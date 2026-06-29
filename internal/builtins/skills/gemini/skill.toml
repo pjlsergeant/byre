@@ -1,0 +1,38 @@
+# Built-in agent skill: Gemini (Google gemini-cli).
+#
+# DRAFT — host-verify the npm package name (@google/gemini-cli), the autonomy
+# flag, and the auth flow (GEMINI_API_KEY env or an OAuth login).
+#
+# Unlike claude/codex, gemini-cli is an npm package, so this skill brings Node.
+# Debian's apt node is too old for gemini-cli, so it installs Node 22 via
+# NodeSource, then `npm install -g` (global, on PATH). Config/credentials live in
+# a per-project .gemini state volume. No seed.
+
+[build]
+apt = ["curl", "ca-certificates"]
+dockerfile = [
+  "RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*",
+  "RUN npm install -g @google/gemini-cli",
+  # Clear any install residue from ~/.gemini (the .gemini state-volume mount
+  # point) so a fresh volume starts clean; gemini recreates it at runtime/login.
+  "RUN rm -rf /home/dev/.gemini",
+]
+
+[runtime]
+env = { }
+
+[agent]
+# Verify the non-interactive/autonomy flag for gemini-cli.
+command = "gemini --yolo"
+state = ".gemini"
+# Gemini reads global guidance from ~/.gemini/GEMINI.md. byre places skill
+# [context] here at runtime. HOST-VERIFY the path/filename gemini actually reads.
+context_target = "/home/dev/.gemini/GEMINI.md"
+
+# No creds seeding: gemini's login is a rotating OAuth token; copying it invites
+# a refresh collision. Log in inside the box (the .gemini state volume persists).
+
+[[volumes]]
+name = ".gemini"
+role = "state"
+target = "/home/dev/.gemini"

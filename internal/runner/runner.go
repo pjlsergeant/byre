@@ -1,0 +1,327 @@
+// Package runner drives a container engine (Docker or Podman) via its CLI.
+//
+// byre shells out to the engine CLI rather than binding the Docker SDK, which
+// keeps Docker and Podman as two implementations of the same small surface.
+// The Runner stays minimal and grows only as commands need build/run/volume
+// operations (M3+).
+package runner
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"sort"
+	"strings"
+)
+
+// Engine is a supported container engine.
+type Engine string
+
+const (
+	Docker Engine = "docker"
+	Podman Engine = "podman"
+)
+
+// LookPath mirrors exec.LookPath; injectable so engine detection is testable
+// without a real engine installed.
+type LookPath func(string) (string, error)
+
+// Detect resolves which engine to use from the config setting ("auto",
+// "docker", or "podman"). With "auto" it prefers docker, then podman. look is
+// exec.LookPath in production; tests inject a fake.
+func Detect(setting string, look LookPath) (Engine, error) {
+	if look == nil {
+		look = exec.LookPath
+	}
+	switch setting {
+	case "", "auto":
+		for _, e := range []Engine{Docker, Podman} {
+			if _, err := look(string(e)); err == nil {
+				return e, nil
+			}
+		}
+		return "", fmt.Errorf("no container engine found on PATH (looked for docker, podman)")
+	case string(Docker), string(Podman):
+		if _, err := look(setting); err != nil {
+			return "", fmt.Errorf("engine %q not found on PATH", setting)
+		}
+		return Engine(setting), nil
+	default:
+		return "", fmt.Errorf("unknown engine %q (want auto|docker|podman)", setting)
+	}
+}
+
+// Runner invokes a container engine via its CLI. The two exec seams are
+// injectable so command assembly can be unit-tested without a real engine:
+// stream connects child stdio (interactive build/run/exec); capture returns
+// stdout (ps/inspect).
+type Runner struct {
+	engine  Engine
+	stream  func(name string, args ...string) error
+	capture func(name string, args ...string) (string, error)
+}
+
+// New returns a Runner for the given engine using real exec.
+func New(e Engine) *Runner {
+	return &Runner{
+		engine:  e,
+		stream:  streamExec,
+		capture: captureExec,
+	}
+}
+
+// Engine reports the engine this runner invokes.
+func (r *Runner) Engine() Engine { return r.engine }
+
+// IsRootlessPodman reports whether this runner drives Podman in ROOTLESS mode.
+// It matters because byre's correctly-owned-files trick (map the host UID/GID
+// onto the in-box dev user, then chown byre's storage to it — see the launcher)
+// assumes a ROOTFUL daemon. Rootless Podman runs in a user namespace where
+// host↔container uids are remapped, so that chown math doesn't hold and files
+// land owned by the wrong id. v0 supports rootful Docker/Podman only; callers use
+// this to WARN (not block). Docker — including rootless Docker — is out of scope
+// here and reports false. A query error is returned so the caller can stay quiet
+// rather than warn on a guess.
+func (r *Runner) IsRootlessPodman() (bool, error) {
+	if r.engine != Podman {
+		return false, nil
+	}
+	out, err := r.capture(string(r.engine), "info", "--format", "{{.Host.Security.Rootless}}")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "true", nil
+}
+
+// Build builds the image tagged tag from the given context directory and
+// Dockerfile. With noCache, the build cache is disabled (--no-cache).
+func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool) error {
+	args := []string{"build", "-t", tag, "-f", dockerfile}
+	if noCache {
+		args = append(args, "--no-cache")
+	}
+	return r.stream(string(r.engine), append(args, contextDir)...)
+}
+
+// Run runs a container from the assembled run argv.
+func (r *Runner) Run(args []string) error {
+	return r.stream(string(r.engine), args...)
+}
+
+// RunningContainersByLabel returns the ids of running containers carrying label
+// ("key=value"). Normally at most one (the container name enforces uniqueness),
+// but callers handle the list explicitly.
+func (r *Runner) RunningContainersByLabel(label string) ([]string, error) {
+	out, err := r.capture(string(r.engine), "ps", "-q", "--filter", "label="+label)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, line := range strings.Split(out, "\n") {
+		if id := strings.TrimSpace(line); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+// ContainerEnv returns a running container's configured environment (image ENV
+// plus the `-e` vars set at run time), so callers can act on the identity/env
+// the session ACTUALLY started with rather than re-deriving it.
+func (r *Runner) ContainerEnv(id string) (map[string]string, error) {
+	out, err := r.capture(string(r.engine), "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", id)
+	if err != nil {
+		return nil, err
+	}
+	return parseEnvLines(out), nil
+}
+
+// parseEnvLines parses newline-separated KEY=VALUE lines into a map (pure, for
+// testing). Lines without '=' (or with an empty key) are skipped.
+func parseEnvLines(out string) map[string]string {
+	env := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if i := strings.IndexByte(line, '='); i > 0 {
+			env[line[:i]] = line[i+1:]
+		}
+	}
+	return env
+}
+
+// Exec runs an interactive command in a running container as the given uid:gid,
+// in workdir, with env. Used by `byre shell` — running as the dev uid (not root)
+// and re-passing the run-time skill env so claude/codex find their config.
+func (r *Runner) Exec(containerID string, uid, gid int, workdir string, env map[string]string, command ...string) error {
+	return r.stream(string(r.engine), execArgs(containerID, uid, gid, workdir, env, command...)...)
+}
+
+// execArgs builds the engine `exec` argv (pure, for testing). Env keys are
+// sorted so the argument order is deterministic.
+func execArgs(containerID string, uid, gid int, workdir string, env map[string]string, command ...string) []string {
+	args := []string{"exec", "-it", "-u", fmt.Sprintf("%d:%d", uid, gid)}
+	if workdir != "" {
+		args = append(args, "-w", workdir)
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		args = append(args, "-e", k+"="+env[k])
+	}
+	args = append(args, containerID)
+	return append(args, command...)
+}
+
+// VolumeExists reports whether a named volume exists.
+func (r *Runner) VolumeExists(name string) (bool, error) {
+	out, err := r.capture(string(r.engine), "volume", "ls", "-q", "--filter", "name=^"+name+"$")
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// VolumeCreate creates a named volume.
+func (r *Runner) VolumeCreate(name string) error {
+	_, err := r.capture(string(r.engine), "volume", "create", name)
+	return err
+}
+
+// ImageExists reports whether an image with the given tag exists locally.
+func (r *Runner) ImageExists(tag string) (bool, error) {
+	out, err := r.capture(string(r.engine), "images", "-q", tag)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// ImageRemove removes an image by tag.
+func (r *Runner) ImageRemove(tag string) error {
+	_, err := r.capture(string(r.engine), "image", "rm", tag)
+	return err
+}
+
+// MigrateVolume copies the contents of src into dst (which must already exist),
+// chowning to uid:gid. Used by rehome (Docker has no volume rename). image
+// supplies cp/chown; the entrypoint is bypassed and it runs as root.
+func (r *Runner) MigrateVolume(src, dst, image string, uid, gid int) error {
+	script := fmt.Sprintf("cp -a /from/. /to/ && chown -R %d:%d /to", uid, gid)
+	return r.stream(string(r.engine), "run", "--rm",
+		"--entrypoint", "sh", "-u", "0:0",
+		"--mount", "type=volume,source="+src+",target=/from,readonly",
+		"--mount", "type=volume,source="+dst+",target=/to",
+		image, "-c", script)
+}
+
+// VolumesByPrefix lists existing volume names beginning with prefix.
+func (r *Runner) VolumesByPrefix(prefix string) ([]string, error) {
+	out, err := r.capture(string(r.engine), "volume", "ls", "-q", "--filter", "name="+prefix)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		// docker's name filter is a substring match, so confirm the prefix.
+		if n := strings.TrimSpace(line); strings.HasPrefix(n, prefix) {
+			names = append(names, n)
+		}
+	}
+	return names, nil
+}
+
+// VolumeRemove removes a named volume.
+func (r *Runner) VolumeRemove(name string) error {
+	_, err := r.capture(string(r.engine), "volume", "rm", name)
+	return err
+}
+
+// SeedVolume copies hostPath into a fresh named volume (a one-way copy — the
+// volume diverges immediately) and chowns it to uid:gid so credential writes
+// succeed regardless of the runtime UID mapping. image supplies cp/chown.
+//
+// It overrides the image ENTRYPOINT (the byre launcher) and runs as root, since
+// a fresh Docker volume is root-owned and the cp/chown must run privileged.
+func (r *Runner) SeedVolume(name, hostPath, image string, uid, gid int) error {
+	script := fmt.Sprintf("cp -a /src/. /dest/ && chown -R %d:%d /dest", uid, gid)
+	return r.stream(string(r.engine), "run", "--rm",
+		"--entrypoint", "sh", "-u", "0:0",
+		"--mount", "type=volume,source="+name+",target=/dest",
+		"--mount", "type=bind,source="+hostPath+",target=/src,readonly",
+		image, "-c", script)
+}
+
+// SeedLiteral writes content to destPath inside a fresh named volume (creating
+// parent dirs) and chowns the volume to uid:gid. The content is piped via stdin
+// and destPath via an env var, so neither can inject shell. Runs as root with
+// the image entrypoint bypassed.
+func (r *Runner) SeedLiteral(volName, destPath, content, image string, uid, gid int) error {
+	script := fmt.Sprintf(`mkdir -p "/dest/$(dirname "$BYRE_DEST")" && cat > "/dest/$BYRE_DEST" && chown -R %d:%d /dest`, uid, gid)
+	cmd := exec.Command(string(r.engine), "run", "--rm", "-i",
+		"--entrypoint", "sh", "-u", "0:0",
+		"-e", "BYRE_DEST="+destPath,
+		"--mount", "type=volume,source="+volName+",target=/dest",
+		image, "-c", script)
+	cmd.Stdin = strings.NewReader(content)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+// SeedFiles copies a curated subset of srcDir (the relative paths in files,
+// each a file or dir) into a fresh named volume at the SAME relative location,
+// then chowns the volume to uid:gid. Used to seed an agent's non-secret prefs
+// (theme, keybindings) into a fresh state volume. Like SeedVolume it overrides
+// the entrypoint and runs as root (a fresh volume is root-owned).
+//
+// The file list is passed as positional ARGV (never interpolated into the
+// script), so a path can't inject shell. A listed path missing in srcDir is
+// skipped, not an error (the host may simply not have that pref yet).
+func (r *Runner) SeedFiles(volName, srcDir string, files []string, image string, uid, gid int) error {
+	// set -e so a failed mkdir/cp aborts with non-zero (the trailing chown must
+	// not mask a copy failure — the caller's rollback depends on the exit status).
+	// A listed path missing in /src is skipped via the [ -e ] guard, not a failure.
+	const script = `set -e
+for f in "$@"; do
+  if [ -e "/src/$f" ]; then
+    mkdir -p "/dest/$(dirname "$f")"
+    cp -a "/src/$f" "/dest/$f"
+  fi
+done
+chown -R "$BYRE_OWNER" /dest`
+	args := []string{"run", "--rm",
+		"--entrypoint", "sh", "-u", "0:0",
+		"-e", fmt.Sprintf("BYRE_OWNER=%d:%d", uid, gid),
+		"--mount", "type=volume,source=" + volName + ",target=/dest",
+		"--mount", "type=bind,source=" + srcDir + ",target=/src,readonly",
+		image, "-c", script, "seed-prefs"}
+	args = append(args, files...)
+	return r.stream(string(r.engine), args...)
+}
+
+func streamExec(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+func captureExec(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		// Surface the engine's stderr — otherwise failures are just "exit status 1".
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return string(out), fmt.Errorf("%s: %s", err, msg)
+		}
+	}
+	return string(out), err
+}

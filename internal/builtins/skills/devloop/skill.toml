@@ -1,0 +1,24 @@
+# Built-in skill: devloop — byre's reusable development workflow.
+#
+# Delivers two things to any project box:
+#   1. `byre-codereview` — an independent, Codex-backed code-review script
+#      (shipped via [build].files, on PATH at /usr/local/bin/byre-codereview).
+#   2. The workflow conventions (commit discipline, the review loop, test-before-
+#      commit) as agent context, placed where the agent reads its memory.
+#
+# Pairs with the codex skill, which installs the codex binary the script drives:
+#
+#   skills = ["codex", "devloop"]
+#
+# codex provides the reviewer; devloop provides the script + conventions. codex
+# is NOT launched as the agent — it's the second opinion. Authenticate it once
+# per box with `codex login`. A project's own CLAUDE.md/AGENTS.md still applies on
+# top of the conventions here.
+
+[build]
+apt = ["jq"] # codereview.sh parses codex --json output with jq
+files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop" }
+dockerfile = ["RUN chmod +x /usr/local/bin/byre-codereview"]
+
+[context]
+file = "context.md"

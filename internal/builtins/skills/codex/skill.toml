@@ -1,0 +1,88 @@
+# Built-in agent skill: Codex (OpenAI codex CLI).
+#
+# Base-agnostic: installs the standalone Codex binary (no node) the same way as
+# the claude skill — as the dev user, with a /usr/local/bin symlink for attach
+# shells. IMPORTANT: codex's installer puts the binary under ~/.codex, so the
+# binary lives in the IMAGE at ~/.codex and that path is NOT a volume. State
+# (auth/sessions/config) lives in CODEX_HOME, which is a separate per-project
+# state volume mounted at /home/dev/.codex-home — so seeding/resetting creds can
+# never disturb the binary.
+#
+# --- TEMPORARY WORKAROUND (gawk) -------------------------------------------
+# The installer validates the download against a SHA256SUMS file with an awk
+# regex using a {64} interval (`$1 ~ /^[0-9a-fA-F]{64}$/`). Debian's default awk
+# (mawk) doesn't support that interval, so the digest lookup fails with
+# "Could not find SHA-256 digest ..." — openai/codex#27194, #28334. (Codex's
+# aarch64-unknown-linux-musl target is intentional, a static binary; this is NOT
+# a musl-vs-glibc problem.) Workaround: install gawk and make it the default awk
+# before running the installer.
+#   REMOVE WHEN FIXED UPSTREAM: when codex's install.sh no longer depends on awk
+#   interval regexes, drop `gawk` from apt + the `update-alternatives` line below
+#   (and the "# byre: workaround" Dockerfile comment). Track openai/codex#28334.
+# ---------------------------------------------------------------------------
+#
+# First-run auth is handled by the codex-login firstrun hook below (device-auth
+# on a fresh box). Still host-verify: the interactive autonomy flag.
+#
+# RE-AUTH — use `codex login --device-auth`, NOT `codex login`. The credential is
+# a ROTATING ChatGPT OAuth token: it expires and can be invalidated out from
+# under you ("refresh token already used"), at which point codex 401s and
+# byre-codereview dies. To re-authenticate from inside the box, always use the
+# device-code flow:
+#     codex login --device-auth
+# Plain `codex login` starts a browser-redirect flow that CANNOT complete in a
+# no-browser sandbox. --device-auth prints a URL + one-time code you authorize in
+# any browser; the new credential lands in the CODEX_HOME volume and persists.
+# (Verified working on codex 0.141.0 — this is the supported headless login.)
+
+[build]
+apt = ["curl", "ca-certificates", "gawk"]
+# First-run auth: ship a firstrun hook that runs `codex login --device-auth` on a
+# fresh box (guarded by auth.json), so byre-codereview works without hunting for a
+# shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
+files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login" }
+dockerfile = [
+  # This comment line is emitted into the generated Dockerfile so the awk swap
+  # isn't a mystery to anyone inspecting it.
+  "# byre: TEMP workaround for openai/codex#28334 — codex install.sh's SHA256SUMS check needs gawk (Debian's mawk lacks {64}-interval regex). Remove this + gawk once upstream fixes the installer.",
+  "RUN update-alternatives --set awk /usr/bin/gawk",
+  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'",
+  # codex installs its BINARY into ~/.codex (~/.codex/packages/.../bin/codex, with
+  # ~/.local/bin/codex symlinked to it). ~/.codex is NOT a volume — the state
+  # volume mounts at CODEX_HOME (/home/dev/.codex-home) instead — so the binary
+  # stays in this image dir, always present, never masked or wiped.
+  "RUN test -x /home/dev/.local/bin/codex && ln -sf /home/dev/.local/bin/codex /usr/local/bin/codex",
+]
+
+[runtime]
+# CODEX_HOME (auth/sessions/config — the STATE) is deliberately SEPARATE from
+# ~/.codex (where the installer puts the BINARY). ~/.codex stays in the image and
+# is never a volume, so the binary is always present; the state volume mounts here
+# at /home/dev/.codex-home. This keeps a creds seed / reset / stale volume from
+# ever clobbering the binary (they only touch CODEX_HOME). HOST-VERIFY that codex
+# honors CODEX_HOME for all its state and doesn't write back into ~/.codex.
+env = { CODEX_HOME = "/home/dev/.codex-home" }
+
+[agent]
+# Flag per moarcode's `codex exec --dangerously-bypass-approvals-and-sandbox`;
+# verify it applies to the interactive `codex` launch.
+command = "codex --dangerously-bypass-approvals-and-sandbox"
+state = ".codex"
+# Codex reads global guidance from $CODEX_HOME/AGENTS.md (= the state volume).
+# HOST-VERIFY the path/filename codex actually reads.
+context_target = "/home/dev/.codex-home/AGENTS.md"
+
+# codex auth is NOT seeded from the host. The ChatGPT credential (auth.json) is a
+# ROTATING OAuth token: each refresh invalidates the previous one. Copying it
+# makes the host AND this box hold the same single-use token, so the first
+# refresh anywhere bricks the rest with "refresh token already used" — exactly
+# the 401 that kills byre-codereview. So codex logs in per-box via the device-auth
+# hook above (`codex login --device-auth`); the token has one holder, stays live.
+# (byre has no agent-creds seeding at all now — every agent login rotates.)
+
+[[volumes]]
+name = ".codex"
+role = "state"
+# Mounts at CODEX_HOME, NOT ~/.codex — the binary lives in ~/.codex (image) and
+# must not be masked/seeded over by this volume.
+target = "/home/dev/.codex-home"

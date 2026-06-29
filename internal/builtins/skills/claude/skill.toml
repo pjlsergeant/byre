@@ -1,0 +1,64 @@
+# Built-in agent skill: Claude (Anthropic claude-code CLI).
+#
+# Base-agnostic: installs the standalone Claude binary via the official
+# installer (no node required) and brings its own apt deps, so it works on any
+# Debian-family base (debian, golang, ubuntu, ...).
+#
+# Installs AS the dev user (via gosu, which the infra layer that precedes skills
+# provides) into /home/dev/.local/bin — the location Claude's own doctor/auto-
+# update expects ($HOME/.local/bin), owned by the runtime user. The infra layer
+# puts /home/dev/.local/bin on PATH (keeps /doctor happy in the main session);
+# the symlink keeps claude reachable in attach (docker exec) shells whose login
+# profile may reset PATH.
+#
+# No seeding: the .claude state volume starts empty and you log in once IN THE
+# BOX. The login persists per-project (the volume survives rebuilds, and
+# CLAUDE_CONFIG_DIR keeps all Claude state inside it). byre never copies your
+# host ~/.claude — the credential is a rotating OAuth token, so a copy invites a
+# refresh collision (two holders of one rotating token); log in inside the box.
+
+[build]
+apt = ["curl", "ca-certificates"]
+dockerfile = [
+  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://claude.ai/install.sh | bash'",
+  "RUN test -x /home/dev/.local/bin/claude && ln -sf /home/dev/.local/bin/claude /usr/local/bin/claude",
+  # The installer writes residue into ~/.claude (e.g. a downloads/ dir). That dir
+  # is the .claude STATE VOLUME's mount point, so a fresh volume would seed from
+  # it — leaving a non-empty config dir with no .claude.json, which makes Claude
+  # print a first-run "config not found / restore from backup" notice. Remove the
+  # residue so the state volume starts clean (the binary lives in ~/.local/bin,
+  # not ~/.claude, so this doesn't touch it; Claude recreates ~/.claude at runtime).
+  "RUN rm -rf /home/dev/.claude",
+]
+
+[runtime]
+# Keep ALL Claude state inside the .claude volume (otherwise Claude uses
+# ~/.claude.json at the home root, which isn't persisted). DEVCONTAINER helps it
+# run headless.
+env = { CLAUDE_CONFIG_DIR = "/home/dev/.claude", DEVCONTAINER = "true", COLORTERM = "truecolor" }
+
+[agent]
+command = "claude --dangerously-skip-permissions"
+state = ".claude"
+# Where Claude reads user memory: $CLAUDE_CONFIG_DIR/CLAUDE.md. byre places the
+# concatenated skill [context] here at runtime (the .claude volume is only mounted
+# then), so skills can deliver workflow context to the agent. Additive: a project
+# CLAUDE.md in /workspace is still read on top of this.
+context_target = "/home/dev/.claude/CLAUDE.md"
+
+# Curated non-secret prefs the user may opt to seed into a fresh .claude volume
+# with `seed_prefs = true` (one-time, only on a fresh volume). ONLY files that
+# are structurally incapable of holding a secret are listed:
+#   - keybindings.json — keyboard shortcuts only.
+#   - themes/          — custom color themes only.
+# DELIBERATELY EXCLUDED: settings.json (mixes theme with env/apiKeyHelper/hooks/
+# permissions/MCP — can hide credentials) and ~/.claude.json (OAuth + MCP tokens
+# + trust state). CLAUDE.md is delivered via context_target above, not seeded.
+[agent.prefs]
+from = "~/.claude"
+files = ["keybindings.json", "themes"]
+
+[[volumes]]
+name = ".claude"
+role = "state"
+target = "/home/dev/.claude"

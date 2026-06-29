@@ -1,0 +1,17 @@
+# moarcode harness — not part of byre, never checked in
+moarcode/
+
+# host-mounted volume
+node_modules/
+
+# build output
+/byre
+
+# throwaway experiments (e.g. moarcode-as-byre-skill)
+curiosity/
+
+# go test binaries
+*.test
+
+# stray local build artifact (was accidentally committed)
+/bb
