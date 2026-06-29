@@ -51,9 +51,9 @@ byre develop
 
 On a project with no `byre.config`, byre asks you to pick a **template** (go /
 node / python / none) × an **agent** (claude / codex / gemini / none), with your
-favourites pre-selected (Enter accepts). It writes a `byre.config`, builds the
-image, and launches the agent in the container with your repo mounted at
-`/workspace`.
+favourites pre-selected (Enter accepts). It writes the resolved config to byre's
+host-side store, builds the image, and launches the agent in the container with
+your repo mounted at `/workspace`.
 
 Non-interactively:
 
@@ -68,10 +68,13 @@ byre develop --template go --agent claude
 | `byre develop` | Generate (if needed), build on cache-miss, and run the container in the foreground. The main entry point. If a session is already running for the dir, it tells you (and how to stop it) rather than starting a second. |
 | `byre shell` | Open an interactive shell (as the `dev` user, with the agent's env) in this project's running session — for `codex login`, running tests, poking around. |
 | `byre status` | Show the resolved config, mounts, skills + what they grant, volumes, and whether a container is running for this directory. |
+| `byre config [--global]` | Open the interactive editor for this project's (host-side) config. `--global` edits your `~/.byre/default.config` baseline instead. |
 | `byre dockerfile` | Print the generated Dockerfile for this directory. |
 | `byre reset [--force]` | Wipe this project's named volumes (not the image). Names what dies; refuses while a session is live. |
+| `byre forget [--force]` | Remove **all** of byre's host-side state for this directory — its volumes, its image, and `~/.byre/projects/<id>/` (config, adoption record, build context). Heavier than `reset`; refuses while live; never touches your project tree. |
 | `byre rebuild` | Rebuild the image with the cache disabled (`--no-cache`) to pick up new upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity (migrate volumes) onto its new path-derived id. |
+| `byre skill update` | Re-materialize byre's built-in skills into `~/.byre/skills/` (pick up changes shipped in a new byre build). |
 
 ## Configuration
 
@@ -79,10 +82,17 @@ A cascade of TOML files, last layer wins (scalars override, lists union, `!name`
 removes):
 
 ```
-~/.byre/default.config         your personal baseline (your "favourites")
-~/.byre/templates/<name>/       template.config (+ optional files)
-<project>/byre.config           project overrides
+~/.byre/default.config              your personal baseline (your "favourites")
+~/.byre/templates/<name>/           template.config (+ optional files)
+~/.byre/projects/<id>/byre.config   this project's overrides (host-side store)
 ```
+
+**byre never reads a `byre.config` out of the project tree.** The project is
+mounted read-write into the box, so a config file sitting there can't be trusted
+— the agent could rewrite it. Instead, a committed `<project>/byre.config` is a
+*proposal*: on `byre develop`, byre offers to review and **adopt** it into the
+host-side store (`~/.byre/projects/<id>/byre.config`), where it becomes the
+project layer above. Adoption is always an explicit, host-side human action.
 
 Vocabulary (the convenient 90%; anything else goes in a raw block):
 
