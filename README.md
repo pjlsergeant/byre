@@ -19,14 +19,14 @@ byre develop
 ```
 
 drops you into a sandbox that sees this project and what you explicitly grant it
-— not your home dir, keys, or the rest of your machine.
+-- not your home dir, keys, or the rest of your machine.
 
-> *byre* (rhymes with *buyer*) is Scots/Northern-English for a cowshed — the
+> *byre* (rhymes with *buyer*) is Scots/Northern-English for a cowshed -- the
 > enclosure you keep the thing in so it doesn't wander off.
 
 byre is the **local-first, inspectable, Docker-native project harness for
 autonomous coding agents.** It generates a Dockerfile you can read, runs it
-locally (Docker or Podman — no account, no control plane), scopes state and cache
+locally (Docker or Podman -- no account, no control plane), scopes state and cache
 to the project, and makes every grant legible. Raw Docker stays first-class.
 
 See [`docs/byre-spec-v0.md`](docs/byre-spec-v0.md) for the full design, and the
@@ -66,12 +66,12 @@ byre develop --template go --agent claude
 | Command | What it does |
 |---|---|
 | `byre develop` | Generate (if needed), build on cache-miss, and run the container in the foreground. The main entry point. If a session is already running for the dir, it tells you (and how to stop it) rather than starting a second. |
-| `byre shell` | Open an interactive shell (as the `dev` user, with the agent's env) in this project's running session — for `codex login`, running tests, poking around. |
+| `byre shell` | Open an interactive shell (as the `dev` user, with the agent's env) in this project's running session -- for `codex login`, running tests, poking around. |
 | `byre status` | Show the resolved config, mounts, skills + what they grant, volumes, and whether a container is running for this directory. |
 | `byre config [--global]` | Open the interactive editor for this project's (host-side) config. `--global` edits your `~/.byre/default.config` baseline instead. |
 | `byre dockerfile` | Print the generated Dockerfile for this directory. |
 | `byre reset [--force]` | Wipe this project's named volumes (not the image). Names what dies; refuses while a session is live. |
-| `byre forget [--force]` | Remove **all** of byre's host-side state for this directory — its volumes, its image, and `~/.byre/projects/<id>/` (config, adoption record, build context). Heavier than `reset`; refuses while live; never touches your project tree. |
+| `byre forget [--force]` | Remove **all** of byre's host-side state for this directory -- its volumes, its image, and `~/.byre/projects/<id>/` (config, adoption record, build context). Heavier than `reset`; refuses while live; never touches your project tree. |
 | `byre rebuild` | Rebuild the image with the cache disabled (`--no-cache`) to pick up new upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity (migrate volumes) onto its new path-derived id. |
 | `byre skill update` | Re-materialize byre's built-in skills into `~/.byre/skills/` (pick up changes shipped in a new byre build). |
@@ -89,7 +89,7 @@ removes):
 
 **byre never reads a `byre.config` out of the project tree.** The project is
 mounted read-write into the box, so a config file sitting there can't be trusted
-— the agent could rewrite it. Instead, a committed `<project>/byre.config` is a
+-- the agent could rewrite it. Instead, a committed `<project>/byre.config` is a
 *proposal*: on `byre develop`, byre offers to review and **adopt** it into the
 host-side store (`~/.byre/projects/<id>/byre.config`), where it becomes the
 project layer above. Adoption is always an explicit, host-side human action.
@@ -119,15 +119,15 @@ run_args        = ["--cap-add=SYS_PTRACE"]  # raw docker-run passthrough
 
 ## Skills
 
-A skill is a portable bundle that contributes to any layer byre controls —
+A skill is a portable bundle that contributes to any layer byre controls --
 build (Dockerfile block + files), runtime (mounts/caps/env), state (named
-volumes), and agent context. **The agent itself is a skill** — byre ships agent
+volumes), and agent context. **The agent itself is a skill** -- byre ships agent
 skills for Claude, Codex, and Gemini. Skills live in `~/.byre/skills/<name>/`
 (built-ins are materialized there and are editable).
 
 ## Security contract
 
-byre isolates the **host filesystem, environment, and credentials** — the agent
+byre isolates the **host filesystem, environment, and credentials** -- the agent
 sees only what you explicitly mount or pass. It does **not** restrict the network
 (open by default) and the project mount is read-write by design (the agent edits
 and commits your code). Skill-granted runtime holes (e.g. a host socket) are
@@ -136,12 +136,12 @@ opt-in and named by `byre status`, never silent.
 ## Volumes & state
 
 - **cache** volumes (e.g. `node_modules`) are disposable.
-- **state** volumes (e.g. `.claude`) are precious — per-project agent auth that
-  persists across rebuilds. byre never copies your host credentials — agents log
+- **state** volumes (e.g. `.claude`) are precious -- per-project agent auth that
+  persists across rebuilds. byre never copies your host credentials -- agents log
   in inside the box (the volume persists the login). A `seed` can initialize a
   fresh volume with non-credential data from a host path.
 - **prefs seeding** (`seed_prefs = true`) opts into a one-time copy of the
-  selected agent's curated, non-secret prefs (theme, keybindings — the skill's
+  selected agent's curated, non-secret prefs (theme, keybindings -- the skill's
   `[agent.prefs]`) into a fresh state volume. Only files the skill vouches are
   secret-free are copied (e.g. for Claude, `keybindings.json` + `themes/`, never
   `settings.json` or `~/.claude.json`). Acts only when the volume is fresh.
