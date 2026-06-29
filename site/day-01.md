@@ -1,3 +1,7 @@
+---
+title: "Day 1: I use byre to write byre"
+---
+
 # Day 1: I use byre to write byre
 
 `byre` is a tool for spinning up quick agent sandboxes, using Docker or Podman, and as of today it's good enough that I build it with itself. It's a harness in which you can (hopefully) let your agent run wild in YOLO mode.

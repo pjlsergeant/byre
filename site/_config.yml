@@ -1,0 +1,10 @@
+title: byre
+description: A local-first sandbox for AI coding agents -- devlog
+baseurl: "/byre"
+url: "https://pjlsergeant.github.io"
+theme: jekyll-theme-cayman
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
