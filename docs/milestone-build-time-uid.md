@@ -245,6 +245,16 @@ already owned by the UID you run as — which is exactly the UID now baked into 
 image. The only volumes that could come up wrong-owned are ones that never
 launched, or a box you now run as a *different* user than before.
 
+- **`byre skill update` is REQUIRED on upgrade (release note).** The firstrun
+  hooks changed — they no longer wrap work in `gosu` (the entrypoint is now
+  unprivileged). But `MaterializeSkills` never overwrites an already-materialized
+  skill, and it's the *host* copy under `~/.byre/skills/` that gets COPY'd into
+  the image — so a new binary alone ships the STALE hooks. A stale
+  `codex-login.sh`/`devloop-firstrun.sh` still calls `gosu`, which now fails
+  (`failed switching to "1000:1000": operation not permitted`) because a non-root
+  process can't switch users. The box still launches (hooks are best-effort) but
+  codex auth won't fire. Fix: `byre skill update` on the host, then `byre
+  develop`. (Same materialize caveat that bit the `[agent.creds]` removal.)
 - **Recovery (release note, not code):** if an upgraded box won't start because a
   pre-existing state volume is wrong-owned, `byre reset` it and re-log-in. The
   only state at risk is agent auth (`.claude`/`.codex` — a 30-second device-auth /

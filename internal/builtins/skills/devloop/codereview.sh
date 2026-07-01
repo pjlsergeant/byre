@@ -108,7 +108,7 @@ run_fresh() {
 report_failure() {
   if grep -qiE 'token_expired|refresh token|sign in again|authentication token is expired|401 unauthorized' "$DBG" 2>/dev/null; then
     echo "byre-codereview: codex authentication failed — the login expired or was invalidated." >&2
-    echo "  Re-authenticate from inside the box with the device-code flow:" >&2
+    echo "  Re-authenticate in another terminal: run 'byre shell', then the device-code flow:" >&2
     echo "      codex login --device-auth" >&2
     echo "  (Plain 'codex login' opens a browser flow the box can't complete.)" >&2
     echo "  Debug log: $DBG" >&2

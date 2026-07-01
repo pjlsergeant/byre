@@ -27,7 +27,7 @@ codex login status >/dev/null 2>&1 && exit 0
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
 # signal-death toward the launcher — the box proceeds to the agent regardless.
-trap 'echo; echo "byre: codex login skipped — run codex login --device-auth later."; exit 0' INT
+trap 'echo; echo "byre: codex login skipped. To do it later, open another terminal and run '\''byre shell'\'', then '\''codex login --device-auth'\''."; exit 0' INT
 
 echo ""
 echo "=== byre: first-run Codex login (for byre-codereview) ==="
@@ -41,5 +41,5 @@ echo ""
 TO=""
 command -v timeout >/dev/null 2>&1 && TO="timeout --foreground 600"
 $TO codex login --device-auth \
-  || echo "byre: codex login didn't complete — run 'codex login --device-auth' later." >&2
+  || echo "byre: codex login didn't complete. To do it later, open another terminal and run 'byre shell', then 'codex login --device-auth'." >&2
 exit 0
