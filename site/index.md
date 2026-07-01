@@ -20,3 +20,6 @@ devlog -- notes written as I build it in the open.
 
 - [Day 1 -- byre is working](day-01.md) -- what's done, what's in progress, and
   where it came from (the `moarcode` Claude/Codex review loop).
+- [Day 2 -- the file-ownership rabbit hole](day-02.md) -- why host/container file
+  ownership was so hard, and how baking the UID in at build time let us delete the
+  whole runtime chown machinery.
