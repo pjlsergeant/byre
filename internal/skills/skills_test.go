@@ -91,6 +91,20 @@ func TestResolveSampleAndAgentSkills(t *testing.T) {
 	}
 }
 
+// ListSkills returns every skill, INCLUDING agent skills — an agent skill can be
+// enabled as a plain skill (e.g. codex for byre-codereview) separate from the
+// launched agent, so the config UI must be able to list/toggle it.
+func TestListSkillsIncludesAgentSkills(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "sample", sampleSkill, nil)  // no [agent]
+	writeSkill(t, dir, "fake", fakeAgentSkill, nil) // has [agent]
+	got := ListSkills(dir)
+	want := []string{"fake", "sample"} // sorted
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("ListSkills = %v, want %v (must include the agent skill)", got, want)
+	}
+}
+
 func TestResolveAgentMustBeAgentSkill(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "sample", sampleSkill, nil) // no [agent]

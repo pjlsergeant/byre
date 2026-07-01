@@ -21,6 +21,7 @@ type StatusInfo struct {
 	Canonical string
 	Skills    []string
 	Binds     []config.Mount
+	Ports     []config.Port
 	Volumes   []config.Volume
 	Grants    []skills.Grant // per-skill runtime grants (attribution)
 	RunArgs   []string
@@ -57,6 +58,7 @@ func Status(stdout io.Writer, projectDir string, selfEdit bool) error {
 		Canonical: paths.Canonical,
 		Skills:    cfg.Skills,
 		Binds:     cfg.Mounts,
+		Ports:     cfg.Ports,
 		Volumes:   cfg.Volumes,
 		RunArgs:   cfg.RunArgs,
 		BuildRaw:  append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
@@ -141,6 +143,18 @@ func RenderStatus(w io.Writer, s StatusInfo) {
 	row("Project", s.Canonical+" -> /workspace  (rw)")
 	row("Network", "open")
 
+	if len(s.Ports) == 0 {
+		row("Ports", "none")
+	} else {
+		for i, p := range s.Ports {
+			label := "Ports"
+			if i > 0 {
+				label = ""
+			}
+			row(label, portStatusLine(p))
+		}
+	}
+
 	if len(s.Binds) == 0 {
 		row("Host mounts", "none")
 	} else {
@@ -212,6 +226,17 @@ func skillNames(res skills.Resolved) []string {
 		names = append(names, b.Name)
 	}
 	return names
+}
+
+// portStatusLine renders a published port as "iface:host -> container", matching
+// the runtime defaults (empty interface = 127.0.0.1, host 0 = the container port).
+func portStatusLine(p config.Port) string {
+	iface := orDefault(p.Interface, "127.0.0.1")
+	host := p.Host
+	if host == 0 {
+		host = p.Container
+	}
+	return fmt.Sprintf("%s:%d -> %d  (host -> container)", iface, host, p.Container)
 }
 
 func splitVolumes(vols []config.Volume) (state, cache []string) {

@@ -36,6 +36,30 @@ type Mount struct {
 	Mode   string `toml:"mode"` // ro|rw; default ro
 }
 
+// Port publishes a container port to the host (docker -p). Interface defaults to
+// 127.0.0.1 (localhost-only — exposing to the LAN is a louder, explicit choice);
+// Host 0 means "mirror the container port on the host" (the predictable default
+// a dev box wants, not a random/ephemeral port).
+type Port struct {
+	Container int    `toml:"container"`           // container port (1-65535)
+	Host      int    `toml:"host,omitempty"`      // host port; 0 = same as Container
+	Interface string `toml:"interface,omitempty"` // bind interface; default 127.0.0.1
+}
+
+// portEffective resolves a port's effective bind interface and host port (the
+// defaults byre applies at run time), used for dedup and collision checks.
+func portEffective(p Port) (iface string, host int) {
+	iface = p.Interface
+	if iface == "" {
+		iface = "127.0.0.1"
+	}
+	host = p.Host
+	if host == 0 {
+		host = p.Container
+	}
+	return iface, host
+}
+
 // Seed initializes a fresh state volume once. Exactly one source is set.
 type Seed struct {
 	Host    string `toml:"host"`    // host path (preferred; secret stays off-config)
@@ -72,6 +96,7 @@ type Config struct {
 	Skills    []string          `toml:"skills,omitempty"`
 	Mounts    []Mount           `toml:"mounts,omitempty"`
 	Volumes   []Volume          `toml:"volumes,omitempty"`
+	Ports     []Port            `toml:"ports,omitempty"`
 
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
@@ -204,6 +229,7 @@ func Merge(base, over Config) Config {
 	// Structured named lists: union keyed by identity, with `!name` removal.
 	out.Mounts = mergeMounts(base.Mounts, over.Mounts)
 	out.Volumes = mergeVolumes(base.Volumes, over.Volumes)
+	out.Ports = mergePorts(base.Ports, over.Ports)
 
 	// Raw blocks: append-only/union, no per-line removal in v0.
 	out.DockerfilePre = appendAll(base.DockerfilePre, over.DockerfilePre)
@@ -318,6 +344,38 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+
+	// Ports: container required in range; host 0 (= same as container) or in range;
+	// no two bindings collide on the same effective interface:host, and a binding
+	// on 0.0.0.0 (all interfaces) can't share a host port with any other interface
+	// — docker would fail at run time in both cases.
+	byHostPort := map[int]map[string]bool{} // effective host port -> set of interfaces
+	for _, p := range c.Ports {
+		if p.Container < 1 || p.Container > 65535 {
+			return fmt.Errorf("port: container port %d out of range (1-65535)", p.Container)
+		}
+		if p.Host < 0 || p.Host > 65535 {
+			return fmt.Errorf("port %d: host port %d out of range (0-65535; 0 = same as the container port)", p.Container, p.Host)
+		}
+		if strings.IndexFunc(p.Interface, func(r rune) bool { return r < 0x20 }) >= 0 {
+			return fmt.Errorf("port %d: interface must not contain control characters", p.Container)
+		}
+		iface, host := portEffective(p)
+		ifaces := byHostPort[host]
+		if ifaces == nil {
+			ifaces = map[string]bool{}
+			byHostPort[host] = ifaces
+		}
+		if ifaces[iface] {
+			return fmt.Errorf("port: host binding %s:%d is used by two ports", iface, host)
+		}
+		ifaces[iface] = true
+	}
+	for host, ifaces := range byHostPort {
+		if ifaces["0.0.0.0"] && len(ifaces) > 1 {
+			return fmt.Errorf("port: host port %d is bound on 0.0.0.0 and another interface (0.0.0.0 already covers all)", host)
+		}
+	}
 	return nil
 }
 
@@ -406,6 +464,29 @@ func mergeMounts(base, over []Mount) []Mount {
 	}
 	for _, rm := range removals {
 		out = filterMounts(out, func(m Mount) bool { return m.Target != rm })
+	}
+	return out
+}
+
+// mergePorts unions port bindings, deduping by EFFECTIVE identity so an override
+// that spells out the defaults (e.g. adds interface=127.0.0.1, or host equal to
+// the container port) collapses onto the base entry instead of colliding. (No
+// `!name` identity — a port has no name; a real host-port clash is Validate's job.)
+func mergePorts(base, over []Port) []Port {
+	key := func(p Port) string {
+		iface, host := portEffective(p)
+		return fmt.Sprintf("%s:%d:%d", iface, host, p.Container)
+	}
+	out := append([]Port{}, base...)
+	seen := map[string]bool{}
+	for _, p := range out {
+		seen[key(p)] = true
+	}
+	for _, p := range over {
+		if !seen[key(p)] {
+			seen[key(p)] = true
+			out = append(out, p)
+		}
 	}
 	return out
 }

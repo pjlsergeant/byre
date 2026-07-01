@@ -50,8 +50,8 @@ ENTRYPOINT ["/usr/local/bin/byre-launch"]
 
 func TestDockerfileDefaultBase(t *testing.T) {
 	out := Dockerfile(Input{})
-	if !strings.Contains(out, "FROM "+defaultBase+"\n") {
-		t.Fatalf("empty input did not default base to %q:\n%s", defaultBase, out)
+	if !strings.Contains(out, "FROM "+DefaultBase+"\n") {
+		t.Fatalf("empty input did not default base to %q:\n%s", DefaultBase, out)
 	}
 }
 

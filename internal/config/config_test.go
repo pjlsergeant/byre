@@ -308,3 +308,33 @@ func TestValidateRejectsControlCharInTarget(t *testing.T) {
 		t.Fatal("expected rejection of newline in mount target")
 	}
 }
+
+func TestValidatePorts(t *testing.T) {
+	ok := Config{Ports: []Port{{Container: 8080, Host: 8080, Interface: "127.0.0.1"}, {Container: 3000}}}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("valid ports rejected: %v", err)
+	}
+	bad := map[string]Config{
+		"container out of range": {Ports: []Port{{Container: 0}}},
+		"host out of range":      {Ports: []Port{{Container: 80, Host: 99999}}},
+		"dup host binding":       {Ports: []Port{{Container: 80, Host: 8080}, {Container: 81, Host: 8080}}},
+	}
+	for name, c := range bad {
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: expected a validation error", name)
+		}
+	}
+	// Two blank-host ports (mirror distinct container ports) don't collide.
+	if err := (Config{Ports: []Port{{Container: 80}, {Container: 81}}}).Validate(); err != nil {
+		t.Errorf("ephemeral ports should not collide: %v", err)
+	}
+}
+
+func TestMergePortsDedup(t *testing.T) {
+	base := Config{Ports: []Port{{Container: 8080, Host: 8080}}}
+	over := Config{Ports: []Port{{Container: 8080, Host: 8080}, {Container: 3000}}}
+	got := Merge(base, over).Ports
+	if len(got) != 2 {
+		t.Fatalf("expected dedup to 2 ports, got %v", got)
+	}
+}

@@ -19,6 +19,7 @@ Commands:
   config       Edit this project's config interactively (--global edits
                your ~/.byre/default.config). Raw fields are shown, not edited.
   dockerfile   Print the generated Dockerfile for this directory.
+  dockerrun    Print the docker/podman run command byre would use (no side effects).
   status       Show resolved config, mounts, skills, container state.
   shell        Open a shell (as the dev user) in this project's running session.
   skill update Re-materialize byre's built-in skills (pick up shipped updates).
@@ -42,6 +43,11 @@ func main() {
 	case "dockerfile":
 		noArgs(cmd)
 		if err := commands.Dockerfile(os.Stdout, cwd()); err != nil {
+			fatal(err)
+		}
+	case "dockerrun":
+		noArgs(cmd)
+		if err := commands.DockerRun(os.Stdout, cwd()); err != nil {
 			fatal(err)
 		}
 	case "develop":

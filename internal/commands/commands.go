@@ -91,6 +91,71 @@ func Dockerfile(stdout io.Writer, projectDir string) error {
 	return err
 }
 
+// DockerRun implements `byre dockerrun`: print the `docker run` (or `podman run`)
+// invocation byre would use for this project — the run-time counterpart to
+// `byre dockerfile`. Informational and side-effect-free: it resolves config +
+// skills and assembles the exact argv (env, workspace bind, mounts, volumes,
+// ports, caps, raw run_args, label, image), but builds/runs nothing, so it works
+// even before the image exists or without the engine on PATH.
+func DockerRun(stdout io.Writer, projectDir string) error {
+	paths, err := project.Resolve(projectDir)
+	if err != nil {
+		return err
+	}
+	if err := paths.Bootstrap(); err != nil {
+		return err
+	}
+	// Same guard develop applies: a comma in the project path can't be expressed in
+	// a docker --mount, so don't advertise a command develop would refuse to run.
+	if strings.Contains(paths.Canonical, ",") {
+		return fmt.Errorf("project path contains a comma, which docker --mount cannot express: %q", paths.Canonical)
+	}
+	cfg, res, err := resolve(paths, projectDir)
+	if err != nil {
+		return err
+	}
+	name := "byre-" + paths.ID
+	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
+	label := labelKey + "=" + paths.ID
+	params, err := runParams(paths, cfg, res, name, image, label, false)
+	if err != nil {
+		return err
+	}
+	// Best-effort engine name for the leading token; fall back to the configured
+	// value (or docker) so this stays informational when no engine is installed.
+	engine := orDefault(cfg.Engine, "docker")
+	if eng, derr := runner.Detect(cfg.Engine, nil); derr == nil {
+		engine = string(eng)
+	}
+	argv := append([]string{engine}, runner.RunArgs(params)...)
+	fmt.Fprintln(stdout, shellCommand(argv))
+	return nil
+}
+
+// shellCommand renders an argv as a copy-pasteable shell command line, quoting
+// only the args that need it.
+func shellCommand(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = shellArg(a)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// shellArg single-quotes an argument when it contains shell-significant
+// characters, escaping embedded single quotes; leaves plain args (including the
+// = and , that fill docker --mount/-e specs) bare for readability.
+func shellArg(s string) string {
+	// Includes brace/bracket/tilde/bang/hash so a shell can't expand a raw run
+	// arg (e.g. --flag={a,b}) into different argv than develop's exec would pass.
+	// = , : / . - _ @ stay bare so --mount/-e specs read cleanly.
+	const unsafe = " \t\n\"'$\\|&;<>*?(){}[]~!#"
+	if s != "" && !strings.ContainsAny(s, unsafe) && !strings.ContainsRune(s, '`') {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // Develop implements `byre develop`: set up (generate + build) under a setup
 // lock and run the container in the foreground. If a container is already
 // running for this directory, report it (and how to act) instead of starting one.
@@ -342,6 +407,22 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name
 	for _, v := range allVols {
 		vols = append(vols, runner.NamedVolume{Name: VolumeName(paths.ID, v.Name), Target: v.Target})
 	}
+	// Published ports come from config only. Default the bind interface to
+	// 127.0.0.1 (localhost-only — binding all interfaces / the LAN must be explicit
+	// in the config), and a blank host port (0) to the container port (a
+	// predictable mapping, not a random one).
+	ports := make([]runner.PortPublish, 0, len(cfg.Ports))
+	for _, p := range cfg.Ports {
+		iface := p.Interface
+		if iface == "" {
+			iface = "127.0.0.1"
+		}
+		host := p.Host
+		if host == 0 {
+			host = p.Container
+		}
+		ports = append(ports, runner.PortPublish{Interface: iface, Host: host, Container: p.Container})
+	}
 
 	return runner.RunParams{
 		Image:           image,
@@ -352,6 +433,7 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name
 		Env:             env,
 		Binds:           binds,
 		Volumes:         vols,
+		Ports:           ports,
 		Caps:            res.Caps,
 		// Skill run_args are generated grants; the project's own run_args come
 		// last so the project-level raw escape hatch wins (last-wins).

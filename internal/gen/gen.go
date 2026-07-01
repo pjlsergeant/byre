@@ -64,8 +64,8 @@ const (
 	SelfEditDocName        = "self-edit.md"
 )
 
-// defaultBase is used when no base is configured (config arrives in M2).
-const defaultBase = "debian:bookworm"
+// DefaultBase is used when no base is configured (and no template supplies one).
+const DefaultBase = "debian:bookworm"
 
 // launcherPath is where the infra layer installs the launcher / ENTRYPOINT.
 const launcherPath = "/usr/local/bin/" + LauncherName
@@ -118,7 +118,7 @@ const infraLayer = "ARG BYRE_UID=1000\n" +
 func Dockerfile(in Input) string {
 	base := in.Base
 	if base == "" {
-		base = defaultBase
+		base = DefaultBase
 	}
 
 	var b strings.Builder

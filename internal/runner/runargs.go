@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"sort"
+	"strconv"
 )
 
 // BindMount is a host-path bind for `docker run -v host:target[:mode]`.
@@ -10,6 +11,15 @@ type BindMount struct {
 	Host   string
 	Target string
 	Mode   string // ro|rw; empty defaults to ro
+}
+
+// PortPublish publishes a container port to the host: `docker run -p
+// [iface:][host:]container`. Host 0 means an ephemeral host port; an empty
+// Interface binds all interfaces (byre defaults it to 127.0.0.1 upstream).
+type PortPublish struct {
+	Interface string
+	Host      int
+	Container int
 }
 
 // NamedVolume is a resolved named volume for `docker run -v name:target`.
@@ -28,9 +38,10 @@ type RunParams struct {
 	Env             map[string]string
 	Binds           []BindMount
 	Volumes         []NamedVolume
-	Caps            []string // --cap-add (from skills)
-	RunArgs         []string // raw passthrough, last-wins
-	Command         []string // agent command; empty uses the image entrypoint default
+	Ports           []PortPublish // -p publications (host-exposed container ports)
+	Caps            []string      // --cap-add (from skills)
+	RunArgs         []string      // raw passthrough, last-wins
+	Command         []string      // agent command; empty uses the image entrypoint default
 }
 
 // RunArgs builds the argv (after the engine name) for `docker run`.
@@ -64,6 +75,9 @@ func RunArgs(p RunParams) []string {
 	for _, v := range p.Volumes {
 		args = append(args, "--mount", fmt.Sprintf("type=volume,source=%s,target=%s", v.Name, v.Target))
 	}
+	for _, pub := range p.Ports {
+		args = append(args, "-p", portSpec(pub))
+	}
 	for _, c := range p.Caps {
 		args = append(args, "--cap-add", c)
 	}
@@ -79,6 +93,23 @@ func RunArgs(p RunParams) []string {
 	args = append(args, p.Image)
 	args = append(args, p.Command...)
 	return args
+}
+
+// portSpec renders a docker -p value: [iface:][host:]container. An empty host
+// (Host 0) yields an ephemeral mapping ("iface::container" or just "container").
+func portSpec(p PortPublish) string {
+	host := ""
+	if p.Host != 0 {
+		host = strconv.Itoa(p.Host)
+	}
+	switch {
+	case p.Interface != "":
+		return fmt.Sprintf("%s:%s:%d", p.Interface, host, p.Container)
+	case host != "":
+		return fmt.Sprintf("%s:%d", host, p.Container)
+	default:
+		return strconv.Itoa(p.Container)
+	}
 }
 
 func sortedKeys(m map[string]string) []string {

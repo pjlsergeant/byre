@@ -116,6 +116,30 @@ type Resolved struct {
 	AgentPrefs *PrefsSpec
 }
 
+// ListSkills returns the names of all skills in skillsDir, sorted. Broken skills
+// are skipped. This is the full set selectable via the `skills` list — including
+// agent skills, which can legitimately be enabled as a plain skill (e.g. codex
+// installed for byre-codereview while claude is the launched agent), separate
+// from the `agent` choice. Broken skills are skipped rather than failing.
+func ListSkills(skillsDir string) []string {
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if _, err := Load(skillsDir, e.Name()); err != nil {
+			continue
+		}
+		out = append(out, e.Name())
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ListAgentSkills returns the names of skills in skillsDir that provide an
 // [agent] command (i.e. can be selected as `agent`), sorted. Broken skills are
 // skipped rather than failing the whole listing.

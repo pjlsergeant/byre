@@ -146,3 +146,36 @@ func TestContainerEnvUsesCaptureSeam(t *testing.T) {
 		t.Fatalf("ContainerEnv parse wrong: %+v", env)
 	}
 }
+
+func TestPortSpec(t *testing.T) {
+	cases := []struct {
+		p    PortPublish
+		want string
+	}{
+		{PortPublish{Interface: "127.0.0.1", Host: 8080, Container: 8080}, "127.0.0.1:8080:8080"},
+		{PortPublish{Interface: "127.0.0.1", Host: 0, Container: 3000}, "127.0.0.1::3000"}, // ephemeral host
+		{PortPublish{Interface: "", Host: 8080, Container: 80}, "8080:80"},
+		{PortPublish{Interface: "", Host: 0, Container: 5432}, "5432"},
+	}
+	for _, c := range cases {
+		if got := portSpec(c.p); got != c.want {
+			t.Errorf("portSpec(%+v) = %q, want %q", c.p, got, c.want)
+		}
+	}
+}
+
+func TestRunArgsPublishesPorts(t *testing.T) {
+	args := RunArgs(RunParams{
+		Image: "img",
+		Ports: []PortPublish{{Interface: "127.0.0.1", Host: 8080, Container: 8080}},
+	})
+	var found bool
+	for i, a := range args {
+		if a == "-p" && i+1 < len(args) && args[i+1] == "127.0.0.1:8080:8080" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected -p 127.0.0.1:8080:8080 in %v", args)
+	}
+}
