@@ -8,7 +8,7 @@
 > config format, and behaviour **will change without warning**. There are sharp
 > edges around isolation, agent auth, and permissions. **Do not rely on it for
 > anything you can't afford to have break.** Use it to kick the tyres, not to
-> guard anything precious. See the [devlog](site/index.md) for an honest
+> guard anything precious. See the [devlog](https://pjlsergeant.github.io/byre/) for an honest
 > rundown of what works and what doesn't.
 
 Run an AI coding agent in a throwaway, project-scoped container.
@@ -30,7 +30,7 @@ locally (Docker or Podman -- no account, no control plane), scopes state and cac
 to the project, and makes every grant legible. Raw Docker stays first-class.
 
 See [`docs/byre-spec-v0.md`](docs/byre-spec-v0.md) for the full design, and the
-[devlog](site/index.md) for build notes and current status.
+[devlog](https://pjlsergeant.github.io/byre/) for build notes and current status.
 
 ## Install
 
