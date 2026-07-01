@@ -23,3 +23,5 @@ devlog -- notes written as I build it in the open.
 - [Day 2 -- the file-ownership rabbit hole](day-02.md) -- why host/container file
   ownership was so hard, and how baking the UID in at build time let us delete the
   whole runtime chown machinery.
+- [Day 3 -- mounting extra folders with byre config](day-03.md) -- the interactive
+  config editor learns to mount more context fast (with a screencast).
