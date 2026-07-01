@@ -38,9 +38,10 @@ type Input struct {
 	// AgentContextTarget, when set alongside AgentContext, emits the baked target
 	// path file so the launcher knows where to place the context at runtime.
 	AgentContextTarget bool
-	// VolumeDirs are named-volume mount points to pre-create dev-owned in the
-	// image, so a fresh Docker named volume initializes with dev ownership (else a
-	// root-owned mount point leaves the unprivileged agent unable to write state).
+	// VolumeDirs are named-volume mount points to pre-create in the image owned by
+	// the baked UID/GID, so a fresh Docker named volume initializes with that
+	// ownership (else a root-owned mount point leaves the unprivileged agent unable
+	// to write state).
 	VolumeDirs     []string
 	DockerfilePre  []string // raw block, before the infra layer
 	DockerfilePost []string // raw block, project tail
@@ -61,7 +62,6 @@ const (
 	AgentContextName       = "agent-context.md"
 	AgentContextTargetName = "agent-context-target"
 	SelfEditDocName        = "self-edit.md"
-	VolumeDirsName         = "volume-dirs"
 )
 
 // defaultBase is used when no base is configured (config arrives in M2).
@@ -70,28 +70,51 @@ const defaultBase = "debian:bookworm"
 // launcherPath is where the infra layer installs the launcher / ENTRYPOINT.
 const launcherPath = "/usr/local/bin/" + LauncherName
 
-// infraLayer is byre's constant infra block: it installs gosu, creates the
-// in-box 'dev' user, installs the launcher, and prepares /workspace. Identical
-// across all projects, so Docker caches and shares it. The launcher does the
-// runtime host-UID/GID mapping, git-identity passthrough, and gosu drop.
-// Note: no fixed --uid. Some bases (e.g. node:*) already own uid 1000, which
-// would make a pinned useradd fail; the build-time uid is irrelevant anyway
-// because the launcher remaps to the host UID/GID at runtime. `id -u dev`
-// resolves the assigned uid so the chown works regardless.
-const infraLayer = "RUN apt-get update \\\n" +
+// infraLayer is byre's constant infra block: it installs gosu (a build-only
+// helper — skills install their CLIs as the dev user via `gosu dev` in a RUN),
+// creates the in-box 'dev' user OWNED BY THE HOST UID/GID, installs the launcher,
+// and prepares /home/dev + /workspace. The host UID/GID arrive as build args
+// (defaulting to 1000), so /home/dev is born owned by the runtime user and a
+// fresh named volume inherits that ownership from its image mount point — no
+// runtime chown, and the container runs unprivileged as that user (USER set at
+// the tail of the Dockerfile, after all root build steps).
+//
+// The user is created by editing /etc/passwd + /etc/group directly rather than
+// via useradd: it avoids useradd's "uid outside UID_MIN..UID_MAX" warning when
+// the host uid is low (e.g. 501 on macOS). Any pre-existing `dev` entry is
+// dropped first so OUR baked id is authoritative — without that, a base image
+// that already ships a `dev` user at some other uid would leave `gosu dev` and
+// the final `USER dev` running as that uid while /home/dev is owned by the host
+// uid, breaking the build==run contract. After this, the name `dev` always
+// resolves to the host UID/GID, so `gosu dev` in skill builds and `USER dev` at
+// runtime are correct. (A duplicate UID — a base whose uid is already taken by
+// another name — is fine: /etc/passwd allows two names per uid, and `dev` is
+// looked up by name.)
+//
+// The ARG default keeps this block byte-stable (the golden test asserts on the
+// template text); only the build-arg VALUE varies per host.
+const infraLayer = "ARG BYRE_UID=1000\n" +
+	"ARG BYRE_GID=1000\n" +
+	"RUN apt-get update \\\n" +
 	" && apt-get install -y --no-install-recommends gosu \\\n" +
 	" && rm -rf /var/lib/apt/lists/*\n" +
-	"RUN useradd --create-home --home-dir /home/dev --shell /bin/bash dev || true\n" +
+	"RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi \\\n" +
+	" && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \\\n" +
+	" && if ! getent group \"$BYRE_GID\" >/dev/null 2>&1; then echo \"dev:x:${BYRE_GID}:\" >> /etc/group; fi \\\n" +
+	" && echo \"dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash\" >> /etc/passwd \\\n" +
+	" && mkdir -p /home/dev /workspace && chown \"${BYRE_UID}:${BYRE_GID}\" /home/dev\n" +
 	"ENV PATH=/home/dev/.local/bin:$PATH\n" +
 	"COPY " + LauncherName + " " + launcherPath + "\n" +
-	"RUN chmod +x " + launcherPath + " && mkdir -p /workspace && chown dev:dev /workspace /home/dev\n"
+	"RUN chmod +x " + launcherPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
 // FROM, template/pre-infra raw block, the constant infra layer, skill blocks,
-// the agent files, the project block (byre primitives + post raw block), and the
-// constant ENTRYPOINT. The infra layer precedes skills so the dev user + gosu
-// exist for skill builds and the constant layer stays cache-shared. Empty
-// sections render as bare markers, keeping the layout stable.
+// the agent files, the project block (byre primitives + post raw block), then
+// USER (drop to the baked dev user) and the constant ENTRYPOINT. The infra layer
+// precedes skills so the dev user + gosu exist for skill builds and the constant
+// layer stays cache-shared; USER comes last so every preceding RUN (infra, skill
+// apt installs, the project block) still runs as root. Empty sections render as
+// bare markers, keeping the layout stable.
 func Dockerfile(in Input) string {
 	base := in.Base
 	if base == "" {
@@ -139,24 +162,20 @@ func Dockerfile(in Input) string {
 		}
 	}
 
-	// Pre-create named-volume mount points dev-owned: Docker seeds a fresh named
-	// volume from the image dir at its mount point (content AND ownership), so this
-	// is what makes a fresh state/cache volume writable by the unprivileged agent.
-	// (Keeping a state volume's seed CLEAN is each agent skill's job — it cleans
-	// its own installer residue from its state dir; byre does not blanket-wipe
-	// arbitrary config-supplied targets.)
+	// Pre-create named-volume mount points owned by the baked UID: Docker seeds a
+	// fresh named volume from the image dir at its mount point (content AND
+	// ownership), so this is what makes a fresh state/cache volume writable by the
+	// unprivileged agent — no runtime chown needed. (Keeping a state volume's seed
+	// CLEAN is each agent skill's job — it cleans its own installer residue from
+	// its state dir; byre does not blanket-wipe arbitrary config-supplied targets.)
 	if dirs := SortedUnique(in.VolumeDirs); len(dirs) > 0 {
-		b.WriteString("\n# --- volume mount points (dev-owned) ---\n")
-		// Bake the list so the launcher can re-own these to the runtime user at
-		// startup (its home chown covers only /home/dev; cache volumes like
-		// /workspace/node_modules sit outside it).
-		fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", VolumeDirsName, VolumeDirsName)
+		b.WriteString("\n# --- volume mount points (owned by the baked uid) ---\n")
 		quoted := make([]string, len(dirs))
 		for i, d := range dirs {
 			quoted[i] = shellQuote(d) // these land in a shell RUN; quote to prevent injection
 		}
 		joined := strings.Join(quoted, " ")
-		fmt.Fprintf(&b, "RUN mkdir -p %s && chown dev:dev %s\n", joined, joined)
+		fmt.Fprintf(&b, "RUN mkdir -p %s && chown \"${BYRE_UID}:${BYRE_GID}\" %s\n", joined, joined)
 	}
 
 	b.WriteString("\n# --- project block ---\n")
@@ -167,7 +186,12 @@ func Dockerfile(in Input) string {
 	writeNpm(&b, in.NpmGlobal)
 	writeRaw(&b, in.DockerfilePost)
 
-	fmt.Fprintf(&b, "\nENTRYPOINT [%q]\n", launcherPath)
+	// Drop to the baked dev user for the runtime container. This comes after every
+	// build step (infra, skills, project block) so those still run as root, but
+	// before the ENTRYPOINT so the launcher and the agent run unprivileged — no
+	// runtime root, no gosu drop.
+	b.WriteString("\nUSER dev\n")
+	fmt.Fprintf(&b, "ENTRYPOINT [%q]\n", launcherPath)
 	return b.String()
 }
 
@@ -208,9 +232,9 @@ func shellQuote(s string) string {
 }
 
 // SortedUnique returns the distinct, sorted, non-empty entries of s. Exported
-// because internal/build reuses it to bake the volume-dirs list the launcher
-// re-owns: that list MUST match the mkdir/chown set this package emits into the
-// Dockerfile, so both sides derive it from this one function.
+// because internal/build reuses it to derive the volume-dirs set: build and gen
+// must agree on the mkdir/chown set this package emits into the Dockerfile, so
+// both sides derive it from this one function.
 func SortedUnique(s []string) []string {
 	seen := make(map[string]struct{}, len(s))
 	out := make([]string, 0, len(s))

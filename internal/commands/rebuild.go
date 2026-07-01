@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"byre/internal/project"
 	"byre/internal/runner"
@@ -29,7 +30,7 @@ func Rebuild(stdout io.Writer, projectDir string) error {
 		return err
 	}
 	r := runner.New(eng)
-	image := "byre-" + paths.ID
+	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 
 	return withSetupLock(paths.LockFile, func() error {
 		fmt.Fprintf(stdout, "byre: rebuilding %s with --no-cache...\n", image)

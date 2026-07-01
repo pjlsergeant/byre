@@ -237,7 +237,8 @@ func (c Config) Validate() error {
 
 	// Full hand-written Dockerfile opt-out: a project-relative path. byre builds
 	// it (from the project dir) instead of generating, and the user owns the
-	// infra layer; byre still owns runtime.
+	// infra layer — including the dev user and its ownership (byre passes no
+	// UID/GID build args on this path); byre still owns runtime.
 	if c.Dockerfile != "" && !relSafe(c.Dockerfile) {
 		return fmt.Errorf("dockerfile = %q: must be a relative path within the project", c.Dockerfile)
 	}

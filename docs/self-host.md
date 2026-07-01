@@ -20,7 +20,8 @@ Driven by `byre.config` at the repo root + the built-in `claude` skill:
   host `~/.claude`. (If you explicitly want to reuse a host login, add a
   `seed = { host = "~/.claude" }` to a `.claude` volume in your own config —
   byre warns before copying.)
-- non-root `dev` user mapped to your host UID/GID; git identity passed through
+- non-root `dev` user baked to your host UID/GID at build time (the agent runs
+  unprivileged as you, no runtime chown); git identity passed through
 
 ## Cutover (run on the host)
 

@@ -55,18 +55,27 @@ func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r forgetRunn
 	if err != nil {
 		return err
 	}
-	image := "byre-" + paths.ID
-	hasImage, err := r.ImageExists(image)
-	if err != nil {
-		return err
+	// Both the current UID-qualified tag and the legacy unqualified `byre-<id>`
+	// tag (a project built before the build-time-UID milestone): forget removes
+	// whichever exist so it never leaves an orphaned image behind.
+	candidates := []string{ImageTag(paths.ID, os.Getuid(), os.Getgid()), "byre-" + paths.ID}
+	var images []string
+	for _, img := range candidates {
+		has, ierr := r.ImageExists(img)
+		if ierr != nil {
+			return ierr
+		}
+		if has {
+			images = append(images, img)
+		}
 	}
 
 	fmt.Fprintf(stdout, "byre forget will permanently delete for %s:\n", paths.ID)
 	for _, v := range vols {
 		fmt.Fprintf(stdout, "  - volume %s\n", v)
 	}
-	if hasImage {
-		fmt.Fprintf(stdout, "  - image %s\n", image)
+	for _, img := range images {
+		fmt.Fprintf(stdout, "  - image %s\n", img)
 	}
 	fmt.Fprintf(stdout, "  - %s/  (config, adoption record, build context)\n", paths.Dir)
 
@@ -98,14 +107,16 @@ func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r forgetRunn
 				failed = append(failed, v)
 			}
 		}
-		nowImage, ierr := r.ImageExists(image)
-		if ierr != nil {
-			fmt.Fprintf(stdout, "byre: could not check image %s: %v\n", image, ierr)
-			failed = append(failed, image) // unknown -> don't remove local state
-		} else if nowImage {
-			if rerr := r.ImageRemove(image); rerr != nil {
-				fmt.Fprintf(stdout, "byre: FAILED to remove image %s: %v\n", image, rerr)
-				failed = append(failed, image)
+		for _, img := range candidates {
+			nowImage, ierr := r.ImageExists(img)
+			if ierr != nil {
+				fmt.Fprintf(stdout, "byre: could not check image %s: %v\n", img, ierr)
+				failed = append(failed, img) // unknown -> don't remove local state
+			} else if nowImage {
+				if rerr := r.ImageRemove(img); rerr != nil {
+					fmt.Fprintf(stdout, "byre: FAILED to remove image %s: %v\n", img, rerr)
+					failed = append(failed, img)
+				}
 			}
 		}
 		return nil

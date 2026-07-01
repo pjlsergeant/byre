@@ -21,19 +21,26 @@ FROM node:22
 # --- template block ---
 
 # --- byre infra layer (constant) ---
+ARG BYRE_UID=1000
+ARG BYRE_GID=1000
 RUN apt-get update \
  && apt-get install -y --no-install-recommends gosu \
  && rm -rf /var/lib/apt/lists/*
-RUN useradd --create-home --home-dir /home/dev --shell /bin/bash dev || true
+RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi \
+ && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \
+ && if ! getent group "$BYRE_GID" >/dev/null 2>&1; then echo "dev:x:${BYRE_GID}:" >> /etc/group; fi \
+ && echo "dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash" >> /etc/passwd \
+ && mkdir -p /home/dev /workspace && chown "${BYRE_UID}:${BYRE_GID}" /home/dev
 ENV PATH=/home/dev/.local/bin:$PATH
 COPY byre-launch /usr/local/bin/byre-launch
-RUN chmod +x /usr/local/bin/byre-launch && mkdir -p /workspace && chown dev:dev /workspace /home/dev
+RUN chmod +x /usr/local/bin/byre-launch
 
 # --- skills ---
 
 # --- project block ---
 WORKDIR /workspace
 
+USER dev
 ENTRYPOINT ["/usr/local/bin/byre-launch"]
 `
 	if got := Dockerfile(Input{Base: "node:22"}); got != want {
@@ -99,12 +106,12 @@ func TestDockerfileAgentContextTarget(t *testing.T) {
 	}
 }
 
-func TestDockerfileVolumeDirsDevOwned(t *testing.T) {
+func TestDockerfileVolumeDirsBakedUIDOwned(t *testing.T) {
 	out := Dockerfile(Input{Base: "node:22", VolumeDirs: []string{
 		"/home/dev/.claude", "/workspace/node_modules", "/home/dev/.claude", // dup
 	}})
-	// One RUN, sorted + deduped, mkdir + chown dev:dev.
-	want := "RUN mkdir -p '/home/dev/.claude' '/workspace/node_modules' && chown dev:dev '/home/dev/.claude' '/workspace/node_modules'\n"
+	// One RUN, sorted + deduped, mkdir + chown to the baked UID/GID (build args).
+	want := "RUN mkdir -p '/home/dev/.claude' '/workspace/node_modules' && chown \"${BYRE_UID}:${BYRE_GID}\" '/home/dev/.claude' '/workspace/node_modules'\n"
 	if !strings.Contains(out, want) {
 		t.Fatalf("volume-dirs RUN missing/wrong:\n%s", out)
 	}

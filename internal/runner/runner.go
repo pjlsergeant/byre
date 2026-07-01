@@ -75,13 +75,14 @@ func New(e Engine) *Runner {
 func (r *Runner) Engine() Engine { return r.engine }
 
 // IsRootlessPodman reports whether this runner drives Podman in ROOTLESS mode.
-// It matters because byre's correctly-owned-files trick (map the host UID/GID
-// onto the in-box dev user, then chown byre's storage to it — see the launcher)
-// assumes a ROOTFUL daemon. Rootless Podman runs in a user namespace where
-// host↔container uids are remapped, so that chown math doesn't hold and files
-// land owned by the wrong id. v0 supports rootful Docker/Podman only; callers use
-// this to WARN (not block). Docker — including rootless Docker — is out of scope
-// here and reports false. A query error is returned so the caller can stay quiet
+// It matters because byre bakes the host UID/GID into the image at build time so
+// the in-container uid equals the uid on disk — which assumes a ROOTFUL daemon.
+// Rootless Podman runs in a user namespace where host↔container uids are
+// remapped, so the baked uid no longer matches what lands on disk and files end
+// up owned by the wrong id. v0 supports rootful Docker/Podman only; callers use
+// this to WARN (not block). The rootless fix (a generic-uid image + keep-id) is a
+// sequenced follow-up. Docker — including rootless Docker — is out of scope here
+// and reports false. A query error is returned so the caller can stay quiet
 // rather than warn on a guess.
 func (r *Runner) IsRootlessPodman() (bool, error) {
 	if r.engine != Podman {
@@ -95,11 +96,16 @@ func (r *Runner) IsRootlessPodman() (bool, error) {
 }
 
 // Build builds the image tagged tag from the given context directory and
-// Dockerfile. With noCache, the build cache is disabled (--no-cache).
-func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool) error {
+// Dockerfile. With noCache, the build cache is disabled (--no-cache). buildArgs
+// are "KEY=VALUE" pairs passed as --build-arg (byre uses these to bake the host
+// UID/GID into the image); pass nil for none.
+func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildArgs []string) error {
 	args := []string{"build", "-t", tag, "-f", dockerfile}
 	if noCache {
 		args = append(args, "--no-cache")
+	}
+	for _, a := range buildArgs {
+		args = append(args, "--build-arg", a)
 	}
 	return r.stream(string(r.engine), append(args, contextDir)...)
 }

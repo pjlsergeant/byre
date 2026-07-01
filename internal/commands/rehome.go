@@ -76,7 +76,7 @@ func rehome(stdout io.Writer, paths project.Paths, oldID string, r rehomeRunner,
 		}
 
 		// An image is needed to run the copy; prefer the old one, else the new one.
-		image, err := pickCopyImage(r, oldID, newID)
+		image, err := pickCopyImage(r, oldID, newID, uid, gid)
 		if err != nil {
 			return err
 		}
@@ -123,13 +123,19 @@ func rehome(stdout io.Writer, paths project.Paths, oldID string, r rehomeRunner,
 	})
 }
 
-func pickCopyImage(r rehomeRunner, oldID, newID string) (string, error) {
+func pickCopyImage(r rehomeRunner, oldID, newID string, uid, gid int) (string, error) {
+	// Try each id's current (UID-qualified) tag, then its legacy unqualified
+	// `byre-<id>` tag — a project built before the build-time-UID milestone still
+	// has only that. The copy one-shot (MigrateVolume) bypasses the entrypoint,
+	// runs as root, and chowns explicitly, so the image's own baked uid is
+	// irrelevant: any byre image for these ids works as the copy vehicle.
 	for _, id := range []string{oldID, newID} {
-		img := "byre-" + id
-		if ok, err := r.ImageExists(img); err != nil {
-			return "", err
-		} else if ok {
-			return img, nil
+		for _, img := range []string{ImageTag(id, uid, gid), "byre-" + id} {
+			if ok, err := r.ImageExists(img); err != nil {
+				return "", err
+			} else if ok {
+				return img, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("no byre image exists to run the volume copy; run `byre develop` first")

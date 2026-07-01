@@ -73,7 +73,7 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 	old := "oldid"
 	f := &fakeRehome{
 		vols:   map[string]bool{"byre-oldid-.claude": true, "byre-oldid-cache": true},
-		images: map[string]bool{"byre-oldid": true},
+		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
 	}
 	var out bytes.Buffer
 	if err := rehome(&out, p, old, f, 1000, 1000); err != nil {
@@ -99,7 +99,7 @@ func TestRehomeRefusesLive(t *testing.T) {
 	f := &fakeRehome{
 		liveIDs: map[string]bool{p.ID: true},
 		vols:    map[string]bool{"byre-oldid-cache": true},
-		images:  map[string]bool{"byre-oldid": true},
+		images:  map[string]bool{ImageTag("oldid", 1000, 1000): true},
 	}
 	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err == nil {
 		t.Fatal("expected refusal while a session is live")
@@ -114,7 +114,7 @@ func TestRehomeConflictAborts(t *testing.T) {
 	dst := "byre-" + p.ID + "-cache"
 	f := &fakeRehome{
 		vols:   map[string]bool{"byre-oldid-cache": true, dst: true}, // dst already exists
-		images: map[string]bool{"byre-oldid": true},
+		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
 	}
 	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err == nil {
 		t.Fatal("expected conflict error")
@@ -129,7 +129,7 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 	failDst := "byre-" + p.ID + "-cache"
 	f := &fakeRehome{
 		vols:        map[string]bool{"byre-oldid-.claude": true, "byre-oldid-cache": true},
-		images:      map[string]bool{"byre-oldid": true},
+		images:      map[string]bool{ImageTag("oldid", 1000, 1000): true},
 		failMigrate: failDst,
 	}
 	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err == nil {
@@ -153,5 +153,21 @@ func TestRehomeNoImageErrors(t *testing.T) {
 	f := &fakeRehome{vols: map[string]bool{"byre-oldid-cache": true}} // no images
 	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err == nil {
 		t.Fatal("expected error when no image exists for the copy")
+	}
+}
+
+// A project built before the build-time-UID milestone has only the legacy
+// unqualified `byre-<id>` image; rehome must still find it as the copy vehicle.
+func TestRehomeFallsBackToLegacyImageTag(t *testing.T) {
+	p := rehomePaths(t)
+	f := &fakeRehome{
+		vols:   map[string]bool{"byre-oldid-cache": true},
+		images: map[string]bool{"byre-oldid": true}, // legacy tag only, not UID-qualified
+	}
+	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err != nil {
+		t.Fatalf("rehome should fall back to the legacy image tag: %v", err)
+	}
+	if len(f.migrated) != 1 {
+		t.Fatalf("expected 1 migration via the legacy image, got %v", f.migrated)
 	}
 }

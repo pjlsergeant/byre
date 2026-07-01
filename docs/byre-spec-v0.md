@@ -36,7 +36,9 @@ enclosure you keep the thing in so it doesn't wander off.
 > security product. Container engine is pluggable (`engine = auto|docker|podman`)
 > behind a thin runner abstraction. One blessed removal mechanism (`!name`);
 > dropped `skills_remove`. `byre status` has a concrete output shape. Rootless
-> Podman vs the UID/GID plumbing is logged as an open question.
+> Podman vs the UID/GID plumbing was flagged for later (now resolved — the
+> rootful path bakes the UID at build; the rootless keep-id path is a sequenced
+> follow-up; see *Open questions* and `docs/milestone-build-time-uid.md`).
 >
 > **v0.1 changes** (after design review): byre no longer owns image caching —
 > `docker build` already does the "did anything change?" detection, so the
@@ -54,9 +56,10 @@ hatch.
 The split that defines the project:
 
 - **Core** owns the *plumbing* — the agent-runtime scaffolding everyone
-  reinvents (UID/GID passthrough, drop to non-root, git identity, credential
-  persistence, the autonomous-agent default that's only safe because it's
-  boxed). Core ships **no opinions**.
+  reinvents (host UID/GID baked into the image so the agent runs unprivileged and
+  writes correctly-owned files, git identity, credential persistence, the
+  autonomous-agent default that's only safe because it's boxed). Core ships **no
+  opinions**.
 - **Skills** own the *opinions*. moarcode (the diary / milestone / codex-review
   workflow) is just a skill. So is shem (host command execution via a mounted
   socket). **So is the agent itself** — byre ships agent skills for Claude,
@@ -143,8 +146,8 @@ At every launch:
 
 1. Resolve config → generate Dockerfile *text* + build context.
 2. Write it to `~/.byre/projects/<project_id>/Dockerfile.generated`.
-3. `docker build -t byre-<project_id> <context>`.
-4. `docker run --rm -it --label byre.project=<project_id> byre-<project_id>`
+3. `docker build --build-arg BYRE_UID=<uid> --build-arg BYRE_GID=<gid> -t byre-<project_id>-u<uid>-g<gid> <context>` (the UID/GID are baked in, so the tag carries them).
+4. `docker run --rm -it --label byre.project=<project_id> byre-<project_id>-u<uid>-g<gid>`
    (foreground; see *Container lifecycle*).
 
 On an unchanged config every instruction is a Docker cache hit, so the build is
@@ -165,11 +168,11 @@ expensive-and-shared first, cheap-and-project-specific last:
 
 ```
 FROM <base>                 # from template config
-<template raw block>        # shared across all projects on this template ─┐ Docker
-<byre infra layer>          # constant: gosu, non-root dev user, launcher  │ layer-
-<skill blocks>              # each enabled skill, deterministic order       │ cached
-<project raw block>         # this project only                             │ across
-ENTRYPOINT ...              # constant                                      ┘ projects
+<template raw block>        # shared across all projects on this template ┐ Docker
+<byre infra layer>          # constant: build-only gosu, baked dev user   │ layer-
+<skill blocks>              # each enabled skill, deterministic order     │ cached
+<project raw block>         # this project only                           │ across
+USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘ projects
 ```
 
 The **infra layer comes before skills**: it's constant, so placing it ahead of
@@ -213,12 +216,14 @@ on the Docker SDK. byre shells out to the engine CLI behind this interface (it
 also answers the "CLI vs SDK" question: **CLI**, for parity and zero SDK
 coupling). Docker and Podman are two implementations of the same small runner.
 
-Caveat — **rootless Podman is not a free win.** byre's core plumbing maps the
-host UID/GID and drops to a non-root user via `gosu`, which assumes a rootful
-daemon on a Linux host. Rootless Podman remaps user namespaces, so "the UID you
-see inside" is no longer the host UID and the ownership math differs. v0 should
-get the runner abstraction and rootful-Docker/rootful-Podman paths right; the
-rootless-Podman ownership model is an open question (below), not a v0 promise.
+Caveat — **rootless Podman is not a free win.** byre's core plumbing bakes the
+host UID/GID into the image so the in-container user *is* the host user and files
+land correctly owned — which assumes a rootful daemon on a Linux host. Rootless
+Podman remaps user namespaces, so "the UID you see inside" is no longer the host
+UID on disk and the ownership math differs. v0 gets the runner abstraction and
+rootful-Docker/rootful-Podman paths right; the rootless-Podman ownership model
+has a settled design (a generic-UID image + `--userns=keep-id`, see *Open
+questions*) but is a sequenced follow-up, not a v0 promise.
 
 ## Container lifecycle
 
@@ -322,11 +327,11 @@ after `run_args`, so lifecycle and `status` can always find the container.
 
 **Full-Dockerfile opt-out contract.** If a project supplies a complete
 hand-written Dockerfile, byre stops generating the build entirely — which means
-*you* own the infra layer too (host UID/GID mapping, `gosu` drop-to-non-root,
-and the launcher ENTRYPOINT that execs the agent). byre still owns *runtime*
-(mounts, volumes, the identity label, `docker run`), but it assumes your image
-provides the user model and entrypoint. Opt out of generation, opt into owning
-what generation gave you.
+*you* own the infra layer too (the dev user and its ownership — byre passes no
+UID/GID build args on this path — and the launcher ENTRYPOINT that execs the
+agent). byre still owns *runtime* (mounts, volumes, the identity label, `docker
+run`), but it assumes your image provides the user model and entrypoint. Opt out
+of generation, opt into owning what generation gave you.
 
 ## Skills
 
@@ -453,8 +458,16 @@ may rely on (see *Skills*).
 Appended on top of whatever Debian-derived `base` the config names, identical
 everywhere (always cached):
 
-- Map host UID/GID to a non-root user; fix ownership on volumes + home.
-- Drop to the unprivileged user via `gosu`; the agent never runs as root.
+- Bake the host UID/GID into the image (the `dev` user is created at that
+  UID/GID, and `/home/dev` + the named-volume mount points are chowned to it), so
+  `/home/dev` is born owned by the runtime user and a fresh volume inherits that
+  ownership. The host UID/GID arrive as `--build-arg`s, known because `develop`
+  builds and runs as the same user in one invocation. No runtime chown.
+- Run unprivileged: the image sets `USER dev` after all (root) build steps, so
+  the launcher and the agent run as the host user from PID 1 — the agent never
+  runs as root, and there is no `gosu` drop at runtime. (`gosu` stays installed
+  only as a *build* helper: a skill installs its CLI as the dev user via `gosu
+  dev` in a `RUN`, where the build is still root.)
 - Pass host git identity through so commits are attributed to the developer —
   **narrowly**: only `user.name` / `user.email`, injected as `GIT_AUTHOR_*` /
   `GIT_COMMITTER_*` env. Not your `.gitconfig`, not git credentials. This is the
@@ -472,9 +485,12 @@ everywhere (always cached):
 dir (resolve symlinks, normalize trailing slash): a **readable slug** of the last
 two path components plus a short hash of the full path for uniqueness, e.g.
 `/Users/me/dev/byre → byre-dev-0877d7`. It is a *naming* device, not a caching
-one: it names the image tag (`byre-<project_id>`), the container, the named
-volumes (`byre-<project_id>-<name>`), the label (`byre.project=<project_id>`),
-and `~/.byre/projects/<project_id>/`. The slug is sanitized to Docker-safe
+one: it names the image tag (`byre-<project_id>-u<uid>-g<gid>` — the host UID/GID
+are baked into the image, so the tag carries them to keep users distinct on a
+shared daemon; this doc writes the tag as `byre-<project_id>` for brevity
+elsewhere), the container (`byre-<project_id>`), the named volumes
+(`byre-<project_id>-<name>`), the label (`byre.project=<project_id>`), and
+`~/.byre/projects/<project_id>/`. The slug is sanitized to Docker-safe
 characters and the `byre-` prefix keeps the final name valid regardless of slug
 content; the hash suffix carries uniqueness (so two same-named dirs in different
 locations don't collide). Caching/freshness is Docker's concern, not this id's —
@@ -545,16 +561,22 @@ byre rehome       Re-point this directory's identity (image/volumes/state) onto
 
 ## Platform note
 
-The UID/GID passthrough that yields correctly-owned files is a Linux-*host*
-nicety. On Docker Desktop (macOS/Windows) the file-sharing layer handles
-ownership differently and the problem mostly doesn't arise. Don't over-engineer
-that path for those platforms; test the `id -u` / `gosu` mapping on a native
-Linux host.
+Baking the host UID/GID into the image to yield correctly-owned files is a
+Linux-*host* concern. On Docker Desktop (macOS/Windows) the file-sharing layer
+fakes ownership, so the problem mostly doesn't arise and the baked UID is
+harmless. Don't over-engineer that path for those platforms; test the baked-UID
+ownership (a fresh box writes host-owned files in `/home/dev` and the volumes,
+with no root in the launch path) on a native Linux host.
 
 ## Open questions
 
-- **Image distribution** — embed a base Dockerfile and build on first run, or
-  ship a prebuilt base byre layers onto?
+- **Image distribution** — ~~embed a base Dockerfile and build on first run, or
+  ship a prebuilt base byre layers onto?~~ **Resolved:** byre builds per host and
+  does *not* ship images between machines. These containers are throwaway
+  sandboxes; real config lives in `~/.byre`, not in a portable image. This is
+  what lets us bake the host UID/GID at build time (see *Plumbing*) — the
+  "generic, portable image" the old runtime-chown machinery defended was never a
+  property byre needed.
 - **Skill packaging & distribution** — `skill.toml` shape (build/runtime/context/
   state contributions, ordering, dependencies, conflicts) is deferred to the
   skills milestone. v0 likely ships built-in skills (agents, moarcode) and
@@ -572,8 +594,12 @@ Linux host.
   a future feature handled by resolving a worktree's *identity* (config + volumes
   + image) from the main worktree's path, with the container/workspace staying
   per-worktree. Designed in `docs/agent-volume-sharing.md`; not built.
-- **Rootless Podman ownership model** — the UID/GID + `gosu` plumbing assumes a
-  rootful daemon. Rootless Podman remaps user namespaces, changing how host file
-  ownership lands. v0 supports rootful Docker/Podman; how (and whether) to make
-  the ownership math correct under rootless Podman is unresolved. Don't market
-  "rootless" until this is designed.
+- **Rootless Podman ownership model** — the baked-UID plumbing assumes a rootful
+  daemon (in-container UID == on-disk UID). Rootless Podman remaps user
+  namespaces, breaking that. **Design settled, not yet built:** ship a
+  *generic*-UID image for the rootless path and run with
+  `--userns=keep-id:uid=<image-uid>,gid=<image-gid>` so the host user maps onto
+  the image's user and files land host-owned; fall back to today's detect-and-warn
+  where `keep-id` is unavailable. v0 supports rootful Docker/Podman; the rootless
+  path is a sequenced follow-up (see `docs/milestone-build-time-uid.md`). Don't
+  market "rootless" until it's built.

@@ -13,7 +13,7 @@ import (
 type fakeForget struct {
 	liveIDs map[string]bool
 	vols    []string
-	image   bool
+	images  map[string]bool // tag -> exists
 	removed []string
 }
 
@@ -26,7 +26,7 @@ func (f *fakeForget) RunningContainersByLabel(label string) ([]string, error) {
 }
 func (f *fakeForget) VolumesByPrefix(string) ([]string, error) { return f.vols, nil }
 func (f *fakeForget) VolumeRemove(name string) error           { f.removed = append(f.removed, name); return nil }
-func (f *fakeForget) ImageExists(string) (bool, error)         { return f.image, nil }
+func (f *fakeForget) ImageExists(tag string) (bool, error)     { return f.images[tag], nil }
 func (f *fakeForget) ImageRemove(tag string) error             { f.removed = append(f.removed, tag); return nil }
 
 func forgetSetup(t *testing.T) (project.Paths, string) {
@@ -49,7 +49,7 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 	os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("agent=\"claude\"\n"), 0o644)
 	projCfg := filepath.Join(proj, "byre.config")
 	os.WriteFile(projCfg, []byte("agent=\"claude\"\n"), 0o644)
-	f := &fakeForget{vols: []string{"byre-x-.claude", "byre-x-cache"}, image: true}
+	f := &fakeForget{vols: []string{"byre-x-.claude", "byre-x-cache"}, images: map[string]bool{ImageTag(p.ID, os.Getuid(), os.Getgid()): true}}
 
 	var out bytes.Buffer
 	if err := forget(&out, strings.NewReader(""), p, f, true); err != nil {
@@ -70,7 +70,7 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 
 func TestForgetRefusesLive(t *testing.T) {
 	p, _ := forgetSetup(t)
-	f := &fakeForget{liveIDs: map[string]bool{p.ID: true}, vols: []string{"byre-x-cache"}, image: true}
+	f := &fakeForget{liveIDs: map[string]bool{p.ID: true}, vols: []string{"byre-x-cache"}}
 	if err := forget(&bytes.Buffer{}, strings.NewReader(""), p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
@@ -84,7 +84,7 @@ func TestForgetRefusesLive(t *testing.T) {
 
 func TestForgetPromptAborts(t *testing.T) {
 	p, _ := forgetSetup(t)
-	f := &fakeForget{vols: []string{"byre-x-cache"}, image: true}
+	f := &fakeForget{vols: []string{"byre-x-cache"}}
 	var out bytes.Buffer
 	if err := forget(&out, strings.NewReader("n\n"), p, f, false); err != nil {
 		t.Fatal(err)

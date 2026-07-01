@@ -238,7 +238,7 @@ func TestAssembleClearsStaleStagedFiles(t *testing.T) {
 	}
 }
 
-func TestAssembleVolumeDirsDevOwned(t *testing.T) {
+func TestAssembleVolumeDirsBakedUIDOwned(t *testing.T) {
 	paths := bootstrapped(t)
 	res := skills.Resolved{Volumes: []config.Volume{
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
@@ -248,8 +248,8 @@ func TestAssembleVolumeDirsDevOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(df, "chown dev:dev '/home/dev/.claude' '/workspace/node_modules'") {
-		t.Errorf("volume mount points not pre-created dev-owned:\n%s", df)
+	if !strings.Contains(df, "chown \"${BYRE_UID}:${BYRE_GID}\" '/home/dev/.claude' '/workspace/node_modules'") {
+		t.Errorf("volume mount points not pre-created owned by the baked UID:\n%s", df)
 	}
 }
 
@@ -267,28 +267,5 @@ func TestAssembleVolumeDirsIncludesConfigVolumes(t *testing.T) {
 	}
 	if !strings.Contains(df, "/home/dev/.cargo") || !strings.Contains(df, "/home/dev/.claude") {
 		t.Errorf("config + skill volume mount points should both be pre-created:\n%s", df)
-	}
-}
-
-func TestAssembleBakesVolumeDirsList(t *testing.T) {
-	paths := bootstrapped(t)
-	res := skills.Resolved{Volumes: []config.Volume{
-		{Name: "node_modules", Role: "cache", Target: "/workspace/node_modules"},
-		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
-	}}
-	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(df, "COPY "+gen.VolumeDirsName+" /etc/byre/"+gen.VolumeDirsName) {
-		t.Errorf("Dockerfile missing volume-dirs COPY:\n%s", df)
-	}
-	b, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.VolumeDirsName))
-	if err != nil {
-		t.Fatalf("volume-dirs file not written: %v", err)
-	}
-	// Sorted, one per line, so the launcher can re-own each.
-	if string(b) != "/home/dev/.claude\n/workspace/node_modules\n" {
-		t.Errorf("volume-dirs content wrong:\n%q", b)
 	}
 }

@@ -1,13 +1,12 @@
 #!/bin/sh
-# devloop firstrun hook — runs (as root, each launch) before the agent starts.
-# Ensures the project's .devloop/ scratch dir exists and is self-ignoring: its
-# own .gitignore is "*", so the agent diary and review log persist via the
+# devloop firstrun hook — runs as the dev user, each launch, before the agent
+# starts. Ensures the project's .devloop/ scratch dir exists and is self-ignoring:
+# its own .gitignore is "*", so the agent diary and review log persist via the
 # workspace mount but never land in git, with no per-project .gitignore entry.
-# Idempotent; best-effort (must never block launch). Done as the dev user so the
-# files aren't root-owned.
+# Idempotent; best-effort (must never block launch).
 ws=/workspace
 [ -d "$ws" ] || exit 0
-gosu "${BYRE_USER:-1000:1000}" sh -c '
+sh -c '
   d="$1/.devloop"
   # Remove a SYMLINK (tested with -L, which does not follow) or any non-directory
   # at .devloop, so writes land in a real dir we own and cannot be redirected

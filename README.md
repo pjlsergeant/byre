@@ -150,7 +150,8 @@ opt-in and named by `byre status`, never silent.
 
 ## Platform
 
-The host UID/GID passthrough that yields correctly-owned files is a Linux-host
-nicety; on Docker Desktop (macOS/Windows) the file-sharing layer handles
-ownership differently. byre targets Debian-derived base images (the core infra
+byre bakes your host UID/GID into the image at build time, so the agent runs
+unprivileged as you and the files it writes are correctly owned -- a Linux-host
+concern; on Docker Desktop (macOS/Windows) the file-sharing layer fakes ownership
+and it doesn't arise. byre targets Debian-derived base images (the core infra
 layer assumes apt/glibc); use other bases via a full hand-written Dockerfile.

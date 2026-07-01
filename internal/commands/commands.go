@@ -143,8 +143,8 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	warnRootlessPodman(os.Stderr, r)
 
 	label := labelKey + "=" + paths.ID
-	name := "byre-" + paths.ID // also the image tag; the name makes single-session atomic
-	image := name
+	name := "byre-" + paths.ID // the container name makes single-session atomic
+	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 
 	// Fast path: a session is already running for this project — report it rather
 	// than racing the shared per-project volumes. A query error here is fatal:
@@ -307,8 +307,10 @@ func withTwoSetupLocks(a, b string, fn func() error) error {
 }
 
 // runParams assembles the run invocation: workspace bind, host UID/GID and git
-// identity as env (the launcher consumes them), config mounts, and named
-// volumes scoped to this project.
+// identity as env, config mounts, and named volumes scoped to this project. The
+// image already bakes the UID/GID (the container runs as that user), so BYRE_UID/
+// BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
+// the dev user.
 func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name, image, label string, selfEdit bool) (runner.RunParams, error) {
 	env := map[string]string{
 		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
@@ -378,6 +380,17 @@ func expandHostPath(p string) (string, error) {
 	return p, nil
 }
 
+// ImageTag is the local image tag for a project's build, qualified by the host
+// UID/GID baked into the image. The UID/GID are part of the image's identity (the
+// dev user, /home/dev, and the volume mount points are all chowned to them at
+// build time), so on a shared daemon two users building the same project path get
+// distinct images instead of one reusing the other's wrong-owned build. The
+// container NAME stays byre-<id> (it makes a single session atomic, and volume
+// names are unchanged); only the image tag carries the uid/gid.
+func ImageTag(projectID string, uid, gid int) string {
+	return fmt.Sprintf("byre-%s-u%d-g%d", projectID, uid, gid)
+}
+
 // VolumeName is the docker volume name for a per-project named volume.
 // VolumeName is the Docker name for a project's named volume: byre-<id>-<name>.
 // The project id namespaces it, so reset/forget/rehome can filter a project's
@@ -443,18 +456,31 @@ func claimedByLongerID(vol, id string, others []string) bool {
 
 // buildImage builds the project's image, honoring the full-Dockerfile opt-out
 // uniformly (so develop and rebuild produce the same image for opt-out projects).
+// The generated build bakes the host UID/GID via --build-arg so /home/dev and the
+// volume mount points are born owned by the runtime user (no runtime chown). The
+// opt-out path gets no build args: the user owns that infra layer.
 func buildImage(r *runner.Runner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool) error {
 	if cfg.Dockerfile != "" {
 		dfPath, err := resolveProjectFile(paths.Canonical, cfg.Dockerfile)
 		if err != nil {
 			return err
 		}
-		return r.Build(image, dfPath, paths.Canonical, noCache)
+		return r.Build(image, dfPath, paths.Canonical, noCache, nil)
 	}
 	if _, err := build.Assemble(paths, cfg, res); err != nil {
 		return err
 	}
-	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache)
+	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache, uidBuildArgs())
+}
+
+// uidBuildArgs returns the --build-arg pairs that bake the invoking user's
+// UID/GID into the image. byre develop builds and runs as the same user in one
+// invocation, so build-UID == run-UID by construction.
+func uidBuildArgs() []string {
+	return []string{
+		fmt.Sprintf("BYRE_UID=%d", os.Getuid()),
+		fmt.Sprintf("BYRE_GID=%d", os.Getgid()),
+	}
 }
 
 // resolveProjectFile resolves a project-relative file, following symlinks and
@@ -485,9 +511,11 @@ func warnNonDebianBase(w io.Writer, base string) {
 	}
 }
 
-// rootlessPodmanWarning explains why rootless Podman is unsupported in v0: its
-// user-namespace remap breaks byre's host-uid ownership mapping (see launcher).
-const rootlessPodmanWarning = "rootless Podman detected — byre maps the host UID/GID onto the in-box user and chowns its storage to it, which assumes a ROOTFUL daemon. Under rootless Podman the userns remap makes that wrong, so files in the project and volumes can end up owned by the wrong id. v0 supports rootful Docker/Podman only — use one of those for correct ownership."
+// rootlessPodmanWarning explains why rootless Podman is unsupported in v0: byre
+// bakes the host UID/GID into the image so the in-container uid matches the uid
+// on disk, which assumes a ROOTFUL daemon; rootless Podman's user-namespace remap
+// breaks that. A generic-uid image + --userns=keep-id is the planned fix.
+const rootlessPodmanWarning = "rootless Podman detected — byre bakes the host UID/GID into the image so files it writes land owned by you, which assumes a ROOTFUL daemon. Under rootless Podman the userns remap makes that wrong, so files in the project and volumes can end up owned by the wrong id. v0 supports rootful Docker/Podman only — use one of those for correct ownership."
 
 // rootlessChecker is the runner subset warnRootlessPodman needs (an interface so
 // the warning wiring is testable without a real engine).

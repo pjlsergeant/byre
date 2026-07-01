@@ -1,6 +1,6 @@
 #!/bin/sh
-# codex first-run auth hook — runs (as root, before the agent launches) on a
-# fresh box. If the codex credential is missing, trigger the device-auth login so
+# codex first-run auth hook — runs as the dev user, before the agent launches, on
+# a fresh box. If the codex credential is missing, trigger the device-auth login so
 # byre-codereview (and any codex use) works out of the box. Mirrors how moarcode
 # did it in its entrypoint.
 #
@@ -16,15 +16,14 @@ export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
 # Already authenticated? Ask codex itself (`codex login status`) rather than
 # testing the file. "auth.json is non-empty" can't tell a usable credential from
 # a corrupt/partial one (an interrupted prior login), so file-presence wrongly
-# skips a needed re-auth. Run as the target user so it reads the right CODEX_HOME
-# and ownership. NOTE: this catches missing/corrupt creds, not a token the server
-# has since expired or invalidated — that only surfaces at use time, where
-# byre-codereview reports it and points back to `codex login --device-auth`.
+# skips a needed re-auth. NOTE: this catches missing/corrupt creds, not a token
+# the server has since expired or invalidated — that only surfaces at use time,
+# where byre-codereview reports it and points back to `codex login --device-auth`.
 cred="$CODEX_HOME/auth.json"
 # A symlinked credential must never count — drop it so a clean re-login writes a
 # fresh regular file a planted link can't redirect.
 [ -L "$cred" ] && rm -f "$cred"
-gosu "${BYRE_USER:-1000:1000}" codex login status >/dev/null 2>&1 && exit 0
+codex login status >/dev/null 2>&1 && exit 0
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
 # signal-death toward the launcher — the box proceeds to the agent regardless.
@@ -41,6 +40,6 @@ echo ""
 # the interrupt wouldn't land until the timeout elapsed).
 TO=""
 command -v timeout >/dev/null 2>&1 && TO="timeout --foreground 600"
-$TO gosu "${BYRE_USER:-1000:1000}" codex login --device-auth \
+$TO codex login --device-auth \
   || echo "byre: codex login didn't complete — run 'codex login --device-auth' later." >&2
 exit 0

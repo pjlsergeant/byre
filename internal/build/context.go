@@ -90,13 +90,6 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 			return "", err
 		}
 	}
-	// Bake the volume mount-point list so the launcher can re-own them to the
-	// runtime user (sorted + deduped to match the Dockerfile's mkdir/chown).
-	if dirs := gen.SortedUnique(volDirs); len(dirs) > 0 {
-		if err := os.WriteFile(ctxPath(paths, gen.VolumeDirsName), []byte(strings.Join(dirs, "\n")+"\n"), 0o644); err != nil {
-			return "", err
-		}
-	}
 	return df, nil
 }
 
@@ -112,9 +105,9 @@ func ctxPath(paths project.Paths, name string) string {
 }
 
 // volumeDirs returns the mount-point dirs of all named volumes (config-declared
-// and skill-contributed), so gen can pre-create them dev-owned — a fresh Docker
-// named volume inherits the image dir's ownership at its mount point. gen
-// de-dups, so overlap between the two sources is fine.
+// and skill-contributed), so gen can pre-create them owned by the baked UID/GID —
+// a fresh Docker named volume inherits the image dir's ownership at its mount
+// point. gen de-dups, so overlap between the two sources is fine.
 func volumeDirs(volSets ...[]config.Volume) []string {
 	var dirs []string
 	for _, vols := range volSets {
