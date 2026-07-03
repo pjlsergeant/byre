@@ -141,6 +141,10 @@ opt-in and named by `byre status`, never silent.
   persists across rebuilds. byre never copies your host credentials -- agents log
   in inside the box (the volume persists the login). A `seed` can initialize a
   fresh volume with non-credential data from a host path.
+- the **devloop** skill adds a persistent `scratch` state volume at
+  `/home/dev/scratch` (advertised as `$BYRE_SCRATCH`) -- somewhere the agent can
+  stash working files that must survive container restarts and rebuilds, which
+  `/tmp` and the rest of the container fs do not.
 - **prefs seeding** (`seed_prefs = true`) opts into a one-time copy of the
   selected agent's curated, non-secret prefs (theme, keybindings -- the skill's
   `[agent.prefs]`) into a fresh state volume. Only files the skill vouches are

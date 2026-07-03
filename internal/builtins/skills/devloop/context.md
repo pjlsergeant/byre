@@ -10,6 +10,16 @@ is ever committed and you never need to touch the project's own `.gitignore`.
 - `.devloop/DIARY.md` — your progress diary (see below).
 - `.devloop/reviews.md` — the code-review log, appended by `byre-codereview`.
 
+## Your persistent stash: `~/scratch` (`$BYRE_SCRATCH`)
+The container filesystem — including `/tmp` — is thrown away on every container
+restart and rebuild. `~/scratch` is a named volume that survives both. Stash
+anything there that should outlive the current container: experiment output,
+downloaded artifacts, notes-to-self across a sandbox rebuild (e.g. a
+`--self-edit` restart). Unlike `.devloop/`, it lives outside the repo — use it
+for files that aren't tied to the working tree. It's per-project and shared
+with concurrent sessions in worktrees of the same repo, so use a subdirectory
+if you might collide.
+
 ## Diary discipline
 Keep a running diary at `.devloop/DIARY.md`. **Read it at the start of each
 session** to recover context, and **update it when you finish**: what you did,

@@ -1,10 +1,13 @@
 # Built-in skill: devloop — byre's reusable development workflow.
 #
-# Delivers two things to any project box:
+# Delivers three things to any project box:
 #   1. `byre-codereview` — an independent, Codex-backed code-review script
 #      (shipped via [build].files, on PATH at /usr/local/bin/byre-codereview).
 #   2. The workflow conventions (commit discipline, the review loop, test-before-
 #      commit) as agent context, placed where the agent reads its memory.
+#   3. A persistent scratch volume at /home/dev/scratch ($BYRE_SCRATCH) — a
+#      stash for the agent's working files that survives container restarts
+#      and rebuilds, unlike /tmp and the rest of the container fs.
 #
 # Pairs with the codex skill, which installs the codex binary the script drives:
 #
@@ -20,5 +23,20 @@ apt = ["jq"] # codereview.sh parses codex --json output with jq
 files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-codereview"]
 
+[runtime]
+# Advertise the scratch volume so the agent and scripts can find it without
+# hardcoding the path.
+env = { BYRE_SCRATCH = "/home/dev/scratch" }
+
 [context]
 file = "context.md"
+
+# The agent's persistent stash. The container fs (including /tmp) is throwaway —
+# it dies on every restart and rebuild, which happens constantly when byre
+# develops itself (--self-edit restarts to apply config changes). This named
+# volume survives those. role=state: persistence is the point; clearing it is a
+# conscious data loss, not a cache eviction.
+[[volumes]]
+name = "scratch"
+role = "state"
+target = "/home/dev/scratch"

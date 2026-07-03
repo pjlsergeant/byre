@@ -131,6 +131,19 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	if !shippedCodexLogin {
 		t.Errorf("codex did not ship its first-run login hook: %+v", res.SkillFiles)
 	}
+	// devloop contributes the persistent scratch volume and advertises it.
+	var scratchVol bool
+	for _, v := range res.Volumes {
+		if v.Name == "scratch" && v.Role == "state" && v.Target == "/home/dev/scratch" {
+			scratchVol = true
+		}
+	}
+	if !scratchVol {
+		t.Errorf("devloop did not contribute the scratch state volume: %+v", res.Volumes)
+	}
+	if got := res.Env["BYRE_SCRATCH"]; got != "/home/dev/scratch" {
+		t.Errorf("BYRE_SCRATCH = %q, want /home/dev/scratch", got)
+	}
 	// Workflow context reaches Claude's memory file.
 	if res.AgentContextTarget != "/home/dev/.claude/CLAUDE.md" {
 		t.Errorf("context target wrong: %q", res.AgentContextTarget)
