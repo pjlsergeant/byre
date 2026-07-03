@@ -89,6 +89,13 @@ type Config struct {
 	// into a FRESH agent state volume. Off by default; only acts on a fresh volume.
 	SeedPrefs bool `toml:"seed_prefs,omitempty"`
 
+	// WorktreeBase is the host directory `byre worktree` creates new worktrees
+	// under (leaf: <repo>-<name>). Unset means `byre worktree` refuses unless
+	// given --path — byre won't guess where to litter checkouts. A host workflow
+	// preference, so it's normally set in ~/.byre/default.config; `~` expands.
+	// Not part of the container/sandbox, just where the checkout lands.
+	WorktreeBase string `toml:"worktree_base,omitempty"`
+
 	Apt       []string          `toml:"apt,omitempty"`
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
@@ -214,6 +221,7 @@ func Merge(base, over Config) Config {
 	// practice, so this is effectively "project wins"). A bool can't distinguish
 	// unset from false, so there's no "turn it back off" in a higher layer.
 	out.SeedPrefs = base.SeedPrefs || over.SeedPrefs
+	out.WorktreeBase = override(base.WorktreeBase, over.WorktreeBase)
 
 	// Package lists: plain dedup union. `!name` removal is reserved for named
 	// lists (skills/mounts/volumes), so a package literally named "!x" is kept.

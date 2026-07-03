@@ -10,15 +10,31 @@ import (
 	"byre/internal/project"
 )
 
-func TestDefaultWorktreePath(t *testing.T) {
-	got := defaultWorktreePath("/home/me/dev/byre", "feature")
-	if want := "/home/me/dev/byre-feature"; got != want {
-		t.Errorf("defaultWorktreePath = %q, want %q", got, want)
+func TestWorktreeLeaf(t *testing.T) {
+	if got := worktreeLeaf("/home/me/dev/byre", "feature"); got != "byre-feature" {
+		t.Errorf("worktreeLeaf = %q, want byre-feature", got)
 	}
-	// Branch slashes are flattened so the worktree stays a single sibling dir.
-	got = defaultWorktreePath("/home/me/dev/byre", "fix/bug")
-	if want := "/home/me/dev/byre-fix-bug"; got != want {
-		t.Errorf("slash flattening: got %q, want %q", got, want)
+	// Branch slashes are flattened so the worktree stays a single dir under base.
+	if got := worktreeLeaf("/home/me/dev/byre", "fix/bug"); got != "byre-fix-bug" {
+		t.Errorf("slash flattening: got %q, want byre-fix-bug", got)
+	}
+}
+
+// With neither --path nor a configured worktree_base, byre refuses rather than
+// guessing a location (least surprise — no directories created unbidden).
+func TestWorktreeRefusesWithoutLocation(t *testing.T) {
+	repo := initRepo(t)
+	t.Setenv("BYRE_HOME", t.TempDir()) // empty ~/.byre -> no worktree_base
+	err := Worktree(repo, "feat", "", false)
+	if err == nil {
+		t.Fatal("expected refusal without --path or worktree_base")
+	}
+	if !strings.Contains(err.Error(), "worktree_base") || !strings.Contains(err.Error(), "--path") {
+		t.Errorf("error should name both remedies (--path / worktree_base): %v", err)
+	}
+	// And it must refuse BEFORE creating anything.
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-feat")); statErr == nil {
+		t.Error("a worktree was created despite the refusal")
 	}
 }
 

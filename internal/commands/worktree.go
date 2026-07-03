@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"byre/internal/config"
 	"byre/internal/project"
 )
 
@@ -31,15 +32,26 @@ func Worktree(projectDir, name, path string, selfEdit bool) error {
 		return fmt.Errorf("not inside a git repository — run `byre worktree` in a repo (git init / byre develop there first)")
 	}
 	// paths.Canonical is the MAIN worktree even when top is a linked worktree, so
-	// the default sibling path and the inherited identity both anchor on the repo
-	// root, not the current worktree.
+	// the location leaf and the inherited identity both anchor on the repo root,
+	// not the current worktree.
 	paths, err := project.Resolve(top)
 	if err != nil {
 		return err
 	}
+	// Location: --path (explicit) wins; else the configured worktree_base. byre
+	// will NOT guess a location (least surprise — no directories created where you
+	// didn't ask). Resolved before any git work so we never half-create.
 	target := path
 	if target == "" {
-		target = defaultWorktreePath(paths.Canonical, name)
+		base, berr := worktreeBase(top)
+		if berr != nil {
+			return berr
+		}
+		if base == "" {
+			return fmt.Errorf("byre worktree needs a location. Set a default with `byre config --global` (worktree_base, " +
+				"e.g. ~/worktrees), or pass --path <dir> for a one-off. byre won't guess where to create worktrees")
+		}
+		target = filepath.Join(base, worktreeLeaf(paths.Canonical, name))
 	}
 	target, err = filepath.Abs(target)
 	if err != nil {
@@ -63,11 +75,25 @@ func Worktree(projectDir, name, path string, selfEdit bool) error {
 	return Develop(target, "", "", selfEdit)
 }
 
-// defaultWorktreePath places the worktree beside the main repo dir, named
-// <repo>-<name>. Branch-name slashes are flattened so it stays a single dir.
-func defaultWorktreePath(mainDir, name string) string {
-	leaf := filepath.Base(mainDir) + "-" + strings.ReplaceAll(name, "/", "-")
-	return filepath.Join(filepath.Dir(mainDir), leaf)
+// worktreeLeaf is the single-directory name for a worktree: <repo>-<name>, with
+// branch-name slashes flattened so it stays one dir under the base.
+func worktreeLeaf(mainDir, name string) string {
+	return filepath.Base(mainDir) + "-" + strings.ReplaceAll(name, "/", "-")
+}
+
+// worktreeBase returns the configured worktree base dir (expanded, absolute), or
+// "" if unset. A malformed config surfaces its error (not masked as "no
+// location"); a set-but-invalid base (relative / comma) is an error too, since
+// the user asked for a specific place.
+func worktreeBase(dir string) (string, error) {
+	cfg, err := config.Load(dir)
+	if err != nil {
+		return "", err
+	}
+	if cfg.WorktreeBase == "" {
+		return "", nil
+	}
+	return expandHostPath(cfg.WorktreeBase)
 }
 
 // createWorktree runs `git worktree add`. If <name> already names a branch —
