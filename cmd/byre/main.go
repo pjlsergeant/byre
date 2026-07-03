@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"byre/internal/commands"
 )
@@ -22,6 +23,8 @@ Commands:
   dockerrun    Print the docker/podman run command byre would use (no side effects).
   status       Show resolved config, mounts, skills, container state.
   shell        Open a shell (as the dev user) in this project's running session.
+  worktree     Create a git worktree (<repo>-<name>, or --path <dir>) and start a
+               session in it — a parallel agent that inherits this repo's setup.
   skill update Re-materialize byre's built-in skills (pick up shipped updates).
   reset        Wipe this project's named volumes.
   rebuild      Rebuild the image with the cache disabled.
@@ -139,6 +142,38 @@ func main() {
 	case "shell":
 		noArgs(cmd)
 		if err := commands.Shell(os.Stdout, cwd()); err != nil {
+			fatal(err)
+		}
+	case "worktree":
+		var name, path string
+		selfEdit := false
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch {
+			case args[i] == "--path":
+				i++
+				if i >= len(args) {
+					fmt.Fprintln(os.Stderr, "byre worktree: --path needs a value")
+					os.Exit(2)
+				}
+				path = args[i]
+			case args[i] == "--self-edit":
+				selfEdit = true
+			case strings.HasPrefix(args[i], "-"):
+				fmt.Fprintf(os.Stderr, "byre worktree: unknown flag %q\n", args[i])
+				os.Exit(2)
+			case name == "":
+				name = args[i]
+			default:
+				fmt.Fprintf(os.Stderr, "byre worktree: unexpected argument %q\n", args[i])
+				os.Exit(2)
+			}
+		}
+		if name == "" {
+			fmt.Fprintln(os.Stderr, "usage: byre worktree <name> [--path <dir>] [--self-edit]")
+			os.Exit(2)
+		}
+		if err := commands.Worktree(cwd(), name, path, selfEdit); err != nil {
 			fatal(err)
 		}
 	case "skill":

@@ -37,9 +37,13 @@ authoring** — and everything it does is a generated file you can read.
    this" to "early and moving fast; here's exactly what works and what
    doesn't", devlog linked as receipts. Declared immaturity builds trust with
    this audience; discovered dishonesty destroys it.
-5. **Competitive framing: a full, honest comparison table** — including the
-   rows byre loses. Tone rule, verbatim from the session: **"we're not trying
-   to persuade, we're trying to illuminate."**
+5. **Competitive framing: full and honest, expressed as a "Why not X?"
+   list** — one prose entry per alternative, each answering honestly
+   (including "use it if…" where the alternative wins), rather than a
+   feature grid that flattens microVM-vs-container into checkmarks. The
+   fact table below stays as the internal evidence base. Tone rule, verbatim
+   from the session: **"we're not trying to persuade, we're trying to
+   illuminate."**
 6. **Free promise: structurally free.** MIT, free forever — as in beer and as
    in speech — and *structurally* so: no account to upsell, no control plane
    to meter, no telemetry to monetize. The architecture makes the promise
@@ -119,9 +123,61 @@ afford to break.
 - **The cowshed is flavor, not load-bearing.** Keep the etymology aside;
   don't make readers parse a metaphor to learn what the tool does.
 
-## Competitive landscape (verified 2026-07-03)
+## "Why not X?" — the public competitive copy
 
-Four columns for the public table; two footnotes. Full sources at the end.
+This is the artifact the README and site carry (the fact table further down
+is the internal evidence base behind it):
+
+```markdown
+## Why not…?
+
+**…Docker Sandboxes?** If you want the strongest isolation, use it — each
+sandbox is a microVM with its own kernel, which beats a shared-kernel
+container, full stop. The trade: it's a proprietary product that requires
+Docker sign-in, and the governance features are paid. byre is the other
+shape: no account, no control plane, a generated Dockerfile you can read,
+MIT forever.
+
+**…your agent's built-in sandbox?** (Claude Code's `/sandbox`, Codex's
+Seatbelt/Landlock modes.) Zero setup, and genuinely useful — but the agent
+still runs *on your host*. Anthropic's own docs note that sandboxed commands
+inherit your environment variables — credentials included — by default, and
+can read `~/.ssh` and `~/.aws/credentials` unless you configure denials.
+There's no throwaway environment and no per-project state. A project-scoped
+container closes all of that by construction: the box only ever contained
+what you put in it.
+
+**…devcontainers?** Mature, open, fully inspectable — because you hand-write
+the `devcontainer.json` and Dockerfile yourself, per project, and wire up
+agent credentials on your own. byre generates the same kind of readable
+Docker from a small config cascade, scopes agent auth per project, and gives
+you a reset story — and you can eject to a raw Dockerfile whenever you've had
+enough of it. If you already maintain devcontainers happily, keep them.
+
+**…container-use?** Different problem. Dagger's container-use gives parallel
+agents an environment per git branch via MCP; byre boxes one full-autonomy
+session per project and makes its grants legible. (It's also explicitly
+experimental, with releases stalled since mid-2025.)
+
+**…a cloud sandbox (e2b, Daytona, …)?** Those are API-first execution
+primitives for *building agent products* — account, usage billing, your code
+in their cloud. byre is `cd ~/project && byre develop` on your own machine.
+
+**…raw Docker?** Please do — byre never stops you. It generates Docker you
+can read, and exists only to own the frame everyone reinvents around it:
+host-matched UID/GID, per-project state volumes for agent auth, install-and-
+launch for three agents, a clean reset. When you outgrow it, `byre
+dockerfile` prints your exit.
+```
+
+Each entry leads with what the alternative does *better* where that's true
+(isolation for Docker Sandboxes, zero-setup for built-in sandboxes, maturity
+for devcontainers) — the honesty policy from the table decision, carried
+over: entries illuminate, they don't persuade.
+
+## Competitive fact base (internal — verified 2026-07-03)
+
+Full sources at the end.
 
 | | **byre** | **Docker Sandboxes** | **Agent built-in sandboxes**¹ | **Dev Containers**² |
 |---|---|---|---|---|
@@ -137,9 +193,10 @@ Four columns for the public table; two footnotes. Full sources at the end.
 | Maturity | **early, pre-1.0** | new (late 2025), Docker Inc. behind it | shipped inside the agents | industry spec, mature ecosystem |
 | Price / license | MIT, free forever | CLI free; org governance needs Docker Business ($24/user/mo); proprietary | free with the agent | open spec, MIT CLI |
 
-\* The default-deny firewall skill is committed for launch — this table does
-not go public before it ships. Until then it's a claim with an asterisk here
-and nowhere else.
+\* The default-deny firewall skill is committed for launch. The public copy
+that claims it (the README contract block's "enable the default-deny
+firewall skill to close it") does not go live before the skill ships; until
+then the claim carries an asterisk here and appears nowhere else.
 ¹ Claude Code `/sandbox` (Seatbelt / bubblewrap + sandbox-runtime) and Codex
 CLI (Seatbelt / Landlock), collapsed: same architecture, same gaps — filesystem
 *write* limits and network mediation, but the agent still runs in your real
@@ -148,7 +205,8 @@ inside it.
 ² Including Anthropic's reference devcontainer for Claude Code — which
 Anthropic labels "a working example rather than a maintained base image."
 
-**Rows byre loses, stated plainly (keep them in the public table):**
+**Where byre honestly loses (each carried into its "Why not…?" entry — the
+alternative's win leads the paragraph):**
 
 1. **Isolation strength** — a microVM with its own kernel beats a
    shared-kernel container. Don't hedge it.
@@ -158,8 +216,8 @@ Anthropic labels "a working example rather than a maintained base image."
    (Linux); byre needs a container engine running.
 
 (Network egress control *was* a fourth loss; the default-deny firewall skill
-is now a launch commitment, so the row reads as a win-with-asterisk until it
-ships and a plain win after.)
+is now a launch commitment, so public copy may claim it — asterisked here
+until it ships.)
 
 **Footnote-tier, not columns:** Dagger's *container-use* (experimental,
 parallel-agents-per-git-branch — a different problem; releases stalled since
@@ -230,11 +288,11 @@ Don't point byre at anything you can't afford to break. The
 [devlog](https://pjlsergeant.github.io/byre/devlog/) is the running record
 of what works and what doesn't.
 
-## How it compares
+## Why not…?
 
-*Checked against live docs 2026-07-03; corrections welcome.*
+*Claims checked against live docs 2026-07-03; corrections welcome.*
 
-[the table above]
+[the "Why not…?" list above, verbatim]
 
 ## Install / Quickstart / Commands / Configuration
 
@@ -243,8 +301,10 @@ of what works and what doesn't.
 
 Two notes on the hero transcript:
 
-- It is a **simplified mock** of the launch. Make it true before or as it
-  ships: see product implication below.
+- It is a **simplified mock** of the launch, and that's fine — it's
+  illustrative, shaped like the truth (nothing in it claims a grant byre
+  doesn't enforce). Making `byre develop` actually print those lines is a
+  nice-to-have, not a prerequisite.
 - The `network: open` line stays in the hero on purpose — the honest scope
   claim inside the money shot is the whole voice in one line.
 
@@ -265,17 +325,19 @@ Two notes on the hero transcript:
 
 ## Product implications (small, on-brand, argued for by this positioning)
 
-1. **Print the grant summary on launch.** `byre develop` should emit the
-   3–4 terse `byre:` lines from the hero (project mount, host mounts,
-   network, agent) before exec'ing the agent — so the README hero is a real
-   transcript, and every session opens by showing the walls going up.
+1. **(Nice-to-have) Print the grant summary on launch.** The hero transcript
+   is an accepted illustrative mock — no product change required. Still, a
+   few terse `byre:` lines (project mount, host mounts, network, agent)
+   before exec'ing the agent would make every real session open by showing
+   the walls going up. Do it when convenient, not for launch.
 2. **The default-deny firewall skill is a launch blocker.** The public copy
-   claims it (the table row reads win-with-asterisk), so it must exist before
-   the README/site go live. A default-deny egress skill — even a blunt
-   allowlist — keeps core opinion-free while closing the one gap where three
-   competitors had a story and byre had none. Once it ships, the hero
-   transcript's `network:` line becomes live proof (it prints `open` or
-   `deny-by-default` per config).
+   claims it (the README contract block: "enable the default-deny firewall
+   skill to close it"), so it must exist before the README/site go live. A
+   default-deny egress skill — even a blunt allowlist — keeps core
+   opinion-free while closing the one gap where three competitors had a
+   story and byre had none. Once it ships, the hero transcript's `network:`
+   line becomes live proof (it prints `open` or `deny-by-default` per
+   config).
 3. **Keep `byre status` output in lockstep with the marketing block** — the
    README/site show its output as proof; drift makes the proof a lie.
 
