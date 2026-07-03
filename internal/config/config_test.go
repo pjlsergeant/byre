@@ -140,6 +140,19 @@ func TestValidateRejectsBadEngine(t *testing.T) {
 	}
 }
 
+func TestValidateWorktreeBase(t *testing.T) {
+	for _, ok := range []string{"", "sibling", "~", "~/worktrees", "/abs/base"} {
+		if err := (Config{WorktreeBase: ok}).Validate(); err != nil {
+			t.Errorf("worktree_base %q should be valid: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"relative-dir", "./x", "/has,comma"} {
+		if err := (Config{WorktreeBase: bad}).Validate(); err == nil {
+			t.Errorf("worktree_base %q should be rejected", bad)
+		}
+	}
+}
+
 func TestValidateVolumeRules(t *testing.T) {
 	cases := map[string]Config{
 		"bad role":      {Volumes: []Volume{{Name: "v", Role: "nope", Target: "/t"}}},

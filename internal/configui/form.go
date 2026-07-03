@@ -24,8 +24,8 @@ import (
 // file is untouched). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
 // quitting never writes.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, vols VolumeAdmin) (bool, error) {
-	m := newModel(title, filePath, cfg, templates, agents, skillOpts, vols)
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, vols VolumeAdmin, global bool) (bool, error) {
+	m := newModel(title, filePath, cfg, templates, agents, skillOpts, vols, global)
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -161,6 +161,7 @@ type model struct {
 	ti        textinput.Model // base image editor
 	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
 	wtSibling bool            // fWorktreeSibling checkbox: worktrees beside the repo
+	global    bool            // editing ~/.byre/default.config: show + edit worktree_base
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
@@ -216,7 +217,7 @@ type model struct {
 	confirmQuit bool
 }
 
-func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, vols VolumeAdmin) model {
+func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, vols VolumeAdmin, global bool) model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Focus()
@@ -239,9 +240,14 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills}},
-		{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}},
-		{"ADVANCED", advanced},
 	}
+	// worktree_base is a global/host preference; only the --global editor shows it
+	// (in a project editor it would falsely read "unset — will refuse" whenever a
+	// global default is actually inherited).
+	if global {
+		sections = append(sections, section{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}})
+	}
+	sections = append(sections, section{"ADVANCED", advanced})
 	var order []fieldID
 	for _, s := range sections {
 		order = append(order, s.fields...)
@@ -258,6 +264,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		order:        order,
 		ti:           ti,
 		wtBase:       wtBase,
+		global:       global,
 		ta:           ta,
 		width:        80,
 		volPendClear: -1,
@@ -1248,12 +1255,14 @@ func (m model) save() model {
 func (m model) assemble() config.Config {
 	out := m.base
 	out.Base = strings.TrimSpace(m.ti.Value())
-	// worktree_base: sibling checkbox wins; else the base path; else unset (refuse).
-	switch {
-	case m.wtSibling:
-		out.WorktreeBase = "sibling"
-	default:
-		out.WorktreeBase = strings.TrimSpace(m.wtBase.Value())
+	// worktree_base is only editable in the global editor; elsewhere it round-trips
+	// via m.base untouched. Sibling checkbox wins; else the base path; else unset.
+	if m.global {
+		if m.wtSibling {
+			out.WorktreeBase = "sibling"
+		} else {
+			out.WorktreeBase = strings.TrimSpace(m.wtBase.Value())
+		}
 	}
 	out.Template = fromNone(m.tmplOpts[m.tmplSel])
 	out.Agent = fromNone(m.agentOpts[m.agentSel])

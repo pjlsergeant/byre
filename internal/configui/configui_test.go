@@ -136,7 +136,7 @@ func TestPickerOptsPreservesUnknown(t *testing.T) {
 
 // The item editor must validate, then add / edit / delete structured items.
 func TestItemAddEditDeleteValidation(t *testing.T) {
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, false)
 
 	// --- env: reject a bad key, accept a good one ---
 	m.listField = fEnv
@@ -239,7 +239,7 @@ func TestVolumesClearFlow(t *testing.T) {
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Exists: true},
 		{Name: "node_modules", Role: "cache", Target: "/workspace/node_modules", Exists: false},
 	}}
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, fv)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, fv, false)
 
 	// fVolumes must be present in the form when a VolumeAdmin is supplied.
 	if !contains(fieldIDsToStrings(m.order), "Volumes") {
@@ -284,7 +284,7 @@ func TestVolumesClearFlow(t *testing.T) {
 
 func TestWorktreeBaseRoundTrip(t *testing.T) {
 	// "sibling" -> checkbox on -> writes "sibling".
-	m := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil)
+	m := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, true)
 	if !m.wtSibling {
 		t.Error("sibling config should check the box")
 	}
@@ -292,7 +292,7 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 		t.Errorf("assemble = %q, want sibling", got)
 	}
 	// A path -> checkbox off, path loaded, round-trips.
-	m = newModel("t", "/x", config.Config{WorktreeBase: "/w"}, nil, nil, nil, nil)
+	m = newModel("t", "/x", config.Config{WorktreeBase: "/w"}, nil, nil, nil, nil, true)
 	if m.wtSibling || m.wtBase.Value() != "/w" {
 		t.Errorf("path config: sibling=%v base=%q", m.wtSibling, m.wtBase.Value())
 	}
@@ -300,7 +300,7 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 		t.Errorf("assemble = %q, want /w", got)
 	}
 	// Unset -> checkbox off, empty -> writes "" (byre worktree refuses).
-	m = newModel("t", "/x", config.Config{}, nil, nil, nil, nil)
+	m = newModel("t", "/x", config.Config{}, nil, nil, nil, nil, true)
 	if m.wtSibling || m.wtBase.Value() != "" {
 		t.Errorf("unset should be off+empty: sibling=%v base=%q", m.wtSibling, m.wtBase.Value())
 	}
@@ -314,14 +314,23 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 		t.Errorf("sibling checkbox should win over a path: %q", got)
 	}
 
-	// The form actually renders the WORKTREES section + a checkbox state.
-	on := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil).View()
+	// The GLOBAL form renders the WORKTREES section + a checkbox state.
+	on := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, true).View()
 	if !strings.Contains(on, "WORKTREES") || !strings.Contains(on, "[x] sibling of repo") {
-		t.Errorf("form should show a checked worktree checkbox:\n%s", on)
+		t.Errorf("global form should show a checked worktree checkbox:\n%s", on)
 	}
-	off := newModel("t", "/x", config.Config{}, nil, nil, nil, nil).View()
+	off := newModel("t", "/x", config.Config{}, nil, nil, nil, nil, true).View()
 	if !strings.Contains(off, "[ ] sibling of repo") || !strings.Contains(off, "refuse") {
-		t.Errorf("unset form should show an unchecked box and a refuse hint:\n%s", off)
+		t.Errorf("unset global form should show an unchecked box and a refuse hint:\n%s", off)
+	}
+	// The PROJECT editor (global=false) omits the section, and preserves an
+	// existing worktree_base untouched through save (no false "unset" clobber).
+	proj := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, false)
+	if strings.Contains(proj.View(), "WORKTREES") {
+		t.Errorf("project editor should not show the WORKTREES section:\n%s", proj.View())
+	}
+	if got := proj.assemble().WorktreeBase; got != "sibling" {
+		t.Errorf("project editor should round-trip worktree_base untouched, got %q", got)
 	}
 }
 
@@ -340,7 +349,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 	cfg := config.Config{Agent: "claude", Skills: []string{"moarcode", "ghost-skill"}} // ghost not installed
 	agents := []string{"claude", "codex"}
 	all := []string{"claude", "codex", "moarcode", "shem"}
-	m := newModel("t", "/tmp/x", cfg, nil, agents, all, nil)
+	m := newModel("t", "/tmp/x", cfg, nil, agents, all, nil, false)
 
 	entryIdx := func(mm model, name string) int {
 		for i, e := range mm.skillEntries() {
@@ -405,7 +414,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 // back into `skills` (the agent field implies it).
 func TestSkillsPrimaryNotDoubleWritten(t *testing.T) {
 	cfg := config.Config{Agent: "claude", Skills: []string{"codex"}} // codex enabled as a skill
-	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude", "codex"}, []string{"claude", "codex"}, nil)
+	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, false)
 	// Promote codex to the primary agent.
 	m.agentSel = indexOf(m.agentOpts, "codex")
 	if out := m.assemble(); contains(out.Skills, "codex") {
@@ -416,7 +425,7 @@ func TestSkillsPrimaryNotDoubleWritten(t *testing.T) {
 // The ports editor validates the container port and treats a blank host as
 // its container port; grants lead the form and focus starts there.
 func TestPortsEditorAndSectionOrder(t *testing.T) {
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, false)
 
 	// Grants section leads and includes ports; focus starts on the first grant.
 	if len(m.sections) == 0 || !strings.HasPrefix(m.sections[0].title, "GRANTS") {
@@ -454,7 +463,7 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 		RunArgs:       []string{"--privileged"},
 		DockerfilePre: []string{"RUN foo \\", "    && bar", "", "RUN baz"},
 	}
-	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil)
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, false)
 	if m.dirty() {
 		t.Fatal("a fresh config with raw fields must not be dirty")
 	}
@@ -498,7 +507,7 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 // must round-trip (not coerce to podman), and touching a field flips dirty.
 func TestModelDirtyAndUnknownEngineRoundTrip(t *testing.T) {
 	cfg := config.Config{Base: "debian:bookworm", Engine: "containerd", Agent: "claude"}
-	m := newModel("t", "/tmp/x", cfg, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, nil)
+	m := newModel("t", "/tmp/x", cfg, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, nil, false)
 	if m.dirty() {
 		t.Fatal("a freshly-opened config must not be dirty")
 	}

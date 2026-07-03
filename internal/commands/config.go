@@ -55,7 +55,10 @@ func Config(projectDir string, global bool) error {
 	}
 	// The editor saves in place (explicit ctrl+s), so Run reports whether the file
 	// was written rather than handing back a config for us to save.
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, vols)
+	// worktree_base is a host workflow preference edited in the GLOBAL config; the
+	// project editor omits it (showing it there would imply a per-project unset
+	// that the cascade can't honor once a global default exists).
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, vols, global)
 	if err != nil {
 		return err
 	}

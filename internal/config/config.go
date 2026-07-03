@@ -278,6 +278,18 @@ func (c Config) Validate() error {
 		return fmt.Errorf("dockerfile = %q: must be a relative path within the project", c.Dockerfile)
 	}
 
+	// worktree_base: "" (refuse), "sibling", or a host path (~ or absolute, and
+	// comma-free — `byre worktree` binds it, and docker --mount can't express a
+	// comma). Caught here so a bad value is rejected at save, not at worktree time.
+	if b := c.WorktreeBase; b != "" && b != "sibling" {
+		if b != "~" && !strings.HasPrefix(b, "~/") && !filepath.IsAbs(b) {
+			return fmt.Errorf("worktree_base = %q: must be \"sibling\", ~/…, or an absolute path", b)
+		}
+		if strings.Contains(b, ",") {
+			return fmt.Errorf("worktree_base = %q: cannot contain a comma (docker --mount can't express it)", b)
+		}
+	}
+
 	// Container targets must be unique across mounts and volumes — they become
 	// distinct `docker run` mount points; a collision is ambiguous.
 	targets := map[string]string{} // target -> what claims it
