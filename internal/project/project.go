@@ -105,39 +105,74 @@ func Home() (string, error) {
 //
 // The build context is a subdirectory so the path record and lock file (which
 // live directly under Dir) are not sent to the engine as build context.
+//
+// Worktree inheritance (docs/agent-volume-sharing.md): a linked git worktree
+// inherits the MAIN worktree's identity — the id-keyed fields (ID/Canonical/
+// Dir/ContextDir/PathRecord/LockFile) all derive from the family (main
+// worktree) path, so config, volumes, and the image are shared. Only the
+// strictly-local bits stay per-worktree: WorkDir (bound at /workspace) and
+// WorktreeID (the container name + per-worktree label, so two worktrees can run
+// at once). For a plain project WorkDir == Canonical and WorktreeID == ID.
 type Paths struct {
-	ID         string // project_id
-	Canonical  string // canonical project directory
+	ID         string // family project_id (config/volumes/image identity)
+	Canonical  string // canonical family dir (main worktree; == WorkDir when not a worktree)
+	WorkDir    string // canonical dir bound at /workspace (the worktree; == Canonical when not a worktree)
 	Home       string // ~/.byre
-	Dir        string // ~/.byre/projects/<id>
-	ContextDir string // ~/.byre/projects/<id>/context  (docker build context)
+	Dir        string // ~/.byre/projects/<ID>
+	ContextDir string // ~/.byre/projects/<ID>/context  (docker build context)
 	Dockerfile string // <ContextDir>/Dockerfile.generated
-	PathRecord string // ~/.byre/projects/<id>/path
-	LockFile   string // ~/.byre/projects/<id>/lock
+	PathRecord string // ~/.byre/projects/<ID>/path
+	LockFile   string // ~/.byre/projects/<ID>/lock
+
+	IsWorktree   bool   // WorkDir is a linked git worktree of Canonical
+	WorktreeID   string // per-worktree id from WorkDir (container name + workdir label; == ID when not a worktree)
+	CommonGitDir string // git common dir to bind-mount same-path (rw) so git works in the box; "" when not a worktree
 }
 
-// Resolve computes the id and on-disk paths for a project directory.
+// Resolve computes the id and on-disk paths for a project directory. When
+// projectDir is a linked git worktree, the id-keyed paths resolve from the main
+// worktree's path (so the worktree inherits the repo's config/volumes/image),
+// while WorkDir/WorktreeID/CommonGitDir capture the per-worktree side.
 func Resolve(projectDir string) (Paths, error) {
-	canon, err := Canonicalize(projectDir)
+	work, err := Canonicalize(projectDir)
 	if err != nil {
 		return Paths{}, err
 	}
-	id := idFromCanonical(canon)
 	home, err := Home()
 	if err != nil {
 		return Paths{}, err
 	}
+
+	// Identity anchor: a linked worktree inherits the main worktree's path.
+	identity := work
+	var isWT bool
+	var commonGitDir string
+	if info, ok, derr := detectWorktree(work); derr != nil {
+		return Paths{}, derr
+	} else if ok {
+		identity, isWT, commonGitDir = info.familyDir, true, info.commonGitDir
+	}
+
+	id := idFromCanonical(identity)
+	worktreeID := id
+	if isWT {
+		worktreeID = idFromCanonical(work)
+	}
 	dir := filepath.Join(home, "projects", id)
 	ctx := filepath.Join(dir, "context")
 	return Paths{
-		ID:         id,
-		Canonical:  canon,
-		Home:       home,
-		Dir:        dir,
-		ContextDir: ctx,
-		Dockerfile: filepath.Join(ctx, "Dockerfile.generated"),
-		PathRecord: filepath.Join(dir, "path"),
-		LockFile:   filepath.Join(dir, "lock"),
+		ID:           id,
+		Canonical:    identity,
+		WorkDir:      work,
+		Home:         home,
+		Dir:          dir,
+		ContextDir:   ctx,
+		Dockerfile:   filepath.Join(ctx, "Dockerfile.generated"),
+		PathRecord:   filepath.Join(dir, "path"),
+		LockFile:     filepath.Join(dir, "lock"),
+		IsWorktree:   isWT,
+		WorktreeID:   worktreeID,
+		CommonGitDir: commonGitDir,
 	}, nil
 }
 
