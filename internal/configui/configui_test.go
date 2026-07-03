@@ -202,12 +202,14 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 // fakeVols is a test VolumeAdmin: List returns its volumes; Clear removes one
 // unless clearErr is set (simulating a live-session refusal).
 type fakeVols struct {
-	vols     []VolumeStatus
-	clearErr error
-	cleared  []string
+	vols       []VolumeStatus
+	clearErr   error
+	cleared    []string
+	sharedNote string
 }
 
 func (f *fakeVols) List() ([]VolumeStatus, error) { return f.vols, nil }
+func (f *fakeVols) SharedNote() string            { return f.sharedNote }
 func (f *fakeVols) Clear(name string) error {
 	if f.clearErr != nil {
 		return f.clearErr
@@ -254,6 +256,12 @@ func TestVolumesClearFlow(t *testing.T) {
 	m = mm.(model)
 	if m.volPendClear != 0 {
 		t.Fatalf("clear should arm the confirm, volPendClear=%d", m.volPendClear)
+	}
+	// The armed confirm surfaces the admin's shared-volume warning (worktree blast
+	// radius) so the config UI is as loud as reset/forget.
+	fv.sharedNote = "Shared with ALL worktrees of /home/me/main."
+	if v := m.viewVolumes(); !strings.Contains(v, "Shared with ALL worktrees") {
+		t.Errorf("clear confirm should include the shared-volume note:\n%s", v)
 	}
 	mm, _ = m.updateVolumes(key("y"))
 	m = mm.(model)

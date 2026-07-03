@@ -105,6 +105,16 @@ func dedupeVolumes(vs []config.Volume) []config.Volume {
 	return out
 }
 
+// SharedNote warns, before a clear, that a worktree's volumes are shared across
+// the whole repo family — mirroring the loud banner `reset`/`forget` print, so
+// clearing a volume from the config UI is as legible about its blast radius.
+func (a *volumeAdmin) SharedNote() string {
+	if a.paths.IsWorktree {
+		return fmt.Sprintf("Shared with ALL worktrees of %s.", a.paths.Canonical)
+	}
+	return ""
+}
+
 // List re-resolves the config from disk so the volume set reflects the current
 // state (e.g. after a $EDITOR edit to [[volumes]] or the agent), not a snapshot.
 func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {

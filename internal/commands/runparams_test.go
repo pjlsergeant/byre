@@ -178,6 +178,23 @@ func TestStatusRendersWorktreeLine(t *testing.T) {
 	}
 }
 
+func TestStatusRendersSiblingSessions(t *testing.T) {
+	// No siblings -> no family-sessions line (the plain-project common case).
+	var none strings.Builder
+	RenderStatus(&none, StatusInfo{ID: "x", Canonical: "/p"})
+	if strings.Contains(none.String(), "other session") {
+		t.Errorf("should not show sibling sessions when there are none:\n%s", none.String())
+	}
+	// Siblings present -> a line naming them, so status doesn't imply nothing is
+	// running while reset/forget (family label) would refuse.
+	var kin strings.Builder
+	RenderStatus(&kin, StatusInfo{ID: "x", Canonical: "/p", SiblingSessions: []string{"abc123def456", "789beefcafe0"}})
+	s := kin.String()
+	if !strings.Contains(s, "2 other session") || !strings.Contains(s, "abc123def456") || !strings.Contains(s, "789beefcafe0") {
+		t.Errorf("sibling sessions not surfaced:\n%s", s)
+	}
+}
+
 func indexOf(s []string, v string) int {
 	for i, x := range s {
 		if x == v {

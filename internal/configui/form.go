@@ -129,6 +129,9 @@ type kvItem struct{ Key, Value string }
 type VolumeAdmin interface {
 	List() ([]VolumeStatus, error)
 	Clear(name string) error // remove the volume from the engine (refuses if a session is live)
+	// SharedNote returns a blast-radius warning to show before a clear (e.g. a
+	// worktree whose volumes are shared across the repo family), or "" if none.
+	SharedNote() string
 }
 
 // VolumeStatus is one project volume for display.
@@ -903,7 +906,13 @@ func (m model) viewVolumes() string {
 	b.WriteString("\n")
 	switch {
 	case m.volPendClear >= 0:
-		b.WriteString(errStyle.Render(fmt.Sprintf("Clear %q? This deletes the volume and its data. [y/n]", m.volList[m.volPendClear].Name)))
+		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", m.volList[m.volPendClear].Name)
+		if m.vols != nil {
+			if note := m.vols.SharedNote(); note != "" {
+				msg += "\n" + note
+			}
+		}
+		b.WriteString(errStyle.Render(msg + " [y/n]"))
 	case m.volErr != "":
 		b.WriteString(errStyle.Render("✗ " + m.volErr))
 	}
