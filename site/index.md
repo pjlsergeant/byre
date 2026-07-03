@@ -25,3 +25,6 @@ devlog -- notes written as I build it in the open.
   whole runtime chown machinery.
 - [Day 3 -- mounting extra folders with byre config](day-03.md) -- the interactive
   config editor learns to mount more context fast (with a screencast).
+- [Day 4 -- where do the worktrees go?](day-04.md) -- `byre worktree` lands, and a
+  small question about default directory placement turns into a lesson about byre
+  refusing to guess.
