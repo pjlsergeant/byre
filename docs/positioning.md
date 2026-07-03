@@ -85,10 +85,11 @@ vendor-neutral, so only the H1 would ever need a five-minute edit.
    Docker or Podman. MIT, free forever — structurally.
 
 **Foundation (the honest contract, always within one screen of any claim):**
-byre boxes your host filesystem, environment, and credentials. It does *not*
-restrict the network (open by default), the project mount is read-write by
-design, and a container is not a microVM. Early software; sharp edges;
-don't point it at anything you can't afford to break.
+byre boxes your host filesystem, environment, and credentials. The network is
+open by default — the default-deny firewall skill closes it when you enable
+it — the project mount is read-write by design, and a container is not a
+microVM. Early software; sharp edges; don't point it at anything you can't
+afford to break.
 
 ### One-liners for different slots
 
@@ -127,7 +128,7 @@ Four columns for the public table; two footnotes. Full sources at the end.
 | Isolation | container (shared kernel) | **microVM, own kernel — strongest** | OS-level (Seatbelt/Landlock); agent runs **on your host** | container |
 | Fresh, throwaway environment | ✔ fresh container per session | ✔ | ✘ — your host, your `$HOME` | long-lived by convention |
 | Host files & creds exposed | only what you mount | none | **whole-disk reads + env vars (incl. credentials) inherited by default** | only what you mount |
-| Network control | ✘ open by default | ✔ policies | Codex: off by default; Claude: approval proxy | DIY (Anthropic's reference ships a deny-by-default firewall) |
+| Network control | ✔ default-deny egress skill\* (open by default without it) | ✔ policies | Codex: off by default; Claude: approval proxy | DIY (Anthropic's reference ships a deny-by-default firewall) |
 | Account / sign-in | none | **Docker OAuth required** | vendor auth only (needed anyway) | none |
 | Setup per project | one command; config generated | low (product flow) | zero | hand-author `devcontainer.json` + Dockerfile |
 | Definition you can read | ✔ generated Dockerfile | partial (templates yes; runtime is product machinery) | n/a | ✔ — because you wrote it |
@@ -136,6 +137,9 @@ Four columns for the public table; two footnotes. Full sources at the end.
 | Maturity | **early, pre-1.0** | new (late 2025), Docker Inc. behind it | shipped inside the agents | industry spec, mature ecosystem |
 | Price / license | MIT, free forever | CLI free; org governance needs Docker Business ($24/user/mo); proprietary | free with the agent | open spec, MIT CLI |
 
+\* The default-deny firewall skill is committed for launch — this table does
+not go public before it ships. Until then it's a claim with an asterisk here
+and nowhere else.
 ¹ Claude Code `/sandbox` (Seatbelt / bubblewrap + sandbox-runtime) and Codex
 CLI (Seatbelt / Landlock), collapsed: same architecture, same gaps — filesystem
 *write* limits and network mediation, but the agent still runs in your real
@@ -148,12 +152,14 @@ Anthropic labels "a working example rather than a maintained base image."
 
 1. **Isolation strength** — a microVM with its own kernel beats a
    shared-kernel container. Don't hedge it.
-2. **Network egress control** — three of four columns have a story; byre is
-   open-by-default with a firewall skill as future work.
-3. **Maturity and backing** — Docker Inc., an industry spec, and 95k-star
+2. **Maturity and backing** — Docker Inc., an industry spec, and 95k-star
    vendor CLIs vs. a pre-1.0 project.
-4. **Zero-install** — native sandboxes need nothing (macOS) or two packages
+3. **Zero-install** — native sandboxes need nothing (macOS) or two packages
    (Linux); byre needs a container engine running.
+
+(Network egress control *was* a fourth loss; the default-deny firewall skill
+is now a launch commitment, so the row reads as a win-with-asterisk until it
+ships and a plain win after.)
 
 **Footnote-tier, not columns:** Dagger's *container-use* (experimental,
 parallel-agents-per-git-branch — a different problem; releases stalled since
@@ -213,9 +219,10 @@ contract:
 
 - **Boxed:** your host filesystem, environment, and credentials. The agent
   sees only what you mount or pass.
-- **Not boxed, by design:** the network (open by default) and the project
-  itself (mounted read-write — it's the agent's job to edit it). An agent
-  with both can exfiltrate the project it's working on.
+- **Not boxed, by design:** the network (open by default — enable the
+  default-deny firewall skill to close it) and the project itself (mounted
+  read-write — it's the agent's job to edit it). An agent with an open
+  network can exfiltrate the project it's working on.
 - **Not a security product:** a container is not a microVM. If you need the
   strongest isolation story, use one.
 
@@ -262,11 +269,13 @@ Two notes on the hero transcript:
    3–4 terse `byre:` lines from the hero (project mount, host mounts,
    network, agent) before exec'ing the agent — so the README hero is a real
    transcript, and every session opens by showing the walls going up.
-2. **A firewall skill raises the floor on the weakest table row.** Network
-   control is byre's clearest honest loss (Codex defaults network-off;
-   Anthropic's devcontainer ships deny-by-default). A default-deny egress
-   skill — even a blunt allowlist — flips that row from ✘ to opt-in ✔ without
-   making core opinionated. Worth sequencing.
+2. **The default-deny firewall skill is a launch blocker.** The public copy
+   claims it (the table row reads win-with-asterisk), so it must exist before
+   the README/site go live. A default-deny egress skill — even a blunt
+   allowlist — keeps core opinion-free while closing the one gap where three
+   competitors had a story and byre had none. Once it ships, the hero
+   transcript's `network:` line becomes live proof (it prints `open` or
+   `deny-by-default` per config).
 3. **Keep `byre status` output in lockstep with the marketing block** — the
    README/site show its output as proof; drift makes the proof a lie.
 
