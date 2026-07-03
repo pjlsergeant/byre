@@ -89,11 +89,12 @@ type Config struct {
 	// into a FRESH agent state volume. Off by default; only acts on a fresh volume.
 	SeedPrefs bool `toml:"seed_prefs,omitempty"`
 
-	// WorktreeBase is the host directory `byre worktree` creates new worktrees
-	// under (leaf: <repo>-<name>). Unset means `byre worktree` refuses unless
-	// given --path — byre won't guess where to litter checkouts. A host workflow
-	// preference, so it's normally set in ~/.byre/default.config; `~` expands.
-	// Not part of the container/sandbox, just where the checkout lands.
+	// WorktreeBase controls where `byre worktree` creates worktrees (leaf:
+	// <repo>-<name>). Three values: unset -> refuse (byre won't guess a location);
+	// "sibling" -> beside the repo; or a host path (e.g. ~/worktrees, `~` expands)
+	// -> under it. A host workflow preference, normally set in
+	// ~/.byre/default.config; not part of the container/sandbox, just where the
+	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
 	Apt       []string          `toml:"apt,omitempty"`

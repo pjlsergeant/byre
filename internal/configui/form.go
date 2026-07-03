@@ -51,6 +51,8 @@ const (
 	fDockerfile
 	fPorts
 	fSkills
+	fWorktreeSibling // checkbox: worktrees beside the repo
+	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 )
 
 // section groups fields under a header in the form (grants foregrounded).
@@ -69,20 +71,22 @@ func isListField(f fieldID) bool { return f == fApt || f == fEnv || f == fMounts
 // Labels are human/display names (not the raw TOML keys); the underlying key is
 // shown as a hint when editing the raw text blocks.
 var fieldLabel = map[fieldID]string{
-	fBase:           "Base image",
-	fTemplate:       "Template",
-	fAgent:          "Pri. Agent",
-	fEngine:         "Engine",
-	fApt:            "Packages",
-	fEnv:            "Env vars",
-	fMounts:         "Extra mounts",
-	fPorts:          "Ports",
-	fVolumes:        "Volumes",
-	fRunArgs:        "Run args",
-	fDockerfilePre:  "Dockerfile before",
-	fDockerfilePost: "Dockerfile after",
-	fDockerfile:     "Dockerfile",
-	fSkills:         "Skills",
+	fBase:            "Base image",
+	fTemplate:        "Template",
+	fAgent:           "Pri. Agent",
+	fEngine:          "Engine",
+	fApt:             "Packages",
+	fEnv:             "Env vars",
+	fMounts:          "Extra mounts",
+	fPorts:           "Ports",
+	fVolumes:         "Volumes",
+	fRunArgs:         "Run args",
+	fDockerfilePre:   "Dockerfile before",
+	fDockerfilePost:  "Dockerfile after",
+	fDockerfile:      "Dockerfile",
+	fSkills:          "Skills",
+	fWorktreeSibling: "Worktree loc",
+	fWorktreeBase:    "Base path",
 }
 
 // rawFieldKey is the TOML key behind a raw text field, shown as a hint in its
@@ -154,7 +158,9 @@ type model struct {
 	sections []section   // rendered groups (Grants / Build / Advanced)
 	order    []fieldID   // flattened focus order across all sections
 
-	ti textinput.Model // base image editor
+	ti        textinput.Model // base image editor
+	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
+	wtSibling bool            // fWorktreeSibling checkbox: worktrees beside the repo
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
@@ -214,6 +220,8 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Focus()
+	wtBase := textinput.New()
+	wtBase.Prompt = ""
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.SetWidth(76)
@@ -231,6 +239,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills}},
+		{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}},
 		{"ADVANCED", advanced},
 	}
 	var order []fieldID
@@ -248,6 +257,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections:     sections,
 		order:        order,
 		ti:           ti,
+		wtBase:       wtBase,
 		ta:           ta,
 		width:        80,
 		volPendClear: -1,
@@ -284,6 +294,19 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
 	m.dfPost = strings.Join(cfg.DockerfilePost, "\n")
 	m.dockerfile = cfg.Dockerfile
+	// worktree_base is a 3-state choice: "sibling" (checkbox on), a path (checkbox
+	// off, path set), or unset (checkbox off, path empty -> byre worktree refuses).
+	switch v := strings.TrimSpace(cfg.WorktreeBase); v {
+	case "sibling":
+		m.wtSibling = true
+		m.wtBase.SetValue("")
+	case "":
+		m.wtSibling = false
+		m.wtBase.SetValue("")
+	default:
+		m.wtSibling = false
+		m.wtBase.SetValue(v)
+	}
 	m.savedSig = m.sig()
 	return m
 }
@@ -337,6 +360,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputs[m.itemFocus], cmd = m.inputs[m.itemFocus].Update(msg)
 	case m.mode == modeForm && m.field() == fBase:
 		m.ti, cmd = m.ti.Update(msg)
+	case m.mode == modeForm && m.field() == fWorktreeBase:
+		m.wtBase, cmd = m.wtBase.Update(msg)
 	}
 	return m, cmd
 }
@@ -397,6 +422,8 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = ""
 		case isTextField(f):
 			return m.openText(f), textarea.Blink
+		case f == fWorktreeSibling:
+			m.wtSibling = !m.wtSibling
 		}
 		return m, nil
 	}
@@ -405,11 +432,18 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ti, cmd = m.ti.Update(msg)
 		return m, cmd
 	}
+	if m.field() == fWorktreeBase {
+		var cmd tea.Cmd
+		m.wtBase, cmd = m.wtBase.Update(msg)
+		return m, cmd
+	}
 	return m, nil
 }
 
 func (m *model) cycle(dir int) {
 	switch m.field() {
+	case fWorktreeSibling:
+		m.wtSibling = !m.wtSibling
 	case fBase:
 		m.ti, _ = m.ti.Update(tea.KeyMsg{Type: keyArrow(dir)})
 	case fTemplate:
@@ -1214,6 +1248,13 @@ func (m model) save() model {
 func (m model) assemble() config.Config {
 	out := m.base
 	out.Base = strings.TrimSpace(m.ti.Value())
+	// worktree_base: sibling checkbox wins; else the base path; else unset (refuse).
+	switch {
+	case m.wtSibling:
+		out.WorktreeBase = "sibling"
+	default:
+		out.WorktreeBase = strings.TrimSpace(m.wtBase.Value())
+	}
 	out.Template = fromNone(m.tmplOpts[m.tmplSel])
 	out.Agent = fromNone(m.agentOpts[m.agentSel])
 	out.Engine = fromAuto(m.engineOpts[m.engineSel])
@@ -1293,6 +1334,7 @@ func (m model) sig() string {
 	}
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost, "df:"+m.dockerfile)
+	parts = append(parts, fmt.Sprintf("wt:%v/%s", m.wtSibling, m.wtBase.Value()))
 	return strings.Join(parts, "\x00")
 }
 
@@ -1302,10 +1344,16 @@ func (m model) field() fieldID { return m.order[m.focus] }
 
 func (m *model) setFocus(i int) {
 	m.focus = wrap(i, len(m.order))
-	if m.field() == fBase {
+	f := m.field()
+	if f == fBase {
 		m.ti.Focus()
 	} else {
 		m.ti.Blur()
+	}
+	if f == fWorktreeBase {
+		m.wtBase.Focus()
+	} else {
+		m.wtBase.Blur()
 	}
 }
 
@@ -1426,6 +1474,27 @@ func (m model) renderValue(f fieldID, focused bool) string {
 			return v
 		}
 		return dimStyle.Render("(defaults to " + gen.DefaultBase + ")")
+	case fWorktreeSibling:
+		box := "[ ]"
+		if m.wtSibling {
+			box = "[x]"
+		}
+		s := box + " sibling of repo"
+		if focused {
+			s += dimStyle.Render("  (←/→ or enter to toggle)")
+		}
+		return s
+	case fWorktreeBase:
+		if m.wtSibling {
+			return dimStyle.Render("(using sibling)")
+		}
+		if focused {
+			return m.wtBase.View()
+		}
+		if v := strings.TrimSpace(m.wtBase.Value()); v != "" {
+			return v
+		}
+		return dimStyle.Render("(unset — byre worktree will refuse)")
 	case fTemplate:
 		return renderSeg(m.tmplOpts, m.tmplSel, focused)
 	case fAgent:

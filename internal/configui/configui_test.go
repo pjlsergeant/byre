@@ -282,6 +282,49 @@ func TestVolumesClearFlow(t *testing.T) {
 	}
 }
 
+func TestWorktreeBaseRoundTrip(t *testing.T) {
+	// "sibling" -> checkbox on -> writes "sibling".
+	m := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil)
+	if !m.wtSibling {
+		t.Error("sibling config should check the box")
+	}
+	if got := m.assemble().WorktreeBase; got != "sibling" {
+		t.Errorf("assemble = %q, want sibling", got)
+	}
+	// A path -> checkbox off, path loaded, round-trips.
+	m = newModel("t", "/x", config.Config{WorktreeBase: "/w"}, nil, nil, nil, nil)
+	if m.wtSibling || m.wtBase.Value() != "/w" {
+		t.Errorf("path config: sibling=%v base=%q", m.wtSibling, m.wtBase.Value())
+	}
+	if got := m.assemble().WorktreeBase; got != "/w" {
+		t.Errorf("assemble = %q, want /w", got)
+	}
+	// Unset -> checkbox off, empty -> writes "" (byre worktree refuses).
+	m = newModel("t", "/x", config.Config{}, nil, nil, nil, nil)
+	if m.wtSibling || m.wtBase.Value() != "" {
+		t.Errorf("unset should be off+empty: sibling=%v base=%q", m.wtSibling, m.wtBase.Value())
+	}
+	if got := m.assemble().WorktreeBase; got != "" {
+		t.Errorf("assemble = %q, want empty", got)
+	}
+	// Checkbox wins over a stray path value.
+	m.wtSibling = true
+	m.wtBase.SetValue("/ignored")
+	if got := m.assemble().WorktreeBase; got != "sibling" {
+		t.Errorf("sibling checkbox should win over a path: %q", got)
+	}
+
+	// The form actually renders the WORKTREES section + a checkbox state.
+	on := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil).View()
+	if !strings.Contains(on, "WORKTREES") || !strings.Contains(on, "[x] sibling of repo") {
+		t.Errorf("form should show a checked worktree checkbox:\n%s", on)
+	}
+	off := newModel("t", "/x", config.Config{}, nil, nil, nil, nil).View()
+	if !strings.Contains(off, "[ ] sibling of repo") || !strings.Contains(off, "refuse") {
+		t.Errorf("unset form should show an unchecked box and a refuse hint:\n%s", off)
+	}
+}
+
 func fieldIDsToStrings(fs []fieldID) []string {
 	out := make([]string, len(fs))
 	for i, f := range fs {

@@ -20,6 +20,41 @@ func TestWorktreeLeaf(t *testing.T) {
 	}
 }
 
+// worktreeParent resolves the three worktree_base states: unset (refuse),
+// "sibling" (beside the repo), and a path (under it).
+func TestWorktreeParent(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	repo := initRepo(t)
+	canon, _ := project.Canonicalize(repo)
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	set := func(v string) {
+		if v == "" {
+			os.Remove(filepath.Join(home, "default.config"))
+			return
+		}
+		if err := os.WriteFile(filepath.Join(home, "default.config"), []byte("worktree_base = \""+v+"\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	set("") // unset -> refuse (empty parent)
+	if p, err := worktreeParent(repo, canon); err != nil || p != "" {
+		t.Fatalf("unset: parent=%q err=%v, want empty", p, err)
+	}
+	set("sibling") // beside the repo
+	if p, err := worktreeParent(repo, canon); err != nil || p != filepath.Dir(canon) {
+		t.Fatalf("sibling: parent=%q err=%v, want %q", p, err, filepath.Dir(canon))
+	}
+	base := t.TempDir() // an explicit base path
+	set(base)
+	if p, err := worktreeParent(repo, canon); err != nil || p != base {
+		t.Fatalf("path: parent=%q err=%v, want %q", p, err, base)
+	}
+}
+
 // With neither --path nor a configured worktree_base, byre refuses rather than
 // guessing a location (least surprise — no directories created unbidden).
 func TestWorktreeRefusesWithoutLocation(t *testing.T) {
@@ -29,8 +64,8 @@ func TestWorktreeRefusesWithoutLocation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected refusal without --path or worktree_base")
 	}
-	if !strings.Contains(err.Error(), "worktree_base") || !strings.Contains(err.Error(), "--path") {
-		t.Errorf("error should name both remedies (--path / worktree_base): %v", err)
+	if !strings.Contains(err.Error(), "byre config") || !strings.Contains(err.Error(), "--path") {
+		t.Errorf("error should name both remedies (byre config / --path): %v", err)
 	}
 	// And it must refuse BEFORE creating anything.
 	if _, statErr := os.Stat(filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-feat")); statErr == nil {

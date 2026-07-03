@@ -43,15 +43,15 @@ func Worktree(projectDir, name, path string, selfEdit bool) error {
 	// didn't ask). Resolved before any git work so we never half-create.
 	target := path
 	if target == "" {
-		base, berr := worktreeBase(top)
+		parent, berr := worktreeParent(top, paths.Canonical)
 		if berr != nil {
 			return berr
 		}
-		if base == "" {
-			return fmt.Errorf("byre worktree needs a location. Set a default with `byre config --global` (worktree_base, " +
-				"e.g. ~/worktrees), or pass --path <dir> for a one-off. byre won't guess where to create worktrees")
+		if parent == "" {
+			return fmt.Errorf("byre worktree needs a location. Set one with `byre config --global` — tick “sibling of repo” or " +
+				"give a base path — or pass --path <dir> for a one-off. byre won't guess where to create worktrees")
 		}
-		target = filepath.Join(base, worktreeLeaf(paths.Canonical, name))
+		target = filepath.Join(parent, worktreeLeaf(paths.Canonical, name))
 	}
 	target, err = filepath.Abs(target)
 	if err != nil {
@@ -81,19 +81,27 @@ func worktreeLeaf(mainDir, name string) string {
 	return filepath.Base(mainDir) + "-" + strings.ReplaceAll(name, "/", "-")
 }
 
-// worktreeBase returns the configured worktree base dir (expanded, absolute), or
-// "" if unset. A malformed config surfaces its error (not masked as "no
-// location"); a set-but-invalid base (relative / comma) is an error too, since
+// worktreeSibling is the worktree_base sentinel meaning "beside the repo".
+const worktreeSibling = "sibling"
+
+// worktreeParent resolves the directory new worktrees are created under, from
+// config: "" (unset -> caller refuses), the sibling of mainDir (the "sibling"
+// sentinel), or a configured base path. A malformed config surfaces its error
+// (not masked as "no location"); a set-but-invalid base path errors too, since
 // the user asked for a specific place.
-func worktreeBase(dir string) (string, error) {
+func worktreeParent(dir, mainDir string) (string, error) {
 	cfg, err := config.Load(dir)
 	if err != nil {
 		return "", err
 	}
-	if cfg.WorktreeBase == "" {
+	switch v := strings.TrimSpace(cfg.WorktreeBase); v {
+	case "":
 		return "", nil
+	case worktreeSibling:
+		return filepath.Dir(mainDir), nil
+	default:
+		return expandHostPath(v)
 	}
-	return expandHostPath(cfg.WorktreeBase)
 }
 
 // createWorktree runs `git worktree add`. If <name> already names a branch —
