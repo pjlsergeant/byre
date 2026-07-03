@@ -35,8 +35,10 @@ authoring** — and everything it does is a generated file you can read.
 4. **Honesty placement: hook first, honest status second.** The README opens
    with the pitch, then a candid status block — reworded from "do not use
    this" to "early and moving fast; here's exactly what works and what
-   doesn't", devlog linked as receipts. Declared immaturity builds trust with
-   this audience; discovered dishonesty destroys it.
+   doesn't". The README itself is the authority on current status; the
+   devlog is linked only as "see what's being built". Caveats are time-scoped
+   ("for now") — they describe age, not design. Declared immaturity builds
+   trust with this audience; discovered dishonesty destroys it.
 5. **Competitive framing: full and honest, expressed as a "Why not X?"
    list** — one prose entry per alternative, each answering honestly
    (including "use it if…" where the alternative wins), rather than a
@@ -44,14 +46,24 @@ authoring** — and everything it does is a generated file you can read.
    fact table below stays as the internal evidence base. Tone rule, verbatim
    from the session: **"we're not trying to persuade, we're trying to
    illuminate."**
-6. **Free promise: structurally free.** MIT, free forever — as in beer and as
-   in speech — and *structurally* so: no account to upsell, no control plane
-   to meter, no telemetry to monetize. The architecture makes the promise
-   credible; this doubles as the differentiator vs account-backed products.
+6. **Free promise: structurally free — later merged with reversibility.**
+   MIT, free forever — as in beer and as in speech — and *structurally* so:
+   no account to upsell, no control plane to meter, no telemetry to
+   monetize. The architecture makes the promise credible; this doubles as
+   the differentiator vs account-backed products. (Amended same session,
+   after outside feedback: reversibility — eject via `byre dockerfile`,
+   clean removal via `byre forget`, no relationship to unwind — is the same
+   fact viewed from the other side, so the two share one pillar: "nothing to
+   sign into, nothing to unwind.")
 7. **Hero proof: a simplified launch transcript** ending in the agent's own
    UI. The experience is "you're just in Claude Code — you watched the walls
-   go up on the way in", not a headless Docker dashboard. (Product
-   implication below.)
+   go up on the way in", not a headless Docker dashboard. (Amended later the
+   same session: the transcript shows the **first run** — `brew install`,
+   `byre develop`, the two-question picker with Enter-able defaults, one
+   walls-up line, then the agent banner — and sits **directly under the
+   headline**, before any prose; the explanation follows the evidence, and
+   the transcript gets no caption. The onboarding IS the demo: it answers
+   "too busy to twizzle" by letting the reader count the steps themselves.)
 8. **Site = landing page + real docs. README = landing page + simplified
    docs. Devlog = personal accountability record**, demoted from front door,
    kept honest.
@@ -80,20 +92,34 @@ vendor-neutral, so only the H1 would ever need a five-minute edit.
 
 1. **One command in.** `cd ~/project && byre develop` — template picked,
    image built, agent launched, repo mounted. The safe way costs nothing.
-2. **The box is legible.** byre generates a Dockerfile you can read, prints
-   what the agent can touch, and `byre status` answers "what can this thing
-   reach?" at any moment. Raw Docker stays first-class; escape hatches in
-   both directions.
-3. **Nothing to sign into, nothing to meter.** No account, no cloud identity,
-   no control plane, no telemetry. A binary on your machine talking to your
-   Docker or Podman. MIT, free forever — structurally.
+   And it scales the git way: `byre worktree <name>` spins up a parallel
+   agent in one step — new linked worktree, own container, inheriting the
+   repo's image, volumes, and login; hand-made `git worktree add` worktrees
+   are detected and inherit identically (shipped 2026-07-03; see
+   `docs/agent-volume-sharing.md`).
+2. **The box is legible — and legibility is editable.** byre generates a
+   Dockerfile you can read, and `byre status` answers "what can this thing
+   reach?" at any moment. `byre config` is the same idea as an editor: an
+   interactive terminal UI organized around grants ("what can this box
+   reach?"), not TOML fields — adding a package or mounting a repo
+   read-only takes seconds, in the same grant vocabulary status prints; and
+   `--self-edit` lets the agent tune its own box as an explicit, announced
+   grant. Raw Docker stays first-class; escape hatches in both directions.
+3. **Nothing to sign into, nothing to unwind.** No account, no cloud
+   identity, no control plane, no telemetry — MIT, free forever,
+   structurally. And no exit cost: `byre dockerfile` prints a plain
+   Dockerfile (your setup survives byre), `byre forget` deletes every trace
+   of a project, and byre never writes into your project tree. Easy to
+   adopt, just as easy to leave — there is no mechanism by which byre
+   *could* hold you.
 
 **Foundation (the honest contract, always within one screen of any claim):**
 byre boxes your host filesystem, environment, and credentials. The network is
 open by default — the default-deny firewall skill closes it when you enable
 it — the project mount is read-write by design, and a container is not a
-microVM. Early software; sharp edges; don't point it at anything you can't
-afford to break.
+microVM. Early software; sharp edges; for now, don't point it at anything
+you can't afford to break. (The status caveats are time-scoped on purpose —
+"for now" — because they describe the project's age, not its design.)
 
 ### One-liners for different slots
 
@@ -115,6 +141,12 @@ afford to break.
 - **Illuminate, don't persuade.** No superlatives, no fear-selling, no
   contrast ads. Show the artifact (transcript, status output, Dockerfile,
   table) and let it argue.
+- **Sell with falsifiable specifics, not adjectives.** "A couple of seconds"
+  over "never a slog"; a guardrail list over a wink. When a section has no
+  artifact to show (e.g. the config editor, whose mock we deliberately
+  don't fake), specifics are the only honest substitute — adjectives are
+  the tell that the register is drifting. (Added 2026-07-03 after outside
+  feedback caught exactly this in the Configuration section.)
 - **Declared immaturity, never discovered.** Sharp edges are named before
   the reader finds them.
 - **Never claim "secure".** byre is not a security product and never
@@ -131,40 +163,51 @@ is the internal evidence base behind it):
 ```markdown
 ## Why not…?
 
-**…Docker Sandboxes?** Stronger isolation — microVMs, own kernel — and if
-that's your bar, use it. It's also a sign-in and a product. byre is a binary
-and some files you can read.
+byre is a thin layer over the Docker or Podman you already run. The
+alternatives:
 
-**…your agent's built-in sandbox?** It runs on your host. By Anthropic's own
-docs, sandboxed commands inherit your env vars — credentials included — and
-can read `~/.ssh` unless you configure otherwise. byre's box only ever
-contains what you put in it.
+**…raw Docker?** Nothing — and byre never takes it away. You'd just be
+hand-rolling what it generates: host-matched file ownership, per-project
+agent login that survives rebuilds, templates, a clean reset. If you want to
+stop using byre, `byre dockerfile` prints your exit.
 
-**…devcontainers?** Then *you're* writing the Dockerfile and the JSON, per
-project, forever. byre generates readable Docker from a three-layer config,
-and `byre config` is an interactive editor — add a package, mount another
-repo read-only, swap agents, seconds each. Eject to a raw Dockerfile any
-time you like.
+**…Docker Sandboxes™?** Commercial product with a hosted control plane (you
+sign in) and paid tiers. Not open source. *(But it gives you kernel-level
+microVM isolation, and we don't.)*
 
-**…container-use?** Different problem: parallel agents, an environment per
-git branch. byre is one full-throttle session per project, with legible
-grants.
+**…your agent's built-in sandbox?** All-or-nothing file isolation, on your
+real machine, wearing your identity — env vars and credentials come along by
+default, so a stray `git push` goes out as *you*. byre's box holds nothing
+you didn't put in it.
+
+**…devcontainers?** You hand-write the Dockerfile and JSON per project, and
+wire up agent credentials yourself. byre generates the Docker from config —
+`byre config` adds a package, mounts another repo read-only, or swaps agents
+in seconds. *(But it's the mature industry spec, and we're young.)*
+
+**…container-use?** Explicitly experimental, and MCP-shaped: your agent
+manages a fleet of environments; you don't sit inside one. byre does
+parallel the git way — one boxed session per worktree, sharing the repo's
+image, volumes, and agent login.
 
 **…a cloud sandbox (e2b, Daytona, …)?** Account, usage billing, your code in
-their cloud. byre is `cd ~/project && byre develop` on your machine.
-
-**…raw Docker?** Go ahead — byre generates Docker, it doesn't hide it. It
-just owns the parts you'd reinvent: host-matched file ownership, agent
-install and login that persists per project, go/node/python templates, a
-clean reset. `byre dockerfile` prints your exit.
+their cloud. Built for shipping agent products, not for `cd ~/project`.
 ```
 
-Format rules for these entries: 2–3 sentences, no throat-clearing; concede
-the alternative's genuine win up front where it has one (isolation for
-Docker Sandboxes, zero-setup for built-in sandboxes); and each entry earns
-its keep by carrying one of byre's conveniences (`byre config`'s interactive
-editor, templates, per-project agent login, the eject path) — the list sells
-the handy stuff *through* the comparisons, it doesn't just parry objections.
+Format rules for these entries: **answer the question literally** — "why
+not X?" gets X's actual drawbacks, crisp and factual, as the lede; the
+honest concession goes in a trailing italic parenthetical *("but it gives
+you kernel-level isolation, and we don't")*, never as the opening — and only
+when it's a concession this audience actually feels (microVM isolation yes;
+"no install needed" no, they already run Docker). 2–3 sentences. Where the
+drawback is "you do it by hand" (devcontainers, raw Docker), byre's
+conveniences ARE the answer — that's where `byre config`, templates,
+per-project login, and the eject path live. Order and the ™ are
+load-bearing: the priming line plus "…raw Docker?" first teach the reader
+that byre IS ordinary Docker underneath *before* they meet the Docker
+Sandboxes™ name — which reads like a category but is a product; the ™ marks
+it as one. (Real reader confusion, 2026-07-03: "did you build your own
+container infra?")
 
 ## Competitive fact base (internal — verified 2026-07-03)
 
@@ -223,6 +266,10 @@ execution, shared state), devcontainers (hand-authoring, no state story).
 
 ## README draft
 
+> **Superseded by `README-next.md`** (the living draft, at repo root) —
+> that file is where copy evolves; this section records the original shape
+> and the notes that motivated it. When they disagree, README-next.md wins.
+
 Replace the current hero + warning with the following shape (Install,
 Commands, Configuration etc. survive below it, condensed; full docs move to
 the site):
@@ -254,7 +301,8 @@ No account. No cloud. No control plane. byre is a single MIT-licensed Go
 binary that generates a Dockerfile you can read and hands it to your local
 Docker or Podman. Free forever — as in beer and as in speech — and
 structurally so: there's no account to upsell, no service to meter, no
-telemetry to monetize.
+telemetry to monetize. Leaving is as easy as trying it: `byre dockerfile`
+prints a plain Dockerfile you keep, and `byre forget` removes every trace.
 
 > *byre* (rhymes with *buyer*) is Scots/Northern-English for a cowshed — the
 > enclosure you keep the thing in so it doesn't wander off.
@@ -275,9 +323,9 @@ contract:
 - **Not a security product:** a container is not a microVM. If you need the
   strongest isolation story, use one.
 
-Don't point byre at anything you can't afford to break. The
-[devlog](https://pjlsergeant.github.io/byre/devlog/) is the running record
-of what works and what doesn't.
+For now: don't point byre at anything you can't afford to break. The
+[devlog](https://pjlsergeant.github.io/byre/devlog/) shows what's being
+built.
 
 ## Why not…?
 
@@ -307,9 +355,9 @@ Two notes on the hero transcript:
 - **`/docs/…` becomes real documentation** (install, quickstart, config
   cascade, skills, volumes & state, security contract, commands) — the README
   keeps only the simplified versions and links here.
-- **Devlog moves to `/devlog/`**, framed as "built in the open — the honest
-  record." It's a personal accountability artifact; it stops being the front
-  door but stays linked from the status block as receipts.
+- **Devlog moves to `/devlog/`.** It's a personal accountability artifact;
+  it stops being the front door and is linked simply as "see what's being
+  built" — never as the authority on what works (that's the README's job).
 - One message everywhere: README converts a repo visitor in 30 seconds; the
   site is the shareable link that *shows* the drop-in moment and holds the
   depth.
@@ -321,6 +369,11 @@ Two notes on the hero transcript:
    few terse `byre:` lines (project mount, host mounts, network, agent)
    before exec'ing the agent would make every real session open by showing
    the walls going up. Do it when convenient, not for launch.
+1b. **(Launch blocker) `brew install byre` must work.** The hero and Install
+   section lead with it — the two-command story depends on it. A tap
+   (`pjlsergeant/tap/byre`) is enough; update the copy to whichever form
+   ships. (Alongside the firewall skill, this is the second gate on going
+   live; both are listed in README-next.md's header comment.)
 2. **The default-deny firewall skill is a launch blocker.** The public copy
    claims it (the README contract block: "enable the default-deny firewall
    skill to close it"), so it must exist before the README/site go live. A
