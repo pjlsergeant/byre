@@ -23,7 +23,7 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 		Caps:    []string{"SYS_PTRACE"},
 		Env:     map[string]string{"SKILLENV": "1"},
 	}
-	p, err := runParams(paths, cfg, res, "byre-x", "byre-x", "byre.project=x", false)
+	p, err := runParams(paths, cfg, res, "byre-x", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	}
 
 	// Without --self-edit, no ~/.byre bind.
-	p, err := runParams(paths, config.Config{}, skills.Resolved{}, "n", "i", "l", false)
+	p, err := runParams(paths, config.Config{}, skills.Resolved{}, "i", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	}
 
 	// With --self-edit, the host ~/.byre is bound rw at the dev home.
-	p, err = runParams(paths, config.Config{}, skills.Resolved{}, "n", "i", "l", true)
+	p, err = runParams(paths, config.Config{}, skills.Resolved{}, "i", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +89,63 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	argv := strings.Join(runner.RunArgs(p), " ")
 	if !strings.Contains(argv, "target="+selfEditTarget) || strings.Contains(argv, "target="+selfEditTarget+",readonly") {
 		t.Fatalf("self-edit bind should be rw in argv: %s", argv)
+	}
+}
+
+func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
+	paths := project.Paths{
+		ID:           "byre-main-000000",
+		Canonical:    "/home/me/main",
+		WorkDir:      "/home/me/wt",
+		WorktreeID:   "byre-wt-111111",
+		IsWorktree:   true,
+		CommonGitDir: "/home/me/main/.git",
+	}
+	p, err := runParams(paths, config.Config{}, skills.Resolved{}, "img", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Container name + labels: name keyed on the worktree id; both family and
+	// workdir labels present so lifecycle (family) and single-session (workdir)
+	// queries both resolve.
+	if p.Name != "byre-byre-wt-111111" {
+		t.Errorf("container name = %q, want worktree-keyed", p.Name)
+	}
+	if got := strings.Join(p.Labels, " "); !strings.Contains(got, "byre.project=byre-main-000000") || !strings.Contains(got, "byre.workdir=byre-wt-111111") {
+		t.Errorf("labels missing family/workdir: %v", p.Labels)
+	}
+	// Workspace bind is the worktree, not the family (main) tree.
+	if p.WorkspaceHost != "/home/me/wt" {
+		t.Errorf("workspace host = %q, want the worktree dir", p.WorkspaceHost)
+	}
+	// Same-path git binds (rw) for the common git dir and the worktree.
+	wantBinds := map[string]bool{"/home/me/main/.git": false, "/home/me/wt": false}
+	for _, b := range p.Binds {
+		if _, ok := wantBinds[b.Target]; ok {
+			if b.Host != b.Target || b.Mode != "rw" {
+				t.Errorf("git bind %q should be same-path rw, got %+v", b.Target, b)
+			}
+			wantBinds[b.Target] = true
+		}
+	}
+	for target, seen := range wantBinds {
+		if !seen {
+			t.Errorf("missing same-path git bind for %q", target)
+		}
+	}
+
+	// A plain project adds neither git bind and keeps name/labels keyed on the id.
+	t.Setenv("BYRE_HOME", t.TempDir())
+	plain, err := project.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := runParams(plain, config.Config{}, skills.Resolved{}, "img", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pp.WorkspaceHost != plain.Canonical || pp.Name != "byre-"+plain.ID {
+		t.Errorf("plain project wiring changed: host=%q name=%q", pp.WorkspaceHost, pp.Name)
 	}
 }
 

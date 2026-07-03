@@ -20,8 +20,28 @@ import (
 	"byre/internal/skills"
 )
 
-// labelKey is the container label byre stamps to find a project's session.
-const labelKey = "byre.project"
+// labelKey is the FAMILY label: byre.project=<family-id>. Every container of a
+// repo family carries it, so blast-radius lifecycle queries (reset/forget/
+// rehome/status) find all worktrees' sessions. workdirKey is the per-worktree
+// label: byre.workdir=<worktree-id>, used to find a SINGLE worktree's session
+// (develop's fast path, shell) so two worktrees can run at once without one
+// seeing the other's container. For a plain project the two values are equal.
+const (
+	labelKey   = "byre.project"
+	workdirKey = "byre.workdir"
+)
+
+// containerName is the engine container name — keyed on the worktree id so two
+// worktrees of one repo get distinct containers (and distinct single-session
+// locks). For a plain project WorktreeID == ID, so this is the historical
+// byre-<id>.
+func containerName(p project.Paths) string { return "byre-" + p.WorktreeID }
+
+// familyLabel selects every container of a repo family (all worktrees).
+func familyLabel(p project.Paths) string { return labelKey + "=" + p.ID }
+
+// workdirLabel selects a single worktree's container.
+func workdirLabel(p project.Paths) string { return workdirKey + "=" + p.WorktreeID }
 
 // resolve loads the config cascade and the enabled skills for a project, and
 // re-validates the combined mount/volume set (config + skill contributions).
@@ -105,19 +125,17 @@ func DockerRun(stdout io.Writer, projectDir string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	// Same guard develop applies: a comma in the project path can't be expressed in
+	// Same guard develop applies: a comma in a bind source can't be expressed in
 	// a docker --mount, so don't advertise a command develop would refuse to run.
-	if strings.Contains(paths.Canonical, ",") {
-		return fmt.Errorf("project path contains a comma, which docker --mount cannot express: %q", paths.Canonical)
+	if err := checkMountPaths(paths); err != nil {
+		return err
 	}
 	cfg, res, err := resolve(paths, projectDir)
 	if err != nil {
 		return err
 	}
-	name := "byre-" + paths.ID
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
-	label := labelKey + "=" + paths.ID
-	params, err := runParams(paths, cfg, res, name, image, label, false)
+	params, err := runParams(paths, cfg, res, image, false)
 	if err != nil {
 		return err
 	}
@@ -177,6 +195,9 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
+	// Worktree: announce the inherited identity up front, so any onboarding/adopt
+	// prompts below are understood as configuring the whole repo family.
+	announceWorktree(os.Stderr, paths)
 	// A committed <project>/byre.config is a proposal: offer to review + adopt it
 	// into the host-side store (never trusted automatically — it's in the box's
 	// rw mount). Runs before onboarding so adopting satisfies "already configured".
@@ -188,10 +209,10 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if err := onboardIfNeeded(projectDir, paths, flagTemplate, flagAgent); err != nil {
 		return err
 	}
-	// Validate the project path before any build/seed side effects: a comma
-	// would corrupt the docker --mount workspace bind.
-	if strings.Contains(paths.Canonical, ",") {
-		return fmt.Errorf("project path contains a comma, which docker --mount cannot express: %q", paths.Canonical)
+	// Validate bind sources before any build/seed side effects: a comma would
+	// corrupt a docker --mount value (workspace bind, and worktree git binds).
+	if err := checkMountPaths(paths); err != nil {
+		return err
 	}
 	cfg, res, err := resolve(paths, projectDir)
 	if err != nil {
@@ -207,14 +228,14 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	r := runner.New(eng)
 	warnRootlessPodman(os.Stderr, r)
 
-	label := labelKey + "=" + paths.ID
-	name := "byre-" + paths.ID // the container name makes single-session atomic
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 
-	// Fast path: a session is already running for this project — report it rather
-	// than racing the shared per-project volumes. A query error here is fatal:
-	// it's the live-session safety check.
-	ids, err := r.RunningContainersByLabel(label)
+	// Fast path: a session is already running for THIS worktree — report it
+	// rather than racing the container name. Queried by the worktree label, not
+	// the family label, so another worktree's live session doesn't block this
+	// one (running both at once is the point). A query error here is fatal: it's
+	// the live-session safety check.
+	ids, err := r.RunningContainersByLabel(workdirLabel(paths))
 	if err != nil {
 		return fmt.Errorf("checking for a running session: %w", err)
 	}
@@ -251,20 +272,29 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 		fmt.Fprintln(os.Stderr, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
 		fmt.Fprintf(os.Stderr, "   read-write mount: %s\n", paths.Dir)
 	}
-	params, err := runParams(paths, cfg, res, name, image, label, selfEdit)
+	params, err := runParams(paths, cfg, res, image, selfEdit)
 	if err != nil {
 		return err
 	}
 	// The container name makes this atomic: if a concurrent develop won the
 	// race, our run fails and a session is now live — report it.
 	if runErr := r.Run(runner.RunArgs(params)); runErr != nil {
-		if live, qerr := r.RunningContainersByLabel(label); qerr == nil && len(live) > 0 {
+		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
 			reportRunning(os.Stderr, r.Engine(), live)
 			return nil
 		}
 		return runErr
 	}
 	return nil
+}
+
+// announceWorktree notes, on stderr, that this directory is a linked worktree
+// inheriting the main repo's identity — so shared config/volumes/image and any
+// onboarding prompts are legible rather than surprising. No-op for a plain project.
+func announceWorktree(w io.Writer, paths project.Paths) {
+	if paths.IsWorktree {
+		fmt.Fprintf(w, "byre: worktree of %s — inheriting its config, volumes, and image.\n", paths.Canonical)
+	}
 }
 
 // reportRunning tells the user a session is already live and how to act on it,
@@ -294,7 +324,9 @@ func Shell(stdout io.Writer, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	label := labelKey + "=" + paths.ID
+	// Query the worktree label so `byre shell` opens THIS worktree's session, not
+	// a sibling worktree's (both carry the family label).
+	label := workdirLabel(paths)
 	// Find the session in whichever installed engine actually holds it — a session
 	// may run under podman even when docker is also installed. Skip engines that
 	// aren't installed or can't be queried; the first with a match wins.
@@ -376,7 +408,7 @@ func withTwoSetupLocks(a, b string, fn func() error) error {
 // image already bakes the UID/GID (the container runs as that user), so BYRE_UID/
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
-func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name, image, label string, selfEdit bool) (runner.RunParams, error) {
+func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, image string, selfEdit bool) (runner.RunParams, error) {
 	env := map[string]string{
 		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
 		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
@@ -395,6 +427,18 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name
 			return runner.RunParams{}, err
 		}
 		binds = append(binds, runner.BindMount{Host: host, Target: m.Target, Mode: m.Mode})
+	}
+	// Worktree git support: a linked worktree's .git is a pointer into the repo's
+	// common git dir (objects/refs live there, outside the worktree), and git's
+	// metadata is full of absolute HOST paths. Bind both the common git dir and
+	// the worktree at their same host paths (rw) so every pointer resolves in the
+	// box and git can commit — without rewriting metadata shared rw with the host
+	// (which would corrupt the host repo). See docs/agent-volume-sharing.md.
+	if paths.IsWorktree {
+		binds = append(binds,
+			runner.BindMount{Host: paths.CommonGitDir, Target: paths.CommonGitDir, Mode: "rw"},
+			runner.BindMount{Host: paths.WorkDir, Target: paths.WorkDir, Mode: "rw"},
+		)
 	}
 	// --self-edit: mount this project's host-side store (~/.byre/projects/<id>/)
 	// rw so the agent can edit its own byre.config (applied on the next develop).
@@ -426,9 +470,9 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name
 
 	return runner.RunParams{
 		Image:           image,
-		Name:            name,
-		Label:           label,
-		WorkspaceHost:   paths.Canonical,
+		Name:            containerName(paths),
+		Labels:          []string{familyLabel(paths), workdirLabel(paths)},
+		WorkspaceHost:   paths.WorkDir,
 		WorkspaceTarget: "/workspace",
 		Env:             env,
 		Binds:           binds,
@@ -439,6 +483,18 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, name
 		// last so the project-level raw escape hatch wins (last-wins).
 		RunArgs: append(append([]string{}, res.RunArgs...), cfg.RunArgs...),
 	}, nil
+}
+
+// checkMountPaths rejects any byre-owned bind source that a docker --mount value
+// (comma-separated key=value pairs) cannot express. Covers the workspace bind
+// and, for a worktree, the same-path git binds — all set by byre, not the user.
+func checkMountPaths(paths project.Paths) error {
+	for _, p := range []string{paths.WorkDir, paths.CommonGitDir} {
+		if strings.Contains(p, ",") {
+			return fmt.Errorf("path contains a comma, which docker --mount cannot express: %q", p)
+		}
+	}
+	return nil
 }
 
 // expandHostPath expands a leading ~ and requires the result to be absolute, so

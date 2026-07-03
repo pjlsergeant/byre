@@ -31,9 +31,9 @@ type NamedVolume struct {
 // RunParams is everything needed to assemble a `docker run` invocation.
 type RunParams struct {
 	Image           string
-	Name            string // container name; makes single-session atomic (engine rejects a dup)
-	Label           string // byre.project=<id>
-	WorkspaceHost   string // canonical project dir (bound rw at WorkspaceTarget)
+	Name            string   // container name; makes single-session atomic (engine rejects a dup)
+	Labels          []string // identity labels (byre.project=<id>, byre.workdir=<wt-id>); re-asserted last so run_args can't override them
+	WorkspaceHost   string   // worktree dir bound rw at WorkspaceTarget
 	WorkspaceTarget string
 	Env             map[string]string
 	Binds           []BindMount
@@ -85,9 +85,11 @@ func RunArgs(p RunParams) []string {
 	// Raw passthrough — last-wins over byre's flags.
 	args = append(args, p.RunArgs...)
 
-	// Identity label re-asserted after run_args so it can't be overridden.
-	if p.Label != "" {
-		args = append(args, "--label", p.Label)
+	// Identity labels re-asserted after run_args so they can't be overridden.
+	for _, l := range p.Labels {
+		if l != "" {
+			args = append(args, "--label", l)
+		}
 	}
 
 	args = append(args, p.Image)

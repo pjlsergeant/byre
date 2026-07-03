@@ -27,7 +27,7 @@ func TestRunArgsCoreFlagsAndOrder(t *testing.T) {
 	args := RunArgs(RunParams{
 		Image:           "byre-abc",
 		Name:            "byre-abc",
-		Label:           "byre.project=abc",
+		Labels:          []string{"byre.project=abc"},
 		WorkspaceHost:   "/home/me/proj",
 		WorkspaceTarget: "/workspace",
 		Env:             map[string]string{"BYRE_UID": "1000", "AAA": "1"},
