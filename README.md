@@ -67,6 +67,7 @@ byre develop --template go --agent claude
 |---|---|
 | `byre develop` | Generate (if needed), build on cache-miss, and run the container in the foreground. The main entry point. If a session is already running for the dir, it tells you (and how to stop it) rather than starting a second. |
 | `byre shell` | Open an interactive shell (as the `dev` user, with the agent's env) in this project's running session -- for `codex login`, running tests, poking around. |
+| `byre worktree <name> [--path <dir>]` | Create a git worktree (a sibling `<repo>-<name>`, or `--path`) on branch `<name>` and start a session in it in one step -- a parallel agent that **inherits** this repo's config, volumes, and image (so it's already logged in). New branch if `<name>` is new, otherwise it checks out the existing (local or remote) branch. Runs concurrently with the main tree. |
 | `byre status` | Show the resolved config, mounts, skills + what they grant, volumes, and whether a container is running for this directory. |
 | `byre config [--global]` | Open the interactive editor for this project's (host-side) config. `--global` edits your `~/.byre/default.config` baseline instead. |
 | `byre dockerfile` | Print the generated Dockerfile for this directory. |
