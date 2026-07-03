@@ -1,8 +1,18 @@
 # Design note: worktree volume inheritance
 
-Status: **decided 2026-07-03** (grilling session; decisions below) -- not yet
-built. Supersedes an earlier draft that proposed a per-repo volume *scope* and
+Status: **IMPLEMENTED 2026-07-03** (decided in a grilling session; decisions
+below). Supersedes an earlier draft that proposed a per-repo volume *scope* and
 a creds/history split -- both dropped (see "What we ruled out").
+
+Verify host-side (needs Docker; not runnable in the dev container):
+
+```sh
+git worktree add -b feat ../myrepo-feat        # in a byre'd repo
+cd ../myrepo-feat && byre status                # 'Worktree of ...; inherited'
+byre develop                                    # inherits image+volumes; agent already logged in
+# in the box:  git status && git commit --allow-empty -m x   # writes to shared .git
+# meanwhile, back in the main tree:  byre develop             # runs CONCURRENTLY
+```
 
 ## The problem
 
