@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"byre/internal/project"
@@ -84,14 +85,67 @@ func TestCreateWorktreeExistingBranch(t *testing.T) {
 	}
 }
 
-func TestIsGitRepo(t *testing.T) {
+func TestGitToplevel(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not on PATH")
 	}
-	if isGitRepo(t.TempDir()) {
+	if _, ok := gitToplevel(t.TempDir()); ok {
 		t.Error("empty dir reported as a git repo")
 	}
-	if !isGitRepo(initRepo(t)) {
-		t.Error("real repo not reported as a git repo")
+	repo := initRepo(t)
+	// From a SUBDIRECTORY, toplevel must resolve to the repo root — otherwise the
+	// default worktree path would anchor inside the repo instead of beside it.
+	sub := filepath.Join(repo, "pkg", "inner")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	top, ok := gitToplevel(sub)
+	if !ok {
+		t.Fatal("subdir of a repo not recognized as inside a repo")
+	}
+	canonRepo, _ := project.Canonicalize(repo)
+	canonTop, _ := project.Canonicalize(top)
+	if canonTop != canonRepo {
+		t.Errorf("toplevel from subdir = %q, want repo root %q", canonTop, canonRepo)
+	}
+}
+
+// TestCreateWorktreeRemoteBranch covers the DWIM footgun: a name that exists only
+// as a remote branch must be checked out (tracking the remote), NOT forked as a
+// new local branch off HEAD.
+func TestCreateWorktreeRemoteBranch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	repo := filepath.Join(root, "main")
+	run := func(args ...string) {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "--bare", origin)
+	run("init", "-q", repo)
+	run("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "init")
+	run("-C", repo, "remote", "add", "origin", origin)
+	run("-C", repo, "push", "-q", "origin", "HEAD:refs/heads/remotefeat")
+	run("-C", repo, "fetch", "-q", "origin")
+
+	// No LOCAL remotefeat, but a remote one exists -> should be detected as existing.
+	if branchExists(repo, "remotefeat") {
+		t.Fatal("precondition: no local remotefeat expected")
+	}
+	if !branchOrRemoteExists(repo, "remotefeat") {
+		t.Fatal("remote-only branch not detected as existing (would fork a divergent branch)")
+	}
+	target := filepath.Join(root, "wt")
+	if err := createWorktree(repo, "remotefeat", target); err != nil {
+		t.Fatalf("createWorktree: %v", err)
+	}
+	// The worktree tracks the remote branch.
+	up, err := exec.Command("git", "-C", target, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}").Output()
+	if err != nil || strings.TrimSpace(string(up)) != "origin/remotefeat" {
+		t.Errorf("worktree should track origin/remotefeat, upstream=%q err=%v", strings.TrimSpace(string(up)), err)
 	}
 }

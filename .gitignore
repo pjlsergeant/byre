@@ -16,5 +16,8 @@ curiosity/
 # go test binaries
 *.test
 
+# macOS finder metadata
+.DS_Store
+
 # stray local build artifact (was accidentally committed)
 /bb

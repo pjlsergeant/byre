@@ -23,13 +23,17 @@ func Worktree(projectDir, name, path string, selfEdit bool) error {
 	if name == "" {
 		return fmt.Errorf("a worktree name (the branch) is required: byre worktree <name>")
 	}
-	if !isGitRepo(projectDir) {
+	// Anchor on the repo top level, not the cwd, so `byre worktree` works from a
+	// subdirectory (else project.Resolve of a subdir sees no .git and the default
+	// path lands INSIDE the repo instead of beside it).
+	top, ok := gitToplevel(projectDir)
+	if !ok {
 		return fmt.Errorf("not inside a git repository — run `byre worktree` in a repo (git init / byre develop there first)")
 	}
-	// paths.Canonical is the MAIN worktree even when run from a linked worktree,
-	// so the default sibling path and the inherited identity both anchor on the
-	// repo root, not the current worktree.
-	paths, err := project.Resolve(projectDir)
+	// paths.Canonical is the MAIN worktree even when top is a linked worktree, so
+	// the default sibling path and the inherited identity both anchor on the repo
+	// root, not the current worktree.
+	paths, err := project.Resolve(top)
 	if err != nil {
 		return err
 	}
@@ -49,7 +53,7 @@ func Worktree(projectDir, name, path string, selfEdit bool) error {
 	if _, lerr := os.Lstat(target); lerr == nil {
 		return fmt.Errorf("target path already exists: %s (pass --path to choose another location)", target)
 	}
-	if err := createWorktree(projectDir, name, target); err != nil {
+	if err := createWorktree(top, name, target); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "byre: created worktree at %s (branch %s); starting a session…\n", target, name)
@@ -66,13 +70,16 @@ func defaultWorktreePath(mainDir, name string) string {
 	return filepath.Join(filepath.Dir(mainDir), leaf)
 }
 
-// createWorktree runs `git worktree add`, creating branch <name> if it does not
-// exist yet or checking it out if it does. git's progress goes to stderr so
-// stdout stays clean.
-func createWorktree(projectDir, name, target string) error {
-	args := []string{"-C", projectDir, "worktree", "add"}
-	if branchExists(projectDir, name) {
-		args = append(args, target, name) // check out the existing branch
+// createWorktree runs `git worktree add`. If <name> already names a branch —
+// local OR remote-tracking — git checks it out (DWIM-creating a local tracking
+// branch for a remote-only one); otherwise a fresh branch is created with -b.
+// Passing -b unconditionally would fork a divergent local branch off HEAD when a
+// remote branch of that name exists, silently starting the agent on wrong code.
+// git's progress goes to stderr so stdout stays clean.
+func createWorktree(dir, name, target string) error {
+	args := []string{"-C", dir, "worktree", "add"}
+	if branchOrRemoteExists(dir, name) {
+		args = append(args, target, name) // check out existing (local or remote) branch
 	} else {
 		args = append(args, "-b", name, target) // create a new branch
 	}
@@ -85,12 +92,38 @@ func createWorktree(projectDir, name, target string) error {
 	return nil
 }
 
-// isGitRepo reports whether dir is inside a git working tree.
-func isGitRepo(dir string) bool {
-	return exec.Command("git", "-C", dir, "rev-parse", "--git-dir").Run() == nil
+// gitToplevel returns the working tree's root dir for dir (its main or linked
+// worktree root), and false if dir is not inside a git repository.
+func gitToplevel(dir string) (string, bool) {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", false
+	}
+	top := strings.TrimSpace(string(out))
+	return top, top != ""
 }
 
 // branchExists reports whether a local branch named name already exists.
 func branchExists(dir, name string) bool {
 	return exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
+}
+
+// branchOrRemoteExists reports whether name is already a branch — a local branch,
+// or a remote-tracking branch <remote>/<name> — so `git worktree add` should
+// check it out rather than create a new branch.
+func branchOrRemoteExists(dir, name string) bool {
+	if branchExists(dir, name) {
+		return true
+	}
+	out, err := exec.Command("git", "-C", dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes").Output()
+	if err != nil {
+		return false
+	}
+	for _, ref := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		// ref is "<remote>/<branch>"; compare the part after the first slash.
+		if i := strings.IndexByte(ref, '/'); i >= 0 && ref[i+1:] == name {
+			return true
+		}
+	}
+	return false
 }

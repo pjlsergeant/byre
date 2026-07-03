@@ -131,49 +131,40 @@ is the internal evidence base behind it):
 ```markdown
 ## Why not…?
 
-**…Docker Sandboxes?** If you want the strongest isolation, use it — each
-sandbox is a microVM with its own kernel, which beats a shared-kernel
-container, full stop. The trade: it's a proprietary product that requires
-Docker sign-in, and the governance features are paid. byre is the other
-shape: no account, no control plane, a generated Dockerfile you can read,
-MIT forever.
+**…Docker Sandboxes?** Stronger isolation — microVMs, own kernel — and if
+that's your bar, use it. It's also a sign-in and a product. byre is a binary
+and some files you can read.
 
-**…your agent's built-in sandbox?** (Claude Code's `/sandbox`, Codex's
-Seatbelt/Landlock modes.) Zero setup, and genuinely useful — but the agent
-still runs *on your host*. Anthropic's own docs note that sandboxed commands
-inherit your environment variables — credentials included — by default, and
-can read `~/.ssh` and `~/.aws/credentials` unless you configure denials.
-There's no throwaway environment and no per-project state. A project-scoped
-container closes all of that by construction: the box only ever contained
-what you put in it.
+**…your agent's built-in sandbox?** It runs on your host. By Anthropic's own
+docs, sandboxed commands inherit your env vars — credentials included — and
+can read `~/.ssh` unless you configure otherwise. byre's box only ever
+contains what you put in it.
 
-**…devcontainers?** Mature, open, fully inspectable — because you hand-write
-the `devcontainer.json` and Dockerfile yourself, per project, and wire up
-agent credentials on your own. byre generates the same kind of readable
-Docker from a small config cascade, scopes agent auth per project, and gives
-you a reset story — and you can eject to a raw Dockerfile whenever you've had
-enough of it. If you already maintain devcontainers happily, keep them.
+**…devcontainers?** Then *you're* writing the Dockerfile and the JSON, per
+project, forever. byre generates readable Docker from a three-layer config,
+and `byre config` is an interactive editor — add a package, mount another
+repo read-only, swap agents, seconds each. Eject to a raw Dockerfile any
+time you like.
 
-**…container-use?** Different problem. Dagger's container-use gives parallel
-agents an environment per git branch via MCP; byre boxes one full-autonomy
-session per project and makes its grants legible. (It's also explicitly
-experimental, with releases stalled since mid-2025.)
+**…container-use?** Different problem: parallel agents, an environment per
+git branch. byre is one full-throttle session per project, with legible
+grants.
 
-**…a cloud sandbox (e2b, Daytona, …)?** Those are API-first execution
-primitives for *building agent products* — account, usage billing, your code
-in their cloud. byre is `cd ~/project && byre develop` on your own machine.
+**…a cloud sandbox (e2b, Daytona, …)?** Account, usage billing, your code in
+their cloud. byre is `cd ~/project && byre develop` on your machine.
 
-**…raw Docker?** Please do — byre never stops you. It generates Docker you
-can read, and exists only to own the frame everyone reinvents around it:
-host-matched UID/GID, per-project state volumes for agent auth, install-and-
-launch for three agents, a clean reset. When you outgrow it, `byre
-dockerfile` prints your exit.
+**…raw Docker?** Go ahead — byre generates Docker, it doesn't hide it. It
+just owns the parts you'd reinvent: host-matched file ownership, agent
+install and login that persists per project, go/node/python templates, a
+clean reset. `byre dockerfile` prints your exit.
 ```
 
-Each entry leads with what the alternative does *better* where that's true
-(isolation for Docker Sandboxes, zero-setup for built-in sandboxes, maturity
-for devcontainers) — the honesty policy from the table decision, carried
-over: entries illuminate, they don't persuade.
+Format rules for these entries: 2–3 sentences, no throat-clearing; concede
+the alternative's genuine win up front where it has one (isolation for
+Docker Sandboxes, zero-setup for built-in sandboxes); and each entry earns
+its keep by carrying one of byre's conveniences (`byre config`'s interactive
+editor, templates, per-project agent login, the eject path) — the list sells
+the handy stuff *through* the comparisons, it doesn't just parry objections.
 
 ## Competitive fact base (internal — verified 2026-07-03)
 
