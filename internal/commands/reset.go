@@ -65,6 +65,7 @@ func reset(stdout io.Writer, stdin io.Reader, paths project.Paths, r resetRunner
 		return nil
 	}
 
+	noteSharedVolumes(stdout, paths)
 	fmt.Fprintf(stdout, "byre reset will permanently delete these volumes for %s:\n", paths.ID)
 	for _, v := range vols {
 		fmt.Fprintf(stdout, "  - %s\n", v)

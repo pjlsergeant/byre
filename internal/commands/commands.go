@@ -297,6 +297,15 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 	}
 }
 
+// noteSharedVolumes warns, before a destructive lifecycle action, that these
+// volumes are shared across the whole repo family — so wiping them from one
+// worktree affects them all. No-op for a plain project.
+func noteSharedVolumes(w io.Writer, paths project.Paths) {
+	if paths.IsWorktree {
+		fmt.Fprintf(w, "byre: this is a worktree of %s; its volumes are SHARED — this affects ALL worktrees of this repo.\n", paths.Canonical)
+	}
+}
+
 // reportRunning tells the user a session is already live and how to act on it,
 // rather than silently opening a shell (which conflated "run the agent" with
 // "give me a shell" — that's `byre shell` now).

@@ -70,6 +70,7 @@ func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r forgetRunn
 		}
 	}
 
+	noteSharedVolumes(stdout, paths)
 	fmt.Fprintf(stdout, "byre forget will permanently delete for %s:\n", paths.ID)
 	for _, v := range vols {
 		fmt.Fprintf(stdout, "  - volume %s\n", v)

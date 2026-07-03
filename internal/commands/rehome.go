@@ -33,6 +33,13 @@ func Rehome(stdout io.Writer, projectDir, oldID string) error {
 	if err != nil {
 		return err
 	}
+	// A worktree has no identity of its own to rehome — it inherits the main
+	// worktree's. Its path only feeds the container name/label, derived fresh each
+	// run, so a moved worktree self-heals. Point at the main tree instead of
+	// migrating the shared (inherited) volumes onto a worktree-derived id.
+	if paths.IsWorktree {
+		return fmt.Errorf("this is a worktree of %s; run rehome from the main worktree if the repo moved (a worktree inherits its identity and needs no rehome)", paths.Canonical)
+	}
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}

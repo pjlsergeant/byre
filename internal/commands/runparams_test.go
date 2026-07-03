@@ -162,6 +162,22 @@ func TestStatusRendersSelfEditGrant(t *testing.T) {
 	}
 }
 
+func TestStatusRendersWorktreeLine(t *testing.T) {
+	var plain, wt strings.Builder
+	RenderStatus(&plain, StatusInfo{ID: "x", Canonical: "/home/me/proj"})
+	if strings.Contains(plain.String(), "Worktree of") {
+		t.Errorf("plain project should not show a worktree line:\n%s", plain.String())
+	}
+	RenderStatus(&wt, StatusInfo{ID: "x", Canonical: "/home/me/wt", WorktreeOf: "/home/me/main"})
+	s := wt.String()
+	if !strings.Contains(s, "Worktree of") || !strings.Contains(s, "/home/me/main") || !strings.Contains(s, "inherited") {
+		t.Errorf("worktree relationship not shown:\n%s", s)
+	}
+	if !strings.Contains(s, "/home/me/wt -> /workspace") {
+		t.Errorf("project row should show the worktree as the /workspace source:\n%s", s)
+	}
+}
+
 func indexOf(s []string, v string) int {
 	for i, x := range s {
 		if x == v {

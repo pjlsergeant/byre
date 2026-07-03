@@ -15,23 +15,24 @@ import (
 
 // StatusInfo is the resolved, display-ready view of a project for `byre status`.
 type StatusInfo struct {
-	Agent     string
-	Engine    string
-	ID        string
-	Canonical string
-	Skills    []string
-	Binds     []config.Mount
-	Ports     []config.Port
-	Volumes   []config.Volume
-	Grants    []skills.Grant // per-skill runtime grants (attribution)
-	RunArgs   []string
-	BuildRaw  []string // dockerfile_pre + dockerfile_post (raw, not introspected)
-	Container string   // running container id, or "" if none
-	Rootless  bool     // true if the engine is rootless Podman (unsupported ownership)
-	EngineErr string   // why the engine/container state is unknown, if applicable
-	SkillErr  string   // why skills couldn't be resolved, if applicable
-	SelfEdit  string   // host store path when --self-edit is active, else ""
-	Proposal  string   // note about a committed <project>/byre.config, if any
+	Agent      string
+	Engine     string
+	ID         string
+	Canonical  string // the dir bound at /workspace (the worktree, for a worktree)
+	WorktreeOf string // family (main worktree) path when this is a linked worktree, else ""
+	Skills     []string
+	Binds      []config.Mount
+	Ports      []config.Port
+	Volumes    []config.Volume
+	Grants     []skills.Grant // per-skill runtime grants (attribution)
+	RunArgs    []string
+	BuildRaw   []string // dockerfile_pre + dockerfile_post (raw, not introspected)
+	Container  string   // running container id, or "" if none
+	Rootless   bool     // true if the engine is rootless Podman (unsupported ownership)
+	EngineErr  string   // why the engine/container state is unknown, if applicable
+	SkillErr   string   // why skills couldn't be resolved, if applicable
+	SelfEdit   string   // host store path when --self-edit is active, else ""
+	Proposal   string   // note about a committed <project>/byre.config, if any
 }
 
 // Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
@@ -55,13 +56,16 @@ func Status(stdout io.Writer, projectDir string, selfEdit bool) error {
 		Agent:     cfg.Agent,
 		Engine:    cfg.Engine,
 		ID:        paths.ID,
-		Canonical: paths.Canonical,
+		Canonical: paths.WorkDir, // what actually mounts at /workspace
 		Skills:    cfg.Skills,
 		Binds:     cfg.Mounts,
 		Ports:     cfg.Ports,
 		Volumes:   cfg.Volumes,
 		RunArgs:   cfg.RunArgs,
 		BuildRaw:  append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
+	}
+	if paths.IsWorktree {
+		info.WorktreeOf = paths.Canonical
 	}
 	if selfEdit {
 		info.SelfEdit = paths.Dir
@@ -106,7 +110,9 @@ func Status(stdout io.Writer, projectDir string, selfEdit bool) error {
 		if rootless, rerr := r.IsRootlessPodman(); rerr == nil && rootless {
 			info.Rootless = true
 		}
-		if ids, cerr := r.RunningContainersByLabel(labelKey + "=" + paths.ID); cerr == nil && len(ids) > 0 {
+		// Query the worktree label so status reflects THIS worktree's session, not
+		// a sibling's (both carry the family label).
+		if ids, cerr := r.RunningContainersByLabel(workdirLabel(paths)); cerr == nil && len(ids) > 0 {
 			info.Container = ids[0]
 		}
 	}
@@ -141,6 +147,9 @@ func RenderStatus(w io.Writer, s StatusInfo) {
 		row("Engine", s.Engine)
 	}
 	row("Project", s.Canonical+" -> /workspace  (rw)")
+	if s.WorktreeOf != "" {
+		row("Worktree of", s.WorktreeOf+"  (config, volumes, image inherited)")
+	}
 	row("Network", "open")
 
 	if len(s.Ports) == 0 {
