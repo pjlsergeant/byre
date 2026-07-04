@@ -4,6 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -35,189 +36,210 @@ Commands:
 
 Run byre in the project directory you want to develop.`
 
+// app is the set of command implementations run dispatches to. A struct (not
+// direct calls) so tests can pin the flag->function wiring with recorders
+// instead of executing real commands.
+type app struct {
+	dockerfile  func(stdout io.Writer, dir string) error
+	dockerrun   func(stdout io.Writer, dir string) error
+	develop     func(dir, tmpl, agent string, selfEdit bool) error
+	config      func(dir string, global bool) error
+	status      func(stdout io.Writer, dir string, selfEdit bool) error
+	reset       func(stdout io.Writer, stdin io.Reader, dir string, force bool) error
+	forget      func(stdout io.Writer, stdin io.Reader, dir string, force bool) error
+	shell       func(stdout io.Writer, dir string) error
+	worktree    func(dir, name, path string, selfEdit bool) error
+	skillUpdate func(stdout io.Writer, dir string) error
+	rebuild     func(stdout io.Writer, dir string) error
+	rehome      func(stdout io.Writer, dir, oldID string) error
+}
+
+var realApp = app{
+	dockerfile:  commands.Dockerfile,
+	dockerrun:   commands.DockerRun,
+	develop:     commands.Develop,
+	config:      commands.Config,
+	status:      commands.Status,
+	reset:       commands.Reset,
+	forget:      commands.Forget,
+	shell:       commands.Shell,
+	worktree:    commands.Worktree,
+	skillUpdate: commands.SkillUpdate,
+	rebuild:     commands.Rebuild,
+	rehome:      commands.Rehome,
+}
+
+// usageError is a command-line parse failure: main prints it to stderr and
+// exits 2, distinct from a byre failure (1) and an agent/refusal code.
+type usageError string
+
+func (e usageError) Error() string { return string(e) }
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
-	}
-
-	switch cmd := os.Args[1]; cmd {
-	case "-h", "--help", "help":
-		fmt.Println(usage)
-	case "dockerfile":
-		noArgs(cmd)
-		if err := commands.Dockerfile(os.Stdout, cwd()); err != nil {
-			fatal(err)
-		}
-	case "dockerrun":
-		noArgs(cmd)
-		if err := commands.DockerRun(os.Stdout, cwd()); err != nil {
-			fatal(err)
-		}
-	case "develop":
-		var tmpl, agent string
-		selfEdit := false
-		args := os.Args[2:]
-		for i := 0; i < len(args); i++ {
-			switch {
-			case args[i] == "--template":
-				i++
-				if i >= len(args) {
-					fmt.Fprintln(os.Stderr, "byre develop: --template needs a value")
-					os.Exit(2)
-				}
-				tmpl = args[i]
-			case args[i] == "--agent":
-				i++
-				if i >= len(args) {
-					fmt.Fprintln(os.Stderr, "byre develop: --agent needs a value")
-					os.Exit(2)
-				}
-				agent = args[i]
-			case args[i] == "--self-edit":
-				selfEdit = true
-			default:
-				fmt.Fprintf(os.Stderr, "byre develop: unknown argument %q\n", args[i])
-				os.Exit(2)
-			}
-		}
-		if err := commands.Develop(cwd(), tmpl, agent, selfEdit); err != nil {
-			fatal(err)
-		}
-	case "config":
-		global := false
-		for _, a := range os.Args[2:] {
-			switch a {
-			case "--global":
-				global = true
-			default:
-				fmt.Fprintf(os.Stderr, "byre config: unknown argument %q\n", a)
-				os.Exit(2)
-			}
-		}
-		if err := commands.Config(cwd(), global); err != nil {
-			fatal(err)
-		}
-	case "status":
-		selfEdit := false
-		for _, a := range os.Args[2:] {
-			switch a {
-			case "--self-edit":
-				selfEdit = true
-			default:
-				fmt.Fprintf(os.Stderr, "byre status: unknown argument %q\n", a)
-				os.Exit(2)
-			}
-		}
-		if err := commands.Status(os.Stdout, cwd(), selfEdit); err != nil {
-			fatal(err)
-		}
-	case "reset":
-		force := false
-		for _, a := range os.Args[2:] {
-			switch a {
-			case "--force", "-y":
-				force = true
-			default:
-				fmt.Fprintf(os.Stderr, "byre reset: unknown argument %q\n", a)
-				os.Exit(2)
-			}
-		}
-		if err := commands.Reset(os.Stdout, os.Stdin, cwd(), force); err != nil {
-			fatal(err)
-		}
-	case "forget":
-		force := false
-		for _, a := range os.Args[2:] {
-			switch a {
-			case "--force", "-y":
-				force = true
-			default:
-				fmt.Fprintf(os.Stderr, "byre forget: unknown argument %q\n", a)
-				os.Exit(2)
-			}
-		}
-		if err := commands.Forget(os.Stdout, os.Stdin, cwd(), force); err != nil {
-			fatal(err)
-		}
-	case "shell":
-		noArgs(cmd)
-		if err := commands.Shell(os.Stdout, cwd()); err != nil {
-			fatal(err)
-		}
-	case "worktree":
-		var name, path string
-		selfEdit := false
-		args := os.Args[2:]
-		for i := 0; i < len(args); i++ {
-			switch {
-			case args[i] == "--path":
-				i++
-				if i >= len(args) {
-					fmt.Fprintln(os.Stderr, "byre worktree: --path needs a value")
-					os.Exit(2)
-				}
-				path = args[i]
-			case args[i] == "--self-edit":
-				selfEdit = true
-			case strings.HasPrefix(args[i], "-"):
-				fmt.Fprintf(os.Stderr, "byre worktree: unknown flag %q\n", args[i])
-				os.Exit(2)
-			case name == "":
-				name = args[i]
-			default:
-				fmt.Fprintf(os.Stderr, "byre worktree: unexpected argument %q\n", args[i])
-				os.Exit(2)
-			}
-		}
-		if name == "" {
-			fmt.Fprintln(os.Stderr, "usage: byre worktree <name> [--path <dir>] [--self-edit]")
-			os.Exit(2)
-		}
-		if err := commands.Worktree(cwd(), name, path, selfEdit); err != nil {
-			fatal(err)
-		}
-	case "skill":
-		if len(os.Args) != 3 || os.Args[2] != "update" {
-			fmt.Fprintln(os.Stderr, "usage: byre skill update   (re-materialize byre's built-in skills)")
-			os.Exit(2)
-		}
-		if err := commands.SkillUpdate(os.Stdout, cwd()); err != nil {
-			fatal(err)
-		}
-	case "rebuild":
-		noArgs(cmd)
-		if err := commands.Rebuild(os.Stdout, cwd()); err != nil {
-			fatal(err)
-		}
-	case "rehome":
-		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "usage: byre rehome <old-id>   (the previous project id, from ~/.byre/projects/)")
-			os.Exit(2)
-		}
-		if err := commands.Rehome(os.Stdout, cwd(), os.Args[2]); err != nil {
-			fatal(err)
-		}
-	default:
-		fmt.Fprintf(os.Stderr, "byre: unknown command %q\n\n%s\n", cmd, usage)
-		os.Exit(2)
-	}
-}
-
-// noArgs rejects unexpected operands after a subcommand.
-func noArgs(cmd string) {
-	if len(os.Args) > 2 {
-		fmt.Fprintf(os.Stderr, "byre %s: unexpected arguments %v\n", cmd, os.Args[2:])
-		os.Exit(2)
-	}
-}
-
-func cwd() string {
 	dir, err := os.Getwd()
 	if err != nil {
 		fatal(err)
 	}
-	return dir
+	if err := run(realApp, os.Args[1:], dir, os.Stdout, os.Stdin); err != nil {
+		var uerr usageError
+		if errors.As(err, &uerr) {
+			fmt.Fprintln(os.Stderr, string(uerr))
+			os.Exit(2)
+		}
+		fatal(err)
+	}
+}
+
+// run parses argv (everything after the program name) and dispatches to a. All
+// parse failures come back as usageError; anything else is the command's own
+// error, exit-mapped by main.
+func run(a app, args []string, dir string, stdout io.Writer, stdin io.Reader) error {
+	if len(args) < 1 {
+		return usageError(usage)
+	}
+	cmd, rest := args[0], args[1:]
+	switch cmd {
+	case "-h", "--help", "help":
+		fmt.Fprintln(stdout, usage)
+		return nil
+	case "dockerfile":
+		if err := noArgs(cmd, rest); err != nil {
+			return err
+		}
+		return a.dockerfile(stdout, dir)
+	case "dockerrun":
+		if err := noArgs(cmd, rest); err != nil {
+			return err
+		}
+		return a.dockerrun(stdout, dir)
+	case "develop":
+		var tmpl, agent string
+		selfEdit := false
+		for i := 0; i < len(rest); i++ {
+			switch {
+			case rest[i] == "--template":
+				i++
+				if i >= len(rest) {
+					return usageError("byre develop: --template needs a value")
+				}
+				tmpl = rest[i]
+			case rest[i] == "--agent":
+				i++
+				if i >= len(rest) {
+					return usageError("byre develop: --agent needs a value")
+				}
+				agent = rest[i]
+			case rest[i] == "--self-edit":
+				selfEdit = true
+			default:
+				return usageError(fmt.Sprintf("byre develop: unknown argument %q", rest[i]))
+			}
+		}
+		return a.develop(dir, tmpl, agent, selfEdit)
+	case "config":
+		global := false
+		for _, arg := range rest {
+			switch arg {
+			case "--global":
+				global = true
+			default:
+				return usageError(fmt.Sprintf("byre config: unknown argument %q", arg))
+			}
+		}
+		return a.config(dir, global)
+	case "status":
+		selfEdit := false
+		for _, arg := range rest {
+			switch arg {
+			case "--self-edit":
+				selfEdit = true
+			default:
+				return usageError(fmt.Sprintf("byre status: unknown argument %q", arg))
+			}
+		}
+		return a.status(stdout, dir, selfEdit)
+	case "reset":
+		force, err := parseForce(cmd, rest)
+		if err != nil {
+			return err
+		}
+		return a.reset(stdout, stdin, dir, force)
+	case "forget":
+		force, err := parseForce(cmd, rest)
+		if err != nil {
+			return err
+		}
+		return a.forget(stdout, stdin, dir, force)
+	case "shell":
+		if err := noArgs(cmd, rest); err != nil {
+			return err
+		}
+		return a.shell(stdout, dir)
+	case "worktree":
+		var name, path string
+		selfEdit := false
+		for i := 0; i < len(rest); i++ {
+			switch {
+			case rest[i] == "--path":
+				i++
+				if i >= len(rest) {
+					return usageError("byre worktree: --path needs a value")
+				}
+				path = rest[i]
+			case rest[i] == "--self-edit":
+				selfEdit = true
+			case strings.HasPrefix(rest[i], "-"):
+				return usageError(fmt.Sprintf("byre worktree: unknown flag %q", rest[i]))
+			case name == "":
+				name = rest[i]
+			default:
+				return usageError(fmt.Sprintf("byre worktree: unexpected argument %q", rest[i]))
+			}
+		}
+		if name == "" {
+			return usageError("usage: byre worktree <name> [--path <dir>] [--self-edit]")
+		}
+		return a.worktree(dir, name, path, selfEdit)
+	case "skill":
+		if len(rest) != 1 || rest[0] != "update" {
+			return usageError("usage: byre skill update   (re-materialize byre's built-in skills)")
+		}
+		return a.skillUpdate(stdout, dir)
+	case "rebuild":
+		if err := noArgs(cmd, rest); err != nil {
+			return err
+		}
+		return a.rebuild(stdout, dir)
+	case "rehome":
+		if len(rest) != 1 {
+			return usageError("usage: byre rehome <old-id>   (the previous project id, from ~/.byre/projects/)")
+		}
+		return a.rehome(stdout, dir, rest[0])
+	default:
+		return usageError(fmt.Sprintf("byre: unknown command %q\n\n%s", cmd, usage))
+	}
+}
+
+// noArgs rejects unexpected operands after a subcommand.
+func noArgs(cmd string, rest []string) error {
+	if len(rest) > 0 {
+		return usageError(fmt.Sprintf("byre %s: unexpected arguments %v", cmd, rest))
+	}
+	return nil
+}
+
+// parseForce parses the shared --force/-y flag of the destructive commands.
+func parseForce(cmd string, rest []string) (bool, error) {
+	force := false
+	for _, arg := range rest {
+		switch arg {
+		case "--force", "-y":
+			force = true
+		default:
+			return false, usageError(fmt.Sprintf("byre %s: unknown argument %q", cmd, arg))
+		}
+	}
+	return force, nil
 }
 
 // fatal reports err and exits. An ExitError carries a process-level exit code
