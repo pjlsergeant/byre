@@ -524,3 +524,77 @@ func TestModelDirtyAndUnknownEngineRoundTrip(t *testing.T) {
 		t.Fatal("changing the engine picker should mark the model dirty")
 	}
 }
+
+// TestWorktreeBaseArrowKeysMoveCursor pins the fBase/fWorktreeBase text inputs
+// to identical arrow-key behavior. Both fields route through the model's
+// focusedInput accessor (form.go), so left/right/home/end must move the
+// cursor in fWorktreeBase exactly as they do in fBase — regression coverage
+// for a bug where fWorktreeBase had no case in cycle(), silently swallowing
+// left/right.
+func TestWorktreeBaseArrowKeysMoveCursor(t *testing.T) {
+	focus := func(m model, f fieldID) model {
+		for i, ff := range m.order {
+			if ff == f {
+				m.setFocus(i)
+				return m
+			}
+		}
+		t.Fatalf("field %v not in focus order", f)
+		return m
+	}
+
+	drive := func(m model, msg tea.KeyMsg) model {
+		mt, _ := m.updateForm(msg)
+		return mt.(model)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		field fieldID
+		pos   func(m model) int
+	}{
+		{"fBase", fBase, func(m model) int { return m.ti.Position() }},
+		{"fWorktreeBase", fWorktreeBase, func(m model) int { return m.wtBase.Position() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{Base: "debian:bookworm", WorktreeBase: "/abcdef"}
+			// global=true so the WORKTREES section (and fWorktreeBase) is in the
+			// focus order.
+			m := newModel("t", "/x", cfg, nil, nil, nil, nil, true)
+			m = focus(m, tc.field)
+			if m.field() != tc.field {
+				t.Fatalf("setFocus landed on %v, want %v", m.field(), tc.field)
+			}
+
+			end := tc.pos(m)
+			if end == 0 {
+				t.Fatal("expected the cursor to start past position 0 (value is non-empty)")
+			}
+
+			// left should move the cursor back by one — this is the key that was
+			// dead in fWorktreeBase before the fix.
+			m = drive(m, tea.KeyMsg{Type: tea.KeyLeft})
+			if got := tc.pos(m); got != end-1 {
+				t.Fatalf("left arrow: cursor = %d, want %d (arrow key was swallowed)", got, end-1)
+			}
+
+			// right should move it forward again.
+			m = drive(m, tea.KeyMsg{Type: tea.KeyRight})
+			if got := tc.pos(m); got != end {
+				t.Fatalf("right arrow: cursor = %d, want %d", got, end)
+			}
+
+			// home moves to the start.
+			m = drive(m, tea.KeyMsg{Type: tea.KeyHome})
+			if got := tc.pos(m); got != 0 {
+				t.Fatalf("home: cursor = %d, want 0", got)
+			}
+
+			// end moves back to the end.
+			m = drive(m, tea.KeyMsg{Type: tea.KeyEnd})
+			if got := tc.pos(m); got != end {
+				t.Fatalf("end: cursor = %d, want %d", got, end)
+			}
+		})
+	}
+}

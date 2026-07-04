@@ -365,10 +365,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ta, cmd = m.ta.Update(msg)
 	case m.mode == modeItem && len(m.inputs) > 0 && m.itemFocus < len(m.inputs):
 		m.inputs[m.itemFocus], cmd = m.inputs[m.itemFocus].Update(msg)
-	case m.mode == modeForm && m.field() == fBase:
-		m.ti, cmd = m.ti.Update(msg)
-	case m.mode == modeForm && m.field() == fWorktreeBase:
-		m.wtBase, cmd = m.wtBase.Update(msg)
+	case m.mode == modeForm:
+		if in := m.focusedInput(); in != nil {
+			*in, cmd = in.Update(msg)
+		}
 	}
 	return m, cmd
 }
@@ -434,31 +434,45 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.field() == fBase {
+	if in := m.focusedInput(); in != nil {
 		var cmd tea.Cmd
-		m.ti, cmd = m.ti.Update(msg)
-		return m, cmd
-	}
-	if m.field() == fWorktreeBase {
-		var cmd tea.Cmd
-		m.wtBase, cmd = m.wtBase.Update(msg)
+		*in, cmd = in.Update(msg)
 		return m, cmd
 	}
 	return m, nil
+}
+
+// focusedInput returns a pointer to the textinput.Model backing the currently
+// focused field, or nil when the focused field isn't a single-line text input.
+// This is the one place that maps "focused field" to "the textinput.Model to
+// route keys/cursor-movement to" — everything that needs to drive a text input
+// (arrow-key cycling, non-key routing in Update, the form's key fallback) goes
+// through it so fBase and fWorktreeBase behave identically.
+func (m *model) focusedInput() *textinput.Model {
+	switch m.field() {
+	case fBase:
+		return &m.ti
+	case fWorktreeBase:
+		return &m.wtBase
+	default:
+		return nil
+	}
 }
 
 func (m *model) cycle(dir int) {
 	switch m.field() {
 	case fWorktreeSibling:
 		m.wtSibling = !m.wtSibling
-	case fBase:
-		m.ti, _ = m.ti.Update(tea.KeyMsg{Type: keyArrow(dir)})
 	case fTemplate:
 		m.tmplSel = wrap(m.tmplSel+dir, len(m.tmplOpts))
 	case fAgent:
 		m.agentSel = wrap(m.agentSel+dir, len(m.agentOpts))
 	case fEngine:
 		m.engineSel = wrap(m.engineSel+dir, len(m.engineOpts))
+	default:
+		if in := m.focusedInput(); in != nil {
+			*in, _ = in.Update(tea.KeyMsg{Type: keyArrow(dir)})
+		}
 	}
 }
 
@@ -1353,16 +1367,10 @@ func (m model) field() fieldID { return m.order[m.focus] }
 
 func (m *model) setFocus(i int) {
 	m.focus = wrap(i, len(m.order))
-	f := m.field()
-	if f == fBase {
-		m.ti.Focus()
-	} else {
-		m.ti.Blur()
-	}
-	if f == fWorktreeBase {
-		m.wtBase.Focus()
-	} else {
-		m.wtBase.Blur()
+	m.ti.Blur()
+	m.wtBase.Blur()
+	if in := m.focusedInput(); in != nil {
+		in.Focus()
 	}
 }
 
