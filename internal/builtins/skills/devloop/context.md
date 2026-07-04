@@ -56,8 +56,9 @@ The loop: run it → read every finding → for each, fix it or note why you're
 leaving it → if you changed anything, re-run with `--continue` → stop only when
 clean or all remaining items are consciously deferred. Findings are also appended
 to `.devloop/reviews.md`. Codex needs to be logged in once per box
-(`codex login`); if `byre-codereview` reports codex isn't authenticated, do that
-first.
+(`codex login --device-auth` — plain `codex login` starts a browser-redirect
+flow that cannot complete in a no-browser sandbox); if `byre-codereview`
+reports codex isn't authenticated, do that first.
 
 ## Before you commit
 Keep the tree healthy: run the project's formatter, vet/lint, and tests, and get

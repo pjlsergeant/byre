@@ -15,8 +15,9 @@
 #
 # codex provides the reviewer; devloop provides the script + conventions. codex
 # is NOT launched as the agent — it's the second opinion. Authenticate it once
-# per box with `codex login`. A project's own CLAUDE.md/AGENTS.md still applies on
-# top of the conventions here.
+# per box with `codex login --device-auth` (plain `codex login` starts a
+# browser-redirect flow that cannot complete in a no-browser sandbox). A
+# project's own CLAUDE.md/AGENTS.md still applies on top of the conventions here.
 
 [build]
 apt = ["jq"] # codereview.sh parses codex --json output with jq

@@ -9,6 +9,22 @@
 #   byre-codereview --continue "..."      # re-check after fixes (resumes session)
 set -euo pipefail
 
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      cat <<'EOF'
+byre-codereview — an independent, Codex-backed review of the current changes.
+
+Usage:
+  byre-codereview                       review current changes
+  byre-codereview "focus area"          review current changes, focused on a topic
+  byre-codereview --continue "..."      re-check after fixes (resumes prior session)
+EOF
+      exit 0
+      ;;
+  esac
+done
+
 if ! command -v codex >/dev/null 2>&1; then
   echo "byre-codereview: codex not found on PATH." >&2
   echo "  Add the codex skill (skills = [\"codex\", \"devloop\"]) and rebuild." >&2
