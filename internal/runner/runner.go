@@ -9,6 +9,7 @@ package runner
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -52,22 +53,25 @@ func Detect(setting string, look LookPath) (Engine, error) {
 	}
 }
 
-// Runner invokes a container engine via its CLI. The two exec seams are
+// Runner invokes a container engine via its CLI. The three exec seams are
 // injectable so command assembly can be unit-tested without a real engine:
 // stream connects child stdio (interactive build/run/exec); capture returns
-// stdout (ps/inspect).
+// stdout (ps/inspect); streamIn is stream with a caller-supplied stdin
+// (piping literal content into a container).
 type Runner struct {
-	engine  Engine
-	stream  func(name string, args ...string) error
-	capture func(name string, args ...string) (string, error)
+	engine   Engine
+	stream   func(name string, args ...string) error
+	capture  func(name string, args ...string) (string, error)
+	streamIn func(stdin io.Reader, name string, args ...string) error
 }
 
 // New returns a Runner for the given engine using real exec.
 func New(e Engine) *Runner {
 	return &Runner{
-		engine:  e,
-		stream:  streamExec,
-		capture: captureExec,
+		engine:   e,
+		stream:   streamExec,
+		capture:  captureExec,
+		streamIn: streamInExec,
 	}
 }
 
@@ -278,14 +282,12 @@ func (r *Runner) SeedVolume(name, hostPath, image string, uid, gid int) error {
 // the image entrypoint bypassed.
 func (r *Runner) SeedLiteral(volName, destPath, content, image string, uid, gid int) error {
 	script := fmt.Sprintf(`mkdir -p "/dest/$(dirname "$BYRE_DEST")" && cat > "/dest/$BYRE_DEST" && chown -R %d:%d /dest`, uid, gid)
-	cmd := exec.Command(string(r.engine), "run", "--rm", "-i",
+	args := []string{"run", "--rm", "-i",
 		"--entrypoint", "sh", "-u", "0:0",
-		"-e", "BYRE_DEST="+destPath,
-		"--mount", "type=volume,source="+volName+",target=/dest",
-		image, "-c", script)
-	cmd.Stdin = strings.NewReader(content)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+		"-e", "BYRE_DEST=" + destPath,
+		"--mount", "type=volume,source=" + volName + ",target=/dest",
+		image, "-c", script}
+	return r.streamIn(strings.NewReader(content), string(r.engine), args...)
 }
 
 // SeedFiles copies a curated subset of srcDir (the relative paths in files,
@@ -322,6 +324,13 @@ chown -R "$BYRE_OWNER" /dest`
 func streamExec(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+func streamInExec(stdin io.Reader, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = stdin
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }
 
