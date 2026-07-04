@@ -62,26 +62,8 @@ func SaveDefault(home, template, agent string) error {
 	}
 	content = setScalar(content, "template", template)
 	content = setScalar(content, "agent", agent)
-	if err := os.MkdirAll(home, 0o755); err != nil {
-		return err
-	}
-	// Atomic write: temp file + rename, so a crash or concurrent save can't
-	// truncate/corrupt the favourites.
-	tmp, err := os.CreateTemp(home, ".default.config-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
+	// Atomic write, so a crash or concurrent save can't truncate the favourites.
+	return config.AtomicWrite(path, content)
 }
 
 // Favourites reads the template/agent scalars from ~/.byre/default.config (the

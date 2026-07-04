@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"byre/internal/builtins"
@@ -125,7 +126,7 @@ func writeAndReport(w io.Writer, configPath, template, agent string) error {
 	if err := onboard.WriteProjectConfig(configPath, template, agent); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s)\n", configPath, orNoneLabel(template), orNoneLabel(agent))
+	fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s)\n", configPath, config.OrNone(template), config.OrNone(agent))
 	return nil
 }
 
@@ -137,7 +138,7 @@ func resolveFlag(flag, fav string, options []string, label string) (string, erro
 		return fav, nil
 	case flag == "none":
 		return "", nil
-	case contains(options, flag):
+	case slices.Contains(options, flag):
 		return flag, nil
 	default:
 		return "", fmt.Errorf("unknown %s %q; available: %s, none", label, flag, strings.Join(options, ", "))
@@ -147,7 +148,7 @@ func resolveFlag(flag, fav string, options []string, label string) (string, erro
 // keepIfIn returns v if it is empty or present in options, else "" (drops a
 // stale favourite).
 func keepIfIn(v string, options []string) string {
-	if v == "" || contains(options, v) {
+	if v == "" || slices.Contains(options, v) {
 		return v
 	}
 	return ""

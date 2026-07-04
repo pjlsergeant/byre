@@ -77,7 +77,7 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 		headline = "has a changed byre.config"
 	}
 	fmt.Fprintf(s.Err, "\nThis project %s — review it before byre runs with it:\n  %s\n", headline, proposed)
-	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", orNoneLabel(cfg.Base), orNoneLabel(cfg.Agent), orNoneLabel(proposal.Template))
+	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", config.OrNone(cfg.Base), config.OrNone(cfg.Agent), config.OrNone(proposal.Template))
 	for _, g := range grants {
 		fmt.Fprintf(s.Err, "  ⚠ %s\n", g)
 	}

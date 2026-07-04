@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,7 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 		t.Fatalf("expected 2 migrations, got %v", f.migrated)
 	}
 	// Old volumes removed after successful copies.
-	if !contains(f.removed, "byre-oldid-.claude") || !contains(f.removed, "byre-oldid-cache") {
+	if !slices.Contains(f.removed, "byre-oldid-.claude") || !slices.Contains(f.removed, "byre-oldid-cache") {
 		t.Fatalf("old volumes not removed: %v", f.removed)
 	}
 	// New volumes named with the current id.
@@ -75,7 +76,7 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 		t.Fatal("expected copy failure")
 	}
 	// Old volumes must NOT be removed (rollback keeps originals).
-	if contains(f.removed, "byre-oldid-.claude") || contains(f.removed, "byre-oldid-cache") {
+	if slices.Contains(f.removed, "byre-oldid-.claude") || slices.Contains(f.removed, "byre-oldid-cache") {
 		t.Fatalf("originals removed despite rollback: %v", f.removed)
 	}
 }

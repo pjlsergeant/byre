@@ -3,6 +3,7 @@
 package configui
 
 import (
+	"byre/internal/config"
 	"fmt"
 	"strings"
 
@@ -130,7 +131,7 @@ func (m model) viewSkills() string {
 
 // ---- option/value helpers --------------------------------------------------
 
-const noneOption = "none"
+const noneOption = config.NoneLabel
 
 // pickerOpts builds the option list for a template/agent picker: the discovered
 // items, then a configured-but-not-discovered value (preserved so it round-trips
@@ -143,19 +144,9 @@ func pickerOpts(discovered []string, current string) []string {
 	return append(opts, noneOption)
 }
 
-func orNone(v string) string {
-	if v == "" {
-		return noneOption
-	}
-	return v
-}
-
-func fromNone(v string) string {
-	if v == noneOption {
-		return ""
-	}
-	return v
-}
+// orNone/fromNone delegate to the shared sentinel vocabulary in config.
+func orNone(v string) string   { return config.OrNone(v) }
+func fromNone(v string) string { return config.FromNone(v) }
 
 func orDefault(v, def string) string {
 	if v == "" {

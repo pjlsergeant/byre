@@ -5,8 +5,6 @@
 package configui
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -30,7 +28,7 @@ func Save(path string, cfg config.Config) error {
 	if err := toml.NewEncoder(&b).Encode(cfg); err != nil {
 		return err
 	}
-	return atomicWrite(path, b.String())
+	return config.AtomicWrite(path, b.String())
 }
 
 // handComments reports whether raw config content has hand-written full-line
@@ -66,26 +64,4 @@ func byreBoilerplate(comment string) bool {
 		}
 	}
 	return false
-}
-
-func atomicWrite(path, content string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".byre-config-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
 }

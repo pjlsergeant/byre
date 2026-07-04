@@ -50,26 +50,9 @@ func orDefault(v, def string) string {
 	return v
 }
 
-// orNoneLabel is orDefault for the template/agent axes' "none" label.
-func orNoneLabel(v string) string {
-	if v == "" {
-		return "none"
-	}
-	return v
-}
-
 func shortID(id string) string {
 	if len(id) > 12 {
 		return id[:12]
 	}
 	return id
-}
-
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

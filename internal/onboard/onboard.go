@@ -6,13 +6,15 @@ package onboard
 
 import (
 	"bufio"
+	"byre/internal/config"
 	"fmt"
 	"io"
 	"strings"
 )
 
-// noneOption is the explicit "no template"/"no agent" choice.
-const noneOption = "none"
+// noneOption is the explicit "no template"/"no agent" choice (config owns the
+// sentinel).
+const noneOption = config.NoneLabel
 
 // Choice is the outcome of the picker.
 type Choice struct {
@@ -95,20 +97,11 @@ func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
 	}
 }
 
+// The "none" sentinel vocabulary is config's (config.NoneLabel); these thin
+// wrappers keep the picker readable.
 func withNone(opts []string) []string {
 	return append(append([]string{}, opts...), noneOption)
 }
 
-func orNone(v string) string {
-	if v == "" {
-		return noneOption
-	}
-	return v
-}
-
-func fromNone(v string) string {
-	if v == noneOption {
-		return ""
-	}
-	return v
-}
+func orNone(v string) string   { return config.OrNone(v) }
+func fromNone(v string) string { return config.FromNone(v) }

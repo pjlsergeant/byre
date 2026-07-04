@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -578,7 +579,7 @@ func override(base, over string) string {
 func unionStrings(base, over []string) []string {
 	out := append([]string{}, base...)
 	for _, it := range over {
-		if !containsString(out, it) {
+		if !slices.Contains(out, it) {
 			out = append(out, it)
 		}
 	}
@@ -595,7 +596,7 @@ func mergeStrings(base, over []string) []string {
 			removals = append(removals, name)
 			continue
 		}
-		if !containsString(out, it) {
+		if !slices.Contains(out, it) {
 			out = append(out, it)
 		}
 	}
@@ -702,15 +703,6 @@ func appendAll(base, over []string) []string {
 	return append(out, over...)
 }
 
-func containsString(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
 func removeString(s []string, v string) []string {
 	out := s[:0:0]
 	for _, x := range s {
@@ -776,4 +768,50 @@ func ListTemplates(templatesDir string) []string {
 	}
 	sort.Strings(ts)
 	return ts
+}
+
+// NoneLabel is how the UIs (onboarding picker, config editor, status and
+// adoption text) display an empty template/agent choice. OrNone/FromNone are
+// the one place the sentinel maps to and from "".
+const NoneLabel = "none"
+
+// OrNone renders a value for display: "" becomes the "none" sentinel.
+func OrNone(v string) string {
+	if v == "" {
+		return NoneLabel
+	}
+	return v
+}
+
+// FromNone parses a displayed value: the "none" sentinel becomes "".
+func FromNone(v string) string {
+	if v == NoneLabel {
+		return ""
+	}
+	return v
+}
+
+// AtomicWrite writes content to path via a temp file + rename in the same
+// directory, so a crash or a concurrent writer can never leave a truncated
+// config behind. Shared by every byre config writer.
+func AtomicWrite(path, content string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".byre-write-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
