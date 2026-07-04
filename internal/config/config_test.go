@@ -413,3 +413,17 @@ func TestMergePortsDedup(t *testing.T) {
 		t.Fatalf("expected dedup to 2 ports, got %v", got)
 	}
 }
+
+func TestListTemplates(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"go", "python"} {
+		td := filepath.Join(dir, n)
+		os.MkdirAll(td, 0o755)
+		os.WriteFile(filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
+	}
+	os.MkdirAll(filepath.Join(dir, "empty"), 0o755) // no template.config -> excluded
+	got := ListTemplates(dir)
+	if len(got) != 2 || got[0] != "go" || got[1] != "python" {
+		t.Fatalf("ListTemplates = %v", got)
+	}
+}

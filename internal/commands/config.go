@@ -7,7 +7,6 @@ import (
 	"byre/internal/builtins"
 	"byre/internal/config"
 	"byre/internal/configui"
-	"byre/internal/onboard"
 	"byre/internal/project"
 	"byre/internal/runner"
 	"byre/internal/skills"
@@ -26,7 +25,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	skillsDir := filepath.Join(home, "skills")
 	_ = builtins.MaterializeTemplates(templatesDir)
 	_ = builtins.MaterializeSkills(skillsDir)
-	templates := onboard.ListTemplates(templatesDir)
+	templates := config.ListTemplates(templatesDir)
 	agents := skills.ListAgentSkills(skillsDir)
 	skillOpts := skills.ListSkills(skillsDir)
 

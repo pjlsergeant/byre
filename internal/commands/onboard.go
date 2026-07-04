@@ -47,7 +47,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if err := builtins.MaterializeSkills(skillsDir); err != nil {
 		return err
 	}
-	templates := onboard.ListTemplates(templatesDir)
+	templates := config.ListTemplates(templatesDir)
 	agents := skills.ListAgentSkills(skillsDir)
 
 	// Drop stale favourites that no longer name a real template/agent, so

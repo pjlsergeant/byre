@@ -184,7 +184,7 @@ func resolveWith(home string, proj Config) (Config, error) {
 	templateName := proj.Template
 	var tmpl Config
 	if templateName != "" {
-		tmplPath := filepath.Join(home, "templates", templateName, "template.config")
+		tmplPath := TemplatePath(filepath.Join(home, "templates"), templateName)
 		// A selected template is an explicit dependency — a typo must fail
 		// loudly, not silently fall back to defaults.
 		if _, statErr := os.Stat(tmplPath); statErr != nil {
@@ -728,4 +728,31 @@ func SortedEnvKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TemplatePath is the config file of template name under templatesDir — the
+// one place the templates/<name>/template.config convention is spelled.
+func TemplatePath(templatesDir, name string) string {
+	return filepath.Join(templatesDir, name, "template.config")
+}
+
+// ListTemplates returns the names of templates in templatesDir (dirs
+// containing a template.config), sorted. It lives here, with the cascade that
+// loads them, so the path convention isn't spelled in a second package.
+func ListTemplates(templatesDir string) []string {
+	entries, err := os.ReadDir(templatesDir)
+	if err != nil {
+		return nil
+	}
+	var ts []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(TemplatePath(templatesDir, e.Name())); err == nil {
+			ts = append(ts, e.Name())
+		}
+	}
+	sort.Strings(ts)
+	return ts
 }

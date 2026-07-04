@@ -8,9 +8,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -22,26 +19,6 @@ type Choice struct {
 	Template    string // "" means none
 	Agent       string // "" means none
 	SaveDefault bool
-}
-
-// ListTemplates returns the names of templates in templatesDir (dirs containing
-// a template.config), sorted.
-func ListTemplates(templatesDir string) []string {
-	entries, err := os.ReadDir(templatesDir)
-	if err != nil {
-		return nil
-	}
-	var ts []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(templatesDir, e.Name(), "template.config")); err == nil {
-			ts = append(ts, e.Name())
-		}
-	}
-	sort.Strings(ts)
-	return ts
 }
 
 // Pick runs the interactive picker. templates and agents are the available
