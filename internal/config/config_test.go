@@ -427,3 +427,51 @@ func TestListTemplates(t *testing.T) {
 		t.Fatalf("ListTemplates = %v", got)
 	}
 }
+
+// sampleConfig sets EVERY Config field to a non-zero sample. The merge growth
+// guard reflects over Config and fails if a field is left zero here, so adding
+// a field to Config forces adding it both here and to Merge.
+func sampleConfig() Config {
+	return Config{
+		Engine:         "podman",
+		Template:       "go",
+		Agent:          "claude",
+		Base:           "debian:bookworm",
+		Dockerfile:     "Dockerfile.dev",
+		SeedPrefs:      true,
+		WorktreeBase:   "sibling",
+		Apt:            []string{"jq"},
+		NpmGlobal:      []string{"typescript"},
+		Env:            map[string]string{"K": "v"},
+		Files:          map[string]string{"a.txt": "/opt/a.txt"},
+		Skills:         []string{"devloop"},
+		Mounts:         []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
+		Volumes:        []Volume{{Name: "v", Role: "cache", Target: "/c"}},
+		Ports:          []Port{{Container: 8080}},
+		DockerfilePre:  []string{"RUN true"},
+		DockerfilePost: []string{"RUN false"},
+		RunArgs:        []string{"--cap-add=X"},
+	}
+}
+
+// TestMergeCoversEveryField is the growth guard for Merge's hand enumeration:
+// a new Config field Merge doesn't handle would silently VANISH when set in an
+// override layer (out starts as base, so only the base->out direction survives
+// by default). Merging a fully-populated sample over an empty base — and vice
+// versa — must reproduce it exactly, and reflection forces the sample to keep
+// covering every field.
+func TestMergeCoversEveryField(t *testing.T) {
+	sample := sampleConfig()
+	v := reflect.ValueOf(sample)
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).IsZero() {
+			t.Fatalf("sampleConfig leaves Config.%s zero — give it a sample value so the merge guard covers it (and handle it in Merge)", v.Type().Field(i).Name)
+		}
+	}
+	if got := Merge(Config{}, sample); !reflect.DeepEqual(got, sample) {
+		t.Errorf("Merge(empty, sample) must reproduce the sample — a field Merge doesn't propagate vanishes from override layers:\ngot  %+v\nwant %+v", got, sample)
+	}
+	if got := Merge(sample, Config{}); !reflect.DeepEqual(got, sample) {
+		t.Errorf("Merge(sample, empty) must reproduce the sample:\ngot  %+v\nwant %+v", got, sample)
+	}
+}
