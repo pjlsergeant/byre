@@ -421,17 +421,14 @@ func withTwoSetupLocks(a, b string, fn func() error) error {
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
 func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, image string, selfEdit bool) (runner.RunParams, error) {
-	env := map[string]string{}
+	env := map[string]string{
+		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
+		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
+	}
 	for k, v := range res.Env { // skill runtime env
 		env[k] = v
 	}
 	addGitIdentity(env) // git identity wins over skill env for those keys
-	// byre-owned identity is authoritative: set last so nothing from a skill can
-	// shadow it. `byre shell` reads BYRE_UID/GID back to exec as the dev user, so a
-	// skill-injected value here would be a privilege bug. (Skills are also rejected
-	// at resolution for using the BYRE_ prefix; this is defense in depth.)
-	env["BYRE_UID"] = fmt.Sprintf("%d", os.Getuid())
-	env["BYRE_GID"] = fmt.Sprintf("%d", os.Getgid())
 
 	// Mounts and volumes are the union of config and skill contributions.
 	mounts := append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...)

@@ -250,22 +250,15 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 		}
 		f := sk.File
 
-		// A skill's build/runtime content is interpolated into the same generated
-		// Dockerfile/shell as the project config, so hold it to the same
-		// anti-injection allowlists. Skills contribute no base image (that's
-		// project-level), hence "".
+		// A skill's build content is interpolated into the same generated
+		// Dockerfile/shell as the project config, so hold its typed fields to the
+		// same allowlists — not as a trust boundary (a skill you enabled can run
+		// anything via a raw [build].dockerfile line), but so a typed field stays
+		// legible data: `apt` holds package names, and the escape hatch for
+		// arbitrary commands is the explicit raw block. Env values are only ever
+		// emitted %q-quoted, so only keys are checked (via ValidateContent).
 		if err := config.ValidateContent("", f.Build.Apt, f.Build.NpmGlobal, f.Runtime.Env); err != nil {
 			return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
-		}
-		// BYRE_UID/BYRE_GID are trusted by `byre shell` to pick the container exec
-		// identity — a skill must not be able to shadow them. Only these two keys
-		// are reserved (not the whole BYRE_ prefix): byre's own skills legitimately
-		// use the namespace (e.g. devloop's BYRE_SCRATCH), and there is no
-		// first-party/third-party trust distinction yet to exempt them by.
-		for k := range f.Runtime.Env {
-			if k == "BYRE_UID" || k == "BYRE_GID" {
-				return Resolved{}, fmt.Errorf("skill %q: env key %q is reserved (byre shell trusts it for exec identity)", name, k)
-			}
 		}
 
 		res.SkillBlocks = append(res.SkillBlocks, gen.SkillBlock{
