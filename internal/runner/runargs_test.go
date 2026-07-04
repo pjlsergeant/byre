@@ -38,8 +38,11 @@ func TestRunArgsCoreFlagsAndOrder(t *testing.T) {
 	})
 	joined := strings.Join(args, " ")
 
-	if args[0] != "run" || indexOf(args, "--rm") < 0 || indexOf(args, "-it") < 0 {
+	if args[0] != "run" || indexOf(args, "--rm") < 0 || indexOf(args, "-i") < 0 {
 		t.Fatalf("missing core flags: %v", args)
+	}
+	if indexOf(args, "-t") >= 0 {
+		t.Errorf("-t should not be present when TTY is unset: %v", args)
 	}
 	if i := indexOf(args, "--name"); i < 0 || args[i+1] != "byre-abc" {
 		t.Errorf("container --name missing: %v", args)
@@ -78,6 +81,23 @@ func TestRunArgsCoreFlagsAndOrder(t *testing.T) {
 	}
 }
 
+func TestRunArgsTTY(t *testing.T) {
+	// TTY=false (the CI/non-interactive default): -i present, -t absent.
+	off := RunArgs(RunParams{Image: "img"})
+	if indexOf(off, "-i") < 0 {
+		t.Errorf("-i should always be present: %v", off)
+	}
+	if indexOf(off, "-t") >= 0 {
+		t.Errorf("-t should be absent when TTY is false: %v", off)
+	}
+
+	// TTY=true (an actual interactive terminal): both -i and -t present.
+	on := RunArgs(RunParams{Image: "img", TTY: true})
+	if indexOf(on, "-i") < 0 || indexOf(on, "-t") < 0 {
+		t.Errorf("-i and -t should both be present when TTY is true: %v", on)
+	}
+}
+
 func TestRunArgsEnvSortedAndDeterministic(t *testing.T) {
 	p := RunParams{Image: "img", Env: map[string]string{"B": "2", "A": "1", "C": "3"}}
 	a1 := strings.Join(RunArgs(p), " ")
@@ -103,18 +123,26 @@ func TestRunArgsExplicitBindMode(t *testing.T) {
 
 func TestExecArgs(t *testing.T) {
 	args := execArgs("abc123", 501, 20, "/workspace",
-		map[string]string{"HOME": "/home/dev", "CODEX_HOME": "/home/dev/.codex"},
+		map[string]string{"HOME": "/home/dev", "CODEX_HOME": "/home/dev/.codex"}, true,
 		"bash", "-l")
 	joined := strings.Join(args, " ")
-	want := "exec -it -u 501:20 -w /workspace -e CODEX_HOME=/home/dev/.codex -e HOME=/home/dev abc123 bash -l"
+	want := "exec -i -t -u 501:20 -w /workspace -e CODEX_HOME=/home/dev/.codex -e HOME=/home/dev abc123 bash -l"
 	if joined != want {
 		t.Fatalf("execArgs wrong:\n got: %s\nwant: %s", joined, want)
 	}
 }
 
 func TestExecArgsNoEnv(t *testing.T) {
-	args := execArgs("c1", 1000, 1000, "/workspace", nil, "bash", "-l")
-	want := "exec -it -u 1000:1000 -w /workspace c1 bash -l"
+	args := execArgs("c1", 1000, 1000, "/workspace", nil, true, "bash", "-l")
+	want := "exec -i -t -u 1000:1000 -w /workspace c1 bash -l"
+	if strings.Join(args, " ") != want {
+		t.Fatalf("got %q want %q", strings.Join(args, " "), want)
+	}
+}
+
+func TestExecArgsNoTTY(t *testing.T) {
+	args := execArgs("c1", 1000, 1000, "/workspace", nil, false, "bash", "-l")
+	want := "exec -i -u 1000:1000 -w /workspace c1 bash -l"
 	if strings.Join(args, " ") != want {
 		t.Fatalf("got %q want %q", strings.Join(args, " "), want)
 	}

@@ -187,6 +187,21 @@ func shellArg(s string) string {
 // byre.config — the deliberate "let the agent change its own sandbox" grant.
 const selfEditTarget = "/home/dev/.byre-self"
 
+// ExitError signals a process-level exit code that is NOT a byre failure —
+// either the agent/container's own exit status, or a deliberate refusal (e.g.
+// a session is already running). main distinguishes it from an ordinary error
+// so it can os.Exit(Code) directly instead of printing a "byre: ..." banner
+// that would misreport the agent's own exit as a byre bug.
+type ExitError struct{ Code int }
+
+func (e ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
+
+// ExitRefused is Develop's exit code when it refuses to start because a
+// session is already running for this project — distinct from 0 (ran
+// cleanly), 1 (byre error), and 2 (usage error), so a script can tell "byre
+// declined to run" from "the agent ran and exited zero".
+const ExitRefused = 3
+
 func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if err := requireNonRootHost(os.Stderr); err != nil {
 		return err
@@ -247,7 +262,7 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 			fmt.Fprintln(os.Stderr, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
 		}
 		reportRunning(os.Stderr, r.Engine(), ids)
-		return nil
+		return ExitError{Code: ExitRefused} // refused, session already live
 	}
 
 	// Setup (generate + build) is serialized by the lock; the interactive
@@ -284,7 +299,20 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if runErr := r.Run(runner.RunArgs(params)); runErr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
 			reportRunning(os.Stderr, r.Engine(), live)
-			return nil
+			return ExitError{Code: ExitRefused} // refused, session already live
+		}
+		// Distinguish the agent/container's own exit from a byre failure: docker
+		// reserves 125-127 for engine-level failures (cannot run / not
+		// executable / not found), so only codes below that are passed through
+		// as the agent's own status (no byre error banner). Anything else —
+		// 125-127, a signal-terminated process (ExitCode() == -1), or a
+		// non-ExitError failure (e.g. the engine binary itself couldn't run) —
+		// stays a byre error.
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			if code := exitErr.ExitCode(); code >= 0 && code < 125 {
+				return ExitError{Code: code}
+			}
 		}
 		return runErr
 	}
@@ -382,7 +410,7 @@ func Shell(stdout io.Writer, projectDir string) error {
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
 		return fmt.Errorf("could not determine a valid dev user (BYRE_UID/BYRE_GID) from container %s", shortID(ids[0]))
 	}
-	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, "bash", "-l")
+	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, isTTY(os.Stdin), "bash", "-l")
 }
 
 // withSetupLock runs fn while holding the per-project setup lock, surfacing both
@@ -494,6 +522,9 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, imag
 		// Skill run_args are generated grants; the project's own run_args come
 		// last so the project-level raw escape hatch wins (last-wins).
 		RunArgs: append(append([]string{}, res.RunArgs...), cfg.RunArgs...),
+		// Only allocate a pseudo-TTY when stdin actually is one — otherwise
+		// docker run -t fails under CI/piped invocations.
+		TTY: isTTY(os.Stdin),
 	}, nil
 }
 

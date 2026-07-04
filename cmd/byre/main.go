@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -219,7 +220,18 @@ func cwd() string {
 	return dir
 }
 
+// fatal reports err and exits. An ExitError carries a process-level exit code
+// that isn't a byre failure (the agent/container's own exit status, or a
+// deliberate refusal like "session already running") — it's propagated
+// silently via os.Exit, with no "byre: ..." banner, so scripts see the real
+// code without it being misreported as a byre bug. Anything else is an actual
+// byre error: print it and exit 1 (2 is reserved for usage errors, checked
+// before this is ever called).
 func fatal(err error) {
+	var exitErr commands.ExitError
+	if errors.As(err, &exitErr) {
+		os.Exit(exitErr.Code)
+	}
 	fmt.Fprintf(os.Stderr, "byre: %v\n", err)
 	os.Exit(1)
 }

@@ -42,6 +42,7 @@ type RunParams struct {
 	Caps            []string      // --cap-add (from skills)
 	RunArgs         []string      // raw passthrough, last-wins
 	Command         []string      // agent command; empty uses the image entrypoint default
+	TTY             bool          // allocate a pseudo-TTY (-t); set only when stdin is an actual terminal, so a piped/non-interactive invocation (CI, an agent driving byre) doesn't fail with "the input device is not a TTY"
 }
 
 // RunArgs builds the argv (after the engine name) for `docker run`.
@@ -50,8 +51,16 @@ type RunParams struct {
 // run_args (so they can override byre's, e.g. --user/--network), then the
 // identity --label re-asserted last so it always wins and lifecycle/status can
 // find the container. The image and command come last.
+//
+// -i is always passed (stdin stays open for the agent); -t (pseudo-TTY) is
+// added only when TTY is set, since docker refuses -t under a non-TTY stdin
+// ("the input device is not a TTY") — the case under CI or when another
+// process drives byre non-interactively.
 func RunArgs(p RunParams) []string {
-	args := []string{"run", "--rm", "-it"}
+	args := []string{"run", "--rm", "-i"}
+	if p.TTY {
+		args = append(args, "-t")
+	}
 	if p.Name != "" {
 		args = append(args, "--name", p.Name)
 	}

@@ -157,15 +157,22 @@ func parseEnvLines(out string) map[string]string {
 
 // Exec runs an interactive command in a running container as the given uid:gid,
 // in workdir, with env. Used by `byre shell` — running as the dev uid (not root)
-// and re-passing the run-time skill env so claude/codex find their config.
-func (r *Runner) Exec(containerID string, uid, gid int, workdir string, env map[string]string, command ...string) error {
-	return r.stream(string(r.engine), execArgs(containerID, uid, gid, workdir, env, command...)...)
+// and re-passing the run-time skill env so claude/codex find their config. tty
+// mirrors RunParams.TTY: pass -t only when stdin is an actual terminal, so a
+// non-TTY caller (CI, a script piping into byre) doesn't hit "the input device
+// is not a TTY".
+func (r *Runner) Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error {
+	return r.stream(string(r.engine), execArgs(containerID, uid, gid, workdir, env, tty, command...)...)
 }
 
 // execArgs builds the engine `exec` argv (pure, for testing). Env keys are
 // sorted so the argument order is deterministic.
-func execArgs(containerID string, uid, gid int, workdir string, env map[string]string, command ...string) []string {
-	args := []string{"exec", "-it", "-u", fmt.Sprintf("%d:%d", uid, gid)}
+func execArgs(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) []string {
+	args := []string{"exec", "-i"}
+	if tty {
+		args = append(args, "-t")
+	}
+	args = append(args, "-u", fmt.Sprintf("%d:%d", uid, gid))
 	if workdir != "" {
 		args = append(args, "-w", workdir)
 	}
