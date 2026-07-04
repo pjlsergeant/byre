@@ -84,7 +84,7 @@ func TestDockerfileSkillFilesCopy(t *testing.T) {
 		Files:      map[string]string{"skills/tools/review.sh": "/usr/local/bin/byre-review"},
 		Dockerfile: []string{"RUN chmod +x /usr/local/bin/byre-review"},
 	}}})
-	copyLine := `COPY "skills/tools/review.sh" "/usr/local/bin/byre-review"`
+	copyLine := CopyLine("skills/tools/review.sh", "/usr/local/bin/byre-review")
 	ci := strings.Index(out, copyLine)
 	ri := strings.Index(out, "RUN chmod +x /usr/local/bin/byre-review")
 	if ci < 0 {

@@ -220,8 +220,15 @@ func writeFiles(b *strings.Builder, files map[string]string) {
 	}
 	sort.Strings(srcs)
 	for _, s := range srcs {
-		fmt.Fprintf(b, "COPY %q %q\n", s, files[s])
+		b.WriteString(CopyLine(s, files[s]) + "\n")
 	}
+}
+
+// CopyLine is the exact COPY line the generator emits for a staged file (the
+// quoted form writeFiles produces). Exported so tests in other packages assert
+// the line via its owner instead of respelling the quoting convention.
+func CopyLine(stagedPath, dest string) string {
+	return fmt.Sprintf("COPY %q %q", stagedPath, dest)
 }
 
 // shellQuote single-quotes s for safe interpolation into a shell command (a

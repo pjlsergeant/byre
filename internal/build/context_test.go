@@ -90,7 +90,7 @@ func TestAssembleStagesFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(df, `COPY "files/seed.txt" "/opt/seed.txt"`) {
+	if !strings.Contains(df, gen.CopyLine("files/seed.txt", "/opt/seed.txt")) {
 		t.Errorf("expected staged COPY line:\n%s", df)
 	}
 	staged := filepath.Join(paths.ContextDir, "files", "seed.txt")
@@ -187,7 +187,7 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 		t.Fatalf("skill file not staged into context: %v", err)
 	}
 	// And the generated Dockerfile COPYs it to the destination.
-	if !strings.Contains(df, `COPY "skills/tools/review.sh" "/usr/local/bin/byre-review"`) {
+	if !strings.Contains(df, gen.CopyLine("skills/tools/review.sh", "/usr/local/bin/byre-review")) {
 		t.Errorf("generated Dockerfile missing skill-file COPY:\n%s", df)
 	}
 }

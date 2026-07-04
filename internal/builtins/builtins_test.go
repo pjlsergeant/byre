@@ -8,6 +8,7 @@ import (
 
 	"byre/internal/build"
 	"byre/internal/config"
+	"byre/internal/gen"
 	"byre/internal/project"
 	"byre/internal/skills"
 )
@@ -194,7 +195,7 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 		t.Fatalf("codereview.sh not staged: %v", err)
 	}
 	// COPY of byre-codereview must precede the chmod that makes it executable.
-	cp := strings.Index(df, `COPY "skills/devloop/codereview.sh" "/usr/local/bin/byre-codereview"`)
+	cp := strings.Index(df, gen.CopyLine("skills/devloop/codereview.sh", "/usr/local/bin/byre-codereview"))
 	chmod := strings.Index(df, "chmod +x /usr/local/bin/byre-codereview")
 	if cp < 0 || chmod < 0 || cp > chmod {
 		t.Fatalf("COPY must precede chmod (copy=%d chmod=%d):\n%s", cp, chmod, df)
@@ -203,7 +204,7 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "codex", "codex-login.sh")); err != nil {
 		t.Fatalf("codex-login.sh not staged: %v", err)
 	}
-	if !strings.Contains(df, `COPY "skills/codex/codex-login.sh" "/etc/byre/firstrun.d/codex-login"`) {
+	if !strings.Contains(df, gen.CopyLine("skills/codex/codex-login.sh", "/etc/byre/firstrun.d/codex-login")) {
 		t.Errorf("codex login hook COPY missing:\n%s", df)
 	}
 }

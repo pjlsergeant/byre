@@ -73,6 +73,18 @@ func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
 	}
 }
 
+// hasField reports whether the status output has a "Label: value" row,
+// insensitive to the column padding between them (presentation, not contract).
+func hasField(out, label, value string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, label) && strings.Contains(trimmed, value) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 	var b bytes.Buffer
 	RenderStatus(&b, StatusInfo{
@@ -81,13 +93,13 @@ func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 		EngineErr: "no container engine found on PATH",
 	})
 	out := b.String()
-	if !strings.Contains(out, "Agent:        (none)") {
+	if !hasField(out, "Agent:", "(none)") {
 		t.Errorf("missing default agent: %s", out)
 	}
-	if !strings.Contains(out, "Host mounts:  none") {
+	if !hasField(out, "Host mounts:", "none") {
 		t.Errorf("missing 'none' mounts: %s", out)
 	}
-	if !strings.Contains(out, "Container:    unknown (no engine)") {
+	if !hasField(out, "Container:", "unknown (no engine)") {
 		t.Errorf("missing no-engine container line: %s", out)
 	}
 }
