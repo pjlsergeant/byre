@@ -14,8 +14,8 @@ import (
 
 func TestVolumeName(t *testing.T) {
 	const id = "proj-abc123"
-	if got := VolumeName(id, "cache"); got != "byre-"+id+"-cache" {
-		t.Errorf("VolumeName = %q, want byre-%s-cache", got, id)
+	if got := volumeName(id, "cache"); got != "byre-"+id+"-cache" {
+		t.Errorf("volumeName = %q, want byre-%s-cache", got, id)
 	}
 }
 

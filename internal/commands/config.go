@@ -127,7 +127,7 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 	defs := dedupeVolumes(rv.volumes)
 	out := make([]configui.VolumeStatus, 0, len(defs))
 	for _, v := range defs {
-		exists, err := a.r.VolumeExists(VolumeName(a.paths.ID, v.Name))
+		exists, err := a.r.VolumeExists(volumeName(a.paths.ID, v.Name))
 		if err != nil {
 			return nil, err
 		}
@@ -146,6 +146,6 @@ func (a *volumeAdmin) Clear(name string) error {
 		} else if len(live) > 0 {
 			return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
 		}
-		return a.r.VolumeRemove(VolumeName(a.paths.ID, name))
+		return a.r.VolumeRemove(volumeName(a.paths.ID, name))
 	})
 }

@@ -124,7 +124,7 @@ func pickCopyImage(r imageRunner, oldID, newID string, uid, gid int) (string, er
 	// runs as root, and chowns explicitly, so the image's own baked uid is
 	// irrelevant: any byre image for these ids works as the copy vehicle.
 	for _, id := range []string{oldID, newID} {
-		for _, img := range []string{ImageTag(id, uid, gid), "byre-" + id} {
+		for _, img := range []string{imageTag(id, uid, gid), "byre-" + id} {
 			if ok, err := r.ImageExists(img); err != nil {
 				return "", err
 			} else if ok {

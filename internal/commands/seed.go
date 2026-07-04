@@ -18,7 +18,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 		if v.Role != "state" || v.Seed == nil {
 			continue
 		}
-		name := VolumeName(paths.ID, v.Name)
+		name := volumeName(paths.ID, v.Name)
 		exists, err := s.VolumeExists(name)
 		if err != nil {
 			return err
@@ -84,7 +84,7 @@ func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentS
 	if agentState == "" || from == "" || len(files) == 0 {
 		return nil // nothing to seed (skill declares no prefs / no state volume)
 	}
-	name := VolumeName(paths.ID, agentState)
+	name := volumeName(paths.ID, agentState)
 	exists, err := s.VolumeExists(name)
 	if err != nil {
 		return err

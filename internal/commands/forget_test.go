@@ -14,8 +14,8 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 	projCfg := filepath.Join(proj, "byre.config")
 	os.WriteFile(projCfg, []byte("agent=\"claude\"\n"), 0o644)
 	f := &fakeRunner{
-		vols:   map[string]bool{VolumeName(p.ID, ".claude"): true, VolumeName(p.ID, "cache"): true},
-		images: map[string]bool{ImageTag(p.ID, os.Getuid(), os.Getgid()): true},
+		vols:   map[string]bool{volumeName(p.ID, ".claude"): true, volumeName(p.ID, "cache"): true},
+		images: map[string]bool{imageTag(p.ID, os.Getuid(), os.Getgid()): true},
 	}
 
 	s, _, _ := testStreams("", false)
@@ -37,7 +37,7 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 
 func TestForgetRefusesLive(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{live: liveFamily(p, "deadbeef0000"), vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{live: liveFamily(p, "deadbeef0000"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
 	if err := forget(s, p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")
@@ -52,7 +52,7 @@ func TestForgetRefusesLive(t *testing.T) {
 
 func TestForgetPromptAborts(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, out := testStreams("n\n", false)
 	if err := forget(s, p, f, false); err != nil {
 		t.Fatal(err)

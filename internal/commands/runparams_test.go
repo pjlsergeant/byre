@@ -143,11 +143,11 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 
 func TestStatusRendersSelfEditGrant(t *testing.T) {
 	var off, on strings.Builder
-	RenderStatus(&off, StatusInfo{ID: "x", Agent: "claude"})
+	renderStatus(&off, statusInfo{ID: "x", Agent: "claude"})
 	if strings.Contains(off.String(), "Self-edit") {
 		t.Errorf("self-edit line shown without the grant:\n%s", off.String())
 	}
-	RenderStatus(&on, StatusInfo{ID: "x", Agent: "claude", SelfEdit: "/home/u/.byre"})
+	renderStatus(&on, statusInfo{ID: "x", Agent: "claude", SelfEdit: "/home/u/.byre"})
 	s := on.String()
 	if !strings.Contains(s, "Self-edit") || !strings.Contains(s, "GRANT via --self-edit") || !strings.Contains(s, "(rw)") {
 		t.Errorf("self-edit grant not announced:\n%s", s)
@@ -156,11 +156,11 @@ func TestStatusRendersSelfEditGrant(t *testing.T) {
 
 func TestStatusRendersWorktreeLine(t *testing.T) {
 	var plain, wt strings.Builder
-	RenderStatus(&plain, StatusInfo{ID: "x", Canonical: "/home/me/proj"})
+	renderStatus(&plain, statusInfo{ID: "x", Canonical: "/home/me/proj"})
 	if strings.Contains(plain.String(), "Worktree of") {
 		t.Errorf("plain project should not show a worktree line:\n%s", plain.String())
 	}
-	RenderStatus(&wt, StatusInfo{ID: "x", Canonical: "/home/me/wt", WorktreeOf: "/home/me/main"})
+	renderStatus(&wt, statusInfo{ID: "x", Canonical: "/home/me/wt", WorktreeOf: "/home/me/main"})
 	s := wt.String()
 	if !strings.Contains(s, "Worktree of") || !strings.Contains(s, "/home/me/main") || !strings.Contains(s, "inherited") {
 		t.Errorf("worktree relationship not shown:\n%s", s)
@@ -173,14 +173,14 @@ func TestStatusRendersWorktreeLine(t *testing.T) {
 func TestStatusRendersSiblingSessions(t *testing.T) {
 	// No siblings -> no family-sessions line (the plain-project common case).
 	var none strings.Builder
-	RenderStatus(&none, StatusInfo{ID: "x", Canonical: "/p"})
+	renderStatus(&none, statusInfo{ID: "x", Canonical: "/p"})
 	if strings.Contains(none.String(), "other session") {
 		t.Errorf("should not show sibling sessions when there are none:\n%s", none.String())
 	}
 	// Siblings present -> a line naming them, so status doesn't imply nothing is
 	// running while reset/forget (family label) would refuse.
 	var kin strings.Builder
-	RenderStatus(&kin, StatusInfo{ID: "x", Canonical: "/p", SiblingSessions: []string{"abc123def456", "789beefcafe0"}})
+	renderStatus(&kin, statusInfo{ID: "x", Canonical: "/p", SiblingSessions: []string{"abc123def456", "789beefcafe0"}})
 	s := kin.String()
 	if !strings.Contains(s, "2 other session") || !strings.Contains(s, "abc123def456") || !strings.Contains(s, "789beefcafe0") {
 		t.Errorf("sibling sessions not surfaced:\n%s", s)

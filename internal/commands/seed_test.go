@@ -18,7 +18,7 @@ func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
-	want := VolumeName(p.ID, ".claude")
+	want := volumeName(p.ID, ".claude")
 	if len(f.seeded) != 1 || f.seeded[0] != want {
 		t.Fatalf("expected to seed %s once, got %v", want, f.seeded)
 	}
@@ -26,7 +26,7 @@ func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
 
 func TestSeedVolumesSkipsExisting(t *testing.T) {
 	p, _ := testPaths(t)
-	name := VolumeName(p.ID, ".claude")
+	name := volumeName(p.ID, ".claude")
 	f := &fakeRunner{vols: map[string]bool{name: true}}
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: "~/.claude"}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
@@ -44,7 +44,7 @@ func TestSeedVolumesRollbackOnFailure(t *testing.T) {
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err == nil {
 		t.Fatal("expected seed failure")
 	}
-	name := VolumeName(p.ID, ".claude")
+	name := volumeName(p.ID, ".claude")
 	if len(f.removed) != 1 || f.removed[0] != name {
 		t.Fatalf("expected rollback removal of %s, got %v", name, f.removed)
 	}
@@ -70,7 +70,7 @@ func TestSeedVolumesLiteralWritesOnce(t *testing.T) {
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
-	want := VolumeName(p.ID, "cfg") + ":etc/foo.conf=hello"
+	want := volumeName(p.ID, "cfg") + ":etc/foo.conf=hello"
 	if len(f.literals) != 1 || f.literals[0] != want {
 		t.Fatalf("literal seed wrong: %v", f.literals)
 	}
@@ -83,7 +83,7 @@ func TestSeedPrefsFreshSeedsOnce(t *testing.T) {
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json", "themes"}, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
-	want := VolumeName(p.ID, ".claude") + ":keybindings.json,themes"
+	want := volumeName(p.ID, ".claude") + ":keybindings.json,themes"
 	if len(f.created) != 1 || len(f.fileSeed) != 1 || f.fileSeed[0] != want {
 		t.Fatalf("expected one fresh prefs seed %q, got created=%v fileSeed=%v", want, f.created, f.fileSeed)
 	}
@@ -91,7 +91,7 @@ func TestSeedPrefsFreshSeedsOnce(t *testing.T) {
 
 func TestSeedPrefsSkipsExisting(t *testing.T) {
 	p, _ := testPaths(t)
-	name := VolumeName(p.ID, ".claude")
+	name := volumeName(p.ID, ".claude")
 	from := t.TempDir()
 	f := &fakeRunner{vols: map[string]bool{name: true}}
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err != nil {
@@ -142,7 +142,7 @@ func TestSeedPrefsRollbackOnFailure(t *testing.T) {
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err == nil {
 		t.Fatal("expected prefs seed failure")
 	}
-	name := VolumeName(p.ID, ".claude")
+	name := volumeName(p.ID, ".claude")
 	if len(f.removed) != 1 || f.removed[0] != name {
 		t.Fatalf("expected rollback removal of %s, got %v", name, f.removed)
 	}

@@ -13,8 +13,8 @@ import (
 	"byre/internal/skills"
 )
 
-// StatusInfo is the resolved, display-ready view of a project for `byre status`.
-type StatusInfo struct {
+// statusInfo is the resolved, display-ready view of a project for `byre status`.
+type statusInfo struct {
 	Agent           string
 	Engine          string
 	ID              string
@@ -53,7 +53,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		return err
 	}
 
-	info := StatusInfo{
+	info := statusInfo{
 		Agent:     cfg.Agent,
 		Engine:    cfg.Engine,
 		ID:        paths.ID,
@@ -133,13 +133,13 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		}
 	}
 
-	RenderStatus(s.Out, info)
+	renderStatus(s.Out, info)
 	return nil
 }
 
-// RenderStatus writes the flat, scannable "what can this thing touch?" block.
+// renderStatus writes the flat, scannable "what can this thing touch?" block.
 // Raw run_args are shown verbatim and flagged as not introspected by byre.
-func RenderStatus(w io.Writer, s StatusInfo) {
+func renderStatus(w io.Writer, s statusInfo) {
 	row := func(label, val string) {
 		head := ""
 		if label != "" {

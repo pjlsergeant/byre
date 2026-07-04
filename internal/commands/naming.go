@@ -32,24 +32,23 @@ func familyLabel(p project.Paths) string { return labelKey + "=" + p.ID }
 // workdirLabel selects a single worktree's container.
 func workdirLabel(p project.Paths) string { return workdirKey + "=" + p.WorktreeID }
 
-// ImageTag is the local image tag for a project's build, qualified by the host
+// imageTag is the local image tag for a project's build, qualified by the host
 // UID/GID baked into the image. The UID/GID are part of the image's identity (the
 // dev user, /home/dev, and the volume mount points are all chowned to them at
 // build time), so on a shared daemon two users building the same project path get
 // distinct images instead of one reusing the other's wrong-owned build. The
 // container NAME stays byre-<id> (it makes a single session atomic, and volume
 // names are unchanged); only the image tag carries the uid/gid.
-func ImageTag(projectID string, uid, gid int) string {
+func imageTag(projectID string, uid, gid int) string {
 	return fmt.Sprintf("byre-%s-u%d-g%d", projectID, uid, gid)
 }
 
-// VolumeName is the docker volume name for a per-project named volume.
-// VolumeName is the Docker name for a project's named volume: byre-<id>-<name>.
+// volumeName is the Docker name for a project's named volume: byre-<id>-<name>.
 // The project id namespaces it, so reset/forget/rehome can filter a project's
 // volumes by the byre-<id>- prefix. (Worktree volume INHERITANCE, when built,
 // works by resolving <id> from the main worktree's path — not by a separate
 // volume scope — see docs/agent-volume-sharing.md.)
-func VolumeName(projectID, name string) string {
+func volumeName(projectID, name string) string {
 	return "byre-" + projectID + "-" + name
 }
 

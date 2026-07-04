@@ -18,6 +18,13 @@ import (
 // adopted <project>/byre.config, so a changed proposal re-prompts.
 const adoptedRecord = "adopted"
 
+// proposalHash is the identity of a proposal's bytes — what the adoption
+// record stores and every "has it changed?" check compares.
+func proposalHash(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
+}
+
 // adoptIfProposed handles a committed <project>/byre.config. That file is a
 // PROPOSAL, never live config (byre only runs the host-side store, which the
 // rw-mounted project can't write). If the proposal is new or changed since the
@@ -33,8 +40,7 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 		return err
 	}
 
-	sum := sha256.Sum256(content)
-	h := hex.EncodeToString(sum[:])
+	h := proposalHash(content)
 	recordPath := filepath.Join(paths.Dir, adoptedRecord)
 	if prev, e := os.ReadFile(recordPath); e == nil && strings.TrimSpace(string(prev)) == h {
 		return nil // unchanged since last adoption — already reflected in the store
@@ -53,9 +59,9 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	cfg, grants := adoptionView(paths, proposal)
 
 	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
-	changed := false
+	storeExists := false
 	if _, e := os.Stat(storePath); e == nil {
-		changed = true
+		storeExists = true
 	}
 
 	// Never adopt unattended — adoption is a deliberate, human, host-side act.
@@ -64,8 +70,10 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 		return nil
 	}
 
+	// With a store config already present, this proposal supersedes an earlier
+	// adopted (or hand-written) one — say "changed", not "ships".
 	headline := "ships a byre.config"
-	if changed {
+	if storeExists {
 		headline = "has a changed byre.config"
 	}
 	fmt.Fprintf(s.Err, "\nThis project %s — review it before byre runs with it:\n  %s\n", headline, proposed)
@@ -101,10 +109,8 @@ func proposalState(projectDir string, paths project.Paths) string {
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(content)
-	h := hex.EncodeToString(sum[:])
 	rec, _ := os.ReadFile(filepath.Join(paths.Dir, adoptedRecord))
-	if strings.TrimSpace(string(rec)) == h {
+	if strings.TrimSpace(string(rec)) == proposalHash(content) {
 		return "adopted"
 	}
 	return "pending"

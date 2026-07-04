@@ -23,7 +23,7 @@ type app struct {
 	forget      func(s commands.Streams, dir string, force bool) error
 	shell       func(s commands.Streams, dir string) error
 	worktree    func(s commands.Streams, dir, name, path string, selfEdit bool) error
-	skillUpdate func(s commands.Streams, dir string) error
+	skillUpdate func(s commands.Streams) error
 	rebuild     func(s commands.Streams, dir string) error
 	rehome      func(s commands.Streams, dir, oldID string) error
 }
@@ -231,7 +231,7 @@ updates (a locally-modified copy is backed up to <name>.bak). Follow with
 			if len(rest) != 1 || rest[0] != "update" {
 				return usageError("usage: byre skill update   (re-materialize byre's built-in skills)")
 			}
-			return a.skillUpdate(s, dir)
+			return a.skillUpdate(s)
 		},
 	},
 	{

@@ -54,7 +54,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	}
 	vols := make([]runner.NamedVolume, 0, len(rv.volumes))
 	for _, v := range rv.volumes {
-		vols = append(vols, runner.NamedVolume{Name: VolumeName(paths.ID, v.Name), Target: v.Target})
+		vols = append(vols, runner.NamedVolume{Name: volumeName(paths.ID, v.Name), Target: v.Target})
 	}
 	// Published ports come from config only, normalized to the publish defaults.
 	ports := make([]runner.PortPublish, 0, len(rv.cfg.Ports))

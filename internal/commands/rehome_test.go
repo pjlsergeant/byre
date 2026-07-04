@@ -9,7 +9,7 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{
 		vols:   map[string]bool{"byre-oldid-.claude": true, "byre-oldid-cache": true},
-		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
 	if err := rehome(s, p, "oldid", f, 1000, 1000); err != nil {
@@ -35,7 +35,7 @@ func TestRehomeRefusesLive(t *testing.T) {
 	f := &fakeRunner{
 		live:   liveFamily(p, "deadbeef0000"),
 		vols:   map[string]bool{"byre-oldid-cache": true},
-		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
 	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
@@ -51,7 +51,7 @@ func TestRehomeConflictAborts(t *testing.T) {
 	dst := "byre-" + p.ID + "-cache"
 	f := &fakeRunner{
 		vols:   map[string]bool{"byre-oldid-cache": true, dst: true}, // dst already exists
-		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
 	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
@@ -67,7 +67,7 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 	failDst := "byre-" + p.ID + "-cache"
 	f := &fakeRunner{
 		vols:        map[string]bool{"byre-oldid-.claude": true, "byre-oldid-cache": true},
-		images:      map[string]bool{ImageTag("oldid", 1000, 1000): true},
+		images:      map[string]bool{imageTag("oldid", 1000, 1000): true},
 		failMigrate: failDst,
 	}
 	s, _, _ := testStreams("", false)

@@ -11,13 +11,14 @@ import (
 // SkillUpdate implements `byre skill update`: re-materialize byre's built-in
 // skills into ~/.byre/skills, overwriting stale copies with the shipped version
 // (a differing copy is backed up to <name>.bak). This removes the need to
-// hand-delete ~/.byre/skills/<name> to pick up skill changes.
-func SkillUpdate(s Streams, projectDir string) error {
-	paths, err := project.Resolve(projectDir)
+// hand-delete ~/.byre/skills/<name> to pick up skill changes. It updates the
+// shared ~/.byre store, so it takes no project dir.
+func SkillUpdate(s Streams) error {
+	home, err := project.Home()
 	if err != nil {
 		return err
 	}
-	skillsDir := filepath.Join(paths.Home, "skills")
+	skillsDir := filepath.Join(home, "skills")
 	updated, err := builtins.UpdateSkills(skillsDir)
 	if err != nil {
 		return err

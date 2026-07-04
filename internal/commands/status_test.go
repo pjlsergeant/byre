@@ -11,7 +11,7 @@ import (
 
 func TestRenderStatusFull(t *testing.T) {
 	var b bytes.Buffer
-	RenderStatus(&b, StatusInfo{
+	renderStatus(&b, statusInfo{
 		Agent:     "claude",
 		Engine:    "docker",
 		Canonical: "/home/me/proj",
@@ -51,7 +51,7 @@ func TestRenderStatusFull(t *testing.T) {
 
 func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
 	var b bytes.Buffer
-	RenderStatus(&b, StatusInfo{
+	renderStatus(&b, statusInfo{
 		Engine:    "docker",
 		Canonical: "/p",
 		Skills:    []string{"shem"},
@@ -87,7 +87,7 @@ func hasField(out, label, value string) bool {
 
 func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 	var b bytes.Buffer
-	RenderStatus(&b, StatusInfo{
+	renderStatus(&b, statusInfo{
 		Engine:    "auto",
 		Canonical: "/p",
 		EngineErr: "no container engine found on PATH",
@@ -106,7 +106,7 @@ func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 
 func TestRenderStatusRootlessPodman(t *testing.T) {
 	var b bytes.Buffer
-	RenderStatus(&b, StatusInfo{Engine: "podman", Canonical: "/p", Rootless: true})
+	renderStatus(&b, statusInfo{Engine: "podman", Canonical: "/p", Rootless: true})
 	out := b.String()
 	if !strings.Contains(out, "rootless") || !strings.Contains(out, "UNSUPPORTED") {
 		t.Errorf("rootless Podman not flagged on the Engine row: %s", out)

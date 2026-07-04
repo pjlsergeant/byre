@@ -44,7 +44,7 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	image := ImageTag(p.ID, os.Getuid(), os.Getgid())
+	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
 
 	if err := buildImage(r, p, rv.cfg, rv.skills, image, false); err != nil {

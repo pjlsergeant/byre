@@ -70,7 +70,7 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
+	image := imageTag(paths.ID, os.Getuid(), os.Getgid())
 	params, err := runParams(paths, rv, image, false, s.TTY)
 	if err != nil {
 		return err

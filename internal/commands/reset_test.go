@@ -14,7 +14,7 @@ func liveFamily(p project.Paths, ids ...string) map[string][]string {
 
 func TestResetForceWipesAll(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, ".claude"): true, VolumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, ".claude"): true, volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
 	if err := reset(s, p, f, true); err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestResetForceWipesAll(t *testing.T) {
 
 func TestResetRefusesWhenLive(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{live: liveFamily(p, "abcdef0123456789"), vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{live: liveFamily(p, "abcdef0123456789"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
 	if err := reset(s, p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")
@@ -50,7 +50,7 @@ func TestResetNoVolumes(t *testing.T) {
 
 func TestResetPromptAbortsOnNo(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, out := testStreams("n\n", false)
 	if err := reset(s, p, f, false); err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestResetPromptAbortsOnNo(t *testing.T) {
 func TestResetRechecksLiveUnderLock(t *testing.T) {
 	p, _ := testPaths(t)
 	// Not live at the first check, but a session appears by the re-check.
-	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}, liveSecond: liveFamily(p, "abcdef0123456789")}
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}, liveSecond: liveFamily(p, "abcdef0123456789")}
 	s, _, _ := testStreams("", false)
 	if err := reset(s, p, f, true); err == nil {
 		t.Fatal("expected abort when a session starts before deletion")
@@ -79,8 +79,8 @@ func TestResetRechecksLiveUnderLock(t *testing.T) {
 func TestResetPartialWipeReported(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{
-		vols:       map[string]bool{VolumeName(p.ID, "a"): true, VolumeName(p.ID, "b"): true, VolumeName(p.ID, "c"): true},
-		failRemove: map[string]bool{VolumeName(p.ID, "b"): true},
+		vols:       map[string]bool{volumeName(p.ID, "a"): true, volumeName(p.ID, "b"): true, volumeName(p.ID, "c"): true},
+		failRemove: map[string]bool{volumeName(p.ID, "b"): true},
 	}
 	s, _, _ := testStreams("", false)
 	err := reset(s, p, f, true)
@@ -91,14 +91,14 @@ func TestResetPartialWipeReported(t *testing.T) {
 	if len(f.removed) != 2 {
 		t.Fatalf("should continue past failure, removed=%v", f.removed)
 	}
-	if !strings.Contains(err.Error(), VolumeName(p.ID, "b")) {
+	if !strings.Contains(err.Error(), volumeName(p.ID, "b")) {
 		t.Errorf("error should name the failed volume: %v", err)
 	}
 }
 
 func TestResetPromptProceedsOnYes(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("y\n", false)
 	if err := reset(s, p, f, false); err != nil {
 		t.Fatal(err)

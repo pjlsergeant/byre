@@ -15,14 +15,6 @@ import (
 	"byre/internal/skills"
 )
 
-// Develop implements `byre develop`: set up (generate + build) under a setup
-// lock and run the container in the foreground. If a container is already
-// running for this directory, report it (and how to act) instead of starting one.
-//
-// flagTemplate/flagAgent come from --template/--agent (empty = unspecified).
-// selfEdit (--self-edit) bind-mounts the host ~/.byre read-write into the box so
-// the agent can edit byre's own skills/templates/favourites — a deliberate grant.
-//
 // selfEditTarget is where --self-edit mounts this project's host-side store
 // (~/.byre/projects/<id>/) inside the box, so the agent can edit its OWN
 // byre.config — the deliberate "let the agent change its own sandbox" grant.
@@ -43,6 +35,14 @@ func (e ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code)
 // declined to run" from "the agent ran and exited zero".
 const ExitRefused = 3
 
+// Develop implements `byre develop`: set up (generate + build) under a setup
+// lock and run the container in the foreground. If a container is already
+// running for this directory, report it (and how to act) instead of starting one.
+//
+// flagTemplate/flagAgent come from --template/--agent (empty = unspecified).
+// selfEdit (--self-edit) bind-mounts this project's host-side store
+// (~/.byre/projects/<id>/, not all of ~/.byre) read-write at selfEditTarget so
+// the agent can edit its own byre.config — a deliberate grant.
 func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
@@ -94,7 +94,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit boo
 func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool) error {
 	warnRootlessPodman(s.Err, r)
 
-	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
+	image := imageTag(paths.ID, os.Getuid(), os.Getgid())
 
 	// Fast path: a session is already running for THIS worktree — report it
 	// rather than racing the container name. Queried by the worktree label, not

@@ -36,7 +36,7 @@ func recorderApp(calls map[string]string) app {
 		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
 		},
-		skillUpdate: func(_ commands.Streams, dir string) error { return note("skill update", dir) },
+		skillUpdate: func(_ commands.Streams) error { return note("skill update", "-") },
 		rebuild:     func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome:      func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
 	}
@@ -78,7 +78,7 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"shell"}, "shell", "/proj"},
 		{[]string{"worktree", "feat"}, "worktree", "/proj feat  false"},
 		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x true"},
-		{[]string{"skill", "update"}, "skill update", "/proj"},
+		{[]string{"skill", "update"}, "skill update", "-"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
 	}

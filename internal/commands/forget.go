@@ -42,7 +42,7 @@ func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	// Both the current UID-qualified tag and the legacy unqualified `byre-<id>`
 	// tag (a project built before the build-time-UID milestone): forget removes
 	// whichever exist so it never leaves an orphaned image behind.
-	candidates := []string{ImageTag(paths.ID, os.Getuid(), os.Getgid()), "byre-" + paths.ID}
+	candidates := []string{imageTag(paths.ID, os.Getuid(), os.Getgid()), "byre-" + paths.ID}
 	var images []string
 	for _, img := range candidates {
 		has, ierr := r.ImageExists(img)
