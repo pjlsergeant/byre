@@ -22,7 +22,10 @@ import (
 // AgentContrib is the agent-skill launch contribution.
 type AgentContrib struct {
 	Command string `toml:"command"` // what the launcher execs (e.g. "claude --dangerously-skip-permissions")
-	State   string `toml:"state"`   // name of its state volume (informational)
+	// State names the skill's state volume. Load-bearing, not informational:
+	// Resolve requires the skill to contribute it (credentials must persist),
+	// and seed_prefs seeds into it.
+	State string `toml:"state"`
 	// ContextTarget is the in-image path where THIS agent reads project memory
 	// (e.g. claude -> /home/dev/.claude/CLAUDE.md). When set, the launcher places
 	// the concatenated skill [context] there at runtime so it reaches the agent.

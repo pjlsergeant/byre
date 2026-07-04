@@ -1,6 +1,9 @@
 // Package config loads and resolves byre's configuration cascade:
 //
-//	~/.byre/default.config  ⊕  ~/.byre/templates/<name>/template.config  ⊕  <project>/byre.config
+//	~/.byre/default.config  ⊕  ~/.byre/templates/<name>/template.config  ⊕  ~/.byre/projects/<id>/byre.config
+//
+// The third layer is the HOST-SIDE store copy — a byre.config committed in the
+// project tree is only a proposal until adopted into the store.
 //
 // Files are TOML; byre layers its own merge semantics on top (scalars override,
 // lists union, maps merge, `!name` removes a named entry an earlier layer added).
@@ -101,7 +104,7 @@ type Volume struct {
 type Config struct {
 	Engine     string `toml:"engine,omitempty"`     // auto|docker|podman
 	Template   string `toml:"template,omitempty"`   // template name to layer in
-	Agent      string `toml:"agent,omitempty"`      // claude|codex|gemini (enables its skill)
+	Agent      string `toml:"agent,omitempty"`      // skill that launches (any skill with an [agent] command); enables it implicitly
 	Base       string `toml:"base,omitempty"`       // base image
 	Dockerfile string `toml:"dockerfile,omitempty"` // full hand-written Dockerfile opt-out (path)
 
@@ -214,6 +217,9 @@ func ParseFile(path string) (Config, error) {
 	return loadFile(path)
 }
 
+// loadFile reads one TOML cascade layer. A missing file is an empty layer
+// (the cascade tolerates absent layers); an unknown key is an error, so a
+// typo can't silently produce a default.
 func loadFile(path string) (Config, error) {
 	var c Config
 	md, err := toml.DecodeFile(path, &c)

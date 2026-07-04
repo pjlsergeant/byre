@@ -13,13 +13,14 @@ import (
 )
 
 // Worktree implements `byre worktree <name>`: create a linked git worktree for
-// branch <name> as a sibling of the repo, then `byre develop` in it — a parallel
-// agent session that inherits the repo's config, volumes, and image, in one
-// step. It needs git on PATH (it runs `git worktree add`).
+// branch <name> and `byre develop` in it — a parallel agent session that
+// inherits the repo's config, volumes, and image, in one step. It needs git on
+// PATH (it runs `git worktree add`).
 //
-// path (--path) overrides the default location, a sibling dir named <repo>-<name>.
-// Run from either the main worktree or an existing linked one: identity resolves
-// to the main worktree, so the new worktree is always a sibling of the repo root.
+// The location comes from --path, or else the configured worktree_base
+// ("sibling" = beside the repo, or a base dir), with the leaf <repo>-<name>;
+// unset, byre refuses rather than guess. Run from the main worktree or a
+// linked one: identity resolves to the main worktree either way.
 func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
