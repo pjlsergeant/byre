@@ -253,12 +253,28 @@ func (r Resolved) AgentPrefs() *PrefsSpec {
 	return r.Agent.Prefs
 }
 
-// ListSkills returns the names of all skills in skillsDir, sorted. Broken skills
-// are skipped. This is the full set selectable via the `skills` list — including
-// agent skills, which can legitimately be enabled as a plain skill (e.g. codex
-// installed for byre-codereview while claude is the launched agent), separate
-// from the `agent` choice. Broken skills are skipped rather than failing.
+// ListSkills returns the names of all skills in skillsDir, sorted. This is the
+// full set selectable via the `skills` list — including agent skills, which can
+// legitimately be enabled as a plain skill (e.g. codex installed for
+// byre-codereview while claude is the launched agent), separate from the
+// `agent` choice.
 func ListSkills(skillsDir string) []string {
+	return list(skillsDir, func(Skill) bool { return true })
+}
+
+// ListAgentSkills returns the names of skills in skillsDir that provide an
+// [agent] command (i.e. can be selected as `agent`), sorted.
+func ListAgentSkills(skillsDir string) []string {
+	return list(skillsDir, func(sk Skill) bool {
+		return sk.File.Agent != nil && sk.File.Agent.Command != ""
+	})
+}
+
+// list returns the sorted names of skills in skillsDir that load cleanly and
+// satisfy keep. Broken skills are skipped rather than failing the listing;
+// non-dirs and dot-prefixed entries (temp/stash dirs from `byre skill update`,
+// backups) are not skills.
+func list(skillsDir string, keep func(Skill) bool) []string {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		return nil
@@ -268,40 +284,14 @@ func ListSkills(skillsDir string) []string {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		if _, err := Load(skillsDir, e.Name()); err != nil {
+		sk, err := Load(skillsDir, e.Name())
+		if err != nil || !keep(sk) {
 			continue
 		}
 		out = append(out, e.Name())
 	}
 	sort.Strings(out)
 	return out
-}
-
-// ListAgentSkills returns the names of skills in skillsDir that provide an
-// [agent] command (i.e. can be selected as `agent`), sorted. Broken skills are
-// skipped rather than failing the whole listing.
-func ListAgentSkills(skillsDir string) []string {
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		return nil
-	}
-	var agents []string
-	for _, e := range entries {
-		// Skip non-dirs and dot-prefixed entries (temp/stash dirs from
-		// `byre skill update`, backups, etc. are not skills).
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		sk, err := Load(skillsDir, e.Name())
-		if err != nil {
-			continue
-		}
-		if sk.File.Agent != nil && sk.File.Agent.Command != "" {
-			agents = append(agents, e.Name())
-		}
-	}
-	sort.Strings(agents)
-	return agents
 }
 
 // Load reads and resolves a single skill from skillsDir/<name>/skill.toml.
@@ -461,19 +451,22 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 	return res, nil
 }
 
-// devHome is the in-box agent home; context_target must stay within it so a
-// skill can't use the launcher's root-time context placement to write arbitrary
-// container paths (e.g. /workspace, /etc/passwd).
-const devHome = "/home/dev"
+// DevHome is the in-box agent home. The generated image bakes the dev user
+// with this home (see internal/gen's infra layer and launcher — they spell it
+// literally in shell/Dockerfile text, pinned by gen's golden test), and
+// context_target must stay within it so a skill can't use the launcher's
+// context placement to write arbitrary container paths (e.g. /workspace,
+// /etc/passwd).
+const DevHome = "/home/dev"
 
-// validateContextTarget requires an absolute path contained within devHome.
+// validateContextTarget requires an absolute path contained within DevHome.
 func validateContextTarget(t string) error {
 	if !filepath.IsAbs(t) {
 		return fmt.Errorf("must be an absolute path")
 	}
-	rel, err := filepath.Rel(devHome, filepath.Clean(t))
+	rel, err := filepath.Rel(DevHome, filepath.Clean(t))
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("must be a file strictly within %s", devHome)
+		return fmt.Errorf("must be a file strictly within %s", DevHome)
 	}
 	return nil
 }
@@ -495,23 +488,13 @@ func validatePrefs(p *PrefsSpec, state string) error {
 		return fmt.Errorf("requires [agent].state (a state volume to seed into)")
 	}
 	for _, f := range p.Files {
-		if !relSafe(f) {
+		// Strictly below `from`: "." would copy the entire from-dir, smuggling in
+		// the curated-out secret-bearing files.
+		if !config.RelSafe(f) {
 			return fmt.Errorf("file %q must be relative and stay within from", f)
 		}
 	}
 	return nil
-}
-
-// relSafe reports whether p names a relative path strictly BELOW its root: no
-// absolute path, no ".." escape, and not the root itself ("." — which for prefs
-// would copy the entire from-dir, smuggling in the curated-out secret-bearing
-// files). It compares the cleaned form, so "./x", "a/.." etc. are normalized.
-func relSafe(p string) bool {
-	if p == "" || filepath.IsAbs(p) {
-		return false
-	}
-	clean := filepath.Clean(p)
-	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }
 
 // validateSkillName requires a skill name to be a single, non-relative path

@@ -9,8 +9,9 @@
 # execs the agent — all as the same user.
 set -euo pipefail
 
-: "${DEV_HOME:=/home/dev}"
-export HOME="$DEV_HOME"
+# The dev user's home is baked at build time (skills.DevHome); not an env knob —
+# a run-time override would sidestep the context_target containment guarantee.
+export HOME=/home/dev
 
 # git identity: mark the workspace safe so git doesn't refuse the bind-mounted
 # repo (owned by the same uid, but git's dubious-ownership check is path-based).

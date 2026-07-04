@@ -7,6 +7,7 @@ import (
 
 	"byre/internal/project"
 	"byre/internal/runner"
+	"byre/internal/skills"
 )
 
 // Shell opens an interactive shell in this project's running container as the
@@ -82,5 +83,5 @@ func shell(s Streams, projectDir string, engines []sessionRunner) error {
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
 		return fmt.Errorf("could not determine a valid dev user (BYRE_UID/BYRE_GID) from container %s", shortID(ids[0]))
 	}
-	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, s.TTY, "bash", "-l")
+	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": skills.DevHome}, s.TTY, "bash", "-l")
 }

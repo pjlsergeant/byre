@@ -18,7 +18,7 @@ import (
 // selfEditTarget is where --self-edit mounts this project's host-side store
 // (~/.byre/projects/<id>/) inside the box, so the agent can edit its OWN
 // byre.config — the deliberate "let the agent change its own sandbox" grant.
-const selfEditTarget = "/home/dev/.byre-self"
+const selfEditTarget = skills.DevHome + "/.byre-self"
 
 // ExitError signals a process-level exit code that is NOT a byre failure —
 // either the agent/container's own exit status, or a deliberate refusal (e.g.

@@ -344,7 +344,7 @@ func (c Config) validateScalars() error {
 	// it (from the project dir) instead of generating, and the user owns the
 	// infra layer — including the dev user and its ownership (byre passes no
 	// UID/GID build args on this path); byre still owns runtime.
-	if c.Dockerfile != "" && !relSafe(c.Dockerfile) {
+	if c.Dockerfile != "" && !RelSafe(c.Dockerfile) {
 		return fmt.Errorf("dockerfile = %q: must be a relative path within the project", c.Dockerfile)
 	}
 
@@ -415,7 +415,7 @@ func validateVolumeShape(v Volume) error {
 			if v.Seed.Path == "" {
 				return fmt.Errorf("volume %s: literal seed requires a path (destination file in the volume)", v.Name)
 			}
-			if !relSafe(v.Seed.Path) {
+			if !RelSafe(v.Seed.Path) {
 				return fmt.Errorf("volume %s: literal seed path %q must be relative and not escape the volume", v.Name, v.Seed.Path)
 			}
 		}
@@ -532,14 +532,17 @@ func (c Config) ValidateLayer() error {
 	return c.validatePorts()
 }
 
-// relSafe reports whether p is a relative path that stays within its root (no
-// absolute path, no ".." escape).
-func relSafe(p string) bool {
-	if filepath.IsAbs(p) {
+// RelSafe reports whether p names a relative path strictly BELOW its root: not
+// absolute, no ".." escape, and not the root itself ("."). It compares the
+// cleaned form, so "./x", "a/..", etc. are normalized. Shared by config
+// validation (dockerfile, literal-seed paths) and skills (pref paths) — every
+// caller means "one of the root's own files", never the root.
+func RelSafe(p string) bool {
+	if p == "" || filepath.IsAbs(p) {
 		return false
 	}
 	clean := filepath.Clean(p)
-	return clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
+	return clean != "." && clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }
 
 func override(base, over string) string {
