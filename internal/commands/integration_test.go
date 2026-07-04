@@ -40,14 +40,14 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	r := requireEngineRunner(t)
 	p, proj := testPaths(t)
 
-	cfg, res, err := resolve(p, proj)
+	rv, err := resolve(p, proj)
 	if err != nil {
 		t.Fatal(err)
 	}
 	image := ImageTag(p.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
 
-	if err := buildImage(r, p, cfg, res, image, false); err != nil {
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false); err != nil {
 		t.Fatalf("generated Dockerfile failed to build: %v", err)
 	}
 	if ok, err := r.ImageExists(image); err != nil || !ok {

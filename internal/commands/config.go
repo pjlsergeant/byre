@@ -84,11 +84,11 @@ type volumeAdmin struct {
 // section is shown even with zero volumes — the screen re-resolves on each open,
 // so volumes added later (e.g. via $EDITOR) appear without restarting.
 func newVolumeAdmin(paths project.Paths, projectDir string) configui.VolumeAdmin {
-	cfg, _, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir)
 	if err != nil {
 		return nil
 	}
-	eng, err := runner.Detect(cfg.Engine, nil)
+	eng, err := runner.Detect(rv.cfg.Engine, nil)
 	if err != nil {
 		return nil // no engine → can't list/clear; hide the section
 	}
@@ -121,11 +121,11 @@ func (a *volumeAdmin) SharedNote() string {
 // List re-resolves the config from disk so the volume set reflects the current
 // state (e.g. after a $EDITOR edit to [[volumes]] or the agent), not a snapshot.
 func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
-	cfg, res, err := resolve(a.paths, a.projectDir)
+	rv, err := resolve(a.paths, a.projectDir)
 	if err != nil {
 		return nil, err
 	}
-	defs := dedupeVolumes(allVolumes(cfg, res.Volumes))
+	defs := dedupeVolumes(rv.volumes)
 	out := make([]configui.VolumeStatus, 0, len(defs))
 	for _, v := range defs {
 		exists, err := a.r.VolumeExists(VolumeName(a.paths.ID, v.Name))

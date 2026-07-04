@@ -26,15 +26,15 @@ func Rebuild(stdout io.Writer, projectDir string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	cfg, res, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir)
 	if err != nil {
 		return err
 	}
-	eng, err := runner.Detect(cfg.Engine, nil)
+	eng, err := runner.Detect(rv.cfg.Engine, nil)
 	if err != nil {
 		return err
 	}
-	return rebuild(stdout, runner.New(eng), paths, cfg, res)
+	return rebuild(stdout, runner.New(eng), paths, rv.cfg, rv.skills)
 }
 
 // rebuild is Rebuild's engine-facing core, split out so it can run against a

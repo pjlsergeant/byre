@@ -119,8 +119,3 @@ func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentS
 	fmt.Fprintf(log, "byre: seeded prefs into %s\n", agentState)
 	return nil
 }
-
-// allVolumes is the union of config and skill-contributed volumes.
-func allVolumes(cfg config.Config, skillVols []config.Volume) []config.Volume {
-	return append(append([]config.Volume{}, cfg.Volumes...), skillVols...)
-}

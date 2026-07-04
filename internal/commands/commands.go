@@ -43,36 +43,61 @@ func familyLabel(p project.Paths) string { return labelKey + "=" + p.ID }
 // workdirLabel selects a single worktree's container.
 func workdirLabel(p project.Paths) string { return workdirKey + "=" + p.WorktreeID }
 
+// resolved is the fully-loaded view of a project: the config cascade, the
+// enabled skills, and — because every consumer wants them — the combined
+// (config + skill) mount and volume sets, formed in one place.
+type resolved struct {
+	cfg     config.Config
+	skills  skills.Resolved
+	mounts  []config.Mount  // config mounts, then skill contributions
+	volumes []config.Volume // config volumes, then skill contributions
+}
+
+// combine forms the resolved view from a loaded config and its skills — the
+// single place the config+skill mount/volume union is built.
+func combine(cfg config.Config, res skills.Resolved) resolved {
+	return resolved{
+		cfg:     cfg,
+		skills:  res,
+		mounts:  append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...),
+		volumes: append(append([]config.Volume{}, cfg.Volumes...), res.Volumes...),
+	}
+}
+
+// validate re-checks the combined mount/volume set for target/name collisions
+// across config and skills (each side is already valid on its own).
+func (rv resolved) validate() error {
+	if err := (config.Config{Mounts: rv.mounts, Volumes: rv.volumes}).Validate(); err != nil {
+		return fmt.Errorf("config + skills: %w", err)
+	}
+	return nil
+}
+
 // resolve loads the config cascade and the enabled skills for a project, and
 // re-validates the combined mount/volume set (config + skill contributions).
-func resolve(paths project.Paths, projectDir string) (config.Config, skills.Resolved, error) {
+func resolve(paths project.Paths, projectDir string) (resolved, error) {
 	// Materialize built-ins before loading config (templates feed the cascade)
 	// and resolving skills.
 	if err := builtins.MaterializeTemplates(filepath.Join(paths.Home, "templates")); err != nil {
-		return config.Config{}, skills.Resolved{}, err
+		return resolved{}, err
 	}
 	skillsDir := filepath.Join(paths.Home, "skills")
 	if err := builtins.MaterializeSkills(skillsDir); err != nil {
-		return config.Config{}, skills.Resolved{}, err
+		return resolved{}, err
 	}
 	cfg, err := config.Load(projectDir)
 	if err != nil {
-		return config.Config{}, skills.Resolved{}, err
+		return resolved{}, err
 	}
 	res, err := skills.Resolve(cfg, skillsDir)
 	if err != nil {
-		return config.Config{}, skills.Resolved{}, err
+		return resolved{}, err
 	}
-	// Skills add mounts/volumes; re-validate the combined set for target/name
-	// collisions across config and skills.
-	combined := config.Config{
-		Mounts:  append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...),
-		Volumes: append(append([]config.Volume{}, cfg.Volumes...), res.Volumes...),
+	rv := combine(cfg, res)
+	if err := rv.validate(); err != nil {
+		return resolved{}, err
 	}
-	if err := combined.Validate(); err != nil {
-		return config.Config{}, skills.Resolved{}, fmt.Errorf("config + skills: %w", err)
-	}
-	return cfg, res, nil
+	return rv, nil
 }
 
 // Dockerfile implements `byre dockerfile`: resolve identity, resolve the config
@@ -85,25 +110,25 @@ func Dockerfile(stdout io.Writer, projectDir string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	cfg, res, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir)
 	if err != nil {
 		return err
 	}
-	if cfg.Dockerfile != "" {
+	if rv.cfg.Dockerfile != "" {
 		// Opt-out: byre doesn't generate; show the user's hand-written Dockerfile.
-		dfPath, rerr := resolveProjectFile(paths.Canonical, cfg.Dockerfile)
+		dfPath, rerr := resolveProjectFile(paths.Canonical, rv.cfg.Dockerfile)
 		if rerr != nil {
 			return rerr
 		}
 		b, rerr := os.ReadFile(dfPath)
 		if rerr != nil {
-			return fmt.Errorf("dockerfile %q: %w", cfg.Dockerfile, rerr)
+			return fmt.Errorf("dockerfile %q: %w", rv.cfg.Dockerfile, rerr)
 		}
-		fmt.Fprintf(stdout, "# byre: generation opted out; using %s verbatim:\n", cfg.Dockerfile)
+		fmt.Fprintf(stdout, "# byre: generation opted out; using %s verbatim:\n", rv.cfg.Dockerfile)
 		_, err = stdout.Write(b)
 		return err
 	}
-	df, err := build.Render(paths, cfg, res)
+	df, err := build.Render(paths, rv.cfg, rv.skills)
 	if err != nil {
 		return err
 	}
@@ -130,19 +155,19 @@ func DockerRun(stdout io.Writer, projectDir string) error {
 	if err := checkMountPaths(paths); err != nil {
 		return err
 	}
-	cfg, res, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir)
 	if err != nil {
 		return err
 	}
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
-	params, err := runParams(paths, cfg, res, image, false)
+	params, err := runParams(paths, rv, image, false)
 	if err != nil {
 		return err
 	}
 	// Best-effort engine name for the leading token; fall back to the configured
 	// value (or docker) so this stays informational when no engine is installed.
-	engine := orDefault(cfg.Engine, "docker")
-	if eng, derr := runner.Detect(cfg.Engine, nil); derr == nil {
+	engine := orDefault(rv.cfg.Engine, "docker")
+	if eng, derr := runner.Detect(rv.cfg.Engine, nil); derr == nil {
 		engine = string(eng)
 	}
 	argv := append([]string{engine}, runner.RunArgs(params)...)
@@ -232,25 +257,25 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if err := checkMountPaths(paths); err != nil {
 		return err
 	}
-	cfg, res, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir)
 	if err != nil {
 		return err
 	}
-	if cfg.Dockerfile == "" {
-		warnNonDebianBase(os.Stderr, cfg.Base)
+	if rv.cfg.Dockerfile == "" {
+		warnNonDebianBase(os.Stderr, rv.cfg.Base)
 	}
-	eng, err := runner.Detect(cfg.Engine, nil)
+	eng, err := runner.Detect(rv.cfg.Engine, nil)
 	if err != nil {
 		return err
 	}
-	return develop(runner.New(eng), os.Stderr, paths, cfg, res, selfEdit)
+	return develop(runner.New(eng), os.Stderr, paths, rv, selfEdit)
 }
 
 // develop is the engine-facing core of Develop — the live-session fast path,
 // then build + seed under the setup lock, then the foreground run and its
 // exit-status mapping. Split from Develop (which does the host-side resolution
 // and onboarding) so it can run end-to-end against a fake engine.
-func develop(r engineRunner, stderr io.Writer, paths project.Paths, cfg config.Config, res skills.Resolved, selfEdit bool) error {
+func develop(r engineRunner, stderr io.Writer, paths project.Paths, rv resolved, selfEdit bool) error {
 	warnRootlessPodman(stderr, r)
 
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
@@ -275,18 +300,18 @@ func develop(r engineRunner, stderr io.Writer, paths project.Paths, cfg config.C
 	// Setup (generate + build) is serialized by the lock; the interactive
 	// session that follows is not.
 	if err := withSetupLock(paths.LockFile, func() error {
-		if berr := buildImage(r, paths, cfg, res, image, false); berr != nil {
+		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false); berr != nil {
 			return berr
 		}
 		// Seed fresh state volumes that declare a config-level seed, using the
 		// image we just built. One-time; existing volumes are left alone.
-		if err := seedVolumes(r, stderr, paths, image, allVolumes(cfg, res.Volumes), os.Getuid(), os.Getgid()); err != nil {
+		if err := seedVolumes(r, stderr, paths, image, rv.volumes, os.Getuid(), os.Getgid()); err != nil {
 			return err
 		}
 		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
 		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
-		if cfg.SeedPrefs && res.AgentPrefs != nil {
-			return seedPrefs(r, stderr, paths, image, res.AgentState, res.AgentPrefs.From, res.AgentPrefs.Files, os.Getuid(), os.Getgid())
+		if rv.cfg.SeedPrefs && rv.skills.AgentPrefs != nil {
+			return seedPrefs(r, stderr, paths, image, rv.skills.AgentState, rv.skills.AgentPrefs.From, rv.skills.AgentPrefs.Files, os.Getuid(), os.Getgid())
 		}
 		return nil
 	}); err != nil {
@@ -297,7 +322,7 @@ func develop(r engineRunner, stderr io.Writer, paths project.Paths, cfg config.C
 		fmt.Fprintln(stderr, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
 		fmt.Fprintf(stderr, "   read-write mount: %s\n", paths.Dir)
 	}
-	params, err := runParams(paths, cfg, res, image, selfEdit)
+	params, err := runParams(paths, rv, image, selfEdit)
 	if err != nil {
 		return err
 	}
@@ -468,20 +493,18 @@ func withTwoSetupLocks(a, b string, fn func() error) error {
 // image already bakes the UID/GID (the container runs as that user), so BYRE_UID/
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
-func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, image string, selfEdit bool) (runner.RunParams, error) {
+func runParams(paths project.Paths, rv resolved, image string, selfEdit bool) (runner.RunParams, error) {
 	env := map[string]string{
 		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
 		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
 	}
-	for k, v := range res.Env { // skill runtime env
+	for k, v := range rv.skills.Env { // skill runtime env
 		env[k] = v
 	}
 	addGitIdentity(env) // git identity wins over skill env for those keys
 
-	// Mounts and volumes are the union of config and skill contributions.
-	mounts := append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...)
-	binds := make([]runner.BindMount, 0, len(mounts))
-	for _, m := range mounts {
+	binds := make([]runner.BindMount, 0, len(rv.mounts))
+	for _, m := range rv.mounts {
 		host, err := expandHostPath(m.Host)
 		if err != nil {
 			return runner.RunParams{}, err
@@ -506,26 +529,15 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, imag
 	if selfEdit {
 		binds = append(binds, runner.BindMount{Host: paths.Dir, Target: selfEditTarget, Mode: "rw"})
 	}
-	allVols := append(append([]config.Volume{}, cfg.Volumes...), res.Volumes...)
-	vols := make([]runner.NamedVolume, 0, len(allVols))
-	for _, v := range allVols {
+	vols := make([]runner.NamedVolume, 0, len(rv.volumes))
+	for _, v := range rv.volumes {
 		vols = append(vols, runner.NamedVolume{Name: VolumeName(paths.ID, v.Name), Target: v.Target})
 	}
-	// Published ports come from config only. Default the bind interface to
-	// 127.0.0.1 (localhost-only — binding all interfaces / the LAN must be explicit
-	// in the config), and a blank host port (0) to the container port (a
-	// predictable mapping, not a random one).
-	ports := make([]runner.PortPublish, 0, len(cfg.Ports))
-	for _, p := range cfg.Ports {
-		iface := p.Interface
-		if iface == "" {
-			iface = "127.0.0.1"
-		}
-		host := p.Host
-		if host == 0 {
-			host = p.Container
-		}
-		ports = append(ports, runner.PortPublish{Interface: iface, Host: host, Container: p.Container})
+	// Published ports come from config only, normalized to the publish defaults.
+	ports := make([]runner.PortPublish, 0, len(rv.cfg.Ports))
+	for _, p := range rv.cfg.Ports {
+		n := normalizePort(p)
+		ports = append(ports, runner.PortPublish{Interface: n.Interface, Host: n.Host, Container: n.Container})
 	}
 
 	return runner.RunParams{
@@ -538,14 +550,28 @@ func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, imag
 		Binds:           binds,
 		Volumes:         vols,
 		Ports:           ports,
-		Caps:            res.Caps,
+		Caps:            rv.skills.Caps,
 		// Skill run_args are generated grants; the project's own run_args come
 		// last so the project-level raw escape hatch wins (last-wins).
-		RunArgs: append(append([]string{}, res.RunArgs...), cfg.RunArgs...),
+		RunArgs: append(append([]string{}, rv.skills.RunArgs...), rv.cfg.RunArgs...),
 		// Only allocate a pseudo-TTY when stdin actually is one — otherwise
 		// docker run -t fails under CI/piped invocations.
 		TTY: isTTY(os.Stdin),
 	}, nil
+}
+
+// normalizePort applies the publish defaults shared by the runtime and
+// status: a blank interface binds 127.0.0.1 (localhost-only — the LAN must be
+// asked for explicitly in the config), and a blank host port mirrors the
+// container port (a predictable mapping, not a random one).
+func normalizePort(p config.Port) config.Port {
+	if p.Interface == "" {
+		p.Interface = "127.0.0.1"
+	}
+	if p.Host == 0 {
+		p.Host = p.Container
+	}
+	return p
 }
 
 // checkMountPaths rejects any byre-owned bind source that a docker --mount value

@@ -90,14 +90,13 @@ func Status(stdout io.Writer, projectDir string, selfEdit bool) error {
 		// mount/volume that collides with a config one, or a duplicate volume name;
 		// develop rejects that, so status shouldn't present it as active. On
 		// failure, surface it and keep the config-only view. Best-effort, not fatal.
-		binds := append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...)
-		vols := append(append([]config.Volume{}, cfg.Volumes...), res.Volumes...)
-		if verr := (config.Config{Mounts: binds, Volumes: vols}).Validate(); verr != nil {
+		rv := combine(cfg, res)
+		if verr := rv.validate(); verr != nil {
 			info.SkillErr = verr.Error()
 		} else {
 			info.Skills = skillNames(res)
-			info.Binds = binds
-			info.Volumes = vols
+			info.Binds = rv.mounts
+			info.Volumes = rv.volumes
 			info.Grants = res.Grants
 			info.RunArgs = append(append([]string{}, res.RunArgs...), cfg.RunArgs...)
 		}
@@ -258,15 +257,12 @@ func skillNames(res skills.Resolved) []string {
 	return names
 }
 
-// portStatusLine renders a published port as "iface:host -> container", matching
-// the runtime defaults (empty interface = 127.0.0.1, host 0 = the container port).
+// portStatusLine renders a published port as "iface:host -> container", via
+// the SAME normalization the runtime applies — so status can't lie about the
+// defaulted interface or host port.
 func portStatusLine(p config.Port) string {
-	iface := orDefault(p.Interface, "127.0.0.1")
-	host := p.Host
-	if host == 0 {
-		host = p.Container
-	}
-	return fmt.Sprintf("%s:%d -> %d  (host -> container)", iface, host, p.Container)
+	n := normalizePort(p)
+	return fmt.Sprintf("%s:%d -> %d  (host -> container)", n.Interface, n.Host, n.Container)
 }
 
 func splitVolumes(vols []config.Volume) (state, cache []string) {
