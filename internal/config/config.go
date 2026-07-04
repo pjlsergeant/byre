@@ -510,15 +510,21 @@ func (c Config) Validate() error {
 
 // ValidateLayer checks a SINGLE unmerged layer (a raw byre.config) for the
 // editor's Save. Every real entry must be well-formed, but `!name` removal
-// markers are permitted (they only make sense pre-merge) and cross-entry
-// collisions are NOT enforced: a layer legitimately overrides a target a lower
-// layer set, and the definitive collision check runs on the resolved config
-// (Validate) at load. Without this split, saving any config that uses the
-// removal feature failed — a `!name` marker can't pass the resolved shape rules.
+// markers are permitted (they only make sense pre-merge) and CROSS-LAYER
+// collisions are not its concern: a layer legitimately overrides a target a
+// lower layer set, and the definitive collision check runs on the resolved
+// config (Validate) at load. Without this split, saving any config that uses
+// the removal feature failed — a `!name` marker can't pass the resolved rules.
+//
+// Duplicates WITHIN the layer are rejected, though: merge resolves a repeated
+// mount target (or volume name) inside one file by silent last-wins, so the
+// losing entry would vanish without ever reaching the resolved check — always
+// a mistake, never an override.
 func (c Config) ValidateLayer() error {
 	if err := c.validateScalars(); err != nil {
 		return err
 	}
+	seenTargets := map[string]bool{}
 	for _, m := range c.Mounts {
 		if isRemoval(m.Target) {
 			continue
@@ -526,7 +532,12 @@ func (c Config) ValidateLayer() error {
 		if err := validateMountShape(m); err != nil {
 			return err
 		}
+		if seenTargets[m.Target] {
+			return fmt.Errorf("mount target %s appears twice in this file; merge would keep only the last one", m.Target)
+		}
+		seenTargets[m.Target] = true
 	}
+	seenNames := map[string]bool{}
 	for _, v := range c.Volumes {
 		if isRemoval(v.Name) {
 			continue
@@ -534,6 +545,10 @@ func (c Config) ValidateLayer() error {
 		if err := validateVolumeShape(v); err != nil {
 			return err
 		}
+		if seenNames[v.Name] {
+			return fmt.Errorf("volume %s appears twice in this file; merge would keep only the last one", v.Name)
+		}
+		seenNames[v.Name] = true
 	}
 	return c.validatePorts()
 }

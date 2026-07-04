@@ -475,3 +475,31 @@ func TestMergeCoversEveryField(t *testing.T) {
 		t.Errorf("Merge(sample, empty) must reproduce the sample:\ngot  %+v\nwant %+v", got, sample)
 	}
 }
+
+// Within-layer duplicates are silent last-wins at merge — the losing entry
+// vanishes before the resolved Validate can see it — so ValidateLayer must
+// reject them. Cross-layer overrides stay legal (not this check's concern).
+func TestValidateLayerRejectsWithinLayerDuplicates(t *testing.T) {
+	dupMount := Config{Mounts: []Mount{
+		{Host: "/a", Target: "/x", Mode: "ro"},
+		{Host: "/b", Target: "/x", Mode: "ro"},
+	}}
+	if err := dupMount.ValidateLayer(); err == nil {
+		t.Error("duplicate mount target within one layer must be rejected")
+	}
+	dupVol := Config{Volumes: []Volume{
+		{Name: "v", Role: "cache", Target: "/c1"},
+		{Name: "v", Role: "cache", Target: "/c2"},
+	}}
+	if err := dupVol.ValidateLayer(); err == nil {
+		t.Error("duplicate volume name within one layer must be rejected")
+	}
+	// A removal marker plus the real entry it removes elsewhere is fine.
+	withRemoval := Config{Mounts: []Mount{
+		{Target: "!/x"},
+		{Host: "/a", Target: "/x", Mode: "ro"},
+	}}
+	if err := withRemoval.ValidateLayer(); err != nil {
+		t.Errorf("removal marker + real entry must stay saveable: %v", err)
+	}
+}

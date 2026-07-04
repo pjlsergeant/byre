@@ -622,3 +622,54 @@ func TestWorktreeBaseArrowKeysMoveCursor(t *testing.T) {
 		})
 	}
 }
+
+// TestCommitItemRunsLayerValidation pins the "catch before save" behavior:
+// cross-item problems Save would reject (here: two mounts on one target)
+// surface at item commit, with the offending item still open and the working
+// state rolled back.
+func TestCommitItemRunsLayerValidation(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, false)
+	m.listField = fMounts
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("/data")
+	m.inputs[1].SetValue("/mnt/x")
+	m = m.commitItem()
+	if m.itemErr != "" || len(m.mounts) != 1 {
+		t.Fatalf("first mount should commit: err=%q mounts=%v", m.itemErr, m.mounts)
+	}
+	// Second mount, same target: per-field checks pass, the layer check must not.
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("/other")
+	m.inputs[1].SetValue("/mnt/x")
+	m2 := m.commitItem()
+	if m2.itemErr == "" {
+		t.Fatal("duplicate mount target must fail at item commit, not at save")
+	}
+	if len(m2.mounts) != 1 {
+		t.Fatalf("rejected item must not stay in the working state: %v", m2.mounts)
+	}
+	if m2.mode != modeItem {
+		t.Fatalf("the offending item should stay open, mode=%v", m2.mode)
+	}
+}
+
+// TestCommentWarnOnLoad pins Q7: opening a hand-commented file warns that
+// saving rewrites it; byre's own boilerplate headers don't cry wolf.
+func TestCommentWarnOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	hand := filepath.Join(dir, "hand.config")
+	os.WriteFile(hand, []byte("# remember: the LAN port is for the demo\nagent = \"claude\"\n"), 0o644)
+	if v := newModel("t", hand, config.Config{}, nil, nil, nil, nil, false).View(); !strings.Contains(v, "hand-written comments") {
+		t.Errorf("hand-commented file should warn on load:\n%s", v)
+	}
+
+	managed := filepath.Join(dir, "managed.config")
+	os.WriteFile(managed, []byte("# Managed by `byre config`. Structured fields are edited there;\n# raw blocks (run_args, dockerfile_pre/post) are edited here by hand.\n\nagent = \"claude\"\n"), 0o644)
+	if v := newModel("t", managed, config.Config{}, nil, nil, nil, nil, false).View(); strings.Contains(v, "hand-written comments") {
+		t.Errorf("byre's own header must not trigger the warning:\n%s", v)
+	}
+
+	if v := newModel("t", filepath.Join(dir, "absent.config"), config.Config{}, nil, nil, nil, nil, false).View(); strings.Contains(v, "hand-written comments") {
+		t.Errorf("a missing file must not warn:\n%s", v)
+	}
+}

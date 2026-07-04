@@ -319,8 +319,11 @@ func longestCommonPrefix(ss []string) string {
 
 // commitItem validates the item editor's inputs and writes the item back into
 // the working slice (append when adding, replace when editing). A validation
-// error keeps the editor open with a message.
+// error — per-field, or the same layer validation Save runs (so cross-item
+// problems like duplicate mount targets surface while the offending item is
+// still open, not at save time) — keeps the editor open with a message.
 func (m model) commitItem() model {
+	orig := m
 	switch m.listField {
 	case fApt:
 		pkg := strings.TrimSpace(m.inputs[0].Value())
@@ -381,17 +384,28 @@ func (m model) commitItem() model {
 			Interface: strings.TrimSpace(m.inputs[2].Value()),
 		})
 	}
+	// The same check Save applies, run against the assembled layer now that the
+	// item is in it. putAt copies, so backing out is just returning the
+	// pre-commit model with the message.
+	if err := m.assemble().ValidateLayer(); err != nil {
+		orig.itemErr = err.Error()
+		return orig
+	}
+	m.itemErr = ""
 	m.mode = modeList
 	return m
 }
 
-// putAt appends v when idx < 0, else replaces the element at idx.
+// putAt appends v when idx < 0 else replaces the element at idx — always into
+// a fresh slice, so a rejected commit can't have mutated the caller's backing
+// array through a shared model copy.
 func putAt[T any](s []T, idx int, v T) []T {
+	out := append([]T{}, s...)
 	if idx < 0 {
-		return append(s, v)
+		return append(out, v)
 	}
-	s[idx] = v
-	return s
+	out[idx] = v
+	return out
 }
 
 // ---- item lines (display form of a field's items) ---------------------------

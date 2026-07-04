@@ -33,6 +33,41 @@ func Save(path string, cfg config.Config) error {
 	return atomicWrite(path, b.String())
 }
 
+// handComments reports whether raw config content has hand-written full-line
+// # comments — ones a re-marshaling Save would destroy. byre's own boilerplate
+// headers (the managed-by header Save writes, onboarding's markers) don't
+// count: they're regenerated or expendable, and warning on them would make
+// every byre-created file cry wolf. Inline comments (after a value) are not
+// detected — TOML strings can contain '#', and a false positive costs more
+// than the rare miss.
+func handComments(raw string) bool {
+	for _, line := range strings.Split(raw, "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "#") {
+			continue
+		}
+		if byreBoilerplate(t) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func byreBoilerplate(comment string) bool {
+	for _, p := range []string{
+		"# Managed by `byre config`",
+		"# raw blocks (run_args",
+		"# Created by byre",
+		"# byre default.config",
+	} {
+		if strings.HasPrefix(comment, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func atomicWrite(path, content string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
