@@ -115,6 +115,30 @@ func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 	}
 }
 
+// A layer using the `!name` removal feature must be saveable: the store config
+// is one cascade layer, so Save validates it with ValidateLayer, not the
+// resolved Validate (which rightly rejects a removal marker as a malformed
+// entry). Regression for the bug where any such config was permanently
+// unsaveable from the editor.
+func TestSaveAcceptsRemovalEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store", "byre.config")
+	cfg := config.Config{
+		Skills:  []string{"!devloop"},                          // remove an inherited skill
+		Volumes: []config.Volume{{Name: "!creds"}},             // remove an inherited volume
+		Mounts:  []config.Mount{{Target: "!/inherited/mount"}}, // remove an inherited mount
+	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save rejected a valid removal-entry layer: %v", err)
+	}
+	back, err := config.ParseFile(path)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if len(back.Skills) != 1 || back.Skills[0] != "!devloop" {
+		t.Errorf("removal marker not round-tripped: %v", back.Skills)
+	}
+}
+
 // pickerOpts must preserve a configured-but-not-discovered value (so opening the
 // editor and saving unrelated edits never silently drops it) and always offer
 // "none" last.

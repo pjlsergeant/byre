@@ -317,7 +317,16 @@ func ValidateContent(base string, apt, npm []string, env map[string]string) erro
 	return nil
 }
 
-func (c Config) Validate() error {
+// isRemoval reports whether a named-list entry is a `!name` removal marker
+// rather than a real entry. Markers are only meaningful in an unmerged layer
+// (Merge consumes them), so ValidateLayer skips them and they never reach a
+// resolved config.
+func isRemoval(id string) bool { return strings.HasPrefix(id, "!") }
+
+// validateScalars checks the layer-safe scalar/content fields — those valid or
+// invalid on their own, independent of the cascade. Shared by Validate and
+// ValidateLayer.
+func (c Config) validateScalars() error {
 	switch c.Engine {
 	case "", "auto", "docker", "podman":
 	default:
@@ -350,87 +359,80 @@ func (c Config) Validate() error {
 			return fmt.Errorf("worktree_base = %q: cannot contain a comma (docker --mount can't express it)", b)
 		}
 	}
+	return nil
+}
 
-	// Container targets must be unique across mounts and volumes — they become
-	// distinct `docker run` mount points; a collision is ambiguous.
-	targets := map[string]string{} // target -> what claims it
-
-	for _, m := range c.Mounts {
-		if m.Host == "" {
-			return fmt.Errorf("mount %s: host path is required", m.Target)
-		}
-		if m.Target == "" {
-			return errors.New("mount: target is required")
-		}
-		if err := validContainerTarget(m.Target); err != nil {
-			return fmt.Errorf("mount target %q: %w", m.Target, err)
-		}
-		switch m.Mode {
-		case "", "ro", "rw":
-		default:
-			return fmt.Errorf("mount %s: mode %q invalid (want ro|rw)", m.Target, m.Mode)
-		}
-		if claimed := targets[m.Target]; claimed != "" {
-			return fmt.Errorf("mount target %s collides with %s", m.Target, claimed)
-		}
-		targets[m.Target] = "mount " + m.Target
+// validateMountShape checks one mount's own fields (not cross-entry collisions).
+func validateMountShape(m Mount) error {
+	if m.Host == "" {
+		return fmt.Errorf("mount %s: host path is required", m.Target)
 	}
+	if m.Target == "" {
+		return errors.New("mount: target is required")
+	}
+	if err := validContainerTarget(m.Target); err != nil {
+		return fmt.Errorf("mount target %q: %w", m.Target, err)
+	}
+	switch m.Mode {
+	case "", "ro", "rw":
+	default:
+		return fmt.Errorf("mount %s: mode %q invalid (want ro|rw)", m.Target, m.Mode)
+	}
+	return nil
+}
 
-	names := map[string]bool{}
-	for _, v := range c.Volumes {
-		if v.Name == "" {
-			return errors.New("volume: name is required")
+// validateVolumeShape checks one volume's own fields (not duplicate names or
+// cross-entry target collisions).
+func validateVolumeShape(v Volume) error {
+	if v.Name == "" {
+		return errors.New("volume: name is required")
+	}
+	if !volumeNameRe.MatchString(v.Name) {
+		return fmt.Errorf("volume %q: name has characters not allowed in a docker volume name", v.Name)
+	}
+	switch v.Role {
+	case "cache", "state":
+	default:
+		return fmt.Errorf("volume %s: role %q invalid (want cache|state)", v.Name, v.Role)
+	}
+	if v.Target == "" {
+		return fmt.Errorf("volume %s: target is required", v.Name)
+	}
+	if err := validContainerTarget(v.Target); err != nil {
+		return fmt.Errorf("volume %s target %q: %w", v.Name, v.Target, err)
+	}
+	if v.Seed != nil {
+		if v.Role != "state" {
+			return fmt.Errorf("volume %s: seed is only valid for state-role volumes", v.Name)
 		}
-		if !volumeNameRe.MatchString(v.Name) {
-			return fmt.Errorf("volume %q: name has characters not allowed in a docker volume name", v.Name)
+		if v.Seed.Host != "" && v.Seed.Literal != "" {
+			return fmt.Errorf("volume %s: seed has both host and literal (choose one)", v.Name)
 		}
-		if names[v.Name] {
-			return fmt.Errorf("volume %s: duplicate name", v.Name)
+		if v.Seed.Host == "" && v.Seed.Literal == "" {
+			return fmt.Errorf("volume %s: seed set but empty", v.Name)
 		}
-		names[v.Name] = true
-		switch v.Role {
-		case "cache", "state":
-		default:
-			return fmt.Errorf("volume %s: role %q invalid (want cache|state)", v.Name, v.Role)
-		}
-		if v.Target == "" {
-			return fmt.Errorf("volume %s: target is required", v.Name)
-		}
-		if err := validContainerTarget(v.Target); err != nil {
-			return fmt.Errorf("volume %s target %q: %w", v.Name, v.Target, err)
-		}
-		if claimed := targets[v.Target]; claimed != "" {
-			return fmt.Errorf("volume %s target %s collides with %s", v.Name, v.Target, claimed)
-		}
-		targets[v.Target] = "volume " + v.Name
-		if v.Seed != nil {
-			if v.Role != "state" {
-				return fmt.Errorf("volume %s: seed is only valid for state-role volumes", v.Name)
+		if v.Seed.Literal != "" {
+			if v.Seed.Path == "" {
+				return fmt.Errorf("volume %s: literal seed requires a path (destination file in the volume)", v.Name)
 			}
-			if v.Seed.Host != "" && v.Seed.Literal != "" {
-				return fmt.Errorf("volume %s: seed has both host and literal (choose one)", v.Name)
+			if !relSafe(v.Seed.Path) {
+				return fmt.Errorf("volume %s: literal seed path %q must be relative and not escape the volume", v.Name, v.Seed.Path)
 			}
-			if v.Seed.Host == "" && v.Seed.Literal == "" {
-				return fmt.Errorf("volume %s: seed set but empty", v.Name)
-			}
-			if v.Seed.Literal != "" {
-				if v.Seed.Path == "" {
-					return fmt.Errorf("volume %s: literal seed requires a path (destination file in the volume)", v.Name)
-				}
-				if !relSafe(v.Seed.Path) {
-					return fmt.Errorf("volume %s: literal seed path %q must be relative and not escape the volume", v.Name, v.Seed.Path)
-				}
-			}
-			if v.Seed.Host != "" && v.Seed.Path != "" {
-				return fmt.Errorf("volume %s: seed path is only for literal seeds", v.Name)
-			}
+		}
+		if v.Seed.Host != "" && v.Seed.Path != "" {
+			return fmt.Errorf("volume %s: seed path is only for literal seeds", v.Name)
 		}
 	}
+	return nil
+}
 
-	// Ports: container required in range; host 0 (= same as container) or in range;
-	// no two bindings collide on the same effective interface:host, and a binding
-	// on 0.0.0.0 (all interfaces) can't share a host port with any other interface
-	// — docker would fail at run time in both cases.
+// validatePorts checks each port binding and that no two collide. A port has no
+// removal form, so this is identical for a layer and the resolved config.
+func (c Config) validatePorts() error {
+	// container required in range; host 0 (= same as container) or in range; no
+	// two bindings collide on the same effective interface:host, and a binding on
+	// 0.0.0.0 (all interfaces) can't share a host port with any other interface —
+	// docker would fail at run time in both cases.
 	byHostPort := map[int]map[string]bool{} // effective host port -> set of interfaces
 	for _, p := range c.Ports {
 		if p.Container < 1 || p.Container > 65535 {
@@ -459,6 +461,75 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// Validate checks a RESOLVED config (post-cascade): every field well-formed AND
+// the cross-entry invariants — mount/volume targets unique, volume names unique,
+// ports non-colliding. resolveWith runs this on the merged result, so a `!name`
+// removal marker reaching here would be a bug (Merge should have consumed it) and
+// is correctly rejected by the shape checks.
+func (c Config) Validate() error {
+	if err := c.validateScalars(); err != nil {
+		return err
+	}
+
+	// Container targets must be unique across mounts and volumes — they become
+	// distinct `docker run` mount points; a collision is ambiguous.
+	targets := map[string]string{} // target -> what claims it
+	for _, m := range c.Mounts {
+		if err := validateMountShape(m); err != nil {
+			return err
+		}
+		if claimed := targets[m.Target]; claimed != "" {
+			return fmt.Errorf("mount target %s collides with %s", m.Target, claimed)
+		}
+		targets[m.Target] = "mount " + m.Target
+	}
+	names := map[string]bool{}
+	for _, v := range c.Volumes {
+		if err := validateVolumeShape(v); err != nil {
+			return err
+		}
+		if names[v.Name] {
+			return fmt.Errorf("volume %s: duplicate name", v.Name)
+		}
+		names[v.Name] = true
+		if claimed := targets[v.Target]; claimed != "" {
+			return fmt.Errorf("volume %s target %s collides with %s", v.Name, v.Target, claimed)
+		}
+		targets[v.Target] = "volume " + v.Name
+	}
+	return c.validatePorts()
+}
+
+// ValidateLayer checks a SINGLE unmerged layer (a raw byre.config) for the
+// editor's Save. Every real entry must be well-formed, but `!name` removal
+// markers are permitted (they only make sense pre-merge) and cross-entry
+// collisions are NOT enforced: a layer legitimately overrides a target a lower
+// layer set, and the definitive collision check runs on the resolved config
+// (Validate) at load. Without this split, saving any config that uses the
+// removal feature failed — a `!name` marker can't pass the resolved shape rules.
+func (c Config) ValidateLayer() error {
+	if err := c.validateScalars(); err != nil {
+		return err
+	}
+	for _, m := range c.Mounts {
+		if isRemoval(m.Target) {
+			continue
+		}
+		if err := validateMountShape(m); err != nil {
+			return err
+		}
+	}
+	for _, v := range c.Volumes {
+		if isRemoval(v.Name) {
+			continue
+		}
+		if err := validateVolumeShape(v); err != nil {
+			return err
+		}
+	}
+	return c.validatePorts()
 }
 
 // relSafe reports whether p is a relative path that stays within its root (no

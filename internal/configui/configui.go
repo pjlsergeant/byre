@@ -1,7 +1,7 @@
-// Package configui is byre's interactive (Bubble Tea / huh) editor for a
-// project's host-side store config and the global default.config. The data layer
-// here (parse/format/save) is unit-tested; the huh form wiring (form.go) is
-// host-verified, since a TUI can't be driven headlessly.
+// Package configui is byre's interactive (Bubble Tea) editor for a project's
+// host-side store config and the global default.config. The Elm-architecture
+// model (form.go) is driven headlessly in tests; the data layer here
+// (parse/format/save) is unit-tested too.
 package configui
 
 import (
@@ -14,11 +14,14 @@ import (
 	"byre/internal/config"
 )
 
-// Save validates cfg, marshals it to TOML (only set fields, via omitempty), and
-// writes it to path atomically with a managed-by header. Raw fields
-// (run_args, dockerfile_*) round-trip untouched.
+// Save validates cfg as a single layer, marshals it to TOML (only set fields,
+// via omitempty), and writes it to path atomically with a managed-by header. Raw
+// fields (run_args, dockerfile_*) round-trip untouched. Validation is
+// ValidateLayer, NOT the resolved Validate: this file is one cascade layer, so
+// `!name` removal entries are legal here and cross-layer collisions aren't its
+// concern — using Validate made any config with a removal entry unsaveable.
 func Save(path string, cfg config.Config) error {
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateLayer(); err != nil {
 		return err
 	}
 	var b strings.Builder

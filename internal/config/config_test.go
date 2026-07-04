@@ -363,6 +363,27 @@ func TestValidateContent(t *testing.T) {
 	}
 }
 
+func TestValidateLayerAllowsRemovals(t *testing.T) {
+	// A `!name` removal marker is legal in an unmerged layer but is a malformed
+	// entry in a resolved config. ValidateLayer accepts it; Validate rejects it.
+	layer := Config{
+		Skills:  []string{"!devloop"},
+		Volumes: []Volume{{Name: "!creds"}},
+		Mounts:  []Mount{{Target: "!/x"}},
+	}
+	if err := layer.ValidateLayer(); err != nil {
+		t.Fatalf("ValidateLayer rejected removal markers: %v", err)
+	}
+	if err := layer.Validate(); err == nil {
+		t.Fatal("Validate should reject removal markers in a resolved config")
+	}
+	// ValidateLayer still catches a genuinely malformed real entry.
+	bad := Config{Volumes: []Volume{{Name: "creds", Role: "bogus", Target: "/c"}}}
+	if err := bad.ValidateLayer(); err == nil {
+		t.Fatal("ValidateLayer should still reject a bad role on a real entry")
+	}
+}
+
 func TestValidatePorts(t *testing.T) {
 	ok := Config{Ports: []Port{{Container: 8080, Host: 8080, Interface: "127.0.0.1"}, {Container: 3000}}}
 	if err := ok.Validate(); err != nil {
