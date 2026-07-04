@@ -10,15 +10,6 @@ import (
 	"byre/internal/runner"
 )
 
-// forgetRunner is the runner surface byre forget needs (interface for testing).
-type forgetRunner interface {
-	RunningContainersByLabel(label string) ([]string, error)
-	VolumesByPrefix(prefix string) ([]string, error)
-	VolumeRemove(name string) error
-	ImageExists(tag string) (bool, error)
-	ImageRemove(tag string) error
-}
-
 // Forget implements `byre forget`: completely remove byre's host-side state for
 // the current directory — its named volumes, its image, and its
 // ~/.byre/projects/<id>/ dir (which holds the config, the adoption record, and
@@ -44,7 +35,7 @@ func Forget(stdout io.Writer, stdin io.Reader, projectDir string, force bool) er
 	return forget(stdout, stdin, paths, runner.New(eng), force)
 }
 
-func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r forgetRunner, force bool) error {
+func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunner, force bool) error {
 	if live, err := liveSession(r, paths.ID); err != nil {
 		return fmt.Errorf("checking for a running session: %w", err)
 	} else if len(live) > 0 {

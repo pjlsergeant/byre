@@ -3,64 +3,14 @@ package commands
 import (
 	"io"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"byre/internal/config"
-	"byre/internal/project"
 )
 
-// fakeSeeder records calls and can fail SeedVolume to exercise rollback.
-type fakeSeeder struct {
-	existing map[string]bool
-	created  []string
-	removed  []string
-	seeded   []string
-	literals []string
-	fileSeed []string // "name:f1,f2" recorded by SeedFiles
-	failSeed bool
-}
-
-func (f *fakeSeeder) VolumeExists(name string) (bool, error) { return f.existing[name], nil }
-func (f *fakeSeeder) VolumeCreate(name string) error         { f.created = append(f.created, name); return nil }
-func (f *fakeSeeder) VolumeRemove(name string) error         { f.removed = append(f.removed, name); return nil }
-func (f *fakeSeeder) SeedVolume(name, host, image string, uid, gid int) error {
-	if f.failSeed {
-		return io.EOF
-	}
-	f.seeded = append(f.seeded, name)
-	return nil
-}
-
-func (f *fakeSeeder) SeedLiteral(name, destPath, content, image string, uid, gid int) error {
-	if f.failSeed {
-		return io.EOF
-	}
-	f.literals = append(f.literals, name+":"+destPath+"="+content)
-	return nil
-}
-
-func (f *fakeSeeder) SeedFiles(name, srcDir string, files []string, image string, uid, gid int) error {
-	if f.failSeed {
-		return io.EOF
-	}
-	f.fileSeed = append(f.fileSeed, name+":"+strings.Join(files, ","))
-	return nil
-}
-
-func paths(t *testing.T) project.Paths {
-	t.Helper()
-	t.Setenv("BYRE_HOME", t.TempDir())
-	p, err := project.Resolve(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
-	p := paths(t)
-	f := &fakeSeeder{existing: map[string]bool{}}
+	p, _ := testPaths(t)
+	f := &fakeRunner{}
 	vols := []config.Volume{
 		{Name: ".claude", Role: "state", Target: "/h/.claude", Seed: &config.Seed{Host: "~/.claude"}},
 		{Name: "cache", Role: "cache", Target: "/c"}, // not seeded
@@ -75,9 +25,9 @@ func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
 }
 
 func TestSeedVolumesSkipsExisting(t *testing.T) {
-	p := paths(t)
+	p, _ := testPaths(t)
 	name := VolumeName(p.ID, ".claude")
-	f := &fakeSeeder{existing: map[string]bool{name: true}}
+	f := &fakeRunner{vols: map[string]bool{name: true}}
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: "~/.claude"}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
 		t.Fatal(err)
@@ -88,8 +38,8 @@ func TestSeedVolumesSkipsExisting(t *testing.T) {
 }
 
 func TestSeedVolumesRollbackOnFailure(t *testing.T) {
-	p := paths(t)
-	f := &fakeSeeder{existing: map[string]bool{}, failSeed: true}
+	p, _ := testPaths(t)
+	f := &fakeRunner{failSeed: true}
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: "~/.claude"}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err == nil {
 		t.Fatal("expected seed failure")
@@ -101,8 +51,8 @@ func TestSeedVolumesRollbackOnFailure(t *testing.T) {
 }
 
 func TestSeedVolumesMissingHostSkips(t *testing.T) {
-	p := paths(t)
-	f := &fakeSeeder{existing: map[string]bool{}}
+	p, _ := testPaths(t)
+	f := &fakeRunner{}
 	// Absolute host path that doesn't exist -> skip (empty volume), not fatal.
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: filepath.Join(t.TempDir(), "nope")}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
@@ -114,8 +64,8 @@ func TestSeedVolumesMissingHostSkips(t *testing.T) {
 }
 
 func TestSeedVolumesLiteralWritesOnce(t *testing.T) {
-	p := paths(t)
-	f := &fakeSeeder{existing: map[string]bool{}}
+	p, _ := testPaths(t)
+	f := &fakeRunner{}
 	vols := []config.Volume{{Name: "cfg", Role: "state", Target: "/t", Seed: &config.Seed{Literal: "hello", Path: "etc/foo.conf"}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
 		t.Fatal(err)
@@ -127,9 +77,9 @@ func TestSeedVolumesLiteralWritesOnce(t *testing.T) {
 }
 
 func TestSeedPrefsFreshSeedsOnce(t *testing.T) {
-	p := paths(t)
+	p, _ := testPaths(t)
 	from := t.TempDir() // an existing host source dir
-	f := &fakeSeeder{existing: map[string]bool{}}
+	f := &fakeRunner{}
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json", "themes"}, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
@@ -140,10 +90,10 @@ func TestSeedPrefsFreshSeedsOnce(t *testing.T) {
 }
 
 func TestSeedPrefsSkipsExisting(t *testing.T) {
-	p := paths(t)
+	p, _ := testPaths(t)
 	name := VolumeName(p.ID, ".claude")
 	from := t.TempDir()
-	f := &fakeSeeder{existing: map[string]bool{name: true}}
+	f := &fakeRunner{vols: map[string]bool{name: true}}
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
@@ -153,9 +103,9 @@ func TestSeedPrefsSkipsExisting(t *testing.T) {
 }
 
 func TestSeedPrefsMissingSourceSkips(t *testing.T) {
-	p := paths(t)
+	p, _ := testPaths(t)
 	from := filepath.Join(t.TempDir(), "nope") // does not exist
-	f := &fakeSeeder{existing: map[string]bool{}}
+	f := &fakeRunner{}
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err != nil {
 		t.Fatalf("missing prefs source should be skipped, got error: %v", err)
 	}
@@ -165,8 +115,8 @@ func TestSeedPrefsMissingSourceSkips(t *testing.T) {
 }
 
 func TestSeedPrefsNoOpWithoutSpec(t *testing.T) {
-	p := paths(t)
-	f := &fakeSeeder{existing: map[string]bool{}}
+	p, _ := testPaths(t)
+	f := &fakeRunner{}
 	// No state volume, or no from, or no files -> nothing happens, no error.
 	for _, c := range []struct {
 		state, from string
@@ -186,9 +136,9 @@ func TestSeedPrefsNoOpWithoutSpec(t *testing.T) {
 }
 
 func TestSeedPrefsRollbackOnFailure(t *testing.T) {
-	p := paths(t)
+	p, _ := testPaths(t)
 	from := t.TempDir()
-	f := &fakeSeeder{existing: map[string]bool{}, failSeed: true}
+	f := &fakeRunner{failSeed: true}
 	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err == nil {
 		t.Fatal("expected prefs seed failure")
 	}

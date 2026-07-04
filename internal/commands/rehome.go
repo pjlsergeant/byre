@@ -11,17 +11,6 @@ import (
 	"byre/internal/runner"
 )
 
-// rehomeRunner is the runner surface rehome needs (interface for testability).
-type rehomeRunner interface {
-	RunningContainersByLabel(label string) ([]string, error)
-	VolumesByPrefix(prefix string) ([]string, error)
-	VolumeExists(name string) (bool, error)
-	VolumeCreate(name string) error
-	VolumeRemove(name string) error
-	MigrateVolume(src, dst, image string, uid, gid int) error
-	ImageExists(tag string) (bool, error)
-}
-
 // Rehome implements `byre rehome <old-id>`: migrate a previous project's named
 // volumes onto the identity of the current directory (after a move/rename, which
 // changes the path-derived id). Docker has no volume rename, so each volume is
@@ -50,7 +39,7 @@ func Rehome(stdout io.Writer, projectDir, oldID string) error {
 	return rehome(stdout, paths, oldID, runner.New(eng), os.Getuid(), os.Getgid())
 }
 
-func rehome(stdout io.Writer, paths project.Paths, oldID string, r rehomeRunner, uid, gid int) error {
+func rehome(stdout io.Writer, paths project.Paths, oldID string, r engineRunner, uid, gid int) error {
 	newID := paths.ID
 	if oldID == newID {
 		return fmt.Errorf("already homed here (id %s)", newID)
@@ -130,7 +119,7 @@ func rehome(stdout io.Writer, paths project.Paths, oldID string, r rehomeRunner,
 	})
 }
 
-func pickCopyImage(r rehomeRunner, oldID, newID string, uid, gid int) (string, error) {
+func pickCopyImage(r imageRunner, oldID, newID string, uid, gid int) (string, error) {
 	// Try each id's current (UID-qualified) tag, then its legacy unqualified
 	// `byre-<id>` tag — a project built before the build-time-UID milestone still
 	// has only that. The copy one-shot (MigrateVolume) bypasses the entrypoint,
@@ -148,7 +137,7 @@ func pickCopyImage(r rehomeRunner, oldID, newID string, uid, gid int) (string, e
 	return "", fmt.Errorf("no byre image exists to run the volume copy; run `byre develop` first")
 }
 
-func rollback(r rehomeRunner, created []string) {
+func rollback(r volumeRunner, created []string) {
 	for _, v := range created {
 		_ = r.VolumeRemove(v)
 	}

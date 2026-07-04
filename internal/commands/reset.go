@@ -11,13 +11,6 @@ import (
 	"byre/internal/runner"
 )
 
-// resetRunner is the runner surface byre reset needs (interface for testability).
-type resetRunner interface {
-	RunningContainersByLabel(label string) ([]string, error)
-	VolumesByPrefix(prefix string) ([]string, error)
-	VolumeRemove(name string) error
-}
-
 // Reset implements `byre reset`: wipe ALL of this project's named volumes (only
 // volumes — not the image). It names what dies first, refuses while a session is
 // live, and serializes with the setup lock. force skips the confirmation prompt.
@@ -44,11 +37,12 @@ func Reset(stdout io.Writer, stdin io.Reader, projectDir string, force bool) err
 	return reset(stdout, stdin, paths, runner.New(eng), force)
 }
 
-func liveSession(r resetRunner, id string) ([]string, error) {
+// liveSession lists the running containers of a repo family (any worktree).
+func liveSession(r sessionRunner, id string) ([]string, error) {
 	return r.RunningContainersByLabel(labelKey + "=" + id)
 }
 
-func reset(stdout io.Writer, stdin io.Reader, paths project.Paths, r resetRunner, force bool) error {
+func reset(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunner, force bool) error {
 	// Fast fail: never wipe volumes out from under a running session.
 	if live, err := liveSession(r, paths.ID); err != nil {
 		return fmt.Errorf("checking for a running session: %w", err)

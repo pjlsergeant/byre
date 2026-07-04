@@ -2,81 +2,18 @@ package commands
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 	"testing"
-
-	"byre/internal/project"
 )
 
-type fakeRehome struct {
-	liveIDs     map[string]bool
-	vols        map[string]bool // existing volumes
-	images      map[string]bool
-	created     []string
-	removed     []string
-	migrated    []string
-	failMigrate string // dst to fail migration on
-}
-
-func (f *fakeRehome) RunningContainersByLabel(label string) ([]string, error) {
-	id := strings.TrimPrefix(label, labelKey+"=")
-	if f.liveIDs[id] {
-		return []string{"deadbeef0000"}, nil
-	}
-	return nil, nil
-}
-func (f *fakeRehome) VolumesByPrefix(prefix string) ([]string, error) {
-	var out []string
-	for v := range f.vols {
-		if strings.HasPrefix(v, prefix) {
-			out = append(out, v)
-		}
-	}
-	return out, nil
-}
-func (f *fakeRehome) VolumeExists(name string) (bool, error) { return f.vols[name], nil }
-func (f *fakeRehome) VolumeCreate(name string) error {
-	f.created = append(f.created, name)
-	f.vols[name] = true
-	return nil
-}
-func (f *fakeRehome) VolumeRemove(name string) error {
-	f.removed = append(f.removed, name)
-	delete(f.vols, name)
-	return nil
-}
-func (f *fakeRehome) MigrateVolume(src, dst, image string, uid, gid int) error {
-	if dst == f.failMigrate {
-		return fmt.Errorf("copy boom")
-	}
-	f.migrated = append(f.migrated, src+"->"+dst)
-	return nil
-}
-func (f *fakeRehome) ImageExists(tag string) (bool, error) { return f.images[tag], nil }
-
-func rehomePaths(t *testing.T) project.Paths {
-	t.Helper()
-	t.Setenv("BYRE_HOME", t.TempDir())
-	p, err := project.Resolve(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Bootstrap(); err != nil { // rehome takes the setup lock
-		t.Fatal(err)
-	}
-	return p
-}
-
 func TestRehomeMigratesAndRemovesOld(t *testing.T) {
-	p := rehomePaths(t)
-	old := "oldid"
-	f := &fakeRehome{
+	p, _ := testPaths(t)
+	f := &fakeRunner{
 		vols:   map[string]bool{"byre-oldid-.claude": true, "byre-oldid-cache": true},
 		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
 	}
 	var out bytes.Buffer
-	if err := rehome(&out, p, old, f, 1000, 1000); err != nil {
+	if err := rehome(&out, p, "oldid", f, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.migrated) != 2 {
@@ -95,11 +32,11 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 }
 
 func TestRehomeRefusesLive(t *testing.T) {
-	p := rehomePaths(t)
-	f := &fakeRehome{
-		liveIDs: map[string]bool{p.ID: true},
-		vols:    map[string]bool{"byre-oldid-cache": true},
-		images:  map[string]bool{ImageTag("oldid", 1000, 1000): true},
+	p, _ := testPaths(t)
+	f := &fakeRunner{
+		live:   liveFamily(p, "deadbeef0000"),
+		vols:   map[string]bool{"byre-oldid-cache": true},
+		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
 	}
 	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err == nil {
 		t.Fatal("expected refusal while a session is live")
@@ -110,9 +47,9 @@ func TestRehomeRefusesLive(t *testing.T) {
 }
 
 func TestRehomeConflictAborts(t *testing.T) {
-	p := rehomePaths(t)
+	p, _ := testPaths(t)
 	dst := "byre-" + p.ID + "-cache"
-	f := &fakeRehome{
+	f := &fakeRunner{
 		vols:   map[string]bool{"byre-oldid-cache": true, dst: true}, // dst already exists
 		images: map[string]bool{ImageTag("oldid", 1000, 1000): true},
 	}
@@ -125,9 +62,9 @@ func TestRehomeConflictAborts(t *testing.T) {
 }
 
 func TestRehomeRollbackOnCopyFailure(t *testing.T) {
-	p := rehomePaths(t)
+	p, _ := testPaths(t)
 	failDst := "byre-" + p.ID + "-cache"
-	f := &fakeRehome{
+	f := &fakeRunner{
 		vols:        map[string]bool{"byre-oldid-.claude": true, "byre-oldid-cache": true},
 		images:      map[string]bool{ImageTag("oldid", 1000, 1000): true},
 		failMigrate: failDst,
@@ -142,15 +79,15 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 }
 
 func TestRehomeSameIDErrors(t *testing.T) {
-	p := rehomePaths(t)
-	if err := rehome(&bytes.Buffer{}, p, p.ID, &fakeRehome{vols: map[string]bool{}}, 1000, 1000); err == nil {
+	p, _ := testPaths(t)
+	if err := rehome(&bytes.Buffer{}, p, p.ID, &fakeRunner{}, 1000, 1000); err == nil {
 		t.Fatal("expected error rehoming to the same id")
 	}
 }
 
 func TestRehomeNoImageErrors(t *testing.T) {
-	p := rehomePaths(t)
-	f := &fakeRehome{vols: map[string]bool{"byre-oldid-cache": true}} // no images
+	p, _ := testPaths(t)
+	f := &fakeRunner{vols: map[string]bool{"byre-oldid-cache": true}} // no images
 	if err := rehome(&bytes.Buffer{}, p, "oldid", f, 1000, 1000); err == nil {
 		t.Fatal("expected error when no image exists for the copy")
 	}
@@ -159,8 +96,8 @@ func TestRehomeNoImageErrors(t *testing.T) {
 // A project built before the build-time-UID milestone has only the legacy
 // unqualified `byre-<id>` image; rehome must still find it as the copy vehicle.
 func TestRehomeFallsBackToLegacyImageTag(t *testing.T) {
-	p := rehomePaths(t)
-	f := &fakeRehome{
+	p, _ := testPaths(t)
+	f := &fakeRunner{
 		vols:   map[string]bool{"byre-oldid-cache": true},
 		images: map[string]bool{"byre-oldid": true}, // legacy tag only, not UID-qualified
 	}

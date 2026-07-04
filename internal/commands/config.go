@@ -74,7 +74,7 @@ func Config(projectDir string, global bool) error {
 // the resolved volume set (config + skills) with on-disk presence, and clears a
 // volume. It mirrors `byre reset`, scoped to one volume.
 type volumeAdmin struct {
-	r          *runner.Runner
+	r          engineRunner
 	paths      project.Paths
 	projectDir string
 }

@@ -9,22 +9,11 @@ import (
 	"byre/internal/project"
 )
 
-// volumeSeeder is the subset of the runner that seeding needs (an interface so
-// the fresh-skip / rollback logic is testable without an engine).
-type volumeSeeder interface {
-	VolumeExists(name string) (bool, error)
-	VolumeCreate(name string) error
-	VolumeRemove(name string) error
-	SeedVolume(name, host, image string, uid, gid int) error
-	SeedLiteral(name, destPath, content, image string, uid, gid int) error
-	SeedFiles(name, srcDir string, files []string, image string, uid, gid int) error
-}
-
 // seedVolumes seeds any fresh state volume that declares a host-path seed.
 // Seeding is one-time: an existing volume has already diverged and is left
 // alone. A failed seed rolls back (removes the volume) so a half-seeded volume
 // isn't later mistaken for "already seeded".
-func seedVolumes(s volumeSeeder, log io.Writer, paths project.Paths, image string, vols []config.Volume, uid, gid int) error {
+func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image string, vols []config.Volume, uid, gid int) error {
 	for _, v := range vols {
 		if v.Role != "state" || v.Seed == nil {
 			continue
@@ -91,7 +80,7 @@ func seedVolumes(s volumeSeeder, log io.Writer, paths project.Paths, image strin
 // alone. A missing host source dir is not an error (the box just starts without
 // seeded prefs). A failed seed rolls back (removes the volume) so a half-seeded
 // volume isn't later mistaken for "already seeded".
-func seedPrefs(s volumeSeeder, log io.Writer, paths project.Paths, image, agentState, from string, files []string, uid, gid int) error {
+func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentState, from string, files []string, uid, gid int) error {
 	if agentState == "" || from == "" || len(files) == 0 {
 		return nil // nothing to seed (skill declares no prefs / no state volume)
 	}

@@ -6,18 +6,6 @@ import (
 	"testing"
 )
 
-type fakeLister struct{ vols []string }
-
-func (f fakeLister) VolumesByPrefix(prefix string) ([]string, error) {
-	var out []string
-	for _, v := range f.vols {
-		if len(v) >= len(prefix) && v[:len(prefix)] == prefix {
-			out = append(out, v)
-		}
-	}
-	return out, nil
-}
-
 func TestProjectVolumesDisambiguatesByLongestID(t *testing.T) {
 	home := t.TempDir()
 	// Two projects whose ids are in a prefix relationship.
@@ -26,10 +14,10 @@ func TestProjectVolumesDisambiguatesByLongestID(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := fakeLister{vols: []string{
-		"byre-web-a1b2c3-cache",            // belongs to web-a1b2c3
-		"byre-web-a1b2c3-x-9f8e7d-cache",   // belongs to the longer id, but the short prefix matches it too
-		"byre-web-a1b2c3-x-9f8e7d-.claude", //   "
+	r := &fakeRunner{vols: map[string]bool{
+		"byre-web-a1b2c3-cache":            true, // belongs to web-a1b2c3
+		"byre-web-a1b2c3-x-9f8e7d-cache":   true, // belongs to the longer id, but the short prefix matches it too
+		"byre-web-a1b2c3-x-9f8e7d-.claude": true, //   "
 	}}
 
 	got, err := projectVolumes(r, home, "web-a1b2c3")

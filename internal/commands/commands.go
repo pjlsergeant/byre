@@ -582,17 +582,12 @@ func VolumeName(projectID, name string) string {
 	return "byre-" + projectID + "-" + name
 }
 
-// volumeLister is the runner surface needed to enumerate a project's volumes.
-type volumeLister interface {
-	VolumesByPrefix(prefix string) ([]string, error)
-}
-
 // projectVolumes lists the volumes owned by id. Because project ids may contain
 // hyphens, a bare `byre-<id>-` prefix can also match another project's volumes
 // (when that project's id begins with this id). Each volume is assigned to the
 // LONGEST known id whose prefix it carries, so one project never captures
 // another's volumes.
-func projectVolumes(r volumeLister, home, id string) ([]string, error) {
+func projectVolumes(r volumeRunner, home, id string) ([]string, error) {
 	vols, err := r.VolumesByPrefix("byre-" + id + "-")
 	if err != nil {
 		return nil, err
@@ -640,7 +635,7 @@ func claimedByLongerID(vol, id string, others []string) bool {
 // The generated build bakes the host UID/GID via --build-arg so /home/dev and the
 // volume mount points are born owned by the runtime user (no runtime chown). The
 // opt-out path gets no build args: the user owns that infra layer.
-func buildImage(r *runner.Runner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool) error {
+func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool) error {
 	if cfg.Dockerfile != "" {
 		dfPath, err := resolveProjectFile(paths.Canonical, cfg.Dockerfile)
 		if err != nil {
@@ -715,15 +710,9 @@ func warnNonDebianBase(w io.Writer, base string) {
 // breaks that. A generic-uid image + --userns=keep-id is the planned fix.
 const rootlessPodmanWarning = "rootless Podman detected — byre bakes the host UID/GID into the image so files it writes land owned by you, which assumes a ROOTFUL daemon. Under rootless Podman the userns remap makes that wrong, so files in the project and volumes can end up owned by the wrong id. v0 supports rootful Docker/Podman only — use one of those for correct ownership."
 
-// rootlessChecker is the runner subset warnRootlessPodman needs (an interface so
-// the warning wiring is testable without a real engine).
-type rootlessChecker interface {
-	IsRootlessPodman() (bool, error)
-}
-
 // warnRootlessPodman prints the rootless-Podman warning to w when r drives it. A
 // detection error is ignored — better silent than warning on a guess.
-func warnRootlessPodman(w io.Writer, r rootlessChecker) {
+func warnRootlessPodman(w io.Writer, r sessionRunner) {
 	if rootless, err := r.IsRootlessPodman(); err == nil && rootless {
 		fmt.Fprintln(w, "byre: warning: "+rootlessPodmanWarning)
 	}

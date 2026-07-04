@@ -11,11 +11,7 @@ import (
 )
 
 func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
-	t.Setenv("BYRE_HOME", t.TempDir())
-	paths, err := project.Resolve(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	paths, _ := testPaths(t)
 
 	cfg := config.Config{RunArgs: []string{"--project-arg"}}
 	res := skills.Resolved{
@@ -49,11 +45,7 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 }
 
 func TestRunParamsSelfEditMount(t *testing.T) {
-	t.Setenv("BYRE_HOME", t.TempDir())
-	paths, err := project.Resolve(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	paths, _ := testPaths(t)
 
 	// Without --self-edit, no ~/.byre bind.
 	p, err := runParams(paths, config.Config{}, skills.Resolved{}, "i", false)

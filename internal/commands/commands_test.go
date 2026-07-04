@@ -12,13 +12,6 @@ import (
 	"byre/internal/project"
 )
 
-type fakeRootless struct {
-	rootless bool
-	err      error
-}
-
-func (f fakeRootless) IsRootlessPodman() (bool, error) { return f.rootless, f.err }
-
 func TestVolumeName(t *testing.T) {
 	const id = "proj-abc123"
 	if got := VolumeName(id, "cache"); got != "byre-"+id+"-cache" {
@@ -29,12 +22,12 @@ func TestVolumeName(t *testing.T) {
 func TestWarnRootlessPodman(t *testing.T) {
 	cases := []struct {
 		name string
-		c    fakeRootless
+		c    *fakeRunner
 		warn bool
 	}{
-		{"rootless warns", fakeRootless{rootless: true}, true},
-		{"rootful is quiet", fakeRootless{rootless: false}, false},
-		{"detection error is quiet", fakeRootless{err: errors.New("boom")}, false},
+		{"rootless warns", &fakeRunner{rootless: true}, true},
+		{"rootful is quiet", &fakeRunner{rootless: false}, false},
+		{"detection error is quiet", &fakeRunner{rootlessErr: errors.New("boom")}, false},
 	}
 	for _, tc := range cases {
 		var buf bytes.Buffer
