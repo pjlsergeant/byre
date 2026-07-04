@@ -21,7 +21,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
 		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
 	}
-	for k, v := range rv.skills.Env { // skill runtime env
+	for k, v := range rv.skills.Env() { // skill runtime env
 		env[k] = v
 	}
 	addGitIdentity(env) // git identity wins over skill env for those keys
@@ -73,10 +73,10 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		Binds:           binds,
 		Volumes:         vols,
 		Ports:           ports,
-		Caps:            rv.skills.Caps,
+		Caps:            rv.skills.Caps(),
 		// Skill run_args are generated grants; the project's own run_args come
 		// last so the project-level raw escape hatch wins (last-wins).
-		RunArgs: append(append([]string{}, rv.skills.RunArgs...), rv.cfg.RunArgs...),
+		RunArgs: append(append([]string{}, rv.skills.RunArgs()...), rv.cfg.RunArgs...),
 		// Only allocate a pseudo-TTY when stdin actually is one — otherwise
 		// docker run -t fails under CI/piped invocations.
 		TTY: tty,

@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"byre/internal/config"
@@ -71,23 +72,24 @@ func TestResolveSampleAndAgentSkills(t *testing.T) {
 	}
 
 	// Two build blocks, sample first (explicit), fake appended (implicit agent).
-	if len(res.SkillBlocks) != 2 || res.SkillBlocks[0].Name != "sample" || res.SkillBlocks[1].Name != "fake" {
-		t.Fatalf("skill blocks/order wrong: %+v", res.SkillBlocks)
+	blocks := res.BuildBlocks()
+	if len(blocks) != 2 || blocks[0].Name != "sample" || blocks[1].Name != "fake" {
+		t.Fatalf("skill blocks/order wrong: %+v", blocks)
 	}
-	if res.Env["SAMPLE"] != "1" {
-		t.Errorf("runtime env not collected: %v", res.Env)
+	if res.Env()["SAMPLE"] != "1" {
+		t.Errorf("runtime env not collected: %v", res.Env())
 	}
-	if len(res.Caps) != 1 || res.Caps[0] != "SYS_PTRACE" {
-		t.Errorf("caps not collected: %v", res.Caps)
+	if len(res.Caps()) != 1 || res.Caps()[0] != "SYS_PTRACE" {
+		t.Errorf("caps not collected: %v", res.Caps())
 	}
-	if res.AgentCommand != "fake-agent --yolo" {
-		t.Errorf("agent command wrong: %q", res.AgentCommand)
+	if res.AgentCommand() != "fake-agent --yolo" {
+		t.Errorf("agent command wrong: %q", res.AgentCommand())
 	}
-	if len(res.Volumes) != 1 || res.Volumes[0].Name != ".fake" {
-		t.Errorf("agent state volume not collected: %v", res.Volumes)
+	if len(res.Volumes()) != 1 || res.Volumes()[0].Name != ".fake" {
+		t.Errorf("agent state volume not collected: %v", res.Volumes())
 	}
-	if res.Context != "sample context\n\nagent context" {
-		t.Errorf("context concat wrong: %q", res.Context)
+	if res.Context() != "sample context\n\nagent context" {
+		t.Errorf("context concat wrong: %q", res.Context())
 	}
 }
 
@@ -140,8 +142,8 @@ func TestResolveContextFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Context != "from file" {
-		t.Errorf("context file not read: %q", res.Context)
+	if res.Context() != "from file" {
+		t.Errorf("context file not read: %q", res.Context())
 	}
 }
 
@@ -209,11 +211,11 @@ func TestResolvePrefsCollected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.AgentPrefs == nil {
+	if res.AgentPrefs() == nil {
 		t.Fatal("expected AgentPrefs to be set")
 	}
-	if res.AgentPrefs.From != "~/.fake" || len(res.AgentPrefs.Files) != 2 {
-		t.Fatalf("prefs not parsed: %+v", res.AgentPrefs)
+	if res.AgentPrefs().From != "~/.fake" || len(res.AgentPrefs().Files) != 2 {
+		t.Fatalf("prefs not parsed: %+v", res.AgentPrefs())
 	}
 }
 
@@ -257,8 +259,8 @@ func TestResolveNoAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.AgentCommand != "" {
-		t.Errorf("no agent should mean empty AgentCommand: %q", res.AgentCommand)
+	if res.AgentCommand() != "" {
+		t.Errorf("no agent should mean empty AgentCommand: %q", res.AgentCommand())
 	}
 }
 
@@ -276,18 +278,19 @@ files = { "review.sh" = "/usr/local/bin/byre-review", "lib/helper.sh" = "/opt/he
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.SkillFiles) != 2 {
-		t.Fatalf("want 2 skill files, got %d: %+v", len(res.SkillFiles), res.SkillFiles)
+	files := res.BuildBlocks()[0].Files
+	if len(files) != 2 {
+		t.Fatalf("want 2 skill files, got %d: %+v", len(files), files)
 	}
 	// Sorted by source for determinism: "lib/helper.sh" < "review.sh".
-	if res.SkillFiles[0].Rel != "lib/helper.sh" || res.SkillFiles[0].Dest != "/opt/helper.sh" {
-		t.Errorf("first file wrong: %+v", res.SkillFiles[0])
+	if files[0].Rel != "lib/helper.sh" || files[0].Dest != "/opt/helper.sh" {
+		t.Errorf("first file wrong: %+v", files[0])
 	}
-	if res.SkillFiles[1].Rel != "review.sh" || res.SkillFiles[1].Dest != "/usr/local/bin/byre-review" {
-		t.Errorf("second file wrong: %+v", res.SkillFiles[1])
+	if files[1].Rel != "review.sh" || files[1].Dest != "/usr/local/bin/byre-review" {
+		t.Errorf("second file wrong: %+v", files[1])
 	}
-	if res.SkillFiles[0].Skill != "tools" {
-		t.Errorf("skill name not recorded: %+v", res.SkillFiles[0])
+	if res.BuildBlocks()[0].Name != "tools" {
+		t.Errorf("skill name not recorded: %+v", res.BuildBlocks()[0])
 	}
 }
 
@@ -327,11 +330,11 @@ target = "/home/dev/.fake"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.AgentContextTarget != "/home/dev/.fake/MEM.md" {
-		t.Errorf("context target not resolved: %q", res.AgentContextTarget)
+	if res.AgentContextTarget() != "/home/dev/.fake/MEM.md" {
+		t.Errorf("context target not resolved: %q", res.AgentContextTarget())
 	}
-	if res.Context != "workflow rules" {
-		t.Errorf("context not resolved: %q", res.Context)
+	if res.Context() != "workflow rules" {
+		t.Errorf("context not resolved: %q", res.Context())
 	}
 }
 
@@ -393,5 +396,51 @@ target = "/home/dev/.fake"
 	writeSkill(t, dir, "fake", toml, nil)
 	if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
 		t.Fatal("expected rejection of context_target == /home/dev (not a file)")
+	}
+}
+
+func TestResolveRejectsCrossSkillEnvConflict(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "a", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
+	writeSkill(t, dir, "b", "[runtime]\nenv = { EDITOR = \"emacs\" }\n", nil)
+	_, err := Resolve(config.Config{Skills: []string{"a", "b"}}, dir)
+	if err == nil {
+		t.Fatal("expected an error for a cross-skill env conflict")
+	}
+	// The error must name both skills and the key, so the fix is obvious.
+	for _, want := range []string{"a", "b", "EDITOR"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("conflict error should mention %q: %v", want, err)
+		}
+	}
+}
+
+func TestResolveAllowsIdenticalEnvAcrossSkills(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "a", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
+	writeSkill(t, dir, "b", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
+	res, err := Resolve(config.Config{Skills: []string{"a", "b"}}, dir)
+	if err != nil {
+		t.Fatalf("identical values are order-independent and must be allowed: %v", err)
+	}
+	if res.Env()["EDITOR"] != "vim" {
+		t.Errorf("env not merged: %v", res.Env())
+	}
+}
+
+func TestGrantsAttributeRunArgs(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "danger", "[runtime]\nrun_args = [\"--privileged\"]\n", nil)
+	writeSkill(t, dir, "plain", "[build]\napt = [\"jq\"]\n", nil)
+	res, err := Resolve(config.Config{Skills: []string{"danger", "plain"}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants := res.Grants()
+	if len(grants) != 1 || grants[0].Skill != "danger" {
+		t.Fatalf("run_args alone must produce an attributed grant: %+v", grants)
+	}
+	if len(grants[0].RunArgs) != 1 || grants[0].RunArgs[0] != "--privileged" {
+		t.Errorf("grant should carry the run args: %+v", grants[0])
 	}
 }

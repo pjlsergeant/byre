@@ -14,11 +14,11 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	paths, _ := testPaths(t)
 
 	cfg := config.Config{RunArgs: []string{"--project-arg"}}
-	res := skills.Resolved{
-		RunArgs: []string{"--skill-arg"},
-		Caps:    []string{"SYS_PTRACE"},
-		Env:     map[string]string{"SKILLENV": "1"},
-	}
+	var sf skills.File
+	sf.Runtime.RunArgs = []string{"--skill-arg"}
+	sf.Runtime.Caps = []string{"SYS_PTRACE"}
+	sf.Runtime.Env = map[string]string{"SKILLENV": "1"}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "s", File: sf}}}
 	p, err := runParams(paths, combine(cfg, res), "byre-x", false, false)
 	if err != nil {
 		t.Fatal(err)

@@ -17,7 +17,6 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"byre/internal/config"
-	"byre/internal/gen"
 )
 
 // AgentContrib is the agent-skill launch contribution.
@@ -69,51 +68,189 @@ type File struct {
 	} `toml:"context"`
 }
 
-// Skill is a loaded skill with its context text resolved.
+// Skill is a loaded skill with its context text resolved. Files is filled by
+// Resolve (Load alone doesn't validate build files).
 type Skill struct {
 	Name    string
 	File    File
-	Context string // resolved context snippet
+	Context string      // resolved context snippet
+	Files   []SkillFile // resolved [build].files, sorted by source
 }
 
 // Grant records a single skill's runtime grants, for legible attribution in
-// `byre status` (e.g. which skill mounts a host socket).
+// `byre status` and the adoption review (e.g. which skill mounts a host
+// socket, or passes raw docker run args).
 type Grant struct {
-	Skill  string
-	Mounts []config.Mount
-	Caps   []string
+	Skill   string
+	Mounts  []config.Mount
+	Caps    []string
+	RunArgs []string
 }
 
 // SkillFile is one resolved file a skill ships into the image: a source inside
 // the skill's own dir (validated for containment) copied to an absolute image
 // path. The build stage stages Src into the build context; gen emits the COPY.
 type SkillFile struct {
-	Skill string
-	Src   string // absolute host path, resolved within the skill dir
-	Rel   string // cleaned skill-relative source (preserves subdirs for staging)
-	Dest  string // absolute image path
+	Src  string // absolute host path, resolved within the skill dir
+	Rel  string // cleaned skill-relative source (preserves subdirs for staging)
+	Dest string // absolute image path
 }
 
-// Resolved is the aggregate of all enabled skills' contributions.
+// BuildBlock is one skill's build contribution, in enable order — the package's
+// own view of it, so skills doesn't import the generator; build maps it onto
+// gen.SkillBlock (and stages Files into the build context).
+type BuildBlock struct {
+	Name       string
+	Apt        []string
+	NpmGlobal  []string
+	Dockerfile []string    // raw lines
+	Files      []SkillFile // files this skill ships into the image
+}
+
+// Resolved is the set of enabled skills — loaded and validated, in enable
+// order — plus the selected agent's contribution. Everything else (env,
+// mounts, grants, build blocks, ...) is DERIVED by methods, so an aggregate
+// can't drift from the per-skill data it projects.
 type Resolved struct {
-	SkillBlocks  []gen.SkillBlock  // per-skill build blocks, in order
-	Env          map[string]string // runtime env
-	RunArgs      []string
-	Caps         []string
-	Mounts       []config.Mount
-	Volumes      []config.Volume
-	Grants       []Grant     // per-skill runtime grants (mounts/caps) for attribution
-	SkillFiles   []SkillFile // files skills ship into the image (staged by build)
-	AgentCommand string      // selected agent's launch command ("" if no agent)
-	AgentState   string      // selected agent's state volume name ("" if none)
-	Context      string      // concatenated agent-context snippets
-	// AgentContextTarget is where the selected agent reads project memory; the
-	// launcher places Context there at runtime. "" if no agent declares one.
-	AgentContextTarget string
-	// AgentPrefs is the selected agent's curated seedable prefs (nil if none). The
-	// seed only runs when the user opts in (config seed_prefs) and the agent's
-	// state volume is fresh.
-	AgentPrefs *PrefsSpec
+	Skills []Skill
+	// Agent is the selected agent skill's [agent] block (nil when no agent is
+	// configured). The skill it came from is also in Skills.
+	Agent *AgentContrib
+}
+
+// Names lists the enabled skills, in enable order.
+func (r Resolved) Names() []string {
+	names := make([]string, 0, len(r.Skills))
+	for _, sk := range r.Skills {
+		names = append(names, sk.Name)
+	}
+	return names
+}
+
+// BuildBlocks is the per-skill build contributions, in enable order.
+func (r Resolved) BuildBlocks() []BuildBlock {
+	blocks := make([]BuildBlock, 0, len(r.Skills))
+	for _, sk := range r.Skills {
+		blocks = append(blocks, BuildBlock{
+			Name:       sk.Name,
+			Apt:        sk.File.Build.Apt,
+			NpmGlobal:  sk.File.Build.NpmGlobal,
+			Dockerfile: sk.File.Build.Dockerfile,
+			Files:      sk.Files,
+		})
+	}
+	return blocks
+}
+
+// Env merges the skills' runtime env. Resolve rejected cross-skill conflicts,
+// so the merge is order-independent.
+func (r Resolved) Env() map[string]string {
+	env := map[string]string{}
+	for _, sk := range r.Skills {
+		for k, v := range sk.File.Runtime.Env {
+			env[k] = v
+		}
+	}
+	return env
+}
+
+// RunArgs concatenates the skills' raw run args, in enable order.
+func (r Resolved) RunArgs() []string {
+	var out []string
+	for _, sk := range r.Skills {
+		out = append(out, sk.File.Runtime.RunArgs...)
+	}
+	return out
+}
+
+// Caps concatenates the skills' added capabilities, in enable order.
+func (r Resolved) Caps() []string {
+	var out []string
+	for _, sk := range r.Skills {
+		out = append(out, sk.File.Runtime.Caps...)
+	}
+	return out
+}
+
+// Mounts concatenates the skills' host mounts, in enable order.
+func (r Resolved) Mounts() []config.Mount {
+	var out []config.Mount
+	for _, sk := range r.Skills {
+		out = append(out, sk.File.Runtime.Mounts...)
+	}
+	return out
+}
+
+// Volumes concatenates the skills' named volumes, in enable order.
+func (r Resolved) Volumes() []config.Volume {
+	var out []config.Volume
+	for _, sk := range r.Skills {
+		out = append(out, sk.File.Volumes...)
+	}
+	return out
+}
+
+// Grants projects each skill's runtime grants (mounts, caps, raw run args)
+// for attribution in status and the adoption review.
+func (r Resolved) Grants() []Grant {
+	var out []Grant
+	for _, sk := range r.Skills {
+		rt := sk.File.Runtime
+		if len(rt.Mounts) > 0 || len(rt.Caps) > 0 || len(rt.RunArgs) > 0 {
+			out = append(out, Grant{Skill: sk.Name, Mounts: rt.Mounts, Caps: rt.Caps, RunArgs: rt.RunArgs})
+		}
+	}
+	return out
+}
+
+// Context concatenates the skills' context snippets, in enable order.
+func (r Resolved) Context() string {
+	var b strings.Builder
+	for _, sk := range r.Skills {
+		if sk.Context == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(sk.Context)
+	}
+	return b.String()
+}
+
+// AgentCommand is the selected agent's launch command ("" if no agent).
+func (r Resolved) AgentCommand() string {
+	if r.Agent == nil {
+		return ""
+	}
+	return r.Agent.Command
+}
+
+// AgentState is the selected agent's state volume name ("" if none).
+func (r Resolved) AgentState() string {
+	if r.Agent == nil {
+		return ""
+	}
+	return r.Agent.State
+}
+
+// AgentContextTarget is where the selected agent reads project memory; the
+// launcher places Context there at runtime. "" if no agent declares one.
+func (r Resolved) AgentContextTarget() string {
+	if r.Agent == nil {
+		return ""
+	}
+	return r.Agent.ContextTarget
+}
+
+// AgentPrefs is the selected agent's curated seedable prefs (nil if none). The
+// seed only runs when the user opts in (config seed_prefs) and the agent's
+// state volume is fresh.
+func (r Resolved) AgentPrefs() *PrefsSpec {
+	if r.Agent == nil {
+		return nil
+	}
+	return r.Agent.Prefs
 }
 
 // ListSkills returns the names of all skills in skillsDir, sorted. Broken skills
@@ -227,14 +364,16 @@ func skillRelPath(dir, rel string) (string, error) {
 	return realFull, nil
 }
 
-// Resolve loads every enabled skill (the cfg.Skills list, plus the cfg.Agent
-// skill enabled implicitly) and aggregates their contributions. The selected
-// agent's skill must exist and provide an [agent] command.
+// Resolve loads and validates every enabled skill (the cfg.Skills list, plus
+// the cfg.Agent skill enabled implicitly). The selected agent's skill must
+// exist and provide an [agent] command. Cross-skill env-key conflicts are an
+// error: two skills setting the SAME key to DIFFERENT values would otherwise
+// resolve by enable order — silent and surprising.
 func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 	names := enabledSkillNames(cfg)
 
 	var res Resolved
-	res.Env = map[string]string{}
+	envSetBy := map[string]string{} // env key -> skill that set it
 	agentFound := cfg.Agent == ""
 
 	for _, name := range names {
@@ -261,13 +400,6 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 			return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
 		}
 
-		res.SkillBlocks = append(res.SkillBlocks, gen.SkillBlock{
-			Name:       name,
-			Apt:        f.Build.Apt,
-			NpmGlobal:  f.Build.NpmGlobal,
-			Dockerfile: f.Build.Dockerfile,
-		})
-
 		// Files this skill ships into the image. Resolve sources within the skill
 		// dir (reject escapes) and require absolute destinations. Sorted by source
 		// for deterministic build-context staging and COPY emission.
@@ -281,27 +413,23 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 			if perr != nil {
 				return Resolved{}, fmt.Errorf("skill %q: build file: %w", name, perr)
 			}
-			res.SkillFiles = append(res.SkillFiles, SkillFile{
-				Skill: name, Src: real, Rel: filepath.Clean(src), Dest: dest,
-			})
+			sk.Files = append(sk.Files, SkillFile{Src: real, Rel: filepath.Clean(src), Dest: dest})
 		}
-		for k, v := range f.Runtime.Env {
-			res.Env[k] = v
-		}
-		res.RunArgs = append(res.RunArgs, f.Runtime.RunArgs...)
-		res.Caps = append(res.Caps, f.Runtime.Caps...)
-		res.Mounts = append(res.Mounts, f.Runtime.Mounts...)
-		res.Volumes = append(res.Volumes, f.Volumes...)
 
-		if len(f.Runtime.Mounts) > 0 || len(f.Runtime.Caps) > 0 {
-			res.Grants = append(res.Grants, Grant{Skill: name, Mounts: f.Runtime.Mounts, Caps: f.Runtime.Caps})
-		}
-		if sk.Context != "" {
-			if res.Context != "" {
-				res.Context += "\n\n"
+		// Cross-skill env conflicts: a differing value for the same key would be
+		// resolved by enable order — refuse instead. The same value twice is
+		// harmless (order-independent) and allowed.
+		for _, k := range sortedKeys(f.Runtime.Env) {
+			if other, ok := envSetBy[k]; ok && other != name {
+				if prev := envValue(res.Skills, other, k); prev != f.Runtime.Env[k] {
+					return Resolved{}, fmt.Errorf("skills %q and %q both set env %s to different values; disable one or align them", other, name, k)
+				}
+				continue
 			}
-			res.Context += sk.Context
+			envSetBy[k] = name
 		}
+
+		res.Skills = append(res.Skills, sk)
 
 		if name == cfg.Agent {
 			if f.Agent == nil || f.Agent.Command == "" {
@@ -321,11 +449,8 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 				if err := validatePrefs(p, f.Agent.State); err != nil {
 					return Resolved{}, fmt.Errorf("agent %q: [agent.prefs]: %w", name, err)
 				}
-				res.AgentPrefs = p
 			}
-			res.AgentCommand = f.Agent.Command
-			res.AgentState = f.Agent.State
-			res.AgentContextTarget = f.Agent.ContextTarget
+			res.Agent = f.Agent
 			agentFound = true
 		}
 	}
@@ -408,6 +533,17 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// envValue looks up the env value skill `skill` set for key k (for conflict
+// error messages).
+func envValue(sks []Skill, skill, k string) string {
+	for _, sk := range sks {
+		if sk.Name == skill {
+			return sk.File.Runtime.Env[k]
+		}
+	}
+	return ""
 }
 
 func hasStateVolume(vols []config.Volume, name string) bool {

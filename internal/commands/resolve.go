@@ -27,8 +27,8 @@ func combine(cfg config.Config, res skills.Resolved) resolved {
 	return resolved{
 		cfg:     cfg,
 		skills:  res,
-		mounts:  append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...),
-		volumes: append(append([]config.Volume{}, cfg.Volumes...), res.Volumes...),
+		mounts:  append(append([]config.Mount{}, cfg.Mounts...), res.Mounts()...),
+		volumes: append(append([]config.Volume{}, cfg.Volumes...), res.Volumes()...),
 	}
 }
 

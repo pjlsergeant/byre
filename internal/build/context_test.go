@@ -56,8 +56,8 @@ func TestAssembleWritesDockerfileAndLauncher(t *testing.T) {
 func TestAssembleWritesAgentFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	res := skills.Resolved{
-		AgentCommand: "claude --dangerously-skip-permissions",
-		Context:      "be concise",
+		Skills: []skills.Skill{{Name: "claude", Context: "be concise"}},
+		Agent:  &skills.AgentContrib{Command: "claude --dangerously-skip-permissions"},
 	}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
@@ -171,12 +171,10 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 	if err := os.WriteFile(src, []byte("#!/bin/sh\necho review\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	res := skills.Resolved{
-		SkillBlocks: []gen.SkillBlock{{Name: "tools"}},
-		SkillFiles: []skills.SkillFile{{
-			Skill: "tools", Src: src, Rel: "review.sh", Dest: "/usr/local/bin/byre-review",
-		}},
-	}
+	res := skills.Resolved{Skills: []skills.Skill{{
+		Name:  "tools",
+		Files: []skills.SkillFile{{Src: src, Rel: "review.sh", Dest: "/usr/local/bin/byre-review"}},
+	}}}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
 		t.Fatal(err)
@@ -195,8 +193,8 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 func TestAssembleWritesAgentContextTarget(t *testing.T) {
 	paths := bootstrapped(t)
 	res := skills.Resolved{
-		Context:            "workflow rules",
-		AgentContextTarget: "/home/dev/.claude/CLAUDE.md",
+		Skills: []skills.Skill{{Name: "claude", Context: "workflow rules"}},
+		Agent:  &skills.AgentContrib{ContextTarget: "/home/dev/.claude/CLAUDE.md"},
 	}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
@@ -219,7 +217,7 @@ func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	paths := bootstrapped(t)
 	// Target set, no skill context: the target + self-edit note are still baked
 	// (so the launcher can place a --self-edit note), but no agent-context.md.
-	res := skills.Resolved{AgentContextTarget: "/home/dev/.claude/CLAUDE.md"}
+	res := skills.Resolved{Agent: &skills.AgentContrib{ContextTarget: "/home/dev/.claude/CLAUDE.md"}}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
 		t.Fatal(err)
@@ -254,10 +252,10 @@ func TestAssembleClearsStaleStagedFiles(t *testing.T) {
 	if err := os.WriteFile(src, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	withFile := skills.Resolved{
-		SkillBlocks: []gen.SkillBlock{{Name: "tools"}},
-		SkillFiles:  []skills.SkillFile{{Skill: "tools", Src: src, Rel: "review.sh", Dest: "/x"}},
-	}
+	withFile := skills.Resolved{Skills: []skills.Skill{{
+		Name:  "tools",
+		Files: []skills.SkillFile{{Src: src, Rel: "review.sh", Dest: "/x"}},
+	}}}
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, withFile); err != nil {
 		t.Fatal(err)
 	}
@@ -276,10 +274,10 @@ func TestAssembleClearsStaleStagedFiles(t *testing.T) {
 
 func TestAssembleVolumeDirsBakedUIDOwned(t *testing.T) {
 	paths := bootstrapped(t)
-	res := skills.Resolved{Volumes: []config.Volume{
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "s", File: skills.File{Volumes: []config.Volume{
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
 		{Name: "node_modules", Role: "cache", Target: "/workspace/node_modules"},
-	}}
+	}}}}}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
 		t.Fatal(err)
@@ -294,9 +292,9 @@ func TestAssembleVolumeDirsIncludesConfigVolumes(t *testing.T) {
 	cfg := config.Config{Base: "node:22", Volumes: []config.Volume{
 		{Name: "cargo", Role: "cache", Target: "/home/dev/.cargo"},
 	}}
-	res := skills.Resolved{Volumes: []config.Volume{
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "s", File: skills.File{Volumes: []config.Volume{
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
-	}}
+	}}}}}
 	df, err := Assemble(paths, cfg, res)
 	if err != nil {
 		t.Fatal(err)

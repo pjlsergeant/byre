@@ -33,9 +33,9 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 	if err != nil {
 		return gen.Input{}, nil, err
 	}
-	// Skills can ship files from their own dir into the image: fill in each skill
-	// block's COPY map and record the jobs.
-	genSkills, skillJobs, err := planSkillFiles(paths, res.SkillBlocks, res.SkillFiles)
+	// Skills can ship files from their own dir into the image: map each skill's
+	// build block to the generator's, filling its COPY map, and record the jobs.
+	genSkills, skillJobs, err := planSkillBlocks(paths, res.BuildBlocks())
 	if err != nil {
 		return gen.Input{}, nil, err
 	}
@@ -46,13 +46,13 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 		Apt:          cfg.Apt,
 		NpmGlobal:    cfg.NpmGlobal,
 		Skills:       genSkills,
-		AgentCmd:     res.AgentCommand != "",
-		AgentContext: res.Context != "",
+		AgentCmd:     res.AgentCommand() != "",
+		AgentContext: res.Context() != "",
 		// Bake the target (and the self-edit note) whenever the agent declares
 		// where it reads memory — even with no skill context — so the launcher can
 		// still place a --self-edit note there.
-		AgentContextTarget: res.AgentContextTarget != "",
-		VolumeDirs:         volumeDirs(cfg.Volumes, res.Volumes),
+		AgentContextTarget: res.AgentContextTarget() != "",
+		VolumeDirs:         volumeDirs(cfg.Volumes, res.Volumes()),
 		DockerfilePre:      cfg.DockerfilePre,
 		DockerfilePost:     cfg.DockerfilePost,
 	}
@@ -103,18 +103,18 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	if err := os.WriteFile(ctxPath(paths, gen.LauncherName), gen.LauncherScript(), 0o755); err != nil {
 		return "", err
 	}
-	if res.AgentCommand != "" {
-		if err := os.WriteFile(ctxPath(paths, gen.AgentCmdName), agentScript(res.AgentCommand), 0o755); err != nil {
+	if cmd := res.AgentCommand(); cmd != "" {
+		if err := os.WriteFile(ctxPath(paths, gen.AgentCmdName), agentScript(cmd), 0o755); err != nil {
 			return "", err
 		}
 	}
-	if res.Context != "" {
-		if err := os.WriteFile(ctxPath(paths, gen.AgentContextName), []byte(res.Context), 0o644); err != nil {
+	if ctx := res.Context(); ctx != "" {
+		if err := os.WriteFile(ctxPath(paths, gen.AgentContextName), []byte(ctx), 0o644); err != nil {
 			return "", err
 		}
 	}
-	if res.AgentContextTarget != "" {
-		if err := os.WriteFile(ctxPath(paths, gen.AgentContextTargetName), []byte(res.AgentContextTarget+"\n"), 0o644); err != nil {
+	if target := res.AgentContextTarget(); target != "" {
+		if err := os.WriteFile(ctxPath(paths, gen.AgentContextTargetName), []byte(target+"\n"), 0o644); err != nil {
 			return "", err
 		}
 		// The --self-edit note the launcher appends to the agent's memory when the
@@ -186,35 +186,34 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 	return out, jobs, nil
 }
 
-// planSkillFiles fills in each skill block's COPY map (staged-context-path ->
-// image dest) for files the skill ships under "skills/<skill>/<rel>", returning
-// the updated blocks and the copy jobs. Sources were already validated for
-// containment by skills.Resolve; this writes nothing.
-func planSkillFiles(paths project.Paths, blocks []gen.SkillBlock, files []skills.SkillFile) ([]gen.SkillBlock, []fileCopy, error) {
-	if len(files) == 0 {
-		return blocks, nil, nil
+// planSkillBlocks maps each skill's build block onto the generator's, filling
+// its COPY map (staged-context-path -> image dest) for files the skill ships
+// under "skills/<skill>/<rel>", and returns the copy jobs. Sources were
+// already validated for containment by skills.Resolve; this writes nothing.
+func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, error) {
+	if len(blocks) == 0 {
+		return nil, nil, nil
 	}
-	copies := make(map[string]map[string]string) // skill -> (ctxPath -> dest)
+	out := make([]gen.SkillBlock, 0, len(blocks))
 	var jobs []fileCopy
-	for _, sf := range files {
-		ctxRel := filepath.ToSlash(filepath.Join("skills", sf.Skill, sf.Rel))
-		staged := filepath.Join(paths.ContextDir, filepath.FromSlash(ctxRel))
-		// Defense-in-depth: skill name + rel are validated upstream, but confirm
-		// the staged path can't escape the context dir before we write to it.
-		if rel, err := filepath.Rel(paths.ContextDir, staged); err != nil ||
-			rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, nil, fmt.Errorf("skill %q: staged file path escapes the build context", sf.Skill)
+	for _, b := range blocks {
+		gb := gen.SkillBlock{Name: b.Name, Apt: b.Apt, NpmGlobal: b.NpmGlobal, Dockerfile: b.Dockerfile}
+		for _, sf := range b.Files {
+			ctxRel := filepath.ToSlash(filepath.Join("skills", b.Name, sf.Rel))
+			staged := filepath.Join(paths.ContextDir, filepath.FromSlash(ctxRel))
+			// Defense-in-depth: skill name + rel are validated upstream, but confirm
+			// the staged path can't escape the context dir before we write to it.
+			if rel, err := filepath.Rel(paths.ContextDir, staged); err != nil ||
+				rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return nil, nil, fmt.Errorf("skill %q: staged file path escapes the build context", b.Name)
+			}
+			jobs = append(jobs, fileCopy{src: sf.Src, staged: staged, what: fmt.Sprintf("skill %q files: copying %s", b.Name, sf.Rel)})
+			if gb.Files == nil {
+				gb.Files = make(map[string]string)
+			}
+			gb.Files[ctxRel] = sf.Dest
 		}
-		jobs = append(jobs, fileCopy{src: sf.Src, staged: staged, what: fmt.Sprintf("skill %q files: copying %s", sf.Skill, sf.Rel)})
-		if copies[sf.Skill] == nil {
-			copies[sf.Skill] = make(map[string]string)
-		}
-		copies[sf.Skill][ctxRel] = sf.Dest
-	}
-	out := make([]gen.SkillBlock, len(blocks))
-	for i, b := range blocks {
-		b.Files = copies[b.Name]
-		out[i] = b
+		out = append(out, gb)
 	}
 	return out, jobs, nil
 }

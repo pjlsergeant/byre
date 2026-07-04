@@ -144,24 +144,24 @@ func adoptionView(paths project.Paths, proposal config.Config) (config.Config, [
 // they're shown at adoption time alongside the config-level grants.
 func skillGrantSummary(res skills.Resolved) []string {
 	var s []string
-	for _, g := range res.Grants {
+	for _, g := range res.Grants() {
 		for _, m := range g.Mounts {
 			s = append(s, fmt.Sprintf("skill %q mounts %s -> %s (%s)", g.Skill, m.Host, m.Target, orDefault(m.Mode, "ro")))
 		}
 		if len(g.Caps) > 0 {
 			s = append(s, fmt.Sprintf("skill %q adds capabilities: %s", g.Skill, strings.Join(g.Caps, ", ")))
 		}
+		if len(g.RunArgs) > 0 {
+			s = append(s, fmt.Sprintf("skill %q adds raw docker run args (can grant --privileged, the docker socket, host net): %s", g.Skill, strings.Join(g.RunArgs, " ")))
+		}
 	}
-	if len(res.RunArgs) > 0 {
-		s = append(s, "skills add raw docker run args: "+strings.Join(res.RunArgs, " "))
-	}
-	for _, v := range res.Volumes {
+	for _, v := range res.Volumes() {
 		if v.Seed != nil && v.Seed.Host != "" {
 			s = append(s, fmt.Sprintf("skill volume %q seeds from host path: %s", v.Name, v.Seed.Host))
 		}
 	}
 	n := 0
-	for _, b := range res.SkillBlocks {
+	for _, b := range res.BuildBlocks() {
 		n += len(b.Dockerfile)
 	}
 	if n > 0 {

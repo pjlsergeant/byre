@@ -126,8 +126,8 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		}
 		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
 		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
-		if rv.cfg.SeedPrefs && rv.skills.AgentPrefs != nil {
-			return seedPrefs(r, s.Err, paths, image, rv.skills.AgentState, rv.skills.AgentPrefs.From, rv.skills.AgentPrefs.Files, os.Getuid(), os.Getgid())
+		if p := rv.skills.AgentPrefs(); rv.cfg.SeedPrefs && p != nil {
+			return seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, os.Getuid(), os.Getgid())
 		}
 		return nil
 	}); err != nil {

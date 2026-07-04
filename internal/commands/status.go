@@ -94,11 +94,11 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		if verr := rv.validate(); verr != nil {
 			info.SkillErr = verr.Error()
 		} else {
-			info.Skills = skillNames(res)
+			info.Skills = res.Names()
 			info.Binds = rv.mounts
 			info.Volumes = rv.volumes
-			info.Grants = res.Grants
-			info.RunArgs = append(append([]string{}, res.RunArgs...), cfg.RunArgs...)
+			info.Grants = res.Grants()
+			info.RunArgs = append(append([]string{}, res.RunArgs()...), cfg.RunArgs...)
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -219,6 +219,9 @@ func renderStatus(w io.Writer, s statusInfo) {
 		for _, c := range g.Caps {
 			parts = append(parts, "+cap "+c)
 		}
+		if len(g.RunArgs) > 0 {
+			parts = append(parts, "run args "+strings.Join(g.RunArgs, " "))
+		}
 		row(label, g.Skill+": "+strings.Join(parts, "; "))
 	}
 
@@ -247,14 +250,6 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s  (share these volumes)",
 			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", ")))
 	}
-}
-
-func skillNames(res skills.Resolved) []string {
-	names := make([]string, 0, len(res.SkillBlocks))
-	for _, b := range res.SkillBlocks {
-		names = append(names, b.Name)
-	}
-	return names
 }
 
 // portStatusLine renders a published port as "iface:host -> container", via

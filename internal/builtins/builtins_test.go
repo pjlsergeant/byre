@@ -42,11 +42,11 @@ func TestBuiltinAgentSkillsResolve(t *testing.T) {
 			t.Errorf("agent %q: resolve failed: %v", agent, err)
 			continue
 		}
-		if res.AgentCommand == "" {
+		if res.AgentCommand() == "" {
 			t.Errorf("agent %q: no launch command", agent)
 		}
-		if len(res.Volumes) == 0 || res.Volumes[0].Role != "state" {
-			t.Errorf("agent %q: expected a state volume, got %+v", agent, res.Volumes)
+		if len(res.Volumes()) == 0 || res.Volumes()[0].Role != "state" {
+			t.Errorf("agent %q: expected a state volume, got %+v", agent, res.Volumes())
 		}
 	}
 }
@@ -103,58 +103,46 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-host composition failed to resolve: %v", err)
 	}
-	// devloop ships byre-codereview and its firstrun hook.
-	var shippedReview, shippedHook bool
-	for _, sf := range res.SkillFiles {
-		if sf.Skill != "devloop" {
-			continue
-		}
-		switch sf.Dest {
-		case "/usr/local/bin/byre-codereview":
-			shippedReview = true
-		case "/etc/byre/firstrun.d/devloop":
-			shippedHook = true
+	// devloop ships byre-codereview and its firstrun hook; codex ships its
+	// first-run login hook into the launcher's firstrun.d.
+	shipped := map[string]bool{} // "skill dest" -> present
+	for _, b := range res.BuildBlocks() {
+		for _, sf := range b.Files {
+			shipped[b.Name+" "+sf.Dest] = true
 		}
 	}
-	if !shippedReview {
-		t.Errorf("devloop did not ship byre-codereview: %+v", res.SkillFiles)
-	}
-	if !shippedHook {
-		t.Errorf("devloop did not ship its firstrun hook: %+v", res.SkillFiles)
-	}
-	// codex ships its first-run login hook into the launcher's firstrun.d.
-	var shippedCodexLogin bool
-	for _, sf := range res.SkillFiles {
-		if sf.Skill == "codex" && sf.Dest == "/etc/byre/firstrun.d/codex-login" {
-			shippedCodexLogin = true
+	for _, want := range []string{
+		"devloop /usr/local/bin/byre-codereview",
+		"devloop /etc/byre/firstrun.d/devloop",
+		"codex /etc/byre/firstrun.d/codex-login",
+	} {
+		if !shipped[want] {
+			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
 		}
-	}
-	if !shippedCodexLogin {
-		t.Errorf("codex did not ship its first-run login hook: %+v", res.SkillFiles)
 	}
 	// devloop contributes the persistent scratch volume and advertises it.
 	var scratchVol bool
-	for _, v := range res.Volumes {
+	for _, v := range res.Volumes() {
 		if v.Name == "scratch" && v.Role == "state" && v.Target == "/home/dev/scratch" {
 			scratchVol = true
 		}
 	}
 	if !scratchVol {
-		t.Errorf("devloop did not contribute the scratch state volume: %+v", res.Volumes)
+		t.Errorf("devloop did not contribute the scratch state volume: %+v", res.Volumes())
 	}
-	if got := res.Env["BYRE_SCRATCH"]; got != "/home/dev/scratch" {
+	if got := res.Env()["BYRE_SCRATCH"]; got != "/home/dev/scratch" {
 		t.Errorf("BYRE_SCRATCH = %q, want /home/dev/scratch", got)
 	}
 	// Workflow context reaches Claude's memory file.
-	if res.AgentContextTarget != "/home/dev/.claude/CLAUDE.md" {
-		t.Errorf("context target wrong: %q", res.AgentContextTarget)
+	if res.AgentContextTarget() != "/home/dev/.claude/CLAUDE.md" {
+		t.Errorf("context target wrong: %q", res.AgentContextTarget())
 	}
-	if !strings.Contains(res.Context, "byre-codereview") {
+	if !strings.Contains(res.Context(), "byre-codereview") {
 		t.Errorf("devloop workflow context not present in agent context")
 	}
 	// codex contributes the reviewer binary install (its build block is present).
 	var codexBlock bool
-	for _, b := range res.SkillBlocks {
+	for _, b := range res.BuildBlocks() {
 		if b.Name == "codex" {
 			codexBlock = true
 		}
@@ -333,7 +321,7 @@ func TestAgentSkillsCleanStateDir(t *testing.T) {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
 		installAt, cleanAt := -1, -1
-		for _, b := range res.SkillBlocks {
+		for _, b := range res.BuildBlocks() {
 			if b.Name != c.agent {
 				continue
 			}
@@ -363,7 +351,7 @@ func TestCodexDoesNotWipeStateDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, b := range res.SkillBlocks {
+	for _, b := range res.BuildBlocks() {
 		if b.Name != "codex" {
 			continue
 		}
@@ -387,18 +375,18 @@ func TestCodexStateVolumeSeparateFromBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Env["CODEX_HOME"] == "" || res.Env["CODEX_HOME"] == "/home/dev/.codex" {
-		t.Fatalf("CODEX_HOME must be set and NOT /home/dev/.codex (the binary dir), got %q", res.Env["CODEX_HOME"])
+	if res.Env()["CODEX_HOME"] == "" || res.Env()["CODEX_HOME"] == "/home/dev/.codex" {
+		t.Fatalf("CODEX_HOME must be set and NOT /home/dev/.codex (the binary dir), got %q", res.Env()["CODEX_HOME"])
 	}
 	var found bool
-	for _, v := range res.Volumes {
+	for _, v := range res.Volumes() {
 		if v.Name == ".codex" {
 			found = true
 			if v.Target == "/home/dev/.codex" {
 				t.Errorf(".codex state volume must NOT mount at /home/dev/.codex (the binary dir)")
 			}
-			if v.Target != res.Env["CODEX_HOME"] {
-				t.Errorf(".codex volume target %q should equal CODEX_HOME %q", v.Target, res.Env["CODEX_HOME"])
+			if v.Target != res.Env()["CODEX_HOME"] {
+				t.Errorf(".codex volume target %q should equal CODEX_HOME %q", v.Target, res.Env()["CODEX_HOME"])
 			}
 		}
 	}
