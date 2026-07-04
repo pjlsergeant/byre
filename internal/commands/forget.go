@@ -5,9 +5,7 @@ import (
 	"io"
 	"os"
 
-	"byre/internal/config"
 	"byre/internal/project"
-	"byre/internal/runner"
 )
 
 // Forget implements `byre forget`: completely remove byre's host-side state for
@@ -24,15 +22,11 @@ func Forget(stdout io.Writer, stdin io.Reader, projectDir string, force bool) er
 	if err := paths.Bootstrap(); err != nil { // ensures the dir+lock exist for the lock
 		return err
 	}
-	engine := "auto"
-	if cfg, cerr := config.Load(projectDir); cerr == nil {
-		engine = cfg.Engine
-	}
-	eng, err := runner.Detect(engine, nil)
+	r, err := resolveEngine(os.Stderr, projectDir)
 	if err != nil {
 		return err
 	}
-	return forget(stdout, stdin, paths, runner.New(eng), force)
+	return forget(stdout, stdin, paths, r, force)
 }
 
 func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunner, force bool) error {

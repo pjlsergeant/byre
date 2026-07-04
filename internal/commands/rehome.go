@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"byre/internal/project"
-	"byre/internal/runner"
 )
 
 // Rehome implements `byre rehome <old-id>`: migrate a previous project's named
@@ -32,11 +31,11 @@ func Rehome(stdout io.Writer, projectDir, oldID string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	eng, err := runner.Detect("auto", nil)
+	r, err := resolveEngine(os.Stderr, projectDir)
 	if err != nil {
 		return err
 	}
-	return rehome(stdout, paths, oldID, runner.New(eng), os.Getuid(), os.Getgid())
+	return rehome(stdout, paths, oldID, r, os.Getuid(), os.Getgid())
 }
 
 func rehome(stdout io.Writer, paths project.Paths, oldID string, r engineRunner, uid, gid int) error {

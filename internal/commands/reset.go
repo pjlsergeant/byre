@@ -4,11 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
-	"byre/internal/config"
 	"byre/internal/project"
-	"byre/internal/runner"
 )
 
 // Reset implements `byre reset`: wipe ALL of this project's named volumes (only
@@ -22,19 +21,11 @@ func Reset(stdout io.Writer, stdin io.Reader, projectDir string, force bool) err
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	// reset is a recovery command — tolerate a broken byre.config (which would
-	// otherwise block wiping volumes); fall back to engine auto-detect.
-	engine := "auto"
-	if cfg, err := config.Load(projectDir); err == nil {
-		engine = cfg.Engine
-	} else {
-		fmt.Fprintf(stdout, "byre: warning: config did not load (%v); using engine=auto\n", err)
-	}
-	eng, err := runner.Detect(engine, nil)
+	r, err := resolveEngine(os.Stderr, projectDir)
 	if err != nil {
 		return err
 	}
-	return reset(stdout, stdin, paths, runner.New(eng), force)
+	return reset(stdout, stdin, paths, r, force)
 }
 
 // liveSession lists the running containers of a repo family (any worktree).
