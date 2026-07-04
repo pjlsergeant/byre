@@ -21,7 +21,7 @@
 
 [build]
 apt = ["jq"] # codereview.sh parses codex --json output with jq
-files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop" }
+files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devloop-lib.sh" = "/usr/local/lib/byre-devloop-lib.sh" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-codereview"]
 
 [runtime]

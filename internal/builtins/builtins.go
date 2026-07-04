@@ -19,10 +19,10 @@ var fsys embed.FS
 // MaterializeSkills writes the built-in skills into destDir (~/.byre/skills).
 func MaterializeSkills(destDir string) error { return materialize("skills", destDir) }
 
-// SkillChange records one skill changed by UpdateSkills: its name and where its
-// prior copy is kept (Backup is the backup slot, or a leftover stash path if the
-// backup couldn't be published; "" only when the skill was newly installed).
-type SkillChange struct {
+// Change records one skill or template changed by an update: its name and
+// where its prior copy is kept (Backup is the backup slot, or a leftover stash
+// path if the backup couldn't be published; "" only when newly installed).
+type Change struct {
 	Name   string
 	Backup string
 }
@@ -32,15 +32,24 @@ type SkillChange struct {
 // clobbers). A replaced copy that differs is preserved in an append-only backup
 // under the sibling skills.bak/ dir. Returns the changes (installed or updated),
 // sorted by name. Hand-dropped (non-built-in) skills are not touched.
-func UpdateSkills(destDir string) ([]SkillChange, error) {
+func UpdateSkills(destDir string) ([]Change, error) { return update("skills", destDir) }
+
+// UpdateTemplates is UpdateSkills for the built-in templates (backups land in
+// templates.bak/) — so shipped template changes have the same pickup path as
+// shipped skill changes.
+func UpdateTemplates(destDir string) ([]Change, error) { return update("templates", destDir) }
+
+// update re-materializes the embedded subtree sub into destDir, overwriting
+// stale copies and preserving differing ones in an append-only <destDir>.bak/.
+func update(sub, destDir string) ([]Change, error) {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return nil, err
 	}
-	names, err := fs.ReadDir(fsys, "skills")
+	names, err := fs.ReadDir(fsys, sub)
 	if err != nil {
 		return nil, err
 	}
-	var updated []SkillChange
+	var updated []Change
 	for _, e := range names {
 		if !e.IsDir() {
 			continue
@@ -51,7 +60,7 @@ func UpdateSkills(destDir string) ([]SkillChange, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := copyTree(filepath.Join("skills", e.Name()), tmp); err != nil {
+		if err := copyTree(filepath.Join(sub, e.Name()), tmp); err != nil {
 			os.RemoveAll(tmp)
 			return nil, err
 		}
@@ -82,13 +91,13 @@ func UpdateSkills(destDir string) ([]SkillChange, error) {
 				}
 				return nil, fmt.Errorf("update of %q failed: %w", e.Name(), err)
 			}
-			updated = append(updated, SkillChange{Name: e.Name(), Backup: backupStash(destDir, e.Name(), stash)})
+			updated = append(updated, Change{Name: e.Name(), Backup: backupStash(destDir, e.Name(), stash)})
 		} else {
 			if err := os.Rename(tmp, target); err != nil {
 				os.RemoveAll(tmp)
 				return nil, err
 			}
-			updated = append(updated, SkillChange{Name: e.Name()})
+			updated = append(updated, Change{Name: e.Name()})
 		}
 	}
 	sort.Slice(updated, func(i, j int) bool { return updated[i].Name < updated[j].Name })

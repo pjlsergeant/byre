@@ -221,15 +221,16 @@ in it — a parallel agent that inherits this repo's config, volumes, and image.
 	},
 	{
 		name:    "skill",
-		summary: "skill update: re-materialize byre's built-in skills.",
+		summary: "skill update: re-materialize byre's built-in skills and templates.",
 		help: `Usage: byre skill update
 
-Re-materialize byre's built-in skills into ~/.byre/skills, picking up shipped
-updates (a locally-modified copy is backed up to <name>.bak). Follow with
-'byre rebuild' to apply the changes to the image.`,
+Re-materialize byre's built-in skills and templates into ~/.byre, picking up
+shipped updates (a locally-modified copy is backed up under skills.bak/ or
+templates.bak/). Follow with 'byre rebuild' to apply skill changes to the
+image.`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
 			if len(rest) != 1 || rest[0] != "update" {
-				return usageError("usage: byre skill update   (re-materialize byre's built-in skills)")
+				return usageError("usage: byre skill update   (re-materialize byre's built-in skills and templates)")
 			}
 			return a.skillUpdate(s)
 		},

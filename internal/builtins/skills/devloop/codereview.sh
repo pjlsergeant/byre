@@ -34,22 +34,16 @@ fi
 # Persisted artifacts live in .devloop/ at the repo root — a self-ignoring dir
 # (its own .gitignore is "*"), so the review log and agent diary persist via the
 # workspace mount but never land in git and need no per-project .gitignore entry.
+# byre_devloop_dir (shared lib, shipped alongside this script) provides the dir,
+# hardened against planted symlinks/nodes.
 if root=$(git rev-parse --show-toplevel 2>/dev/null); then
   cd "$root"
 else
   root="$PWD"
 fi
+. /usr/local/lib/byre-devloop-lib.sh
+byre_devloop_dir "$root"
 REVIEW_DIR="$root/.devloop"
-# Remove a SYMLINK (-L, no-follow) or non-dir at .devloop, and a symlink/non-
-# regular .gitignore, so writes can't be redirected through a planted node; then
-# force the self-ignore content atomically (temp + rename, never write through it).
-if [ -L "$REVIEW_DIR" ] || { [ -e "$REVIEW_DIR" ] && [ ! -d "$REVIEW_DIR" ]; }; then rm -rf "$REVIEW_DIR"; fi
-mkdir -p "$REVIEW_DIR"
-GI="$REVIEW_DIR/.gitignore"
-if [ -L "$GI" ] || { [ -e "$GI" ] && [ ! -f "$GI" ]; }; then rm -rf "$GI"; fi
-GITMP="$REVIEW_DIR/.gitignore.tmp.$$"
-rm -rf "$GITMP"
-printf '*\n' > "$GITMP" && mv -f "$GITMP" "$GI" || rm -f "$GITMP"
 SESSION_FILE="$REVIEW_DIR/.review-session"
 LOG_FILE="$REVIEW_DIR/reviews.md"
 

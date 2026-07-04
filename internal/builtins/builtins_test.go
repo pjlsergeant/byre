@@ -114,6 +114,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	for _, want := range []string{
 		"devloop /usr/local/bin/byre-codereview",
 		"devloop /etc/byre/firstrun.d/devloop",
+		"devloop /usr/local/lib/byre-devloop-lib.sh", // shared hardening lib both scripts source
 		"codex /etc/byre/firstrun.d/codex-login",
 	} {
 		if !shipped[want] {
@@ -418,5 +419,49 @@ func TestNodeTemplateContainerNodeModules(t *testing.T) {
 	}
 	if !found {
 		t.Error("node template should declare a /workspace/node_modules cache volume")
+	}
+}
+
+// TestUpdateTemplatesOverwritesAndBacksUp mirrors the skills update test:
+// shipped template changes need the same pickup path (`byre skill update`).
+func TestUpdateTemplatesOverwritesAndBacksUp(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeTemplates(dest); err != nil {
+		t.Fatal(err)
+	}
+	goTmpl := filepath.Join(dest, "go", "template.config")
+	if err := os.WriteFile(goTmpl, []byte("# my local edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changes, err := UpdateTemplates(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var goChange *Change
+	for i := range changes {
+		if changes[i].Name == "go" {
+			goChange = &changes[i]
+		}
+	}
+	if goChange == nil {
+		t.Fatalf("edited go template not updated: %+v", changes)
+	}
+	// The shipped content is restored...
+	b, _ := os.ReadFile(goTmpl)
+	if string(b) == "# my local edit\n" {
+		t.Error("update did not overwrite the edited template")
+	}
+	// ...and the prior copy is preserved where the change says.
+	if goChange.Backup == "" {
+		t.Fatal("a differing copy must be backed up")
+	}
+	prior, err := os.ReadFile(filepath.Join(goChange.Backup, "template.config"))
+	if err != nil || string(prior) != "# my local edit\n" {
+		t.Errorf("prior copy not preserved at %s: %q err=%v", goChange.Backup, prior, err)
+	}
+	// A second update is a no-op.
+	again, err := UpdateTemplates(dest)
+	if err != nil || len(again) != 0 {
+		t.Errorf("second update should change nothing: %+v err=%v", again, err)
 	}
 }
