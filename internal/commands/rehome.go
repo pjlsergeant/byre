@@ -50,7 +50,7 @@ func rehome(s Streams, paths project.Paths, oldID string, r engineRunner, uid, g
 	if err := os.MkdirAll(filepath.Dir(oldLock), 0o755); err != nil {
 		return err
 	}
-	return withTwoSetupLocks(paths.LockFile, oldLock, func() error {
+	return withTwoSetupLocks(s.Err, paths.LockFile, oldLock, func() error {
 		for _, id := range []string{oldID, newID} {
 			if live, err := r.RunningContainersByLabel(labelKey + "=" + id); err != nil {
 				return fmt.Errorf("checking for a running session: %w", err)

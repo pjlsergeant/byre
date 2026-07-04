@@ -63,7 +63,7 @@ func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	}
 
 	// Serialize with develop's setup so we don't race a concurrent build/seed.
-	return withSetupLock(paths.LockFile, func() error {
+	return withSetupLock(s.Err, paths.LockFile, func() error {
 		// Re-check live under the lock, immediately before deletion, to catch a
 		// session that started between the initial check and now.
 		if live, err := liveSession(r, paths.ID); err != nil {

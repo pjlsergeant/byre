@@ -76,7 +76,7 @@ func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	// state created since the preview is also removed); the projects dir holds
 	// the lock file, so remove it after the lock is released.
 	var failed []string
-	if err := withSetupLock(paths.LockFile, func() error {
+	if err := withSetupLock(s.Err, paths.LockFile, func() error {
 		if live, lerr := liveSession(r, paths.ID); lerr != nil {
 			return fmt.Errorf("checking for a running session: %w", lerr)
 		} else if len(live) > 0 {

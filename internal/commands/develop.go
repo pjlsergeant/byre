@@ -115,7 +115,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 
 	// Setup (generate + build) is serialized by the lock; the interactive
 	// session that follows is not.
-	if err := withSetupLock(paths.LockFile, func() error {
+	if err := withSetupLock(s.Err, paths.LockFile, func() error {
 		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false); berr != nil {
 			return berr
 		}

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"byre/internal/builtins"
@@ -139,7 +140,8 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 // session inside it — the same guard `reset`/`forget` use, so a concurrent
 // `byre develop` can't seed a volume we're deleting (or vice versa).
 func (a *volumeAdmin) Clear(name string) error {
-	return withSetupLock(a.paths.LockFile, func() error {
+	// io.Discard: this runs inside the TUI; a waiting note would corrupt the screen.
+	return withSetupLock(io.Discard, a.paths.LockFile, func() error {
 		if live, err := liveSession(a.r, a.paths.ID); err != nil {
 			return fmt.Errorf("checking for a running session: %w", err)
 		} else if len(live) > 0 {

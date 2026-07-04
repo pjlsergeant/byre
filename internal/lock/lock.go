@@ -7,6 +7,7 @@
 package lock
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -26,7 +27,7 @@ func Acquire(path string) (*Lock, error) {
 // holder currently has it.
 func TryAcquire(path string) (l *Lock, ok bool, err error) {
 	l, err = acquire(path, true)
-	if err == syscall.EWOULDBLOCK {
+	if errors.Is(err, syscall.EWOULDBLOCK) {
 		return nil, false, nil
 	}
 	if err != nil {
