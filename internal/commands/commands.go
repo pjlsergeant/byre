@@ -243,8 +243,15 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	if err != nil {
 		return err
 	}
-	r := runner.New(eng)
-	warnRootlessPodman(os.Stderr, r)
+	return develop(runner.New(eng), os.Stderr, paths, cfg, res, selfEdit)
+}
+
+// develop is the engine-facing core of Develop — the live-session fast path,
+// then build + seed under the setup lock, then the foreground run and its
+// exit-status mapping. Split from Develop (which does the host-side resolution
+// and onboarding) so it can run end-to-end against a fake engine.
+func develop(r engineRunner, stderr io.Writer, paths project.Paths, cfg config.Config, res skills.Resolved, selfEdit bool) error {
+	warnRootlessPodman(stderr, r)
 
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 
@@ -259,9 +266,9 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	}
 	if len(ids) > 0 {
 		if selfEdit {
-			fmt.Fprintln(os.Stderr, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
+			fmt.Fprintln(stderr, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
 		}
-		reportRunning(os.Stderr, r.Engine(), ids)
+		reportRunning(stderr, r.Engine(), ids)
 		return ExitError{Code: ExitRefused} // refused, session already live
 	}
 
@@ -273,13 +280,13 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 		}
 		// Seed fresh state volumes that declare a config-level seed, using the
 		// image we just built. One-time; existing volumes are left alone.
-		if err := seedVolumes(r, os.Stderr, paths, image, allVolumes(cfg, res.Volumes), os.Getuid(), os.Getgid()); err != nil {
+		if err := seedVolumes(r, stderr, paths, image, allVolumes(cfg, res.Volumes), os.Getuid(), os.Getgid()); err != nil {
 			return err
 		}
 		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
 		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
 		if cfg.SeedPrefs && res.AgentPrefs != nil {
-			return seedPrefs(r, os.Stderr, paths, image, res.AgentState, res.AgentPrefs.From, res.AgentPrefs.Files, os.Getuid(), os.Getgid())
+			return seedPrefs(r, stderr, paths, image, res.AgentState, res.AgentPrefs.From, res.AgentPrefs.Files, os.Getuid(), os.Getgid())
 		}
 		return nil
 	}); err != nil {
@@ -287,8 +294,8 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	}
 
 	if selfEdit {
-		fmt.Fprintln(os.Stderr, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
-		fmt.Fprintf(os.Stderr, "   read-write mount: %s\n", paths.Dir)
+		fmt.Fprintln(stderr, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
+		fmt.Fprintf(stderr, "   read-write mount: %s\n", paths.Dir)
 	}
 	params, err := runParams(paths, cfg, res, image, selfEdit)
 	if err != nil {
@@ -298,7 +305,7 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	// race, our run fails and a session is now live — report it.
 	if runErr := r.Run(runner.RunArgs(params)); runErr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
-			reportRunning(os.Stderr, r.Engine(), live)
+			reportRunning(stderr, r.Engine(), live)
 			return ExitError{Code: ExitRefused} // refused, session already live
 		}
 		// Distinguish the agent/container's own exit from a byre failure: docker
@@ -360,6 +367,24 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 // were set as run-time -e vars), so we only add HOME, which the launcher sets at
 // runtime and isn't in the container's configured env.
 func Shell(stdout io.Writer, projectDir string) error {
+	return shell(stdout, projectDir, installedEngines(), isTTY(os.Stdin))
+}
+
+// installedEngines returns a sessionRunner per installed engine, in shell's
+// probe order (docker, then podman). Engines not on PATH are skipped.
+func installedEngines() []sessionRunner {
+	var out []sessionRunner
+	for _, e := range []string{"docker", "podman"} {
+		eng, err := runner.Detect(e, nil)
+		if err != nil {
+			continue // engine not installed
+		}
+		out = append(out, runner.New(eng))
+	}
+	return out
+}
+
+func shell(stdout io.Writer, projectDir string, engines []sessionRunner, tty bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -369,16 +394,11 @@ func Shell(stdout io.Writer, projectDir string) error {
 	label := workdirLabel(paths)
 	// Find the session in whichever installed engine actually holds it — a session
 	// may run under podman even when docker is also installed. Skip engines that
-	// aren't installed or can't be queried; the first with a match wins.
-	var r *runner.Runner
+	// can't be queried; the first with a match wins.
+	var r sessionRunner
 	var ids []string
 	var queryErr error
-	for _, e := range []string{"docker", "podman"} {
-		eng, derr := runner.Detect(e, nil)
-		if derr != nil {
-			continue // engine not installed
-		}
-		rr := runner.New(eng)
+	for _, rr := range engines {
 		got, qerr := rr.RunningContainersByLabel(label)
 		if qerr != nil {
 			queryErr = qerr // remember; another engine may still hold the session
@@ -410,7 +430,7 @@ func Shell(stdout io.Writer, projectDir string) error {
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
 		return fmt.Errorf("could not determine a valid dev user (BYRE_UID/BYRE_GID) from container %s", shortID(ids[0]))
 	}
-	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, isTTY(os.Stdin), "bash", "-l")
+	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, tty, "bash", "-l")
 }
 
 // withSetupLock runs fn while holding the per-project setup lock, surfacing both

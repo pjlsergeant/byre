@@ -5,8 +5,10 @@ import (
 	"io"
 	"os"
 
+	"byre/internal/config"
 	"byre/internal/project"
 	"byre/internal/runner"
+	"byre/internal/skills"
 )
 
 // Rebuild implements `byre rebuild`: regenerate the build context and rebuild
@@ -32,9 +34,13 @@ func Rebuild(stdout io.Writer, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	r := runner.New(eng)
-	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
+	return rebuild(stdout, runner.New(eng), paths, cfg, res)
+}
 
+// rebuild is Rebuild's engine-facing core, split out so it can run against a
+// fake engine.
+func rebuild(stdout io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved) error {
+	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 	return withSetupLock(paths.LockFile, func() error {
 		fmt.Fprintf(stdout, "byre: rebuilding %s with --no-cache...\n", image)
 		return buildImage(r, paths, cfg, res, image, true)
