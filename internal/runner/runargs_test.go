@@ -176,14 +176,14 @@ func TestContainerEnvUsesCaptureSeam(t *testing.T) {
 }
 
 func TestPortSpec(t *testing.T) {
+	// Publications arrive normalized (interface + host always set) — the
+	// upstream defaulting lives in commands' normalizePort.
 	cases := []struct {
 		p    PortPublish
 		want string
 	}{
 		{PortPublish{Interface: "127.0.0.1", Host: 8080, Container: 8080}, "127.0.0.1:8080:8080"},
-		{PortPublish{Interface: "127.0.0.1", Host: 0, Container: 3000}, "127.0.0.1::3000"}, // ephemeral host
-		{PortPublish{Interface: "", Host: 8080, Container: 80}, "8080:80"},
-		{PortPublish{Interface: "", Host: 0, Container: 5432}, "5432"},
+		{PortPublish{Interface: "0.0.0.0", Host: 8080, Container: 80}, "0.0.0.0:8080:80"},
 	}
 	for _, c := range cases {
 		if got := portSpec(c.p); got != c.want {

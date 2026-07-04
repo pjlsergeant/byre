@@ -3,7 +3,6 @@ package runner
 import (
 	"fmt"
 	"sort"
-	"strconv"
 )
 
 // BindMount is a host-path bind for `docker run -v host:target[:mode]`.
@@ -14,8 +13,9 @@ type BindMount struct {
 }
 
 // PortPublish publishes a container port to the host: `docker run -p
-// [iface:][host:]container`. Host 0 means an ephemeral host port; an empty
-// Interface binds all interfaces (byre defaults it to 127.0.0.1 upstream).
+// iface:host:container`. All three parts are required — byre normalizes every
+// publication upstream (blank interface -> 127.0.0.1, blank host -> the
+// container port), so this layer never decides a default.
 type PortPublish struct {
 	Interface string
 	Host      int
@@ -106,21 +106,12 @@ func RunArgs(p RunParams) []string {
 	return args
 }
 
-// portSpec renders a docker -p value: [iface:][host:]container. An empty host
-// (Host 0) yields an ephemeral mapping ("iface::container" or just "container").
+// portSpec renders a docker -p value from a normalized publication (see
+// PortPublish: interface and host are always set upstream). The old
+// ephemeral/all-interfaces fallbacks were unreachable from byre and only
+// documented behavior nothing produced.
 func portSpec(p PortPublish) string {
-	host := ""
-	if p.Host != 0 {
-		host = strconv.Itoa(p.Host)
-	}
-	switch {
-	case p.Interface != "":
-		return fmt.Sprintf("%s:%s:%d", p.Interface, host, p.Container)
-	case host != "":
-		return fmt.Sprintf("%s:%d", host, p.Container)
-	default:
-		return strconv.Itoa(p.Container)
-	}
+	return fmt.Sprintf("%s:%d:%d", p.Interface, p.Host, p.Container)
 }
 
 func sortedKeys(m map[string]string) []string {
