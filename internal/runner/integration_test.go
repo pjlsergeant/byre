@@ -168,7 +168,9 @@ func TestIntegrationLabelQueries(t *testing.T) {
 	r := requireEngine(t)
 	label := "byre.inttest=" + smokeName(t, "lbl")
 	id := engineOut(t, r, "run", "-d", "--rm", "--label", label, smokeImage, "sleep", "30")
-	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "stop", id).Run() })
+	// rm -f, not stop: busybox sleep ignores SIGTERM, so a plain stop stalls
+	// the suite for the full 10s grace period.
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", id).Run() })
 
 	ids, err := r.RunningContainersByLabel(label)
 	if err != nil {
