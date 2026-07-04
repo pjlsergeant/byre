@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"byre/internal/config"
 )
 
 // WriteProjectConfig writes a byre.config (the host-side store path) from the
@@ -40,6 +42,14 @@ func WriteProjectConfig(destPath, template, agent string) error {
 // SaveDefault updates the template/agent scalars in ~/.byre/default.config
 // (creating it if absent), preserving any other content. An empty value removes
 // that scalar.
+//
+// Write philosophy: this is the SURGICAL writer — it touches only its two
+// top-level scalars and leaves the user's comments and hand-set fields alone,
+// because it runs from the onboarding picker where the user never chose to
+// edit the whole file. The full-file editor (`byre config --global`) is the
+// other philosophy: it re-marshals the entire file (and warns that comments
+// are lost). Keep the two roles distinct; don't grow this into a third
+// general-purpose writer.
 func SaveDefault(home, template, agent string) error {
 	path := filepath.Join(home, "default.config")
 	existing, err := os.ReadFile(path)
@@ -75,13 +85,15 @@ func SaveDefault(home, template, agent string) error {
 }
 
 // Favourites reads the template/agent scalars from ~/.byre/default.config (the
-// user's pre-selected defaults). Missing values come back empty.
+// user's pre-selected defaults) via a real TOML parse — the regex scraper it
+// replaced broke on literal ('single-quoted') strings. Missing or unparsable
+// values come back empty (the picker just starts without favourites).
 func Favourites(home string) (template, agent string) {
-	b, err := os.ReadFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
 	if err != nil {
 		return "", ""
 	}
-	return getScalar(string(b), "template"), getScalar(string(b), "agent")
+	return cfg.Template, cfg.Agent
 }
 
 // findTopLevelScalar returns the line index of a top-level `key =` assignment
@@ -98,18 +110,6 @@ func findTopLevelScalar(lines []string, key string) int {
 		}
 	}
 	return -1
-}
-
-func getScalar(content, key string) string {
-	lines := strings.Split(content, "\n")
-	i := findTopLevelScalar(lines, key)
-	if i < 0 {
-		return ""
-	}
-	if m := regexp.MustCompile(`=\s*"([^"]*)"`).FindStringSubmatch(lines[i]); len(m) == 2 {
-		return m[1]
-	}
-	return ""
 }
 
 // setScalar replaces (or, for an empty value, removes; or appends) a top-level

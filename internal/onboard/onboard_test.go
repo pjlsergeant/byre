@@ -120,17 +120,25 @@ func TestSaveDefaultPreservesOtherKeys(t *testing.T) {
 }
 
 func TestScalarEditingIsTopLevelOnly(t *testing.T) {
-	// A nested key with the same name in a [section] must not be read or edited.
+	// A nested key with the same name in a [section] must not be edited.
 	content := "agent = \"claude\"\n\n[env]\nagent = \"nested-should-be-ignored\"\n"
-	if got := getScalar(content, "agent"); got != "claude" {
-		t.Fatalf("getScalar read a nested key: %q", got)
-	}
 	out := setScalar(content, "agent", "codex")
-	if getScalar(out, "agent") != "codex" {
+	if !strings.Contains(out, `agent = "codex"`) || strings.Contains(out, `agent = "claude"`) {
 		t.Fatalf("top-level agent not updated:\n%s", out)
 	}
 	if !strings.Contains(out, `agent = "nested-should-be-ignored"`) {
 		t.Fatalf("nested key was corrupted:\n%s", out)
+	}
+}
+
+func TestFavouritesReadsLiteralStrings(t *testing.T) {
+	// TOML literal (single-quoted) strings are valid; the old regex reader
+	// silently returned "" for them. A real parse must not.
+	home := t.TempDir()
+	os.WriteFile(filepath.Join(home, "default.config"), []byte("template = 'go'\nagent = 'claude'\n"), 0o644)
+	tmpl, agent := Favourites(home)
+	if tmpl != "go" || agent != "claude" {
+		t.Fatalf("literal-string favourites misread: %q %q", tmpl, agent)
 	}
 }
 
