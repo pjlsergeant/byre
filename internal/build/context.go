@@ -82,6 +82,14 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 			return "", err
 		}
 	}
+	// Same for the conditional context files: each is written only when its
+	// condition holds, so a condition that turned false since the last build
+	// (agent removed, context emptied) would otherwise leave a stale file behind.
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+		if err := os.Remove(ctxPath(paths, name)); err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+	}
 
 	in, jobs, err := buildInput(paths, cfg, res)
 	if err != nil {

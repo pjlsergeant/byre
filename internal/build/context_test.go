@@ -303,3 +303,30 @@ func TestAssembleVolumeDirsIncludesConfigVolumes(t *testing.T) {
 		t.Errorf("config + skill volume mount points should both be pre-created:\n%s", df)
 	}
 }
+
+func TestAssembleClearsStaleAgentFiles(t *testing.T) {
+	paths := bootstrapped(t)
+	withAgent := skills.Resolved{
+		Skills: []skills.Skill{{Name: "claude", Context: "rules"}},
+		Agent:  &skills.AgentContrib{Command: "claude", ContextTarget: "/home/dev/.claude/CLAUDE.md"},
+	}
+	if _, err := Assemble(paths, config.Config{Base: "node:22"}, withAgent); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); err != nil {
+			t.Fatalf("%s not written with an agent: %v", name, err)
+		}
+	}
+	// Re-assemble with the agent removed: every conditional file must be gone,
+	// or a stale agent-cmd would be COPYable by a hand-written dockerfile_post
+	// (and the context stops reflecting the config).
+	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); !os.IsNotExist(err) {
+			t.Errorf("stale %s survived an agent-less re-assemble: %v", name, err)
+		}
+	}
+}

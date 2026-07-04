@@ -259,18 +259,31 @@ func SortedUnique(s []string) []string {
 	return out
 }
 
+// writeApt / writeNpm shell-quote every package name, matching the posture of
+// writeVolumeDirs: upstream validation (config.ValidateContent) already
+// allowlists the charset, but this layer interpolates into shell and should
+// not depend on a check two packages away.
 func writeApt(b *strings.Builder, pkgs []string) {
 	if len(pkgs) == 0 {
 		return
 	}
 	fmt.Fprintf(b, "RUN apt-get update \\\n"+
 		" && apt-get install -y --no-install-recommends %s \\\n"+
-		" && rm -rf /var/lib/apt/lists/*\n", strings.Join(pkgs, " "))
+		" && rm -rf /var/lib/apt/lists/*\n", joinQuoted(pkgs))
 }
 
 func writeNpm(b *strings.Builder, pkgs []string) {
 	if len(pkgs) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "RUN npm install -g %s\n", strings.Join(pkgs, " "))
+	fmt.Fprintf(b, "RUN npm install -g %s\n", joinQuoted(pkgs))
+}
+
+// joinQuoted shell-quotes each element and joins with spaces.
+func joinQuoted(items []string) string {
+	quoted := make([]string, len(items))
+	for i, it := range items {
+		quoted[i] = shellQuote(it)
+	}
+	return strings.Join(quoted, " ")
 }

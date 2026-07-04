@@ -131,3 +131,13 @@ func TestDockerfileVolumeDirInjectionQuoted(t *testing.T) {
 		t.Fatalf("volume target not safely quoted:\n%s", out)
 	}
 }
+
+func TestAptNpmPackagesAreShellQuoted(t *testing.T) {
+	out := Dockerfile(Input{Apt: []string{"jq", "build-essential"}, NpmGlobal: []string{"@scope/tool"}})
+	if !strings.Contains(out, "--no-install-recommends 'jq' 'build-essential'") {
+		t.Errorf("apt packages should be shell-quoted:\n%s", out)
+	}
+	if !strings.Contains(out, "npm install -g '@scope/tool'") {
+		t.Errorf("npm packages should be shell-quoted:\n%s", out)
+	}
+}
