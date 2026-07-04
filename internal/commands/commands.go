@@ -103,7 +103,7 @@ func Dockerfile(stdout io.Writer, projectDir string) error {
 		_, err = stdout.Write(b)
 		return err
 	}
-	df, err := build.Assemble(paths, cfg, res)
+	df, err := build.Render(paths, cfg, res)
 	if err != nil {
 		return err
 	}

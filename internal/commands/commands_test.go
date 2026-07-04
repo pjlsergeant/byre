@@ -45,7 +45,7 @@ func TestWarnRootlessPodman(t *testing.T) {
 	}
 }
 
-func TestDockerfileWritesPersistsAndPrints(t *testing.T) {
+func TestDockerfilePrintsWithoutTouchingContext(t *testing.T) {
 	t.Setenv("BYRE_HOME", t.TempDir())
 	proj := t.TempDir()
 
@@ -54,23 +54,21 @@ func TestDockerfileWritesPersistsAndPrints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Printed bytes must equal the generator output...
+	// Printed bytes must equal the generator output.
 	want := gen.Dockerfile(gen.Input{})
 	if out.String() != want {
 		t.Fatalf("printed output != generator output:\n%s", out.String())
 	}
 
-	// ...and the persisted file must match byte-for-byte.
+	// `byre dockerfile` is informational and side-effect-free: it must NOT write
+	// the Dockerfile or restage the context (that races a concurrent develop
+	// build sharing the context dir — the reason it renders instead of assembling).
 	paths, err := project.Resolve(proj)
 	if err != nil {
 		t.Fatal(err)
 	}
-	onDisk, err := os.ReadFile(paths.Dockerfile)
-	if err != nil {
-		t.Fatalf("Dockerfile.generated not written: %v", err)
-	}
-	if string(onDisk) != want {
-		t.Fatalf("persisted file != generator output:\n%s", string(onDisk))
+	if _, err := os.Stat(paths.Dockerfile); !os.IsNotExist(err) {
+		t.Fatalf("byre dockerfile persisted to disk (should be side-effect-free): %v", err)
 	}
 }
 

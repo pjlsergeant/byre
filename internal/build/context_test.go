@@ -99,6 +99,42 @@ func TestAssembleStagesFiles(t *testing.T) {
 	}
 }
 
+// Render must produce the same Dockerfile text as Assemble but write NOTHING to
+// the context dir — `byre dockerfile` is informational and must not race a
+// concurrent build that shares the context (Assemble clears+restages files/).
+func TestRenderMatchesAssembleWithoutTouchingContext(t *testing.T) {
+	cfg := config.Config{Base: "debian:bookworm", Files: map[string]string{"seed.txt": "/opt/seed.txt"}}
+
+	// Assemble on one bootstrapped project to get the reference text.
+	ap := bootstrapped(t)
+	if err := os.WriteFile(filepath.Join(ap.Canonical, "seed.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want, err := Assemble(ap, cfg, skills.Resolved{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Render on a fresh project: same text, but the context dir stays empty.
+	rp := bootstrapped(t)
+	if err := os.WriteFile(filepath.Join(rp.Canonical, "seed.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Render(rp, cfg, skills.Resolved{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("Render text != Assemble text:\n--- render ---\n%s\n--- assemble ---\n%s", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(rp.ContextDir, "files", "seed.txt")); !os.IsNotExist(err) {
+		t.Errorf("Render staged a file into the context dir (should be side-effect-free): %v", err)
+	}
+	if _, err := os.Stat(rp.Dockerfile); !os.IsNotExist(err) {
+		t.Errorf("Render wrote the Dockerfile to disk (should be side-effect-free): %v", err)
+	}
+}
+
 func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 	paths := bootstrapped(t)
 	// A directory source containing a symlink that points outside the project.

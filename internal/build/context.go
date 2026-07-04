@@ -18,33 +18,27 @@ import (
 	"byre/internal/skills"
 )
 
-// Assemble writes the build context (Dockerfile + launcher + agent files + any
-// `files`) and returns the generated Dockerfile text.
-func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
-	// Re-stage from scratch: clear the staging subtrees so a file removed from
-	// `files`/skills since the last build can't linger in the context and make the
-	// build nondeterministic (or get swept into the image).
-	for _, d := range []string{"files", "skills"} {
-		if err := os.RemoveAll(filepath.Join(paths.ContextDir, d)); err != nil {
-			return "", err
-		}
-	}
+// fileCopy is one staged copy job: a real source path, its destination inside
+// the build context, and a description for error messages.
+type fileCopy struct{ src, staged, what string }
 
-	// `files` copies host paths into the image: stage each source into the build
-	// context (so the generated COPY can find it) and render COPY <staged> <dest>.
-	genFiles, err := stageFiles(paths, cfg.Files)
+// buildInput computes the generator input for a project WITHOUT writing anything
+// (it reads and validates sources, but stages no bytes) and returns the copy
+// jobs that would populate the context. Assemble and Render share it so the
+// rendered Dockerfile always matches what a build would actually use.
+func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (gen.Input, []fileCopy, error) {
+	// `files` copies host paths into the image: map each source to its staged
+	// context path (so the generated COPY can find it) and record the copy job.
+	genFiles, fileJobs, err := planFiles(paths, cfg.Files)
 	if err != nil {
-		return "", err
+		return gen.Input{}, nil, err
 	}
-
-	// Skills can ship files from their own dir into the image: stage each into the
-	// build context and fill in the matching skill block's COPY map.
-	genSkills, err := stageSkillFiles(paths, res.SkillBlocks, res.SkillFiles)
+	// Skills can ship files from their own dir into the image: fill in each skill
+	// block's COPY map and record the jobs.
+	genSkills, skillJobs, err := planSkillFiles(paths, res.SkillBlocks, res.SkillFiles)
 	if err != nil {
-		return "", err
+		return gen.Input{}, nil, err
 	}
-
-	volDirs := volumeDirs(cfg.Volumes, res.Volumes)
 	in := gen.Input{
 		Base:         cfg.Base,
 		Env:          cfg.Env,
@@ -58,9 +52,48 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		// where it reads memory — even with no skill context — so the launcher can
 		// still place a --self-edit note there.
 		AgentContextTarget: res.AgentContextTarget != "",
-		VolumeDirs:         volDirs,
+		VolumeDirs:         volumeDirs(cfg.Volumes, res.Volumes),
 		DockerfilePre:      cfg.DockerfilePre,
 		DockerfilePost:     cfg.DockerfilePost,
+	}
+	return in, append(fileJobs, skillJobs...), nil
+}
+
+// Render returns the generated Dockerfile text WITHOUT touching the build
+// context on disk. `byre dockerfile` is informational and side-effect-free, so
+// it must not clear-and-restage the context (which Assemble does) — that would
+// race a concurrent `byre develop` build sharing the same context dir.
+func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+	in, _, err := buildInput(paths, cfg, res)
+	if err != nil {
+		return "", err
+	}
+	return gen.Dockerfile(in), nil
+}
+
+// Assemble writes the build context (Dockerfile + launcher + agent files + any
+// `files`) and returns the generated Dockerfile text.
+func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+	// Re-stage from scratch: clear the staging subtrees so a file removed from
+	// `files`/skills since the last build can't linger in the context and make the
+	// build nondeterministic (or get swept into the image).
+	for _, d := range []string{"files", "skills"} {
+		if err := os.RemoveAll(filepath.Join(paths.ContextDir, d)); err != nil {
+			return "", err
+		}
+	}
+
+	in, jobs, err := buildInput(paths, cfg, res)
+	if err != nil {
+		return "", err
+	}
+	for _, j := range jobs {
+		if err := os.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
+			return "", err
+		}
+		if err := copyPath(j.src, j.staged); err != nil {
+			return "", fmt.Errorf("%s: %w", j.what, err)
+		}
 	}
 	df := gen.Dockerfile(in)
 
@@ -126,45 +159,43 @@ func agentScript(command string) []byte {
 	return []byte("#!/bin/sh\nexec " + command + " \"$@\"\n")
 }
 
-// stageFiles copies each `files` source (a path relative to the project dir)
-// into the build context under "files/<src>", and returns the COPY map the
-// generator should emit (staged-context-path -> image destination). Sources must
-// stay within the project dir (no absolute paths, no "../" or symlink escapes);
-// destinations must be absolute image paths.
-func stageFiles(paths project.Paths, files map[string]string) (map[string]string, error) {
+// planFiles maps each `files` source (a path relative to the project dir) to its
+// staged context path under "files/<src>", returning the COPY map the generator
+// emits (staged-context-path -> image destination) and the copy jobs to realize
+// it. It validates sources (no absolute paths, no "../" or symlink escapes) and
+// destinations (absolute image paths) but writes nothing — the caller stages the
+// jobs (Assemble) or discards them (Render).
+func planFiles(paths project.Paths, files map[string]string) (map[string]string, []fileCopy, error) {
 	if len(files) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	out := make(map[string]string, len(files))
+	var jobs []fileCopy
 	for src, dest := range files {
 		if !filepath.IsAbs(dest) {
-			return nil, fmt.Errorf("files: destination %q must be an absolute path in the image", dest)
+			return nil, nil, fmt.Errorf("files: destination %q must be an absolute path in the image", dest)
 		}
 		realSrc, rel, err := safeProjectPath(paths.Canonical, src)
 		if err != nil {
-			return nil, fmt.Errorf("files: %w", err)
+			return nil, nil, fmt.Errorf("files: %w", err)
 		}
 		staged := filepath.Join(paths.ContextDir, "files", rel)
-		if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
-			return nil, err
-		}
-		if err := copyPath(realSrc, staged); err != nil {
-			return nil, fmt.Errorf("files: copying %s: %w", src, err)
-		}
+		jobs = append(jobs, fileCopy{src: realSrc, staged: staged, what: "files: copying " + src})
 		out[filepath.ToSlash(filepath.Join("files", rel))] = dest
 	}
-	return out, nil
+	return out, jobs, nil
 }
 
-// stageSkillFiles copies each skill's shipped files into the build context under
-// "skills/<skill>/<rel>" and returns a copy of the skill blocks with their COPY
-// maps (staged-context-path -> image dest) filled in. Sources were already
-// validated for containment by skills.Resolve.
-func stageSkillFiles(paths project.Paths, blocks []gen.SkillBlock, files []skills.SkillFile) ([]gen.SkillBlock, error) {
+// planSkillFiles fills in each skill block's COPY map (staged-context-path ->
+// image dest) for files the skill ships under "skills/<skill>/<rel>", returning
+// the updated blocks and the copy jobs. Sources were already validated for
+// containment by skills.Resolve; this writes nothing.
+func planSkillFiles(paths project.Paths, blocks []gen.SkillBlock, files []skills.SkillFile) ([]gen.SkillBlock, []fileCopy, error) {
 	if len(files) == 0 {
-		return blocks, nil
+		return blocks, nil, nil
 	}
 	copies := make(map[string]map[string]string) // skill -> (ctxPath -> dest)
+	var jobs []fileCopy
 	for _, sf := range files {
 		ctxRel := filepath.ToSlash(filepath.Join("skills", sf.Skill, sf.Rel))
 		staged := filepath.Join(paths.ContextDir, filepath.FromSlash(ctxRel))
@@ -172,14 +203,9 @@ func stageSkillFiles(paths project.Paths, blocks []gen.SkillBlock, files []skill
 		// the staged path can't escape the context dir before we write to it.
 		if rel, err := filepath.Rel(paths.ContextDir, staged); err != nil ||
 			rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, fmt.Errorf("skill %q: staged file path escapes the build context", sf.Skill)
+			return nil, nil, fmt.Errorf("skill %q: staged file path escapes the build context", sf.Skill)
 		}
-		if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
-			return nil, err
-		}
-		if err := copyPath(sf.Src, staged); err != nil {
-			return nil, fmt.Errorf("skill %q files: copying %s: %w", sf.Skill, sf.Rel, err)
-		}
+		jobs = append(jobs, fileCopy{src: sf.Src, staged: staged, what: fmt.Sprintf("skill %q files: copying %s", sf.Skill, sf.Rel)})
 		if copies[sf.Skill] == nil {
 			copies[sf.Skill] = make(map[string]string)
 		}
@@ -190,7 +216,7 @@ func stageSkillFiles(paths project.Paths, blocks []gen.SkillBlock, files []skill
 		b.Files = copies[b.Name]
 		out[i] = b
 	}
-	return out, nil
+	return out, jobs, nil
 }
 
 // safeProjectPath resolves src (relative to projectDir) and confirms — after
