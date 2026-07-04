@@ -6,6 +6,11 @@
 > `positioning-discussion.md` (kept as the record of earlier reasoning).
 > Competitive facts below were re-verified against live sources on
 > **2026-07-03**; re-check before any launch push.
+>
+> **Amended 2026-07-04** in a second grilling session, against new evidence:
+> the under-claimed personal-toolkit strength, two Slack feedback threads,
+> and a claude-pod review. Amendments are marked inline; the evidence is
+> recorded in "Reader-response evidence" below.
 
 ## Positioning statement
 
@@ -38,7 +43,12 @@ authoring** — and everything it does is a generated file you can read.
    doesn't". The README itself is the authority on current status; the
    devlog is linked only as "see what's being built". Caveats are time-scoped
    ("for now") — they describe age, not design. Declared immaturity builds
-   trust with this audience; discovered dishonesty destroys it.
+   trust with this audience; discovered dishonesty destroys it. (Amended
+   2026-07-04: the *detailed* status block moves down the page; what stays
+   at the top — as roughly the third sentence — is one bold line: **THIS IS
+   A VERY YOUNG AND FAST-CHANGING PROJECT**. Signal early, detail later: a
+   reader who bails at 20% of the page still leaves warned. Prompted by a
+   reader who read ~20% and called the page ~50% too long.)
 5. **Competitive framing: full and honest, expressed as a "Why not X?"
    list** — one prose entry per alternative, each answering honestly
    (including "use it if…" where the alternative wins), rather than a
@@ -64,29 +74,54 @@ authoring** — and everything it does is a generated file you can read.
    headline**, before any prose; the explanation follows the evidence, and
    the transcript gets no caption. The onboarding IS the demo: it answers
    "too busy to twizzle" by letting the reader count the steps themselves.)
+   (Amended 2026-07-04: the mandatory plain what-it-is sentence now sits
+   between the headline and the transcript — see decision 9.)
 8. **Site = landing page + real docs. README = landing page + simplified
    docs. Devlog = personal accountability record**, demoted from front door,
    kept honest.
-9. **Headline: speak the flag.**
+9. **Headline: speak the flag — and risk the farm.** (Amended 2026-07-04;
+   the reasoning and the accepted trade are under "Headline" below.)
 
 ## The marketing message
 
 ### Headline
 
-> **`--dangerously-skip-permissions`, minus your machine.**
+> **`--dangerously-skip-permissions`, without risking the farm.**
 
-Immediately followed by (in this order): the two-line quickstart, the
-tri-agent mention (so the flag reads as in-group language, not
-Claude-exclusivity), and the honest scope sentence (so the headline
-overclaims for exactly one line, then gets scoped).
+(2026-07-04, replacing "…, minus your machine.") "Cute is the asset": the
+idiom stands on its own even without the byre/farm resonance, and the
+resonance -- byre is a cowshed; the farm is what it protects -- pays off on
+the second read rather than being required on the first. Comprehension was
+tested by showing three LLMs the headline alone and asking what the project
+does: two of three reconstructed the product almost exactly ("YOLO mode,
+but fenced in"; "blast radius confined to the sandbox"); the third drifted
+to generic CI tooling -- the already-accepted doesn't-know-the-flag failure
+mode. The flag carries the meaning; the farm carries the tone.
 
-Known risks, accepted: the flag is Claude's and could be renamed; mitigation
-is that the sub-copy names Claude/Codex/Gemini and the formal one-liner is
-vendor-neutral, so only the H1 would ever need a five-minute edit.
+The accepted trade: the H1 is now a safety **idiom**, not a scope statement
+-- "minus your machine" said what's out of reach; "the farm" doesn't. So
+the **plain what-it-is sentence directly under the headline is now
+mandatory** (previously a nice-to-have): one or two flat declarative
+sentences carrying all the precision the old H1 carried, built from Pete's
+own Slack phrasing -- the version a cold reader endorsed verbatim as "what
+I would put at the top of the readme": *"if you want to regularly run
+agents with `--dangerously-skip-permissions` in many different folders,
+but don't trust the agent not to run `git push` as you, or go digging
+around in other folders."* Order under the headline: plain sentence (with
+the tri-agent mention), then the hero transcript, then the bold
+young-project line (see decision 4).
+
+Known risks, accepted: the flag is Claude's and could be renamed (sub-copy
+still names all three agents; the H1 stays a five-minute edit). "Risking
+the farm" is an Anglo idiom; non-native readers get the precision from the
+plain sentence one line later. One cold reader (2026-07-03) flagged
+flag-based headlines as "Claude trying hard to write marketing copy" --
+judged an overreaction, but if cold readers repeat the complaint
+post-launch, that's the tripwire to revisit.
 
 ### Message house
 
-**Roof:** `--dangerously-skip-permissions`, minus your machine.
+**Roof:** `--dangerously-skip-permissions`, without risking the farm.
 
 **Pillars:**
 
@@ -112,6 +147,19 @@ vendor-neutral, so only the H1 would ever need a five-minute edit.
    of a project, and byre never writes into your project tree. Easy to
    adopt, just as easy to leave — there is no mechanism by which byre
    *could* hold you.
+4. **The box is stocked -- with your stuff.** (Added 2026-07-04 -- the
+   under-claimed strength.) `~/.byre` accumulates your building blocks:
+   your baseline config, your templates, your skills. Every box you enter,
+   in any directory, is already your environment -- curl is there, your
+   Claude skills are there, your usual tools are there -- with no
+   per-project setup. A bare host in a strange folder has none of that
+   curation either: the box isn't just as easy as the host, it's more
+   comfortable. This pillar is the real answer to "why not a VPS / raw
+   Docker / devcontainers" (your environment doesn't follow you there).
+   Evidence it was missing: Pete reaches for it spontaneously when
+   pitching ("over time I want a variety of tools to live in these little
+   containers... I may wanna stick pgclient in a byre container with node
+   in it. I'm not sure the README makes that that clear.")
 
 **Foundation (the honest contract, always within one screen of any claim):**
 byre boxes your host filesystem, environment, and credentials. The network is
@@ -154,6 +202,15 @@ you can't afford to break. (The status caveats are time-scoped on purpose —
   *legible* — not *secure*, *safe*, *hardened*.
 - **The cowshed is flavor, not load-bearing.** Keep the etymology aside;
   don't make readers parse a metaphor to learn what the tool does.
+  (Amended 2026-07-04: the farm is now in the H1, so the metaphor is
+  allowed to be load-bearing *there* -- and the etymology blockquote
+  becomes the headline's payoff. Everywhere else the rule stands.)
+- **Break the aphorism cadence.** (Rewrite-pass note, 2026-07-04 -- a craft
+  instruction, not doctrine.) Reader feedback flagged three body sentences
+  as AI-sounding; what they shared wasn't length but rhythm -- every
+  sentence landing as an epigram. Most sentences should state their fact
+  flatly; spend the epigram on the two or three places that earn one (the
+  headline already is one).
 
 ## "Why not X?" — the public competitive copy
 
@@ -180,6 +237,14 @@ real machine, wearing your identity — env vars and credentials come along by
 default, so a stray `git push` goes out as *you*. byre's box holds nothing
 you didn't put in it.
 
+**…nothing — just keep YOLOing on the host?** The host is the incumbent:
+zero setup, and nothing bad has happened yet. But the agent works as you,
+in your real home dir — byre exists because Claude went editing a sibling
+repository and did things with an ssh key it shouldn't have. The box costs
+one command, so the host's convenience argument is gone. *(If you've never
+had the scare, you may not feel the need — byre is for after your first
+one.)*
+
 **…devcontainers?** You hand-write the Dockerfile and JSON per project, and
 wire up agent credentials yourself. byre generates the Docker from config —
 `byre config` adds a package, mounts another repo read-only, or swaps agents
@@ -190,8 +255,17 @@ manages a fleet of environments; you don't sit inside one. byre does
 parallel the git way — one boxed session per worktree, sharing the repo's
 image, volumes, and agent login.
 
-**…a cloud sandbox (e2b, Daytona, …)?** Account, usage billing, your code in
-their cloud. Built for shipping agent products, not for `cd ~/project`.
+**…a cloud sandbox (e2b, Daytona, your agent's web offering)?** Account,
+usage billing, your code in their cloud — and they're repo-shaped, built
+for shipping agent products or driving a GitHub repo. byre is for dropping
+into whatever folder you're standing in.
+
+**…a cheap VPS (a Hetzner box)?** A box per project doesn't scale across
+many repos — and half of what you'd point an agent at isn't a repo, just a
+folder. byre is a throwaway box per folder, on the machine you're already
+sitting at, with your toolkit already inside. *(But a remote box is real
+hardware isolation — if the agent must never share a kernel with your
+machine, rent one.)*
 ```
 
 Format rules for these entries: **answer the question literally** — "why
@@ -207,7 +281,14 @@ load-bearing: the priming line plus "…raw Docker?" first teach the reader
 that byre IS ordinary Docker underneath *before* they meet the Docker
 Sandboxes™ name — which reads like a category but is a product; the ™ marks
 it as one. (Real reader confusion, 2026-07-03: "did you build your own
-container infra?")
+container infra?" — and confirmed a second time 2026-07-04: "I'd be
+explicit that you mean the enterprise product.")
+
+Added 2026-07-04 from reader feedback (see "Reader-response evidence"):
+the "…just keep YOLOing?" and "…a cheap VPS?" entries, and the cloud entry
+extended to absorb agent-vendor web offerings. The list is now eight
+entries — acceptable because the section is demoted below the fold
+(amended decision 4), where it reads as reference, not pitch.
 
 ## Competitive fact base (internal — verified 2026-07-03)
 
@@ -257,12 +338,67 @@ until it ships.)
 parallel-agents-per-git-branch — a different problem; releases stalled since
 2025-08). Cloud sandboxes (e2b, Daytona, Modal — account + usage billing,
 API-first, for building agent products, not local dev). Single-agent Docker
-wrappers (largest, *claudebox* at ~1.1k stars, unmaintained ~10 months).
+wrappers (largest, *claudebox* at ~1.1k stars, unmaintained ~10 months;
+freshest, *claude-pod* — four files, ~200 lines, Claude-only, 21 stars,
+high-visibility author — reviewed 2026-07-04, nothing adopted, no public
+mention).
 
 **The wedge nobody else occupies:** *local + no-account + generated-readable
-+ per-project agent state*, all four at once. Each competitor concedes at
-least one: Docker Sandboxes (account, opacity), native sandboxes (host
-execution, shared state), devcontainers (hand-authoring, no state story).
++ per-project agent state + a personal toolkit that follows you into any
+folder*, all five at once. Each competitor concedes at least one: Docker
+Sandboxes (account, opacity), native sandboxes (host execution, shared
+state), devcontainers (hand-authoring, no state story) — and none of them
+has the per-*person* layer at all (fifth element added 2026-07-04 with
+pillar 4).
+
+## Reader-response evidence (added 2026-07-04)
+
+Two Slack feedback threads on the README draft, plus a competitor review.
+What changed because of them is recorded in the amended decisions above;
+this records the evidence itself.
+
+**Thread 1 (README feedback):** one reader managed ~20% of the page and
+called it ~50% too long; wanted Install/Quickstart surfaced and "Why
+not…?" / status demoted; flagged three body sentences as AI-sounding
+verbosity (their shared trait: aphorism cadence, not length). A second
+reader couldn't tell what the product was from the top of the page and
+asked for "one sentence at the top which just plainly says what it is" —
+then endorsed, verbatim, Pete's off-the-cuff use-case sentence as the
+thing to put there. The repeated pattern across both threads: Pete's
+spontaneous phrasings ("it's instant per-folder sandboxes", the use-case
+sentence, "stop you needing to twizzle", "I don't want a Hetzner box per
+repo") outperformed the crafted copy. Raw material — mine these before
+writing new lines.
+
+**Thread 2 (gist feedback):** confirmed the Docker Sandboxes™ confusion a
+second time. Produced the missing "Why not…?" objections — "why not a
+cheap Hetzner box?" and, from a reader who doesn't feel the pain, why not
+just not bother — whose in-thread answers became the new entries. Audience
+refinements for the fact base: part of the YOLO population is unreachable
+(less-technical users who don't care — they'd never adopt tooling like
+this); maturity-signal seekers won't adopt pre-1.0 regardless (accepted
+loss, already in the loses-honestly list); per-case-isolation users who
+enjoy hand-configuring each environment are correctly out of scope. And
+the toolkit strength surfaced spontaneously in Pete's own pitching (see
+pillar 4).
+
+**claude-pod (github.com/trekhleb/claude-pod), reviewed 2026-07-04:** the
+nearest neighbor — a four-file, ~200-line, Claude-only Docker wrapper
+(MIT, 21 stars) whose README leads with the same flag. Machine-wide auth,
+`node:24-slim` base (any other stack means editing the Dockerfile
+yourself), no templates, no multi-agent, no worktrees, no config model.
+Decision: no public mention (not popular enough to name), and nothing
+adopted from its README either — five candidate steals were reviewed and
+rejected wholesale. It stands in the fact base as proof of the "I could
+write this in 200 lines" objection, and of what 200 lines doesn't get you
+(pillar 4).
+
+**Conscious negatives from this round:** no path nannying — byre will
+happily box `~` or `/`; Pete deliberately runs it on `~/.byre` itself ("a
+knife needs to be sharp"). No approval-fatigue framing fact (a reader's
+TouchID-Pavlov line was considered; Pete has a different project for
+that). No new voice doctrine from the register complaints — one
+rewrite-pass note only (see voice rules).
 
 ## README draft
 
