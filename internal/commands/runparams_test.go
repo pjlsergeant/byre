@@ -19,7 +19,7 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 		Caps:    []string{"SYS_PTRACE"},
 		Env:     map[string]string{"SKILLENV": "1"},
 	}
-	p, err := runParams(paths, combine(cfg, res), "byre-x", false)
+	p, err := runParams(paths, combine(cfg, res), "byre-x", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	paths, _ := testPaths(t)
 
 	// Without --self-edit, no ~/.byre bind.
-	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "i", false)
+	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "i", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	}
 
 	// With --self-edit, the host ~/.byre is bound rw at the dev home.
-	p, err = runParams(paths, combine(config.Config{}, skills.Resolved{}), "i", true)
+	p, err = runParams(paths, combine(config.Config{}, skills.Resolved{}), "i", true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 		IsWorktree:   true,
 		CommonGitDir: "/home/me/main/.git",
 	}
-	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false)
+	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pp, err := runParams(plain, combine(config.Config{}, skills.Resolved{}), "img", false)
+	pp, err := runParams(plain, combine(config.Config{}, skills.Resolved{}), "img", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

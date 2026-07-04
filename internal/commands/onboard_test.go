@@ -54,7 +54,7 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 	if err := os.WriteFile(cfg, []byte("agent = \"claude\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := onboardIfNeeded(proj, p, "", "codex")
+	err := onboardIfNeeded(discardStreams(), proj, p, "", "codex")
 	if err == nil {
 		t.Fatal("expected an error when a flag is passed to an already-configured project")
 	}
@@ -63,7 +63,7 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 		t.Fatalf("error should name the current agent and the file path: %v", err)
 	}
 	// Without a flag, an existing config is fine (no error, no prompt).
-	if err := onboardIfNeeded(proj, p, "", ""); err != nil {
+	if err := onboardIfNeeded(discardStreams(), proj, p, "", ""); err != nil {
 		t.Fatalf("no-flag develop on a configured project should be a no-op: %v", err)
 	}
 }
@@ -83,7 +83,7 @@ func TestOnboardPartialFlagWritesConfig(t *testing.T) {
 	os.Stdin = r
 	defer func() { os.Stdin = old }()
 
-	if err := onboardIfNeeded(proj, p, "", "codex"); err != nil {
+	if err := onboardIfNeeded(discardStreams(), proj, p, "", "codex"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(p.Dir, "byre.config")) // host-side store

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ import (
 // has no byre.config. With flags it's non-interactive; on a TTY it prompts with
 // favourites pre-selected; on a non-TTY with no flags it does nothing (develop
 // proceeds from the cascade defaults).
-func onboardIfNeeded(projectDir string, paths project.Paths, flagTemplate, flagAgent string) error {
+func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string) error {
 	anyFlag := flagTemplate != "" || flagAgent != ""
 
 	// The project's config lives in the host-side store, NOT the project tree, so
@@ -57,26 +58,24 @@ func onboardIfNeeded(projectDir string, paths project.Paths, flagTemplate, flagA
 	defT := keepIfIn(rawT, templates)
 	defA := keepIfIn(rawA, agents)
 
-	tty := isTTY(os.Stdin)
-
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
 	// proceeds from the cascade.
 	if !anyFlag {
-		if !tty {
+		if !s.TTY {
 			return nil
 		}
-		choice, err := onboard.Pick(os.Stdout, os.Stdin, templates, agents, defT, defA)
+		choice, err := onboard.Pick(s.Err, s.In, templates, agents, defT, defA)
 		if err != nil {
 			return err
 		}
-		if err := writeAndReport(cfgPath, choice.Template, choice.Agent); err != nil {
+		if err := writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent); err != nil {
 			return err
 		}
 		if choice.SaveDefault {
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stderr, "byre: saved as your default for new projects.")
+			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
 		return nil
 	}
@@ -104,31 +103,31 @@ func onboardIfNeeded(projectDir string, paths project.Paths, flagTemplate, flagA
 	// axis), or fall back to the favourite on a non-TTY. (At least one axis is
 	// flag-fixed here, so at most one prompt happens.) We never silently inherit
 	// the favourite for an un-flagged axis on a TTY.
-	if tty && (!tFixed || !aFixed) {
-		fmt.Fprintln(os.Stderr, "byre: no byre.config — choosing the rest interactively (Enter accepts [default]).")
+	if s.TTY && (!tFixed || !aFixed) {
+		fmt.Fprintln(s.Err, "byre: no byre.config — choosing the rest interactively (Enter accepts [default]).")
 	}
-	if !tFixed && tty {
-		v, err := onboard.AskAxis(os.Stdout, os.Stdin, "Template", templates, defT)
+	if !tFixed && s.TTY {
+		v, err := onboard.AskAxis(s.Err, s.In, "Template", templates, defT)
 		if err != nil {
 			return err
 		}
 		t = v
 	}
-	if !aFixed && tty {
-		v, err := onboard.AskAxis(os.Stdout, os.Stdin, "Agent", agents, defA)
+	if !aFixed && s.TTY {
+		v, err := onboard.AskAxis(s.Err, s.In, "Agent", agents, defA)
 		if err != nil {
 			return err
 		}
 		a = v
 	}
-	return writeAndReport(cfgPath, t, a)
+	return writeAndReport(s.Err, cfgPath, t, a)
 }
 
-func writeAndReport(configPath, template, agent string) error {
+func writeAndReport(w io.Writer, configPath, template, agent string) error {
 	if err := onboard.WriteProjectConfig(configPath, template, agent); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "byre: wrote %s (template=%s, agent=%s)\n", configPath, orNoneLabel(template), orNoneLabel(agent))
+	fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s)\n", configPath, orNoneLabel(template), orNoneLabel(agent))
 	return nil
 }
 

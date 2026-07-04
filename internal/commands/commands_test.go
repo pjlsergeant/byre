@@ -42,8 +42,8 @@ func TestDockerfilePrintsWithoutTouchingContext(t *testing.T) {
 	t.Setenv("BYRE_HOME", t.TempDir())
 	proj := t.TempDir()
 
-	var out bytes.Buffer
-	if err := Dockerfile(&out, proj); err != nil {
+	s, out, _ := testStreams("", false)
+	if err := Dockerfile(s, proj); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,8 +82,8 @@ func TestDockerfileOptOutPrintsHandWritten(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("dockerfile = \"Dockerfile\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	if err := Dockerfile(&out, proj); err != nil {
+	s, out, _ := testStreams("", false)
+	if err := Dockerfile(s, proj); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "opted out") || !strings.Contains(out.String(), "FROM scratch") {
@@ -107,8 +107,8 @@ func TestDockerfileHonorsByreHomeAndCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := Dockerfile(&out, proj); err == nil {
+	s, _, _ := testStreams("", false)
+	if err := Dockerfile(s, proj); err == nil {
 		t.Fatal("expected collision error from Dockerfile, got nil")
 	}
 }

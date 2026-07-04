@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"sort"
@@ -176,6 +177,19 @@ func (f *fakeRunner) Build(tag, dockerfile, contextDir string, noCache bool, bui
 }
 
 var _ engineRunner = (*fakeRunner)(nil)
+
+// testStreams builds Streams over buffers: the returned buffers capture Out
+// and Err, in feeds prompts, tty marks stdin as interactive.
+func testStreams(in string, tty bool) (Streams, *bytes.Buffer, *bytes.Buffer) {
+	var out, errBuf bytes.Buffer
+	return Streams{Out: &out, Err: &errBuf, In: strings.NewReader(in), TTY: tty}, &out, &errBuf
+}
+
+// discardStreams is a non-TTY Streams that swallows all output — for tests
+// that only care about behavior, not messages.
+func discardStreams() Streams {
+	return Streams{Out: io.Discard, Err: io.Discard, In: strings.NewReader("")}
+}
 
 // testPaths points BYRE_HOME at a temp dir and resolves + bootstraps a fresh
 // temp project, returning its paths and the project dir.

@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -36,7 +35,7 @@ func exitError(t *testing.T, code int) error {
 func TestDevelopRefusesWhenSessionLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{live: liveWorkdir(p, "abcdef0123456789")}
-	err := develop(f, io.Discard, p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 		t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
@@ -53,7 +52,7 @@ func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Seed: &config.Seed{Host: seedSrc}},
 	}}
 	f := &fakeRunner{}
-	if err := develop(f, io.Discard, p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, discardStreams(), p, combine(cfg, skills.Resolved{}), false); err != nil {
 		t.Fatal(err)
 	}
 	image := ImageTag(p.ID, os.Getuid(), os.Getgid())
@@ -91,7 +90,7 @@ func TestDevelopRunRaceReportsRefusal(t *testing.T) {
 		runErr:     exitError(t, 125),
 		liveSecond: liveWorkdir(p, "cafebabe0000"),
 	}
-	err := develop(f, io.Discard, p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 		t.Fatalf("expected ExitError{%d} after losing the run race, got %v", ExitRefused, err)
@@ -101,7 +100,7 @@ func TestDevelopRunRaceReportsRefusal(t *testing.T) {
 func TestDevelopAgentExitCodePassesThrough(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{runErr: exitError(t, 7)}
-	err := develop(f, io.Discard, p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 7 {
 		t.Fatalf("expected the agent's own exit 7 passed through, got %v", err)
@@ -113,7 +112,7 @@ func TestDevelopEngineFailureStaysByreError(t *testing.T) {
 	// Docker reserves 125-127 for engine-level failures; with no session live at
 	// the re-check, that must surface as a byre error, not the agent's status.
 	f := &fakeRunner{runErr: exitError(t, 126)}
-	err := develop(f, io.Discard, p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	var exitErr ExitError
 	if err == nil || errors.As(err, &exitErr) {
 		t.Fatalf("engine failure must stay an ordinary error, got %v", err)
@@ -123,8 +122,8 @@ func TestDevelopEngineFailureStaysByreError(t *testing.T) {
 func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
-	var stderr bytes.Buffer
-	if err := develop(f, &stderr, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stderr.String(), "self-edit on") {

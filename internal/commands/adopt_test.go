@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,8 +18,8 @@ func TestAdoptYesCopiesToStore(t *testing.T) {
 	p, proj := onboardPaths(t)
 	proposeConfig(t, proj, "agent = \"codex\"\nrun_args = [\"--privileged\"]\n")
 
-	var out bytes.Buffer
-	if err := adoptIfProposed(&out, strings.NewReader("y\n"), true, proj, p); err != nil {
+	s, _, out := testStreams("y\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	// The grant summary must surface the dangerous run_args.
@@ -37,8 +36,8 @@ func TestAdoptYesCopiesToStore(t *testing.T) {
 	}
 
 	// Second call with the same proposal is a no-op (unchanged): no prompt output.
-	var out2 bytes.Buffer
-	if err := adoptIfProposed(&out2, strings.NewReader(""), true, proj, p); err != nil {
+	s2, _, out2 := testStreams("", true)
+	if err := adoptIfProposed(s2, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	if out2.Len() != 0 {
@@ -59,8 +58,8 @@ func TestAdoptShowsTemplateContributedGrants(t *testing.T) {
 	}
 	proposeConfig(t, proj, "template = \"danger\"\n") // proposal itself looks innocent
 
-	var out bytes.Buffer
-	if err := adoptIfProposed(&out, strings.NewReader("n\n"), true, proj, p); err != nil {
+	s, _, out := testStreams("n\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "--privileged") {
@@ -72,7 +71,8 @@ func TestAdoptNoLeavesStoreUntouched(t *testing.T) {
 	p, proj := onboardPaths(t)
 	proposeConfig(t, proj, "agent = \"codex\"\n")
 
-	if err := adoptIfProposed(&bytes.Buffer{}, strings.NewReader("n\n"), true, proj, p); err != nil {
+	s, _, _ := testStreams("n\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
@@ -84,8 +84,8 @@ func TestAdoptNonTTYNeverAdopts(t *testing.T) {
 	p, proj := onboardPaths(t)
 	proposeConfig(t, proj, "agent = \"codex\"\n")
 
-	var out bytes.Buffer
-	if err := adoptIfProposed(&out, strings.NewReader("y\n"), false, proj, p); err != nil {
+	s, _, out := testStreams("y\n", false)
+	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
@@ -99,13 +99,14 @@ func TestAdoptNonTTYNeverAdopts(t *testing.T) {
 func TestAdoptChangedReprompts(t *testing.T) {
 	p, proj := onboardPaths(t)
 	proposeConfig(t, proj, "agent = \"codex\"\n")
-	if err := adoptIfProposed(&bytes.Buffer{}, strings.NewReader("y\n"), true, proj, p); err != nil {
+	s, _, _ := testStreams("y\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	// Change the proposal: it must prompt again (hash differs).
 	proposeConfig(t, proj, "agent = \"claude\"\n")
-	var out bytes.Buffer
-	if err := adoptIfProposed(&out, strings.NewReader("y\n"), true, proj, p); err != nil {
+	s, _, out := testStreams("y\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "changed") {

@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"byre/internal/commands"
 )
 
 // recorderApp returns an app whose every command records its call into calls
@@ -13,29 +15,37 @@ import (
 func recorderApp(calls map[string]string) app {
 	note := func(k, v string) error { calls[k] = v; return nil }
 	return app{
-		dockerfile: func(_ io.Writer, dir string) error { return note("dockerfile", dir) },
-		dockerrun:  func(_ io.Writer, dir string) error { return note("dockerrun", dir) },
-		develop: func(dir, tmpl, agent string, selfEdit bool) error {
+		dockerfile: func(_ commands.Streams, dir string) error { return note("dockerfile", dir) },
+		dockerrun:  func(_ commands.Streams, dir string) error { return note("dockerrun", dir) },
+		develop: func(_ commands.Streams, dir, tmpl, agent string, selfEdit bool) error {
 			return note("develop", strings.Join([]string{dir, tmpl, agent, boolStr(selfEdit)}, " "))
 		},
-		config: func(dir string, global bool) error { return note("config", dir+" "+boolStr(global)) },
-		status: func(_ io.Writer, dir string, selfEdit bool) error {
+		config: func(_ commands.Streams, dir string, global bool) error {
+			return note("config", dir+" "+boolStr(global))
+		},
+		status: func(_ commands.Streams, dir string, selfEdit bool) error {
 			return note("status", dir+" "+boolStr(selfEdit))
 		},
-		reset: func(_ io.Writer, _ io.Reader, dir string, force bool) error {
+		reset: func(_ commands.Streams, dir string, force bool) error {
 			return note("reset", dir+" "+boolStr(force))
 		},
-		forget: func(_ io.Writer, _ io.Reader, dir string, force bool) error {
+		forget: func(_ commands.Streams, dir string, force bool) error {
 			return note("forget", dir+" "+boolStr(force))
 		},
-		shell: func(_ io.Writer, dir string) error { return note("shell", dir) },
-		worktree: func(dir, name, path string, selfEdit bool) error {
+		shell: func(_ commands.Streams, dir string) error { return note("shell", dir) },
+		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
 		},
-		skillUpdate: func(_ io.Writer, dir string) error { return note("skill update", dir) },
-		rebuild:     func(_ io.Writer, dir string) error { return note("rebuild", dir) },
-		rehome:      func(_ io.Writer, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
+		skillUpdate: func(_ commands.Streams, dir string) error { return note("skill update", dir) },
+		rebuild:     func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
+		rehome:      func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
 	}
+}
+
+// testStreams is a buffer-backed Streams; the returned buffer captures Out.
+func testStreams() (commands.Streams, *bytes.Buffer) {
+	var out bytes.Buffer
+	return commands.Streams{Out: &out, Err: io.Discard, In: strings.NewReader("")}, &out
 }
 
 func boolStr(b bool) string {
@@ -74,7 +84,8 @@ func TestRunDispatch(t *testing.T) {
 	}
 	for _, tc := range cases {
 		calls := map[string]string{}
-		if err := run(recorderApp(calls), tc.argv, "/proj", io.Discard, strings.NewReader("")); err != nil {
+		s, _ := testStreams()
+		if err := run(recorderApp(calls), tc.argv, "/proj", s); err != nil {
 			t.Errorf("%v: unexpected error %v", tc.argv, err)
 			continue
 		}
@@ -110,7 +121,8 @@ func TestRunUsageErrors(t *testing.T) {
 	}
 	for _, argv := range cases {
 		calls := map[string]string{}
-		err := run(recorderApp(calls), argv, "/proj", io.Discard, strings.NewReader(""))
+		s, _ := testStreams()
+		err := run(recorderApp(calls), argv, "/proj", s)
 		var uerr usageError
 		if !errors.As(err, &uerr) {
 			t.Errorf("%v: expected usageError, got %v", argv, err)
@@ -123,8 +135,8 @@ func TestRunUsageErrors(t *testing.T) {
 
 func TestRunHelpPrintsUsage(t *testing.T) {
 	for _, argv := range [][]string{{"help"}, {"-h"}, {"--help"}} {
-		var out bytes.Buffer
-		if err := run(recorderApp(map[string]string{}), argv, "/proj", &out, strings.NewReader("")); err != nil {
+		s, out := testStreams()
+		if err := run(recorderApp(map[string]string{}), argv, "/proj", s); err != nil {
 			t.Errorf("%v: help must not error: %v", argv, err)
 		}
 		if !strings.Contains(out.String(), "Usage: byre <command>") {
@@ -138,8 +150,9 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 func TestRunCommandErrorPassesThrough(t *testing.T) {
 	boom := errors.New("boom")
 	a := recorderApp(map[string]string{})
-	a.shell = func(io.Writer, string) error { return boom }
-	if err := run(a, []string{"shell"}, "/proj", io.Discard, strings.NewReader("")); !errors.Is(err, boom) {
+	a.shell = func(commands.Streams, string) error { return boom }
+	s, _ := testStreams()
+	if err := run(a, []string{"shell"}, "/proj", s); !errors.Is(err, boom) {
 		t.Fatalf("expected the command error back, got %v", err)
 	}
 }

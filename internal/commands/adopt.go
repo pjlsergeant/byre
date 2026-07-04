@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,7 @@ const adoptedRecord = "adopted"
 // rw-mounted project can't write). If the proposal is new or changed since the
 // last adoption, prompt the human — outside the box — to review its grants and
 // copy it into the store. Declining (or a non-TTY) leaves the store untouched.
-func adoptIfProposed(stdout io.Writer, stdin io.Reader, tty bool, projectDir string, paths project.Paths) error {
+func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	proposed := filepath.Join(projectDir, config.ProjectConfigName)
 	content, err := os.ReadFile(proposed)
 	if err != nil {
@@ -44,7 +43,7 @@ func adoptIfProposed(stdout io.Writer, stdin io.Reader, tty bool, projectDir str
 	// Parse for the grant summary; never adopt something that doesn't parse.
 	proposal, perr := config.ParseFile(proposed)
 	if perr != nil {
-		fmt.Fprintf(stdout, "byre: %s ships a byre.config but it doesn't parse (%v); ignoring it.\n", projectDir, perr)
+		fmt.Fprintf(s.Err, "byre: %s ships a byre.config but it doesn't parse (%v); ignoring it.\n", projectDir, perr)
 		return nil
 	}
 	// Summarize the EFFECTIVE config the human is consenting to — the full
@@ -60,8 +59,8 @@ func adoptIfProposed(stdout io.Writer, stdin io.Reader, tty bool, projectDir str
 	}
 
 	// Never adopt unattended — adoption is a deliberate, human, host-side act.
-	if !tty {
-		fmt.Fprintf(stdout, "byre: %s ships a byre.config; run develop interactively to review and adopt it (ignored for now).\n", projectDir)
+	if !s.TTY {
+		fmt.Fprintf(s.Err, "byre: %s ships a byre.config; run develop interactively to review and adopt it (ignored for now).\n", projectDir)
 		return nil
 	}
 
@@ -69,15 +68,15 @@ func adoptIfProposed(stdout io.Writer, stdin io.Reader, tty bool, projectDir str
 	if changed {
 		headline = "has a changed byre.config"
 	}
-	fmt.Fprintf(stdout, "\nThis project %s — review it before byre runs with it:\n  %s\n", headline, proposed)
-	fmt.Fprintf(stdout, "  base=%s  agent=%s  template=%s\n", orNoneLabel(cfg.Base), orNoneLabel(cfg.Agent), orNoneLabel(proposal.Template))
+	fmt.Fprintf(s.Err, "\nThis project %s — review it before byre runs with it:\n  %s\n", headline, proposed)
+	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", orNoneLabel(cfg.Base), orNoneLabel(cfg.Agent), orNoneLabel(proposal.Template))
 	for _, g := range grants {
-		fmt.Fprintf(stdout, "  ⚠ %s\n", g)
+		fmt.Fprintf(s.Err, "  ⚠ %s\n", g)
 	}
-	fmt.Fprintf(stdout, "--- %s ---\n%s\n------\n", config.ProjectConfigName, strings.TrimRight(string(content), "\n"))
-	fmt.Fprint(stdout, "Adopt this config? byre will build & run with it. [y/N] ")
-	if !confirmed(stdin) {
-		fmt.Fprintln(stdout, "byre: not adopted; leaving the existing config in place.")
+	fmt.Fprintf(s.Err, "--- %s ---\n%s\n------\n", config.ProjectConfigName, strings.TrimRight(string(content), "\n"))
+	fmt.Fprint(s.Err, "Adopt this config? byre will build & run with it. [y/N] ")
+	if !confirmed(s.In) {
+		fmt.Fprintln(s.Err, "byre: not adopted; leaving the existing config in place.")
 		return nil
 	}
 
@@ -90,7 +89,7 @@ func adoptIfProposed(stdout io.Writer, stdin io.Reader, tty bool, projectDir str
 	if err := os.WriteFile(recordPath, []byte(h), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "byre: adopted into %s\n", storePath)
+	fmt.Fprintf(s.Err, "byre: adopted into %s\n", storePath)
 	return nil
 }
 

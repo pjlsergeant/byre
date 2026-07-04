@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	"byre/internal/project"
@@ -14,7 +13,7 @@ import (
 // the build context). It does NOT touch the project tree; a committed
 // <project>/byre.config is yours to keep. Refuses while a session is live; names
 // everything before deleting.
-func Forget(stdout io.Writer, stdin io.Reader, projectDir string, force bool) error {
+func Forget(s Streams, projectDir string, force bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -22,14 +21,14 @@ func Forget(stdout io.Writer, stdin io.Reader, projectDir string, force bool) er
 	if err := paths.Bootstrap(); err != nil { // ensures the dir+lock exist for the lock
 		return err
 	}
-	r, err := resolveEngine(os.Stderr, projectDir)
+	r, err := resolveEngine(s.Err, projectDir)
 	if err != nil {
 		return err
 	}
-	return forget(stdout, stdin, paths, r, force)
+	return forget(s, paths, r, force)
 }
 
-func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunner, force bool) error {
+func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	if live, err := liveSession(r, paths.ID); err != nil {
 		return fmt.Errorf("checking for a running session: %w", err)
 	} else if len(live) > 0 {
@@ -55,20 +54,20 @@ func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunn
 		}
 	}
 
-	noteSharedVolumes(stdout, paths)
-	fmt.Fprintf(stdout, "byre forget will permanently delete for %s:\n", paths.ID)
+	noteSharedVolumes(s.Err, paths)
+	fmt.Fprintf(s.Err, "byre forget will permanently delete for %s:\n", paths.ID)
 	for _, v := range vols {
-		fmt.Fprintf(stdout, "  - volume %s\n", v)
+		fmt.Fprintf(s.Err, "  - volume %s\n", v)
 	}
 	for _, img := range images {
-		fmt.Fprintf(stdout, "  - image %s\n", img)
+		fmt.Fprintf(s.Err, "  - image %s\n", img)
 	}
-	fmt.Fprintf(stdout, "  - %s/  (config, adoption record, build context)\n", paths.Dir)
+	fmt.Fprintf(s.Err, "  - %s/  (config, adoption record, build context)\n", paths.Dir)
 
 	if !force {
-		fmt.Fprint(stdout, "Proceed? [y/N] ")
-		if !confirmed(stdin) {
-			fmt.Fprintln(stdout, "aborted.")
+		fmt.Fprint(s.Err, "Proceed? [y/N] ")
+		if !confirmed(s.In) {
+			fmt.Fprintln(s.Err, "aborted.")
 			return nil
 		}
 	}
@@ -89,18 +88,18 @@ func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunn
 		}
 		for _, v := range lockedVols {
 			if rerr := r.VolumeRemove(v); rerr != nil {
-				fmt.Fprintf(stdout, "byre: FAILED to remove volume %s: %v\n", v, rerr)
+				fmt.Fprintf(s.Err, "byre: FAILED to remove volume %s: %v\n", v, rerr)
 				failed = append(failed, v)
 			}
 		}
 		for _, img := range candidates {
 			nowImage, ierr := r.ImageExists(img)
 			if ierr != nil {
-				fmt.Fprintf(stdout, "byre: could not check image %s: %v\n", img, ierr)
+				fmt.Fprintf(s.Err, "byre: could not check image %s: %v\n", img, ierr)
 				failed = append(failed, img) // unknown -> don't remove local state
 			} else if nowImage {
 				if rerr := r.ImageRemove(img); rerr != nil {
-					fmt.Fprintf(stdout, "byre: FAILED to remove image %s: %v\n", img, rerr)
+					fmt.Fprintf(s.Err, "byre: FAILED to remove image %s: %v\n", img, rerr)
 					failed = append(failed, img)
 				}
 			}
@@ -113,12 +112,12 @@ func forget(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunn
 	// Only remove the host-side project dir once the engine state is fully gone,
 	// so a partial failure stays recoverable.
 	if len(failed) > 0 {
-		fmt.Fprintln(stdout, "byre: engine state not fully removed; leaving the project dir in place.")
+		fmt.Fprintln(s.Err, "byre: engine state not fully removed; leaving the project dir in place.")
 		return fmt.Errorf("forget incomplete: %d item(s) not removed (%v)", len(failed), failed)
 	}
 	if rerr := os.RemoveAll(paths.Dir); rerr != nil {
 		return fmt.Errorf("removing %s: %w", paths.Dir, rerr)
 	}
-	fmt.Fprintf(stdout, "byre: forgot %s\n", paths.ID)
+	fmt.Fprintf(s.Err, "byre: forgot %s\n", paths.ID)
 	return nil
 }

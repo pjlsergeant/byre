@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,7 +61,7 @@ func TestWorktreeParent(t *testing.T) {
 func TestWorktreeRefusesWithoutLocation(t *testing.T) {
 	repo := initRepo(t)
 	t.Setenv("BYRE_HOME", t.TempDir()) // empty ~/.byre -> no worktree_base
-	err := Worktree(repo, "feat", "", false)
+	err := Worktree(discardStreams(), repo, "feat", "", false)
 	if err == nil {
 		t.Fatal("expected refusal without --path or worktree_base")
 	}
@@ -97,7 +98,7 @@ func TestCreateWorktreeNewBranch(t *testing.T) {
 	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-feat")
 	t.Cleanup(func() { os.RemoveAll(target) })
 
-	if err := createWorktree(repo, "feat", target); err != nil {
+	if err := createWorktree(io.Discard, repo, "feat", target); err != nil {
 		t.Fatalf("createWorktree: %v", err)
 	}
 	// The target is now a real linked worktree that byre detects and inherits from.
@@ -128,7 +129,7 @@ func TestCreateWorktreeExistingBranch(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(target) })
 
 	// Should check out the existing branch (not fail trying to -b create it).
-	if err := createWorktree(repo, "existing", target); err != nil {
+	if err := createWorktree(io.Discard, repo, "existing", target); err != nil {
 		t.Fatalf("createWorktree on existing branch: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
@@ -191,7 +192,7 @@ func TestCreateWorktreeRemoteBranch(t *testing.T) {
 		t.Fatal("remote-only branch not detected as existing (would fork a divergent branch)")
 	}
 	target := filepath.Join(root, "wt")
-	if err := createWorktree(repo, "remotefeat", target); err != nil {
+	if err := createWorktree(io.Discard, repo, "remotefeat", target); err != nil {
 		t.Fatalf("createWorktree: %v", err)
 	}
 	// The worktree tracks the remote branch.

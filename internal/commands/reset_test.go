@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
@@ -16,8 +15,8 @@ func liveFamily(p project.Paths, ids ...string) map[string][]string {
 func TestResetForceWipesAll(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, ".claude"): true, VolumeName(p.ID, "cache"): true}}
-	var out bytes.Buffer
-	if err := reset(&out, strings.NewReader(""), p, f, true); err != nil {
+	s, _, _ := testStreams("", false)
+	if err := reset(s, p, f, true); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 2 {
@@ -28,7 +27,8 @@ func TestResetForceWipesAll(t *testing.T) {
 func TestResetRefusesWhenLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{live: liveFamily(p, "abcdef0123456789"), vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
-	if err := reset(&bytes.Buffer{}, strings.NewReader(""), p, f, true); err == nil {
+	s, _, _ := testStreams("", false)
+	if err := reset(s, p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
 	if len(f.removed) != 0 {
@@ -39,8 +39,8 @@ func TestResetRefusesWhenLive(t *testing.T) {
 func TestResetNoVolumes(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
-	var out bytes.Buffer
-	if err := reset(&out, strings.NewReader(""), p, f, true); err != nil {
+	s, _, out := testStreams("", false)
+	if err := reset(s, p, f, true); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "no volumes to reset") {
@@ -51,8 +51,8 @@ func TestResetNoVolumes(t *testing.T) {
 func TestResetPromptAbortsOnNo(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
-	var out bytes.Buffer
-	if err := reset(&out, strings.NewReader("n\n"), p, f, false); err != nil {
+	s, _, out := testStreams("n\n", false)
+	if err := reset(s, p, f, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 0 {
@@ -67,8 +67,8 @@ func TestResetRechecksLiveUnderLock(t *testing.T) {
 	p, _ := testPaths(t)
 	// Not live at the first check, but a session appears by the re-check.
 	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}, liveSecond: liveFamily(p, "abcdef0123456789")}
-	var out bytes.Buffer
-	if err := reset(&out, strings.NewReader(""), p, f, true); err == nil {
+	s, _, _ := testStreams("", false)
+	if err := reset(s, p, f, true); err == nil {
 		t.Fatal("expected abort when a session starts before deletion")
 	}
 	if len(f.removed) != 0 {
@@ -82,8 +82,8 @@ func TestResetPartialWipeReported(t *testing.T) {
 		vols:       map[string]bool{VolumeName(p.ID, "a"): true, VolumeName(p.ID, "b"): true, VolumeName(p.ID, "c"): true},
 		failRemove: map[string]bool{VolumeName(p.ID, "b"): true},
 	}
-	var out bytes.Buffer
-	err := reset(&out, strings.NewReader(""), p, f, true)
+	s, _, _ := testStreams("", false)
+	err := reset(s, p, f, true)
 	if err == nil {
 		t.Fatal("expected error reporting partial wipe")
 	}
@@ -99,8 +99,8 @@ func TestResetPartialWipeReported(t *testing.T) {
 func TestResetPromptProceedsOnYes(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
-	var out bytes.Buffer
-	if err := reset(&out, strings.NewReader("y\n"), p, f, false); err != nil {
+	s, _, _ := testStreams("y\n", false)
+	if err := reset(s, p, f, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 1 {

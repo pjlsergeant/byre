@@ -38,7 +38,7 @@ type StatusInfo struct {
 
 // Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
 // grant it would add (rw ~/.byre) is announced here too.
-func Status(stdout io.Writer, projectDir string, selfEdit bool) error {
+func Status(s Streams, projectDir string, selfEdit bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -133,7 +133,7 @@ func Status(stdout io.Writer, projectDir string, selfEdit bool) error {
 		}
 	}
 
-	RenderStatus(stdout, info)
+	RenderStatus(s.Out, info)
 	return nil
 }
 

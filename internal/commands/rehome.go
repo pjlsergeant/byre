@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,7 @@ import (
 // copy-then-remove. Refuses while a session is live for either id; pre-checks
 // for destination conflicts; removes the old volumes only after every copy
 // succeeds.
-func Rehome(stdout io.Writer, projectDir, oldID string) error {
+func Rehome(s Streams, projectDir, oldID string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -31,14 +30,14 @@ func Rehome(stdout io.Writer, projectDir, oldID string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	r, err := resolveEngine(os.Stderr, projectDir)
+	r, err := resolveEngine(s.Err, projectDir)
 	if err != nil {
 		return err
 	}
-	return rehome(stdout, paths, oldID, r, os.Getuid(), os.Getgid())
+	return rehome(s, paths, oldID, r, os.Getuid(), os.Getgid())
 }
 
-func rehome(stdout io.Writer, paths project.Paths, oldID string, r engineRunner, uid, gid int) error {
+func rehome(s Streams, paths project.Paths, oldID string, r engineRunner, uid, gid int) error {
 	newID := paths.ID
 	if oldID == newID {
 		return fmt.Errorf("already homed here (id %s)", newID)
@@ -66,7 +65,7 @@ func rehome(stdout io.Writer, paths project.Paths, oldID string, r engineRunner,
 			return err
 		}
 		if len(oldVols) == 0 {
-			fmt.Fprintf(stdout, "byre: no volumes found for old id %s; nothing to migrate\n", oldID)
+			fmt.Fprintf(s.Err, "byre: no volumes found for old id %s; nothing to migrate\n", oldID)
 			return nil
 		}
 
@@ -104,16 +103,16 @@ func rehome(stdout io.Writer, paths project.Paths, oldID string, r engineRunner,
 				rollback(r, created)
 				return fmt.Errorf("copying %s -> %s: %w", p.src, p.dst, err)
 			}
-			fmt.Fprintf(stdout, "byre: migrated %s -> %s\n", p.src, p.dst)
+			fmt.Fprintf(s.Err, "byre: migrated %s -> %s\n", p.src, p.dst)
 		}
 
 		// All copies succeeded — now remove the originals.
 		for _, p := range plan {
 			if err := r.VolumeRemove(p.src); err != nil {
-				fmt.Fprintf(stdout, "byre: warning: copied but could not remove old volume %s: %v\n", p.src, err)
+				fmt.Fprintf(s.Err, "byre: warning: copied but could not remove old volume %s: %v\n", p.src, err)
 			}
 		}
-		fmt.Fprintf(stdout, "byre: rehomed %s -> %s. Run `byre develop` to rebuild the image.\n", oldID, newID)
+		fmt.Fprintf(s.Err, "byre: rehomed %s -> %s. Run `byre develop` to rebuild the image.\n", oldID, newID)
 		return nil
 	})
 }

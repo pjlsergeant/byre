@@ -31,6 +31,24 @@ const (
 	workdirKey = "byre.workdir"
 )
 
+// Streams is a command's stdio, under one convention: Out carries the
+// command's OUTPUT — the thing you'd pipe (a Dockerfile, a run argv, the
+// status block). Err carries byre's own voice — progress, warnings, prompts —
+// so interaction survives `byre ... > file`. In answers prompts, and TTY says
+// whether it is an interactive terminal (detected once, by main, so commands
+// never re-derive it).
+type Streams struct {
+	Out io.Writer
+	Err io.Writer
+	In  io.Reader
+	TTY bool
+}
+
+// StdStreams is the process's real stdio, with TTY detected from stdin.
+func StdStreams() Streams {
+	return Streams{Out: os.Stdout, Err: os.Stderr, In: os.Stdin, TTY: isTTY(os.Stdin)}
+}
+
 // containerName is the engine container name — keyed on the worktree id so two
 // worktrees of one repo get distinct containers (and distinct single-session
 // locks). For a plain project WorktreeID == ID, so this is the historical
@@ -102,7 +120,7 @@ func resolve(paths project.Paths, projectDir string) (resolved, error) {
 
 // Dockerfile implements `byre dockerfile`: resolve identity, resolve the config
 // cascade + skills, generate the Dockerfile into the build context, and print it.
-func Dockerfile(stdout io.Writer, projectDir string) error {
+func Dockerfile(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -124,15 +142,15 @@ func Dockerfile(stdout io.Writer, projectDir string) error {
 		if rerr != nil {
 			return fmt.Errorf("dockerfile %q: %w", rv.cfg.Dockerfile, rerr)
 		}
-		fmt.Fprintf(stdout, "# byre: generation opted out; using %s verbatim:\n", rv.cfg.Dockerfile)
-		_, err = stdout.Write(b)
+		fmt.Fprintf(s.Out, "# byre: generation opted out; using %s verbatim:\n", rv.cfg.Dockerfile)
+		_, err = s.Out.Write(b)
 		return err
 	}
 	df, err := build.Render(paths, rv.cfg, rv.skills)
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(stdout, df)
+	_, err = io.WriteString(s.Out, df)
 	return err
 }
 
@@ -142,7 +160,7 @@ func Dockerfile(stdout io.Writer, projectDir string) error {
 // skills and assembles the exact argv (env, workspace bind, mounts, volumes,
 // ports, caps, raw run_args, label, image), but builds/runs nothing, so it works
 // even before the image exists or without the engine on PATH.
-func DockerRun(stdout io.Writer, projectDir string) error {
+func DockerRun(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -160,7 +178,7 @@ func DockerRun(stdout io.Writer, projectDir string) error {
 		return err
 	}
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
-	params, err := runParams(paths, rv, image, false)
+	params, err := runParams(paths, rv, image, false, s.TTY)
 	if err != nil {
 		return err
 	}
@@ -171,7 +189,7 @@ func DockerRun(stdout io.Writer, projectDir string) error {
 		engine = string(eng)
 	}
 	argv := append([]string{engine}, runner.RunArgs(params)...)
-	fmt.Fprintln(stdout, shellCommand(argv))
+	fmt.Fprintln(s.Out, shellCommand(argv))
 	return nil
 }
 
@@ -227,8 +245,8 @@ func (e ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code)
 // declined to run" from "the agent ran and exited zero".
 const ExitRefused = 3
 
-func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
-	if err := requireNonRootHost(os.Stderr); err != nil {
+func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
+	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
 	paths, err := project.Resolve(projectDir)
@@ -240,16 +258,16 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 	}
 	// Worktree: announce the inherited identity up front, so any onboarding/adopt
 	// prompts below are understood as configuring the whole repo family.
-	announceWorktree(os.Stderr, paths)
+	announceWorktree(s.Err, paths)
 	// A committed <project>/byre.config is a proposal: offer to review + adopt it
 	// into the host-side store (never trusted automatically — it's in the box's
 	// rw mount). Runs before onboarding so adopting satisfies "already configured".
-	if err := adoptIfProposed(os.Stdout, os.Stdin, isTTY(os.Stdin), projectDir, paths); err != nil {
+	if err := adoptIfProposed(s, projectDir, paths); err != nil {
 		return err
 	}
 	// First-run onboarding: with no host-side config, pick (or apply flags / fall
 	// back to the cascade on non-TTY) and write the store's byre.config.
-	if err := onboardIfNeeded(projectDir, paths, flagTemplate, flagAgent); err != nil {
+	if err := onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent); err != nil {
 		return err
 	}
 	// Validate bind sources before any build/seed side effects: a comma would
@@ -262,21 +280,21 @@ func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
 		return err
 	}
 	if rv.cfg.Dockerfile == "" {
-		warnNonDebianBase(os.Stderr, rv.cfg.Base)
+		warnNonDebianBase(s.Err, rv.cfg.Base)
 	}
 	eng, err := runner.Detect(rv.cfg.Engine, nil)
 	if err != nil {
 		return err
 	}
-	return develop(runner.New(eng), os.Stderr, paths, rv, selfEdit)
+	return develop(runner.New(eng), s, paths, rv, selfEdit)
 }
 
 // develop is the engine-facing core of Develop — the live-session fast path,
 // then build + seed under the setup lock, then the foreground run and its
 // exit-status mapping. Split from Develop (which does the host-side resolution
 // and onboarding) so it can run end-to-end against a fake engine.
-func develop(r engineRunner, stderr io.Writer, paths project.Paths, rv resolved, selfEdit bool) error {
-	warnRootlessPodman(stderr, r)
+func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool) error {
+	warnRootlessPodman(s.Err, r)
 
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 
@@ -291,9 +309,9 @@ func develop(r engineRunner, stderr io.Writer, paths project.Paths, rv resolved,
 	}
 	if len(ids) > 0 {
 		if selfEdit {
-			fmt.Fprintln(stderr, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
+			fmt.Fprintln(s.Err, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
 		}
-		reportRunning(stderr, r.Engine(), ids)
+		reportRunning(s.Err, r.Engine(), ids)
 		return ExitError{Code: ExitRefused} // refused, session already live
 	}
 
@@ -305,13 +323,13 @@ func develop(r engineRunner, stderr io.Writer, paths project.Paths, rv resolved,
 		}
 		// Seed fresh state volumes that declare a config-level seed, using the
 		// image we just built. One-time; existing volumes are left alone.
-		if err := seedVolumes(r, stderr, paths, image, rv.volumes, os.Getuid(), os.Getgid()); err != nil {
+		if err := seedVolumes(r, s.Err, paths, image, rv.volumes, os.Getuid(), os.Getgid()); err != nil {
 			return err
 		}
 		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
 		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
 		if rv.cfg.SeedPrefs && rv.skills.AgentPrefs != nil {
-			return seedPrefs(r, stderr, paths, image, rv.skills.AgentState, rv.skills.AgentPrefs.From, rv.skills.AgentPrefs.Files, os.Getuid(), os.Getgid())
+			return seedPrefs(r, s.Err, paths, image, rv.skills.AgentState, rv.skills.AgentPrefs.From, rv.skills.AgentPrefs.Files, os.Getuid(), os.Getgid())
 		}
 		return nil
 	}); err != nil {
@@ -319,10 +337,10 @@ func develop(r engineRunner, stderr io.Writer, paths project.Paths, rv resolved,
 	}
 
 	if selfEdit {
-		fmt.Fprintln(stderr, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
-		fmt.Fprintf(stderr, "   read-write mount: %s\n", paths.Dir)
+		fmt.Fprintln(s.Err, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
+		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
 	}
-	params, err := runParams(paths, rv, image, selfEdit)
+	params, err := runParams(paths, rv, image, selfEdit, s.TTY)
 	if err != nil {
 		return err
 	}
@@ -330,7 +348,7 @@ func develop(r engineRunner, stderr io.Writer, paths project.Paths, rv resolved,
 	// race, our run fails and a session is now live — report it.
 	if runErr := r.Run(runner.RunArgs(params)); runErr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
-			reportRunning(stderr, r.Engine(), live)
+			reportRunning(s.Err, r.Engine(), live)
 			return ExitError{Code: ExitRefused} // refused, session already live
 		}
 		// Distinguish the agent/container's own exit from a byre failure: docker
@@ -391,8 +409,8 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 // already inherits the container's env (CLAUDE_CONFIG_DIR/CODEX_HOME/git identity
 // were set as run-time -e vars), so we only add HOME, which the launcher sets at
 // runtime and isn't in the container's configured env.
-func Shell(stdout io.Writer, projectDir string) error {
-	return shell(stdout, projectDir, installedEngines(), isTTY(os.Stdin))
+func Shell(s Streams, projectDir string) error {
+	return shell(s, projectDir, installedEngines())
 }
 
 // installedEngines returns a sessionRunner per installed engine, in shell's
@@ -409,7 +427,7 @@ func installedEngines() []sessionRunner {
 	return out
 }
 
-func shell(stdout io.Writer, projectDir string, engines []sessionRunner, tty bool) error {
+func shell(s Streams, projectDir string, engines []sessionRunner) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -442,7 +460,7 @@ func shell(stdout io.Writer, projectDir string, engines []sessionRunner, tty boo
 		return fmt.Errorf("no session is running for this project; start one with 'byre develop'")
 	}
 	if len(ids) > 1 {
-		fmt.Fprintf(stdout, "byre: %d containers match this project; using %s\n", len(ids), shortID(ids[0]))
+		fmt.Fprintf(s.Err, "byre: %d containers match this project; using %s\n", len(ids), shortID(ids[0]))
 	}
 	cenv, err := r.ContainerEnv(ids[0])
 	if err != nil {
@@ -455,7 +473,7 @@ func shell(stdout io.Writer, projectDir string, engines []sessionRunner, tty boo
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
 		return fmt.Errorf("could not determine a valid dev user (BYRE_UID/BYRE_GID) from container %s", shortID(ids[0]))
 	}
-	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, tty, "bash", "-l")
+	return r.Exec(ids[0], uid, gid, "/workspace", map[string]string{"HOME": "/home/dev"}, s.TTY, "bash", "-l")
 }
 
 // withSetupLock runs fn while holding the per-project setup lock, surfacing both
@@ -493,7 +511,7 @@ func withTwoSetupLocks(a, b string, fn func() error) error {
 // image already bakes the UID/GID (the container runs as that user), so BYRE_UID/
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
-func runParams(paths project.Paths, rv resolved, image string, selfEdit bool) (runner.RunParams, error) {
+func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty bool) (runner.RunParams, error) {
 	env := map[string]string{
 		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
 		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
@@ -556,7 +574,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit bool) (r
 		RunArgs: append(append([]string{}, rv.skills.RunArgs...), rv.cfg.RunArgs...),
 		// Only allocate a pseudo-TTY when stdin actually is one — otherwise
 		// docker run -t fails under CI/piped invocations.
-		TTY: isTTY(os.Stdin),
+		TTY: tty,
 	}, nil
 }
 

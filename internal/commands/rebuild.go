@@ -15,8 +15,8 @@ import (
 // the image with the cache disabled (--no-cache), to pick up new upstream
 // tool/package versions. Volumes are untouched; the next `byre develop` runs the
 // fresh image.
-func Rebuild(stdout io.Writer, projectDir string) error {
-	if err := requireNonRootHost(os.Stderr); err != nil {
+func Rebuild(s Streams, projectDir string) error {
+	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
 	paths, err := project.Resolve(projectDir)
@@ -34,15 +34,15 @@ func Rebuild(stdout io.Writer, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	return rebuild(stdout, runner.New(eng), paths, rv.cfg, rv.skills)
+	return rebuild(s.Err, runner.New(eng), paths, rv.cfg, rv.skills)
 }
 
 // rebuild is Rebuild's engine-facing core, split out so it can run against a
-// fake engine.
-func rebuild(stdout io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved) error {
+// fake engine. w gets the progress note (stderr in production).
+func rebuild(w io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved) error {
 	image := ImageTag(paths.ID, os.Getuid(), os.Getgid())
 	return withSetupLock(paths.LockFile, func() error {
-		fmt.Fprintf(stdout, "byre: rebuilding %s with --no-cache...\n", image)
+		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)
 		return buildImage(r, paths, cfg, res, image, true)
 	})
 }

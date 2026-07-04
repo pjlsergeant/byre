@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"byre/internal/project"
@@ -13,7 +12,7 @@ import (
 // Reset implements `byre reset`: wipe ALL of this project's named volumes (only
 // volumes — not the image). It names what dies first, refuses while a session is
 // live, and serializes with the setup lock. force skips the confirmation prompt.
-func Reset(stdout io.Writer, stdin io.Reader, projectDir string, force bool) error {
+func Reset(s Streams, projectDir string, force bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -21,11 +20,11 @@ func Reset(stdout io.Writer, stdin io.Reader, projectDir string, force bool) err
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	r, err := resolveEngine(os.Stderr, projectDir)
+	r, err := resolveEngine(s.Err, projectDir)
 	if err != nil {
 		return err
 	}
-	return reset(stdout, stdin, paths, r, force)
+	return reset(s, paths, r, force)
 }
 
 // liveSession lists the running containers of a repo family (any worktree).
@@ -33,7 +32,7 @@ func liveSession(r sessionRunner, id string) ([]string, error) {
 	return r.RunningContainersByLabel(labelKey + "=" + id)
 }
 
-func reset(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunner, force bool) error {
+func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	// Fast fail: never wipe volumes out from under a running session.
 	if live, err := liveSession(r, paths.ID); err != nil {
 		return fmt.Errorf("checking for a running session: %w", err)
@@ -46,21 +45,21 @@ func reset(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunne
 		return err
 	}
 	if len(vols) == 0 {
-		fmt.Fprintf(stdout, "byre: no volumes to reset for %s\n", paths.ID)
+		fmt.Fprintf(s.Err, "byre: no volumes to reset for %s\n", paths.ID)
 		return nil
 	}
 
-	noteSharedVolumes(stdout, paths)
-	fmt.Fprintf(stdout, "byre reset will permanently delete these volumes for %s:\n", paths.ID)
+	noteSharedVolumes(s.Err, paths)
+	fmt.Fprintf(s.Err, "byre reset will permanently delete these volumes for %s:\n", paths.ID)
 	for _, v := range vols {
-		fmt.Fprintf(stdout, "  - %s\n", v)
+		fmt.Fprintf(s.Err, "  - %s\n", v)
 	}
-	fmt.Fprintln(stdout, "State volumes (e.g. agent credentials) will need to be re-created/re-authed on next develop.")
+	fmt.Fprintln(s.Err, "State volumes (e.g. agent credentials) will need to be re-created/re-authed on next develop.")
 
 	if !force {
-		fmt.Fprint(stdout, "Proceed? [y/N] ")
-		if !confirmed(stdin) {
-			fmt.Fprintln(stdout, "aborted.")
+		fmt.Fprint(s.Err, "Proceed? [y/N] ")
+		if !confirmed(s.In) {
+			fmt.Fprintln(s.Err, "aborted.")
 			return nil
 		}
 	}
@@ -87,11 +86,11 @@ func reset(stdout io.Writer, stdin io.Reader, paths project.Paths, r engineRunne
 		var failed []string
 		for _, v := range vols {
 			if err := r.VolumeRemove(v); err != nil {
-				fmt.Fprintf(stdout, "byre: FAILED to remove %s: %v\n", v, err)
+				fmt.Fprintf(s.Err, "byre: FAILED to remove %s: %v\n", v, err)
 				failed = append(failed, v)
 				continue
 			}
-			fmt.Fprintf(stdout, "byre: removed %s\n", v)
+			fmt.Fprintf(s.Err, "byre: removed %s\n", v)
 		}
 		if len(failed) > 0 {
 			return fmt.Errorf("reset incomplete: %d of %d volumes not removed (%s)", len(failed), len(vols), strings.Join(failed, ", "))

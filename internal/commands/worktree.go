@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,7 @@ import (
 // path (--path) overrides the default location, a sibling dir named <repo>-<name>.
 // Run from either the main worktree or an existing linked one: identity resolves
 // to the main worktree, so the new worktree is always a sibling of the repo root.
-func Worktree(projectDir, name, path string, selfEdit bool) error {
+func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("a worktree name (the branch) is required: byre worktree <name>")
@@ -65,14 +66,14 @@ func Worktree(projectDir, name, path string, selfEdit bool) error {
 	if _, lerr := os.Lstat(target); lerr == nil {
 		return fmt.Errorf("target path already exists: %s (pass --path to choose another location)", target)
 	}
-	if err := createWorktree(top, name, target); err != nil {
+	if err := createWorktree(s.Err, top, name, target); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "byre: created worktree at %s (branch %s); starting a session…\n", target, name)
+	fmt.Fprintf(s.Err, "byre: created worktree at %s (branch %s); starting a session…\n", target, name)
 	// Hand off to develop in the new worktree. If it fails, the worktree is still
 	// valid — retry with `byre develop` there, or drop it with `git worktree
 	// remove` — so we don't roll back a successful checkout on a develop error.
-	return Develop(target, "", "", selfEdit)
+	return Develop(s, target, "", "", selfEdit)
 }
 
 // worktreeLeaf is the single-directory name for a worktree: <repo>-<name>, with
@@ -110,7 +111,7 @@ func worktreeParent(dir, mainDir string) (string, error) {
 // Passing -b unconditionally would fork a divergent local branch off HEAD when a
 // remote branch of that name exists, silently starting the agent on wrong code.
 // git's progress goes to stderr so stdout stays clean.
-func createWorktree(dir, name, target string) error {
+func createWorktree(w io.Writer, dir, name, target string) error {
 	args := []string{"-C", dir, "worktree", "add"}
 	if branchOrRemoteExists(dir, name) {
 		args = append(args, target, name) // check out existing (local or remote) branch
@@ -118,8 +119,8 @@ func createWorktree(dir, name, target string) error {
 		args = append(args, "-b", name, target) // create a new branch
 	}
 	cmd := exec.Command("git", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = w
+	cmd.Stderr = w
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("git worktree add failed: %w", err)
 	}

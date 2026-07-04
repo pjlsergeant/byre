@@ -4,7 +4,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -40,18 +39,18 @@ Run byre in the project directory you want to develop.`
 // direct calls) so tests can pin the flag->function wiring with recorders
 // instead of executing real commands.
 type app struct {
-	dockerfile  func(stdout io.Writer, dir string) error
-	dockerrun   func(stdout io.Writer, dir string) error
-	develop     func(dir, tmpl, agent string, selfEdit bool) error
-	config      func(dir string, global bool) error
-	status      func(stdout io.Writer, dir string, selfEdit bool) error
-	reset       func(stdout io.Writer, stdin io.Reader, dir string, force bool) error
-	forget      func(stdout io.Writer, stdin io.Reader, dir string, force bool) error
-	shell       func(stdout io.Writer, dir string) error
-	worktree    func(dir, name, path string, selfEdit bool) error
-	skillUpdate func(stdout io.Writer, dir string) error
-	rebuild     func(stdout io.Writer, dir string) error
-	rehome      func(stdout io.Writer, dir, oldID string) error
+	dockerfile  func(s commands.Streams, dir string) error
+	dockerrun   func(s commands.Streams, dir string) error
+	develop     func(s commands.Streams, dir, tmpl, agent string, selfEdit bool) error
+	config      func(s commands.Streams, dir string, global bool) error
+	status      func(s commands.Streams, dir string, selfEdit bool) error
+	reset       func(s commands.Streams, dir string, force bool) error
+	forget      func(s commands.Streams, dir string, force bool) error
+	shell       func(s commands.Streams, dir string) error
+	worktree    func(s commands.Streams, dir, name, path string, selfEdit bool) error
+	skillUpdate func(s commands.Streams, dir string) error
+	rebuild     func(s commands.Streams, dir string) error
+	rehome      func(s commands.Streams, dir, oldID string) error
 }
 
 var realApp = app{
@@ -80,7 +79,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if err := run(realApp, os.Args[1:], dir, os.Stdout, os.Stdin); err != nil {
+	if err := run(realApp, os.Args[1:], dir, commands.StdStreams()); err != nil {
 		var uerr usageError
 		if errors.As(err, &uerr) {
 			fmt.Fprintln(os.Stderr, string(uerr))
@@ -93,25 +92,25 @@ func main() {
 // run parses argv (everything after the program name) and dispatches to a. All
 // parse failures come back as usageError; anything else is the command's own
 // error, exit-mapped by main.
-func run(a app, args []string, dir string, stdout io.Writer, stdin io.Reader) error {
+func run(a app, args []string, dir string, s commands.Streams) error {
 	if len(args) < 1 {
 		return usageError(usage)
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "-h", "--help", "help":
-		fmt.Fprintln(stdout, usage)
+		fmt.Fprintln(s.Out, usage)
 		return nil
 	case "dockerfile":
 		if err := noArgs(cmd, rest); err != nil {
 			return err
 		}
-		return a.dockerfile(stdout, dir)
+		return a.dockerfile(s, dir)
 	case "dockerrun":
 		if err := noArgs(cmd, rest); err != nil {
 			return err
 		}
-		return a.dockerrun(stdout, dir)
+		return a.dockerrun(s, dir)
 	case "develop":
 		var tmpl, agent string
 		selfEdit := false
@@ -135,7 +134,7 @@ func run(a app, args []string, dir string, stdout io.Writer, stdin io.Reader) er
 				return usageError(fmt.Sprintf("byre develop: unknown argument %q", rest[i]))
 			}
 		}
-		return a.develop(dir, tmpl, agent, selfEdit)
+		return a.develop(s, dir, tmpl, agent, selfEdit)
 	case "config":
 		global := false
 		for _, arg := range rest {
@@ -146,7 +145,7 @@ func run(a app, args []string, dir string, stdout io.Writer, stdin io.Reader) er
 				return usageError(fmt.Sprintf("byre config: unknown argument %q", arg))
 			}
 		}
-		return a.config(dir, global)
+		return a.config(s, dir, global)
 	case "status":
 		selfEdit := false
 		for _, arg := range rest {
@@ -157,24 +156,24 @@ func run(a app, args []string, dir string, stdout io.Writer, stdin io.Reader) er
 				return usageError(fmt.Sprintf("byre status: unknown argument %q", arg))
 			}
 		}
-		return a.status(stdout, dir, selfEdit)
+		return a.status(s, dir, selfEdit)
 	case "reset":
 		force, err := parseForce(cmd, rest)
 		if err != nil {
 			return err
 		}
-		return a.reset(stdout, stdin, dir, force)
+		return a.reset(s, dir, force)
 	case "forget":
 		force, err := parseForce(cmd, rest)
 		if err != nil {
 			return err
 		}
-		return a.forget(stdout, stdin, dir, force)
+		return a.forget(s, dir, force)
 	case "shell":
 		if err := noArgs(cmd, rest); err != nil {
 			return err
 		}
-		return a.shell(stdout, dir)
+		return a.shell(s, dir)
 	case "worktree":
 		var name, path string
 		selfEdit := false
@@ -199,22 +198,22 @@ func run(a app, args []string, dir string, stdout io.Writer, stdin io.Reader) er
 		if name == "" {
 			return usageError("usage: byre worktree <name> [--path <dir>] [--self-edit]")
 		}
-		return a.worktree(dir, name, path, selfEdit)
+		return a.worktree(s, dir, name, path, selfEdit)
 	case "skill":
 		if len(rest) != 1 || rest[0] != "update" {
 			return usageError("usage: byre skill update   (re-materialize byre's built-in skills)")
 		}
-		return a.skillUpdate(stdout, dir)
+		return a.skillUpdate(s, dir)
 	case "rebuild":
 		if err := noArgs(cmd, rest); err != nil {
 			return err
 		}
-		return a.rebuild(stdout, dir)
+		return a.rebuild(s, dir)
 	case "rehome":
 		if len(rest) != 1 {
 			return usageError("usage: byre rehome <old-id>   (the previous project id, from ~/.byre/projects/)")
 		}
-		return a.rehome(stdout, dir, rest[0])
+		return a.rehome(s, dir, rest[0])
 	default:
 		return usageError(fmt.Sprintf("byre: unknown command %q\n\n%s", cmd, usage))
 	}

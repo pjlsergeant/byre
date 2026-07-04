@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"byre/internal/builtins"
@@ -18,7 +17,7 @@ import (
 // host-side store config (~/.byre/projects/<id>/byre.config), and, with global,
 // the global ~/.byre/default.config. Both are byre-owned/host-side, so editing
 // them never touches the project tree.
-func Config(projectDir string, global bool) error {
+func Config(s Streams, projectDir string, global bool) error {
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -63,10 +62,10 @@ func Config(projectDir string, global bool) error {
 		return err
 	}
 	if !saved {
-		fmt.Fprintln(os.Stderr, "byre: config unchanged.")
+		fmt.Fprintln(s.Err, "byre: config unchanged.")
 		return nil
 	}
-	fmt.Fprintf(os.Stderr, "byre: wrote %s\n", path)
+	fmt.Fprintf(s.Err, "byre: wrote %s\n", path)
 	return nil
 }
 

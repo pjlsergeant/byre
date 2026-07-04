@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,8 +18,8 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 		images: map[string]bool{ImageTag(p.ID, os.Getuid(), os.Getgid()): true},
 	}
 
-	var out bytes.Buffer
-	if err := forget(&out, strings.NewReader(""), p, f, true); err != nil {
+	s, _, _ := testStreams("", false)
+	if err := forget(s, p, f, true); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 2 || len(f.rmImages) != 1 {
@@ -39,7 +38,8 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 func TestForgetRefusesLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{live: liveFamily(p, "deadbeef0000"), vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
-	if err := forget(&bytes.Buffer{}, strings.NewReader(""), p, f, true); err == nil {
+	s, _, _ := testStreams("", false)
+	if err := forget(s, p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
 	if len(f.removed) != 0 || len(f.rmImages) != 0 {
@@ -53,8 +53,8 @@ func TestForgetRefusesLive(t *testing.T) {
 func TestForgetPromptAborts(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{VolumeName(p.ID, "cache"): true}}
-	var out bytes.Buffer
-	if err := forget(&out, strings.NewReader("n\n"), p, f, false); err != nil {
+	s, _, out := testStreams("n\n", false)
+	if err := forget(s, p, f, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 0 || !strings.Contains(out.String(), "aborted") {

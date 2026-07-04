@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"io"
 	"path/filepath"
 
 	"byre/internal/builtins"
@@ -13,7 +12,7 @@ import (
 // skills into ~/.byre/skills, overwriting stale copies with the shipped version
 // (a differing copy is backed up to <name>.bak). This removes the need to
 // hand-delete ~/.byre/skills/<name> to pick up skill changes.
-func SkillUpdate(stdout io.Writer, projectDir string) error {
+func SkillUpdate(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -24,16 +23,16 @@ func SkillUpdate(stdout io.Writer, projectDir string) error {
 		return err
 	}
 	if len(updated) == 0 {
-		fmt.Fprintln(stdout, "byre: built-in skills already up to date.")
+		fmt.Fprintln(s.Err, "byre: built-in skills already up to date.")
 		return nil
 	}
 	for _, u := range updated {
 		if u.Backup != "" {
-			fmt.Fprintf(stdout, "byre: updated skill %q (prior copy kept at %s)\n", u.Name, u.Backup)
+			fmt.Fprintf(s.Err, "byre: updated skill %q (prior copy kept at %s)\n", u.Name, u.Backup)
 		} else {
-			fmt.Fprintf(stdout, "byre: installed skill %q\n", u.Name)
+			fmt.Fprintf(s.Err, "byre: installed skill %q\n", u.Name)
 		}
 	}
-	fmt.Fprintln(stdout, "Run 'byre rebuild' (or 'byre develop') to apply the changes to the image.")
+	fmt.Fprintln(s.Err, "Run 'byre rebuild' (or 'byre develop') to apply the changes to the image.")
 	return nil
 }
