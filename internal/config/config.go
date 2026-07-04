@@ -29,6 +29,27 @@ const ProjectConfigName = "byre.config"
 // dotfile-style state volumes like `.claude` / `.codex` / `.gemini`.
 var volumeNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
+// These allowlists constrain the TYPED config fields that byre interpolates into
+// generated Dockerfile/shell syntax, so a config or third-party skill can't smuggle
+// executable content through a field that looks like inert data. They are NOT a
+// general-purpose sanitizer: raw Dockerfile blocks (dockerfile_pre/post) and
+// run_args are the sanctioned, consent-surfaced escape hatches for anything these
+// reject. See ValidateContent.
+var (
+	// imageRefRe is the standard OCI image-reference charset. `base` is emitted as
+	// `FROM <base>`, so anything outside this set (notably whitespace or a newline)
+	// could append a second Dockerfile instruction.
+	imageRefRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@-]*$`)
+	// envKeyRe is a POSIX-shell environment variable name. Keys are emitted as
+	// `ENV <key>=...` unquoted; a space or newline in the key would inject.
+	envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// packageRe covers real apt and npm package specs — scoped names (@scope/pkg),
+	// version pins (pkg=1.2.3, pkg@1.2.3), and semver-ish markers (~^) — while
+	// excluding whitespace and every shell metacharacter, since apt/npm_global
+	// entries are joined into a `RUN apt-get install`/`npm install -g` shell line.
+	packageRe = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9@/._+:=~^-]*$`)
+)
+
 // Mount is a host-bind mount. Identity for `!name` removal is Target.
 type Mount struct {
 	Host   string `toml:"host"`
@@ -250,15 +271,48 @@ func Merge(base, over Config) Config {
 
 // Validate checks the resolved config for v0-supported, well-formed values.
 // validContainerTarget requires an in-container mount/volume target to be an
-// absolute path with no control characters. Absolute keeps mounts unambiguous;
-// rejecting control chars (esp. CR/LF) stops a target from injecting a new line
-// into a generated Dockerfile RUN or corrupting a `docker run` argument.
+// absolute path with no control characters and no comma. Absolute keeps mounts
+// unambiguous; rejecting control chars (esp. CR/LF) stops a target from injecting
+// a new line into a generated Dockerfile RUN; rejecting the comma stops it from
+// injecting extra fields into docker's comma-delimited `--mount` value (e.g. a
+// target `/x,readonly` flipping the mode, or a volume opt remounting the host).
 func validContainerTarget(t string) error {
 	if !strings.HasPrefix(t, "/") {
 		return errors.New("must be an absolute path")
 	}
 	if i := strings.IndexFunc(t, func(r rune) bool { return r < 0x20 }); i >= 0 {
 		return errors.New("must not contain control characters")
+	}
+	if strings.Contains(t, ",") {
+		return errors.New("must not contain a comma (docker --mount is comma-delimited)")
+	}
+	return nil
+}
+
+// ValidateContent checks the typed config fields that byre interpolates into
+// generated Dockerfile or shell syntax against strict allowlists (see imageRefRe,
+// envKeyRe, packageRe). It is split out from Validate because it applies to every
+// content-bearing source — the resolved config AND each skill's build contribution
+// — so both are held to the same anti-injection bar. Fields byre only ever emits
+// %q-quoted (env values, file paths) are safe by construction and not checked here.
+func ValidateContent(base string, apt, npm []string, env map[string]string) error {
+	if base != "" && !imageRefRe.MatchString(base) {
+		return fmt.Errorf("base image %q: not a valid image reference (use dockerfile_pre for anything unusual)", base)
+	}
+	for _, p := range apt {
+		if !packageRe.MatchString(p) {
+			return fmt.Errorf("apt package %q: not a valid package name", p)
+		}
+	}
+	for _, p := range npm {
+		if !packageRe.MatchString(p) {
+			return fmt.Errorf("npm_global package %q: not a valid package spec", p)
+		}
+	}
+	for k := range env {
+		if !envKeyRe.MatchString(k) {
+			return fmt.Errorf("env key %q: not a valid environment variable name", k)
+		}
 	}
 	return nil
 }
@@ -268,6 +322,13 @@ func (c Config) Validate() error {
 	case "", "auto", "docker", "podman":
 	default:
 		return fmt.Errorf("engine: %q invalid (want auto|docker|podman)", c.Engine)
+	}
+
+	// Anti-injection allowlists for the typed fields byre interpolates into
+	// generated Dockerfile/shell. Skills' own apt/npm/env are held to the same bar
+	// where their build blocks are resolved (see internal/skills).
+	if err := ValidateContent(c.Base, c.Apt, c.NpmGlobal, c.Env); err != nil {
+		return err
 	}
 
 	// Full hand-written Dockerfile opt-out: a project-relative path. byre builds

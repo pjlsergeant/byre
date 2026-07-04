@@ -14,6 +14,9 @@ import (
 // tool/package versions. Volumes are untouched; the next `byre develop` runs the
 // fresh image.
 func Rebuild(stdout io.Writer, projectDir string) error {
+	if err := requireNonRootHost(os.Stderr); err != nil {
+		return err
+	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err

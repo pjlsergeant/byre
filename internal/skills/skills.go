@@ -250,6 +250,24 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 		}
 		f := sk.File
 
+		// A skill's build/runtime content is interpolated into the same generated
+		// Dockerfile/shell as the project config, so hold it to the same
+		// anti-injection allowlists. Skills contribute no base image (that's
+		// project-level), hence "".
+		if err := config.ValidateContent("", f.Build.Apt, f.Build.NpmGlobal, f.Runtime.Env); err != nil {
+			return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
+		}
+		// BYRE_UID/BYRE_GID are trusted by `byre shell` to pick the container exec
+		// identity — a skill must not be able to shadow them. Only these two keys
+		// are reserved (not the whole BYRE_ prefix): byre's own skills legitimately
+		// use the namespace (e.g. devloop's BYRE_SCRATCH), and there is no
+		// first-party/third-party trust distinction yet to exempt them by.
+		for k := range f.Runtime.Env {
+			if k == "BYRE_UID" || k == "BYRE_GID" {
+				return Resolved{}, fmt.Errorf("skill %q: env key %q is reserved (byre shell trusts it for exec identity)", name, k)
+			}
+		}
+
 		res.SkillBlocks = append(res.SkillBlocks, gen.SkillBlock{
 			Name:       name,
 			Apt:        f.Build.Apt,

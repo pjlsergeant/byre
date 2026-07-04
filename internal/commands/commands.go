@@ -188,6 +188,9 @@ func shellArg(s string) string {
 const selfEditTarget = "/home/dev/.byre-self"
 
 func Develop(projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
+	if err := requireNonRootHost(os.Stderr); err != nil {
+		return err
+	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -418,14 +421,17 @@ func withTwoSetupLocks(a, b string, fn func() error) error {
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
 func runParams(paths project.Paths, cfg config.Config, res skills.Resolved, image string, selfEdit bool) (runner.RunParams, error) {
-	env := map[string]string{
-		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
-		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
-	}
+	env := map[string]string{}
 	for k, v := range res.Env { // skill runtime env
 		env[k] = v
 	}
 	addGitIdentity(env) // git identity wins over skill env for those keys
+	// byre-owned identity is authoritative: set last so nothing from a skill can
+	// shadow it. `byre shell` reads BYRE_UID/GID back to exec as the dev user, so a
+	// skill-injected value here would be a privilege bug. (Skills are also rejected
+	// at resolution for using the BYRE_ prefix; this is defense in depth.)
+	env["BYRE_UID"] = fmt.Sprintf("%d", os.Getuid())
+	env["BYRE_GID"] = fmt.Sprintf("%d", os.Getgid())
 
 	// Mounts and volumes are the union of config and skill contributions.
 	mounts := append(append([]config.Mount{}, cfg.Mounts...), res.Mounts...)
@@ -618,6 +624,23 @@ func buildImage(r *runner.Runner, paths project.Paths, cfg config.Config, res sk
 		return err
 	}
 	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache, uidBuildArgs())
+}
+
+// requireNonRootHost refuses to build/run as uid or gid 0. byre bakes the
+// invoking user's id into the image as the `dev` user, so running as root makes
+// the in-container agent root — it would write root-owned files onto host bind
+// mounts, defeating byre's unprivileged-agent design. Determined users can
+// override with BYRE_ALLOW_ROOT=1, which only prints a warning. warn receives
+// that warning (human-facing, so callers pass stderr).
+func requireNonRootHost(warn io.Writer) error {
+	if os.Getuid() != 0 && os.Getgid() != 0 {
+		return nil
+	}
+	if os.Getenv("BYRE_ALLOW_ROOT") == "1" {
+		fmt.Fprintln(warn, "byre: WARNING: running as root (BYRE_ALLOW_ROOT=1). The container's dev user is UID 0, so the agent runs as root and any files it writes to host mounts are root-owned. This defeats byre's unprivileged-agent design — you're on your own.")
+		return nil
+	}
+	return errors.New("refusing to run as root: byre would bake UID 0 as the container's dev user, so the agent would run as root and create root-owned files on your host mounts. Run byre as your normal user, or set BYRE_ALLOW_ROOT=1 to override anyway.")
 }
 
 // uidBuildArgs returns the --build-arg pairs that bake the invoking user's
