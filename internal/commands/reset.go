@@ -1,9 +1,7 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"strings"
 
 	"byre/internal/project"
@@ -97,15 +95,4 @@ func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 		}
 		return nil
 	})
-}
-
-// confirmed reads a line and returns true only for an affirmative answer.
-func confirmed(stdin io.Reader) bool {
-	line, _ := bufio.NewReader(stdin).ReadString('\n')
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true
-	default:
-		return false
-	}
 }

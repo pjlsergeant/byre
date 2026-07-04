@@ -275,17 +275,3 @@ func splitVolumes(vols []config.Volume) (state, cache []string) {
 	}
 	return state, cache
 }
-
-func orDefault(v, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
-}
-
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
-}

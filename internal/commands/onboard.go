@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattn/go-isatty"
-
 	"byre/internal/builtins"
 	"byre/internal/config"
 	"byre/internal/onboard"
@@ -153,29 +151,4 @@ func keepIfIn(v string, options []string) string {
 		return v
 	}
 	return ""
-}
-
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
-func orNoneLabel(v string) string {
-	if v == "" {
-		return "none"
-	}
-	return v
-}
-
-// isTTY reports whether f is an interactive terminal. It uses an isatty (ioctl)
-// check, not os.ModeCharDevice: /dev/null is a character device but not a
-// terminal, so the coarser check made `byre develop < /dev/null` (CI/scripts)
-// emit `docker run -t`, which the engine then rejects with "the input device is
-// not a TTY".
-func isTTY(f *os.File) bool {
-	return isatty.IsTerminal(f.Fd())
 }
