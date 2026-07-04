@@ -10,31 +10,6 @@ import (
 	"byre/internal/commands"
 )
 
-const usage = `byre — run an AI coding agent in a throwaway, project-scoped container.
-
-Usage: byre <command> [args]
-
-Commands:
-  develop      Set up and run the project container in the foreground.
-               (--self-edit mounts this project's host-side store read-write so
-               the agent can edit its own byre.config — a deliberate grant.)
-  config       Edit this project's config interactively (--global edits
-               your ~/.byre/default.config). Raw fields are shown, not edited.
-  dockerfile   Print the generated Dockerfile for this directory.
-  dockerrun    Print the docker/podman run command byre would use (no side effects).
-  status       Show resolved config, mounts, skills, container state.
-  shell        Open a shell (as the dev user) in this project's running session.
-  worktree     Create a git worktree (<repo>-<name>, or --path <dir>) and start a
-               session in it — a parallel agent that inherits this repo's setup.
-  skill update Re-materialize byre's built-in skills (pick up shipped updates).
-  reset        Wipe this project's named volumes.
-  rebuild      Rebuild the image with the cache disabled.
-  rehome       Re-point this directory's identity after a move.
-  forget       Remove all of byre's host-side state for this directory
-               (volumes, image, config, adoption record). Leaves your tree.
-
-Run byre in the project directory you want to develop.`
-
 // app is the set of command implementations run dispatches to. A struct (not
 // direct calls) so tests can pin the flag->function wiring with recorders
 // instead of executing real commands.
@@ -68,6 +43,277 @@ var realApp = app{
 	rehome:      commands.Rehome,
 }
 
+// command is one byre subcommand: its one-line summary for the command list,
+// its full help for `byre <name> --help`, and its parse+dispatch function.
+// The top-level usage is GENERATED from this table, so a command (or flag
+// documented in its help) can't be forgotten there.
+type command struct {
+	name    string
+	summary string
+	help    string
+	run     func(a app, s commands.Streams, dir string, rest []string) error
+}
+
+var cmdTable = []command{
+	{
+		name:    "develop",
+		summary: "Set up and run the project container in the foreground.",
+		help: `Usage: byre develop [--template <name>] [--agent <name>] [--self-edit]
+
+Set up (generate + build the image) and run the project container in the
+foreground. First run onboards the project (creates its host-side config).
+
+  --template <name>  template for a NEW project's config (first run only; "none" to skip)
+  --agent <name>     agent for a NEW project's config (first run only; "none" to skip)
+  --self-edit        mount this project's host-side store read-write so the
+                     agent can edit its own byre.config — a deliberate grant,
+                     applied on the next develop`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			var tmpl, agent string
+			selfEdit := false
+			for i := 0; i < len(rest); i++ {
+				switch {
+				case rest[i] == "--template":
+					i++
+					if i >= len(rest) {
+						return usageError("byre develop: --template needs a value")
+					}
+					tmpl = rest[i]
+				case rest[i] == "--agent":
+					i++
+					if i >= len(rest) {
+						return usageError("byre develop: --agent needs a value")
+					}
+					agent = rest[i]
+				case rest[i] == "--self-edit":
+					selfEdit = true
+				default:
+					return usageError(fmt.Sprintf("byre develop: unknown argument %q", rest[i]))
+				}
+			}
+			return a.develop(s, dir, tmpl, agent, selfEdit)
+		},
+	},
+	{
+		name:    "config",
+		summary: "Edit this project's config interactively.",
+		help: `Usage: byre config [--global]
+
+Open the interactive editor for this project's host-side config
+(~/.byre/projects/<id>/byre.config). Raw fields are shown, not edited.
+
+  --global  edit your global defaults (~/.byre/default.config) instead`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			global := false
+			for _, arg := range rest {
+				switch arg {
+				case "--global":
+					global = true
+				default:
+					return usageError(fmt.Sprintf("byre config: unknown argument %q", arg))
+				}
+			}
+			return a.config(s, dir, global)
+		},
+	},
+	{
+		name:    "dockerfile",
+		summary: "Print the generated Dockerfile for this directory.",
+		help: `Usage: byre dockerfile
+
+Print the Dockerfile byre would build for this directory (or the hand-written
+one, when the config opts out of generation). Side-effect-free.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if err := noArgs("dockerfile", rest); err != nil {
+				return err
+			}
+			return a.dockerfile(s, dir)
+		},
+	},
+	{
+		name:    "dockerrun",
+		summary: "Print the docker/podman run command byre would use.",
+		help: `Usage: byre dockerrun
+
+Print the exact docker/podman run invocation byre would use for this project —
+the run-time counterpart to 'byre dockerfile'. Side-effect-free.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if err := noArgs("dockerrun", rest); err != nil {
+				return err
+			}
+			return a.dockerrun(s, dir)
+		},
+	},
+	{
+		name:    "status",
+		summary: "Show resolved config, mounts, skills, container state.",
+		help: `Usage: byre status [--self-edit]
+
+Show the resolved view of this project: agent, engine, mounts, ports, volumes,
+skill grants, and whether a session is running.
+
+  --self-edit  also show the grant 'develop --self-edit' would add`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			selfEdit := false
+			for _, arg := range rest {
+				switch arg {
+				case "--self-edit":
+					selfEdit = true
+				default:
+					return usageError(fmt.Sprintf("byre status: unknown argument %q", arg))
+				}
+			}
+			return a.status(s, dir, selfEdit)
+		},
+	},
+	{
+		name:    "shell",
+		summary: "Open a shell (as the dev user) in the running session.",
+		help: `Usage: byre shell
+
+Open an interactive shell in this project's running container, as the dev
+user — for agent logins, running tests, poking around. Needs a session
+started by 'byre develop'.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if err := noArgs("shell", rest); err != nil {
+				return err
+			}
+			return a.shell(s, dir)
+		},
+	},
+	{
+		name:    "worktree",
+		summary: "Create a git worktree and start a parallel session in it.",
+		help: `Usage: byre worktree <name> [--path <dir>] [--self-edit]
+
+Create a linked git worktree for branch <name> (default location: a sibling
+dir <repo>-<name>, from the configured worktree_base) and run 'byre develop'
+in it — a parallel agent that inherits this repo's config, volumes, and image.
+
+  --path <dir>  create the worktree at an explicit path instead
+  --self-edit   forward 'develop --self-edit' for the new session`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			var name, path string
+			selfEdit := false
+			for i := 0; i < len(rest); i++ {
+				switch {
+				case rest[i] == "--path":
+					i++
+					if i >= len(rest) {
+						return usageError("byre worktree: --path needs a value")
+					}
+					path = rest[i]
+				case rest[i] == "--self-edit":
+					selfEdit = true
+				case strings.HasPrefix(rest[i], "-"):
+					return usageError(fmt.Sprintf("byre worktree: unknown flag %q", rest[i]))
+				case name == "":
+					name = rest[i]
+				default:
+					return usageError(fmt.Sprintf("byre worktree: unexpected argument %q", rest[i]))
+				}
+			}
+			if name == "" {
+				return usageError("usage: byre worktree <name> [--path <dir>] [--self-edit]")
+			}
+			return a.worktree(s, dir, name, path, selfEdit)
+		},
+	},
+	{
+		name:    "skill",
+		summary: "skill update: re-materialize byre's built-in skills.",
+		help: `Usage: byre skill update
+
+Re-materialize byre's built-in skills into ~/.byre/skills, picking up shipped
+updates (a locally-modified copy is backed up to <name>.bak). Follow with
+'byre rebuild' to apply the changes to the image.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if len(rest) != 1 || rest[0] != "update" {
+				return usageError("usage: byre skill update   (re-materialize byre's built-in skills)")
+			}
+			return a.skillUpdate(s, dir)
+		},
+	},
+	{
+		name:    "reset",
+		summary: "Wipe this project's named volumes.",
+		help: `Usage: byre reset [--force|-y]
+
+Permanently delete ALL of this project's named volumes (agent credentials,
+caches — not the image). Prompts first; refuses while a session is running.
+
+  --force, -y  skip the confirmation prompt`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			force, err := parseForce("reset", rest)
+			if err != nil {
+				return err
+			}
+			return a.reset(s, dir, force)
+		},
+	},
+	{
+		name:    "rebuild",
+		summary: "Rebuild the image with the cache disabled.",
+		help: `Usage: byre rebuild
+
+Regenerate the build context and rebuild this project's image with
+--no-cache, picking up new upstream tool/package versions. Volumes are
+untouched; the next 'byre develop' runs the fresh image.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if err := noArgs("rebuild", rest); err != nil {
+				return err
+			}
+			return a.rebuild(s, dir)
+		},
+	},
+	{
+		name:    "rehome",
+		summary: "Re-point this directory's identity after a move.",
+		help: `Usage: byre rehome <old-id>
+
+After moving/renaming the project directory (which changes its path-derived
+id), migrate the previous id's volumes onto the new identity. <old-id> is the
+previous project id, from ~/.byre/projects/.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if len(rest) != 1 {
+				return usageError("usage: byre rehome <old-id>   (the previous project id, from ~/.byre/projects/)")
+			}
+			return a.rehome(s, dir, rest[0])
+		},
+	},
+	{
+		name:    "forget",
+		summary: "Remove all byre host-side state for this directory.",
+		help: `Usage: byre forget [--force|-y]
+
+Completely remove byre's host-side state for this directory: named volumes,
+the image, and ~/.byre/projects/<id>/ (config, adoption record, build
+context). Your project tree is left alone. Prompts first.
+
+  --force, -y  skip the confirmation prompt`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			force, err := parseForce("forget", rest)
+			if err != nil {
+				return err
+			}
+			return a.forget(s, dir, force)
+		},
+	},
+}
+
+// usageText renders the top-level help from the command table.
+func usageText() string {
+	var b strings.Builder
+	b.WriteString("byre — run an AI coding agent in a throwaway, project-scoped container.\n")
+	b.WriteString("\nUsage: byre <command> [args]\n\nCommands:\n")
+	for _, c := range cmdTable {
+		fmt.Fprintf(&b, "  %-11s %s\n", c.name, c.summary)
+	}
+	b.WriteString("\nRun byre in the project directory you want to develop.\n")
+	b.WriteString("Use 'byre <command> --help' for details on a command.")
+	return b.String()
+}
+
 // usageError is a command-line parse failure: main prints it to stderr and
 // exits 2, distinct from a byre failure (1) and an agent/refusal code.
 type usageError string
@@ -89,134 +335,33 @@ func main() {
 	}
 }
 
-// run parses argv (everything after the program name) and dispatches to a. All
-// parse failures come back as usageError; anything else is the command's own
-// error, exit-mapped by main.
+// run parses argv (everything after the program name) and dispatches via the
+// command table. All parse failures come back as usageError; anything else is
+// the command's own error, exit-mapped by main.
 func run(a app, args []string, dir string, s commands.Streams) error {
 	if len(args) < 1 {
-		return usageError(usage)
+		return usageError(usageText())
 	}
-	cmd, rest := args[0], args[1:]
-	switch cmd {
-	case "-h", "--help", "help":
-		fmt.Fprintln(s.Out, usage)
+	name, rest := args[0], args[1:]
+	if name == "-h" || name == "--help" || name == "help" {
+		fmt.Fprintln(s.Out, usageText())
 		return nil
-	case "dockerfile":
-		if err := noArgs(cmd, rest); err != nil {
-			return err
-		}
-		return a.dockerfile(s, dir)
-	case "dockerrun":
-		if err := noArgs(cmd, rest); err != nil {
-			return err
-		}
-		return a.dockerrun(s, dir)
-	case "develop":
-		var tmpl, agent string
-		selfEdit := false
-		for i := 0; i < len(rest); i++ {
-			switch {
-			case rest[i] == "--template":
-				i++
-				if i >= len(rest) {
-					return usageError("byre develop: --template needs a value")
-				}
-				tmpl = rest[i]
-			case rest[i] == "--agent":
-				i++
-				if i >= len(rest) {
-					return usageError("byre develop: --agent needs a value")
-				}
-				agent = rest[i]
-			case rest[i] == "--self-edit":
-				selfEdit = true
-			default:
-				return usageError(fmt.Sprintf("byre develop: unknown argument %q", rest[i]))
-			}
-		}
-		return a.develop(s, dir, tmpl, agent, selfEdit)
-	case "config":
-		global := false
-		for _, arg := range rest {
-			switch arg {
-			case "--global":
-				global = true
-			default:
-				return usageError(fmt.Sprintf("byre config: unknown argument %q", arg))
-			}
-		}
-		return a.config(s, dir, global)
-	case "status":
-		selfEdit := false
-		for _, arg := range rest {
-			switch arg {
-			case "--self-edit":
-				selfEdit = true
-			default:
-				return usageError(fmt.Sprintf("byre status: unknown argument %q", arg))
-			}
-		}
-		return a.status(s, dir, selfEdit)
-	case "reset":
-		force, err := parseForce(cmd, rest)
-		if err != nil {
-			return err
-		}
-		return a.reset(s, dir, force)
-	case "forget":
-		force, err := parseForce(cmd, rest)
-		if err != nil {
-			return err
-		}
-		return a.forget(s, dir, force)
-	case "shell":
-		if err := noArgs(cmd, rest); err != nil {
-			return err
-		}
-		return a.shell(s, dir)
-	case "worktree":
-		var name, path string
-		selfEdit := false
-		for i := 0; i < len(rest); i++ {
-			switch {
-			case rest[i] == "--path":
-				i++
-				if i >= len(rest) {
-					return usageError("byre worktree: --path needs a value")
-				}
-				path = rest[i]
-			case rest[i] == "--self-edit":
-				selfEdit = true
-			case strings.HasPrefix(rest[i], "-"):
-				return usageError(fmt.Sprintf("byre worktree: unknown flag %q", rest[i]))
-			case name == "":
-				name = rest[i]
-			default:
-				return usageError(fmt.Sprintf("byre worktree: unexpected argument %q", rest[i]))
-			}
-		}
-		if name == "" {
-			return usageError("usage: byre worktree <name> [--path <dir>] [--self-edit]")
-		}
-		return a.worktree(s, dir, name, path, selfEdit)
-	case "skill":
-		if len(rest) != 1 || rest[0] != "update" {
-			return usageError("usage: byre skill update   (re-materialize byre's built-in skills)")
-		}
-		return a.skillUpdate(s, dir)
-	case "rebuild":
-		if err := noArgs(cmd, rest); err != nil {
-			return err
-		}
-		return a.rebuild(s, dir)
-	case "rehome":
-		if len(rest) != 1 {
-			return usageError("usage: byre rehome <old-id>   (the previous project id, from ~/.byre/projects/)")
-		}
-		return a.rehome(s, dir, rest[0])
-	default:
-		return usageError(fmt.Sprintf("byre: unknown command %q\n\n%s", cmd, usage))
 	}
+	for _, c := range cmdTable {
+		if c.name != name {
+			continue
+		}
+		// -h/--help anywhere in the subcommand's args prints its help. Checked
+		// before parsing, so 'byre worktree --help' is help, not an unknown flag.
+		for _, arg := range rest {
+			if arg == "-h" || arg == "--help" {
+				fmt.Fprintln(s.Out, c.help)
+				return nil
+			}
+		}
+		return c.run(a, s, dir, rest)
+	}
+	return usageError(fmt.Sprintf("byre: unknown command %q\n\n%s", name, usageText()))
 }
 
 // noArgs rejects unexpected operands after a subcommand.

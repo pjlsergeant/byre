@@ -145,6 +145,48 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+// TestRunSubcommandHelp pins per-subcommand --help: prints that command's
+// usage, dispatches nothing, exits clean — for every table entry, -h included.
+func TestRunSubcommandHelp(t *testing.T) {
+	for _, c := range cmdTable {
+		for _, flag := range []string{"--help", "-h"} {
+			calls := map[string]string{}
+			s, out := testStreams()
+			if err := run(recorderApp(calls), []string{c.name, flag}, "/proj", s); err != nil {
+				t.Errorf("byre %s %s must not error: %v", c.name, flag, err)
+			}
+			if len(calls) != 0 {
+				t.Errorf("byre %s %s must not dispatch: %v", c.name, flag, calls)
+			}
+			if !strings.Contains(out.String(), "Usage: byre "+c.name) {
+				t.Errorf("byre %s %s output missing its usage line: %q", c.name, flag, out.String())
+			}
+		}
+	}
+}
+
+// TestUsageTextCoversTable pins that the generated top-level usage lists every
+// command, and that develop's flags are documented in its help — the omission
+// that motivated generating usage from the table.
+func TestUsageTextCoversTable(t *testing.T) {
+	u := usageText()
+	for _, c := range cmdTable {
+		if !strings.Contains(u, "\n  "+c.name) {
+			t.Errorf("top-level usage missing command %q:\n%s", c.name, u)
+		}
+	}
+	for _, c := range cmdTable {
+		if c.name != "develop" {
+			continue
+		}
+		for _, flag := range []string{"--template", "--agent", "--self-edit"} {
+			if !strings.Contains(c.help, flag) {
+				t.Errorf("develop help missing %s", flag)
+			}
+		}
+	}
+}
+
 // TestRunCommandErrorPassesThrough pins that a command's own error is returned
 // as-is (main maps it to exit 1 / the agent's code), not wrapped as usage.
 func TestRunCommandErrorPassesThrough(t *testing.T) {
