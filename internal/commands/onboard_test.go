@@ -9,6 +9,29 @@ import (
 	"byre/internal/project"
 )
 
+// isTTY must report false for /dev/null and regular files — /dev/null is a
+// character device, so the old ModeCharDevice check wrongly called it a terminal,
+// which made `byre develop < /dev/null` emit `docker run -t` and fail.
+func TestIsTTYRejectsDevNullAndFiles(t *testing.T) {
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devnull.Close()
+	if isTTY(devnull) {
+		t.Error("isTTY(/dev/null) = true, want false (not an interactive terminal)")
+	}
+
+	f, err := os.CreateTemp(t.TempDir(), "f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTTY(f) {
+		t.Error("isTTY(regular file) = true, want false")
+	}
+}
+
 func onboardPaths(t *testing.T) (project.Paths, string) {
 	t.Helper()
 	t.Setenv("BYRE_HOME", t.TempDir())
