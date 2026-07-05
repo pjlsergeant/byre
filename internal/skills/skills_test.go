@@ -444,3 +444,69 @@ func TestGrantsAttributeRunArgs(t *testing.T) {
 		t.Errorf("grant should carry the run args: %+v", grants[0])
 	}
 }
+
+func TestResolveNetworkPostureAndNetnsInit(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"deny-by-default\"\nnetns_init = \"/usr/local/bin/byre-firewall\"\n", nil)
+	res, err := Resolve(config.Config{Skills: []string{"fw"}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	posture, by := res.NetworkPosture()
+	if posture != "deny-by-default" || by != "fw" {
+		t.Errorf("posture = %q by %q, want deny-by-default by fw", posture, by)
+	}
+	hooks := res.NetnsInits()
+	if len(hooks) != 1 || hooks[0].Skill != "fw" || hooks[0].Path != "/usr/local/bin/byre-firewall" {
+		t.Errorf("netns hooks = %+v", hooks)
+	}
+	// A netns_init is a root-privileged hook — it must surface as a grant.
+	grants := res.Grants()
+	if len(grants) != 1 || grants[0].NetnsInit != "/usr/local/bin/byre-firewall" {
+		t.Errorf("netns_init must be an attributed grant: %+v", grants)
+	}
+}
+
+func TestResolveNoPostureMeansOpen(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "plain", "[build]\napt = [\"jq\"]\n", nil)
+	res, err := Resolve(config.Config{Skills: []string{"plain"}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posture, by := res.NetworkPosture(); posture != "" || by != "" {
+		t.Errorf("no skill declares a posture; got %q by %q", posture, by)
+	}
+}
+
+func TestResolveRejectsConflictingPostures(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "fw1", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
+	writeSkill(t, dir, "fw2", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
+	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, dir)
+	if err == nil {
+		t.Fatal("two skills declaring a posture must be rejected (even identical: each claims the stance)")
+	}
+	for _, want := range []string{"fw1", "fw2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q: %v", want, err)
+		}
+	}
+}
+
+func TestResolveRejectsMalformedPosture(t *testing.T) {
+	dir := t.TempDir()
+	// Status prints the posture verbatim; a spoofing label must be rejected.
+	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"open  (all good)\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, dir); err == nil {
+		t.Fatal("posture with spaces/parens must be rejected")
+	}
+}
+
+func TestResolveRejectsRelativeNetnsInit(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "fw", "[runtime]\nnetns_init = \"bin/fw\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, dir); err == nil {
+		t.Fatal("relative netns_init must be rejected")
+	}
+}

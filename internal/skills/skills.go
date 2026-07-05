@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -18,6 +19,11 @@ import (
 
 	"byre/internal/config"
 )
+
+// postureRe bounds a declared network_posture to a short display label —
+// status prints it verbatim, so it must not carry spaces, parens, or control
+// characters that could forge the surrounding status annotations.
+var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // AgentContrib is the agent-skill launch contribution.
 type AgentContrib struct {
@@ -62,6 +68,19 @@ type File struct {
 		RunArgs []string          `toml:"run_args"`
 		Caps    []string          `toml:"caps"`
 		Mounts  []config.Mount    `toml:"mounts"`
+		// NetworkPosture is the network stance this skill establishes (e.g.
+		// "deny-by-default"). Purely declarative: byre prints it in status and
+		// the launch line instead of the default "open", attributed to the
+		// skill — core never inspects or enforces it. Status degrades the claim
+		// when project-level raw escape hatches could undermine it (see
+		// commands/status).
+		NetworkPosture string `toml:"network_posture"`
+		// NetnsInit names an entrypoint (absolute image path) that byre runs in
+		// the box's network namespace as root with CAP_NET_ADMIN, from a
+		// run-to-completion helper container, after the box starts. This is the
+		// firewall skill's application vehicle: rules are programmed from
+		// OUTSIDE the box, so nothing inside it needs (or gets) privileges.
+		NetnsInit string `toml:"netns_init"`
 	} `toml:"runtime"`
 	Agent   *AgentContrib   `toml:"agent"`
 	Volumes []config.Volume `toml:"volumes"`
@@ -84,10 +103,11 @@ type Skill struct {
 // `byre status` and the adoption review (e.g. which skill mounts a host
 // socket, or passes raw docker run args).
 type Grant struct {
-	Skill   string
-	Mounts  []config.Mount
-	Caps    []string
-	RunArgs []string
+	Skill     string
+	Mounts    []config.Mount
+	Caps      []string
+	RunArgs   []string
+	NetnsInit string // entrypoint run in the box's netns as root (see Runtime.NetnsInit)
 }
 
 // SkillFile is one resolved file a skill ships into the image: a source inside
@@ -193,17 +213,47 @@ func (r Resolved) Volumes() []config.Volume {
 	return out
 }
 
-// Grants projects each skill's runtime grants (mounts, caps, raw run args)
-// for attribution in status and the adoption review.
+// Grants projects each skill's runtime grants (mounts, caps, raw run args,
+// netns hooks) for attribution in status and the adoption review.
 func (r Resolved) Grants() []Grant {
 	var out []Grant
 	for _, sk := range r.Skills {
 		rt := sk.File.Runtime
-		if len(rt.Mounts) > 0 || len(rt.Caps) > 0 || len(rt.RunArgs) > 0 {
-			out = append(out, Grant{Skill: sk.Name, Mounts: rt.Mounts, Caps: rt.Caps, RunArgs: rt.RunArgs})
+		if len(rt.Mounts) > 0 || len(rt.Caps) > 0 || len(rt.RunArgs) > 0 || rt.NetnsInit != "" {
+			out = append(out, Grant{Skill: sk.Name, Mounts: rt.Mounts, Caps: rt.Caps, RunArgs: rt.RunArgs, NetnsInit: rt.NetnsInit})
 		}
 	}
 	return out
+}
+
+// NetnsHook is one skill's declared netns-init entrypoint (see
+// Runtime.NetnsInit), attributed to the skill for error messages and status.
+type NetnsHook struct {
+	Skill string
+	Path  string
+}
+
+// NetnsInits lists the declared netns-init hooks, in enable order.
+func (r Resolved) NetnsInits() []NetnsHook {
+	var out []NetnsHook
+	for _, sk := range r.Skills {
+		if p := sk.File.Runtime.NetnsInit; p != "" {
+			out = append(out, NetnsHook{Skill: sk.Name, Path: p})
+		}
+	}
+	return out
+}
+
+// NetworkPosture is the declared network posture and the skill declaring it
+// ("", "" when no enabled skill declares one — the caller renders the default
+// "open"). Resolve rejected conflicting declarations, so the first is the only.
+func (r Resolved) NetworkPosture() (posture, skill string) {
+	for _, sk := range r.Skills {
+		if p := sk.File.Runtime.NetworkPosture; p != "" {
+			return p, sk.Name
+		}
+	}
+	return "", ""
 }
 
 // Context concatenates the skills' context snippets, in enable order.
@@ -367,6 +417,7 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 
 	var res Resolved
 	envSetBy := map[string]string{} // env key -> skill that set it
+	postureBy := ""                 // skill that declared network_posture
 	agentFound := cfg.Agent == ""
 
 	for _, name := range names {
@@ -407,6 +458,26 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 				return Resolved{}, fmt.Errorf("skill %q: build file: %w", name, perr)
 			}
 			sk.Files = append(sk.Files, SkillFile{Src: real, Rel: filepath.Clean(src), Dest: dest})
+		}
+
+		// network_posture is printed by status; hold it to a tight shape so a
+		// skill can't smuggle formatting/control text into the output, and
+		// reject two skills both claiming the network stance — there is one
+		// network, so one declared posture (unlike env, even equal duplicates
+		// are refused: each claims to have established the stance).
+		if p := f.Runtime.NetworkPosture; p != "" {
+			if !postureRe.MatchString(p) {
+				return Resolved{}, fmt.Errorf("skill %q: network_posture %q: must match %s", name, p, postureRe)
+			}
+			if postureBy != "" {
+				return Resolved{}, fmt.Errorf("skills %q and %q both declare a network_posture; disable one", postureBy, name)
+			}
+			postureBy = name
+		}
+		// netns_init runs as root in the box's netns; require an absolute image
+		// path so it stays legible data (the script itself is skill-shipped).
+		if p := f.Runtime.NetnsInit; p != "" && !filepath.IsAbs(p) {
+			return Resolved{}, fmt.Errorf("skill %q: netns_init %q must be an absolute image path", name, p)
 		}
 
 		// Cross-skill env conflicts: a differing value for the same key would be
