@@ -112,3 +112,30 @@ func TestRenderStatusRootlessPodman(t *testing.T) {
 		t.Errorf("rootless Podman not flagged on the Engine row: %s", out)
 	}
 }
+
+func TestNetworkLine(t *testing.T) {
+	cases := []struct {
+		name string
+		info statusInfo
+		want string
+	}{
+		{"default open", statusInfo{}, "open"},
+		{"clean posture", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall"},
+			"deny-by-default  (skill: firewall)"},
+		{"project run_args degrade", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", ProjectRunArgs: true},
+			"deny-by-default  (declared; raw run_args present — not guaranteed)"},
+		{"raw build lines degrade", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", BuildRaw: []string{"RUN x"}},
+			"deny-by-default  (declared; raw build lines present — not guaranteed)"},
+		{"both degrade", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", ProjectRunArgs: true, BuildRaw: []string{"RUN x"}},
+			"deny-by-default  (declared; raw run_args + raw build lines present — not guaranteed)"},
+		{"custom Dockerfile wins", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", CustomDF: true, ProjectRunArgs: true},
+			"deny-by-default  (declared; custom Dockerfile — byre didn't build the wall)"},
+		{"unresolved skills", statusInfo{SkillErr: "boom", NetPosture: ""},
+			"unknown  (skills unresolved)"},
+	}
+	for _, c := range cases {
+		if got := networkLine(c.info); got != c.want {
+			t.Errorf("%s: networkLine = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

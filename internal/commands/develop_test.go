@@ -146,3 +146,63 @@ func TestRebuildBuildsNoCache(t *testing.T) {
 		t.Fatalf("expected one --no-cache build of %s, got %v", image, f.builds)
 	}
 }
+
+// netnsSkill builds a Resolved with one skill declaring a netns_init hook, the
+// way the firewall skill does.
+func netnsSkill(path string) skills.Resolved {
+	var sk skills.Skill
+	sk.Name = "fw"
+	sk.File.Runtime.NetnsInit = path
+	return skills.Resolved{Skills: []skills.Skill{sk}}
+}
+
+func TestDevelopRunsNetnsInitsOnceUp(t *testing.T) {
+	p, _ := testPaths(t)
+	name := "byre-" + p.WorktreeID
+	f := &fakeRunner{running: map[string]bool{name: true}}
+	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.netnsInits) != 1 || f.netnsInits[0] != name+" /usr/local/bin/byre-firewall" {
+		t.Fatalf("expected the netns hook applied to the running box, got %v", f.netnsInits)
+	}
+}
+
+func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
+	p, _ := testPaths(t)
+	// The container never reports running (e.g. the run failed instantly):
+	// the poll must exit via the done channel, not hang or fire the hook.
+	f := &fakeRunner{}
+	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.netnsInits) != 0 {
+		t.Fatalf("hook must not fire for a box that never came up: %v", f.netnsInits)
+	}
+}
+
+func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
+	p, _ := testPaths(t)
+	name := "byre-" + p.WorktreeID
+	f := &fakeRunner{running: map[string]bool{name: true}, netnsErr: errors.New("iptables: boom")}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "failing closed") {
+		t.Errorf("hook failure must explain the fail-closed outcome: %s", stderr.String())
+	}
+}
+
+func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{running: map[string]bool{"byre-" + p.WorktreeID: true}}
+	if err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.netnsInits) != 0 {
+		t.Fatalf("no skill declares a hook; none must run: %v", f.netnsInits)
+	}
+}

@@ -27,6 +27,10 @@ type statusInfo struct {
 	Grants          []skills.Grant // per-skill runtime grants (attribution)
 	RunArgs         []string
 	BuildRaw        []string // dockerfile_pre + dockerfile_post (raw, not introspected)
+	NetPosture      string   // a skill's declared network posture ("" = default open)
+	NetPostureSkill string   // the skill declaring it
+	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
+	CustomDF        bool     // full-Dockerfile opt-out (skill build contributions never land)
 	Container       string   // this dir's running container id, or "" if none
 	SiblingSessions []string // short ids of OTHER live sessions in this repo family (worktrees sharing these volumes)
 	Rootless        bool     // true if the engine is rootless Podman (unsupported ownership)
@@ -54,16 +58,18 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	}
 
 	info := statusInfo{
-		Agent:     cfg.Agent,
-		Engine:    cfg.Engine,
-		ID:        paths.ID,
-		Canonical: paths.WorkDir, // what actually mounts at /workspace
-		Skills:    cfg.Skills,
-		Binds:     cfg.Mounts,
-		Ports:     cfg.Ports,
-		Volumes:   cfg.Volumes,
-		RunArgs:   cfg.RunArgs,
-		BuildRaw:  append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
+		Agent:          cfg.Agent,
+		Engine:         cfg.Engine,
+		ID:             paths.ID,
+		Canonical:      paths.WorkDir, // what actually mounts at /workspace
+		Skills:         cfg.Skills,
+		Binds:          cfg.Mounts,
+		Ports:          cfg.Ports,
+		Volumes:        cfg.Volumes,
+		RunArgs:        cfg.RunArgs,
+		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
+		ProjectRunArgs: len(cfg.RunArgs) > 0,
+		CustomDF:       cfg.Dockerfile != "",
 	}
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
@@ -99,6 +105,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.Volumes = rv.volumes
 			info.Grants = res.Grants()
 			info.RunArgs = append(append([]string{}, res.RunArgs()...), cfg.RunArgs...)
+			info.NetPosture, info.NetPostureSkill = res.NetworkPosture()
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -166,7 +173,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	if s.WorktreeOf != "" {
 		row("Worktree of", s.WorktreeOf+"  (config, volumes, image inherited)")
 	}
-	row("Network", "open")
+	row("Network", networkLine(s))
 
 	if len(s.Ports) == 0 {
 		row("Ports", "none")
@@ -222,6 +229,9 @@ func renderStatus(w io.Writer, s statusInfo) {
 		if len(g.RunArgs) > 0 {
 			parts = append(parts, "run args "+strings.Join(g.RunArgs, " "))
 		}
+		if g.NetnsInit != "" {
+			parts = append(parts, "netns init "+g.NetnsInit+" (run as root + NET_ADMIN, outside the box)")
+		}
 		row(label, g.Skill+": "+strings.Join(parts, "; "))
 	}
 
@@ -250,6 +260,39 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s  (share these volumes)",
 			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", ")))
 	}
+}
+
+// networkLine renders the Network row. Default: "open". With a skill-declared
+// posture, the claim follows the footgun doctrine's honesty rules — status
+// only asserts unqualified what byre set up itself, and never blocks anything:
+//   - skill contributions never degrade the claim (enabling a skill IS
+//     trusting it; its grants are attributed separately);
+//   - the project's own raw escape hatches (run_args, dockerfile_pre/post)
+//     degrade it — byre can't audit arbitrary argv or Dockerfile text;
+//   - the full-Dockerfile opt-out means the skill's build bits never landed
+//     in the image at all, so the wall byre would vouch for was never built;
+//   - unresolved skills mean the posture is simply unknown.
+func networkLine(s statusInfo) string {
+	if s.SkillErr != "" {
+		return "unknown  (skills unresolved)"
+	}
+	if s.NetPosture == "" {
+		return "open"
+	}
+	if s.CustomDF {
+		return s.NetPosture + "  (declared; custom Dockerfile — byre didn't build the wall)"
+	}
+	var raw []string
+	if s.ProjectRunArgs {
+		raw = append(raw, "raw run_args")
+	}
+	if len(s.BuildRaw) > 0 {
+		raw = append(raw, "raw build lines")
+	}
+	if len(raw) > 0 {
+		return s.NetPosture + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"
+	}
+	return s.NetPosture + "  (skill: " + s.NetPostureSkill + ")"
 }
 
 // portStatusLine renders a published port as "iface:host -> container", via

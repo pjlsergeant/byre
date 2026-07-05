@@ -32,7 +32,10 @@ type fakeRunner struct {
 	runErr     error
 	execErr    error
 	runs       [][]string
-	execs      []string // "id uid:gid workdir cmd..."
+	execs      []string        // "id uid:gid workdir cmd..."
+	running    map[string]bool // ContainerRunning by name
+	netnsErr   error
+	netnsInits []string // NetnsInit: "container entrypoint"
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -76,6 +79,14 @@ func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
 }
 
 func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) { return f.env, f.envErr }
+
+func (f *fakeRunner) ContainerRunning(name string) (bool, error) { return f.running[name], nil }
+
+func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
+	f.netnsInits = append(f.netnsInits, container+" "+entrypoint)
+	f.ops = append(f.ops, "netnsinit "+entrypoint)
+	return f.netnsErr
+}
 
 func (f *fakeRunner) Run(args []string) error {
 	f.runs = append(f.runs, args)

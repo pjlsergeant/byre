@@ -142,9 +142,28 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	if err != nil {
 		return err
 	}
+	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
+	// OUTSIDE the box, concurrently with the attached run: the box's launcher
+	// waits at its launch gate until the hooks land. The wait after the run
+	// keeps the goroutine from outliving develop (and its s.Err writes).
+	var netnsWait func()
+	if hooks := rv.skills.NetnsInits(); len(hooks) > 0 {
+		done := make(chan struct{})
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			runNetnsInits(r, s.Err, params.Name, image, hooks, params.Env, done)
+		}()
+		netnsWait = func() { close(done); <-finished }
+	}
+
 	// The container name makes this atomic: if a concurrent develop won the
 	// race, our run fails and a session is now live — report it.
-	if runErr := r.Run(runner.RunArgs(params)); runErr != nil {
+	runErr := r.Run(runner.RunArgs(params))
+	if netnsWait != nil {
+		netnsWait()
+	}
+	if runErr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
 			reportRunning(s.Err, r.Engine(), live)
 			return ExitError{Code: ExitRefused} // refused, session already live
