@@ -28,3 +28,6 @@ devlog -- notes written as I build it in the open.
 - [Day 4 -- where do the worktrees go?](day-04.md) -- `byre worktree` lands, and a
   small question about default directory placement turns into a lesson about byre
   refusing to guess.
+- [Day 5 -- the agent reviews its own harness](day-05.md) -- a pre-release review
+  and six phases of fixes, from inside the box: the rot was in the seams, silence
+  was the enemy, and the review loop wouldn't let go.
