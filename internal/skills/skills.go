@@ -292,6 +292,26 @@ type EgressAllow struct {
 	Port  int
 }
 
+// SplitEgress parses a raw space/comma/tab-separated host[:port] list — the
+// grammar the user's FIREWALL_ALLOW uses — into host:port pairs, SKIPPING
+// malformed entries (Skill left for the caller to attribute). Unlike the skill
+// egress path, this input isn't validated at load, so a bad entry is dropped,
+// not an error — mirroring firewall.sh, which warns-and-skips. This is the one
+// parser for the FIREWALL_ALLOW grammar so status can't drift from the script.
+func SplitEgress(raw string) []EgressAllow {
+	var out []EgressAllow
+	for _, tok := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ' ' || r == ',' || r == '\t' || r == '\n'
+	}) {
+		host, port, err := parseEgress(tok)
+		if err != nil {
+			continue
+		}
+		out = append(out, EgressAllow{Host: host, Port: port})
+	}
+	return out
+}
+
 // EgressAllows lists every enabled skill's egress entries, parsed and
 // attributed, in enable order. Resolve validated them, so parsing can't fail.
 func (r Resolved) EgressAllows() []EgressAllow {

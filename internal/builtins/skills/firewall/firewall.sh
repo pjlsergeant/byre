@@ -39,7 +39,13 @@ v4rules=() v6rules=()   # elements: "ip port"
 probe_host="" probe_port=""
 for e in "${entries[@]+"${entries[@]}"}"; do
   if [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=443; fi
+  # Match byre's Go validation (skills.parseEgress): numeric, 1..65535. Skill
+  # egress is already validated; FIREWALL_ALLOW is the user path and isn't, so
+  # reject an out-of-range port here rather than let iptables fail at launch.
   case "$port" in ''|*[!0-9]*) log "warning: bad egress entry '$e' — skipping"; continue ;; esac
+  if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    log "warning: egress '$e' port out of range — skipping"; continue
+  fi
   ips="$(getent ahosts "$host" 2>/dev/null | awk '{print $1}' | sort -u)" || true
   if [ -z "$ips" ]; then
     log "warning: cannot resolve $host — it will be blocked"
@@ -127,18 +133,28 @@ if [ -n "$ip6_ok" ]; then
 fi
 
 # Self-verify. The deny probe is the security property: a connect to a
-# non-allowlisted address must FAIL (DROP = the connect hangs; timeout kills
-# it). If it gets through, the wall isn't real — die, gate stays shut. Pick an
-# address not in the v4 allow set.
-deny_probe=1.1.1.1
-for r in "${v4rules[@]+"${v4rules[@]}"}"; do
-  read -r ip _ <<<"$r"
-  [ "$ip" = "$deny_probe" ] && { deny_probe=""; break; }
+# non-allowlisted address:PORT must FAIL (DROP = the connect hangs; timeout
+# kills it). If it gets through, the wall isn't real — die, gate stays shut.
+# The match is on the exact ip+port pair, since rules are port-scoped now: an
+# allow of 1.1.1.1:80 must NOT suppress a 1.1.1.1:443 deny check. We pick from
+# a small set of stable public IPs so we can always find one that is not
+# allowlisted at :443 (a config allowlisting all of them at :443 is pathological
+# and would just fall through to no probe — accepted).
+deny_probe=""
+for cand in 1.1.1.1 8.8.8.8 9.9.9.9; do
+  clash=
+  for r in "${v4rules[@]+"${v4rules[@]}"}"; do
+    read -r ip port <<<"$r"
+    [ "$ip" = "$cand" ] && [ "$port" = "443" ] && { clash=1; break; }
+  done
+  [ -z "$clash" ] && { deny_probe="$cand"; break; }
 done
 if [ -n "$deny_probe" ]; then
   if timeout 3 bash -c "exec 3<>/dev/tcp/$deny_probe/443" 2>/dev/null; then
     die "deny probe reached $deny_probe:443 — rules are not effective"
   fi
+else
+  log "warning: could not pick a non-allowlisted deny probe; skipping the drop check"
 fi
 # The allow probe is availability, not security: warn only (a flaky edge must
 # not brick the launch — the deny posture still holds). Skipped for a

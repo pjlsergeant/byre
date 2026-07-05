@@ -179,3 +179,15 @@ func TestRenderStatusNoEgressWithoutPosture(t *testing.T) {
 		t.Errorf("no Egress section when the network is open:\n%s", buf.String())
 	}
 }
+
+func TestConfigEgressAttributed(t *testing.T) {
+	entries := configEgress("grafana.com internal:8443 bad:99999")
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 valid entries (99999 dropped), got %+v", entries)
+	}
+	for _, e := range entries {
+		if e.Skill != "config: FIREWALL_ALLOW" {
+			t.Errorf("FIREWALL_ALLOW entry not attributed to config: %+v", e)
+		}
+	}
+}
