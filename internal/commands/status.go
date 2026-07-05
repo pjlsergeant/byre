@@ -26,18 +26,19 @@ type statusInfo struct {
 	Volumes         []config.Volume
 	Grants          []skills.Grant // per-skill runtime grants (attribution)
 	RunArgs         []string
-	BuildRaw        []string // dockerfile_pre + dockerfile_post (raw, not introspected)
-	NetPosture      string   // a skill's declared network posture ("" = default open)
-	NetPostureSkill string   // the skill declaring it
-	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
-	CustomDF        bool     // full-Dockerfile opt-out (skill build contributions never land)
-	Container       string   // this dir's running container id, or "" if none
-	SiblingSessions []string // short ids of OTHER live sessions in this repo family (worktrees sharing these volumes)
-	Rootless        bool     // true if the engine is rootless Podman (unsupported ownership)
-	EngineErr       string   // why the engine/container state is unknown, if applicable
-	SkillErr        string   // why skills couldn't be resolved, if applicable
-	SelfEdit        string   // host store path when --self-edit is active, else ""
-	Proposal        string   // note about a committed <project>/byre.config, if any
+	BuildRaw        []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
+	NetPosture      string               // a skill's declared network posture ("" = default open)
+	NetPostureSkill string               // the skill declaring it
+	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
+	ProjectRunArgs  bool                 // the PROJECT's own raw run_args present (degrades the posture claim)
+	CustomDF        bool                 // full-Dockerfile opt-out (skill build contributions never land)
+	Container       string               // this dir's running container id, or "" if none
+	SiblingSessions []string             // short ids of OTHER live sessions in this repo family (worktrees sharing these volumes)
+	Rootless        bool                 // true if the engine is rootless Podman (unsupported ownership)
+	EngineErr       string               // why the engine/container state is unknown, if applicable
+	SkillErr        string               // why skills couldn't be resolved, if applicable
+	SelfEdit        string               // host store path when --self-edit is active, else ""
+	Proposal        string               // note about a committed <project>/byre.config, if any
 }
 
 // Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
@@ -106,6 +107,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.Grants = res.Grants()
 			info.RunArgs = append(append([]string{}, res.RunArgs()...), cfg.RunArgs...)
 			info.NetPosture, info.NetPostureSkill = res.NetworkPosture()
+			info.Egress = res.EgressAllows()
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -174,6 +176,27 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Worktree of", s.WorktreeOf+"  (config, volumes, image inherited)")
 	}
 	row("Network", networkLine(s))
+
+	// When a firewall posture is in effect, list its allowlist so "what can
+	// this box reach?" is legible — each host:port attributed to the skill that
+	// asked for it (deduped on host:port; first declarer wins the credit).
+	if s.NetPosture != "" && len(s.Egress) > 0 {
+		seen := map[string]bool{}
+		first := true
+		for _, a := range s.Egress {
+			hp := fmt.Sprintf("%s:%d", a.Host, a.Port)
+			if seen[hp] {
+				continue
+			}
+			seen[hp] = true
+			label := "Egress"
+			if !first {
+				label = ""
+			}
+			first = false
+			row(label, fmt.Sprintf("%s  (%s)", hp, a.Skill))
+		}
+	}
 
 	if len(s.Ports) == 0 {
 		row("Ports", "none")

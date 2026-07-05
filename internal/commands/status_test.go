@@ -139,3 +139,43 @@ func TestNetworkLine(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderStatusEgressSection(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent:           "claude",
+		NetPosture:      "deny-by-default",
+		NetPostureSkill: "firewall",
+		Egress: []skills.EgressAllow{
+			{Skill: "claude", Host: "api.anthropic.com", Port: 443},
+			{Skill: "firewall", Host: "deb.debian.org", Port: 80},
+			{Skill: "claude", Host: "api.anthropic.com", Port: 443}, // dup, must collapse
+		},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "Egress:") {
+		t.Fatalf("expected an Egress section when a posture is declared:\n%s", out)
+	}
+	if !strings.Contains(out, "api.anthropic.com:443  (claude)") {
+		t.Errorf("egress entry not attributed to its skill:\n%s", out)
+	}
+	if !strings.Contains(out, "deb.debian.org:80  (firewall)") {
+		t.Errorf("port-scoped base entry missing:\n%s", out)
+	}
+	if strings.Count(out, "api.anthropic.com:443") != 1 {
+		t.Errorf("duplicate host:port must collapse to one row:\n%s", out)
+	}
+}
+
+func TestRenderStatusNoEgressWithoutPosture(t *testing.T) {
+	var buf strings.Builder
+	// Agent skills declare egress even with no firewall; without a posture in
+	// effect, status must NOT imply an allowlist is enforced.
+	renderStatus(&buf, statusInfo{
+		Agent:  "claude",
+		Egress: []skills.EgressAllow{{Skill: "claude", Host: "api.anthropic.com", Port: 443}},
+	})
+	if strings.Contains(buf.String(), "Egress:") {
+		t.Errorf("no Egress section when the network is open:\n%s", buf.String())
+	}
+}

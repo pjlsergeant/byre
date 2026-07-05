@@ -154,11 +154,21 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if nonce := runNonce(); nonce != "" {
 			label := runKey + "=" + nonce
 			params.Labels = append(params.Labels, label)
+			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
+			// union of every enabled skill's declared egress (computed here, so
+			// it can't come from baked image ENV); a firewall skill reads it
+			// alongside the user's FIREWALL_ALLOW. Copy params.Env so the added
+			// key doesn't leak into the box's own runtime env.
+			netnsEnv := make(map[string]string, len(params.Env)+1)
+			for k, v := range params.Env {
+				netnsEnv[k] = v
+			}
+			netnsEnv["BYRE_EGRESS"] = strings.Join(rv.skills.Egress(), " ")
 			done := make(chan struct{})
 			finished := make(chan struct{})
 			go func() {
 				defer close(finished)
-				runNetnsInits(r, s.Err, label, image, hooks, params.Env, done)
+				runNetnsInits(r, s.Err, label, image, hooks, netnsEnv, done)
 			}()
 			netnsWait = func() { close(done); <-finished }
 		} else {
