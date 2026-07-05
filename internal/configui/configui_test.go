@@ -673,3 +673,27 @@ func TestCommentWarnOnLoad(t *testing.T) {
 		t.Errorf("a missing file must not warn:\n%s", v)
 	}
 }
+
+// TestCommentWarnTracksEditorRoundTrip pins the reviewer's finding: comments
+// added (or removed) via the ^e $EDITOR round-trip must update the
+// destroys-comments warning — it tracks the file, not the open-time state.
+func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.config")
+	os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644)
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, false)
+	if m.commentWarn {
+		t.Fatal("clean file must not warn at open")
+	}
+	// User adds a hand comment in $EDITOR, then the TUI reloads.
+	os.WriteFile(path, []byte("# my note\nagent = \"claude\"\n"), 0o644)
+	m = m.onEditorClosed(nil)
+	if !m.commentWarn {
+		t.Error("comments added via $EDITOR must arm the warning")
+	}
+	// And removing them disarms it.
+	os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644)
+	m = m.onEditorClosed(nil)
+	if m.commentWarn {
+		t.Error("warning must clear once the comments are gone")
+	}
+}

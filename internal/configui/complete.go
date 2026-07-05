@@ -47,6 +47,11 @@ func (m model) onEditorClosed(err error) model {
 		return m
 	}
 	m = m.loadConfig(cfg)
+	// The editor may have added (or removed) hand-written comments — recompute
+	// the destroys-comments warning so it tracks the file, not the open-time state.
+	if raw, rerr := os.ReadFile(m.filePath); rerr == nil {
+		m.commentWarn = handComments(string(raw))
+	}
 	m.errMsg = ""
 	m.status = "Reloaded from file"
 	return m
