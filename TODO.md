@@ -16,16 +16,18 @@ Two gates on going public. Until **both** ship: README-next.md must not
 replace README.md, and the site must not go live. (Both claim these
 features in copy -- shipping the copy first would make it a lie.)
 
-- [ ] **Default-deny firewall skill.** BUILT 2026-07-05 (design:
-  `docs/firewall-design.md`; unit-tested, committed). Remaining before
-  this checks off:
-  - [ ] **Host-side verification** (needs Docker; can't run from the dev
-    box): enable `firewall` on a real project; confirm the box reaches an
-    allowlisted host, can't reach others, `byre status` prints the
-    posture, and sabotaging the helper makes the launch die closed. Then
-    wire it as the gated `BYRE_DOCKER_TESTS=1` integration test (§5).
-  - [ ] Host action: `byre skill update` + rebuild to materialize the new
-    skill on existing installs (the usual caveat).
+- [ ] **Default-deny firewall skill.** BUILT + core host-verified
+  2026-07-05 (design: `docs/firewall-design.md`; unit-tested, committed).
+  Verified live on Docker Desktop via `byre develop`: box launches (gate
+  opens), `curl api.anthropic.com` works, `curl example.com` times out,
+  codex first-run auth reaches its allowlisted endpoint behind the wall.
+  Remaining before this checks off:
+  - [ ] Confirm `byre status` prints `Network: deny-by-default (skill:
+    firewall)` for that project (not yet eyeballed).
+  - [ ] Run the automated gated test (`-run IntegrationFirewall`) to lock
+    in allow/deny + the fail-closed case, and confirm it's not flaky (§5).
+  - [x] Host action: `byre skill update` + rebuild -- done (the develop
+    run above built the skill in).
   - Done when: the README contract block's claim ("enable the
     default-deny firewall skill to close it") is true, and the hero
     transcript's `network:` line is live proof -- it prints `open` or

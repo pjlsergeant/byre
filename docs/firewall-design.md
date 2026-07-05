@@ -1,11 +1,19 @@
 # Firewall skill: default-deny egress (design)
 
-**Status: IMPLEMENTED 2026-07-05 (pending host-side verification).** The
-built-in `firewall` skill + the core mechanisms (skill.toml
+**Status: IMPLEMENTED + core host-verified 2026-07-05.** The built-in
+`firewall` skill + the core mechanisms (skill.toml
 `network_posture`/`netns_init`, the launcher's launch gate, develop's
 netns-init orchestration, the honest status Network row) are built and
-unit-tested; the gated `BYRE_DOCKER_TESTS=1` end-to-end run still needs a
-Docker host. Decisions were grilled with Pete 2026-07-05; implementation
+unit-tested. Verified live on Docker Desktop via `byre develop`: the box
+launches (so the gate opened, i.e. the netns helper applied rules and
+signaled through the real develop path), an allowlisted host
+(`api.anthropic.com`) is reachable, a non-allowlisted one (`example.com`)
+times out (resolves then drops — scoped DNS + drop policy both working),
+and codex's first-run device-auth reached its allowlisted endpoint from
+behind the wall (gate-before-hooks ordering confirmed). Still to lock in:
+the `byre status` posture line eyeballed, and the gated
+`BYRE_DOCKER_TESTS=1` run (`-run IntegrationFirewall`, incl. fail-closed)
+confirmed non-flaky. Decisions were grilled with Pete 2026-07-05; implementation
 refinements are marked "(impl)" where they deviate from the reviewed
 draft.
 
