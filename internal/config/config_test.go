@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"byre/internal/project"
@@ -518,5 +519,43 @@ func TestValidateLayerRejectsWithinLayerDuplicates(t *testing.T) {
 	}}
 	if err := withRemoval.ValidateLayer(); err != nil {
 		t.Errorf("removal marker + real entry must stay saveable: %v", err)
+	}
+}
+
+// TestLoadRejectsWithinLayerCollisionInAnyLayer pins that the per-layer rules
+// hold for HAND-EDITED files too, not just editor saves — a duplicate in any
+// cascade layer errors at load, naming the file, instead of silently merging
+// last-wins. ParseFile stays lenient so the editor can open a broken file.
+func TestLoadRejectsWithinLayerCollisionInAnyLayer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	dup := "[[mounts]]\nhost = \"/a\"\ntarget = \"/x\"\n[[mounts]]\nhost = \"/b\"\ntarget = \"/x\"\n"
+
+	// Project layer (the host-side store copy).
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(p.Dir, 0o755)
+	storeCfg := filepath.Join(p.Dir, ProjectConfigName)
+	os.WriteFile(storeCfg, []byte(dup), 0o644)
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), storeCfg) {
+		t.Errorf("duplicate in the project layer should fail load naming the file, got %v", err)
+	}
+	os.Remove(storeCfg)
+
+	// Default layer.
+	defCfg := filepath.Join(home, "default.config")
+	os.WriteFile(defCfg, []byte(dup), 0o644)
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), defCfg) {
+		t.Errorf("duplicate in default.config should fail load naming the file, got %v", err)
+	}
+	os.Remove(defCfg)
+
+	// ParseFile (the editor's open path) must still tolerate it.
+	os.WriteFile(storeCfg, []byte(dup), 0o644)
+	if _, err := ParseFile(storeCfg); err != nil {
+		t.Errorf("ParseFile must stay lenient so the editor can open a broken file: %v", err)
 	}
 }

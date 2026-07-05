@@ -149,11 +149,28 @@ func Load(projectDir string) (Config, error) {
 	// trusts a config that the (rw-mounted) project could contain — a committed
 	// <project>/byre.config is adopted into the store by an explicit, host-side
 	// human action (see commands adopt), never read directly here.
-	proj, err := loadFile(filepath.Join(paths.Dir, ProjectConfigName))
+	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName))
 	if err != nil {
 		return Config{}, err
 	}
 	return resolveWith(paths.Home, proj)
+}
+
+// loadLayer reads one cascade layer AND holds it to the per-layer rules
+// (ValidateLayer): a hand-edited file with a same-layer collision (a repeated
+// mount target, two volumes on one target, ...) would otherwise be silently
+// last-wins-merged before the resolved Validate could see the loss. ParseFile
+// stays lenient on purpose — the config editor must be able to OPEN a broken
+// file so it can be fixed.
+func loadLayer(path string) (Config, error) {
+	c, err := loadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := c.ValidateLayer(); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
 }
 
 // ResolveProposed resolves the cascade as if proj were the project layer
@@ -170,7 +187,7 @@ func ResolveProposed(proj Config) (Config, error) {
 
 // resolveWith applies the cascade default ⊕ template ⊕ proj.
 func resolveWith(home string, proj Config) (Config, error) {
-	def, err := loadFile(filepath.Join(home, "default.config"))
+	def, err := loadLayer(filepath.Join(home, "default.config"))
 	if err != nil {
 		return Config{}, err
 	}
@@ -197,7 +214,7 @@ func resolveWith(home string, proj Config) (Config, error) {
 			}
 			return Config{}, statErr
 		}
-		tmpl, err = loadFile(tmplPath)
+		tmpl, err = loadLayer(tmplPath)
 		if err != nil {
 			return Config{}, err
 		}
