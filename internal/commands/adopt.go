@@ -52,6 +52,13 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 		fmt.Fprintf(s.Err, "byre: %s ships a byre.config but it doesn't parse (%v); ignoring it.\n", projectDir, perr)
 		return nil
 	}
+	// And never adopt a layer Load would reject: adoption copies the file into
+	// the store verbatim, so a same-layer collision (ParseFile is lenient by
+	// design) would brick the very next develop on a byre-owned file.
+	if verr := proposal.ValidateLayer(); verr != nil {
+		fmt.Fprintf(s.Err, "byre: %s ships a byre.config but it is invalid (%v); ignoring it.\n", projectDir, verr)
+		return nil
+	}
 	// Summarize the EFFECTIVE config the human is consenting to — the full
 	// cascade (default ⊕ template ⊕ proposal) PLUS the skills it enables — not
 	// just the raw proposal file, so a bare `template=x`/`agent=x` can't smuggle

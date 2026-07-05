@@ -117,3 +117,23 @@ func TestAdoptChangedReprompts(t *testing.T) {
 		t.Errorf("re-adopt should update the store: %s", b)
 	}
 }
+
+// TestAdoptRejectsInvalidLayer pins the adoption gate: a proposal that parses
+// but fails the per-layer rules (here: two mounts on one target) must not be
+// copied into the store — Load would reject that same file on the very next
+// develop, bricking a byre-owned path.
+func TestAdoptRejectsInvalidLayer(t *testing.T) {
+	p, proj := onboardPaths(t)
+	proposeConfig(t, proj, "[[mounts]]\nhost = \"/a\"\ntarget = \"/x\"\n[[mounts]]\nhost = \"/b\"\ntarget = \"/x\"\n")
+
+	s, _, errBuf := testStreams("y\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
+		t.Error("an invalid proposal must never reach the store")
+	}
+	if !strings.Contains(errBuf.String(), "invalid") {
+		t.Errorf("the user should be told why the proposal was ignored: %q", errBuf.String())
+	}
+}
