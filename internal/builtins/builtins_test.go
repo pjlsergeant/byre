@@ -512,3 +512,41 @@ func TestFirewallSkillResolves(t *testing.T) {
 		}
 	}
 }
+
+// TestFirewallComposesAgentEgress pins the derived-allowlist contract: the
+// firewall skill carries only the generic base (git/registries), each agent
+// skill carries its own endpoints, and enabling firewall + an agent unions
+// them -- so the firewall does NOT hardcode agent hosts.
+func TestFirewallComposesAgentEgress(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	union := strings.Join(res.Egress(), " ")
+	// claude's endpoint comes from the claude skill; github from the firewall
+	// base; debian's http mirror carries its explicit :80.
+	for _, want := range []string{"api.anthropic.com:443", "github.com:443", "deb.debian.org:80"} {
+		if !strings.Contains(union, want) {
+			t.Errorf("egress union missing %q; got: %s", want, union)
+		}
+	}
+	// The firewall skill must NOT itself carry the agent endpoints (the whole
+	// point of the redesign): with claude NOT enabled, anthropic must be absent.
+	fwOnly, err := skills.Resolve(config.Config{Skills: []string{"firewall"}}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(fwOnly.Egress(), " "), "anthropic") {
+		t.Errorf("firewall base must not hardcode agent endpoints; got: %v", fwOnly.Egress())
+	}
+	// Attribution: anthropic is credited to the claude skill, not the firewall.
+	for _, a := range res.EgressAllows() {
+		if strings.Contains(a.Host, "anthropic") && a.Skill != "claude" {
+			t.Errorf("anthropic egress attributed to %q, want claude", a.Skill)
+		}
+	}
+}

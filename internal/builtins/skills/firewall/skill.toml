@@ -41,6 +41,23 @@ dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall"]
 [runtime]
 network_posture = "deny-by-default"
 netns_init = "/usr/local/bin/byre-firewall"
+# The firewall's OWN base allowlist: the generic infra a firewalled dev box
+# needs regardless of agent — git hosting and the package registries. Agent
+# API endpoints are NOT here; each agent skill declares its own egress and the
+# firewall unions them all. Debian's apt mirrors default to http (port 80), so
+# they're listed with an explicit :80 (and :443 for https mirrors). Extend
+# per project with FIREWALL_ALLOW in [env] (host[:port], same grammar).
+# (Registry endpoints could later move to the language templates that imply
+# them; kept here for v1.)
+egress = [
+  "github.com", "api.github.com", "codeload.github.com",
+  "objects.githubusercontent.com", "raw.githubusercontent.com",
+  "registry.npmjs.org",
+  "proxy.golang.org", "sum.golang.org", "storage.googleapis.com",
+  "pypi.org", "files.pythonhosted.org",
+  "deb.debian.org:80", "deb.debian.org:443",
+  "security.debian.org:80", "security.debian.org:443",
+]
 
 [context]
 file = "context.md"

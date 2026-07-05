@@ -17,58 +17,51 @@ set -euo pipefail
 log() { echo "byre-firewall: $*" >&2; }
 die() { log "FATAL: $* — the launch gate stays shut; the box will exit (fail closed)."; exit 1; }
 
-# The default allowlist: the built-in agents' API/auth endpoints, github, and
-# the package registries the built-in templates imply. Static v1 snapshot —
-# generous but bounded. Extend per project with FIREWALL_ALLOW (space- or
-# comma-separated hostnames) in byre.config env.
-DEFAULT_ALLOW=(
-  # anthropic / claude
-  api.anthropic.com console.anthropic.com claude.ai statsig.anthropic.com
-  # openai / codex
-  api.openai.com auth.openai.com chatgpt.com
-  # google / gemini
-  generativelanguage.googleapis.com cloudcode-pa.googleapis.com
-  oauth2.googleapis.com accounts.google.com
-  # git hosting
-  github.com api.github.com codeload.github.com
-  objects.githubusercontent.com raw.githubusercontent.com
-  # package registries (node / go / python / debian)
-  registry.npmjs.org
-  proxy.golang.org sum.golang.org storage.googleapis.com
-  pypi.org files.pythonhosted.org
-  deb.debian.org security.debian.org
-)
-
 GATE_FILE=/etc/byre/launch-gate
 [ -s "$GATE_FILE" ] || die "no gate file at $GATE_FILE (image mismatch?)"
 gate_port="$(tr -cd '0-9' < "$GATE_FILE")"
 [ -n "$gate_port" ] || die "gate file holds no port"
 
-# Assemble the domain list: defaults + FIREWALL_ALLOW extension.
-domains=("${DEFAULT_ALLOW[@]}")
-for d in $(echo "${FIREWALL_ALLOW:-}" | tr ',' ' '); do
-  domains+=("$d")
+# The allowlist entries: the union of every enabled skill's declared egress
+# (BYRE_EGRESS, already normalized to host:port by byre) plus the user's
+# FIREWALL_ALLOW extension (host[:port], port defaults to 443). NO host list is
+# hardcoded here — each agent skill brings its own endpoints and byre unions
+# them. Both vars are space- or comma-separated.
+entries=()
+for e in $(echo "${BYRE_EGRESS:-} ${FIREWALL_ALLOW:-}" | tr ',' ' '); do
+  entries+=("$e")
 done
+requested=${#entries[@]}
 
-# Resolve every domain to its current A/AAAA records via getent (libc — no
-# extra tooling). Per-domain failure is a warning (the host may simply not
-# exist yet); resolving NOTHING means DNS itself is broken, which would leave
-# an all-DROP box — die instead so the failure is legible at launch.
-v4s=() v6s=()
-for d in "${domains[@]}"; do
-  ips="$(getent ahosts "$d" 2>/dev/null | awk '{print $1}' | sort -u)" || true
+# Resolve each entry to per-(ip,port) accept rules (getent = libc, no extra
+# tooling). Per-entry resolution failure is a warning — that host stays blocked.
+v4rules=() v6rules=()   # elements: "ip port"
+probe_host="" probe_port=""
+for e in "${entries[@]+"${entries[@]}"}"; do
+  if [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=443; fi
+  case "$port" in ''|*[!0-9]*) log "warning: bad egress entry '$e' — skipping"; continue ;; esac
+  ips="$(getent ahosts "$host" 2>/dev/null | awk '{print $1}' | sort -u)" || true
   if [ -z "$ips" ]; then
-    log "warning: cannot resolve $d — it will be blocked"
+    log "warning: cannot resolve $host — it will be blocked"
     continue
   fi
   for ip in $ips; do
     case "$ip" in
-      *:*) v6s+=("$ip") ;;
-      *) v4s+=("$ip") ;;
+      *:*) v6rules+=("$ip $port") ;;
+      *)
+        v4rules+=("$ip $port")
+        [ -n "$probe_host" ] || { probe_host="$ip"; probe_port="$port"; }
+        ;;
     esac
   done
 done
-[ "${#v4s[@]}" -gt 0 ] || die "resolved no allowlisted IPv4 addresses (is DNS working?)"
+
+# An EMPTY allowlist is a legitimate, maximally-locked box (only DNS + loopback
+# leave); a NON-empty request that resolved nothing means DNS is broken. Die
+# only on the latter — a deliberate lockdown is not a failure.
+if [ "$requested" -gt 0 ] && [ "${#v4rules[@]}" -eq 0 ] && [ "${#v6rules[@]}" -eq 0 ]; then
+  die "requested $requested host(s) but resolved none (is DNS working?)"
+fi
 
 # Rules are appended (allows) with the policy flipped to DROP LAST, per family
 # — the box's launcher is parked at the gate, so nothing runs during assembly.
@@ -116,37 +109,47 @@ for ns in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf 2>/dev/null | sort -
   esac
 done
 
-# Allowlisted hosts, then DROP policy — v4 always, v6 when present.
-for ip in "${v4s[@]}"; do
-  ipt -A OUTPUT -d "$ip" -j ACCEPT
+# Allowlisted (ip, port) rules — TCP to the EXACT port each host was listed for
+# (default 443), not all-ports to the IP (shared cloud/CDN addresses front many
+# services; scoping to the port is what "allow HTTPS to this host" means). Then
+# flip each family's policy to DROP.
+for r in "${v4rules[@]+"${v4rules[@]}"}"; do
+  read -r ip port <<<"$r"
+  ipt -A OUTPUT -d "$ip" -p tcp --dport "$port" -j ACCEPT
 done
 ipt -P OUTPUT DROP
 if [ -n "$ip6_ok" ]; then
-  for ip in "${v6s[@]+"${v6s[@]}"}"; do
-    ipt6 -A OUTPUT -d "$ip" -j ACCEPT
+  for r in "${v6rules[@]+"${v6rules[@]}"}"; do
+    read -r ip port <<<"$r"
+    ipt6 -A OUTPUT -d "$ip" -p tcp --dport "$port" -j ACCEPT
   done
   ipt6 -P OUTPUT DROP
 fi
 
 # Self-verify. The deny probe is the security property: a connect to a
 # non-allowlisted address must FAIL (DROP = the connect hangs; timeout kills
-# it). If it gets through, the wall isn't real — die, gate stays shut.
+# it). If it gets through, the wall isn't real — die, gate stays shut. Pick an
+# address not in the v4 allow set.
 deny_probe=1.1.1.1
-for ip in "${v4s[@]}"; do
-  [ "$ip" = "$deny_probe" ] && deny_probe="" && break
+for r in "${v4rules[@]+"${v4rules[@]}"}"; do
+  read -r ip _ <<<"$r"
+  [ "$ip" = "$deny_probe" ] && { deny_probe=""; break; }
 done
 if [ -n "$deny_probe" ]; then
   if timeout 3 bash -c "exec 3<>/dev/tcp/$deny_probe/443" 2>/dev/null; then
     die "deny probe reached $deny_probe:443 — rules are not effective"
   fi
 fi
-# The allow probe is availability, not security: warn only (a flaky edge or
-# an odd port must not brick the launch — the deny posture still holds).
-if ! timeout 5 bash -c "exec 3<>/dev/tcp/${v4s[0]}/443" 2>/dev/null; then
-  log "warning: allow probe to ${v4s[0]}:443 failed — allowlisted egress may be broken"
+# The allow probe is availability, not security: warn only (a flaky edge must
+# not brick the launch — the deny posture still holds). Skipped for a
+# deliberately empty allowlist (no host to probe).
+if [ -n "$probe_host" ]; then
+  if ! timeout 5 bash -c "exec 3<>/dev/tcp/$probe_host/$probe_port" 2>/dev/null; then
+    log "warning: allow probe to $probe_host:$probe_port failed — allowlisted egress may be broken"
+  fi
 fi
 
-log "egress deny-by-default applied: ${#v4s[@]} IPv4 / ${#v6s[@]} IPv6 allowlisted addresses"
+log "egress deny-by-default applied: ${#v4rules[@]} IPv4 / ${#v6rules[@]} IPv6 allow rules"
 
 # Open the launch gate: listen once on the loopback port; the box's launcher
 # poll-connects and proceeds. Shared netns = shared loopback, so this is the

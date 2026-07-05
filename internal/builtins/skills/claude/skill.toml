@@ -36,6 +36,10 @@ dockerfile = [
 # ~/.claude.json at the home root, which isn't persisted). DEVCONTAINER helps it
 # run headless.
 env = { CLAUDE_CONFIG_DIR = "/home/dev/.claude", DEVCONTAINER = "true", COLORTERM = "truecolor" }
+# Egress this agent needs if a firewall skill is enabled (host[:port], default
+# 443). The firewall unions every enabled skill's egress into its allowlist, so
+# claude carries its OWN endpoints rather than the firewall hardcoding them.
+egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.anthropic.com"]
 
 [agent]
 command = "claude --dangerously-skip-permissions"

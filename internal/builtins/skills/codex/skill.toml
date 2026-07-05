@@ -62,6 +62,9 @@ dockerfile = [
 # ever clobbering the binary (they only touch CODEX_HOME). HOST-VERIFY that codex
 # honors CODEX_HOME for all its state and doesn't write back into ~/.codex.
 env = { CODEX_HOME = "/home/dev/.codex-home" }
+# Egress codex needs if a firewall skill is enabled (host[:port], default 443).
+# api = inference; auth.openai.com + chatgpt.com = the device-auth login flow.
+egress = ["api.openai.com", "auth.openai.com", "chatgpt.com"]
 
 [agent]
 # Flag per moarcode's `codex exec --dangerously-bypass-approvals-and-sandbox`;

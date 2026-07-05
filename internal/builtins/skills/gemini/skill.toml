@@ -18,6 +18,11 @@ dockerfile = [
   "RUN rm -rf /home/dev/.gemini",
 ]
 
+[runtime]
+# Egress gemini needs if a firewall skill is enabled (host[:port], default 443):
+# the generative + code-assist APIs and the Google OAuth login endpoints.
+egress = ["generativelanguage.googleapis.com", "cloudcode-pa.googleapis.com", "oauth2.googleapis.com", "accounts.google.com"]
+
 [agent]
 # Verify the non-interactive/autonomy flag for gemini-cli.
 command = "gemini --yolo"
