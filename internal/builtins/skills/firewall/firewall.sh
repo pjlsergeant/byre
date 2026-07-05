@@ -70,36 +70,62 @@ for d in "${domains[@]}"; do
 done
 [ "${#v4s[@]}" -gt 0 ] || die "resolved no allowlisted IPv4 addresses (is DNS working?)"
 
-# IPv4 rules. Append allows first, flip the policy to DROP last — the box's
-# launcher is parked at the gate, so nothing runs during assembly. -w waits on
-# the xtables lock rather than racing it.
+# Rules are appended (allows) with the policy flipped to DROP LAST, per family
+# — the box's launcher is parked at the gate, so nothing runs during assembly.
+# -w waits on the xtables lock rather than racing it.
 ipt() { iptables -w "$@"; }
+ipt6() { ip6tables -w "$@"; }
+
+# Is there a v6 stack in this netns at all? A host without one has nothing to
+# leak through v6 — skip rather than dying on missing modules.
+ip6_ok=
+if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
+  ip6_ok=1
+else
+  log "IPv6 unavailable in this netns; skipping ip6tables (nothing to leak through)"
+fi
+
+# Baseline, both families: loopback (covers Docker's embedded resolver at
+# 127.0.0.11) and established/related return traffic.
 ipt -A OUTPUT -o lo -j ACCEPT
 ipt -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-# DNS stays open (both transports): resolution must work for the box to be
-# usable, and Docker's embedded resolver forwards outside the netns anyway.
-# This is the documented DNS-tunneling hole; v2 may force a filtering resolver.
-ipt -A OUTPUT -p udp --dport 53 -j ACCEPT
-ipt -A OUTPUT -p tcp --dport 53 -j ACCEPT
+if [ -n "$ip6_ok" ]; then
+  ipt6 -A OUTPUT -o lo -j ACCEPT
+  ipt6 -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+fi
+
+# DNS: allow port 53 ONLY to the nameservers this box actually uses (from
+# /etc/resolv.conf), not to every host — an unscoped port-53 allow is a direct
+# exfil channel to any attacker-run resolver. The loopback resolver (Docker's
+# 127.0.0.11) is already covered above; an external resolver (host-network /
+# custom --dns) gets a scoped allow here. Resolving through YOUR nameserver is
+# still a DNS-tunneling channel (the documented v1 hole; v2 may force a
+# filtering resolver), but no longer an open channel to an arbitrary one.
+for ns in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf 2>/dev/null | sort -u); do
+  case "$ns" in
+    127.*|::1) continue ;; # loopback resolver already allowed via -o lo
+    *:*)
+      [ -n "$ip6_ok" ] || continue
+      ipt6 -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
+      ipt6 -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
+      ;;
+    *)
+      ipt -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
+      ipt -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
+      ;;
+  esac
+done
+
+# Allowlisted hosts, then DROP policy — v4 always, v6 when present.
 for ip in "${v4s[@]}"; do
   ipt -A OUTPUT -d "$ip" -j ACCEPT
 done
 ipt -P OUTPUT DROP
-
-# IPv6: same shape. A host without IPv6 support has no v6 stack to leak
-# through — skip with a note rather than dying on the missing modules.
-if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
-  ipt6() { ip6tables -w "$@"; }
-  ipt6 -A OUTPUT -o lo -j ACCEPT
-  ipt6 -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-  ipt6 -A OUTPUT -p udp --dport 53 -j ACCEPT
-  ipt6 -A OUTPUT -p tcp --dport 53 -j ACCEPT
+if [ -n "$ip6_ok" ]; then
   for ip in "${v6s[@]+"${v6s[@]}"}"; do
     ipt6 -A OUTPUT -d "$ip" -j ACCEPT
   done
   ipt6 -P OUTPUT DROP
-else
-  log "IPv6 unavailable in this netns; skipping ip6tables (nothing to leak through)"
 fi
 
 # Self-verify. The deny probe is the security property: a connect to a

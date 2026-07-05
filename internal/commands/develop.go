@@ -152,7 +152,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		finished := make(chan struct{})
 		go func() {
 			defer close(finished)
-			runNetnsInits(r, s.Err, params.Name, image, hooks, params.Env, done)
+			runNetnsInits(r, s.Err, workdirLabel(paths), image, hooks, params.Env, done)
 		}()
 		netnsWait = func() { close(done); <-finished }
 	}

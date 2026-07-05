@@ -192,18 +192,6 @@ func execArgs(containerID string, uid, gid int, workdir string, env map[string]s
 	return append(args, command...)
 }
 
-// ContainerRunning reports whether a container with the given name is
-// currently running. Used to poll for the box's netns existing before a
-// netns-init helper joins it; an inspect error (typically "no such object"
-// while the container hasn't been created yet) reads as "not running".
-func (r *Runner) ContainerRunning(name string) (bool, error) {
-	out, err := r.capture(string(r.engine), "inspect", "-f", "{{.State.Running}}", name)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == "true", nil
-}
-
 // NetnsInit runs a skill's declared netns-init entrypoint in the target
 // container's network namespace: a run-to-completion helper container sharing
 // ONLY the netns (not fs, not pid), as root with CAP_NET_ADMIN — the one

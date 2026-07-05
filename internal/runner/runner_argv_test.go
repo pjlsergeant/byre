@@ -158,15 +158,3 @@ func TestNetnsInitArgv(t *testing.T) {
 		t.Fatalf("NetnsInit argv = %q, want %q", got, want)
 	}
 }
-
-func TestContainerRunning(t *testing.T) {
-	for out, want := range map[string]bool{"true\n": true, "false\n": false} {
-		r := &Runner{engine: Docker, capture: func(string, ...string) (string, error) {
-			return out, nil
-		}}
-		got, err := r.ContainerRunning("byre-x")
-		if err != nil || got != want {
-			t.Fatalf("ContainerRunning with %q = %v, %v; want %v", out, got, err, want)
-		}
-	}
-}

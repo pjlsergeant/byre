@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"byre/internal/project"
@@ -18,6 +19,12 @@ import (
 // calls; ops additionally records the mutating calls in order, for tests that
 // assert sequencing (e.g. build before run).
 type fakeRunner struct {
+	// mu guards the recorded slices/counters: during develop's netns window the
+	// foreground Run (main goroutine) and the netns-init poll (RunningContainers
+	// ByLabel + NetnsInit, background goroutine) touch this fake concurrently.
+	// The real runner shares no such mutable state; this is test-only.
+	mu sync.Mutex
+
 	engine      runner.Engine // "" means docker
 	rootless    bool
 	rootlessErr error
@@ -32,8 +39,7 @@ type fakeRunner struct {
 	runErr     error
 	execErr    error
 	runs       [][]string
-	execs      []string        // "id uid:gid workdir cmd..."
-	running    map[string]bool // ContainerRunning by name
+	execs      []string // "id uid:gid workdir cmd..."
 	netnsErr   error
 	netnsInits []string // NetnsInit: "container entrypoint"
 
@@ -68,6 +74,8 @@ func (f *fakeRunner) Engine() runner.Engine {
 func (f *fakeRunner) IsRootlessPodman() (bool, error) { return f.rootless, f.rootlessErr }
 
 func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.liveCalls++
 	if f.liveErr != nil {
 		return nil, f.liveErr
@@ -80,15 +88,17 @@ func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
 
 func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) { return f.env, f.envErr }
 
-func (f *fakeRunner) ContainerRunning(name string) (bool, error) { return f.running[name], nil }
-
 func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.netnsInits = append(f.netnsInits, container+" "+entrypoint)
 	f.ops = append(f.ops, "netnsinit "+entrypoint)
 	return f.netnsErr
 }
 
 func (f *fakeRunner) Run(args []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.runs = append(f.runs, args)
 	f.ops = append(f.ops, "run")
 	return f.runErr

@@ -104,6 +104,12 @@ const infraLayer = "ARG BYRE_UID=1000\n" +
 	" && echo \"dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash\" >> /etc/passwd \\\n" +
 	" && mkdir -p /home/dev /workspace && chown \"${BYRE_UID}:${BYRE_GID}\" /home/dev\n" +
 	"ENV PATH=/home/dev/.local/bin:$PATH\n" +
+	// Strip any inherited HEALTHCHECK: the engine runs healthcheck commands in
+	// the container's netns independently of our ENTRYPOINT, so a base image's
+	// probe could do network I/O before a network-posture skill's launch gate
+	// lands (fail-open window). byre boxes are interactive sessions, not
+	// health-monitored services, so we never want one regardless.
+	"HEALTHCHECK NONE\n" +
 	"COPY " + LauncherName + " " + launcherPath + "\n" +
 	"RUN chmod +x " + launcherPath + "\n"
 

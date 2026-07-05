@@ -14,7 +14,6 @@ type sessionRunner interface {
 	Engine() runner.Engine
 	IsRootlessPodman() (bool, error)
 	RunningContainersByLabel(label string) ([]string, error)
-	ContainerRunning(name string) (bool, error)
 	ContainerEnv(id string) (map[string]string, error)
 	Run(args []string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string) error

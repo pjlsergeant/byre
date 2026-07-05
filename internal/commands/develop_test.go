@@ -158,21 +158,27 @@ func netnsSkill(path string) skills.Resolved {
 
 func TestDevelopRunsNetnsInitsOnceUp(t *testing.T) {
 	p, _ := testPaths(t)
-	name := "byre-" + p.WorktreeID
-	f := &fakeRunner{running: map[string]bool{name: true}}
+	// liveSecond, not live: the develop fast path queries the workdir label
+	// first and must see NOTHING (else it refuses as already-running). Our box
+	// appears only from the 2nd query on — what the netns poll sees after the
+	// run starts it. The hook must target OUR container id (from the label),
+	// not the deterministic name, so a squatter of byre-<id> can't get it.
+	id := "cafef00d1234"
+	f := &fakeRunner{liveSecond: liveWorkdir(p, id)}
 	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.netnsInits) != 1 || f.netnsInits[0] != name+" /usr/local/bin/byre-firewall" {
-		t.Fatalf("expected the netns hook applied to the running box, got %v", f.netnsInits)
+	if len(f.netnsInits) != 1 || f.netnsInits[0] != id+" /usr/local/bin/byre-firewall" {
+		t.Fatalf("expected the netns hook applied to OUR container id, got %v", f.netnsInits)
 	}
 }
 
 func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
 	p, _ := testPaths(t)
-	// The container never reports running (e.g. the run failed instantly):
-	// the poll must exit via the done channel, not hang or fire the hook.
+	// Our container never appears under its label (e.g. the run failed
+	// instantly, or a peer we don't own won the name race): the poll must exit
+	// via the done channel, not hang or fire the hook.
 	f := &fakeRunner{}
 	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
 	if err != nil {
@@ -185,8 +191,7 @@ func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
 
 func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
 	p, _ := testPaths(t)
-	name := "byre-" + p.WorktreeID
-	f := &fakeRunner{running: map[string]bool{name: true}, netnsErr: errors.New("iptables: boom")}
+	f := &fakeRunner{liveSecond: liveWorkdir(p, "cafef00d1234"), netnsErr: errors.New("iptables: boom")}
 	s, _, stderr := testStreams("", false)
 	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
 		t.Fatal(err)
@@ -198,7 +203,7 @@ func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
 
 func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{running: map[string]bool{"byre-" + p.WorktreeID: true}}
+	f := &fakeRunner{liveSecond: liveWorkdir(p, "cafef00d1234")}
 	if err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
 		t.Fatal(err)
 	}
