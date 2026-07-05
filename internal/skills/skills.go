@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -24,6 +25,38 @@ import (
 // status prints it verbatim, so it must not carry spaces, parens, or control
 // characters that could forge the surrounding status annotations.
 var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// egressHostRe bounds an egress hostname: a plain DNS name (or IP), no shell
+// metacharacters. The value is passed to the netns helper as an env var and
+// used there in `getent`/`iptables` args, so keeping it to hostname characters
+// keeps it injection-safe and legible.
+var egressHostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:_-]*[A-Za-z0-9])?$`)
+
+// parseEgress splits a `host` or `host:port` entry, defaulting the port to
+// 443. It rejects a malformed host or an out-of-range port. A bracketed IPv6
+// literal ("[::1]:443") is out of scope — egress entries are hostnames or
+// IPv4; a bare IPv6 with colons is ambiguous with host:port, so reject it.
+func parseEgress(entry string) (host string, port int, err error) {
+	e := strings.TrimSpace(entry)
+	if e == "" {
+		return "", 0, fmt.Errorf("empty egress entry")
+	}
+	host, port = e, 443
+	// Split a trailing :port only when the tail is all digits, so a hostname
+	// stays intact and an accidental IPv6 (multiple colons) is caught below.
+	if i := strings.LastIndexByte(e, ':'); i >= 0 {
+		if p, perr := strconv.Atoi(e[i+1:]); perr == nil {
+			host, port = e[:i], p
+		}
+	}
+	if port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("egress %q: port out of range", entry)
+	}
+	if strings.ContainsRune(host, ':') || !egressHostRe.MatchString(host) {
+		return "", 0, fmt.Errorf("egress %q: not a valid host[:port]", entry)
+	}
+	return host, port, nil
+}
 
 // AgentContrib is the agent-skill launch contribution.
 type AgentContrib struct {
@@ -81,6 +114,13 @@ type File struct {
 		// firewall skill's application vehicle: rules are programmed from
 		// OUTSIDE the box, so nothing inside it needs (or gets) privileges.
 		NetnsInit string `toml:"netns_init"`
+		// Egress is the set of hosts this skill needs to reach, as `host` or
+		// `host:port` (port defaults to 443). A network-posture skill
+		// (firewall) unions every enabled skill's Egress into its allowlist —
+		// so an agent skill carries its OWN API endpoints rather than the
+		// firewall hardcoding them, and enabling only what you use opens only
+		// what it needs. Declarative: with no firewall enabled it does nothing.
+		Egress []string `toml:"egress"`
 	} `toml:"runtime"`
 	Agent   *AgentContrib   `toml:"agent"`
 	Volumes []config.Volume `toml:"volumes"`
@@ -239,6 +279,46 @@ func (r Resolved) NetnsInits() []NetnsHook {
 	for _, sk := range r.Skills {
 		if p := sk.File.Runtime.NetnsInit; p != "" {
 			out = append(out, NetnsHook{Skill: sk.Name, Path: p})
+		}
+	}
+	return out
+}
+
+// EgressAllow is one host:port an enabled skill needs to reach, attributed to
+// the skill — for status legibility (which skill opened which hole).
+type EgressAllow struct {
+	Skill string
+	Host  string
+	Port  int
+}
+
+// EgressAllows lists every enabled skill's egress entries, parsed and
+// attributed, in enable order. Resolve validated them, so parsing can't fail.
+func (r Resolved) EgressAllows() []EgressAllow {
+	var out []EgressAllow
+	for _, sk := range r.Skills {
+		for _, e := range sk.File.Runtime.Egress {
+			host, port, err := parseEgress(e)
+			if err != nil {
+				continue // unreachable: Resolve validated every entry
+			}
+			out = append(out, EgressAllow{Skill: sk.Name, Host: host, Port: port})
+		}
+	}
+	return out
+}
+
+// Egress is the deduped, normalized (host:port) union of every enabled skill's
+// egress entries — what a network-posture skill's helper consumes to build its
+// allowlist. Order is first-seen across skills, so it's deterministic.
+func (r Resolved) Egress() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, a := range r.EgressAllows() {
+		hp := fmt.Sprintf("%s:%d", a.Host, a.Port)
+		if !seen[hp] {
+			seen[hp] = true
+			out = append(out, hp)
 		}
 	}
 	return out
@@ -478,6 +558,14 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 		// path so it stays legible data (the script itself is skill-shipped).
 		if p := f.Runtime.NetnsInit; p != "" && !filepath.IsAbs(p) {
 			return Resolved{}, fmt.Errorf("skill %q: netns_init %q must be an absolute image path", name, p)
+		}
+		// egress entries feed a firewall allowlist and are passed to the netns
+		// helper as data; validate host[:port] shape up front so a typo fails
+		// loudly rather than silently dropping a host from the allowlist.
+		for _, e := range f.Runtime.Egress {
+			if _, _, eerr := parseEgress(e); eerr != nil {
+				return Resolved{}, fmt.Errorf("skill %q: %w", name, eerr)
+			}
 		}
 
 		// Cross-skill env conflicts: a differing value for the same key would be

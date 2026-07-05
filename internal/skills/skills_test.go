@@ -510,3 +510,54 @@ func TestResolveRejectsRelativeNetnsInit(t *testing.T) {
 		t.Fatal("relative netns_init must be rejected")
 	}
 }
+
+func TestEgressUnionAndAttribution(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "claude", "[runtime]\negress = [\"api.anthropic.com\", \"claude.ai\"]\n", nil)
+	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"deny-by-default\"\negress = [\"github.com\", \"deb.debian.org:80\", \"api.anthropic.com\"]\n", nil)
+	res, err := Resolve(config.Config{Skills: []string{"claude", "fw"}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Union: normalized host:port, deduped (api.anthropic.com appears in both),
+	// port defaulted to 443, explicit :80 preserved, first-seen order.
+	got := res.Egress()
+	want := []string{"api.anthropic.com:443", "claude.ai:443", "github.com:443", "deb.debian.org:80"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("Egress() = %v, want %v", got, want)
+	}
+	// Attribution keeps the per-skill duplicate (both declared anthropic) so
+	// status can show who asked for what.
+	allows := res.EgressAllows()
+	var fromClaude, fromFw int
+	for _, a := range allows {
+		switch a.Skill {
+		case "claude":
+			fromClaude++
+		case "fw":
+			fromFw++
+		}
+	}
+	if fromClaude != 2 || fromFw != 3 {
+		t.Errorf("attribution counts: claude=%d fw=%d; allows=%+v", fromClaude, fromFw, allows)
+	}
+}
+
+func TestEgressRejectsMalformed(t *testing.T) {
+	for _, bad := range []string{"api.anthropic.com:99999", "has space.com", "host:notaport:443", "bad;host"} {
+		dir := t.TempDir()
+		writeSkill(t, dir, "fw", "[runtime]\negress = [\""+bad+"\"]\n", nil)
+		if _, err := Resolve(config.Config{Skills: []string{"fw"}}, dir); err == nil {
+			t.Errorf("egress %q must be rejected", bad)
+		}
+	}
+}
+
+func TestEgressPortDefaultsTo443(t *testing.T) {
+	if h, p, err := parseEgress("api.anthropic.com"); err != nil || h != "api.anthropic.com" || p != 443 {
+		t.Fatalf("parseEgress default = (%q,%d,%v), want (api.anthropic.com,443,nil)", h, p, err)
+	}
+	if h, p, err := parseEgress("deb.debian.org:80"); err != nil || h != "deb.debian.org" || p != 80 {
+		t.Fatalf("parseEgress explicit = (%q,%d,%v)", h, p, err)
+	}
+}
