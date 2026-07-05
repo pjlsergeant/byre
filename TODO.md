@@ -33,8 +33,14 @@ features in copy -- shipping the copy first would make it a lie.)
     transcript's `network:` line is live proof -- it prints `open` or
     `deny-by-default` per config. (README.md already mentions the skill;
     README-next's stronger claims stay gated on the host verification.)
+  - DONE since: allowlist DERIVED from enabled skills' `[runtime] egress`
+    declarations + port-scoped rules (host[:port], default 443) -- Pete's
+    2026-07-05 catches; needs a fresh host-side spot-check (rebuild, then
+    confirm agent API + `curl example.com` behavior unchanged, and that
+    `git clone https://...` works while ssh-to-github hangs unless
+    `github.com:22` is added to FIREWALL_ALLOW).
   - v2 candidates (deliberately not v1): mid-session re-resolve of CDN
-    IPs, allowlist derived from enabled skills, DNS filtering.
+    IPs, DNS filtering, registry egress moved into language templates.
 - [ ] **`brew install byre` works.** The hero and Install copy lead with
   it; the two-command story depends on it.
   - What: a tap is enough -- `brew install pjlsergeant/tap/byre` -- with

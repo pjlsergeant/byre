@@ -9,7 +9,10 @@ hangs then times out is the wall, not a network outage.
   outside; nothing inside the box can change them. Don't try.
 - If a host you legitimately need is blocked, tell the user: they can extend
   the allowlist by setting the `FIREWALL_ALLOW` env var in `byre.config`
-  (space-separated hostnames) and restarting the session.
+  (space-separated `host` or `host:port` entries; port defaults to 443) and
+  restarting the session. Allowed hosts are reachable ONLY on their listed
+  port — `https://host` working while `ssh host` hangs is the port scoping,
+  not a bug.
 - DNS resolution works for all names (only connecting is restricted). A host
   whose IPs rotated mid-session (CDNs) may start failing; a session restart
   re-resolves the allowlist.

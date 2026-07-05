@@ -174,17 +174,33 @@ Core grows (generic, not firewall-specific):
 
 ## Allowlist
 
-- **Decided (impl): static v1 default in the skill's script** -- the
-  built-in agents' API/auth endpoints, github, and the registries the
-  built-in templates imply. Deriving the list from enabled skills (agent
-  skills declaring their endpoints) stays a v2 refinement.
+- **DERIVED, not static (redesigned 2026-07-05, Pete's catch).** Each
+  skill declares the egress it needs via a typed skill.toml field:
+  `[runtime] egress = ["host[:port]", ...]` (port defaults to 443).
+  claude/codex/gemini carry their own API+auth endpoints; the firewall
+  skill carries only the generic base (git hosting, package registries,
+  debian apt mirrors with explicit `:80`). byre unions every enabled
+  skill's egress (`skills.Resolved.Egress()`) and passes it to the netns
+  helper as `BYRE_EGRESS`. Enabling only claude opens only claude's
+  endpoints; a new agent skill brings its own egress instead of the
+  firewall having to learn about it. `byre status` shows the resolved
+  allowlist as an `Egress:` section, each host:port attributed to the
+  declaring skill.
+- **Port-scoped rules (same catch).** An allowlist entry means "TCP to
+  this host at this port", emitted as `-d <ip> -p tcp --dport <port> -j
+  ACCEPT` -- not all-ports to the IP. Agent APIs and registries sit on
+  shared CDN/cloud addresses that front many tenants; scoping to the
+  port collapses "anything to this address" to what was actually meant.
+  Default 443; debian's http mirrors are declared `:80` explicitly.
+- **An empty allowlist is legal**: a maximally-locked box (loopback +
+  scoped DNS only). The helper dies only when a NON-empty request
+  resolves to nothing (DNS broken), never on a deliberate lockdown.
 - **Per-project additions: the `FIREWALL_ALLOW` env var in `byre.config`**
-  (space/comma-separated hostnames), which byre re-passes to the helper.
-  (impl: the reviewed draft said a `firewall_allow` config key; that would
-  put a firewall-specific key in core config -- opinion in core. The
-  existing generic env mechanism gives the same capability: it lives in
-  the config cascade, is editable in the config UI's env editor, and is
-  visible in status like any env grant.)
+  -- same `host[:port]` grammar, space/comma-separated -- which byre
+  re-passes to the helper. (impl: the reviewed draft said a
+  `firewall_allow` config key; that would put a firewall-specific key in
+  core config -- opinion in core. The generic env mechanism gives the
+  same capability: config cascade, config UI env editor, status-visible.)
 
 ## Failure modes (analyzed)
 
@@ -219,14 +235,17 @@ Core grows (generic, not firewall-specific):
 
 1. Re-resolve story for long sessions (accept v1 bluntness? a `byre`
    subcommand to re-run the helper?).
-2. Deriving the default allowlist from enabled skills (v2; static in v1).
+2. Moving the package-registry egress from the firewall base into the
+   language templates that imply them (refinement; registries currently
+   open on every firewalled box regardless of stack).
 
 (Resolved by review: ready-signal mechanism = loopback socket handshake;
 a filesystem marker fails open across `docker restart` because `/run`
 isn't tmpfs in Docker containers by default. Resolved by impl: the
-helper concurrency lives in develop -- a goroutine polling
-ContainerRunning, joined before develop returns; a hook failure warns
-and lets the gate enforce fail-closed.)
+helper concurrency lives in develop -- a goroutine polling by nonce
+label, joined before develop returns; a hook failure warns and lets the
+gate enforce fail-closed. Resolved 2026-07-05: derived allowlist + port
+scoping -- see the Allowlist section.)
 
 ## Verification
 

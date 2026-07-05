@@ -15,12 +15,16 @@
 # gate's loopback port. Any failure means the gate never opens and the box
 # exits instead of running open. See gen/launcher.sh.
 #
-# Allowlist: a static default in firewall.sh (agent APIs, github, common
-# package registries), extendable per project via the FIREWALL_ALLOW env var
-# in byre.config ([env] FIREWALL_ALLOW = "host1 host2 ..."), which byre
-# re-passes to the helper. IPs are resolved at apply time — a snapshot; a CDN
-# rotating a domain's IPs mid-session makes that host start failing (closed,
-# not open). Restart the session to re-resolve.
+# Allowlist: DERIVED — byre unions every enabled skill's [runtime] egress
+# declarations (each agent skill carries its own API endpoints; this skill
+# carries only the generic base below) and passes the union to the helper as
+# BYRE_EGRESS. Entries are host[:port], port defaulting to 443, and each rule
+# is scoped to that TCP port, not all-ports to the IP (shared CDN addresses
+# front many tenants). Extend per project via the FIREWALL_ALLOW env var in
+# byre.config ([env] FIREWALL_ALLOW = "host1 host2:8443 ..."), same grammar.
+# IPs are resolved at apply time — a snapshot; a CDN rotating a domain's IPs
+# mid-session makes that host start failing (closed, not open). Restart the
+# session to re-resolve.
 #
 # Known holes, deliberate (documented in the design doc): DNS is allowed
 # through (port 53 + Docker's embedded resolver), so DNS tunneling is not
