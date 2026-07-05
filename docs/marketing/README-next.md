@@ -1,6 +1,8 @@
 <!--
   Draft replacement for README.md, per docs/marketing/positioning.md (2026-07-03,
-  amended 2026-07-04). LAUNCH BLOCKERS (tracked authoritatively in TODO.md
+  amended 2026-07-04). NOTE: relative links in this draft are written for its
+  DESTINATION (the repo root) and do not resolve from docs/marketing/.
+  LAUNCH BLOCKERS (tracked authoritatively in TODO.md
   §1) -- this file must not replace README.md before:
   1. the default-deny firewall skill ships (the contract block claims it);
   2. `brew install byre` works (the hero and Install claim it -- needs at
@@ -231,7 +233,7 @@ container against its own checkout, so sessions run side by side.
 Worktrees you made yourself with `git worktree add` inherit the same way:
 just `byre develop` in them. You pick once where new worktrees live
 (`byre config --global`). Commits land in the shared object store,
-`byre status` shows the whole family, and `reset`/`forget` name their
+`byre status` shows every worktree session in the project, and `reset`/`forget` name their
 blast radius before touching anything shared.
 
 ## Volumes & state

@@ -3,8 +3,9 @@
 > **Captured 2026-06-17. May now be out of date.** The actionable conclusions
 > from this discussion (positioning, non-goals, Podman/`engine` support, the
 > single `!name` removal mechanism, `byre status` output shape, and the
-> rootless-Podman caveat) have been folded into `byre-spec-v0.md` (v0.2), which
-> is the source of truth. This document is kept as a record of the reasoning.
+> rootless-Podman caveat) were folded into the spec (v0.2) -- which has since
+> become `docs/ARCHITECTURE.md` plus `PRINCIPLES.md`/`adr/` (2026-07-05 doc
+> taxonomy). This document is kept as a record of the reasoning.
 >
 > Note: the competitive claims about Docker Sandboxes below were gathered via an
 > LLM/web search (see the `utm_source=chatgpt.com` citations) about a new,

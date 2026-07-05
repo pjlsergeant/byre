@@ -118,7 +118,7 @@ baked at the host UID/GID, home/workspace ownership, the launcher install
 as root). The block family is named by contributor: template block, core
 block, skill blocks, project block. Not emitted on the full-Dockerfile
 opt-out -- what you take ownership of on that path is exactly this block
-(plus the USER/ENTRYPOINT tail).
+and that tail.
 _Avoid_: infra layer (collides with cascade layers and Docker image
 layers), users block; "plumbing" stays informal prose for core's job
 
@@ -213,6 +213,9 @@ config) onto its new path-derived id.
 The named principle that byre's threat model is the *agent*, never the
 user. Protections are tamper-proof against the box and one config edit
 away from off for the user; byre never refuses a deliberate user choice.
+We don't give you a gun that will shoot you in the foot if you were aiming
+somewhere else, but we do give you a gun that lets you accurately target
+your foot should you wish to.
 Substance: PRINCIPLES.md #1.
 
 **Legibility**:

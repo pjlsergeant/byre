@@ -21,7 +21,7 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `engine = "auto"` — auto | docker | podman
 - `mounts = [{ host = "~/data", target = "/data", mode = "ro" }]` — host bind mounts
 - `volumes = [{ name = "cache", role = "cache", target = "/c" }]` — named volumes
-- `dockerfile_pre  = ["RUN ..."]` — raw Dockerfile lines BEFORE byre's infra layer
+- `dockerfile_pre  = ["RUN ..."]` — raw Dockerfile lines BEFORE byre's core block
 - `dockerfile_post = ["RUN ..."]` — raw Dockerfile lines at the project tail
 - `run_args = ["--cap-add=SYS_PTRACE"]` — raw `docker run` flags
 - `dockerfile = "Dockerfile"` — opt out of generation; bring your own
