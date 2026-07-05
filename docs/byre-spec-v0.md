@@ -570,6 +570,9 @@ with no root in the launch path) on a native Linux host.
 
 ## Open questions
 
+> Open *work* is tracked authoritatively in `TODO.md` at the repo root; this
+> section keeps the design context and rationale.
+
 - **Image distribution** — ~~embed a base Dockerfile and build on first run, or
   ship a prebuilt base byre layers onto?~~ **Resolved:** byre builds per host and
   does *not* ship images between machines. These containers are throwaway

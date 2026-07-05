@@ -1,7 +1,7 @@
 <!--
   Draft replacement for README.md, per docs/positioning.md (2026-07-03,
-  amended 2026-07-04). LAUNCH BLOCKERS -- this file must not replace
-  README.md before:
+  amended 2026-07-04). LAUNCH BLOCKERS (tracked authoritatively in TODO.md
+  §1) -- this file must not replace README.md before:
   1. the default-deny firewall skill ships (the contract block claims it);
   2. `brew install byre` works (the hero and Install claim it -- needs at
      least a tap, e.g. `brew install pjlsergeant/tap/byre`, and the copy

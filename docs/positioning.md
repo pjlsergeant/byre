@@ -500,6 +500,9 @@ Two notes on the hero transcript:
 
 ## Product implications (small, on-brand, argued for by this positioning)
 
+> Tracked authoritatively in `TODO.md` (launch blockers + nice-to-haves);
+> this section holds the positioning argument for *why*.
+
 1. **(Nice-to-have) Print the grant summary on launch.** The hero transcript
    is an accepted illustrative mock — no product change required. Still, a
    few terse `byre:` lines (project mount, host mounts, network, agent)

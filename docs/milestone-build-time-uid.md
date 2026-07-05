@@ -383,7 +383,8 @@ internal rationale comment was updated to bake-at-build.
 - [x] `internal/runner/runner_test.go` `TestIsRootlessPodman` — keep (detection
   stays; its consumer changes from warn → mode-select).
 
-**Add** (deferred — need a Docker host, so they're written/run host-side, not from the dev box):
+**Add** (deferred — need a Docker host, so they're written/run host-side, not
+from the dev box; tracked authoritatively in `TODO.md` § Test debt):
 - [ ] Gated integration test (`BYRE_DOCKER_TESTS=1`): a fresh `develop` produces
   host-UID-owned files in `/home/dev`, a fresh cache volume, and `/workspace`,
   with **no** root phase / `chown` / `gosu` in the launch path.
