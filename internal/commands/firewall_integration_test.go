@@ -50,7 +50,15 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	if err := buildImage(r, p, cfg, res, image, false); err != nil {
 		t.Fatalf("firewall image failed to build: %v", err)
 	}
-	return image, res.Env()
+	// Mirror develop's netns env: the helper builds its allowlist from
+	// BYRE_EGRESS (the skill union) — without it the box comes up fully
+	// locked and the allow probe below would wrongly fail.
+	env := res.Env()
+	if env == nil {
+		env = map[string]string{}
+	}
+	env["BYRE_EGRESS"] = strings.Join(res.Egress(), " ")
+	return image, env
 }
 
 // dockerWait blocks until the named container exits and returns its exit code.
