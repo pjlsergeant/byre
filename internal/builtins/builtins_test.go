@@ -465,3 +465,50 @@ func TestUpdateTemplatesOverwritesAndBacksUp(t *testing.T) {
 		t.Errorf("second update should change nothing: %+v err=%v", again, err)
 	}
 }
+
+// TestFirewallSkillResolves pins the firewall skill's contract: it declares
+// the posture and the netns hook (both consumed by core), stays composable
+// with an agent skill, and grants NOTHING to the box itself — no caps, no
+// run_args, no mounts. The box's only firewall-related content is inert
+// tooling; privileges live solely in the netns-init helper byre runs outside.
+func TestFirewallSkillResolves(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall"}}, dest)
+	if err != nil {
+		t.Fatalf("firewall + claude must resolve together: %v", err)
+	}
+	posture, by := res.NetworkPosture()
+	if posture != "deny-by-default" || by != "firewall" {
+		t.Errorf("posture = %q by %q", posture, by)
+	}
+	hooks := res.NetnsInits()
+	if len(hooks) != 1 || hooks[0].Path != "/usr/local/bin/byre-firewall" {
+		t.Errorf("netns hooks = %+v", hooks)
+	}
+	for _, sk := range res.Skills {
+		if sk.Name != "firewall" {
+			continue
+		}
+		rt := sk.File.Runtime
+		if len(rt.Caps) != 0 || len(rt.RunArgs) != 0 || len(rt.Mounts) != 0 {
+			t.Errorf("the firewall skill must grant the BOX nothing: %+v", rt)
+		}
+		if sk.Context == "" {
+			t.Error("firewall skill should ship agent context explaining the wall")
+		}
+		// The gate file and the script must both ship into the image: the
+		// launcher keys the wait on the former; the helper entrypoint is the latter.
+		dests := map[string]bool{}
+		for _, f := range sk.Files {
+			dests[f.Dest] = true
+		}
+		for _, want := range []string{"/etc/byre/launch-gate", "/usr/local/bin/byre-firewall"} {
+			if !dests[want] {
+				t.Errorf("firewall skill must ship %s; files: %+v", want, sk.Files)
+			}
+		}
+	}
+}

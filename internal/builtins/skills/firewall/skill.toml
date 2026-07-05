@@ -1,0 +1,39 @@
+# Built-in skill: firewall — default-deny egress.
+#
+# Design: docs/firewall-design.md. The rules are iptables default-DROP on
+# OUTPUT with a per-IP allowlist, applied INSIDE the box's network namespace
+# but FROM OUTSIDE the box: byre runs firewall.sh via the netns_init mechanism
+# (a run-to-completion helper container joining the box's netns as root with
+# CAP_NET_ADMIN). The box itself gets no sudo and no capabilities from this
+# skill — the agent is subject to the rules and structurally cannot modify
+# them (changing netns rules requires CAP_NET_ADMIN, and nothing in the box
+# has a path to it).
+#
+# Launch ordering (fail-closed): the launch-gate file baked below makes the
+# box's launcher wait — before first-run hooks and the agent — until
+# firewall.sh has applied and verified the rules and signals ready on the
+# gate's loopback port. Any failure means the gate never opens and the box
+# exits instead of running open. See gen/launcher.sh.
+#
+# Allowlist: a static default in firewall.sh (agent APIs, github, common
+# package registries), extendable per project via the FIREWALL_ALLOW env var
+# in byre.config ([env] FIREWALL_ALLOW = "host1 host2 ..."), which byre
+# re-passes to the helper. IPs are resolved at apply time — a snapshot; a CDN
+# rotating a domain's IPs mid-session makes that host start failing (closed,
+# not open). Restart the session to re-resolve.
+#
+# Known holes, deliberate (documented in the design doc): DNS is allowed
+# through (port 53 + Docker's embedded resolver), so DNS tunneling is not
+# closed in v1. Disabling the firewall = removing it from `skills` in config.
+
+[build]
+apt = ["iptables", "netcat-openbsd"]
+files = { "firewall.sh" = "/usr/local/bin/byre-firewall", "launch-gate" = "/etc/byre/launch-gate" }
+dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall"]
+
+[runtime]
+network_posture = "deny-by-default"
+netns_init = "/usr/local/bin/byre-firewall"
+
+[context]
+file = "context.md"
