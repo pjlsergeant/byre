@@ -136,6 +136,16 @@ UID assertions in `gen_test.go`/`context_test.go`).
 
 ## 6. Doc chores
 
+- [x] **Doc taxonomy migration** (2026-07-05, branch doc-taxonomy). One
+  lane per kind of knowledge: `docs/GLOSSARY.md` (canonical vocabulary),
+  `docs/PRINCIPLES.md` (standing commitments), `docs/adr/0001-0013`
+  (decisions), `docs/ARCHITECTURE.md` (the spec, transformed to
+  current-state mechanics), `docs/marketing/` (README-next +
+  positioning). firewall-design.md packed into ADRs 0010-0012 and
+  removed; historical markers on the milestone/design-note docs; code
+  reconciled with the glossary (core block, "session is running",
+  project-not-family).
+
 - [ ] **docs/marketing/README-next.md worktree copy is stale** (~line 226):
   it documents
   `byre worktree` as unconditionally "beside the repo". Shipped behavior is

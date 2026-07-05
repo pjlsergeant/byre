@@ -2,10 +2,12 @@
 
 byre runs an AI coding agent in a throwaway, project-scoped container -- a
 local-first, inspectable, Docker-native harness. This file is canonical for
-**vocabulary only**: TODO.md owns what to do, the spec owns how things work,
-this file owns what things are called. When the spec, README, code, or a
-conversation disagrees with a definition here, one of them is wrong and
-should be reconciled -- naming drift is a bug you can point at.
+**vocabulary only**: TODO.md owns what to do, `ARCHITECTURE.md` owns how
+things work, `PRINCIPLES.md` owns how we decide, `adr/` owns why decisions
+went the way they did -- this file owns what things are called. When
+another doc, the code, or a conversation disagrees with a definition here,
+one of them is wrong and should be reconciled -- naming drift is a bug you
+can point at.
 
 ## Language
 
@@ -79,7 +81,8 @@ _Avoid_: escape hatch as the noun (it describes what a raw block is *for*)
 
 **Opt-out**:
 Supplying a full hand-written Dockerfile, which stops generation entirely.
-You own the infra layer on this path -- user model, ownership, entrypoint.
+You own the chassis's build half on this path -- user model, ownership,
+entrypoint.
 
 ### Skills
 
@@ -105,7 +108,7 @@ Core's constant provision to every box -- the core block at build time
 plus the runtime constants (git identity passthrough, launcher behavior,
 the launch gate). What a box has regardless of config; "core chassis"
 when ownership needs saying. Cf. the microservice-chassis pattern.
-_Avoid_: plumbing (the spec's old word), fittings, infra
+_Avoid_: plumbing (the old spec's word), fittings, infra
 
 **Core block**:
 The build-time slice of the chassis -- core's constant contribution to
@@ -114,7 +117,8 @@ baked at the host UID/GID, home/workspace ownership, the launcher install
 (plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
 as root). The block family is named by contributor: template block, core
 block, skill blocks, project block. Not emitted on the full-Dockerfile
-opt-out -- "you own the infra" means exactly this block.
+opt-out -- what you take ownership of on that path is exactly this block
+(plus the USER/ENTRYPOINT tail).
 _Avoid_: infra layer (collides with cascade layers and Docker image
 layers), users block; "plumbing" stays informal prose for core's job
 
@@ -209,7 +213,9 @@ config) onto its new path-derived id.
 The named principle that byre's threat model is the *agent*, never the
 user. Protections are tamper-proof against the box and one config edit
 away from off for the user; byre never refuses a deliberate user choice.
+Substance: PRINCIPLES.md #1.
 
 **Legibility**:
 byre's alternative to gating: `byre status` names every grant truthfully,
 flags what it can't introspect, and degrades claims it can't stand behind.
+Substance: PRINCIPLES.md #4.
