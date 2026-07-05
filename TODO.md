@@ -23,9 +23,14 @@ features in copy -- shipping the copy first would make it a lie.)
   codex first-run auth reaches its allowlisted endpoint behind the wall.
   Remaining before this checks off:
   - [ ] Confirm `byre status` prints `Network: deny-by-default (skill:
-    firewall)` for that project (not yet eyeballed).
-  - [ ] Run the automated gated test (`-run IntegrationFirewall`) to lock
-    in allow/deny + the fail-closed case, and confirm it's not flaky (§5).
+    firewall)` + the Egress section for that project (10-second eyeball;
+    not yet done), and rebuild the live project box once more to pick up
+    the derived/port-scoped firewall.sh.
+  - [x] Automated gated test (`-run IntegrationFirewall`): PASSED
+    2026-07-05 on Docker Desktop (arm64) -- allow github.com, deny
+    example.com, fail-closed with no helper. Bonus: Debian resolved
+    iptables to the nft variant and the rules held, settling the
+    nft-vs-legacy question empirically.
   - [x] Host action: `byre skill update` + rebuild -- done (the develop
     run above built the skill in).
   - Done when: the README contract block's claim ("enable the
@@ -120,10 +125,9 @@ UID assertions in `gen_test.go`/`context_test.go`).
   `docs/agent-volume-sharing.md`.
 - [x] Firewall end-to-end (`BYRE_DOCKER_TESTS=1`): allowlisted host
   reachable, others dropped, launch fails closed when the helper never
-  signals. WRITTEN (`internal/commands/firewall_integration_test.go`,
-  `-run IntegrationFirewall`) but NOT YET RUN host-side -- verify it
-  actually passes on real Docker (fragile spots: `nc -l` syntax, getent
-  resolution, the gate handshake timing). A `docker restart` fail-closed
+  signals (`internal/commands/firewall_integration_test.go`,
+  `-run IntegrationFirewall`). PASSED host-side 2026-07-05 (Docker
+  Desktop, arm64; iptables-nft variant). A `docker restart` fail-closed
   case could still be added.
 - [ ] Pre-existing data race in `TestWithSetupLockNotesWhenWaiting`
   (`internal/commands/lock_test.go` ~38: a bool shared across goroutines
