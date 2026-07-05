@@ -116,6 +116,11 @@ development, but treat it as early software. What it does and doesn't box:
   network can exfiltrate the project it's working on.
 - **Not a security product:** a container is not a microVM. If you need
   the strongest isolation story, use one.
+- **Not your nanny:** the box is locked against the *agent*, not against
+  you. Every protection is one config edit away from off, and skills can
+  widen the box as far as you like -- you can hang yourself with skills,
+  and that's intentional. byre's promise is that `byre status` always
+  tells you where the rope is.
 
 The [devlog](https://pjlsergeant.github.io/byre/) shows what's being built.
 

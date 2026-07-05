@@ -16,17 +16,14 @@ Two gates on going public. Until **both** ship: README-next.md must not
 replace README.md, and the site must not go live. (Both claim these
 features in copy -- shipping the copy first would make it a lie.)
 
-- [ ] **Default-deny firewall skill.** URGENT -- Pete flagged 2026-07-03
-  and plans to drive it himself; confirm scope with him before building
-  unprompted.
-  - What: a skill that flips a box's network posture from today's
-    deliberate "open" to deny-by-default egress with an allowlist. Even a
-    blunt allowlist is enough for launch. Core stays opinion-free -- the
-    opinion lives in the skill.
-  - Where: network restriction is a run-time concern, not a Dockerfile
-    one. Start from `internal/runner/runargs.go` (`RunParams.RunArgs`,
-    the `docker run` argv assembly) -- e.g. `--network`, an egress
-    firewall/proxy.
+- [ ] **Default-deny firewall skill.** URGENT -- Pete's to drive.
+  **Design DECIDED 2026-07-05** (grilled + external-reviewed):
+  `docs/firewall-design.md` -- host-applied netns rules via a
+  run-to-completion helper container, loopback-socket launch gate,
+  fail-closed everywhere, no sudo/caps in the box, posture honesty rules
+  per the footgun doctrine. Remaining open questions are listed in the
+  design doc (default allowlist static-vs-derived, helper concurrency
+  placement, re-resolve story).
   - Done when: the README contract block's claim ("enable the
     default-deny firewall skill to close it") is true, and the hero
     transcript's `network:` line is live proof -- it prints `open` or

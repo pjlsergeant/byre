@@ -129,6 +129,21 @@ What byre actually guarantees — stated plainly so it isn't mistaken for more:
   grants **legible** via `byre status`; it does not block them. Core bundles
   none of these — core ships empty.
 
+**The footgun doctrine.** byre's threat model is the *agent*, never the user. A
+footgun is something a user ends up aiming at their foot *accidentally* — not
+the fact that a user can point a regular gun at their foot on purpose. byre
+guards against the first kind with legibility (`byre status` tells the truth
+about what is and isn't in effect, and degrades any claim it can no longer
+stand behind) and defends the second as a right: a user may weaken or remove
+any protection — raw `run_args`, raw Dockerfile blocks, disabling a protective
+skill, baking sudo into their own image — and byre runs it without refusal.
+Protections are built to be tamper-proof against the boxed agent and one
+config edit away from off for the user. When a "safety" feature would gate a
+deliberate user choice rather than prevent an accident, it does not belong in
+byre. (Precedents: no path nannying; the `run_args` escape hatch overrides
+byre's own flags by design; the full-Dockerfile opt-out skips byre's
+infrastructure entirely — "you own that infra".)
+
 ### Network
 
 Open to the world by default. No firewall, no `NET_ADMIN`/`NET_RAW` added by
