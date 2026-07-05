@@ -131,7 +131,7 @@ post-launch, that's the tripwire to revisit.
    agent in one step — new linked worktree, own container, inheriting the
    repo's image, volumes, and login; hand-made `git worktree add` worktrees
    are detected and inherit identically (shipped 2026-07-03; see
-   `docs/agent-volume-sharing.md`).
+   `docs/adr/0009-worktrees-inherit-project-identity.md`).
 2. **The box is legible — and legibility is editable.** byre generates a
    Dockerfile you can read, and `byre status` answers "what can this thing
    reach?" at any moment. `byre config` is the same idea as an editor: an

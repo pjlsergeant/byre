@@ -39,7 +39,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	// metadata is full of absolute HOST paths. Bind both the common git dir and
 	// the worktree at their same host paths (rw) so every pointer resolves in the
 	// box and git can commit — without rewriting metadata shared rw with the host
-	// (which would corrupt the host repo). See docs/agent-volume-sharing.md.
+	// (which would corrupt the host repo). See docs/adr/0009-worktrees-inherit-project-identity.md.
 	if paths.IsWorktree {
 		binds = append(binds,
 			runner.BindMount{Host: paths.CommonGitDir, Target: paths.CommonGitDir, Mode: "rw"},

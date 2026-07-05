@@ -18,7 +18,7 @@ type worktreeInfo struct {
 	mainDir string
 	// commonGitDir is the git common dir, exactly as git dereferences it, so it
 	// can be bind-mounted at the same host path inside the box (see the mount
-	// discussion in docs/agent-volume-sharing.md). The per-worktree git dir lives
+	// discussion in docs/adr/0009-worktrees-inherit-project-identity.md). The per-worktree git dir lives
 	// under it, so mounting this one path makes both present.
 	commonGitDir string
 }

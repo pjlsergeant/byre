@@ -106,7 +106,8 @@ func Home() (string, error) {
 // The build context is a subdirectory so the path record and lock file (which
 // live directly under Dir) are not sent to the engine as build context.
 //
-// Worktree inheritance (docs/agent-volume-sharing.md): a linked git worktree
+// Worktree inheritance (docs/adr/0009-worktrees-inherit-project-identity.md):
+// a linked git worktree
 // inherits the MAIN worktree's identity — the id-keyed fields (ID/Canonical/
 // Dir/ContextDir/PathRecord/LockFile) all derive from the project identity (main
 // worktree) path, so config, volumes, and the image are shared. Only the

@@ -32,5 +32,4 @@ metadata is a hard error -- never a silent standalone fallback);
 `develop`/`shell` filter sessions by the per-worktree label while
 `reset`/`forget` sweep the project label (shared volumes = project-wide
 blast radius, announced loudly); `rehome` refuses from a worktree and
-points at the main tree. Background mechanics: `docs/agent-volume-sharing.md`
-(historical).
+points at the main tree.

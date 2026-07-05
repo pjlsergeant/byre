@@ -30,8 +30,11 @@ Consequences:
   upgrade is a no-op; recovery is `byre reset` + re-login).
 - Rootless Podman remaps user namespaces and breaks the bake. Decided,
   separately-sequenced follow-up: a generic-UID image on that path run
-  with `--userns=keep-id:uid=<image-uid>,gid=<image-gid>`, falling back
-  to detect-and-warn. Until built, rootless is detect-and-warn only.
+  with `--userns=keep-id:uid=<image-uid>,gid=<image-gid>` -- the explicit
+  `uid=`/`gid=` form, because plain `keep-id` only aligns when the host
+  UID already equals the image UID -- falling back to detect-and-warn
+  where keep-id is unavailable. Until built, rootless is detect-and-warn
+  only.
 - Out of scope, documented unsupported: `sudo byre`, CI-prebuild-then-run
   (build-as-one-user-run-as-another), identity-changing `run_args`
   (`--user`/`--userns` -- author-owned footgun per PRINCIPLES.md #1).

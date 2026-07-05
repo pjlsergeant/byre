@@ -71,8 +71,7 @@ features in copy -- shipping the copy first would make it a lie.)
 ## 3. Config UI follow-ups
 
 Lower priority, queued after the 2026-07-01 overhaul. (Background: diary
-2026-07-01. `docs/byre-config-ui-spec.md` is outdated -- loose context
-only, not gospel.)
+2026-07-01.)
 
 - [ ] **env secret-masking:** env values render in plaintext in the form;
   mask values (show on reveal, or mask all but a prefix) so a shoulder-surf
@@ -94,7 +93,7 @@ only, not gospel.)
     the host user. Mode-select on the existing `runner.IsRootlessPodman`
     detection, whose consumer changes from warn to mode-select.
   - Interim: today's detect-and-warn in develop/status stays until this
-    lands. Background: `docs/milestone-build-time-uid.md`.
+    lands. Background: `docs/adr/0008-build-time-uid-bake.md`.
 - [ ] **Skill packaging & distribution.** No `byre skill add` / fetch /
   install path exists -- v0 is built-in skills plus hand-dropped
   `~/.byre/skills/<name>/`. The full `skill.toml` semantics (ordering,
@@ -121,8 +120,13 @@ UID assertions in `gen_test.go`/`context_test.go`).
 - [ ] Rootless-Podman keep-id integration coverage (when §4's path is
   built).
 - [ ] Live-container worktree run: git commit inside the box + two
-  concurrent sessions (main tree + worktree) at once. Recipe in
-  `docs/agent-volume-sharing.md`.
+  concurrent sessions (main tree + worktree) at once. Recipe (in a
+  byre'd repo):
+  `git worktree add -b feat ../repo-feat && cd ../repo-feat`;
+  `byre status` (expect "worktree of ...; inherited"); `byre develop`
+  (inherits image+volumes -- agent already logged in); in the box
+  `git commit --allow-empty -m x` (writes to the shared .git);
+  meanwhile `byre develop` in the main tree runs CONCURRENTLY.
 - [x] Firewall end-to-end (`BYRE_DOCKER_TESTS=1`): allowlisted host
   reachable, others dropped, launch fails closed when the helper never
   signals (`internal/commands/firewall_integration_test.go`,

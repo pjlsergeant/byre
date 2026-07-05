@@ -56,7 +56,7 @@ func imageTag(projectID string, uid, gid int) string {
 // The project id namespaces it, so reset/forget/rehome can filter a project's
 // volumes by the byre-<id>- prefix. (Worktree volume INHERITANCE, when built,
 // works by resolving <id> from the main worktree's path — not by a separate
-// volume scope — see docs/agent-volume-sharing.md.)
+// volume scope — see docs/adr/0009-worktrees-inherit-project-identity.md.)
 func volumeName(projectID, name string) string {
 	return "byre-" + projectID + "-" + name
 }
