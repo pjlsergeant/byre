@@ -83,7 +83,14 @@ Why this shape:
    must also run behind the wall (review finding). Timeout (~30s) -> exit
    non-zero -> box dies **offline**, never launches open.
 2. byre (host side, concurrently with the attached `docker run`): polls
-   until the container is running, then runs the helper:
+   until the container is running, then runs the helper. (impl: the poll
+   keys on a per-invocation `byre.run=<crypto nonce>` label and targets
+   the resolved container ID — the container name and the family/workdir
+   labels are all derivable from the project path, so a planted container
+   could otherwise capture the root+NET_ADMIN helper; the nonce exists
+   only in this invocation's run argv, asserted after run_args so it
+   can't be overridden. No randomness = hooks skipped = gate fails the
+   launch closed.) The helper:
    `docker run --rm -u 0 --net=container:<box> --cap-add NET_ADMIN
    --entrypoint /usr/local/bin/byre-firewall <the box's own image>`.
    The helper shares ONLY the netns (not fs, not pid). It resolves the

@@ -114,6 +114,10 @@ UID assertions in `gen_test.go`/`context_test.go`).
   reachable, others dropped, launch dies closed when the netns helper is
   sabotaged, `docker restart` also dies closed. See TODO §1 + the
   Verification section of `docs/firewall-design.md`.
+- [ ] Pre-existing data race in `TestWithSetupLockNotesWhenWaiting`
+  (`internal/commands/lock_test.go` ~38: a bool shared across goroutines
+  without sync). Test-only, surfaced by `go test -race` during the
+  firewall work; unrelated to it. Fix when touching the lock code.
 
 ## 6. Doc chores
 
