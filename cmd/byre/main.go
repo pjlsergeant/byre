@@ -186,11 +186,13 @@ started by 'byre develop'.`,
 		summary: "Create a git worktree and start a parallel session in it.",
 		help: `Usage: byre worktree <name> [--path <dir>] [--self-edit]
 
-Create a linked git worktree for branch <name> (default location: a sibling
-dir <repo>-<name>, from the configured worktree_base) and run 'byre develop'
-in it — a parallel agent that inherits this repo's config, volumes, and image.
+Create a linked git worktree for branch <name> and run 'byre develop' in
+it — a parallel agent that inherits this project's config, volumes, and
+image. Location: --path, or the configured worktree_base ("sibling" = a
+sibling dir <repo>-<name>, or a directory to put worktrees under); with
+neither set, byre refuses rather than guessing.
 
-  --path <dir>  create the worktree at an explicit path instead
+  --path <dir>  create the worktree at an explicit path
   --self-edit   forward 'develop --self-edit' for the new session`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
 			var name, path string
