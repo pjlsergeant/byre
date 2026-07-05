@@ -1,8 +1,13 @@
 # Firewall skill: default-deny egress (design)
 
-**Status: DRAFT -- under design review, no code yet.** Launch blocker (see
-`TODO.md` §1). Decisions below were grilled with Pete 2026-07-05; open
-questions are marked.
+**Status: IMPLEMENTED 2026-07-05 (pending host-side verification).** The
+built-in `firewall` skill + the core mechanisms (skill.toml
+`network_posture`/`netns_init`, the launcher's launch gate, develop's
+netns-init orchestration, the honest status Network row) are built and
+unit-tested; the gated `BYRE_DOCKER_TESTS=1` end-to-end run still needs a
+Docker host. Decisions were grilled with Pete 2026-07-05; implementation
+refinements are marked "(impl)" where they deviate from the reviewed
+draft.
 
 ## Goal
 
@@ -82,23 +87,32 @@ Why this shape:
    `docker run --rm -u 0 --net=container:<box> --cap-add NET_ADMIN
    --entrypoint /usr/local/bin/byre-firewall <the box's own image>`.
    The helper shares ONLY the netns (not fs, not pid). It resolves the
-   allowlist domains into an ipset, installs default-DROP OUTPUT rules
-   (allow loopback, established/related, DNS to the embedded resolver, the
-   ipset), self-verifies (a curl to a non-allowlisted host must FAIL, an
-   allowlisted one must succeed -- stolen from Anthropic's script), and
-   exits. Lifetime well under a second; nothing keeps running.
+   allowlist domains (getent -- pure libc, no extra tooling) and installs
+   per-IP ACCEPT rules + a default-DROP OUTPUT policy, v4 and v6, then
+   self-verifies: a deny probe (TCP connect to a non-allowlisted address)
+   must FAIL or the helper dies; an allow probe failing only warns
+   (availability, not security -- a flaky CDN edge must not brick the
+   launch). (impl: plain per-IP rules instead of ipset -- a dozen domains
+   don't need a set, and it drops the ipset package + nft set-match
+   compatibility concerns. Probes use bash /dev/tcp, dropping the curl
+   dependency.) Lifetime well under a second; nothing keeps running.
 3. Ready signal delivered; launcher execs the agent behind the wall.
-   **Decided: a loopback socket handshake** -- the launcher listens on
-   `127.0.0.1:<port>` and the helper, after rules verify, connects and
-   sends the go signal (they share `lo`; the netns IS the channel). No
-   filesystem state exists, so nothing can go stale: on any container
-   restart the fresh launcher listens, nobody connects, timeout, die
-   closed. (A marker file was rejected by review: `/run` is NOT tmpfs in
-   Docker by default, so a marker would survive `docker restart` into a
-   rule-less netns and silently fail OPEN.)
+   **A loopback socket handshake** -- they share `lo`; the netns IS the
+   channel. No filesystem state exists, so nothing can go stale: after any
+   container restart nobody signals, timeout, die closed. (A marker file
+   was rejected by review: `/run` is NOT tmpfs in Docker by default, so a
+   marker would survive `docker restart` into a rule-less netns and
+   silently fail OPEN.) (impl: direction inverted from the reviewed draft
+   -- the LAUNCHER poll-connects and the HELPER listens once after rules
+   verify, because bash can only be a /dev/tcp client, not a listener,
+   and the launcher must stay dependency-free on arbitrary bases; the
+   helper side ships `nc` via the skill. Failure properties are
+   unchanged: no listener within the timeout = die closed, and in the
+   pre-gate window only byre's own launcher exists in the netns, so
+   nothing else can open the gate.)
 
-No second image: the skill bakes iptables/ipset + the script into the box
-image via existing `[build]` fields; both are inert to the capless agent.
+No second image: the skill bakes iptables + the script into the box image
+via existing `[build]` fields; both are inert to the capless agent.
 
 ## Skill/core split
 
@@ -145,13 +159,17 @@ Core grows (generic, not firewall-specific):
 
 ## Allowlist
 
-- Skill ships a conservative default: the enabled agents' API endpoints,
-  github.com, and the package registries implied by the box's template.
-  OPEN QUESTION: fully static list (like Anthropic's) vs derived from
-  enabled skills/template (agent skills declare their own endpoints).
-- Per-project additions: `firewall_allow = [...]` in `byre.config` -- it's
-  a grant, so it lives in the config cascade next to mounts/ports and
-  shows in `byre status` and the config UI.
+- **Decided (impl): static v1 default in the skill's script** -- the
+  built-in agents' API/auth endpoints, github, and the registries the
+  built-in templates imply. Deriving the list from enabled skills (agent
+  skills declaring their endpoints) stays a v2 refinement.
+- **Per-project additions: the `FIREWALL_ALLOW` env var in `byre.config`**
+  (space/comma-separated hostnames), which byre re-passes to the helper.
+  (impl: the reviewed draft said a `firewall_allow` config key; that would
+  put a firewall-specific key in core config -- opinion in core. The
+  existing generic env mechanism gives the same capability: it lives in
+  the config cascade, is editable in the config UI's env editor, and is
+  visible in status like any env grant.)
 
 ## Failure modes (analyzed)
 
@@ -184,14 +202,16 @@ Core grows (generic, not firewall-specific):
 
 ## Open questions
 
-1. Default allowlist: static vs derived from enabled skills/template.
-2. Where the develop-side helper concurrency lives and its failure UX.
-3. Re-resolve story for long sessions (accept v1 bluntness? a `byre`
+1. Re-resolve story for long sessions (accept v1 bluntness? a `byre`
    subcommand to re-run the helper?).
+2. Deriving the default allowlist from enabled skills (v2; static in v1).
 
 (Resolved by review: ready-signal mechanism = loopback socket handshake;
 a filesystem marker fails open across `docker restart` because `/run`
-isn't tmpfs in Docker containers by default.)
+isn't tmpfs in Docker containers by default. Resolved by impl: the
+helper concurrency lives in develop -- a goroutine polling
+ContainerRunning, joined before develop returns; a hook failure warns
+and lets the gate enforce fail-closed.)
 
 ## Verification
 

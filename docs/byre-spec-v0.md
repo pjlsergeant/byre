@@ -149,7 +149,16 @@ infrastructure entirely — "you own that infra".)
 Open to the world by default. No firewall, no `NET_ADMIN`/`NET_RAW` added by
 core. Because byre makes **no** network-containment claim, the container's
 default Docker capability set is not a security surface byre reasons about.
-Network restriction, if anyone wants it, is a skill — not a core concern.
+Network restriction is a skill, not a core concern: the built-in **firewall**
+skill (opt-in) flips a box to deny-by-default egress with an allowlist. Its
+rules are applied to the box's network namespace *from outside* (a
+run-to-completion helper container byre runs as root with `NET_ADMIN` — the
+box itself gains no sudo and no capabilities), and the box's launcher waits at
+a launch gate until they're applied and verified, failing closed on any
+failure. Core's parts are generic mechanism (skill.toml `network_posture` +
+`netns_init`, the gate, the status posture row with its honesty rules);
+everything firewall-shaped lives in the skill. Design + threat model:
+`docs/firewall-design.md`.
 
 ## Image generation
 

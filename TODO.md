@@ -16,18 +16,23 @@ Two gates on going public. Until **both** ship: README-next.md must not
 replace README.md, and the site must not go live. (Both claim these
 features in copy -- shipping the copy first would make it a lie.)
 
-- [ ] **Default-deny firewall skill.** URGENT -- Pete's to drive.
-  **Design DECIDED 2026-07-05** (grilled + external-reviewed):
-  `docs/firewall-design.md` -- host-applied netns rules via a
-  run-to-completion helper container, loopback-socket launch gate,
-  fail-closed everywhere, no sudo/caps in the box, posture honesty rules
-  per the footgun doctrine. Remaining open questions are listed in the
-  design doc (default allowlist static-vs-derived, helper concurrency
-  placement, re-resolve story).
+- [ ] **Default-deny firewall skill.** BUILT 2026-07-05 (design:
+  `docs/firewall-design.md`; unit-tested, committed). Remaining before
+  this checks off:
+  - [ ] **Host-side verification** (needs Docker; can't run from the dev
+    box): enable `firewall` on a real project; confirm the box reaches an
+    allowlisted host, can't reach others, `byre status` prints the
+    posture, and sabotaging the helper makes the launch die closed. Then
+    wire it as the gated `BYRE_DOCKER_TESTS=1` integration test (§5).
+  - [ ] Host action: `byre skill update` + rebuild to materialize the new
+    skill on existing installs (the usual caveat).
   - Done when: the README contract block's claim ("enable the
     default-deny firewall skill to close it") is true, and the hero
     transcript's `network:` line is live proof -- it prints `open` or
-    `deny-by-default` per config.
+    `deny-by-default` per config. (README.md already mentions the skill;
+    README-next's stronger claims stay gated on the host verification.)
+  - v2 candidates (deliberately not v1): mid-session re-resolve of CDN
+    IPs, allowlist derived from enabled skills, DNS filtering.
 - [ ] **`brew install byre` works.** The hero and Install copy lead with
   it; the two-command story depends on it.
   - What: a tap is enough -- `brew install pjlsergeant/tap/byre` -- with
@@ -105,6 +110,10 @@ UID assertions in `gen_test.go`/`context_test.go`).
 - [ ] Live-container worktree run: git commit inside the box + two
   concurrent sessions (main tree + worktree) at once. Recipe in
   `docs/agent-volume-sharing.md`.
+- [ ] Firewall end-to-end (`BYRE_DOCKER_TESTS=1`): allowlisted host
+  reachable, others dropped, launch dies closed when the netns helper is
+  sabotaged, `docker restart` also dies closed. See TODO §1 + the
+  Verification section of `docs/firewall-design.md`.
 
 ## 6. Doc chores
 

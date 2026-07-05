@@ -129,8 +129,10 @@ skills for Claude, Codex, and Gemini. Skills live in `~/.byre/skills/<name>/`
 ## Security contract
 
 byre isolates the **host filesystem, environment, and credentials** -- the agent
-sees only what you explicitly mount or pass. It does **not** restrict the network
-(open by default) and the project mount is read-write by design (the agent edits
+sees only what you explicitly mount or pass. The network is open by default;
+enable the built-in **firewall** skill (`skills = ["firewall", ...]`) for
+deny-by-default egress with an allowlist, applied from outside the box so the
+agent can't touch it. The project mount is read-write by design (the agent edits
 and commits your code). Skill-granted runtime holes (e.g. a host socket) are
 opt-in and named by `byre status`, never silent.
 
