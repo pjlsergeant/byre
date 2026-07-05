@@ -517,15 +517,17 @@ func (c Config) Validate() error {
 // config (Validate) at load. Without this split, saving any config that uses
 // the removal feature failed — a `!name` marker can't pass the resolved rules.
 //
-// Duplicates WITHIN the layer are rejected, though: merge resolves a repeated
-// mount target (or volume name) inside one file by silent last-wins, so the
-// losing entry would vanish without ever reaching the resolved check — always
-// a mistake, never an override.
+// Collisions WITHIN the layer are rejected, though — they can never merge
+// into something legal: a repeated mount target or volume name resolves by
+// silent last-wins (the losing entry vanishes before the resolved check ever
+// sees it), and two entries claiming one container target (volume vs volume,
+// or mount vs volume) fail the resolved Validate at develop time — better to
+// refuse at save, with the file open, than during the next develop.
 func (c Config) ValidateLayer() error {
 	if err := c.validateScalars(); err != nil {
 		return err
 	}
-	seenTargets := map[string]bool{}
+	seenTargets := map[string]string{} // target -> what claims it
 	for _, m := range c.Mounts {
 		if isRemoval(m.Target) {
 			continue
@@ -533,10 +535,10 @@ func (c Config) ValidateLayer() error {
 		if err := validateMountShape(m); err != nil {
 			return err
 		}
-		if seenTargets[m.Target] {
-			return fmt.Errorf("mount target %s appears twice in this file; merge would keep only the last one", m.Target)
+		if claimed := seenTargets[m.Target]; claimed != "" {
+			return fmt.Errorf("mount target %s collides with %s in this file", m.Target, claimed)
 		}
-		seenTargets[m.Target] = true
+		seenTargets[m.Target] = "mount " + m.Target
 	}
 	seenNames := map[string]bool{}
 	for _, v := range c.Volumes {
@@ -550,6 +552,10 @@ func (c Config) ValidateLayer() error {
 			return fmt.Errorf("volume %s appears twice in this file; merge would keep only the last one", v.Name)
 		}
 		seenNames[v.Name] = true
+		if claimed := seenTargets[v.Target]; claimed != "" {
+			return fmt.Errorf("volume %s target %s collides with %s in this file", v.Name, v.Target, claimed)
+		}
+		seenTargets[v.Target] = "volume " + v.Name
 	}
 	return c.validatePorts()
 }

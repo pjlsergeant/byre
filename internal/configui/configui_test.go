@@ -696,4 +696,19 @@ func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
 	if m.commentWarn {
 		t.Error("warning must clear once the comments are gone")
 	}
+
+	// A successful ^s re-marshals the file — the comments it warned about are
+	// gone, so the warning must clear rather than nag about the file just written.
+	os.WriteFile(path, []byte("# note\nagent = \"claude\"\n"), 0o644)
+	m = m.onEditorClosed(nil)
+	if !m.commentWarn {
+		t.Fatal("precondition: warning armed")
+	}
+	m = m.save()
+	if m.errMsg != "" {
+		t.Fatalf("save failed: %s", m.errMsg)
+	}
+	if m.commentWarn {
+		t.Error("warning must clear after the save that removed the comments")
+	}
 }

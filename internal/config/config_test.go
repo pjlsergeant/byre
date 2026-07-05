@@ -494,6 +494,23 @@ func TestValidateLayerRejectsWithinLayerDuplicates(t *testing.T) {
 	if err := dupVol.ValidateLayer(); err == nil {
 		t.Error("duplicate volume name within one layer must be rejected")
 	}
+	// Cross-kind: a volume claiming a mount's target (or another volume's)
+	// fails the resolved Validate at develop time — refuse at save instead.
+	mixed := Config{
+		Mounts:  []Mount{{Host: "/a", Target: "/x", Mode: "ro"}},
+		Volumes: []Volume{{Name: "v", Role: "cache", Target: "/x"}},
+	}
+	if err := mixed.ValidateLayer(); err == nil {
+		t.Error("mount + volume on one target within a layer must be rejected")
+	}
+	twoVols := Config{Volumes: []Volume{
+		{Name: "a", Role: "cache", Target: "/x"},
+		{Name: "b", Role: "cache", Target: "/x"},
+	}}
+	if err := twoVols.ValidateLayer(); err == nil {
+		t.Error("two volumes on one target within a layer must be rejected")
+	}
+
 	// A removal marker plus the real entry it removes elsewhere is fine.
 	withRemoval := Config{Mounts: []Mount{
 		{Target: "!/x"},

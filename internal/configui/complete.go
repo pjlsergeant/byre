@@ -71,6 +71,9 @@ func (m model) save() model {
 	m.savedOnce = true
 	m.status = "Saved ✓"
 	m.confirmQuit = false
+	// The save re-marshaled the file: any hand-written comments are gone now,
+	// so the destroys-comments warning has nothing left to protect.
+	m.commentWarn = false
 	return m
 }
 
