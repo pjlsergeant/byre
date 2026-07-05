@@ -13,3 +13,7 @@ hangs then times out is the wall, not a network outage.
 - DNS resolution works for all names (only connecting is restricted). A host
   whose IPs rotated mid-session (CDNs) may start failing; a session restart
   re-resolves the allowlist.
+- To diagnose the wall, this box has `ping`, `traceroute`, `dig`/`nslookup`,
+  `curl`, `telnet`, and `nc`: an allowlisted host answers, a blocked one
+  hangs/times out. Use them to tell "the wall is blocking this" apart from
+  "the service is down" before reporting a problem to the user.

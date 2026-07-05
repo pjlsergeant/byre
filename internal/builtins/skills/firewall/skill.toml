@@ -26,8 +26,15 @@
 # through (port 53 + Docker's embedded resolver), so DNS tunneling is not
 # closed in v1. Disabling the firewall = removing it from `skills` in config.
 
+# apt: iptables (the rules) + netcat-openbsd (the launch-gate listener). The
+# rest are network DIAGNOSTICS — a firewalled box is exactly where you want to
+# SEE the wall: ping/traceroute an allowlisted host (works) vs a blocked one
+# (dropped), dig/nslookup to check name resolution, curl to test an HTTPS
+# endpoint. They're plain clients, still subject to the netns rules — they let
+# you inspect the boundary, they don't widen it. netcat-openbsd for `nc -l`
+# must stay the OpenBSD variant (the gate uses its `-l host port` form).
 [build]
-apt = ["iptables", "netcat-openbsd"]
+apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "telnet"]
 files = { "firewall.sh" = "/usr/local/bin/byre-firewall", "launch-gate" = "/etc/byre/launch-gate" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall"]
 
