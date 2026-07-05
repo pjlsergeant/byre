@@ -63,6 +63,12 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 		fmt.Fprintf(s.Err, "byre: %s ships a byre.config but it is invalid (%v); ignoring it.\n", projectDir, verr)
 		return nil
 	}
+	// Materialize the built-ins BEFORE the cascade gate: on a fresh ~/.byre a
+	// proposal naming a built-in template (template = "go") must not be
+	// rejected as missing when the normal resolve path would materialize it.
+	// (adoptionView repeats these calls; they're idempotent.)
+	_ = builtins.MaterializeTemplates(filepath.Join(paths.Home, "templates"))
+	_ = builtins.MaterializeSkills(filepath.Join(paths.Home, "skills"))
 	if _, rerr := config.ResolveProposed(proposal); rerr != nil {
 		fmt.Fprintf(s.Err, "byre: %s ships a byre.config, but it doesn't resolve against this host's config (%v); not adopting. Fix the conflict (your ~/.byre/default.config or the named template may contribute to it) and re-run develop.\n", projectDir, rerr)
 		return nil

@@ -161,3 +161,22 @@ func TestAdoptRejectsHostCascadeConflict(t *testing.T) {
 		t.Errorf("the user should be pointed at the host-side conflict: %q", errBuf.String())
 	}
 }
+
+// TestAdoptBuiltinTemplateOnFreshHome pins the gate ordering: on a fresh
+// ~/.byre, a proposal naming a BUILT-IN template must materialize the builtins
+// before the cascade gate, not be rejected as "template not found".
+func TestAdoptBuiltinTemplateOnFreshHome(t *testing.T) {
+	p, proj := onboardPaths(t)
+	proposeConfig(t, proj, "template = \"go\"\nagent = \"claude\"\n")
+
+	s, _, errBuf := testStreams("y\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "doesn't resolve") {
+		t.Fatalf("built-in template must not fail the cascade gate on a fresh home: %q", errBuf.String())
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
+		t.Errorf("valid proposal should adopt: %v", err)
+	}
+}
