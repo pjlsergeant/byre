@@ -1,6 +1,6 @@
 # Built-in skill: firewall — default-deny egress.
 #
-# Design: docs/firewall-design.md. The rules are iptables default-DROP on
+# Decisions: docs/adr/0010-0012 (enforcement, launch gate, derived egress). The rules are iptables default-DROP on
 # OUTPUT with a per-IP allowlist, applied INSIDE the box's network namespace
 # but FROM OUTSIDE the box: byre runs firewall.sh via the netns_init mechanism
 # (a run-to-completion helper container joining the box's netns as root with

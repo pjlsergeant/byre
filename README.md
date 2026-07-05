@@ -29,7 +29,7 @@ autonomous coding agents.** It generates a Dockerfile you can read, runs it
 locally (Docker or Podman -- no account, no control plane), scopes state and cache
 to the project, and makes every grant legible. Raw Docker stays first-class.
 
-See [`docs/byre-spec-v0.md`](docs/byre-spec-v0.md) for the full design, and the
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design, and the
 [devlog](https://pjlsergeant.github.io/byre/) for build notes and current status.
 
 ## Install

@@ -12,12 +12,12 @@ or priority, this file wins.
 
 ## 1. Launch blockers
 
-Two gates on going public. Until **both** ship: README-next.md must not
-replace README.md, and the site must not go live. (Both claim these
+Two gates on going public. Until **both** ship: docs/marketing/README-next.md
+must not replace README.md, and the site must not go live. (Both claim these
 features in copy -- shipping the copy first would make it a lie.)
 
 - [ ] **Default-deny firewall skill.** BUILT + core host-verified
-  2026-07-05 (design: `docs/firewall-design.md`; unit-tested, committed).
+  2026-07-05 (decisions: `docs/adr/0010`-`0012`; unit-tested, committed).
   Verified live on Docker Desktop via `byre develop`: box launches (gate
   opens), `curl api.anthropic.com` works, `curl example.com` times out,
   codex first-run auth reaches its allowlisted endpoint behind the wall.
@@ -136,7 +136,8 @@ UID assertions in `gen_test.go`/`context_test.go`).
 
 ## 6. Doc chores
 
-- [ ] **README-next.md worktree copy is stale** (~line 226): it documents
+- [ ] **docs/marketing/README-next.md worktree copy is stale** (~line 226):
+  it documents
   `byre worktree` as unconditionally "beside the repo". Shipped behavior is
   the three-state `worktree_base`: unset -> refuse (never guess),
   `"sibling"` -> beside the repo, path -> under it, with `--path` as a
@@ -147,6 +148,13 @@ UID assertions in `gen_test.go`/`context_test.go`).
 
 ## 7. Nice-to-haves
 
+- [ ] **Host-env passthrough** (Pete, 2026-07-05): a config key to pass
+  named host env vars into the box (shape TBD, e.g.
+  `env_passthrough = ["FOO"]`). Today `env` is literal-only and nothing
+  crosses from the host except git identity (`GIT_AUTHOR_*` /
+  `GIT_COMMITTER_*`). Per GLOSSARY.md, a passed-through var IS a grant
+  (a literal isn't) -- so when built, it must be named in `byre status`
+  and belongs in the config UI's GRANTS section.
 - [ ] **Print the grant summary on launch:** a few terse `byre:` lines
   (project mount, host mounts, network, agent) before exec'ing the agent,
   so every real session opens by showing the walls going up. The hero
@@ -162,7 +170,7 @@ UID assertions in `gen_test.go`/`context_test.go`).
   a safety idiom, not a scope statement, and one cold reader bounced off
   it. The plain what-it-is sentence directly under it is mandatory
   mitigation. If cold readers keep bouncing post-launch, revisit the H1.
-  (Background: positioning.md "Reader-response evidence".)
+  (Background: docs/marketing/positioning.md "Reader-response evidence".)
 
 ## Parked / consciously not doing
 

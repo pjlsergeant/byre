@@ -1,5 +1,10 @@
 # Milestone — build-time UID ownership (delete the runtime chown fence)
 
+> **HISTORICAL.** This milestone shipped. The decision and its
+> consequences are recorded in `adr/0008-build-time-uid-bake.md`; current
+> mechanics live in `ARCHITECTURE.md`. Kept for the detailed rationale and
+> the rootless keep-id design; not maintained.
+
 **Status:** implemented (rootful path); rootless Podman keep-id path deferred to a
 sequenced follow-up.
 **Supersedes:** the runtime UID-reconciliation mechanism in `internal/gen/launcher.sh`

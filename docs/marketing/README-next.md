@@ -1,5 +1,5 @@
 <!--
-  Draft replacement for README.md, per docs/positioning.md (2026-07-03,
+  Draft replacement for README.md, per docs/marketing/positioning.md (2026-07-03,
   amended 2026-07-04). LAUNCH BLOCKERS (tracked authoritatively in TODO.md
   §1) -- this file must not replace README.md before:
   1. the default-deny firewall skill ships (the contract block claims it);
@@ -195,7 +195,7 @@ removes):
 The vocabulary covers packages, env, mounts, volumes, and skills; raw
 Dockerfile lines and `docker run` args cover the rest, and `dockerfile =`
 opts out entirely. Full reference:
-[`docs/byre-spec-v0.md`](docs/byre-spec-v0.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 byre reads config only from its host-side store, never from inside the
 project -- the project mount is read-write, so the agent could edit a
@@ -249,5 +249,5 @@ sequenced follow-up). byre bakes your UID/GID into the image so the agent
 runs unprivileged as you and files land correctly owned. Debian-derived base
 images; anything else via your own Dockerfile.
 
-Design: [`docs/byre-spec-v0.md`](docs/byre-spec-v0.md). Build notes:
+Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Build notes:
 [devlog](https://pjlsergeant.github.io/byre/).

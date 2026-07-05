@@ -1,5 +1,9 @@
 # Self-hosting byre (dogfood / cutover)
 
+> **HISTORICAL.** Written for the moarcode->byre cutover, which happened;
+> byre now hosts its own development (see `CLAUDE.md`). Details below may
+> be stale; not maintained.
+
 byre runs on the **host** (where Docker is). This container is where the agent
 *develops* byre; the actual `byre develop` runs happen host-side — the same place
 `./moarcode/develop.sh` runs today. At M5, byre can reproduce its own dev box and

@@ -1,5 +1,9 @@
 # `byre config` — UI design brief (v0)
 
+> **HISTORICAL / OUTDATED.** The config UI was rebuilt 2026-07-01 (custom
+> Bubble Tea form; see TODO.md §3 for follow-ups). This brief predates
+> that and is loose context only -- design intent, not current behavior.
+
 _For a designer. Describes purpose, content, and constraints — not layout. The
 current implementation is a throwaway first pass; design from this, not from it._
 

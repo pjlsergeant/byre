@@ -1,5 +1,11 @@
 # Design note: worktree volume inheritance
 
+> **HISTORICAL.** Implemented 2026-07-03. The decisions are recorded in
+> `adr/0009-worktrees-inherit-project-identity.md` (and
+> `adr/0013-prefs-seeding-curated.md` for the prefs-seeding section);
+> current mechanics live in `ARCHITECTURE.md`. Kept for the detailed
+> mechanism notes and the host-side verification recipe; not maintained.
+
 Status: **IMPLEMENTED 2026-07-03** (decided in a grilling session; decisions
 below). Supersedes an earlier draft that proposed a per-repo volume *scope* and
 a creds/history split -- both dropped (see "What we ruled out").

@@ -402,7 +402,7 @@ rewrite-pass note only (see voice rules).
 
 ## README draft
 
-> **Superseded by `README-next.md`** (the living draft, at repo root) —
+> **Superseded by `README-next.md`** (the living draft, in this directory) —
 > that file is where copy evolves; this section records the original shape
 > and the notes that motivated it. When they disagree, README-next.md wins.
 

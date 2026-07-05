@@ -6,8 +6,17 @@
 project-scoped container — a local-first, inspectable, Docker-native harness.
 `cd ~/project && byre develop` generates a Dockerfile from a config cascade,
 builds it (Docker/Podman), and runs the agent in a sandbox that sees only the
-project and what you explicitly grant. Design: `docs/byre-spec-v0.md`. User docs:
-`README.md`.
+project and what you explicitly grant. Mechanics: `docs/ARCHITECTURE.md`. User
+docs: `README.md`.
+
+**Vocabulary is canonical in `docs/GLOSSARY.md`** (the domain-modeling skill's
+`CONTEXT.md`, renamed -- treat it as that skill's glossary file). It is binding
+for prose, docs, and user-facing strings; vocabulary only, never behavior. When
+another doc disagrees with it on naming, one of them is wrong -- reconcile.
+**Design principles live in `docs/PRINCIPLES.md`** (standing commitments);
+**point-in-time decisions live in `docs/adr/`** and cite principles as
+rationale. Litmus: could it be "superseded by ADR-NNNN"? ADR. Would changing
+it re-litigate the project? Principle.
 
 **byre runs on the host** (where Docker is). The dev *container* is where the
 agent writes Go, runs `go build`, and runs unit tests; the actual `byre develop`
