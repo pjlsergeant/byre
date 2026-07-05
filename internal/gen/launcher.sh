@@ -13,6 +13,39 @@ set -euo pipefail
 # a run-time override would sidestep the context_target containment guarantee.
 export HOME=/home/dev
 
+# Launch gate — a network-posture skill (e.g. firewall) bakes a gate file whose
+# content is a loopback port. When present, byre applies the skill's network
+# setup from OUTSIDE the box (a netns-init helper container) after start, and
+# that helper listens on the port once the rules are applied and verified. We
+# poll-connect until it does, and only then proceed — so NOTHING in the box
+# (context placement, first-run hooks, the agent) runs before the wall is up.
+# Every failure path fails CLOSED: no listener within the timeout means the
+# box exits instead of launching open. The handshake is deliberately stateless
+# (no marker file): a `docker restart` recreates the netns without the rules,
+# and this gate then simply times out again rather than trusting stale state.
+# The env overrides exist for byre's own tests; a user setting them is
+# disabling their own protection, which is theirs to do (footgun doctrine).
+GATE_FILE="${BYRE_LAUNCH_GATE_FILE:-/etc/byre/launch-gate}"
+if [ -s "$GATE_FILE" ]; then
+  gate_port="$(tr -cd '0-9' < "$GATE_FILE")"
+  gate_timeout="${BYRE_LAUNCH_GATE_TIMEOUT:-30}"
+  gate_ok=
+  SECONDS=0
+  while [ "$SECONDS" -lt "$gate_timeout" ]; do
+    # Bash's /dev/tcp: a successful connect means the netns-init helper is
+    # listening, which it only does after its rules are applied and verified.
+    if (exec 3<>"/dev/tcp/127.0.0.1/$gate_port") 2>/dev/null; then
+      gate_ok=1
+      break
+    fi
+    sleep 0.2
+  done
+  if [ -z "$gate_ok" ]; then
+    echo "byre: launch gate: network setup never signaled ready on 127.0.0.1:${gate_port:-?} after ${gate_timeout}s — refusing to launch without it (failing closed)." >&2
+    exit 1
+  fi
+fi
+
 # git identity: mark the workspace safe so git doesn't refuse the bind-mounted
 # repo (owned by the same uid, but git's dubious-ownership check is path-based).
 git config --global --add safe.directory /workspace >/dev/null 2>&1 || true
