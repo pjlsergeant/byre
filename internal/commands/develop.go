@@ -144,17 +144,26 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
 	// OUTSIDE the box, concurrently with the attached run: the box's launcher
-	// waits at its launch gate until the hooks land. The wait after the run
-	// keeps the goroutine from outliving develop (and its s.Err writes).
+	// waits at its launch gate until the hooks land. The container gets a
+	// per-invocation nonce label as the hooks' ownership proof (see naming.go);
+	// without a nonce (no randomness) the hooks are skipped and the gate fails
+	// the launch closed. The wait after the run keeps the goroutine from
+	// outliving develop (and its s.Err writes).
 	var netnsWait func()
 	if hooks := rv.skills.NetnsInits(); len(hooks) > 0 {
-		done := make(chan struct{})
-		finished := make(chan struct{})
-		go func() {
-			defer close(finished)
-			runNetnsInits(r, s.Err, workdirLabel(paths), image, hooks, params.Env, done)
-		}()
-		netnsWait = func() { close(done); <-finished }
+		if nonce := runNonce(); nonce != "" {
+			label := runKey + "=" + nonce
+			params.Labels = append(params.Labels, label)
+			done := make(chan struct{})
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				runNetnsInits(r, s.Err, label, image, hooks, params.Env, done)
+			}()
+			netnsWait = func() { close(done); <-finished }
+		} else {
+			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
+		}
 	}
 
 	// The container name makes this atomic: if a concurrent develop won the

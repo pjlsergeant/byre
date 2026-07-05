@@ -1,12 +1,27 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
 
 	"byre/internal/skills"
 )
+
+// runNonce returns the random value for this invocation's byre.run label (see
+// naming.go: the netns target's ownership proof). A package var so tests can
+// pin it; production always uses fresh crypto randomness.
+var runNonce = func() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// No randomness means no ownership proof; the caller treats an empty
+		// nonce as "don't run hooks" and the launch gate then fails closed.
+		return ""
+	}
+	return hex.EncodeToString(b)
+}
 
 // runNetnsInits applies the enabled skills' declared netns-init hooks (e.g.
 // the firewall's rule script) to the box once its network namespace exists.
@@ -16,13 +31,12 @@ import (
 // neither). The box's launcher waits at the launch gate meanwhile, so no
 // skill or agent code executes before the hooks finish.
 //
-// It polls by the worktree LABEL (not the container name) and targets the
-// resolved container ID: the name byre-<worktreeID> is deterministic, so an
-// unrelated container squatting it would otherwise get the root+NET_ADMIN
-// helper run in its netns. The label is byre's own, asserted last in the run
-// argv (unspoofable by run_args), so a match is definitely our box. develop's
-// fast path already refused to start if a session held this label, so at most
-// one container carries it — ours.
+// It polls by the per-invocation byre.run NONCE label and targets the
+// resolved container ID. The container name and the family/workdir labels are
+// all derivable from the project path, so a container planted with any of
+// them could capture the root+NET_ADMIN helper; the nonce is fresh randomness
+// that exists only in this invocation's run argv (asserted last, unspoofable
+// by run_args), so a match is OUR box, full stop.
 //
 // done closes when the session ends; if our container never appears (the run
 // failed at once, or lost the name race to a peer that we don't own), the

@@ -15,9 +15,18 @@ import (
 // label: byre.workdir=<worktree-id>, used to find a SINGLE worktree's session
 // (develop's fast path, shell) so two worktrees can run at once without one
 // seeing the other's container. For a plain project the two values are equal.
+// runKey is a transient per-invocation label: byre.run=<random nonce>. Added
+// only when netns-init hooks will run, as the OWNERSHIP PROOF for their
+// target: the family and workdir label values are derivable from the project
+// path, so a container planted with them could otherwise capture the
+// root+NET_ADMIN helper — the nonce is fresh randomness that exists only in
+// this invocation's run argv (asserted last, so run_args can't override it)
+// and cannot be known in advance. (Reading it back post-start requires
+// docker-socket access, which is host-root-equivalent already.)
 const (
 	labelKey   = "byre.project"
 	workdirKey = "byre.workdir"
+	runKey     = "byre.run"
 )
 
 // containerName is the engine container name — keyed on the worktree id so two

@@ -156,15 +156,26 @@ func netnsSkill(path string) skills.Resolved {
 	return skills.Resolved{Skills: []skills.Skill{sk}}
 }
 
+// pinNonce pins the per-invocation byre.run nonce so a test can pre-key the
+// fake's label queries, restoring the real generator afterwards.
+func pinNonce(t *testing.T, v string) {
+	t.Helper()
+	orig := runNonce
+	runNonce = func() string { return v }
+	t.Cleanup(func() { runNonce = orig })
+}
+
 func TestDevelopRunsNetnsInitsOnceUp(t *testing.T) {
 	p, _ := testPaths(t)
+	pinNonce(t, "feedface")
 	// liveSecond, not live: the develop fast path queries the workdir label
 	// first and must see NOTHING (else it refuses as already-running). Our box
 	// appears only from the 2nd query on — what the netns poll sees after the
-	// run starts it. The hook must target OUR container id (from the label),
-	// not the deterministic name, so a squatter of byre-<id> can't get it.
+	// run starts it. The poll keys on the byre.run NONCE label (the ownership
+	// proof — the name and path-derived labels are plantable) and the hook
+	// must target the container id resolved from it.
 	id := "cafef00d1234"
-	f := &fakeRunner{liveSecond: liveWorkdir(p, id)}
+	f := &fakeRunner{liveSecond: map[string][]string{"byre.run=feedface": {id}}}
 	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
 	if err != nil {
 		t.Fatal(err)
@@ -172,13 +183,19 @@ func TestDevelopRunsNetnsInitsOnceUp(t *testing.T) {
 	if len(f.netnsInits) != 1 || f.netnsInits[0] != id+" /usr/local/bin/byre-firewall" {
 		t.Fatalf("expected the netns hook applied to OUR container id, got %v", f.netnsInits)
 	}
+	// The nonce label must actually be on the run argv (asserted with the
+	// identity labels, after run_args) or the poll could never match.
+	if argv := strings.Join(f.runs[0], " "); !strings.Contains(argv, "--label byre.run=feedface") {
+		t.Errorf("run argv missing the nonce label: %s", argv)
+	}
 }
 
 func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
 	p, _ := testPaths(t)
-	// Our container never appears under its label (e.g. the run failed
-	// instantly, or a peer we don't own won the name race): the poll must exit
-	// via the done channel, not hang or fire the hook.
+	pinNonce(t, "feedface")
+	// Our container never appears under the nonce label (e.g. the run failed
+	// instantly, or a squatter holds the name — it can't hold the nonce): the
+	// poll must exit via the done channel, not hang or fire the hook.
 	f := &fakeRunner{}
 	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
 	if err != nil {
@@ -191,7 +208,11 @@ func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
 
 func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{liveSecond: liveWorkdir(p, "cafef00d1234"), netnsErr: errors.New("iptables: boom")}
+	pinNonce(t, "feedface")
+	f := &fakeRunner{
+		liveSecond: map[string][]string{"byre.run=feedface": {"cafef00d1234"}},
+		netnsErr:   errors.New("iptables: boom"),
+	}
 	s, _, stderr := testStreams("", false)
 	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
 		t.Fatal(err)
@@ -209,5 +230,25 @@ func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
 	}
 	if len(f.netnsInits) != 0 {
 		t.Fatalf("no skill declares a hook; none must run: %v", f.netnsInits)
+	}
+	// And no nonce label is added when nothing consumes it.
+	if argv := strings.Join(f.runs[0], " "); strings.Contains(argv, "byre.run=") {
+		t.Errorf("nonce label must not appear without netns hooks: %s", argv)
+	}
+}
+
+func TestDevelopNetnsNoNonceSkipsHooks(t *testing.T) {
+	p, _ := testPaths(t)
+	pinNonce(t, "") // randomness unavailable
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.netnsInits) != 0 {
+		t.Fatalf("no nonce, no ownership proof — hooks must not run: %v", f.netnsInits)
+	}
+	if !strings.Contains(stderr.String(), "fail the launch closed") {
+		t.Errorf("expected the fail-closed note, got: %s", stderr.String())
 	}
 }
