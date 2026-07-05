@@ -55,7 +55,7 @@ func rehome(s Streams, paths project.Paths, oldID string, r engineRunner, uid, g
 			if live, err := r.RunningContainersByLabel(labelKey + "=" + id); err != nil {
 				return fmt.Errorf("checking for a running session: %w", err)
 			} else if len(live) > 0 {
-				return fmt.Errorf("a container is running for %s (%s); exit it before rehome", id, shortID(live[0]))
+				return fmt.Errorf("a session is running for %s (%s); exit it before rehome", id, shortID(live[0]))
 			}
 		}
 

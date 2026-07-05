@@ -10,7 +10,7 @@ import (
 )
 
 // noteSharedVolumes warns, before a destructive lifecycle action, that these
-// volumes are shared across the whole repo family — so wiping them from one
+// volumes are shared across the whole project (all its worktrees) — so wiping them from one
 // worktree affects them all. No-op for a plain project.
 func noteSharedVolumes(w io.Writer, paths project.Paths) {
 	if paths.IsWorktree {

@@ -34,7 +34,7 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 func TestRehomeRefusesLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{
-		live:   liveFamily(p, "deadbeef0000"),
+		live:   liveProject(p, "deadbeef0000"),
 		vols:   map[string]bool{"byre-oldid-cache": true},
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}

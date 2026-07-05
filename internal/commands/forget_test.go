@@ -37,7 +37,7 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 
 func TestForgetRefusesLive(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{live: liveFamily(p, "deadbeef0000"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{live: liveProject(p, "deadbeef0000"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
 	if err := forget(s, p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")

@@ -9,15 +9,15 @@ import (
 	"byre/internal/project"
 )
 
-// labelKey is the FAMILY label: byre.project=<family-id>. Every container of a
-// repo family carries it, so blast-radius lifecycle queries (reset/forget/
+// labelKey is the PROJECT label: byre.project=<project-id>. Every container of
+// the project (all its worktrees) carries it, so blast-radius lifecycle queries (reset/forget/
 // rehome/status) find all worktrees' sessions. workdirKey is the per-worktree
 // label: byre.workdir=<worktree-id>, used to find a SINGLE worktree's session
 // (develop's fast path, shell) so two worktrees can run at once without one
 // seeing the other's container. For a plain project the two values are equal.
 // runKey is a transient per-invocation label: byre.run=<random nonce>. Added
 // only when netns-init hooks will run, as the OWNERSHIP PROOF for their
-// target: the family and workdir label values are derivable from the project
+// target: the project and workdir label values are derivable from the project
 // path, so a container planted with them could otherwise capture the
 // root+NET_ADMIN helper — the nonce is fresh randomness that exists only in
 // this invocation's run argv (asserted last, so run_args can't override it)
@@ -35,8 +35,8 @@ const (
 // byre-<id>.
 func containerName(p project.Paths) string { return "byre-" + p.WorktreeID }
 
-// familyLabel selects every container of a repo family (all worktrees).
-func familyLabel(p project.Paths) string { return labelKey + "=" + p.ID }
+// projectLabel selects every container of the project (all its worktrees).
+func projectLabel(p project.Paths) string { return labelKey + "=" + p.ID }
 
 // workdirLabel selects a single worktree's container.
 func workdirLabel(p project.Paths) string { return workdirKey + "=" + p.WorktreeID }

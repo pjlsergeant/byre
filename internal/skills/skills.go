@@ -634,7 +634,7 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 }
 
 // DevHome is the in-box agent home. The generated image bakes the dev user
-// with this home (see internal/gen's infra layer and launcher — they spell it
+// with this home (see internal/gen's core block and launcher — they spell it
 // literally in shell/Dockerfile text, pinned by gen's golden test), and
 // context_target must stay within it so a skill can't use the launcher's
 // context placement to write arbitrary container paths (e.g. /workspace,

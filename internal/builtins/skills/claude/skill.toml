@@ -4,9 +4,9 @@
 # installer (no node required) and brings its own apt deps, so it works on any
 # Debian-family base (debian, golang, ubuntu, ...).
 #
-# Installs AS the dev user (via gosu, which the infra layer that precedes skills
+# Installs AS the dev user (via gosu, which the core block that precedes skills
 # provides) into /home/dev/.local/bin — the location Claude's own doctor/auto-
-# update expects ($HOME/.local/bin), owned by the runtime user. The infra layer
+# update expects ($HOME/.local/bin), owned by the runtime user. The core block
 # puts /home/dev/.local/bin on PATH (keeps /doctor happy in the main session);
 # the symlink keeps claude reachable in attach (docker exec) shells whose login
 # profile may reset PATH.

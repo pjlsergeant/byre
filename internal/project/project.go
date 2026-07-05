@@ -108,14 +108,14 @@ func Home() (string, error) {
 //
 // Worktree inheritance (docs/agent-volume-sharing.md): a linked git worktree
 // inherits the MAIN worktree's identity — the id-keyed fields (ID/Canonical/
-// Dir/ContextDir/PathRecord/LockFile) all derive from the family (main
+// Dir/ContextDir/PathRecord/LockFile) all derive from the project identity (main
 // worktree) path, so config, volumes, and the image are shared. Only the
 // strictly-local bits stay per-worktree: WorkDir (bound at /workspace) and
 // WorktreeID (the container name + per-worktree label, so two worktrees can run
 // at once). For a plain project WorkDir == Canonical and WorktreeID == ID.
 type Paths struct {
-	ID         string // family project_id (config/volumes/image identity)
-	Canonical  string // canonical family dir (main worktree; == WorkDir when not a worktree)
+	ID         string // project id, shared across worktrees (config/volumes/image identity)
+	Canonical  string // canonical project dir (main worktree; == WorkDir when not a worktree)
 	WorkDir    string // canonical dir bound at /workspace (the worktree; == Canonical when not a worktree)
 	Home       string // ~/.byre
 	Dir        string // ~/.byre/projects/<ID>
@@ -150,7 +150,7 @@ func Resolve(projectDir string) (Paths, error) {
 	if info, ok, derr := detectWorktree(work); derr != nil {
 		return Paths{}, derr
 	} else if ok {
-		identity, isWT, commonGitDir = info.familyDir, true, info.commonGitDir
+		identity, isWT, commonGitDir = info.mainDir, true, info.commonGitDir
 	}
 
 	id := idFromCanonical(identity)

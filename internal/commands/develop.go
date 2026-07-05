@@ -55,7 +55,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit boo
 		return err
 	}
 	// Worktree: announce the inherited identity up front, so any onboarding/adopt
-	// prompts below are understood as configuring the whole repo family.
+	// prompts below are understood as configuring the whole project (all its worktrees).
 	announceWorktree(s.Err, paths)
 	// A committed <project>/byre.config is a proposal: offer to review + adopt it
 	// into the host-side store (never trusted automatically — it's in the box's
@@ -98,7 +98,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 
 	// Fast path: a session is already running for THIS worktree — report it
 	// rather than racing the container name. Queried by the worktree label, not
-	// the family label, so another worktree's live session doesn't block this
+	// the project label, so another worktree's live session doesn't block this
 	// one (running both at once is the point). A query error here is fatal: it's
 	// the live-session safety check.
 	ids, err := r.RunningContainersByLabel(workdirLabel(paths))
@@ -209,7 +209,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 // uniformly (so develop and rebuild produce the same image for opt-out projects).
 // The generated build bakes the host UID/GID via --build-arg so /home/dev and the
 // volume mount points are born owned by the runtime user (no runtime chown). The
-// opt-out path gets no build args: the user owns that infra layer.
+// opt-out path gets no build args: the user owns that part of the chassis.
 func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool) error {
 	if cfg.Dockerfile != "" {
 		dfPath, err := resolveProjectFile(paths.Canonical, cfg.Dockerfile)
@@ -252,11 +252,11 @@ func uidBuildArgs() []string {
 }
 
 // warnNonDebianBase prints a friendly warning when the base image is obviously
-// not Debian-derived, since byre's core infra layer assumes apt + glibc.
+// not Debian-derived, since byre's core block assumes apt + glibc.
 func warnNonDebianBase(w io.Writer, base string) {
 	l := strings.ToLower(base)
 	if strings.Contains(l, "alpine") || strings.Contains(l, "scratch") || strings.Contains(l, "distroless") {
-		fmt.Fprintf(w, "byre: warning: base %q is not Debian-derived; byre's core infra layer assumes apt + glibc and may fail to build. Use a Debian/Ubuntu base, or a full hand-written Dockerfile (dockerfile = ...).\n", base)
+		fmt.Fprintf(w, "byre: warning: base %q is not Debian-derived; byre's core block assumes apt + glibc and may fail to build. Use a Debian/Ubuntu base, or a full hand-written Dockerfile (dockerfile = ...).\n", base)
 	}
 }
 

@@ -35,7 +35,7 @@ func requireEngineRunner(t *testing.T) *runner.Runner {
 // and runs the image once with the entrypoint bypassed. This is the
 // generated-Dockerfile <-> real-engine contract the unit suite can only
 // approximate; run it once after any change to internal/gen or the base
-// infra layer, and before a release.
+// core block, and before a release.
 func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	r := requireEngineRunner(t)
 	p, proj := testPaths(t)

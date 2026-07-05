@@ -11,11 +11,11 @@ import (
 // anchor (the main worktree) lives, and the common git dir byre must mount so
 // git works inside the box.
 type worktreeInfo struct {
-	// familyDir is the canonical path of the main worktree — the identity anchor.
+	// mainDir is the canonical path of the main worktree — the identity anchor.
 	// byre derives config/volumes/image from it so a worktree inherits the repo's
-	// setup instead of re-onboarding. For a bare-repo family it is the git dir
+	// setup instead of re-onboarding. For a bare repo it is the git dir
 	// itself (there is no working tree to anchor on).
-	familyDir string
+	mainDir string
 	// commonGitDir is the git common dir, exactly as git dereferences it, so it
 	// can be bind-mounted at the same host path inside the box (see the mount
 	// discussion in docs/agent-volume-sharing.md). The per-worktree git dir lives
@@ -26,7 +26,7 @@ type worktreeInfo struct {
 // detectWorktree inspects <dir>/.git to decide whether dir is a linked git
 // worktree.
 //
-//   - (info, true, nil)  — dir is a linked worktree; inherit familyDir's identity.
+//   - (info, true, nil)  — dir is a linked worktree; inherit mainDir's identity.
 //   - (_, false, nil)    — dir is a plain repo, a submodule, or not a repo at
 //     all; treat it as its own standalone project (today's behaviour).
 //   - (_, false, err)    — dir LOOKS like a worktree but its metadata is missing
@@ -85,18 +85,18 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	}
 	common = filepath.Clean(common)
 
-	// The family (identity) dir is the main worktree: the parent of a ".git"
-	// common dir, or the common dir itself for a bare-repo family. Canonicalize
+	// The identity dir is the main worktree: the parent of a ".git"
+	// common dir, or the common dir itself for a bare repo. Canonicalize
 	// it so the id matches running byre in the main worktree directly.
-	familyDir := common
+	mainDir := common
 	if filepath.Base(common) == ".git" {
-		familyDir = filepath.Dir(common)
+		mainDir = filepath.Dir(common)
 	}
-	canonFamily, err := Canonicalize(familyDir)
+	canonMain, err := Canonicalize(mainDir)
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
-	return worktreeInfo{familyDir: canonFamily, commonGitDir: common}, true, nil
+	return worktreeInfo{mainDir: canonMain, commonGitDir: common}, true, nil
 }
 
 // parseGitdirPointer extracts the path from a `.git` file's `gitdir: <path>`

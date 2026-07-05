@@ -112,7 +112,7 @@ func TestCreateWorktreeNewBranch(t *testing.T) {
 	}
 	canonRepo, _ := project.Canonicalize(repo)
 	if p.Canonical != canonRepo {
-		t.Errorf("worktree family %q != repo %q", p.Canonical, canonRepo)
+		t.Errorf("worktree project dir %q != repo %q", p.Canonical, canonRepo)
 	}
 	// The new branch exists.
 	if !branchExists(repo, "feat") {

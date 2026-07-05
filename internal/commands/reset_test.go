@@ -7,8 +7,8 @@ import (
 	"byre/internal/project"
 )
 
-// liveFamily marks a session live for the project's family label.
-func liveFamily(p project.Paths, ids ...string) map[string][]string {
+// liveProject marks a session live for the project label.
+func liveProject(p project.Paths, ids ...string) map[string][]string {
 	return map[string][]string{labelKey + "=" + p.ID: ids}
 }
 
@@ -26,7 +26,7 @@ func TestResetForceWipesAll(t *testing.T) {
 
 func TestResetRefusesWhenLive(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{live: liveFamily(p, "abcdef0123456789"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
+	f := &fakeRunner{live: liveProject(p, "abcdef0123456789"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
 	if err := reset(s, p, f, true); err == nil {
 		t.Fatal("expected refusal while a session is live")
@@ -66,7 +66,7 @@ func TestResetPromptAbortsOnNo(t *testing.T) {
 func TestResetRechecksLiveUnderLock(t *testing.T) {
 	p, _ := testPaths(t)
 	// Not live at the first check, but a session appears by the re-check.
-	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}, liveSecond: liveFamily(p, "abcdef0123456789")}
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}, liveSecond: liveProject(p, "abcdef0123456789")}
 	s, _, _ := testStreams("", false)
 	if err := reset(s, p, f, true); err == nil {
 		t.Fatal("expected abort when a session starts before deletion")

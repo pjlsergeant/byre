@@ -68,7 +68,7 @@ byre develop --template go --agent claude
 | `byre develop` | Generate (if needed), build on cache-miss, and run the container in the foreground. The main entry point. If a session is already running for the dir, it tells you (and how to stop it) rather than starting a second. |
 | `byre shell` | Open an interactive shell (as the `dev` user, with the agent's env) in this project's running session -- for `codex login`, running tests, poking around. |
 | `byre worktree <name> [--path <dir>]` | Create a git worktree (a sibling `<repo>-<name>`, or `--path`) on branch `<name>` and start a session in it in one step -- a parallel agent that **inherits** this repo's config, volumes, and image (so it's already logged in). New branch if `<name>` is new, otherwise it checks out the existing (local or remote) branch. Runs concurrently with the main tree. |
-| `byre status` | Show the resolved config, mounts, skills + what they grant, volumes, and whether a container is running for this directory. |
+| `byre status` | Show the resolved config, mounts, skills + what they grant, volumes, and whether a session is running for this directory. |
 | `byre config [--global]` | Open the interactive editor for this project's (host-side) config. `--global` edits your `~/.byre/default.config` baseline instead. |
 | `byre dockerfile` | Print the generated Dockerfile for this directory. |
 | `byre reset [--force]` | Wipe this project's named volumes (not the image). Names what dies; refuses while a session is live. |
@@ -112,7 +112,7 @@ files    = { "./seed" = "/opt/seed" }       # copy project files into the image
 skills   = ["moarcode", "shem"]
 mounts   = [ ... ]                          # host-bind mounts
 volumes  = [ ... ]                          # named volumes (role/target/seed)
-dockerfile_pre  = ["RUN ..."]               # raw build block, before infra
+dockerfile_pre  = ["RUN ..."]               # raw build block, before the core block
 dockerfile_post = ["RUN ..."]               # raw build block, project tail
 run_args        = ["--cap-add=SYS_PTRACE"]  # raw docker-run passthrough
 # dockerfile = "Dockerfile"                 # opt out: bring your own Dockerfile
@@ -160,5 +160,5 @@ opt-in and named by `byre status`, never silent.
 byre bakes your host UID/GID into the image at build time, so the agent runs
 unprivileged as you and the files it writes are correctly owned -- a Linux-host
 concern; on Docker Desktop (macOS/Windows) the file-sharing layer fakes ownership
-and it doesn't arise. byre targets Debian-derived base images (the core infra
-layer assumes apt/glibc); use other bases via a full hand-written Dockerfile.
+and it doesn't arise. byre targets Debian-derived base images (the core
+block assumes apt/glibc); use other bases via a full hand-written Dockerfile.

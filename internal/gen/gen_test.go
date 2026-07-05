@@ -20,7 +20,7 @@ FROM node:22
 
 # --- template block ---
 
-# --- byre infra layer (constant) ---
+# --- byre core block (constant) ---
 ARG BYRE_UID=1000
 ARG BYRE_GID=1000
 RUN apt-get update \
@@ -66,16 +66,16 @@ func TestDockerfileUsesConfiguredBase(t *testing.T) {
 func TestDockerfileCanonicalOrder(t *testing.T) {
 	out := Dockerfile(Input{Base: "node:22", Skills: []SkillBlock{{Name: "x"}}})
 	from := strings.Index(out, "FROM ")
-	infra := strings.Index(out, "byre infra layer")
+	core := strings.Index(out, "byre core block")
 	skills := strings.Index(out, "# --- skills ---")
 	entry := strings.Index(out, "ENTRYPOINT")
-	if from < 0 || infra < 0 || skills < 0 || entry < 0 {
+	if from < 0 || core < 0 || skills < 0 || entry < 0 {
 		t.Fatalf("missing required sections:\n%s", out)
 	}
 	// Infra (constant) must precede skills (so the dev user + gosu exist for
-	// skill builds, and infra stays cache-shared); ENTRYPOINT last.
-	if !(from < infra && infra < skills && skills < entry) {
-		t.Fatalf("sections out of order: FROM=%d infra=%d skills=%d ENTRYPOINT=%d\n%s", from, infra, skills, entry, out)
+	// skill builds, and the core block stays cache-shared); ENTRYPOINT last.
+	if !(from < core && core < skills && skills < entry) {
+		t.Fatalf("sections out of order: FROM=%d core=%d skills=%d ENTRYPOINT=%d\n%s", from, core, skills, entry, out)
 	}
 }
 

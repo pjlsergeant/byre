@@ -14,7 +14,7 @@ import (
 )
 
 // LauncherName is the build-context filename of the launcher script that the
-// infra layer COPYs in and installs as the ENTRYPOINT.
+// core block COPYs in and installs as the ENTRYPOINT.
 const LauncherName = "byre-launch"
 
 //go:embed launcher.sh
@@ -43,7 +43,7 @@ type Input struct {
 	// ownership (else a root-owned mount point leaves the unprivileged agent unable
 	// to write state).
 	VolumeDirs     []string
-	DockerfilePre  []string // raw block, before the infra layer
+	DockerfilePre  []string // raw block, before the core block
 	DockerfilePost []string // raw block, project tail
 }
 
@@ -67,11 +67,12 @@ const (
 // DefaultBase is used when no base is configured (and no template supplies one).
 const DefaultBase = "debian:bookworm"
 
-// launcherPath is where the infra layer installs the launcher / ENTRYPOINT.
+// launcherPath is where the core block installs the launcher / ENTRYPOINT.
 const launcherPath = "/usr/local/bin/" + LauncherName
 
-// infraLayer is byre's constant infra block: it installs gosu (a build-only
-// helper — skills install their CLIs as the dev user via `gosu dev` in a RUN),
+// coreBlock is the chassis's build-time slice — core's constant contribution
+// to every generated Dockerfile. It installs gosu (a build-only helper —
+// skills install their CLIs as the dev user via `gosu dev` in a RUN),
 // creates the in-box 'dev' user OWNED BY THE HOST UID/GID, installs the launcher,
 // and prepares /home/dev + /workspace. The host UID/GID arrive as build args
 // (defaulting to 1000), so /home/dev is born owned by the runtime user and a
@@ -93,7 +94,7 @@ const launcherPath = "/usr/local/bin/" + LauncherName
 //
 // The ARG default keeps this block byte-stable (the golden test asserts on the
 // template text); only the build-arg VALUE varies per host.
-const infraLayer = "ARG BYRE_UID=1000\n" +
+const coreBlock = "ARG BYRE_UID=1000\n" +
 	"ARG BYRE_GID=1000\n" +
 	"RUN apt-get update \\\n" +
 	" && apt-get install -y --no-install-recommends gosu \\\n" +
@@ -114,11 +115,11 @@ const infraLayer = "ARG BYRE_UID=1000\n" +
 	"RUN chmod +x " + launcherPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
-// FROM, template/pre-infra raw block, the constant infra layer, skill blocks,
+// FROM, the template block, the constant core block, skill blocks,
 // the agent files, the project block (byre primitives + post raw block), then
-// USER (drop to the baked dev user) and the constant ENTRYPOINT. The infra layer
-// precedes skills so the dev user + gosu exist for skill builds and the constant
-// layer stays cache-shared; USER comes last so every preceding RUN (infra, skill
+// USER (drop to the baked dev user) and the constant ENTRYPOINT. The core block
+// precedes skills so the dev user + gosu exist for skill builds and the
+// constant block stays cache-shared; USER comes last so every preceding RUN (core block, skill
 // apt installs, the project block) still runs as root. Empty sections render as
 // bare markers, keeping the layout stable.
 func Dockerfile(in Input) string {
@@ -134,12 +135,12 @@ func Dockerfile(in Input) string {
 	b.WriteString("\n# --- template block ---\n")
 	writeRaw(&b, in.DockerfilePre)
 
-	// The constant infra layer comes BEFORE skills: it's shared across all
+	// The constant core block comes BEFORE skills: it's shared across all
 	// projects on a base (skills vary, so placing it after them would rebuild it
 	// per skill-set), and it means the dev user + gosu exist when skills build —
 	// so a skill can install as the dev user rather than root.
-	b.WriteString("\n# --- byre infra layer (constant) ---\n")
-	b.WriteString(infraLayer)
+	b.WriteString("\n# --- byre core block (constant) ---\n")
+	b.WriteString(coreBlock)
 
 	b.WriteString("\n# --- skills ---\n")
 	for _, s := range in.Skills {
@@ -151,7 +152,7 @@ func Dockerfile(in Input) string {
 	}
 
 	// Agent files are project/agent-specific, so they go after the constant
-	// infra layer (and after skills), keeping them out of the shared path.
+	// core block (and after skills), keeping them out of the shared path.
 	if in.AgentCmd || in.AgentContext || in.AgentContextTarget {
 		b.WriteString("\n# --- agent ---\n")
 		if in.AgentCmd {
@@ -193,7 +194,7 @@ func Dockerfile(in Input) string {
 	writeRaw(&b, in.DockerfilePost)
 
 	// Drop to the baked dev user for the runtime container. This comes after every
-	// build step (infra, skills, project block) so those still run as root, but
+	// build step (core block, skills, project block) so those still run as root, but
 	// before the ENTRYPOINT so the launcher and the agent run unprivileged — no
 	// runtime root, no gosu drop.
 	b.WriteString("\nUSER dev\n")

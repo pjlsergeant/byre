@@ -25,7 +25,7 @@ func Reset(s Streams, projectDir string, force bool) error {
 	return reset(s, paths, r, force)
 }
 
-// liveSession lists the running containers of a repo family (any worktree).
+// liveSession lists the running containers of the project (any of its worktrees).
 func liveSession(r sessionRunner, id string) ([]string, error) {
 	return r.RunningContainersByLabel(labelKey + "=" + id)
 }
@@ -35,7 +35,7 @@ func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	if live, err := liveSession(r, paths.ID); err != nil {
 		return fmt.Errorf("checking for a running session: %w", err)
 	} else if len(live) > 0 {
-		return fmt.Errorf("a container is running for this project (%s); exit it before reset", shortID(live[0]))
+		return fmt.Errorf("a session is running for this project (%s); exit it before reset", shortID(live[0]))
 	}
 
 	vols, err := projectVolumes(r, paths.Home, paths.ID)

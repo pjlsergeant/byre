@@ -69,7 +69,7 @@ func TestResolveWorktreeInheritsMainIdentity(t *testing.T) {
 		t.Fatalf("WorkDir = %q, want %q", wtPaths.WorkDir, wantWork)
 	}
 	if wtPaths.WorktreeID == wtPaths.ID {
-		t.Fatalf("WorktreeID %q must differ from family ID for a worktree", wtPaths.WorktreeID)
+		t.Fatalf("WorktreeID %q must differ from the project ID for a worktree", wtPaths.WorktreeID)
 	}
 	wantCommon, _ := Canonicalize(filepath.Join(main, ".git"))
 	if gotCommon, _ := Canonicalize(wtPaths.CommonGitDir); gotCommon != wantCommon {

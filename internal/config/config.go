@@ -366,7 +366,7 @@ func (c Config) validateScalars() error {
 
 	// Full hand-written Dockerfile opt-out: a project-relative path. byre builds
 	// it (from the project dir) instead of generating, and the user owns the
-	// infra layer — including the dev user and its ownership (byre passes no
+	// core block — including the dev user and its ownership (byre passes no
 	// UID/GID build args on this path); byre still owns runtime.
 	if c.Dockerfile != "" && !RelSafe(c.Dockerfile) {
 		return fmt.Errorf("dockerfile = %q: must be a relative path within the project", c.Dockerfile)

@@ -16,7 +16,7 @@ type VolumeAdmin interface {
 	List() ([]VolumeStatus, error)
 	Clear(name string) error // remove the volume from the engine (refuses if a session is live)
 	// SharedNote returns a blast-radius warning to show before a clear (e.g. a
-	// worktree whose volumes are shared across the repo family), or "" if none.
+	// worktree whose volumes are shared across the project's worktrees), or "" if none.
 	SharedNote() string
 }
 

@@ -97,16 +97,16 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Container name + labels: name keyed on the worktree id; both family and
-	// workdir labels present so lifecycle (family) and single-session (workdir)
+	// Container name + labels: name keyed on the worktree id; both project and
+	// workdir labels present so lifecycle (project) and single-session (workdir)
 	// queries both resolve.
 	if p.Name != "byre-byre-wt-111111" {
 		t.Errorf("container name = %q, want worktree-keyed", p.Name)
 	}
 	if got := strings.Join(p.Labels, " "); !strings.Contains(got, "byre.project=byre-main-000000") || !strings.Contains(got, "byre.workdir=byre-wt-111111") {
-		t.Errorf("labels missing family/workdir: %v", p.Labels)
+		t.Errorf("labels missing project/workdir: %v", p.Labels)
 	}
-	// Workspace bind is the worktree, not the family (main) tree.
+	// Workspace bind is the worktree, not the main tree.
 	if p.WorkspaceHost != "/home/me/wt" {
 		t.Errorf("workspace host = %q, want the worktree dir", p.WorkspaceHost)
 	}
@@ -171,14 +171,14 @@ func TestStatusRendersWorktreeLine(t *testing.T) {
 }
 
 func TestStatusRendersSiblingSessions(t *testing.T) {
-	// No siblings -> no family-sessions line (the plain-project common case).
+	// No siblings -> no sibling-sessions line (the plain-project common case).
 	var none strings.Builder
 	renderStatus(&none, statusInfo{ID: "x", Canonical: "/p"})
 	if strings.Contains(none.String(), "other session") {
 		t.Errorf("should not show sibling sessions when there are none:\n%s", none.String())
 	}
 	// Siblings present -> a line naming them, so status doesn't imply nothing is
-	// running while reset/forget (family label) would refuse.
+	// running while reset/forget (project label) would refuse.
 	var kin strings.Builder
 	renderStatus(&kin, statusInfo{ID: "x", Canonical: "/p", SiblingSessions: []string{"abc123def456", "789beefcafe0"}})
 	s := kin.String()

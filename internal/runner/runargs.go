@@ -47,7 +47,7 @@ type RunParams struct {
 
 // RunArgs builds the argv (after the engine name) for `docker run`.
 //
-// Ordering encodes the spec contract: byre's own flags first, then the raw
+// Ordering encodes the ADR 0006 contract: byre's own flags first, then the raw
 // run_args (so they can override byre's, e.g. --user/--network), then the
 // identity --label re-asserted last so it always wins and lifecycle/status can
 // find the container. The image and command come last.

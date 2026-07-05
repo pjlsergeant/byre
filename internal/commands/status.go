@@ -19,7 +19,7 @@ type statusInfo struct {
 	Engine          string
 	ID              string
 	Canonical       string // the dir bound at /workspace (the worktree, for a worktree)
-	WorktreeOf      string // family (main worktree) path when this is a linked worktree, else ""
+	WorktreeOf      string // main-worktree path when this is a linked worktree, else ""
 	Skills          []string
 	Binds           []config.Mount
 	Ports           []config.Port
@@ -33,7 +33,7 @@ type statusInfo struct {
 	ProjectRunArgs  bool                 // the PROJECT's own raw run_args present (degrades the posture claim)
 	CustomDF        bool                 // full-Dockerfile opt-out (skill build contributions never land)
 	Container       string               // this dir's running container id, or "" if none
-	SiblingSessions []string             // short ids of OTHER live sessions in this repo family (worktrees sharing these volumes)
+	SiblingSessions []string             // short ids of OTHER live sessions in this project (worktrees sharing these volumes)
 	Rootless        bool                 // true if the engine is rootless Podman (unsupported ownership)
 	EngineErr       string               // why the engine/container state is unknown, if applicable
 	SkillErr        string               // why skills couldn't be resolved, if applicable
@@ -124,16 +124,16 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.Rootless = true
 		}
 		// This dir's own session: the worktree label, so it reflects THIS worktree,
-		// not a sibling (both carry the family label).
+		// not a sibling (both carry the project label).
 		mine, _ := r.RunningContainersByLabel(workdirLabel(paths))
 		if len(mine) > 0 {
 			info.Container = mine[0]
 		}
-		// Other live sessions in the same repo family (worktrees sharing these
+		// Other live sessions in the same project (worktrees sharing these
 		// volumes). Surfaced so status doesn't imply "nothing running" while
-		// reset/forget correctly refuse on the family label. Empty for a plain
-		// project (its family set is just itself).
-		if fam, cerr := r.RunningContainersByLabel(familyLabel(paths)); cerr == nil {
+		// reset/forget correctly refuse on the project label. Empty for a plain
+		// project (no worktree siblings).
+		if fam, cerr := r.RunningContainersByLabel(projectLabel(paths)); cerr == nil {
 			mineSet := map[string]bool{}
 			for _, id := range mine {
 				mineSet[id] = true

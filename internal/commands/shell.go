@@ -43,7 +43,7 @@ func shell(s Streams, projectDir string, engines []sessionRunner) error {
 		return err
 	}
 	// Query the worktree label so `byre shell` opens THIS worktree's session, not
-	// a sibling worktree's (both carry the family label).
+	// a sibling worktree's (both carry the project label).
 	label := workdirLabel(paths)
 	// Find the session in whichever installed engine actually holds it — a session
 	// may run under podman even when docker is also installed. Skip engines that

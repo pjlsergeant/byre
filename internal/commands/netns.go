@@ -32,7 +32,7 @@ var runNonce = func() string {
 // skill or agent code executes before the hooks finish.
 //
 // It polls by the per-invocation byre.run NONCE label and targets the
-// resolved container ID. The container name and the family/workdir labels are
+// resolved container ID. The container name and the project/workdir labels are
 // all derivable from the project path, so a container planted with any of
 // them could capture the root+NET_ADMIN helper; the nonce is fresh randomness
 // that exists only in this invocation's run argv (asserted last, unspoofable
