@@ -138,3 +138,35 @@ func TestSeedLiteralArgvAndStdin(t *testing.T) {
 		}
 	}
 }
+
+func TestNetnsInitArgv(t *testing.T) {
+	var gotArgs []string
+	r := &Runner{engine: Docker, capture: func(name string, args ...string) (string, error) {
+		gotArgs = append([]string{name}, args...)
+		return "", nil
+	}}
+	err := r.NetnsInit("byre-img.v0", "byre-myproj", "/usr/local/bin/byre-firewall",
+		map[string]string{"FIREWALL_ALLOW": "grafana.com", "A": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// -u 0:0 + --cap-add NET_ADMIN live HERE, on the throwaway helper joining
+	// the box's netns — never on the box itself. Env keys sorted.
+	want := "docker run --rm -u 0:0 --net container:byre-myproj --cap-add NET_ADMIN" +
+		" --entrypoint /usr/local/bin/byre-firewall -e A=1 -e FIREWALL_ALLOW=grafana.com byre-img.v0"
+	if got := strings.Join(gotArgs, " "); got != want {
+		t.Fatalf("NetnsInit argv = %q, want %q", got, want)
+	}
+}
+
+func TestContainerRunning(t *testing.T) {
+	for out, want := range map[string]bool{"true\n": true, "false\n": false} {
+		r := &Runner{engine: Docker, capture: func(string, ...string) (string, error) {
+			return out, nil
+		}}
+		got, err := r.ContainerRunning("byre-x")
+		if err != nil || got != want {
+			t.Fatalf("ContainerRunning with %q = %v, %v; want %v", out, got, err, want)
+		}
+	}
+}

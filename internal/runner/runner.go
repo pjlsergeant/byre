@@ -192,6 +192,50 @@ func execArgs(containerID string, uid, gid int, workdir string, env map[string]s
 	return append(args, command...)
 }
 
+// ContainerRunning reports whether a container with the given name is
+// currently running. Used to poll for the box's netns existing before a
+// netns-init helper joins it; an inspect error (typically "no such object"
+// while the container hasn't been created yet) reads as "not running".
+func (r *Runner) ContainerRunning(name string) (bool, error) {
+	out, err := r.capture(string(r.engine), "inspect", "-f", "{{.State.Running}}", name)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "true", nil
+}
+
+// NetnsInit runs a skill's declared netns-init entrypoint in the target
+// container's network namespace: a run-to-completion helper container sharing
+// ONLY the netns (not fs, not pid), as root with CAP_NET_ADMIN — the one
+// place that capability exists; the box itself never gets it. image is the
+// box's own image (the skill baked its tooling there; inert to the capless
+// agent inside). env is the box's resolved runtime env, re-passed so the
+// helper sees the same configuration (e.g. an allowlist extension var).
+//
+// Output is captured, not streamed: the helper runs concurrently with the
+// box's interactive `run`, so it must not contend for the TTY. On failure the
+// engine's stderr is folded into the error; on success the launch gate
+// opening is the signal, not text.
+func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
+	_, err := r.capture(string(r.engine), netnsInitArgs(image, container, entrypoint, env)...)
+	return err
+}
+
+// netnsInitArgs builds the netns-init helper argv (pure, for testing). Env
+// keys are sorted for deterministic argument order.
+func netnsInitArgs(image, container, entrypoint string, env map[string]string) []string {
+	args := []string{"run", "--rm",
+		"-u", "0:0",
+		"--net", "container:" + container,
+		"--cap-add", "NET_ADMIN",
+		"--entrypoint", entrypoint,
+	}
+	for _, k := range sortedKeys(env) {
+		args = append(args, "-e", k+"="+env[k])
+	}
+	return append(args, image)
+}
+
 // VolumeExists reports whether a named volume exists.
 func (r *Runner) VolumeExists(name string) (bool, error) {
 	out, err := r.capture(string(r.engine), "volume", "ls", "-q", "--filter", "name=^"+name+"$")
