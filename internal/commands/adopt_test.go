@@ -137,3 +137,27 @@ func TestAdoptRejectsInvalidLayer(t *testing.T) {
 		t.Errorf("the user should be told why the proposal was ignored: %q", errBuf.String())
 	}
 }
+
+// TestAdoptRejectsHostCascadeConflict pins the second adoption gate: a
+// proposal that is fine as a single layer but collides with THIS host's
+// default.config (here: its volume targets a default-layer mount's path) must
+// not be adopted — the next develop's Load would fail on the store copy.
+func TestAdoptRejectsHostCascadeConflict(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"),
+		[]byte("[[mounts]]\nhost = \"/data\"\ntarget = \"/x\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proposeConfig(t, proj, "[[volumes]]\nname = \"v\"\nrole = \"cache\"\ntarget = \"/x\"\n")
+
+	s, _, errBuf := testStreams("y\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
+		t.Error("a proposal that can't resolve on this host must not reach the store")
+	}
+	if !strings.Contains(errBuf.String(), "doesn't resolve against this host") {
+		t.Errorf("the user should be pointed at the host-side conflict: %q", errBuf.String())
+	}
+}

@@ -52,11 +52,19 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 		fmt.Fprintf(s.Err, "byre: %s ships a byre.config but it doesn't parse (%v); ignoring it.\n", projectDir, perr)
 		return nil
 	}
-	// And never adopt a layer Load would reject: adoption copies the file into
-	// the store verbatim, so a same-layer collision (ParseFile is lenient by
-	// design) would brick the very next develop on a byre-owned file.
+	// And never adopt what the next develop would reject. Two gates: the file
+	// itself must pass the per-layer rules (a same-layer collision — ParseFile
+	// is lenient by design — would fail loadLayer on a byre-owned file), and
+	// the EFFECTIVE cascade must resolve on THIS host (a missing template, or a
+	// collision with this machine's default.config, fails resolveWith the same
+	// way). The second failure can be host-specific, so the message says where
+	// to look rather than blaming the proposal alone.
 	if verr := proposal.ValidateLayer(); verr != nil {
 		fmt.Fprintf(s.Err, "byre: %s ships a byre.config but it is invalid (%v); ignoring it.\n", projectDir, verr)
+		return nil
+	}
+	if _, rerr := config.ResolveProposed(proposal); rerr != nil {
+		fmt.Fprintf(s.Err, "byre: %s ships a byre.config, but it doesn't resolve against this host's config (%v); not adopting. Fix the conflict (your ~/.byre/default.config or the named template may contribute to it) and re-run develop.\n", projectDir, rerr)
 		return nil
 	}
 	// Summarize the EFFECTIVE config the human is consenting to — the full
