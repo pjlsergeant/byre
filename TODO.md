@@ -110,10 +110,13 @@ UID assertions in `gen_test.go`/`context_test.go`).
 - [ ] Live-container worktree run: git commit inside the box + two
   concurrent sessions (main tree + worktree) at once. Recipe in
   `docs/agent-volume-sharing.md`.
-- [ ] Firewall end-to-end (`BYRE_DOCKER_TESTS=1`): allowlisted host
-  reachable, others dropped, launch dies closed when the netns helper is
-  sabotaged, `docker restart` also dies closed. See TODO §1 + the
-  Verification section of `docs/firewall-design.md`.
+- [x] Firewall end-to-end (`BYRE_DOCKER_TESTS=1`): allowlisted host
+  reachable, others dropped, launch fails closed when the helper never
+  signals. WRITTEN (`internal/commands/firewall_integration_test.go`,
+  `-run IntegrationFirewall`) but NOT YET RUN host-side -- verify it
+  actually passes on real Docker (fragile spots: `nc -l` syntax, getent
+  resolution, the gate handshake timing). A `docker restart` fail-closed
+  case could still be added.
 - [ ] Pre-existing data race in `TestWithSetupLockNotesWhenWaiting`
   (`internal/commands/lock_test.go` ~38: a bool shared across goroutines
   without sync). Test-only, surfaced by `go test -race` during the
