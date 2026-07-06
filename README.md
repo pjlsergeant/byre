@@ -115,7 +115,6 @@ volumes  = [ ... ]                          # named volumes (role/target/seed)
 dockerfile_pre  = ["RUN ..."]               # raw build block, before the core block
 dockerfile_post = ["RUN ..."]               # raw build block, project tail
 run_args        = ["--cap-add=SYS_PTRACE"]  # raw docker-run passthrough
-# dockerfile = "Dockerfile"                 # opt out: bring your own Dockerfile
 ```
 
 ## Skills
@@ -163,4 +162,5 @@ byre bakes your host UID/GID into the image at build time, so the agent runs
 unprivileged as you and the files it writes are correctly owned -- a Linux-host
 concern; on Docker Desktop (macOS/Windows) the file-sharing layer fakes ownership
 and it doesn't arise. byre targets Debian-derived base images (the core
-block assumes apt/glibc); use other bases via a full hand-written Dockerfile.
+block assumes apt/glibc); other bases are unsupported -- for those, use
+Docker directly.

@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"byre/internal/builtins"
 	"byre/internal/config"
@@ -66,23 +65,4 @@ func resolve(paths project.Paths, projectDir string) (resolved, error) {
 		return resolved{}, err
 	}
 	return rv, nil
-}
-
-// resolveProjectFile resolves a project-relative file, following symlinks and
-// confirming containment within the project dir (so an opt-out `dockerfile`
-// can't point outside via a symlink).
-func resolveProjectFile(projectDir, rel string) (string, error) {
-	realDir, err := filepath.EvalSymlinks(projectDir)
-	if err != nil {
-		return "", err
-	}
-	real, err := filepath.EvalSymlinks(filepath.Join(realDir, rel))
-	if err != nil {
-		return "", fmt.Errorf("dockerfile %q: %w", rel, err)
-	}
-	within, err := filepath.Rel(realDir, real)
-	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("dockerfile %q escapes the project dir", rel)
-	}
-	return real, nil
 }

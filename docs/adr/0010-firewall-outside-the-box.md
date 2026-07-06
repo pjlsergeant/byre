@@ -42,5 +42,6 @@ Consequences / accepted holes (documented, not closed in v1):
   claim (enabling a skill is trusting it), but project-level raw escape
   hatches do -- `run_args` or `dockerfile_*` present prints
   `deny-by-default (raw run_args present -- not guaranteed)`, and the
-  full-Dockerfile opt-out prints `declared; custom Dockerfile -- byre
-  didn't build the wall`. Never an unqualified claim, never a refusal.
+  full-Dockerfile opt-out printed `declared; custom Dockerfile -- byre
+  didn't build the wall` (the opt-out was since removed -- ADR 0014).
+  Never an unqualified claim, never a refusal.

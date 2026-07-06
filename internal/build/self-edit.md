@@ -24,7 +24,6 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `dockerfile_pre  = ["RUN ..."]` — raw Dockerfile lines BEFORE byre's core block
 - `dockerfile_post = ["RUN ..."]` — raw Dockerfile lines at the project tail
 - `run_args = ["--cap-add=SYS_PTRACE"]` — raw `docker run` flags
-- `dockerfile = "Dockerfile"` — opt out of generation; bring your own
 
 So: need a **package** → add it to `apt`. Need a **custom build step** → add a
 `RUN ...` line to `dockerfile_pre` or `dockerfile_post`.

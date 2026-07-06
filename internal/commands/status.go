@@ -31,7 +31,6 @@ type statusInfo struct {
 	NetPostureSkill string               // the skill declaring it
 	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
 	ProjectRunArgs  bool                 // the PROJECT's own raw run_args present (degrades the posture claim)
-	CustomDF        bool                 // full-Dockerfile opt-out (skill build contributions never land)
 	Container       string               // this dir's running container id, or "" if none
 	SiblingSessions []string             // short ids of OTHER live sessions in this project (worktrees sharing these volumes)
 	Rootless        bool                 // true if the engine is rootless Podman (unsupported ownership)
@@ -70,7 +69,6 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		RunArgs:        cfg.RunArgs,
 		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs: len(cfg.RunArgs) > 0,
-		CustomDF:       cfg.Dockerfile != "",
 	}
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
@@ -307,8 +305,6 @@ func configEgress(raw string) []skills.EgressAllow {
 //     trusting it; its grants are attributed separately);
 //   - the project's own raw escape hatches (run_args, dockerfile_pre/post)
 //     degrade it — byre can't audit arbitrary argv or Dockerfile text;
-//   - the full-Dockerfile opt-out means the skill's build bits never landed
-//     in the image at all, so the wall byre would vouch for was never built;
 //   - unresolved skills mean the posture is simply unknown.
 func networkLine(s statusInfo) string {
 	if s.SkillErr != "" {
@@ -316,9 +312,6 @@ func networkLine(s statusInfo) string {
 	}
 	if s.NetPosture == "" {
 		return "open"
-	}
-	if s.CustomDF {
-		return s.NetPosture + "  (declared; custom Dockerfile — byre didn't build the wall)"
 	}
 	var raw []string
 	if s.ProjectRunArgs {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,32 +61,6 @@ func TestDockerfilePrintsWithoutTouchingContext(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.Dockerfile); !os.IsNotExist(err) {
 		t.Fatalf("byre dockerfile persisted to disk (should be side-effect-free): %v", err)
-	}
-}
-
-func TestDockerfileOptOutPrintsHandWritten(t *testing.T) {
-	t.Setenv("BYRE_HOME", t.TempDir())
-	proj := t.TempDir()
-	if err := os.WriteFile(filepath.Join(proj, "Dockerfile"), []byte("FROM scratch\n# mine\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// The opt-out Dockerfile lives in the project; its byre.config lives host-side.
-	p, err := project.Resolve(proj)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("dockerfile = \"Dockerfile\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s, out, _ := testStreams("", false)
-	if err := Dockerfile(s, proj); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "opted out") || !strings.Contains(out.String(), "FROM scratch") {
-		t.Fatalf("opt-out dockerfile output wrong:\n%s", out.String())
 	}
 }
 

@@ -221,7 +221,6 @@ volumes     = [ ... ]                         # ad-hoc named volumes; skills usu
 dockerfile_pre  = ["RUN ..."]                 # raw BUILD block, before the core block
 dockerfile_post = ["RUN ..."]                 # raw BUILD block, project tail
 run_args        = ["--cap-add=SYS_PTRACE"]    # raw RUNTIME block: docker-run passthrough
-# dockerfile = "Dockerfile"                   # opt out: bring your own Dockerfile
 ```
 
 Escape hatches are symmetric across both layers byre controls
@@ -239,13 +238,9 @@ verbatim and flags them as not-introspected.
 appended last, so a raw flag can override byre's -- except the identity
 labels, re-asserted after it.
 
-**Full-Dockerfile opt-out contract.** If a project supplies a complete
-hand-written Dockerfile, byre stops generating the build entirely --
-which means *you* own the chassis's build half (the dev user and its
-ownership -- byre passes no UID/GID build args on this path -- and the
-launcher ENTRYPOINT). byre still owns *runtime* (mounts, volumes, the
-identity labels, `docker run`). Opt out of generation, opt into owning
-what generation gave you.
+There is no full-Dockerfile opt-out: byre either generates the build or
+isn't involved (ADR 0014). A whole hand-written Dockerfile means raw
+Docker, not byre.
 
 ## Skills
 
@@ -335,7 +330,7 @@ box and the state volume persists the login per-project. `seed_prefs`
 Core's constant provision to every box. **Supported base (v0):
 Debian-derived images** -- the core block assumes `apt`, a POSIX shell,
 glibc, and root at build time. Alpine/distroless/non-glibc bases are
-unsupported by core; use them via the full-Dockerfile opt-out.
+unsupported; for those, use Docker directly (ADR 0014).
 
 Build-time (the **core block**, identical everywhere, always cached):
 

@@ -217,9 +217,6 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 
 	// Grants lead (security-weighty: what the box can reach), then Build, then the
 	// Advanced escape hatches. Volumes sits in Advanced, and only when engine-backed.
-	// The full-Dockerfile opt-out (config `dockerfile`) is deliberately NOT here —
-	// it's a rare, whole-image escape hatch, edited in the file / via ctrl+e; its
-	// value still round-trips untouched through save.
 	advanced := []fieldID{fRunArgs, fDockerfilePre, fDockerfilePost}
 	if vols != nil {
 		advanced = append(advanced, fVolumes)

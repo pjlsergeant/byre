@@ -26,8 +26,7 @@ Implications:
   prevent an accident does not belong in byre.
 
 Precedents: no path nannying (byre runs on `~/.byre` itself); `run_args`
-overrides byre's own flags by design; the full-Dockerfile opt-out skips
-byre's chassis entirely ("you own that infra"); the firewall is disabled by
+overrides byre's own flags by design; the firewall is disabled by
 removing it from `skills`, not by a dedicated flag.
 
 ## 2. Core ships no opinions

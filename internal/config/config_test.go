@@ -123,15 +123,14 @@ func TestLoadMissingTemplateErrors(t *testing.T) {
 	}
 }
 
-func TestValidateOptOutPath(t *testing.T) {
-	if err := (Config{Dockerfile: "Dockerfile"}).Validate(); err != nil {
-		t.Errorf("relative opt-out dockerfile should be allowed: %v", err)
-	}
-	if err := (Config{Dockerfile: "/etc/Dockerfile"}).Validate(); err == nil {
-		t.Error("absolute opt-out dockerfile should be rejected")
-	}
-	if err := (Config{Dockerfile: "../Dockerfile"}).Validate(); err == nil {
-		t.Error("escaping opt-out dockerfile should be rejected")
+func TestDockerfileKeyRejectedLoudly(t *testing.T) {
+	// The full-Dockerfile opt-out was removed (ADR 0014): a config still
+	// carrying the key must fail as unknown, not be silently ignored.
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+	writeProjectCfg(t, proj, "dockerfile = \"Dockerfile\"\n")
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Fatalf("dockerfile key must fail loudly as unknown, got: %v", err)
 	}
 }
 
@@ -438,7 +437,6 @@ func sampleConfig() Config {
 		Template:       "go",
 		Agent:          "claude",
 		Base:           "debian:bookworm",
-		Dockerfile:     "Dockerfile.dev",
 		SeedPrefs:      true,
 		WorktreeBase:   "sibling",
 		Apt:            []string{"jq"},

@@ -103,11 +103,10 @@ type Volume struct {
 // Config is one resolved (or single-layer) byre configuration. omitempty keeps
 // regenerated config files (byre config) clean — only set fields are written.
 type Config struct {
-	Engine     string `toml:"engine,omitempty"`     // auto|docker|podman
-	Template   string `toml:"template,omitempty"`   // template name to layer in
-	Agent      string `toml:"agent,omitempty"`      // skill that launches (any skill with an [agent] command); enables it implicitly
-	Base       string `toml:"base,omitempty"`       // base image
-	Dockerfile string `toml:"dockerfile,omitempty"` // full hand-written Dockerfile opt-out (path)
+	Engine   string `toml:"engine,omitempty"`   // auto|docker|podman
+	Template string `toml:"template,omitempty"` // template name to layer in
+	Agent    string `toml:"agent,omitempty"`    // skill that launches (any skill with an [agent] command); enables it implicitly
+	Base     string `toml:"base,omitempty"`     // base image
 
 	// SeedPrefs opts into a one-time copy of the selected agent's curated, non-secret
 	// pref files (theme, keybindings — see the skill's [agent.prefs]) from the host
@@ -262,7 +261,6 @@ func Merge(base, over Config) Config {
 	out.Template = override(base.Template, over.Template)
 	out.Agent = override(base.Agent, over.Agent)
 	out.Base = override(base.Base, over.Base)
-	out.Dockerfile = override(base.Dockerfile, over.Dockerfile)
 	// Bool opt-in: enabled if any layer sets it (default/template never do in
 	// practice, so this is effectively "project wins"). A bool can't distinguish
 	// unset from false, so there's no "turn it back off" in a higher layer.
@@ -362,14 +360,6 @@ func (c Config) validateScalars() error {
 	// where their build blocks are resolved (see internal/skills).
 	if err := ValidateContent(c.Base, c.Apt, c.NpmGlobal, c.Env); err != nil {
 		return err
-	}
-
-	// Full hand-written Dockerfile opt-out: a project-relative path. byre builds
-	// it (from the project dir) instead of generating, and the user owns the
-	// core block — including the dev user and its ownership (byre passes no
-	// UID/GID build args on this path); byre still owns runtime.
-	if c.Dockerfile != "" && !RelSafe(c.Dockerfile) {
-		return fmt.Errorf("dockerfile = %q: must be a relative path within the project", c.Dockerfile)
 	}
 
 	// worktree_base: "" (refuse), "sibling", or a host path (~ or absolute, and

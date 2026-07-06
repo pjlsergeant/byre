@@ -25,20 +25,6 @@ func Dockerfile(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	if rv.cfg.Dockerfile != "" {
-		// Opt-out: byre doesn't generate; show the user's hand-written Dockerfile.
-		dfPath, rerr := resolveProjectFile(paths.Canonical, rv.cfg.Dockerfile)
-		if rerr != nil {
-			return rerr
-		}
-		b, rerr := os.ReadFile(dfPath)
-		if rerr != nil {
-			return fmt.Errorf("dockerfile %q: %w", rv.cfg.Dockerfile, rerr)
-		}
-		fmt.Fprintf(s.Out, "# byre: generation opted out; using %s verbatim:\n", rv.cfg.Dockerfile)
-		_, err = s.Out.Write(b)
-		return err
-	}
 	df, err := build.Render(paths, rv.cfg, rv.skills)
 	if err != nil {
 		return err

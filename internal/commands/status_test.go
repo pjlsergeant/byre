@@ -128,8 +128,6 @@ func TestNetworkLine(t *testing.T) {
 			"deny-by-default  (declared; raw build lines present — not guaranteed)"},
 		{"both degrade", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", ProjectRunArgs: true, BuildRaw: []string{"RUN x"}},
 			"deny-by-default  (declared; raw run_args + raw build lines present — not guaranteed)"},
-		{"custom Dockerfile wins", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", CustomDF: true, ProjectRunArgs: true},
-			"deny-by-default  (declared; custom Dockerfile — byre didn't build the wall)"},
 		{"unresolved skills", statusInfo{SkillErr: "boom", NetPosture: ""},
 			"unknown  (skills unresolved)"},
 	}

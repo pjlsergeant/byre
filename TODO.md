@@ -55,33 +55,19 @@ features in copy -- shipping the copy first would make it a lie.)
 
 ## 2. Near-term roadmap
 
-- [ ] **Firewall × custom-Dockerfile seam** (codereview finding, discussed
-  with Pete 2026-07-06; fix properly, next up).
-  - The confusion, resolved: `dockerfile =` turns off ALL of byre's
-    build-time half (core block, launcher + launch gate, skills' build
-    blocks, `base`/`apt`/`files`/`dockerfile_pre/post` go dead) and keeps
-    ALL of the runtime half (mounts, volumes, env, ports, labels,
-    lifecycle, netns hooks). "byre stops being the image author and stays
-    the chauffeur."
-  - The bug lives on that seam: the firewall skill's *runtime* netns hook
-    still fires on opt-out projects, but the *build-time* pieces it needs
-    (`/usr/local/bin/byre-firewall`, the launch gate) were never baked in.
-    The box's own entrypoint starts immediately with open networking while
-    the helper fails on the missing script -- the fail-closed ordering
-    silently doesn't exist. `status` degrades the claim; develop says
-    nothing up front.
-  - Direction agreed: **verify the contract, then decide.** The opt-out
-    contract already assigns the launcher ENTRYPOINT (and thus the gate)
-    to the user, so an opt-out Dockerfile that implements the chassis
-    contract is legitimate, not misconfigured. Before firing netns hooks
-    on an opt-out project, probe the image for the gate + hook entrypoint:
-    present -> run hooks, fail-closed holds; absent -> skip hooks and
-    print the degraded claim loudly at develop time. Rejected: blanket-
-    disable hooks on opt-out (breaks contract-implementing users; makes
-    the firewall secretly generated-only -- a gate, doctrine-wise) and
-    attempt-and-fail-loudly (open-network window before the helper dies).
-  - Companion fixes from the same review (host-netns guard, worktree
-    build-source notice, seed_prefs doc honesty) done 2026-07-06.
+- [x] **Firewall × custom-Dockerfile seam** (codereview finding
+  2026-07-06) -- RESOLVED BY REMOVAL, same day: Pete re-examined why the
+  full-Dockerfile opt-out existed at all ("running your own Dockerfile
+  feels like ejection") and killed the feature instead of building the
+  planned verify-the-contract fix. The seam no longer exists. Decision +
+  rejected alternatives recorded in `docs/adr/0014-no-full-dockerfile-
+  opt-out.md`; PRINCIPLES #3 amended (raw tier = raw blocks; ejection is
+  raw Docker). A config carrying `dockerfile =` now fails loudly as an
+  unknown key. If a real bring-your-own-image constituency ever shows
+  up, the feature returns AS the verified-contract mode (see the ADR).
+  Companion fixes from the same review (host-netns guard + active stop,
+  worktree build-source notice, seed_prefs doc honesty) shipped
+  2026-07-06 (b84e3cc..986cd88).
 - [ ] **Versioning + distribution** (flagged 2026-07-01) -- so byre
   installs and runs on other boxes. Confirm scope with Pete before
   building.

@@ -77,9 +77,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit boo
 	if err != nil {
 		return err
 	}
-	if rv.cfg.Dockerfile == "" {
-		warnNonDebianBase(s.Err, rv.cfg.Base)
-	}
+	warnNonDebianBase(s.Err, rv.cfg.Base)
 	eng, err := runner.Detect(rv.cfg.Engine, nil)
 	if err != nil {
 		return err
@@ -215,19 +213,10 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	return nil
 }
 
-// buildImage builds the project's image, honoring the full-Dockerfile opt-out
-// uniformly (so develop and rebuild produce the same image for opt-out projects).
-// The generated build bakes the host UID/GID via --build-arg so /home/dev and the
-// volume mount points are born owned by the runtime user (no runtime chown). The
-// opt-out path gets no build args: the user owns that part of the chassis.
+// buildImage generates the build context and builds the project's image. The
+// build bakes the host UID/GID via --build-arg so /home/dev and the volume
+// mount points are born owned by the runtime user (no runtime chown).
 func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool) error {
-	if cfg.Dockerfile != "" {
-		dfPath, err := resolveProjectFile(paths.Canonical, cfg.Dockerfile)
-		if err != nil {
-			return err
-		}
-		return r.Build(image, dfPath, paths.Canonical, noCache, nil)
-	}
 	if _, err := build.Assemble(paths, cfg, res); err != nil {
 		return err
 	}
@@ -266,7 +255,7 @@ func uidBuildArgs() []string {
 func warnNonDebianBase(w io.Writer, base string) {
 	l := strings.ToLower(base)
 	if strings.Contains(l, "alpine") || strings.Contains(l, "scratch") || strings.Contains(l, "distroless") {
-		fmt.Fprintf(w, "byre: warning: base %q is not Debian-derived; byre's core block assumes apt + glibc and may fail to build. Use a Debian/Ubuntu base, or a full hand-written Dockerfile (dockerfile = ...).\n", base)
+		fmt.Fprintf(w, "byre: warning: base %q is not Debian-derived; byre's core block assumes apt + glibc and may fail to build. Use a Debian/Ubuntu base (other bases are unsupported — use docker directly).\n", base)
 	}
 }
 

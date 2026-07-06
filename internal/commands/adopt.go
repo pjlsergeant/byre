@@ -195,9 +195,6 @@ func skillGrantSummary(res skills.Resolved) []string {
 // things a reviewer must see before adopting, since they can widen the sandbox.
 func grantSummary(c config.Config) []string {
 	var s []string
-	if c.Dockerfile != "" {
-		s = append(s, "FULL build opt-out — runs a hand-written Dockerfile: "+c.Dockerfile)
-	}
 	if len(c.Mounts) > 0 {
 		var m []string
 		for _, x := range c.Mounts {
