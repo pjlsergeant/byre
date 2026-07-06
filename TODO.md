@@ -218,6 +218,15 @@ the diary and the docs cited.
 - **Machine-wide `shared` volume scope** -- removed; no natural boundary
   across unrelated projects. Worktree identity-inheritance covers the real
   case.
+- **Hardening the project store against a --self-edit agent** (symlink
+  checks on the build context, byre.config writes, path record, lock) --
+  reverted 2026-07-06 (0f35743) after being built from a codereview
+  finding. A --self-edit agent already authors the next develop's config
+  (mounts/run_args) and build context through the front door, so
+  store-symlink defenses protect a boundary that doesn't exist;
+  `--self-edit` means trusting the agent with the host, full stop.
+  Reviewers WILL re-find this class -- it's a conscious negative, don't
+  re-fix.
 - **Path nannying** (refusing to run on dangerous dirs) -- "a knife needs
   to be sharp"; Pete runs byre on `~/.byre` itself.
 - **claude-pod feature steals** -- reviewed 2026-07-04, nothing adopted,
