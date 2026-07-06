@@ -245,6 +245,11 @@ func TestDevelopNetnsInitRefusesSharedNamespace(t *testing.T) {
 			if !strings.Contains(stderr.String(), "not byre's to modify") || !strings.Contains(stderr.String(), "failing closed") {
 				t.Errorf("skip must name the shared namespace and the fail-closed outcome: %s", stderr.String())
 			}
+			// The gate can't be trusted in a shared namespace (any listener on
+			// the gate port opens it), so byre must stop the box itself.
+			if len(f.stops) != 1 || f.stops[0] != "cafef00d1234" {
+				t.Errorf("shared-namespace skip must stop the box: stops=%v", f.stops)
+			}
 		})
 	}
 }
@@ -267,6 +272,9 @@ func TestDevelopNetnsInitSkipsOnUnknownNetworkMode(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "failing closed") {
 		t.Errorf("skip must explain the fail-closed outcome: %s", stderr.String())
+	}
+	if len(f.stops) != 1 {
+		t.Errorf("unknown-mode skip must stop the box: stops=%v", f.stops)
 	}
 }
 

@@ -160,6 +160,14 @@ func (r *Runner) NetworkMode(container string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// Stop stops a running container (short grace period, then SIGKILL). Used when
+// byre must actively end a session it cannot let run — e.g. netns hooks were
+// refused and the launch gate can't be trusted to fail the launch closed.
+func (r *Runner) Stop(container string) error {
+	_, err := r.capture(string(r.engine), "stop", "-t", "2", container)
+	return err
+}
+
 // parseEnvLines parses newline-separated KEY=VALUE lines into a map (pure, for
 // testing). Lines without '=' (or with an empty key) are skipped.
 func parseEnvLines(out string) map[string]string {

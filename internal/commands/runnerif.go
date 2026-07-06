@@ -16,6 +16,7 @@ type sessionRunner interface {
 	RunningContainersByLabel(label string) ([]string, error)
 	ContainerEnv(id string) (map[string]string, error)
 	NetworkMode(container string) (string, error)
+	Stop(container string) error
 	Run(args []string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string) error
 	Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error

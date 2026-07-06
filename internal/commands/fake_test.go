@@ -44,6 +44,8 @@ type fakeRunner struct {
 	netnsInits []string // NetnsInit: "container entrypoint"
 	netMode    string   // NetworkMode result; "" means "bridge" (private netns)
 	netModeErr error
+	stops      []string // Stop: container ids
+	stopErr    error
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -100,6 +102,14 @@ func (f *fakeRunner) NetworkMode(container string) (string, error) {
 		return "bridge", nil // a private namespace, the normal case
 	}
 	return f.netMode, nil
+}
+
+func (f *fakeRunner) Stop(container string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stops = append(f.stops, container)
+	f.ops = append(f.ops, "stop "+container)
+	return f.stopErr
 }
 
 func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string) error {

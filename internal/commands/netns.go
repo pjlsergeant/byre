@@ -29,6 +29,17 @@ func describeNetMode(mode string) string {
 	return mode
 }
 
+// stopClosed ends the session because netns hooks were refused: without them
+// the launch gate is the only barrier, and it can't be trusted here (in a
+// shared namespace any listener on the gate port would open it). Stopping the
+// box is byre failing ITS claim closed, not gating the user's config.
+func stopClosed(r sessionRunner, warn io.Writer, container string) {
+	fmt.Fprintln(warn, "byre: stopping the box — the launch gate can't be trusted without the hooks, so byre won't let the session run unprotected (failing closed).")
+	if err := r.Stop(container); err != nil {
+		fmt.Fprintf(warn, "byre: stopping the box failed: %v — if the session launches anyway, it is running WITHOUT the declared network setup.\n", err)
+	}
+}
+
 // runNonce returns the random value for this invocation's byre.run label (see
 // naming.go: the netns target's ownership proof). A package var so tests can
 // pin it; production always uses fresh crypto randomness.
@@ -87,18 +98,21 @@ func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks [
 	// ns:/path (all reachable via run_args) the "box's namespace" is really
 	// the host's, another container's, or an arbitrary one, and a hook like
 	// the firewall's default-DROP rules would rewrite network state outside
-	// the box. Refuse byre's own root action there; the launch gate then
-	// fails the launch closed. An inspect failure gets the same treatment: no
-	// proof of a private namespace, no hooks.
+	// the box. Refuse byre's own root action there — and STOP the box rather
+	// than trusting the launch gate: the gate is "a listener on a loopback
+	// port", and in a shared namespace a stranger's listener on that port
+	// would open it, launching the agent with no rules applied. An inspect
+	// failure gets the same treatment: no proof of a private namespace, no
+	// hooks, no launch.
 	mode, err := r.NetworkMode(container)
 	if err != nil {
 		fmt.Fprintf(warn, "byre: netns init: could not determine the box's network mode: %v\n", err)
-		fmt.Fprintln(warn, "byre: skipping netns init — the launch gate will not open; the box will time out and exit rather than run unprotected (failing closed).")
+		stopClosed(r, warn, container)
 		return
 	}
 	if sharedNetMode(mode) {
-		fmt.Fprintf(warn, "byre: netns init skipped: the box shares the %s network namespace (run_args?) — that namespace is not byre's to modify, so the netns hooks (e.g. firewall rules) will not be applied there.\n", describeNetMode(mode))
-		fmt.Fprintln(warn, "byre: the launch gate will not open — the box will time out and exit rather than run unprotected (failing closed). Drop the network override or disable the skill that declares the hook.")
+		fmt.Fprintf(warn, "byre: netns init skipped: the box shares the %s network namespace (run_args?) — that namespace is not byre's to modify, so the netns hooks (e.g. firewall rules) will not be applied there. Drop the network override or disable the skill that declares the hook.\n", describeNetMode(mode))
+		stopClosed(r, warn, container)
 		return
 	}
 	for _, h := range hooks {
