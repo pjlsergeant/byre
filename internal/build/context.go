@@ -74,21 +74,25 @@ func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string
 // Assemble writes the build context (Dockerfile + launcher + agent files + any
 // `files`) and returns the generated Dockerfile text.
 func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
-	// Re-stage from scratch: clear the staging subtrees so a file removed from
-	// `files`/skills since the last build can't linger in the context and make the
-	// build nondeterministic (or get swept into the image).
-	for _, d := range []string{"files", "skills"} {
-		if err := os.RemoveAll(filepath.Join(paths.ContextDir, d)); err != nil {
-			return "", err
-		}
+	// Rebuild the context dir from scratch. This serves two masters:
+	//  - staleness: a file removed from `files`/skills (or a conditional agent
+	//    file whose condition turned false) since the last build must not linger
+	//    in the context and make the build nondeterministic.
+	//  - trust: a --self-edit session mounts the project store rw, so nothing
+	//    under it survives an agent's reach — a planted symlink (the context dir
+	//    itself, or any file inside it, pointed at a host path) would redirect
+	//    the writes below outside the store on the next host-side build.
+	// RemoveAll unlinks symlinks rather than following them, and Mkdir (unlike
+	// MkdirAll) refuses to succeed through one, so everything below lands in a
+	// directory this process created empty.
+	if err := os.RemoveAll(paths.ContextDir); err != nil {
+		return "", err
 	}
-	// Same for the conditional context files: each is written only when its
-	// condition holds, so a condition that turned false since the last build
-	// (agent removed, context emptied) would otherwise leave a stale file behind.
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
-		if err := os.Remove(ctxPath(paths, name)); err != nil && !os.IsNotExist(err) {
-			return "", err
-		}
+	if err := os.MkdirAll(filepath.Dir(paths.ContextDir), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.Mkdir(paths.ContextDir, 0o755); err != nil {
+		return "", err
 	}
 
 	in, jobs, err := buildInput(paths, cfg, res)
