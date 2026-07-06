@@ -15,8 +15,9 @@ this file about status, scope, or priority, this file wins.
 - [ ] **Brew tap** (optional, Pete-side): create the
   `pjlsergeant/homebrew-tap` repo + the `HOMEBREW_TAP_GITHUB_TOKEN`
   Actions secret (steps in `docs/RELEASING.md`); the next tagged release
-  publishes the cask automatically. Then add the brew line to the README
-  Install section. Everything else about versioning + distribution
+  publishes the cask automatically. The README Install section already
+  shows the brew line (added 2026-07-06, ahead of the tap -- it 404s
+  until the tap repo exists). Everything else about versioning + distribution
   shipped 2026-07-06 as v0.1.1 (`docs/adr/0016`, `docs/RELEASING.md`,
   `CHANGES.md`).
 
