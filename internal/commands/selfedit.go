@@ -88,7 +88,10 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 	if len(added)+len(changed)+len(deleted) == 0 {
 		return
 	}
-	fmt.Fprintln(w, "🛑 self-edit: the agent changed the project store this session:")
+	// "changed", not "the agent changed": the store is shared across worktree
+	// sessions, so a sibling develop rebuilding context/ mid-session would be
+	// misattributed by the stronger claim.
+	fmt.Fprintln(w, "🛑 self-edit: the project store changed during this session:")
 
 	// byre.config first, as a content diff (existence flips called out -- a
 	// created or deleted EMPTY config is still a change).
