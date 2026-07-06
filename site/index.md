@@ -31,3 +31,8 @@ devlog -- notes written as I build it in the open.
 - [Day 5 -- the agent reviews its own harness](day-05.md) -- one Saturday: a full
   pre-release review and six phases of fixes from inside the box. The rot was
   accretion, not slop, and the review loop wouldn't let go.
+- [Day 6 -- the wall goes up, and we agree what to call things](day-06.md) --
+  the default-deny firewall lands and is verified live (rules applied from
+  outside the box, fail-closed launch gate, derived port-scoped allowlist),
+  then new skills drive a docs taxonomy: glossary, principles, ADRs, and the
+  code reconciled to the ratified vocabulary.
