@@ -48,7 +48,10 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	}
 	// --self-edit: mount this project's host-side store (~/.byre/projects/<id>/)
 	// rw so the agent can edit its own byre.config (applied on the next develop).
-	// Deliberate grant; scoped to this project only, not all of ~/.byre.
+	// Deliberate grant. The MOUNT is scoped to this project's store, but its
+	// power is transitive: the agent authors the next develop's config (mounts,
+	// run_args) and build context, so --self-edit means trusting the agent with
+	// the host. Decided 2026-07-06: no store hardening pretends otherwise.
 	if selfEdit {
 		binds = append(binds, runner.BindMount{Host: paths.Dir, Target: selfEditTarget, Mode: "rw"})
 	}

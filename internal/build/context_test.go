@@ -243,57 +243,6 @@ func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	}
 }
 
-// A --self-edit session mounts the project store rw, so the context dir's
-// contents are agent-writable between builds. A symlink planted there must not
-// redirect the next host-side Assemble outside the store.
-func TestAssembleDoesNotFollowPlantedSymlinks(t *testing.T) {
-	t.Run("context dir replaced by a symlink", func(t *testing.T) {
-		paths := bootstrapped(t)
-		victim := t.TempDir()
-		if err := os.WriteFile(filepath.Join(victim, "precious"), []byte("keep\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove(paths.ContextDir); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(victim, paths.ContextDir); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := os.Stat(filepath.Join(victim, "precious")); err != nil {
-			t.Errorf("victim dir was written through the symlink: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(victim, "Dockerfile.generated")); !os.IsNotExist(err) {
-			t.Error("Dockerfile leaked into the symlink target")
-		}
-		if fi, err := os.Lstat(paths.ContextDir); err != nil || !fi.IsDir() {
-			t.Errorf("context dir not recreated as a real directory: %v %v", fi, err)
-		}
-		if _, err := os.Stat(paths.Dockerfile); err != nil {
-			t.Errorf("Dockerfile not written into the fresh context: %v", err)
-		}
-	})
-	t.Run("context file replaced by a symlink", func(t *testing.T) {
-		paths := bootstrapped(t)
-		victim := filepath.Join(t.TempDir(), "target")
-		if err := os.WriteFile(victim, []byte("keep\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink(victim, paths.Dockerfile); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
-			t.Fatal(err)
-		}
-		got, err := os.ReadFile(victim)
-		if err != nil || string(got) != "keep\n" {
-			t.Errorf("victim file was overwritten through the symlink: %q %v", got, err)
-		}
-	})
-}
-
 func TestAssembleClearsStaleStagedFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	src := filepath.Join(t.TempDir(), "review.sh")
