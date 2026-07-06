@@ -5,10 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/commands"
 )
+
+// version is stamped by release builds (goreleaser passes
+// -ldflags "-X main.version=vX.Y.Z"). Unstamped builds resolve a version
+// from Go's build info instead — see versionString.
+var version string
 
 // app is the set of command implementations run dispatches to. A struct (not
 // direct calls) so tests can pin the flag->function wiring with recorders
@@ -301,6 +307,48 @@ context). Your project tree is left alone. Prompts first.
 			return a.forget(s, dir, force)
 		},
 	},
+	{
+		name:    "version",
+		summary: "Print the byre version.",
+		help: `Usage: byre version
+
+Print the byre version: the release tag for released binaries, the module
+version for 'go install' builds, or (devel) for a plain local build.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if err := noArgs("version", rest); err != nil {
+				return err
+			}
+			printVersion(s)
+			return nil
+		},
+	},
+}
+
+// versionString resolves what `byre version` prints, in priority order: the
+// release-stamped tag, the module version Go records for `go install ...@vX`
+// builds, then "(devel)" — with the VCS revision appended when the toolchain
+// recorded one, so a local build is still identifiable.
+func versionString(stamped string, bi *debug.BuildInfo) string {
+	if stamped != "" {
+		return stamped
+	}
+	if bi == nil {
+		return "(devel)"
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	for _, s := range bi.Settings {
+		if s.Key == "vcs.revision" && len(s.Value) >= 12 {
+			return "(devel) " + s.Value[:12]
+		}
+	}
+	return "(devel)"
+}
+
+func printVersion(s commands.Streams) {
+	bi, _ := debug.ReadBuildInfo()
+	fmt.Fprintln(s.Out, "byre "+versionString(version, bi))
 }
 
 // usageText renders the top-level help from the command table.
@@ -347,6 +395,10 @@ func run(a app, args []string, dir string, s commands.Streams) error {
 	name, rest := args[0], args[1:]
 	if name == "-h" || name == "--help" || name == "help" {
 		fmt.Fprintln(s.Out, usageText())
+		return nil
+	}
+	if name == "--version" {
+		printVersion(s)
 		return nil
 	}
 	for _, c := range cmdTable {
