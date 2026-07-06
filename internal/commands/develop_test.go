@@ -270,6 +270,23 @@ func TestDevelopNetnsInitSkipsOnUnknownNetworkMode(t *testing.T) {
 	}
 }
 
+func TestDevelopWorktreeSaysImageBuildsFromMain(t *testing.T) {
+	// Worktrees inherit the project image, so build inputs resolve from the
+	// main worktree — every worktree session must say so, or a branch editing
+	// a build input silently runs an image built from other content.
+	p, _ := testPaths(t)
+	p.IsWorktree = true
+	p.WorkDir = t.TempDir()
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+		t.Fatal(err)
+	}
+	if msg := stderr.String(); !strings.Contains(msg, "main worktree") || !strings.Contains(msg, p.Canonical) {
+		t.Errorf("worktree develop must state the image builds from the main worktree: %s", msg)
+	}
+}
+
 func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{liveSecond: liveWorkdir(p, "cafef00d1234")}
