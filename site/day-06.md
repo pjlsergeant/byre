@@ -87,6 +87,15 @@ newly installed skills -- one for domain modeling, which insists on a
 ratified glossary, and a grilling workflow that gets you there by
 interrogation rather than agreement.
 
+Getting those skills into the boxes was a nice bit of dogfooding in its
+own right. They're agent-side skills, and I wanted them available in
+every box, not hand-installed into one -- so I pointed byre at byre:
+ran a box on my own `~/.byre` config directory (which byre is happy to
+do; no path is nannied, per the principles doc) and had the agent in
+there write me a *byre* skill that installs them. Now they're a
+two-second config task from being in any box -- add the skill to
+`skills = [...]`, rebuild, done.
+
 The grilling session produced `docs/GLOSSARY.md`: canonical vocabulary,
 nothing else. A **box** is the user-facing word; "container" is reserved
 for the engine-level artifact. A **grant** is anything that widens what
