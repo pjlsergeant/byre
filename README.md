@@ -152,6 +152,8 @@ opt-in and named by `byre status`, never silent.
   `[agent.prefs]`) into a fresh state volume. Only files the skill vouches are
   secret-free are copied (e.g. for Claude, `keybindings.json` + `themes/`, never
   `settings.json` or `~/.claude.json`). Acts only when the volume is fresh.
+  Unlike other scalars it's a monotonic opt-in: once any config layer sets it
+  `true`, a later layer can't turn it back off.
 
 `byre reset` wipes a project's volumes; `byre rehome` migrates them after a move.
 

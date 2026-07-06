@@ -194,7 +194,10 @@ rewrite its own sandbox. A committed `<project>/byre.config` is a
 store only on explicit `[y/N]` (sha256-recorded, re-prompts on change,
 non-TTY never adopts). `--self-edit` is the one announced exception.
 
-- **Scalars override** -- last layer wins.
+- **Scalars override** -- last layer wins. Exception: `seed_prefs` is a
+  **monotonic opt-in** -- any layer setting it `true` turns it on, and a
+  later layer can't set it back to `false` (a plain TOML bool can't
+  distinguish unset from false).
 - **Lists union** -- `skills`, `mounts`, etc. accumulate across layers.
 - **Removal escape hatch** -- a `!name` entry drops something an earlier
   layer added (one blessed mechanism, applied to *named* lists). Raw
