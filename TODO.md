@@ -28,9 +28,18 @@ this file about status, scope, or priority, this file wins.
   per-project state (cwd-keyed history etc.) split out via symlinked
   subdirs or nested volume mounts. Key hazard: never symlink the
   credential file itself (atomic rename-over-symlink forks it). Research
-  pending in `docs/agent-credential-mechanics.md` (state-dir inventories,
-  write patterns, rotation semantics); then a design session before
-  building. Revisits two prior negatives, deliberately: Parked
+  DONE 2026-07-06: `docs/agent-credential-mechanics.md` (state-dir
+  inventories, write patterns, rotation semantics; absorb into an ADR at
+  the design session, firewall-design precedent). Headline findings: the
+  mechanism must differ per agent -- Claude file-sharing is the WORST
+  path (temp+rename breaks symlinks, single-use refresh tokens cascade
+  logout on concurrent refresh) so claude-shared-auth should ride
+  `claude setup-token` -> env instead; Codex is vendor-blessed easy
+  (in-place writes, `CODEX_HOME`); Gemini has no relocation env, so its
+  seam is nested mounts inside `~/.gemini` +
+  `GEMINI_CLI_TRUSTED_FOLDERS_PATH` for per-project trust. All three keep
+  per-project trust in root-level mixed-scope files. Next: design
+  session. Revisits two prior negatives, deliberately: Parked
   "machine-wide shared volume scope" (agent identity IS naturally
   machine-scoped) and the retired creds/history split; ADR-0007 stays
   closed (no host-credential copying). Env passthrough (§6) remains the
