@@ -1,8 +1,9 @@
 # Releasing byre
 
-byre ships as a single static binary; images are built per-host and never
-distributed (ADR-0008), so a release is just cross-compiled binaries on a
-GitHub Release. The pipeline is goreleaser, run by
+byre ships as a single static binary with skills and templates embedded.
+The dev-box *container images* are never part of a release -- every host
+bakes its own (they carry the host's UID, ADR-0008) -- so a release is
+just cross-compiled binaries on a GitHub Release. The pipeline is goreleaser, run by
 `.github/workflows/release.yml` on every `v*` tag push (ADR-0016).
 
 ## Cutting a release
