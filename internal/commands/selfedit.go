@@ -18,11 +18,26 @@ func reportSelfEditDiff(w io.Writer, path string, before []byte) {
 		fmt.Fprintf(w, "byre: cannot re-read %s to report self-edit changes: %v\n", path, err)
 		return
 	}
-	if bytes.Equal(before, after) {
+	// A missing file reads as nil, an existing empty file as a non-nil empty
+	// slice — bytes.Equal can't tell them apart, so compare existence too
+	// (creating or deleting an EMPTY config is still a change worth reporting).
+	beforeMissing, afterMissing := before == nil, err != nil
+	if beforeMissing == afterMissing && bytes.Equal(before, after) {
 		return
 	}
 	fmt.Fprintln(w, "🛑 self-edit: the agent changed byre.config this session. The diff applies on the next develop:")
-	for _, l := range diffLines(string(before), string(after)) {
+	if afterMissing {
+		fmt.Fprintln(w, "   (byre.config was deleted)")
+	} else if beforeMissing {
+		fmt.Fprintln(w, "   (byre.config was created)")
+	}
+	lines := diffLines(string(before), string(after))
+	// Content changed but no line differs: the only edit was the final newline,
+	// which splitLines normalizes away. Say so rather than printing a bare header.
+	if len(lines) == 0 && !beforeMissing && !afterMissing {
+		fmt.Fprintln(w, "   (trailing-newline-only change)")
+	}
+	for _, l := range lines {
 		fmt.Fprintln(w, "   "+l)
 	}
 }

@@ -60,13 +60,51 @@ func TestReportSelfEditDiff(t *testing.T) {
 		t.Errorf("diff output wrong: %q", got)
 	}
 
-	// Config deleted during the session: everything shows as removed.
+	// Trailing-newline-only change: header plus an explicit note, not a bare
+	// header with no diff lines.
+	if err := os.WriteFile(path, []byte("base = \"node:22\""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	reportSelfEditDiff(&out, path, []byte("base = \"node:22\"\n"))
+	if !strings.Contains(out.String(), "trailing-newline-only") {
+		t.Errorf("expected the trailing-newline note: %q", out.String())
+	}
+
+	// Created EMPTY during the session (snapshot nil, file exists with no
+	// content): existence is the change, and it must be reported.
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	reportSelfEditDiff(&out, path, nil)
+	if !strings.Contains(out.String(), "was created") {
+		t.Errorf("expected the created-empty report: %q", out.String())
+	}
+
+	// Deleted during the session: named as deleted, lines shown as removed.
+	if err := os.WriteFile(path, []byte("base = \"node:22\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
 	reportSelfEditDiff(&out, path, []byte("base = \"node:22\"\n"))
-	if !strings.Contains(out.String(), `- base = "node:22"`) {
-		t.Errorf("expected the deleted config's lines as removed: %q", out.String())
+	if !strings.Contains(out.String(), "was deleted") || !strings.Contains(out.String(), `- base = "node:22"`) {
+		t.Errorf("expected the deletion report with removed lines: %q", out.String())
+	}
+
+	// Deleted EMPTY config: still a reported change (existence flipped).
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	reportSelfEditDiff(&out, path, []byte{})
+	if !strings.Contains(out.String(), "was deleted") {
+		t.Errorf("expected the deleted-empty report: %q", out.String())
 	}
 }
