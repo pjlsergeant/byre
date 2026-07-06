@@ -222,6 +222,54 @@ func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
 	}
 }
 
+func TestDevelopNetnsInitRefusesSharedNamespace(t *testing.T) {
+	// A box in a shared network namespace (--network host or container:<other>
+	// via run_args) is not byre's to firewall: the root+NET_ADMIN hook would
+	// rewrite host (or foreign-container) network state. The hook must not
+	// fire, and the skip must explain the fail-closed outcome.
+	for _, mode := range []string{"host", "container:deadbeef"} {
+		t.Run(mode, func(t *testing.T) {
+			p, _ := testPaths(t)
+			pinNonce(t, "feedface")
+			f := &fakeRunner{
+				liveSecond: map[string][]string{"byre.run=feedface": {"cafef00d1234"}},
+				netMode:    mode,
+			}
+			s, _, stderr := testStreams("", false)
+			if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.netnsInits) != 0 {
+				t.Fatalf("hook must not fire into a shared (%s) namespace: %v", mode, f.netnsInits)
+			}
+			if !strings.Contains(stderr.String(), "not byre's to modify") || !strings.Contains(stderr.String(), "failing closed") {
+				t.Errorf("skip must name the shared namespace and the fail-closed outcome: %s", stderr.String())
+			}
+		})
+	}
+}
+
+func TestDevelopNetnsInitSkipsOnUnknownNetworkMode(t *testing.T) {
+	// No proof of a private namespace, no hooks: an inspect failure skips the
+	// hooks (the gate fails the launch closed) rather than firing blind.
+	p, _ := testPaths(t)
+	pinNonce(t, "feedface")
+	f := &fakeRunner{
+		liveSecond: map[string][]string{"byre.run=feedface": {"cafef00d1234"}},
+		netModeErr: errors.New("inspect: boom"),
+	}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.netnsInits) != 0 {
+		t.Fatalf("hook must not fire without a known network mode: %v", f.netnsInits)
+	}
+	if !strings.Contains(stderr.String(), "failing closed") {
+		t.Errorf("skip must explain the fail-closed outcome: %s", stderr.String())
+	}
+}
+
 func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{liveSecond: liveWorkdir(p, "cafef00d1234")}

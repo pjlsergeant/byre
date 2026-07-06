@@ -147,6 +147,19 @@ func (r *Runner) ContainerEnv(id string) (map[string]string, error) {
 	return parseEnvLines(out), nil
 }
 
+// NetworkMode returns a container's network mode as the engine reports it
+// (HostConfig.NetworkMode): "host", "container:<id>", "none", or a private
+// network ("default"/"bridge"/a network name). Callers that mutate a
+// container's network namespace (NetnsInit) use this to establish the
+// namespace is actually the container's own before touching it.
+func (r *Runner) NetworkMode(container string) (string, error) {
+	out, err := r.capture(string(r.engine), "inspect", "-f", "{{.HostConfig.NetworkMode}}", container)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // parseEnvLines parses newline-separated KEY=VALUE lines into a map (pure, for
 // testing). Lines without '=' (or with an empty key) are skipped.
 func parseEnvLines(out string) map[string]string {

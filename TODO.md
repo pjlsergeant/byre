@@ -55,6 +55,33 @@ features in copy -- shipping the copy first would make it a lie.)
 
 ## 2. Near-term roadmap
 
+- [ ] **Firewall × custom-Dockerfile seam** (codereview finding, discussed
+  with Pete 2026-07-06; fix properly, next up).
+  - The confusion, resolved: `dockerfile =` turns off ALL of byre's
+    build-time half (core block, launcher + launch gate, skills' build
+    blocks, `base`/`apt`/`files`/`dockerfile_pre/post` go dead) and keeps
+    ALL of the runtime half (mounts, volumes, env, ports, labels,
+    lifecycle, netns hooks). "byre stops being the image author and stays
+    the chauffeur."
+  - The bug lives on that seam: the firewall skill's *runtime* netns hook
+    still fires on opt-out projects, but the *build-time* pieces it needs
+    (`/usr/local/bin/byre-firewall`, the launch gate) were never baked in.
+    The box's own entrypoint starts immediately with open networking while
+    the helper fails on the missing script -- the fail-closed ordering
+    silently doesn't exist. `status` degrades the claim; develop says
+    nothing up front.
+  - Direction agreed: **verify the contract, then decide.** The opt-out
+    contract already assigns the launcher ENTRYPOINT (and thus the gate)
+    to the user, so an opt-out Dockerfile that implements the chassis
+    contract is legitimate, not misconfigured. Before firing netns hooks
+    on an opt-out project, probe the image for the gate + hook entrypoint:
+    present -> run hooks, fail-closed holds; absent -> skip hooks and
+    print the degraded claim loudly at develop time. Rejected: blanket-
+    disable hooks on opt-out (breaks contract-implementing users; makes
+    the firewall secretly generated-only -- a gate, doctrine-wise) and
+    attempt-and-fail-loudly (open-network window before the helper dies).
+  - Companion fixes from the same review (host-netns guard, worktree
+    build-source notice, seed_prefs doc honesty) done 2026-07-06.
 - [ ] **Versioning + distribution** (flagged 2026-07-01) -- so byre
   installs and runs on other boxes. Confirm scope with Pete before
   building.

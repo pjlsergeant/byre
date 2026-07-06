@@ -42,6 +42,8 @@ type fakeRunner struct {
 	execs      []string // "id uid:gid workdir cmd..."
 	netnsErr   error
 	netnsInits []string // NetnsInit: "container entrypoint"
+	netMode    string   // NetworkMode result; "" means "bridge" (private netns)
+	netModeErr error
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -87,6 +89,18 @@ func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
 }
 
 func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) { return f.env, f.envErr }
+
+func (f *fakeRunner) NetworkMode(container string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.netModeErr != nil {
+		return "", f.netModeErr
+	}
+	if f.netMode == "" {
+		return "bridge", nil // a private namespace, the normal case
+	}
+	return f.netMode, nil
+}
 
 func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
 	f.mu.Lock()
