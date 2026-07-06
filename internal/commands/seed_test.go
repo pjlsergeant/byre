@@ -12,7 +12,7 @@ func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	vols := []config.Volume{
-		{Name: ".claude", Role: "state", Target: "/h/.claude", Seed: &config.Seed{Host: "~/.claude"}},
+		{Name: ".claude", Role: "state", Target: "/h/.claude", Seed: &config.Seed{Host: t.TempDir()}},
 		{Name: "cache", Role: "cache", Target: "/c"}, // not seeded
 	}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
@@ -28,7 +28,7 @@ func TestSeedVolumesSkipsExisting(t *testing.T) {
 	p, _ := testPaths(t)
 	name := volumeName(p.ID, ".claude")
 	f := &fakeRunner{vols: map[string]bool{name: true}}
-	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: "~/.claude"}}}
+	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: t.TempDir()}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestSeedVolumesSkipsExisting(t *testing.T) {
 func TestSeedVolumesRollbackOnFailure(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{failSeed: true}
-	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: "~/.claude"}}}
+	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: t.TempDir()}}}
 	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err == nil {
 		t.Fatal("expected seed failure")
 	}
