@@ -11,13 +11,22 @@ import (
 	"byre/internal/skills"
 )
 
+// sharedNetMode reports whether a NetworkMode value means the container was
+// joined to a namespace that is not its own: the host's ("host"), another
+// container's ("container:<id>"), or an arbitrary namespace path (podman's
+// "ns:/path"). Everything else (bridge/none/slirp4netns/pasta/a network name)
+// is a private namespace.
+func sharedNetMode(mode string) bool {
+	return mode == "host" || strings.HasPrefix(mode, "container:") || strings.HasPrefix(mode, "ns:")
+}
+
 // describeNetMode names a shared network mode for the skip message: "host"
-// reads as the host's namespace, "container:<id>" as another container's.
+// reads as the host's namespace, everything else quotes the mode.
 func describeNetMode(mode string) string {
 	if mode == "host" {
 		return "HOST"
 	}
-	return "container " + strings.TrimPrefix(mode, "container:")
+	return mode
 }
 
 // runNonce returns the random value for this invocation's byre.run label (see
@@ -74,20 +83,20 @@ func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks [
 	}
 	// The hooks join the box's network namespace as root with NET_ADMIN
 	// (--net container:<id>), which is only byre's to mutate when that
-	// namespace is the box's OWN. Under --network host (or container:<other>,
-	// both reachable via run_args) the "box's namespace" is really the host's
-	// or another container's, and a hook like the firewall's default-DROP
-	// rules would rewrite network state outside the box. Refuse byre's own
-	// root action there; the launch gate then fails the launch closed. An
-	// inspect failure gets the same treatment: no proof of a private
-	// namespace, no hooks.
+	// namespace is the box's OWN. Under --network host, container:<other>, or
+	// ns:/path (all reachable via run_args) the "box's namespace" is really
+	// the host's, another container's, or an arbitrary one, and a hook like
+	// the firewall's default-DROP rules would rewrite network state outside
+	// the box. Refuse byre's own root action there; the launch gate then
+	// fails the launch closed. An inspect failure gets the same treatment: no
+	// proof of a private namespace, no hooks.
 	mode, err := r.NetworkMode(container)
 	if err != nil {
 		fmt.Fprintf(warn, "byre: netns init: could not determine the box's network mode: %v\n", err)
 		fmt.Fprintln(warn, "byre: skipping netns init — the launch gate will not open; the box will time out and exit rather than run unprotected (failing closed).")
 		return
 	}
-	if mode == "host" || strings.HasPrefix(mode, "container:") {
+	if sharedNetMode(mode) {
 		fmt.Fprintf(warn, "byre: netns init skipped: the box shares the %s network namespace (run_args?) — that namespace is not byre's to modify, so the netns hooks (e.g. firewall rules) will not be applied there.\n", describeNetMode(mode))
 		fmt.Fprintln(warn, "byre: the launch gate will not open — the box will time out and exit rather than run unprotected (failing closed). Drop the network override or disable the skill that declares the hook.")
 		return

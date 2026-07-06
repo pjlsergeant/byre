@@ -94,13 +94,14 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit boo
 func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool) error {
 	warnRootlessPodman(s.Err, r)
 
-	// Worktrees inherit the project image (ADR 0009), so ALL build inputs —
-	// config cascade, `files` sources, a custom Dockerfile — resolve from the
-	// main worktree, not this one. Say so every session: a branch that edits a
-	// build input would otherwise silently run an image built from other
-	// content.
+	// Worktrees inherit the project image (ADR 0009), so file build inputs —
+	// `files` sources, a custom Dockerfile — resolve from the main worktree,
+	// not this one. (Config is different: a byre.config proposal IS read from
+	// this worktree and can be adopted into the shared store.) Say so every
+	// session: a branch that edits a build input would otherwise silently run
+	// an image built from other content.
 	if paths.IsWorktree {
-		fmt.Fprintf(s.Err, "byre: worktree session — the shared project image builds from the main worktree (%s); config/Dockerfile/files changes made only in this worktree don't reach the image.\n", paths.Canonical)
+		fmt.Fprintf(s.Err, "byre: worktree session — the shared project image builds from the main worktree (%s); Dockerfile/`files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
 	}
 
 	image := imageTag(paths.ID, os.Getuid(), os.Getgid())

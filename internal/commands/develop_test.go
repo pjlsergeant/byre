@@ -227,7 +227,7 @@ func TestDevelopNetnsInitRefusesSharedNamespace(t *testing.T) {
 	// via run_args) is not byre's to firewall: the root+NET_ADMIN hook would
 	// rewrite host (or foreign-container) network state. The hook must not
 	// fire, and the skip must explain the fail-closed outcome.
-	for _, mode := range []string{"host", "container:deadbeef"} {
+	for _, mode := range []string{"host", "container:deadbeef", "ns:/proc/1/ns/net"} {
 		t.Run(mode, func(t *testing.T) {
 			p, _ := testPaths(t)
 			pinNonce(t, "feedface")
