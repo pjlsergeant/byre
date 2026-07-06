@@ -149,7 +149,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	var cfgBefore []byte
 	if selfEdit {
-		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to massively escalate privileges on the next run.")
+		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to grant itself full access to your host on the next run.")
 		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
 		cfgBefore, _ = os.ReadFile(cfgPath)
 	}
