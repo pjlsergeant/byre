@@ -198,7 +198,13 @@ func grantSummary(c config.Config) []string {
 	if len(c.Mounts) > 0 {
 		var m []string
 		for _, x := range c.Mounts {
-			m = append(m, fmt.Sprintf("%s->%s(%s)", x.Host, x.Target, orDefault(x.Mode, "ro")))
+			mode := orDefault(x.Mode, "ro")
+			// A disabled mount grants nothing today, but adopting it plants an
+			// entry one flip away from a grant — show it, marked, not hidden.
+			if x.Disabled {
+				mode += ", disabled"
+			}
+			m = append(m, fmt.Sprintf("%s->%s(%s)", x.Host, x.Target, mode))
 		}
 		s = append(s, "mounts host paths: "+strings.Join(m, ", "))
 	}

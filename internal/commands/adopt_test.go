@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"byre/internal/config"
 )
 
 func proposeConfig(t *testing.T, projectDir, content string) {
@@ -178,5 +180,20 @@ func TestAdoptBuiltinTemplateOnFreshHome(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
 		t.Errorf("valid proposal should adopt: %v", err)
+	}
+}
+
+func TestGrantSummaryMarksDisabledMounts(t *testing.T) {
+	got := strings.Join(grantSummary(config.Config{Mounts: []config.Mount{
+		{Host: "/a", Target: "/a", Mode: "rw"},
+		{Host: "/b", Target: "/b", Mode: "rw", Disabled: true},
+	}}), "\n")
+	if !strings.Contains(got, "/a->/a(rw)") {
+		t.Errorf("active mount missing: %q", got)
+	}
+	// Adopting a disabled mount plants an entry one flip away from a grant:
+	// the reviewer must see it, marked, not have it hidden.
+	if !strings.Contains(got, "/b->/b(rw, disabled)") {
+		t.Errorf("disabled mount should be shown marked: %q", got)
 	}
 }
