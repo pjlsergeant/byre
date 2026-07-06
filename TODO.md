@@ -12,20 +12,23 @@ or priority, this file wins.
 
 ## 1. Launch blockers
 
-Two gates on going public. Until **both** ship: docs/marketing/README-next.md
-must not replace README.md, and the site must not go live. (Both claim these
-features in copy -- shipping the copy first would make it a lie.)
+CLEARED 2026-07-06. The firewall gate shipped and Pete confirmed the
+host-side verification ("firewall works"); the brew gate was retired by
+softening the copy (Pete's call) -- the README leads with `go install`
+instead. README-next replaced README.md the same day and the draft left
+docs/marketing/. The site is no longer blocked from this side.
 
-- [ ] **Default-deny firewall skill.** BUILT + core host-verified
+- [x] **Default-deny firewall skill.** BUILT + core host-verified
   2026-07-05 (decisions: `docs/adr/0010`-`0012`; unit-tested, committed).
   Verified live on Docker Desktop via `byre develop`: box launches (gate
   opens), `curl api.anthropic.com` works, `curl example.com` times out,
   codex first-run auth reaches its allowlisted endpoint behind the wall.
   Remaining before this checks off:
-  - [ ] Confirm `byre status` prints `Network: deny-by-default (skill:
-    firewall)` + the Egress section for that project (10-second eyeball;
-    not yet done), and rebuild the live project box once more to pick up
-    the derived/port-scoped firewall.sh.
+  - [x] Confirm `byre status` prints `Network: deny-by-default (skill:
+    firewall)` + the Egress section for that project (10-second eyeball),
+    and rebuild the live project box once more to pick up the
+    derived/port-scoped firewall.sh -- covered by Pete's 2026-07-06
+    confirmation ("firewall works").
   - [x] Automated gated test (`-run IntegrationFirewall`): PASSED
     2026-07-05 on Docker Desktop (arm64) -- allow github.com, deny
     example.com, fail-closed with no helper. Bonus: Debian resolved
@@ -46,12 +49,13 @@ features in copy -- shipping the copy first would make it a lie.)
     `github.com:22` is added to FIREWALL_ALLOW).
   - v2 candidates (deliberately not v1): mid-session re-resolve of CDN
     IPs, DNS filtering, registry egress moved into language templates.
-- [ ] **`brew install byre` works.** The hero and Install copy lead with
-  it; the two-command story depends on it.
-  - What: a tap is enough -- `brew install pjlsergeant/tap/byre` -- with
-    the formula pulling a tagged release binary. Update README-next/site
-    copy to whichever form actually ships.
-  - Depends on: versioning + releases (§2).
+- [x] **`brew install byre` works.** RETIRED AS A BLOCKER 2026-07-06:
+  Pete chose to soften the copy instead of building the release path.
+  The hero and Install now lead with
+  `go install github.com/pjlsergeant/byre/cmd/byre@latest`; the module
+  was renamed from `byre` to the full GitHub path so that resolves.
+  A brew tap is still worth having once tagged releases exist -- folded
+  into versioning + distribution (§2).
 
 ## 2. Near-term roadmap
 
@@ -80,6 +84,11 @@ features in copy -- shipping the copy first would make it a lie.)
   - Scope note: images build per-host and are never shipped (the
     build-time-UID decision), so distribution is just the single static
     binary -- skills and templates are embedded.
+  - Includes the brew tap demoted from §1 (2026-07-06):
+    `brew install pjlsergeant/tap/byre`, formula pulling a tagged release
+    binary. `go install` already works (module renamed to the full GitHub
+    path); the tap is a nicety on top of tagged releases, and the README
+    Install copy gains it when it ships.
 
 ## 3. Config UI follow-ups
 
@@ -163,14 +172,12 @@ UID assertions in `gen_test.go`/`context_test.go`).
   reconciled with the glossary (core block, "session is running",
   project-not-family).
 
-- [ ] **docs/marketing/README-next.md worktree copy is stale** (~line 226):
-  it documents
-  `byre worktree` as unconditionally "beside the repo". Shipped behavior is
-  the three-state `worktree_base`: unset -> refuse (never guess),
-  `"sibling"` -> beside the repo, path -> under it, with `--path` as a
-  per-invocation override. Pete's draft -- he rewrites or delegates.
-  (The draft's two stale opt-out claims were fixed 2026-07-06 at Pete's
-  direction after ADR 0014; only the worktree copy remains stale.)
+- [x] **docs/marketing/README-next.md worktree copy is stale** (~line 226):
+  RESOLVED -- Pete's 2026-07-05 rewrite had already reconciled it ("You
+  pick once where new worktrees live (`byre config --global`)" -- no
+  "beside the repo" claim survives); verified against the shipped
+  three-state `worktree_base` on 2026-07-06 when the draft became
+  README.md. This entry had gone stale, not the copy.
 - [ ] **Walk back the "publishable/portable skills" framing** in the spec
   and README -- not a goal until §4's packaging work exists. Small doc
   edit, pending since 2026-06-23.
@@ -192,6 +199,9 @@ UID assertions in `gen_test.go`/`context_test.go`).
 - [ ] **Keep `byre status` output in lockstep with the marketing block:**
   the README/site show its output as proof; drift makes the proof a lie.
   Standing discipline -- re-verify at launch and after any status change.
+  (README's Quickstart status block reconciled against status.go's actual
+  rows -- Project id/Ports/Skills lines, volume names, container short id
+  -- 2026-07-06, at the README-next swap.)
 
 ## Post-launch tripwire
 
