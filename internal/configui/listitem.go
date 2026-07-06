@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // ---- list screen (browse a field's items) ----------------------------------

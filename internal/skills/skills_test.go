@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // writeSkill creates skillsDir/<name>/skill.toml (+ optional extra files).

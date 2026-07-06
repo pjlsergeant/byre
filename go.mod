@@ -1,4 +1,4 @@
-module byre
+module github.com/pjlsergeant/byre
 
 go 1.22
 

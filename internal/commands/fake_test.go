@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"byre/internal/project"
-	"byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 // fakeRunner is the one configurable engineRunner fake for commands tests. The

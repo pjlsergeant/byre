@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 func proposeConfig(t *testing.T, projectDir, content string) {

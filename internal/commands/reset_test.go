@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // liveProject marks a session live for the project label.

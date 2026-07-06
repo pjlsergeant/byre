@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 func TestReportRunning(t *testing.T) {

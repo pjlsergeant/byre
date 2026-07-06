@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/config"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 func TestRenderStatusFull(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // sharedNetMode reports whether a NetworkMode value means the container was

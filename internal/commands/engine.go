@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"byre/internal/config"
-	"byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 // resolveEngine picks the container engine for a recovery/lifecycle command

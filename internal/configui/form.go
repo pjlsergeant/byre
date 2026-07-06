@@ -15,8 +15,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"byre/internal/config"
-	"byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 )
 
 // Run shows the interactive editor for cfg and returns whether the config was

@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byre/internal/builtins"
-	"byre/internal/config"
-	"byre/internal/project"
-	"byre/internal/runner"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // statusInfo is the resolved, display-ready view of a project for `byre status`.

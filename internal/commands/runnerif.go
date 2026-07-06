@@ -1,6 +1,6 @@
 package commands
 
-import "byre/internal/runner"
+import "github.com/pjlsergeant/byre/internal/runner"
 
 // The engine surface the commands consume, sliced into three composable
 // interfaces (satisfied by *runner.Runner; tests inject fakeRunner). A command

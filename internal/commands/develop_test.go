@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/config"
-	"byre/internal/project"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // liveWorkdir marks a session live for the project's worktree label — the

@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 func TestLongestCommonPrefix(t *testing.T) {

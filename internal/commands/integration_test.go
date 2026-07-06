@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"testing"
 
-	"byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 func requireEngineRunner(t *testing.T) *runner.Runner {

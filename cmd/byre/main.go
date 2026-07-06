@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"byre/internal/commands"
+	"github.com/pjlsergeant/byre/internal/commands"
 )
 
 // app is the set of command implementations run dispatches to. A struct (not

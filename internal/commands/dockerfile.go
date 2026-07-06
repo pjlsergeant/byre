@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"byre/internal/build"
-	"byre/internal/project"
-	"byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/build"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 // Dockerfile implements `byre dockerfile`: resolve identity, resolve the config

@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"byre/internal/config"
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // seedVolumes seeds any fresh state volume that declares a host-path seed.

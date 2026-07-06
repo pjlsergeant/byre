@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"byre/internal/builtins"
-	"byre/internal/config"
-	"byre/internal/runner"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // buildFirewallImage materializes the built-in skills, resolves a

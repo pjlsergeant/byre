@@ -5,10 +5,10 @@ import (
 	"io"
 	"os"
 
-	"byre/internal/config"
-	"byre/internal/project"
-	"byre/internal/runner"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // Rebuild implements `byre rebuild`: regenerate the build context and rebuild

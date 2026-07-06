@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // isTTY must report false for /dev/null and regular files — /dev/null is a
