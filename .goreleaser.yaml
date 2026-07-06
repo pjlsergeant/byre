@@ -1,6 +1,6 @@
 # Release pipeline: cross-compile the single static binary, attach
 # checksummed archives to a GitHub Release, and — once the tap repo and
-# token exist — publish the Homebrew formula. Run by
+# token exist — publish the Homebrew cask. Run by
 # .github/workflows/release.yml on tag push. Validate locally with
 # `goreleaser check` or `goreleaser release --snapshot --clean`.
 version: 2
