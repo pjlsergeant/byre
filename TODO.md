@@ -12,6 +12,13 @@ this file about status, scope, or priority, this file wins.
 
 ## 1. Near-term roadmap
 
+- [ ] **Site** (landing page + real docs, devlog demoted to `/devlog/`):
+  still on; the decided shape lives in `docs/marketing/positioning.md`
+  "Site plan".
+- [ ] **Agent best-practices guide, inside `~/.byre`** (Pete, 2026-07-06):
+  a really comprehensive guide for agents on best practices, living in the
+  store so it rides into every box. Shape TBD -- likely delivered the way
+  devloop's conventions are (as agent context/memory).
 - [ ] **Brew tap** (optional, Pete-side): create the
   `pjlsergeant/homebrew-tap` repo + the `HOMEBREW_TAP_GITHUB_TOKEN`
   Actions secret (steps in `docs/RELEASING.md`); the next tagged release
@@ -121,7 +128,9 @@ UID assertions in `gen_test.go`/`context_test.go`).
   a safety idiom, not a scope statement, and one cold reader bounced off
   it. The plain what-it-is sentence directly under it is mandatory
   mitigation. If cold readers keep bouncing post-launch, revisit the H1.
-  (Background: docs/marketing/positioning.md "Reader-response evidence".)
+  Also: the flag is Claude's and could be renamed -- the H1 stays a
+  five-minute edit. (Background: docs/marketing/positioning.md
+  "Copy bank".)
 
 ## Parked / consciously not doing
 
