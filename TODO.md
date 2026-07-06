@@ -19,6 +19,22 @@ this file about status, scope, or priority, this file wins.
   a really comprehensive guide for agents on best practices, living in the
   store so it rides into every box. Shape TBD -- likely delivered the way
   devloop's conventions are (as agent context/memory).
+- [ ] **Shared agent credentials across projects** (Pete, 2026-07-06):
+  per-project login is a hard-sell for the drop-into-any-folder pitch, and
+  it must work for all three agents, not just Claude. Direction: ship
+  per-agent opt-in skill variants (e.g. `claude` vs `claude-shared-auth`)
+  backed by a machine-wide agent-identity volume -- login happens in-box
+  once per agent ever, byre never touches host credentials -- with
+  per-project state (cwd-keyed history etc.) split out via symlinked
+  subdirs or nested volume mounts. Key hazard: never symlink the
+  credential file itself (atomic rename-over-symlink forks it). Research
+  pending in `docs/agent-credential-mechanics.md` (state-dir inventories,
+  write patterns, rotation semantics); then a design session before
+  building. Revisits two prior negatives, deliberately: Parked
+  "machine-wide shared volume scope" (agent identity IS naturally
+  machine-scoped) and the retired creds/history split; ADR-0007 stays
+  closed (no host-credential copying). Env passthrough (§6) remains the
+  separate CI/API-key story.
 - [ ] **Brew tap** (optional, Pete-side): create the
   `pjlsergeant/homebrew-tap` repo + the `HOMEBREW_TAP_GITHUB_TOKEN`
   Actions secret (steps in `docs/RELEASING.md`); the next tagged release
