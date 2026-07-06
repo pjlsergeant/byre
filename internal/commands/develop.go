@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"byre/internal/build"
@@ -142,9 +143,15 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		return err
 	}
 
+	// --self-edit hands the agent authorship of its own next sandbox; open the
+	// session with the warning and snapshot the config so the session can close
+	// by showing exactly what the agent changed (reportSelfEditDiff below).
+	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
+	var cfgBefore []byte
 	if selfEdit {
-		fmt.Fprintln(s.Err, "💡 self-edit on — the agent can edit its own byre.config; changes apply on the next develop.")
+		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to massively escalate privileges on the next run.")
 		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
+		cfgBefore, _ = os.ReadFile(cfgPath)
 	}
 	params, err := runParams(paths, rv, image, selfEdit, s.TTY)
 	if err != nil {
@@ -189,6 +196,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	runErr := r.Run(runner.RunArgs(params))
 	if netnsWait != nil {
 		netnsWait()
+	}
+	// The session is over (runErr may just be the agent's own exit status):
+	// show what a self-edit agent changed before the exit paths below return.
+	if selfEdit {
+		reportSelfEditDiff(s.Err, cfgPath, cfgBefore)
 	}
 	if runErr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {

@@ -37,6 +37,7 @@ type fakeRunner struct {
 	env        map[string]string // ContainerEnv of any id
 	envErr     error
 	runErr     error
+	runHook    func() // called inside Run: "while the session is live"
 	execErr    error
 	runs       [][]string
 	execs      []string // "id uid:gid workdir cmd..."
@@ -125,6 +126,9 @@ func (f *fakeRunner) Run(args []string) error {
 	defer f.mu.Unlock()
 	f.runs = append(f.runs, args)
 	f.ops = append(f.ops, "run")
+	if f.runHook != nil {
+		f.runHook()
+	}
 	return f.runErr
 }
 

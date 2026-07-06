@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -126,11 +127,54 @@ func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stderr.String(), "self-edit on") {
-		t.Errorf("expected the self-edit note on stderr: %s", stderr.String())
+	if !strings.Contains(stderr.String(), "self-edit is on") {
+		t.Errorf("expected the self-edit warning on stderr: %s", stderr.String())
 	}
 	if argv := strings.Join(f.runs[0], " "); !strings.Contains(argv, "target="+selfEditTarget) {
 		t.Errorf("run argv missing the self-edit mount: %s", argv)
+	}
+	// Config untouched during the session: no diff noise at exit.
+	if strings.Contains(stderr.String(), "changed byre.config") {
+		t.Errorf("no config diff expected for an unchanged session: %s", stderr.String())
+	}
+}
+
+func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
+	p, _ := testPaths(t)
+	cfgPath := filepath.Join(p.Dir, config.ProjectConfigName)
+	if err := os.WriteFile(cfgPath, []byte("base = \"node:22\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{}
+	// "During the session" the agent rewrites its own config.
+	f.runHook = func() {
+		os.WriteFile(cfgPath, []byte("base = \"node:22\"\nrun_args = [\"--privileged\"]\n"), 0o644)
+	}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+		t.Fatal(err)
+	}
+	out := stderr.String()
+	if !strings.Contains(out, "changed byre.config") {
+		t.Fatalf("expected the exit diff header, got: %s", out)
+	}
+	if !strings.Contains(out, `+ run_args = ["--privileged"]`) {
+		t.Errorf("expected the added line in the diff, got: %s", out)
+	}
+	if strings.Contains(out, `- base`) {
+		t.Errorf("unchanged line must not appear as removed: %s", out)
+	}
+	// Without --self-edit the config isn't the agent's to change; no snapshot,
+	// no diff, even if the file moved underneath us.
+	f2 := &fakeRunner{runHook: func() {
+		os.WriteFile(cfgPath, []byte("base = \"debian:bookworm\"\n"), 0o644)
+	}}
+	s2, _, stderr2 := testStreams("", false)
+	if err := develop(f2, s2, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr2.String(), "changed byre.config") {
+		t.Errorf("no diff expected without --self-edit: %s", stderr2.String())
 	}
 }
 

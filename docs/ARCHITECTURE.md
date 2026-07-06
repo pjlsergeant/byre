@@ -192,7 +192,9 @@ Resolution: `default ⊕ template ⊕ project`.
 rewrite its own sandbox. A committed `<project>/byre.config` is a
 **proposal** -- shown to the human and **adopted** into the host-side
 store only on explicit `[y/N]` (sha256-recorded, re-prompts on change,
-non-TTY never adopts). `--self-edit` is the one announced exception.
+non-TTY never adopts). `--self-edit` is the one announced exception: the
+session opens with a loud escalation warning and closes by printing the
+byre.config diff, if any -- the change applies on the next develop.
 
 - **Scalars override** -- last layer wins. Exception: `seed_prefs` is a
   **monotonic opt-in** -- any layer setting it `true` turns it on, and a
