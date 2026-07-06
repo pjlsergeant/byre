@@ -121,8 +121,7 @@ Open the interactive editor for this project's host-side config
 		summary: "Print the generated Dockerfile for this directory.",
 		help: `Usage: byre dockerfile
 
-Print the Dockerfile byre would build for this directory (or the hand-written
-one, when the config opts out of generation). Side-effect-free.`,
+Print the Dockerfile byre would build for this directory. Side-effect-free.`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
 			if err := noArgs("dockerfile", rest); err != nil {
 				return err

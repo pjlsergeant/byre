@@ -169,6 +169,10 @@ UID assertions in `gen_test.go`/`context_test.go`).
   the three-state `worktree_base`: unset -> refuse (never guess),
   `"sibling"` -> beside the repo, path -> under it, with `--path` as a
   per-invocation override. Pete's draft -- he rewrites or delegates.
+  Also stale since 2026-07-06 (ADR 0014 removed the full-Dockerfile
+  opt-out): ~line 198 still advertises `dockerfile =` as opting out of
+  generation, and ~line 252 says non-Debian bases work "via your own
+  Dockerfile" -- both now false; the boundary is "use Docker directly".
 - [ ] **Walk back the "publishable/portable skills" framing** in the spec
   and README -- not a goal until §4's packaging work exists. Small doc
   edit, pending since 2026-06-23.
