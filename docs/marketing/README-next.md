@@ -195,8 +195,7 @@ removes):
 ```
 
 The vocabulary covers packages, env, mounts, volumes, and skills; raw
-Dockerfile lines and `docker run` args cover the rest, and `dockerfile =`
-opts out entirely. Full reference:
+Dockerfile lines and `docker run` args cover the rest. Full reference:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 byre reads config only from its host-side store, never from inside the
@@ -249,7 +248,7 @@ migrates them after a move.
 Linux and macOS, over Docker or Podman (rootful; rootless Podman is a
 sequenced follow-up). byre bakes your UID/GID into the image so the agent
 runs unprivileged as you and files land correctly owned. Debian-derived base
-images; anything else via your own Dockerfile.
+images only.
 
 Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Build notes:
 [devlog](https://pjlsergeant.github.io/byre/).
