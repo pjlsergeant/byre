@@ -217,6 +217,8 @@ env         = { FOO = "bar" }                 # literals, baked into the image (
 files       = { "./seed" = "/opt/..." }       # copied into image, read-only
 skills      = ["devloop", "firewall"]
 mounts      = [ ... ]                         # host-bind mounts (see Mounts & volumes)
+ports       = [{ container = 3000 }]          # published ports; binds 127.0.0.1 unless
+                                              # interface says otherwise, host defaults to container
 volumes     = [ ... ]                         # ad-hoc named volumes; skills usually supply these
 dockerfile_pre  = ["RUN ..."]                 # raw BUILD block, before the core block
 dockerfile_post = ["RUN ..."]                 # raw BUILD block, project tail

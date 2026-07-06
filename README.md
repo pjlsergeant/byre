@@ -111,6 +111,8 @@ env      = { FOO = "bar" }                  # baked into the image
 files    = { "./seed" = "/opt/seed" }       # copy project files into the image
 skills   = ["moarcode", "shem"]
 mounts   = [ ... ]                          # host-bind mounts
+ports    = [{ container = 3000 }]           # published ports (localhost-only
+                                            # unless interface says otherwise)
 volumes  = [ ... ]                          # named volumes (role/target/seed)
 dockerfile_pre  = ["RUN ..."]               # raw build block, before the core block
 dockerfile_post = ["RUN ..."]               # raw build block, project tail
