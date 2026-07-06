@@ -44,6 +44,35 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	}
 }
 
+func TestRunParamsSkipsDisabledMounts(t *testing.T) {
+	paths, _ := testPaths(t)
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: "/live", Target: "/live", Mode: "rw"},
+		// The disabled entry's host path is one expandHostPath would REJECT
+		// (relative) — proving the skip happens before expansion, so a mount
+		// whose host path is currently bogus can be switched off harmlessly.
+		{Host: "not-absolute", Target: "/off", Mode: "rw", Disabled: true},
+	}}
+	p, err := runParams(paths, combine(cfg, skills.Resolved{}), "i", false, false)
+	if err != nil {
+		t.Fatalf("disabled mount must not block runParams: %v", err)
+	}
+	for _, b := range p.Binds {
+		if b.Target == "/off" {
+			t.Fatalf("disabled mount produced a bind: %+v", b)
+		}
+	}
+	found := false
+	for _, b := range p.Binds {
+		if b.Target == "/live" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("enabled mount missing from binds: %+v", p.Binds)
+	}
+}
+
 func TestRunParamsSelfEditMount(t *testing.T) {
 	paths, _ := testPaths(t)
 

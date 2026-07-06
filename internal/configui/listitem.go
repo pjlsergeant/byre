@@ -93,6 +93,11 @@ func (m model) startItem(idx int) model {
 			if m.mounts[idx].Mode == "rw" {
 				m.itemMode = 1
 			}
+			// Disabled wins the picker display; the ro/rw underneath survives in
+			// the entry (commitItem preserves it) so re-enabling restores it.
+			if m.mounts[idx].Disabled {
+				m.itemMode = 2
+			}
 		}
 		m.inputs = []textinput.Model{newInput(host), newInput(target)}
 		m.itemHasMode = true
@@ -159,12 +164,12 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "left":
 		if m.onModePicker() {
-			m.itemMode = wrap(m.itemMode-1, 2)
+			m.itemMode = wrap(m.itemMode-1, 3)
 			return m, nil
 		}
 	case "right":
 		if m.onModePicker() {
-			m.itemMode = wrap(m.itemMode+1, 2)
+			m.itemMode = wrap(m.itemMode+1, 3)
 			return m, nil
 		}
 		// At the end of an input with a live suggestion, → accepts it (host-path
@@ -358,11 +363,19 @@ func (m model) commitItem() model {
 			m.itemErr = "target must be an absolute path in the box (start with /)"
 			return m
 		}
-		mode := "ro"
-		if m.itemMode == 1 {
-			mode = "rw"
+		mt := config.Mount{Host: host, Target: target, Mode: "ro"}
+		switch m.itemMode {
+		case 1:
+			mt.Mode = "rw"
+		case 2:
+			mt.Disabled = true
+			// Keep the entry's stored ro/rw while it's off, so flipping it back
+			// on restores the mode instead of resetting to ro.
+			if m.editIndex >= 0 {
+				mt.Mode = m.mounts[m.editIndex].Mode
+			}
 		}
-		m.mounts = putAt(m.mounts, m.editIndex, config.Mount{Host: host, Target: target, Mode: mode})
+		m.mounts = putAt(m.mounts, m.editIndex, mt)
 	case fPorts:
 		container, err := strconv.Atoi(strings.TrimSpace(m.inputs[0].Value()))
 		if err != nil || container < 1 || container > 65535 {
@@ -441,6 +454,9 @@ func mountLine(mt config.Mount) string {
 	if mode == "" {
 		mode = "ro"
 	}
+	if mt.Disabled {
+		mode += ", disabled"
+	}
 	return fmt.Sprintf("%s -> %s (%s)", mt.Host, mt.Target, mode)
 }
 
@@ -504,7 +520,7 @@ func (m model) viewItem() string {
 			cursor = focusStyle.Render("▸ ")
 		}
 		label := fmt.Sprintf("%-*s", 16, "Mode")
-		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, renderSeg([]string{"ro", "rw"}, m.itemMode, m.onModePicker()))
+		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, renderSeg([]string{"ro", "rw", "disabled"}, m.itemMode, m.onModePicker()))
 	}
 
 	if m.itemErr != "" {

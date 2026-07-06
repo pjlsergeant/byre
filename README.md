@@ -110,7 +110,8 @@ npm_global = ["prettier"]
 env      = { FOO = "bar" }                  # baked into the image
 files    = { "./seed" = "/opt/seed" }       # copy project files into the image
 skills   = ["moarcode", "shem"]
-mounts   = [ ... ]                          # host-bind mounts
+mounts   = [ ... ]                          # host-bind mounts (mode ro|rw;
+                                            # disabled = true keeps one switched off)
 ports    = [{ container = 3000 }]           # published ports (localhost-only
                                             # unless interface says otherwise)
 volumes  = [ ... ]                          # named volumes (role/target/seed)

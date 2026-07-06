@@ -55,10 +55,16 @@ var (
 )
 
 // Mount is a host-bind mount. Identity for `!name` removal is Target.
+//
+// Mode is docker's own bind grammar (ro|rw) and passes through to the engine;
+// Disabled is byre's switch (ADR 0015): the entry stays in config and status
+// but produces no bind, and Mode survives the off state so re-enabling is one
+// field flip. Disabled is a toggle, `!target` is a removal -- both exist.
 type Mount struct {
-	Host   string `toml:"host"`
-	Target string `toml:"target"`
-	Mode   string `toml:"mode"` // ro|rw; default ro
+	Host     string `toml:"host"`
+	Target   string `toml:"target"`
+	Mode     string `toml:"mode"`               // ro|rw; default ro
+	Disabled bool   `toml:"disabled,omitempty"` // switched off: kept + shown, not bound
 }
 
 // Port publishes a container port to the host (docker -p). Interface defaults to

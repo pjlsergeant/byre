@@ -16,7 +16,10 @@ func TestRenderStatusFull(t *testing.T) {
 		Engine:    "docker",
 		Canonical: "/home/me/proj",
 		Skills:    []string{"moarcode"},
-		Binds:     []config.Mount{{Host: "/data", Target: "/data", Mode: "ro"}},
+		Binds: []config.Mount{
+			{Host: "/data", Target: "/data", Mode: "ro"},
+			{Host: "/media", Target: "/media", Mode: "rw", Disabled: true},
+		},
 		Ports: []config.Port{
 			{Container: 8080, Host: 8080},
 			{Container: 3000}, // blank host = mirror the container port
@@ -37,6 +40,7 @@ func TestRenderStatusFull(t *testing.T) {
 		"Network:", "open",
 		"Ports:", "127.0.0.1:8080 -> 8080", "127.0.0.1:3000 -> 3000",
 		"/data -> /data  (ro)",
+		"/media -> /media  (rw, disabled)",
 		"moarcode",
 		"State vols:", "creds",
 		"Cache vols:", "node_modules",

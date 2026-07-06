@@ -20,6 +20,7 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `template = "go"` — a named starter from `~/.byre/templates`
 - `engine = "auto"` — auto | docker | podman
 - `mounts = [{ host = "~/data", target = "/data", mode = "ro" }]` — host bind mounts
+  (add `disabled = true` to keep one in the config but switched off)
 - `ports = [{ container = 3000 }]` — publish container ports on the host
   (binds 127.0.0.1 unless `interface` says otherwise; `host` defaults to `container`)
 - `volumes = [{ name = "cache", role = "cache", target = "/c" }]` — named volumes

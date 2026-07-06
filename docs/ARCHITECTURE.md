@@ -311,7 +311,11 @@ Two mount species:
    (default `ro`). The project itself is the implicit one (`/workspace`,
    read-write by design). `:ro` protects another codebase from
    *modification*, not from being read. Plain Docker binds -- anything
-   fancier drops to `run_args`.
+   fancier drops to `run_args`. A mount can be **disabled**
+   (`disabled = true`): it stays in the config and in `byre status`
+   (marked), but produces no bind -- a switch for long-lived entries,
+   distinct from `!target` removal. `mode` survives the off state, and a
+   disabled mount's host path may be absent without blocking develop.
 2. **named volume** -- Docker-managed, project-scoped
    (`byre-<project_id>-<name>`), survives rebuilds. Usually contributed
    by a skill; a project can declare ad-hoc ones via `volumes`. Carries:

@@ -220,7 +220,13 @@ func renderStatus(w io.Writer, s statusInfo) {
 			if i > 0 {
 				label = ""
 			}
-			row(label, fmt.Sprintf("%s -> %s  (%s)", m.Host, m.Target, orDefault(m.Mode, "ro")))
+			// A disabled mount is shown, marked -- staying visible while off is
+			// the whole point of the switch (vs deleting the entry).
+			mode := orDefault(m.Mode, "ro")
+			if m.Disabled {
+				mode += ", disabled"
+			}
+			row(label, fmt.Sprintf("%s -> %s  (%s)", m.Host, m.Target, mode))
 		}
 	}
 

@@ -216,6 +216,31 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 		t.Fatalf("mount not added correctly: %v", m.mounts)
 	}
 
+	// --- disable it: the picker's third state sets the bool, keeps rw ---
+	m = m.startItem(0)
+	if m.itemMode != 1 {
+		t.Fatalf("editor should open on the stored rw mode, got %d", m.itemMode)
+	}
+	m.itemMode = 2 // disabled
+	m = m.commitItem()
+	if !m.mounts[0].Disabled || m.mounts[0].Mode != "rw" {
+		t.Fatalf("disable should set the bool and preserve rw: %+v", m.mounts[0])
+	}
+	if line := mountLine(m.mounts[0]); !strings.Contains(line, "rw, disabled") {
+		t.Fatalf("list row should mark the disabled mount: %q", line)
+	}
+
+	// --- re-enable: editor opens on disabled, picking rw clears the bool ---
+	m = m.startItem(0)
+	if m.itemMode != 2 {
+		t.Fatalf("editor should open on disabled, got %d", m.itemMode)
+	}
+	m.itemMode = 1
+	m = m.commitItem()
+	if m.mounts[0].Disabled || m.mounts[0].Mode != "rw" {
+		t.Fatalf("re-enable should clear the bool and keep rw: %+v", m.mounts[0])
+	}
+
 	// --- delete the mount ---
 	m.deleteItem(fMounts, 0)
 	if len(m.mounts) != 0 {

@@ -134,6 +134,9 @@ _Avoid_: permission (implies a policy engine deciding; byre only reports)
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The
 project itself is the implicit one: mounted read-write at `/workspace`.
+A mount can be **disabled**: kept in the config and shown in status,
+but not bound. Disabling is a switch (the entry and its mode survive);
+`!target` removal is how a later cascade layer deletes the entry.
 
 **Volume**:
 A Docker named volume, per-project (`byre-<project_id>-<name>`), surviving

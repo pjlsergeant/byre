@@ -28,6 +28,12 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 
 	binds := make([]runner.BindMount, 0, len(rv.mounts))
 	for _, m := range rv.mounts {
+		// A disabled mount produces no bind at all. Skipped BEFORE host-path
+		// expansion, so a mount whose host path is currently absent or invalid
+		// can be switched off without blocking develop -- that's its point.
+		if m.Disabled {
+			continue
+		}
 		host, err := expandHostPath(m.Host)
 		if err != nil {
 			return runner.RunParams{}, err

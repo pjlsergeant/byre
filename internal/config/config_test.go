@@ -69,6 +69,31 @@ func TestMergeMountsByTarget(t *testing.T) {
 	}
 }
 
+func TestMergeMountsReenableByReplacing(t *testing.T) {
+	// disabled is part of the whole-entry replace: a later layer restating the
+	// target without it re-enables the mount (no per-field merge).
+	base := Config{Mounts: []Mount{{Host: "/h", Target: "/t", Mode: "rw", Disabled: true}}}
+	over := Config{Mounts: []Mount{{Host: "/h", Target: "/t", Mode: "rw"}}}
+	got := Merge(base, over).Mounts
+	if len(got) != 1 || got[0].Disabled {
+		t.Errorf("later layer should re-enable by replacement: got %+v", got)
+	}
+}
+
+func TestValidateDisabledMountStillChecked(t *testing.T) {
+	// A disabled mount is still config: shape errors and target collisions
+	// fail now, not on re-enable.
+	if err := (Config{Mounts: []Mount{{Target: "/t", Disabled: true}}}).Validate(); err == nil {
+		t.Error("disabled mount without host should still fail validation")
+	}
+	dup := Config{Mounts: []Mount{
+		{Host: "/a", Target: "/t", Disabled: true}, {Host: "/b", Target: "/t"},
+	}}
+	if err := dup.Validate(); err == nil {
+		t.Error("disabled mount should still collide on target")
+	}
+}
+
 func TestRawBlocksAppendOnly(t *testing.T) {
 	got := Merge(Config{DockerfilePre: []string{"RUN a"}}, Config{DockerfilePre: []string{"RUN a", "RUN b"}}).DockerfilePre
 	if want := []string{"RUN a", "RUN a", "RUN b"}; !reflect.DeepEqual(got, want) {
