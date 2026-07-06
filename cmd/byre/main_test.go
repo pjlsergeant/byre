@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -39,6 +40,7 @@ func recorderApp(calls map[string]string) app {
 		skillUpdate: func(_ commands.Streams) error { return note("skill update", "-") },
 		rebuild:     func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome:      func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
+		version:     func(_ commands.Streams) error { return note("version", "-") },
 	}
 }
 
@@ -81,6 +83,8 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"skill", "update"}, "skill update", "-"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
+		{[]string{"version"}, "version", "-"},
+		{[]string{"--version"}, "version", "-"}, // alias for the table entry
 	}
 	for _, tc := range cases {
 		calls := map[string]string{}
@@ -118,6 +122,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{"skill", "bogus"},         // unknown subcommand
 		{"rehome"},                 // missing old id
 		{"rehome", "old", "extra"}, // extra operand
+		{"version", "extra"},       // operands after a no-arg command
+		{"--version", "extra"},     // the alias gets the same operand check
 	}
 	for _, argv := range cases {
 		calls := map[string]string{}
@@ -141,6 +147,47 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "Usage: byre <command>") {
 			t.Errorf("%v: expected usage on stdout, got %q", argv, out.String())
+		}
+	}
+}
+
+// TestPrintVersion pins the real implementation's output shape; dispatch of
+// `version` and `--version` to it is pinned in TestRunDispatch.
+func TestPrintVersion(t *testing.T) {
+	s, out := testStreams()
+	if err := printVersion(s); err != nil {
+		t.Fatalf("printVersion: %v", err)
+	}
+	if !strings.HasPrefix(out.String(), "byre ") {
+		t.Errorf("expected a 'byre <version>' line, got %q", out.String())
+	}
+}
+
+// TestVersionString pins the resolution order: stamped tag, then module
+// version, then (devel) with the VCS revision when recorded.
+func TestVersionString(t *testing.T) {
+	withRev := &debug.BuildInfo{}
+	withRev.Main.Version = "(devel)"
+	withRev.Settings = []debug.BuildSetting{{Key: "vcs.revision", Value: "0123456789abcdef"}}
+	shortRev := &debug.BuildInfo{}
+	shortRev.Settings = []debug.BuildSetting{{Key: "vcs.revision", Value: "abc"}}
+	fromModule := &debug.BuildInfo{}
+	fromModule.Main.Version = "v0.2.1"
+	cases := []struct {
+		stamped string
+		bi      *debug.BuildInfo
+		want    string
+	}{
+		{"v1.0.0", fromModule, "v1.0.0"},      // stamped wins over build info
+		{"", fromModule, "v0.2.1"},            // go install ...@vX.Y.Z
+		{"", withRev, "(devel) 0123456789ab"}, // local build with VCS info
+		{"", shortRev, "(devel) abc"},         // revision shorter than display width
+		{"", &debug.BuildInfo{}, "(devel)"},   // build info without a version
+		{"", nil, "(devel)"},                  // no build info at all
+	}
+	for _, tc := range cases {
+		if got := versionString(tc.stamped, tc.bi); got != tc.want {
+			t.Errorf("versionString(%q, %+v) = %q, want %q", tc.stamped, tc.bi, got, tc.want)
 		}
 	}
 }

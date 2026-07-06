@@ -21,3 +21,6 @@ curiosity/
 
 # stray local build artifact (was accidentally committed)
 /bb
+
+# goreleaser output
+/dist/

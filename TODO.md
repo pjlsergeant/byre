@@ -73,22 +73,30 @@ docs/marketing/. The site is no longer blocked from this side.
   worktree build-source notice, seed_prefs doc honesty) shipped
   2026-07-06 (b84e3cc..986cd88).
 - [ ] **Versioning + distribution** (flagged 2026-07-01) -- so byre
-  installs and runs on other boxes. Confirm scope with Pete before
-  building.
-  - Current state: greenfield. No `byre version` command, no version
-    variable or `-ldflags` injection, no goreleaser/Makefile, no git tags.
-  - Shape: `byre version` + version baked via `-ldflags -X`; tagged
-    cross-compiled releases (goreleaser, or a small Makefile + GitHub
-    Actions release workflow); an install path (curl|sh and/or
-    `go install`).
-  - Scope note: images build per-host and are never shipped (the
-    build-time-UID decision), so distribution is just the single static
-    binary -- skills and templates are embedded.
-  - Includes the brew tap demoted from §1 (2026-07-06):
-    `brew install pjlsergeant/tap/byre`, formula pulling a tagged release
-    binary. `go install` already works (module renamed to the full GitHub
-    path); the tap is a nicety on top of tagged releases, and the README
-    Install copy gains it when it ships.
+  installs and runs on other boxes. MACHINERY BUILT 2026-07-06 (decision:
+  `docs/adr/0016`; how-to: `docs/RELEASING.md`); the scope confirmation
+  couldn't reach Pete, so the shape below was built as written, with
+  goreleaser over a hand-rolled Makefile. Remaining is Pete-side:
+  - [x] `byre version` / `byre --version`: release tag via `-ldflags -X`,
+    module version for `go install ...@vX` builds, `(devel)`+revision
+    locally.
+  - [x] Tagged cross-compiled releases: `.goreleaser.yaml` +
+    `.github/workflows/release.yml` on `v*` tag push (linux/darwin x
+    amd64/arm64, checksummed archives). Verified with a local snapshot
+    release. Plus `ci.yml` (gofmt/vet/test) -- didn't exist, and tagging
+    unverified commits is worse.
+  - [x] Install paths: `go install` (already worked), `install.sh` for
+    curl|sh (checksum-verified; live once the first tag exists), brew
+    cask publish to `pjlsergeant/homebrew-tap` -- gated on the tap token
+    so releases never block on it.
+  - [ ] Pete: cut the first tag (`git tag v0.1.0 && git push origin
+    v0.1.0` -- see RELEASING.md), and optionally create the tap repo +
+    `HOMEBREW_TAP_GITHUB_TOKEN` secret to switch on brew.
+  - [ ] After the first release: README Install copy gains the curl|sh
+    one-liner, and the brew line once the tap is live.
+  - Scope note (unchanged): images build per-host and are never shipped
+    (the build-time-UID decision), so distribution is just the single
+    static binary -- skills and templates are embedded.
 
 ## 3. Config UI follow-ups
 
