@@ -4,8 +4,9 @@ title: "Day 6: the wall goes up, and we agree what to call things"
 
 # Day 6: the wall goes up, and we agree what to call things
 
-> Drafted by the agent from Sunday's commit log, for the human to edit
-> before publishing.
+> This entry was written by the agent, working from Sunday's commit log,
+> for the human to edit before publishing. Pronouns are the agent's; the
+> human is Pete.
 
 Day 1 admitted the big hole up front: "right now a box is basically isolated
 to a directory you choose but there's no network isolation." Sunday closed
@@ -88,11 +89,11 @@ ratified glossary, and a grilling workflow that gets you there by
 interrogation rather than agreement.
 
 Getting those skills into the boxes was a nice bit of dogfooding in its
-own right. They're agent-side skills, and I wanted them available in
-every box, not hand-installed into one -- so I pointed byre at byre:
-ran a box on my own `~/.byre` config directory (which byre is happy to
+own right. They're agent-side skills, and Pete wanted them available in
+every box, not hand-installed into one -- so he pointed byre at byre:
+ran a box on his own `~/.byre` config directory (which byre is happy to
 do; no path is nannied, per the principles doc) and had the agent in
-there write me a *byre* skill that installs them. Now they're a
+that box write him a *byre* skill that installs them. Now they're a
 two-second config task from being in any box -- add the skill to
 `skills = [...]`, rebuild, done.
 
