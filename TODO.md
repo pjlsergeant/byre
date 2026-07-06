@@ -72,11 +72,12 @@ docs/marketing/. The site is no longer blocked from this side.
   Companion fixes from the same review (host-netns guard + active stop,
   worktree build-source notice, seed_prefs doc honesty) shipped
   2026-07-06 (b84e3cc..986cd88).
-- [ ] **Versioning + distribution** (flagged 2026-07-01) -- so byre
-  installs and runs on other boxes. MACHINERY BUILT 2026-07-06 (decision:
-  `docs/adr/0016`; how-to: `docs/RELEASING.md`); the scope confirmation
-  couldn't reach Pete, so the shape below was built as written, with
-  goreleaser over a hand-rolled Makefile. Remaining is Pete-side:
+- [x] **Versioning + distribution** (flagged 2026-07-01) -- SHIPPED
+  2026-07-06 as **v0.1.1** (decision: `docs/adr/0016`; how-to:
+  `docs/RELEASING.md`; releases hand-logged in `CHANGES.md`). Verified
+  end-to-end: curl|sh installer fetched, checksum-verified, and
+  installed a binary reporting `byre v0.1.1`. Only the brew tap
+  remains:
   - [x] `byre version` / `byre --version`: release tag via `-ldflags -X`,
     module version for `go install ...@vX` builds, `(devel)`+revision
     locally.
@@ -89,11 +90,14 @@ docs/marketing/. The site is no longer blocked from this side.
     curl|sh (checksum-verified; live once the first tag exists), brew
     cask publish to `pjlsergeant/homebrew-tap` -- gated on the tap token
     so releases never block on it.
-  - [ ] Pete: cut the first tag (`git tag v0.1.0 && git push origin
-    v0.1.0` -- see RELEASING.md), and optionally create the tap repo +
-    `HOMEBREW_TAP_GITHUB_TOKEN` secret to switch on brew.
-  - [ ] After the first release: README Install copy gains the curl|sh
-    one-liner, and the brew line once the tap is live.
+  - [x] First tag cut 2026-07-06. It took two: v0.1.0's release run was
+    refused by the CI gate (seed tests assumed a real ~/.claude on the
+    test host; fixed in b656b0d) and that tag is BURNED -- the module
+    proxy cached it at ff390a6, so it must never move. v0.1.1 shipped.
+  - [x] README Install copy gained the curl|sh one-liner (2026-07-06).
+  - [ ] Pete (optional): create the `pjlsergeant/homebrew-tap` repo +
+    `HOMEBREW_TAP_GITHUB_TOKEN` secret to switch on brew; then add the
+    brew line to the README Install copy.
   - Scope note (unchanged): images build per-host and are never shipped
     (the build-time-UID decision), so distribution is just the single
     static binary -- skills and templates are embedded.
