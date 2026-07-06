@@ -134,7 +134,7 @@ func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 		t.Errorf("run argv missing the self-edit mount: %s", argv)
 	}
 	// Config untouched during the session: no diff noise at exit.
-	if strings.Contains(stderr.String(), "changed byre.config") {
+	if strings.Contains(stderr.String(), "changed the project store") {
 		t.Errorf("no config diff expected for an unchanged session: %s", stderr.String())
 	}
 }
@@ -155,7 +155,7 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := stderr.String()
-	if !strings.Contains(out, "changed byre.config") {
+	if !strings.Contains(out, "changed the project store") {
 		t.Fatalf("expected the exit diff header, got: %s", out)
 	}
 	if !strings.Contains(out, `+ run_args = ["--privileged"]`) {
@@ -173,7 +173,7 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 	if err := develop(f2, s2, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(stderr2.String(), "changed byre.config") {
+	if strings.Contains(stderr2.String(), "changed the project store") {
 		t.Errorf("no diff expected without --self-edit: %s", stderr2.String())
 	}
 }

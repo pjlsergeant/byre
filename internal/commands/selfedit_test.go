@@ -32,79 +32,117 @@ func TestDiffLines(t *testing.T) {
 	}
 }
 
-func TestReportSelfEditDiff(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "byre.config")
-
-	// Unchanged (including both-missing): silence.
+// report snapshots dir, applies mutate, and returns the exit report's output.
+func report(t *testing.T, dir string, mutate func()) string {
+	t.Helper()
+	before := snapshotStore(dir)
+	mutate()
 	var out bytes.Buffer
-	reportSelfEditDiff(&out, path, nil)
-	if out.Len() != 0 {
-		t.Errorf("expected silence for a missing, unsnapshotted config: %q", out.String())
-	}
-	if err := os.WriteFile(path, []byte("base = \"node:22\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	reportSelfEditDiff(&out, path, []byte("base = \"node:22\"\n"))
-	if out.Len() != 0 {
-		t.Errorf("expected silence for an unchanged config: %q", out.String())
-	}
+	reportSelfEditChanges(&out, dir, before)
+	return out.String()
+}
 
-	// Changed: header + markers.
-	out.Reset()
-	reportSelfEditDiff(&out, path, []byte("base = \"debian:bookworm\"\n"))
-	got := out.String()
-	if !strings.Contains(got, "changed byre.config") ||
-		!strings.Contains(got, `- base = "debian:bookworm"`) ||
-		!strings.Contains(got, `+ base = "node:22"`) {
-		t.Errorf("diff output wrong: %q", got)
+func TestReportSelfEditChanges(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "byre.config")
+	ctx := filepath.Join(dir, "context")
+	if err := os.MkdirAll(ctx, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(cfg, "base = \"node:22\"\n")
+	write(filepath.Join(ctx, "Dockerfile.generated"), "FROM node:22\n")
 
-	// Trailing-newline-only change: header plus an explicit note, not a bare
-	// header with no diff lines.
-	if err := os.WriteFile(path, []byte("base = \"node:22\""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	reportSelfEditDiff(&out, path, []byte("base = \"node:22\"\n"))
-	if !strings.Contains(out.String(), "trailing-newline-only") {
-		t.Errorf("expected the trailing-newline note: %q", out.String())
-	}
+	t.Run("untouched store is silent", func(t *testing.T) {
+		if got := report(t, dir, func() {}); got != "" {
+			t.Errorf("expected silence: %q", got)
+		}
+	})
 
-	// Created EMPTY during the session (snapshot nil, file exists with no
-	// content): existence is the change, and it must be reported.
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	reportSelfEditDiff(&out, path, nil)
-	if !strings.Contains(out.String(), "was created") {
-		t.Errorf("expected the created-empty report: %q", out.String())
-	}
+	t.Run("config edit shows a content diff", func(t *testing.T) {
+		got := report(t, dir, func() { write(cfg, "base = \"node:22\"\nrun_args = [\"--privileged\"]\n") })
+		if !strings.Contains(got, "byre.config (applies on the next develop):") ||
+			!strings.Contains(got, `+ run_args = ["--privileged"]`) {
+			t.Errorf("config diff wrong: %q", got)
+		}
+		if strings.Contains(got, "changed:") {
+			t.Errorf("config must not ALSO appear in the file listing: %q", got)
+		}
+	})
 
-	// Deleted during the session: named as deleted, lines shown as removed.
-	if err := os.WriteFile(path, []byte("base = \"node:22\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	reportSelfEditDiff(&out, path, []byte("base = \"node:22\"\n"))
-	if !strings.Contains(out.String(), "was deleted") || !strings.Contains(out.String(), `- base = "node:22"`) {
-		t.Errorf("expected the deletion report with removed lines: %q", out.String())
-	}
+	t.Run("other store files are listed by status", func(t *testing.T) {
+		got := report(t, dir, func() {
+			write(filepath.Join(ctx, "Dockerfile.generated"), "FROM evil\n")
+			write(filepath.Join(ctx, "planted.sh"), "#!/bin/sh\n")
+			if err := os.Remove(filepath.Join(dir, "byre.config")); err != nil {
+				t.Fatal(err)
+			}
+		})
+		for _, want := range []string{
+			"changed: context/Dockerfile.generated",
+			"added:   context/planted.sh",
+			"(deleted)", // byre.config, in its own section
+			`- base = "node:22"`,
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q in: %q", want, got)
+			}
+		}
+		if strings.Contains(got, "deleted: byre.config") {
+			t.Errorf("byre.config must not ALSO appear in the file listing: %q", got)
+		}
+	})
 
-	// Deleted EMPTY config: still a reported change (existence flipped).
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	reportSelfEditDiff(&out, path, []byte{})
-	if !strings.Contains(out.String(), "was deleted") {
-		t.Errorf("expected the deleted-empty report: %q", out.String())
-	}
+	// State from the previous subtest: no byre.config, planted.sh present.
+	t.Run("created empty config is reported", func(t *testing.T) {
+		got := report(t, dir, func() { write(cfg, "") })
+		if !strings.Contains(got, "(created)") {
+			t.Errorf("expected the created report: %q", got)
+		}
+	})
+
+	t.Run("deleted empty config is reported", func(t *testing.T) {
+		got := report(t, dir, func() {
+			if err := os.Remove(cfg); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if !strings.Contains(got, "(deleted)") {
+			t.Errorf("expected the deleted report: %q", got)
+		}
+	})
+
+	t.Run("trailing-newline-only edit is named", func(t *testing.T) {
+		write(cfg, "base = \"node:22\"\n")
+		got := report(t, dir, func() { write(cfg, "base = \"node:22\"") })
+		if !strings.Contains(got, "trailing-newline-only") {
+			t.Errorf("expected the trailing-newline note: %q", got)
+		}
+	})
+
+	t.Run("retargeted symlink is a change", func(t *testing.T) {
+		a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+		write(a, "a\n")
+		write(b, "b\n")
+		link := filepath.Join(dir, "link")
+		if err := os.Symlink(a, link); err != nil {
+			t.Fatal(err)
+		}
+		got := report(t, dir, func() {
+			if err := os.Remove(link); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(b, link); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if !strings.Contains(got, "changed: link") {
+			t.Errorf("expected the retargeted symlink reported: %q", got)
+		}
+	})
 }
