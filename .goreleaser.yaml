@@ -1,0 +1,62 @@
+# Release pipeline: cross-compile the single static binary, attach
+# checksummed archives to a GitHub Release, and — once the tap repo and
+# token exist — publish the Homebrew formula. Run by
+# .github/workflows/release.yml on tag push. Validate locally with
+# `goreleaser check` or `goreleaser release --snapshot --clean`.
+version: 2
+
+project_name: byre
+
+builds:
+  - main: ./cmd/byre
+    binary: byre
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # v-prefixed so `byre version` prints the same string a
+    # `go install ...@vX.Y.Z` build reports from module build info.
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }}
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^site"
+      - "^docs"
+
+# Cask, not formula: goreleaser deprecated `brews` for pre-built binaries.
+# macOS-only at brew's end; Linux users have go install / install.sh.
+homebrew_casks:
+  - name: byre
+    repository:
+      owner: pjlsergeant
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
+    homepage: https://pjlsergeant.github.io/byre/
+    description: Run an AI coding agent in a throwaway, project-scoped container
+    # Until the tap repo + token exist the cask is only generated into
+    # dist/, never pushed — a release must not block on brew.
+    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}false{{ else }}true{{ end }}'
+    # The binary is unsigned/un-notarized; strip the quarantine bit so
+    # Gatekeeper doesn't block it (goreleaser's documented recipe).
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/byre"]
+          end
