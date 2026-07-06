@@ -18,7 +18,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // postureRe bounds a declared network_posture to a short display label —

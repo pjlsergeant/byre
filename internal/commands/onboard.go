@@ -8,11 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"byre/internal/builtins"
-	"byre/internal/config"
-	"byre/internal/onboard"
-	"byre/internal/project"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/onboard"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // onboardIfNeeded runs the first-run picker (or applies flags) when a project

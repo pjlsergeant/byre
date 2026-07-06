@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byre/internal/config"
-	"byre/internal/gen"
-	"byre/internal/project"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // fileCopy is one staged copy job: a real source path, its destination inside

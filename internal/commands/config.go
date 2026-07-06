@@ -5,12 +5,12 @@ import (
 	"io"
 	"path/filepath"
 
-	"byre/internal/builtins"
-	"byre/internal/config"
-	"byre/internal/configui"
-	"byre/internal/project"
-	"byre/internal/runner"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/configui"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // Config implements `byre config` — the interactive editor for this project's

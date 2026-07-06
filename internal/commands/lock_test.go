@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"byre/internal/lock"
+	"github.com/pjlsergeant/byre/internal/lock"
 )
 
 // TestWithSetupLockNotesWhenWaiting pins the contended-lock UX: a second

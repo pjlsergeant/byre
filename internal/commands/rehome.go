@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // Rehome implements `byre rehome <old-id>`: migrate a previous project's named

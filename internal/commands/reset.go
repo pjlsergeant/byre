@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // Reset implements `byre reset`: wipe ALL of this project's named volumes (only

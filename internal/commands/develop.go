@@ -8,11 +8,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"byre/internal/build"
-	"byre/internal/config"
-	"byre/internal/project"
-	"byre/internal/runner"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/build"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // selfEditTarget is where --self-edit mounts this project's host-side store

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/build"
-	"byre/internal/config"
-	"byre/internal/gen"
-	"byre/internal/project"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/build"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 func TestMaterializeWritesClaudeSkill(t *testing.T) {

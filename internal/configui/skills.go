@@ -3,8 +3,8 @@
 package configui
 
 import (
-	"byre/internal/config"
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/config"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"

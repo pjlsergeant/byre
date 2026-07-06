@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 func TestSeedVolumesFreshSeedsOnce(t *testing.T) {

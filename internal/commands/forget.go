@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // Forget implements `byre forget`: completely remove byre's host-side state for

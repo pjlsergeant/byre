@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"byre/internal/lock"
+	"github.com/pjlsergeant/byre/internal/lock"
 )
 
 // acquireNoisy takes the setup lock, telling the user (on w — stderr) when it

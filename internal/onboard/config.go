@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // WriteProjectConfig writes a byre.config (the host-side store path) from the

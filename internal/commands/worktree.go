@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byre/internal/config"
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // Worktree implements `byre worktree <name>`: create a linked git worktree for

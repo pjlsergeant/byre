@@ -402,9 +402,10 @@ rewrite-pass note only (see voice rules).
 
 ## README draft
 
-> **Superseded by `README-next.md`** (the living draft, in this directory) —
-> that file is where copy evolves; this section records the original shape
-> and the notes that motivated it. When they disagree, README-next.md wins.
+> **Superseded by the shipped `README.md`** (repo root) — the README-next.md
+> draft that lived in this directory replaced README.md on 2026-07-06 and is
+> where copy now evolves; this section records the original shape and the
+> notes that motivated it. When they disagree, README.md wins.
 
 Replace the current hero + warning with the following shape (Install,
 Commands, Configuration etc. survive below it, condensed; full docs move to
@@ -513,6 +514,10 @@ Two notes on the hero transcript:
    (`pjlsergeant/tap/byre`) is enough; update the copy to whichever form
    ships. (Alongside the firewall skill, this is the second gate on going
    live; both are listed in README-next.md's header comment.)
+   *Resolved 2026-07-06 by softening instead: the copy now leads with
+   `go install github.com/pjlsergeant/byre/cmd/byre@latest` — still a
+   two-command story — and the tap moved to the post-launch roadmap
+   (TODO §2).*
 2. **The default-deny firewall skill is a launch blocker.** The public copy
    claims it (the README contract block: "enable the default-deny firewall
    skill to close it"), so it must exist before the README/site go live. A
@@ -520,7 +525,8 @@ Two notes on the hero transcript:
    opinion-free while closing the one gap where three competitors had a
    story and byre had none. Once it ships, the hero transcript's `network:`
    line becomes live proof (it prints `open` or `deny-by-default` per
-   config).
+   config). *Shipped and host-verified 2026-07-05/06 (ADRs 0010–0012);
+   gate cleared.*
 3. **Keep `byre status` output in lockstep with the marketing block** — the
    README/site show its output as proof; drift makes the proof a lie.
 

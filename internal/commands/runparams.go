@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byre/internal/config"
-	"byre/internal/project"
-	"byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 // runParams assembles the run invocation: workspace bind, host UID/GID and git

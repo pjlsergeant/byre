@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // labelKey is the PROJECT label: byre.project=<project-id>. Every container of

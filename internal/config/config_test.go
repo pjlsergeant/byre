@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 func TestMergeScalarOverride(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // storeSnapshot captures the self-edit mount's contents before the session so

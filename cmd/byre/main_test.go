@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/commands"
+	"github.com/pjlsergeant/byre/internal/commands"
 )
 
 // recorderApp returns an app whose every command records its call into calls

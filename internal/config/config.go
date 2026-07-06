@@ -21,7 +21,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // ProjectConfigName is the fixed per-project config filename.

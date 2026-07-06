@@ -6,8 +6,8 @@ package onboard
 
 import (
 	"bufio"
-	"byre/internal/config"
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/config"
 	"io"
 	"strings"
 )

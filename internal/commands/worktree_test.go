@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 func TestWorktreeLeaf(t *testing.T) {

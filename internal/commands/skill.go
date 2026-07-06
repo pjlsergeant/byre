@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"byre/internal/builtins"
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // SkillUpdate implements `byre skill update`: re-materialize byre's built-in

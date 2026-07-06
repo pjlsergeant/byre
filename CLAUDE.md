@@ -52,7 +52,8 @@ byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
 
 ## Tech Stack
 
-- **Go 1.22+**, single static binary. Module `byre`.
+- **Go 1.22+**, single static binary. Module `github.com/pjlsergeant/byre`
+  (full path so `go install .../cmd/byre@latest` resolves).
 - CLI: stdlib `flag` + manual subcommand dispatch (minimal deps).
 - TOML config via `github.com/BurntSushi/toml` (byre's own merge/`!name` layer).
 - Container engine: shells out to the `docker`/`podman` **CLI** (no SDK).

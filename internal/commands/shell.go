@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"byre/internal/project"
-	"byre/internal/runner"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // Shell opens an interactive shell in this project's running container as the

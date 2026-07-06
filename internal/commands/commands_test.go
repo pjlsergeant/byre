@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"byre/internal/gen"
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 func TestVolumeName(t *testing.T) {

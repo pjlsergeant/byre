@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // noteSharedVolumes warns, before a destructive lifecycle action, that these

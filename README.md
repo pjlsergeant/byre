@@ -1,169 +1,248 @@
 # byre
 
-> # ⚠️ NOT READY FOR PRODUCTION
->
-> **byre is early, unfinished, and experimental.** It's vibe-coded Go that the
-> author uses daily but is *not yet happy with*. The architecture is deliberate,
-> but parts were written by an agent and haven't been fully audited. Interfaces,
-> config format, and behaviour **will change without warning**. There are sharp
-> edges around isolation, agent auth, and permissions. **Do not rely on it for
-> anything you can't afford to have break.** Use it to kick the tyres, not to
-> guard anything precious. See the [devlog](https://pjlsergeant.github.io/byre/) for an honest
-> rundown of what works and what doesn't.
+**`--dangerously-skip-permissions`, without risking the farm.**
 
-Run an AI coding agent in a throwaway, project-scoped container.
+For when you run Claude Code, Codex, or Gemini at full autonomy, in lots of
+different folders, and don't entirely trust the agent not to `git push` as
+you or go digging around your other repos. byre puts the agent in a
+throwaway container that sees the folder you launch it from, plus whatever
+you explicitly grant, and nothing else.
 
-```sh
-cd ~/project
-byre develop
+```text
+$ go install github.com/pjlsergeant/byre/cmd/byre@latest
+$ cd ~/my-project && byre develop
+  No byre.config here — let's set one up (press Enter to accept [default]).
+  Template — go node python none [node]:
+  Agent — claude codex gemini none [claude]:
+
+  byre: wrote ~/.byre/projects/my-project-pjl-069d95/byre.config (template=node, agent=claude)
+  byre: ~/my-project -> /workspace (rw) · host mounts: none · network: open
+
+╭──────────────────────────────────╮
+│ ✻ Claude Code                    │
+│   /workspace                     │
+╰──────────────────────────────────╯
 ```
 
-drops you into a sandbox that sees this project and what you explicitly grant it
--- not your home dir, keys, or the rest of your machine.
+**THIS IS A VERY YOUNG AND FAST-CHANGING PROJECT.** Interfaces and config
+will change without warning, and there are sharp edges. Don't point it at
+anything you can't afford to break; [the contract](#the-honest-contract)
+below says exactly what is and isn't boxed.
+
+No account. No cloud. No control plane. byre is a single MIT-licensed Go
+binary that generates a Dockerfile you can read and hands it to your local
+Docker or Podman. Free forever -- as in beer and as in speech -- and
+structurally so: there's no account to upsell, no service to meter, no
+telemetry to monetize. Leaving is as easy as trying it: `byre dockerfile`
+prints a plain Dockerfile you keep, and `byre forget` removes every trace.
 
 > *byre* (rhymes with *buyer*) is Scots/Northern-English for a cowshed -- the
 > enclosure you keep the thing in so it doesn't wander off.
 
-byre is the **local-first, inspectable, Docker-native project harness for
-autonomous coding agents.** It generates a Dockerfile you can read, runs it
-locally (Docker or Podman -- no account, no control plane), scopes state and cache
-to the project, and makes every grant legible. Raw Docker stays first-class.
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design, and the
-[devlog](https://pjlsergeant.github.io/byre/) for build notes and current status.
-
 ## Install
 
-byre is a single Go binary. Build it (Go 1.22+):
+byre is a single Go binary. With Go 1.22+ on your machine:
 
 ```sh
-go build -o ~/bin/byre ./cmd/byre   # ensure ~/bin is on PATH
+go install github.com/pjlsergeant/byre/cmd/byre@latest
+```
+
+(that puts `byre` in `$(go env GOPATH)/bin` -- make sure it's on your PATH).
+Or build from a checkout:
+
+```sh
+go build -o ~/bin/byre ./cmd/byre
 ```
 
 You need Docker (or Podman) running on the host.
 
 ## Quickstart
 
-```sh
-cd ~/some/project
-byre develop
-```
-
-On a project with no `byre.config`, byre asks you to pick a **template** (go /
-node / python / none) × an **agent** (claude / codex / gemini / none), with your
-favourites pre-selected (Enter accepts). It writes the resolved config to byre's
-host-side store, builds the image, and launches the agent in the container with
-your repo mounted at `/workspace`.
-
-Non-interactively:
+The first `byre develop` in a project asks its two questions (see above)
+and remembers your answers -- your favourites become the pre-selected
+defaults. Log the agent in once; the login persists, per project, across
+rebuilds. To skip the questions:
 
 ```sh
 byre develop --template go --agent claude
 ```
 
+Ask the box what it can touch, any time:
+
+```text
+$ byre status
+Project id:   my-project-pjl-069d95
+Agent:        claude
+Engine:       docker
+Project:      ~/my-project -> /workspace  (rw)
+Network:      open
+Ports:        none
+Host mounts:  none
+Skills:       claude
+State vols:   .claude
+Cache vols:   node_modules
+Container:    running (0d95f3a2c1b4)
+```
+
+## Your toolkit, every folder
+
+`~/.byre` fills up with your building blocks: a baseline config, templates
+per stack, and skills -- portable bundles that can add packages, mounts,
+volumes, and agent context to any box. The result is that `byre develop`
+in a brand-new directory lands you somewhere familiar: curl is there, your
+Claude skills are there, your usual tools are there, and none of it needed
+per-project setup. Want a postgres client next to node for one folder?
+That's a one-line config edit or a template, and it's yours everywhere
+from then on.
+
+Skills are also how anything *widens* the box: a host socket, say, is a
+skill you chose, named by `byre status`, never silent. The agent itself is
+a skill -- byre ships agent skills for Claude, Codex, and Gemini.
+
+## The honest contract
+
+byre is young and built in the open. I use it for all my daily
+development, but treat it as early software. What it does and doesn't box:
+
+- **Boxed:** your host filesystem, environment, and credentials. The agent
+  sees only what you mount or pass.
+- **Not boxed, by design:** the network (open by default -- enable the
+  default-deny firewall skill to close it) and the project itself (mounted
+  read-write -- it's the agent's job to edit it). An agent with an open
+  network can exfiltrate the project it's working on.
+- **Not a security product:** a container is not a microVM. If you need
+  the strongest isolation story, use one.
+- **Not your nanny:** the box is locked against the *agent*, not against
+  you. Every protection is one config edit away from off, and skills can
+  widen the box as far as you like -- you can hang yourself with skills,
+  and that's intentional. byre's promise is that `byre status` always
+  tells you where the rope is.
+
+The [devlog](https://pjlsergeant.github.io/byre/) shows what's being built.
+
+## Why not…?
+
+byre is a thin layer over the Docker or Podman you already run. The
+alternatives:
+
+**…raw Docker?** Nothing -- and byre never takes it away. You'd just be
+hand-rolling what it generates: host-matched file ownership, per-project
+agent login that survives rebuilds, templates, a clean reset. If you want to
+stop using byre, `byre dockerfile` prints your exit.
+
+**…Docker Sandboxes™?** Commercial product with a hosted control plane (you
+sign in) and paid tiers. Not open source. *(But it gives you kernel-level
+microVM isolation, and we don't.)*
+
+**…your agent's built-in sandbox?** All-or-nothing file isolation, on your
+real machine, wearing your identity -- env vars and credentials come along by
+default, so a stray `git push` goes out as *you*. byre's box holds nothing
+you didn't put in it.
+
+**…nothing -- just keep YOLOing on the host?** The host is the incumbent:
+zero setup, and nothing bad has happened yet. But the agent works as you,
+in your real home dir -- byre exists because Claude went editing a sibling
+repository and did things with an ssh key it shouldn't have. The box costs
+one command, so the host's convenience argument is gone. *(If you've never
+had the scare, you may not feel the need -- byre is for after your first
+one.)*
+
+**…devcontainers?** You hand-write the Dockerfile and JSON per project, and
+wire up agent credentials yourself. byre generates the Docker from config --
+`byre config` adds a package, mounts another repo read-only, or swaps agents
+in seconds. *(But it's the mature industry spec, and we're young.)*
+
+**…container-use?** Explicitly experimental, and MCP-shaped: your agent
+manages a fleet of environments; you don't sit inside one. byre does
+parallel the git way -- one boxed session per worktree, sharing the repo's
+image, volumes, and agent login.
+
+**…a cloud sandbox (e2b, Daytona, your agent's web offering)?** Account,
+usage billing, your code in their cloud -- and they're repo-shaped, built
+for shipping agent products or driving a GitHub repo. byre is for dropping
+into whatever folder you're standing in.
+
+**…a cheap VPS (a Hetzner box)?** A box per project doesn't scale across
+many repos -- and half of what you'd point an agent at isn't a repo, just a
+folder. byre is a throwaway box per folder, on the machine you're already
+sitting at, with your toolkit already inside. *(But a remote box is real
+hardware isolation -- if the agent must never share a kernel with your
+machine, rent one.)*
+
+## Configuration
+
+**`byre config`** opens an interactive editor in your terminal
+(keyboard-driven, works over SSH): grants first -- mounts, env -- then build
+choices, in the same vocabulary `byre status` prints. Adding a package or
+mounting another repo read-only takes a couple of seconds. `--self-edit`
+(a per-session `develop` flag, announced at launch) lets the agent edit
+its own box config; edits apply on the next develop.
+
+Underneath, it's a cascade of three TOML files that are always yours to
+edit by hand -- last layer wins (scalars override, lists union, `!name`
+removes):
+
+```text
+~/.byre/default.config              your personal baseline
+~/.byre/templates/<name>/           template config (+ optional files)
+~/.byre/projects/<id>/byre.config   this project's overrides (host-side)
+```
+
+The vocabulary covers packages, env, mounts, volumes, and skills; raw
+Dockerfile lines and `docker run` args cover the rest. Full reference:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+byre reads config only from its host-side store, never from inside the
+project -- the project mount is read-write, so the agent could edit a
+config that lived there. A `byre.config` committed in a repo is a
+proposal: byre shows you its grants and asks before adopting it.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `byre develop` | Generate (if needed), build on cache-miss, and run the container in the foreground. The main entry point. If a session is already running for the dir, it tells you (and how to stop it) rather than starting a second. |
-| `byre shell` | Open an interactive shell (as the `dev` user, with the agent's env) in this project's running session -- for `codex login`, running tests, poking around. |
-| `byre worktree <name> [--path <dir>]` | Create a git worktree on branch `<name>` and start a session in it in one step -- a parallel agent that **inherits** this project's config, volumes, and image (so it's already logged in). Location: `--path`, or your `worktree_base` setting (`byre config --global`: `"sibling"` = beside the repo as `<repo>-<name>`, or a directory to put them under); with neither set, byre refuses rather than guessing. New branch if `<name>` is new, otherwise it checks out the existing (local or remote) branch. Runs concurrently with the main tree. Because the image is shared, it builds from the **main** worktree's files -- build-input file changes (`files` sources) made only on the branch don't reach it. |
-| `byre status` | Show the resolved config, mounts, skills + what they grant, volumes, and whether a session is running for this directory. |
-| `byre config [--global]` | Open the interactive editor for this project's (host-side) config. `--global` edits your `~/.byre/default.config` baseline instead. |
-| `byre dockerfile` | Print the generated Dockerfile for this directory. |
-| `byre reset [--force]` | Wipe this project's named volumes (not the image). Names what dies; refuses while a session is live. |
-| `byre forget [--force]` | Remove **all** of byre's host-side state for this directory -- its volumes, its image, and `~/.byre/projects/<id>/` (config, adoption record, build context). Heavier than `reset`; refuses while live; never touches your project tree. |
-| `byre rebuild` | Rebuild the image with the cache disabled (`--no-cache`) to pick up new upstream versions. |
-| `byre rehome <old-id>` | Re-point a moved/renamed directory's identity (migrate volumes) onto its new path-derived id. |
-| `byre skill update` | Re-materialize byre's built-in skills into `~/.byre/skills/` (pick up changes shipped in a new byre build). |
+| `byre develop` | Generate, build on cache-miss, and run in the foreground. The main entry point. |
+| `byre shell` | A second shell in the running session -- for logins, tests, poking around. |
+| `byre worktree <name>` | New linked worktree on branch `<name>` + a session in it -- a parallel agent in one step. |
+| `byre status` | What can this thing touch? Resolved config, mounts, skills, volumes, session. |
+| `byre config [--global]` | Interactive config editor -- packages, mounts, agents, in seconds. |
+| `byre dockerfile` | Print the generated Dockerfile. Your exit, whenever you want it. |
+| `byre reset [--force]` | Wipe this project's volumes. Names what dies first. |
+| `byre forget [--force]` | Remove all of byre's host-side state for this directory. Never touches your project tree. |
+| `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
+| `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
+| `byre skill update` | Re-materialize built-in skills after upgrading byre. |
 
-## Configuration
+## Worktrees: parallel agents, the git way
 
-A cascade of TOML files, last layer wins (scalars override, lists union, `!name`
-removes):
-
-```
-~/.byre/default.config              your personal baseline (your "favourites")
-~/.byre/templates/<name>/           template.config (+ optional files)
-~/.byre/projects/<id>/byre.config   this project's overrides (host-side store)
+```sh
+byre worktree fix-flaky-tests
 ```
 
-**byre never reads a `byre.config` out of the project tree.** The project is
-mounted read-write into the box, so a config file sitting there can't be trusted
--- the agent could rewrite it. Instead, a committed `<project>/byre.config` is a
-*proposal*: on `byre develop`, byre offers to review and **adopt** it into the
-host-side store (`~/.byre/projects/<id>/byre.config`), where it becomes the
-project layer above. Adoption is always an explicit, host-side human action.
-
-Vocabulary (the convenient 90%; anything else goes in a raw block):
-
-```toml
-engine   = "auto"                          # auto | docker | podman
-template = "go"                            # ~/.byre/templates/<name>
-agent    = "claude"                        # enables the claude/codex/gemini skill
-seed_prefs = true                          # one-time copy of the agent's curated,
-                                           # non-secret prefs (theme/keybindings)
-                                           # into a FRESH state volume; off by default
-base     = "debian:bookworm"
-apt      = ["build-essential"]
-npm_global = ["prettier"]
-env      = { FOO = "bar" }                  # baked into the image
-files    = { "./seed" = "/opt/seed" }       # copy project files into the image
-skills   = ["moarcode", "shem"]
-mounts   = [ ... ]                          # host-bind mounts (mode ro|rw;
-                                            # disabled = true keeps one switched off)
-ports    = [{ container = 3000 }]           # published ports (localhost-only
-                                            # unless interface says otherwise)
-volumes  = [ ... ]                          # named volumes (role/target/seed)
-dockerfile_pre  = ["RUN ..."]               # raw build block, before the core block
-dockerfile_post = ["RUN ..."]               # raw build block, project tail
-run_args        = ["--cap-add=SYS_PTRACE"]  # raw docker-run passthrough
-```
-
-## Skills
-
-A skill is a portable bundle that contributes to any layer byre controls --
-build (Dockerfile block + files), runtime (mounts/caps/env), state (named
-volumes), and agent context. **The agent itself is a skill** -- byre ships agent
-skills for Claude, Codex, and Gemini. Skills live in `~/.byre/skills/<name>/`
-(built-ins are materialized there and are editable).
-
-## Security contract
-
-byre isolates the **host filesystem, environment, and credentials** -- the agent
-sees only what you explicitly mount or pass. The network is open by default;
-enable the built-in **firewall** skill (`skills = ["firewall", ...]`) for
-deny-by-default egress with an allowlist, applied from outside the box so the
-agent can't touch it. The project mount is read-write by design (the agent edits
-and commits your code). Skill-granted runtime holes (e.g. a host socket) are
-opt-in and named by `byre status`, never silent.
+creates a linked git worktree on branch `fix-flaky-tests` (existing or
+new) and starts a session in it. The worktree inherits the repo's config,
+image, and volumes -- the agent is already logged in -- but runs in its own
+container against its own checkout, so sessions run side by side.
+Worktrees you made yourself with `git worktree add` inherit the same way:
+just `byre develop` in them. You pick once where new worktrees live
+(`byre config --global`). Commits land in the shared object store,
+`byre status` shows every worktree session in the project, and `reset`/`forget` name their
+blast radius before touching anything shared.
 
 ## Volumes & state
 
-- **cache** volumes (e.g. `node_modules`) are disposable.
-- **state** volumes (e.g. `.claude`) are precious -- per-project agent auth that
-  persists across rebuilds. byre never copies your host credentials -- agents log
-  in inside the box (the volume persists the login). A `seed` can initialize a
-  fresh volume with non-credential data from a host path.
-- the **devloop** skill adds a persistent `scratch` state volume at
-  `/home/dev/scratch` (advertised as `$BYRE_SCRATCH`) -- somewhere the agent can
-  stash working files that must survive container restarts and rebuilds, which
-  `/tmp` and the rest of the container fs do not.
-- **prefs seeding** (`seed_prefs = true`) opts into a one-time copy of the
-  selected agent's curated, non-secret prefs (theme, keybindings -- the skill's
-  `[agent.prefs]`) into a fresh state volume. Only files the skill vouches are
-  secret-free are copied (e.g. for Claude, `keybindings.json` + `themes/`, never
-  `settings.json` or `~/.claude.json`). Acts only when the volume is fresh.
-  Unlike other scalars it's a monotonic opt-in: once any config layer sets it
-  `true`, a later layer can't turn it back off.
-
-`byre reset` wipes a project's volumes; `byre rehome` migrates them after a move.
+**Cache** volumes (`node_modules`, …) are disposable. **State** volumes
+(`.claude`, …) hold the agent's login and history, per project, and
+survive rebuilds -- byre never copies host credentials; agents log in once,
+inside the box. `byre reset` wipes a project's volumes; `byre rehome`
+migrates them after a move.
 
 ## Platform
 
-byre bakes your host UID/GID into the image at build time, so the agent runs
-unprivileged as you and the files it writes are correctly owned -- a Linux-host
-concern; on Docker Desktop (macOS/Windows) the file-sharing layer fakes ownership
-and it doesn't arise. byre targets Debian-derived base images (the core
-block assumes apt/glibc); other bases are unsupported -- for those, use
-Docker directly.
+Linux and macOS, over Docker or Podman (rootful; rootless Podman is a
+sequenced follow-up). byre bakes your UID/GID into the image so the agent
+runs unprivileged as you and files land correctly owned. Debian-derived base
+images only.
+
+Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Build notes:
+[devlog](https://pjlsergeant.github.io/byre/).

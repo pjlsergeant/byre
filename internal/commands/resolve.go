@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"byre/internal/builtins"
-	"byre/internal/config"
-	"byre/internal/project"
-	"byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // resolved is the fully-loaded view of a project: the config cascade, the
