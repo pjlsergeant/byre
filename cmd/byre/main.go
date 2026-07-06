@@ -32,6 +32,7 @@ type app struct {
 	skillUpdate func(s commands.Streams) error
 	rebuild     func(s commands.Streams, dir string) error
 	rehome      func(s commands.Streams, dir, oldID string) error
+	version     func(s commands.Streams) error
 }
 
 var realApp = app{
@@ -47,6 +48,7 @@ var realApp = app{
 	skillUpdate: commands.SkillUpdate,
 	rebuild:     commands.Rebuild,
 	rehome:      commands.Rehome,
+	version:     printVersion,
 }
 
 // command is one byre subcommand: its one-line summary for the command list,
@@ -312,22 +314,24 @@ context). Your project tree is left alone. Prompts first.
 		summary: "Print the byre version.",
 		help: `Usage: byre version
 
-Print the byre version: the release tag for released binaries, the module
-version for 'go install' builds, or (devel) for a plain local build.`,
+Print the byre version ('byre --version' works too). Release binaries
+report their tag; other builds report what Go recorded in the binary's
+build info — a module or pseudo-version, or (devel) when nothing was.`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
 			if err := noArgs("version", rest); err != nil {
 				return err
 			}
-			printVersion(s)
-			return nil
+			return a.version(s)
 		},
 	},
 }
 
 // versionString resolves what `byre version` prints, in priority order: the
-// release-stamped tag, the module version Go records for `go install ...@vX`
-// builds, then "(devel)" — with the VCS revision appended when the toolchain
-// recorded one, so a local build is still identifiable.
+// release-stamped tag, then the version Go recorded in build info (the module
+// version for `go install ...@vX` builds; on Go 1.24+ a plain `go build` in a
+// clone gets a VCS-derived pseudo-version here too), then "(devel)" — with
+// the VCS revision appended when one was recorded, so even a build with no
+// version anywhere is still identifiable.
 func versionString(stamped string, bi *debug.BuildInfo) string {
 	if stamped != "" {
 		return stamped
@@ -339,16 +343,17 @@ func versionString(stamped string, bi *debug.BuildInfo) string {
 		return v
 	}
 	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" && len(s.Value) >= 12 {
-			return "(devel) " + s.Value[:12]
+		if s.Key == "vcs.revision" && s.Value != "" {
+			return "(devel) " + s.Value[:min(12, len(s.Value))]
 		}
 	}
 	return "(devel)"
 }
 
-func printVersion(s commands.Streams) {
+func printVersion(s commands.Streams) error {
 	bi, _ := debug.ReadBuildInfo()
-	fmt.Fprintln(s.Out, "byre "+versionString(version, bi))
+	_, err := fmt.Fprintln(s.Out, "byre "+versionString(version, bi))
+	return err
 }
 
 // usageText renders the top-level help from the command table.
@@ -398,8 +403,9 @@ func run(a app, args []string, dir string, s commands.Streams) error {
 		return nil
 	}
 	if name == "--version" {
-		printVersion(s)
-		return nil
+		// Alias, not a second code path: the table entry does the work, so
+		// both spellings share help, operand checking, and dispatch.
+		name = "version"
 	}
 	for _, c := range cmdTable {
 		if c.name != name {

@@ -8,7 +8,12 @@ permissions:
   contents: write
 
 jobs:
+  # The same gofmt/vet/test gate as CI — one definition, so the release
+  # can't tag-and-ship a commit CI would have rejected.
+  check:
+    uses: ./.github/workflows/ci.yml
   goreleaser:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,14 +22,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: go test
-        run: go test ./...
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Unset until the tap exists; .goreleaser.yaml skips the brew
-          # publish when it's empty.
+          # Empty until the tap exists — see docs/RELEASING.md.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

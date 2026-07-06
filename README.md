@@ -212,6 +212,7 @@ proposal: byre shows you its grants and asks before adopting it.
 | `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
 | `byre skill update` | Re-materialize built-in skills after upgrading byre. |
+| `byre version` | Which byre is this? Release tag, module version, or build info. |
 
 ## Worktrees: parallel agents, the git way
 

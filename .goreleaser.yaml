@@ -46,7 +46,10 @@ homebrew_casks:
     repository:
       owner: pjlsergeant
       name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
+      # Must be exactly this bare .Env form: goreleaser templates repo
+      # tokens with ApplySingleEnvOnly, which rejects anything else
+      # (envOrDefault included) at publish time.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://pjlsergeant.github.io/byre/
     description: Run an AI coding agent in a throwaway, project-scoped container
     # Until the tap repo + token exist the cask is only generated into

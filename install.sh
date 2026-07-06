@@ -51,18 +51,13 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 echo "byre install: fetching $asset ($version)"
-curl -fsSL -o "$tmp/$asset" "$base/$asset"
-curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
+curl -fsSL -o "$tmp/$asset" "$base/$asset" -o "$tmp/checksums.txt" "$base/checksums.txt"
 
-(
-	cd "$tmp"
-	line=$(grep " $asset\$" checksums.txt)
-	if command -v sha256sum >/dev/null 2>&1; then
-		echo "$line" | sha256sum -c - >/dev/null
-	else
-		echo "$line" | shasum -a 256 -c - >/dev/null
-	fi
-)
+# grep finding nothing still fails the check: the verifier errors on empty
+# input, and set -e stops the install.
+sum="sha256sum"
+command -v sha256sum >/dev/null 2>&1 || sum="shasum -a 256"
+(cd "$tmp" && grep " $asset\$" checksums.txt | $sum -c - >/dev/null)
 
 tar -xzf "$tmp/$asset" -C "$tmp" byre
 
