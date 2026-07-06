@@ -60,4 +60,4 @@ goreleaser release --snapshot --clean   # artifacts land in dist/, nothing publi
 ## After the first release
 
 Update the README Install section: add the `install.sh` one-liner and (once
-the tap is live) the brew line, per the copy note in TODO §2.
+the tap is live) the brew line, per the copy note in TODO §1.

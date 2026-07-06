@@ -517,7 +517,7 @@ Two notes on the hero transcript:
    *Resolved 2026-07-06 by softening instead: the copy now leads with
    `go install github.com/pjlsergeant/byre/cmd/byre@latest` — still a
    two-command story — and the tap moved to the post-launch roadmap
-   (TODO §2).*
+   (TODO §1).*
 2. **The default-deny firewall skill is a launch blocker.** The public copy
    claims it (the README contract block: "enable the default-deny firewall
    skill to close it"), so it must exist before the README/site go live. A

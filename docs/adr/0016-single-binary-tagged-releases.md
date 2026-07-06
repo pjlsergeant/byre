@@ -35,5 +35,5 @@ not fail the release that everything else depends on.
 Not decided here: any promise about version-number semantics (semver
 discipline pre-1.0), auto-update, or package-manager presence beyond the
 tap. `byre skill add`-style distribution of skills is a separate
-milestone (TODO §4), not a release concern — skills ship inside the
+milestone (TODO §3), not a release concern — skills ship inside the
 binary.
