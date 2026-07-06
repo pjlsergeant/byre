@@ -11,9 +11,15 @@ just cross-compiled binaries on a GitHub Release. The pipeline is goreleaser, ru
 ```sh
 git checkout main && git pull
 go test ./...                # the workflow re-runs this, but fail fast
+$EDITOR CHANGES.md           # date the release's entry (see below)
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+`CHANGES.md` is the hand-curated, user-facing history; the GitHub
+Release changelog is commit-derived and noisier. Before tagging, turn
+the top `unreleased` heading into the tag's version + date (and start
+the next `unreleased` section when work resumes).
 
 That's it. The workflow runs the tests, then goreleaser cross-compiles
 linux/darwin × amd64/arm64, writes checksummed `tar.gz` archives, and
