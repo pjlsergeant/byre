@@ -59,8 +59,9 @@ a `firewall_allow` core config key.
 it.** It generates a Dockerfile you can read, and writing raw Docker is an
 expected path, not an escape from the system. Nice primitives cover the
 convenient 90%; symmetric raw blocks (`dockerfile_pre`/`dockerfile_post` at
-build, `run_args` at runtime) and the full-Dockerfile opt-out cover the
-rest.
+build, `run_args` at runtime) cover the rest. Beyond the raw blocks,
+ejection is raw Docker itself -- byre either generates the build or isn't
+involved (ADR 0014).
 
 Implications:
 

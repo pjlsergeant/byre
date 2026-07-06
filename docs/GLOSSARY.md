@@ -79,11 +79,6 @@ A verbatim passthrough byre never parses inside: `dockerfile_pre`,
 flagged as not-introspected in status; presence degrades any posture claim.
 _Avoid_: escape hatch as the noun (it describes what a raw block is *for*)
 
-**Opt-out**:
-Supplying a full hand-written Dockerfile, which stops generation entirely.
-You own the chassis's build half on this path -- user model, ownership,
-entrypoint.
-
 ### Skills
 
 **Skill**:
@@ -116,9 +111,7 @@ the generated Dockerfile: the `dev` user
 baked at the host UID/GID, home/workspace ownership, the launcher install
 (plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
 as root). The block family is named by contributor: template block, core
-block, skill blocks, project block. Not emitted on the full-Dockerfile
-opt-out -- what you take ownership of on that path is exactly this block
-and that tail.
+block, skill blocks, project block.
 _Avoid_: infra layer (collides with cascade layers and Docker image
 layers), users block; "plumbing" stays informal prose for core's job
 
