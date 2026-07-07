@@ -100,6 +100,26 @@ if [ -d /etc/byre/firstrun.d ]; then
   done
 fi
 
+# Launch env hooks — skills drop scripts here to put env into the AGENT
+# process (a firstrun hook runs in its own process, so it can't). Sourced (not
+# executed) in glob order, after firstrun hooks and immediately before exec,
+# still as the unprivileged dev user. Best-effort per hook: a broken hook must
+# never block the launch (errexit/nounset are suspended around the source; a
+# hook must still never call `exit` -- sourced code exits the launcher). First
+# user: claude-shared-auth exports CLAUDE_CODE_OAUTH_TOKEN from its identity
+# volume (ADR 0017). The dir override is a test seam, per the gate precedent.
+ENVD_DIR="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
+if [ -d "$ENVD_DIR" ]; then
+  for envhook in "$ENVD_DIR"/*.sh; do
+    if [ -r "$envhook" ]; then
+      set +eu
+      # shellcheck disable=SC1090
+      . "$envhook"
+      set -eu
+    fi
+  done
+fi
+
 # Agent command: explicit run args > recorded agent command > login shell.
 # /etc/byre/agent-cmd is an *executable script* an agent skill installs (M6);
 # executing it (rather than word-splitting its text) preserves quoting/spaces.

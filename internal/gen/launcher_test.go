@@ -106,3 +106,64 @@ func TestLauncherGateMalformedPortFailsClosed(t *testing.T) {
 		t.Fatal("launcher must fail closed on a malformed gate file")
 	}
 }
+
+// runLauncherEnvd drives the real launcher with an env.d override dir and a
+// command that asserts on the resulting environment.
+func runLauncherEnvd(t *testing.T, envdDir string, cmd ...string) (int, string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command("bash", append([]string{script}, cmd...)...)
+	c.Env = append(os.Environ(),
+		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
+		"BYRE_ENVD_DIR="+envdDir,
+	)
+	out, err := c.CombinedOutput()
+	if err == nil {
+		return 0, string(out)
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode(), string(out)
+	}
+	t.Fatalf("launcher did not run: %v (%s)", err, out)
+	return -1, ""
+}
+
+// An env.d hook's exports must land in the exec'd agent process — the whole
+// point of the mechanism (a firstrun hook runs in its own process and can't).
+func TestLauncherEnvdExportsReachAgent(t *testing.T) {
+	envd := t.TempDir()
+	hook := "export BYRE_ENVD_PROOF=yes\n"
+	if err := os.WriteFile(filepath.Join(envd, "10-proof.sh"), []byte(hook), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runLauncherEnvd(t, envd, "sh", "-c", `test "$BYRE_ENVD_PROOF" = yes`)
+	if code != 0 {
+		t.Fatalf("env.d export did not reach the agent process (exit %d): %s", code, out)
+	}
+}
+
+// A hook whose commands fail (reading an absent token file, say) must never
+// block the launch — errexit is suspended around the source.
+func TestLauncherEnvdBrokenHookStillLaunches(t *testing.T) {
+	envd := t.TempDir()
+	hook := "false\nexport AFTER_FAILURE=set\nno-such-command-zzz\n"
+	if err := os.WriteFile(filepath.Join(envd, "10-broken.sh"), []byte(hook), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runLauncherEnvd(t, envd, "sh", "-c", `test "$AFTER_FAILURE" = set`)
+	if code != 0 {
+		t.Fatalf("a failing env.d hook must not block the launch (exit %d): %s", code, out)
+	}
+}
+
+// No env.d dir at all: the launcher proceeds untouched.
+func TestLauncherEnvdAbsentProceeds(t *testing.T) {
+	code, out := runLauncherEnvd(t, filepath.Join(t.TempDir(), "nope"), "true")
+	if code != 0 {
+		t.Fatalf("missing env.d dir must be a no-op (exit %d): %s", code, out)
+	}
+}
