@@ -5,10 +5,29 @@
 # one and paste it. Declining (or no TTY) degrades to the ordinary per-project
 # login — this hook must never block a launch. Runs as the dev user; installed
 # with a 00- prefix so companion hooks sort before agent-skill hooks.
-IDENTITY_DIR="/home/dev/.byre-identity/claude"
+# The base override is a test seam (the launcher's gate-file precedent).
+IDENTITY_DIR="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/claude"
 TOKEN_FILE="$IDENTITY_DIR/token"
 
-[ -s "$TOKEN_FILE" ] && exit 0
+# The env token authenticates inference but does NOT satisfy interactive
+# Claude's first-run wizard: a fresh CLAUDE_CONFIG_DIR has no .claude.json, so
+# the wizard runs (login step included) without ever consulting the token
+# (host-verified 2026-07-07). Seeding the onboarding-complete marker makes
+# Claude use the token directly. FRESH volumes only — never touch an existing
+# .claude.json (Claude owns it; it rewrites via temp+rename). Trade recorded:
+# skipping the wizard skips the theme picker; /config re-opens it in-session.
+seed_onboarding() {
+  cfg="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}"
+  if [ -s "$TOKEN_FILE" ] && [ ! -e "$cfg/.claude.json" ]; then
+    mkdir -p "$cfg" 2>/dev/null || return 0
+    printf '{"hasCompletedOnboarding": true}\n' >"$cfg/.claude.json" 2>/dev/null || true
+  fi
+}
+
+if [ -s "$TOKEN_FILE" ]; then
+  seed_onboarding
+  exit 0
+fi
 [ -t 0 ] || exit 0
 
 echo ""
@@ -38,5 +57,6 @@ mkdir -p "$IDENTITY_DIR"
 umask 077
 printf '%s\n' "$token" >"$TOKEN_FILE"
 chmod 600 "$TOKEN_FILE" 2>/dev/null || true
-echo "byre: saved — every byre project on this machine now launches Claude logged in."
+seed_onboarding
+echo "byre: saved. Boxes with claude-shared-auth enabled launch Claude with this login from their next develop."
 exit 0

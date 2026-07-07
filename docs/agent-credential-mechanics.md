@@ -135,6 +135,15 @@ Multiple open issues describe exactly the shared-credential scenario:
   re-called after 5 min or on 401 (`CLAUDE_CODE_API_KEY_HELPER_TTL_MS`) --
   a viable "fetch token from host/volume" hook.
 
+**Host-verified addendum (2026-07-07, byre box):** `CLAUDE_CODE_OAUTH_TOKEN`
+authenticates headless/inference use, but interactive Claude Code's
+first-run gate is its ONBOARDING state, not its auth state: with a fresh
+`CLAUDE_CONFIG_DIR` (no `.claude.json`) the setup wizard runs -- login step
+included -- without consulting the env token. Seeding
+`{"hasCompletedOnboarding": true}` into a fresh config dir makes the token
+take effect directly (trade: no first-run theme picker; `/config` re-opens
+it). The shared-auth skill does this seed on fresh volumes only.
+
 ### 5. Vendor guidance on sharing
 
 Devcontainer docs prescribe a **named volume at `~/.claude`** to persist

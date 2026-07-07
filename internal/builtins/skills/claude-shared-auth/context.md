@@ -17,3 +17,12 @@ the user's, not yours -- tell them:
 
 Do not try to work around an expired shared token with an in-box
 `/login`; the env token wins and the confusion compounds.
+
+Two more facts worth knowing:
+- On a fresh project volume byre seeds `.claude.json` with
+  `hasCompletedOnboarding: true` -- the interactive setup wizard would
+  otherwise demand a login without consulting the env token. The trade
+  is no theme picker at first run; if the user wants a theme, point
+  them at `/config` (or `claude config set theme <name>`).
+- The folder-trust prompt is per-project and unrelated to auth; it is
+  expected on a project's first launch.

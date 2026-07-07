@@ -135,6 +135,13 @@ Dockerfile test updates in `internal/gen` (byte-stable output rule).
   never block the launch. Deliberately NOT running setup-token inside
   the hook: that would parse another tool's interactive output (nobody's
   stable API) and require a browser story in the box.
+- **Onboarding seed (host-verified fix, 2026-07-07)**: the env token
+  authenticates inference but interactive Claude's first-run WIZARD gates
+  on `.claude.json` existing, not on auth -- so when the shared token is
+  present and the per-project config dir has no `.claude.json`, the
+  firstrun hook seeds `{"hasCompletedOnboarding": true}` (fresh volumes
+  only; never rewrite a file Claude owns). Trade: no first-run theme
+  picker; `/config` re-opens it in-session.
 - **env.d hook**: `export CLAUDE_CODE_OAUTH_TOKEN="$(cat <identity>/token
   2>/dev/null || true)"` -- exports only when the file exists and is
   non-empty; otherwise leaves env unset so Claude falls back to the

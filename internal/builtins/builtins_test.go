@@ -702,3 +702,54 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 		t.Fatalf("idempotent re-run changed the credential: %q", b)
 	}
 }
+
+// The claude-shared-auth hook seeds onboarding-complete state on a FRESH
+// config dir when the shared token exists (interactive Claude's wizard gates
+// on .claude.json, not the env token -- host-verified 2026-07-07), and never
+// touches an existing .claude.json.
+func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "claude-shared-auth", "firstrun.sh")
+	run := func(base, cfg string) {
+		t.Helper()
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
+		cmd.Stdin = nil // no TTY: the paste path must not trigger
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+
+	// Token present + fresh config dir -> seeded.
+	base, cfg := t.TempDir(), filepath.Join(t.TempDir(), "claude")
+	if err := os.MkdirAll(filepath.Join(base, "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "claude", "token"), []byte("sk-ant-oat01-x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(base, cfg)
+	b, err := os.ReadFile(filepath.Join(cfg, ".claude.json"))
+	if err != nil || !strings.Contains(string(b), "hasCompletedOnboarding") {
+		t.Fatalf("onboarding not seeded: %v %q", err, b)
+	}
+
+	// Existing .claude.json -> untouched (Claude owns it).
+	if err := os.WriteFile(filepath.Join(cfg, ".claude.json"), []byte(`{"mine":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(base, cfg)
+	if b, _ := os.ReadFile(filepath.Join(cfg, ".claude.json")); string(b) != `{"mine":true}` {
+		t.Fatalf("existing .claude.json clobbered: %q", b)
+	}
+
+	// No token -> nothing seeded (per-project login must proceed untouched).
+	base2, cfg2 := t.TempDir(), filepath.Join(t.TempDir(), "claude")
+	run(base2, cfg2)
+	if _, err := os.Stat(filepath.Join(cfg2, ".claude.json")); !os.IsNotExist(err) {
+		t.Fatal("seeded onboarding without a shared token")
+	}
+}
