@@ -23,7 +23,14 @@ this file about status, scope, or priority, this file wins.
   them in place. Start minimal; may grow into the comprehensive guide
   originally floated. Delivery shape TBD -- likely the way devloop's
   conventions ride in (agent context/memory).
-- [ ] **Shared agent credentials across projects** (Pete, 2026-07-06):
+- [ ] **Shared agent credentials across projects — SPEC'D, ready to build**
+  (Pete, 2026-07-06; grilled + decided 2026-07-07). The build plan is
+  `docs/shared-auth-design.md` (ordered 8-step implementation map with
+  code pointers; step 1 `description` field ships alone; gemini ships
+  last, gated on an empirical rotation test); rationale of record is
+  `docs/adr/0017-shared-agent-identity.md`; deliverables include root
+  `SECURITY.md` (created) and the README claim reword (step 7). Original
+  direction, for context:
   per-project login is a hard-sell for the drop-into-any-folder pitch, and
   it must work for all three agents, not just Claude. Direction: ship
   per-agent opt-in skill variants (e.g. `claude` vs `claude-shared-auth`)
@@ -179,9 +186,10 @@ the diary and the docs cited.
   practice; recovery is `byre reset` + re-login (documented, no code).
 - **run_args `--user`/`--userns` detect-and-warn** -- author-only
   footguns; one-sentence spec caveat instead of code.
-- **Machine-wide `shared` volume scope** -- removed; no natural boundary
-  across unrelated projects. Worktree identity-inheritance covers the real
-  case.
+- ~~**Machine-wide `shared` volume scope**~~ -- REVERSED by ADR 0017
+  (2026-07-07): agent identity turned out to be the natural boundary the
+  original ruling said didn't exist. Machine-scoped volumes are now part
+  of the shared-auth design (§1).
 - **Hardening the project store against a --self-edit agent** (symlink
   checks on the build context, byre.config writes, path record, lock) --
   reverted 2026-07-06 (0f35743) after being built from a codereview

@@ -92,6 +92,18 @@ A skill with an `[agent]` table: contributes the agent's CLI, its launch
 command, and its state volume. The `agent` config scalar selects which one
 the launcher execs, and implicitly enables it.
 
+**Companion skill**:
+A skill that augments the selected agent skill rather than being one --
+enabled alongside it, carrying only the delta (a volume, a hook, some
+wiring), leaving the agent skill untouched. The shared-auth trio
+(`claude-shared-auth` etc., ADR 0017) are the canonical examples.
+
+**Launch env hooks**:
+The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
+the launcher sources (sorted, best-effort, unprivileged) after firstrun
+hooks and immediately before exec'ing the agent -- the only way a skill
+can put env into the agent process at launch. Sibling of `firstrun.d`.
+
 **Core**:
 The byre binary minus all skill content: config resolution, generation,
 the runner, identity, lifecycle commands, status -- including the skill
@@ -139,10 +151,23 @@ but not bound. Disabling is a switch (the entry and its mode survive);
 `!target` removal is how a later cascade layer deletes the entry.
 
 **Volume**:
-A Docker named volume, per-project (`byre-<project_id>-<name>`), surviving
-rebuilds. Usually contributed by a skill. There is no scope knob -- sharing
-across unrelated projects was considered and dropped.
-_Avoid_: shared volume, volume scope
+A Docker named volume, surviving rebuilds. Usually contributed by a
+skill. Project-scoped by default (`byre-<project_id>-<name>`); see Volume
+scope.
+
+**Volume scope**:
+Which boxes share a volume: `project` (the default -- one per project) or
+`machine` (one per user per machine, `byre-machine-u<uid>-<name>`, mounted
+identically by every project that declares it; ADR 0017). General
+`[[volumes]]` grammar, config or skill. "Machine" deliberately means
+per-USER-per-machine -- the uid qualifier keeps two users on a shared box
+from silently sharing state.
+
+**Identity volume**:
+The informal name for a machine-scoped volume holding one agent's
+credential and nothing else -- what the shared-auth companion skills
+declare. Deliberately identity-only: everything cwd-keyed stays in the
+per-project state volume.
 
 **State (role)**:
 A precious volume: agent auth, history, scratch. `byre reset` warns and
