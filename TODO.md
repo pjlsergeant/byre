@@ -166,7 +166,16 @@ UID assertions in `gen_test.go`/`context_test.go`).
 
 ## 6. Nice-to-haves
 
-- [ ] **Host-env passthrough** (Pete, 2026-07-05): a config key to pass
+- [ ] **Drag-and-drop into the boxed terminal, nicely** (Pete,
+  2026-07-07): dragging a file onto the terminal pastes its HOST path,
+  which is meaningless inside the box (agents like Claude read
+  dropped-file paths directly, so the flow silently breaks). Work out
+  the nice version. Directions to explore: translate paths under the
+  project dir to their /workspace equivalent (agent-side context note
+  or a tiny in-box shim?); paths OUTSIDE the project are a grant
+  question (a drop-dir mount?); terminal-side integration varies
+  (iTerm2/Terminal/others differ on drop behavior). Needs a design
+  pass before building.
   named host env vars into the box (shape TBD, e.g.
   `env_passthrough = ["FOO"]`). Today `env` is literal-only and nothing
   crosses from the host except git identity (`GIT_AUTHOR_*` /
