@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/configui"
 )
 
 func TestProjectVolumesDisambiguatesByLongestID(t *testing.T) {
@@ -94,7 +96,7 @@ func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
 	if !found {
 		t.Fatalf("orphaned machine volume not listed: %+v", list)
 	}
-	if err := a.Clear("claude-identity"); err != nil {
+	if err := a.Clear(configui.VolumeStatus{Name: "claude-identity", Machine: true, Orphan: true, Exists: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 1 || f.removed[0] != orphan {

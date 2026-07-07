@@ -259,7 +259,8 @@ type fakeVols struct {
 
 func (f *fakeVols) List() ([]VolumeStatus, error) { return f.vols, nil }
 func (f *fakeVols) SharedNote() string            { return f.sharedNote }
-func (f *fakeVols) Clear(name string) error {
+func (f *fakeVols) Clear(v VolumeStatus) error {
+	name := v.Name
 	if f.clearErr != nil {
 		return f.clearErr
 	}

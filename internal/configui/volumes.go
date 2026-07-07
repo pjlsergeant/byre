@@ -14,7 +14,11 @@ import (
 // the Volumes section (e.g. the global config, which has no project volumes).
 type VolumeAdmin interface {
 	List() ([]VolumeStatus, error)
-	Clear(name string) error // remove the volume from the engine (refuses if a session is live)
+	// Clear removes the volume from the engine (refuses if a session is
+	// live). It takes the full row, not just the name: scope decides which
+	// Docker volume the logical name maps to, and an orphaned machine volume
+	// may share a logical name with a declared project one.
+	Clear(v VolumeStatus) error
 	// SharedNote returns a blast-radius warning to show before a clear (e.g. a
 	// worktree whose volumes are shared across the project's worktrees), or "" if none.
 	SharedNote() string
@@ -52,9 +56,9 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.volPendClear >= 0 {
 		switch msg.String() {
 		case "y", "Y":
-			name := m.volList[m.volPendClear].Name
+			vol := m.volList[m.volPendClear]
 			m.volPendClear = -1
-			if err := m.vols.Clear(name); err != nil {
+			if err := m.vols.Clear(vol); err != nil {
 				m.volErr = err.Error()
 			} else {
 				m.volErr = ""
