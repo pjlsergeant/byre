@@ -99,7 +99,10 @@ run_fresh() {
   echo "Running code review${FOCUS:+ (focus: ${FOCUS[*]})} — this may take several minutes..."
   # read-only sandbox: codex can read the repo and run git (reads) but cannot
   # modify anything — so a prompt-injection in the code under review can't act.
-  if codex exec --json --sandbox read-only "$PROMPT" \
+  # --skip-git-repo-check: codex refuses non-git dirs by default, but half of
+  # what byre boxes isn't a repo, and the BOX is the trust boundary here — the
+  # check duplicates an enclosure byre already provides (footgun doctrine).
+  if codex exec --skip-git-repo-check --json --sandbox read-only "$PROMPT" \
        --output-last-message "$OUT" < /dev/null > "$DBG" 2>&1; then
     sid=$(extract_session)
     [ -n "$sid" ] && [ "$sid" != "null" ] && echo "$sid" > "$SESSION_FILE" || rm -f "$SESSION_FILE"
@@ -130,7 +133,7 @@ report_failure() {
 run_resume() {
   local sid="$1"
   echo "Continuing previous review session — this may take several minutes..."
-  if codex exec resume --json --sandbox read-only \
+  if codex exec resume --skip-git-repo-check --json --sandbox read-only \
        "$sid" "$PROMPT" < /dev/null > "$DBG" 2>&1; then
     new=$(extract_session); [ -n "$new" ] && [ "$new" != "null" ] && echo "$new" > "$SESSION_FILE"
     grep '"type":"item.completed"' "$DBG" \
