@@ -22,10 +22,11 @@ type VolumeAdmin interface {
 
 // VolumeStatus is one project volume for display.
 type VolumeStatus struct {
-	Name   string // logical name (e.g. ".claude")
-	Role   string // "state" | "cache"
-	Target string // mount point inside the box
-	Exists bool   // whether the engine volume currently exists on disk
+	Name    string // logical name (e.g. ".claude")
+	Role    string // "state" | "cache"
+	Target  string // mount point inside the box
+	Exists  bool   // whether the engine volume currently exists on disk
+	Machine bool   // machine-scoped: shared across ALL the user's projects
 }
 
 // openVolumes loads the project's volumes and enters the volumes screen. A list

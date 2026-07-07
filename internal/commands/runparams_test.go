@@ -7,6 +7,8 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
+	"os"
+
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -41,6 +43,39 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	argv := strings.Join(runner.RunArgs(p), " ")
 	if strings.Index(argv, "--skill-arg") > strings.Index(argv, "--project-arg") {
 		t.Errorf("argv ordering wrong: %s", argv)
+	}
+}
+
+// A machine-scoped volume mounts under its uid-qualified machine name (no
+// project id) while project-scoped siblings keep the historical name — the
+// wiring behind ADR 0017's identity volumes.
+func TestRunParamsMachineScopedVolumeName(t *testing.T) {
+	paths, _ := testPaths(t)
+	var sf skills.File
+	sf.Volumes = []config.Volume{
+		{Name: "claude-identity", Role: "state", Target: "/home/dev/.byre-identity/claude", Scope: "machine"},
+		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
+	}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "s", File: sf}}}
+	p, err := runParams(paths, combine(config.Config{}, res), "img", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := machineVolumeName(os.Getuid(), "claude-identity")
+	var haveMachine, haveProject bool
+	for _, v := range p.Volumes {
+		if v.Name == want && v.Target == "/home/dev/.byre-identity/claude" {
+			haveMachine = true
+		}
+		if v.Name == volumeName(paths.ID, ".claude") {
+			haveProject = true
+		}
+	}
+	if !haveMachine {
+		t.Errorf("machine-scoped volume not mounted under %q: %+v", want, p.Volumes)
+	}
+	if !haveProject {
+		t.Errorf("project-scoped volume lost its historical name: %+v", p.Volumes)
 	}
 }
 

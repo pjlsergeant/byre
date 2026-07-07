@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -15,6 +16,29 @@ func TestVolumeName(t *testing.T) {
 	const id = "proj-abc123"
 	if got := volumeName(id, "cache"); got != "byre-"+id+"-cache" {
 		t.Errorf("volumeName = %q, want byre-%s-cache", got, id)
+	}
+}
+
+func TestMachineVolumeName(t *testing.T) {
+	if got := machineVolumeName(501, "claude-identity"); got != "byre-machine-u501-claude-identity" {
+		t.Errorf("machineVolumeName = %q", got)
+	}
+	// scopedVolumeName resolves the SAME Docker name from two different
+	// projects for a machine-scoped volume (the point of the scope, ADR 0017),
+	// and the project-scoped name otherwise.
+	mv := config.Volume{Name: "claude-identity", Role: "state", Target: "/x", Scope: "machine"}
+	a := scopedVolumeName("proj-a-111111", 501, mv)
+	b := scopedVolumeName("proj-b-222222", 501, mv)
+	if a != b || a != "byre-machine-u501-claude-identity" {
+		t.Errorf("machine-scoped names differ across projects: %q vs %q", a, b)
+	}
+	pv := config.Volume{Name: ".claude", Role: "state", Target: "/x"}
+	if got := scopedVolumeName("proj-a-111111", 501, pv); got != "byre-proj-a-111111-.claude" {
+		t.Errorf("project-scoped name = %q", got)
+	}
+	// Two USERS on one machine resolve different names (uid-qualified).
+	if machineVolumeName(501, "x") == machineVolumeName(502, "x") {
+		t.Error("uid must qualify machine volume names")
 	}
 }
 

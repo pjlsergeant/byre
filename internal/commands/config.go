@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -128,11 +129,11 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 	defs := dedupeVolumes(rv.volumes)
 	out := make([]configui.VolumeStatus, 0, len(defs))
 	for _, v := range defs {
-		exists, err := a.r.VolumeExists(volumeName(a.paths.ID, v.Name))
+		exists, err := a.r.VolumeExists(scopedVolumeName(a.paths.ID, os.Getuid(), v))
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists})
+		out = append(out, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists, Machine: v.MachineScoped()})
 	}
 	return out, nil
 }
@@ -147,6 +148,17 @@ func (a *volumeAdmin) Clear(name string) error {
 			return fmt.Errorf("checking for a running session: %w", err)
 		} else if len(live) > 0 {
 			return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
+		}
+		// Scope-aware: a machine-scoped volume's Docker name carries no
+		// project id, so look the definition up in the resolved set.
+		rv, err := resolve(a.paths, a.projectDir)
+		if err != nil {
+			return err
+		}
+		for _, v := range dedupeVolumes(rv.volumes) {
+			if v.Name == name {
+				return a.r.VolumeRemove(scopedVolumeName(a.paths.ID, os.Getuid(), v))
+			}
 		}
 		return a.r.VolumeRemove(volumeName(a.paths.ID, name))
 	})

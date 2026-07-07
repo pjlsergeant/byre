@@ -206,6 +206,27 @@ func TestValidateVolumeNameCharset(t *testing.T) {
 	}
 }
 
+func TestValidateVolumeScope(t *testing.T) {
+	ok := Config{Volumes: []Volume{{Name: "claude-identity", Role: "state", Target: "/t", Scope: "machine"}}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("machine scope rejected: %v", err)
+	}
+	explicit := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/t", Scope: "project"}}}
+	if err := explicit.Validate(); err != nil {
+		t.Errorf("explicit project scope rejected: %v", err)
+	}
+	bad := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/t", Scope: "global"}}}
+	if err := bad.Validate(); err == nil {
+		t.Error("expected rejection of unknown scope")
+	}
+	// seed + machine scope don't compose: the seed pipeline names its target
+	// volume project-scoped, and identity volumes are box-born (ADR 0017).
+	seeded := Config{Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Scope: "machine", Seed: &Seed{Host: "~/x"}}}}
+	if err := seeded.Validate(); err == nil {
+		t.Error("expected rejection of seed on a machine-scoped volume")
+	}
+}
+
 func TestValidateLiteralSeed(t *testing.T) {
 	ok := Config{Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x", Path: "a/b.conf"}}}}
 	if err := ok.Validate(); err != nil {

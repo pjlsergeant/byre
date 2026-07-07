@@ -104,7 +104,16 @@ type Volume struct {
 	Role   string `toml:"role"`   // cache|state
 	Target string `toml:"target"` // mount path in the container
 	Seed   *Seed  `toml:"seed"`   // state-only, optional
+	// Scope is which boxes share the volume: "project" (default; one per
+	// project, byre-<id>-<name>) or "machine" (one per user per machine,
+	// byre-machine-u<uid>-<name>, mounted identically by every project that
+	// declares it -- ADR 0017). General grammar: valid in config or skill.
+	Scope string `toml:"scope,omitempty"`
 }
+
+// MachineScoped reports whether the volume is machine-scoped (shared across
+// all of one user's projects) rather than the default project scope.
+func (v Volume) MachineScoped() bool { return v.Scope == "machine" }
 
 // Config is one resolved (or single-layer) byre configuration. omitempty keeps
 // regenerated config files (byre config) clean — only set fields are written.
@@ -421,7 +430,20 @@ func validateVolumeShape(v Volume) error {
 	if err := validContainerTarget(v.Target); err != nil {
 		return fmt.Errorf("volume %s target %q: %w", v.Name, v.Target, err)
 	}
+	switch v.Scope {
+	case "", "project", "machine":
+	default:
+		return fmt.Errorf("volume %s: scope %q invalid (want project|machine)", v.Name, v.Scope)
+	}
 	if v.Seed != nil {
+		if v.MachineScoped() {
+			// The seed pipeline names its target volume project-scoped
+			// (commands/seed.go) and stays that way: a machine-scoped seed
+			// would seed one Docker volume and mount another. The combination
+			// is also meaningless -- seeding is host->volume, and machine-
+			// scoped (identity) volumes are box-born by design (ADR 0017).
+			return fmt.Errorf("volume %s: seed is not valid on a machine-scoped volume", v.Name)
+		}
 		if v.Role != "state" {
 			return fmt.Errorf("volume %s: seed is only valid for state-role volumes", v.Name)
 		}

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -61,6 +63,29 @@ func volumeName(projectID, name string) string {
 	return "byre-" + projectID + "-" + name
 }
 
+// machineVolumeName is the Docker name for a machine-scoped volume:
+// byre-machine-u<uid>-<name>. No project id — every project of this user
+// resolves the same name, which is the point (ADR 0017). The uid qualifier
+// matches imageTag's precedent: on a shared daemon two users must not silently
+// share one volume (it cannot stop a daemon user mounting another's volume
+// deliberately — daemon access is root-equivalent; see SECURITY.md).
+func machineVolumeName(uid int, name string) string {
+	return fmt.Sprintf("byre-machine-u%d-%s", uid, name)
+}
+
+// machineVolumeRe matches any user's machine-scoped volume names, so project-
+// volume listings can exclude them even when a project id happens to begin
+// with "machine" (e.g. a repo directory literally named "machine").
+var machineVolumeRe = regexp.MustCompile(`^byre-machine-u[0-9]+-`)
+
+// scopedVolumeName picks the Docker name for a resolved volume by its scope.
+func scopedVolumeName(projectID string, uid int, v config.Volume) string {
+	if v.MachineScoped() {
+		return machineVolumeName(uid, v.Name)
+	}
+	return volumeName(projectID, v.Name)
+}
+
 // projectVolumes lists the volumes owned by id. Because project ids may contain
 // hyphens, a bare `byre-<id>-` prefix can also match another project's volumes
 // (when that project's id begins with this id). Each volume is assigned to the
@@ -74,6 +99,13 @@ func projectVolumes(r volumeRunner, home, id string) ([]string, error) {
 	others := knownProjectIDs(home)
 	var owned []string
 	for _, v := range vols {
+		// Machine-scoped volumes (byre-machine-u<uid>-...) are never a
+		// project's, even when this project's id begins with "machine" (a
+		// repo directory literally named that) -- reset/forget must not
+		// capture them (ADR 0017).
+		if machineVolumeRe.MatchString(v) {
+			continue
+		}
 		if !claimedByLongerID(v, id, others) {
 			owned = append(owned, v)
 		}

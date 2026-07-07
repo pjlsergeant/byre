@@ -240,9 +240,15 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Skills", orDefault(strings.Join(s.Skills, ", "), "none"))
 	}
 
-	state, cache := splitVolumes(s.Volumes)
+	state, cache, machine := splitVolumes(s.Volumes)
 	row("State vols", orDefault(strings.Join(state, ", "), "none"))
 	row("Cache vols", orDefault(strings.Join(cache, ", "), "none"))
+	// Machine-scoped volumes cross project boundaries by design (ADR 0017);
+	// the row exists so that sharing is never invisible. Omitted entirely when
+	// none are declared -- most boxes have no shared volumes to report.
+	if len(machine) > 0 {
+		row("Shared vols", strings.Join(machine, ", ")+"  (machine-wide, all your projects)")
+	}
 
 	// Skill-granted runtime holes, attributed to the skill that opened them.
 	for i, g := range s.Grants {
@@ -340,13 +346,16 @@ func portStatusLine(p config.Port) string {
 	return fmt.Sprintf("%s:%d -> %d  (host -> container)", n.Interface, n.Host, n.Container)
 }
 
-func splitVolumes(vols []config.Volume) (state, cache []string) {
+func splitVolumes(vols []config.Volume) (state, cache, machine []string) {
 	for _, v := range vols {
-		if v.Role == "state" {
+		switch {
+		case v.MachineScoped():
+			machine = append(machine, v.Name)
+		case v.Role == "state":
 			state = append(state, v.Name)
-		} else {
+		default:
 			cache = append(cache, v.Name)
 		}
 	}
-	return state, cache
+	return state, cache, machine
 }
