@@ -23,34 +23,19 @@ this file about status, scope, or priority, this file wins.
   them in place. Start minimal; may grow into the comprehensive guide
   originally floated. Delivery shape TBD -- likely the way devloop's
   conventions ride in (agent context/memory).
-- [ ] **Shared agent credentials across projects — SPEC'D, ready to build**
-  (Pete, 2026-07-06; grilled + decided 2026-07-07). The build plan is
-  `docs/shared-auth-design.md` (ordered 8-step implementation map with
-  code pointers; step 1 `description` field ships alone; gemini ships
-  last, gated on an empirical rotation test); rationale of record is
-  `docs/adr/0017-shared-agent-identity.md`; deliverables include root
-  `SECURITY.md` (created) and the README claim reword (step 7). Original
-  direction, for context:
-  per-project login is a hard-sell for the drop-into-any-folder pitch, and
-  it must work for all three agents, not just Claude. Direction: ship
-  per-agent opt-in skill variants (e.g. `claude` vs `claude-shared-auth`)
-  backed by a machine-wide agent-identity volume -- login happens in-box
-  once per agent ever, byre never touches host credentials -- with
-  per-project state (cwd-keyed history etc.) split out via symlinked
-  subdirs or nested volume mounts. Key hazard: never symlink the
-  credential file itself (atomic rename-over-symlink forks it). Research
-  DONE 2026-07-06: `docs/agent-credential-mechanics.md` (state-dir
-  inventories, write patterns, rotation semantics; absorb into an ADR at
-  the design session, firewall-design precedent). Headline findings: the
-  mechanism must differ per agent -- Claude file-sharing is the WORST
-  path (temp+rename breaks symlinks, single-use refresh tokens cascade
-  logout on concurrent refresh) so claude-shared-auth should ride
-  `claude setup-token` -> env instead; Codex is vendor-blessed easy
-  (in-place writes, `CODEX_HOME`); Gemini has no relocation env, so its
-  seam is nested mounts inside `~/.gemini` +
-  `GEMINI_CLI_TRUSTED_FOLDERS_PATH` for per-project trust. All three keep
-  per-project trust in root-level mixed-scope files. Next: design
-  session. Revisits two prior negatives, deliberately: Parked
+- [ ] **Shared agent credentials across projects -- SPEC'D, ready to
+  build** (Pete, 2026-07-06; grilled + decided 2026-07-07; spec review
+  loop closed over 3 rounds). Build plan: `docs/shared-auth-design.md`
+  -- ordered 8-step implementation map with code pointers; step 1 (skill
+  `description` field) ships alone; gemini-shared-auth builds LAST,
+  gated on an empirical rotation test. Rationale of record:
+  `docs/adr/0017-shared-agent-identity.md` (companion skills enabled
+  alongside agent skills; machine-scoped identity volumes,
+  `byre-machine-u<uid>-<name>`; per-agent transports -- Claude via
+  user-minted setup-token pasted at a prompt, Codex/Gemini via in-box
+  login + symlinks; byre reads/copies no host credentials, ADR 0007
+  stays closed). Evidence: `docs/agent-credential-mechanics.md`. Root
+  `SECURITY.md` created; README claim reword lands at step 7. Revisits two prior negatives, deliberately: Parked
   "machine-wide shared volume scope" (agent identity IS naturally
   machine-scoped) and the retired creds/history split; ADR-0007 stays
   closed (no host-credential copying). Env passthrough (§6) remains the
