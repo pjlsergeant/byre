@@ -43,13 +43,16 @@ func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	if err != nil {
 		return err
 	}
+	// The machine-volume note comes before the empty-case return: a project
+	// whose ONLY volumes are machine-scoped must still hear what was spared
+	// and why (review finding on ADR 0017).
+	noteMachineVolumes(s.Err, r, os.Getuid())
 	if len(vols) == 0 {
 		fmt.Fprintf(s.Err, "byre: no volumes to reset for %s\n", paths.ID)
 		return nil
 	}
 
 	noteSharedVolumes(s.Err, paths)
-	noteMachineVolumes(s.Err, r, os.Getuid())
 	fmt.Fprintf(s.Err, "byre reset will permanently delete these volumes for %s:\n", paths.ID)
 	for _, v := range vols {
 		fmt.Fprintf(s.Err, "  - %s\n", v)

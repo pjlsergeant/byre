@@ -70,3 +70,34 @@ func TestProjectVolumesExcludesMachineScoped(t *testing.T) {
 		t.Fatalf("u<digits> corner must over-exclude (fail-safe), got %v", got2)
 	}
 }
+
+// The config-UI VolumeAdmin lists ORPHANED machine-scoped volumes (on the
+// engine, no longer declared by any enabled skill/config) so the
+// deliberate-delete route reset/forget advertises keeps working after e.g.
+// shared-auth is disabled — and Clear removes them under the machine name.
+func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
+	p, dir := testPaths(t)
+	orphan := machineVolumeName(os.Getuid(), "claude-identity")
+	f := &fakeRunner{vols: map[string]bool{orphan: true}}
+	a := &volumeAdmin{r: f, paths: p, projectDir: dir}
+
+	list, err := a.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, v := range list {
+		if v.Name == "claude-identity" && v.Machine && v.Orphan && v.Exists {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("orphaned machine volume not listed: %+v", list)
+	}
+	if err := a.Clear("claude-identity"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.removed) != 1 || f.removed[0] != orphan {
+		t.Fatalf("orphan cleared under the wrong name: %v", f.removed)
+	}
+}

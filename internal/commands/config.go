@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
@@ -128,12 +129,31 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 	}
 	defs := dedupeVolumes(rv.volumes)
 	out := make([]configui.VolumeStatus, 0, len(defs))
+	declared := map[string]bool{}
 	for _, v := range defs {
 		exists, err := a.r.VolumeExists(scopedVolumeName(a.paths.ID, os.Getuid(), v))
 		if err != nil {
 			return nil, err
 		}
+		if v.MachineScoped() {
+			declared[v.Name] = true
+		}
 		out = append(out, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists, Machine: v.MachineScoped()})
+	}
+	// Orphaned machine-scoped volumes: present on the engine but no longer
+	// declared by any enabled skill/config (e.g. shared-auth disabled after a
+	// login). Listed so the deliberate-delete route reset/forget advertises
+	// keeps working for them (review finding on ADR 0017's logout story).
+	prefix := fmt.Sprintf("byre-machine-u%d-", os.Getuid())
+	engineVols, err := a.r.VolumesByPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+	for _, ev := range engineVols {
+		name := strings.TrimPrefix(ev, prefix)
+		if !declared[name] {
+			out = append(out, configui.VolumeStatus{Name: name, Exists: true, Machine: true, Orphan: true})
+		}
 	}
 	return out, nil
 }
@@ -171,6 +191,17 @@ func (a *volumeAdmin) Clear(name string) error {
 				}
 				return a.r.VolumeRemove(scopedVolumeName(a.paths.ID, os.Getuid(), v))
 			}
+		}
+		// Not declared anywhere: an orphaned machine-scoped volume (listed by
+		// List above) clears under its machine name, with the same any-session
+		// guard -- it may still be mounted by another project's running box.
+		if has, herr := a.r.VolumeExists(machineVolumeName(os.Getuid(), name)); herr == nil && has {
+			if live, lerr := a.r.RunningContainersByLabel(labelKey); lerr != nil {
+				return fmt.Errorf("checking for running byre sessions: %w", lerr)
+			} else if len(live) > 0 {
+				return fmt.Errorf("this volume is shared by ALL your projects and a byre session is running (%s) — exit every session before clearing it", shortID(live[0]))
+			}
+			return a.r.VolumeRemove(machineVolumeName(os.Getuid(), name))
 		}
 		return a.r.VolumeRemove(volumeName(a.paths.ID, name))
 	})

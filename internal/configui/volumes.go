@@ -27,6 +27,7 @@ type VolumeStatus struct {
 	Target  string // mount point inside the box
 	Exists  bool   // whether the engine volume currently exists on disk
 	Machine bool   // machine-scoped: shared across ALL the user's projects
+	Orphan  bool   // machine-scoped volume no longer declared by any enabled skill/config
 }
 
 // openVolumes loads the project's volumes and enters the volumes screen. A list
@@ -106,7 +107,10 @@ func (m model) viewVolumes() string {
 			state = "present"
 		}
 		line := fmt.Sprintf("%-14s %-6s %-24s %s", v.Name, v.Role, v.Target, state)
-		if v.Machine {
+		switch {
+		case v.Orphan:
+			line += dimStyle.Render("  (shared: all your projects — no longer declared)")
+		case v.Machine:
 			line += dimStyle.Render("  (shared: all your projects)")
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.volCur, line))
@@ -140,6 +144,9 @@ func (m model) viewVolumes() string {
 }
 
 func volDescription(v VolumeStatus) string {
+	if v.Orphan {
+		return "machine-scoped, ORPHANED — still on disk but no enabled skill declares it (e.g. shared-auth was disabled). Clearing deletes the shared data (a shared agent login: logged out everywhere)."
+	}
 	if v.Machine {
 		return "machine-scoped — ONE volume shared by all your projects (ADR 0017). Clearing it affects every project (e.g. a shared agent login: clearing = logging out everywhere)."
 	}

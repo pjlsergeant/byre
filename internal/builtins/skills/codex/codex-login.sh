@@ -29,7 +29,13 @@ cred="$CODEX_HOME/auth.json"
 # would redirect.
 shared_auth=""
 if [ -L "$cred" ]; then
-  case "$(readlink "$cred")" in
+  # Canonicalize the target's PARENT dir (the final auth.json may be absent --
+  # dangling is the expected first-login state); a lexical prefix check would
+  # accept planted ..-traversals and reject legitimate relative links.
+  # Relative targets resolve from the link's own directory.
+  target="$(readlink "$cred")"
+  tdir="$(cd "$CODEX_HOME" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || tdir=""
+  case "$tdir/" in
   /home/dev/.byre-identity/*) shared_auth=1 ;;
   *) rm -f "$cred" ;;
   esac

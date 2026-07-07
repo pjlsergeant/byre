@@ -135,3 +135,24 @@ func TestResetPromptProceedsOnYes(t *testing.T) {
 		t.Fatalf("'y' should proceed, removed=%v", f.removed)
 	}
 }
+
+// A project whose ONLY volumes are machine-scoped still hears what reset
+// spared — the note must precede the no-volumes early return.
+func TestResetNotesMachineVolumesEvenWithNoProjectVolumes(t *testing.T) {
+	p, _ := testPaths(t)
+	machineVol := machineVolumeName(os.Getuid(), "claude-identity")
+	f := &fakeRunner{vols: map[string]bool{machineVol: true}}
+	s, _, out := testStreams("", false)
+	if err := reset(s, p, f, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "NOT touched") || !strings.Contains(out.String(), machineVol) {
+		t.Errorf("machine-volume note missing when no project volumes exist:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "no volumes to reset") {
+		t.Errorf("empty-case message lost:\n%s", out.String())
+	}
+	if len(f.removed) != 0 {
+		t.Fatalf("nothing should be removed: %v", f.removed)
+	}
+}
