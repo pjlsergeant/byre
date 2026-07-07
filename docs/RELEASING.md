@@ -59,5 +59,7 @@ goreleaser release --snapshot --clean   # artifacts land in dist/, nothing publi
 
 ## After the first release
 
-Update the README Install section: add the `install.sh` one-liner and (once
-the tap is live) the brew line, per the copy note in TODO §1.
+Done (2026-07-06/07): the README Install section carries the
+`install.sh` one-liner and the brew line -- the brew line went in AHEAD
+of the tap, deliberately, so it 404s until the tap repo + token exist
+(TODO §1). Don't remove it; create the tap.
