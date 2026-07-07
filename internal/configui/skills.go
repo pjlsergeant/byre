@@ -130,6 +130,7 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ", "x", "enter":
 		if m.skillCur < len(entries) {
 			e := entries[m.skillCur]
+			m.status = "" // every press restates or clears the guidance; never stale
 			// Toggling peels one layer of state at a time, so every press has
 			// exactly one legible effect on THIS layer's list:
 			//   enabled here            -> drop the local entry
