@@ -15,10 +15,14 @@ this file about status, scope, or priority, this file wins.
 - [ ] **Site** (landing page + real docs, devlog demoted to `/devlog/`):
   still on; the decided shape lives in `docs/marketing/positioning.md`
   "Site plan".
-- [ ] **Agent best-practices guide, inside `~/.byre`** (Pete, 2026-07-06):
-  a really comprehensive guide for agents on best practices, living in the
-  store so it rides into every box. Shape TBD -- likely delivered the way
-  devloop's conventions are (as agent context/memory).
+- [ ] **AGENTS.md in `~/.byre`: best-practices guide for agents** (Pete,
+  2026-07-06; refined 2026-07-07): drop a minimal AGENTS.md into the store
+  covering at least: how to version-control `~/.byre`, how to compose
+  skills, and "don't over-write agent-provided ones (go over them
+  instead)" -- i.e. layer on top of provided skills rather than editing
+  them in place. Start minimal; may grow into the comprehensive guide
+  originally floated. Delivery shape TBD -- likely the way devloop's
+  conventions ride in (agent context/memory).
 - [ ] **Shared agent credentials across projects** (Pete, 2026-07-06):
   per-project login is a hard-sell for the drop-into-any-folder pitch, and
   it must work for all three agents, not just Claude. Direction: ship
@@ -79,12 +83,16 @@ Lower priority, queued after the 2026-07-01 overhaul. (Background: diary
     detection, whose consumer changes from warn to mode-select.
   - Interim: today's detect-and-warn in develop/status stays until this
     lands. Background: `docs/adr/0008-build-time-uid-bake.md`.
-- [ ] **Skill packaging & distribution.** No `byre skill add` / fetch /
-  install path exists -- v0 is built-in skills plus hand-dropped
-  `~/.byre/skills/<name>/`. The full `skill.toml` semantics (ordering,
-  dependencies, conflicts) are deferred to a skills milestone. Until this
-  ships, any "publishable/shareable skills" pitch is aspirational (see the
-  doc chore in §5).
+- [ ] **Skill & template bundle sharing** (upgraded to a definite need,
+  Pete 2026-07-07: "we definitely need a way to share skills and template
+  bundles, even if that's just a bundle/install format"). No
+  `byre skill add` / fetch / install path exists -- v0 is built-in skills
+  plus hand-dropped `~/.byre/skills/<name>/` -- and templates have no
+  sharing story at all. Minimum viable shape: a bundle/install format
+  covering both skills and templates; the full `skill.toml` semantics
+  (ordering, dependencies, conflicts) stay deferred to a skills
+  milestone. Until this ships, any "publishable/shareable skills" pitch
+  is aspirational (see the doc chore in §5).
 - [ ] **Skill trust surface.** A skill can carry real grants (e.g. mount a
   host socket). Today that's legible via `byre status` and nothing else --
   no consent step, no permission framework. Decide how loudly grants are
