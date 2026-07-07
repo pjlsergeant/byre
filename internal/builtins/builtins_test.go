@@ -550,3 +550,45 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 		}
 	}
 }
+
+// TestSharedAuthCompositionResolves pins the claude-shared-auth companion
+// composing with the claude agent skill (ADR 0017): the machine-scoped
+// identity volume, both hooks landing in the launcher's hook dirs (00- prefix
+// so the firstrun hook sorts before agent-skill hooks), and the expiry brief
+// reaching the agent's context.
+func TestSharedAuthCompositionResolves(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"claude-shared-auth"}}, dest)
+	if err != nil {
+		t.Fatalf("claude + claude-shared-auth failed to resolve: %v", err)
+	}
+	shipped := map[string]bool{}
+	for _, b := range res.BuildBlocks() {
+		for _, sf := range b.Files {
+			shipped[b.Name+" "+sf.Dest] = true
+		}
+	}
+	for _, want := range []string{
+		"claude-shared-auth /etc/byre/firstrun.d/00-claude-shared-auth",
+		"claude-shared-auth /etc/byre/env.d/50-claude-shared-auth.sh",
+	} {
+		if !shipped[want] {
+			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
+		}
+	}
+	var identity bool
+	for _, v := range res.Volumes() {
+		if v.Name == "claude-identity" && v.Role == "state" && v.MachineScoped() && v.Target == "/home/dev/.byre-identity/claude" {
+			identity = true
+		}
+	}
+	if !identity {
+		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
+	}
+	if !strings.Contains(res.Context(), "CLAUDE_CODE_OAUTH_TOKEN") {
+		t.Errorf("expiry brief not in agent context")
+	}
+}

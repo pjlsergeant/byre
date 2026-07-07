@@ -1,0 +1,36 @@
+# Built-in companion skill: claude-shared-auth (ADR 0017).
+#
+# One Claude login for every byre project on this machine. Enabled ALONGSIDE
+# the claude agent skill (skills = ["claude-shared-auth"], typically in
+# ~/.byre/default.config); it contributes only the delta — the machine-scoped
+# identity volume, a first-run paste prompt, and a launch env hook — and leaves
+# the claude skill untouched.
+#
+# WHY a static token and not a shared credential file: Claude Code's refresh
+# tokens are single-use (concurrent refresh from two boxes cascade-logs-out
+# both) and it replaces symlinked files via temp+rename — file sharing is
+# unsafe twice over. `claude setup-token` mints a static ~1-year,
+# inference-only token that never rotates; the firstrun hook asks the user to
+# paste one (minted wherever a browser is handy — byre never reads anything
+# from the host), and the env hook exports it as CLAUDE_CODE_OAUTH_TOKEN.
+# Evidence: docs/agent-credential-mechanics.md.
+#
+# No token = clean degrade: the env hook exports nothing and Claude falls back
+# to this project's own in-box login, exactly as without this skill.
+
+description = "Share one Claude login across all your projects (machine-wide token)."
+
+[build]
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-claude-shared-auth", "env.sh" = "/etc/byre/env.d/50-claude-shared-auth.sh" }
+
+# Briefs the in-box agent on how this box authenticates and what to do when
+# the token expires (~1 year) — no expiry machinery in byre; the failure
+# self-announces and the resident expert is pre-briefed.
+[context]
+file = "context.md"
+
+[[volumes]]
+name = "claude-identity"
+role = "state"
+target = "/home/dev/.byre-identity/claude"
+scope = "machine"
