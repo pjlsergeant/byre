@@ -68,7 +68,7 @@ func volumeName(projectID, name string) string {
 // resolves the same name, which is the point (ADR 0017). The uid qualifier
 // matches imageTag's precedent: on a shared daemon two users must not silently
 // share one volume (it cannot stop a daemon user mounting another's volume
-// deliberately — daemon access is root-equivalent; see SECURITY.md).
+// deliberately — daemon access is root-equivalent; see docs/SECURITY.md).
 func machineVolumeName(uid int, name string) string {
 	return fmt.Sprintf("byre-machine-u%d-%s", uid, name)
 }

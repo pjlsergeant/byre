@@ -24,7 +24,7 @@ Shared agent logins, and a rebuilt README.
   credential against the hostname; byre boxes now have a stable one),
   and the untrusted-folder and 256-color warnings are gone.
 - `byre-codereview` now works in non-git folders.
-- New `SECURITY.md`: the security model, stated plainly.
+- New `docs/SECURITY.md`: the security model, stated plainly.
 - README rewritten post-release: honest contract renamed to "What's
   boxed, what isn't", toolkit section rebuilt, Homebrew line added
   (the tap itself may lag the release).

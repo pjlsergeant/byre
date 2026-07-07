@@ -55,7 +55,7 @@ impossible stay put, untouched. "Machine" scope is really
 per-user-per-machine -- the uid-qualified name (the ImageTag precedent,
 ADR 0008) prevents two users on a shared box from silently sharing one
 login. It cannot prevent deliberate cross-user mounting: Docker daemon
-access is root-equivalent, which SECURITY.md now states plainly.
+access is root-equivalent, which docs/SECURITY.md now states plainly.
 
 Lifecycle honesty: `byre status` prints machine-scoped volumes on their
 own row; `reset` and `forget` skip them and say so, naming the

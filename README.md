@@ -176,14 +176,12 @@ blast radius before touching anything shared.
 ## Volumes & state
 
 **Cache** volumes (`node_modules`, …) are disposable. **State** volumes
-(`.claude`, …) hold the agent's login and history, per project, and survive rebuilds. byre never reads or copies host credentials; nothing crosses
-unless you enable it, and what you enable, `byre status` shows. By default
-agents log in once per project, inside the box. Tired of that? Enable a
-shared-auth skill (`claude-shared-auth`, `codex-shared-auth`, or
-`gemini-shared-auth` -- gemini's API-key path is verified, OAuth sharing
-still gated) and one login serves every project on your machine -- it lives in a shared volume
-that `reset`/`forget` deliberately never touch. `byre reset` wipes a
-project's volumes; `byre rehome` migrates them after a move.
+(`.claude`, …) hold the agent's login and history, per project, and survive rebuilds. **Machine** volumes let you share volumes between different byre boxes. byre never reads or
+copies host credentials; nothing crosses unless you enable it, and what you
+enable, `byre status` shows.
+
+By default agents log in once per project, inside the box, and maintain their
+own context. See "How do I?" for enabling shared LLM credentials.
 
 ## Why not…?
 
@@ -230,6 +228,12 @@ folder. byre is a throwaway box per folder, on the machine you're already
 sitting at, with your toolkit already inside. *(But a remote box is real
 hardware isolation -- if the agent must never share a kernel with your
 machine, rent one.)*
+
+## How do I...?
+
+### Save my LLM credentials so I don't need to re-auth for each box?
+
+By default agents log in once per project, inside the box; the shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per machine. The login lives in a shared volume that reset/forget deliberately never touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications.
 
 ## Platform
 
