@@ -341,12 +341,15 @@ copy-semantics breaks rotating OAuth tokens): agents log in once in the
 box and the state volume persists the login per-project. `seed_prefs`
 (ADR 0013) is the curated, non-secret exception for agent prefs. The
 **shared-auth companion skills** (`claude-shared-auth`,
-`codex-shared-auth`; ADR 0017) make one login serve every project
-WITHOUT host copying: the credential lives in a machine-scoped identity
-volume and byre reads nothing from the host -- Codex logs in once in
-any box (the credential lands in the shared volume through a symlink);
-Claude uses a user-minted `claude setup-token` pasted at a first-run
-prompt and exported to the agent process by a **launch env hook**
+`codex-shared-auth`, `gemini-shared-auth`; ADR 0017) make one login
+serve every project WITHOUT host copying: the credential lives in a
+machine-scoped identity volume and byre reads nothing from the host --
+Codex and Gemini log in once in any box (the credential lands in the
+shared volume through symlinks; Gemini's API-key path is verified,
+OAuth sharing gate-pending -- see the skill and ADR 0017's verification
+record); Claude uses a user-minted `claude setup-token` pasted at a
+first-run prompt and exported to the agent process by a **launch env
+hook**
 (`/etc/byre/env.d/*.sh`, sourced by the launcher after firstrun hooks,
 immediately before exec -- the chassis mechanism for skills that must
 put env into the agent process).

@@ -35,11 +35,14 @@ volume carries a **static one-year inference-only token** (minted by
 `CLAUDE_CODE_OAUTH_TOKEN` by an env.d hook). Codex writes `auth.json` in
 place and OpenAI endorses moving it between machines, so its companion
 is one idempotently-asserted **symlink** into the identity volume.
-Gemini is symlink-shaped too, but Google's refresh-rotation behavior is
-unverified: `gemini-shared-auth` ships only after an empirical gate (two
-concurrent boxes, forced refresh, neither session dies); if rotation is
-Claude-shaped it is not released, since Google offers no env-token
-fallback.
+Gemini is symlink-shaped too, but Google's OAuth refresh-rotation
+behavior is unverified: `gemini-shared-auth` shipped with its
+description saying so -- the API-key path is verified and
+rotation-immune (a static key has no refresh tokens; see the
+verification record below), while OAuth sharing stays behind the
+empirical gate (two concurrent boxes, forced refresh, neither session
+dies). If OAuth rotation ever proves Claude-shaped, OAuth sharing stays
+unsupported, since Google offers no env-token fallback.
 
 This deliberately reverses two prior negatives. The parked "machine-wide
 shared volume scope" was dropped for lacking a natural boundary across
