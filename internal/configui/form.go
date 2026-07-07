@@ -594,8 +594,17 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		}
 		return s
 	case fSkills:
+		// Count EFFECTIVE state, same as the skills screen's checkboxes: raw
+		// layer entries include `!name` removal markers (not enabled skills)
+		// and miss inherited-on skills entirely.
+		n := 0
+		for _, e := range m.skillEntries() {
+			if e.on() {
+				n++
+			}
+		}
 		s := dimStyle.Render("(none)")
-		if n := len(m.skills); n > 0 {
+		if n > 0 {
 			s = fmt.Sprintf("%d enabled", n)
 		}
 		if focused {

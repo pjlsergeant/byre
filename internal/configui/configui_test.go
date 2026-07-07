@@ -835,6 +835,27 @@ func TestSkillsInheritedShownOnAndToggledViaRemoval(t *testing.T) {
 	}
 }
 
+// The form's Skills summary counts EFFECTIVE state (what the skills screen
+// shows checked), not raw layer entries: a `!name` removal marker is not an
+// enabled skill, and inherited-on skills count even with an empty local list.
+func TestSkillsSummaryCountsEffectiveState(t *testing.T) {
+	inherited := map[string][]string{"": {"claude-shared-auth", "devloop"}}
+	m := newModel("t", "/tmp/x", config.Config{Agent: "claude"}, nil,
+		[]string{"claude"}, []string{"claude", "devloop", "claude-shared-auth"}, nil, inherited, nil, false)
+
+	// Empty local layer, but primary agent + two inherited skills are on.
+	if got := m.renderValue(fSkills, false); !strings.Contains(got, "3 enabled") {
+		t.Fatalf("summary should count inherited-on skills: %q", got)
+	}
+
+	// A removal marker turns one inherited skill off; it must not be counted
+	// as enabled itself (the raw layer holds exactly one entry: the marker).
+	m.skills = []string{"!claude-shared-auth"}
+	if got := m.renderValue(fSkills, false); !strings.Contains(got, "2 enabled") {
+		t.Fatalf("summary should not count removal markers: %q", got)
+	}
+}
+
 // A pre-existing `!name` marker in the loaded config must render as a row
 // (removed state), not as a bogus skill named "!devloop".
 func TestSkillsExistingRemovalMarkerRendered(t *testing.T) {

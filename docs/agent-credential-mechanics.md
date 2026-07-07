@@ -344,9 +344,14 @@ the cached-credential path is the only subscription option headless.
 Per agent, what goes in the shared identity volume vs per-project volume:
 
 **Claude Code**
-- Shared identity: `.credentials.json`. Arguably also machine-wide prefs
-  (`settings.json`, `CLAUDE.md`, `skills/`) if "one login, one persona" is the
-  goal.
+- Shared identity: a `claude setup-token` in the identity volume, exported as
+  `CLAUDE_CODE_OAUTH_TOKEN` at launch (decided + shipped, ADR 0017). NOT
+  `.credentials.json` -- sharing that file is the path this doc's Claude
+  section argues against (temp+rename breaks symlinks, single-use refresh
+  cascade), and a leftover copy alongside the token 401s the box ~8h after
+  its last login (see the precedence falsification above). Arguably also
+  machine-wide prefs (`settings.json`, `CLAUDE.md`, `skills/`) if "one login,
+  one persona" is the goal.
 - Per-project: `projects/` (transcripts + auto memory), `file-history/`,
   `session-env/`, `tasks/`, `shell-snapshots/`, caches.
 - Unsplittable-by-mount: `.claude.json` (identity metadata + per-project trust
