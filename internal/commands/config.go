@@ -29,6 +29,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	templates := config.ListTemplates(templatesDir)
 	agents := skills.ListAgentSkills(skillsDir)
 	skillOpts := skills.ListSkills(skillsDir)
+	skillDescs := skills.DescribeSkills(skillsDir)
 
 	var path, title string
 	var vols configui.VolumeAdmin // nil for --global (no project volumes)
@@ -57,7 +58,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, vols, global)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, vols, global)
 	if err != nil {
 		return err
 	}

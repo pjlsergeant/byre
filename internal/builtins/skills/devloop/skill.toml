@@ -19,6 +19,8 @@
 # browser-redirect flow that cannot complete in a no-browser sandbox). A
 # project's own CLAUDE.md/AGENTS.md still applies on top of the conventions here.
 
+description = "Dev-workflow conventions plus the byre-codereview loop."
+
 [build]
 apt = ["jq"] # codereview.sh parses codex --json output with jq
 files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devloop-lib.sh" = "/usr/local/lib/byre-devloop-lib.sh" }

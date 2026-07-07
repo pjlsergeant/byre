@@ -35,6 +35,8 @@
 # any browser; the new credential lands in the CODEX_HOME volume and persists.
 # (Verified working on codex 0.141.0 — this is the supported headless login.)
 
+description = "The Codex CLI agent; also the reviewer behind byre-codereview."
+
 [build]
 apt = ["curl", "ca-certificates", "gawk"]
 # First-run auth: ship a firstrun hook that runs `codex login --device-auth` on a

@@ -147,6 +147,27 @@ func TestResolveContextFromFile(t *testing.T) {
 	}
 }
 
+func TestDescriptionParsedAndListed(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "described", "description = \"One line about it.\"\n[build]\napt = [\"jq\"]\n", nil)
+	writeSkill(t, dir, "bare", "[build]\napt = [\"jq\"]\n", nil)
+	sk, err := Load(dir, "described")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if sk.File.Description != "One line about it." {
+		t.Fatalf("Description = %q", sk.File.Description)
+	}
+	descs := DescribeSkills(dir)
+	if descs["described"] != "One line about it." {
+		t.Fatalf("DescribeSkills[described] = %q", descs["described"])
+	}
+	// A skill without a description is legal and simply absent from the map.
+	if d, ok := descs["bare"]; ok {
+		t.Fatalf("bare skill unexpectedly described: %q", d)
+	}
+}
+
 func TestLoadRejectsUnknownKey(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "typo", "[agent]\ncommmand = \"x\"\n", nil) // misspelled command

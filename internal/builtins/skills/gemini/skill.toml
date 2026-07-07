@@ -8,6 +8,8 @@
 # NodeSource, then `npm install -g` (global, on PATH). Config/credentials live in
 # a per-project .gemini state volume. No seed.
 
+description = "The Gemini CLI agent; login persists per project."
+
 [build]
 apt = ["curl", "ca-certificates"]
 dockerfile = [

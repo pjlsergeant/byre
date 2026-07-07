@@ -119,6 +119,9 @@ func (m model) viewSkills() string {
 		if e.locked {
 			line += dimStyle.Render("  (primary agent)")
 		}
+		if d := m.skillDescs[e.name]; d != "" {
+			line += dimStyle.Render("  — " + d)
+		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.skillCur, line))
 	}
 

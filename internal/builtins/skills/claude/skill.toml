@@ -17,6 +17,8 @@
 # host ~/.claude — the credential is a rotating OAuth token, so a copy invites a
 # refresh collision (two holders of one rotating token); log in inside the box.
 
+description = "The Claude Code agent; login persists per project."
+
 [build]
 apt = ["curl", "ca-certificates"]
 dockerfile = [

@@ -24,8 +24,8 @@ import (
 // file is untouched). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
 // quitting never writes.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, vols VolumeAdmin, global bool) (bool, error) {
-	m := newModel(title, filePath, cfg, templates, agents, skillOpts, vols, global)
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, vols VolumeAdmin, global bool) (bool, error) {
+	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, vols, global)
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -131,6 +131,11 @@ type model struct {
 	// The discovered lists, kept so state can be rebuilt after an external
 	// ($EDITOR) edit reloads the file.
 	templates, agents, skillOpts []string
+	// skillDescs maps a skill name to its one-line description (skill.toml
+	// `description`), shown dimmed beside the name in the skills screen so
+	// near-namesakes (claude vs claude-shared-auth) are tellable apart at the
+	// point of choice. Missing entries render as just the name.
+	skillDescs map[string]string
 
 	vols     VolumeAdmin // nil = no Volumes section
 	sections []section   // rendered groups (Grants / Build / Advanced)
@@ -198,7 +203,7 @@ type model struct {
 	confirmQuit bool
 }
 
-func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, vols VolumeAdmin, global bool) model {
+func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, vols VolumeAdmin, global bool) model {
 	// Q7: saving re-marshals the whole file, so a hand-commented config would
 	// lose its comments — say so on LOAD, while the user can still bail to ^e.
 	commentWarn := false
@@ -243,6 +248,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		templates:    templates,
 		agents:       agents,
 		skillOpts:    skillOpts,
+		skillDescs:   skillDescs,
 		vols:         vols,
 		sections:     sections,
 		order:        order,

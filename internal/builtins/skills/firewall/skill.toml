@@ -37,6 +37,8 @@
 # endpoint. They're plain clients, still subject to the netns rules — they let
 # you inspect the boundary, they don't widen it. netcat-openbsd for `nc -l`
 # must stay the OpenBSD variant (the gate uses its `-l host port` form).
+description = "Default-deny egress firewall; allowlist derived from enabled skills."
+
 [build]
 apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "telnet"]
 files = { "firewall.sh" = "/usr/local/bin/byre-firewall", "launch-gate" = "/etc/byre/launch-gate" }

@@ -90,7 +90,13 @@ type PrefsSpec struct {
 
 // File is the on-disk skill.toml schema.
 type File struct {
-	Build struct {
+	// Description is a one-line, human-facing summary shown wherever skills
+	// are enumerated side by side (e.g. the config UI's skills screen), so
+	// near-namesakes like claude vs claude-shared-auth are distinguishable at
+	// the point of choice. Optional for hand-dropped skills; every builtin
+	// carries one.
+	Description string `toml:"description"`
+	Build       struct {
 		Apt        []string          `toml:"apt"`
 		NpmGlobal  []string          `toml:"npm_global"`
 		Dockerfile []string          `toml:"dockerfile"` // raw build lines
@@ -413,6 +419,20 @@ func (r Resolved) AgentPrefs() *PrefsSpec {
 // `agent` choice.
 func ListSkills(skillsDir string) []string {
 	return list(skillsDir, func(Skill) bool { return true })
+}
+
+// DescribeSkills returns each cleanly-loading skill's one-line description,
+// keyed by name. Skills without a description are absent from the map (the
+// caller renders nothing rather than a placeholder). Broken skills are
+// skipped, mirroring ListSkills.
+func DescribeSkills(skillsDir string) map[string]string {
+	out := map[string]string{}
+	for _, name := range ListSkills(skillsDir) {
+		if sk, err := Load(skillsDir, name); err == nil && sk.File.Description != "" {
+			out[name] = sk.File.Description
+		}
+	}
+	return out
 }
 
 // ListAgentSkills returns the names of skills in skillsDir that provide an
