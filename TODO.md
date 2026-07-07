@@ -136,6 +136,18 @@ UID assertions in `gen_test.go`/`context_test.go`).
   question (a drop-dir mount?); terminal-side integration varies
   (iTerm2/Terminal/others differ on drop behavior). Needs a design
   pass before building.
+- [ ] **Consider passing through terminal + local time** (Pete,
+  2026-07-07): the box currently guesses both, and today showed the
+  cost twice -- TERM had to be hardcoded to xterm-256color in the
+  gemini skill (docker -t defaults TERM=xterm, triggering agent color
+  warnings), and the box thinking in UTC turned "set the commits to
+  2pm" into a two-round timezone dance. Candidates: pass host TERM
+  (honest capability instead of a hardcoded guess) and the host
+  timezone (TZ env and/or /etc/localtime) into every box via the
+  chassis, like git identity -- small, named, constant passthroughs.
+  Decide whether these are chassis constants or ride the
+  env-passthrough feature below; per GLOSSARY, passed-through env IS a
+  grant, so either way status should name them.
 - [ ] **Host-env passthrough** (Pete, 2026-07-05): a config key to pass
   named host env vars into the box (shape TBD, e.g.
   `env_passthrough = ["FOO"]`). Today `env` is literal-only and nothing
