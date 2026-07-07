@@ -753,3 +753,79 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 		t.Fatal("seeded onboarding without a shared token")
 	}
 }
+
+// gemini-shared-auth: composition + the symlink-assert hook's behaviors for
+// all three identity files (fresh -> dangling links; adopt; heal; idempotent).
+// The skill is GATE PENDING (ADR 0017) -- these tests pin the mechanism, not
+// the rotation-safety claim, which only the host-side gate can settle.
+func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "gemini", Skills: []string{"gemini-shared-auth"}}, dest)
+	if err != nil {
+		t.Fatalf("gemini + gemini-shared-auth failed to resolve: %v", err)
+	}
+	var identity bool
+	for _, v := range res.Volumes() {
+		if v.Name == "gemini-identity" && v.MachineScoped() && v.Target == "/home/dev/.byre-identity/gemini" {
+			identity = true
+		}
+	}
+	if !identity {
+		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
+	}
+
+	hook := filepath.Join(dest, "gemini-shared-auth", "firstrun.sh")
+	base, home := t.TempDir(), t.TempDir()
+	run := func() {
+		t.Helper()
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "BYRE_GEMINI_DIR="+home)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+	files := []string{"oauth_creds.json", "google_accounts.json", "installation_id"}
+
+	// Fresh: three dangling links, nothing fabricated, trust file untouched.
+	if err := os.WriteFile(filepath.Join(home, "trustedFolders.json"), []byte(`{"t":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	for _, f := range files {
+		want := filepath.Join(base, "gemini", f)
+		if got, err := os.Readlink(filepath.Join(home, f)); err != nil || got != want {
+			t.Fatalf("fresh run: %s not a dangling link to %q: %q (%v)", f, want, got, err)
+		}
+	}
+	if fi, err := os.Lstat(filepath.Join(home, "trustedFolders.json")); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("trustedFolders.json must stay a per-project regular file")
+	}
+
+	// Adopt: a real local login moves into the shared volume.
+	if err := os.Remove(filepath.Join(home, "oauth_creds.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "oauth_creds.json"), []byte(`{"adopted":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if b, err := os.ReadFile(filepath.Join(base, "gemini", "oauth_creds.json")); err != nil || string(b) != `{"adopted":true}` {
+		t.Fatalf("login not adopted: %v %q", err, b)
+	}
+
+	// Heal: shared copy wins over a local fork; idempotent re-run.
+	if err := os.Remove(filepath.Join(home, "oauth_creds.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "oauth_creds.json"), []byte(`{"fork":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	run()
+	if b, _ := os.ReadFile(filepath.Join(home, "oauth_creds.json")); string(b) != `{"adopted":true}` {
+		t.Fatalf("fork not healed to the shared credential: %q", b)
+	}
+}

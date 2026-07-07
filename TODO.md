@@ -38,11 +38,22 @@ this file about status, scope, or priority, this file wins.
     logged in; codex login in A -> B authenticated; logout-fork heal;
     reset spares the identity volumes and says so. Then
     `byre skill update` + rebuild to materialize on real boxes.
-  - [ ] **gemini-shared-auth (step 8)**: build LAST, ship gated on the
-    empirical refresh-rotation test (two concurrent boxes sharing one
-    credential file, force a refresh, neither session dies). If
-    rotation is Claude-shaped: not released; record either way in ADR
-    0017.
+  - [ ] **gemini-shared-auth rotation gate (step 8)**: the skill is now
+    BUILT (2026-07-07) so the gate can run, and its description says
+    GATE PENDING until it passes. The gate, on a Docker host with a
+    burnable Google login: two projects with `agent = "gemini"` +
+    `skills = ["gemini-shared-auth"]`; develop A, log in (no-browser
+    paste flow) -- creds land in the shared volume through the dangling
+    symlinks; develop B concurrently, confirm authenticated; force a
+    refresh (edit `expiry_date` to the past in
+    `~/.byre-identity/gemini/oauth_creds.json` -- edit THAT path
+    directly or in place; jq/temp+rename via the ~/.gemini symlink
+    would replace the symlink) and prompt in BOTH boxes. PASS: neither
+    logs out -> drop the GATE PENDING wording, record in ADR 0017.
+    FAIL: unregister the skill, record in ADR 0017 (no env-token
+    fallback exists for Google). Also still open: the gemini agent
+    skill's remaining DRAFT items (--yolo flag, auth flow; package
+    name live-verified 2026-07-07).
   - [ ] Design-doc lifecycle: absorb `docs/shared-auth-design.md` into
     ADR/ARCHITECTURE and delete once step 8 resolves
     (firewall-design.md precedent). Revisits two prior negatives, deliberately: Parked

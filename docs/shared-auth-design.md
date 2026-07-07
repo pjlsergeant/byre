@@ -274,6 +274,8 @@ injected fake runner, host-side integration gated `BYRE_DOCKER_TESTS=1`.
    descriptions and asks.
 8. **gemini-shared-auth** -- skill + the empirical rotation gate; ships
    only if the gate passes. Record the result either way in ADR 0017.
+   STATUS 2026-07-07: skill BUILT (description carries GATE PENDING) so
+   the gate can run; recipe in TODO 1.
 
 ## Ruled out (recorded so they stay ruled out)
 

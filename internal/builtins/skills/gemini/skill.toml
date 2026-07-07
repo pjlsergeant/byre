@@ -1,7 +1,8 @@
 # Built-in agent skill: Gemini (Google gemini-cli).
 #
-# DRAFT — host-verify the npm package name (@google/gemini-cli), the autonomy
-# flag, and the auth flow (GEMINI_API_KEY env or an OAuth login).
+# DRAFT — package name @google/gemini-cli VERIFIED against the live npm
+# registry 2026-07-07 (bin: gemini). Still host-verify: the --yolo autonomy
+# flag and the auth flow (GEMINI_API_KEY env or an OAuth login).
 #
 # Unlike claude/codex, gemini-cli is an npm package, so this skill brings Node.
 # Debian's apt node is too old for gemini-cli, so it installs Node 22 via
