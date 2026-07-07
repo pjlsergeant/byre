@@ -21,8 +21,19 @@ export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
 # where byre-codereview reports it and points back to `codex login --device-auth`.
 cred="$CODEX_HOME/auth.json"
 # A symlinked credential must never count — drop it so a clean re-login writes a
-# fresh regular file a planted link can't redirect.
-[ -L "$cred" ] && rm -f "$cred"
+# fresh regular file a planted link can't redirect. ONE exception (ADR 0017):
+# codex-shared-auth's own link into the identity volume is legitimate, and a
+# DANGLING one is its expected first-login state (the login below writes
+# through it into the shared volume) — it must be kept, never removed. The
+# narrowing is accepted: the agent can already read the credential the link
+# would redirect.
+shared_auth=""
+if [ -L "$cred" ]; then
+  case "$(readlink "$cred")" in
+  /home/dev/.byre-identity/*) shared_auth=1 ;;
+  *) rm -f "$cred" ;;
+  esac
+fi
 codex login status >/dev/null 2>&1 && exit 0
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
@@ -31,7 +42,11 @@ trap 'echo; echo "byre: codex login skipped. To do it later, open another termin
 
 echo ""
 echo "=== byre: first-run Codex login (for byre-codereview) ==="
-echo "Authorize below; stored per-project, survives rebuilds. Ctrl-C to skip."
+if [ -n "$shared_auth" ]; then
+  echo "Authorize below; stored machine-wide (shared-auth: all your byre projects). Ctrl-C to skip."
+else
+  echo "Authorize below; stored per-project, survives rebuilds. Ctrl-C to skip."
+fi
 echo ""
 # Bound the wait so a stale/unused device code can't hold the box open for long
 # (codex polls until you authorize); on timeout/failure we fall through to launch.

@@ -1,0 +1,34 @@
+# Built-in companion skill: codex-shared-auth (ADR 0017).
+#
+# One Codex login for every byre project on this machine. Enabled ALONGSIDE
+# the codex skill (skills = ["codex-shared-auth"], typically in
+# ~/.byre/default.config). Mechanism: $CODEX_HOME/auth.json becomes a symlink
+# into the machine-scoped identity volume — safe for Codex specifically
+# because it writes credentials IN PLACE (source-verified) and OpenAI's docs
+# endorse moving auth.json between machines; the first `codex login` in any
+# box writes straight through the dangling link into the shared volume, so
+# there is no bootstrap prompt at all. Evidence:
+# docs/agent-credential-mechanics.md. (Claude gets a token-env mechanism
+# instead — its refresh rotation makes file sharing unsafe; see
+# claude-shared-auth.)
+#
+# The firstrun hook re-asserts the symlink EVERY launch, healing the
+# logout-fork: `codex logout` unlinks the symlink, and a later login would
+# otherwise write a local file, silently forking the credential. The codex
+# skill's own login hook keeps its anti-planting symlink removal for any
+# OTHER symlink; links into /home/dev/.byre-identity/ are recognized as ours.
+#
+# Accepted residual (recorded in the design, do not re-raise): Codex's
+# cross-process refresh has no lock — two boxes refreshing in the same window
+# race benignly (last-writer-wins on a still-valid token).
+
+description = "Share one Codex login across all your projects."
+
+[build]
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-codex-shared-auth" }
+
+[[volumes]]
+name = "codex-identity"
+role = "state"
+target = "/home/dev/.byre-identity/codex"
+scope = "machine"
