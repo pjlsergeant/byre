@@ -23,19 +23,29 @@ this file about status, scope, or priority, this file wins.
   them in place. Start minimal; may grow into the comprehensive guide
   originally floated. Delivery shape TBD -- likely the way devloop's
   conventions ride in (agent context/memory).
-- [ ] **Shared agent credentials across projects -- SPEC'D, ready to
-  build** (Pete, 2026-07-06; grilled + decided 2026-07-07; spec review
-  loop closed over 3 rounds). Build plan: `docs/shared-auth-design.md`
-  -- ordered 8-step implementation map with code pointers; step 1 (skill
-  `description` field) ships alone; gemini-shared-auth builds LAST,
-  gated on an empirical rotation test. Rationale of record:
-  `docs/adr/0017-shared-agent-identity.md` (companion skills enabled
-  alongside agent skills; machine-scoped identity volumes,
-  `byre-machine-u<uid>-<name>`; per-agent transports -- Claude via
-  user-minted setup-token pasted at a prompt, Codex/Gemini via in-box
-  login + symlinks; byre reads/copies no host credentials, ADR 0007
-  stays closed). Evidence: `docs/agent-credential-mechanics.md`. Root
-  `SECURITY.md` created; README claim reword lands at step 7. Revisits two prior negatives, deliberately: Parked
+- [ ] **Shared agent credentials -- BUILT (steps 1-7 of 8), host
+  verification pending** (built 2026-07-07 per
+  `docs/shared-auth-design.md`; rationale
+  `docs/adr/0017-shared-agent-identity.md`; evidence
+  `docs/agent-credential-mechanics.md`). Shipped: skill `description`
+  field; machine-scoped volumes (`scope = "machine"`,
+  `byre-machine-u<uid>-<name>`); launch env hooks (`/etc/byre/env.d`);
+  reset/forget spare-and-say-so + guarded UI clears; claude-shared-auth
+  (setup-token paste -> env) and codex-shared-auth (symlink assert +
+  codex-login identity guard). Remaining:
+  - [ ] Host-side verification (needs Docker; recipes in the design
+    doc steps 5-6): token prompt in project A -> project B launches
+    logged in; codex login in A -> B authenticated; logout-fork heal;
+    reset spares the identity volumes and says so. Then
+    `byre skill update` + rebuild to materialize on real boxes.
+  - [ ] **gemini-shared-auth (step 8)**: build LAST, ship gated on the
+    empirical refresh-rotation test (two concurrent boxes sharing one
+    credential file, force a refresh, neither session dies). If
+    rotation is Claude-shaped: not released; record either way in ADR
+    0017.
+  - [ ] Design-doc lifecycle: absorb `docs/shared-auth-design.md` into
+    ADR/ARCHITECTURE and delete once step 8 resolves
+    (firewall-design.md precedent). Revisits two prior negatives, deliberately: Parked
   "machine-wide shared volume scope" (agent identity IS naturally
   machine-scoped) and the retired creds/history split; ADR-0007 stays
   closed (no host-credential copying). Env passthrough (§6) remains the
