@@ -47,7 +47,12 @@ this file about status, scope, or priority, this file wins.
     symlinks; develop B concurrently, confirm authenticated; force a
     refresh -- 0.49's credential (`gemini-credentials.json`) is
     ENCRYPTED so expiry can't be hand-edited: keep BOTH boxes running
-    past access-token expiry (~1h) and prompt in each. PASS: neither
+    past access-token expiry (~1h) and prompt in each. MIGRATION WART
+    (one-time): a credential minted before the stable --hostname fix
+    decrypts against the wrong key and gemini reports it as
+    "Corrupted credentials file" and refuses to save over it -- fix is
+    `rm /home/dev/.byre-identity/gemini/gemini-credentials.json` (the
+    TARGET, keeping the symlink) and log in again. PASS: neither
     logs out -> drop the GATE PENDING wording, record in ADR 0017.
     FAIL: unregister the skill, record in ADR 0017 (no env-token
     fallback exists for Google). Also still open: the gemini agent
