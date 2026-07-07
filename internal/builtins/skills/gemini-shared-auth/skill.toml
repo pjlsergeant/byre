@@ -7,7 +7,7 @@
 # the auth-method picker once, credential prefilled (selectedAuthType is
 # per-project settings.json; seeding it is consciously deferred).
 #
-# ⚠ GATE PENDING for OAuth (ADR 0017 / TODO §1): Google's refresh-token rotation
+# ⚠ GATE PENDING for OAuth (ADR 0017 / TODO §6): Google's refresh-token rotation
 # behavior is the one UNVERIFIED claim in docs/agent-credential-mechanics.md.
 # If Google rotates refresh tokens on use (Claude-shaped), two concurrent
 # boxes sharing this credential will cascade-logout each other and this skill

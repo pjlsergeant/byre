@@ -151,6 +151,7 @@ UID assertions in `gen_test.go`/`context_test.go`).
   question (a drop-dir mount?); terminal-side integration varies
   (iTerm2/Terminal/others differ on drop behavior). Needs a design
   pass before building.
+- [ ] **Host-env passthrough** (Pete, 2026-07-05): a config key to pass
   named host env vars into the box (shape TBD, e.g.
   `env_passthrough = ["FOO"]`). Today `env` is literal-only and nothing
   crosses from the host except git identity (`GIT_AUTHOR_*` /

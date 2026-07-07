@@ -179,8 +179,9 @@ blast radius before touching anything shared.
 (`.claude`, …) hold the agent's login and history, per project, and survive rebuilds. byre never reads or copies host credentials; nothing crosses
 unless you enable it, and what you enable, `byre status` shows. By default
 agents log in once per project, inside the box. Tired of that? Enable a
-shared-auth skill (`claude-shared-auth`, `codex-shared-auth`) and one
-login serves every project on your machine -- it lives in a shared volume
+shared-auth skill (`claude-shared-auth`, `codex-shared-auth`, or
+`gemini-shared-auth` -- gemini's API-key path is verified, OAuth sharing
+still gated) and one login serves every project on your machine -- it lives in a shared volume
 that `reset`/`forget` deliberately never touch. `byre reset` wipes a
 project's volumes; `byre rehome` migrates them after a move.
 
