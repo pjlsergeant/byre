@@ -23,59 +23,6 @@ this file about status, scope, or priority, this file wins.
   them in place. Start minimal; may grow into the comprehensive guide
   originally floated. Delivery shape TBD -- likely the way devloop's
   conventions ride in (agent context/memory).
-- [ ] **Shared agent credentials -- BUILT (steps 1-7 of 8), host
-  verification pending** (built 2026-07-07 per
-  `docs/shared-auth-design.md`; rationale
-  `docs/adr/0017-shared-agent-identity.md`; evidence
-  `docs/agent-credential-mechanics.md`). Shipped: skill `description`
-  field; machine-scoped volumes (`scope = "machine"`,
-  `byre-machine-u<uid>-<name>`); launch env hooks (`/etc/byre/env.d`);
-  reset/forget spare-and-say-so + guarded UI clears; claude-shared-auth
-  (setup-token paste -> env) and codex-shared-auth (symlink assert +
-  codex-login identity guard). Remaining:
-  - [ ] Host-side verification (needs Docker; recipes in the design
-    doc steps 5-6): token prompt in project A -> project B launches
-    logged in; codex login in A -> B authenticated; logout-fork heal;
-    reset spares the identity volumes and says so. Then
-    `byre skill update` + rebuild to materialize on real boxes.
-  - [ ] **gemini-shared-auth rotation gate (step 8)**: PARTIAL PASS
-    2026-07-07 -- Pete's live mmm/nnn test proved the mechanism (API
-    key stored via the symlinked keychain in one box, decrypted in the
-    other under the stable hostname). The API-KEY path is therefore
-    verified AND rotation-immune (a static key has no refresh tokens);
-    the OAuth (Sign in with Google) path remains gate-pending. Residual,
-    Pete-accepted ("I can live with this -- nobody using Gemini
-    anyway"): each new project shows the auth-method picker ONCE with
-    the credential prefilled -- one Enter, not a login.
-    `selectedAuthType` lives in per-project ~/.gemini/settings.json;
-    seeding or sharing it is consciously deferred (settings.json is
-    user-scope prefs, but its write pattern went unverified).
-    Original gate, if OAuth sharing is ever wanted: The gate, on a Docker host with a
-    burnable Google login: two projects with `agent = "gemini"` +
-    `skills = ["gemini-shared-auth"]`; develop A, log in (no-browser
-    paste flow) -- creds land in the shared volume through the dangling
-    symlinks; develop B concurrently, confirm authenticated; force a
-    refresh -- 0.49's credential (`gemini-credentials.json`) is
-    ENCRYPTED so expiry can't be hand-edited: keep BOTH boxes running
-    past access-token expiry (~1h) and prompt in each. MIGRATION WART
-    (one-time): a credential minted before the stable --hostname fix
-    decrypts against the wrong key and gemini reports it as
-    "Corrupted credentials file" and refuses to save over it -- fix is
-    `rm /home/dev/.byre-identity/gemini/gemini-credentials.json` (the
-    TARGET, keeping the symlink) and log in again. PASS: neither
-    logs out -> drop the GATE PENDING wording, record in ADR 0017.
-    FAIL: unregister the skill, record in ADR 0017 (no env-token
-    fallback exists for Google). Also still open: the gemini agent
-    skill's remaining DRAFT items (--yolo flag, auth flow; package
-    name live-verified 2026-07-07).
-  - [ ] Design-doc lifecycle: absorb `docs/shared-auth-design.md` into
-    ADR/ARCHITECTURE and delete once step 8 resolves
-    (firewall-design.md precedent).
-
-  (Context: deliberately revisits two prior negatives -- Parked
-  "machine-wide shared volume scope" and the retired creds/history
-  split; ADR-0007 stays closed. Env passthrough (§6) remains the
-  separate CI/API-key story.)
 - [ ] **Brew tap** (optional, Pete-side): create the
   `pjlsergeant/homebrew-tap` repo + the `HOMEBREW_TAP_GITHUB_TOKEN`
   Actions secret (steps in `docs/RELEASING.md`); the next tagged release
@@ -165,6 +112,11 @@ UID assertions in `gen_test.go`/`context_test.go`).
   (inherits image+volumes -- agent already logged in); in the box
   `git commit --allow-empty -m x` (writes to the shared .git);
   meanwhile `byre develop` in the main tree runs CONCURRENTLY.
+- [ ] Shared-auth gated integration coverage (`BYRE_DOCKER_TESTS=1`):
+  the ADR-0017 machinery was verified by hand on a live host (see the
+  ADR's verification record) but has no automated integration case --
+  machine volume mounts under the uid-qualified name, env.d export
+  reaches PID 1, reset spares + names the shared volume.
 - [ ] Firewall `docker restart` fail-closed integration case -- the
   shipped `-run IntegrationFirewall` (passed 2026-07-05) covers
   allow/deny/fail-closed-at-launch but not a restarted box.
@@ -181,6 +133,14 @@ UID assertions in `gen_test.go`/`context_test.go`).
 
 ## 6. Nice-to-haves
 
+- [ ] **gemini-shared-auth OAuth gate** (optional; the API-key path is
+  verified and rotation-immune, ADR 0017's verification record): two
+  concurrent gemini boxes sharing one OAuth credential, run both past
+  the ~1h access-token expiry, prompt in each; neither dying = OAuth
+  sharing is safe, record in ADR 0017. Related deferred nicety: seed or
+  share gemini's `selectedAuthType` (per-project settings.json) so new
+  projects skip the auth-method picker -- verify settings.json's write
+  pattern (rename vs in-place) before ever symlinking it.
 - [ ] **Drag-and-drop into the boxed terminal, nicely** (Pete,
   2026-07-07): dragging a file onto the terminal pastes its HOST path,
   which is meaningless inside the box (agents like Claude read

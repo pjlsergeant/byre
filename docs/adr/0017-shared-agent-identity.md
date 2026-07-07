@@ -8,8 +8,10 @@ contributes a **machine-scoped volume** -- new general config grammar,
 `byre-machine-u<uid>-<name>` -- holding only that agent's identity, plus
 the small wiring that connects it (a firstrun hook; for Claude a launch
 env hook from the new `/etc/byre/env.d/` chassis mechanism). Decided
-2026-07-07; evidence in `docs/agent-credential-mechanics.md`, build plan
-in `docs/shared-auth-design.md` (which this ADR outlives).
+2026-07-07; built and live-verified the same day (verification record at
+the end). Evidence in `docs/agent-credential-mechanics.md`; the build-plan
+doc (`shared-auth-design.md`) served its purpose and was absorbed and
+deleted per its lifecycle, like `firewall-design.md` before it.
 
 Per-project login was the cost of per-project state volumes, and it
 taxes exactly the use byre is pitched on: dropping an agent into many
@@ -67,3 +69,22 @@ config and byre's hands -- TODO 6's passthrough stays a separate
 generic feature); a host-side token broker (revocation theater, and
 byre is structurally daemon-less); sharing whole state dirs (cwd-keyed
 state collides across projects -- everything is /workspace).
+
+**Verification record (2026-07-07, live on the maintainer's host).**
+Claude: verified end-to-end -- with one fix found live: interactive
+Claude Code's first-run gate is its ONBOARDING state, not its auth state,
+so the skill seeds `hasCompletedOnboarding` into fresh config dirs (the
+env token alone never got consulted). Codex: verified (one login,
+second box authenticated; the logout-fork heal works). Gemini: the
+API-KEY path is verified and rotation-immune (a static key has no
+refresh tokens); OAuth sharing remains unverified and the rotation gate
+stands open, optional -- two concurrent boxes, forced refresh, neither
+dies -- with an accepted residual either way: each new project shows
+gemini's auth-method picker once, credential prefilled
+(`selectedAuthType` is per-project settings.json; seeding it was
+consciously deferred). The build also corrected the evidence base:
+gemini-cli 0.49 stores its credential ENCRYPTED
+(`gemini-credentials.json`, key derived from hostname+username), so the
+gemini skill pins `--hostname byre` -- without which the login died on
+EVERY rebuild, shared or not. All live findings are version-stamped in
+`docs/agent-credential-mechanics.md`.
