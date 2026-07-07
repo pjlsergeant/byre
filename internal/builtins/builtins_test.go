@@ -754,6 +754,90 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 	}
 }
 
+// The claude-shared-auth env hook is SOURCED by the launcher (it must never
+// exit) and exports the shared token stripped of whitespace. When a leftover
+// per-project login sits alongside the token it warns on stderr: interactive
+// Claude prefers the stored credential and stops refreshing it, so such a box
+// 401s ~8h after that login (host-verified 2026-07-07). Warn only -- the
+// credentials file is Claude's and the hook must not touch it.
+func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "claude-shared-auth", "env.sh")
+	// Source the hook the way the launcher does, then record what it exported.
+	// A clean env (no inherited CLAUDE_CODE_OAUTH_TOKEN) keeps the no-token
+	// cases honest when the test itself runs inside a token-authed box.
+	run := func(base, cfg string) (token, output string) {
+		t.Helper()
+		tokenOut := filepath.Join(t.TempDir(), "token.out")
+		cmd := exec.Command("bash", "-c", `. "$0"; printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN" >"$1"`, hook, tokenOut)
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "CLAUDE_CODE_OAUTH_TOKEN=") {
+				cmd.Env = append(cmd.Env, e)
+			}
+		}
+		cmd.Env = append(cmd.Env, "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("sourcing the hook failed: %v (%s)", err, out)
+		}
+		b, err := os.ReadFile(tokenOut)
+		if err != nil {
+			t.Fatalf("hook exited the sourcing shell: %v", err)
+		}
+		return string(b), string(out)
+	}
+	seed := func(token string) (base, cfg string) {
+		t.Helper()
+		base, cfg = t.TempDir(), t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, "claude", "token"), []byte(token), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return base, cfg
+	}
+
+	// Token with trailing newline, no leftover login -> exported stripped, silent.
+	base, cfg := seed("sk-ant-oat01-x\n")
+	if tok, out := run(base, cfg); tok != "sk-ant-oat01-x" || out != "" {
+		t.Fatalf("clean export broken: token=%q output=%q", tok, out)
+	}
+
+	// Leftover .credentials.json alongside the token -> still exported, warns.
+	if err := os.WriteFile(filepath.Join(cfg, ".credentials.json"), []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tok, out := run(base, cfg)
+	if tok != "sk-ant-oat01-x" {
+		t.Fatalf("leftover login must not block the export: token=%q", tok)
+	}
+	if !strings.Contains(out, "401") || !strings.Contains(out, ".credentials.json") {
+		t.Fatalf("warning missing or unactionable: %q", out)
+	}
+
+	// No token file -> nothing exported, no warning even with a leftover login.
+	base2, cfg2 := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(cfg2, ".credentials.json"), []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if tok, out := run(base2, cfg2); tok != "" || out != "" {
+		t.Fatalf("no-token launch must stay silent: token=%q output=%q", tok, out)
+	}
+
+	// Whitespace-only token file -> treated as absent: no export, no warning.
+	base3, cfg3 := seed(" \n")
+	if err := os.WriteFile(filepath.Join(cfg3, ".credentials.json"), []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if tok, out := run(base3, cfg3); tok != "" || out != "" {
+		t.Fatalf("whitespace token must be treated as absent: token=%q output=%q", tok, out)
+	}
+}
+
 // gemini-shared-auth: composition + the symlink-assert hook's behaviors for
 // all three identity files (fresh -> dangling links; adopt; heal; idempotent).
 // The skill is GATE PENDING (ADR 0017) -- these tests pin the mechanism, not
