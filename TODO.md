@@ -61,8 +61,25 @@ this file about status, scope, or priority, this file wins.
 
 ## 2. Config UI follow-ups
 
-Lower priority, queued after the 2026-07-01 overhaul. (Background: diary
-2026-07-01.)
+Lower priority (EXCEPT the first item), queued after the 2026-07-01
+overhaul. (Background: diary 2026-07-01.)
+
+- [ ] **URGENT (Pete, 2026-07-07): show inherited skills in the project
+  editor.** `byre config` is a layer editor -- the skills multi-select
+  reflects only this project's file, so a skill enabled in
+  `default.config` (e.g. claude-shared-auth, enabled machine-wide during
+  shared-auth testing) shows `[ ]` in every project editor: reads as
+  OFF while actually ON. Found live by Pete the same hour he enabled it
+  globally. Shape (discussed, not yet grilled): pass the resolved
+  lower-layer skill set (default + template, after `!name` removals)
+  into configui; inherited skills render checked + "(inherited)";
+  toggling one OFF writes `!name` to the project layer (the cascade's
+  real off-switch), toggling back removes the marker; enabled-here
+  entries unchanged. Watch the assemble/save round-trip and the
+  `!name` interplay. Same misreporting exists for apt/mounts/env (the
+  whole editor is layer-scoped) -- skills first, it's where the
+  checkbox actively lies; precedent: the worktree_base false
+  "unset->refuse" fix (made global-only; skills can't hide that way).
 
 - [ ] **env secret-masking:** env values render in plaintext in the form;
   mask values (show on reveal, or mask all but a prefix) so a shoulder-surf
