@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -21,6 +22,33 @@ func TestResetForceWipesAll(t *testing.T) {
 	}
 	if len(f.removed) != 2 {
 		t.Fatalf("force should remove all volumes, got %v", f.removed)
+	}
+}
+
+// reset must leave machine-scoped volumes alone AND say so, naming the
+// deliberate route (ADR 0017: the machine-wide agent login never dies as a
+// side effect of resetting one project).
+func TestResetSparesAndNamesMachineVolumes(t *testing.T) {
+	p, _ := testPaths(t)
+	machineVol := machineVolumeName(os.Getuid(), "claude-identity")
+	f := &fakeRunner{vols: map[string]bool{
+		volumeName(p.ID, ".claude"): true,
+		machineVol:                  true,
+	}}
+	s, _, out := testStreams("", false)
+	if err := reset(s, p, f, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, rm := range f.removed {
+		if rm == machineVol {
+			t.Fatalf("reset removed a machine-scoped volume: %v", f.removed)
+		}
+	}
+	if !strings.Contains(out.String(), "NOT touched") || !strings.Contains(out.String(), machineVol) {
+		t.Errorf("reset should name the spared machine volume:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "byre config") {
+		t.Errorf("reset should point at the deliberate-delete route:\n%s", out.String())
 	}
 }
 

@@ -18,6 +18,21 @@ func noteSharedVolumes(w io.Writer, paths project.Paths) {
 	}
 }
 
+// noteMachineVolumes tells the user, during a destructive lifecycle action,
+// which machine-scoped volumes were deliberately NOT touched and how to delete
+// one on purpose (ADR 0017: reset/forget are project-scoped by contract; the
+// machine-wide agent login must never die as a side effect of resetting one
+// project). Checked against the engine, not the config: a volume can outlive
+// the skill that declared it and still deserves the note.
+func noteMachineVolumes(w io.Writer, r volumeRunner, uid int) {
+	vols, err := r.VolumesByPrefix(fmt.Sprintf("byre-machine-u%d-", uid))
+	if err != nil || len(vols) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "byre: NOT touched (machine-wide, shared by all your projects): %s\n", strings.Join(vols, ", "))
+	fmt.Fprintln(w, "byre: to delete one deliberately: byre config -> Volumes -> clear.")
+}
+
 // rootlessPodmanWarning explains why rootless Podman is unsupported in v0: byre
 // bakes the host UID/GID into the image so the in-container uid matches the uid
 // on disk, which assumes a ROOTFUL daemon; rootless Podman's user-namespace remap

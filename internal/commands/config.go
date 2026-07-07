@@ -157,6 +157,18 @@ func (a *volumeAdmin) Clear(name string) error {
 		}
 		for _, v := range dedupeVolumes(rv.volumes) {
 			if v.Name == name {
+				if v.MachineScoped() {
+					// A machine-scoped volume is mounted by EVERY project's
+					// boxes, so the this-project guard above isn't enough:
+					// refuse while ANY byre session runs (bare label key =
+					// presence filter). Clearing it is the machine-wide
+					// logout story (ADR 0017).
+					if live, lerr := a.r.RunningContainersByLabel(labelKey); lerr != nil {
+						return fmt.Errorf("checking for running byre sessions: %w", lerr)
+					} else if len(live) > 0 {
+						return fmt.Errorf("this volume is shared by ALL your projects and a byre session is running (%s) — exit every session before clearing it", shortID(live[0]))
+					}
+				}
 				return a.r.VolumeRemove(scopedVolumeName(a.paths.ID, os.Getuid(), v))
 			}
 		}

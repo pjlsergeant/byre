@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/project"
@@ -48,6 +49,7 @@ func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	}
 
 	noteSharedVolumes(s.Err, paths)
+	noteMachineVolumes(s.Err, r, os.Getuid())
 	fmt.Fprintf(s.Err, "byre reset will permanently delete these volumes for %s:\n", paths.ID)
 	for _, v := range vols {
 		fmt.Fprintf(s.Err, "  - %s\n", v)

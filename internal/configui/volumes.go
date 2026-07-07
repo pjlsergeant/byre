@@ -106,11 +106,14 @@ func (m model) viewVolumes() string {
 			state = "present"
 		}
 		line := fmt.Sprintf("%-14s %-6s %-24s %s", v.Name, v.Role, v.Target, state)
+		if v.Machine {
+			line += dimStyle.Render("  (shared: all your projects)")
+		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.volCur, line))
 	}
 	// Description of the highlighted volume.
 	if m.volCur < len(m.volList) {
-		if d := volDescription(m.volList[m.volCur].Role); d != "" {
+		if d := volDescription(m.volList[m.volCur]); d != "" {
 			b.WriteString("\n" + dimStyle.Render(d) + "\n")
 		}
 	}
@@ -119,6 +122,9 @@ func (m model) viewVolumes() string {
 	switch {
 	case m.volPendClear >= 0:
 		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", m.volList[m.volPendClear].Name)
+		if m.volList[m.volPendClear].Machine {
+			msg += "\nShared by ALL your projects — clearing it affects every one (a shared agent login logs out everywhere)."
+		}
 		if m.vols != nil {
 			if note := m.vols.SharedNote(); note != "" {
 				msg += "\n" + note
@@ -133,8 +139,11 @@ func (m model) viewVolumes() string {
 	return b.String()
 }
 
-func volDescription(role string) string {
-	switch role {
+func volDescription(v VolumeStatus) string {
+	if v.Machine {
+		return "machine-scoped — ONE volume shared by all your projects (ADR 0017). Clearing it affects every project (e.g. a shared agent login: clearing = logging out everywhere)."
+	}
+	switch v.Role {
 	case "state":
 		return "state — persists across rebuilds (agent auth, history, config). Clearing forces a re-login / re-init on the next develop."
 	case "cache":

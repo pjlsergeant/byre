@@ -55,6 +55,7 @@ func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	}
 
 	noteSharedVolumes(s.Err, paths)
+	noteMachineVolumes(s.Err, r, os.Getuid())
 	fmt.Fprintf(s.Err, "byre forget will permanently delete for %s:\n", paths.ID)
 	for _, v := range vols {
 		fmt.Fprintf(s.Err, "  - volume %s\n", v)
