@@ -16,6 +16,10 @@ Shared agent logins, and a rebuilt README.
   per machine, shared by every project that declares it.
 - Skills can carry a one-line `description`, shown in the `byre config`
   skills screen so similar names are tellable apart.
+- The `byre config` skills screen now shows INHERITED skills (enabled by
+  `default.config` or the template) as on, marked "(inherited)" -- they
+  used to render unchecked, which read as off. Toggling one writes the
+  cascade's `!name` off-switch into the project layer.
 - Gemini fixes: logins now survive rebuilds (gemini encrypts its
   credential against the hostname; byre boxes now have a stable one),
   and the untrusted-folder and 256-color warnings are gone.

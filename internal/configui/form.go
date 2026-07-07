@@ -24,8 +24,8 @@ import (
 // file is untouched). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
 // quitting never writes.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, vols VolumeAdmin, global bool) (bool, error) {
-	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, vols, global)
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inheritedSkills map[string][]string, vols VolumeAdmin, global bool) (bool, error) {
+	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inheritedSkills, vols, global)
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -136,6 +136,14 @@ type model struct {
 	// near-namesakes (claude vs claude-shared-auth) are tellable apart at the
 	// point of choice. Missing entries render as just the name.
 	skillDescs map[string]string
+	// inheritedSkills maps a template name ("" = none selected) to the skill
+	// set the LOWER cascade layers (default ⊕ that template) enable -- so the
+	// skills screen can show a globally-enabled skill as ON instead of lying
+	// with an unchecked box (the editor edits one layer; effect is cascade-
+	// wide). Keyed by template because the template choice is itself a form
+	// field and flips the lower layers live. nil = no inheritance display
+	// (the --global editor: it IS the base layer).
+	inheritedSkills map[string][]string
 
 	vols     VolumeAdmin // nil = no Volumes section
 	sections []section   // rendered groups (Grants / Build / Advanced)
@@ -203,7 +211,7 @@ type model struct {
 	confirmQuit bool
 }
 
-func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, vols VolumeAdmin, global bool) model {
+func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inheritedSkills map[string][]string, vols VolumeAdmin, global bool) model {
 	// Q7: saving re-marshals the whole file, so a hand-commented config would
 	// lose its comments — say so on LOAD, while the user can still bail to ^e.
 	commentWarn := false
@@ -243,22 +251,23 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	}
 
 	m := model{
-		title:        title,
-		filePath:     filePath,
-		templates:    templates,
-		agents:       agents,
-		skillOpts:    skillOpts,
-		skillDescs:   skillDescs,
-		vols:         vols,
-		sections:     sections,
-		order:        order,
-		ti:           ti,
-		wtBase:       wtBase,
-		global:       global,
-		ta:           ta,
-		width:        80,
-		volPendClear: -1,
-		commentWarn:  commentWarn,
+		title:           title,
+		filePath:        filePath,
+		templates:       templates,
+		agents:          agents,
+		skillOpts:       skillOpts,
+		skillDescs:      skillDescs,
+		inheritedSkills: inheritedSkills,
+		vols:            vols,
+		sections:        sections,
+		order:           order,
+		ti:              ti,
+		wtBase:          wtBase,
+		global:          global,
+		ta:              ta,
+		width:           80,
+		volPendClear:    -1,
+		commentWarn:     commentWarn,
 	}
 	return m.loadConfig(cfg)
 }

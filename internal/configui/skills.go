@@ -4,29 +4,70 @@ package configui
 
 import (
 	"fmt"
-	"github.com/pjlsergeant/byre/internal/config"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // skillEntry is one row of the skills multi-select.
 type skillEntry struct {
-	name   string
-	agent  bool // an agent skill (grouped separately)
-	locked bool // the primary agent — shown ticked, can't be toggled here
+	name        string
+	agent       bool // an agent skill (grouped separately)
+	locked      bool // the primary agent — shown ticked, can't be toggled here
+	enabledHere bool // this layer's own `skills` list names it
+	inherited   bool // a LOWER cascade layer (default/template) enables it
+	removedHere bool // this layer carries a `!name` removal marker for it
+}
+
+// on reports the entry's EFFECTIVE state — what the resolved cascade enables —
+// which is what the checkbox must show (an unchecked box for an inherited-on
+// skill is a lie; found live 2026-07-07).
+func (e skillEntry) on() bool {
+	return e.locked || e.enabledHere || (e.inherited && !e.removedHere)
+}
+
+// splitSkillLayer parses one layer's skills list into plain enables and
+// `!name` removal markers (the cascade's off-switch for inherited entries).
+func splitSkillLayer(entries []string) (enabled []string, removed map[string]bool) {
+	removed = map[string]bool{}
+	for _, s := range entries {
+		if n, ok := strings.CutPrefix(s, "!"); ok {
+			removed[n] = true
+		} else {
+			enabled = append(enabled, s)
+		}
+	}
+	return enabled, removed
+}
+
+// inheritedNow is the lower-layer skill set under the CURRENTLY selected
+// template — the template picker is a live form field, so the inherited set
+// follows it.
+func (m model) inheritedNow() []string {
+	if m.inheritedSkills == nil {
+		return nil
+	}
+	return m.inheritedSkills[fromNone(m.tmplOpts[m.tmplSel])]
 }
 
 // skillEntries builds the multi-select rows: non-agent skills first, then agent
-// skills. The set is the discovered skills plus any enabled or primary-agent
-// skill not already in it (so nothing an existing config references disappears).
-// The primary agent (from the Pri. Agent picker) is marked locked+on.
+// skills. The set is the discovered skills, plus anything this layer enables or
+// removes, plus anything a lower layer enables, plus the primary agent (so
+// nothing an existing config references disappears). The primary agent (from
+// the Pri. Agent picker) is marked locked+on.
 func (m model) skillEntries() []skillEntry {
 	agentSet := map[string]bool{}
 	for _, a := range m.agents {
 		agentSet[a] = true
 	}
 	primary := fromNone(m.agentOpts[m.agentSel])
+	enabledHere, removedHere := splitSkillLayer(m.skills)
+	inherited := map[string]bool{}
+	for _, n := range m.inheritedNow() {
+		inherited[n] = true
+	}
 
 	seen := map[string]bool{}
 	var names []string
@@ -39,17 +80,36 @@ func (m model) skillEntries() []skillEntry {
 	for _, n := range m.skillOpts {
 		add(n)
 	}
-	for _, n := range m.skills {
+	for _, n := range enabledHere {
 		add(n)
+	}
+	for _, n := range m.inheritedNow() {
+		add(n)
+	}
+	for n := range removedHere {
+		add(n) // a stale removal marker stays visible + editable
 	}
 	add(primary)
 
+	enabledSet := map[string]bool{}
+	for _, n := range enabledHere {
+		enabledSet[n] = true
+	}
+
 	var nonAgent, agent []skillEntry
 	for _, n := range names {
+		e := skillEntry{
+			name:        n,
+			locked:      n == primary,
+			enabledHere: enabledSet[n],
+			inherited:   inherited[n],
+			removedHere: removedHere[n],
+		}
 		if agentSet[n] || n == primary {
-			agent = append(agent, skillEntry{name: n, agent: true, locked: n == primary})
+			e.agent = true
+			agent = append(agent, e)
 		} else {
-			nonAgent = append(nonAgent, skillEntry{name: n})
+			nonAgent = append(nonAgent, e)
 		}
 	}
 	return append(nonAgent, agent...)
@@ -69,10 +129,26 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ", "x", "enter":
 		if m.skillCur < len(entries) {
 			e := entries[m.skillCur]
-			if e.locked {
+			// Toggling peels one layer of state at a time, so every press has
+			// exactly one legible effect on THIS layer's list:
+			//   enabled here            -> drop the local entry
+			//   removed here            -> drop the `!name` marker (re-inherit)
+			//   inherited (effectively on) -> add `!name` (the cascade's off-switch)
+			//   otherwise               -> enable here
+			switch {
+			case e.locked:
 				m.status = "that's the primary agent — change it in Pri. Agent"
-			} else {
-				m.skills = toggle(m.skills, e.name)
+			case e.enabledHere:
+				m.skills = removeString(m.skills, e.name)
+				if e.inherited {
+					m.status = fmt.Sprintf("%s still inherited — toggle again to remove it here", e.name)
+				}
+			case e.removedHere:
+				m.skills = removeString(m.skills, "!"+e.name)
+			case e.inherited:
+				m.skills = append(m.skills, "!"+e.name)
+			default:
+				m.skills = append(m.skills, e.name)
 			}
 		}
 		return m, nil
@@ -80,14 +156,14 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// toggle adds name to s if absent, else removes it (preserving order).
-func toggle(s []string, name string) []string {
-	for i, v := range s {
-		if v == name {
+// removeString drops the first occurrence of v from s (preserving order).
+func removeString(s []string, v string) []string {
+	for i, x := range s {
+		if x == v {
 			return append(s[:i], s[i+1:]...)
 		}
 	}
-	return append(s, name)
+	return s
 }
 
 func (m model) viewSkills() string {
@@ -112,12 +188,19 @@ func (m model) viewSkills() string {
 		prevAgent = e.agent
 
 		box := "[ ]"
-		if e.locked || contains(m.skills, e.name) {
+		if e.on() {
 			box = "[x]"
 		}
 		line := box + " " + e.name
-		if e.locked {
+		switch {
+		case e.locked:
 			line += dimStyle.Render("  (primary agent)")
+		case e.inherited && e.removedHere:
+			line += dimStyle.Render("  (inherited — removed here)")
+		case e.inherited && !e.enabledHere:
+			line += dimStyle.Render("  (inherited)")
+		case e.removedHere:
+			line += dimStyle.Render("  (removes an inherited skill)")
 		}
 		if d := m.skillDescs[e.name]; d != "" {
 			line += dimStyle.Render("  — " + d)
@@ -128,7 +211,7 @@ func (m model) viewSkills() string {
 	if m.status != "" {
 		b.WriteString("\n" + dimStyle.Render(m.status))
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · space toggle · esc back"))
+	b.WriteString("\n" + dimStyle.Render("↑/↓ move · space toggle (inherited: adds/removes a !name override) · esc back"))
 	return b.String()
 }
 

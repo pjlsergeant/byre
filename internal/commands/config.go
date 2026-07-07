@@ -32,6 +32,19 @@ func Config(s Streams, projectDir string, global bool) error {
 	agents := skills.ListAgentSkills(skillsDir)
 	skillOpts := skills.ListSkills(skillsDir)
 	skillDescs := skills.DescribeSkills(skillsDir)
+	// Lower-layer (default + template) skill sets, per template, so the
+	// project editor can mark inherited skills instead of showing them
+	// unchecked. Degrade on error (a broken template just loses its marks);
+	// the --global editor gets nil -- it IS the base layer.
+	var inheritedSkills map[string][]string
+	if !global {
+		inheritedSkills = map[string][]string{}
+		for _, t := range append([]string{""}, templates...) {
+			if low, lerr := config.ResolveLower(home, t); lerr == nil {
+				inheritedSkills[t] = low.Skills
+			}
+		}
+	}
 
 	var path, title string
 	var vols configui.VolumeAdmin // nil for --global (no project volumes)
@@ -60,7 +73,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, vols, global)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inheritedSkills, vols, global)
 	if err != nil {
 		return err
 	}
