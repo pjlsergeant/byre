@@ -24,6 +24,7 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `ports = [{ container = 3000 }]` — publish container ports on the host
   (binds 127.0.0.1 unless `interface` says otherwise; `host` defaults to `container`)
 - `volumes = [{ name = "cache", role = "cache", target = "/c" }]` — named volumes
+  (add `scope = "machine"` for one volume shared by ALL the user's projects)
 - `dockerfile_pre  = ["RUN ..."]` — raw Dockerfile lines BEFORE byre's core block
 - `dockerfile_post = ["RUN ..."]` — raw Dockerfile lines at the project tail
 - `run_args = ["--cap-add=SYS_PTRACE"]` — raw `docker run` flags

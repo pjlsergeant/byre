@@ -236,7 +236,7 @@ func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	}
 	// The doc must name the real config keys, so the agent doesn't have to guess.
 	doc, _ := os.ReadFile(filepath.Join(paths.ContextDir, gen.SelfEditDocName))
-	for _, key := range []string{"apt =", "npm_global", "dockerfile_pre", "dockerfile_post", "run_args", "skills =", "mounts =", "volumes =", "ports =", "disabled = true", "byre.config"} {
+	for _, key := range []string{"apt =", "npm_global", "dockerfile_pre", "dockerfile_post", "run_args", "skills =", "mounts =", "volumes =", "ports =", "disabled = true", `scope = "machine"`, "byre.config"} {
 		if !strings.Contains(string(doc), key) {
 			t.Errorf("self-edit doc should reference %q:\n%s", key, doc)
 		}

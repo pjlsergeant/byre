@@ -322,9 +322,16 @@ Two mount species:
    - **role** -- `cache` (disposable, regenerable) or `state` (precious:
      agent auth + history). Drives lifecycle: `byre reset` warns and
      wipes; rebuild leaves volumes alone.
-   - **scope** -- none. Volumes are per-project; there is no scope knob
-     (ADR 0009 -- worktree sharing is an identity question, not a volume
-     one).
+   - **scope** -- `project` (default) or `machine` (ADR 0017). A
+     machine-scoped volume is one per user per machine
+     (`byre-machine-u<uid>-<name>`) and mounts identically in every
+     project's box -- the shared-auth companion skills' identity
+     volumes are the canonical use. `byre status` lists them on their
+     own "Shared vols" row; `reset`/`forget` never touch them and say
+     so (delete one deliberately via `byre config` -> Volumes ->
+     clear, which refuses while ANY byre session runs). `seed` is
+     invalid on a machine-scoped volume. (Worktree sharing remains an
+     identity question, not a volume one -- ADR 0009.)
    - **seed** (state only, optional) -- initialize a *fresh* volume from
      a host path or config literal (non-secrets only), once. A copy, not
      a shared mount; nothing flows back.
@@ -332,7 +339,17 @@ Two mount species:
 Credentials are **not seeded** (ADR 0007 -- a "not now", not doctrine:
 copy-semantics breaks rotating OAuth tokens): agents log in once in the
 box and the state volume persists the login per-project. `seed_prefs`
-(ADR 0013) is the curated, non-secret exception for agent prefs.
+(ADR 0013) is the curated, non-secret exception for agent prefs. The
+**shared-auth companion skills** (`claude-shared-auth`,
+`codex-shared-auth`; ADR 0017) make one login serve every project
+WITHOUT host copying: the credential lives in a machine-scoped identity
+volume and byre reads nothing from the host -- Codex logs in once in
+any box (the credential lands in the shared volume through a symlink);
+Claude uses a user-minted `claude setup-token` pasted at a first-run
+prompt and exported to the agent process by a **launch env hook**
+(`/etc/byre/env.d/*.sh`, sourced by the launcher after firstrun hooks,
+immediately before exec -- the chassis mechanism for skills that must
+put env into the agent process).
 
 ## The chassis
 
