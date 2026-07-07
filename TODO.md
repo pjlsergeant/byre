@@ -56,11 +56,12 @@ this file about status, scope, or priority, this file wins.
     name live-verified 2026-07-07).
   - [ ] Design-doc lifecycle: absorb `docs/shared-auth-design.md` into
     ADR/ARCHITECTURE and delete once step 8 resolves
-    (firewall-design.md precedent). Revisits two prior negatives, deliberately: Parked
-  "machine-wide shared volume scope" (agent identity IS naturally
-  machine-scoped) and the retired creds/history split; ADR-0007 stays
-  closed (no host-credential copying). Env passthrough (§6) remains the
-  separate CI/API-key story.
+    (firewall-design.md precedent).
+
+  (Context: deliberately revisits two prior negatives -- Parked
+  "machine-wide shared volume scope" and the retired creds/history
+  split; ADR-0007 stays closed. Env passthrough (§6) remains the
+  separate CI/API-key story.)
 - [ ] **Brew tap** (optional, Pete-side): create the
   `pjlsergeant/homebrew-tap` repo + the `HOMEBREW_TAP_GITHUB_TOKEN`
   Actions secret (steps in `docs/RELEASING.md`); the next tagged release
