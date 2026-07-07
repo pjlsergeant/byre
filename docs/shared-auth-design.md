@@ -17,8 +17,10 @@ Every project logs its agent in separately (the `.claude`/state volume is
 per-project by construction). For the drop-into-any-folder pitch that's a
 real adoption cost: N folders x 3 agents = N x 3 login ceremonies. The goal:
 **log in once per agent, per machine, ever** -- opt-in, legible, and without
-byre ever touching host credentials (ADR 0007 stays closed: nothing is
-copied from the host; the login still happens in a box).
+byre ever touching host credentials (ADR 0007 stays closed: byre reads and
+copies nothing from the host -- Codex/Gemini logins happen in a box;
+Claude's shared token is user-minted anywhere and explicitly handed over
+at a prompt).
 
 ## The decided design, in one paragraph
 
@@ -167,9 +169,12 @@ Dockerfile test updates in `internal/gen` (byte-stable output rule).
   `auth.json` before checking auth ("a symlinked credential must never
   count" -- an anti-planting defense from the initial import), which
   would rip out the companion's symlink every launch. It gains an
-  identity-aware guard: a symlink whose RESOLVED target lies inside
-  `/home/dev/.byre-identity/` is legitimate and kept; anything else is
-  removed as today. Its "stored per-project" login message branches to
+  identity-aware guard: a symlink whose target path lies inside
+  `/home/dev/.byre-identity/` is legitimate and kept -- canonicalize the
+  target's PARENT dir, and the final `auth.json` component MAY be absent:
+  a DANGLING identity symlink is the expected first-login state (login
+  writes through it into the shared volume) and must NOT be removed.
+  Anything else is removed as today. Its "stored per-project" login message branches to
   "stored machine-wide (shared-auth)" when the symlink is in place.
   This narrows the planting defense to "any symlink except ours" --
   accepted: the agent can already read the credential the link would
@@ -215,10 +220,11 @@ SECURITY.md natively.
 ## README / docs ripple (step 7)
 
 - "byre never copies host credentials; agents log in once, inside the
-  box" (README Volumes & state) gains the shared-auth reality: still
-  true -- the login STILL happens in a box, nothing is read from the
-  host -- but reword to "nothing crosses unless you enable it; what you
-  enable, status shows".
+  box" (README Volumes & state) gains the shared-auth reality: byre
+  still reads and copies nothing from the host, but Claude's shared
+  token is user-minted (possibly on the host) and pasted at a prompt --
+  so reword to "nothing crosses unless you enable it; what you enable,
+  status shows", NOT a login-location claim.
 - ARCHITECTURE.md: volume scope, env.d, the companion-skill pattern.
 - GLOSSARY: rewrite the **Volume** entry (it currently says "no scope
   knob... _Avoid_: volume scope" -- reversed by ADR 0017) + new entries:
@@ -269,8 +275,9 @@ injected fake runner, host-side integration gated `BYRE_DOCKER_TESTS=1`.
   agents x 2 variants drifting apart. Companions carry only the delta.
 - **Credential-file seeding from the host** (reopening ADR 0007): copies
   invite refresh collisions (Claude: cascading logout; all: stale
-  forks), and byre would be in the host-credential business. The login
-  happening IN a box is load-bearing for the trust story.
+  forks), and byre would be in the host-credential business. byre never
+  READING a credential -- everything arrives by in-box login or explicit
+  user hand-over -- is load-bearing for the trust story.
 - **Host env passthrough as the shared-auth story**: TODO 6's
   `env_passthrough` stays a separate, generic CI/API-key feature; making
   it the auth path puts a year-long token in host config/env and byre's
