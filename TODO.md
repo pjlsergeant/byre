@@ -38,9 +38,19 @@ this file about status, scope, or priority, this file wins.
     logged in; codex login in A -> B authenticated; logout-fork heal;
     reset spares the identity volumes and says so. Then
     `byre skill update` + rebuild to materialize on real boxes.
-  - [ ] **gemini-shared-auth rotation gate (step 8)**: the skill is now
-    BUILT (2026-07-07) so the gate can run, and its description says
-    GATE PENDING until it passes. The gate, on a Docker host with a
+  - [ ] **gemini-shared-auth rotation gate (step 8)**: PARTIAL PASS
+    2026-07-07 -- Pete's live mmm/nnn test proved the mechanism (API
+    key stored via the symlinked keychain in one box, decrypted in the
+    other under the stable hostname). The API-KEY path is therefore
+    verified AND rotation-immune (a static key has no refresh tokens);
+    the OAuth (Sign in with Google) path remains gate-pending. Residual,
+    Pete-accepted ("I can live with this -- nobody using Gemini
+    anyway"): each new project shows the auth-method picker ONCE with
+    the credential prefilled -- one Enter, not a login.
+    `selectedAuthType` lives in per-project ~/.gemini/settings.json;
+    seeding or sharing it is consciously deferred (settings.json is
+    user-scope prefs, but its write pattern went unverified).
+    Original gate, if OAuth sharing is ever wanted: The gate, on a Docker host with a
     burnable Google login: two projects with `agent = "gemini"` +
     `skills = ["gemini-shared-auth"]`; develop A, log in (no-browser
     paste flow) -- creds land in the shared volume through the dangling

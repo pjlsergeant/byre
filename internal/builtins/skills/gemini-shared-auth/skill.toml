@@ -1,6 +1,13 @@
 # Built-in companion skill: gemini-shared-auth (ADR 0017).
 #
-# ⚠ GATE PENDING (ADR 0017 / TODO §1): Google's refresh-token rotation
+# STATUS 2026-07-07: API-KEY sharing VERIFIED live (stored in one box via
+# the symlinked keychain, decrypted in another under the stable hostname)
+# and rotation-immune -- a static key has no refresh tokens. The OAuth
+# path below remains gate-pending. Accepted residual: fresh projects show
+# the auth-method picker once, credential prefilled (selectedAuthType is
+# per-project settings.json; seeding it is consciously deferred).
+#
+# ⚠ GATE PENDING for OAuth (ADR 0017 / TODO §1): Google's refresh-token rotation
 # behavior is the one UNVERIFIED claim in docs/agent-credential-mechanics.md.
 # If Google rotates refresh tokens on use (Claude-shaped), two concurrent
 # boxes sharing this credential will cascade-logout each other and this skill
@@ -21,7 +28,7 @@
 # in-box OAuth login (no-browser paste flow) writes through the dangling
 # links straight into the shared volume.
 
-description = "Share one Gemini login across all your projects (GATE PENDING — verify rotation first, see skill.toml)."
+description = "Share one Gemini login across all your projects (API-key path verified; OAuth path gate-pending, see skill.toml)."
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-gemini-shared-auth" }
