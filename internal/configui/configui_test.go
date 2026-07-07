@@ -849,3 +849,35 @@ func TestSkillsExistingRemovalMarkerRendered(t *testing.T) {
 		t.Fatalf("removed-here mark missing:\n%s", view)
 	}
 }
+
+// Same-layer enable+remove resolves OFF (Merge applies removals last), so the
+// checkbox must show OFF; and a stale !primary marker must stay visible and
+// clearable on the locked row (review findings).
+func TestSkillsMarkerEdgeCases(t *testing.T) {
+	// ["devloop", "!devloop"] in one layer -> effectively off.
+	m := newModel("t", "/tmp/x", config.Config{Agent: "claude", Skills: []string{"devloop", "!devloop"}}, nil,
+		[]string{"claude"}, []string{"claude", "devloop"}, nil, nil, nil, false)
+	for _, e := range m.skillEntries() {
+		if e.name == "devloop" && e.on() {
+			t.Fatalf("same-layer enable+remove must render OFF: %+v", e)
+		}
+	}
+
+	// agent = claude + skills = ["!claude"]: marker visible on the locked row
+	// and one toggle clears it.
+	m2 := newModel("t", "/tmp/x", config.Config{Agent: "claude", Skills: []string{"!claude"}}, nil,
+		[]string{"claude"}, []string{"claude"}, nil, nil, nil, false)
+	if !strings.Contains(m2.viewSkills(), "stale !claude marker") {
+		t.Fatalf("stale primary marker invisible:\n%s", m2.viewSkills())
+	}
+	for i, e := range m2.skillEntries() {
+		if e.name == "claude" {
+			m2.skillCur = i
+		}
+	}
+	mm, _ := m2.updateSkills(key(" "))
+	m2 = mm.(model)
+	if contains(m2.skills, "!claude") {
+		t.Fatalf("toggle should clear the stale marker: %v", m2.skills)
+	}
+}

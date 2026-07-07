@@ -23,9 +23,10 @@ type skillEntry struct {
 
 // on reports the entry's EFFECTIVE state — what the resolved cascade enables —
 // which is what the checkbox must show (an unchecked box for an inherited-on
-// skill is a lie; found live 2026-07-07).
+// skill is a lie; found live 2026-07-07). A removal marker trumps a same-layer
+// enable: Merge applies removals after additions, so ["x", "!x"] resolves OFF.
 func (e skillEntry) on() bool {
-	return e.locked || e.enabledHere || (e.inherited && !e.removedHere)
+	return e.locked || (!e.removedHere && (e.enabledHere || e.inherited))
 }
 
 // splitSkillLayer parses one layer's skills list into plain enables and
@@ -136,6 +137,11 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			//   inherited (effectively on) -> add `!name` (the cascade's off-switch)
 			//   otherwise               -> enable here
 			switch {
+			// removedHere outranks locked: a stale `!primary` marker must stay
+			// visible and removable, or it silently suppresses the inherited
+			// skill the moment the primary agent changes.
+			case e.removedHere:
+				m.skills = removeString(m.skills, "!"+e.name)
 			case e.locked:
 				m.status = "that's the primary agent — change it in Pri. Agent"
 			case e.enabledHere:
@@ -143,8 +149,6 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if e.inherited {
 					m.status = fmt.Sprintf("%s still inherited — toggle again to remove it here", e.name)
 				}
-			case e.removedHere:
-				m.skills = removeString(m.skills, "!"+e.name)
 			case e.inherited:
 				m.skills = append(m.skills, "!"+e.name)
 			default:
@@ -193,6 +197,8 @@ func (m model) viewSkills() string {
 		}
 		line := box + " " + e.name
 		switch {
+		case e.locked && e.removedHere:
+			line += dimStyle.Render("  (primary agent — stale !" + e.name + " marker, toggle to clear)")
 		case e.locked:
 			line += dimStyle.Render("  (primary agent)")
 		case e.inherited && e.removedHere:
