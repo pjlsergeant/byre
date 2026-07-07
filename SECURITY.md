@@ -25,7 +25,11 @@ attacker with kernel exploits.
 - **Boxed:** your host filesystem, environment, and credentials. The
   agent sees the project folder, plus exactly what you mount, pass, or
   enable -- nothing else. byre reads no host credentials and copies
-  none; agent logins happen inside the box.
+  none. Agent logins happen inside the box; the one exception is the
+  optional shared-auth token for Claude (ADR 0017), which you mint
+  yourself with `claude setup-token` -- wherever suits you -- and hand
+  over at an explicit prompt. Explicit hand-over, never ambient
+  inheritance.
 - **Not boxed, by design:** the network (open by default; the
   default-deny firewall skill closes it to a derived allowlist) and the
   project itself (mounted read-write -- editing it is the agent's job).

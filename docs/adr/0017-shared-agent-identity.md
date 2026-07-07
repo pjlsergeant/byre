@@ -17,8 +17,12 @@ folders. The fix had to hold three constraints at once: work for all
 three agents (a Claude-only story undersells the project), stay opt-in
 and legible (a shared credential must be visible, never ambient), and
 keep byre out of the host-credential business -- **ADR 0007 remains
-closed**: nothing is read or copied from the host; the one login still
-happens inside a box, and the shared volume just makes it the last one.
+closed**: byre reads nothing from the host and copies nothing. Codex and
+Gemini logins still happen inside a box (the shared volume just makes it
+the last one); Claude's shared token is minted by the user with
+`claude setup-token` -- wherever a browser is handy, host included --
+and handed over at an explicit prompt. An explicit hand-over, never
+ambient inheritance.
 
 The mechanism is per-agent because the vendors' credential mechanics
 differ (research-verified): Claude Code's refresh tokens are single-use

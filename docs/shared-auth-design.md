@@ -30,8 +30,10 @@ core grammar: `scope = "machine"` on `[[volumes]]`, Docker name
 `byre-machine-u<uid>-<name>`) holding only that agent's identity, plus a
 firstrun hook and -- for Claude -- a **launch env hook** (new core chassis:
 `/etc/byre/env.d/*.sh`, sourced by the launcher just before exec). The
-agent skills themselves are untouched. Per-project state (history,
-transcripts, trust) stays exactly where it is today.
+agent skills stay untouched with ONE exception, found in review:
+`codex-login.sh` gains an identity-aware guard (see codex-shared-auth
+below). Per-project state (history, transcripts, trust) stays exactly
+where it is today.
 
 Per-agent transport (dictated by the research doc's findings):
 
@@ -78,6 +80,12 @@ Mount wiring: `runparams.go` mounts machine-scoped volumes identically to
 project ones (same `-v name:target`), only the name derivation differs.
 Worktrees need no special handling -- the volume resolves to the same name
 from every path by construction.
+
+`seed` is FORBIDDEN on machine-scoped volumes (validation + test, review
+finding): `seed.go:21` names seed targets project-scoped and stays that
+way; a machine-scoped seed would seed one Docker volume and mount
+another. The combination is also meaningless -- seeding is host->volume,
+identity volumes are box-born by design.
 
 ### 3. Launch env hooks (`/etc/byre/env.d/`)
 
@@ -145,12 +153,27 @@ Dockerfile test updates in `internal/gen` (byte-stable output rule).
 - `[[volumes]] name = "codex-identity", role = "state",
   scope = "machine", target = "/home/dev/.byre-identity/codex"`.
 - **Firstrun hook**, idempotent, EVERY launch: ensure
-  `$CODEX_HOME/auth.json` is a symlink to `<identity>/codex/auth.json`
-  (create parent dirs; replace a plain file only if the identity copy is
-  absent -- then MOVE the file in, adopting an existing login rather
-  than clobbering it). Re-asserting every launch heals the logout-fork:
+  `$CODEX_HOME/auth.json` is a symlink to `<identity>/auth.json` (the
+  identity volume's target IS the codex dir -- no extra nesting; create
+  parent dirs; replace a plain file only if the identity copy is absent
+  -- then MOVE the file in, adopting an existing login rather than
+  clobbering it). Re-asserting every launch heals the logout-fork:
   `codex logout` unlinks the symlink, and a later `codex login` would
   otherwise write a local file, silently forking the credential.
+- **Hook ordering + the base-skill exception (review findings)**:
+  firstrun hooks run in glob order, so companion hooks install as
+  `/etc/byre/firstrun.d/00-<name>` to sort before the agent skills'
+  hooks. AND `codex-login.sh:25` currently deletes ANY symlinked
+  `auth.json` before checking auth ("a symlinked credential must never
+  count" -- an anti-planting defense from the initial import), which
+  would rip out the companion's symlink every launch. It gains an
+  identity-aware guard: a symlink whose RESOLVED target lies inside
+  `/home/dev/.byre-identity/` is legitimate and kept; anything else is
+  removed as today. Its "stored per-project" login message branches to
+  "stored machine-wide (shared-auth)" when the symlink is in place.
+  This narrows the planting defense to "any symlink except ours" --
+  accepted: the agent can already read the credential the link would
+  redirect.
 - No env hook, no paste prompt: Codex writes in place (source-verified,
   storage.rs), so the FIRST `codex login` in any box writes through the
   dangling symlink and lands the credential in the shared volume.
@@ -211,11 +234,12 @@ injected fake runner, host-side integration gated `BYRE_DOCKER_TESTS=1`.
 
 1. **Skill `description`** -- skills.go parse + unknown-key test update;
    builtins gain descriptions; config-UI picker shows them. Ships alone.
-2. **Volume scope (core)** -- config.go Volume.Scope + Validate;
-   naming.go machine-name derivation (+ TestVolumeName cases + the
-   id != "machine" guard); runparams mount wiring; status Shared-vols
-   row. Unit: fake-runner assertions that a machine-scoped volume mounts
-   with the uid-qualified name from two different fake projects.
+2. **Volume scope (core)** -- config.go Volume.Scope + Validate
+   (including seed-forbidden-on-machine-scope); naming.go machine-name
+   derivation (+ TestVolumeName cases + the id != "machine" guard);
+   runparams mount wiring; status Shared-vols row. Unit: fake-runner
+   assertions that a machine-scoped volume mounts with the
+   uid-qualified name from two different fake projects.
 3. **Launch env hooks** -- launcher.sh sources /etc/byre/env.d/*.sh
    before exec; gen golden test update; launcher_test coverage.
 4. **Lifecycle guards** -- reset/forget skip + explain (unit-test the
@@ -226,10 +250,12 @@ injected fake runner, host-side integration gated `BYRE_DOCKER_TESTS=1`.
    Host verify: fresh project A prompts + accepts token; fresh project B
    launches logged-in with NO prompt; `byre reset` in A leaves auth
    intact and says so.
-6. **codex-shared-auth** -- skill.toml + symlink-assert hook (incl. the
-   adopt-existing-login move). Host verify: login in A, B is
-   authenticated; `codex logout` in A then relaunch A -- symlink healed,
-   still one shared credential.
+6. **codex-shared-auth** -- skill.toml + `00-`-prefixed symlink-assert
+   hook (incl. the adopt-existing-login move) + the codex-login.sh
+   identity-aware guard and message branch (the one agent-skill edit in
+   this design). Host verify: login in A, B is authenticated;
+   `codex logout` in A then relaunch A -- symlink healed, still one
+   shared credential.
 7. **SECURITY.md + doc sweep** -- as above; README claim reword lands
    here, keeping copy honest BEFORE anyone reads the new skills'
    descriptions and asks.
