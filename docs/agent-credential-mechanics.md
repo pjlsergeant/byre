@@ -131,6 +131,14 @@ Multiple open issues describe exactly the shared-credential scenario:
 - Auth precedence (top wins): cloud-provider vars -> `ANTHROPIC_AUTH_TOKEN` ->
   `ANTHROPIC_API_KEY` -> `apiKeyHelper` -> `CLAUDE_CODE_OAUTH_TOKEN` ->
   `/login` OAuth credentials (https://code.claude.com/docs/en/authentication).
+  **Host-falsified for interactive use (2026-07-07, three boxes):** when
+  `~/.claude/.credentials.json` exists, interactive Claude Code (2.1.202)
+  rides the STORED access token for its requests -- `/status` still claims
+  env-token auth -- and the env token's presence suppresses the refresh
+  cycle, so the box 401s ~8h after the last `/login`. The documented
+  precedence holds headless (and when no credentials file exists). Fix per
+  box: `mv ~/.claude/.credentials.json{,.bak}` + relaunch; the
+  claude-shared-auth env hook warns at launch on this combination.
   `apiKeyHelper` (a settings key, not env) shells out for a credential,
   re-called after 5 min or on 401 (`CLAUDE_CODE_API_KEY_HELPER_TTL_MS`) --
   a viable "fetch token from host/volume" hook.
