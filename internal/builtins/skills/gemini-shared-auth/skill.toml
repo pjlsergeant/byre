@@ -9,9 +9,13 @@
 # refresh, confirm neither session dies. Record the result in ADR 0017.
 #
 # Mechanism (mirrors codex-shared-auth): Gemini writes its credentials IN
-# PLACE (source-verified, oauth2.ts fs.writeFile), so the identity files in
+# PLACE (source-verified: FileKeychain saveData fs.writeFile, 0.49), so the
+# identity files in
 # ~/.gemini become symlinks into the machine-scoped identity volume. Gemini
 # has no home-relocation env var, so the seam lives inside the real ~/.gemini.
+# DEPENDS on the gemini skill's stable --hostname: 0.49 encrypts the
+# credential with a hostname+username-derived key, so an unstable hostname
+# makes the shared file undecryptable in every other box.
 # trustedFolders.json is deliberately NOT touched — per-project trust already
 # lives in the per-project state volume, which is where it belongs. The first
 # in-box OAuth login (no-browser paste flow) writes through the dangling

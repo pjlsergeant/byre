@@ -22,6 +22,22 @@ dockerfile = [
 ]
 
 [runtime]
+# GEMINI_CLI_TRUST_WORKSPACE: gemini's folder-trust check honors this env as
+# its highest-precedence test (source-verified, trust.js checkPathTrust).
+# Inside a byre box the check duplicates an enclosure byre already provides --
+# the box IS the trust boundary (footgun doctrine; same ratified argument as
+# codex's --skip-git-repo-check) -- and untrusted mode silently skips project
+# agents/GEMINI.md, which byre relies on for context delivery.
+# TERM: docker's -t defaults TERM=xterm, so gemini warns about missing
+# 256-color support in any modern terminal; claude's COLORTERM precedent.
+env = { GEMINI_CLI_TRUST_WORKSPACE = "true", TERM = "xterm-256color" }
+# Stable hostname (CRITICAL for login persistence): gemini 0.49+ stores its
+# OAuth credential ENCRYPTED (FileKeychain, gemini-credentials.json) with a
+# key derived from hostname+username. Docker's default hostname is the
+# container id -- new on every rebuild -- so without this flag the login is
+# lost on EVERY rebuild (and can never be shared across boxes, ADR 0017).
+# Project run_args come last, so a user can still override the hostname.
+run_args = ["--hostname", "byre"]
 # Egress gemini needs if a firewall skill is enabled (host[:port], default 443):
 # the generative + code-assist APIs and the Google OAuth login endpoints.
 egress = ["generativelanguage.googleapis.com", "cloudcode-pa.googleapis.com", "oauth2.googleapis.com", "accounts.google.com"]

@@ -45,10 +45,9 @@ this file about status, scope, or priority, this file wins.
     `skills = ["gemini-shared-auth"]`; develop A, log in (no-browser
     paste flow) -- creds land in the shared volume through the dangling
     symlinks; develop B concurrently, confirm authenticated; force a
-    refresh (edit `expiry_date` to the past in
-    `~/.byre-identity/gemini/oauth_creds.json` -- edit THAT path
-    directly or in place; jq/temp+rename via the ~/.gemini symlink
-    would replace the symlink) and prompt in BOTH boxes. PASS: neither
+    refresh -- 0.49's credential (`gemini-credentials.json`) is
+    ENCRYPTED so expiry can't be hand-edited: keep BOTH boxes running
+    past access-token expiry (~1h) and prompt in each. PASS: neither
     logs out -> drop the GATE PENDING wording, record in ADR 0017.
     FAIL: unregister the skill, record in ADR 0017 (no env-token
     fallback exists for Google). Also still open: the gemini agent

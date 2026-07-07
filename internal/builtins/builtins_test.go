@@ -787,7 +787,7 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 			t.Fatalf("hook failed: %v (%s)", err, out)
 		}
 	}
-	files := []string{"oauth_creds.json", "google_accounts.json", "installation_id"}
+	files := []string{"gemini-credentials.json", "oauth_creds.json", "google_accounts.json", "installation_id"}
 
 	// Fresh: three dangling links, nothing fabricated, trust file untouched.
 	if err := os.WriteFile(filepath.Join(home, "trustedFolders.json"), []byte(`{"t":1}`), 0o600); err != nil {

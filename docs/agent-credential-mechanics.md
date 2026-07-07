@@ -248,6 +248,21 @@ including a Docker-container variant -- with the caveat "Treat
 
 ## Google Gemini CLI (NOT installed in this box -- docs + source only)
 
+> **CORRECTION, live-verified 2026-07-07 (gemini-cli 0.49.0, host test +
+> npm tarball read):** the credential no longer lives in
+> `oauth_creds.json`. In containers (no native keytar) 0.49 uses
+> **FileKeychain**: `~/.gemini/gemini-credentials.json`, AES-256-GCM,
+> key = scrypt("gemini-cli-oauth", salt = `hostname-username-gemini-cli`).
+> Consequences: (1) the credential is HOSTNAME-BOUND -- docker's default
+> per-container hostname means the login is lost on every rebuild and can
+> never be shared across boxes; byre's gemini skill now pins
+> `--hostname byre`. (2) Write is `fs.writeFile` in place
+> (fileKeychain.js saveData) -- symlink-safe. (3) `oauth_creds.json` is
+> legacy; link both. (4) `GEMINI_CLI_TRUST_WORKSPACE=true` is the
+> highest-precedence folder-trust override (trust.js checkPathTrust).
+> The inventory below predates this and stands for older versions.
+
+
 ### 1. State-dir inventory
 
 From `packages/core/src/config/storage.ts` (main, 2026-07-06;

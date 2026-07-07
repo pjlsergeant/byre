@@ -11,7 +11,9 @@ GEMINI_DIR="${BYRE_GEMINI_DIR:-/home/dev/.gemini}"
 
 mkdir -p "$IDENTITY_DIR" "$GEMINI_DIR" 2>/dev/null || exit 0
 
-for f in oauth_creds.json google_accounts.json installation_id; do
+# gemini-credentials.json is the 0.49+ encrypted credential (FileKeychain);
+# oauth_creds.json is the legacy name -- link both, dangling is harmless.
+for f in gemini-credentials.json oauth_creds.json google_accounts.json installation_id; do
   shared="$IDENTITY_DIR/$f"
   local_f="$GEMINI_DIR/$f"
   # Adopt an existing per-project login rather than clobbering it: a real
