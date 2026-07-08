@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.4 -- 2026-07-08
 
 - **Deny-by-default now means it** (ADR 0020, behavior change): a firewalled
   box opens your agent's own API endpoints and *nothing else*. Git hosting,
@@ -26,6 +26,9 @@
 - New `docs/EJECTING.md` + a "Stop using byre?" How-do-I: leaving byre is
   `byre dockerfile` + `byre dockerrun` (+ `byre ejectfirewall` if
   firewalled).
+- Config UI fixes: frames now clip to the terminal width (an over-width
+  row used to corrupt the repaint and strand stale rows from the previous
+  screen), and the item editor's title no longer mangles "Egress".
 
 ## v0.1.3 -- 2026-07-08
 
