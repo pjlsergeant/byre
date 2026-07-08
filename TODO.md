@@ -24,6 +24,14 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   add to the existing How-do-I section.
 - [ ] **README "How do I": mount other folders** (Pete, 2026-07-08): doc
   add, same section.
+- [ ] **Egress becomes config vocabulary** (Pete, 2026-07-08; design
+  settled in `docs/adr/0019-egress-is-config-vocabulary.md`): the `egress`
+  config key -- string list, `host[:port]`, union + `!entry` removal --
+  replaces `FIREWALL_ALLOW` (retired, no shim). GRANTS row in the config
+  UI; status drops its special case and attributes per layer;
+  shown-but-inert without a posture skill. Includes the eject warnings:
+  `dockerfile` comment block, `dockerrun` stderr note, launch-gate failure
+  hint. GLOSSARY's Egress entry reconciles when this lands.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
@@ -44,6 +52,13 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Next
 
+- [ ] **Skill env guidance strings** (Pete, 2026-07-08): let a skill
+  declare env vars it CONSUMES, each with a one-line guidance string
+  (shape sketch: `[[runtime.env_docs]]` with name + guidance); the config
+  UI's env screen shows a dim suggestion row per declared var from
+  enabled skills, enter prefills the add editor. Pure documentation, no
+  validation. Example targets: `GEMINI_API_KEY`. (ADR 0019 removed the
+  original motivating case, `FIREWALL_ALLOW`.)
 - [ ] **Config UI: env secret-masking.** env values render in plaintext in
   the form; mask them (reveal on demand) so a shoulder-surf or screenshot
   doesn't leak tokens.
