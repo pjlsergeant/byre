@@ -182,10 +182,26 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// When a firewall posture is in effect, list its allowlist so "what can
 	// this box reach?" is legible — each host:port attributed to the skill that
 	// asked for it (deduped on host:port; first declarer wins the credit).
-	if s.NetPosture != "" && len(s.Egress) > 0 {
+	// With NO posture, skill-declared egress is suppressed (every agent skill
+	// declares endpoints; on an open network the list is meaningless noise) —
+	// but the user's own `egress` config entries still print, marked
+	// unenforced: config must not carry invisible teeth that a later skill
+	// toggle arms (ADR 0019).
+	egress := s.Egress
+	unenforced := ""
+	if s.NetPosture == "" {
+		egress = nil
+		for _, a := range s.Egress {
+			if a.Skill == "config" {
+				egress = append(egress, a)
+			}
+		}
+		unenforced = " — unenforced, network open"
+	}
+	if len(egress) > 0 {
 		seen := map[string]bool{}
 		first := true
-		for _, a := range s.Egress {
+		for _, a := range egress {
 			hp := fmt.Sprintf("%s:%d", a.Host, a.Port)
 			if seen[hp] {
 				continue
@@ -196,7 +212,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 				label = ""
 			}
 			first = false
-			row(label, fmt.Sprintf("%s  (%s)", hp, a.Skill))
+			row(label, fmt.Sprintf("%s  (%s%s)", hp, a.Skill, unenforced))
 		}
 	}
 

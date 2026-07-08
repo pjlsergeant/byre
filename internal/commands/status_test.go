@@ -182,6 +182,41 @@ func TestRenderStatusNoEgressWithoutPosture(t *testing.T) {
 	}
 }
 
+func TestRenderStatusConfigEgressShownUnenforced(t *testing.T) {
+	var buf strings.Builder
+	// The user's own `egress` config entries are latent grants: with no
+	// posture they still print, marked unenforced (ADR 0019) — while skill
+	// egress stays suppressed as noise on an open network.
+	renderStatus(&buf, statusInfo{
+		Agent: "claude",
+		Egress: []skills.EgressAllow{
+			{Skill: "claude", Host: "api.anthropic.com", Port: 443},
+			{Skill: "config", Host: "grafana.com", Port: 443},
+		},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "grafana.com:443") || !strings.Contains(out, "unenforced") {
+		t.Errorf("config egress should print unenforced without a posture:\n%s", out)
+	}
+	if strings.Contains(out, "api.anthropic.com") {
+		t.Errorf("skill egress should stay suppressed without a posture:\n%s", out)
+	}
+	// With a posture, everything prints and nothing claims unenforced.
+	buf.Reset()
+	renderStatus(&buf, statusInfo{
+		Agent:      "claude",
+		NetPosture: "deny-by-default",
+		Egress: []skills.EgressAllow{
+			{Skill: "claude", Host: "api.anthropic.com", Port: 443},
+			{Skill: "config", Host: "grafana.com", Port: 443},
+		},
+	})
+	out = buf.String()
+	if !strings.Contains(out, "api.anthropic.com:443") || strings.Contains(out, "unenforced") {
+		t.Errorf("posture on: full list, no unenforced tag:\n%s", out)
+	}
+}
+
 func TestConfigEgressAttributed(t *testing.T) {
 	entries := configEgress([]string{"grafana.com", "internal:8443", "bad:99999"})
 	if len(entries) != 2 {
