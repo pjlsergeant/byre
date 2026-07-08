@@ -493,6 +493,7 @@ func sampleConfig() Config {
 		Files:          map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:         []string{"devloop"},
 		Egress:         []string{"grafana.com"},
+		EgressOffered:  []string{"registry.npmjs.org"},
 		Mounts:         []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
 		Volumes:        []Volume{{Name: "v", Role: "cache", Target: "/c"}},
 		Ports:          []Port{{Container: 8080}},

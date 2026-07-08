@@ -514,10 +514,10 @@ func TestFirewallSkillResolves(t *testing.T) {
 	}
 }
 
-// TestFirewallComposesAgentEgress pins the derived-allowlist contract: the
-// firewall skill carries only the generic base (git/registries), each agent
-// skill carries its own endpoints, and enabling firewall + an agent unions
-// them -- so the firewall does NOT hardcode agent hosts.
+// TestFirewallComposesAgentEgress pins the derived-allowlist contract
+// (ADR 0020): enabling firewall + an agent opens ONLY the agent's own
+// endpoints -- the skill's functional requirement. Everything else the
+// firewall knows about (git hosting, apt) is OFFERED, never auto-open.
 func TestFirewallComposesAgentEgress(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
@@ -528,11 +528,23 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	union := strings.Join(res.Egress(), " ")
-	// claude's endpoint comes from the claude skill; github from the firewall
-	// base; debian's http mirror carries its explicit :80.
-	for _, want := range []string{"api.anthropic.com:443", "github.com:443", "deb.debian.org:80"} {
-		if !strings.Contains(union, want) {
-			t.Errorf("egress union missing %q; got: %s", want, union)
+	if !strings.Contains(union, "api.anthropic.com:443") {
+		t.Errorf("agent endpoints must open with the agent; got: %s", union)
+	}
+	// Deny-by-default means it: git/apt must NOT be open, only offered.
+	for _, closed := range []string{"github.com", "deb.debian.org"} {
+		if strings.Contains(union, closed) {
+			t.Errorf("%q must be offered, not auto-open; got: %s", closed, union)
+		}
+	}
+	fw, err := skills.Load(dest, "firewall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	offered := strings.Join(fw.File.Runtime.EgressOffered, " ")
+	for _, want := range []string{"github.com", "deb.debian.org:80"} {
+		if !strings.Contains(offered, want) {
+			t.Errorf("firewall must OFFER %q; got: %s", want, offered)
 		}
 	}
 	// The firewall skill must NOT itself carry the agent endpoints (the whole

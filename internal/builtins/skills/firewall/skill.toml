@@ -47,20 +47,17 @@ dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall"]
 [runtime]
 network_posture = "deny-by-default"
 netns_init = "/usr/local/bin/byre-firewall"
-# The firewall's OWN base allowlist: the generic infra a firewalled dev box
-# needs regardless of agent — git hosting and the package registries. Agent
-# API endpoints are NOT here; each agent skill declares its own egress and the
-# firewall unions them all. Debian's apt mirrors default to http (port 80), so
-# they're listed with an explicit :80 (and :443 for https mirrors). Extend
-# per project with the `egress` config key (host[:port], same grammar).
-# (Registry endpoints could later move to the language templates that imply
-# them; kept here for v1.)
-egress = [
+# OFFERED, not open (ADR 0020): the firewall itself needs NO egress to
+# function, so it opens nothing. These are the doors a dev box commonly
+# wants — git hosting and apt — declared here so the config UI can offer
+# each as a one-press switch (`byre config` → Egress); opening one writes
+# it into YOUR config's `egress`. Debian's apt mirrors default to http
+# (port 80), so they're listed with an explicit :80 (and :443 for https
+# mirrors). Language registries live in the language templates that imply
+# them, offered the same way.
+egress_offered = [
   "github.com", "api.github.com", "codeload.github.com",
   "objects.githubusercontent.com", "raw.githubusercontent.com",
-  "registry.npmjs.org",
-  "proxy.golang.org", "sum.golang.org", "storage.googleapis.com",
-  "pypi.org", "files.pythonhosted.org",
   "deb.debian.org:80", "deb.debian.org:443",
   "security.debian.org:80", "security.debian.org:443",
 ]

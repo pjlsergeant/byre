@@ -93,13 +93,20 @@ type File struct {
 		// firewall skill's application vehicle: rules are programmed from
 		// OUTSIDE the box, so nothing inside it needs (or gets) privileges.
 		NetnsInit string `toml:"netns_init"`
-		// Egress is the set of hosts this skill needs to reach, as `host` or
-		// `host:port` (port defaults to 443). A network-posture skill
-		// (firewall) unions every enabled skill's Egress into its allowlist —
-		// so an agent skill carries its OWN API endpoints rather than the
-		// firewall hardcoding them, and enabling only what you use opens only
-		// what it needs. Declarative: with no firewall enabled it does nothing.
+		// Egress is the set of hosts this skill NEEDS to reach to function, as
+		// `host` or `host:port` (port defaults to 443). A network-posture
+		// skill (firewall) unions every enabled skill's Egress into its
+		// allowlist — an agent skill carries its OWN API endpoints, and
+		// enabling the skill is the intent to open them (ADR 0020: functional
+		// requirement, not convenience). Declarative: with no firewall enabled
+		// it does nothing.
 		Egress []string `toml:"egress"`
+		// EgressOffered is a declared-but-CLOSED door (ADR 0020): same
+		// grammar, never enforced. The config UI offers each entry as a
+		// switch; opening writes it into the user's own config `egress`.
+		// Convenience endpoints (registries, git hosting) belong here, not in
+		// Egress — deny-by-default means the user opens their own doors.
+		EgressOffered []string `toml:"egress_offered"`
 	} `toml:"runtime"`
 	Agent   *AgentContrib   `toml:"agent"`
 	Volumes []config.Volume `toml:"volumes"`
@@ -555,7 +562,9 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 		// egress entries feed a firewall allowlist and are passed to the netns
 		// helper as data; validate host[:port] shape up front so a typo fails
 		// loudly rather than silently dropping a host from the allowlist.
-		for _, e := range f.Runtime.Egress {
+		// Offered entries (ADR 0020) are held to the same grammar: they become
+		// real egress the moment a user opens one.
+		for _, e := range append(append([]string{}, f.Runtime.Egress...), f.Runtime.EgressOffered...) {
 			if _, _, eerr := parseEgress(e); eerr != nil {
 				return Resolved{}, fmt.Errorf("skill %q: %w", name, eerr)
 			}

@@ -188,6 +188,12 @@ type Config struct {
 	// declarative and inert without one (nothing enforces it, same as skill
 	// egress). String list, so the cascade unions it with `!entry` removal.
 	Egress []string `toml:"egress,omitempty"`
+	// EgressOffered is a declared-but-CLOSED door (ADR 0020): same grammar,
+	// ALWAYS inert at enforcement time. Templates ship their registries here;
+	// the config UI offers each as a switch whose open writes the plain entry
+	// into the user's own `egress`. Deny-by-default means nothing opens a
+	// hole except explicit user intent.
+	EgressOffered []string `toml:"egress_offered,omitempty"`
 
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
@@ -333,6 +339,7 @@ func Merge(base, over Config) Config {
 	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
 	out.Egress = mergeStrings(base.Egress, over.Egress)
+	out.EgressOffered = mergeStrings(base.EgressOffered, over.EgressOffered)
 
 	// Maps: union, over wins per key.
 	out.Env = mergeMap(base.Env, over.Env)
@@ -430,15 +437,16 @@ func (c Config) validateScalars(layer bool) error {
 		return err
 	}
 
-	// Egress entries share the skills' grammar (ADR 0019); markers are exempt
-	// in layer mode like the package lists above.
-	egress := c.Egress
-	if layer {
-		egress = filter(egress, func(s string) bool { return !isRemoval(s) })
-	}
-	for _, e := range egress {
-		if _, _, err := ParseEgress(e); err != nil {
-			return err
+	// Egress entries (open and offered) share the skills' grammar (ADR 0019);
+	// markers are exempt in layer mode like the package lists above.
+	for _, list := range [][]string{c.Egress, c.EgressOffered} {
+		if layer {
+			list = filter(list, func(s string) bool { return !isRemoval(s) })
+		}
+		for _, e := range list {
+			if _, _, err := ParseEgress(e); err != nil {
+				return err
+			}
 		}
 	}
 
