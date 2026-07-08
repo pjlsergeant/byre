@@ -48,9 +48,12 @@ Implications:
 
 Precedents: the agent is a skill (`agent` selects which one launches); the
 firewall skill carries all firewall policy while core carries only the
-generic `network_posture`/`netns_init`/launch-gate mechanisms; the
-per-project firewall allowlist is the generic `FIREWALL_ALLOW` env var, not
-a `firewall_allow` core config key.
+generic `network_posture`/`netns_init`/launch-gate mechanisms plus the
+`egress` config key -- vocabulary, not policy: declaring an endpoint is
+core's job the same way `ports` is, while deny-by-default stays the
+skill's opinion. (ADR 0019 superseded the earlier precedent here, which
+kept the allowlist in a generic env var; the env vehicle gave the
+list override-instead-of-union semantics and hid a grant.)
 
 ## 3. Raw Docker is first-class
 

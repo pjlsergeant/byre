@@ -8,9 +8,9 @@ hangs then times out is the wall, not a network outage.
 - The rules live in the box's network namespace and were applied from
   outside; nothing inside the box can change them. Don't try.
 - If a host you legitimately need is blocked, tell the user: they can extend
-  the allowlist by setting the `FIREWALL_ALLOW` env var in `byre.config`
-  (space-separated `host` or `host:port` entries; port defaults to 443) and
-  restarting the session. Allowed hosts are reachable ONLY on their listed
+  the allowlist with the `egress` config key -- `byre config` → Egress
+  (GRANTS), or `egress = ["host", "host:port"]` in `byre.config` (port
+  defaults to 443) -- and restart the session. Allowed hosts are reachable ONLY on their listed
   port — `https://host` working while `ssh host` hangs is the port scoping,
   not a bug.
 - DNS resolution works for all names (only connecting is restricted). A host
