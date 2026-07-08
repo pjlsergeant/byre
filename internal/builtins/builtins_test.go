@@ -876,6 +876,29 @@ func TestClaudeSharedAuthHookOffersCredsMove(t *testing.T) {
 	if out := run(base, cfg, "", true); strings.Contains(out, "leftover") {
 		t.Fatalf("no leftover login -> no offer: %q", out)
 	}
+
+	// The adoption launch: no token yet, a leftover login present. The silent
+	// path must stay SILENT (a missing token file must not leak shell errors),
+	// and once the user pastes a token the offer fires on that same launch —
+	// not the next one.
+	base, cfg = t.TempDir(), t.TempDir()
+	creds = filepath.Join(cfg, ".credentials.json")
+	if err := os.WriteFile(creds, []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(base, cfg, "", false); out != "" {
+		t.Fatalf("token-less non-interactive launch must be silent: %q", out)
+	}
+	out = run(base, cfg, "sk-ant-oat01-x\ny\n", true)
+	if b, err := os.ReadFile(filepath.Join(base, "claude", "token")); err != nil || !strings.Contains(string(b), "sk-ant-oat01-x") {
+		t.Fatalf("pasted token not saved: %v %q", err, b)
+	}
+	if _, err := os.Stat(creds); !os.IsNotExist(err) {
+		t.Fatalf("adoption launch must offer and move the leftover login: %v (out=%q)", err, out)
+	}
+	if b, _ := os.ReadFile(creds + ".bak"); string(b) != `{"claudeAiOauth":{}}` {
+		t.Fatalf("adoption-launch backup missing or corrupted: %q", b)
+	}
 }
 
 // The claude-shared-auth env hook is SOURCED by the launcher (it must never

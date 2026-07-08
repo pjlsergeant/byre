@@ -14,8 +14,12 @@ CFG_DIR="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}"
 
 # "Token present" must mean what env.sh means by it: non-empty after stripping
 # whitespace. A whitespace-only file exports nothing there, so it must not
-# gate onboarding seeding or the creds-move offer here either.
-token_present() { [ -n "$(tr -d '[:space:]' <"$TOKEN_FILE" 2>/dev/null)" ]; }
+# gate onboarding seeding or the creds-move offer here either. The [ -s ]
+# guard (env.sh's precedent) keeps a missing file from printing a redirection
+# error — a token-less box must launch in silence.
+token_present() {
+  [ -s "$TOKEN_FILE" ] && [ -n "$(tr -d '[:space:]' <"$TOKEN_FILE" 2>/dev/null)" ]
+}
 
 # Both prompts below gate on this: never wait for input nobody can give. The
 # override is a test seam; a user exporting it on a non-TTY launch is blocking
