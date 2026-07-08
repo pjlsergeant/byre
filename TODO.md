@@ -15,10 +15,15 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
-- [ ] **Config UI: inherited-state misreporting (bug).** apt/mounts/env show
-  raw layer entries instead of effective inherited state -- the same bug
-  class the skills screen was fixed for. A safety UI that misreports what
-  the config grants is broken safety.
+- [ ] **Config UI: effective-state overhaul.** Design settled in
+  `docs/adr/0018-effective-state-editor-cascade-off-switches.md`: every
+  screen shows resolved effective state and edits one layer, peel-per-press
+  (the skills model generalized); apt gains `!name`, ports gain
+  `remove = true`; inherited rows get provenance tags; skill-contributed
+  mounts/env/volumes show read-only; summaries count effective state.
+  Fixes the apt/mounts/env misreporting bug. Build order: merge semantics,
+  then plumbing (pass the full lower-layer config, not just skills), then
+  screens; README/ARCHITECTURE cascade text updates with the code.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows

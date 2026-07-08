@@ -46,7 +46,15 @@ closed, never launches open.
 
 **Cascade**:
 The three-layer config resolution `default ⊕ template ⊕ project`. Scalars
-override (last wins), lists union, `!name` removes.
+override (last wins), lists union, a removal marker removes.
+
+**Removal marker**:
+A later layer's off-switch for an inherited list entry. Two spellings by
+identity type: `!name` where the entry's identity is a string (skills,
+apt, volumes, mounts by target), `remove = true` where it's structured
+(ports, keyed by container port alone). Applied after the same layer's
+additions; the removed entry is gone from the resolved set -- contrast a
+mount's `disabled`, which keeps the entry visible (ADR 0015). (ADR 0018)
 
 **Layer**:
 One file in the cascade: the global default, a template, or the project
