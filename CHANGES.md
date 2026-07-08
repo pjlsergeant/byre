@@ -1,5 +1,24 @@
 # Changes
 
+## Unreleased
+
+- **The `byre config` list screens now tell the truth about the whole
+  cascade** (ADR 0018): Packages, Env vars, Extra mounts, and Ports show
+  the effective merged state -- inherited entries tagged `(default)` /
+  `(template:x)`, skill-contributed mounts and env shown read-only as
+  `(skill:x)` -- while every edit still writes only the file being
+  edited. Enter on a row opens a small action menu offering exactly
+  what that row supports (Edit, Delete, Override here, Remove in this
+  project, Restore) with a where-it's-set line; `e`/`d` accelerate the
+  same actions. Form summaries count effective state too
+  (`3 packages (2 inherited)`).
+- **Every cascade list now has an off-switch**: `apt`/`npm_global`
+  accept the same `!name` removal marker as skills, mounts, and
+  volumes; ports gain `remove = true` (keyed by container port alone --
+  a port has no name for `!` to ride). Env stays override-only:
+  shadow an inherited key's value, including with empty; unset is
+  deliberately deferred.
+
 ## v0.1.2 -- 2026-07-07
 
 Shared agent logins, and a rebuilt README.
