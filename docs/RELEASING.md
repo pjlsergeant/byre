@@ -60,6 +60,6 @@ goreleaser release --snapshot --clean   # artifacts land in dist/, nothing publi
 ## After the first release
 
 Done (2026-07-06/07): the README Install section carries the
-`install.sh` one-liner and the brew line -- the brew line went in AHEAD
-of the tap, deliberately, so it 404s until the tap repo + token exist
-(TODO §1). Don't remove it; create the tap.
+`install.sh` one-liner and the brew line. The tap repo and
+`HOMEBREW_TAP_GITHUB_TOKEN` secret exist (2026-07-08), so goreleaser
+publishes the cask on every release; nothing is gated anymore.

@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.3 -- 2026-07-08
 
 - **The `byre config` list screens now tell the truth about the whole
   cascade** (ADR 0018): Packages, Env vars, Extra mounts, and Ports show
