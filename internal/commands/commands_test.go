@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -123,5 +124,85 @@ func TestShellArgQuoting(t *testing.T) {
 		if got := shellArg(in); got != want {
 			t.Errorf("shellArg(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// writeStoreConfig writes the project's host-side byre.config directly.
+func writeStoreConfig(t *testing.T, proj, content string) {
+	t.Helper()
+	paths, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := paths.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Dir, config.ProjectConfigName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The eject surfaces (ADR 0019): a firewalled project's dockerfile output
+// explains its launch gate, dockerrun warns on stderr, and ejectfirewall
+// prints the standalone sidecar with the resolved allowlist.
+func TestEjectSurfacesFirewalled(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+	writeStoreConfig(t, proj, "skills = [\"firewall\"]\negress = [\"grafana.com\", \"internal:8443\"]\n")
+
+	s, out, _ := testStreams("", false)
+	if err := Dockerfile(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "expects byre's launch-time firewall") {
+		t.Errorf("firewalled dockerfile output missing the gate comment:\n%s", out.String()[:200])
+	}
+
+	s2, out2, err2 := testStreams("", false)
+	if err := DockerRun(s2, proj); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out2.String(), "launch gate") {
+		t.Error("the dockerrun note must not pollute stdout")
+	}
+	if !strings.Contains(err2.String(), "ejectfirewall") {
+		t.Errorf("firewalled dockerrun missing the stderr note: %q", err2.String())
+	}
+
+	s3, out3, _ := testStreams("", false)
+	if err := EjectFirewall(s3, proj); err != nil {
+		t.Fatal(err)
+	}
+	script := out3.String()
+	for _, want := range []string{
+		"#!/bin/sh",
+		"--cap-add NET_ADMIN",
+		"--entrypoint /usr/local/bin/byre-firewall",
+		"--net \"container:$BOX\"",
+		"grafana.com:443",
+		"internal:8443",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("eject script missing %q:\n%s", want, script)
+		}
+	}
+}
+
+// Without a firewall: dockerfile output is untouched (pinned byte-identical
+// elsewhere), dockerrun stays quiet, ejectfirewall refuses.
+func TestEjectSurfacesUnfirewalled(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+
+	s, _, errBuf := testStreams("", false)
+	if err := DockerRun(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "ejectfirewall") {
+		t.Errorf("unfirewalled dockerrun should not warn: %q", errBuf.String())
+	}
+	s2, _, _ := testStreams("", false)
+	if err := EjectFirewall(s2, proj); err == nil {
+		t.Fatal("ejectfirewall without a firewall skill should refuse")
 	}
 }

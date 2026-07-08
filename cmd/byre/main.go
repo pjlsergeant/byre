@@ -20,8 +20,9 @@ var version string
 // direct calls) so tests can pin the flag->function wiring with recorders
 // instead of executing real commands.
 type app struct {
-	dockerfile  func(s commands.Streams, dir string) error
-	dockerrun   func(s commands.Streams, dir string) error
+	dockerfile    func(s commands.Streams, dir string) error
+	dockerrun     func(s commands.Streams, dir string) error
+	ejectfirewall func(s commands.Streams, dir string) error
 	develop     func(s commands.Streams, dir, tmpl, agent string, selfEdit bool) error
 	config      func(s commands.Streams, dir string, global bool) error
 	status      func(s commands.Streams, dir string, selfEdit bool) error
@@ -36,8 +37,9 @@ type app struct {
 }
 
 var realApp = app{
-	dockerfile:  commands.Dockerfile,
-	dockerrun:   commands.DockerRun,
+	dockerfile:    commands.Dockerfile,
+	dockerrun:     commands.DockerRun,
+	ejectfirewall: commands.EjectFirewall,
 	develop:     commands.Develop,
 	config:      commands.Config,
 	status:      commands.Status,
@@ -149,6 +151,23 @@ the run-time counterpart to 'byre dockerfile'. Side-effect-free.`,
 				return err
 			}
 			return a.dockerrun(s, dir)
+		},
+	},
+	{
+		name:    "ejectfirewall",
+		summary: "Print the firewall sidecar as a standalone script.",
+		help: `Usage: byre ejectfirewall
+
+Print, as a shell script, the firewall sidecar byre runs for this project —
+the one piece of the box 'byre dockerfile' + 'byre dockerrun' can't carry.
+Run the printed script right after starting the box; it applies the resolved
+egress allowlist from outside and opens the launch gate. Side-effect-free;
+errors if no firewall (netns hook) is enabled.`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			if err := noArgs("ejectfirewall", rest); err != nil {
+				return err
+			}
+			return a.ejectfirewall(s, dir)
 		},
 	},
 	{

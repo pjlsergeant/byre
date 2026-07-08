@@ -42,6 +42,7 @@ if [ -s "$GATE_FILE" ]; then
   done
   if [ -z "$gate_ok" ]; then
     echo "byre: launch gate: network setup never signaled ready on 127.0.0.1:${gate_port:-?} after ${gate_timeout}s — refusing to launch without it (failing closed)." >&2
+    echo "byre: (running this image without byre? the firewall sidecar must run alongside it — \`byre ejectfirewall\` prints it. To launch with NO walls instead: set BYRE_LAUNCH_GATE_FILE=/dev/null.)" >&2
     exit 1
   fi
 fi
