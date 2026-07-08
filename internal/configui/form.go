@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
@@ -499,22 +500,40 @@ func (m *model) setFocus(i int) {
 // ---- rendering -------------------------------------------------------------
 
 func (m model) View() string {
+	var v string
 	switch m.mode {
 	case modeList:
-		return m.viewList()
+		v = m.viewList()
 	case modeItem:
-		return m.viewItem()
+		v = m.viewItem()
 	case modeMenu:
-		return m.viewMenu()
+		v = m.viewMenu()
 	case modeVolumes:
-		return m.viewVolumes()
+		v = m.viewVolumes()
 	case modeText:
-		return m.viewText()
+		v = m.viewText()
 	case modeSkills:
-		return m.viewSkills()
+		v = m.viewSkills()
 	default:
-		return m.viewForm()
+		v = m.viewForm()
 	}
+	return clipLines(v, m.width)
+}
+
+// clipLines truncates every rendered line to the terminal width (ANSI-aware).
+// The inline bubbletea renderer counts the lines it drew to repaint them; a
+// line that WRAPS breaks that accounting and strands stale rows from the
+// previous frame on screen (found live 2026-07-08: a long Egress summary row
+// left the form row above it behind on the item-editor screen).
+func clipLines(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, width, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m model) viewForm() string {

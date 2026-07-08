@@ -615,6 +615,25 @@ func putAt[T any](s []T, idx int, v T) []T {
 	return out
 }
 
+// itemTitle is the singular noun the item editor's title uses. Explicit per
+// field: naive de-pluralizing turned "Egress" into "Egres" (found live
+// 2026-07-08).
+func itemTitle(f fieldID) string {
+	switch f {
+	case fApt:
+		return "Package"
+	case fEnv:
+		return "Env var"
+	case fMounts:
+		return "Extra mount"
+	case fPorts:
+		return "Port"
+	case fEgress:
+		return "Egress host"
+	}
+	return strings.TrimSuffix(fieldLabel[f], "s")
+}
+
 // ---- display helpers ---------------------------------------------------------
 
 func mountLine(mt config.Mount) string {
@@ -742,7 +761,7 @@ func (m model) viewItem() string {
 	if m.editIndex < 0 {
 		verb = "Add"
 	}
-	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(verb+" "+strings.TrimSuffix(fieldLabel[m.listField], "s")))
+	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(verb+" "+itemTitle(m.listField)))
 
 	for i, in := range m.inputs {
 		cursor := "  "

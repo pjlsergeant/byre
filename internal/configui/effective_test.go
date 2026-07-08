@@ -507,3 +507,44 @@ func TestEgressItemEditorValidates(t *testing.T) {
 		t.Fatalf("valid egress entry should commit: err=%q egress=%v", m.itemErr, m.egress)
 	}
 }
+
+// Long rows must clip to the terminal width: a wrapped line corrupts the
+// inline renderer's repaint accounting and strands stale rows (found live).
+func TestViewClipsToWidth(t *testing.T) {
+	m := effectiveModel()
+	m.egress = []string{"a-very-long-hostname-that-overflows.example.internal:8443"}
+	m.width = 40
+	for _, line := range strings.Split(m.View(), "\n") {
+		if w := len([]rune(stripANSI(line))); w > 40 {
+			t.Fatalf("line wider than terminal (%d): %q", w, line)
+		}
+	}
+}
+
+// stripANSI removes CSI sequences for width-checking rendered lines.
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for _, r := range s {
+		switch {
+		case inEsc:
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+		case r == 0x1b:
+			inEsc = true
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func TestItemEditorTitles(t *testing.T) {
+	m := effectiveModel()
+	m.listField = fEgress
+	m = m.startItem(-1)
+	if v := m.viewItem(); !strings.Contains(v, "Add Egress host") || strings.Contains(v, "Egres\n") {
+		t.Fatalf("egress item title wrong:\n%s", v)
+	}
+}
