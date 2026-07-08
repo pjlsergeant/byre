@@ -1,9 +1,10 @@
 # Network: deny-by-default egress (byre firewall skill)
 
 This box's outbound network is firewalled: only an allowlist of hosts is
-reachable (agent APIs, github, common package registries), resolved to IPs
-when the session started. Everything else is dropped — a connection that
-hangs then times out is the wall, not a network outage.
+reachable — by default just the agent's own API endpoints, plus whatever
+doors the user has opened — resolved to IPs when the session started.
+Everything else is dropped — a connection that hangs then times out is
+the wall, not a network outage.
 
 - The rules live in the box's network namespace and were applied from
   outside; nothing inside the box can change them. Don't try.

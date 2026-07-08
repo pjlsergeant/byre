@@ -618,3 +618,20 @@ func TestEgressSummaryCountsOffered(t *testing.T) {
 		t.Errorf("summary should count offered doors: %q", got)
 	}
 }
+
+// Offered-door suppression compares normalized host:port and counts skill
+// egress as open (review finding): "github.com" offered vs "github.com:443"
+// open is the same door.
+func TestEgressOfferedSuppressionNormalized(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Templates["go"] = config.Config{EgressOffered: []string{"github.com", "api.anthropic.com"}}
+	m.egress = []string{"github.com:443"} // equivalent spelling of the offer
+	sk := m.inh.Skills["docker"]
+	sk.Egress = append(sk.Egress, "api.anthropic.com") // skill already opens it
+	m.inh.Skills["docker"] = sk
+	for _, r := range m.fieldRows(fEgress) {
+		if r.kind == rowOffered {
+			t.Fatalf("offered row for an already-open door: %+v", r)
+		}
+	}
+}

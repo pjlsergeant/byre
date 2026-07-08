@@ -115,26 +115,45 @@ func (m model) egressRows() []listRow {
 	}
 
 	// Offered doors (ADR 0020): declared-but-closed entries from lower layers,
-	// this layer's own file, and effective skills -- suppressed once the exact
-	// entry is already open (the open row tells that story), deduped across
-	// sources (first offerer wins the credit).
+	// this layer's own file, and effective skills -- suppressed once the door
+	// is already open (the open row tells that story), deduped across sources
+	// (first offerer wins the credit). Open/offered comparison is on the
+	// NORMALIZED host:port ("github.com" == "github.com:443" at enforcement
+	// time), and skill egress counts as open too -- an offered row claiming a
+	// reachable host is closed would be a lie (review finding).
+	normalize := func(e string) string {
+		host, port, err := config.ParseEgress(e)
+		if err != nil {
+			return ""
+		}
+		return host + ":" + strconv.Itoa(port)
+	}
 	open := map[string]bool{}
-	for _, e := range m.lowerNow().Egress {
+	addOpen := func(e string) {
 		if !isRemovalName(e) {
-			open[e] = true
+			if n := normalize(e); n != "" {
+				open[n] = true
+			}
 		}
 	}
+	for _, e := range m.lowerNow().Egress {
+		addOpen(e)
+	}
 	for _, e := range m.egress {
-		if !isRemovalName(e) {
-			open[e] = true
+		addOpen(e)
+	}
+	for _, sk := range m.effectiveSkills() {
+		for _, e := range m.inh.Skills[sk].Egress {
+			addOpen(e)
 		}
 	}
 	offered := map[string]bool{}
 	addOffered := func(e, source string) {
-		if isRemovalName(e) || open[e] || offered[e] {
+		n := normalize(e)
+		if isRemovalName(e) || n == "" || open[n] || offered[n] {
 			return
 		}
-		offered[e] = true
+		offered[n] = true
 		rows = append(rows, listRow{kind: rowOffered, text: e, ident: e, source: source})
 	}
 	for _, e := range m.lowerNow().EgressOffered {
