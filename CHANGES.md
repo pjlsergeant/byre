@@ -1,5 +1,12 @@
 # Changes
 
+## Unreleased
+
+- New `docs/EJECTING.md` + a "Stop using byre?" How-do-I: leaving byre is
+  `byre dockerfile` + `byre dockerrun`, with the firewall as the one named
+  thing that doesn't travel (its rules are applied from outside the box) --
+  bring your own.
+
 ## v0.1.3 -- 2026-07-08
 
 - **The `byre config` list screens now tell the truth about the whole

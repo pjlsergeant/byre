@@ -236,6 +236,10 @@ machine, rent one.)*
 
 By default agents log in once per project, inside the box; the shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per machine. The login lives in a shared volume that reset/forget deliberately never touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications.
 
+### Stop using byre?
+
+`byre dockerfile` prints the image, `byre dockerrun` prints the exact run command -- that's the whole exit. The one thing that doesn't travel is the firewall (its rules are applied from outside the box, by byre): bring your own. See [docs/EJECTING.md](docs/EJECTING.md).
+
 ## Platform
 
 Linux and macOS, over Docker or Podman (rootful; rootless Podman coming soon). byre bakes your UID/GID into the image so the agent
