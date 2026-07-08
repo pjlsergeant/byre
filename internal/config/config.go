@@ -61,9 +61,9 @@ var (
 // but produces no bind, and Mode survives the off state so re-enabling is one
 // field flip. Disabled is a toggle, `!target` is a removal -- both exist.
 type Mount struct {
-	Host     string `toml:"host"`
+	Host     string `toml:"host,omitempty"` // empty only on a `!target` removal marker
 	Target   string `toml:"target"`
-	Mode     string `toml:"mode"`               // ro|rw; default ro
+	Mode     string `toml:"mode,omitempty"`     // ro|rw; default ro
 	Disabled bool   `toml:"disabled,omitempty"` // switched off: kept + shown, not bound
 }
 
@@ -202,16 +202,6 @@ func ResolveProposed(proj Config) (Config, error) {
 		return Config{}, err
 	}
 	return resolveWith(home, proj)
-}
-
-// ResolveLower resolves the cascade BELOW the project layer -- default ⊕
-// template -- as it would apply under templateName ("" = no template
-// selected). The config UI uses it to mark inherited (lower-layer) skills in
-// the project editor (TODO §2 / found live 2026-07-07: a globally-enabled
-// skill showed as unchecked in every project). Errors (e.g. a missing
-// template) are the caller's to degrade on.
-func ResolveLower(home, templateName string) (Config, error) {
-	return resolveWith(home, Config{Template: templateName})
 }
 
 // resolveWith applies the cascade default ⊕ template ⊕ proj.

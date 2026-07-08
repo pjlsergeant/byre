@@ -16,25 +16,48 @@ type SkillRuntime struct {
 	Env    map[string]string
 }
 
-// Inherited is the editor's provenance input. Zero value = show nothing
-// inherited (degrade to the plain layer view, never error).
+// Inherited is the editor's provenance input. The lower layers ride RAW (not
+// pre-merged) so each effective row can name which layer set it; the editor
+// merges them itself via config.Merge -- the same op the cascade runs. Zero
+// value = show nothing inherited (degrade to the plain layer view).
 type Inherited struct {
-	// Lower maps a template name ("" = none selected) to the resolved lower
-	// cascade (default ⊕ that template). Keyed by template because the
-	// template picker is a live form field that flips the lower layers.
-	// nil for the --global editor: it IS the base layer.
-	Lower map[string]config.Config
+	// HasLower is false for the --global editor: it IS the base layer, so
+	// nothing is inherited regardless of what else is set.
+	HasLower bool
+	// Default is the raw global default.config layer.
+	Default config.Config
+	// Templates maps a template name to its raw layer. Consulted per the
+	// CURRENTLY selected template -- the template picker is a live form field
+	// that flips the lower layers.
+	Templates map[string]config.Config
 	// Skills maps each discovered skill's name to its runtime contribution,
 	// consulted for whatever skill set is currently effective in the form --
 	// toggling a skill adds/removes its rows live.
 	Skills map[string]SkillRuntime
 }
 
-// lowerNow is the lower-layer resolved config under the CURRENTLY selected
-// template (zero Config when there is none -- the --global editor).
+// lowerNow is the lower-layer resolved config (default ⊕ template) under the
+// CURRENTLY selected template; zero Config when this editor has no lower.
 func (m model) lowerNow() config.Config {
-	if m.inh.Lower == nil {
+	if !m.inh.HasLower {
 		return config.Config{}
 	}
-	return m.inh.Lower[fromNone(m.tmplOpts[m.tmplSel])]
+	t := fromNone(m.tmplOpts[m.tmplSel])
+	if t == "" {
+		return m.inh.Default
+	}
+	return config.Merge(m.inh.Default, m.inh.Templates[t])
+}
+
+// lowerSource names the sublayer an inherited entry comes from -- the current
+// template's raw layer wins over the default (it's the later layer), matching
+// merge order. has reports whether a raw layer carries the entry.
+func (m model) lowerSource(has func(config.Config) bool) string {
+	if t := fromNone(m.tmplOpts[m.tmplSel]); t != "" && has(m.inh.Templates[t]) {
+		return "template:" + t
+	}
+	if has(m.inh.Default) {
+		return "default"
+	}
+	return "inherited"
 }

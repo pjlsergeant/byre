@@ -117,6 +117,7 @@ const (
 	modeForm uiMode = iota
 	modeList
 	modeItem
+	modeMenu // per-row action menu over a list row (ADR 0018)
 	modeVolumes
 	modeText
 	modeSkills
@@ -178,7 +179,11 @@ type model struct {
 
 	// modeList
 	listField fieldID
-	listCur   int // 0..len(items); the last index is the "+ add" row
+	listCur   int // 0..len(rows); the last index is the "+ add" row
+
+	// modeMenu (per-row actions over the list row under the cursor)
+	menuRow listRow
+	menuCur int
 
 	// modeVolumes
 	volList      []VolumeStatus
@@ -344,6 +349,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateList(msg)
 		case modeItem:
 			return m.updateItem(msg)
+		case modeMenu:
+			return m.updateMenu(msg)
 		case modeVolumes:
 			return m.updateVolumes(msg)
 		case modeText:
@@ -491,6 +498,8 @@ func (m model) View() string {
 		return m.viewList()
 	case modeItem:
 		return m.viewItem()
+	case modeMenu:
+		return m.viewMenu()
 	case modeVolumes:
 		return m.viewVolumes()
 	case modeText:
@@ -621,18 +630,40 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		}
 		return s
 	default:
-		n := len(m.itemLines(f))
+		// List fields count EFFECTIVE state, like the Skills summary: what the
+		// box actually gets, with the inherited/skill share dimmed beside it.
+		eff, inherited, fromSkills := rowCounts(m.fieldRows(f))
 		s := dimStyle.Render("(none)")
-		if n == 1 {
-			s = "1 item"
-		} else if n > 1 {
-			s = fmt.Sprintf("%d items", n)
+		if eff > 0 {
+			s = fmt.Sprintf("%d %s", eff, fieldNoun(f, eff))
+			var parts []string
+			if inherited > 0 {
+				parts = append(parts, fmt.Sprintf("%d inherited", inherited))
+			}
+			if fromSkills > 0 {
+				parts = append(parts, fmt.Sprintf("%d from skills", fromSkills))
+			}
+			if len(parts) > 0 {
+				s += dimStyle.Render("  (" + strings.Join(parts, ", ") + ")")
+			}
 		}
 		if focused {
 			s += dimStyle.Render("  (enter to edit)")
 		}
 		return s
 	}
+}
+
+// fieldNoun is the summary noun for a list field, pluralized.
+func fieldNoun(f fieldID, n int) string {
+	noun := map[fieldID]string{fApt: "package", fEnv: "var", fMounts: "mount", fPorts: "port"}[f]
+	if noun == "" {
+		noun = "item"
+	}
+	if n != 1 {
+		noun += "s"
+	}
+	return noun
 }
 
 // renderSeg renders a segmented picker: every option is bracketed, the chosen

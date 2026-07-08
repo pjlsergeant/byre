@@ -40,10 +40,14 @@ func Config(s Streams, projectDir string, global bool) error {
 	// the base layer.
 	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}}
 	if !global {
-		inh.Lower = map[string]config.Config{}
-		for _, t := range append([]string{""}, templates...) {
-			if low, lerr := config.ResolveLower(home, t); lerr == nil {
-				inh.Lower[t] = low
+		inh.HasLower = true
+		if def, derr := config.ParseFile(filepath.Join(home, "default.config")); derr == nil {
+			inh.Default = def
+		}
+		inh.Templates = map[string]config.Config{}
+		for _, t := range templates {
+			if tc, terr := config.ParseFile(config.TemplatePath(templatesDir, t)); terr == nil {
+				inh.Templates[t] = tc
 			}
 		}
 	}

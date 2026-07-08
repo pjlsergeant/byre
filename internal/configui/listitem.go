@@ -15,36 +15,212 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
-// ---- list screen (browse a field's items) ----------------------------------
+// ---- list screen (browse a field's EFFECTIVE rows, ADR 0018) ---------------
 
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	items := m.itemLines(m.listField)
-	addRow := len(items) // index of the "+ add" pseudo-row
+	rows := m.fieldRows(m.listField)
+	addRow := len(rows) // index of the "+ add" pseudo-row
 	if cur, ok := cursorMove(msg.String(), m.listCur, addRow+1); ok {
 		m.listCur = cur
+		m.status = ""
 		return m, nil
 	}
 	switch msg.String() {
 	case "esc", "ctrl+c":
 		m.mode = modeForm
+		m.status = ""
 		return m, nil
 	case "a":
 		return m.startItem(-1), nil
-	case "d", "x":
-		if m.listCur < addRow {
-			m.deleteItem(m.listField, m.listCur)
-			if m.listCur > 0 && m.listCur >= len(m.itemLines(m.listField)) {
-				m.listCur--
-			}
-		}
-		return m, nil
 	case "enter":
 		if m.listCur == addRow {
 			return m.startItem(-1), nil
 		}
-		return m.startItem(m.listCur), nil
+		r := rows[m.listCur]
+		m.status = ""
+		if r.kind == rowSkill {
+			m.status = skillRowNote(r)
+			return m, nil
+		}
+		m.menuRow = r
+		m.menuCur = 0
+		m.mode = modeMenu
+		return m, nil
+	// Accelerators: the same actions the menu offers, keyed identically.
+	case "e":
+		if m.listCur < addRow {
+			return m.accelerate(rows[m.listCur], "e")
+		}
+	case "d", "x":
+		if m.listCur < addRow {
+			return m.accelerate(rows[m.listCur], "d")
+		}
 	}
 	return m, nil
+}
+
+// accelerate applies the row's menu action bound to key, or explains why the
+// row has none (the dead-ends read as information, not errors).
+func (m model) accelerate(r listRow, key string) (tea.Model, tea.Cmd) {
+	m.status = ""
+	for _, c := range rowChoices(m.listField, r) {
+		if c.key == key {
+			return m.applyRowAct(c.act, r)
+		}
+	}
+	m.status = deadEndNote(m.listField, r)
+	return m, nil
+}
+
+// ---- per-row action menu (modeMenu) -----------------------------------------
+
+// rowAct is one action a list row supports; the menu and the accelerator keys
+// dispatch to the same set.
+type rowAct int
+
+const (
+	actEdit rowAct = iota
+	actDelete
+	actOverride   // add a local entry shadowing the inherited one
+	actRemoveHere // write this layer's removal marker for the inherited entry
+	actRestore    // drop this layer's marker (re-inherit / clear stale)
+)
+
+type menuChoice struct {
+	label string
+	key   string // accelerator, shown dimmed beside the label
+	act   rowAct
+}
+
+// rowChoices is what the menu offers for a row: exactly what the cascade
+// supports for that field and kind, nothing refused after the fact.
+func rowChoices(f fieldID, r listRow) []menuChoice {
+	switch r.kind {
+	case rowLocal, rowOverride:
+		return []menuChoice{{"Edit", "e", actEdit}, {"Delete", "d", actDelete}}
+	case rowInherited:
+		switch f {
+		case fEnv:
+			return []menuChoice{{"Override here", "e", actOverride}}
+		case fMounts:
+			return []menuChoice{
+				{"Override here", "e", actOverride},
+				{"Remove in this project", "d", actRemoveHere},
+			}
+		default: // apt, ports: no per-entry override, just the off-switch
+			return []menuChoice{{"Remove in this project", "d", actRemoveHere}}
+		}
+	case rowRemoved:
+		return []menuChoice{{"Restore", "d", actRestore}}
+	case rowStaleMarker:
+		return []menuChoice{{"Clear marker", "d", actRestore}}
+	}
+	return nil // rowSkill: no menu; the list screen shows a pointer instead
+}
+
+func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	choices := rowChoices(m.listField, m.menuRow)
+	if cur, ok := cursorMove(msg.String(), m.menuCur, len(choices)); ok {
+		m.menuCur = cur
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		m.mode = modeList
+		return m, nil
+	case "enter", " ":
+		if m.menuCur < len(choices) {
+			m.mode = modeList
+			return m.applyRowAct(choices[m.menuCur].act, m.menuRow)
+		}
+	default:
+		for _, c := range choices {
+			if msg.String() == c.key {
+				m.mode = modeList
+				return m.applyRowAct(c.act, m.menuRow)
+			}
+		}
+	}
+	return m, nil
+}
+
+// applyRowAct performs one row action against THIS layer's working state --
+// every action is a single legible change to the open file (ADR 0018).
+func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
+	m.status = ""
+	switch act {
+	case actEdit:
+		return m.startItem(r.idx), nil
+	case actOverride:
+		return m.startOverride(r), nil
+	case actDelete:
+		m.deleteItem(m.listField, r.idx)
+		if r.also {
+			m.status = r.text + " is still inherited — remove again to turn it off here"
+		}
+	case actRemoveHere:
+		m.removeHere(r)
+	case actRestore:
+		m.deleteItem(m.listField, r.idx)
+	}
+	if n := len(m.fieldRows(m.listField)); m.listCur > n {
+		m.listCur = n
+	}
+	return m, nil
+}
+
+// removeHere writes this layer's removal marker for an inherited entry: the
+// cascade's off-switch, spelled per field (ADR 0018).
+func (m *model) removeHere(r listRow) {
+	switch m.listField {
+	case fApt:
+		m.apt = append(m.apt, "!"+r.ident)
+	case fMounts:
+		m.mounts = append(m.mounts, config.Mount{Target: "!" + r.ident})
+	case fPorts:
+		if c, err := strconv.Atoi(r.ident); err == nil {
+			m.ports = append(m.ports, config.Port{Container: c, Remove: true})
+		}
+	}
+}
+
+// startOverride opens the add editor prefilled with an inherited entry's
+// values; saving writes a local entry that shadows it (env by key, mounts by
+// target -- Merge's replace rules do the shadowing).
+func (m model) startOverride(r listRow) model {
+	next := m.startItem(-1)
+	switch m.listField {
+	case fEnv:
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(r.vals[1])
+	case fMounts:
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(r.vals[1])
+		switch r.vals[2] {
+		case "rw":
+			next.itemMode = 1
+		case "disabled":
+			next.itemMode = 2
+		}
+	}
+	return next
+}
+
+// skillRowNote points at the one place a skill-contributed row can be turned
+// off: the skill itself.
+func skillRowNote(r listRow) string {
+	return "granted by " + r.source + " — disable it in Skills to remove"
+}
+
+// deadEndNote explains a keypress the cascade can't honor for this row.
+func deadEndNote(f fieldID, r listRow) string {
+	if f == fEnv && r.kind == rowInherited {
+		return "can't unset an inherited var from this layer — override its value here, or edit the " + r.source + " config"
+	}
+	if r.kind == rowSkill {
+		return skillRowNote(r)
+	}
+	return ""
 }
 
 func (m *model) deleteItem(f fieldID, i int) {
@@ -421,33 +597,7 @@ func putAt[T any](s []T, idx int, v T) []T {
 	return out
 }
 
-// ---- item lines (display form of a field's items) ---------------------------
-
-func (m model) itemLines(f fieldID) []string {
-	switch f {
-	case fApt:
-		return m.apt
-	case fEnv:
-		out := make([]string, len(m.env))
-		for i, kv := range m.env {
-			out[i] = kv.Key + "=" + kv.Value
-		}
-		return out
-	case fMounts:
-		out := make([]string, len(m.mounts))
-		for i, mt := range m.mounts {
-			out[i] = mountLine(mt)
-		}
-		return out
-	case fPorts:
-		out := make([]string, len(m.ports))
-		for i, pt := range m.ports {
-			out[i] = portLine(pt)
-		}
-		return out
-	}
-	return nil
-}
+// ---- display helpers ---------------------------------------------------------
 
 func mountLine(mt config.Mount) string {
 	mode := mt.Mode
@@ -477,23 +627,89 @@ func portLine(p config.Port) string {
 func (m model) viewList() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(fieldLabel[m.listField]))
-	items := m.itemLines(m.listField)
-	if len(items) == 0 {
+	rows := m.fieldRows(m.listField)
+	if len(rows) == 0 {
 		b.WriteString(dimStyle.Render("  (no items yet)\n"))
 	}
-	for i, line := range items {
+	for i, r := range rows {
+		line := r.text
+		if r.kind == rowRemoved || r.kind == rowStaleMarker {
+			line = dimStyle.Render(line)
+		}
+		if ann := rowAnnotation(r); ann != "" {
+			line += dimStyle.Render(ann)
+		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.listCur, line))
 	}
 	// The "+ add" row.
 	addLine := "+ add " + fieldLabel[m.listField]
-	if m.listCur == len(items) {
+	if m.listCur == len(rows) {
 		fmt.Fprintf(&b, "%s\n", cursorLine(true, addLine))
 	} else {
 		fmt.Fprintf(&b, "%s\n", cursorLine(false, dimStyle.Render(addLine)))
 	}
 
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter edit · a add · d delete · esc back"))
+	if m.status != "" {
+		b.WriteString("\n" + dimStyle.Render(m.status))
+	}
+	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter actions · a add · esc back"))
 	return b.String()
+}
+
+// rowAnnotation is the dim provenance tail after a row's value (ADR 0018).
+func rowAnnotation(r listRow) string {
+	switch r.kind {
+	case rowLocal:
+		if r.also {
+			return "  (also " + r.source + ")"
+		}
+	case rowOverride:
+		return "  (overrides " + r.source + ")"
+	case rowInherited:
+		return "  (" + r.source + ")"
+	case rowRemoved:
+		return "  (" + r.source + " — removed here)"
+	case rowStaleMarker:
+		return "  (removes nothing — stale marker)"
+	case rowSkill:
+		return "  (" + r.source + ")"
+	}
+	return ""
+}
+
+// viewMenu renders the per-row action menu: the row, where it's set, and the
+// actions it supports -- terse labels, accelerator keys beside them.
+func (m model) viewMenu() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.menuRow.text))
+	b.WriteString(dimStyle.Render("Set in: "+setIn(m.menuRow)) + "\n\n")
+	choices := rowChoices(m.listField, m.menuRow)
+	for i, c := range choices {
+		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.menuCur, c.label+dimStyle.Render("  "+c.key)))
+	}
+	if m.listField == fEnv && m.menuRow.kind == rowInherited {
+		b.WriteString("\n" + dimStyle.Render("(can't unset from this layer — edit the "+m.menuRow.source+" config to remove)"))
+	}
+	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter apply · esc back"))
+	return b.String()
+}
+
+// setIn names where the row under the menu is set, in cascade vocabulary.
+func setIn(r listRow) string {
+	switch r.kind {
+	case rowOverride:
+		return "this file, overriding " + r.source
+	case rowInherited, rowSkill:
+		return r.source
+	case rowRemoved:
+		return r.source + " — removed by this file"
+	case rowStaleMarker:
+		return "this file (marker matches nothing)"
+	}
+	if r.also {
+		return "this file — also in " + r.source
+	}
+	return "this file"
 }
 
 func (m model) viewItem() string {

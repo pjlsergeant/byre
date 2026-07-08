@@ -760,7 +760,7 @@ func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
 // is a lie (found live 2026-07-07). Toggling one writes the cascade's real
 // off-switch (`!name`) into THIS layer; toggling again removes it.
 func TestSkillsInheritedShownOnAndToggledViaRemoval(t *testing.T) {
-	inherited := Inherited{Lower: map[string]config.Config{"": {Skills: []string{"claude-shared-auth", "devloop"}}}}
+	inherited := Inherited{HasLower: true, Default: config.Config{Skills: []string{"claude-shared-auth", "devloop"}}}
 	m := newModel("t", "/tmp/x", config.Config{Agent: "claude"}, nil,
 		[]string{"claude"}, []string{"claude", "devloop", "claude-shared-auth"}, nil, inherited, nil, false)
 
@@ -839,7 +839,7 @@ func TestSkillsInheritedShownOnAndToggledViaRemoval(t *testing.T) {
 // shows checked), not raw layer entries: a `!name` removal marker is not an
 // enabled skill, and inherited-on skills count even with an empty local list.
 func TestSkillsSummaryCountsEffectiveState(t *testing.T) {
-	inherited := Inherited{Lower: map[string]config.Config{"": {Skills: []string{"claude-shared-auth", "devloop"}}}}
+	inherited := Inherited{HasLower: true, Default: config.Config{Skills: []string{"claude-shared-auth", "devloop"}}}
 	m := newModel("t", "/tmp/x", config.Config{Agent: "claude"}, nil,
 		[]string{"claude"}, []string{"claude", "devloop", "claude-shared-auth"}, nil, inherited, nil, false)
 
@@ -859,7 +859,7 @@ func TestSkillsSummaryCountsEffectiveState(t *testing.T) {
 // A pre-existing `!name` marker in the loaded config must render as a row
 // (removed state), not as a bogus skill named "!devloop".
 func TestSkillsExistingRemovalMarkerRendered(t *testing.T) {
-	inherited := Inherited{Lower: map[string]config.Config{"": {Skills: []string{"devloop"}}}}
+	inherited := Inherited{HasLower: true, Default: config.Config{Skills: []string{"devloop"}}}
 	cfg := config.Config{Agent: "claude", Skills: []string{"!devloop"}}
 	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude"}, []string{"claude", "devloop"}, nil, inherited, nil, false)
 	view := m.viewSkills()
