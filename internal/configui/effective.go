@@ -216,7 +216,11 @@ func (m model) portRows() []listRow {
 		lowerKeys[portKey(p)] = true
 		lowerByContainer[p.Container] = true
 		c := p.Container
-		src := m.lowerSource(func(cf config.Config) bool { return hasContainerPort(cf.Ports, c) })
+		// Attribute by the full effective identity, not container alone: two
+		// layers may bind the same container port on different interfaces/host
+		// ports, and each row must name its own layer (review finding).
+		k := portKey(p)
+		src := m.lowerSource(func(cf config.Config) bool { return hasPortKey(cf.Ports, k) })
 		switch {
 		case hasKey(markerIdx, c):
 			rows = append(rows, listRow{kind: rowRemoved, text: portLine(p), source: src, idx: markerIdx[c]})
@@ -304,9 +308,9 @@ func hasMountTarget(ms []config.Mount, target string) bool {
 	return false
 }
 
-func hasContainerPort(ps []config.Port, container int) bool {
+func hasPortKey(ps []config.Port, key string) bool {
 	for _, p := range ps {
-		if !p.Remove && p.Container == container {
+		if !p.Remove && portKey(p) == key {
 			return true
 		}
 	}

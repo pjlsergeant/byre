@@ -419,3 +419,20 @@ func TestSigDistinguishesPortMarker(t *testing.T) {
 		t.Fatal("marker and real binding must sign differently")
 	}
 }
+
+// Two lower layers binding the same container port on different interfaces
+// must each be attributed to their own layer (review finding, round 3).
+func TestPortAttributionByFullIdentity(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Templates["go"] = config.Config{
+		Ports: []config.Port{{Container: 5432, Interface: "0.0.0.0", Host: 15432}},
+	}
+	rows := m.portRows()
+	if r := rowByText(t, rows, portLine(config.Port{Container: 5432})); r.source != "default" {
+		t.Errorf("default's binding misattributed: %+v", r)
+	}
+	tmplLine := portLine(config.Port{Container: 5432, Interface: "0.0.0.0", Host: 15432})
+	if r := rowByText(t, rows, tmplLine); r.source != "template:go" {
+		t.Errorf("template's binding misattributed: %+v", r)
+	}
+}
