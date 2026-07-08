@@ -56,6 +56,15 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
     pass)
 - [ ] **Site.** Landing page + real docs, devlog demoted to `/devlog/`; the
   decided shape lives in `docs/marketing/positioning.md` "Site plan".
+- [ ] **Offer to fix a shadowing Claude credentials.json** (Pete,
+  2026-07-08): the launcher already warns when a leftover per-project
+  `/login` credential shadows the shared token (it 401s ~8h later); go one
+  better and offer the fix (move `~/.claude/.credentials.json` aside)
+  instead of just naming it.
+- [ ] **README "How do I": enable the firewall** (Pete, 2026-07-08): doc
+  add to the existing How-do-I section.
+- [ ] **README "How do I": mount other folders** (Pete, 2026-07-08): doc
+  add, same section.
 - [ ] **TERM + timezone + host-env passthrough.** Pass host TERM and TZ into
   every box via the chassis (the box currently guesses both), plus a config
   key for named host env vars (shape TBD, e.g. `env_passthrough = ["FOO"]`).
