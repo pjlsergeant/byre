@@ -583,17 +583,3 @@ func TestEgressPortDefaultsTo443(t *testing.T) {
 	}
 }
 
-func TestSplitEgressSkipsMalformed(t *testing.T) {
-	got := SplitEgress("api.anthropic.com, bad host, deb.debian.org:80 host:99999 grafana:8443")
-	// "bad host" splits into two bare tokens "bad"/"host" (both valid hosts,
-	// default 443); "host:99999" is out of range and dropped.
-	want := map[string]int{"api.anthropic.com": 443, "bad": 443, "host": 443, "deb.debian.org": 80, "grafana": 8443}
-	if len(got) != len(want) {
-		t.Fatalf("SplitEgress = %+v, want %d entries", got, len(want))
-	}
-	for _, a := range got {
-		if want[a.Host] != a.Port {
-			t.Errorf("entry %s:%d not expected (want port %d)", a.Host, a.Port, want[a.Host])
-		}
-	}
-}

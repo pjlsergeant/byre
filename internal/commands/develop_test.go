@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -367,5 +368,26 @@ func TestDevelopNetnsNoNonceSkipsHooks(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "fail the launch closed") {
 		t.Errorf("expected the fail-closed note, got: %s", stderr.String())
+	}
+}
+
+// resolvedEgress unions skill egress with the config `egress` key (ADR 0019),
+// normalized to host:port and deduped.
+func TestResolvedEgressUnionsConfigKey(t *testing.T) {
+	rv := resolved{
+		cfg: config.Config{Egress: []string{"grafana.com", "api.anthropic.com"}},
+		skills: skills.Resolved{Skills: []skills.Skill{
+			func() skills.Skill {
+				var sk skills.Skill
+				sk.Name = "claude"
+				sk.File.Runtime.Egress = []string{"api.anthropic.com"}
+				return sk
+			}(),
+		}},
+	}
+	got := resolvedEgress(rv)
+	want := []string{"api.anthropic.com:443", "grafana.com:443"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("resolvedEgress = %v, want %v", got, want)
 	}
 }

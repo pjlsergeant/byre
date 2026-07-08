@@ -22,13 +22,14 @@ GATE_FILE=/etc/byre/launch-gate
 gate_port="$(tr -cd '0-9' < "$GATE_FILE")"
 [ -n "$gate_port" ] || die "gate file holds no port"
 
-# The allowlist entries: the union of every enabled skill's declared egress
-# (BYRE_EGRESS, already normalized to host:port by byre) plus the user's
-# FIREWALL_ALLOW extension (host[:port], port defaults to 443). NO host list is
-# hardcoded here — each agent skill brings its own endpoints and byre unions
-# them. Both vars are space- or comma-separated.
+# The allowlist entries: BYRE_EGRESS, the union byre computes of every enabled
+# skill's declared egress AND the user's `egress` config key (ADR 0019),
+# already normalized to host:port. NO host list is hardcoded here — each agent
+# skill brings its own endpoints and byre unions them. Space- or
+# comma-separated. (FIREWALL_ALLOW retired with ADR 0019 — move any value into
+# the config's `egress` list.)
 entries=()
-for e in $(echo "${BYRE_EGRESS:-} ${FIREWALL_ALLOW:-}" | tr ',' ' '); do
+for e in $(echo "${BYRE_EGRESS:-}" | tr ',' ' '); do
   entries+=("$e")
 done
 requested=${#entries[@]}
@@ -39,9 +40,10 @@ v4rules=() v6rules=()   # elements: "ip port"
 probe_host="" probe_port=""
 for e in "${entries[@]+"${entries[@]}"}"; do
   if [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=443; fi
-  # Match byre's Go validation (skills.parseEgress): numeric, 1..65535. Skill
-  # egress is already validated; FIREWALL_ALLOW is the user path and isn't, so
-  # reject an out-of-range port here rather than let iptables fail at launch.
+  # Match byre's Go validation (config.ParseEgress): numeric, 1..65535. byre
+  # validates everything it puts in BYRE_EGRESS, but this script also runs
+  # ejected (byre ejectfirewall) where the value is hand-editable — so reject
+  # an out-of-range port here rather than let iptables fail at launch.
   case "$port" in ''|*[!0-9]*) log "warning: bad egress entry '$e' — skipping"; continue ;; esac
   if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
     log "warning: egress '$e' port out of range — skipping"; continue

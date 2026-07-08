@@ -168,15 +168,15 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			label := runKey + "=" + nonce
 			params.Labels = append(params.Labels, label)
 			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
-			// union of every enabled skill's declared egress (computed here, so
-			// it can't come from baked image ENV); a firewall skill reads it
-			// alongside the user's FIREWALL_ALLOW. Copy params.Env so the added
-			// key doesn't leak into the box's own runtime env.
+			// union of every enabled skill's declared egress plus the config
+			// `egress` key (ADR 0019) — computed here, so it can't come from
+			// baked image ENV. Copy params.Env so the added key doesn't leak
+			// into the box's own runtime env.
 			netnsEnv := make(map[string]string, len(params.Env)+1)
 			for k, v := range params.Env {
 				netnsEnv[k] = v
 			}
-			netnsEnv["BYRE_EGRESS"] = strings.Join(rv.skills.Egress(), " ")
+			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
 			done := make(chan struct{})
 			finished := make(chan struct{})
 			go func() {
@@ -289,4 +289,28 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 	fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
 	fmt.Fprintf(w, "  • open a shell in it:  byre shell\n")
 	fmt.Fprintf(w, "  • stop it:             %s stop %s\n", eng, id)
+}
+
+// resolvedEgress is the full normalized allowlist the netns helper enforces:
+// every enabled skill's declared egress plus the config `egress` key
+// (ADR 0019), deduped as host:port. The config entries are already validated
+// by the resolved config, so a parse failure here is unreachable and skipped.
+func resolvedEgress(rv resolved) []string {
+	out := rv.skills.Egress()
+	seen := map[string]bool{}
+	for _, e := range out {
+		seen[e] = true
+	}
+	for _, e := range rv.cfg.Egress {
+		host, port, err := config.ParseEgress(e)
+		if err != nil {
+			continue
+		}
+		hp := fmt.Sprintf("%s:%d", host, port)
+		if !seen[hp] {
+			seen[hp] = true
+			out = append(out, hp)
+		}
+	}
+	return out
 }

@@ -106,10 +106,10 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.RunArgs = append(append([]string{}, res.RunArgs()...), cfg.RunArgs...)
 			info.NetPosture, info.NetPostureSkill = res.NetworkPosture()
 			info.Egress = res.EgressAllows()
-			// The firewall also honors FIREWALL_ALLOW from config env (the user
-			// extension path), so status must show those holes too — attributed
-			// to config, not a skill — or it under-reports what the box can reach.
-			info.Egress = append(info.Egress, configEgress(cfg.Env["FIREWALL_ALLOW"])...)
+			// The `egress` config key is the user's extension path (ADR 0019),
+			// so status must show those holes too — attributed to config, not a
+			// skill — or it under-reports what the box can reach.
+			info.Egress = append(info.Egress, configEgress(cfg.Egress)...)
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -299,15 +299,20 @@ func renderStatus(w io.Writer, s statusInfo) {
 	}
 }
 
-// configEgress parses the project's FIREWALL_ALLOW env value into egress
-// entries attributed to config, so status shows the user's extension holes
-// alongside the skills'. Malformed entries are dropped (as firewall.sh does).
-func configEgress(raw string) []skills.EgressAllow {
-	entries := skills.SplitEgress(raw)
-	for i := range entries {
-		entries[i].Skill = "config: FIREWALL_ALLOW"
+// configEgress parses the resolved config's egress entries, attributed to
+// config, so status shows the user's extension holes alongside the skills'.
+// The resolved config is already validated, so parse failures can't happen;
+// skipping is belt-and-braces, mirroring EgressAllows.
+func configEgress(entries []string) []skills.EgressAllow {
+	var out []skills.EgressAllow
+	for _, e := range entries {
+		host, port, err := config.ParseEgress(e)
+		if err != nil {
+			continue
+		}
+		out = append(out, skills.EgressAllow{Skill: "config", Host: host, Port: port})
 	}
-	return entries
+	return out
 }
 
 // networkLine renders the Network row. Default: "open". With a skill-declared

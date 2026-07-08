@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -53,6 +54,38 @@ var (
 	// entries are joined into a `RUN apt-get install`/`npm install -g` shell line.
 	packageRe = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9@/._+:=~^-]*$`)
 )
+
+// egressHostRe keeps an egress host to hostname characters: the value ends up
+// in the netns helper's env and is used in `getent`/`iptables` args, so this
+// keeps it injection-safe and legible. (Moved from skills with ADR 0019 — the
+// `egress` config key and skill egress share one grammar and one parser.)
+var egressHostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:_-]*[A-Za-z0-9])?$`)
+
+// ParseEgress splits a `host` or `host:port` entry, defaulting the port to
+// 443. It rejects a malformed host or an out-of-range port. A bracketed IPv6
+// literal ("[::1]:443") is out of scope — egress entries are hostnames or
+// IPv4; a bare IPv6 with colons is ambiguous with host:port, so reject it.
+func ParseEgress(entry string) (host string, port int, err error) {
+	e := strings.TrimSpace(entry)
+	if e == "" {
+		return "", 0, fmt.Errorf("empty egress entry")
+	}
+	host, port = e, 443
+	// Split a trailing :port only when the tail is all digits, so a hostname
+	// stays intact and an accidental IPv6 (multiple colons) is caught below.
+	if i := strings.LastIndexByte(e, ':'); i >= 0 {
+		if p, perr := strconv.Atoi(e[i+1:]); perr == nil {
+			host, port = e[:i], p
+		}
+	}
+	if port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("egress %q: port out of range", entry)
+	}
+	if strings.ContainsRune(host, ':') || !egressHostRe.MatchString(host) {
+		return "", 0, fmt.Errorf("egress %q: not a valid host[:port]", entry)
+	}
+	return host, port, nil
+}
 
 // Mount is a host-bind mount. Identity for `!name` removal is Target.
 //
@@ -149,6 +182,12 @@ type Config struct {
 	Mounts    []Mount           `toml:"mounts,omitempty"`
 	Volumes   []Volume          `toml:"volumes,omitempty"`
 	Ports     []Port            `toml:"ports,omitempty"`
+	// Egress is the user's firewall-allowlist extension (ADR 0019): extra
+	// `host[:port]` endpoints (port defaults to 443) unioned with every
+	// enabled skill's declared egress. A grant under a restrictive posture;
+	// declarative and inert without one (nothing enforces it, same as skill
+	// egress). String list, so the cascade unions it with `!entry` removal.
+	Egress []string `toml:"egress,omitempty"`
 
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
@@ -293,6 +332,7 @@ func Merge(base, over Config) Config {
 	out.Apt = mergeStrings(base.Apt, over.Apt)
 	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
+	out.Egress = mergeStrings(base.Egress, over.Egress)
 
 	// Maps: union, over wins per key.
 	out.Env = mergeMap(base.Env, over.Env)
@@ -388,6 +428,18 @@ func (c Config) validateScalars(layer bool) error {
 	// where their build blocks are resolved (see internal/skills).
 	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
 		return err
+	}
+
+	// Egress entries share the skills' grammar (ADR 0019); markers are exempt
+	// in layer mode like the package lists above.
+	egress := c.Egress
+	if layer {
+		egress = filter(egress, func(s string) bool { return !isRemoval(s) })
+	}
+	for _, e := range egress {
+		if _, _, err := ParseEgress(e); err != nil {
+			return err
+		}
 	}
 
 	// worktree_base: "" (refuse), "sibling", or a host path (~ or absolute, and

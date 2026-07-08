@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -26,36 +25,10 @@ import (
 // characters that could forge the surrounding status annotations.
 var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// egressHostRe bounds an egress hostname: a plain DNS name (or IP), no shell
-// metacharacters. The value is passed to the netns helper as an env var and
-// used there in `getent`/`iptables` args, so keeping it to hostname characters
-// keeps it injection-safe and legible.
-var egressHostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:_-]*[A-Za-z0-9])?$`)
-
-// parseEgress splits a `host` or `host:port` entry, defaulting the port to
-// 443. It rejects a malformed host or an out-of-range port. A bracketed IPv6
-// literal ("[::1]:443") is out of scope — egress entries are hostnames or
-// IPv4; a bare IPv6 with colons is ambiguous with host:port, so reject it.
+// parseEgress delegates to the shared `host[:port]` grammar in config — the
+// egress config key (ADR 0019) and skill egress are validated by one parser.
 func parseEgress(entry string) (host string, port int, err error) {
-	e := strings.TrimSpace(entry)
-	if e == "" {
-		return "", 0, fmt.Errorf("empty egress entry")
-	}
-	host, port = e, 443
-	// Split a trailing :port only when the tail is all digits, so a hostname
-	// stays intact and an accidental IPv6 (multiple colons) is caught below.
-	if i := strings.LastIndexByte(e, ':'); i >= 0 {
-		if p, perr := strconv.Atoi(e[i+1:]); perr == nil {
-			host, port = e[:i], p
-		}
-	}
-	if port < 1 || port > 65535 {
-		return "", 0, fmt.Errorf("egress %q: port out of range", entry)
-	}
-	if strings.ContainsRune(host, ':') || !egressHostRe.MatchString(host) {
-		return "", 0, fmt.Errorf("egress %q: not a valid host[:port]", entry)
-	}
-	return host, port, nil
+	return config.ParseEgress(entry)
 }
 
 // AgentContrib is the agent-skill launch contribution.
@@ -296,26 +269,6 @@ type EgressAllow struct {
 	Skill string
 	Host  string
 	Port  int
-}
-
-// SplitEgress parses a raw space/comma/tab-separated host[:port] list — the
-// grammar the user's FIREWALL_ALLOW uses — into host:port pairs, SKIPPING
-// malformed entries (Skill left for the caller to attribute). Unlike the skill
-// egress path, this input isn't validated at load, so a bad entry is dropped,
-// not an error — mirroring firewall.sh, which warns-and-skips. This is the one
-// parser for the FIREWALL_ALLOW grammar so status can't drift from the script.
-func SplitEgress(raw string) []EgressAllow {
-	var out []EgressAllow
-	for _, tok := range strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ' ' || r == ',' || r == '\t' || r == '\n'
-	}) {
-		host, port, err := parseEgress(tok)
-		if err != nil {
-			continue
-		}
-		out = append(out, EgressAllow{Host: host, Port: port})
-	}
-	return out
 }
 
 // EgressAllows lists every enabled skill's egress entries, parsed and

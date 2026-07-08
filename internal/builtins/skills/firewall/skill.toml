@@ -20,8 +20,8 @@
 # carries only the generic base below) and passes the union to the helper as
 # BYRE_EGRESS. Entries are host[:port], port defaulting to 443, and each rule
 # is scoped to that TCP port, not all-ports to the IP (shared CDN addresses
-# front many tenants). Extend per project via the FIREWALL_ALLOW env var in
-# byre.config ([env] FIREWALL_ALLOW = "host1 host2:8443 ..."), same grammar.
+# front many tenants). Extend per project via the `egress` config key
+# (egress = ["host1", "host2:8443"], ADR 0019), same grammar.
 # IPs are resolved at apply time — a snapshot; a CDN rotating a domain's IPs
 # mid-session makes that host start failing (closed, not open). Restart the
 # session to re-resolve.
@@ -52,7 +52,7 @@ netns_init = "/usr/local/bin/byre-firewall"
 # API endpoints are NOT here; each agent skill declares its own egress and the
 # firewall unions them all. Debian's apt mirrors default to http (port 80), so
 # they're listed with an explicit :80 (and :443 for https mirrors). Extend
-# per project with FIREWALL_ALLOW in [env] (host[:port], same grammar).
+# per project with the `egress` config key (host[:port], same grammar).
 # (Registry endpoints could later move to the language templates that imply
 # them; kept here for v1.)
 egress = [

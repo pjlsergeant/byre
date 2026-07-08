@@ -492,6 +492,7 @@ func sampleConfig() Config {
 		Env:            map[string]string{"K": "v"},
 		Files:          map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:         []string{"devloop"},
+		Egress:         []string{"grafana.com"},
 		Mounts:         []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
 		Volumes:        []Volume{{Name: "v", Role: "cache", Target: "/c"}},
 		Ports:          []Port{{Container: 8080}},
@@ -687,5 +688,47 @@ func TestValidateLayerPortRemoveNoCollision(t *testing.T) {
 	}}
 	if err := c.ValidateLayer(); err != nil {
 		t.Errorf("remove marker + real binding of same port should validate: %v", err)
+	}
+}
+
+func TestMergeEgressUnionAndRemoval(t *testing.T) {
+	got := Merge(Config{Egress: []string{"grafana.com", "internal:8443"}},
+		Config{Egress: []string{"!internal:8443", "api.stripe.com"}}).Egress
+	if want := []string{"grafana.com", "api.stripe.com"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("egress merge: got %v want %v", got, want)
+	}
+}
+
+func TestValidateEgressEntries(t *testing.T) {
+	if err := (Config{Egress: []string{"grafana.com", "internal:8443"}}).ValidateLayer(); err != nil {
+		t.Errorf("valid egress should pass: %v", err)
+	}
+	if err := (Config{Egress: []string{"internal:99999"}}).ValidateLayer(); err == nil {
+		t.Error("out-of-range egress port should fail")
+	}
+	if err := (Config{Egress: []string{"bad host"}}).ValidateLayer(); err == nil {
+		t.Error("egress host with a space should fail")
+	}
+	// Markers: legal in a layer, a bug in a resolved config.
+	marker := Config{Egress: []string{"!grafana.com"}}
+	if err := marker.ValidateLayer(); err != nil {
+		t.Errorf("egress removal marker should pass layer validation: %v", err)
+	}
+	if err := marker.Validate(); err == nil {
+		t.Error("egress marker surviving to a resolved config should fail")
+	}
+}
+
+func TestParseEgress(t *testing.T) {
+	if h, p, err := ParseEgress("deb.debian.org:80"); err != nil || h != "deb.debian.org" || p != 80 {
+		t.Fatalf("ParseEgress explicit = (%q,%d,%v)", h, p, err)
+	}
+	if h, p, err := ParseEgress("grafana.com"); err != nil || h != "grafana.com" || p != 443 {
+		t.Fatalf("ParseEgress default = (%q,%d,%v)", h, p, err)
+	}
+	for _, bad := range []string{"", "host:0", "host:99999", "::1", "a b"} {
+		if _, _, err := ParseEgress(bad); err == nil {
+			t.Errorf("ParseEgress(%q) should fail", bad)
+		}
 	}
 }

@@ -183,13 +183,16 @@ func TestRenderStatusNoEgressWithoutPosture(t *testing.T) {
 }
 
 func TestConfigEgressAttributed(t *testing.T) {
-	entries := configEgress("grafana.com internal:8443 bad:99999")
+	entries := configEgress([]string{"grafana.com", "internal:8443", "bad:99999"})
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 valid entries (99999 dropped), got %+v", entries)
 	}
+	if entries[0].Host != "grafana.com" || entries[0].Port != 443 || entries[1].Port != 8443 {
+		t.Errorf("entries parsed wrong: %+v", entries)
+	}
 	for _, e := range entries {
-		if e.Skill != "config: FIREWALL_ALLOW" {
-			t.Errorf("FIREWALL_ALLOW entry not attributed to config: %+v", e)
+		if e.Skill != "config" {
+			t.Errorf("egress entry not attributed to config: %+v", e)
 		}
 	}
 }
