@@ -2,10 +2,20 @@
 
 ## Unreleased
 
+- **New `egress` config key** (ADR 0019): extra firewall-allowlist entries
+  as first-class config -- `egress = ["internal.example.com", "api.stripe.com:8443"]`
+  -- unioned across cascade layers like every other list (`!entry` removes),
+  shown in the config UI's GRANTS section and in `byre status`, attributed.
+  Inert without a posture skill, and the UI says so. **`FIREWALL_ALLOW` is
+  retired**: the firewall no longer reads it -- move any value into `egress`.
+- **New `byre ejectfirewall`**: prints the firewall sidecar byre runs at
+  launch as a standalone script, so leaving byre no longer means leaving
+  the walls. With the firewall enabled, `byre dockerfile` and
+  `byre dockerrun` now explain the launch gate an ejected image would
+  otherwise die at, and the gate's failure message points the same way.
 - New `docs/EJECTING.md` + a "Stop using byre?" How-do-I: leaving byre is
-  `byre dockerfile` + `byre dockerrun`, with the firewall as the one named
-  thing that doesn't travel (its rules are applied from outside the box) --
-  bring your own.
+  `byre dockerfile` + `byre dockerrun` (+ `byre ejectfirewall` if
+  firewalled).
 
 ## v0.1.3 -- 2026-07-08
 

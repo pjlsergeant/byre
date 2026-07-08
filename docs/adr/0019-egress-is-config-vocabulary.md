@@ -48,8 +48,11 @@ run command -- except the firewall: its rules are applied from outside
 the box by byre's netns helper, so no Dockerfile or run command can
 carry them, and the baked-in launch gate makes an ejected firewalled
 image fail closed after 30s with a message written for byre's own
-failure context. The boundary is documented (`docs/EJECTING.md`:
-"dockerfile, dockerrun, and bring your own firewall") and each surface
+failure context. But the enforcement script ships INSIDE the image, so
+the walls can travel after all: **`byre ejectfirewall`** (Pete's call,
+same session) prints byre's own sidecar invocation as a standalone
+script — start the box, run the script against it, the gate opens.
+The boundary is documented (`docs/EJECTING.md`) and each surface
 explains itself when the firewall is enabled: a comment block in the
 `dockerfile` output, a stderr note beside the `dockerrun` command (kept
 off stdout so the printed command stays copy-pasteable), and an
@@ -65,9 +68,11 @@ eject-aware hint in the launch gate's failure message.
 - **A FIREWALL_ALLOW compat shim**: a young project keeping a magic env
   var alive next to its replacement doubles the surface and keeps the
   broken override semantics reachable.
-- **Making the walls travel on ejection** (rules applied in-container at
-  start): needs CAP_NET_ADMIN and an in-box root phase, unwinding
-  ADR 0010's "nothing inside the box is privileged".
+- **Making the walls travel INSIDE the box** (rules applied in-container
+  at start): needs CAP_NET_ADMIN and an in-box root phase, unwinding
+  ADR 0010's "nothing inside the box is privileged". `ejectfirewall`
+  keeps the outside-the-box shape: the privileged step stays a separate
+  sidecar, just user-run instead of byre-run.
 
 ## Boundaries and follow-ons
 

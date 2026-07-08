@@ -14,5 +14,11 @@ nothing in the image or the run command depends on byre existing.
 *outside* the box at launch (`docs/adr/0010`), so no Dockerfile or run
 command can carry them -- and a firewalled image refuses to start
 without byre's ready signal (it fails closed rather than launching
-unwalled). To eject a firewalled project: disable the firewall skill,
-regenerate, and bring your own firewall.
+unwalled). Two ways out:
+
+```sh
+byre ejectfirewall > firewall.sh   # the sidecar byre runs, as a script:
+                                   # start the box, then ./firewall.sh <container>
+```
+
+or disable the firewall skill and regenerate -- bring your own firewall.

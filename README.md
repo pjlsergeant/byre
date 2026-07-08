@@ -151,6 +151,7 @@ proposal: byre shows you its grants and asks before adopting it.
 | `byre status` | What can this thing touch? Resolved config, mounts, skills, volumes, session. |
 | `byre config [--global]` | Interactive config editor -- packages, mounts, agents, in seconds. |
 | `byre dockerfile` | Print the generated Dockerfile. Your exit, whenever you want it. |
+| `byre ejectfirewall` | Print the firewall sidecar as a standalone script -- the exit's last piece. |
 | `byre reset [--force]` | Wipe this project's volumes. Names what dies first. |
 | `byre forget [--force]` | Remove all of byre's host-side state for this directory. Never touches your project tree. |
 | `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
@@ -238,7 +239,7 @@ By default agents log in once per project, inside the box; the shared-auth skill
 
 ### Stop using byre?
 
-`byre dockerfile` prints the image, `byre dockerrun` prints the exact run command -- that's the whole exit. The one thing that doesn't travel is the firewall (its rules are applied from outside the box, by byre): bring your own. See [docs/EJECTING.md](docs/EJECTING.md).
+`byre dockerfile` prints the image, `byre dockerrun` prints the exact run command -- that's the whole exit. The firewall is the one thing that doesn't travel automatically (its rules are applied from outside the box, by byre); `byre ejectfirewall` prints that step as a standalone script. See [docs/EJECTING.md](docs/EJECTING.md).
 
 ## Platform
 

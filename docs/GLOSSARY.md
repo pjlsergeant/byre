@@ -199,9 +199,10 @@ status under the honesty rules.
 
 **Egress**:
 The derived allowlist: every enabled skill declares the `host[:port]`
-endpoints it needs, byre unions them (plus the user's `FIREWALL_ALLOW`)
-and enforces them as port-scoped per-IP rules. Empty is legal -- a
-maximally-locked box.
+endpoints it needs, byre unions them (plus the user's `egress` config
+key, ADR 0019) and enforces them as port-scoped per-IP rules. Empty is
+legal -- a maximally-locked box. An egress entry under a restrictive
+posture is a grant; without one it is declared and inert.
 
 **Netns helper**:
 The run-to-completion container (root + NET_ADMIN, sharing only the box's

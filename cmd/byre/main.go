@@ -23,34 +23,34 @@ type app struct {
 	dockerfile    func(s commands.Streams, dir string) error
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
-	develop     func(s commands.Streams, dir, tmpl, agent string, selfEdit bool) error
-	config      func(s commands.Streams, dir string, global bool) error
-	status      func(s commands.Streams, dir string, selfEdit bool) error
-	reset       func(s commands.Streams, dir string, force bool) error
-	forget      func(s commands.Streams, dir string, force bool) error
-	shell       func(s commands.Streams, dir string) error
-	worktree    func(s commands.Streams, dir, name, path string, selfEdit bool) error
-	skillUpdate func(s commands.Streams) error
-	rebuild     func(s commands.Streams, dir string) error
-	rehome      func(s commands.Streams, dir, oldID string) error
-	version     func(s commands.Streams) error
+	develop       func(s commands.Streams, dir, tmpl, agent string, selfEdit bool) error
+	config        func(s commands.Streams, dir string, global bool) error
+	status        func(s commands.Streams, dir string, selfEdit bool) error
+	reset         func(s commands.Streams, dir string, force bool) error
+	forget        func(s commands.Streams, dir string, force bool) error
+	shell         func(s commands.Streams, dir string) error
+	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
+	skillUpdate   func(s commands.Streams) error
+	rebuild       func(s commands.Streams, dir string) error
+	rehome        func(s commands.Streams, dir, oldID string) error
+	version       func(s commands.Streams) error
 }
 
 var realApp = app{
 	dockerfile:    commands.Dockerfile,
 	dockerrun:     commands.DockerRun,
 	ejectfirewall: commands.EjectFirewall,
-	develop:     commands.Develop,
-	config:      commands.Config,
-	status:      commands.Status,
-	reset:       commands.Reset,
-	forget:      commands.Forget,
-	shell:       commands.Shell,
-	worktree:    commands.Worktree,
-	skillUpdate: commands.SkillUpdate,
-	rebuild:     commands.Rebuild,
-	rehome:      commands.Rehome,
-	version:     printVersion,
+	develop:       commands.Develop,
+	config:        commands.Config,
+	status:        commands.Status,
+	reset:         commands.Reset,
+	forget:        commands.Forget,
+	shell:         commands.Shell,
+	worktree:      commands.Worktree,
+	skillUpdate:   commands.SkillUpdate,
+	rebuild:       commands.Rebuild,
+	rehome:        commands.Rehome,
+	version:       printVersion,
 }
 
 // command is one byre subcommand: its one-line summary for the command list,
