@@ -30,7 +30,12 @@ a provenance tag (`(default)`, `(template:go)`); skill-contributed rows
 show read-only as `(skill:name)` -- their off-switch is disabling the
 skill, and the tag names which one. Where the cascade offers no
 off-switch for a field, the row says so and names the layer to edit; the
-editor never writes another layer's file. Summary rows count effective
+editor never writes another layer's file. On the list screens, enter
+opens a per-row action menu offering only what that row supports (terse
+labels -- Edit, Delete, Override here, Remove in this project, Restore --
+plus a "where it's set" attribution line), with single keys kept as
+accelerators; the skills screen stays a plain checkbox toggle, since
+toggle is its only verb. Summary rows count effective
 state, not raw layer entries (`5 packages (3 inherited)`), same as the
 skills summary. List screens resolve skills the way the volumes screen
 already does, and degrade the same way when the engine/config won't

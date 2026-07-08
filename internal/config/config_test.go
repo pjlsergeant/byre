@@ -101,11 +101,13 @@ func TestRawBlocksAppendOnly(t *testing.T) {
 	}
 }
 
-func TestAptDoesNotHonorRemoval(t *testing.T) {
-	// "!name" is reserved for named lists; in apt it's a literal package name.
+func TestAptHonorsRemoval(t *testing.T) {
+	// Reversed by ADR 0018: apt takes `!name` like every other string list.
+	// (Previously pinned as literal-only; packageRe never admitted a leading
+	// '!', so no real package is shadowed by the marker.)
 	got := Merge(Config{Apt: []string{"a"}}, Config{Apt: []string{"!a", "b"}}).Apt
-	if want := []string{"a", "!a", "b"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("apt should not honor !removal: got %v want %v", got, want)
+	if want := []string{"b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("apt should honor !removal: got %v want %v", got, want)
 	}
 }
 
@@ -601,5 +603,89 @@ func TestLoadRejectsWithinLayerCollisionInAnyLayer(t *testing.T) {
 	os.WriteFile(storeCfg, []byte(dup), 0o644)
 	if _, err := ParseFile(storeCfg); err != nil {
 		t.Errorf("ParseFile must stay lenient so the editor can open a broken file: %v", err)
+	}
+}
+
+func TestMergeAptNpmRemoval(t *testing.T) {
+	// ADR 0018: package lists take the same `!name` off-switch as skills.
+	got := Merge(Config{Apt: []string{"ripgrep", "htop"}}, Config{Apt: []string{"!htop", "jq"}}).Apt
+	if want := []string{"ripgrep", "jq"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("apt removal: got %v want %v", got, want)
+	}
+	got = Merge(Config{NpmGlobal: []string{"prettier"}}, Config{NpmGlobal: []string{"!prettier"}}).NpmGlobal
+	if len(got) != 0 {
+		t.Errorf("npm_global removal: got %v want empty", got)
+	}
+}
+
+func TestMergePortsRemove(t *testing.T) {
+	// remove=true keys on container port ALONE: every inherited binding of that
+	// container port dies, whatever its interface/host (ADR 0018).
+	base := Config{Ports: []Port{
+		{Container: 5432},
+		{Container: 5432, Interface: "0.0.0.0", Host: 15432},
+		{Container: 3000},
+	}}
+	over := Config{Ports: []Port{{Container: 5432, Remove: true}}}
+	got := Merge(base, over).Ports
+	if len(got) != 1 || got[0].Container != 3000 {
+		t.Errorf("port remove: got %+v", got)
+	}
+	for _, p := range got {
+		if p.Remove {
+			t.Errorf("merge must consume remove markers, got %+v", p)
+		}
+	}
+}
+
+func TestMergePortsRemoveAfterAdditions(t *testing.T) {
+	// Removals apply after the same layer's additions, matching the `!name`
+	// lists: an add+remove of the same container port in one layer resolves off.
+	base := Config{Ports: []Port{{Container: 8080}}}
+	over := Config{Ports: []Port{
+		{Container: 8080, Host: 18080},
+		{Container: 8080, Remove: true},
+	}}
+	if got := Merge(base, over).Ports; len(got) != 0 {
+		t.Errorf("add+remove same layer should resolve off: got %+v", got)
+	}
+}
+
+func TestValidateLayerAcceptsPackageMarkers(t *testing.T) {
+	c := Config{Apt: []string{"!htop"}, NpmGlobal: []string{"!prettier"}}
+	if err := c.ValidateLayer(); err != nil {
+		t.Errorf("layer with package removal markers should validate: %v", err)
+	}
+	// A marker surviving to a RESOLVED config is a bug and must be rejected.
+	if err := c.Validate(); err == nil {
+		t.Error("resolved config with a `!name` package should fail validation")
+	}
+}
+
+func TestValidateLayerPortRemoveEntries(t *testing.T) {
+	ok := Config{Ports: []Port{{Container: 5432, Remove: true}}}
+	if err := ok.ValidateLayer(); err != nil {
+		t.Errorf("layer with a port remove marker should validate: %v", err)
+	}
+	// Removal ignores host/interface; an entry setting them implies a narrower
+	// removal than will happen — refused at save.
+	narrow := Config{Ports: []Port{{Container: 5432, Host: 15432, Remove: true}}}
+	if err := narrow.ValidateLayer(); err == nil {
+		t.Error("port remove with host set should fail layer validation")
+	}
+	if err := ok.Validate(); err == nil {
+		t.Error("resolved config with a port remove marker should fail validation")
+	}
+}
+
+func TestValidateLayerPortRemoveNoCollision(t *testing.T) {
+	// A remove marker binds nothing: it must not count toward host-port
+	// collision accounting in its own layer.
+	c := Config{Ports: []Port{
+		{Container: 5432, Remove: true},
+		{Container: 5432},
+	}}
+	if err := c.ValidateLayer(); err != nil {
+		t.Errorf("remove marker + real binding of same port should validate: %v", err)
 	}
 }

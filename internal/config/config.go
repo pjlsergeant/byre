@@ -75,6 +75,11 @@ type Port struct {
 	Container int    `toml:"container"`           // container port (1-65535)
 	Host      int    `toml:"host,omitempty"`      // host port; 0 = same as Container
 	Interface string `toml:"interface,omitempty"` // bind interface; default 127.0.0.1
+	// Remove marks this entry as a removal marker (ADR 0018): a later cascade
+	// layer dropping every inherited binding of Container, whatever its
+	// interface/host. A port has no string identity for the `!name` prefix to
+	// ride, so removal is a field keyed by container port alone.
+	Remove bool `toml:"remove,omitempty"`
 }
 
 // portEffective resolves a port's effective bind interface and host port (the
@@ -292,11 +297,11 @@ func Merge(base, over Config) Config {
 	out.SeedPrefs = base.SeedPrefs || over.SeedPrefs
 	out.WorktreeBase = override(base.WorktreeBase, over.WorktreeBase)
 
-	// Package lists: plain dedup union. `!name` removal is reserved for named
-	// lists (skills/mounts/volumes), so a package literally named "!x" is kept.
-	out.Apt = unionStrings(base.Apt, over.Apt)
-	out.NpmGlobal = unionStrings(base.NpmGlobal, over.NpmGlobal)
-	// Skills: union with `!name` removal.
+	// String lists: union with `!name` removal (ADR 0018). Unambiguous for
+	// packages too: packageRe has never admitted a leading '!', so no real
+	// package collides with the marker.
+	out.Apt = mergeStrings(base.Apt, over.Apt)
+	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
 
 	// Maps: union, over wins per key.
@@ -372,8 +377,16 @@ func isRemoval(id string) bool { return strings.HasPrefix(id, "!") }
 
 // validateScalars checks the layer-safe scalar/content fields — those valid or
 // invalid on their own, independent of the cascade. Shared by Validate and
-// ValidateLayer.
-func (c Config) validateScalars() error {
+// ValidateLayer; layer mode exempts `!name` removal markers in the package
+// lists from the content allowlists (packageRe rejects a leading '!', which is
+// exactly what makes the marker unambiguous — but a marker is legal in a
+// layer, and Merge consumes it before the resolved check runs).
+func (c Config) validateScalars(layer bool) error {
+	apt, npm := c.Apt, c.NpmGlobal
+	if layer {
+		apt = filter(apt, func(s string) bool { return !isRemoval(s) })
+		npm = filter(npm, func(s string) bool { return !isRemoval(s) })
+	}
 	switch c.Engine {
 	case "", "auto", "docker", "podman":
 	default:
@@ -383,7 +396,7 @@ func (c Config) validateScalars() error {
 	// Anti-injection allowlists for the typed fields byre interpolates into
 	// generated Dockerfile/shell. Skills' own apt/npm/env are held to the same bar
 	// where their build blocks are resolved (see internal/skills).
-	if err := ValidateContent(c.Base, c.Apt, c.NpmGlobal, c.Env); err != nil {
+	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
 		return err
 	}
 
@@ -478,9 +491,12 @@ func validateVolumeShape(v Volume) error {
 	return nil
 }
 
-// validatePorts checks each port binding and that no two collide. A port has no
-// removal form, so this is identical for a layer and the resolved config.
-func (c Config) validatePorts() error {
+// validatePorts checks each port binding and that no two collide. Layer mode
+// permits `remove = true` marker entries (ADR 0018) — container in range,
+// nothing else set, and no collision accounting since a marker binds nothing.
+// Resolved mode rejects them: Merge consumes markers, so one surviving to a
+// resolved config is a bug, same stance as `!name` in the shape checks.
+func (c Config) validatePorts(layer bool) error {
 	// container required in range; host 0 (= same as container) or in range; no
 	// two bindings collide on the same effective interface:host, and a binding on
 	// 0.0.0.0 (all interfaces) can't share a host port with any other interface —
@@ -489,6 +505,18 @@ func (c Config) validatePorts() error {
 	for _, p := range c.Ports {
 		if p.Container < 1 || p.Container > 65535 {
 			return fmt.Errorf("port: container port %d out of range (1-65535)", p.Container)
+		}
+		if p.Remove {
+			if !layer {
+				return fmt.Errorf("port %d: remove is only meaningful in a cascade layer", p.Container)
+			}
+			// Removal keys on container port alone; a host/interface here implies
+			// a narrower removal than the one that will happen — refuse rather
+			// than silently over-remove.
+			if p.Host != 0 || p.Interface != "" {
+				return fmt.Errorf("port %d: remove takes only a container port (removal ignores host/interface)", p.Container)
+			}
+			continue
 		}
 		if p.Host < 0 || p.Host > 65535 {
 			return fmt.Errorf("port %d: host port %d out of range (0-65535; 0 = same as the container port)", p.Container, p.Host)
@@ -521,7 +549,7 @@ func (c Config) validatePorts() error {
 // removal marker reaching here would be a bug (Merge should have consumed it) and
 // is correctly rejected by the shape checks.
 func (c Config) Validate() error {
-	if err := c.validateScalars(); err != nil {
+	if err := c.validateScalars(false); err != nil {
 		return err
 	}
 
@@ -551,7 +579,7 @@ func (c Config) Validate() error {
 		}
 		targets[v.Target] = "volume " + v.Name
 	}
-	return c.validatePorts()
+	return c.validatePorts(false)
 }
 
 // ValidateLayer checks a SINGLE unmerged layer (a raw byre.config) for the
@@ -569,7 +597,7 @@ func (c Config) Validate() error {
 // or mount vs volume) fail the resolved Validate at develop time — better to
 // refuse at save, with the file open, than during the next develop.
 func (c Config) ValidateLayer() error {
-	if err := c.validateScalars(); err != nil {
+	if err := c.validateScalars(true); err != nil {
 		return err
 	}
 	seenTargets := map[string]string{} // target -> what claims it
@@ -602,7 +630,7 @@ func (c Config) ValidateLayer() error {
 		}
 		seenTargets[v.Target] = "volume " + v.Name
 	}
-	return c.validatePorts()
+	return c.validatePorts(true)
 }
 
 // RelSafe reports whether p names a relative path strictly BELOW its root: not
@@ -623,18 +651,6 @@ func override(base, over string) string {
 		return over
 	}
 	return base
-}
-
-// unionStrings unions base with over, deduping and preserving first occurrence.
-// No `!name` handling — for plain lists like apt/npm_global.
-func unionStrings(base, over []string) []string {
-	out := append([]string{}, base...)
-	for _, it := range over {
-		if !slices.Contains(out, it) {
-			out = append(out, it)
-		}
-	}
-	return out
 }
 
 // mergeStrings unions base with over (dedup, preserving first occurrence), then
@@ -692,15 +708,17 @@ func mergeMounts(base, over []Mount) []Mount {
 		}
 	}
 	for _, rm := range removals {
-		out = filterMounts(out, func(m Mount) bool { return m.Target != rm })
+		out = filter(out, func(m Mount) bool { return m.Target != rm })
 	}
 	return out
 }
 
 // mergePorts unions port bindings, deduping by EFFECTIVE identity so an override
 // that spells out the defaults (e.g. adds interface=127.0.0.1, or host equal to
-// the container port) collapses onto the base entry instead of colliding. (No
-// `!name` identity — a port has no name; a real host-port clash is Validate's job.)
+// the container port) collapses onto the base entry instead of colliding. A
+// `remove = true` entry in over drops every accumulated binding of that
+// container port (ADR 0018) — applied after over's additions, matching the
+// `!name` lists' additions-then-removals order within a layer.
 func mergePorts(base, over []Port) []Port {
 	key := func(p Port) string {
 		iface, host := portEffective(p)
@@ -711,11 +729,19 @@ func mergePorts(base, over []Port) []Port {
 	for _, p := range out {
 		seen[key(p)] = true
 	}
+	var removals []int
 	for _, p := range over {
+		if p.Remove {
+			removals = append(removals, p.Container)
+			continue
+		}
 		if !seen[key(p)] {
 			seen[key(p)] = true
 			out = append(out, p)
 		}
+	}
+	for _, rm := range removals {
+		out = filter(out, func(p Port) bool { return p.Container != rm })
 	}
 	return out
 }
@@ -764,7 +790,7 @@ func removeString(s []string, v string) []string {
 	return out
 }
 
-func filterMounts(s []Mount, keep func(Mount) bool) []Mount {
+func filter[T any](s []T, keep func(T) bool) []T {
 	out := s[:0:0]
 	for _, x := range s {
 		if keep(x) {
