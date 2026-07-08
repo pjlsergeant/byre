@@ -55,6 +55,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.listCur < addRow {
 			return m.accelerate(rows[m.listCur], "d")
 		}
+	case "o":
+		if m.listCur < addRow {
+			return m.accelerate(rows[m.listCur], "o")
+		}
 	}
 	return m, nil
 }
@@ -84,6 +88,7 @@ const (
 	actOverride   // add a local entry shadowing the inherited one
 	actRemoveHere // write this layer's removal marker for the inherited entry
 	actRestore    // drop this layer's marker (re-inherit / clear stale)
+	actOpen       // open an offered egress door: write the entry into this layer (ADR 0020)
 )
 
 type menuChoice struct {
@@ -114,6 +119,8 @@ func rowChoices(f fieldID, r listRow) []menuChoice {
 		return []menuChoice{{"Restore", "d", actRestore}}
 	case rowStaleMarker:
 		return []menuChoice{{"Clear marker", "d", actRestore}}
+	case rowOffered:
+		return []menuChoice{{"Open in this project", "o", actOpen}}
 	}
 	return nil // rowSkill: no menu; the list screen shows a pointer instead
 }
@@ -162,6 +169,10 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		m.removeHere(r)
 	case actRestore:
 		m.deleteItem(m.listField, r.idx)
+	case actOpen:
+		// The opened door becomes THIS layer's own egress entry: user-authored,
+		// user-attributed, closable like any other (ADR 0020).
+		m.egress = append(m.egress, r.ident)
 	}
 	if n := len(m.fieldRows(m.listField)); m.listCur > n {
 		m.listCur = n
@@ -670,7 +681,7 @@ func (m model) viewList() string {
 	}
 	for i, r := range rows {
 		line := r.text
-		if r.kind == rowRemoved || r.kind == rowStaleMarker {
+		if r.kind == rowRemoved || r.kind == rowStaleMarker || r.kind == rowOffered {
 			line = dimStyle.Render(line)
 		}
 		if ann := rowAnnotation(r); ann != "" {
@@ -713,6 +724,11 @@ func rowAnnotation(r listRow) string {
 		return "  (removes nothing — stale marker)"
 	case rowSkill:
 		return "  (" + r.source + ")"
+	case rowOffered:
+		if r.source == "" {
+			return "  (offered here — closed)"
+		}
+		return "  (offered by " + r.source + " — closed)"
 	}
 	return ""
 }
@@ -748,6 +764,11 @@ func setIn(r listRow) string {
 		return r.source + " — removed by this file"
 	case rowStaleMarker:
 		return "this file (marker matches nothing)"
+	case rowOffered:
+		if r.source == "" {
+			return "offered by this file — closed until opened"
+		}
+		return "offered by " + r.source + " — closed until opened"
 	}
 	if r.also {
 		return "this file — also in " + r.source

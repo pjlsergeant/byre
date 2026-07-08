@@ -14,7 +14,10 @@ import (
 type SkillRuntime struct {
 	Mounts []config.Mount
 	Env    map[string]string
-	Egress []string // declared host[:port] endpoints (ADR 0019)
+	Egress []string // functional endpoints, open with enablement (ADR 0019/0020)
+	// Offered is the skill's declared-but-CLOSED doors (ADR 0020): shown as
+	// switches; opening one writes the entry into the user's own egress.
+	Offered []string
 	// Posture is the skill's declared network_posture ("" = none). The Egress
 	// screen uses it to say whether anything enforces the allowlist.
 	Posture string

@@ -657,7 +657,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 	default:
 		// List fields count EFFECTIVE state, like the Skills summary: what the
 		// box actually gets, with the inherited/skill share dimmed beside it.
-		eff, inherited, fromSkills := rowCounts(m.fieldRows(f))
+		eff, inherited, fromSkills, offered := rowCounts(m.fieldRows(f))
 		s := dimStyle.Render("(none)")
 		if eff > 0 {
 			s = fmt.Sprintf("%d %s", eff, fieldNoun(f, eff))
@@ -671,6 +671,11 @@ func (m model) renderValue(f fieldID, focused bool) string {
 			if len(parts) > 0 {
 				s += dimStyle.Render("  (" + strings.Join(parts, ", ") + ")")
 			}
+		}
+		// Offered doors are closed, so they never count as effective — but
+		// discovery must not depend on entering the screen (ADR 0020).
+		if offered > 0 {
+			s += dimStyle.Render(fmt.Sprintf("  — %d offered", offered))
 		}
 		// Egress is declarative: with no posture skill enabled, nothing
 		// enforces it — config must not look armed when it isn't (ADR 0019).

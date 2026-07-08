@@ -24,6 +24,7 @@ const (
 	rowRemoved                    // an inherited entry this layer removes
 	rowStaleMarker                // a removal marker matching nothing inherited
 	rowSkill                      // skill-contributed; read-only here
+	rowOffered                    // a declared-but-closed egress door (ADR 0020)
 )
 
 // listRow is one row of a list screen's effective view. idx points into the
@@ -110,6 +111,43 @@ func (m model) egressRows() []listRow {
 			if host, port, err := config.ParseEgress(e); err == nil {
 				rows = append(rows, listRow{kind: rowSkill, text: host + ":" + strconv.Itoa(port), source: "skill:" + sk})
 			}
+		}
+	}
+
+	// Offered doors (ADR 0020): declared-but-closed entries from lower layers,
+	// this layer's own file, and effective skills -- suppressed once the exact
+	// entry is already open (the open row tells that story), deduped across
+	// sources (first offerer wins the credit).
+	open := map[string]bool{}
+	for _, e := range m.lowerNow().Egress {
+		if !isRemovalName(e) {
+			open[e] = true
+		}
+	}
+	for _, e := range m.egress {
+		if !isRemovalName(e) {
+			open[e] = true
+		}
+	}
+	offered := map[string]bool{}
+	addOffered := func(e, source string) {
+		if isRemovalName(e) || open[e] || offered[e] {
+			return
+		}
+		offered[e] = true
+		rows = append(rows, listRow{kind: rowOffered, text: e, ident: e, source: source})
+	}
+	for _, e := range m.lowerNow().EgressOffered {
+		e := e
+		src := m.lowerSource(func(c config.Config) bool { return slices.Contains(c.EgressOffered, e) })
+		addOffered(e, src)
+	}
+	for _, e := range m.base.EgressOffered {
+		addOffered(e, "")
+	}
+	for _, sk := range m.effectiveSkills() {
+		for _, e := range m.inh.Skills[sk].Offered {
+			addOffered(e, "skill:"+sk)
 		}
 	}
 	return rows
@@ -340,7 +378,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.Egress) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0) {
 			out = append(out, e.name)
 		}
 	}
@@ -349,7 +387,9 @@ func (m model) effectiveSkills() []string {
 }
 
 // rowCounts tallies a field's effective rows for the form summary line.
-func rowCounts(rows []listRow) (effective, inherited, fromSkills int) {
+// Offered rows are counted separately: they are closed doors, not effective
+// state.
+func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 	for _, r := range rows {
 		switch r.kind {
 		case rowLocal, rowOverride:
@@ -360,6 +400,8 @@ func rowCounts(rows []listRow) (effective, inherited, fromSkills int) {
 		case rowSkill:
 			effective++
 			fromSkills++
+		case rowOffered:
+			offered++
 		}
 	}
 	return

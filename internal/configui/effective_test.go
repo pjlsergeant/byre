@@ -380,7 +380,7 @@ func TestSameLayerMarkerBeatsSameLayerEntry(t *testing.T) {
 	}
 	// Replacing m.apt dropped the fixture's "!htop" too, so the inherited set
 	// is ripgrep+htop+golang = 3; counting foo as effective would make it 4.
-	if eff, _, _ := rowCounts(rows); eff != 3 {
+	if eff, _, _, _ := rowCounts(rows); eff != 3 {
 		t.Fatalf("same-layer add+remove counted as effective: eff=%d rows=%+v", eff, rows)
 	}
 
@@ -546,5 +546,75 @@ func TestItemEditorTitles(t *testing.T) {
 	m = m.startItem(-1)
 	if v := m.viewItem(); !strings.Contains(v, "Add Egress host") || strings.Contains(v, "Egres\n") {
 		t.Fatalf("egress item title wrong:\n%s", v)
+	}
+}
+
+// Offered doors (ADR 0020): closed switches attributed to their source,
+// suppressed once the entry is open, opened into THIS layer with one action.
+func TestEgressOfferedRowsAndOpen(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Templates["go"] = config.Config{EgressOffered: []string{"proxy.golang.org"}}
+	sk := m.inh.Skills["docker"]
+	sk.Offered = []string{"registry.example.com:5000"}
+	m.inh.Skills["docker"] = sk
+	m.listField = fEgress
+
+	rows := m.fieldRows(fEgress)
+	if r := rowByText(t, rows, "proxy.golang.org"); r.kind != rowOffered || r.source != "template:go" {
+		t.Fatalf("template offered row wrong: %+v", r)
+	}
+	if r := rowByText(t, rows, "registry.example.com:5000"); r.kind != rowOffered || r.source != "skill:docker" {
+		t.Fatalf("skill offered row wrong: %+v", r)
+	}
+
+	// Open the template's door: the entry lands in THIS layer's egress...
+	for i, r := range rows {
+		if r.text == "proxy.golang.org" {
+			m.listCur = i
+		}
+	}
+	mm, _ := m.updateList(key("o"))
+	m = mm.(model)
+	if !contains(m.egress, "proxy.golang.org") {
+		t.Fatalf("open should write the entry into this layer: %v", m.egress)
+	}
+	// ...and the offered row disappears in favor of the open (local) one.
+	rows = m.fieldRows(fEgress)
+	if r := rowByText(t, rows, "proxy.golang.org"); r.kind != rowLocal {
+		t.Fatalf("opened door should show as a local entry: %+v", r)
+	}
+	// Deleting the local entry re-surfaces the offer (peel-consistent).
+	for i, r := range rows {
+		if r.text == "proxy.golang.org" {
+			m.listCur = i
+		}
+	}
+	mm, _ = m.updateList(key("d"))
+	m = mm.(model)
+	if r := rowByText(t, m.fieldRows(fEgress), "proxy.golang.org"); r.kind != rowOffered {
+		t.Fatalf("closing the door should re-surface the offer: %+v", r)
+	}
+}
+
+func TestEgressOfferedNeverEnforced(t *testing.T) {
+	// Offered entries must not reach the resolved allowlist: resolvedEgress is
+	// commands-side, but the config merge must also keep them out of Egress.
+	got := config.Merge(
+		config.Config{EgressOffered: []string{"proxy.golang.org"}},
+		config.Config{Egress: []string{"grafana.com"}},
+	)
+	if contains(got.Egress, "proxy.golang.org") {
+		t.Fatalf("offered leaked into open egress: %v", got.Egress)
+	}
+	if !contains(got.EgressOffered, "proxy.golang.org") {
+		t.Fatalf("offered should survive the merge: %v", got.EgressOffered)
+	}
+}
+
+func TestEgressSummaryCountsOffered(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Templates["go"] = config.Config{EgressOffered: []string{"proxy.golang.org", "sum.golang.org"}}
+	if got := m.renderValue(fEgress, false); !strings.Contains(got, "2 offered") {
+		t.Errorf("summary should count offered doors: %q", got)
 	}
 }
