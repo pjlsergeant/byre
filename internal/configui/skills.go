@@ -47,10 +47,7 @@ func splitSkillLayer(entries []string) (enabled []string, removed map[string]boo
 // template — the template picker is a live form field, so the inherited set
 // follows it.
 func (m model) inheritedNow() []string {
-	if m.inheritedSkills == nil {
-		return nil
-	}
-	return m.inheritedSkills[fromNone(m.tmplOpts[m.tmplSel])]
+	return m.lowerNow().Skills
 }
 
 // skillEntries builds the multi-select rows: non-agent skills first, then agent

@@ -32,17 +32,24 @@ func Config(s Streams, projectDir string, global bool) error {
 	agents := skills.ListAgentSkills(skillsDir)
 	skillOpts := skills.ListSkills(skillsDir)
 	skillDescs := skills.DescribeSkills(skillsDir)
-	// Lower-layer (default + template) skill sets, per template, so the
-	// project editor can mark inherited skills instead of showing them
-	// unchecked. Degrade on error (a broken template just loses its marks);
-	// the --global editor gets nil -- it IS the base layer.
-	var inheritedSkills map[string][]string
+	// Provenance inputs (ADR 0018): the resolved lower cascade per template,
+	// so the project editor can mark inherited entries instead of showing the
+	// layer's raw delta, plus each skill's runtime contribution for the
+	// read-only (skill:name) rows. Degrade on error (a broken template or
+	// skill just loses its marks); the --global editor gets no Lower -- it IS
+	// the base layer.
+	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}}
 	if !global {
-		inheritedSkills = map[string][]string{}
+		inh.Lower = map[string]config.Config{}
 		for _, t := range append([]string{""}, templates...) {
 			if low, lerr := config.ResolveLower(home, t); lerr == nil {
-				inheritedSkills[t] = low.Skills
+				inh.Lower[t] = low
 			}
+		}
+	}
+	for _, n := range skillOpts {
+		if sk, serr := skills.Load(skillsDir, n); serr == nil {
+			inh.Skills[n] = configui.SkillRuntime{Mounts: sk.File.Runtime.Mounts, Env: sk.File.Runtime.Env}
 		}
 	}
 
@@ -73,7 +80,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inheritedSkills, vols, global)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, global)
 	if err != nil {
 		return err
 	}

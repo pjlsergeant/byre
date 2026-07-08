@@ -160,7 +160,7 @@ func TestPickerOptsPreservesUnknown(t *testing.T) {
 
 // The item editor must validate, then add / edit / delete structured items.
 func TestItemAddEditDeleteValidation(t *testing.T) {
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
 
 	// --- env: reject a bad key, accept a good one ---
 	m.listField = fEnv
@@ -289,7 +289,7 @@ func TestVolumesClearFlow(t *testing.T) {
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Exists: true},
 		{Name: "node_modules", Role: "cache", Target: "/workspace/node_modules", Exists: false},
 	}}
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, nil, fv, false)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv, false)
 
 	// fVolumes must be present in the form when a VolumeAdmin is supplied.
 	if !contains(fieldIDsToStrings(m.order), "Volumes") {
@@ -334,7 +334,7 @@ func TestVolumesClearFlow(t *testing.T) {
 
 func TestWorktreeBaseRoundTrip(t *testing.T) {
 	// "sibling" -> checkbox on -> writes "sibling".
-	m := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, nil, nil, true)
+	m := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, Inherited{}, nil, true)
 	if !m.wtSibling {
 		t.Error("sibling config should check the box")
 	}
@@ -342,7 +342,7 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 		t.Errorf("assemble = %q, want sibling", got)
 	}
 	// A path -> checkbox off, path loaded, round-trips.
-	m = newModel("t", "/x", config.Config{WorktreeBase: "/w"}, nil, nil, nil, nil, nil, nil, true)
+	m = newModel("t", "/x", config.Config{WorktreeBase: "/w"}, nil, nil, nil, nil, Inherited{}, nil, true)
 	if m.wtSibling || m.wtBase.Value() != "/w" {
 		t.Errorf("path config: sibling=%v base=%q", m.wtSibling, m.wtBase.Value())
 	}
@@ -350,7 +350,7 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 		t.Errorf("assemble = %q, want /w", got)
 	}
 	// Unset -> checkbox off, empty -> writes "" (byre worktree refuses).
-	m = newModel("t", "/x", config.Config{}, nil, nil, nil, nil, nil, nil, true)
+	m = newModel("t", "/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, true)
 	if m.wtSibling || m.wtBase.Value() != "" {
 		t.Errorf("unset should be off+empty: sibling=%v base=%q", m.wtSibling, m.wtBase.Value())
 	}
@@ -365,17 +365,17 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 	}
 
 	// The GLOBAL form renders the WORKTREES section + a checkbox state.
-	on := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, nil, nil, true).View()
+	on := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, Inherited{}, nil, true).View()
 	if !strings.Contains(on, "WORKTREES") || !strings.Contains(on, "[x] sibling of repo") {
 		t.Errorf("global form should show a checked worktree checkbox:\n%s", on)
 	}
-	off := newModel("t", "/x", config.Config{}, nil, nil, nil, nil, nil, nil, true).View()
+	off := newModel("t", "/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, true).View()
 	if !strings.Contains(off, "[ ] sibling of repo") || !strings.Contains(off, "refuse") {
 		t.Errorf("unset global form should show an unchecked box and a refuse hint:\n%s", off)
 	}
 	// The PROJECT editor (global=false) omits the section, and preserves an
 	// existing worktree_base untouched through save (no false "unset" clobber).
-	proj := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, nil, nil, false)
+	proj := newModel("t", "/x", config.Config{WorktreeBase: "sibling"}, nil, nil, nil, nil, Inherited{}, nil, false)
 	if strings.Contains(proj.View(), "WORKTREES") {
 		t.Errorf("project editor should not show the WORKTREES section:\n%s", proj.View())
 	}
@@ -399,7 +399,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 	cfg := config.Config{Agent: "claude", Skills: []string{"moarcode", "ghost-skill"}} // ghost not installed
 	agents := []string{"claude", "codex"}
 	all := []string{"claude", "codex", "moarcode", "shem"}
-	m := newModel("t", "/tmp/x", cfg, nil, agents, all, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", cfg, nil, agents, all, nil, Inherited{}, nil, false)
 
 	entryIdx := func(mm model, name string) int {
 		for i, e := range mm.skillEntries() {
@@ -466,7 +466,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 func TestSkillsScreenShowsDescriptions(t *testing.T) {
 	cfg := config.Config{Agent: "claude"}
 	descs := map[string]string{"claude-shared-auth": "Share one Claude login across all your projects."}
-	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude"}, []string{"claude", "claude-shared-auth"}, descs, nil, nil, false)
+	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude"}, []string{"claude", "claude-shared-auth"}, descs, Inherited{}, nil, false)
 	view := m.viewSkills()
 	if !strings.Contains(view, "Share one Claude login") {
 		t.Fatalf("description not rendered:\n%s", view)
@@ -480,7 +480,7 @@ func TestSkillsScreenShowsDescriptions(t *testing.T) {
 // back into `skills` (the agent field implies it).
 func TestSkillsPrimaryNotDoubleWritten(t *testing.T) {
 	cfg := config.Config{Agent: "claude", Skills: []string{"codex"}} // codex enabled as a skill
-	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, Inherited{}, nil, false)
 	// Promote codex to the primary agent.
 	m.agentSel = indexOf(m.agentOpts, "codex")
 	if out := m.assemble(); contains(out.Skills, "codex") {
@@ -491,7 +491,7 @@ func TestSkillsPrimaryNotDoubleWritten(t *testing.T) {
 // The ports editor validates the container port and treats a blank host as
 // its container port; grants lead the form and focus starts there.
 func TestPortsEditorAndSectionOrder(t *testing.T) {
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
 
 	// Grants section leads and includes ports; focus starts on the first grant.
 	if len(m.sections) == 0 || !strings.HasPrefix(m.sections[0].title, "GRANTS") {
@@ -529,7 +529,7 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 		RunArgs:       []string{"--privileged"},
 		DockerfilePre: []string{"RUN foo \\", "    && bar", "", "RUN baz"},
 	}
-	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, false)
 	if m.dirty() {
 		t.Fatal("a fresh config with raw fields must not be dirty")
 	}
@@ -573,7 +573,7 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 // must round-trip (not coerce to podman), and touching a field flips dirty.
 func TestModelDirtyAndUnknownEngineRoundTrip(t *testing.T) {
 	cfg := config.Config{Base: "debian:bookworm", Engine: "containerd", Agent: "claude"}
-	m := newModel("t", "/tmp/x", cfg, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", cfg, []string{"claude", "codex"}, []string{"claude", "codex"}, nil, nil, Inherited{}, nil, false)
 	if m.dirty() {
 		t.Fatal("a freshly-opened config must not be dirty")
 	}
@@ -626,7 +626,7 @@ func TestWorktreeBaseArrowKeysMoveCursor(t *testing.T) {
 			cfg := config.Config{Base: "debian:bookworm", WorktreeBase: "/abcdef"}
 			// global=true so the WORKTREES section (and fWorktreeBase) is in the
 			// focus order.
-			m := newModel("t", "/x", cfg, nil, nil, nil, nil, nil, nil, true)
+			m := newModel("t", "/x", cfg, nil, nil, nil, nil, Inherited{}, nil, true)
 			m = focus(m, tc.field)
 			if m.field() != tc.field {
 				t.Fatalf("setFocus landed on %v, want %v", m.field(), tc.field)
@@ -670,7 +670,7 @@ func TestWorktreeBaseArrowKeysMoveCursor(t *testing.T) {
 // surface at item commit, with the offending item still open and the working
 // state rolled back.
 func TestCommitItemRunsLayerValidation(t *testing.T) {
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, nil, nil, false)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
 	m.listField = fMounts
 	m = m.startItem(-1)
 	m.inputs[0].SetValue("/data")
@@ -701,17 +701,17 @@ func TestCommentWarnOnLoad(t *testing.T) {
 	dir := t.TempDir()
 	hand := filepath.Join(dir, "hand.config")
 	os.WriteFile(hand, []byte("# remember: the LAN port is for the demo\nagent = \"claude\"\n"), 0o644)
-	if v := newModel("t", hand, config.Config{}, nil, nil, nil, nil, nil, nil, false).View(); !strings.Contains(v, "hand-written comments") {
+	if v := newModel("t", hand, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false).View(); !strings.Contains(v, "hand-written comments") {
 		t.Errorf("hand-commented file should warn on load:\n%s", v)
 	}
 
 	managed := filepath.Join(dir, "managed.config")
 	os.WriteFile(managed, []byte("# Managed by `byre config`. Structured fields are edited there;\n# raw blocks (run_args, dockerfile_pre/post) are edited here by hand.\n\nagent = \"claude\"\n"), 0o644)
-	if v := newModel("t", managed, config.Config{}, nil, nil, nil, nil, nil, nil, false).View(); strings.Contains(v, "hand-written comments") {
+	if v := newModel("t", managed, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false).View(); strings.Contains(v, "hand-written comments") {
 		t.Errorf("byre's own header must not trigger the warning:\n%s", v)
 	}
 
-	if v := newModel("t", filepath.Join(dir, "absent.config"), config.Config{}, nil, nil, nil, nil, nil, nil, false).View(); strings.Contains(v, "hand-written comments") {
+	if v := newModel("t", filepath.Join(dir, "absent.config"), config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false).View(); strings.Contains(v, "hand-written comments") {
 		t.Errorf("a missing file must not warn:\n%s", v)
 	}
 }
@@ -722,7 +722,7 @@ func TestCommentWarnOnLoad(t *testing.T) {
 func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.config")
 	os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644)
-	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, nil, nil, false)
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
 	if m.commentWarn {
 		t.Fatal("clean file must not warn at open")
 	}
@@ -760,7 +760,7 @@ func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
 // is a lie (found live 2026-07-07). Toggling one writes the cascade's real
 // off-switch (`!name`) into THIS layer; toggling again removes it.
 func TestSkillsInheritedShownOnAndToggledViaRemoval(t *testing.T) {
-	inherited := map[string][]string{"": {"claude-shared-auth", "devloop"}}
+	inherited := Inherited{Lower: map[string]config.Config{"": {Skills: []string{"claude-shared-auth", "devloop"}}}}
 	m := newModel("t", "/tmp/x", config.Config{Agent: "claude"}, nil,
 		[]string{"claude"}, []string{"claude", "devloop", "claude-shared-auth"}, nil, inherited, nil, false)
 
@@ -839,7 +839,7 @@ func TestSkillsInheritedShownOnAndToggledViaRemoval(t *testing.T) {
 // shows checked), not raw layer entries: a `!name` removal marker is not an
 // enabled skill, and inherited-on skills count even with an empty local list.
 func TestSkillsSummaryCountsEffectiveState(t *testing.T) {
-	inherited := map[string][]string{"": {"claude-shared-auth", "devloop"}}
+	inherited := Inherited{Lower: map[string]config.Config{"": {Skills: []string{"claude-shared-auth", "devloop"}}}}
 	m := newModel("t", "/tmp/x", config.Config{Agent: "claude"}, nil,
 		[]string{"claude"}, []string{"claude", "devloop", "claude-shared-auth"}, nil, inherited, nil, false)
 
@@ -859,7 +859,7 @@ func TestSkillsSummaryCountsEffectiveState(t *testing.T) {
 // A pre-existing `!name` marker in the loaded config must render as a row
 // (removed state), not as a bogus skill named "!devloop".
 func TestSkillsExistingRemovalMarkerRendered(t *testing.T) {
-	inherited := map[string][]string{"": {"devloop"}}
+	inherited := Inherited{Lower: map[string]config.Config{"": {Skills: []string{"devloop"}}}}
 	cfg := config.Config{Agent: "claude", Skills: []string{"!devloop"}}
 	m := newModel("t", "/tmp/x", cfg, nil, []string{"claude"}, []string{"claude", "devloop"}, nil, inherited, nil, false)
 	view := m.viewSkills()
@@ -877,7 +877,7 @@ func TestSkillsExistingRemovalMarkerRendered(t *testing.T) {
 func TestSkillsMarkerEdgeCases(t *testing.T) {
 	// ["devloop", "!devloop"] in one layer -> effectively off.
 	m := newModel("t", "/tmp/x", config.Config{Agent: "claude", Skills: []string{"devloop", "!devloop"}}, nil,
-		[]string{"claude"}, []string{"claude", "devloop"}, nil, nil, nil, false)
+		[]string{"claude"}, []string{"claude", "devloop"}, nil, Inherited{}, nil, false)
 	for _, e := range m.skillEntries() {
 		if e.name == "devloop" && e.on() {
 			t.Fatalf("same-layer enable+remove must render OFF: %+v", e)
@@ -887,7 +887,7 @@ func TestSkillsMarkerEdgeCases(t *testing.T) {
 	// agent = claude + skills = ["!claude"]: marker visible on the locked row
 	// and one toggle clears it.
 	m2 := newModel("t", "/tmp/x", config.Config{Agent: "claude", Skills: []string{"!claude"}}, nil,
-		[]string{"claude"}, []string{"claude"}, nil, nil, nil, false)
+		[]string{"claude"}, []string{"claude"}, nil, Inherited{}, nil, false)
 	if !strings.Contains(m2.viewSkills(), "stale !claude marker") {
 		t.Fatalf("stale primary marker invisible:\n%s", m2.viewSkills())
 	}
