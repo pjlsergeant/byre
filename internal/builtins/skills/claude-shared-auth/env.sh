@@ -13,7 +13,9 @@ if [ -s "$_byre_token_file" ]; then
     # token and stops refreshing it, so the box starts failing with "401
     # Invalid authentication credentials" roughly 8h after that login, while
     # /status still claims env-token auth (host-verified 2026-07-07, three
-    # boxes). Warn, don't fix — the file is Claude's, not ours.
+    # boxes). Warn, don't fix — the file is Claude's, not ours; the firstrun
+    # hook offers a consented move when a TTY is present, so this warning is
+    # the non-interactive fallback (and the trail for a declined offer).
     _byre_creds="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}/.credentials.json"
     if [ -s "$_byre_creds" ]; then
       {

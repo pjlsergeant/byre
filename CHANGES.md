@@ -17,7 +17,9 @@ Shared agent logins, and a rebuilt README.
   and the box starts failing with 401s about 8h later (Claude prefers
   the stored login and stops refreshing it -- while claiming env-token
   auth). byre now warns at launch when it sees the combination and
-  names the one-command fix.
+  names the one-command fix -- and on interactive launches offers to
+  apply it for you (a consented, reversible move to `.bak`; nothing is
+  ever deleted, and declining just launches as before).
 - New `[[volumes]]` grammar: `scope = "machine"` -- one volume per user
   per machine, shared by every project that declares it.
 - Skills can carry a one-line `description`, shown in the `byre config`

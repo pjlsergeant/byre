@@ -754,6 +754,120 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 	}
 }
 
+// With the shared token in place, the firstrun hook offers to move a leftover
+// per-project login aside (the file that would otherwise shadow the token and
+// 401 the box ~8h later). Consent is the contract: no TTY -> untouched, "n"
+// -> untouched, yes/Enter -> renamed to .bak (never deleted, never clobbering
+// an earlier backup). BYRE_ASSUME_INTERACTIVE is the hook's TTY test seam.
+func TestClaudeSharedAuthHookOffersCredsMove(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "claude-shared-auth", "firstrun.sh")
+	run := func(base, cfg, stdin string, interactive bool) string {
+		t.Helper()
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
+		if interactive {
+			cmd.Env = append(cmd.Env, "BYRE_ASSUME_INTERACTIVE=1")
+		}
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+		return string(out)
+	}
+	seed := func() (base, cfg, creds string) {
+		t.Helper()
+		base, cfg = t.TempDir(), t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, "claude", "token"), []byte("sk-ant-oat01-x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		creds = filepath.Join(cfg, ".credentials.json")
+		if err := os.WriteFile(creds, []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return base, cfg, creds
+	}
+
+	// Non-interactive: no prompt, file untouched (the env hook's warning is
+	// the only signal on such launches).
+	base, _, creds := seed()
+	if out := run(base, filepath.Dir(creds), "", false); strings.Contains(out, "Move it aside") {
+		t.Fatalf("non-interactive launch must not prompt: %q", out)
+	}
+	if _, err := os.Stat(creds); err != nil {
+		t.Fatalf("non-interactive launch must not touch the login: %v", err)
+	}
+
+	// Decline ("n") leaves the file alone.
+	base, _, creds = seed()
+	if out := run(base, filepath.Dir(creds), "n\n", true); !strings.Contains(out, "left in place") {
+		t.Fatalf("decline should be acknowledged: %q", out)
+	}
+	if _, err := os.Stat(creds); err != nil {
+		t.Fatalf("declined offer must not touch the login: %v", err)
+	}
+
+	// Accept (plain Enter -- the default) moves the login to .bak intact.
+	base, _, creds = seed()
+	out := run(base, filepath.Dir(creds), "\n", true)
+	if !strings.Contains(out, "moved") {
+		t.Fatalf("accepted offer should report the move: %q", out)
+	}
+	if _, err := os.Stat(creds); !os.IsNotExist(err) {
+		t.Fatalf("accepted offer must move the login aside: %v", err)
+	}
+	if b, err := os.ReadFile(creds + ".bak"); err != nil || string(b) != `{"claudeAiOauth":{}}` {
+		t.Fatalf("backup missing or corrupted: %v %q", err, b)
+	}
+
+	// A second accepted move (a /login happened after the first) must not
+	// clobber the earlier backup: both credentials survive somewhere.
+	if err := os.WriteFile(creds, []byte(`{"second":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(base, filepath.Dir(creds), "\n", true)
+	if _, err := os.Stat(creds); !os.IsNotExist(err) {
+		t.Fatalf("second accepted offer must move the new login: %v", err)
+	}
+	if b, _ := os.ReadFile(creds + ".bak"); string(b) != `{"claudeAiOauth":{}}` {
+		t.Fatalf("earlier backup clobbered: %q", b)
+	}
+	entries, err := os.ReadDir(filepath.Dir(creds))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second bool
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".credentials.json.bak.") {
+			if b, _ := os.ReadFile(filepath.Join(filepath.Dir(creds), e.Name())); string(b) == `{"second":true}` {
+				second = true
+			}
+		}
+	}
+	if !second {
+		t.Fatalf("second login not preserved in a fresh backup; dir: %v", entries)
+	}
+
+	// No leftover login: interactive launch with the token stays silent.
+	base2, cfg2 := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base2, "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base2, "claude", "token"), []byte("sk-ant-oat01-x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(base2, cfg2, "", true); strings.Contains(out, "leftover") {
+		t.Fatalf("no leftover login -> no offer: %q", out)
+	}
+}
+
 // The claude-shared-auth env hook is SOURCED by the launcher (it must never
 // exit) and exports the shared token stripped of whitespace. When a leftover
 // per-project login sits alongside the token it warns on stderr: interactive

@@ -138,7 +138,8 @@ Multiple open issues describe exactly the shared-credential scenario:
   cycle, so the box 401s ~8h after the last `/login`. The documented
   precedence holds headless (and when no credentials file exists). Fix per
   box: `mv ~/.claude/.credentials.json{,.bak}` + relaunch; the
-  claude-shared-auth env hook warns at launch on this combination.
+  claude-shared-auth env hook warns at launch on this combination, and the
+  firstrun hook offers the consented move itself on interactive launches.
   `apiKeyHelper` (a settings key, not env) shells out for a credential,
   re-called after 5 min or on 401 (`CLAUDE_CODE_API_KEY_HELPER_TTL_MS`) --
   a viable "fetch token from host/volume" hook.

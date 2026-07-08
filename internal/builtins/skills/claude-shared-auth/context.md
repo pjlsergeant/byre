@@ -17,8 +17,9 @@ errors), check the likelier cause first:
    box 401s roughly 8h after that login -- and an in-box `/login` only
    resets the 8h clock (host-verified 2026-07-07, three boxes). The fix:
    `mv ~/.claude/.credentials.json{,.bak}` and relaunch; Claude then runs
-   on the shared token alone. The launcher warns at launch when it sees
-   this combination.
+   on the shared token alone. On an interactive launch byre offers to do
+   that move itself (consent prompt); non-interactive launches only warn.
+   So the cheapest advice is often: relaunch and answer Y.
 2. **The shared token itself expired or was revoked** (it lasts about a
    year). This fix is the user's, not yours -- tell them: run
    `claude setup-token` again (on the host or in `byre shell`), then
