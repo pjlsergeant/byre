@@ -161,7 +161,14 @@ func (m model) sig() string {
 		parts = append(parts, "mnt:"+mountLine(mt))
 	}
 	for _, pt := range m.ports {
-		parts = append(parts, "port:"+portLine(pt))
+		// portLine renders the effective binding, which a removal marker
+		// doesn't have — sign the marker distinctly or swapping a marker for
+		// the real binding it removes would read as clean (review finding).
+		if pt.Remove {
+			parts = append(parts, fmt.Sprintf("port:!%d", pt.Container))
+		} else {
+			parts = append(parts, "port:"+portLine(pt))
+		}
 	}
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost)

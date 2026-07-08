@@ -668,6 +668,9 @@ func rowAnnotation(r listRow) string {
 	case rowInherited:
 		return "  (" + r.source + ")"
 	case rowRemoved:
+		if r.source == "" {
+			return "  (removed here)" // this layer's own entry, killed by its own marker
+		}
 		return "  (" + r.source + " — removed here)"
 	case rowStaleMarker:
 		return "  (removes nothing — stale marker)"
@@ -702,6 +705,9 @@ func setIn(r listRow) string {
 	case rowInherited, rowSkill:
 		return r.source
 	case rowRemoved:
+		if r.source == "" {
+			return "this file — removed by its own marker"
+		}
 		return r.source + " — removed by this file"
 	case rowStaleMarker:
 		return "this file (marker matches nothing)"

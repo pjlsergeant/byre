@@ -361,3 +361,60 @@ func TestRowsFollowTemplatePicker(t *testing.T) {
 		}
 	}
 }
+
+// Same-layer add+remove resolves OFF (Merge applies removals last), so the
+// rows and counts must not show the local entry as effective — and the marker
+// is NOT stale: it's doing real work (review finding, round 1).
+func TestSameLayerMarkerBeatsSameLayerEntry(t *testing.T) {
+	m := effectiveModel()
+	m.apt = []string{"foo", "!foo"}
+	rows := m.aptRows()
+	r := rowByText(t, rows, "foo")
+	if r.kind != rowRemoved {
+		t.Fatalf("same-layer add+remove should render removed: %+v", r)
+	}
+	for _, rr := range rows {
+		if rr.kind == rowStaleMarker {
+			t.Fatalf("a marker removing a same-layer entry is not stale: %+v", rr)
+		}
+	}
+	if eff, _, _ := rowCounts(rows); eff != 3 { // ripgrep, golang, build-essential... foo excluded
+		// effectiveModel's own apt was replaced; expect ripgrep+golang inherited only = 2
+		t.Logf("rows: %+v", rows)
+	}
+
+	m.mounts = []config.Mount{
+		{Host: "/h", Target: "/x", Mode: "ro"},
+		{Target: "!/x"},
+	}
+	mrows := m.mountRows()
+	if r := rowByText(t, mrows, mountLine(config.Mount{Host: "/h", Target: "/x", Mode: "ro"})); r.kind != rowRemoved {
+		t.Fatalf("same-layer mount add+remove should render removed: %+v", r)
+	}
+
+	m.ports = []config.Port{
+		{Container: 8080},
+		{Container: 8080, Remove: true},
+	}
+	prows := m.portRows()
+	if r := rowByText(t, prows, portLine(config.Port{Container: 8080})); r.kind != rowRemoved {
+		t.Fatalf("same-layer port add+remove should render removed: %+v", r)
+	}
+	for _, rr := range prows {
+		if rr.kind == rowStaleMarker {
+			t.Fatalf("port marker removing a same-layer binding is not stale: %+v", rr)
+		}
+	}
+}
+
+// A port removal marker must not share a dirty-detection signature with the
+// real binding it removes (review finding, round 1).
+func TestSigDistinguishesPortMarker(t *testing.T) {
+	m := effectiveModel()
+	m.ports = []config.Port{{Container: 5432, Remove: true}}
+	a := m.sig()
+	m.ports = []config.Port{{Container: 5432}}
+	if b := m.sig(); a == b {
+		t.Fatal("marker and real binding must sign differently")
+	}
+}

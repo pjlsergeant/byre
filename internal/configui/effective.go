@@ -88,10 +88,16 @@ func (m model) aptRows() []listRow {
 		if isRemovalName(p) || lower[p] {
 			continue
 		}
+		// Merge applies removals after additions, so a same-layer marker turns
+		// this layer's own entry off too — the row must not read as effective.
+		if hasKey(markerIdx, p) {
+			rows = append(rows, listRow{kind: rowRemoved, text: p, idx: markerIdx[p]})
+			continue
+		}
 		rows = append(rows, listRow{kind: rowLocal, text: p, idx: i})
 	}
 	for i, p := range m.apt {
-		if n, ok := strings.CutPrefix(p, "!"); ok && !lower[n] {
+		if n, ok := strings.CutPrefix(p, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
 			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
 		}
 	}
@@ -167,10 +173,15 @@ func (m model) mountRows() []listRow {
 		if isRemovalName(mt.Target) || lower[mt.Target] {
 			continue
 		}
+		// Same-layer marker beats the same-layer entry (removals apply last).
+		if hasKey(markerIdx, mt.Target) {
+			rows = append(rows, listRow{kind: rowRemoved, text: mountLine(mt), idx: markerIdx[mt.Target]})
+			continue
+		}
 		rows = append(rows, listRow{kind: rowLocal, text: mountLine(mt), idx: i})
 	}
 	for i, mt := range m.mounts {
-		if n, ok := strings.CutPrefix(mt.Target, "!"); ok && !lower[n] {
+		if n, ok := strings.CutPrefix(mt.Target, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
 			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
 		}
 	}
@@ -221,14 +232,25 @@ func (m model) portRows() []listRow {
 			rows = append(rows, listRow{kind: rowInherited, text: portLine(p), ident: strconv.Itoa(p.Container), source: src})
 		}
 	}
+	localByContainer := map[int]bool{}
+	for _, p := range m.ports {
+		if !p.Remove {
+			localByContainer[p.Container] = true
+		}
+	}
 	for i, p := range m.ports {
 		if p.Remove || lowerKeys[portKey(p)] {
+			continue
+		}
+		// Same-layer marker beats the same-layer binding (removals apply last).
+		if hasKey(markerIdx, p.Container) {
+			rows = append(rows, listRow{kind: rowRemoved, text: portLine(p), idx: markerIdx[p.Container]})
 			continue
 		}
 		rows = append(rows, listRow{kind: rowLocal, text: portLine(p), idx: i})
 	}
 	for i, p := range m.ports {
-		if p.Remove && !lowerByContainer[p.Container] {
+		if p.Remove && !lowerByContainer[p.Container] && !localByContainer[p.Container] {
 			rows = append(rows, listRow{kind: rowStaleMarker, text: strconv.Itoa(p.Container), idx: i})
 		}
 	}
