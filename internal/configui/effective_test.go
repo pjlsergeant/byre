@@ -378,9 +378,10 @@ func TestSameLayerMarkerBeatsSameLayerEntry(t *testing.T) {
 			t.Fatalf("a marker removing a same-layer entry is not stale: %+v", rr)
 		}
 	}
-	if eff, _, _ := rowCounts(rows); eff != 3 { // ripgrep, golang, build-essential... foo excluded
-		// effectiveModel's own apt was replaced; expect ripgrep+golang inherited only = 2
-		t.Logf("rows: %+v", rows)
+	// Replacing m.apt dropped the fixture's "!htop" too, so the inherited set
+	// is ripgrep+htop+golang = 3; counting foo as effective would make it 4.
+	if eff, _, _ := rowCounts(rows); eff != 3 {
+		t.Fatalf("same-layer add+remove counted as effective: eff=%d rows=%+v", eff, rows)
 	}
 
 	m.mounts = []config.Mount{
