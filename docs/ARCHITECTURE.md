@@ -202,9 +202,12 @@ on the next develop), every other file listed as added/changed/deleted.
   later layer can't set it back to `false` (a plain TOML bool can't
   distinguish unset from false).
 - **Lists union** -- `skills`, `mounts`, etc. accumulate across layers.
-- **Removal escape hatch** -- a `!name` entry drops something an earlier
-  layer added (one blessed mechanism, applied to *named* lists). Raw
-  blocks are unnamed lines: append-only union, no per-line removal.
+- **Removal markers** -- a later layer drops something an earlier layer
+  added: `!name` where the entry's identity is a string (skills, apt,
+  npm_global, volumes, mounts by target), `remove = true` where it's
+  structured (ports, keyed by container port alone). ADR 0018. Env has
+  no unset (override the value instead); raw blocks are unnamed lines:
+  append-only union, no per-line removal.
 
 Vocabulary is deliberately minimal -- the convenient 90%:
 

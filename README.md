@@ -122,8 +122,9 @@ mounting another repo read-only takes a couple of seconds. `--self-edit`
 its own box config; edits apply on the next develop.
 
 Underneath, it's a cascade of three TOML files that are always yours to
-edit by hand -- last layer wins (scalars override, lists union, `!name`
-removes):
+edit by hand -- last layer wins (scalars override, lists union, and a
+later layer can remove an inherited entry: `!name` for named lists,
+`remove = true` for ports):
 
 ```text
 ~/.byre/default.config              your personal baseline
