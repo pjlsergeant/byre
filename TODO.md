@@ -24,16 +24,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   add to the existing How-do-I section.
 - [ ] **README "How do I": mount other folders** (Pete, 2026-07-08): doc
   add, same section.
-- [ ] **Egress doors ship closed** (Pete, 2026-07-08; design settled in
-  `docs/adr/0020-egress-doors-ship-closed.md`): new `egress_offered`
-  string-list key (config + skill `[runtime]`), always inert; the Egress
-  screen shows offered entries as closed switches whose toggle writes the
-  entry into the open layer. The firewall's whole base list (git, apt,
-  registries) moves to offered; templates carry their registries offered
-  (verify storage.googleapis.com is still needed for go at all); a
-  skill's `egress` stays open-with-enablement for its own functional
-  endpoints only (agents). Firewall context.md redirects the agent;
-  GLOSSARY gains the term.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows

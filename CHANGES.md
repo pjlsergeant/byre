@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Deny-by-default now means it** (ADR 0020, behavior change): a firewalled
+  box opens your agent's own API endpoints and *nothing else*. Git hosting,
+  apt mirrors, and language registries -- previously auto-open -- are now
+  **offered, not open**: new `egress_offered` key (templates and skills
+  declare doors; always inert), shown in the config UI's Egress screen as
+  closed switches, one press writing the entry into your own `egress`.
+  Expect `git`/`apt`/`go get`/`npm install` to hang on a fresh firewalled
+  box until you open their doors -- that's the firewall working.
+  (`storage.googleapis.com` is gone entirely: Go's proxy serves content
+  directly, and a blanket GCS allowance was an exfiltration-grade hole.)
 - **New `egress` config key** (ADR 0019): extra firewall-allowlist entries
   as first-class config -- `egress = ["internal.example.com", "api.stripe.com:8443"]`
   -- unioned across cascade layers like every other list (`!entry` removes),

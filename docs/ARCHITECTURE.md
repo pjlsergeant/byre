@@ -83,16 +83,19 @@ a box's posture to deny-by-default egress with an allowlist. How it works:
    death, DNS failure, `docker restart` recreating the netns -- means no
    signal, timeout, and the box dies **closed** (ADR 0011).
 
-The allowlist is **derived**: every enabled skill declares its own
-`[runtime] egress = ["host[:port]"]` (agents carry their API endpoints;
-the firewall skill carries only the generic base), unioned with the
-user's `egress` config key (ADR 0012, key per ADR 0019 -- it cascades
-like every other list, `!entry` removes). Empty is legal -- a
-maximally-locked box. `byre status` prints the posture under honesty
-rules (skill contributions are trusted and attributed; project-level raw
-blocks degrade the claim -- ADR 0010) and shows the resolved allowlist as
-an Egress section attributed per source (each skill, and `config` for
-the key's entries).
+The allowlist is **derived, and minimal by ruling** (ADR 0020): every
+enabled skill declares the `[runtime] egress = ["host[:port]"]` it NEEDS
+to function (agents carry their API endpoints -- enabling the agent is
+the intent), unioned with the user's `egress` config key (ADR 0012, key
+per ADR 0019 -- it cascades like every other list, `!entry` removes).
+Nothing else opens: convenience endpoints (git hosting, apt, language
+registries) ship as `egress_offered` -- declared-but-closed doors the
+config UI opens with one press, writing the entry into the user's own
+config. Empty is legal -- a maximally-locked box. `byre status` prints
+the posture under honesty rules (skill contributions are trusted and
+attributed; project-level raw blocks degrade the claim -- ADR 0010) and
+shows the resolved allowlist as an Egress section attributed per source
+(each skill, and `config` for the key's entries).
 
 ## Image generation
 

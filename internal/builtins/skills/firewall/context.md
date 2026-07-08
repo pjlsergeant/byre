@@ -7,10 +7,13 @@ hangs then times out is the wall, not a network outage.
 
 - The rules live in the box's network namespace and were applied from
   outside; nothing inside the box can change them. Don't try.
-- If a host you legitimately need is blocked, tell the user: they can extend
-  the allowlist with the `egress` config key -- `byre config` → Egress
-  (GRANTS), or `egress = ["host", "host:port"]` in `byre.config` (port
-  defaults to 443) -- and restart the session. Allowed hosts are reachable ONLY on their listed
+- The wall opens ONLY the agent's own API endpoints by default. Common
+  doors -- git hosting, apt, language registries -- are offered-but-closed:
+  the user opens each in `byre config` → Egress (one press per door). So if
+  git/apt/package installs hang, that is expected on a fresh firewalled box,
+  not a bug: tell the user which host you need and point them at the Egress
+  screen (or `egress = ["host", "host:port"]` in `byre.config`, port
+  defaulting to 443), then have them restart the session. Allowed hosts are reachable ONLY on their listed
   port — `https://host` working while `ssh host` hangs is the port scoping,
   not a bug.
 - DNS resolution works for all names (only connecting is restricted). A host
