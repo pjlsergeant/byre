@@ -436,3 +436,74 @@ func TestPortAttributionByFullIdentity(t *testing.T) {
 		t.Errorf("template's binding misattributed: %+v", r)
 	}
 }
+
+// The Egress screen (ADR 0019): inherited/local/removed rows, skill endpoints
+// read-only, and the unenforced note when no posture skill is on.
+func TestEgressRowsAndRemoveHere(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Default.Egress = []string{"grafana.com"}
+	sk := m.inh.Skills["docker"]
+	sk.Egress = []string{"registry.example.com:5000"}
+	m.inh.Skills["docker"] = sk
+	m.egress = []string{"api.stripe.com"}
+	m.listField = fEgress
+
+	rows := m.fieldRows(fEgress)
+	if r := rowByText(t, rows, "grafana.com"); r.kind != rowInherited || r.source != "default" {
+		t.Errorf("inherited egress row wrong: %+v", r)
+	}
+	if r := rowByText(t, rows, "api.stripe.com"); r.kind != rowLocal {
+		t.Errorf("local egress row wrong: %+v", r)
+	}
+	if r := rowByText(t, rows, "registry.example.com:5000"); r.kind != rowSkill || r.source != "skill:docker" {
+		t.Errorf("skill egress row wrong: %+v", r)
+	}
+
+	for i, r := range rows {
+		if r.kind == rowInherited {
+			m.listCur = i
+		}
+	}
+	mm, _ := m.updateList(key("d"))
+	m = mm.(model)
+	if !contains(m.egress, "!grafana.com") {
+		t.Fatalf("remove-here should append the marker: %v", m.egress)
+	}
+	if err := m.assemble().ValidateLayer(); err != nil {
+		t.Fatalf("layer with egress marker should validate: %v", err)
+	}
+}
+
+func TestEgressSummaryUnenforcedNote(t *testing.T) {
+	m := effectiveModel()
+	m.egress = []string{"grafana.com"}
+	// The docker fixture skill declares no posture -> unenforced.
+	if got := m.renderValue(fEgress, false); !strings.Contains(got, "unenforced") {
+		t.Errorf("egress summary should carry the unenforced note: %q", got)
+	}
+	sk := m.inh.Skills["docker"]
+	sk.Posture = "deny-by-default"
+	m.inh.Skills["docker"] = sk
+	if got := m.renderValue(fEgress, false); strings.Contains(got, "unenforced") {
+		t.Errorf("posture skill on -> no unenforced note: %q", got)
+	}
+	if got := m.renderValue(fEgress, false); !strings.Contains(got, "1 host") {
+		t.Errorf("egress summary count: %q", got)
+	}
+}
+
+func TestEgressItemEditorValidates(t *testing.T) {
+	m := effectiveModel()
+	m.listField = fEgress
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("bad host")
+	m = m.commitItem()
+	if m.itemErr == "" || len(m.egress) != 0 {
+		t.Fatalf("malformed egress entry should be rejected: err=%q egress=%v", m.itemErr, m.egress)
+	}
+	m.inputs[0].SetValue("internal:8443")
+	m = m.commitItem()
+	if m.itemErr != "" || len(m.egress) != 1 || m.egress[0] != "internal:8443" {
+		t.Fatalf("valid egress entry should commit: err=%q egress=%v", m.itemErr, m.egress)
+	}
+}

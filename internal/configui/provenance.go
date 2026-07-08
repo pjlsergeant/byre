@@ -14,6 +14,10 @@ import (
 type SkillRuntime struct {
 	Mounts []config.Mount
 	Env    map[string]string
+	Egress []string // declared host[:port] endpoints (ADR 0019)
+	// Posture is the skill's declared network_posture ("" = none). The Egress
+	// screen uses it to say whether anything enforces the allowlist.
+	Posture string
 }
 
 // Inherited is the editor's provenance input. The lower layers ride RAW (not

@@ -112,6 +112,7 @@ func (m model) assemble() config.Config {
 	if len(out.Ports) == 0 {
 		out.Ports = nil
 	}
+	out.Egress = nilIfEmpty(m.egress)
 	// The primary agent is implied by `agent`, so never write it into `skills`
 	// (even if it lingers in m.skills from a config that listed it before it became
 	// primary) — the locked row shows it on via the agent, not via this list.
@@ -170,6 +171,7 @@ func (m model) sig() string {
 			parts = append(parts, "port:"+portLine(pt))
 		}
 	}
+	parts = append(parts, "egress:"+strings.Join(m.egress, ","))
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost)
 	parts = append(parts, fmt.Sprintf("wt:%v/%s", m.wtSibling, m.wtBase.Value()))

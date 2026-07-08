@@ -43,6 +43,7 @@ const (
 	fEngine
 	fApt
 	fEnv
+	fEgress
 	fMounts
 	fVolumes
 	fRunArgs
@@ -65,7 +66,9 @@ func isTextField(f fieldID) bool {
 	return f == fRunArgs || f == fDockerfilePre || f == fDockerfilePost
 }
 
-func isListField(f fieldID) bool { return f == fApt || f == fEnv || f == fMounts || f == fPorts }
+func isListField(f fieldID) bool {
+	return f == fApt || f == fEnv || f == fMounts || f == fPorts || f == fEgress
+}
 
 // Labels are human/display names (not the raw TOML keys); the underlying key is
 // shown as a hint when editing the raw text blocks.
@@ -76,6 +79,7 @@ var fieldLabel = map[fieldID]string{
 	fEngine:          "Engine",
 	fApt:             "Packages",
 	fEnv:             "Env vars",
+	fEgress:          "Egress",
 	fMounts:          "Extra mounts",
 	fPorts:           "Ports",
 	fVolumes:         "Volumes",
@@ -164,6 +168,7 @@ type model struct {
 	env    []kvItem
 	mounts []config.Mount
 	ports  []config.Port
+	egress []string // firewall-allowlist extensions, host[:port] (ADR 0019)
 	skills []string // enabled skill names (multi-select)
 
 	// Freeform raw-tier working state (edited as text blocks).
@@ -237,7 +242,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		advanced = append(advanced, fVolumes)
 	}
 	sections := []section{
-		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEnv}},
+		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills}},
 	}
 	// worktree_base is a global/host preference; only the --global editor shows it
@@ -298,6 +303,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.env = envItems(cfg.Env)
 	m.mounts = append([]config.Mount{}, cfg.Mounts...)
 	m.ports = append([]config.Port{}, cfg.Ports...)
+	m.egress = append([]string{}, cfg.Egress...)
 	m.skills = append([]string{}, cfg.Skills...)
 	m.runArgs = strings.Join(cfg.RunArgs, "\n")
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
@@ -647,6 +653,11 @@ func (m model) renderValue(f fieldID, focused bool) string {
 				s += dimStyle.Render("  (" + strings.Join(parts, ", ") + ")")
 			}
 		}
+		// Egress is declarative: with no posture skill enabled, nothing
+		// enforces it — config must not look armed when it isn't (ADR 0019).
+		if f == fEgress && eff > 0 && !m.postureNow() {
+			s += dimStyle.Render("  — unenforced (no firewall skill)")
+		}
 		if focused {
 			s += dimStyle.Render("  (enter to edit)")
 		}
@@ -656,7 +667,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 
 // fieldNoun is the summary noun for a list field, pluralized.
 func fieldNoun(f fieldID, n int) string {
-	noun := map[fieldID]string{fApt: "package", fEnv: "var", fMounts: "mount", fPorts: "port"}[f]
+	noun := map[fieldID]string{fApt: "package", fEnv: "var", fMounts: "mount", fPorts: "port", fEgress: "host"}[f]
 	if noun == "" {
 		noun = "item"
 	}

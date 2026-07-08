@@ -5,6 +5,7 @@
 package configui
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,8 +53,77 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.mountRows()
 	case fPorts:
 		return m.portRows()
+	case fEgress:
+		return m.egressRows()
 	}
 	return nil
+}
+
+// egressRows mirrors aptRows: egress is a plain string list with `!entry`
+// removal, plus each effective skill's declared endpoints shown read-only
+// (normalized to host:port for display; identity stays the raw entry string).
+func (m model) egressRows() []listRow {
+	localIdx := map[string]int{}
+	markerIdx := map[string]int{}
+	for i, e := range m.egress {
+		if n, ok := strings.CutPrefix(e, "!"); ok {
+			markerIdx[n] = i
+		} else {
+			localIdx[e] = i
+		}
+	}
+	lower := map[string]bool{}
+	var rows []listRow
+	for _, e := range m.lowerNow().Egress {
+		if isRemovalName(e) || lower[e] {
+			continue
+		}
+		lower[e] = true
+		e := e
+		src := m.lowerSource(func(c config.Config) bool { return slices.Contains(c.Egress, e) })
+		switch {
+		case hasKey(markerIdx, e):
+			rows = append(rows, listRow{kind: rowRemoved, text: e, source: src, idx: markerIdx[e]})
+		case hasKey(localIdx, e):
+			rows = append(rows, listRow{kind: rowLocal, text: e, source: src, also: true, idx: localIdx[e]})
+		default:
+			rows = append(rows, listRow{kind: rowInherited, text: e, ident: e, source: src})
+		}
+	}
+	for i, e := range m.egress {
+		if isRemovalName(e) || lower[e] {
+			continue
+		}
+		if hasKey(markerIdx, e) {
+			rows = append(rows, listRow{kind: rowRemoved, text: e, idx: markerIdx[e]})
+			continue
+		}
+		rows = append(rows, listRow{kind: rowLocal, text: e, idx: i})
+	}
+	for i, e := range m.egress {
+		if n, ok := strings.CutPrefix(e, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
+			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
+		}
+	}
+	for _, sk := range m.effectiveSkills() {
+		for _, e := range m.inh.Skills[sk].Egress {
+			if host, port, err := config.ParseEgress(e); err == nil {
+				rows = append(rows, listRow{kind: rowSkill, text: host + ":" + strconv.Itoa(port), source: "skill:" + sk})
+			}
+		}
+	}
+	return rows
+}
+
+// postureNow reports whether any currently-effective skill declares a network
+// posture — i.e. whether anything will actually enforce the egress allowlist.
+func (m model) postureNow() bool {
+	for _, e := range m.skillEntries() {
+		if e.on() && m.inh.Skills[e.name].Posture != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) aptRows() []listRow {
@@ -270,7 +340,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.Egress) > 0) {
 			out = append(out, e.name)
 		}
 	}

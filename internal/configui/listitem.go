@@ -175,6 +175,8 @@ func (m *model) removeHere(r listRow) {
 	switch m.listField {
 	case fApt:
 		m.apt = append(m.apt, "!"+r.ident)
+	case fEgress:
+		m.egress = append(m.egress, "!"+r.ident)
 	case fMounts:
 		m.mounts = append(m.mounts, config.Mount{Target: "!" + r.ident})
 	case fPorts:
@@ -233,6 +235,8 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.mounts = append(m.mounts[:i], m.mounts[i+1:]...)
 	case fPorts:
 		m.ports = append(m.ports[:i], m.ports[i+1:]...)
+	case fEgress:
+		m.egress = append(m.egress[:i], m.egress[i+1:]...)
 	}
 }
 
@@ -252,6 +256,13 @@ func (m model) startItem(idx int) model {
 		v := ""
 		if idx >= 0 {
 			v = m.apt[idx]
+		}
+		m.inputs = []textinput.Model{newInput(v)}
+	case fEgress:
+		m.inputLabels = []string{"Host[:port]"}
+		v := ""
+		if idx >= 0 {
+			v = m.egress[idx]
 		}
 		m.inputs = []textinput.Model{newInput(v)}
 	case fEnv:
@@ -513,6 +524,13 @@ func (m model) commitItem() model {
 			return m
 		}
 		m.apt = putAt(m.apt, m.editIndex, pkg)
+	case fEgress:
+		entry := strings.TrimSpace(m.inputs[0].Value())
+		if _, _, err := config.ParseEgress(entry); err != nil {
+			m.itemErr = err.Error()
+			return m
+		}
+		m.egress = putAt(m.egress, m.editIndex, entry)
 	case fEnv:
 		k := strings.TrimSpace(m.inputs[0].Value())
 		if !envKeyRe.MatchString(k) {

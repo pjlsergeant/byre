@@ -582,4 +582,3 @@ func TestEgressPortDefaultsTo443(t *testing.T) {
 		t.Fatalf("parseEgress explicit = (%q,%d,%v)", h, p, err)
 	}
 }
-
