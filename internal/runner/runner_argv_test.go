@@ -146,14 +146,14 @@ func TestNetnsInitArgv(t *testing.T) {
 		return "", nil
 	}}
 	err := r.NetnsInit("byre-img.v0", "byre-myproj", "/usr/local/bin/byre-firewall",
-		map[string]string{"FIREWALL_ALLOW": "grafana.com", "A": "1"})
+		map[string]string{"BYRE_EGRESS": "grafana.com:443", "A": "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// -u 0:0 + --cap-add NET_ADMIN live HERE, on the throwaway helper joining
 	// the box's netns — never on the box itself. Env keys sorted.
 	want := "docker run --rm -u 0:0 --net container:byre-myproj --cap-add NET_ADMIN" +
-		" --entrypoint /usr/local/bin/byre-firewall -e A=1 -e FIREWALL_ALLOW=grafana.com byre-img.v0"
+		" --entrypoint /usr/local/bin/byre-firewall -e A=1 -e BYRE_EGRESS=grafana.com:443 byre-img.v0"
 	if got := strings.Join(gotArgs, " "); got != want {
 		t.Fatalf("NetnsInit argv = %q, want %q", got, want)
 	}

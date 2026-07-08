@@ -1,5 +1,9 @@
 # Egress allowlist: derived from skills, port-scoped
 
+> Superseded in part by ADR 0019 (2026-07-08): the user's extension path
+> is now the `egress` config key; `FIREWALL_ALLOW` is retired. The
+> derivation and port-scoping decided here are unchanged.
+
 The firewall allowlist is **derived, not static**: each skill declares
 the egress it needs via a typed `skill.toml` field (`[runtime] egress =
 ["host[:port]", ...]`, port defaulting to 443). Agent skills carry their
