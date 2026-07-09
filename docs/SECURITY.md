@@ -64,10 +64,15 @@ decision about its author, made once, with the consequences legible in
 Dockerfile `ENV` layers, so `docker history` shows them to anyone with
 daemon access, and they live in the image -- surviving `byre reset`,
 which clears volumes, not images -- until it is rebuilt or deleted.
-Config-literal env is configuration, not a grant (the box doesn't reach
-more because of it), but a secret pasted into `env` is a secret in an
-image layer. Keep real credentials to the agents' own login flows or
-the shared-auth skills, which store them in volumes instead.
+To be clear about what this does NOT change: byre images never leave
+your machine (there is no push path), and daemon access is
+root-equivalent anyway -- nobody can read the layer who couldn't
+already read the running container's env, the volumes, and the host.
+So this is a hygiene fact, not a new exposure. The reasons to know it:
+a value persists in image layers after you delete it from config, and
+changing one re-runs the project block's installs. Real credentials
+belong to the agents' own login flows or the shared-auth skills, which
+keep them in volumes.
 
 **An open network is an exfiltration channel.** With the default open
 posture, an agent can send anywhere -- including the project it is

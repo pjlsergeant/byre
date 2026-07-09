@@ -121,6 +121,16 @@ the docs cited and in git history.
   boundary that doesn't exist; `--self-edit` means trusting the agent with
   the host, full stop. Reviewers WILL re-find this class -- conscious
   negative, don't re-fix.
+- **Runtime-only env** (moving config `env` from baked ENV layers to
+  run-time `-e`) -- no security value under the threat model: byre images
+  never leave the machine (no push path) and daemon access is
+  root-equivalent, so no adversary can read a layer who can't already
+  read everything (2026-07-09 external-review grilling; the layers fact
+  is documented in SECURITY.md/README). If ever revived it's build-cache
+  QoL for the env-UX cluster (guidance strings, masking), never secret
+  protection -- and build-time env visibility (e.g. GOTOOLCHAIN consumed
+  by dockerfile_pre) is load-bearing, so any change needs a build_env
+  story.
 - **Agent `command` argv validation** (quoting/allowlisting the skill
   [agent] command) -- documented as a deliberate shell fragment instead
   (agentScript comment + SECURITY.md "A skill is trusted code",
