@@ -126,12 +126,18 @@ func TestPickReprompsOnInvalid(t *testing.T) {
 }
 
 func TestPickNone(t *testing.T) {
-	c, err := Pick(&bytes.Buffer{}, strings.NewReader("none\nnone\n\n"), []string{"go"}, []string{"claude"}, fav(""), fav(""))
+	var out bytes.Buffer
+	c, err := Pick(&out, strings.NewReader("none\nnone\n\n"), []string{"go"}, []string{"claude"}, fav(""), fav(""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Template != "" || c.Agent != "" {
 		t.Fatalf("none should map to empty, got %+v", c)
+	}
+	// With no stored favourites, none/none IS the stored state — saving would
+	// be a no-op, so the offer must not appear.
+	if c.SaveDefault || strings.Contains(out.String(), "Save these") {
+		t.Fatalf("save offer must not appear for none/none with no favourites:\n%s", out.String())
 	}
 }
 
