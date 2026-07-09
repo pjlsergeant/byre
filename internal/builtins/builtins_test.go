@@ -37,7 +37,7 @@ func TestBuiltinAgentSkillsResolve(t *testing.T) {
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	for _, agent := range []string{"claude", "codex", "gemini"} {
+	for _, agent := range []string{"claude", "codex", "gemini", "grok"} {
 		res, err := skills.Resolve(config.Config{Agent: agent}, dest)
 		if err != nil {
 			t.Errorf("agent %q: resolve failed: %v", agent, err)
@@ -66,8 +66,8 @@ func TestMaterializeTemplatesAndListAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	agents := skills.ListAgentSkills(filepath.Join(dest, "skills"))
-	if len(agents) != 3 {
-		t.Errorf("expected 3 agent skills (claude/codex/gemini), got %v", agents)
+	if len(agents) != 4 {
+		t.Errorf("expected 4 agent skills (claude/codex/gemini/grok), got %v", agents)
 	}
 }
 
@@ -342,58 +342,69 @@ func TestAgentSkillsCleanStateDir(t *testing.T) {
 	}
 }
 
-// codex installs its BINARY into ~/.codex, so it must NOT wipe that dir (doing so
-// deletes the binary and leaves dangling symlinks).
-func TestCodexDoesNotWipeStateDir(t *testing.T) {
+// codex and grok install their BINARIES into their dotdir (~/.codex, ~/.grok),
+// so they must NOT wipe it (doing so deletes the binary and leaves dangling
+// symlinks).
+func TestBinaryDirAgentsDoNotWipeIt(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	res, err := skills.Resolve(config.Config{Agent: "codex"}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, b := range res.BuildBlocks() {
-		if b.Name != "codex" {
-			continue
+	for _, c := range []struct{ agent, binDir string }{
+		{"codex", "/home/dev/.codex"},
+		{"grok", "/home/dev/.grok"},
+	} {
+		res, err := skills.Resolve(config.Config{Agent: c.agent}, dest)
+		if err != nil {
+			t.Fatalf("%s: %v", c.agent, err)
 		}
-		for _, line := range b.Dockerfile {
-			if strings.Contains(line, "rm -rf /home/dev/.codex") {
-				t.Fatalf("codex must NOT wipe ~/.codex (its binary lives there): %q", line)
+		for _, b := range res.BuildBlocks() {
+			if b.Name != c.agent {
+				continue
+			}
+			for _, line := range b.Dockerfile {
+				if strings.Contains(line, "rm -rf "+c.binDir) {
+					t.Errorf("%s must NOT wipe %s (its binary lives there): %q", c.agent, c.binDir, line)
+				}
 			}
 		}
 	}
 }
 
-// codex's state volume + CODEX_HOME must be a DIFFERENT path from ~/.codex, where
-// the installer puts the binary — otherwise the volume masks/seeds-over the
-// binary (the bug). Guards the decoupling.
-func TestCodexStateVolumeSeparateFromBinary(t *testing.T) {
+// codex's/grok's state volume + home env must be a DIFFERENT path from the
+// dotdir where the installer puts the binary — otherwise the volume
+// masks/seeds-over the binary (the bug). Guards the decoupling.
+func TestStateVolumeSeparateFromBinaryDir(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	res, err := skills.Resolve(config.Config{Agent: "codex"}, dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Env()["CODEX_HOME"] == "" || res.Env()["CODEX_HOME"] == "/home/dev/.codex" {
-		t.Fatalf("CODEX_HOME must be set and NOT /home/dev/.codex (the binary dir), got %q", res.Env()["CODEX_HOME"])
-	}
-	var found bool
-	for _, v := range res.Volumes() {
-		if v.Name == ".codex" {
-			found = true
-			if v.Target == "/home/dev/.codex" {
-				t.Errorf(".codex state volume must NOT mount at /home/dev/.codex (the binary dir)")
-			}
-			if v.Target != res.Env()["CODEX_HOME"] {
-				t.Errorf(".codex volume target %q should equal CODEX_HOME %q", v.Target, res.Env()["CODEX_HOME"])
+	for _, c := range []struct{ agent, envKey, binDir, volName string }{
+		{"codex", "CODEX_HOME", "/home/dev/.codex", ".codex"},
+		{"grok", "GROK_HOME", "/home/dev/.grok", ".grok"},
+	} {
+		res, err := skills.Resolve(config.Config{Agent: c.agent}, dest)
+		if err != nil {
+			t.Fatalf("%s: %v", c.agent, err)
+		}
+		if res.Env()[c.envKey] == "" || res.Env()[c.envKey] == c.binDir {
+			t.Fatalf("%s must be set and NOT %s (the binary dir), got %q", c.envKey, c.binDir, res.Env()[c.envKey])
+		}
+		var found bool
+		for _, v := range res.Volumes() {
+			if v.Name == c.volName {
+				found = true
+				if v.Target == c.binDir {
+					t.Errorf("%s state volume must NOT mount at %s (the binary dir)", c.volName, c.binDir)
+				}
+				if v.Target != res.Env()[c.envKey] {
+					t.Errorf("%s volume target %q should equal %s %q", c.volName, v.Target, c.envKey, res.Env()[c.envKey])
+				}
 			}
 		}
-	}
-	if !found {
-		t.Fatal("codex skill should contribute a .codex state volume")
+		if !found {
+			t.Fatalf("%s skill should contribute a %s state volume", c.agent, c.volName)
+		}
 	}
 }
 

@@ -1,7 +1,8 @@
 # Agent-CLI credential and state-dir mechanics
 
 Research notes for the shared-auth skill design: how Claude Code, OpenAI Codex
-CLI, and Google Gemini CLI store identity vs per-project state, how they write
+CLI, Google Gemini CLI, and xAI Grok CLI store identity vs per-project state,
+how they write
 credential files, and what breaks when one credential is shared across
 containers. Gathered 2026-07-06. Empirical facts come from this box (Claude
 Code 2.1.201 live session; Codex CLI 0.142.5 logged in via ChatGPT; Gemini CLI
@@ -9,21 +10,25 @@ Code 2.1.201 live session; Codex CLI 0.142.5 logged in via ChatGPT; Gemini CLI
 open enough for all needed fetches; the only web failures were moved URLs
 (404s), each re-located -- no findings below are firewall-degraded. `gh` is not
 installed in this box (used the GitHub REST API over WebFetch instead).
+The Grok section was added 2026-07-09 (Grok CLI 0.2.93 live in this box,
+authenticated with a seeded consumer credential; grok is closed source, so its
+section is empirical + vendor docs, with the write/rotation claims explicitly
+unverifiable from source).
 
 ## Summary table
 
-| | Claude Code | Codex CLI | Gemini CLI |
-|---|---|---|---|
-| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `oauth_creds.json`, `google_accounts.json` |
-| Per-project state in a ROOT-LEVEL FILE | **YES** -- `.claude.json` `projects` key (trust, allowed tools, MCP local scope) | **YES** -- `config.toml` `[projects."<path>"] trust_level` | **YES** -- `trustedFolders.json` (per-folder trust) |
-| Per-project state in subdirectories | `projects/<encoded-cwd>/` (transcripts, auto memory) | none keyed by project (`sessions/` is date-keyed) | `history/<projectId>/`, `tmp/<project_hash>/` |
-| Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` |
-| Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees |
-| Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | **none** (open feature requests) |
-| Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename |
-| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) |
-| Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) |
-| Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" |
+| | Claude Code | Codex CLI | Gemini CLI | Grok CLI |
+|---|---|---|---|---|
+| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `oauth_creds.json`, `google_accounts.json` | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` |
+| Per-project state in a ROOT-LEVEL FILE | **YES** -- `.claude.json` `projects` key (trust, allowed tools, MCP local scope) | **YES** -- `config.toml` `[projects."<path>"] trust_level` | **YES** -- `trustedFolders.json` (per-folder trust) | none observed (closed source; `worktrees.db`/`active_sessions.json` are root-level but not trust-shaped) |
+| Per-project state in subdirectories | `projects/<encoded-cwd>/` (transcripts, auto memory) | none keyed by project (`sessions/` is date-keyed) | `history/<projectId>/`, `tmp/<project_hash>/` | `memory/<project-slug>-<hash8>/`; `sessions/` is date-keyed |
+| Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` | `config.toml`, `skills/`, `AGENTS.md` (global rules) |
+| Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees | `models_cache.json`, `logs/`, `upload_queue/`, `marketplace-cache/`, `downloads/` (binary!) |
+| Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | **none** (open feature requests) | `GROK_HOME` (**verified**: moves auth + sessions + config) |
+| Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; **unverified** (gate 1, grok-shared-auth) |
+| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) | ~7-day expiry, silent OIDC refresh; rotation **unverified** (gate 2) |
+| Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) | **none** -- `XAI_API_KEY` only (different billing); native `grok login --device-auth` |
+| Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" | silent; its own installer reads `auth.json` tokens for authenticated downloads (empirically: a copied credential works) |
 
 ## Claude Code (2.1.201, empirical + docs)
 
@@ -340,6 +345,81 @@ existing authentication credential is cached", else use env vars (same URL as
 above) -- no endorsement or prohibition of copying `oauth_creds.json`, but
 the cached-credential path is the only subscription option headless.
 
+## xAI Grok CLI (0.2.93, empirical + vendor docs -- closed source)
+
+Added 2026-07-09, from a live authenticated install in this box (the host's
+consumer credential, seeded read-only for inspection). Grok CLI ships as a
+closed-source static binary, so unlike Codex/Gemini nothing here is
+source-verified; claims are either observed live or quoted from the vendor
+README.
+
+### 1. State-dir inventory
+
+Default home `~/.grok` MIXES the binary with state: the installer downloads
+the real binary to `~/.grok/downloads/grok-<platform>` and symlinks
+`~/.grok/bin/{grok,agent}` to it (relative links). State observed live:
+`auth.json` (0600) + `auth.json.lock`, `config.toml`, `agent_id`, `sessions/`
+(date-keyed), `memory/<project-slug>-<hash8>/` (project-keyed, hash from the
+git remote so clones/worktrees share), `models_cache.json`, `logs/`,
+`skills/`, `upload_queue/`, `marketplace-cache/`, `worktrees.db`,
+`active_sessions.json`. Global agent rules: `$GROK_HOME/AGENTS.md` (also
+accepts `Claude.md`/`AGENT.md`/`Agents.md`; each rules file capped at 10,000
+chars).
+
+`auth.json` shape (observed, and confirmed by the vendor installer's own
+parser): `{"<auth-scope-url>": {"key": "<token>", ...}, ...}` with two known
+scopes -- `https://auth.x.ai::<client-id>` (OIDC) and
+`https://accounts.x.ai/sign-in` (legacy).
+
+### 2. Credential write patterns
+
+**Unverified** -- closed source, and forcing a rewrite requires a login or a
+refresh (a refresh against a live shared credential risks invalidating the
+host's session if rotation turns out single-use, so it was not run
+unilaterally). The `auth.json.lock` sibling shows the CLI coordinates writes
+across processes on one machine; whether the write is in-place (symlink
+survives) or temp+rename (symlink replaced) is **gate 1** for
+`grok-shared-auth`, cheaply testable: device-auth login through the asserted
+symlink, then check the link survived and the credential landed in the
+identity volume.
+
+### 3. Refresh-token rotation semantics
+
+Vendor docs: consumer tokens "expire after 7 days"; OIDC tokens
+"auto-refresh silently via the stored `refresh_token`";
+`GROK_AUTH_EARLY_INVALIDATION_SECS` (default 300) controls how early a token
+is treated as expired -- setting it very high forces refresh-on-next-use,
+which is the lever for **gate 2** (two concurrent boxes, forced refresh,
+neither session dies -- same gate as Gemini OAuth). Whether refresh tokens
+are single-use is undocumented and unverified.
+
+### 4. Env overrides
+
+- `GROK_HOME` -- relocates the config dir. **Verified live** (0.2.93): with
+  `GROK_HOME` set to a fresh dir containing only a seeded `auth.json`, the
+  CLI authenticated from it, read `AGENTS.md` global rules from it (codeword
+  probe), and created `sessions/`, `config.toml`, `logs/` etc. under it --
+  nothing written back to `~/.grok`. This gives Grok the codex-shaped
+  binary/state split: binary stays in image `~/.grok`, state volume mounts at
+  `$GROK_HOME`.
+- `XAI_API_KEY` -- static API key (console.x.ai, separate API billing), takes
+  precedence over the file credential; rotation-proof by construction, same
+  status as Gemini's API-key path.
+- `GROK_AUTH_PROVIDER_COMMAND` -- delegate auth to an external binary whose
+  stdout becomes the stored token; the enterprise/SSO escape hatch.
+- No plan-scoped long-lived token equivalent to `claude setup-token`.
+
+### 5. Vendor guidance on sharing
+
+Silent on copying `auth.json` between machines. Adjacent evidence both ways:
+the vendor's own `install.sh` parses `~/.grok/auth.json` and uses the token
+to authenticate downloads (the file is treated as the canonical, portable
+credential), and a host-minted credential seeded into a fresh `GROK_HOME`
+worked for inference in this box; but the 7-day expiry means any shared copy
+goes stale fast without a shared refresh path -- which is exactly what the
+gate-pending symlink mechanism would provide. Native headless login exists:
+`grok login --device-auth` (aliased `--device-code`).
+
 ## Implications for the shared-auth split
 
 Per agent, what goes in the shared identity volume vs per-project volume:
@@ -379,6 +459,21 @@ Per agent, what goes in the shared identity volume vs per-project volume:
   hatch.
 - No home-relocation env var: the shared/per-project seam must be built by
   mounting into `~/.gemini` itself.
+
+**Grok CLI**
+- Shared identity: `auth.json` (both write claims gate-pending -- see the
+  Grok section; the symlink mechanism ships to run the gates, mirroring the
+  Gemini-OAuth stance).
+- Per-project: `sessions/`, `memory/<project-slug>-<hash8>/`, `config.toml`
+  (holds per-project-ish UI prefs plus `[custom_endpoints]` API keys -- the
+  secret-capable field is also why grok has no prefs seeding),
+  `agent_id`, `worktrees.db`, caches.
+- Unsplittable-by-mount: none known root-level; but `auth.json.lock` stays
+  per-project while its target is shared, so lock-based write coordination
+  does not extend across boxes (codex-shaped benign-race residual at worst,
+  pending gate 2).
+- `GROK_HOME` moves the tree (verified) but cannot split it -- same as
+  `CODEX_HOME`.
 
 ### Hard blockers and hazards
 
@@ -423,6 +518,11 @@ Per agent, what goes in the shared identity volume vs per-project volume:
 - Empirical, this box: Claude Code 2.1.201 live `~/.claude` (with
   `CLAUDE_CONFIG_DIR` set) and `~/.claude.json`; Codex CLI 0.142.5
   `$CODEX_HOME=~/.codex-home` (ChatGPT auth mode); `gemini` not installed.
+- Empirical, this box (2026-07-09): Grok CLI 0.2.93 -- unauthenticated
+  install into a clean `$HOME`; `GROK_HOME` relocation + global `AGENTS.md`
+  pickup with a seeded credential; `grok login --help` (device-auth flag);
+  a read-only mount of the host's live `~/.grok` (dir inventory, `auth.json`
+  shape and mode, `auth.json.lock`).
 - https://code.claude.com/docs/en/authentication (credential storage,
   precedence, setup-token)
 - https://code.claude.com/docs/en/settings (~/.claude.json contents)
@@ -441,3 +541,9 @@ Per agent, what goes in the shared identity volume vs per-project volume:
   inventory), packages/core/src/code_assist/oauth2.ts (in-place write,
   tokens-event rewrite); issues #2815, #8440
 - https://google-gemini.github.io/gemini-cli/docs/get-started/authentication.html
+- https://x.ai/cli (Grok CLI product page); https://x.ai/cli/install.sh (the
+  installer is also the best public spec of `auth.json`: its `read_grok_token`
+  parses the scope-keyed shape, and it falls back to unauthenticated download)
+- Grok CLI vendor README (shipped in `~/.grok/README.md`, 0.2.93):
+  Authentication, Automatic Credential Refresh, Environment Variables,
+  AGENTS.md sections

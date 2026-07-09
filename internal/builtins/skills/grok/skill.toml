@@ -1,0 +1,93 @@
+# Built-in agent skill: Grok (xAI grok CLI, "Grok Build").
+#
+# Base-agnostic: installs the standalone Grok binary (single static binary, no
+# node) the same way as the claude skill — as the dev user, with a
+# /usr/local/bin symlink for attach shells. IMPORTANT: like codex, the
+# installer puts the binary under ~/.grok (~/.grok/downloads/grok-<platform>,
+# with ~/.grok/bin/ symlinks), so the binary lives in the IMAGE at ~/.grok and
+# that path is NOT a volume. State (auth/sessions/config) lives in GROK_HOME,
+# which is a separate per-project state volume mounted at
+# /home/dev/.grok-home — so seeding/resetting creds can never disturb the
+# binary. VERIFIED in-box 2026-07-09 (grok 0.2.93): GROK_HOME relocates
+# everything — auth.json is read from it, sessions/config/logs are created
+# under it, and nothing is written back into ~/.grok.
+#
+# The installer needs no secret at build time (VERIFIED 2026-07-09): with no
+# credential present it downloads the public artifact (x.ai/cli, with a
+# public-GCS fallback). When an auth.json IS present it uses the token for the
+# download — irrelevant in a docker build, where none exists.
+#
+# First-run auth is handled by the grok-login firstrun hook below:
+# `grok login --device-auth` is the CLI's documented headless flow (prints a
+# URL + code to authorize in any browser). NOTE: the credential expires after
+# ~7 days (vendor docs: "Tokens expire after 7 days"); re-auth is the same
+# command. Alternatively a static XAI_API_KEY (from console.x.ai — separate
+# API billing) takes precedence over the file credential; export it via
+# project env to skip file auth entirely.
+
+description = "The Grok CLI agent (Grok Build); login persists per project."
+
+[build]
+apt = ["curl", "ca-certificates"]
+# First-run auth: ship a firstrun hook that runs `grok login --device-auth` on
+# a fresh box (guarded by auth.json), so grok works without hunting for a
+# shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
+files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login" }
+dockerfile = [
+  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://x.ai/cli/install.sh | bash'",
+  # grok installs its BINARY into ~/.grok (downloads/ holds the file, bin/
+  # symlinks to it). ~/.grok is NOT a volume — the state volume mounts at
+  # GROK_HOME (/home/dev/.grok-home) instead — so the binary stays in this
+  # image dir, always present, never masked or wiped. Do NOT add a
+  # `rm -rf /home/dev/.grok` cleanup like claude/gemini: it would delete the
+  # binary (the claude/gemini wipe works only because their binaries live
+  # elsewhere).
+  "RUN test -x /home/dev/.grok/bin/grok && ln -sf /home/dev/.grok/bin/grok /usr/local/bin/grok",
+]
+
+[runtime]
+# GROK_HOME (auth/sessions/config — the STATE) is deliberately SEPARATE from
+# ~/.grok (where the installer puts the BINARY). ~/.grok stays in the image
+# and is never a volume, so the binary is always present; the state volume
+# mounts here at /home/dev/.grok-home. This keeps a creds reset / stale volume
+# from ever clobbering the binary (they only touch GROK_HOME). Verified
+# in-box 2026-07-09 — see header.
+env = { GROK_HOME = "/home/dev/.grok-home" }
+# Egress grok needs if a firewall skill is enabled (host[:port], default 443).
+# cli-chat-proxy.grok.com = inference (the CLI's documented default proxy);
+# auth.x.ai + accounts.x.ai = the two credential scopes in auth.json (OIDC and
+# legacy sign-in). HOST-VERIFY: the exact hosts the device-auth flow polls,
+# and whether the XAI_API_KEY path talks to api.x.ai instead of the proxy.
+egress = ["cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"]
+# `grok update` (in-box self-update) re-downloads from x.ai. Convenience, not
+# a functional need — the image pins the version — so it ships closed
+# (ADR 0020) and the config UI offers it as a switch.
+egress_offered = ["x.ai"]
+
+[agent]
+command = "grok --always-approve"
+state = ".grok"
+# Grok reads global agent rules from $GROK_HOME/AGENTS.md and appends them to
+# the system prompt (VERIFIED in-box 2026-07-09 via a codeword probe). byre
+# places the concatenated skill [context] here at runtime. Additive: project
+# rules files (AGENTS.md/CLAUDE.md/... from repo root down to cwd) are read on
+# top of this. CAP: grok truncates each rules file at 10,000 characters with a
+# warning — keep skill [context] lean when grok is the agent.
+context_target = "/home/dev/.grok-home/AGENTS.md"
+
+# No prefs seeding: grok's config.toml mixes prefs with credential-capable
+# fields ([custom_endpoints] api_key), so it fails the PrefsSpec vouch
+# (structurally secret-incapable files only) and nothing else in GROK_HOME is
+# worth carrying.
+
+# grok auth is NOT seeded from the host (ADR 0007: byre reads nothing from the
+# host). Log in per-box via the device-auth hook above; the .grok state volume
+# persists the login across rebuilds. For one login across all your projects,
+# enable grok-shared-auth alongside this skill.
+
+[[volumes]]
+name = ".grok"
+role = "state"
+# Mounts at GROK_HOME, NOT ~/.grok — the binary lives in ~/.grok (image) and
+# must not be masked/seeded over by this volume.
+target = "/home/dev/.grok-home"

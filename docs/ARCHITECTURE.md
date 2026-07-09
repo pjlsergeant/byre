@@ -219,7 +219,7 @@ Vocabulary is deliberately minimal -- the convenient 90%:
 ```toml
 engine      = "auto"                         # auto | docker | podman
 template    = "node"                          # which ~/.byre/templates/<name> to layer on (optional)
-agent       = "claude"                        # which agent skill launches: claude | codex | gemini
+agent       = "claude"                        # which agent skill launches: claude | codex | gemini | grok
 seed_prefs  = true                            # one-time curated prefs seed (ADR 0013); off by default
 base        = "node:22"
 apt         = ["build-essential"]
@@ -267,7 +267,8 @@ controls**:
 
 **Agents are skills** (ADR 0005). An agent skill contributes its CLI
 (build), its launch command + autonomy flag, and its auth state volume
-(`.claude` / `.codex` / `.gemini`). The chassis ENTRYPOINT is a constant
+(`.claude` / `.codex` / `.gemini` / `.grok`). The chassis ENTRYPOINT is a
+constant
 launcher that execs the *selected* agent skill's recorded command; the
 `agent` scalar picks which, and **implicitly enables** that skill. More
 than one agent skill can be enabled; `agent` decides the default command.
@@ -349,13 +350,15 @@ copy-semantics breaks rotating OAuth tokens): agents log in once in the
 box and the state volume persists the login per-project. `seed_prefs`
 (ADR 0013) is the curated, non-secret exception for agent prefs. The
 **shared-auth companion skills** (`claude-shared-auth`,
-`codex-shared-auth`, `gemini-shared-auth`; ADR 0017) make one login
+`codex-shared-auth`, `gemini-shared-auth`, `grok-shared-auth`; ADR 0017)
+make one login
 serve every project WITHOUT host copying: the credential lives in a
 machine-scoped identity volume and byre reads nothing from the host --
-Codex and Gemini log in once in any box (the credential lands in the
-shared volume through symlinks; Gemini's API-key path is verified,
-OAuth sharing gate-pending -- see the skill and ADR 0017's verification
-record); Claude uses a user-minted `claude setup-token` pasted at a
+Codex, Gemini, and Grok log in once in any box (the credential lands in
+the shared volume through symlinks; Gemini's API-key path is verified,
+Gemini-OAuth and Grok sharing gate-pending -- see the skills and ADR
+0017's verification record); Claude uses a user-minted `claude
+setup-token` pasted at a
 first-run prompt and exported to the agent process by a **launch env
 hook**
 (`/etc/byre/env.d/*.sh`, sourced by the launcher after firstrun hooks,

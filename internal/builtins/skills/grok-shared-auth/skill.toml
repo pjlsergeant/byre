@@ -1,0 +1,45 @@
+# Built-in companion skill: grok-shared-auth (ADR 0017).
+#
+# One Grok login for every byre project on this machine. Enabled ALONGSIDE the
+# grok skill (skills = ["grok-shared-auth"], typically in
+# ~/.byre/default.config). Mechanism (mirrors codex-shared-auth):
+# $GROK_HOME/auth.json becomes a symlink into the machine-scoped identity
+# volume; the first `grok login --device-auth` in any box writes through the
+# dangling link into the shared volume. Grok's ~7-day token expiry is the case
+# FOR sharing: re-auth becomes once per machine, not once per box per week.
+#
+# ⚠ GATE PENDING (ADR 0017 / docs/agent-credential-mechanics.md): the Grok CLI
+# is closed source, so the two claims the symlink mechanism rests on are
+# UNVERIFIED — this skill ships to RUN the gates, not because they passed:
+#   1. Write pattern — does the CLI write auth.json IN PLACE (the symlink
+#      survives, codex-shaped) or via temp+rename (the symlink is replaced by
+#      a regular file and the credential silently forks, Claude-shaped)?
+#      Cheap gate: log in via the firstrun hook, then confirm auth.json is
+#      still a symlink and the credential landed in the identity volume.
+#   2. Refresh rotation — tokens expire after ~7 days and refresh silently
+#      via the stored refresh_token; whether refresh tokens are single-use is
+#      unknown. Gate: two concurrent boxes, force a refresh (set
+#      GROK_AUTH_EARLY_INVALIDATION_SECS very high so the token always reads
+#      as expiring), confirm neither session dies. Record results in ADR 0017.
+# Favorable evidence: the CLI maintains an auth.json.lock beside the
+# credential (some cross-process write coordination exists — semantics
+# unverified, and the lock file stays per-box local, so cross-box refreshes
+# race at worst codex-benignly). A static XAI_API_KEY is the rotation-proof
+# fallback (separate API billing, console.x.ai).
+#
+# The firstrun hook re-asserts the symlink EVERY launch, healing the
+# logout-fork: `grok logout` clears the credential, and a later login would
+# otherwise write a local file, silently forking the identity. The grok
+# skill's own login hook keeps its anti-planting symlink removal for any
+# OTHER symlink; links into /home/dev/.byre-identity/ are recognized as ours.
+
+description = "Share one Grok login across all your projects (gate-pending, see skill.toml)."
+
+[build]
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-grok-shared-auth" }
+
+[[volumes]]
+name = "grok-identity"
+role = "state"
+target = "/home/dev/.byre-identity/grok"
+scope = "machine"
