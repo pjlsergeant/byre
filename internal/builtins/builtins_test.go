@@ -171,7 +171,8 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 	if err := MaterializeSkills(skillsDir); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "devloop"}}
+	// Mirrors this repo's own byre.config skill set (codex + devloop + grok).
+	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "devloop", "grok"}}
 	res, err := skills.Resolve(cfg, skillsDir)
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +197,18 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 	}
 	if !strings.Contains(df, gen.CopyLine("skills/codex/codex-login.sh", "/etc/byre/firstrun.d/codex-login")) {
 		t.Errorf("codex login hook COPY missing:\n%s", df)
+	}
+	// grok's two firstrun hooks are staged and COPYd likewise.
+	for src, dst := range map[string]string{
+		"skills/grok/grok-login.sh":   "/etc/byre/firstrun.d/grok-login",
+		"skills/grok/grok-bundled.sh": "/etc/byre/firstrun.d/grok-bundled",
+	} {
+		if _, err := os.Stat(filepath.Join(paths.ContextDir, filepath.FromSlash(src))); err != nil {
+			t.Fatalf("%s not staged: %v", src, err)
+		}
+		if !strings.Contains(df, gen.CopyLine(src, dst)) {
+			t.Errorf("grok hook COPY missing (%s -> %s):\n%s", src, dst, df)
+		}
 	}
 }
 
@@ -723,6 +736,103 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 	runCodexSharedAuthHook(t, base, home)
 	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
 		t.Fatalf("idempotent re-run changed the credential: %q", b)
+	}
+}
+
+// TestGrokSkillPinsLoadBearingFacts pins the grok facts unit tests can hold
+// still and that are uniquely tempting to "fix" wrong: the autonomy flag, the
+// AGENTS.md context target inside GROK_HOME, the egress set (the device-auth
+// flow was observed live against accounts.x.ai), the device-auth login flow —
+// which the vendor's TOP-LEVEL README does not document (it lags the binary;
+// the flag is real, see the skill.toml evidence note) — and the bundled-skills
+// bridge hook (without it the GROK_HOME split silently drops grok's bundled
+// product skills).
+func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "grok"}, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.AgentCommand(), "--always-approve") {
+		t.Errorf("grok autonomy flag missing from launch command %q", res.AgentCommand())
+	}
+	if got := res.AgentContextTarget(); got != "/home/dev/.grok-home/AGENTS.md" {
+		t.Errorf("context target must be AGENTS.md inside GROK_HOME, got %q", got)
+	}
+	egress := strings.Join(res.Egress(), " ")
+	for _, h := range []string{"cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"} {
+		if !strings.Contains(egress, h) {
+			t.Errorf("egress missing %s (got %q)", h, egress)
+		}
+	}
+	var login, bundled bool
+	for _, b := range res.BuildBlocks() {
+		if b.Name != "grok" {
+			continue
+		}
+		for _, sf := range b.Files {
+			switch sf.Dest {
+			case "/etc/byre/firstrun.d/grok-login":
+				login = true
+			case "/etc/byre/firstrun.d/grok-bundled":
+				bundled = true
+			}
+		}
+	}
+	if !login || !bundled {
+		t.Errorf("grok firstrun hooks not both shipped (login=%v bundled=%v)", login, bundled)
+	}
+	b, err := os.ReadFile(filepath.Join(dest, "grok", "grok-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "grok login --device-auth") {
+		t.Error("login hook lost the device-auth flow (the vendor README omits the flag; the binary has it)")
+	}
+}
+
+// The bundled-skills bridge hook, driven for real: a fresh GROK_HOME gets the
+// symlink to the image-side extraction dir; a real directory (a future grok
+// managing bundled/ in place) is left alone; and the assert is idempotent.
+func TestGrokBundledHookBehavior(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "grok", "grok-bundled.sh")
+	home := t.TempDir()
+	run := func() {
+		t.Helper()
+		cmd := exec.Command("sh", hook)
+		cmd.Env = append(os.Environ(), "GROK_HOME="+home)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+	link := filepath.Join(home, "bundled")
+
+	run()
+	if got, err := os.Readlink(link); err != nil || got != "/home/dev/.grok/bundled" {
+		t.Fatalf("fresh run should link bundled to the image tree, got %q (%v)", got, err)
+	}
+	run() // idempotent
+	if got, _ := os.Readlink(link); got != "/home/dev/.grok/bundled" {
+		t.Fatalf("re-run changed the link: %q", got)
+	}
+
+	// A real directory means grok manages bundled/ in place — hands off.
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("a real bundled/ dir must be left alone: %v %v", fi, err)
 	}
 }
 

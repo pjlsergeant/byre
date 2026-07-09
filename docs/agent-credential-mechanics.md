@@ -398,10 +398,15 @@ are single-use is undocumented and unverified.
 - `GROK_HOME` -- relocates the config dir. **Verified live** (0.2.93): with
   `GROK_HOME` set to a fresh dir containing only a seeded `auth.json`, the
   CLI authenticated from it, read `AGENTS.md` global rules from it (codeword
-  probe), and created `sessions/`, `config.toml`, `logs/` etc. under it --
-  nothing written back to `~/.grok`. This gives Grok the codex-shaped
-  binary/state split: binary stays in image `~/.grok`, state volume mounts at
-  `$GROK_HOME`.
+  probe), and created `sessions/`, `config.toml`, `logs/` etc. under it. This
+  gives Grok the codex-shaped binary/state split: binary stays in image
+  `~/.grok`, state volume mounts at `$GROK_HOME`. ONE known leak in the
+  split (found by Grok itself reviewing byre's grok skill, reproduced
+  2026-07-09): the CLI **extracts its bundled product packs into
+  `$HOME/.grok/bundled`** while skill discovery reads `$GROK_HOME/bundled`,
+  so under the split the bundled review/design/execute-plan/pr-babysit
+  skills silently vanish unless `$GROK_HOME/bundled` is symlinked to the
+  extraction dir (byre's grok-bundled firstrun hook does exactly that).
 - `XAI_API_KEY` -- static API key (console.x.ai, separate API billing), takes
   precedence over the file credential; rotation-proof by construction, same
   status as Gemini's API-key path.
@@ -419,8 +424,10 @@ worked for inference in this box; but the 7-day expiry means any shared copy
 goes stale fast without a shared refresh path -- which is exactly what the
 gate-pending symlink mechanism would provide. Native headless login exists:
 `grok login --device-auth` (aliased `--device-code`) -- documented by
-`grok login --help` on 0.2.93; the vendor README lags the binary and does not
-mention the flag.
+`grok login --help` on 0.2.93 and by the shipped user guide
+(`~/.grok/docs/user-guide/02-authentication.md`); the TOP-LEVEL vendor README
+lags the binary and does not mention the flag. The in-box side of the flow
+uses `accounts.x.ai/oauth2/device` (observed live, unauthenticated probe).
 
 ## Implications for the shared-auth split
 

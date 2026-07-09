@@ -37,12 +37,14 @@ if [ -L "$cred" ]; then
   *) rm -f "$cred" ;;
   esac
 fi
-# Already authenticated? grok has no `login status` probe (unlike codex), so a
-# non-empty auth.json is the best guard available. This can't tell a usable
-# credential from a corrupt/expired one — grok tokens expire after ~7 days —
-# so a stale credential surfaces at use time, where the fix is the same
-# command: `grok login --device-auth`.
-[ -s "$cred" ] && exit 0
+# Already authenticated? grok has no `login status` probe (unlike codex), so
+# the guard is a shape sniff: auth.json is scope-keyed maps of {"key": token}
+# (the vendor installer's own parser), so a credential-bearing file contains
+# a "key" member. This catches the empty/truncated artifacts an interrupted
+# login could leave (which a bare -s test would wrongly count as logged in)
+# but not an EXPIRED token — grok tokens last ~7 days — which surfaces at use
+# time, where the fix is the same command: `grok login --device-auth`.
+[ -s "$cred" ] && grep -q '"key"' "$cred" 2>/dev/null && exit 0
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
 # signal-death toward the launcher — the box proceeds to the agent regardless.
