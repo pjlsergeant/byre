@@ -68,8 +68,8 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	// Published ports come from config only, normalized to the publish defaults.
 	ports := make([]runner.PortPublish, 0, len(rv.cfg.Ports))
 	for _, p := range rv.cfg.Ports {
-		n := normalizePort(p)
-		ports = append(ports, runner.PortPublish{Interface: n.Interface, Host: n.Host, Container: n.Container})
+		iface, host := config.PortEffective(p)
+		ports = append(ports, runner.PortPublish{Interface: iface, Host: host, Container: p.Container})
 	}
 
 	return runner.RunParams{
@@ -90,20 +90,6 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		// docker run -t fails under CI/piped invocations.
 		TTY: tty,
 	}, nil
-}
-
-// normalizePort applies the publish defaults shared by the runtime and
-// status: a blank interface binds 127.0.0.1 (localhost-only — the LAN must be
-// asked for explicitly in the config), and a blank host port mirrors the
-// container port (a predictable mapping, not a random one).
-func normalizePort(p config.Port) config.Port {
-	if p.Interface == "" {
-		p.Interface = "127.0.0.1"
-	}
-	if p.Host == 0 {
-		p.Host = p.Container
-	}
-	return p
 }
 
 // checkMountPaths rejects any byre-owned bind source that a docker --mount value

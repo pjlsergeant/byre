@@ -115,12 +115,19 @@ type Port struct {
 	Remove bool `toml:"remove,omitempty"`
 }
 
-// portEffective resolves a port's effective bind interface and host port (the
-// defaults byre applies at run time), used for dedup and collision checks.
-func portEffective(p Port) (iface string, host int) {
+// DefaultPortInterface is the bind interface a blank `interface` gets:
+// localhost-only — exposing to the LAN is a louder, explicit choice.
+const DefaultPortInterface = "127.0.0.1"
+
+// PortEffective resolves a port's effective bind interface and host port (a
+// blank interface binds DefaultPortInterface; host 0 mirrors the container
+// port). It is the one owner of the publish defaults: validation's collision
+// checks, the runtime's publish list, status, and the config UI all call it
+// rather than restating the rule.
+func PortEffective(p Port) (iface string, host int) {
 	iface = p.Interface
 	if iface == "" {
-		iface = "127.0.0.1"
+		iface = DefaultPortInterface
 	}
 	host = p.Host
 	if host == 0 {
@@ -574,7 +581,7 @@ func (c Config) validatePorts(layer bool) error {
 		if strings.IndexFunc(p.Interface, func(r rune) bool { return r < 0x20 }) >= 0 {
 			return fmt.Errorf("port %d: interface must not contain control characters", p.Container)
 		}
-		iface, host := portEffective(p)
+		iface, host := PortEffective(p)
 		ifaces := byHostPort[host]
 		if ifaces == nil {
 			ifaces = map[string]bool{}
@@ -771,7 +778,7 @@ func mergeMounts(base, over []Mount) []Mount {
 // `!name` lists' additions-then-removals order within a layer.
 func mergePorts(base, over []Port) []Port {
 	key := func(p Port) string {
-		iface, host := portEffective(p)
+		iface, host := PortEffective(p)
 		return fmt.Sprintf("%s:%d:%d", iface, host, p.Container)
 	}
 	out := append([]Port{}, base...)

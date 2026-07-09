@@ -14,8 +14,8 @@ type BindMount struct {
 
 // PortPublish publishes a container port to the host: `docker run -p
 // iface:host:container`. All three parts are required — byre normalizes every
-// publication upstream (blank interface -> 127.0.0.1, blank host -> the
-// container port), so this layer never decides a default.
+// publication upstream (config.PortEffective), so this layer never decides a
+// default.
 type PortPublish struct {
 	Interface string
 	Host      int

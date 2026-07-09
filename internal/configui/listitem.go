@@ -300,7 +300,7 @@ func (m model) startItem(idx int) model {
 		m.inputs = []textinput.Model{newInput(host), newInput(target)}
 		m.itemHasMode = true
 	case fPorts:
-		m.inputLabels = []string{"Container port", "Host port (blank = same)", "Interface (blank = 127.0.0.1)"}
+		m.inputLabels = []string{"Container port", "Host port (blank = same)", "Interface (blank = " + config.DefaultPortInterface + ")"}
 		container, host, iface := "", "", ""
 		if idx >= 0 {
 			p := m.ports[idx]
@@ -659,14 +659,7 @@ func mountLine(mt config.Mount) string {
 }
 
 func portLine(p config.Port) string {
-	iface := p.Interface
-	if iface == "" {
-		iface = "127.0.0.1"
-	}
-	host := p.Host
-	if host == 0 {
-		host = p.Container // blank host mirrors the container port
-	}
+	iface, host := config.PortEffective(p)
 	return fmt.Sprintf("%s:%d -> %d", iface, host, p.Container)
 }
 

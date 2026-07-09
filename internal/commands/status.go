@@ -360,11 +360,11 @@ func networkLine(s statusInfo) string {
 }
 
 // portStatusLine renders a published port as "iface:host -> container", via
-// the SAME normalization the runtime applies — so status can't lie about the
-// defaulted interface or host port.
+// the SAME normalization the runtime applies (config.PortEffective) — so
+// status can't lie about the defaulted interface or host port.
 func portStatusLine(p config.Port) string {
-	n := normalizePort(p)
-	return fmt.Sprintf("%s:%d -> %d  (host -> container)", n.Interface, n.Host, n.Container)
+	iface, host := config.PortEffective(p)
+	return fmt.Sprintf("%s:%d -> %d  (host -> container)", iface, host, p.Container)
 }
 
 func splitVolumes(vols []config.Volume) (state, cache, machine []string) {

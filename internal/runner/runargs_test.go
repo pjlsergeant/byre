@@ -177,7 +177,7 @@ func TestContainerEnvUsesCaptureSeam(t *testing.T) {
 
 func TestPortSpec(t *testing.T) {
 	// Publications arrive normalized (interface + host always set) — the
-	// upstream defaulting lives in commands' normalizePort.
+	// upstream defaulting lives in config.PortEffective.
 	cases := []struct {
 		p    PortPublish
 		want string

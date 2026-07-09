@@ -460,13 +460,6 @@ func sortedKeys(m map[string]string) []string {
 // portKey is a port's effective identity (interface:host:container), matching
 // mergePorts' dedup key.
 func portKey(p config.Port) string {
-	iface := p.Interface
-	if iface == "" {
-		iface = "127.0.0.1"
-	}
-	host := p.Host
-	if host == 0 {
-		host = p.Container
-	}
+	iface, host := config.PortEffective(p)
 	return iface + ":" + strconv.Itoa(host) + ":" + strconv.Itoa(p.Container)
 }
