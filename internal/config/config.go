@@ -422,8 +422,10 @@ func ValidateContent(base string, apt, npm []string, env map[string]string) erro
 // isRemoval reports whether a named-list entry is a `!name` removal marker
 // rather than a real entry. Markers are only meaningful in an unmerged layer
 // (Merge consumes them), so ValidateLayer skips them and they never reach a
-// resolved config.
-func isRemoval(id string) bool { return strings.HasPrefix(id, "!") }
+// resolved config. A marker needs an identity: a bare "!" is NOT a marker (it
+// would merge as a silent no-op removal of ""), so it falls through to the
+// real-entry shape checks, which all reject it loudly.
+func isRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!") }
 
 // validateScalars checks the layer-safe scalar/content fields — those valid or
 // invalid on their own, independent of the cascade. Shared by Validate and
@@ -448,6 +450,16 @@ func (c Config) validateScalars(layer bool) error {
 	// where their build blocks are resolved (see internal/skills).
 	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
 		return err
+	}
+
+	// Skill names have no config-side grammar (they resolve against the store's
+	// skill dirs at develop time, which fails loudly on a bad name) — but an
+	// entry with no identity would merge into a silent no-op instead: "" names
+	// nothing and a bare "!" removes nothing. Refuse both at save.
+	for _, s := range c.Skills {
+		if s == "" || s == "!" {
+			return fmt.Errorf("skills entry %q: missing a skill name", s)
+		}
 	}
 
 	// Egress entries (open and offered) share the skills' grammar (ADR 0019);

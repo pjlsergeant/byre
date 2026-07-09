@@ -453,6 +453,30 @@ func TestValidateLayerMarkersAreBare(t *testing.T) {
 	}
 }
 
+func TestValidateLayerRejectsEmptyMarkers(t *testing.T) {
+	// A bare "!" is a removal marker of nothing — it would merge as a silent
+	// no-op (remove the entry named ""). isRemoval requires an identity, so a
+	// bare "!" falls through to the real-entry shape checks (packageRe,
+	// ParseEgress, validContainerTarget, volumeNameRe), which are all loud;
+	// the skills list has no shape grammar, so it gets an explicit guard that
+	// also covers an empty-string entry.
+	cases := []Config{
+		{Apt: []string{"!"}},
+		{NpmGlobal: []string{"!"}},
+		{Egress: []string{"!"}},
+		{EgressOffered: []string{"!"}},
+		{Mounts: []Mount{{Target: "!"}}},
+		{Volumes: []Volume{{Name: "!"}}},
+		{Skills: []string{"!"}},
+		{Skills: []string{""}},
+	}
+	for i, c := range cases {
+		if err := c.ValidateLayer(); err == nil {
+			t.Errorf("case %d: bare/empty marker should be rejected: %+v", i, c)
+		}
+	}
+}
+
 func TestValidatePorts(t *testing.T) {
 	ok := Config{Ports: []Port{{Container: 8080, Host: 8080, Interface: "127.0.0.1"}, {Container: 3000}}}
 	if err := ok.Validate(); err != nil {
