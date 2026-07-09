@@ -45,13 +45,10 @@ func (rv resolved) validate() error {
 func resolve(paths project.Paths, projectDir string) (resolved, error) {
 	// Materialize built-ins before loading config (templates feed the cascade)
 	// and resolving skills.
-	if err := builtins.MaterializeTemplates(filepath.Join(paths.Home, "templates")); err != nil {
+	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return resolved{}, err
 	}
 	skillsDir := filepath.Join(paths.Home, "skills")
-	if err := builtins.MaterializeSkills(skillsDir); err != nil {
-		return resolved{}, err
-	}
 	cfg, err := config.Load(projectDir)
 	if err != nil {
 		return resolved{}, err

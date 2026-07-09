@@ -66,9 +66,8 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	// Materialize the built-ins BEFORE the cascade gate: on a fresh ~/.byre a
 	// proposal naming a built-in template (template = "go") must not be
 	// rejected as missing when the normal resolve path would materialize it.
-	// (adoptionView repeats these calls; they're idempotent.)
-	_ = builtins.MaterializeTemplates(filepath.Join(paths.Home, "templates"))
-	_ = builtins.MaterializeSkills(filepath.Join(paths.Home, "skills"))
+	// (adoptionView repeats the call; it's idempotent.)
+	_ = builtins.EnsureStore(paths.Home)
 	if _, rerr := config.ResolveProposed(proposal); rerr != nil {
 		fmt.Fprintf(s.Err, "byre: %s ships a byre.config, but it doesn't resolve against this host's config (%v); not adopting. Fix the conflict (your ~/.byre/default.config or the named template may contribute to it) and re-run develop.\n", projectDir, rerr)
 		return nil
@@ -143,9 +142,8 @@ func proposalState(projectDir string, paths project.Paths) string {
 // can't be expanded, it falls back to the raw proposal and says so, so a failure
 // to expand never hides grants behind an empty summary.
 func adoptionView(paths project.Paths, proposal config.Config) (config.Config, []string) {
-	_ = builtins.MaterializeTemplates(filepath.Join(paths.Home, "templates"))
+	_ = builtins.EnsureStore(paths.Home)
 	skillsDir := filepath.Join(paths.Home, "skills")
-	_ = builtins.MaterializeSkills(skillsDir)
 
 	effective, err := config.ResolveProposed(proposal)
 	if err != nil {

@@ -48,9 +48,9 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		return err
 	}
 	// Materialize built-ins before loading config (templates feed the cascade).
-	_ = builtins.MaterializeTemplates(filepath.Join(paths.Home, "templates"))
+	// The error degrades the skills view below rather than failing status.
 	skillsDir := filepath.Join(paths.Home, "skills")
-	materializeErr := builtins.MaterializeSkills(skillsDir)
+	materializeErr := builtins.EnsureStore(paths.Home)
 
 	cfg, err := config.Load(projectDir)
 	if err != nil {

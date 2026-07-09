@@ -26,8 +26,9 @@ func Config(s Streams, projectDir string, global bool) error {
 	}
 	templatesDir := filepath.Join(home, "templates")
 	skillsDir := filepath.Join(home, "skills")
-	_ = builtins.MaterializeTemplates(templatesDir)
-	_ = builtins.MaterializeSkills(skillsDir)
+	// Best-effort: the editor should still open on a store that won't
+	// materialize; develop's strict path reports the failure.
+	_ = builtins.EnsureStore(home)
 	templates := config.ListTemplates(templatesDir)
 	agents := skills.ListAgentSkills(skillsDir)
 	skillOpts := skills.ListSkills(skillsDir)

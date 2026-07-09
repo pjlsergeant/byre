@@ -42,10 +42,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// Need the built-ins materialized to list options / resolve flags.
 	templatesDir := filepath.Join(paths.Home, "templates")
 	skillsDir := filepath.Join(paths.Home, "skills")
-	if err := builtins.MaterializeTemplates(templatesDir); err != nil {
-		return err
-	}
-	if err := builtins.MaterializeSkills(skillsDir); err != nil {
+	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return err
 	}
 	templates := config.ListTemplates(templatesDir)

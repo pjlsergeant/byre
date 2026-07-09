@@ -19,6 +19,19 @@ var fsys embed.FS
 // MaterializeSkills writes the built-in skills into destDir (~/.byre/skills).
 func MaterializeSkills(destDir string) error { return materialize("skills", destDir) }
 
+// EnsureStore materializes the built-in templates and skills into the store
+// rooted at home (~/.byre) — the one bootstrap every command runs before
+// reading the store. Non-clobbering, like the Materialize funcs it wraps.
+// Strict paths (develop's resolve, onboard) propagate the error; best-effort
+// paths (status, config UI, adoption preview) may ignore it, because a store
+// too broken to materialize into fails the next strict path loudly.
+func EnsureStore(home string) error {
+	if err := MaterializeTemplates(filepath.Join(home, "templates")); err != nil {
+		return err
+	}
+	return MaterializeSkills(filepath.Join(home, "skills"))
+}
+
 // Change records one skill or template changed by an update: its name and
 // where its prior copy is kept (Backup is the backup slot, or a leftover stash
 // path if the backup couldn't be published; "" only when newly installed).
