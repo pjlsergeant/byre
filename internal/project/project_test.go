@@ -41,6 +41,7 @@ func TestValidID(t *testing.T) {
 		"byre-dev-0877D7", // hash is lowercase hex
 		"byre-dev-0877d",  // hash too short
 		"-0877d7",         // empty slug
+		"foo--0877d7",     // adjacent hyphens: sanitize collapses runs, never emits these
 		"byre dev-0877d7",
 	} {
 		if ValidID(bad) {

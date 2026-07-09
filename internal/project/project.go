@@ -89,9 +89,11 @@ func sanitize(s string) string {
 }
 
 // idRe is the shape every generated id has: a non-empty Docker-safe slug,
-// then the 6-hex path-hash suffix. Kept next to idFromCanonical so the
-// grammar and the generator can't drift.
-var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*-[0-9a-f]{6}$`)
+// then the 6-hex path-hash suffix. Hyphens only ever separate non-empty
+// alnum runs -- sanitize collapses and trims them, so a generated slug
+// never carries adjacent or trailing hyphens. Kept next to idFromCanonical
+// so the grammar and the generator can't drift.
+var idRe = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{6}$`)
 
 // ValidID reports whether s has the shape of a byre project id. Commands
 // that take an id from the user (e.g. `byre rehome <old-id>`) check it
