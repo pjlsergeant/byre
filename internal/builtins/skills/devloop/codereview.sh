@@ -302,6 +302,8 @@ run_resume_grok() {
        < /dev/null > "$OUT" 2> "$DBG" && [ -s "$OUT" ] && ! grok_startup_error; then
     cat "$OUT"; record_review; cleanup
   else
+    # Same partial-output courtesy as the fresh path before the fallback eats it.
+    [ -s "$OUT" ] && cat "$OUT" >&2
     echo "Resume failed — falling back to a fresh review." >&2
     rm -f "$SESSION_FILE"; run_fresh_grok
   fi
