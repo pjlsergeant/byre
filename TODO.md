@@ -97,6 +97,11 @@ Disciplines and tripwires, not tasks.
   statement; the plain what-it-is sentence under it is mandatory
   mitigation. If cold readers keep bouncing post-launch, revisit it.
   (Background: `docs/marketing/positioning.md` "Copy bank".)
+- **`internal/commands` split tripwire:** the package is ~25 files with no
+  internal boundaries (2026-07-09 external review). Don't split it as a
+  project; next time substantial work lands there, carve the area being
+  touched into its own package (e.g. status, lifecycle, store) instead of
+  adding to the pile.
 
 ## Parked / consciously not doing
 
