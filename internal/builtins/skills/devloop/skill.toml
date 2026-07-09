@@ -1,23 +1,38 @@
 # Built-in skill: devloop — byre's reusable development workflow.
 #
 # Delivers three things to any project box:
-#   1. `byre-codereview` — an independent, Codex-backed code-review script
-#      (shipped via [build].files, on PATH at /usr/local/bin/byre-codereview).
+#   1. `byre-codereview` — an independent code-review script (shipped via
+#      [build].files, on PATH at /usr/local/bin/byre-codereview). Codex drives
+#      it by default; `--reviewer grok` (or BYRE_REVIEWER=grok) uses grok when
+#      that skill is enabled too.
 #   2. The workflow conventions (commit discipline, the review loop, test-before-
 #      commit) as agent context, placed where the agent reads its memory.
 #   3. A persistent scratch volume at /home/dev/scratch ($BYRE_SCRATCH) — a
 #      stash for the agent's working files that survives container restarts
 #      and rebuilds, unlike /tmp and the rest of the container fs.
 #
-# Pairs with the codex skill, which installs the codex binary the script drives:
+# Pairs with a reviewer skill, which installs the binary the script drives:
 #
-#   skills = ["codex", "devloop"]
+#   skills = ["codex", "devloop"]          # codex reviews (the default)
+#   skills = ["codex", "grok", "devloop"]  # both available; --reviewer picks
 #
-# codex provides the reviewer; devloop provides the script + conventions. codex
-# is NOT launched as the agent — it's the second opinion. Authenticate it once
-# per box with `codex login --device-auth` (plain `codex login` starts a
-# browser-redirect flow that cannot complete in a no-browser sandbox). A
-# project's own CLAUDE.md/AGENTS.md still applies on top of the conventions here.
+# The reviewer skill provides the reviewer; devloop provides the script +
+# conventions. The reviewer is NOT launched as the agent — it's the second
+# opinion. Authenticate once per box with the device flow (`codex login
+# --device-auth` / `grok login --device-auth`; both CLIs' plain `login` starts
+# a browser-redirect flow that cannot complete in a no-browser sandbox). A
+# project's own CLAUDE.md/AGENTS.md still applies on top of the conventions
+# here.
+#
+# Review execution policy (encoded in the script's prompt, checked by its
+# tripwire): the reviewer may run cheap targeted read-only probes to put
+# evidence behind a specific finding, but never builds or the test suite (the
+# author owns green), and never anything that mutates the tree — the script
+# re-hashes the working tree after each run and warns if it changed. codex
+# additionally runs under its own OS-level read-only sandbox; grok cannot
+# (its Landlock profiles silently break tool execution inside a container —
+# see the script), so it relies on the edit-tool strip + tripwire + the box
+# boundary.
 
 description = "Dev-workflow conventions plus the byre-codereview loop."
 

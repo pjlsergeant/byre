@@ -42,23 +42,28 @@ the host git identity byre passes into the box; adding co-sign trailers without
 permission misrepresents who authored the work.
 
 ## Code review loop (mandatory after a feature or fix)
-This box ships `byre-codereview` — an independent Codex-backed reviewer. After
-completing any feature or fix, run it yourself and act on the findings; don't ask
-permission first.
+This box ships `byre-codereview` — an independent reviewer (Codex by default;
+`--reviewer grok` or `BYRE_REVIEWER=grok` when the grok skill is enabled).
+After completing any feature or fix, run it yourself and act on the findings;
+don't ask permission first.
 
 ```sh
 byre-codereview                       # review the current changes
 byre-codereview "auth error handling" # focus the review
 byre-codereview --continue "..."      # re-check after fixes (resumes the session)
+byre-codereview --reviewer grok "..." # second opinion from grok instead
 ```
 
 The loop: run it → read every finding → for each, fix it or note why you're
 leaving it → if you changed anything, re-run with `--continue` → stop only when
 clean or all remaining items are consciously deferred. Findings are also appended
-to `.devloop/reviews.md`. Codex needs to be logged in once per box
-(`codex login --device-auth` — plain `codex login` starts a browser-redirect
+to `.devloop/reviews.md`. Reviewers may run cheap read-only probes to back up
+findings but never your test suite — green stays YOUR job — and must not touch
+the tree; the script warns if the working tree changed during a review.
+The reviewer needs to be logged in once per box (`codex login --device-auth` /
+`grok login --device-auth` — both CLIs' plain `login` starts a browser-redirect
 flow that cannot complete in a no-browser sandbox); if `byre-codereview`
-reports codex isn't authenticated, do that first.
+reports an authentication failure, do that first.
 
 ## Before you commit
 Keep the tree healthy: run the project's formatter, vet/lint, and tests, and get
