@@ -8,9 +8,13 @@ import (
 	"testing"
 )
 
+// fav is the common case: the stored favourite is valid, so it is also the
+// effective (pre-selected) one.
+func fav(v string) Favourite { return Favourite{Stored: v, Effective: v} }
+
 func TestPickAcceptsDefaultsOnEmpty(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, strings.NewReader("\n\n\n"), []string{"go", "node"}, []string{"claude", "codex"}, "go", "claude")
+	c, err := Pick(&out, strings.NewReader("\n\n\n"), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +31,7 @@ func TestPickAcceptsDefaultsOnEmpty(t *testing.T) {
 // same choice — no save offer.
 func TestPickRetypedDefaultsSkipSaveOffer(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, strings.NewReader("go\nclaude\n"), []string{"go", "node"}, []string{"claude", "codex"}, "go", "claude")
+	c, err := Pick(&out, strings.NewReader("go\nclaude\n"), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +47,7 @@ func TestPickRetypedDefaultsSkipSaveOffer(t *testing.T) {
 // scalars; the matching one is idempotent).
 func TestPickOneAxisDifferingStillOffers(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, strings.NewReader("\ncodex\ny\n"), []string{"go", "node"}, []string{"claude", "codex"}, "go", "claude")
+	c, err := Pick(&out, strings.NewReader("\ncodex\ny\n"), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,9 +59,30 @@ func TestPickOneAxisDifferingStillOffers(t *testing.T) {
 	}
 }
 
+// A STALE stored favourite (Effective dropped to "") must still get the save
+// offer even when the user accepts the presented defaults: what's stored
+// differs from the choice, so saving is NOT a no-op — and skipping it would
+// leave the stale value to silently resurrect if its name turns valid again.
+func TestPickStaleFavouriteStillOffers(t *testing.T) {
+	var out bytes.Buffer
+	// Stored template "old" no longer exists; the picker presents none.
+	// The user accepts none + the existing agent, and answers y.
+	c, err := Pick(&out, strings.NewReader("\n\ny\n"), []string{"go", "node"}, []string{"claude", "codex"},
+		Favourite{Stored: "old", Effective: ""}, fav("claude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Save these") {
+		t.Fatalf("save offer missing with a stale stored favourite:\n%s", out.String())
+	}
+	if c.Template != "" || c.Agent != "claude" || !c.SaveDefault {
+		t.Fatalf("stale-favourite choice wrong: %+v", c)
+	}
+}
+
 func TestPickChoosesAndSaves(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, strings.NewReader("node\ncodex\ny\n"), []string{"go", "node"}, []string{"claude", "codex"}, "go", "claude")
+	c, err := Pick(&out, strings.NewReader("node\ncodex\ny\n"), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +113,7 @@ func TestAskAxisPromptsOneAxis(t *testing.T) {
 
 func TestPickReprompsOnInvalid(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, strings.NewReader("rust\ngo\nclaude\n\n"), []string{"go"}, []string{"claude"}, "go", "claude")
+	c, err := Pick(&out, strings.NewReader("rust\ngo\nclaude\n\n"), []string{"go"}, []string{"claude"}, fav("go"), fav("claude"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +126,7 @@ func TestPickReprompsOnInvalid(t *testing.T) {
 }
 
 func TestPickNone(t *testing.T) {
-	c, err := Pick(&bytes.Buffer{}, strings.NewReader("none\nnone\n\n"), []string{"go"}, []string{"claude"}, "", "")
+	c, err := Pick(&bytes.Buffer{}, strings.NewReader("none\nnone\n\n"), []string{"go"}, []string{"claude"}, fav(""), fav(""))
 	if err != nil {
 		t.Fatal(err)
 	}

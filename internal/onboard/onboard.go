@@ -23,26 +23,41 @@ type Choice struct {
 	SaveDefault bool
 }
 
+// Favourite is one axis's stored default. Stored is what default.config holds
+// verbatim — the basis for "would saving change anything?". Effective is the
+// validated value the picker pre-selects ("" when Stored is absent or stale,
+// i.e. no longer names a real template/agent). They differ exactly when the
+// stored favourite is stale — and then the save offer must still appear, or
+// the stale value can never be overwritten and silently resurrects if its
+// name becomes valid again.
+type Favourite struct {
+	Stored    string
+	Effective string
+}
+
 // Pick runs the interactive picker. templates and agents are the available
-// options (a "none" choice is always offered); defTemplate/defAgent are the
-// user's favourites, pre-selected so an empty answer accepts them.
-func Pick(out io.Writer, in io.Reader, templates, agents []string, defTemplate, defAgent string) (Choice, error) {
+// options (a "none" choice is always offered); tmplFav/agentFav are the user's
+// favourites — Effective pre-selected so an empty answer accepts it.
+func Pick(out io.Writer, in io.Reader, templates, agents []string, tmplFav, agentFav Favourite) (Choice, error) {
 	r := bufio.NewReader(in)
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
-	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(defTemplate))
+	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(tmplFav.Effective))
 	if err != nil {
 		return Choice{}, err
 	}
-	agent, err := ask(out, r, "Agent", withNone(agents), orNone(defAgent))
+	agent, err := ask(out, r, "Agent", withNone(agents), orNone(agentFav.Effective))
 	if err != nil {
 		return Choice{}, err
 	}
-	// Choosing exactly the favourites again is not news: offering to save them
-	// as the default would be noise (and the save a no-op). Only ask when the
-	// choice differs — whether the favourite was accepted with Enter or retyped.
+	// Choosing exactly what default.config already stores is not news:
+	// offering to save it would be noise (and the save a no-op). Only ask when
+	// saving would change the stored favourites — whether the choice was
+	// accepted with Enter or retyped. Compared against Stored, not Effective:
+	// with a stale favourite the two differ, saving is NOT a no-op, and the
+	// offer is the user's one chance to overwrite the stale value.
 	save := false
-	if fromNone(tmpl) != defTemplate || fromNone(agent) != defAgent {
+	if fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored {
 		save, err = askYesNo(out, r, "Save these as your default for new projects?")
 		if err != nil {
 			return Choice{}, err

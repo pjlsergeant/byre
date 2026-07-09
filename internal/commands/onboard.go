@@ -60,7 +60,9 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		if !s.TTY {
 			return nil
 		}
-		choice, err := onboard.Pick(s.Err, s.In, templates, agents, defT, defA)
+		choice, err := onboard.Pick(s.Err, s.In, templates, agents,
+			onboard.Favourite{Stored: rawT, Effective: defT},
+			onboard.Favourite{Stored: rawA, Effective: defA})
 		if err != nil {
 			return err
 		}
