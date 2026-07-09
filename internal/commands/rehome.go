@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -146,4 +148,92 @@ func rollback(r volumeRunner, created []string) {
 	for _, v := range created {
 		_ = r.VolumeRemove(v)
 	}
+}
+
+// rehomeCandidate is one stored project whose recorded path no longer exists —
+// exactly what a move/rename leaves behind.
+type rehomeCandidate struct {
+	ID       string
+	WasPath  string
+	LastUsed time.Time
+}
+
+// RehomeCandidates implements bare `byre rehome`, a valid query of its own:
+// list the stored projects whose recorded path no longer exists — the ids a
+// move/rename orphans — most recently used first, so the id the user needs is
+// usually the top line. Ids whose recorded path still exists are not offered:
+// the id is derived from the path, so an existing path IS that project's
+// current home.
+func RehomeCandidates(s Streams, projectDir string) error {
+	paths, err := project.Resolve(projectDir)
+	if err != nil {
+		return err
+	}
+	cands, total, err := rehomeCandidates(paths)
+	if err != nil {
+		return err
+	}
+	if total == 0 {
+		fmt.Fprintln(s.Out, "byre: no stored projects yet (~/.byre/projects/ is empty) — nothing to rehome from.")
+		return nil
+	}
+	if len(cands) == 0 {
+		fmt.Fprintf(s.Out, "byre: none of the %d stored project(s) look moved (every recorded path still exists).\n", total)
+		return nil
+	}
+	fmt.Fprintln(s.Out, "byre: stored projects whose recorded path no longer exists (likely rehome candidates), most recent first:")
+	for _, c := range cands {
+		fmt.Fprintf(s.Out, "  %-24s last used %s   was %s\n", c.ID, c.LastUsed.Format("2006-01-02"), c.WasPath)
+	}
+	return nil
+}
+
+// rehomeCandidates scans the project store for moved projects. total is the
+// number of stored projects considered (excluding this directory's own id), so
+// the caller can distinguish "no store" from "nothing moved".
+func rehomeCandidates(paths project.Paths) (cands []rehomeCandidate, total int, err error) {
+	entries, err := os.ReadDir(filepath.Join(paths.Home, "projects"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, 0, nil
+		}
+		return nil, 0, err
+	}
+	for _, e := range entries {
+		id := e.Name()
+		if !e.IsDir() || !project.ValidID(id) || id == paths.ID {
+			continue
+		}
+		dir := filepath.Join(paths.Home, "projects", id)
+		rec, rerr := os.ReadFile(filepath.Join(dir, "path"))
+		if rerr != nil {
+			// No readable path record — half-bootstrapped or foreign; it can't
+			// be shown as "moved from" anywhere, so don't offer it.
+			continue
+		}
+		total++
+		was := strings.TrimSuffix(string(rec), "\n")
+		if _, serr := os.Stat(was); serr == nil {
+			continue // path still exists: that project still lives there
+		}
+		cands = append(cands, rehomeCandidate{ID: id, WasPath: was, LastUsed: lastUsed(dir)})
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].LastUsed.After(cands[j].LastUsed) })
+	return cands, total, nil
+}
+
+// lastUsed approximates a stored project's last activity: the generated
+// Dockerfile is re-staged on every develop, so its mtime is the best cheap
+// signal; the path record's mtime (creation) is the floor.
+func lastUsed(projectDir string) time.Time {
+	var t time.Time
+	for _, f := range []string{
+		filepath.Join(projectDir, "context", "Dockerfile.generated"),
+		filepath.Join(projectDir, "path"),
+	} {
+		if fi, err := os.Stat(f); err == nil && fi.ModTime().After(t) {
+			t = fi.ModTime()
+		}
+	}
+	return t
 }

@@ -37,10 +37,11 @@ func recorderApp(calls map[string]string) app {
 		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
 		},
-		skillUpdate: func(_ commands.Streams) error { return note("skill update", "-") },
-		rebuild:     func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
-		rehome:      func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
-		version:     func(_ commands.Streams) error { return note("version", "-") },
+		skillUpdate:      func(_ commands.Streams) error { return note("skill update", "-") },
+		rebuild:          func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
+		rehome:           func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
+		rehomeCandidates: func(_ commands.Streams, dir string) error { return note("rehome candidates", dir) },
+		version:          func(_ commands.Streams) error { return note("version", "-") },
 	}
 }
 
@@ -83,6 +84,7 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"skill", "update"}, "skill update", "-"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
+		{[]string{"rehome"}, "rehome candidates", "/proj"}, // bare = list likely old ids
 		{[]string{"version"}, "version", "-"},
 		{[]string{"--version"}, "version", "-"}, // alias for the table entry
 	}
@@ -120,8 +122,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{"worktree", "a", "b"},     // extra operand
 		{"skill"},                  // missing subcommand
 		{"skill", "bogus"},         // unknown subcommand
-		{"rehome"},                 // missing old id
-		{"rehome", "old", "extra"}, // extra operand
+		{"rehome", "old", "extra"}, // extra operand (bare rehome is valid: it lists candidates)
 		{"version", "extra"},       // operands after a no-arg command
 		{"--version", "extra"},     // the alias gets the same operand check
 	}

@@ -32,25 +32,29 @@ type app struct {
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
 	skillUpdate   func(s commands.Streams) error
 	rebuild       func(s commands.Streams, dir string) error
-	rehome        func(s commands.Streams, dir, oldID string) error
-	version       func(s commands.Streams) error
+	rehome func(s commands.Streams, dir, oldID string) error
+	// rehomeCandidates is bare `byre rehome`: list stored projects whose
+	// recorded path no longer exists (the likely rehome sources).
+	rehomeCandidates func(s commands.Streams, dir string) error
+	version          func(s commands.Streams) error
 }
 
 var realApp = app{
-	dockerfile:    commands.Dockerfile,
-	dockerrun:     commands.DockerRun,
-	ejectfirewall: commands.EjectFirewall,
-	develop:       commands.Develop,
-	config:        commands.Config,
-	status:        commands.Status,
-	reset:         commands.Reset,
-	forget:        commands.Forget,
-	shell:         commands.Shell,
-	worktree:      commands.Worktree,
-	skillUpdate:   commands.SkillUpdate,
-	rebuild:       commands.Rebuild,
-	rehome:        commands.Rehome,
-	version:       printVersion,
+	dockerfile:       commands.Dockerfile,
+	dockerrun:        commands.DockerRun,
+	ejectfirewall:    commands.EjectFirewall,
+	develop:          commands.Develop,
+	config:           commands.Config,
+	status:           commands.Status,
+	reset:            commands.Reset,
+	forget:           commands.Forget,
+	shell:            commands.Shell,
+	worktree:         commands.Worktree,
+	skillUpdate:      commands.SkillUpdate,
+	rebuild:          commands.Rebuild,
+	rehome:           commands.Rehome,
+	rehomeCandidates: commands.RehomeCandidates,
+	version:          printVersion,
 }
 
 // command is one byre subcommand: its one-line summary for the command list,
@@ -298,16 +302,22 @@ untouched; the next 'byre develop' runs the fresh image.`,
 	{
 		name:    "rehome",
 		summary: "Re-point this directory's identity after a move.",
-		help: `Usage: byre rehome <old-id>
+		help: `Usage: byre rehome [<old-id>]
 
 After moving/renaming the project directory (which changes its path-derived
 id), migrate the previous id's volumes onto the new identity. <old-id> is the
-previous project id, from ~/.byre/projects/.`,
+previous project id. Run 'byre rehome' bare to list likely candidates —
+stored projects whose recorded path no longer exists, most recently used
+first — instead of spelunking in ~/.byre/projects/.`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if len(rest) != 1 {
-				return usageError("usage: byre rehome <old-id>   (the previous project id, from ~/.byre/projects/)")
+			switch len(rest) {
+			case 0:
+				return a.rehomeCandidates(s, dir)
+			case 1:
+				return a.rehome(s, dir, rest[0])
+			default:
+				return usageError("usage: byre rehome [<old-id>]")
 			}
-			return a.rehome(s, dir, rest[0])
 		},
 	},
 	{
