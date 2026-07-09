@@ -134,7 +134,10 @@ later layer can remove an inherited entry: `!name` for named lists,
 
 The vocabulary covers packages, env, mounts, volumes, and skills; raw
 Dockerfile lines and `docker run` args cover the rest. Full reference:
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). One sharp edge to know:
+`env` values are baked into the image (`docker history` shows them, and
+they outlive `byre reset`), so don't put secrets there -- agent logins
+belong to the agents' own auth flows.
 
 byre reads config only from its host-side store, never from inside the
 project -- the project mount is read-write, so the agent could edit a

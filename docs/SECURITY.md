@@ -48,6 +48,27 @@ naming (`byre-<id>-u<uid>-...` images, `byre-machine-u<uid>-...`
 volumes) prevents users *accidentally* sharing state; it cannot stop a
 daemon user doing it deliberately.
 
+**A skill is trusted code -- enabling one hands it the box.** Skills
+ship raw Dockerfile lines, shell hooks sourced at launch, and (for a
+network-posture skill) a root helper in the box's network namespace.
+The allowlists on a skill's typed fields (`apt`, env keys, `egress`)
+exist for legibility -- so a typed field always reads as data -- not as
+containment; there is no sandbox between an enabled skill and the box
+it builds. The agent `command` is deliberately a shell fragment for the
+same reason (flags ride in it; quoting it would contain nothing).
+Treat enabling a skill like installing an editor extension: a trust
+decision about its author, made once, with the consequences legible in
+`byre status`.
+
+**Config `env` values are baked into the image.** They are emitted as
+Dockerfile `ENV` layers, so `docker history` shows them to anyone with
+daemon access, and they live in the image -- surviving `byre reset`,
+which clears volumes, not images -- until it is rebuilt or deleted.
+Config-literal env is configuration, not a grant (the box doesn't reach
+more because of it), but a secret pasted into `env` is a secret in an
+image layer. Keep real credentials to the agents' own login flows or
+the shared-auth skills, which store them in volumes instead.
+
 **An open network is an exfiltration channel.** With the default open
 posture, an agent can send anywhere -- including the project it is
 working on, or any credential you passed in. The firewall skill

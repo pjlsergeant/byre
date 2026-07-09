@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`byre rehome` validates the old id**: a malformed id (anything byre
+  couldn't have generated) is refused up front instead of being used as a
+  store path component.
+- **Security docs sharpened** (external-review follow-up): SECURITY.md now
+  states plainly that a skill is trusted code (enabling one hands it the
+  box) and that config `env` values are baked into image layers -- with a
+  matching don't-put-secrets-in-env warning in the README.
 - **claude-shared-auth now offers the shadowing-login fix**: when a leftover
   per-project `/login` credential sits alongside the shared token (the
   combination that 401s the box ~8h later), an interactive launch now asks

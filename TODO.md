@@ -121,6 +121,13 @@ the docs cited and in git history.
   boundary that doesn't exist; `--self-edit` means trusting the agent with
   the host, full stop. Reviewers WILL re-find this class -- conscious
   negative, don't re-fix.
+- **Agent `command` argv validation** (quoting/allowlisting the skill
+  [agent] command) -- documented as a deliberate shell fragment instead
+  (agentScript comment + SECURITY.md "A skill is trusted code",
+  2026-07-09 external-review triage). An enabled skill already runs
+  anything via raw [build].dockerfile and launch hooks; the typed-field
+  allowlists are legibility, not containment. Reviewers will re-find
+  this; don't re-fix.
 - **Path nannying** (refusing to run on dangerous dirs) -- "a knife needs
   to be sharp"; Pete runs byre on `~/.byre` itself.
 - **claude-pod feature steals** -- reviewed, nothing adopted, no public

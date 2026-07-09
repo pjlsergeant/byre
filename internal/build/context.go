@@ -163,6 +163,12 @@ func volumeDirs(volSets ...[]config.Volume) []string {
 
 // agentScript wraps the agent's launch command in an executable shell script, so
 // the launcher execs it (preserving quoting) rather than word-splitting text.
+// The command is DELIBERATELY an unvalidated shell fragment (flags ride in it:
+// "claude --dangerously-skip-permissions"): it comes only from a skill.toml the
+// user enabled, and an enabled skill already runs anything it likes via raw
+// [build].dockerfile lines and launch hooks. The typed-field allowlists are
+// legibility, not containment (skills.go, docs/SECURITY.md "A skill is trusted
+// code"); quoting this field would contain nothing.
 func agentScript(command string) []byte {
 	return []byte("#!/bin/sh\nexec " + command + " \"$@\"\n")
 }
