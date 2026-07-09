@@ -92,15 +92,15 @@ func TestMaterializeDoesNotClobber(t *testing.T) {
 }
 
 // TestSelfHostCompositionResolves verifies byre's own self-hosting config
-// (Claude agent + codex + devloop) resolves end-to-end: devloop ships the
-// byre-codereview script, the workflow context reaches the agent's memory file,
-// and codex's reviewer apt dep is present.
+// (Claude agent + codex + devloop + grok, mirroring byre.config) resolves
+// end-to-end: devloop ships the byre-codereview script, the workflow context
+// reaches the agent's memory file, and codex's reviewer apt dep is present.
 func TestSelfHostCompositionResolves(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "devloop"}}, dest)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "devloop", "grok"}}, dest)
 	if err != nil {
 		t.Fatalf("self-host composition failed to resolve: %v", err)
 	}
@@ -117,6 +117,8 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		"devloop /etc/byre/firstrun.d/devloop",
 		"devloop /usr/local/lib/byre-devloop-lib.sh", // shared hardening lib both scripts source
 		"codex /etc/byre/firstrun.d/codex-login",
+		"grok /etc/byre/firstrun.d/grok-login",
+		"grok /etc/byre/firstrun.d/grok-bundled",
 	} {
 		if !shipped[want] {
 			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
