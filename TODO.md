@@ -35,6 +35,20 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Next
 
+- [ ] **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
+  `opencode-shared-auth` builtin pair, following the grok playbook
+  (commits 0d9f59f..2cfd8fb are the worked example). Per-agent facts to
+  establish empirically before writing the skill.toml: install shape
+  (binary location vs state dir — does it need the codex/grok split?),
+  config-dir relocation env, headless/device login flow and whether the
+  credential rotates (gates like grok's if unverifiable), autonomy flag,
+  global rules/context file for `context_target`, egress endpoints
+  (OpenCode is multi-provider, so the functional-egress set depends on
+  the configured provider — may need thought vs ADR 0020), headless
+  permission mode (grok's silent-death lesson: verify tool calls work
+  under a FRESH config), and whether byre-codereview should learn it as
+  a third reviewer. Record findings in
+  docs/agent-credential-mechanics.md like the others.
 - [ ] **Skill env guidance strings** (Pete, 2026-07-08): let a skill
   declare env vars it CONSUMES, each with a one-line guidance string
   (shape sketch: `[[runtime.env_docs]]` with name + guidance); the config
