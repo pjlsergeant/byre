@@ -278,6 +278,12 @@ type EgressAllow struct {
 	Port  int
 }
 
+// EgressFromConfig is the Skill attribution for egress entries contributed by
+// the project's own `egress` config key rather than a skill. Status both
+// produces it (configEgress) and filters on it (config entries still print,
+// marked unenforced, when no posture is active — ADR 0019).
+const EgressFromConfig = "config"
+
 // EgressAllows lists every enabled skill's egress entries, parsed and
 // attributed, in enable order. Resolve validated them, so parsing can't fail.
 func (r Resolved) EgressAllows() []EgressAllow {
@@ -590,7 +596,7 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 				return Resolved{}, fmt.Errorf("agent %q: skill has no [agent] command", name)
 			}
 			// If the agent declares a state volume, the skill must actually
-			// contribute it — otherwise credentials won't persist (M5).
+			// contribute it — otherwise credentials won't persist.
 			if f.Agent.State != "" && !hasStateVolume(f.Volumes, f.Agent.State) {
 				return Resolved{}, fmt.Errorf("agent %q: [agent].state %q is not a state volume contributed by the skill", name, f.Agent.State)
 			}

@@ -192,7 +192,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	if s.NetPosture == "" {
 		egress = nil
 		for _, a := range s.Egress {
-			if a.Skill == "config" {
+			if a.Skill == skills.EgressFromConfig {
 				egress = append(egress, a)
 			}
 		}
@@ -326,7 +326,7 @@ func configEgress(entries []string) []skills.EgressAllow {
 		if err != nil {
 			continue
 		}
-		out = append(out, skills.EgressAllow{Skill: "config", Host: host, Port: port})
+		out = append(out, skills.EgressAllow{Skill: skills.EgressFromConfig, Host: host, Port: port})
 	}
 	return out
 }

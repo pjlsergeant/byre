@@ -90,7 +90,7 @@ if [ -s /etc/byre/agent-context-target ]; then
   fi
 fi 2>/dev/null || true
 
-# First-run hooks — agent skills drop scripts here (M6). They run as the dev user
+# First-run hooks — agent skills drop scripts here. They run as the dev user
 # (the launcher is unprivileged), so a hook does its own user-level setup directly
 # (codex device-auth login → the .codex volume; devloop → /workspace). A hook that
 # needs root is not supported: skills declaring privileged setup would need an
@@ -122,7 +122,7 @@ if [ -d "$ENVD_DIR" ]; then
 fi
 
 # Agent command: explicit run args > recorded agent command > login shell.
-# /etc/byre/agent-cmd is an *executable script* an agent skill installs (M6);
+# /etc/byre/agent-cmd is an *executable script* an agent skill installs;
 # executing it (rather than word-splitting its text) preserves quoting/spaces.
 if [ "$#" -gt 0 ]; then
   CMD=("$@")
