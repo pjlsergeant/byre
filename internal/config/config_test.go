@@ -432,6 +432,27 @@ func TestValidateLayerAllowsRemovals(t *testing.T) {
 	}
 }
 
+func TestValidateLayerMarkersAreBare(t *testing.T) {
+	// A removal marker takes only its identity field — same stance as port
+	// remove entries. Anything more means the author probably intended a real
+	// entry with a mistyped `!` (the editor's add path always sets host+mode,
+	// and merge would silently turn it into a removal).
+	cases := []Config{
+		{Mounts: []Mount{{Target: "!/x", Host: "/host"}}},
+		{Mounts: []Mount{{Target: "!/x", Mode: "ro"}}},
+		{Mounts: []Mount{{Target: "!/x", Disabled: true}}},
+		{Volumes: []Volume{{Name: "!creds", Target: "/c"}}},
+		{Volumes: []Volume{{Name: "!creds", Role: "state"}}},
+		{Volumes: []Volume{{Name: "!creds", Scope: "machine"}}},
+		{Volumes: []Volume{{Name: "!creds", Seed: &Seed{Host: "~/x"}}}},
+	}
+	for i, c := range cases {
+		if err := c.ValidateLayer(); err == nil {
+			t.Errorf("case %d: marker with extra fields should be rejected: %+v", i, c)
+		}
+	}
+}
+
 func TestValidatePorts(t *testing.T) {
 	ok := Config{Ports: []Port{{Container: 8080, Host: 8080, Interface: "127.0.0.1"}, {Container: 3000}}}
 	if err := ok.Validate(); err != nil {

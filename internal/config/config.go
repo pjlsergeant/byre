@@ -666,6 +666,14 @@ func (c Config) ValidateLayer() error {
 	seenTargets := map[string]string{} // target -> what claims it
 	for _, m := range c.Mounts {
 		if isRemoval(m.Target) {
+			// A removal marker is just `target = "!name"` — same stance as
+			// validatePorts' remove entries. Any other field set means the
+			// author probably meant a REAL mount with a mistyped target (the
+			// editor's add path always sets host+mode), so refuse rather than
+			// silently turn their entry into a removal.
+			if m.Host != "" || m.Mode != "" || m.Disabled {
+				return fmt.Errorf("mount %s: a removal marker takes only a target — host/mode/disabled here suggest a real mount with a mistyped target", m.Target)
+			}
 			continue
 		}
 		if err := validateMountShape(m); err != nil {
@@ -679,6 +687,10 @@ func (c Config) ValidateLayer() error {
 	seenNames := map[string]bool{}
 	for _, v := range c.Volumes {
 		if isRemoval(v.Name) {
+			// Same rule as mount markers above: a marker is name-only.
+			if v.Role != "" || v.Target != "" || v.Seed != nil || v.Scope != "" {
+				return fmt.Errorf("volume %s: a removal marker takes only a name — other fields here suggest a real volume with a mistyped name", v.Name)
+			}
 			continue
 		}
 		if err := validateVolumeShape(v); err != nil {

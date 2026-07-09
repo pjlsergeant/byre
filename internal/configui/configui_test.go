@@ -209,6 +209,13 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 	if m2 := m.commitItem(); m2.itemErr == "" || len(m2.mounts) != 0 {
 		t.Fatalf("non-absolute mount target should be rejected: err=%q", m2.itemErr)
 	}
+	// A `!`-prefixed target must not slip through as a removal marker: the
+	// layer gate skips markers' shape checks, but a marker carrying host/mode
+	// (which the add editor always sets) is refused as a mistyped real mount.
+	m.inputs[1].SetValue("!/data")
+	if m2 := m.commitItem(); m2.itemErr == "" || len(m2.mounts) != 0 {
+		t.Fatalf("mount target with a ! prefix should be rejected, not saved as a removal marker: err=%q", m2.itemErr)
+	}
 	m.inputs[1].SetValue("/data")
 	m.itemMode = 1 // rw
 	m = m.commitItem()
