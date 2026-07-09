@@ -8,6 +8,17 @@
 # state volume mounted at /home/dev/.codex-home — so seeding/resetting creds can
 # never disturb the binary.
 #
+# KNOWN TRANSIENT BUILD FAILURE (no action needed — retry): if the build dies
+# on the installer with "Could not find Codex package or platform npm release
+# assets for Codex X.Y.Z", a codex release shipped within the last ~hour. The
+# installer only counts an asset as existing when the GitHub release JSON
+# carries its sha256 `digest`, and GitHub computes digests ASYNCHRONOUSLY
+# after upload — so a fresh release has a window where every asset reads as
+# missing. The error text misleads: the files exist, version resolution
+# succeeded from the very same JSON fetch (so it isn't rate limiting either).
+# Diagnosed 2026-07-09 against rust-v0.144.0. Retry after a few minutes, or
+# pin the previous version via the installer's CODEX_RELEASE env.
+#
 # --- TEMPORARY WORKAROUND (gawk) -------------------------------------------
 # The installer validates the download against a SHA256SUMS file with an awk
 # regex using a {64} interval (`$1 ~ /^[0-9a-fA-F]{64}$/`). Debian's default awk
