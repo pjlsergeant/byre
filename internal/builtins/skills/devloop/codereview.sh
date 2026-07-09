@@ -174,9 +174,28 @@ check_tripwire() {
 trap check_tripwire EXIT
 
 # Append the captured findings to the review log with a timestamp + reviewer.
+# A run that died mid-review can leave a plausible-looking fragment (grok's
+# permission/sandbox deaths print a preamble, then stop — one got recorded as
+# a clean review before this check). The prompt mandates a trailing
+# "Probes run:" section, so its absence marks a likely truncation: record it,
+# but say so — in the log heading and on stderr. Warn-only: a reviewer that
+# merely forgot the section must not have its findings suppressed.
 record_review() {
   [ -s "$OUT" ] || return 0
-  { printf '\n## %s (%s)\n\n' "$(date -u +%FT%TZ)" "$REVIEWER"; cat "$OUT"; } >> "$LOG_FILE"
+  # Tail-anchored, not body-wide: a review that QUOTES the mandate mid-body
+  # (any review of this script would) and then dies must still be flagged —
+  # the marker only counts as the trailing section it was mandated to be.
+  note=""
+  if ! tail -n 40 "$OUT" 2>/dev/null | grep -qi 'probes run'; then
+    note=" — POSSIBLY TRUNCATED: missing the mandated 'Probes run:' section"
+    {
+      echo ""
+      echo "byre-codereview: WARNING — the review lacks its mandated 'Probes run:' section,"
+      echo "  so the run may have died mid-review. Treat the findings — and especially the"
+      echo "  APPARENT ABSENCE of findings — accordingly."
+    } >&2
+  fi
+  { printf '\n## %s (%s)%s\n\n' "$(date -u +%FT%TZ)" "$REVIEWER" "$note"; cat "$OUT"; } >> "$LOG_FILE"
 }
 
 extract_codex_session() {
@@ -258,10 +277,23 @@ run_resume_codex() {
 #   FULL toolset, edit tools included). It must be the env var: putting
 #   "Agent" in the denylist breaks grok session construction outright
 #   (0.2.93 run_terminal_cmd params bug, verified in-box).
+# - --always-approve is REQUIRED for headless tool use: grok's default
+#   permission mode prompts for any command off its safe fast-path list (git
+#   reads, ls/cat/grep — NOT rg, bash, or --help probes), headless has no TTY
+#   to prompt, and the turn silently DIES there — exit 0, preamble-only
+#   output (reproduced in-box 2026-07-09; it bit a fresh box first, whose
+#   stub got recorded as a clean review). My earlier runs only worked because
+#   that box's config carried permission_mode = "always-approve". The user
+#   guide's recommended headless pattern (--permission-mode dontAsk + narrow
+#   --allow rules) fits byre's deny-by-default posture better, but 0.2.93
+#   does not enforce dontAsk from the flag (documented wiring note) —
+#   tighten to that when it ships. Risk is bounded the same way as the rest:
+#   edit tools stripped, subagents off, tripwire, box boundary.
 # - Because of the silent-empty failure shape above, empty output on exit 0 is
 #   treated as a FAILED run, never recorded as a clean review. Session-
 #   construction errors are ALSO exit 0 — but with the error text on stdout
-#   (verified) — so those are caught by shape too.
+#   (verified) — so those are caught by shape too. Mid-run deaths that leave a
+#   preamble are caught by the "Probes run:" marker check in record_review.
 GROK_TOOL_STRIP="search_replace,todo_write,write_file,apply_patch"
 
 # The observed 0.2.93 exit-0 startup failure: "Couldn't create session: ..."
@@ -276,7 +308,7 @@ run_fresh_grok() {
   # -s pre-assigns the session UUID (grok creates it), so --continue can
   # --resume it later without parsing any output.
   local sid; sid=$(cat /proc/sys/kernel/random/uuid)
-  if GROK_SUBAGENTS=0 grok -p "$PROMPT" -s "$sid" --disallowed-tools "$GROK_TOOL_STRIP" \
+  if GROK_SUBAGENTS=0 grok -p "$PROMPT" -s "$sid" --always-approve --disallowed-tools "$GROK_TOOL_STRIP" \
        < /dev/null > "$OUT" 2> "$DBG"; then
     if [ ! -s "$OUT" ] || grok_startup_error; then
       echo "byre-codereview: grok failed before reviewing (exit 0 with empty output, or a startup error):" >&2
@@ -298,7 +330,7 @@ run_fresh_grok() {
 run_resume_grok() {
   local sid="$1"
   echo "Continuing previous review session (grok) — this may take several minutes..."
-  if GROK_SUBAGENTS=0 grok -p "$PROMPT" --resume "$sid" --disallowed-tools "$GROK_TOOL_STRIP" \
+  if GROK_SUBAGENTS=0 grok -p "$PROMPT" --resume "$sid" --always-approve --disallowed-tools "$GROK_TOOL_STRIP" \
        < /dev/null > "$OUT" 2> "$DBG" && [ -s "$OUT" ] && ! grok_startup_error; then
     cat "$OUT"; record_review; cleanup
   else
