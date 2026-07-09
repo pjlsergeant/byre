@@ -208,3 +208,47 @@ func TestRehomeCandidatesNoneMoved(t *testing.T) {
 		t.Fatalf("expected the none-moved message, got:\n%s", out.String())
 	}
 }
+
+// A store containing only the current project must not claim to be empty —
+// and an unreadable (EACCES) recorded path is not evidence of a move.
+func TestRehomeCandidatesHonestMessagesAndUnverifiablePaths(t *testing.T) {
+	paths, proj := testPaths(t)
+	var out bytes.Buffer
+	if err := RehomeCandidates(Streams{Out: &out, Err: &out}, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "no other stored projects") {
+		t.Fatalf("current-only store should say 'no other stored projects', got:\n%s", out.String())
+	}
+
+	// A recorded path under a 000-mode parent stats EACCES, not ENOENT: it
+	// cannot be verified missing, so it must not be offered as moved.
+	if os.Getuid() == 0 {
+		t.Skip("EACCES is not enforceable as root")
+	}
+	locked := filepath.Join(t.TempDir(), "locked")
+	if err := os.MkdirAll(filepath.Join(locked, "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	dir := filepath.Join(paths.Home, "projects", "denied-ffffff")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "path"), []byte(filepath.Join(locked, "inner")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := RehomeCandidates(Streams{Out: &out, Err: &out}, proj); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "denied-ffffff") {
+		t.Fatalf("EACCES path offered as moved:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "look moved") {
+		t.Fatalf("expected the none-moved message (the denied id still counts as stored):\n%s", out.String())
+	}
+}

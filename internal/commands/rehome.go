@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -174,16 +176,24 @@ func RehomeCandidates(s Streams, projectDir string) error {
 		return err
 	}
 	if total == 0 {
-		fmt.Fprintln(s.Out, "byre: no stored projects yet (~/.byre/projects/ is empty) — nothing to rehome from.")
+		// total counts OTHER stored projects with a readable path record — the
+		// store may well contain this project itself, so don't claim "empty".
+		fmt.Fprintln(s.Out, "byre: no other stored projects — nothing to rehome from.")
 		return nil
 	}
 	if len(cands) == 0 {
-		fmt.Fprintf(s.Out, "byre: none of the %d stored project(s) look moved (every recorded path still exists).\n", total)
+		fmt.Fprintf(s.Out, "byre: none of the %d other stored project(s) look moved (every recorded path still exists).\n", total)
 		return nil
 	}
 	fmt.Fprintln(s.Out, "byre: stored projects whose recorded path no longer exists (likely rehome candidates), most recent first:")
+	w := 0
 	for _, c := range cands {
-		fmt.Fprintf(s.Out, "  %-24s last used %s   was %s\n", c.ID, c.LastUsed.Format("2006-01-02"), c.WasPath)
+		if len(c.ID) > w {
+			w = len(c.ID)
+		}
+	}
+	for _, c := range cands {
+		fmt.Fprintf(s.Out, "  %-*s   last used %s   was %s\n", w, c.ID, c.LastUsed.Format("2006-01-02"), c.WasPath)
 	}
 	return nil
 }
@@ -213,8 +223,14 @@ func rehomeCandidates(paths project.Paths) (cands []rehomeCandidate, total int, 
 		}
 		total++
 		was := strings.TrimSuffix(string(rec), "\n")
-		if _, serr := os.Stat(was); serr == nil {
+		_, serr := os.Stat(was)
+		if serr == nil {
 			continue // path still exists: that project still lives there
+		}
+		if !errors.Is(serr, fs.ErrNotExist) {
+			// EACCES and friends: the path can't be VERIFIED missing, so don't
+			// claim it moved.
+			continue
 		}
 		cands = append(cands, rehomeCandidate{ID: id, WasPath: was, LastUsed: lastUsed(dir)})
 	}
