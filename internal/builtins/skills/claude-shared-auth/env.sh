@@ -13,14 +13,41 @@ if [ -s "$_byre_token_file" ]; then
     # token and stops refreshing it, so the box starts failing with "401
     # Invalid authentication credentials" roughly 8h after that login, while
     # /status still claims env-token auth (host-verified 2026-07-07, three
-    # boxes). Warn, don't fix — the file is Claude's, not ours.
+    # boxes). The file is Claude's, not ours, so moving it aside needs the
+    # user's yes: offer when stdin is interactive (default Y — declining is
+    # the deliberate act), warn-only otherwise. The read is bounded — a TTY
+    # does not imply an attending human (walk-away, PTY-allocating wrapper),
+    # and an env hook must not hang the launch; timeout falls back to the
+    # warn-only outcome. The TTY override is a test seam, per the launch
+    # gate's env-override precedent (it can force a blocking read onto a
+    # non-TTY launch, which is the footgun doctrine's "theirs to do").
     _byre_creds="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}/.credentials.json"
     if [ -s "$_byre_creds" ]; then
       {
         echo "byre: warning — this box has a per-project Claude login alongside the shared token."
         echo "      Claude prefers the stored login and stops refreshing it, so this box will 401"
-        echo "      roughly 8h after that login. Fix: mv \"$_byre_creds\"{,.bak} and relaunch."
+        echo "      roughly 8h after that login."
       } >&2
+      _byre_answered=
+      if [ -t 0 ] || [ -n "${BYRE_ASSUME_TTY:-}" ]; then
+        printf "byre: move it aside now (to .credentials.json.bak) so the shared token wins? [Y/n] " >&2
+        IFS= read -r -t 60 _byre_ans || _byre_ans="n"
+        case "$_byre_ans" in
+          ""|[Yy]*)
+            if mv -f -- "$_byre_creds" "$_byre_creds.bak" 2>/dev/null; then
+              echo "byre: moved — this session runs on the shared token." >&2
+            else
+              echo "byre: move failed — fix by hand: mv \"$_byre_creds\"{,.bak} and relaunch." >&2
+            fi
+            _byre_answered=1
+            ;;
+        esac
+        unset _byre_ans
+      fi
+      if [ -z "$_byre_answered" ]; then
+        echo "byre: left in place — fix later with: mv \"$_byre_creds\"{,.bak} and relaunch." >&2
+      fi
+      unset _byre_answered
     fi
     unset _byre_creds
   else

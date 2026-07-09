@@ -1,5 +1,13 @@
 # Changes
 
+## Unreleased
+
+- **claude-shared-auth now offers the shadowing-login fix**: when a leftover
+  per-project `/login` credential sits alongside the shared token (the
+  combination that 401s the box ~8h later), an interactive launch now asks
+  to move `.credentials.json` aside (default yes) instead of only warning.
+  Non-interactive launches keep the warn-and-leave behavior.
+
 ## v0.1.4 -- 2026-07-08
 
 - **Deny-by-default now means it** (ADR 0020, behavior change): a firewalled

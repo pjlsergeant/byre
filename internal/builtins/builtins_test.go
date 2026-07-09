@@ -770,8 +770,9 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 // exit) and exports the shared token stripped of whitespace. When a leftover
 // per-project login sits alongside the token it warns on stderr: interactive
 // Claude prefers the stored credential and stops refreshing it, so such a box
-// 401s ~8h after that login (host-verified 2026-07-07). Warn only -- the
-// credentials file is Claude's and the hook must not touch it.
+// 401s ~8h after that login (host-verified 2026-07-07). The file is Claude's,
+// so the hook only moves it aside with the user's yes: an interactive launch
+// offers the move (default Y), a non-interactive one warns and leaves it.
 func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
@@ -781,7 +782,10 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 	// Source the hook the way the launcher does, then record what it exported.
 	// A clean env (no inherited CLAUDE_CODE_OAUTH_TOKEN) keeps the no-token
 	// cases honest when the test itself runs inside a token-authed box.
-	run := func(base, cfg string) (token, output string) {
+	// stdin == nil sources the hook the non-interactive way the test always
+	// has; a non-nil stdin also sets the BYRE_ASSUME_TTY test seam so the
+	// offer path runs and reads the scripted answer.
+	runWith := func(base, cfg string, stdin *string) (token, output string) {
 		t.Helper()
 		tokenOut := filepath.Join(t.TempDir(), "token.out")
 		cmd := exec.Command("bash", "-c", `. "$0"; printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN" >"$1"`, hook, tokenOut)
@@ -791,6 +795,10 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 			}
 		}
 		cmd.Env = append(cmd.Env, "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
+		if stdin != nil {
+			cmd.Env = append(cmd.Env, "BYRE_ASSUME_TTY=1")
+			cmd.Stdin = strings.NewReader(*stdin)
+		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("sourcing the hook failed: %v (%s)", err, out)
@@ -800,6 +808,10 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 			t.Fatalf("hook exited the sourcing shell: %v", err)
 		}
 		return string(b), string(out)
+	}
+	run := func(base, cfg string) (token, output string) {
+		t.Helper()
+		return runWith(base, cfg, nil)
 	}
 	seed := func(token string) (base, cfg string) {
 		t.Helper()
@@ -819,8 +831,10 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 		t.Fatalf("clean export broken: token=%q output=%q", tok, out)
 	}
 
-	// Leftover .credentials.json alongside the token -> still exported, warns.
-	if err := os.WriteFile(filepath.Join(cfg, ".credentials.json"), []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+	// Leftover .credentials.json alongside the token, no TTY -> still
+	// exported, warns, and the file stays put (no user to say yes).
+	creds := filepath.Join(cfg, ".credentials.json")
+	if err := os.WriteFile(creds, []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	tok, out := run(base, cfg)
@@ -829,6 +843,31 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 	}
 	if !strings.Contains(out, "401") || !strings.Contains(out, ".credentials.json") {
 		t.Fatalf("warning missing or unactionable: %q", out)
+	}
+	if _, err := os.Stat(creds); err != nil {
+		t.Fatalf("non-interactive launch must not touch the login: %v", err)
+	}
+
+	// Interactive decline ("n") -> file stays put, told how to fix by hand.
+	answer := "n\n"
+	if _, out := runWith(base, cfg, &answer); !strings.Contains(out, "left in place") {
+		t.Fatalf("declined offer should say the file was left: %q", out)
+	}
+	if _, err := os.Stat(creds); err != nil {
+		t.Fatalf("declining the offer must leave the login: %v", err)
+	}
+
+	// Interactive accept (bare Enter = default Y) -> moved to .bak, exported.
+	answer = "\n"
+	tok, out = runWith(base, cfg, &answer)
+	if tok != "sk-ant-oat01-x" || !strings.Contains(out, "moved") {
+		t.Fatalf("accepted offer broken: token=%q output=%q", tok, out)
+	}
+	if _, err := os.Stat(creds); !os.IsNotExist(err) {
+		t.Fatal("accepted offer must move the login aside")
+	}
+	if _, err := os.Stat(creds + ".bak"); err != nil {
+		t.Fatalf("moved login must land at .bak: %v", err)
 	}
 
 	// No token file -> nothing exported, no warning even with a leftover login.

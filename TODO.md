@@ -15,11 +15,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
-- [ ] **Offer to fix a shadowing Claude credentials.json** (Pete,
-  2026-07-08): the launcher already warns when a leftover per-project
-  `/login` credential shadows the shared token (it 401s ~8h later); go one
-  better and offer the fix (move `~/.claude/.credentials.json` aside)
-  instead of just naming it.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
@@ -90,10 +85,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   credential, run past the ~1h token expiry; neither dying = OAuth sharing
   is safe. The API-key path is already verified
   (`docs/adr/0017-shared-agent-identity.md` verification record).
-- [ ] **Lock-test data race.** `TestWithSetupLockNotesWhenWaiting`
-  (`internal/commands/lock_test.go`): a bool shared across goroutines
-  without sync, test-only, surfaced by `go test -race`. Fix when touching
-  the lock code.
 
 ## Standing
 
