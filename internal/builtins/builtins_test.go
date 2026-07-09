@@ -726,6 +726,115 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 	}
 }
 
+// TestGrokSharedAuthCompositionResolves pins the grok-shared-auth companion
+// composing with the grok skill: the machine-scoped identity volume and the
+// 00-prefixed symlink-assert hook sorting BEFORE grok's own login hook in the
+// launcher's glob order (the login hook must see the asserted link).
+func TestGrokSharedAuthCompositionResolves(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "grok", Skills: []string{"grok-shared-auth"}}, dest)
+	if err != nil {
+		t.Fatalf("grok + grok-shared-auth failed to resolve: %v", err)
+	}
+	var hook bool
+	for _, b := range res.BuildBlocks() {
+		for _, sf := range b.Files {
+			if b.Name == "grok-shared-auth" && sf.Dest == "/etc/byre/firstrun.d/00-grok-shared-auth" {
+				hook = true
+			}
+		}
+	}
+	if !hook {
+		t.Error("symlink-assert hook not shipped")
+	}
+	if !("00-grok-shared-auth" < "grok-login") {
+		t.Error("hook ordering invariant broken: companion must sort before grok-login")
+	}
+	var identity bool
+	for _, v := range res.Volumes() {
+		if v.Name == "grok-identity" && v.MachineScoped() && v.Target == "/home/dev/.byre-identity/grok" {
+			identity = true
+		}
+	}
+	if !identity {
+		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
+	}
+}
+
+// runGrokSharedAuthHook executes the real materialized symlink-assert hook
+// against a temp identity base + GROK_HOME (the BYRE_IDENTITY_BASE seam).
+func runGrokSharedAuthHook(t *testing.T, identityBase, grokHome string) {
+	t.Helper()
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "grok-shared-auth", "firstrun.sh")
+	cmd := exec.Command("bash", hook)
+	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "GROK_HOME="+grokHome)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+}
+
+// The grok symlink-assert hook's four behaviors, driven for real: fresh box
+// gets a dangling link; an existing per-project login is ADOPTED (moved, then
+// linked); a local fork is healed in favor of the shared credential; and the
+// whole thing is idempotent. Mirrors TestCodexSharedAuthHookBehavior.
+func TestGrokSharedAuthHookBehavior(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "grok", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+
+	// 1. Fresh: dangling symlink pointing at the (absent) shared credential.
+	runGrokSharedAuthHook(t, base, home)
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("fresh run should leave a dangling link to %q, got %q (%v)", shared, got, err)
+	}
+	if _, err := os.Stat(shared); !os.IsNotExist(err) {
+		t.Fatalf("fresh run must not fabricate a shared credential")
+	}
+
+	// 2. Adopt: a real local login and no shared copy — the file MOVES in.
+	if err := os.Remove(cred); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"adopted":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGrokSharedAuthHook(t, base, home)
+	if b, err := os.ReadFile(shared); err != nil || string(b) != `{"adopted":true}` {
+		t.Fatalf("existing login not adopted into the shared volume: %v %q", err, b)
+	}
+	if got, _ := os.Readlink(cred); got != shared {
+		t.Fatalf("adopted cred not re-linked: %q", got)
+	}
+
+	// 3. Heal a fork: local plain file AND shared credential — shared wins.
+	if err := os.Remove(cred); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"fork":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGrokSharedAuthHook(t, base, home)
+	if b, _ := os.ReadFile(shared); string(b) != `{"adopted":true}` {
+		t.Fatalf("shared credential clobbered by a fork: %q", b)
+	}
+	if got, _ := os.Readlink(cred); got != shared {
+		t.Fatalf("fork not healed to the link: %q", got)
+	}
+
+	// 4. Idempotent: run again, nothing changes.
+	runGrokSharedAuthHook(t, base, home)
+	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
+		t.Fatalf("idempotent re-run changed the credential: %q", b)
+	}
+}
+
 // The claude-shared-auth hook seeds onboarding-complete state on a FRESH
 // config dir when the shared token exists (interactive Claude's wizard gates
 // on .claude.json, not the env token -- host-verified 2026-07-07), and never

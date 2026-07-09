@@ -18,8 +18,11 @@
 # download — irrelevant in a docker build, where none exists.
 #
 # First-run auth is handled by the grok-login firstrun hook below:
-# `grok login --device-auth` is the CLI's documented headless flow (prints a
-# URL + code to authorize in any browser). NOTE: the credential expires after
+# `grok login --device-auth` is the CLI's built-in headless flow (prints a
+# URL + code to authorize in any browser). Evidence: `grok login --help` on
+# 0.2.93 lists it (aliased --device-code) — the vendor README lags the binary
+# and does NOT document the flag, so don't "fix" this against the README.
+# NOTE: the credential expires after
 # ~7 days (vendor docs: "Tokens expire after 7 days"); re-auth is the same
 # command. Alternatively a static XAI_API_KEY (from console.x.ai — separate
 # API billing) takes precedence over the file credential; export it via
@@ -56,8 +59,11 @@ env = { GROK_HOME = "/home/dev/.grok-home" }
 # Egress grok needs if a firewall skill is enabled (host[:port], default 443).
 # cli-chat-proxy.grok.com = inference (the CLI's documented default proxy);
 # auth.x.ai + accounts.x.ai = the two credential scopes in auth.json (OIDC and
-# legacy sign-in). HOST-VERIFY: the exact hosts the device-auth flow polls,
-# and whether the XAI_API_KEY path talks to api.x.ai instead of the proxy.
+# legacy sign-in). HOST-VERIFY (firewalled box + device-auth login): the exact
+# hosts the in-box side of the device-auth flow polls — grok.com is the
+# documented browser-login site and a candidate, but the browser half happens
+# OUTSIDE the box, so it is not presumed functional here (deny-by-default);
+# also whether the XAI_API_KEY path talks to api.x.ai instead of the proxy.
 egress = ["cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"]
 # `grok update` (in-box self-update) re-downloads from x.ai. Convenience, not
 # a functional need — the image pins the version — so it ships closed

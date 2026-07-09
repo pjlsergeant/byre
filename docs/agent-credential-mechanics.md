@@ -418,7 +418,9 @@ credential), and a host-minted credential seeded into a fresh `GROK_HOME`
 worked for inference in this box; but the 7-day expiry means any shared copy
 goes stale fast without a shared refresh path -- which is exactly what the
 gate-pending symlink mechanism would provide. Native headless login exists:
-`grok login --device-auth` (aliased `--device-code`).
+`grok login --device-auth` (aliased `--device-code`) -- documented by
+`grok login --help` on 0.2.93; the vendor README lags the binary and does not
+mention the flag.
 
 ## Implications for the shared-auth split
 
