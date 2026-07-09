@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,11 +32,11 @@ func TestWithSetupLockNotesWhenWaiting(t *testing.T) {
 	}
 	var out safeBuffer
 	var wg sync.WaitGroup
-	ran := false
+	var ran atomic.Bool
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := withSetupLock(&out, path, func() error { ran = true; return nil }); err != nil {
+		if err := withSetupLock(&out, path, func() error { ran.Store(true); return nil }); err != nil {
 			t.Errorf("contended withSetupLock: %v", err)
 		}
 	}()
@@ -48,12 +49,12 @@ func TestWithSetupLockNotesWhenWaiting(t *testing.T) {
 		wg.Wait()
 		t.Fatalf("expected a waiting note while contended, got %q", out.String())
 	}
-	if ran {
+	if ran.Load() {
 		t.Fatal("fn must not run while the lock is held elsewhere")
 	}
 	holder.Release()
 	wg.Wait()
-	if !ran {
+	if !ran.Load() {
 		t.Fatal("fn should run once the lock frees")
 	}
 }

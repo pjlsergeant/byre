@@ -90,10 +90,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   credential, run past the ~1h token expiry; neither dying = OAuth sharing
   is safe. The API-key path is already verified
   (`docs/adr/0017-shared-agent-identity.md` verification record).
-- [ ] **Lock-test data race.** `TestWithSetupLockNotesWhenWaiting`
-  (`internal/commands/lock_test.go`): a bool shared across goroutines
-  without sync, test-only, surfaced by `go test -race`. Fix when touching
-  the lock code.
 
 ## Standing
 
