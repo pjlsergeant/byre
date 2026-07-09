@@ -143,6 +143,13 @@ the docs cited and in git history.
   anything via raw [build].dockerfile and launch hooks; the typed-field
   allowlists are legibility, not containment. Reviewers will re-find
   this; don't re-fix.
+- **Structured (field/row-addressable) config validation errors** -- the
+  config-UI drift fix is shared predicates + `ValidateLayer` as the only
+  completeness gate (2026-07-09 grilling); prose errors plus open-editor
+  context attribute well enough. Revive trigger: a consumer that needs
+  attribution WITHOUT an open editor for context (form-level Save, adopt
+  file review, or any third consumer beyond UI+CLI). Until then, improve
+  error strings in place; don't build the path algebra.
 - **Path nannying** (refusing to run on dangerous dirs) -- "a knife needs
   to be sharp"; Pete runs byre on `~/.byre` itself.
 - **claude-pod feature steals** -- reviewed, nothing adopted, no public
