@@ -3,7 +3,6 @@ package project
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -23,7 +22,32 @@ func TestCanonicalizeTrailingSlashIdentical(t *testing.T) {
 	}
 }
 
-var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*-[0-9a-f]{6}$`)
+// The shape assertions below ride the production idRe (project.go), so the
+// tests pin the same grammar ValidID enforces.
+
+func TestValidID(t *testing.T) {
+	dir := t.TempDir()
+	id, err := ID(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ValidID(id) {
+		t.Fatalf("generated id %q must validate", id)
+	}
+	for _, bad := range []string{
+		"",
+		"../../etc",
+		"byre/dev-0877d7",
+		"byre-dev-0877D7", // hash is lowercase hex
+		"byre-dev-0877d",  // hash too short
+		"-0877d7",         // empty slug
+		"byre dev-0877d7",
+	} {
+		if ValidID(bad) {
+			t.Errorf("%q must not validate", bad)
+		}
+	}
+}
 
 func TestIDShapeStableAndDistinct(t *testing.T) {
 	a := t.TempDir()

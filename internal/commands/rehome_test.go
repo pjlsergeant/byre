@@ -81,6 +81,17 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 	}
 }
 
+// A malformed old id is refused before any resolution: it's user-typed input
+// that becomes a store path component and a volume-name prefix, and byre never
+// generates ids outside the slug-6hex grammar.
+func TestRehomeRefusesMalformedID(t *testing.T) {
+	s, _, _ := testStreams("", false)
+	err := Rehome(s, t.TempDir(), "../../escape")
+	if err == nil || !strings.Contains(err.Error(), "not a byre project id") {
+		t.Fatalf("expected the malformed-id refusal, got %v", err)
+	}
+}
+
 func TestRehomeSameIDErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	s, _, _ := testStreams("", false)
