@@ -182,7 +182,9 @@ func RehomeCandidates(s Streams, projectDir string) error {
 		return nil
 	}
 	if len(cands) == 0 {
-		fmt.Fprintf(s.Out, "byre: none of the %d other stored project(s) look moved (every recorded path still exists).\n", total)
+		// Not "every path still exists": an unverifiable (e.g. EACCES) path was
+		// skipped, not confirmed present.
+		fmt.Fprintf(s.Out, "byre: none of the %d other stored project(s) look moved.\n", total)
 		return nil
 	}
 	fmt.Fprintln(s.Out, "byre: stored projects whose recorded path no longer exists (likely rehome candidates), most recent first:")

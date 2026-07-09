@@ -32,7 +32,7 @@ type app struct {
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
 	skillUpdate   func(s commands.Streams) error
 	rebuild       func(s commands.Streams, dir string) error
-	rehome func(s commands.Streams, dir, oldID string) error
+	rehome        func(s commands.Streams, dir, oldID string) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
 	// recorded path no longer exists (the likely rehome sources).
 	rehomeCandidates func(s commands.Streams, dir string) error
