@@ -17,6 +17,42 @@ func TestPickAcceptsDefaultsOnEmpty(t *testing.T) {
 	if c.Template != "go" || c.Agent != "claude" || c.SaveDefault {
 		t.Fatalf("empty input should accept favourites, got %+v", c)
 	}
+	// Choosing what's already the default must not offer to save it as such.
+	if strings.Contains(out.String(), "Save these") {
+		t.Fatalf("save-as-default offered for a choice that IS the default:\n%s", out.String())
+	}
+}
+
+// Retyping the favourites (rather than accepting them with Enter) is still the
+// same choice — no save offer.
+func TestPickRetypedDefaultsSkipSaveOffer(t *testing.T) {
+	var out bytes.Buffer
+	c, err := Pick(&out, strings.NewReader("go\nclaude\n"), []string{"go", "node"}, []string{"claude", "codex"}, "go", "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Template != "go" || c.Agent != "claude" || c.SaveDefault {
+		t.Fatalf("retyped favourites wrong: %+v", c)
+	}
+	if strings.Contains(out.String(), "Save these") {
+		t.Fatalf("save-as-default offered for retyped favourites:\n%s", out.String())
+	}
+}
+
+// One axis differing is enough to make the offer (the save updates both
+// scalars; the matching one is idempotent).
+func TestPickOneAxisDifferingStillOffers(t *testing.T) {
+	var out bytes.Buffer
+	c, err := Pick(&out, strings.NewReader("\ncodex\ny\n"), []string{"go", "node"}, []string{"claude", "codex"}, "go", "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Template != "go" || c.Agent != "codex" || !c.SaveDefault {
+		t.Fatalf("one-axis change should offer and save: %+v", c)
+	}
+	if !strings.Contains(out.String(), "Save these") {
+		t.Fatalf("save offer missing for a differing choice:\n%s", out.String())
+	}
 }
 
 func TestPickChoosesAndSaves(t *testing.T) {

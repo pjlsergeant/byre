@@ -38,9 +38,15 @@ func Pick(out io.Writer, in io.Reader, templates, agents []string, defTemplate, 
 	if err != nil {
 		return Choice{}, err
 	}
-	save, err := askYesNo(out, r, "Save these as your default for new projects?")
-	if err != nil {
-		return Choice{}, err
+	// Choosing exactly the favourites again is not news: offering to save them
+	// as the default would be noise (and the save a no-op). Only ask when the
+	// choice differs — whether the favourite was accepted with Enter or retyped.
+	save := false
+	if fromNone(tmpl) != defTemplate || fromNone(agent) != defAgent {
+		save, err = askYesNo(out, r, "Save these as your default for new projects?")
+		if err != nil {
+			return Choice{}, err
+		}
 	}
 
 	return Choice{
