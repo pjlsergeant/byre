@@ -40,6 +40,12 @@ var volumeNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 // general-purpose sanitizer: raw Dockerfile blocks (dockerfile_pre/post) and
 // run_args are the sanctioned, consent-surfaced escape hatches for anything these
 // reject. See ValidateContent.
+//
+// Single-owner rule: these shapes are deliberately unexported. Other packages
+// must not restate them — pre-check input only with exported functions the
+// validators themselves call (ParseEgress, PortEffective), or defer to
+// ValidateLayer/Validate. A lookalike reimplementation is how the rules fork
+// (the config UI once carried its own weaker copies; 2026-07-09 review).
 var (
 	// imageRefRe is the standard OCI image-reference charset. `base` is emitted as
 	// `FROM <base>`, so anything outside this set (notably whitespace or a newline)

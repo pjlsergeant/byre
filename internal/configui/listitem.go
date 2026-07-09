@@ -521,10 +521,16 @@ func longestCommonPrefix(ss []string) string {
 }
 
 // commitItem validates the item editor's inputs and writes the item back into
-// the working slice (append when adding, replace when editing). A validation
-// error — per-field, or the same layer validation Save runs (so cross-item
-// problems like duplicate mount targets surface while the offending item is
-// still open, not at save time) — keeps the editor open with a message.
+// the working slice (append when adding, replace when editing). Pre-checks are
+// limited to what the layer gate can't own: parsing string inputs, friendlier
+// wording for empty/partial input, and editor-only rules (duplicate env rows
+// collapse in assemble() before validation could see them). Field shapes,
+// ranges, and cross-item collisions are all caught by the same ValidateLayer
+// call Save runs — against the assembled layer, while the offending item is
+// still open, not at save time. Any failure keeps the editor open with a
+// message. (Composition rule: never restate a config rule here — config owns
+// the shapes, and a pre-check may only call what its validators call, like
+// fEgress's ParseEgress.)
 func (m model) commitItem() model {
 	orig := m
 	switch m.listField {
@@ -544,12 +550,9 @@ func (m model) commitItem() model {
 		m.egress = putAt(m.egress, m.editIndex, entry)
 	case fEnv:
 		k := strings.TrimSpace(m.inputs[0].Value())
-		if !envKeyRe.MatchString(k) {
-			m.itemErr = "key must match [A-Za-z_][A-Za-z0-9_]*"
-			return m
-		}
-		// Reject a duplicate key (other than the row being edited): env is a map on
-		// disk, so two rows with the same key would silently collapse on save.
+		// Key shape is the layer check's job. Duplicates are the editor's: env is
+		// a map on disk, so two rows with the same key would silently collapse in
+		// assemble() before ValidateLayer could reject them.
 		for i, kv := range m.env {
 			if i != m.editIndex && kv.Key == k {
 				m.itemErr = "duplicate key " + k
@@ -562,10 +565,6 @@ func (m model) commitItem() model {
 		target := strings.TrimSpace(m.inputs[1].Value())
 		if host == "" || target == "" {
 			m.itemErr = "host and target are both required"
-			return m
-		}
-		if !strings.HasPrefix(target, "/") {
-			m.itemErr = "target must be an absolute path in the box (start with /)"
 			return m
 		}
 		mt := config.Mount{Host: host, Target: target, Mode: "ro"}
@@ -582,16 +581,18 @@ func (m model) commitItem() model {
 		}
 		m.mounts = putAt(m.mounts, m.editIndex, mt)
 	case fPorts:
+		// The inputs are strings, so the numeric parse happens here; ranges and
+		// collisions are the layer check's (validatePorts).
 		container, err := strconv.Atoi(strings.TrimSpace(m.inputs[0].Value()))
-		if err != nil || container < 1 || container > 65535 {
-			m.itemErr = "container port must be a number 1-65535"
+		if err != nil {
+			m.itemErr = "container port must be a number"
 			return m
 		}
 		host := 0
 		if hs := strings.TrimSpace(m.inputs[1].Value()); hs != "" {
 			h, herr := strconv.Atoi(hs)
-			if herr != nil || h < 1 || h > 65535 {
-				m.itemErr = "host port must be blank (any) or a number 1-65535"
+			if herr != nil {
+				m.itemErr = "host port must be a number (blank = same as container)"
 				return m
 			}
 			host = h

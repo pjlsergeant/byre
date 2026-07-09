@@ -6,7 +6,6 @@ package configui
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -102,9 +101,6 @@ var rawFieldKey = map[fieldID]string{
 
 // labelWidth is the padded width of the label column ("Dockerfile before" is longest).
 const labelWidth = 17
-
-// envKeyRe is the accepted shape of an env var name (POSIX-ish).
-var envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 var (
 	focusStyle = lipgloss.NewStyle().Bold(true)
