@@ -235,11 +235,49 @@ machine, rent one.)*
 
 ### Save my LLM credentials so I don't need to re-auth for each box?
 
-By default agents log in once per project, inside the box; the shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per machine. The login lives in a shared volume that reset/forget deliberately never touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications.
+tldr: `byre config` and enable the relevant _x-shared-auth_ skill(s) for the
+agent(s) you'll use on the box.
+
+By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per
+machine. The login lives in a shared volume that reset/forget deliberately never
+touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
 
 ### Stop using byre?
 
 `byre dockerfile` prints the image, `byre dockerrun` prints the exact run command -- that's the whole exit. The firewall is the one thing that doesn't travel automatically (its rules are applied from outside the box, by byre); `byre ejectfirewall` prints that step as a standalone script. See [docs/EJECTING.md](docs/EJECTING.md).
+
+### Restrict network access?
+
+tldr: `byre config` and enable the _firewall_ skill. Under "Egress" choose what
+to open. We automatically open the ports your selected agent needs, and there
+may be more suggestions based on your selected skills (eg Github) but those
+you'll need to manually open and then relaunch.
+
+By default, we don't restrict network access. The _firewall_ skill flips that
+to deny-by-default: your container starts but runs nothing while a privileged
+one-shot helper joins its network namespace, installs the allowlist rules, and
+verifies them. Only then does the agent launch behind the wall -- and if any of
+that fails, the box dies closed rather than running open.
+
+### Mount other folders from the host?
+
+tldr: `byre config` -> Mounts
+
+### Run other Docker containers from inside the byre environment?
+
+Today this is possible rather than ergonomic. You can mount the host's Docker
+daemon socket using `byre config` -> Mounts. It's worth remembering that
+anything that can run Docker on the host also has effective root on the host.
+I plan to make this even easier and also support nested Podman in the very near
+future.
+
+### Get the coding agent to edit its own byre config?
+
+`byre develop --self-edit` will mount the box's configuration directory on
+`/home/dev/.byre-self` and will also ship contextual documentation to your box
+telling your agent how to make edits. There are (of course!) some security
+implications to this, so it's probably best not to always run in this mode.
+Changes to the configuration will be shown on exit.
 
 ## Platform
 

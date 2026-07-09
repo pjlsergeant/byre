@@ -20,10 +20,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   `/login` credential shadows the shared token (it 401s ~8h later); go one
   better and offer the fix (move `~/.claude/.credentials.json` aside)
   instead of just naming it.
-- [ ] **README "How do I": enable the firewall** (Pete, 2026-07-08): doc
-  add to the existing How-do-I section.
-- [ ] **README "How do I": mount other folders** (Pete, 2026-07-08): doc
-  add, same section.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
