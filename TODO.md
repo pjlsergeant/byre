@@ -15,11 +15,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
-- [ ] **Offer to fix a shadowing Claude credentials.json** (Pete,
-  2026-07-08): the launcher already warns when a leftover per-project
-  `/login` credential shadows the shared token (it 401s ~8h later); go one
-  better and offer the fix (move `~/.claude/.credentials.json` aside)
-  instead of just naming it.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
