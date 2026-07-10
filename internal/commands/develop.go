@@ -142,13 +142,6 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		return err
 	}
 
-	// Every real session opens by showing the walls going up: the terse
-	// exposure lines. The config UI renders the same tally (config.Exposure
-	// owns the words); `byre status` is the detailed, attributed view.
-	exp := exposureOf(rv)
-	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
-	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
-
 	// --self-edit hands the agent authorship of its own next sandbox; open the
 	// session with the warning and snapshot the store so the session can close
 	// by showing exactly what the agent touched (reportSelfEditChanges below).
@@ -162,6 +155,14 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	if err != nil {
 		return err
 	}
+	// Every real session opens by showing the walls going up: the terse
+	// exposure lines. Printed only once runParams has assembled the actual
+	// invocation — a session that fails to launch gets no walls claimed. The
+	// config UI renders the same tally (config.Exposure owns the words);
+	// `byre status` is the detailed, attributed view.
+	exp := exposureOf(rv)
+	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
+	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
 	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
 	// OUTSIDE the box, concurrently with the attached run: the box's launcher
 	// waits at its launch gate until the hooks land. The container gets a
@@ -300,16 +301,25 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 
 // exposureOf tallies the resolved view for the launch exposure lines. The
 // counts must match what actually happens at run time: disabled mounts
-// produce no bind (runParams skips them), ports come from config only, and
-// env is the baked config env plus skill runtime env. Plumbing env (BYRE_UID,
-// git identity) isn't counted — it's how every box works, not this box's
-// exposure; when named host-env passthrough lands it joins the count, being a
-// real grant. The network claim mirrors status's networkLine honesty rules.
+// produce no bind (runParams skips them), ports come from config only, env is
+// the distinct keys the box gets (baked config env ∪ skill runtime env — a
+// skill restating a config key is one variable, not two), and egress is the
+// enforced deduped union. Plumbing env (BYRE_UID, git identity) isn't counted
+// — it's how every box works, not this box's exposure; when named host-env
+// passthrough lands it joins the count, being a real grant. The network claim
+// mirrors status's networkLine honesty rules.
 func exposureOf(rv resolved) config.Exposure {
+	envKeys := map[string]bool{}
+	for k := range rv.cfg.Env {
+		envKeys[k] = true
+	}
+	for k := range rv.skills.Env() {
+		envKeys[k] = true
+	}
 	e := config.Exposure{
 		Workspace:  true,
 		Ports:      len(rv.cfg.Ports),
-		Env:        len(rv.cfg.Env) + len(rv.skills.Env()),
+		Env:        len(envKeys),
 		Egress:     len(resolvedEgress(rv)),
 		RawRunArgs: len(rv.cfg.RunArgs) > 0,
 		RawBuild:   len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,

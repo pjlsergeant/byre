@@ -669,20 +669,27 @@ func TestExposureNowDisabledMountsAndPosture(t *testing.T) {
 	// Switch the inherited mount off in the default layer, add a local live one.
 	m.inh.Default.Mounts[0].Disabled = true
 	m.mounts = []config.Mount{{Host: "/h/src", Target: "/src", Mode: "rw"}}
-	// Enable a firewall skill declaring the posture and one endpoint.
+	// Enable a firewall skill declaring the posture and one endpoint. The
+	// user's "github.com" restates the skill's door in another spelling —
+	// normalized dedup counts one enforced host, matching launch's tally.
 	m.inh.Skills["firewall"] = SkillRuntime{Posture: "deny-by-default", Egress: []string{"github.com:443"}}
 	m.skills = append(m.skills, "firewall")
-	m.egress = []string{"example.com"}
+	m.egress = []string{"example.com", "github.com"}
+	// A local env entry restating the skill's key is one variable, not two.
+	m.env = []kvItem{{Key: "DOCKER_HOST", Value: "unix:///x"}}
 
 	e := m.exposureNow()
 	// Local /src + the docker skill's socket stay live; the default mount is off.
 	if e.Mounts != 2 || e.DisabledMounts != 1 {
 		t.Errorf("mounts = %d (+%d disabled), want 2 (+1)", e.Mounts, e.DisabledMounts)
 	}
+	if e.Env != 2 { // GIT_EDITOR + DOCKER_HOST (key restated locally and by the skill)
+		t.Errorf("env = %d, want 2", e.Env)
+	}
 	if e.Posture != "deny-by-default" {
 		t.Errorf("posture = %q, want deny-by-default", e.Posture)
 	}
-	// The skill's endpoint + the user's own egress entry.
+	// The skill's endpoint + the user's own example.com; the dup spelling folds.
 	if e.Egress != 2 {
 		t.Errorf("egress = %d, want 2", e.Egress)
 	}

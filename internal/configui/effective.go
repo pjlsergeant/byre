@@ -425,13 +425,39 @@ func (m model) exposureNow() config.Exposure {
 		}
 	}
 	e.Ports, _, _, _ = rowCounts(m.fieldRows(fPorts))
-	e.Env, _, _, _ = rowCounts(m.fieldRows(fEnv))
+	// Env counts distinct keys, not sources: a skill restating a config key is
+	// one variable in the box — the launch tally (exposureOf) counts the same
+	// way, and the two surfaces must agree.
+	envKeys := map[string]bool{}
+	for k := range m.lowerNow().Env {
+		envKeys[k] = true
+	}
+	for _, kv := range m.env {
+		envKeys[kv.Key] = true
+	}
+	for _, sk := range m.effectiveSkills() {
+		for k := range m.inh.Skills[sk].Env {
+			envKeys[k] = true
+		}
+	}
+	e.Env = len(envKeys)
 	e.Posture = m.postureNow()
 	// The allowlist size only means something under a posture; without one the
 	// line just says "network open" (the per-field summary carries the
-	// unenforced caveat).
+	// unenforced caveat). Deduped on the NORMALIZED host:port — "github.com"
+	// and "github.com:443" are one enforced door, and the launch tally
+	// (resolvedEgress) dedupes the same way.
 	if e.Posture != "" {
-		e.Egress, _, _, _ = rowCounts(m.fieldRows(fEgress))
+		seen := map[string]bool{}
+		for _, r := range m.fieldRows(fEgress) {
+			switch r.kind {
+			case rowLocal, rowOverride, rowInherited, rowSkill:
+				if host, port, err := config.ParseEgress(r.text); err == nil {
+					seen[host+":"+strconv.Itoa(port)] = true
+				}
+			}
+		}
+		e.Egress = len(seen)
 	}
 	lower := m.lowerNow()
 	e.RawRunArgs = len(splitLines(m.textValue(fRunArgs)))+len(lower.RunArgs) > 0

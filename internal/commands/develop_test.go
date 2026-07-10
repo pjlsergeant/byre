@@ -100,14 +100,17 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 			{Host: "/h/notes", Target: "/notes", Mode: "ro"},
 			{Host: "/h/data", Target: "/data", Mode: "rw", Disabled: true},
 		},
-		Ports:  []config.Port{{Container: 8080}},
-		Env:    map[string]string{"FOO": "1", "BAR": "2"},
-		Egress: []string{"example.com"}, // normalizes to example.com:443 in the union
+		Ports: []config.Port{{Container: 8080}},
+		Env:   map[string]string{"FOO": "1", "BAR": "2"},
+		// "example.com" normalizes to example.com:443; "github.com" restates
+		// the skill's door in another spelling — one enforced host, not two.
+		Egress: []string{"example.com", "github.com"},
 	}
 	var fw skills.Skill
 	fw.Name = "firewall"
 	fw.File.Runtime.NetworkPosture = "deny-by-default"
 	fw.File.Runtime.Egress = []string{"github.com:443", "proxy.golang.org:443"}
+	fw.File.Runtime.Env = map[string]string{"FOO": "skill"} // restates a config key: one var
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
 	if err := develop(f, s, p, combine(cfg, skills.Resolved{Skills: []skills.Skill{fw}}), false); err != nil {
@@ -118,7 +121,7 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 		t.Errorf("expected the exposure line, got: %s", out)
 	}
 	if !strings.Contains(out, "byre: network deny-by-default · egress 3 hosts\n") {
-		t.Errorf("expected the network line (2 skill hosts + 1 config host), got: %s", out)
+		t.Errorf("expected the network line (2 skill hosts + 1 config host, dup spelling deduped), got: %s", out)
 	}
 }
 
