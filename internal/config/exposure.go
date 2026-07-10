@@ -17,6 +17,7 @@ import (
 // the rendered line is labeled "exposure", never "grants".
 type Exposure struct {
 	Workspace      bool   // include the implicit project mount — set by launch; the UI summarizes only config
+	SelfEdit       bool   // --self-edit's rw store mount — launch only; the loudest grant stands in the inventory too, not just the warning above it
 	Mounts         int    // host mounts that will actually bind
 	DisabledMounts int    // switched off: no bind, but staying visible while off is the switch's point
 	Ports          int    // published ports
@@ -37,6 +38,9 @@ func (e Exposure) GrantsLine() string {
 	var parts []string
 	if e.Workspace {
 		parts = append(parts, "/workspace rw")
+	}
+	if e.SelfEdit {
+		parts = append(parts, "self-edit rw")
 	}
 	if e.Mounts > 0 || e.DisabledMounts > 0 {
 		s := fmt.Sprintf("%d host %s", e.Mounts, plural("mount", e.Mounts))

@@ -26,6 +26,13 @@ func TestExposureLine(t *testing.T) {
 			want: "/workspace rw · 2 host mounts · 1 port · 4 env vars · network open",
 		},
 		{
+			// The loudest grant stands in the inventory too, not just in the
+			// 🛑 warning printed above it.
+			name: "self-edit named",
+			e:    Exposure{Workspace: true, SelfEdit: true, Mounts: 1},
+			want: "/workspace rw · self-edit rw · 1 host mount · network open",
+		},
+		{
 			name: "singulars",
 			e:    Exposure{Mounts: 1, Ports: 1, Env: 1},
 			want: "1 host mount · 1 port · 1 env var · network open",

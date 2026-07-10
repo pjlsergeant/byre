@@ -172,6 +172,11 @@ func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 	if !strings.Contains(stderr.String(), "self-edit is on") {
 		t.Errorf("expected the self-edit warning on stderr: %s", stderr.String())
 	}
+	// The exposure line names the grant too — it must stand alone as the
+	// complete wall inventory, not lean on the warning above it.
+	if !strings.Contains(stderr.String(), "byre: exposure: /workspace rw · self-edit rw\n") {
+		t.Errorf("expected self-edit in the exposure line: %s", stderr.String())
+	}
 	if argv := strings.Join(f.runs[0], " "); !strings.Contains(argv, "target="+selfEditTarget) {
 		t.Errorf("run argv missing the self-edit mount: %s", argv)
 	}

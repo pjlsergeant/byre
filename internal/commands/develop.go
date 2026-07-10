@@ -157,10 +157,14 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 	// Every real session opens by showing the walls going up: the terse
 	// exposure lines. Printed only once runParams has assembled the actual
-	// invocation — a session that fails to launch gets no walls claimed. The
-	// config UI renders the same tally (config.Exposure owns the words);
-	// `byre status` is the detailed, attributed view.
-	exp := exposureOf(rv)
+	// invocation — a session that fails to launch gets no walls claimed.
+	// (Residual, consciously accepted: losing the container-name race to a
+	// concurrent develop still prints them; the refusal that follows
+	// supersedes the claim, and the self-edit warning above shares the same
+	// pre-run property.) The config UI renders the same tally
+	// (config.Exposure owns the words); `byre status` is the detailed,
+	// attributed view.
+	exp := exposureOf(rv, selfEdit)
 	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
 	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
 	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
@@ -307,8 +311,13 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 // enforced deduped union. Plumbing env (BYRE_UID, git identity) isn't counted
 // — it's how every box works, not this box's exposure; when named host-env
 // passthrough lands it joins the count, being a real grant. The network claim
-// mirrors status's networkLine honesty rules.
-func exposureOf(rv resolved) config.Exposure {
+// mirrors status's networkLine honesty rules. --self-edit's rw store mount
+// gets its own named segment (like status's Self-edit row), not a bump of the
+// host-mount count. A worktree's same-path git binds are consciously NOT
+// counted: they're the project's own repo (ADR 0009 — worktrees inherit
+// project identity), status doesn't list them either, and the worktree
+// banner already announces the arrangement.
+func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 	envKeys := map[string]bool{}
 	for k := range rv.cfg.Env {
 		envKeys[k] = true
@@ -318,6 +327,7 @@ func exposureOf(rv resolved) config.Exposure {
 	}
 	e := config.Exposure{
 		Workspace:  true,
+		SelfEdit:   selfEdit,
 		Ports:      len(rv.cfg.Ports),
 		Env:        len(envKeys),
 		Egress:     len(resolvedEgress(rv)),
