@@ -4,9 +4,11 @@
 > brainstorming sessions with three agents (disagreements resolved by Pete,
 > noted inline). Nothing implemented yet. Companion docs in this directory:
 > `thoughts-fable.md` (in-box review), `grilling-input-grok.md` /
-> `grilling-input-codex.md` (external reviewer passes). This directory is a
-> design workspace (shared-auth-design.md lifecycle): absorbed into ADRs +
-> shipped docs, then deleted.
+> `grilling-input-codex.md` (external reviewer passes), and
+> **`decisions.md` (the grilled design of record — where it disagrees with
+> this brief, it wins)**. This directory is a design workspace
+> (shared-auth-design.md lifecycle): absorbed into ADRs + shipped docs,
+> then deleted.
 
 ## What this is
 
