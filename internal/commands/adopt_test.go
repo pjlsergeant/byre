@@ -146,19 +146,21 @@ func TestAdoptChangedShowsDiffAgainstStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "- agent = \"codex\"") || !strings.Contains(got, "+ agent = \"claude\"") {
+	if !strings.Contains(got, "-agent = \"codex\"") || !strings.Contains(got, "+agent = \"claude\"") {
 		t.Errorf("prompt should diff proposal against the store config:\n%s", got)
 	}
-	if strings.Contains(got, "\napt = [\"ripgrep\"]") {
-		t.Errorf("unchanged lines shouldn't print in the diff view:\n%s", got)
+	// Unchanged nearby lines print as CONTEXT (leading space) — they anchor
+	// the change to its block, which is why the unified differ is here.
+	if !strings.Contains(got, "\n apt = [\"ripgrep\"]") {
+		t.Errorf("context line missing from the diff view:\n%s", got)
 	}
 	if !strings.Contains(got, "replaces the whole file") {
 		t.Errorf("diff view should name the wholesale replace:\n%s", got)
 	}
 }
 
-// "Identical" is a byte claim: diffLines normalizes the final newline away,
-// so a newline-only change must be named, not presented as identical.
+// "Identical" is a byte claim: a proposal differing only in its final newline
+// must show that edit, not be presented as identical.
 func TestAdoptDiffNamesTrailingNewlineOnlyChange(t *testing.T) {
 	p, proj := onboardPaths(t)
 	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
@@ -176,8 +178,8 @@ func TestAdoptDiffNamesTrailingNewlineOnlyChange(t *testing.T) {
 	if strings.Contains(out.String(), "identical") {
 		t.Errorf("newline-only change must not claim identical:\n%s", out.String())
 	}
-	if !strings.Contains(out.String(), "trailing-newline-only") {
-		t.Errorf("newline-only change should be named:\n%s", out.String())
+	if !strings.Contains(out.String(), "No newline at end of file") {
+		t.Errorf("newline-only change should be visible in the diff:\n%s", out.String())
 	}
 }
 

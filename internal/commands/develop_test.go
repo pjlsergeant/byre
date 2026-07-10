@@ -205,10 +205,10 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 	if !strings.Contains(out, "the project store changed") {
 		t.Fatalf("expected the exit diff header, got: %s", out)
 	}
-	if !strings.Contains(out, `+ run_args = ["--privileged"]`) {
+	if !strings.Contains(out, `+run_args = ["--privileged"]`) {
 		t.Errorf("expected the added line in the diff, got: %s", out)
 	}
-	if strings.Contains(out, `- base`) {
+	if strings.Contains(out, `-base`) {
 		t.Errorf("unchanged line must not appear as removed: %s", out)
 	}
 	// Without --self-edit the config isn't the agent's to change; no snapshot,

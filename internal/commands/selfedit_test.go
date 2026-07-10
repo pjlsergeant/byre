@@ -4,32 +4,36 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestDiffLines(t *testing.T) {
-	cases := []struct {
-		name          string
-		before, after string
-		want          []string
-	}{
-		{"identical", "a\nb\n", "a\nb\n", nil},
-		{"add", "a\n", "a\nb\n", []string{"+ b"}},
-		{"remove", "a\nb\n", "a\n", []string{"- b"}},
-		{"modify", "a\nb\nc\n", "a\nB\nc\n", []string{"- b", "+ B"}},
-		{"create from nothing", "", "a\nb\n", []string{"+ a", "+ b"}},
-		{"delete everything", "a\n", "", []string{"- a"}},
-		{"insert between anchors", "a\nz\n", "a\nm\nz\n", []string{"+ m"}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := diffLines(c.before, c.after); !reflect.DeepEqual(got, c.want) {
-				t.Errorf("diffLines(%q, %q) = %v, want %v", c.before, c.after, got, c.want)
+// unifiedDiff itself is the upstream-tested gopls differ; these pin the
+// contract byre's call sites lean on, not the diff algorithm.
+func TestUnifiedDiff(t *testing.T) {
+	t.Run("byte-identical is empty", func(t *testing.T) {
+		if got := unifiedDiff("a", "b", "x\ny\n", "x\ny\n"); got != nil {
+			t.Errorf("expected nil for identical content, got %v", got)
+		}
+	})
+	t.Run("context names the changed block", func(t *testing.T) {
+		before := "[[mounts]]\nhost = \"~/notes\"\nmode = \"rw\"\n"
+		after := "[[mounts]]\nhost = \"~/notes\"\nmode = \"ro\"\n"
+		got := strings.Join(unifiedDiff("a", "b", before, after), "\n")
+		// The whole reason for the unified differ: the unchanged block lines
+		// print as context, so a mode flip can't float free of its mount.
+		for _, want := range []string{" [[mounts]]", ` host = "~/notes"`, `-mode = "rw"`, `+mode = "ro"`} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q in:\n%s", want, got)
 			}
-		})
-	}
+		}
+	})
+	t.Run("final-newline-only edit yields a hunk", func(t *testing.T) {
+		got := strings.Join(unifiedDiff("a", "b", "x", "x\n"), "\n")
+		if !strings.Contains(got, "No newline at end of file") {
+			t.Errorf("newline-only change must be visible, got:\n%s", got)
+		}
+	})
 }
 
 // report snapshots dir, applies mutate, and returns the exit report's output.
@@ -67,7 +71,7 @@ func TestReportSelfEditChanges(t *testing.T) {
 	t.Run("config edit shows a content diff", func(t *testing.T) {
 		got := report(t, dir, func() { write(cfg, "base = \"node:22\"\nrun_args = [\"--privileged\"]\n") })
 		if !strings.Contains(got, "byre.config (applies on the next develop):") ||
-			!strings.Contains(got, `+ run_args = ["--privileged"]`) {
+			!strings.Contains(got, `+run_args = ["--privileged"]`) {
 			t.Errorf("config diff wrong: %q", got)
 		}
 		if strings.Contains(got, "changed:") {
@@ -87,7 +91,7 @@ func TestReportSelfEditChanges(t *testing.T) {
 			"changed: context/Dockerfile.generated",
 			"added:   context/planted.sh",
 			"(deleted)", // byre.config, in its own section
-			`- base = "node:22"`,
+			`-base = "node:22"`,
 		} {
 			if !strings.Contains(got, want) {
 				t.Errorf("missing %q in: %q", want, got)
@@ -117,11 +121,13 @@ func TestReportSelfEditChanges(t *testing.T) {
 		}
 	})
 
-	t.Run("trailing-newline-only edit is named", func(t *testing.T) {
+	t.Run("trailing-newline-only edit is visible", func(t *testing.T) {
 		write(cfg, "base = \"node:22\"\n")
 		got := report(t, dir, func() { write(cfg, "base = \"node:22\"") })
-		if !strings.Contains(got, "trailing-newline-only") {
-			t.Errorf("expected the trailing-newline note: %q", got)
+		// The unified differ shows the edit itself (no special-case note):
+		// a changed config must never print as a bare section header.
+		if !strings.Contains(got, "No newline at end of file") {
+			t.Errorf("expected the newline edit in the diff: %q", got)
 		}
 	})
 
