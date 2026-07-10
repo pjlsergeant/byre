@@ -39,6 +39,8 @@ Usage:
   byre-codereview --reviewer <name> ...  choose the reviewer: codex (default) | grok | claude
   byre-codereview --raw "prompt"         send YOUR prompt verbatim (skips the
                                          built-in review prompt; mechanics stay)
+  byre-codereview --raw -- "--anything"  -- ends option parsing, so option-shaped
+                                         prompt text passes through
 
 BYRE_REVIEWER sets the default reviewer.
 EOF
@@ -49,7 +51,12 @@ CONTINUE=false
 RAW=false
 FOCUS=()
 expect_reviewer=false
+ddash=false
 for arg in "$@"; do
+  if [ "$ddash" = true ]; then
+    FOCUS+=("$arg")
+    continue
+  fi
   if [ "$expect_reviewer" = true ]; then
     REVIEWER="$arg"
     expect_reviewer=false
@@ -61,6 +68,9 @@ for arg in "$@"; do
     --raw) RAW=true ;;
     --reviewer) expect_reviewer=true ;;
     --reviewer=*) REVIEWER="${arg#--reviewer=}" ;;
+    # Everything after -- is prompt text, never an option — the only way an
+    # option-shaped prompt ("--help") can reach the reviewer, raw or focused.
+    --) ddash=true ;;
     *) FOCUS+=("$arg") ;;
   esac
 done
@@ -386,6 +396,11 @@ run_resume_grok() {
 #   working (headless runs auto-DENY any tool that would prompt — a deny, not
 #   grok's silent death), so free-form writes remain POSSIBLE — that's what
 #   the tripwire is for. No codex-style OS sandbox is applied.
+# - --safe-mode keeps the REVIEWED repo's claude customizations (settings,
+#   hooks, plugins, MCP servers, CLAUDE.md) from loading: without it a
+#   malicious repo's hooks would execute at reviewer startup — code running
+#   BEFORE the prompt or denylist gets a say. The review prompt is
+#   self-contained, so the reviewer loses nothing it needs.
 # - The PROMPT rides stdin: --allowedTools/--disallowedTools are variadic and
 #   swallow a trailing prompt argument (each prompt word became a bogus
 #   permission rule when passed after them).
@@ -399,7 +414,7 @@ run_fresh_claude() {
   rm -f "$SESSION_FILE"
   echo "Running code review (claude)${RUN_NOTE} — this may take several minutes..."
   local sid; sid=$(cat /proc/sys/kernel/random/uuid)
-  if printf '%s' "$PROMPT" | claude -p --session-id "$sid" \
+  if printf '%s' "$PROMPT" | claude -p --safe-mode --session-id "$sid" \
        --allowedTools "Bash" --disallowedTools "$CLAUDE_TOOL_STRIP" \
        > "$OUT" 2> "$DBG"; then
     # Exit 0 with nothing to say has no legitimate reading — never record it
@@ -424,7 +439,7 @@ run_fresh_claude() {
 run_resume_claude() {
   local sid="$1"
   echo "Continuing previous review session (claude) — this may take several minutes..."
-  if printf '%s' "$PROMPT" | claude -p --resume "$sid" \
+  if printf '%s' "$PROMPT" | claude -p --safe-mode --resume "$sid" \
        --allowedTools "Bash" --disallowedTools "$CLAUDE_TOOL_STRIP" \
        > "$OUT" 2> "$DBG" && [ -s "$OUT" ]; then
     cat "$OUT"; record_review; cleanup
