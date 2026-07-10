@@ -265,7 +265,9 @@ Substance: PRINCIPLES.md #4.
 The terse one-line tally of what a box can reach — host mounts (disabled
 split out), ports, env vars, and the network stance — spoken in one shared
 voice on two surfaces: atop the config UI's form, and as `byre:` lines at
-launch. Counts only; `byre status` is the detailed, attributed view.
+launch (where the implicit `/workspace` mount and, when active, the
+`--self-edit` store mount are named too). Counts only; `byre status`
+is the detailed, attributed view.
 Called "exposure", not "grants": a config-literal env var is counted (it
 reaches the box) but is not a Grant.
 _Avoid_: grant summary (env vars in the tally aren't all grants)

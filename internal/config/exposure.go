@@ -31,9 +31,9 @@ type Exposure struct {
 	RawBuild   bool
 }
 
-// GrantsLine renders the count segments — "/workspace rw · 2 host mounts
-// (+1 disabled) · 1 port · 4 env vars". Zero counts are skipped; "" when
-// nothing applies.
+// GrantsLine renders the count segments — "/workspace rw · self-edit rw ·
+// 2 host mounts (+1 disabled) · 1 port · 4 env vars". Zero counts are
+// skipped; "" when nothing applies.
 func (e Exposure) GrantsLine() string {
 	var parts []string
 	if e.Workspace {

@@ -316,7 +316,9 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 // host-mount count. A worktree's same-path git binds are consciously NOT
 // counted: they're the project's own repo (ADR 0009 — worktrees inherit
 // project identity), status doesn't list them either, and the worktree
-// banner already announces the arrangement.
+// banner already announces the arrangement. Caps and skill run_args are
+// also consciously out of the count's scope (mounts/ports/env/network):
+// status's Skill grants rows carry that attribution.
 func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 	envKeys := map[string]bool{}
 	for k := range rv.cfg.Env {
