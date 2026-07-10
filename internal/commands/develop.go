@@ -142,6 +142,13 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		return err
 	}
 
+	// Every real session opens by showing the walls going up: the terse
+	// exposure lines. The config UI renders the same tally (config.Exposure
+	// owns the words); `byre status` is the detailed, attributed view.
+	exp := exposureOf(rv)
+	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
+	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
+
 	// --self-edit hands the agent authorship of its own next sandbox; open the
 	// session with the warning and snapshot the store so the session can close
 	// by showing exactly what the agent touched (reportSelfEditChanges below).
@@ -289,6 +296,33 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 	fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
 	fmt.Fprintf(w, "  • open a shell in it:  byre shell\n")
 	fmt.Fprintf(w, "  • stop it:             %s stop %s\n", eng, id)
+}
+
+// exposureOf tallies the resolved view for the launch exposure lines. The
+// counts must match what actually happens at run time: disabled mounts
+// produce no bind (runParams skips them), ports come from config only, and
+// env is the baked config env plus skill runtime env. Plumbing env (BYRE_UID,
+// git identity) isn't counted — it's how every box works, not this box's
+// exposure; when named host-env passthrough lands it joins the count, being a
+// real grant. The network claim mirrors status's networkLine honesty rules.
+func exposureOf(rv resolved) config.Exposure {
+	e := config.Exposure{
+		Workspace:  true,
+		Ports:      len(rv.cfg.Ports),
+		Env:        len(rv.cfg.Env) + len(rv.skills.Env()),
+		Egress:     len(resolvedEgress(rv)),
+		RawRunArgs: len(rv.cfg.RunArgs) > 0,
+		RawBuild:   len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
+	}
+	for _, m := range rv.mounts {
+		if m.Disabled {
+			e.DisabledMounts++
+		} else {
+			e.Mounts++
+		}
+	}
+	e.Posture, _ = rv.skills.NetworkPosture()
+	return e
 }
 
 // resolvedEgress is the full normalized allowlist the netns helper enforces:
