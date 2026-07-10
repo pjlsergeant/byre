@@ -59,10 +59,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 - [ ] **Config UI: env secret-masking.** env values render in plaintext in
   the form; mask them (reveal on demand) so a shoulder-surf or screenshot
   doesn't leak tokens.
-- [ ] **Grant summary, two surfaces.** A one-line total-exposure summary
-  (mounts / ports / env / network) in the config UI, and a few terse
-  `byre:` lines printed at launch before exec'ing the agent, so every real
-  session opens by showing the walls going up.
 - [ ] **Host-side test session.** The end-to-end cases that stay manual
   until agent-runnable tests exist; shrinks to whatever that item doesn't
   automate. The unit layer already pins build-time behavior.
