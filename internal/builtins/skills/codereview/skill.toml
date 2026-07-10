@@ -15,6 +15,9 @@
 # and grok authenticate once per box with the device flow (`codex login
 # --device-auth` / `grok login --device-auth`; both CLIs' plain `login` starts
 # a browser-redirect flow that cannot complete in a no-browser sandbox).
+# claude works too (--reviewer claude; it's usually already authenticated as
+# the box's agent) — with the honest caveat that claude reviewing claude's own
+# work is a second pass, not a second opinion; prefer codex/grok when present.
 #
 # Review execution policy (encoded in the script's prompt, checked by its
 # tripwire): the reviewer may run cheap targeted read-only probes to put

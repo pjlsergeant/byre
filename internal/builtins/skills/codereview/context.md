@@ -5,7 +5,7 @@ byre placed this guidance here; it applies to every session in this box.
 ## Run a review after each feature or fix
 
 This box ships `byre-codereview` — an independent reviewer (Codex by default;
-`--reviewer grok` or `BYRE_REVIEWER=grok` when the grok skill is enabled).
+`--reviewer grok|claude` or `BYRE_REVIEWER=...` picks another installed one).
 After completing any feature or fix, run it yourself and act on the findings;
 don't ask permission first.
 
@@ -15,6 +15,10 @@ byre-codereview "auth error handling" # focus the review
 byre-codereview --continue "..."      # re-check after fixes (resumes the session)
 byre-codereview --reviewer grok "..." # second opinion from grok instead
 ```
+
+Prefer a reviewer that ISN'T the model driving this session: same-model review
+is a second pass, not a second opinion. `--reviewer claude` is there for boxes
+where claude is the only CLI.
 
 The loop: run it → read every finding → for each, fix it or note why you're
 leaving it → if you changed anything, re-run with `--continue` → stop only when
