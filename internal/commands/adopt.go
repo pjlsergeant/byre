@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -118,8 +119,13 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	store, serr := os.ReadFile(storePath)
 	if storeExists && serr == nil {
 		lines := diffLines(string(store), string(content))
-		if len(lines) == 0 {
+		// "identical" must be a BYTE claim: diffLines normalizes the final
+		// newline away (same edge reportSelfEditChanges names explicitly), and
+		// adoption still rewrites the store and records a new identity.
+		if bytes.Equal(store, content) {
 			fmt.Fprintf(s.Err, "--- %s: identical to your current config (adopting just records that) ---\n", config.ProjectConfigName)
+		} else if len(lines) == 0 {
+			fmt.Fprintf(s.Err, "--- %s: trailing-newline-only change vs your current config ---\n", config.ProjectConfigName)
 		} else {
 			fmt.Fprintf(s.Err, "--- %s (changes vs your current config; adopting replaces the whole file) ---\n", config.ProjectConfigName)
 			for _, l := range lines {

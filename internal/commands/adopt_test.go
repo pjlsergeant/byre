@@ -157,6 +157,30 @@ func TestAdoptChangedShowsDiffAgainstStore(t *testing.T) {
 	}
 }
 
+// "Identical" is a byte claim: diffLines normalizes the final newline away,
+// so a newline-only change must be named, not presented as identical.
+func TestAdoptDiffNamesTrailingNewlineOnlyChange(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("agent = \"codex\""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proposeConfig(t, proj, "agent = \"codex\"\n")
+
+	s, _, out := testStreams("n\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "identical") {
+		t.Errorf("newline-only change must not claim identical:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "trailing-newline-only") {
+		t.Errorf("newline-only change should be named:\n%s", out.String())
+	}
+}
+
 func TestAdoptNonTTYNeverAdopts(t *testing.T) {
 	p, proj := onboardPaths(t)
 	proposeConfig(t, proj, "agent = \"codex\"\n")
