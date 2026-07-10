@@ -38,7 +38,7 @@ description = "Dev-workflow conventions plus the byre-codereview loop."
 
 [build]
 apt = ["jq"] # codereview.sh parses codex --json output with jq
-files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devloop-lib.sh" = "/usr/local/lib/byre-devloop-lib.sh" }
+files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devlog-lib.sh" = "/usr/local/lib/byre-devlog-lib.sh" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-codereview"]
 
 [runtime]

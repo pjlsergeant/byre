@@ -115,7 +115,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	for _, want := range []string{
 		"devloop /usr/local/bin/byre-codereview",
 		"devloop /etc/byre/firstrun.d/devloop",
-		"devloop /usr/local/lib/byre-devloop-lib.sh", // shared hardening lib both scripts source
+		"devloop /usr/local/lib/byre-devlog-lib.sh", // shared hardening lib both scripts source
 		"codex /etc/byre/firstrun.d/codex-login",
 		"grok /etc/byre/firstrun.d/grok-login",
 		"grok /etc/byre/firstrun.d/grok-bundled",

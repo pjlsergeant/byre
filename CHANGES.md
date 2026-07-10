@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`.devloop/` is now `.byre-devlog/`**: the self-ignoring working-tree dir
+  for the agent diary and review log is named for byre, not for one skill
+  (glossary: "devlog dir"). Existing `.devloop/` dirs are migrated in place
+  the first time a hook or `byre-codereview` touches the dir -- diaries and
+  review logs carry over.
 - **`byre rehome` validates the old id**: a malformed id (anything byre
   couldn't have generated) is refused up front instead of being used as a
   store path component.

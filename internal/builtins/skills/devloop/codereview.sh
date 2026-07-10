@@ -2,7 +2,7 @@
 # byre-codereview — an independent second-opinion review of the current changes.
 # Shipped by the devloop skill; pairs with a reviewer skill that installs the
 # reviewer binary: codex (the default) and/or grok. Reviews the working tree's
-# git changes and prints findings, and appends them to .devloop/reviews.md.
+# git changes and prints findings, and appends them to .byre-devlog/reviews.md.
 #
 #   byre-codereview                        # review current changes (codex)
 #   byre-codereview "focus area"           # focus the review
@@ -75,19 +75,20 @@ if ! command -v "$REVIEWER" >/dev/null 2>&1; then
   exit 127
 fi
 
-# Persisted artifacts live in .devloop/ at the repo root — a self-ignoring dir
-# (its own .gitignore is "*"), so the review log and agent diary persist via the
-# workspace mount but never land in git and need no per-project .gitignore entry.
-# byre_devloop_dir (shared lib, shipped alongside this script) provides the dir,
-# hardened against planted symlinks/nodes.
+# Persisted artifacts live in .byre-devlog/ at the repo root — a self-ignoring
+# dir (its own .gitignore is "*"), so the review log and agent diary persist via
+# the workspace mount but never land in git and need no per-project .gitignore
+# entry. byre_devlog_dir (shared lib, shipped alongside this script) provides
+# the dir — migrating a pre-rename .devloop/ — hardened against planted
+# symlinks/nodes.
 if root=$(git rev-parse --show-toplevel 2>/dev/null); then
   cd "$root"
 else
   root="$PWD"
 fi
-. /usr/local/lib/byre-devloop-lib.sh
-byre_devloop_dir "$root"
-REVIEW_DIR="$root/.devloop"
+. /usr/local/lib/byre-devlog-lib.sh
+byre_devlog_dir "$root"
+REVIEW_DIR="$root/.byre-devlog"
 LOG_FILE="$REVIEW_DIR/reviews.md"
 # Sessions are per-reviewer: resuming a codex thread with grok (or vice versa)
 # is meaningless. The codex file keeps its historical name so a box upgraded
@@ -138,7 +139,7 @@ cleanup() { rm -f "$OUT" "$DBG"; }
 # content diff + untracked-file CONTENT hashes (porcelain alone only lists
 # untracked NAMES, so a content-only edit to an existing untracked file would
 # slip through; ls-files -o is plumbing, so it also sidesteps a
-# status.showUntrackedFiles=no config). Gitignored files (including .devloop/,
+# status.showUntrackedFiles=no config). Gitignored files (including .byre-devlog/,
 # where this script's own log and temp files live) are deliberately outside
 # the snapshot. Empty outside git — the tripwire is inert there, matching the
 # rest of the script's non-repo degradation.
