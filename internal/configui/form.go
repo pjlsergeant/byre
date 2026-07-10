@@ -534,7 +534,10 @@ func clipLines(s string, width int) string {
 
 func (m model) viewForm() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(m.title))
+	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.title))
+	// The one-line total-exposure summary: what the box actually gets across
+	// all layers + skills, in the same words develop prints at launch.
+	fmt.Fprintf(&b, "%s\n\n", dimStyle.Render("exposure: "+m.exposureNow().Line()))
 
 	focusedField := m.field()
 	for _, s := range m.sections {
@@ -675,7 +678,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		}
 		// Egress is declarative: with no posture skill enabled, nothing
 		// enforces it — config must not look armed when it isn't (ADR 0019).
-		if f == fEgress && eff > 0 && !m.postureNow() {
+		if f == fEgress && eff > 0 && m.postureNow() == "" {
 			s += dimStyle.Render("  — unenforced (no firewall skill)")
 		}
 		if focused {

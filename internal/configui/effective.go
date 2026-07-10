@@ -31,13 +31,14 @@ const (
 // field's LOCAL backing slice (the entry or marker this layer owns); -1 for
 // rows this layer doesn't own (inherited, skill).
 type listRow struct {
-	kind   rowKind
-	text   string   // display form of the value
-	ident  string   // removal identity: package, env key, mount target, container port
-	source string   // "default", "template:go", "skill:x"; "" for pure local
-	also   bool     // local entry duplicating an inherited one (union dedups)
-	idx    int      // index into the local slice, or -1
-	vals   []string // inherited raw values, for prefilling an override editor
+	kind     rowKind
+	text     string   // display form of the value
+	ident    string   // removal identity: package, env key, mount target, container port
+	source   string   // "default", "template:go", "skill:x"; "" for pure local
+	also     bool     // local entry duplicating an inherited one (union dedups)
+	disabled bool     // mounts only: present but switched off — no bind
+	idx      int      // index into the local slice, or -1
+	vals     []string // inherited raw values, for prefilling an override editor
 }
 
 // fieldRows builds the effective rows for a list field: inherited entries in
@@ -172,15 +173,15 @@ func (m model) egressRows() []listRow {
 	return rows
 }
 
-// postureNow reports whether any currently-effective skill declares a network
-// posture — i.e. whether anything will actually enforce the egress allowlist.
-func (m model) postureNow() bool {
+// postureNow returns the network posture a currently-effective skill declares
+// ("" = nothing will actually enforce the egress allowlist).
+func (m model) postureNow() string {
 	for _, e := range m.skillEntries() {
-		if e.on() && m.inh.Skills[e.name].Posture != "" {
-			return true
+		if p := m.inh.Skills[e.name].Posture; e.on() && p != "" {
+			return p
 		}
 	}
-	return false
+	return ""
 }
 
 func (m model) aptRows() []listRow {
@@ -284,7 +285,7 @@ func (m model) mountRows() []listRow {
 		case hasKey(markerIdx, t):
 			rows = append(rows, listRow{kind: rowRemoved, text: mountLine(mt), source: src, idx: markerIdx[t]})
 		case hasKey(localIdx, t):
-			rows = append(rows, listRow{kind: rowOverride, text: mountLine(m.mounts[localIdx[t]]), source: src, idx: localIdx[t]})
+			rows = append(rows, listRow{kind: rowOverride, text: mountLine(m.mounts[localIdx[t]]), source: src, disabled: m.mounts[localIdx[t]].Disabled, idx: localIdx[t]})
 		default:
 			mode := mt.Mode
 			if mode == "" {
@@ -293,7 +294,7 @@ func (m model) mountRows() []listRow {
 			if mt.Disabled {
 				mode = "disabled"
 			}
-			rows = append(rows, listRow{kind: rowInherited, text: mountLine(mt), ident: mt.Target, source: src, vals: []string{mt.Host, mt.Target, mode}})
+			rows = append(rows, listRow{kind: rowInherited, text: mountLine(mt), ident: mt.Target, source: src, disabled: mt.Disabled, vals: []string{mt.Host, mt.Target, mode}})
 		}
 	}
 	for i, mt := range m.mounts {
@@ -305,7 +306,7 @@ func (m model) mountRows() []listRow {
 			rows = append(rows, listRow{kind: rowRemoved, text: mountLine(mt), idx: markerIdx[mt.Target]})
 			continue
 		}
-		rows = append(rows, listRow{kind: rowLocal, text: mountLine(mt), idx: i})
+		rows = append(rows, listRow{kind: rowLocal, text: mountLine(mt), disabled: mt.Disabled, idx: i})
 	}
 	for i, mt := range m.mounts {
 		if n, ok := strings.CutPrefix(mt.Target, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
@@ -314,7 +315,7 @@ func (m model) mountRows() []listRow {
 	}
 	for _, sk := range m.effectiveSkills() {
 		for _, mt := range m.inh.Skills[sk].Mounts {
-			rows = append(rows, listRow{kind: rowSkill, text: mountLine(mt), source: "skill:" + sk})
+			rows = append(rows, listRow{kind: rowSkill, text: mountLine(mt), source: "skill:" + sk, disabled: mt.Disabled})
 		}
 	}
 	return rows
@@ -403,6 +404,40 @@ func (m model) effectiveSkills() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// exposureNow tallies the effective GRANTS rows into the shared one-line
+// summary (config.Exposure — the same words develop's launch lines use).
+// Counts are the effective view (all layers + skills), like the per-field
+// summaries, with mounts split by disabled: a disabled mount produces no
+// bind, so it must not count as exposure. Workspace stays false — this
+// editor summarizes config, and the project mount isn't a config row.
+func (m model) exposureNow() config.Exposure {
+	var e config.Exposure
+	for _, r := range m.fieldRows(fMounts) {
+		switch r.kind {
+		case rowLocal, rowOverride, rowInherited, rowSkill:
+			if r.disabled {
+				e.DisabledMounts++
+			} else {
+				e.Mounts++
+			}
+		}
+	}
+	e.Ports, _, _, _ = rowCounts(m.fieldRows(fPorts))
+	e.Env, _, _, _ = rowCounts(m.fieldRows(fEnv))
+	e.Posture = m.postureNow()
+	// The allowlist size only means something under a posture; without one the
+	// line just says "network open" (the per-field summary carries the
+	// unenforced caveat).
+	if e.Posture != "" {
+		e.Egress, _, _, _ = rowCounts(m.fieldRows(fEgress))
+	}
+	lower := m.lowerNow()
+	e.RawRunArgs = len(splitLines(m.textValue(fRunArgs)))+len(lower.RunArgs) > 0
+	e.RawBuild = len(splitLines(m.textValue(fDockerfilePre)))+len(splitLines(m.textValue(fDockerfilePost)))+
+		len(lower.DockerfilePre)+len(lower.DockerfilePost) > 0
+	return e
 }
 
 // rowCounts tallies a field's effective rows for the form summary line.

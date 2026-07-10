@@ -635,3 +635,75 @@ func TestEgressOfferedSuppressionNormalized(t *testing.T) {
 		}
 	}
 }
+
+// The one-line exposure summary tallies the same effective rows the per-field
+// summaries count, and speaks in config.Exposure's shared words — the launch
+// lines and this line must tell the same story.
+func TestExposureNowAndFormLine(t *testing.T) {
+	m := effectiveModel()
+	e := m.exposureNow()
+	// 1 inherited mount (default) + 1 skill mount; 1 inherited port;
+	// GIT_EDITOR inherited + DOCKER_HOST from the skill; no posture skill.
+	if e.Mounts != 2 || e.DisabledMounts != 0 {
+		t.Errorf("mounts = %d (+%d disabled), want 2 (+0)", e.Mounts, e.DisabledMounts)
+	}
+	if e.Ports != 1 || e.Env != 2 {
+		t.Errorf("ports/env = %d/%d, want 1/2", e.Ports, e.Env)
+	}
+	if e.Posture != "" || e.Egress != 0 {
+		t.Errorf("no posture skill enabled, got posture %q egress %d", e.Posture, e.Egress)
+	}
+	if e.RawRunArgs || e.RawBuild {
+		t.Errorf("no raw config in the test bed: %+v", e)
+	}
+	want := "exposure: 2 host mounts · 1 port · 2 env vars · network open"
+	if got := m.viewForm(); !strings.Contains(got, want) {
+		t.Errorf("form missing %q:\n%s", want, got)
+	}
+}
+
+// Disabled mounts split out of the exposure count (no bind), whichever layer
+// they live in; a posture skill flips the network segment to the allowlist.
+func TestExposureNowDisabledMountsAndPosture(t *testing.T) {
+	m := effectiveModel()
+	// Switch the inherited mount off in the default layer, add a local live one.
+	m.inh.Default.Mounts[0].Disabled = true
+	m.mounts = []config.Mount{{Host: "/h/src", Target: "/src", Mode: "rw"}}
+	// Enable a firewall skill declaring the posture and one endpoint.
+	m.inh.Skills["firewall"] = SkillRuntime{Posture: "deny-by-default", Egress: []string{"github.com:443"}}
+	m.skills = append(m.skills, "firewall")
+	m.egress = []string{"example.com"}
+
+	e := m.exposureNow()
+	// Local /src + the docker skill's socket stay live; the default mount is off.
+	if e.Mounts != 2 || e.DisabledMounts != 1 {
+		t.Errorf("mounts = %d (+%d disabled), want 2 (+1)", e.Mounts, e.DisabledMounts)
+	}
+	if e.Posture != "deny-by-default" {
+		t.Errorf("posture = %q, want deny-by-default", e.Posture)
+	}
+	// The skill's endpoint + the user's own egress entry.
+	if e.Egress != 2 {
+		t.Errorf("egress = %d, want 2", e.Egress)
+	}
+	if !strings.Contains(m.viewForm(), "network deny-by-default · egress 2 hosts") {
+		t.Errorf("form missing the posture segment:\n%s", m.viewForm())
+	}
+}
+
+// Raw escape hatches — this layer's or an inherited layer's — degrade the
+// posture claim in the summary, mirroring status's networkLine honesty rule.
+func TestExposureNowRawConfigDegradesPosture(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Skills["firewall"] = SkillRuntime{Posture: "deny-by-default"}
+	m.skills = append(m.skills, "firewall")
+	m.runArgs = "--privileged"
+	m.inh.Default.DockerfilePre = []string{"RUN true"}
+	e := m.exposureNow()
+	if !e.RawRunArgs || !e.RawBuild {
+		t.Errorf("raw flags = %v/%v, want true/true", e.RawRunArgs, e.RawBuild)
+	}
+	if !strings.Contains(e.NetworkLine(), "not guaranteed") {
+		t.Errorf("degraded posture must say so: %q", e.NetworkLine())
+	}
+}
