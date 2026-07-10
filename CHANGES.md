@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`byre-codereview` is its own skill** (behavior change for devloop users):
+  the review script and its loop conventions moved from the devloop skill to
+  a new `codereview` builtin. A box that wants the reviewer now enables
+  `skills = ["codex", "codereview", ...]`; a rebuild with only devloop
+  enabled no longer ships `byre-codereview`. devloop keeps the workflow
+  conventions, the diary, and the scratch volume. The two skills share the
+  devlog dir without depending on each other.
 - **`.devloop/` is now `.byre-devlog/`**: the self-ignoring working-tree dir
   for the agent diary and review log is named for byre, not for one skill
   (glossary: "devlog dir"). Existing `.devloop/` dirs are migrated in place

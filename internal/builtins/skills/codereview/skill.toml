@@ -1,0 +1,41 @@
+# Built-in skill: codereview — the independent second-opinion review loop.
+#
+# Ships `byre-codereview` (on PATH at /usr/local/bin/byre-codereview): a script
+# that has a reviewer CLI review the working tree's current git changes, prints
+# the findings, and appends them to the devlog dir (.byre-devlog/reviews.md).
+# The review-loop conventions ride along as agent context.
+#
+# Pairs with a reviewer skill, which installs the CLI the script drives — this
+# skill carries the loop, not a reviewer:
+#
+#   skills = ["codex", "codereview"]           # codex reviews (the default)
+#   skills = ["codex", "grok", "codereview"]   # both available; --reviewer picks
+#
+# The reviewer is NOT launched as the agent — it's the second opinion. codex
+# and grok authenticate once per box with the device flow (`codex login
+# --device-auth` / `grok login --device-auth`; both CLIs' plain `login` starts
+# a browser-redirect flow that cannot complete in a no-browser sandbox).
+#
+# Review execution policy (encoded in the script's prompt, checked by its
+# tripwire): the reviewer may run cheap targeted read-only probes to put
+# evidence behind a specific finding, but never builds or the test suite (the
+# author owns green), and never anything that mutates the tree — the script
+# re-hashes the working tree after each run and warns if it changed. codex
+# additionally runs under its own OS-level read-only sandbox; grok cannot
+# (its Landlock profiles silently break tool execution inside a container —
+# see the script), so it relies on the edit-tool strip + tripwire + the box
+# boundary.
+#
+# Self-contained: the devlog-dir helper lib is shipped here too (the devloop
+# skill ships an identical copy — pinned by a builtins test — so neither skill
+# needs the other).
+
+description = "byre-codereview — the independent second-opinion review loop."
+
+[build]
+apt = ["jq"] # codereview.sh parses codex --json output with jq
+files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devlog-lib.sh" = "/usr/local/lib/byre-devlog-lib.sh" }
+dockerfile = ["RUN chmod +x /usr/local/bin/byre-codereview"]
+
+[context]
+file = "context.md"

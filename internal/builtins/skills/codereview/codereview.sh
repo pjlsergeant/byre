@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # byre-codereview — an independent second-opinion review of the current changes.
-# Shipped by the devloop skill; pairs with a reviewer skill that installs the
+# Shipped by the codereview skill; pairs with a reviewer skill that installs the
 # reviewer binary: codex (the default) and/or grok. Reviews the working tree's
 # git changes and prints findings, and appends them to .byre-devlog/reviews.md.
 #
@@ -67,7 +67,7 @@ esac
 
 if ! command -v "$REVIEWER" >/dev/null 2>&1; then
   echo "byre-codereview: $REVIEWER not found on PATH." >&2
-  echo "  Add the $REVIEWER skill (skills = [\"$REVIEWER\", \"devloop\"]) and rebuild." >&2
+  echo "  Add the $REVIEWER skill (skills = [\"$REVIEWER\", \"codereview\"]) and rebuild." >&2
   if [ "$REVIEWER" = codex ]; then other=grok; else other=codex; fi
   if command -v "$other" >/dev/null 2>&1; then
     echo "  ($other is available: byre-codereview --reviewer $other)" >&2
