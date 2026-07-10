@@ -104,10 +104,15 @@ just restate the flag table will fail it. To settle in the grilling:
   feature's pitch; it likely earns a place in the README's demo/How-do-I
   section. Marketing lockstep applies: whatever output the README shows must
   be re-verified against the code.
-- **`--install-app` is doc-adjacent**: the generated droplet/Quick
+- **`--install-app` is doc-adjacent**: the generated app/Quick
   Action/.desktop artifact should be readable-generated (like
   `Dockerfile.generated`) and its install path documented; uninstall story
   too.
+- **The `--install-app` artifact needs a glossary name, and two candidates
+  are already burned** (Pete, 2026-07-10): "droplet" is overloaded by
+  DigitalOcean (avoid), and GLOSSARY pins "materialize" to built-in skill
+  copies (grok's F13). The grilling should pick the noun and the verb for
+  this artifact before any user-facing string exists.
 
 ## Consulted externally
 
