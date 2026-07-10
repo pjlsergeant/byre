@@ -18,6 +18,12 @@ import (
 // adopted <project>/byre.config, so a changed proposal re-prompts.
 const adoptedRecord = "adopted"
 
+// declinedRecord is its sibling for the last DECLINED proposal: saying no
+// sticks until the proposal's bytes change, instead of re-asking every
+// develop — a nag would punish the decision the user already made. Any edit
+// re-prompts (new hash); deleting the record file reconsiders now.
+const declinedRecord = "declined"
+
 // proposalHash is the identity of a proposal's bytes — what the adoption
 // record stores and every "has it changed?" check compares.
 func proposalHash(content []byte) string {
@@ -44,6 +50,10 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	recordPath := filepath.Join(paths.Dir, adoptedRecord)
 	if prev, e := os.ReadFile(recordPath); e == nil && strings.TrimSpace(string(prev)) == h {
 		return nil // unchanged since last adoption — already reflected in the store
+	}
+	declinedPath := filepath.Join(paths.Dir, declinedRecord)
+	if prev, e := os.ReadFile(declinedPath); e == nil && strings.TrimSpace(string(prev)) == h {
+		return nil // this exact proposal was reviewed and declined — status still names it
 	}
 
 	// Parse for the grant summary; never adopt something that doesn't parse.
@@ -101,10 +111,36 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	for _, g := range grants {
 		fmt.Fprintf(s.Err, "  ⚠ %s\n", g)
 	}
-	fmt.Fprintf(s.Err, "--- %s ---\n%s\n------\n", config.ProjectConfigName, strings.TrimRight(string(content), "\n"))
+	// With a store config in place, adoption REPLACES it wholesale — so the
+	// review shows the delta against it, including any host-local lines
+	// adoption would delete (they read as removals). A store read failure
+	// falls back to the full body: never hide the payload behind a bad diff.
+	store, serr := os.ReadFile(storePath)
+	if storeExists && serr == nil {
+		lines := diffLines(string(store), string(content))
+		if len(lines) == 0 {
+			fmt.Fprintf(s.Err, "--- %s: identical to your current config (adopting just records that) ---\n", config.ProjectConfigName)
+		} else {
+			fmt.Fprintf(s.Err, "--- %s (changes vs your current config; adopting replaces the whole file) ---\n", config.ProjectConfigName)
+			for _, l := range lines {
+				fmt.Fprintln(s.Err, l)
+			}
+			fmt.Fprintln(s.Err, "------")
+		}
+	} else {
+		fmt.Fprintf(s.Err, "--- %s ---\n%s\n------\n", config.ProjectConfigName, strings.TrimRight(string(content), "\n"))
+	}
 	fmt.Fprint(s.Err, "Adopt this config? byre will build & run with it. [y/N] ")
 	if !confirmed(s.In) {
-		fmt.Fprintln(s.Err, "byre: not adopted; leaving the existing config in place.")
+		// The no sticks (see declinedRecord): record these bytes so develop
+		// stops asking until the proposal changes.
+		if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(declinedPath, []byte(h), 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(s.Err, "byre: not adopted; leaving the existing config in place. This version won't ask again — editing %s re-prompts, or delete %s to reconsider.\n", config.ProjectConfigName, declinedPath)
 		return nil
 	}
 
@@ -117,21 +153,30 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	if err := os.WriteFile(recordPath, []byte(h), 0o644); err != nil {
 		return err
 	}
+	// A stale decline of some earlier version has been superseded by this
+	// adoption; clear it so state stays one-of (adopted wins anyway).
+	_ = os.Remove(declinedPath)
 	fmt.Fprintf(s.Err, "byre: adopted into %s\n", storePath)
 	return nil
 }
 
 // proposalState reports the state of a committed <project>/byre.config relative
-// to the host-side store: "" (none), "adopted" (matches the record), or
-// "pending" (new/changed, awaiting review). Used by status.
+// to the host-side store: "" (none), "adopted" (matches the record),
+// "declined" (matches the decline record), or "pending" (new/changed,
+// awaiting review). Used by status.
 func proposalState(projectDir string, paths project.Paths) string {
 	content, err := os.ReadFile(filepath.Join(projectDir, config.ProjectConfigName))
 	if err != nil {
 		return ""
 	}
+	h := proposalHash(content)
 	rec, _ := os.ReadFile(filepath.Join(paths.Dir, adoptedRecord))
-	if strings.TrimSpace(string(rec)) == proposalHash(content) {
+	if strings.TrimSpace(string(rec)) == h {
 		return "adopted"
+	}
+	dec, _ := os.ReadFile(filepath.Join(paths.Dir, declinedRecord))
+	if strings.TrimSpace(string(dec)) == h {
+		return "declined"
 	}
 	return "pending"
 }

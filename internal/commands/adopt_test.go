@@ -73,12 +73,87 @@ func TestAdoptNoLeavesStoreUntouched(t *testing.T) {
 	p, proj := onboardPaths(t)
 	proposeConfig(t, proj, "agent = \"codex\"\n")
 
-	s, _, _ := testStreams("n\n", true)
+	s, _, out := testStreams("n\n", true)
 	if err := adoptIfProposed(s, proj, p); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
 		t.Errorf("declined proposal must not be written to the store")
+	}
+	// The no sticks: the user is told it won't ask again, and how to change
+	// their mind.
+	if !strings.Contains(out.String(), "won't ask again") {
+		t.Errorf("decline should say it sticks:\n%s", out.String())
+	}
+	if got := proposalState(proj, p); got != "declined" {
+		t.Errorf("proposalState after decline = %q, want declined", got)
+	}
+}
+
+// Saying no sticks until the proposal's bytes change: the same version never
+// re-prompts, an edited one does, and adopting the new version clears the
+// stale decline.
+func TestAdoptDeclineSticksUntilProposalChanges(t *testing.T) {
+	p, proj := onboardPaths(t)
+	proposeConfig(t, proj, "agent = \"codex\"\n")
+	s, _, _ := testStreams("n\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same bytes again: silent, no prompt.
+	s2, _, out2 := testStreams("", true)
+	if err := adoptIfProposed(s2, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if out2.Len() != 0 {
+		t.Errorf("declined proposal must not re-prompt while unchanged: %s", out2.String())
+	}
+
+	// An edit re-prompts; adopting clears the decline record.
+	proposeConfig(t, proj, "agent = \"claude\"\n")
+	s3, _, out3 := testStreams("y\n", true)
+	if err := adoptIfProposed(s3, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out3.String(), "Adopt this config?") {
+		t.Fatalf("changed proposal should prompt again:\n%s", out3.String())
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, declinedRecord)); !os.IsNotExist(err) {
+		t.Errorf("adoption should clear the stale decline record")
+	}
+	if got := proposalState(proj, p); got != "adopted" {
+		t.Errorf("proposalState after re-adopt = %q, want adopted", got)
+	}
+}
+
+// With a store config already in place, the prompt reviews the DELTA: adoption
+// replaces the whole file, so lines only in the store (host-local extras)
+// must read as removals — that's the wholesale-replace footgun made legible.
+func TestAdoptChangedShowsDiffAgainstStore(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Dir, "byre.config"),
+		[]byte("agent = \"codex\"\napt = [\"ripgrep\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proposeConfig(t, proj, "agent = \"claude\"\napt = [\"ripgrep\"]\n")
+
+	s, _, out := testStreams("n\n", true)
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "- agent = \"codex\"") || !strings.Contains(got, "+ agent = \"claude\"") {
+		t.Errorf("prompt should diff proposal against the store config:\n%s", got)
+	}
+	if strings.Contains(got, "\napt = [\"ripgrep\"]") {
+		t.Errorf("unchanged lines shouldn't print in the diff view:\n%s", got)
+	}
+	if !strings.Contains(got, "replaces the whole file") {
+		t.Errorf("diff view should name the wholesale replace:\n%s", got)
 	}
 }
 

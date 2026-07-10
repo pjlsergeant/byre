@@ -78,7 +78,10 @@ agent may edit it freely and nothing changes.
 
 **Adoption**:
 The explicit, host-side, human act of reviewing a proposal's grants and
-copying it into the host-side store. Re-prompts when the proposal changes.
+copying it into the host-side store. Both answers stick: yes and no are
+each remembered for that version of the proposal, and any change to it
+re-prompts. Adopting replaces the store config wholesale (the prompt
+shows the diff).
 _Avoid_: import, sync
 
 **Raw block**:

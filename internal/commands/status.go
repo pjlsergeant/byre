@@ -81,6 +81,8 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		info.Proposal = "repo ships a byre.config — PENDING review (run develop to adopt)"
 	case "adopted":
 		info.Proposal = "running an adopted repo byre.config"
+	case "declined":
+		info.Proposal = "repo ships a byre.config — DECLINED (editing it re-prompts)"
 	}
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
 	// skill, its .claude state volume, skill mounts) are shown, not just the
