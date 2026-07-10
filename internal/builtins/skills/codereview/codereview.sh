@@ -9,8 +9,15 @@
 #   byre-codereview "focus area"           # focus the review
 #   byre-codereview --continue "..."       # re-check after fixes (resumes session)
 #   byre-codereview --reviewer grok "..."  # use grok as the reviewer
+#   byre-codereview --raw "prompt"         # your prompt verbatim, no review prompt
 #
 # BYRE_REVIEWER sets the default reviewer (codex when unset).
+#
+# --raw replaces the built-in review prompt entirely: the arguments become the
+# whole prompt (required). The mechanics stay — reviewer enforcement flags,
+# session resume, the tripwire, the reviews.md log (tagged "raw") — but the
+# execution policy below is only as strong as YOUR prompt, and the truncation
+# marker check is skipped since nothing mandates a "Probes run:" section.
 #
 # Review execution policy (the prompt below enforces it, the tripwire checks
 # it): the reviewer may run cheap, targeted, read-only probes to put evidence
@@ -30,6 +37,8 @@ Usage:
   byre-codereview "focus area"           review current changes, focused on a topic
   byre-codereview --continue "..."       re-check after fixes (resumes prior session)
   byre-codereview --reviewer <name> ...  choose the reviewer: codex (default) | grok | claude
+  byre-codereview --raw "prompt"         send YOUR prompt verbatim (skips the
+                                         built-in review prompt; mechanics stay)
 
 BYRE_REVIEWER sets the default reviewer.
 EOF
@@ -37,6 +46,7 @@ EOF
 
 REVIEWER="${BYRE_REVIEWER:-codex}"
 CONTINUE=false
+RAW=false
 FOCUS=()
 expect_reviewer=false
 for arg in "$@"; do
@@ -48,6 +58,7 @@ for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --continue) CONTINUE=true ;;
+    --raw) RAW=true ;;
     --reviewer) expect_reviewer=true ;;
     --reviewer=*) REVIEWER="${arg#--reviewer=}" ;;
     *) FOCUS+=("$arg") ;;
@@ -55,6 +66,10 @@ for arg in "$@"; do
 done
 if [ "$expect_reviewer" = true ]; then
   echo "byre-codereview: --reviewer needs a value (codex | grok | claude)." >&2
+  exit 2
+fi
+if [ "$RAW" = true ] && [ "${#FOCUS[@]}" -eq 0 ]; then
+  echo "byre-codereview: --raw needs a prompt (the arguments become the whole prompt)." >&2
   exit 2
 fi
 
@@ -102,6 +117,10 @@ case "$REVIEWER" in
   claude) SESSION_FILE="$REVIEW_DIR/.review-session-claude" ;;
 esac
 
+# RUN_NOTE annotates the "Running..." line: raw mode says so instead of echoing
+# the whole prompt back as a "focus".
+if [ "$RAW" = true ]; then RUN_NOTE=" (raw)"; else RUN_NOTE="${FOCUS:+ (focus: ${FOCUS[*]})}"; fi
+
 read -r -d '' PROMPT <<'EOF' || true
 You are PURELY a code-review agent: you review, the author fixes. Do not modify
 anything — not the working tree, not git state, not credentials or other shared
@@ -129,7 +148,11 @@ commands you executed beyond the git reads above ("none" if none). Give the
 full report as your final message.
 EOF
 
-if [ "${#FOCUS[@]}" -gt 0 ]; then
+if [ "$RAW" = true ]; then
+  # --raw: the arguments ARE the prompt. The enforcement flags and tripwire
+  # still apply; the policy the built-in prompt encodes does not.
+  PROMPT="${FOCUS[*]}"
+elif [ "${#FOCUS[@]}" -gt 0 ]; then
   PROMPT="$PROMPT
 
 Pay particular attention to: ${FOCUS[*]}"
@@ -190,8 +213,10 @@ record_review() {
   # Tail-anchored, not body-wide: a review that QUOTES the mandate mid-body
   # (any review of this script would) and then dies must still be flagged —
   # the marker only counts as the trailing section it was mandated to be.
+  # Raw runs skip the check entirely: only the built-in prompt mandates the
+  # section, so its absence marks nothing.
   note=""
-  if ! tail -n 40 "$OUT" 2>/dev/null | grep -qi 'probes run'; then
+  if [ "$RAW" != true ] && ! tail -n 40 "$OUT" 2>/dev/null | grep -qi 'probes run'; then
     note=" — POSSIBLY TRUNCATED: missing the mandated 'Probes run:' section"
     {
       echo ""
@@ -200,7 +225,9 @@ record_review() {
       echo "  APPARENT ABSENCE of findings — accordingly."
     } >&2
   fi
-  { printf '\n## %s (%s)%s\n\n' "$(date -u +%FT%TZ)" "$REVIEWER" "$note"; cat "$OUT"; } >> "$LOG_FILE"
+  raw_tag=""
+  [ "$RAW" = true ] && raw_tag=", raw"
+  { printf '\n## %s (%s%s)%s\n\n' "$(date -u +%FT%TZ)" "$REVIEWER" "$raw_tag" "$note"; cat "$OUT"; } >> "$LOG_FILE"
 }
 
 extract_codex_session() {
@@ -212,7 +239,7 @@ run_fresh_codex() {
   # Starting fresh: drop any prior session up front, so an interrupted run can't
   # leave a stale session that a later --continue would wrongly resume.
   rm -f "$SESSION_FILE"
-  echo "Running code review (codex)${FOCUS:+ (focus: ${FOCUS[*]})} — this may take several minutes..."
+  echo "Running code review (codex)${RUN_NOTE} — this may take several minutes..."
   # --sandbox read-only: OS-level enforcement on top of the prompt — codex can
   # read the repo and exec read-only probes, but writes are blocked, so a
   # prompt-injection in the code under review can't act. A probe that needs to
@@ -309,7 +336,7 @@ grok_startup_error() { head -n1 "$OUT" 2>/dev/null | grep -q "^Couldn.t create s
 
 run_fresh_grok() {
   rm -f "$SESSION_FILE"
-  echo "Running code review (grok)${FOCUS:+ (focus: ${FOCUS[*]})} — this may take several minutes..."
+  echo "Running code review (grok)${RUN_NOTE} — this may take several minutes..."
   # -s pre-assigns the session UUID (grok creates it), so --continue can
   # --resume it later without parsing any output.
   local sid; sid=$(cat /proc/sys/kernel/random/uuid)
@@ -370,7 +397,7 @@ CLAUDE_TOOL_STRIP="Edit,Write,NotebookEdit,TodoWrite,Task"
 
 run_fresh_claude() {
   rm -f "$SESSION_FILE"
-  echo "Running code review (claude)${FOCUS:+ (focus: ${FOCUS[*]})} — this may take several minutes..."
+  echo "Running code review (claude)${RUN_NOTE} — this may take several minutes..."
   local sid; sid=$(cat /proc/sys/kernel/random/uuid)
   if printf '%s' "$PROMPT" | claude -p --session-id "$sid" \
        --allowedTools "Bash" --disallowedTools "$CLAUDE_TOOL_STRIP" \

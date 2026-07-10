@@ -14,6 +14,7 @@ byre-codereview                       # review the current changes
 byre-codereview "auth error handling" # focus the review
 byre-codereview --continue "..."      # re-check after fixes (resumes the session)
 byre-codereview --reviewer grok "..." # second opinion from grok instead
+byre-codereview --raw "prompt"        # your prompt verbatim (no built-in review prompt)
 ```
 
 Prefer a reviewer that ISN'T the model driving this session: same-model review

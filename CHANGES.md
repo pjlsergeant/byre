@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **`byre-codereview --reviewer claude`**: Claude joins codex and grok as a
+  reviewer, driven headless (`claude -p`) with edit tools and subagents
+  stripped and sessions resumable via `--continue`. Caveat, stated in the
+  shipped context too: claude reviewing the claude agent's own work is a
+  second pass, not a second opinion -- prefer a different-model reviewer
+  when one is installed.
+- **`byre-codereview --raw "prompt"`**: sends your prompt verbatim instead
+  of the built-in review prompt. Enforcement flags, session resume, the
+  tripwire, and the review log (tagged "raw") all still apply; the review
+  policy is whatever your prompt says.
 - **`byre-codereview` is its own skill** (behavior change for devloop users):
   the review script and its loop conventions moved from the devloop skill to
   a new `codereview` builtin. A box that wants the reviewer now enables
