@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -128,20 +129,66 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 				}
 			}
 		}
+		// The store contents die INSIDE the critical section (only once the
+		// engine state is fully gone, so a partial failure stays recoverable)
+		// — a develop queued on this lock must never interleave its own store
+		// writes with the deletion. Only the dir + lock file survive to the
+		// post-release step below.
+		if len(failed) == 0 {
+			if cerr := clearStoreContents(paths.Dir); cerr != nil {
+				return fmt.Errorf("removing store contents: %w", cerr)
+			}
+		}
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	// Only remove the host-side project dir once the engine state is fully gone,
-	// so a partial failure stays recoverable.
 	if len(failed) > 0 {
 		fmt.Fprintln(s.Err, "byre: engine state not fully removed; leaving the project dir in place.")
 		return fmt.Errorf("forget incomplete: %d item(s) not removed (%v)", len(failed), failed)
 	}
-	if rerr := os.RemoveAll(paths.Dir); rerr != nil {
-		return fmt.Errorf("removing %s: %w", paths.Dir, rerr)
+	if rerr := removeEmptiedStore(paths.Dir); rerr != nil {
+		return rerr
 	}
 	fmt.Fprintf(s.Err, "byre: forgot %s\n", paths.ID)
+	return nil
+}
+
+// clearStoreContents deletes everything in a project store dir EXCEPT the
+// lock file — which must survive the critical section it serializes (the
+// caller holds it). Running this under the setup lock is the point: a
+// develop queued on that lock can't interleave its own store writes with the
+// deletion.
+func clearStoreContents(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() == "lock" {
+			continue
+		}
+		if rerr := os.RemoveAll(filepath.Join(dir, e.Name())); rerr != nil {
+			return rerr
+		}
+	}
+	return nil
+}
+
+// removeEmptiedStore removes the lock file and then the store dir itself —
+// NON-recursively — after the lock is released. The contents died under the
+// lock (clearStoreContents); if a concurrent byre repopulated the dir in the
+// post-release window, the final remove fails and the fresh state survives:
+// deleting a dir whose lock we no longer hold must never take new content
+// with it.
+func removeEmptiedStore(dir string) error {
+	_ = os.Remove(filepath.Join(dir, "lock"))
+	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing %s: %w (recreated by a concurrent byre? its contents were already deleted)", dir, err)
+	}
 	return nil
 }

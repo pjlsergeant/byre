@@ -85,11 +85,37 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 		}
 
 		// Volumes are engine-local (there is no cross-engine copy vehicle), so
-		// each engine's old volumes migrate within that engine.
-		migratedAny := false
+		// each engine's old volumes migrate within that engine — but planned,
+		// copied, and retired as ONE transaction across engines: every
+		// engine's plan is conflict-checked before any copy, every copy lands
+		// before any source is removed, and a copy failure rolls back every
+		// destination created (on any engine) with the sources intact. Without
+		// that, a podman-side conflict would surface only after docker's
+		// sources were already gone.
+		var plans []enginePlan
 		for _, r := range engines {
-			if err := rehomeVolumes(s, paths, oldID, r, uid, gid, multi, &migratedAny); err != nil {
+			pl, err := planRehomeVolumes(paths, oldID, r, uid, gid, multi)
+			if err != nil {
 				return err
+			}
+			if len(pl.pairs) > 0 {
+				plans = append(plans, pl)
+			}
+		}
+		for i := range plans {
+			if err := copyRehomeVolumes(s, &plans[i], uid, gid, multi); err != nil {
+				for _, done := range plans[:i+1] {
+					rollback(done.r, done.created)
+				}
+				return err
+			}
+		}
+		migratedAny := len(plans) > 0
+		for _, pl := range plans {
+			for _, p := range pl.pairs {
+				if err := pl.r.VolumeRemove(p.src); err != nil {
+					fmt.Fprintf(s.Err, "byre: warning: copied but could not remove old volume %s%s: %v\n", p.src, engineSuffix(multi, pl.r), err)
+				}
 			}
 		}
 
@@ -123,7 +149,16 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 			}
 		}
 
-		removeOldStore = storeSafe
+		// The old store's contents die INSIDE the critical section (a develop
+		// on the old id queued on its lock must never interleave with the
+		// deletion); only the dir + lock file survive to the post-release
+		// removal below.
+		if storeSafe {
+			if cerr := clearStoreContents(oldDir); cerr != nil {
+				return fmt.Errorf("removing the old store contents: %w", cerr)
+			}
+			removeOldStore = true
+		}
 		fmt.Fprintf(s.Err, "byre: rehomed %s -> %s. Run `byre develop` to rebuild the image.\n", oldID, newID)
 		return nil
 	}); err != nil {
@@ -131,8 +166,8 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 	}
 
 	if removeOldStore {
-		if rerr := os.RemoveAll(oldDir); rerr != nil {
-			fmt.Fprintf(s.Err, "byre: warning: could not remove the old store %s: %v — it will keep appearing as a rehome candidate until deleted.\n", oldDir, rerr)
+		if rerr := removeEmptiedStore(oldDir); rerr != nil {
+			fmt.Fprintf(s.Err, "byre: warning: %v — the old id will keep appearing as a rehome candidate until deleted.\n", rerr)
 		}
 	}
 	return nil
@@ -183,64 +218,66 @@ func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bo
 	return found, safe, nil
 }
 
-// rehomeVolumes migrates one engine's old-id volumes onto the new id:
-// conflict-check every destination, copy-then-remove each volume (Docker has
-// no rename), roll back created destinations on failure. Sets *migrated when
-// this engine had anything to move.
-func rehomeVolumes(s Streams, paths project.Paths, oldID string, r engineRunner, uid, gid int, multi bool, migrated *bool) error {
+// enginePlan is one engine's slice of the rehome transaction: the volume
+// copies to run (already conflict-checked), the image to run them with, and
+// the destinations created so far — the cross-engine rollback list.
+type enginePlan struct {
+	r       engineRunner
+	image   string
+	pairs   []volPair
+	created []string
+}
+
+type volPair struct{ src, dst string }
+
+// planRehomeVolumes validates one engine's migration without mutating
+// anything: lists the old id's volumes, picks the copy image, and
+// conflict-checks every destination. An empty pairs list means this engine
+// holds nothing to move.
+func planRehomeVolumes(paths project.Paths, oldID string, r engineRunner, uid, gid int, multi bool) (enginePlan, error) {
 	newID := paths.ID
 	oldPrefix := "byre-" + oldID + "-"
+	pl := enginePlan{r: r}
 	oldVols, err := projectVolumes(r, paths.Home, oldID)
 	if err != nil {
-		return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+		return pl, fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
 	}
 	if len(oldVols) == 0 {
-		return nil
+		return pl, nil
 	}
-	*migrated = true
-
-	// An image is needed to run the copy; prefer the old one, else the new one.
-	image, err := pickCopyImage(r, oldID, newID, uid, gid)
+	// An image is needed to run the copies; prefer the old one, else the new one.
+	pl.image, err = pickCopyImage(r, oldID, newID, uid, gid)
 	if err != nil {
-		return err
+		return pl, err
 	}
-
-	// Pre-check all destinations for conflicts before mutating anything.
-	type pair struct{ src, dst string }
-	var plan []pair
 	for _, src := range oldVols {
 		dst := "byre-" + newID + "-" + strings.TrimPrefix(src, oldPrefix)
 		exists, err := r.VolumeExists(dst)
 		if err != nil {
-			return err
+			return pl, err
 		}
 		if exists {
-			return fmt.Errorf("destination volume %s already exists%s; resolve the conflict (e.g. byre reset) before rehome", dst, engineSuffix(multi, r))
+			return pl, fmt.Errorf("destination volume %s already exists%s; resolve the conflict (e.g. byre reset) before rehome", dst, engineSuffix(multi, r))
 		}
-		plan = append(plan, pair{src, dst})
+		pl.pairs = append(pl.pairs, volPair{src, dst})
 	}
+	return pl, nil
+}
 
-	// Copy each old volume into a fresh destination. On any failure, roll back
-	// the destinations created so far and leave the originals intact.
-	var created []string
-	for _, p := range plan {
-		if err := r.VolumeCreate(p.dst); err != nil {
-			rollback(r, created)
+// copyRehomeVolumes executes one engine's copies, recording every created
+// destination into the plan so the caller can roll back ACROSS engines on
+// failure. It never removes a source — retirement happens only after every
+// engine's copies landed.
+func copyRehomeVolumes(s Streams, pl *enginePlan, uid, gid int, multi bool) error {
+	for _, p := range pl.pairs {
+		if err := pl.r.VolumeCreate(p.dst); err != nil {
 			return fmt.Errorf("creating %s: %w", p.dst, err)
 		}
-		created = append(created, p.dst)
-		if err := r.MigrateVolume(p.src, p.dst, image, uid, gid); err != nil {
-			rollback(r, created)
+		pl.created = append(pl.created, p.dst)
+		if err := pl.r.MigrateVolume(p.src, p.dst, pl.image, uid, gid); err != nil {
 			return fmt.Errorf("copying %s -> %s: %w", p.src, p.dst, err)
 		}
-		fmt.Fprintf(s.Err, "byre: migrated %s -> %s%s\n", p.src, p.dst, engineSuffix(multi, r))
-	}
-
-	// All copies succeeded — now remove the originals.
-	for _, p := range plan {
-		if err := r.VolumeRemove(p.src); err != nil {
-			fmt.Fprintf(s.Err, "byre: warning: copied but could not remove old volume %s: %v\n", p.src, err)
-		}
+		fmt.Fprintf(s.Err, "byre: migrated %s -> %s%s\n", p.src, p.dst, engineSuffix(multi, pl.r))
 	}
 	return nil
 }

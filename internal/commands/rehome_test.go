@@ -85,6 +85,58 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 	}
 }
 
+// The rehome transaction spans engines: a conflict on the SECOND engine must
+// surface before the first engine mutated anything — no source may be removed
+// until every engine's copies landed.
+func TestRehomeSecondEngineConflictLeavesFirstUntouched(t *testing.T) {
+	p, _ := testPaths(t)
+	docker := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	podman := &fakeRunner{
+		engine: "podman",
+		vols:   map[string]bool{"byre-oldid-cache": true, "byre-" + p.ID + "-cache": true}, // dst conflict
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(docker, podman), 1000, 1000); err == nil {
+		t.Fatal("expected the podman-side destination conflict to fail the rehome")
+	}
+	if len(docker.created) != 0 || len(docker.migrated) != 0 || len(docker.removed) != 0 {
+		t.Fatalf("docker must be untouched when podman's plan conflicts: created=%v migrated=%v removed=%v",
+			docker.created, docker.migrated, docker.removed)
+	}
+}
+
+// A copy failure on the second engine rolls back the FIRST engine's created
+// destinations too, with every source left intact.
+func TestRehomeCrossEngineRollbackOnCopyFailure(t *testing.T) {
+	p, _ := testPaths(t)
+	docker := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	podman := &fakeRunner{
+		engine:      "podman",
+		vols:        map[string]bool{"byre-oldid-cache": true},
+		images:      map[string]bool{imageTag("oldid", 1000, 1000): true},
+		failMigrate: "byre-" + p.ID + "-cache",
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(docker, podman), 1000, 1000); err == nil {
+		t.Fatal("expected the podman copy failure to fail the rehome")
+	}
+	// Docker's copy succeeded before podman failed — its destination must be
+	// rolled back and its source kept.
+	if !slices.Contains(docker.removed, "byre-"+p.ID+"-.claude") {
+		t.Errorf("docker's created destination must be rolled back: removed=%v", docker.removed)
+	}
+	if slices.Contains(docker.removed, "byre-oldid-.claude") || slices.Contains(podman.removed, "byre-oldid-cache") {
+		t.Errorf("no source may be removed on failure: docker=%v podman=%v", docker.removed, podman.removed)
+	}
+}
+
 // mkOldStore populates the old id's store dir the way a real project leaves
 // it: a path record pointing at the (now gone) old location, plus any files.
 func mkOldStore(t *testing.T, home, oldID string, files map[string]string) string {
