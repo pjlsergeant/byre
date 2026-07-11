@@ -426,9 +426,10 @@ which re-resolves automatically once git's own pointers are repaired).
 
 Every command is either *lifecycle* (`develop`, `worktree`, `reset`,
 `rebuild`, `rehome`, `forget`) or *inspection* (`status`, `dockerfile`,
-`shell`, `config`). **No command mutates config behind your back** --
-config is edited by you (in files, or explicitly in the `byre config`
-editor); `develop` and friends only read it and act.
+`shell`, `config`) -- plus one *transfer* verb, `deliver` (below).
+**No command mutates config behind your back** -- config is edited by
+you (in files, or explicitly in the `byre config` editor); `develop`
+and friends only read it and act.
 
 ```
 byre develop      Set up if needed (generate, build-on-cache-miss) and run the
@@ -475,7 +476,43 @@ byre forget       Remove all of byre's host-side state for this directory --
                   project tree.
 
 byre skill update Re-materialize built-in skills into ~/.byre/skills/.
+
+byre deliver      Stream files (or the clipboard, or stdin) from the host into
+                  a running box's /inbox. User docs: docs/deliver.md.
 ```
+
+### Deliver
+
+`byre deliver` is the one **machine-scoped** verb: instead of deriving a
+project from cwd, it discovers running boxes across every installed
+engine (`ps` filtered on the `byre.project` label; each hit keeps engine
+affinity for the later exec) and resolves a target through a cascade —
+`--box` (unique prefix), cwd match walking ancestor directories against
+the `byre.workdir` label, sole owned session (disabled when an engine
+query failed: a partial pool can't prove "exactly one"), interactive
+picker (Bubble Tea on a TTY, osascript/zenity/kdialog on a graphical
+launch), else an error listing the candidates. Discovery filters to
+boxes whose `BYRE_UID` matches the caller — an accident filter, not
+confinement (`--skip-uid-check` reveals and permits the rest).
+
+Transport is an `exec -i` per file, as the container's own
+`BYRE_UID:BYRE_GID` (the `byre shell` attach model), running a POSIX-sh
+script that streams stdin to a dotfile temp under `set -C` (noclobber)
+and claims the final name with `ln` — link(2) fails EEXIST atomically,
+so collisions uniquify (`report-2.pdf`) with no overwrite window, and a
+died stream leaves no half-file under a real name. Directories claim
+their top-level name with an atomic `mkdir` and stream the tree
+per-file. `/inbox` itself is baked by the chassis: dev-owned under
+root-owned `/`, so the boxed agent can't replace it with a symlink.
+
+Host capabilities are probed per axis and degrade independently: the
+landed paths always print to stdout (the machine contract, one per
+line) and best-effort ride the host clipboard back (pbcopy / wl-copy /
+xclip, or OSC 52 through SSH); the no-arg clipboard import waits for a
+paste gesture on a TTY and reads the system pasteboard directly (file
+references → image → text). Every degraded nicety states itself on
+stderr. Mechanics in `internal/deliver`; decisions in ADR 0021; user
+behavior (and the what-works-where matrix) in `docs/deliver.md`.
 
 ## Platform note
 
