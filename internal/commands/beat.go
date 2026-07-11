@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync/atomic"
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
@@ -193,32 +194,29 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	canRead := reader != nil
 	var stopSampler chan struct{}
 	var samplerDone chan struct{}
+	var stopLive func()
 	if canRead {
 		// The LIVE prompt: redraw in place as the clipboard changes. Types
 		// only, ~1.2s cadence (one cheap listTypes subprocess per tick,
 		// only while the beat waits), redraw only on change (no flicker).
-		draw := func(line string) { fmt.Fprint(s.Err, "\r\x1b[2K"+line) }
+		// Reads run SEQUENTIALLY in the sampler goroutine: a hung clipboard
+		// tool (unresponsive pasteboard owner) blocks further ticks instead
+		// of accumulating hung subprocesses — at most one is ever
+		// outstanding (review finding). Cleanup joins with a BOUNDED wait so
+		// that one hang can't hold the terminal raw, and the stopped flag is
+		// checked before every draw so a late responder never scribbles on a
+		// restored terminal.
+		var stopped atomic.Bool
+		draw := func(line string) {
+			if !stopped.Load() {
+				fmt.Fprint(s.Err, "\r\x1b[2K"+line)
+			}
+		}
 		var last string
 		sample := func() {
-			// Bounded: a hung clipboard tool (unresponsive pasteboard owner)
-			// must skip a tick, never block — the beat's cleanup JOINS this
-			// sampler while the terminal is still raw, so an unbounded read
-			// here would wedge the whole session un-restored (review
-			// finding). The buffered channel lets a late responder die
-			// quietly instead of leaking a block.
-			ch := make(chan []string, 1)
-			go func() {
-				types, err := reader.listTypes()
-				if err != nil {
-					types = nil
-				}
-				ch <- types
-			}()
-			var types []string
-			select {
-			case types = <-ch:
-			case <-time.After(3 * time.Second):
-				return
+			types, err := reader.listTypes()
+			if err != nil {
+				types = nil
 			}
 			if line := beatPrompt(types); line != last {
 				last = line
@@ -241,14 +239,21 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 				}
 			}
 		}()
+		stopLive = func() {
+			stopped.Store(true)
+			close(stopSampler)
+			select { // bounded: one hung read must not wedge the exit
+			case <-samplerDone:
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
 	} else {
 		fmt.Fprintln(s.Err, "byre: no clipboard access here — paste text to deliver it (text only; ctrl-d to finish, ctrl-c to cancel)")
 	}
 	state, err := xterm.MakeRaw(f.Fd())
 	if err != nil {
-		if stopSampler != nil {
-			close(stopSampler)
-			<-samplerDone
+		if stopLive != nil {
+			stopLive()
 			fmt.Fprint(s.Err, "\r\x1b[2K") // don't leave the live line dangling
 		}
 		return beatCancelled, nil, fmt.Errorf("raw terminal mode: %w", err)
@@ -260,9 +265,8 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	// (it's the terminal device); human prompts stay on s.Err.
 	fmt.Fprint(f, "\x1b[?2004h") // bracketed paste on
 	defer func() {
-		if stopSampler != nil {
-			close(stopSampler)
-			<-samplerDone
+		if stopLive != nil {
+			stopLive()
 			fmt.Fprint(s.Err, "\r\x1b[2K") // erase the live prompt line
 		}
 		fmt.Fprint(f, "\x1b[?2004l")
