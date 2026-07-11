@@ -37,19 +37,42 @@ func TryAcquire(path string) (l *Lock, ok bool, err error) {
 }
 
 func acquire(path string, nonblock bool) (*Lock, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	how := syscall.LOCK_EX
-	if nonblock {
-		how |= syscall.LOCK_NB
-	}
-	if err := syscall.Flock(int(f.Fd()), how); err != nil {
+	for {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		how := syscall.LOCK_EX
+		if nonblock {
+			how |= syscall.LOCK_NB
+		}
+		if err := syscall.Flock(int(f.Fd()), how); err != nil {
+			f.Close()
+			return nil, err
+		}
+		// The lock file can be legitimately deleted while we were queued on
+		// it: forget/rehome clear a project store, lock file included. Flock
+		// is per-INODE, so a waiter that then wins the unlinked inode holds a
+		// lock no later arrival can see (they open — and recreate — the path,
+		// locking a fresh inode): a split lock. Only return held if the path
+		// still names the inode we locked; otherwise requeue against the live
+		// file. If the whole store dir is gone the reopen fails ENOENT and
+		// the caller hears it loudly — operating on a deleted store must not
+		// proceed silently.
+		locked, serr := f.Stat()
+		if serr != nil {
+			f.Close()
+			return nil, serr
+		}
+		current, serr := os.Stat(path)
+		if serr == nil && os.SameFile(locked, current) {
+			return &Lock{f: f}, nil
+		}
 		f.Close()
-		return nil, err
+		if serr != nil && !os.IsNotExist(serr) {
+			return nil, serr
+		}
 	}
-	return &Lock{f: f}, nil
 }
 
 // Release drops the lock.

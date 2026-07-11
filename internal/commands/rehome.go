@@ -111,24 +111,32 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 			}
 		}
 		migratedAny := len(plans) > 0
+
+		// The stored config follows the identity: a store-only (adopted or
+		// hand-written) byre.config would otherwise be silently orphaned and
+		// the new id re-onboarded from scratch. Runs BEFORE any source is
+		// retired: everything that can FAIL must fail while the old volumes
+		// (and the rollback below) still make a clean re-run possible — from
+		// the retirement steps on, problems are warned, never fatal.
+		storeFound, storeSafe, serr := migrateStore(s, paths, oldDir)
+		if serr != nil {
+			for _, pl := range plans {
+				rollback(pl.r, pl.created)
+			}
+			return serr
+		}
+		if !migratedAny && !storeFound {
+			fmt.Fprintf(s.Err, "byre: nothing found for old id %s (no volumes, no stored config); nothing to migrate\n", oldID)
+			return nil
+		}
+
+		// Every copy landed and the store followed — retire the sources.
 		for _, pl := range plans {
 			for _, p := range pl.pairs {
 				if err := pl.r.VolumeRemove(p.src); err != nil {
 					fmt.Fprintf(s.Err, "byre: warning: copied but could not remove old volume %s%s: %v\n", p.src, engineSuffix(multi, pl.r), err)
 				}
 			}
-		}
-
-		// The stored config follows the identity: a store-only (adopted or
-		// hand-written) byre.config would otherwise be silently orphaned and
-		// the new id re-onboarded from scratch.
-		storeFound, storeSafe, serr := migrateStore(s, paths, oldDir)
-		if serr != nil {
-			return serr
-		}
-		if !migratedAny && !storeFound {
-			fmt.Fprintf(s.Err, "byre: nothing found for old id %s (no volumes, no stored config); nothing to migrate\n", oldID)
-			return nil
 		}
 
 		// The old id's image is permanently orphaned by the move (the new id
