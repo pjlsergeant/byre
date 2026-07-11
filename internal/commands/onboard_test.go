@@ -3,9 +3,11 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -92,5 +94,97 @@ func TestOnboardPartialFlagWritesConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `agent = "codex"`) {
 		t.Fatalf("the --agent flag must be honored: %s", b)
+	}
+}
+
+// Full picker on a TTY: declining the shared-auth offer is recorded in
+// default.config (shared_auth_declined), and a later project's onboarding
+// must not re-ask — the offer happens at most once per agent.
+func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Template: none, Agent: claude, save-as-default: n, shared auth: n.
+	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), "Use shared auth for claude?") {
+		t.Fatalf("expected the shared-auth offer:\n%s", errBuf.String())
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SharedAuthDeclined) != 1 || cfg.SharedAuthDeclined[0] != "claude" {
+		t.Fatalf("shared_auth_declined = %v", cfg.SharedAuthDeclined)
+	}
+
+	// A second project, same home: the offer must not reappear — the input
+	// carries NO answer for it, so re-asking would hit EOF and error.
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	s2, _, errBuf2 := testStreams("\nclaude\nn\n", true)
+	if err := onboardIfNeeded(s2, proj2, p2, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf2.String(), "shared auth") {
+		t.Fatalf("declined offer must not be re-asked:\n%s", errBuf2.String())
+	}
+}
+
+// Accepting the offer enables the companion skill machine-wide: it lands in
+// default.config's skills list — the same representation as a hand-enabled
+// companion, so there is no second source of truth.
+func TestOnboardSharedAuthAcceptEnablesCompanion(t *testing.T) {
+	p, proj := onboardPaths(t)
+	s, _, errBuf := testStreams("\nclaude\nn\ny\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cfg.Skills, "claude-shared-auth") {
+		t.Fatalf("accepting must enable the companion in default.config, skills = %v", cfg.Skills)
+	}
+	if !strings.Contains(errBuf.String(), "every project on this machine") {
+		t.Fatalf("the confirmation must state the machine-wide scope:\n%s", errBuf.String())
+	}
+}
+
+// The flag path prompts too: --agent fixes the agent, the template is asked on
+// a TTY, and the shared-auth offer follows.
+func TestOnboardFlagPathOffersSharedAuth(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Template: none (Enter), shared auth: y.
+	s, _, _ := testStreams("\ny\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cfg.Skills, "claude-shared-auth") {
+		t.Fatalf("skills = %v", cfg.Skills)
+	}
+}
+
+// An agent with no READY companion (grok's is broken and declares no
+// shared_auth_for) gets no offer.
+func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
+	p, proj := onboardPaths(t)
+	s, _, errBuf := testStreams("\ngrok\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "shared auth") {
+		t.Fatalf("no ready companion — no offer:\n%s", errBuf.String())
 	}
 }

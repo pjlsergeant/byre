@@ -39,7 +39,7 @@ type Favourite struct {
 // options (a "none" choice is always offered); tmplFav/agentFav are the user's
 // favourites — Effective pre-selected so an empty answer accepts it.
 func Pick(out io.Writer, in io.Reader, templates, agents []string, tmplFav, agentFav Favourite) (Choice, error) {
-	r := bufio.NewReader(in)
+	r := reader(in)
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
 	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(tmplFav.Effective))
@@ -75,11 +75,32 @@ func Pick(out io.Writer, in io.Reader, templates, agents []string, tmplFav, agen
 // option and pre-selecting def (the favourite). Returns "" for none. Used when a
 // --template/--agent flag fixes one axis and the other still needs choosing.
 func AskAxis(out io.Writer, in io.Reader, label string, options []string, def string) (string, error) {
-	v, err := ask(out, bufio.NewReader(in), label, withNone(options), orNone(def))
+	v, err := ask(out, reader(in), label, withNone(options), orNone(def))
 	if err != nil {
 		return "", err
 	}
 	return fromNone(v), nil
+}
+
+// OfferSharedAuth asks the one-time shared-auth question (ADR 0023) for the
+// chosen agent: whether to enable its companion skill machine-wide. The
+// wording carries the scope — the answer lands in default.config, not the
+// project — and defaults to No, like every other yes/no here.
+func OfferSharedAuth(out io.Writer, in io.Reader, agent, companion string) (bool, error) {
+	fmt.Fprintf(out, "%s supports shared auth: one login for every byre project on this machine (skill %q).\n", agent, companion)
+	return askYesNo(out, reader(in), fmt.Sprintf("Use shared auth for %s?", agent))
+}
+
+// reader adapts in for prompting, reusing an existing *bufio.Reader rather
+// than re-wrapping it: a second bufio over the same source would lose
+// whatever the first buffered ahead. Callers asking more than one question
+// across these functions (commands.onboardIfNeeded) pass one shared
+// *bufio.Reader for exactly that reason.
+func reader(in io.Reader) *bufio.Reader {
+	if r, ok := in.(*bufio.Reader); ok {
+		return r
+	}
+	return bufio.NewReader(in)
 }
 
 // ask prompts for one choice among options, pre-selecting def. An empty answer
