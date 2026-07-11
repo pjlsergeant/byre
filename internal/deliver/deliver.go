@@ -47,6 +47,7 @@ type Session struct {
 type Options struct {
 	Box          string // explicit target: id or project prefix (cascade step 0)
 	SkipUIDCheck bool   // include (and permit) boxes owned by other uids
+	NoClip       bool   // skip the clipboard round-trip's return leg
 }
 
 // Config is the host-side wiring deliver needs but must not derive itself.
@@ -60,8 +61,9 @@ type Config struct {
 	// carry — used by the cascade's ancestor walk. Errors mean "no id for
 	// this level", not failure.
 	WorkdirIDOf func(dir string) (string, error)
-	Out         io.Writer // the contract: delivered in-box paths, one per line
-	Err         io.Writer // byre's voice: target line, notes, degrade claims
+	Out         io.Writer  // the contract: delivered in-box paths, one per line
+	Err         io.Writer  // byre's voice: target line, notes, degrade claims
+	Clip        *Clipboard // host clipboard write path; nil = unavailable
 }
 
 // Run delivers each source path into the selected box and returns the landed
@@ -90,6 +92,7 @@ func Run(cfg Config, opts Options, paths []string) ([]string, error) {
 			failed++
 		}
 	}
+	shipClipboard(cfg, opts, landed)
 	if failed > 0 {
 		return landed, fmt.Errorf("%d of %d deliveries failed", failed, len(paths))
 	}

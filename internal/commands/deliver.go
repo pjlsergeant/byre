@@ -14,10 +14,10 @@ import (
 // side in: installed engines, the label vocabulary, workdir ids for the
 // cascade's ancestor walk, and the caller's identity.
 func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error {
-	return deliverWith(s, dir, opts, paths, installedEngines(), os.Getuid())
+	return deliverWith(s, dir, opts, paths, installedEngines(), os.Getuid(), hostClipboardWriter())
 }
 
-func deliverWith(s Streams, dir string, opts deliver.Options, paths []string, engines []sessionRunner, uid int) error {
+func deliverWith(s Streams, dir string, opts deliver.Options, paths []string, engines []sessionRunner, uid int, clip *deliver.Clipboard) error {
 	cfg := deliver.Config{
 		ProjectLabel: labelKey,
 		WorkdirLabel: workdirKey,
@@ -30,8 +30,9 @@ func deliverWith(s Streams, dir string, opts deliver.Options, paths []string, en
 			}
 			return p.WorktreeID, nil
 		},
-		Out: s.Out,
-		Err: s.Err,
+		Out:  s.Out,
+		Err:  s.Err,
+		Clip: clip,
 	}
 	for _, r := range engines {
 		cfg.Engines = append(cfg.Engines, engineAdapter{r})

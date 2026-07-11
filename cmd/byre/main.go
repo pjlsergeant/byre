@@ -229,8 +229,14 @@ prefix); otherwise a box whose workdir contains the current directory wins;
 otherwise the only running box owned by you; otherwise the candidates are
 listed. Boxes started by other users are hidden unless --skip-uid-check.
 
+After a delivery the landed paths also go to your clipboard (pbcopy /
+wl-copy / xclip, or OSC 52 through SSH), ready to paste; --no-clip skips
+that, and when no clipboard path exists byre says so — the printed path is
+always the contract.
+
   --box <id>        deliver to this box (unique id or project prefix)
-  --skip-uid-check  include (and permit) boxes owned by other users`,
+  --skip-uid-check  include (and permit) boxes owned by other users
+  --no-clip         don't copy the landed paths to the clipboard`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
 			var opts deliver.Options
 			var paths []string
@@ -246,6 +252,8 @@ listed. Boxes started by other users are hidden unless --skip-uid-check.
 					opts.Box = strings.TrimPrefix(rest[i], "--box=")
 				case rest[i] == "--skip-uid-check":
 					opts.SkipUIDCheck = true
+				case rest[i] == "--no-clip":
+					opts.NoClip = true
 				case rest[i] == "-":
 					return usageError("byre deliver: stdin mode ('-') lands with the clipboard step of this feature")
 				case strings.HasPrefix(rest[i], "-"):
