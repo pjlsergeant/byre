@@ -20,9 +20,14 @@ import (
 func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error {
 	sources, err := deliverSources(s, opts, paths, hostClipboardReader())
 	if err != nil || sources == nil { // nil sources = beat cancelled, cleanly
+		deliverNotify(s, nil, err)
 		return err
 	}
-	return deliverWith(s, dir, opts, sources, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s))
+	landed, err := deliverWith(s, dir, opts, sources, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s))
+	// Graphical launches (the deliver app, a .desktop entry) have no terminal
+	// to read: the outcome ALSO goes to the notification center (D19).
+	deliverNotify(s, landed, err)
+	return err
 }
 
 // deliverSources resolves the input mode (decisions D17-D19): path args →
@@ -182,7 +187,7 @@ var stdinIsPiped = func() bool {
 	return st.Mode()&os.ModeCharDevice == 0
 }
 
-func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.Source, engines []sessionRunner, uid int, clip *deliver.Clipboard, pick func([]deliver.Session) (deliver.Session, bool, error)) error {
+func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.Source, engines []sessionRunner, uid int, clip *deliver.Clipboard, pick func([]deliver.Session) (deliver.Session, bool, error)) ([]string, error) {
 	cfg := deliver.Config{
 		ProjectLabel: labelKey,
 		WorkdirLabel: workdirKey,
@@ -207,12 +212,12 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 		warnRootlessPodman(s.Err, r)
 		cfg.Engines = append(cfg.Engines, engineAdapter{r})
 	}
-	_, err := deliver.RunSources(cfg, opts, sources)
+	landed, err := deliver.RunSources(cfg, opts, sources)
 	if deliver.IsCancelled(err) {
 		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
-		return nil
+		return landed, nil
 	}
-	return err
+	return landed, err
 }
 
 // engineAdapter narrows a sessionRunner to deliver's Engine interface.
