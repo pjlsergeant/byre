@@ -56,6 +56,14 @@ loops accepted it on deliver but rejected it on develop). Completion
 install is documented as a README "How do I" entry -- a manual step,
 not release plumbing.
 
+Consciously accepted (review round 1, Pete-ratified): a value-taking
+flag consumes a following `--help` -- `byre develop --template --help`
+dispatches with the template `"--help"` instead of printing help. The
+old parser's help-anywhere scan was implementation fallout, not a
+promise (its purpose, `cmd --help` working, is cobra-native), and this
+is exactly what docker, kubectl, and git do. Pinned by a dispatch test;
+do not restore a pre-parse help scan.
+
 ## The dependency posture
 
 The founding CLAUDE.md's "minimal deps" line was descriptive scaffolding

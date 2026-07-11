@@ -77,6 +77,10 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"dockerrun"}, "dockerrun", "/proj"},
 		{[]string{"develop"}, "develop", "/proj   false"},
 		{[]string{"develop", "--template", "go", "--agent", "codex", "--self-edit"}, "develop", "/proj go codex true"},
+		// A value-taking flag consumes a following --help (standard
+		// docker/kubectl behavior; ADR 0022, Pete-ratified) — this DISPATCHES,
+		// it does not print help. Do not restore a pre-parse help scan.
+		{[]string{"develop", "--template", "--help"}, "develop", "/proj --help  false"},
 		{[]string{"config"}, "config", "/proj false"},
 		{[]string{"config", "--global"}, "config", "/proj true"},
 		{[]string{"status"}, "status", "/proj false"},
