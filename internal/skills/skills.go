@@ -70,11 +70,12 @@ type File struct {
 	// carries one.
 	Description string `toml:"description"`
 	// SharedAuthFor declares this skill as the shared-auth companion (ADR
-	// 0017) for the named agent skill, making it OFFERABLE: the onboarding
-	// picker asks "use shared auth?" when that agent is selected. Declaring
-	// the key is the author VOUCHING the companion is ready to enable —
-	// a broken or gate-pending companion (grok-shared-auth, gemini's OAuth
-	// path) omits it and stays a hand-enabled expert option.
+	// 0017) for the named agent skill, making it OFFERABLE: when that agent
+	// is selected, the onboarding picker asks to share one login across all
+	// byre projects on the machine (ADR 0023). Declaring the key is the
+	// author VOUCHING the companion is ready to enable — a broken or
+	// gate-pending companion (grok-shared-auth, gemini's OAuth path) omits
+	// it and stays a hand-enabled expert option.
 	SharedAuthFor string `toml:"shared_auth_for"`
 	Build         struct {
 		Apt        []string          `toml:"apt"`
