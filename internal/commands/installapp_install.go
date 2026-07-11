@@ -116,6 +116,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	}
 	// Ship the readable source in the bundle — the artifact stays inspectable.
 	if err := os.WriteFile(filepath.Join(staged, "Contents", "Resources", "droplet.applescript"), []byte(source), 0o644); err != nil {
+		_ = os.RemoveAll(staged)
 		return err
 	}
 	// Icon: overwrite the stub's droplet/applet icns with ours.
@@ -141,11 +142,17 @@ func installDarwin(s Streams, box string, d installDeps) error {
 			return fmt.Errorf("setting the old app aside: %w", err)
 		}
 		if err := os.Rename(staged, appPath); err != nil {
-			_ = os.Rename(backup, appPath) // restore the working app
 			_ = os.RemoveAll(staged)
+			if rerr := os.Rename(backup, appPath); rerr != nil {
+				// The one truly bad outcome: say exactly where the working
+				// app still lives instead of claiming a restore that failed.
+				return fmt.Errorf("installing the assembled app failed (%v) AND restoring the old one failed (%v) — your previous app is intact at %s; rename it back by hand", err, rerr, backup)
+			}
 			return fmt.Errorf("installing the assembled app (old app restored): %w", err)
 		}
-		_ = os.RemoveAll(backup)
+		if err := os.RemoveAll(backup); err != nil {
+			fmt.Fprintf(s.Err, "byre: warning: could not remove the old app's backup at %s (%v) — delete it yourself\n", backup, err)
+		}
 	} else if err := os.Rename(staged, appPath); err != nil {
 		_ = os.RemoveAll(staged)
 		return fmt.Errorf("installing the assembled app: %w", err)
