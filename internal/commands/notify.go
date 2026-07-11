@@ -41,15 +41,18 @@ func notify(goos string, title, body string, sticky bool) {
 			return strings.ReplaceAll(s, `"`, `\"`)
 		}
 		icon, dismiss := "note", " giving up after 5"
+		bodyEsc := esc(body)
 		if sticky {
 			icon, dismiss = "caution", ""
 		} else {
 			// An auto-closing dialog with an OK button reads as haunted
-			// unless it SAYS it self-dismisses.
-			body += "\n\n(this window closes itself)"
+			// unless it SAYS it self-dismisses. Appended AFTER escaping, as
+			// AppleScript's own \n escape: a raw line break inside an
+			// AppleScript string literal is a syntax error.
+			bodyEsc += `\n\n(this window closes itself)`
 		}
 		script := fmt.Sprintf(`display dialog "%s" with title "%s" buttons {"OK"} default button 1 with icon %s%s`,
-			esc(body), esc(title), icon, dismiss)
+			bodyEsc, esc(title), icon, dismiss)
 		if _, err := clipRunOut("osascript", "-e", script); err != nil {
 			banner := fmt.Sprintf(`display notification "%s" with title "%s"`, esc(body), esc(title))
 			_, _ = clipRunOut("osascript", "-e", banner)
