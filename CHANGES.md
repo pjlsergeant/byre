@@ -30,7 +30,11 @@
   `byre deliver` now use generally). Re-run after moving the byre
   binary; `--box` bakes a fixed target; uninstall by deleting the
   printed paths. Regeneration never clobbers a same-named artifact
-  byre didn't write.
+  byre didn't write. **macOS is the tested platform for the graphical
+  layer; on Linux the `.desktop` launcher, graphical picker, and
+  notifications are experimental and unverified across desktop
+  environments -- the terminal `byre deliver` flows are the supported
+  Linux path.**
 - **`byre rehome` validates the old id**: a malformed id (anything byre
   couldn't have generated) is refused up front instead of being used as a
   store path component.

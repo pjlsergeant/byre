@@ -354,3 +354,14 @@ func TestGeneratedArtifactsWidenPATH(t *testing.T) {
 		t.Fatalf("quick action lacks the PATH prefix:\n%s", wflow)
 	}
 }
+
+func TestInstallLinuxWarnsExperimental(t *testing.T) {
+	d, _ := testDeps(t, "linux")
+	s, _, errw := testStreams("", false)
+	if err := installApp(s, "", d); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "EXPERIMENTAL") {
+		t.Fatalf("linux install must flag the graphical path as experimental: %q", errw.String())
+	}
+}

@@ -224,6 +224,10 @@ func installLinux(s Streams, box string, d installDeps) error {
 		}
 	}
 	fmt.Fprintf(s.Err, "byre: installed the deliver launcher — drag files onto it in your app grid/dock\n")
+	fmt.Fprintf(s.Err, "byre: NOTE — the Linux graphical path (dropping files on the launcher, the\n")
+	fmt.Fprintf(s.Err, "byre:   picker dialog, notifications) is EXPERIMENTAL and unverified across\n")
+	fmt.Fprintf(s.Err, "byre:   desktop environments; some don't support launcher drops at all. The\n")
+	fmt.Fprintf(s.Err, "byre:   'byre deliver <file>' terminal flow is the supported path. Reports welcome.\n")
 	fmt.Fprintf(s.Err, "byre: to uninstall: delete the paths above\n")
 	fmt.Fprintf(s.Err, "byre: to update (byre moved, new --box): re-run 'byre deliver --install-app'\n")
 	return nil

@@ -103,6 +103,14 @@ prints -- stdout is the contract, the clipboard is garnish. Images over
 SSH genuinely can't ride a terminal paste; deliver them from the laptop
 side with `pngpaste - | ssh host byre deliver - --name shot.png`.
 
+**Platform note.** The terminal flows above are fully supported on macOS
+and Linux alike. macOS is the tested platform for the *graphical* extras
+(the deliver app, the Finder Quick Action, notification popups). On
+Linux the graphical layer -- the `.desktop` launcher, the
+`zenity`/`kdialog` picker, `notify-send` -- is **experimental and
+unverified across desktop environments** (see "The deliver app"); the
+terminal path is the one to rely on.
+
 ## The inbox
 
 Delivered files live at `/inbox` inside the box, owned by the dev user;
@@ -128,8 +136,7 @@ arrive as a small popup ("shot.png → /inbox -- path copied to the
 clipboard"). Click it with nothing and it opens a terminal running the
 interactive clipboard flow -- the paste beat, so you see what's on your
 clipboard before it ships. The right-click **Deliver to Byre** Quick
-Action delivers from Finder's context menu. On Linux you get a
-`.desktop` launcher instead.
+Action delivers from Finder's context menu.
 
 The app is a *generated, readable artifact* -- its AppleScript source
 ships inside the bundle (`Contents/Resources/droplet.applescript`), it's
@@ -138,6 +145,17 @@ so no signing or notarization is ever involved), and re-running
 `--install-app` regenerates it -- do that if you move the byre binary.
 `--box <id>` bakes a fixed target box in. First use triggers macOS's
 one-time permission prompts. To uninstall, delete the printed paths.
+
+On **Linux**, `--install-app` writes a `.desktop` launcher instead. This
+is **experimental and unverified**: whether you can drop files onto a
+launcher (and whether a dropped-on launch reaches `/inbox`) depends
+heavily on your desktop environment and file manager -- some support it,
+some don't, and byre's maintainers haven't been able to test the
+graphical path across that spread. The `byre deliver <file>` and
+clipboard flows in a **terminal** are the supported Linux path and work
+the same as everywhere; the graphical extras (the launcher, the
+`zenity`/`kdialog` picker, `notify-send` feedback) are best-effort until
+a Linux user confirms them. Reports welcome.
 
 ## Not here yet
 
