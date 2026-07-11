@@ -65,7 +65,19 @@ type Config struct {
 	Out         io.Writer  // the contract: delivered in-box paths, one per line
 	Err         io.Writer  // byre's voice: target line, notes, degrade claims
 	Clip        *Clipboard // host clipboard write path; nil = unavailable
+	// Pick resolves an ambiguous session set interactively (TTY list or a
+	// graphical dialog — the platform adapter is the caller's). nil means no
+	// picker exists; the cascade degrades to an error listing the candidates.
+	// ok=false is a clean user cancel.
+	Pick func(sessions []Session) (s Session, ok bool, err error)
 }
+
+// errCancelled marks a clean user cancel at the picker: not a failure, and
+// callers exit quietly (IsCancelled).
+var errCancelled = fmt.Errorf("cancelled")
+
+// IsCancelled reports whether err is the user cancelling at the picker.
+func IsCancelled(err error) bool { return err == errCancelled }
 
 // Run delivers path arguments — RunSources over PathSources.
 func Run(cfg Config, opts Options, paths []string) ([]string, error) {

@@ -25,7 +25,7 @@ func TestDeliverWiring(t *testing.T) {
 	}
 	var out, errw bytes.Buffer
 	s := Streams{Out: &out, Err: &errw, In: strings.NewReader(""), TTY: false}
-	err := deliverWith(s, t.TempDir(), deliver.Options{}, deliver.PathSources([]string{src}), []sessionRunner{f}, 501, nil)
+	err := deliverWith(s, t.TempDir(), deliver.Options{}, deliver.PathSources([]string{src}), []sessionRunner{f}, 501, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestDeliverWiringUIDMismatch(t *testing.T) {
 	}
 	var out, errw bytes.Buffer
 	s := Streams{Out: &out, Err: &errw, In: strings.NewReader(""), TTY: false}
-	err := deliverWith(s, t.TempDir(), deliver.Options{}, deliver.PathSources([]string{"x"}), []sessionRunner{f}, 501, nil)
+	err := deliverWith(s, t.TempDir(), deliver.Options{}, deliver.PathSources([]string{"x"}), []sessionRunner{f}, 501, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "--skip-uid-check") {
 		t.Fatalf("err = %v", err)
 	}

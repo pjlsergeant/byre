@@ -157,8 +157,18 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 		return p.sessions[0], nil
 	}
 
-	// Step 3: ambiguous. Interactive pickers slot in here; the listing error
-	// is the script/no-picker degradation and the always-available floor.
+	// Step 3: ambiguous — the picker's moment. The listing error is the
+	// script/no-picker degradation and the always-available floor.
+	if cfg.Pick != nil {
+		s, ok, err := cfg.Pick(p.sessions)
+		if err != nil {
+			return Session{}, err
+		}
+		if !ok {
+			return Session{}, errCancelled
+		}
+		return s, nil
+	}
 	return Session{}, fmt.Errorf("%d boxes are running — pick one with --box:\n%s", len(p.sessions), sessionList(p.sessions))
 }
 

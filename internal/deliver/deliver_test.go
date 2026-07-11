@@ -471,3 +471,47 @@ func mustMkdir(t *testing.T, p string) {
 }
 
 func mkfifo(p string) error { return syscall.Mkfifo(p, 0o600) }
+
+func TestPickerResolvesAmbiguity(t *testing.T) {
+	eng := box("docker", "aaa", "bbb")
+	cfg, _, _ := testConfig(eng)
+	cfg.Pick = func(sessions []Session) (Session, bool, error) {
+		if len(sessions) != 2 {
+			t.Fatalf("picker got %d sessions", len(sessions))
+		}
+		return sessions[1], true, nil
+	}
+	src := writeFile(t, "f", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.streams) != 1 || !strings.HasPrefix(eng.streams[0], "bbb ") {
+		t.Fatalf("streams = %v", eng.streams)
+	}
+}
+
+func TestPickerCancelIsClean(t *testing.T) {
+	eng := box("docker", "aaa", "bbb")
+	cfg, out, _ := testConfig(eng)
+	cfg.Pick = func([]Session) (Session, bool, error) { return Session{}, false, nil }
+	_, err := Run(cfg, Options{}, []string{"whatever"})
+	if !IsCancelled(err) {
+		t.Fatalf("err = %v, want the cancelled marker", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout must stay empty on cancel: %q", out.String())
+	}
+}
+
+func TestPickerNotConsultedWhenUnambiguous(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, _ := testConfig(eng)
+	cfg.Pick = func([]Session) (Session, bool, error) {
+		t.Fatal("picker consulted for a sole session")
+		return Session{}, false, nil
+	}
+	src := writeFile(t, "f", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+}
