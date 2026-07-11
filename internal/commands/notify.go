@@ -25,17 +25,31 @@ func guiSession(goos string, getenv func(string) string) bool {
 	return getenv("DISPLAY") != "" || getenv("WAYLAND_DISPLAY") != ""
 }
 
-// notify posts one notification. Best-effort by design.
-func notify(goos string, title, body string) {
+// notify shows one outcome. Best-effort by design. On macOS this is a
+// DIALOG, not a notification banner: `display notification` from a bare
+// osascript is permission-gated (and silently no-ops ungranted —
+// field-found 2026-07-10: a successful Quick Action showed nothing), while
+// `display dialog` needs no permission and is guaranteed visible. Successes
+// auto-dismiss ("giving up after"); failures stay until acknowledged. If
+// dialogs are refused in some context (-1713 no-user-interaction), the
+// banner is still attempted as a fallback.
+func notify(goos string, title, body string, sticky bool) {
 	switch goos {
 	case "darwin":
-		// AppleScript string literals escape backslash and double-quote only.
-		esc := func(s string) string {
+		esc := func(s string) string { // AppleScript string literal escaping
 			s = strings.ReplaceAll(s, `\`, `\\`)
 			return strings.ReplaceAll(s, `"`, `\"`)
 		}
-		script := fmt.Sprintf("display notification \"%s\" with title \"%s\"", esc(body), esc(title))
-		_, _ = clipRunOut("osascript", "-e", script)
+		icon, dismiss := "note", " giving up after 4"
+		if sticky {
+			icon, dismiss = "caution", ""
+		}
+		script := fmt.Sprintf(`display dialog "%s" with title "%s" buttons {"OK"} default button 1 with icon %s%s`,
+			esc(body), esc(title), icon, dismiss)
+		if _, err := clipRunOut("osascript", "-e", script); err != nil {
+			banner := fmt.Sprintf(`display notification "%s" with title "%s"`, esc(body), esc(title))
+			_, _ = clipRunOut("osascript", "-e", banner)
+		}
 	default:
 		if _, err := clipLookPath("notify-send"); err == nil {
 			_, _ = clipRunOut("notify-send", title, body)
@@ -52,11 +66,11 @@ func deliverNotify(s Streams, landed []string, err error) {
 	title := "byre deliver"
 	switch {
 	case err != nil && len(landed) == 0:
-		notify(runtime.GOOS, title, firstNotifyLine(err.Error()))
+		notify(runtime.GOOS, title, firstNotifyLine(err.Error()), true)
 	case err != nil:
-		notify(runtime.GOOS, title, fmt.Sprintf("%s — but %s", notifySummary(landed), firstNotifyLine(err.Error())))
+		notify(runtime.GOOS, title, fmt.Sprintf("%s — but %s", notifySummary(landed), firstNotifyLine(err.Error())), true)
 	case len(landed) > 0:
-		notify(runtime.GOOS, title, notifySummary(landed)+" — path copied to the clipboard")
+		notify(runtime.GOOS, title, notifySummary(landed)+" — path copied to the clipboard", false)
 	}
 }
 

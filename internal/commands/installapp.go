@@ -53,7 +53,7 @@ on byreBinary()
 			return c as string
 		end try
 	end repeat
-	display notification "byre not found — re-run 'byre deliver --install-app' after reinstalling byre" with title "Byre Deliver"
+	display dialog "byre not found — re-run 'byre deliver --install-app' after reinstalling byre" with title "Byre Deliver" buttons {"OK"} default button 1 with icon caution
 	error "byre not found"
 end byreBinary
 
@@ -75,8 +75,9 @@ on runByre(args)
 		-- Finder launches carry a sparse PATH that can't see Docker Desktop.
 		do shell script "` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + `" & args & " </dev/null"
 	on error errMsg
-		-- byre notifies its own outcomes; this catches byre failing to RUN.
-		display notification errMsg with title "Byre Deliver"
+		-- byre shows its own outcomes; this catches byre failing to RUN.
+		-- A dialog, not a notification: banners are permission-gated.
+		display dialog errMsg with title "Byre Deliver" buttons {"OK"} default button 1 with icon caution
 	end try
 end runByre
 `

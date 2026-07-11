@@ -34,7 +34,7 @@ func stubRunOut(t *testing.T) *[]string {
 
 func TestNotifyDarwinEscapesAppleScript(t *testing.T) {
 	calls := stubRunOut(t)
-	notify("darwin", "byre deliver", `path "with" quotes \ and slash`)
+	notify("darwin", "byre deliver", `path "with" quotes \ and slash`, false)
 	if len(*calls) != 1 {
 		t.Fatalf("calls = %v", *calls)
 	}
@@ -44,10 +44,44 @@ func TestNotifyDarwinEscapesAppleScript(t *testing.T) {
 	}
 }
 
+func TestNotifyDarwinIsAnAutoDismissingDialog(t *testing.T) {
+	// Field-found: notification banners from bare osascript are
+	// permission-gated and showed NOTHING on a successful Quick Action.
+	// Success = dialog that gives up; failure = sticky dialog.
+	calls := stubRunOut(t)
+	notify("darwin", "t", "ok", false)
+	if got := (*calls)[0]; !strings.Contains(got, "display dialog") || !strings.Contains(got, "giving up after 4") {
+		t.Fatalf("success should auto-dismiss: %q", got)
+	}
+	notify("darwin", "t", "bad", true)
+	if got := (*calls)[1]; !strings.Contains(got, "display dialog") || strings.Contains(got, "giving up") || !strings.Contains(got, "icon caution") {
+		t.Fatalf("failure should be sticky: %q", got)
+	}
+}
+
+func TestNotifyDarwinFallsBackToBanner(t *testing.T) {
+	// -1713 territory (no user interaction allowed): the banner is still
+	// attempted so SOME channel gets the outcome.
+	orig := clipRunOut
+	t.Cleanup(func() { clipRunOut = orig })
+	var calls []string
+	clipRunOut = func(name string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if len(calls) == 1 {
+			return nil, errFake
+		}
+		return nil, nil
+	}
+	notify("darwin", "t", "b", false)
+	if len(calls) != 2 || !strings.Contains(calls[1], "display notification") {
+		t.Fatalf("no banner fallback: %v", calls)
+	}
+}
+
 func TestNotifyLinuxUsesNotifySend(t *testing.T) {
 	stubClipTools(t, "notify-send") // lookup succeeds
 	calls := stubRunOut(t)
-	notify("linux", "byre deliver", "/inbox/a.png")
+	notify("linux", "byre deliver", "/inbox/a.png", false)
 	if len(*calls) != 1 || !strings.HasPrefix((*calls)[0], "notify-send ") {
 		t.Fatalf("calls = %v", *calls)
 	}
@@ -56,7 +90,7 @@ func TestNotifyLinuxUsesNotifySend(t *testing.T) {
 func TestNotifyLinuxSilentWithoutTool(t *testing.T) {
 	stubClipTools(t) // nothing available
 	calls := stubRunOut(t)
-	notify("linux", "t", "b")
+	notify("linux", "t", "b", true)
 	if len(*calls) != 0 {
 		t.Fatalf("should not exec anything: %v", *calls)
 	}
