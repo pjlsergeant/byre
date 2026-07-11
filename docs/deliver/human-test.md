@@ -125,9 +125,13 @@
       agent works. FIRST use: expect macOS permission prompts once.
 - [ ] Click the app with nothing selected (or open it) → a Terminal
       window opens running the paste beat (sampled prompt: "your
-      clipboard holds …"); deliver via ctrl-v → window closes itself on
-      success (default Terminal profile). First click may prompt for
-      Automation permission (controlling Terminal) once.
+      clipboard holds …"); deliver via ctrl-v → the window CLOSES ITSELF
+      on success (regardless of Terminal profile); cancel (ctrl-c) also
+      closes. First click may prompt for Automation permission
+      (controlling Terminal) once.
+- [ ] Force a failure from the app's terminal (e.g. stop all boxes,
+      click the app, ctrl-v) → the window STAYS OPEN with the error
+      readable.
 - [ ] Right-click a file in Finder → Quick Actions → "Deliver to Byre" →
       same flow. (May need enabling once under System Settings →
       Extensions → Finder if macOS doesn't show it immediately.)

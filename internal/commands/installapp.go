@@ -69,14 +69,37 @@ on run
 	-- A plain click (no drop) opens a TERMINAL running byre deliver: the
 	-- interactive paste beat, with its sampled what's-on-your-clipboard
 	-- prompt, is the point — silently shipping the clipboard from a Dock
-	-- click would skip the one moment to notice the wrong thing. The
-	-- trailing exit closes the window on success (default Terminal
-	-- profile); a failure's shell stays open to read.
-	set cmd to "` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + `; exit"
+	-- click would skip the one moment to notice the wrong thing.
+	-- Terminal's scripting exposes no exit codes, so the command drops a
+	-- flag file on failure: success closes the window (whatever the
+	-- profile says); a failure's window stays open to read.
+	set failFlag to do shell script "mktemp -u /tmp/byre-deliver-fail.XXXXXX"
+	set cmd to "` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + ` || touch " & quoted form of failFlag & "; exit"
 	tell application "Terminal"
 		activate
-		do script cmd
+		set t to do script cmd
+		set theTTY to tty of t
+		try
+			repeat while busy of t
+				delay 0.2
+			end repeat
+		end try
 	end tell
+	set failed to false
+	try
+		do shell script "test -e " & quoted form of failFlag
+		set failed to true
+	end try
+	if failed then
+		do shell script "rm -f " & quoted form of failFlag
+	else
+		delay 0.5 -- let the final output land before the window goes
+		tell application "Terminal"
+			try
+				close (every window whose tty of selected tab is theTTY)
+			end try
+		end tell
+	end if
 end run
 
 on runByre(args)
