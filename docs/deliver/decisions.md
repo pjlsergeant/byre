@@ -272,6 +272,34 @@ time (can't test in-box). #10 clipboard clobber → D16. #11 type honesty
 → D11. #12 version negotiation → D22. #13 materialize collision → D26.
 #14 multi-file transaction → D9, D12–13.
 
+## Field amendments (2026-07-10, Pete's real-Mac test — these win over the above)
+
+- **D1 refined:** an UNREACHABLE engine (podman installed, machine not
+  started — "cannot connect" class) counts as answered-with-zero: one
+  quiet "isn't reachable; skipping it" line, auto-pick stays alive.
+  Only OTHER query failures set the partial pool (one-line warning,
+  auto-pick disabled). Rationale: a daemon you can't reach runs no
+  containers, and a stale podman install must not break the flagship
+  one-command flow on every Mac.
+- **D17 amended — the streamed paste is EVIDENCE, not noise.** A file
+  dragged onto the terminal window pastes its PATH: text that was never
+  on the pasteboard. Blind discard-and-read-pasteboard delivered stale
+  clipboard content (at worst byre's own previous output — observed).
+  New rule: a bracketed paste's text is captured and classified —
+  mirrors the pasteboard's text → real Cmd-V, full priority read;
+  parses as existing ABSOLUTE host path(s) (shell-escaped spaces
+  honored) → a drag, deliver those files; else literal pasted text.
+- **D17 amended — Ctrl-V is the headline gesture.** With an image-only
+  clipboard, macOS Terminal sends NOTHING on Cmd-V (no text
+  representation → no paste event), so no app can catch it. The prompt
+  names Ctrl-V first; Cmd-V remains fine for text and copied files.
+- **Immediate gesture feedback:** every gesture prints what was
+  received before any read ("paste received (N bytes)", "reading the
+  clipboard…") — the beat must never look hung.
+- **Diagnosable emptiness:** the nothing-deliverable error lists the
+  clipboard types actually seen, so an unmapped pasteboard class is
+  self-reporting.
+
 ## Round-2 review disposition (2026-07-10, adversarial pass over THIS file)
 
 Both reviewers re-run against the decisions themselves (findings logged

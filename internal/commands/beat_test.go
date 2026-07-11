@@ -12,16 +12,18 @@ func TestBeatCtrlVIsTheGesture(t *testing.T) {
 	}
 }
 
-func TestBeatBracketedPasteIsTheGestureAndTextIsDiscarded(t *testing.T) {
-	// Cmd-V arrives as a bracketed paste; the streamed text must be discarded
-	// (the pasteboard has the same or better) and the gesture recognized.
+func TestBeatBracketedPasteCapturesTextAsEvidence(t *testing.T) {
+	// Cmd-V arrives as a bracketed paste; the streamed text is returned so
+	// the caller can tell a real clipboard paste from a drag-typed path
+	// (field-found 2026-07-10: drags paste text that was never on the
+	// pasteboard — discarding it delivered a stale clipboard).
 	in := "\x1b[200~some pasted text\x1b[201~"
 	action, text, err := beatLoop(strings.NewReader(in), true)
-	if err != nil || action != beatGesture {
+	if err != nil || action != beatPaste {
 		t.Fatalf("action = %v err = %v", action, err)
 	}
-	if text != nil {
-		t.Fatalf("streamed paste text should be discarded, got %q", text)
+	if string(text) != "some pasted text" {
+		t.Fatalf("streamed paste text should be captured, got %q", text)
 	}
 }
 

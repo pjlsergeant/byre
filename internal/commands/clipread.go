@@ -115,7 +115,13 @@ func readClipboard(cb clipBackend, now func() time.Time, warn io.Writer) ([]deli
 	if firstErr != nil {
 		return nil, fmt.Errorf("reading the clipboard: %w", firstErr)
 	}
-	return nil, fmt.Errorf("the clipboard holds nothing deliverable (no files, image, or text)")
+	// Name what WAS seen: when a real board lands here, the types list is
+	// the diagnostic (a class byre doesn't map yet, an empty representation).
+	seen := "no types at all"
+	if len(types) > 0 {
+		seen = "types seen: " + strings.Join(types, ", ")
+	}
+	return nil, fmt.Errorf("the clipboard holds nothing deliverable (%s)", seen)
 }
 
 func hasType(types []string, want string) bool {

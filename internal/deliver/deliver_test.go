@@ -231,7 +231,7 @@ func TestBoxNoMatchErrors(t *testing.T) {
 }
 
 func TestPartialPoolDisablesAutoPick(t *testing.T) {
-	broken := &fakeEngine{name: "podman", idsErr: fmt.Errorf("cannot connect")}
+	broken := &fakeEngine{name: "podman", idsErr: fmt.Errorf("permission denied on the socket")}
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng, broken)
 	_, err := Run(cfg, Options{}, []string{"x"})
@@ -244,7 +244,7 @@ func TestPartialPoolDisablesAutoPick(t *testing.T) {
 }
 
 func TestPartialPoolBoxStillWorks(t *testing.T) {
-	broken := &fakeEngine{name: "podman", idsErr: fmt.Errorf("cannot connect")}
+	broken := &fakeEngine{name: "podman", idsErr: fmt.Errorf("permission denied on the socket")}
 	eng := box("docker", "aaa")
 	cfg, _, _ := testConfig(eng, broken)
 	src := writeFile(t, "f", "x")
@@ -584,5 +584,37 @@ func TestDirSummaryCountsFailedDirEntries(t *testing.T) {
 	}
 	if !strings.Contains(errw.String(), "1 entry failed") {
 		t.Fatalf("summary hides the failed dir entry: %q", errw.String())
+	}
+}
+
+func TestUnreachableEngineDoesNotPoisonAutoPick(t *testing.T) {
+	// Field-found 2026-07-10: podman installed but its machine not started is
+	// normal life — one quiet line, zero sessions, auto-pick stays alive.
+	stale := &fakeEngine{name: "podman", idsErr: fmt.Errorf("exit status 125: Cannot connect to Podman. Please verify your connection ...")}
+	eng := box("docker", "aaa")
+	cfg, out, errw := testConfig(eng, stale)
+	src := writeFile(t, "f.txt", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "/inbox/f.txt") {
+		t.Fatalf("delivery should proceed: %q", out.String())
+	}
+	msg := errw.String()
+	if !strings.Contains(msg, "podman isn't reachable; skipping it") {
+		t.Fatalf("no quiet skip note: %q", msg)
+	}
+	if strings.Contains(msg, "warning") || strings.Contains(msg, "libpod") {
+		t.Fatalf("unreachable engine should be one quiet line: %q", msg)
+	}
+}
+
+func TestPartialWarningIsOneLine(t *testing.T) {
+	multi := &fakeEngine{name: "podman", idsErr: fmt.Errorf("broke badly\nwith a second line\nand a third")}
+	eng := box("docker", "aaa", "bbb")
+	cfg, _, errw := testConfig(eng, multi)
+	_, _ = Run(cfg, Options{Box: "proj-aaa"}, []string{writeFile(t, "f", "x")})
+	if strings.Contains(errw.String(), "second line") {
+		t.Fatalf("engine essay leaked into the warning: %q", errw.String())
 	}
 }

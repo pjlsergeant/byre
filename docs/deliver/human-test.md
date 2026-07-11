@@ -59,15 +59,26 @@
       picker. A prefix matching both sessions → error listing candidates.
 - [ ] Stop all boxes → `byre deliver x` → `no running byre boxes; start
       one with 'byre develop'`.
+- [ ] With podman installed but its machine NOT started: any deliver →
+      one quiet `byre: podman isn't reachable; skipping it` line (no
+      multi-line engine essay), and single-box auto-pick still works.
 
 ## 4. The paste beat (no args, terminal)
 
 - [ ] Copy some TEXT (Cmd-C in any app), then `byre deliver` →
-      prompt `byre: paste to deliver the clipboard (ctrl-c to cancel)`;
-      **Cmd-V** → `delivered clipboard text (N bytes) → /inbox/clipboard-<ts>.txt`
+      prompt `byre: ctrl-v to deliver the clipboard (text, images, copied files) — or paste/drag a file here; ctrl-c cancels`;
+      **Cmd-V** → `paste received (N bytes)` then `reading the clipboard…`
+      then `delivered clipboard text (N bytes) → /inbox/clipboard-<ts>.txt`
       — content NOT echoed anywhere.
 - [ ] Screenshot to clipboard (Cmd-Ctrl-Shift-4), `byre deliver`, **Ctrl-V**
-      → `/inbox/clipboard-<ts>.png`; open it in the box (`file` it) → PNG.
+      → `reading the clipboard…` then `/inbox/clipboard-<ts>.png`; open it
+      in the box (`file` it) → PNG.
+- [ ] Same screenshot, but press **Cmd-V** instead → expected: NOTHING
+      happens (the terminal sends no event for an image-only clipboard —
+      documented, not a bug); Ctrl-V still works from the same prompt.
+- [ ] **Drag a file from Finder onto the terminal window** during the beat
+      → `paste received…` then `delivering the dragged file` → the FILE
+      lands in /inbox (its real content — not stale clipboard text).
 - [ ] Copy an image FROM A BROWSER (right-click → copy image, typically
       JPEG), deliver via the beat → extension matches the actual format
       (`.jpeg`, not `.png`) — check with `file` in the box.

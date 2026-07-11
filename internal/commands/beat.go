@@ -30,8 +30,13 @@ type beatAction int
 
 const (
 	beatCancelled beatAction = iota // ctrl-c / EOF: user chose not to
-	beatGesture                     // paste gesture seen: read the pasteboard
-	beatText                        // degraded capture: content in hand
+	beatGesture                     // ctrl-v: read the pasteboard
+	beatPaste                       // bracketed paste: streamed text in hand — the CALLER
+	// decides whether it mirrors the pasteboard (real Cmd-V → full pasteboard
+	// read) or is drag-typed content that was never ON the pasteboard (a file
+	// dragged onto the window pastes its PATH — deliver that file, not the
+	// stale clipboard; field-found 2026-07-10).
+	beatText // degraded capture: content in hand
 )
 
 // beatLoop consumes raw keystrokes and decides. canRead says a pasteboard
@@ -65,10 +70,11 @@ func beatLoop(in io.Reader, canRead bool) (beatAction, []byte, error) {
 			seq, consumed := readBracketMarker(r)
 			if seq == pasteStart {
 				if canRead {
-					// Discard the streamed text (the pasteboard has it, or better).
-					var sink bytes.Buffer
-					captureUntilPasteEnd(r, &sink)
-					return beatGesture, nil, nil
+					// Capture the streamed text and hand it up: it's evidence
+					// (real clipboard paste vs drag-typed path), not noise.
+					var text bytes.Buffer
+					captureUntilPasteEnd(r, &text)
+					return beatPaste, text.Bytes(), nil
 				}
 				capturing = true
 				captureUntilPasteEnd(r, &captured)
@@ -162,7 +168,12 @@ func runPasteBeat(s Streams, canRead bool) (beatAction, []byte, error) {
 		return beatCancelled, nil, fmt.Errorf("the paste beat needs a terminal on stdin")
 	}
 	if canRead {
-		fmt.Fprintln(s.Err, "byre: paste to deliver the clipboard (ctrl-c to cancel)")
+		// Ctrl-V is the reliable gesture: with an IMAGE-only clipboard, Cmd-V
+		// sends the terminal nothing at all (no text representation), so
+		// there is no event to catch — field-verified 2026-07-10. Cmd-V still
+		// works for text and copied files, and dragging a file onto the
+		// window delivers that file.
+		fmt.Fprintln(s.Err, "byre: ctrl-v to deliver the clipboard (text, images, copied files) — or paste/drag a file here; ctrl-c cancels")
 	} else {
 		fmt.Fprintln(s.Err, "byre: no clipboard access here — paste text to deliver it (text only; ctrl-d to finish, ctrl-c to cancel)")
 	}

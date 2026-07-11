@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
@@ -56,7 +58,10 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 				return nil, nil
 			}
 			return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
+		case action == beatPaste:
+			return importFromPaste(s, reader, text, stamp)
 		}
+		fmt.Fprintln(s.Err, "byre: reading the clipboard…")
 		return readClipboard(*reader, time.Now, s.Err)
 	case stdinIsPiped():
 		return []deliver.Source{stdinSource(s.In)}, nil
@@ -65,6 +70,90 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 	default:
 		return nil, fmt.Errorf("nothing to deliver: no paths, no piped stdin, and no clipboard access — pass a path or pipe content in")
 	}
+}
+
+// importFromPaste decides what a bracketed paste MEANS (field-found
+// 2026-07-10: a file dragged onto the window pastes its path — text that was
+// never on the pasteboard, so blindly reading the clipboard delivers stale
+// content, in the worst case byre's own previous output). The streamed text
+// is evidence:
+//
+//   - mirrors the pasteboard's text → a real Cmd-V: do the full priority
+//     read (a Finder copy's file refs beat its text representation);
+//   - parses as existing absolute host path(s) → a drag: deliver the FILES;
+//   - anything else → literal pasted content.
+//
+// Every branch says immediately what was received — the beat must never
+// look hung after a gesture.
+func importFromPaste(s Streams, reader *clipBackend, text []byte, stamp string) ([]deliver.Source, error) {
+	fmt.Fprintf(s.Err, "byre: paste received (%d bytes)\n", len(text))
+	trimmed := strings.TrimSpace(string(text))
+	if trimmed == "" {
+		fmt.Fprintln(s.Err, "byre: empty paste — reading the clipboard instead…")
+		return readClipboard(*reader, time.Now, s.Err)
+	}
+	if pb, err := reader.fetch("text/plain"); err == nil && strings.TrimSpace(string(pb)) == trimmed {
+		fmt.Fprintln(s.Err, "byre: reading the clipboard…")
+		return readClipboard(*reader, time.Now, s.Err)
+	}
+	if paths := draggedPaths(trimmed); len(paths) > 0 {
+		fmt.Fprintf(s.Err, "byre: delivering the dragged %s\n", plural(len(paths), "file", "files"))
+		return deliver.PathSources(paths), nil
+	}
+	return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
+}
+
+// draggedPaths recognizes a terminal drag: absolute path(s), shell-escaped
+// spaces (`My\ File.txt`), space-separated when multiple. ABSOLUTE is
+// required — pasted prose that happens to name a relative file must stay
+// text, never surprise-deliver a file.
+func draggedPaths(s string) []string {
+	if p := strings.ReplaceAll(s, `\ `, " "); pathExists(p) {
+		return []string{p}
+	}
+	var toks []string
+	var cur strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == '\\' && i+1 < len(s) && s[i+1] == ' ':
+			cur.WriteByte(' ')
+			i++
+		case s[i] == ' ':
+			if cur.Len() > 0 {
+				toks = append(toks, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteByte(s[i])
+		}
+	}
+	if cur.Len() > 0 {
+		toks = append(toks, cur.String())
+	}
+	if len(toks) == 0 {
+		return nil
+	}
+	for _, t := range toks {
+		if !pathExists(t) {
+			return nil
+		}
+	}
+	return toks
+}
+
+func pathExists(p string) bool {
+	if !filepath.IsAbs(p) {
+		return false
+	}
+	st, err := os.Stat(p)
+	return err == nil && (st.Mode().IsRegular() || st.IsDir())
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // stdinIsPiped distinguishes `... | byre deliver` (a pipe or file on stdin —

@@ -31,8 +31,17 @@ func discover(cfg Config, opts Options) (pool, error) {
 	for _, eng := range cfg.Engines {
 		ids, err := eng.Sessions(cfg.ProjectLabel)
 		if err != nil {
-			// Degrade loudly, never mask a broken engine as "nothing running".
-			fmt.Fprintf(cfg.Err, "byre: warning: %s query failed (%v); its sessions are invisible this run\n", eng.Name(), err)
+			// An UNREACHABLE engine is normal life (podman installed, machine
+			// not started — every Mac with a stale podman install): no daemon
+			// means no running sessions, so it counts as answered-with-zero,
+			// one quiet line, and auto-pick stays alive. Any OTHER failure
+			// degrades loudly and poisons "exactly one" (partial pool) —
+			// never mask a broken engine as "nothing running".
+			if isUnreachable(err) {
+				fmt.Fprintf(cfg.Err, "byre: %s isn't reachable; skipping it\n", eng.Name())
+				continue
+			}
+			fmt.Fprintf(cfg.Err, "byre: warning: %s query failed (%s); its sessions are invisible this run\n", eng.Name(), firstLine(err))
 			p.partial = true
 			continue
 		}
@@ -189,6 +198,32 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 		return s, nil
 	}
 	return Session{}, fmt.Errorf("%d boxes are running — pick one with --box:\n%s", len(p.sessions), sessionList(p.sessions))
+}
+
+// isUnreachable classifies can't-talk-to-the-daemon failures (podman machine
+// not started, docker daemon down) by their message — the engine CLIs give no
+// typed errors across an exec boundary. Heuristic on purpose; a miss just
+// means the louder partial-pool path, never a wrong delivery.
+func isUnreachable(err error) bool {
+	msg := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"cannot connect", "unable to connect", "connection refused",
+		"is the docker daemon running", "podman machine init",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// firstLine keeps engine-CLI essays out of byre's one-line warnings.
+func firstLine(err error) string {
+	s := err.Error()
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i] + " …"
+	}
+	return s
 }
 
 func hiddenHint(p pool) string {
