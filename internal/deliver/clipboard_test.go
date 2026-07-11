@@ -135,3 +135,39 @@ func TestReaderSourceCountsBytes(t *testing.T) {
 		t.Fatalf("no counted confirmation: %q", errw.String())
 	}
 }
+
+func TestNameCannotEscapeInbox(t *testing.T) {
+	// --name with path components must be forced to a basename (review
+	// finding: '--name ../workspace/x -' would have landed outside /inbox).
+	eng := box("docker", "aaa")
+	cfg, out, errw := testConfig(eng)
+	landed, err := RunSources(cfg, Options{}, []Source{{Data: []byte("x"), Name: "../workspace/evil.txt", Kind: "stdin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 || landed[0] != "/inbox/evil.txt" {
+		t.Fatalf("landed = %v", landed)
+	}
+	if strings.Contains(out.String(), "..") {
+		t.Fatalf("path components leaked: %q", out.String())
+	}
+	if !strings.Contains(errw.String(), "renamed") {
+		t.Fatalf("silent rename: %q", errw.String())
+	}
+}
+
+func TestSplitNameForcesBasename(t *testing.T) {
+	cases := []struct{ in, stem, ext string }{
+		{"../workspace/evil.txt", "evil", ".txt"},
+		{"/etc/passwd", "passwd", ""},
+		{"a/b/c.png", "c", ".png"},
+		{"..", "unnamed", ""},
+		{"/", "unnamed", ""},
+	}
+	for _, c := range cases {
+		stem, ext, sanitized := splitName(c.in)
+		if stem != c.stem || ext != c.ext || !sanitized {
+			t.Errorf("splitName(%q) = %q %q %v, want %q %q true", c.in, stem, ext, sanitized, c.stem, c.ext)
+		}
+	}
+}

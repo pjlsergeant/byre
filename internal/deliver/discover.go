@@ -9,11 +9,15 @@ import (
 )
 
 // pool is the discovered session set plus what discovery couldn't see:
-// hidden counts sessions the uid filter excluded, partial notes that at
-// least one engine's query failed (so "exactly one" is unknowable).
+// hidden counts sessions the uid filter excluded (revealable with
+// --skip-uid-check), unusable counts sessions whose identity couldn't be
+// read at all (no flag reveals those — attach would fail closed anyway),
+// and partial notes that at least one engine's query failed (so "exactly
+// one" is unknowable).
 type pool struct {
 	sessions []Session
 	hidden   int
+	unusable int
 	partial  bool
 }
 
@@ -33,12 +37,15 @@ func discover(cfg Config, opts Options) (pool, error) {
 			continue
 		}
 		for _, id := range ids {
-			s, ok := inspect(cfg, opts, eng, id)
-			if !ok {
+			s, verdict := inspect(cfg, opts, eng, id)
+			switch verdict {
+			case sessionOK:
+				p.sessions = append(p.sessions, s)
+			case sessionForeign:
 				p.hidden++
-				continue
+			case sessionUnusable:
+				p.unusable++
 			}
-			p.sessions = append(p.sessions, s)
 		}
 	}
 	// Deterministic order for listings and tests: engine, then project, then id.
@@ -55,10 +62,19 @@ func discover(cfg Config, opts Options) (pool, error) {
 	return p, nil
 }
 
-// inspect reads one container's identity. ok=false means the session is
-// excluded (foreign under the uid filter, or unreadable identity — which the
-// filter treats as unverifiable, since attach would fail closed anyway).
-func inspect(cfg Config, opts Options, eng Engine, id string) (Session, bool) {
+// sessionVerdict is inspect's outcome: usable, foreign (revealable with
+// --skip-uid-check), or unusable (identity unreadable — nothing reveals it,
+// since attach fails closed without BYRE_UID/BYRE_GID).
+type sessionVerdict int
+
+const (
+	sessionOK sessionVerdict = iota
+	sessionForeign
+	sessionUnusable
+)
+
+// inspect reads one container's identity.
+func inspect(cfg Config, opts Options, eng Engine, id string) (Session, sessionVerdict) {
 	s := Session{Engine: eng, EngineName: eng.Name(), ID: id}
 	labels, err := eng.Labels(id)
 	if err == nil {
@@ -70,22 +86,22 @@ func inspect(cfg Config, opts Options, eng Engine, id string) (Session, bool) {
 	}
 	env, err := eng.Env(id)
 	if err != nil {
-		fmt.Fprintf(cfg.Err, "byre: warning: could not read the identity of %s (%v)\n", shortID(id), err)
-		return s, false
+		fmt.Fprintf(cfg.Err, "byre: warning: could not read the identity of %s (%v); it cannot be a target\n", shortID(id), err)
+		return s, sessionUnusable
 	}
 	uid, uerr := strconv.Atoi(strings.TrimSpace(env["BYRE_UID"]))
 	gid, gerr := strconv.Atoi(strings.TrimSpace(env["BYRE_GID"]))
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
 		// Not a box byre can attach to (shell.go's fail-closed rule).
-		fmt.Fprintf(cfg.Err, "byre: warning: %s carries no valid BYRE_UID/BYRE_GID; skipping it\n", shortID(id))
-		return s, false
+		fmt.Fprintf(cfg.Err, "byre: warning: %s carries no valid BYRE_UID/BYRE_GID; it cannot be a target\n", shortID(id))
+		return s, sessionUnusable
 	}
 	s.UID, s.GID = uid, gid
 	s.Foreign = uid != cfg.CallerUID
 	if s.Foreign && !opts.SkipUIDCheck {
-		return s, false
+		return s, sessionForeign
 	}
-	return s, true
+	return s, sessionOK
 }
 
 // selectSession runs the target cascade: --box, cwd ancestor walk, sole
@@ -121,7 +137,10 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 
 	if len(p.sessions) == 0 {
 		if p.hidden > 0 {
-			return Session{}, fmt.Errorf("no running boxes owned by you (%d hidden; --skip-uid-check to include them)", p.hidden)
+			return Session{}, fmt.Errorf("no running boxes owned by you (%d hidden; --skip-uid-check to include them)%s", p.hidden, unusableNote(p))
+		}
+		if p.unusable > 0 {
+			return Session{}, fmt.Errorf("no deliverable byre boxes (%d running without a readable dev identity — see the warnings above)", p.unusable)
 		}
 		if p.partial {
 			return Session{}, fmt.Errorf("no running byre boxes found (and an engine query failed, so some may be invisible)")
@@ -175,6 +194,13 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 func hiddenHint(p pool) string {
 	if p.hidden > 0 {
 		return fmt.Sprintf(" (%d sessions hidden by the uid filter; --skip-uid-check to include them)", p.hidden)
+	}
+	return ""
+}
+
+func unusableNote(p pool) string {
+	if p.unusable > 0 {
+		return fmt.Sprintf("; %d more lack a readable dev identity", p.unusable)
 	}
 	return ""
 }

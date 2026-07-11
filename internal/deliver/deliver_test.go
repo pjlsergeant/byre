@@ -515,3 +515,18 @@ func TestPickerNotConsultedWhenUnambiguous(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUnreadableIdentityNotBlamedOnUIDFilter(t *testing.T) {
+	// Review finding: a session whose env can't be read must NOT be counted
+	// as "hidden; --skip-uid-check to include" — that flag can't reveal it.
+	eng := box("docker", "aaa")
+	eng.envErr = fmt.Errorf("inspect broke")
+	cfg, _, _ := testConfig(eng)
+	_, err := Run(cfg, Options{}, []string{"x"})
+	if err == nil || strings.Contains(err.Error(), "skip-uid-check") {
+		t.Fatalf("err = %v (must not prescribe --skip-uid-check)", err)
+	}
+	if !strings.Contains(err.Error(), "readable dev identity") {
+		t.Fatalf("err = %v", err)
+	}
+}

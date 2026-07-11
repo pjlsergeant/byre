@@ -85,3 +85,23 @@ func TestBeatOtherEscapeSequencesIgnored(t *testing.T) {
 		t.Fatalf("action = %v err = %v", action, err)
 	}
 }
+
+func TestBeatDegradedPreservesEscapesInContent(t *testing.T) {
+	// Review finding: pasted content containing ESC (ANSI-colored logs) must
+	// arrive byte-for-byte, not have escape-ish runs eaten.
+	in := "\x1b[200~red:\x1b[31mtext\x1b[0m done\x1b[201~\x04"
+	action, text, err := beatLoop(strings.NewReader(in), false)
+	if err != nil || action != beatText {
+		t.Fatalf("action = %v err = %v", action, err)
+	}
+	if string(text) != "red:\x1b[31mtext\x1b[0m done" {
+		t.Fatalf("content corrupted: %q", text)
+	}
+}
+
+func TestBeatDegradedPreservesEscOutsidePaste(t *testing.T) {
+	action, text, err := beatLoop(strings.NewReader("a\x1b[31mb\x04"), false)
+	if err != nil || action != beatText || string(text) != "a\x1b[31mb" {
+		t.Fatalf("action=%v text=%q err=%v", action, text, err)
+	}
+}

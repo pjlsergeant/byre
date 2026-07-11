@@ -108,7 +108,7 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 	}
 	switch {
 	case info.Mode().IsRegular():
-		return deliverFile(sess, src, filepath.Base(src), "/inbox", false)
+		return deliverFile(cfg, sess, src, filepath.Base(src), "/inbox", false)
 	case info.IsDir():
 		return deliverDir(cfg, sess, src)
 	default:
@@ -117,21 +117,26 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 	}
 }
 
-// deliverFile streams one local file (or reader-backed capture) into destDir
-// under name, returning the landed path the box reported (uniquify happens
-// in-box, so the reported name is the truth).
-func deliverFile(sess Session, src, name, destDir string, interior bool) (string, error) {
+// deliverFile streams one local file into destDir under name, returning the
+// landed path the box reported (uniquify happens in-box, so the reported name
+// is the truth).
+func deliverFile(cfg Config, sess Session, src, name, destDir string, interior bool) (string, error) {
 	f, err := os.Open(src)
 	if err != nil {
 		return "", fmt.Errorf("delivering %s: %w", src, err)
 	}
 	defer f.Close()
-	return deliverStream(sess, f, name, destDir, interior)
+	return deliverStream(cfg, sess, f, name, destDir, interior)
 }
 
 // deliverStream is deliverFile's engine: content from any reader.
-func deliverStream(sess Session, content io.Reader, name, destDir string, interior bool) (string, error) {
-	stem, ext, _ := splitName(name)
+func deliverStream(cfg Config, sess Session, content io.Reader, name, destDir string, interior bool) (string, error) {
+	stem, ext, sanitized := splitName(name)
+	if sanitized {
+		// The landing name was rewritten (control chars, or a path-shaped
+		// --name forced to a basename) — say so, never rename silently.
+		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", name, stem+ext)
+	}
 	args := []string{"sh", "-c", fileScript, "byre-deliver", destDir, stem, ext}
 	if interior {
 		args = append(args, "mk")
@@ -189,7 +194,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		}
 		deliverOne := func(size int64) {
 			files++
-			if _, ferr := deliverFile(sess, p, filepath.Base(dest), destDir, true); ferr != nil {
+			if _, ferr := deliverFile(cfg, sess, p, filepath.Base(dest), destDir, true); ferr != nil {
 				fmt.Fprintf(cfg.Err, "byre: %v\n", ferr)
 				failed++
 				return
@@ -246,17 +251,25 @@ func dirOf(rel string) string {
 	return d
 }
 
-// splitName splits a basename into (stem, ext) for uniquify ("report", ".pdf")
-// and sanitizes control characters (including newlines — the printed path and
+// splitName splits a landing name into (stem, ext) for uniquify ("report",
+// ".pdf"). It FORCES a basename first — a caller-supplied name (--name, a
+// clipboard capture) can never escape the destination dir with `/` or `..`
+// (the container has no /inbox-escape hatch until an explicit --to lands) —
+// and sanitizes control characters (including newlines: the printed path and
 // the porcelain grammar are line-framed by THIS rule, not by escaping).
 func splitName(name string) (stem, ext string, sanitized bool) {
-	name, sanitized = sanitizeBase(name)
-	ext = filepath.Ext(name)
-	stem = strings.TrimSuffix(name, ext)
-	if stem == "" { // dotfiles: Ext(".bashrc") is the whole name
-		stem, ext = name, ""
+	base := filepath.Base(name)
+	if base == "." || base == "/" || base == ".." || base == string(filepath.Separator) {
+		base = "unnamed"
 	}
-	return stem, ext, sanitized
+	changed := base != name
+	base, sc := sanitizeBase(base)
+	ext = filepath.Ext(base)
+	stem = strings.TrimSuffix(base, ext)
+	if stem == "" { // dotfiles: Ext(".bashrc") is the whole name
+		stem, ext = base, ""
+	}
+	return stem, ext, changed || sc
 }
 
 // sanitizeBase replaces control characters in a basename with '_'.

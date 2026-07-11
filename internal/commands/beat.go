@@ -62,19 +62,25 @@ func beatLoop(in io.Reader, canRead bool) (beatAction, []byte, error) {
 			}
 			capturing = true // degraded: nothing to read; keep waiting for text
 		case b == 0x1b: // possible bracketed-paste marker ESC [ 2 0 0 ~ / 2 0 1 ~
-			seq, ok := readBracketMarker(r)
-			if !ok {
-				continue // some other escape sequence; ignore
-			}
+			seq, consumed := readBracketMarker(r)
 			if seq == pasteStart {
 				if canRead {
 					// Discard the streamed text (the pasteboard has it, or better).
-					discardUntilPasteEnd(r)
+					var sink bytes.Buffer
+					captureUntilPasteEnd(r, &sink)
 					return beatGesture, nil, nil
 				}
 				capturing = true
 				captureUntilPasteEnd(r, &captured)
 				// Paste captured; Ctrl-D still confirms (multi-paste allowed).
+				continue
+			}
+			// Some other escape sequence. While waiting for a gesture it's
+			// terminal chrome (an arrow key) — ignore it. In a degraded
+			// capture it's CONTENT and must arrive intact.
+			if !canRead && capturing {
+				captured.WriteByte(0x1b)
+				captured.Write(consumed)
 			}
 		default:
 			if !canRead {
@@ -94,36 +100,40 @@ const (
 )
 
 // readBracketMarker reads the bytes after an ESC and classifies bracketed-
-// paste markers. Anything else is consumed as far as read and ignored.
-func readBracketMarker(r *bufio.Reader) (bracketSeq, bool) {
-	expect := func(want byte) bool {
+// paste markers. On a non-marker it returns the bytes it consumed, so capture
+// paths can preserve them verbatim instead of corrupting ESC-bearing content.
+func readBracketMarker(r *bufio.Reader) (bracketSeq, []byte) {
+	var consumed []byte
+	next := func() (byte, bool) {
 		b, err := r.ReadByte()
-		return err == nil && b == want
+		if err != nil {
+			return 0, false
+		}
+		consumed = append(consumed, b)
+		return b, true
 	}
-	if !expect('[') || !expect('2') || !expect('0') {
-		return notBracket, false
+	for _, want := range []byte("[20") {
+		b, ok := next()
+		if !ok || b != want {
+			return notBracket, consumed
+		}
 	}
-	b, err := r.ReadByte()
-	if err != nil {
-		return notBracket, false
+	kind, ok := next()
+	if !ok || (kind != '0' && kind != '1') {
+		return notBracket, consumed
 	}
-	if !expect('~') {
-		return notBracket, false
+	if b, ok := next(); !ok || b != '~' {
+		return notBracket, consumed
 	}
-	switch b {
-	case '0':
-		return pasteStart, true
-	case '1':
-		return pasteEnd, true
+	if kind == '0' {
+		return pasteStart, consumed
 	}
-	return notBracket, false
+	return pasteEnd, consumed
 }
 
-func discardUntilPasteEnd(r *bufio.Reader) {
-	var sink bytes.Buffer
-	captureUntilPasteEnd(r, &sink)
-}
-
+// captureUntilPasteEnd copies paste content into out until the end marker,
+// preserving any non-marker escape sequences byte-for-byte — pasted content
+// legitimately contains ESC (ANSI-colored logs, terminal transcripts).
 func captureUntilPasteEnd(r *bufio.Reader, out *bytes.Buffer) {
 	for {
 		b, err := r.ReadByte()
@@ -131,9 +141,12 @@ func captureUntilPasteEnd(r *bufio.Reader, out *bytes.Buffer) {
 			return
 		}
 		if b == 0x1b {
-			if seq, ok := readBracketMarker(r); ok && seq == pasteEnd {
+			seq, consumed := readBracketMarker(r)
+			if seq == pasteEnd {
 				return
 			}
+			out.WriteByte(0x1b)
+			out.Write(consumed)
 			continue
 		}
 		out.WriteByte(b)

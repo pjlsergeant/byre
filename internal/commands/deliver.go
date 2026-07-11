@@ -97,6 +97,10 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 		Pick: pick,
 	}
 	for _, r := range engines {
+		// Deliver inherits develop's rootless-Podman detect-and-warn (ADR
+		// 0008 via decisions D3): exec-stream ownership can be wrong there,
+		// so the claim degrades up front; delivery itself is not blocked.
+		warnRootlessPodman(s.Err, r)
 		cfg.Engines = append(cfg.Engines, engineAdapter{r})
 	}
 	_, err := deliver.RunSources(cfg, opts, sources)

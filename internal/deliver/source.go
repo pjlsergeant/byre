@@ -60,7 +60,7 @@ func deliverSource(cfg Config, sess Session, src Source) (string, error) {
 	case src.Path != "":
 		return deliverPath(cfg, sess, src.Path)
 	case src.Data != nil:
-		landed, err := deliverStream(sess, bytes.NewReader(src.Data), src.Name, "/inbox", false)
+		landed, err := deliverStream(cfg, sess, bytes.NewReader(src.Data), src.Name, "/inbox", false)
 		if err != nil {
 			return "", err
 		}
@@ -68,7 +68,7 @@ func deliverSource(cfg Config, sess Session, src Source) (string, error) {
 		return landed, nil
 	case src.Reader != nil:
 		cr := &countingReader{r: src.Reader}
-		landed, err := deliverStream(sess, cr, src.Name, "/inbox", false)
+		landed, err := deliverStream(cfg, sess, cr, src.Name, "/inbox", false)
 		if err != nil {
 			return "", err
 		}
