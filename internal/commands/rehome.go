@@ -160,12 +160,15 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 		// The old store's contents die INSIDE the critical section (a develop
 		// on the old id queued on its lock must never interleave with the
 		// deletion); only the dir + lock file survive to the post-release
-		// removal below.
+		// removal below. Warn-only from here: sources are already retired, so
+		// failing now would leave an error atop a committed migration — the
+		// leftover store is a candidate-list wart, not migration state.
 		if storeSafe {
 			if cerr := clearStoreContents(oldDir); cerr != nil {
-				return fmt.Errorf("removing the old store contents: %w", cerr)
+				fmt.Fprintf(s.Err, "byre: warning: could not remove the old store contents: %v — the old id stays a rehome candidate until %s is deleted by hand.\n", cerr, oldDir)
+			} else {
+				removeOldStore = true
 			}
-			removeOldStore = true
 		}
 		fmt.Fprintf(s.Err, "byre: rehomed %s -> %s. Run `byre develop` to rebuild the image.\n", oldID, newID)
 		return nil

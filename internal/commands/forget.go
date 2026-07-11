@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -179,16 +180,36 @@ func clearStoreContents(dir string) error {
 	return nil
 }
 
-// removeEmptiedStore removes the lock file and then the store dir itself —
-// NON-recursively — after the lock is released. The contents died under the
-// lock (clearStoreContents); if a concurrent byre repopulated the dir in the
-// post-release window, the final remove fails and the fresh state survives:
-// deleting a dir whose lock we no longer hold must never take new content
-// with it.
+// removeEmptiedStore retires a store dir whose contents already died under
+// the setup lock (clearStoreContents), after that lock was released — the
+// lock file lives in the dir, so this is the only possible ordering. The
+// lock file must never be unlinked while another process could hold or be
+// acquiring it (flock is per-inode; unlinking a held path splits the mutex),
+// so this RE-TAKES the lock non-blocking first: a holder means the store is
+// back in use — leave it. Unlinking under the held flock is safe: a waiter
+// queued on this inode re-stats after our release (lock.acquire), sees the
+// path gone, and requeues or fails loudly on the removed dir. The dir itself
+// goes non-recursively, so content repopulated in between survives.
 func removeEmptiedStore(dir string) error {
-	_ = os.Remove(filepath.Join(dir, "lock"))
-	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing %s: %w (recreated by a concurrent byre? its contents were already deleted)", dir, err)
+	lockPath := filepath.Join(dir, "lock")
+	l, ok, err := lock.TryAcquire(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // the dir is already gone
+		}
+		return err
 	}
-	return nil
+	if !ok {
+		return fmt.Errorf("not removing %s: a concurrent byre is using it (its contents were already deleted)", dir)
+	}
+	rmErr := os.Remove(lockPath)
+	dirErr := os.Remove(dir)
+	relErr := l.Release()
+	if rmErr != nil && !os.IsNotExist(rmErr) {
+		return fmt.Errorf("removing %s: %w", lockPath, rmErr)
+	}
+	if dirErr != nil && !os.IsNotExist(dirErr) {
+		return fmt.Errorf("removing %s: %w (recreated by a concurrent byre? its contents were already deleted)", dir, dirErr)
+	}
+	return relErr
 }
