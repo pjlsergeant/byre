@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -207,10 +208,17 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 		// checked before every draw so a late responder never scribbles on a
 		// restored terminal.
 		var stopped atomic.Bool
+		var drawMu sync.Mutex
 		draw := func(line string) {
-			if !stopped.Load() {
-				fmt.Fprint(s.Err, "\r\x1b[2K"+line)
+			if stopped.Load() {
+				return
 			}
+			drawMu.Lock()
+			defer drawMu.Unlock()
+			if stopped.Load() { // re-check under the lock: shutdown may have won
+				return
+			}
+			fmt.Fprint(s.Err, "\r\x1b[2K"+line)
 		}
 		var last string
 		sample := func() {
@@ -242,6 +250,26 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 		stopLive = func() {
 			stopped.Store(true)
 			close(stopSampler)
+			// Try to win the draw lock: holding it (even momentarily) proves
+			// no write is in flight, so nothing lands after restore. Bounded,
+			// like the join below — the deliberate residual is a stderr
+			// write BLOCKED >500ms (a ctrl-s-suspended tty), where one late
+			// line beats wedging the terminal raw forever.
+			deadline := time.Now().Add(500 * time.Millisecond)
+			locked := false
+			for {
+				if drawMu.TryLock() {
+					locked = true
+					break
+				}
+				if time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if locked {
+				drawMu.Unlock() // held even momentarily = no write in flight
+			}
 			select { // bounded: one hung read must not wedge the exit
 			case <-samplerDone:
 			case <-time.After(500 * time.Millisecond):
