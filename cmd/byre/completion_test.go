@@ -77,12 +77,18 @@ func TestCompletionInstallFish(t *testing.T) {
 	if !strings.Contains(string(body), "fish completion for byre") {
 		t.Errorf("written file isn't the completion script:\n%.200s", body)
 	}
+	if !strings.Contains(string(body), completionMarker) {
+		t.Errorf("written file missing the ownership marker")
+	}
 
 	if _, err := runCompletion(t, "fish", "--install"); err != nil {
 		t.Fatalf("re-install over byre's own file must succeed: %v", err)
 	}
 
-	if err := os.WriteFile(target, []byte("someone else's file\n"), 0o644); err != nil {
+	// Ownership is the MARKER, not the generated header phrase: a
+	// hand-written script mentioning "completion for byre" is still foreign.
+	foreign := "# my own fish completion for byre\ncomplete -c byre\n"
+	if err := os.WriteFile(target, []byte(foreign), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err = runCompletion(t, "fish", "--install")
@@ -93,8 +99,40 @@ func TestCompletionInstallFish(t *testing.T) {
 	if errors.As(err, &uerr) {
 		t.Errorf("foreign-file refusal must be a byre failure (exit 1), not usage: %v", err)
 	}
-	if got, _ := os.ReadFile(target); string(got) != "someone else's file\n" {
+	if got, _ := os.ReadFile(target); string(got) != foreign {
 		t.Errorf("foreign file was modified: %q", got)
+	}
+}
+
+// TestCompletionInstallIgnoresRelativeXDG pins the XDG spec rule: a relative
+// XDG_CONFIG_HOME is ignored (falls back to ~/.config), never resolved
+// against the cwd where it could land inside a project tree.
+func TestCompletionInstallIgnoresRelativeXDG(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "relative/config")
+	out, err := runCompletion(t, "fish", "--install")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	target := filepath.Join(home, ".config", "fish", "completions", "byre.fish")
+	if strings.TrimSpace(out) != target {
+		t.Errorf("stdout = %q, want the home fallback %q", out, target)
+	}
+}
+
+// TestCompletionNoDescriptions pins the flag reaches the generators: the
+// no-desc scripts drive the hidden __completeNoDesc command instead.
+func TestCompletionNoDescriptions(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		out, err := runCompletion(t, shell, "--no-descriptions")
+		if err != nil {
+			t.Errorf("%s --no-descriptions: %v", shell, err)
+			continue
+		}
+		if !strings.Contains(out, "__completeNoDesc") {
+			t.Errorf("%s --no-descriptions script doesn't use __completeNoDesc", shell)
+		}
 	}
 }
 
@@ -159,5 +197,29 @@ func TestCompletionInstallZshFallback(t *testing.T) {
 	}
 	if _, err := runCompletion(t, "zsh", "--install"); err == nil {
 		t.Fatal("foreign _byre in the operative site dir must refuse, not shadow")
+	}
+}
+
+// TestCompletionInstallZshStaleShadowStops pins that a byre-owned _byre in
+// the operative site dir that can't be UPDATED is an error — falling through
+// to a later location would leave the stale copy first on fpath.
+func TestCompletionInstallZshStaleShadowStops(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	site := t.TempDir()
+	restore := zshSiteFunctionDirs
+	zshSiteFunctionDirs = []string{site}
+	defer func() { zshSiteFunctionDirs = restore }()
+
+	target := filepath.Join(site, "_byre")
+	stale := "#compdef byre\n" + completionMarker + "\n"
+	if err := os.WriteFile(target, []byte(stale), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCompletion(t, "zsh", "--install"); err == nil {
+		t.Fatal("un-updatable byre-owned _byre must error, not fall through")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".zfunc", "_byre")); err == nil {
+		t.Error("fallback copy written despite the stale copy shadowing it")
 	}
 }
