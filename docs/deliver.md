@@ -114,11 +114,13 @@ $ byre deliver --install-app
 /Users/you/Library/Services/Deliver to Byre.workflow
 ```
 
-Drag **Byre Deliver** to your Dock and drop files on it, or open it with
-nothing to deliver your clipboard; outcomes arrive as notifications
-("shot.png → /inbox -- path copied to the clipboard"). The right-click
-**Deliver to Byre** Quick Action does the same from Finder's context
-menu. On Linux you get a `.desktop` launcher instead.
+Drag **Byre Deliver** to your Dock and drop files on it -- outcomes
+arrive as a small popup ("shot.png → /inbox -- path copied to the
+clipboard"). Click it with nothing and it opens a terminal running the
+interactive clipboard flow -- the paste beat, so you see what's on your
+clipboard before it ships. The right-click **Deliver to Byre** Quick
+Action delivers from Finder's context menu. On Linux you get a
+`.desktop` launcher instead.
 
 The app is a *generated, readable artifact* -- its AppleScript source
 ships inside the bundle (`Contents/Resources/droplet.applescript`), it's

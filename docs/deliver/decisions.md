@@ -299,6 +299,12 @@ time (can't test in-box). #10 clipboard clobber → D16. #11 type honesty
 - **Diagnosable emptiness:** the nothing-deliverable error lists the
   clipboard types actually seen, so an unmapped pasteboard class is
   self-reporting.
+- **D19 amended — a plain CLICK on the deliver app opens a terminal
+  running the interactive beat** (Pete, deliver-app field round):
+  silently shipping the clipboard from a Dock click skipped the paste
+  beat exactly where the user can't see what's shipping. Drops stay
+  direct (a drag is already the explicit what-to-deliver choice);
+  detached immediate-read remains only for non-app graphical launches.
 
 ## Round-2 review disposition (2026-07-10, adversarial pass over THIS file)
 

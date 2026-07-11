@@ -123,8 +123,11 @@
 - [ ] Drag the app to the Dock; drop a file on it → notification
       ("… → /inbox… — path copied to the clipboard"); Cmd-V into the
       agent works. FIRST use: expect macOS permission prompts once.
-- [ ] Click the app with nothing selected (or open it) → clipboard mode:
-      whatever's on the clipboard delivers, notification reports it.
+- [ ] Click the app with nothing selected (or open it) → a Terminal
+      window opens running the paste beat (sampled prompt: "your
+      clipboard holds …"); deliver via ctrl-v → window closes itself on
+      success (default Terminal profile). First click may prompt for
+      Automation permission (controlling Terminal) once.
 - [ ] Right-click a file in Finder → Quick Actions → "Deliver to Byre" →
       same flow. (May need enabling once under System Settings →
       Extensions → Finder if macOS doesn't show it immediately.)
