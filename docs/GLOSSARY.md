@@ -42,6 +42,30 @@ The launcher's wait, at its very top, for the firewall ready signal before
 anything else runs. No signal within the timeout kills the box -- it fails
 closed, never launches open.
 
+**Deliver**:
+Getting a file from the host into a running box, human-initiated: `byre
+deliver` streams path arguments, the host clipboard, or stdin into the
+box's inbox and hands the in-box path back (stdout + host clipboard).
+Machine-scoped -- the one verb that picks a box by discovery, not cwd.
+(ADR 0021)
+_Avoid_: drop, ingest, airlock (all lost the naming)
+
+**Inbox**:
+Where delivered files land in the box: `/inbox`, a dev-owned directory
+baked into the image, dead with the container -- re-deliver rather than
+expect it to survive. Always spelled as the absolute path in output and
+docs. (ADR 0021)
+_Avoid_: airlock (connotes a two-way chamber; this is one-way and
+human-initiated)
+
+**Deliver app**:
+The generated host-side drag target `byre deliver --install-app` writes:
+a readable macOS `.app` (display name "Byre Deliver") or Linux
+`.desktop` entry whose only job is invoking `byre deliver` on what you
+drop. The Finder Quick Action is "Deliver to Byre". (ADR 0021)
+_Avoid_: droplet (DigitalOcean owns it), materialize (reserved for
+built-in skill copies), shim
+
 ### Config
 
 **Cascade**:

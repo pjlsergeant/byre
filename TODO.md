@@ -15,6 +15,41 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
+- [ ] **URGENT: rebuild grok-shared-auth on the API-key path** (Pete,
+  2026-07-10). The symlinked-auth.json design FAILED ITS GATE in the field
+  (twice in one day on the byre-dev box): grok's refresh rotation is
+  single-use and does NOT propagate through the shared file, so the shared
+  credential is dead within ~6h of whoever authed last ("ServerRejected",
+  unrecoverable) — and the firstrun hook's every-launch heal then CLOBBERS
+  working per-box logins with the corpse ("shared wins" was designed for
+  logout-forks, not for a stale shared copy). Presents as "grok randomly
+  breaks", hangs headless runs on an interactive device prompt. Evidence:
+  2026-07-10 diary; shared file /home/dev/.byre-identity/grok/auth.json
+  mtime Jul 9 18:55 vs its 00:55 expiry; ~/.grok-home/logs/unified.jsonl
+  ("auth recovery: disk token expired" / "refresh_chain short-circuit on
+  permanent failure"). The fix: drop the symlink mechanism entirely and
+  ride grok's env-based API-key auth (skips file auth; rotation-immune;
+  mirrors claude-shared-auth's token-not-files shape — the skill.toml
+  already notes the env path). Until rebuilt: the skill is a footgun —
+  update its description to say so (or pull it from the picker), and note
+  that the grok skill ITSELF is fine (per-box plain-file logins rotate
+  correctly). Related cheap fixes to ride along: byre-codereview grows a
+  pre-flight grok auth probe/timeout (expired auth = headless HANG on a
+  device prompt today, silent in background runs; the live device code
+  lands in .devloop/.dbg.*), and its "~7 days" token-lifetime comment is
+  wrong (~6h access tokens). Record the mechanics in
+  docs/agent-credential-mechanics.md when the fix lands.
+- [ ] **`byre deliver` follow-on tranches** (v1 SHIPPED 2026-07-10 —
+  merged after two reviewer loops + one field round; design of record
+  `docs/deliver/decisions.md` incl. field amendments, rationale ADR
+  0021, user guide docs/deliver.md). Remaining, separately shippable:
+  `ssh://` remote delivery (frozen mini-protocol: --proto / --porcelain
+  / --consume, designed); `--install-app` deliver app ("Byre Deliver"
+  bundle + "Deliver to Byre" Quick Action + .desktop, designed).
+  Also outstanding: finish the human-test checklist
+  (docs/deliver/human-test.md — image Ctrl-V, drag, SSH sections);
+  delete the docs/deliver/ workspace once the tranches land; gated
+  BYRE_DOCKER_TESTS deliver cases ride the agent-runnable-tests item.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
@@ -90,7 +125,10 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 - [ ] **Drag-and-drop into the boxed terminal.** Dropping a file pastes its
   host path, meaningless in-box. Needs a design pass: translate paths under
   the project dir to `/workspace`, treat outside paths as a grant question,
-  survey per-terminal drop behavior.
+  survey per-terminal drop behavior. Partially superseded by `byre deliver`
+  (Now): dropping onto the deliver app covers get-this-file-in-the-box;
+  what remains here is only drop-directly-onto-the-running-terminal
+  ergonomics.
 - [ ] **gemini OAuth gate.** Two concurrent gemini boxes sharing one OAuth
   credential, run past the ~1h token expiry; neither dying = OAuth sharing
   is safe. The API-key path is already verified

@@ -245,6 +245,16 @@ By default agents log in once per project, inside the box. The shared-auth skill
 machine. The login lives in a shared volume that reset/forget deliberately never
 touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
 
+### Paste images and files into the box?
+
+tldr: `byre deliver <file>` — or just `byre deliver` and paste.
+
+Anything you deliver lands in the box's `/inbox` and the in-box path comes
+back on your clipboard, ready to Cmd-V into the agent prompt. With no
+arguments byre reads your *clipboard* — so screenshot, `byre deliver`,
+paste, done. Works from any directory (it finds your running box), over
+SSH, and with whole directories. See [docs/deliver.md](docs/deliver.md).
+
 ### Stop using byre?
 
 `byre dockerfile` prints the image, `byre dockerrun` prints the exact run command -- that's the whole exit. The firewall is the one thing that doesn't travel automatically (its rules are applied from outside the box, by byre); `byre ejectfirewall` prints that step as a standalone script. See [docs/EJECTING.md](docs/EJECTING.md).

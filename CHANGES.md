@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- **New `byre deliver`** (ADR 0021): get files from the host into a running
+  box in one move -- `byre deliver report.pdf` streams into the box's new
+  `/inbox` and puts the in-box path on your clipboard, ready to paste into
+  the agent prompt. Plain `byre deliver` delivers your *clipboard*: it
+  samples what's on offer (files, image, text -- types only, never content),
+  waits for a paste gesture (Ctrl-V reads images and copied files directly;
+  dragging a file onto the window delivers that file), and confirms kind and
+  size, never content. `-` streams stdin (`--name` names it). byre's first
+  machine-scoped verb: it finds your running box from anywhere (unique
+  `--box` prefix, cwd match from any subdirectory, sole session, or an
+  interactive picker), across docker and podman, only boxes you own
+  (`--skip-uid-check` widens). Names are preserved and collisions
+  uniquified, never overwritten; directories deliver recursively as one
+  path; every landed path prints to stdout (the machine contract) with the
+  clipboard as best-effort garnish (pbcopy/wl-copy/xclip, OSC 52 over SSH,
+  `--no-clip` to skip). The inbox dies with the box -- re-deliver, it's one
+  command. Boxes built before this release need one rebuild to gain
+  `/inbox`. User guide: docs/deliver.md.
+- **New `byre deliver --install-app`**: generates the deliver app -- a
+  "Byre Deliver" Dock/Finder drag target and a right-click "Deliver to
+  Byre" Quick Action on macOS (assembled locally by `osacompile` from a
+  readable AppleScript source shipped inside the bundle -- nothing
+  prebuilt, nothing to notarize), a `.desktop` launcher on Linux. Drop
+  files on it, or open it plain to deliver the clipboard; outcomes
+  arrive as OS notifications (which no-TTY graphical launches of
+  `byre deliver` now use generally). Re-run after moving the byre
+  binary; `--box` bakes a fixed target; uninstall by deleting the
+  printed paths. Regeneration never clobbers a same-named artifact
+  byre didn't write. **macOS is the tested platform for the graphical
+  layer; on Linux the `.desktop` launcher, graphical picker, and
+  notifications are experimental and unverified across desktop
+  environments -- the terminal `byre deliver` flows are the supported
+  Linux path.**
 - **`byre rehome` validates the old id**: a malformed id (anything byre
   couldn't have generated) is refused up front instead of being used as a
   store path component.

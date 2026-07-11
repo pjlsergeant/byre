@@ -71,8 +71,10 @@ func TestDockerfilePrintsWithoutTouchingContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Printed bytes must equal the generator output.
-	want := gen.Dockerfile(gen.Input{})
+	// Printed bytes must equal the generator output. AgentContext is always on:
+	// the chassis paragraph (the /inbox fact) makes the context non-empty on
+	// every box.
+	want := gen.Dockerfile(gen.Input{AgentContext: true})
 	if out.String() != want {
 		t.Fatalf("printed output != generator output:\n%s", out.String())
 	}

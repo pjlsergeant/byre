@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/commands"
+	"github.com/pjlsergeant/byre/internal/deliver"
 )
 
 // version is stamped by release builds (goreleaser passes
@@ -29,6 +30,8 @@ type app struct {
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
 	shell         func(s commands.Streams, dir string) error
+	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
+	installApp    func(s commands.Streams, box string) error
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
 	skillUpdate   func(s commands.Streams) error
 	rebuild       func(s commands.Streams, dir string) error
@@ -49,6 +52,8 @@ var realApp = app{
 	reset:            commands.Reset,
 	forget:           commands.Forget,
 	shell:            commands.Shell,
+	deliver:          commands.Deliver,
+	installApp:       commands.InstallApp,
 	worktree:         commands.Worktree,
 	skillUpdate:      commands.SkillUpdate,
 	rebuild:          commands.Rebuild,
@@ -209,6 +214,96 @@ started by 'byre develop'.`,
 				return err
 			}
 			return a.shell(s, dir)
+		},
+	},
+	{
+		name:    "deliver",
+		summary: "Deliver files from the host into a running box's /inbox.",
+		help: `Usage: byre deliver [flags] [<path>... | -]
+
+Get files into a running box: each path streams into the box's /inbox
+(names preserved, collisions uniquified, never overwritten) and the landed
+in-box path prints to stdout, one per line — paste it into the agent prompt.
+Directories deliver recursively, preserving structure, as one path.
+
+With no paths, byre delivers your CLIPBOARD: on a terminal it waits for a
+paste gesture (Ctrl-V or Cmd-V — the beat where you check what's on the
+clipboard), then reads the system clipboard directly, so copied files,
+screenshots, and text all work. Import priority: file references → image →
+text; captures land as clipboard-<timestamp> named for their actual format.
+'-' (or piped stdin) streams stdin into a single file.
+
+The box is found machine-wide: --box picks explicitly (unique id or project
+prefix); otherwise a box whose workdir contains the current directory wins;
+otherwise the only running box owned by you; otherwise the candidates are
+listed. Boxes started by other users are hidden unless --skip-uid-check.
+
+After a delivery the landed paths also go to your clipboard (pbcopy /
+wl-copy / xclip, or OSC 52 through SSH), ready to paste; --no-clip skips
+that, and when no clipboard path exists byre says so — the printed path is
+always the contract.
+
+'byre deliver --install-app' installs the DELIVER APP instead: a generated
+"Byre Deliver" drag target (macOS: a Dock/Finder droplet plus a right-click
+"Deliver to Byre" Quick Action; Linux: a .desktop launcher). Drop files on
+it, or open it plain to deliver the clipboard; outcomes arrive as
+notifications. Re-run it after moving byre; --box bakes a fixed target in.
+
+  --box <id>        deliver to this box (unique id or project prefix)
+  --name <base>     landing filename for stdin ('-') content
+  --skip-uid-check  include (and permit) boxes owned by other users
+  --no-clip         don't copy the landed paths to the clipboard
+  --install-app     install the deliver app instead of delivering`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			var opts deliver.Options
+			var paths []string
+			installApp := false
+			for i := 0; i < len(rest); i++ {
+				switch {
+				case rest[i] == "--install-app":
+					installApp = true
+				case rest[i] == "--box":
+					i++
+					if i >= len(rest) {
+						return usageError("byre deliver: --box needs a value")
+					}
+					opts.Box = rest[i]
+				case strings.HasPrefix(rest[i], "--box="):
+					opts.Box = strings.TrimPrefix(rest[i], "--box=")
+				case rest[i] == "--name":
+					i++
+					if i >= len(rest) {
+						return usageError("byre deliver: --name needs a value")
+					}
+					opts.Name = rest[i]
+				case strings.HasPrefix(rest[i], "--name="):
+					opts.Name = strings.TrimPrefix(rest[i], "--name=")
+				case rest[i] == "--skip-uid-check":
+					opts.SkipUIDCheck = true
+				case rest[i] == "--no-clip":
+					opts.NoClip = true
+				case rest[i] == "-":
+					paths = append(paths, "-")
+				case strings.HasPrefix(rest[i], "-"):
+					return usageError(fmt.Sprintf("byre deliver: unknown flag %q", rest[i]))
+				default:
+					paths = append(paths, rest[i])
+				}
+			}
+			if installApp {
+				if len(paths) > 0 || opts.Name != "" || opts.SkipUIDCheck || opts.NoClip {
+					return usageError("byre deliver --install-app: takes only an optional --box")
+				}
+				return a.installApp(s, opts.Box)
+			}
+			if len(paths) > 1 {
+				for _, p := range paths {
+					if p == "-" {
+						return usageError("byre deliver: '-' (stdin) cannot be mixed with path arguments")
+					}
+				}
+			}
+			return a.deliver(s, dir, opts, paths)
 		},
 	},
 	{

@@ -1,0 +1,173 @@
+package deliver
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func TestQuoteIfNeeded(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/inbox/report.pdf", "/inbox/report.pdf"},
+		{"/inbox/a_b-c.1.txt", "/inbox/a_b-c.1.txt"},
+		{"/inbox/Screenshot 2026-07-10 at 3.14.15 PM.png", "'/inbox/Screenshot 2026-07-10 at 3.14.15 PM.png'"},
+		{"/inbox/it's.txt", `'/inbox/it'\''s.txt'`},
+		{"/inbox/a$b", "'/inbox/a$b'"},
+	}
+	for _, c := range cases {
+		if got := quoteIfNeeded(c.in); got != c.want {
+			t.Errorf("quoteIfNeeded(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestClipboardPayloadOnePerLine(t *testing.T) {
+	got := clipboardPayload([]string{"/inbox/a.png", "/inbox/b c.png"})
+	want := "/inbox/a.png\n'/inbox/b c.png'"
+	if got != want {
+		t.Fatalf("payload = %q, want %q", got, want)
+	}
+}
+
+func TestClipboardRoundTrip(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	var wrote string
+	cfg.Clip = &Clipboard{Name: "pbcopy", Write: func(s string) error { wrote = s; return nil }}
+	src := writeFile(t, "shot.png", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if wrote != "/inbox/shot.png" {
+		t.Fatalf("clipboard = %q", wrote)
+	}
+	if !strings.Contains(errw.String(), "path copied to the clipboard (pbcopy)") {
+		t.Fatalf("no feedback line: %q", errw.String())
+	}
+}
+
+func TestClipboardUnavailableSaysSo(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	src := writeFile(t, "f", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "clipboard unavailable — path printed above") {
+		t.Fatalf("no degrade claim: %q", errw.String())
+	}
+}
+
+func TestClipboardWriteFailureDegrades(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, out, errw := testConfig(eng)
+	cfg.Clip = &Clipboard{Name: "xclip", Write: func(string) error { return fmt.Errorf("no display") }}
+	src := writeFile(t, "f.txt", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err) // a failed clipboard write must NOT fail the delivery
+	}
+	if !strings.Contains(errw.String(), "clipboard write failed") {
+		t.Fatalf("no degrade claim: %q", errw.String())
+	}
+	if !strings.Contains(out.String(), "/inbox/f.txt") {
+		t.Fatalf("stdout must still carry the path: %q", out.String())
+	}
+}
+
+func TestNoClipSkipsSilently(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	called := false
+	cfg.Clip = &Clipboard{Name: "pbcopy", Write: func(string) error { called = true; return nil }}
+	src := writeFile(t, "f", "x")
+	if _, err := Run(cfg, Options{NoClip: true}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("clipboard written despite --no-clip")
+	}
+	if strings.Contains(errw.String(), "clipboard") {
+		t.Fatalf("--no-clip should be silent about the clipboard: %q", errw.String())
+	}
+}
+
+func TestBestEffortClaimIsHedged(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	cfg.Clip = &Clipboard{Name: "OSC 52", BestEffort: true, Write: func(string) error { return nil }}
+	src := writeFile(t, "f", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "OSC 52 (best-effort)") {
+		t.Fatalf("best-effort claim not hedged: %q", errw.String())
+	}
+}
+
+func TestDataSourceConfirmationStatesKindAndSizeNeverContent(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, out, errw := testConfig(eng)
+	secret := "hunter2-super-secret"
+	landed, err := RunSources(cfg, Options{}, []Source{{Data: []byte(secret), Name: "clipboard-x.txt", Kind: "clipboard text"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 || landed[0] != "/inbox/clipboard-x.txt" {
+		t.Fatalf("landed = %v", landed)
+	}
+	msg := errw.String()
+	if !strings.Contains(msg, "delivered clipboard text (20 bytes) → /inbox/clipboard-x.txt") {
+		t.Fatalf("confirmation missing kind+size: %q", msg)
+	}
+	if strings.Contains(msg, "hunter2") || strings.Contains(out.String(), "hunter2") {
+		t.Fatal("content leaked into output")
+	}
+}
+
+func TestReaderSourceCountsBytes(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	_, err := RunSources(cfg, Options{}, []Source{{Reader: strings.NewReader("12345"), Name: "stdin-x", Kind: "stdin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "delivered stdin (5 bytes)") {
+		t.Fatalf("no counted confirmation: %q", errw.String())
+	}
+}
+
+func TestNameCannotEscapeInbox(t *testing.T) {
+	// --name with path components must be forced to a basename (review
+	// finding: '--name ../workspace/x -' would have landed outside /inbox).
+	eng := box("docker", "aaa")
+	cfg, out, errw := testConfig(eng)
+	landed, err := RunSources(cfg, Options{}, []Source{{Data: []byte("x"), Name: "../workspace/evil.txt", Kind: "stdin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 || landed[0] != "/inbox/evil.txt" {
+		t.Fatalf("landed = %v", landed)
+	}
+	if strings.Contains(out.String(), "..") {
+		t.Fatalf("path components leaked: %q", out.String())
+	}
+	if !strings.Contains(errw.String(), "renamed") {
+		t.Fatalf("silent rename: %q", errw.String())
+	}
+}
+
+func TestSplitNameForcesBasename(t *testing.T) {
+	cases := []struct{ in, stem, ext string }{
+		{"../workspace/evil.txt", "evil", ".txt"},
+		{"/etc/passwd", "passwd", ""},
+		{"a/b/c.png", "c", ".png"},
+		{"..", "unnamed", ""},
+		{"/", "unnamed", ""},
+	}
+	for _, c := range cases {
+		stem, ext, sanitized := splitName(c.in)
+		if stem != c.stem || ext != c.ext || !sanitized {
+			t.Errorf("splitName(%q) = %q %q %v, want %q %q true", c.in, stem, ext, sanitized, c.stem, c.ext)
+		}
+	}
+}

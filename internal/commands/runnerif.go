@@ -1,6 +1,10 @@
 package commands
 
-import "github.com/pjlsergeant/byre/internal/runner"
+import (
+	"io"
+
+	"github.com/pjlsergeant/byre/internal/runner"
+)
 
 // The engine surface the commands consume, sliced into three composable
 // interfaces (satisfied by *runner.Runner; tests inject fakeRunner). A command
@@ -15,11 +19,13 @@ type sessionRunner interface {
 	IsRootlessPodman() (bool, error)
 	RunningContainersByLabel(label string) ([]string, error)
 	ContainerEnv(id string) (map[string]string, error)
+	ContainerLabels(id string) (map[string]string, error)
 	NetworkMode(container string) (string, error)
 	Stop(container string) error
 	Run(args []string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string) error
 	Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error
+	ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error)
 }
 
 // volumeRunner is the named-volume surface: enumeration, lifecycle, and the
