@@ -66,20 +66,23 @@
 ## 4. The paste beat (no args, terminal)
 
 - [ ] Copy some TEXT (Cmd-C in any app), then `byre deliver` →
-      prompt says `your clipboard holds text — ...`; **Cmd-V** →
+      prompt says `📝 text on the clipboard — ...`; now copy an IMAGE
+      without leaving the beat → the line updates in place to
+      `🖼  image on the clipboard — press ctrl-v ...` (bold ctrl-v);
+      copy text again and **Cmd-V** →
       `paste received (N bytes)` then `reading the clipboard…` then
       `delivered clipboard text (N bytes) → /inbox/clipboard-<ts>.txt`
       — content NOT echoed anywhere.
 - [ ] Screenshot to clipboard (Cmd-Ctrl-Shift-4), `byre deliver` →
-      prompt says `your clipboard holds an image — ctrl-v to deliver it
-      (cmd-v won't register for images)`; **Ctrl-V** →
+      prompt says `🖼  image on the clipboard — press ctrl-v ...`;
+      **Ctrl-V** →
       `reading the clipboard…` then `/inbox/clipboard-<ts>.png`; open it
       in the box (`file` it) → PNG.
 - [ ] Same screenshot, but press **Cmd-V** instead → expected: NOTHING
       happens (the terminal sends no event for an image-only clipboard —
       the prompt warned you); Ctrl-V still works from the same prompt.
 - [ ] Multi-select files in Finder, Cmd-C, `byre deliver` → prompt says
-      `your clipboard holds copied files — ...`.
+      `📎 copied files on the clipboard — ...`.
 - [ ] **Drag a file from Finder onto the terminal window** during the beat
       → `paste received…` then `delivering the dragged file` → the FILE
       lands in /inbox (its real content — not stale clipboard text).

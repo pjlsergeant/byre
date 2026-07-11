@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	xterm "github.com/charmbracelet/x/term"
 )
@@ -160,22 +161,24 @@ func captureUntilPasteEnd(r *bufio.Reader, out *bytes.Buffer) {
 }
 
 // beatPrompt tailors the beat's prompt to what the pasteboard HOLDS — types
-// only, sampled up front, never content (Claude Code's own move: it can't
-// see a failed Cmd-V either, so it samples the pasteboard and hints
-// proactively). Ctrl-V leads for images because Cmd-V with an image-only
-// clipboard sends the terminal NOTHING (no text representation, no event to
-// catch — field-verified 2026-07-10); typ "" means the sample failed or the
-// board is empty, and the generic prompt still tells the whole story.
+// only, never content (Claude Code's own move: it can't see a failed Cmd-V
+// either, so it samples the pasteboard and hints proactively). The beat
+// re-samples every ~1.2s and redraws in place, so copying something new
+// updates the line live. Ctrl-V goes LOUD (bold, cmd-v disclaimed) exactly
+// when it matters: Cmd-V with an image-only clipboard sends the terminal
+// NOTHING (no text representation, no event to catch — field-verified
+// 2026-07-10). An empty/unreadable board still tells the whole story.
 func beatPrompt(types []string) string {
+	const bold, plain = "\x1b[1m", "\x1b[22m"
 	switch {
 	case hasType(types, typeFileRefs):
-		return "byre: your clipboard holds copied files — ctrl-v (or cmd-v) to deliver them; ctrl-c cancels"
+		return "byre: 📎 copied files on the clipboard — ctrl-v (or cmd-v) delivers them · ctrl-c cancels"
 	case pickImageType(types) != "":
-		return "byre: your clipboard holds an image — ctrl-v to deliver it (cmd-v won't register for images); ctrl-c cancels"
+		return "byre: 🖼  image on the clipboard — press " + bold + "ctrl-v" + plain + " to deliver it (cmd-v won't work for images) · ctrl-c cancels"
 	case hasType(types, "text/plain"):
-		return "byre: your clipboard holds text — ctrl-v or cmd-v to deliver it, or paste/drag a file here; ctrl-c cancels"
+		return "byre: 📝 text on the clipboard — ctrl-v / cmd-v delivers it, or paste/drag a file here · ctrl-c cancels"
 	default:
-		return "byre: ctrl-v to deliver the clipboard (text, images, copied files) — or paste/drag a file here; ctrl-c cancels"
+		return "byre: 📋 clipboard looks empty — copy something (this line updates), or paste/drag a file here · ctrl-c cancels"
 	}
 }
 
@@ -188,17 +191,49 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 		return beatCancelled, nil, fmt.Errorf("the paste beat needs a terminal on stdin")
 	}
 	canRead := reader != nil
+	var stopSampler chan struct{}
+	var samplerDone chan struct{}
 	if canRead {
-		var types []string
-		if got, err := reader.listTypes(); err == nil {
-			types = got
+		// The LIVE prompt: redraw in place as the clipboard changes. Types
+		// only, ~1.2s cadence (one cheap listTypes subprocess per tick,
+		// only while the beat waits), redraw only on change (no flicker).
+		draw := func(line string) { fmt.Fprint(s.Err, "\r\x1b[2K"+line) }
+		var last string
+		sample := func() {
+			types, err := reader.listTypes()
+			if err != nil {
+				types = nil
+			}
+			if line := beatPrompt(types); line != last {
+				last = line
+				draw(line)
+			}
 		}
-		fmt.Fprintln(s.Err, beatPrompt(types))
+		sample()
+		stopSampler = make(chan struct{})
+		samplerDone = make(chan struct{})
+		go func() {
+			defer close(samplerDone)
+			tick := time.NewTicker(1200 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				select {
+				case <-stopSampler:
+					return
+				case <-tick.C:
+					sample()
+				}
+			}
+		}()
 	} else {
 		fmt.Fprintln(s.Err, "byre: no clipboard access here — paste text to deliver it (text only; ctrl-d to finish, ctrl-c to cancel)")
 	}
 	state, err := xterm.MakeRaw(f.Fd())
 	if err != nil {
+		if stopSampler != nil {
+			close(stopSampler)
+			<-samplerDone
+		}
 		return beatCancelled, nil, fmt.Errorf("raw terminal mode: %w", err)
 	}
 	// Mode sequences are NOT chrome: they must reach the terminal DEVICE that
@@ -208,9 +243,16 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	// (it's the terminal device); human prompts stay on s.Err.
 	fmt.Fprint(f, "\x1b[?2004h") // bracketed paste on
 	defer func() {
+		if stopSampler != nil {
+			close(stopSampler)
+			<-samplerDone
+			fmt.Fprint(s.Err, "\r\x1b[2K") // erase the live prompt line
+		}
 		fmt.Fprint(f, "\x1b[?2004l")
 		_ = xterm.Restore(f.Fd(), state)
-		fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
+		if stopSampler == nil {
+			fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
+		}
 	}()
 	return beatLoop(f, canRead)
 }

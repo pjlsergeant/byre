@@ -116,11 +116,11 @@ func TestBeatPromptSamplesTheClipboard(t *testing.T) {
 		types []string
 		want  string
 	}{
-		{[]string{typeFileRefs, "image/png"}, "copied files"},
-		{[]string{"image/png", "text/plain"}, "holds an image"},
-		{[]string{"image/tiff"}, "holds an image"},
-		{[]string{"text/plain"}, "holds text"},
-		{nil, "ctrl-v to deliver the clipboard"},
+		{[]string{typeFileRefs, "image/png"}, "📎 copied files"},
+		{[]string{"image/png", "text/plain"}, "🖼  image on the clipboard"},
+		{[]string{"image/tiff"}, "🖼  image on the clipboard"},
+		{[]string{"text/plain"}, "📝 text on the clipboard"},
+		{nil, "📋 clipboard looks empty"},
 	}
 	for _, c := range cases {
 		if got := beatPrompt(c.types); !strings.Contains(got, c.want) {
@@ -129,8 +129,12 @@ func TestBeatPromptSamplesTheClipboard(t *testing.T) {
 	}
 }
 
-func TestBeatPromptImageWarnsAboutCmdV(t *testing.T) {
-	if got := beatPrompt([]string{"image/png"}); !strings.Contains(got, "cmd-v won't register") {
+func TestBeatPromptImageWarnsAboutCmdVAndBoldsCtrlV(t *testing.T) {
+	got := beatPrompt([]string{"image/png"})
+	if !strings.Contains(got, "cmd-v won't work") {
 		t.Fatalf("image prompt must warn about Cmd-V: %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1mctrl-v\x1b[22m") {
+		t.Fatalf("ctrl-v should be bold when it matters most: %q", got)
 	}
 }

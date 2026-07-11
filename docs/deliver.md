@@ -35,11 +35,12 @@ then:
 
 ```
 $ byre deliver
-byre: your clipboard holds an image — ctrl-v to deliver it (cmd-v won't register for images); ctrl-c cancels
+byre: 🖼  image on the clipboard — press ctrl-v to deliver it (cmd-v won't work for images) · ctrl-c cancels
 ```
 
-The prompt samples your clipboard's *types* up front (never the
-content) and says what's on offer. **Ctrl-V** reads the clipboard
+The prompt samples your clipboard's *types* (never the content), says
+what's on offer, and keeps sampling while it waits -- copy something
+else and the line updates in place. **Ctrl-V** reads the clipboard
 directly -- file references are delivered as those files, an image
 lands as `/inbox/clipboard-<timestamp>.png` (extension matches what
 your clipboard actually holds), text as `clipboard-<timestamp>.txt`.
