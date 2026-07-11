@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.5 -- 2026-07-11
 
 - **New `byre deliver`** (ADR 0021): get files from the host into a running
   box in one move -- `byre deliver report.pdf` streams into the box's new
@@ -39,7 +39,7 @@
   cobra. `byre completion bash|zsh|fish|powershell` prints a completion
   script covering every command and flag, and `--install` (all but
   powershell) writes it where your shell will find it and prints the
-  path — byre never edits shell rc files; when zsh needs one fpath
+  path -- byre never edits shell rc files; when zsh needs one fpath
   line, it prints the line instead. Help gained `Flags:` sections and
   `byre help <command>`; `--flag=value` now works everywhere. Exit
   codes and command behavior are unchanged; error and usage wording
