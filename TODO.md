@@ -45,10 +45,8 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   absorbed + deleted, full record in git history). Remaining,
   separately shippable: `ssh://` remote delivery (frozen mini-protocol:
   --proto / --porcelain / --consume, designed in ADR 0021).
-  Also outstanding: finish the human-test checklist
-  (docs/deliver-human-test.md — the SSH section and unticked extras);
-  gated BYRE_DOCKER_TESTS deliver cases ride the agent-runnable-tests
-  item.
+  Also outstanding: gated BYRE_DOCKER_TESTS deliver cases ride the
+  agent-runnable-tests item.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
