@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+- **Lifecycle correctness batch** (2026-07-11 external-review triage):
+  - `develop` now creates the session container **under the setup lock**
+    and starts it after release, closing the window where a concurrent
+    `byre reset`/`forget` saw no live session and wiped freshly seeded
+    volumes (or the store) from under a launching session. Cleanup
+    commands see containers in every state: a created-but-not-started
+    container is a develop's ownership marker — they remove it
+    (forcelessly, so a session that started meanwhile aborts them) and
+    that develop's start fails loudly instead of launching against
+    wiped state. Sibling-worktree sessions stay concurrent.
+  - `reset`/`forget`/`rehome` now inspect **every installed engine**
+    (docker and podman), not the configured one: an engine switch or a
+    broken config could previously make `forget` clean docker, find
+    nothing, delete the store, and strand all podman state — a false
+    "completely removed". Listings are labeled by engine when both are
+    installed; `forget` refuses to delete the store if either engine
+    can't be queried or cleaned.
+  - `rehome` now migrates the **stored config and adoption records**
+    alongside volumes (conflict-checked, never clobbering the new id's
+    own config) and retires the old id's image and store dir on
+    success — previously the old store haunted `byre rehome`'s
+    candidate list forever and a store-only config was silently
+    orphaned.
+  - Config adoption writes atomically (`AtomicWrite`, like every other
+    config writer) and is serialized under the setup lock; the proposal
+    is re-read after review and adopted only if it still holds the
+    reviewed bytes.
+  - Skill resolution rejects a second `netns_init` (the launch gate is
+    opened by the hook's own script, so a second hook could run after
+    the agent was already released) — same stance as the single
+    `network_posture` rule.
+  - `develop` **refuses rootless Podman** instead of warning (the
+    baked-UID ownership model is known-broken there);
+    `BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides with the warning kept,
+    mirroring `BYRE_ALLOW_ROOT`.
+  - Port `interface` values must be canonical IPv4 literals; hostnames,
+    IPv6, and colon-bearing strings now fail validation instead of
+    failing (or changing meaning) inside docker's `-p` grammar.
+  - Honest picker descriptions: gemini is labeled EXPERIMENTAL (its
+    autonomy flag/auth flow are still unverified), and grok-shared-auth
+    is labeled BROKEN pending its API-key rebuild (its symlink design
+    failed the field gate).
+
 - **New `byre deliver`** (ADR 0021): get files from the host into a running
   box in one move -- `byre deliver report.pdf` streams into the box's new
   `/inbox` and puts the in-box path on your clipboard, ready to paste into
