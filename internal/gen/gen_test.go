@@ -30,7 +30,7 @@ RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi
  && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \
  && if ! getent group "$BYRE_GID" >/dev/null 2>&1; then echo "dev:x:${BYRE_GID}:" >> /etc/group; fi \
  && echo "dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash" >> /etc/passwd \
- && mkdir -p /home/dev /workspace && chown "${BYRE_UID}:${BYRE_GID}" /home/dev
+ && mkdir -p /home/dev /workspace /inbox && chown "${BYRE_UID}:${BYRE_GID}" /home/dev /inbox
 ENV PATH=/home/dev/.local/bin:$PATH
 HEALTHCHECK NONE
 COPY byre-launch /usr/local/bin/byre-launch

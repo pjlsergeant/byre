@@ -158,3 +158,58 @@ func TestNetnsInitArgv(t *testing.T) {
 		t.Fatalf("NetnsInit argv = %q, want %q", got, want)
 	}
 }
+
+func TestExecInputArgv(t *testing.T) {
+	var gotArgs []string
+	var gotStdin string
+	r := &Runner{engine: Docker, captureIn: func(stdin io.Reader, name string, args ...string) (string, error) {
+		b, _ := io.ReadAll(stdin)
+		gotStdin = string(b)
+		gotArgs = append([]string{name}, args...)
+		return "/inbox/report.pdf\n", nil
+	}}
+	out, err := r.ExecInput("ctr1", 501, 20, strings.NewReader("payload"), "sh", "-c", "script", "byre-deliver", "report", ".pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "/inbox/report.pdf\n" {
+		t.Fatalf("ExecInput out = %q", out)
+	}
+	if gotStdin != "payload" {
+		t.Fatalf("ExecInput stdin = %q, want payload", gotStdin)
+	}
+	want := "docker exec -i -u 501:20 ctr1 sh -c script byre-deliver report .pdf"
+	if got := strings.Join(gotArgs, " "); got != want {
+		t.Fatalf("ExecInput argv = %q, want %q", got, want)
+	}
+}
+
+func TestContainerLabels(t *testing.T) {
+	r := &Runner{engine: Docker, capture: func(name string, args ...string) (string, error) {
+		want := "docker inspect -f {{json .Config.Labels}} ctr1"
+		if got := strings.Join(append([]string{name}, args...), " "); got != want {
+			t.Fatalf("ContainerLabels argv = %q, want %q", got, want)
+		}
+		return `{"byre.project":"proj-abc123","byre.workdir":"proj-abc123"}` + "\n", nil
+	}}
+	labels, err := r.ContainerLabels("ctr1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if labels["byre.project"] != "proj-abc123" || labels["byre.workdir"] != "proj-abc123" {
+		t.Fatalf("ContainerLabels = %v", labels)
+	}
+}
+
+func TestContainerLabelsNull(t *testing.T) {
+	r := &Runner{engine: Docker, capture: func(string, ...string) (string, error) {
+		return "null\n", nil
+	}}
+	labels, err := r.ContainerLabels("ctr1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(labels) != 0 {
+		t.Fatalf("ContainerLabels(null) = %v, want empty", labels)
+	}
+}

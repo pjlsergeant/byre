@@ -103,7 +103,12 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	" && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \\\n" +
 	" && if ! getent group \"$BYRE_GID\" >/dev/null 2>&1; then echo \"dev:x:${BYRE_GID}:\" >> /etc/group; fi \\\n" +
 	" && echo \"dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash\" >> /etc/passwd \\\n" +
-	" && mkdir -p /home/dev /workspace && chown \"${BYRE_UID}:${BYRE_GID}\" /home/dev\n" +
+	// /inbox is deliver's landing spot: dev-owned so the exec-stream writes as
+	// the dev identity, root-PARENTED (/ stays root's) so the agent cannot
+	// replace the inbox itself with a symlink — the structural half of the
+	// deliver design (ADR 0021). /workspace stays root-owned here; the bind
+	// mount covers it at run time.
+	" && mkdir -p /home/dev /workspace /inbox && chown \"${BYRE_UID}:${BYRE_GID}\" /home/dev /inbox\n" +
 	"ENV PATH=/home/dev/.local/bin:$PATH\n" +
 	// Strip any inherited HEALTHCHECK: the engine runs healthcheck commands in
 	// the container's netns independently of our ENTRYPOINT, so a base image's

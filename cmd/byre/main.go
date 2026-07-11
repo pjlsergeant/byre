@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/commands"
+	"github.com/pjlsergeant/byre/internal/deliver"
 )
 
 // version is stamped by release builds (goreleaser passes
@@ -29,6 +30,7 @@ type app struct {
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
 	shell         func(s commands.Streams, dir string) error
+	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
 	skillUpdate   func(s commands.Streams) error
 	rebuild       func(s commands.Streams, dir string) error
@@ -49,6 +51,7 @@ var realApp = app{
 	reset:            commands.Reset,
 	forget:           commands.Forget,
 	shell:            commands.Shell,
+	deliver:          commands.Deliver,
 	worktree:         commands.Worktree,
 	skillUpdate:      commands.SkillUpdate,
 	rebuild:          commands.Rebuild,
@@ -209,6 +212,52 @@ started by 'byre develop'.`,
 				return err
 			}
 			return a.shell(s, dir)
+		},
+	},
+	{
+		name:    "deliver",
+		summary: "Deliver files from the host into a running box's /inbox.",
+		help: `Usage: byre deliver [--box <id>] [--skip-uid-check] <path>...
+
+Get files into a running box: each path streams into the box's /inbox
+(names preserved, collisions uniquified, never overwritten) and the landed
+in-box path prints to stdout, one per line — paste it into the agent prompt.
+Directories deliver recursively, preserving structure, as one path.
+
+The box is found machine-wide: --box picks explicitly (unique id or project
+prefix); otherwise a box whose workdir contains the current directory wins;
+otherwise the only running box owned by you; otherwise the candidates are
+listed. Boxes started by other users are hidden unless --skip-uid-check.
+
+  --box <id>        deliver to this box (unique id or project prefix)
+  --skip-uid-check  include (and permit) boxes owned by other users`,
+		run: func(a app, s commands.Streams, dir string, rest []string) error {
+			var opts deliver.Options
+			var paths []string
+			for i := 0; i < len(rest); i++ {
+				switch {
+				case rest[i] == "--box":
+					i++
+					if i >= len(rest) {
+						return usageError("byre deliver: --box needs a value")
+					}
+					opts.Box = rest[i]
+				case strings.HasPrefix(rest[i], "--box="):
+					opts.Box = strings.TrimPrefix(rest[i], "--box=")
+				case rest[i] == "--skip-uid-check":
+					opts.SkipUIDCheck = true
+				case rest[i] == "-":
+					return usageError("byre deliver: stdin mode ('-') lands with the clipboard step of this feature")
+				case strings.HasPrefix(rest[i], "-"):
+					return usageError(fmt.Sprintf("byre deliver: unknown flag %q", rest[i]))
+				default:
+					paths = append(paths, rest[i])
+				}
+			}
+			if len(paths) == 0 {
+				return usageError("byre deliver: nothing to deliver — pass one or more paths (clipboard mode lands with a later step of this feature)")
+			}
+			return a.deliver(s, dir, opts, paths)
 		},
 	},
 	{
