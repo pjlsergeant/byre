@@ -45,7 +45,7 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 	case len(paths) > 0:
 		return deliver.PathSources(paths), nil
 	case s.TTY:
-		action, text, err := runPasteBeat(s, reader != nil)
+		action, text, err := runPasteBeat(s, reader)
 		switch {
 		case err != nil:
 			return nil, err

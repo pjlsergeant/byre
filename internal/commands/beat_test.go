@@ -107,3 +107,30 @@ func TestBeatDegradedPreservesEscOutsidePaste(t *testing.T) {
 		t.Fatalf("action=%v text=%q err=%v", action, text, err)
 	}
 }
+
+func TestBeatPromptSamplesTheClipboard(t *testing.T) {
+	// Claude Code's move, adapted: types are sampled up front so the prompt
+	// says what's on offer — and steers image holders to ctrl-v, since their
+	// Cmd-V never reaches a terminal. Types only, never content.
+	cases := []struct {
+		types []string
+		want  string
+	}{
+		{[]string{typeFileRefs, "image/png"}, "copied files"},
+		{[]string{"image/png", "text/plain"}, "holds an image"},
+		{[]string{"image/tiff"}, "holds an image"},
+		{[]string{"text/plain"}, "holds text"},
+		{nil, "ctrl-v to deliver the clipboard"},
+	}
+	for _, c := range cases {
+		if got := beatPrompt(c.types); !strings.Contains(got, c.want) {
+			t.Errorf("beatPrompt(%v) = %q, want it to mention %q", c.types, got, c.want)
+		}
+	}
+}
+
+func TestBeatPromptImageWarnsAboutCmdV(t *testing.T) {
+	if got := beatPrompt([]string{"image/png"}); !strings.Contains(got, "cmd-v won't register") {
+		t.Fatalf("image prompt must warn about Cmd-V: %q", got)
+	}
+}

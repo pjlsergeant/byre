@@ -35,18 +35,20 @@ then:
 
 ```
 $ byre deliver
-byre: ctrl-v to deliver the clipboard (text, images, copied files) — or paste/drag a file here; ctrl-c cancels
+byre: your clipboard holds an image — ctrl-v to deliver it (cmd-v won't register for images); ctrl-c cancels
 ```
 
-**Ctrl-V** reads your system clipboard directly -- file references are
-delivered as those files, an image lands as
-`/inbox/clipboard-<timestamp>.png` (extension matches what your
-clipboard actually holds), text as `clipboard-<timestamp>.txt`. Cmd-V
-works too for text and copied files (for an image-only clipboard the
-terminal sends nothing on Cmd-V -- that's why Ctrl-V is the headline
-gesture). You can also **drag a file from Finder onto the window**: the
-dragged file itself is delivered. The confirmation tells you what
-shipped -- kind and size, never the content:
+The prompt samples your clipboard's *types* up front (never the
+content) and says what's on offer. **Ctrl-V** reads the clipboard
+directly -- file references are delivered as those files, an image
+lands as `/inbox/clipboard-<timestamp>.png` (extension matches what
+your clipboard actually holds), text as `clipboard-<timestamp>.txt`.
+Cmd-V works too for text and copied files (for an image-only clipboard
+the terminal sends nothing on Cmd-V -- which is why the prompt steers
+you to Ctrl-V when it sees an image). You can also **drag a file from
+Finder onto the window**: the dragged file itself is delivered. The
+confirmation tells you what shipped -- kind and size, never the
+content:
 
 ```
 byre: delivered clipboard image (1.4 MB) → /inbox/clipboard-20260710-091412.png

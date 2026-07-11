@@ -159,21 +159,41 @@ func captureUntilPasteEnd(r *bufio.Reader, out *bytes.Buffer) {
 	}
 }
 
+// beatPrompt tailors the beat's prompt to what the pasteboard HOLDS — types
+// only, sampled up front, never content (Claude Code's own move: it can't
+// see a failed Cmd-V either, so it samples the pasteboard and hints
+// proactively). Ctrl-V leads for images because Cmd-V with an image-only
+// clipboard sends the terminal NOTHING (no text representation, no event to
+// catch — field-verified 2026-07-10); typ "" means the sample failed or the
+// board is empty, and the generic prompt still tells the whole story.
+func beatPrompt(types []string) string {
+	switch {
+	case hasType(types, typeFileRefs):
+		return "byre: your clipboard holds copied files — ctrl-v (or cmd-v) to deliver them; ctrl-c cancels"
+	case pickImageType(types) != "":
+		return "byre: your clipboard holds an image — ctrl-v to deliver it (cmd-v won't register for images); ctrl-c cancels"
+	case hasType(types, "text/plain"):
+		return "byre: your clipboard holds text — ctrl-v or cmd-v to deliver it, or paste/drag a file here; ctrl-c cancels"
+	default:
+		return "byre: ctrl-v to deliver the clipboard (text, images, copied files) — or paste/drag a file here; ctrl-c cancels"
+	}
+}
+
 // runPasteBeat wraps beatLoop in a real terminal: raw mode (so Ctrl-V and the
 // paste arrive as bytes, not line-buffered input) and bracketed-paste mode on
 // the terminal for the duration.
-func runPasteBeat(s Streams, canRead bool) (beatAction, []byte, error) {
+func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	f, ok := s.In.(*os.File)
 	if !ok {
 		return beatCancelled, nil, fmt.Errorf("the paste beat needs a terminal on stdin")
 	}
+	canRead := reader != nil
 	if canRead {
-		// Ctrl-V is the reliable gesture: with an IMAGE-only clipboard, Cmd-V
-		// sends the terminal nothing at all (no text representation), so
-		// there is no event to catch — field-verified 2026-07-10. Cmd-V still
-		// works for text and copied files, and dragging a file onto the
-		// window delivers that file.
-		fmt.Fprintln(s.Err, "byre: ctrl-v to deliver the clipboard (text, images, copied files) — or paste/drag a file here; ctrl-c cancels")
+		var types []string
+		if got, err := reader.listTypes(); err == nil {
+			types = got
+		}
+		fmt.Fprintln(s.Err, beatPrompt(types))
 	} else {
 		fmt.Fprintln(s.Err, "byre: no clipboard access here — paste text to deliver it (text only; ctrl-d to finish, ctrl-c to cancel)")
 	}
