@@ -85,6 +85,107 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 	}
 }
 
+// mkOldStore populates the old id's store dir the way a real project leaves
+// it: a path record pointing at the (now gone) old location, plus any files.
+func mkOldStore(t *testing.T, home, oldID string, files map[string]string) string {
+	t.Helper()
+	dir := filepath.Join(home, "projects", oldID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "path"), []byte("/gone/old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// The stored config follows the identity, and a completed rehome retires the
+// old id: its store dir (else it haunts the candidate list forever) and its
+// image.
+func TestRehomeMigratesStoreAndRetiresOldID(t *testing.T) {
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{
+		"byre.config": "agent = \"claude\"\n",
+		"adopted":     "abc123",
+	})
+	f := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
+	if err != nil || string(b) != "agent = \"claude\"\n" {
+		t.Fatalf("stored config not migrated: %v / %q", err, b)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "adopted")); err != nil {
+		t.Errorf("adoption record not migrated: %v", err)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Errorf("old store must be removed after a successful rehome (it would haunt the candidate list): %v", err)
+	}
+	if len(f.rmImages) != 1 || f.rmImages[0] != imageTag("oldid", 1000, 1000) {
+		t.Errorf("old image not retired: %v", f.rmImages)
+	}
+}
+
+// A conflicting config at the new id is never clobbered — and the old store
+// (holding the only copy of the old config) is kept for hand reconciliation.
+func TestRehomeKeepsOldStoreOnConfigConflict(t *testing.T) {
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{"byre.config": "agent = \"claude\"\n"})
+	if err := os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("agent = \"codex\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, out := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
+	if string(b) != "agent = \"codex\"\n" {
+		t.Fatalf("new id's config must not be clobbered: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(oldDir, "byre.config")); err != nil {
+		t.Errorf("old store must survive a conflict (only copy of the old config): %v", err)
+	}
+	if !strings.Contains(out.String(), "NOT copied") {
+		t.Errorf("conflict should be reported:\n%s", out.String())
+	}
+}
+
+// A store-only project (config adopted, volumes long gone) still rehomes: the
+// config moves and the old id is retired — this is not the 'nothing found'
+// case.
+func TestRehomeStoreOnlyProject(t *testing.T) {
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{"byre.config": "agent = \"claude\"\n"})
+	f := &fakeRunner{}
+	s, _, out := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
+		t.Fatalf("store-only config not migrated: %v", err)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Errorf("old store must be removed: %v", err)
+	}
+	if !strings.Contains(out.String(), "rehomed oldid") {
+		t.Errorf("store-only rehome should report success:\n%s", out.String())
+	}
+}
+
 // A malformed old id is refused before any resolution: it's user-typed input
 // that becomes a store path component and a volume-name prefix, and byre never
 // generates ids outside the slug-6hex grammar.

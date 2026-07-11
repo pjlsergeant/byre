@@ -470,8 +470,9 @@ byre dockerfile   Print the generated Dockerfile for this directory.
 byre config       Interactive editor for this project's host-side config
                   (--global for the baseline).
 
-byre rehome       Re-point a moved directory's identity (migrate volumes) onto
-                  its new path-derived id.
+byre rehome       Re-point a moved directory's identity onto its new
+                  path-derived id: migrate volumes and the stored config,
+                  then retire the old id's store and image.
 
 byre forget       Remove all of byre's host-side state for this directory --
                   volumes, image, ~/.byre/projects/<id>/. Never touches the
