@@ -112,14 +112,16 @@ func shellCompletionCmd(s commands.Streams, shell, short string,
 const completionMarker = "# installed by 'byre completion --install' — re-running it overwrites this file"
 
 // writeCompletion writes the generated script at target, creating parents.
-// A pre-existing target must carry byre's install marker; a file byre can't
-// prove it wrote — unreadable ones included — is refused, never truncated.
+// A pre-existing target must END with byre's marker line — marker-as-suffix
+// means byre wrote the file last, so a copy someone appended their own lines
+// to counts as theirs now, and a file byre can't prove it wrote — unreadable
+// ones included — is refused, never truncated.
 func writeCompletion(target string, script []byte) error {
 	existing, err := os.ReadFile(target)
 	switch {
 	case err == nil:
-		if !bytes.Contains(existing, []byte(completionMarker)) {
-			return fmt.Errorf("refusing to overwrite %s — it exists and byre didn't write it; move it aside and re-run", target)
+		if !bytes.HasSuffix(existing, []byte(completionMarker+"\n")) {
+			return fmt.Errorf("refusing to overwrite %s — it exists and byre didn't write it (or it was edited since); move it aside and re-run", target)
 		}
 	case !errors.Is(err, fs.ErrNotExist):
 		return fmt.Errorf("refusing to overwrite %s — can't verify byre wrote it: %w", target, err)
@@ -188,14 +190,15 @@ func installZsh(script []byte, s commands.Streams) error {
 			fmt.Fprintln(s.Err, "byre: already on your fpath — restart your shell")
 			return nil
 		}
-		if statErr == nil {
-			// A _byre already lives in this fpath dir and couldn't be
-			// replaced — foreign file, or a byre-owned copy that failed to
-			// update. Falling through would leave THIS stale/foreign copy
-			// shadowing whatever we wrote further down the cascade: stop.
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			// Something already lives at this fpath name (or we can't even
+			// prove it doesn't) and it couldn't be replaced — foreign file,
+			// or a byre-owned copy that failed to update. Falling through
+			// would leave THIS stale/foreign copy shadowing whatever we
+			// wrote further down the cascade: stop.
 			return err
 		}
-		// Nothing here yet and the dir isn't writable (e.g. root-owned
+		// Provably nothing here and the dir isn't writable (e.g. root-owned
 		// site-functions): fall past it.
 	}
 	home, err := os.UserHomeDir()

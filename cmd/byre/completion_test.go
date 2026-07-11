@@ -102,6 +102,21 @@ func TestCompletionInstallFish(t *testing.T) {
 	if got, _ := os.ReadFile(target); string(got) != foreign {
 		t.Errorf("foreign file was modified: %q", got)
 	}
+
+	// Ownership means the marker is the FINAL line — a byre-installed file
+	// the user appended their own lines to is theirs now, and a foreign
+	// file quoting the marker mid-body is still foreign.
+	for name, content := range map[string]string{
+		"user-appended": "#compdef byre\n" + completionMarker + "\ncomplete -c byre -a mine\n",
+		"marker-quoted": "# not byre's; ignore the line \"" + completionMarker + "\" here\ncomplete -c byre\n",
+	} {
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runCompletion(t, "fish", "--install"); err == nil {
+			t.Errorf("%s: expected a refusal", name)
+		}
+	}
 }
 
 // TestCompletionInstallIgnoresRelativeXDG pins the XDG spec rule: a relative
