@@ -245,7 +245,9 @@ by hand.
 By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth, grok-shared-auth) move that to once per
 machine. For claude and codex the picker offers this once, when you first
 choose that agent (answering no is remembered; delete
-`shared_auth_declined` from `~/.byre/default.config` to be re-asked). The
+`shared_auth_declined` from `~/.byre/default.config` to be re-asked). On
+an install that predates the offer, run `byre skill update` once so the
+companion skills carry the offer metadata. The
 login lives in a shared volume that reset/forget deliberately never
 touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
 

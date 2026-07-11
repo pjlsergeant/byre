@@ -51,12 +51,23 @@ Three choices carry the design:
   gate — grok-shared-auth is BROKEN (failed its field gate) and
   gemini's OAuth path is gate-pending, so neither declares the key and
   neither is offered, while both remain hand-enableable by someone who
-  has read their skill.toml.
+  has read their skill.toml. Two skills claiming one agent is refused
+  (no offer — the `network_posture` stance): sort order must not pick
+  which skill a "y" enables machine-wide, and a hand-dropped
+  near-namesake must not shadow the vetted builtin.
 
 Consequences: the picker asks up to three questions plus the offer
-(template, agent, save-as-default, shared auth); the offer only appears
-on a TTY, only when unanswered, and EOF/non-TTY paths are unchanged.
-`config.Config` gains the `shared_auth_declined` key, inert outside
-onboarding. When gemini's OAuth gate passes or grok's rebuild lands,
-declaring `shared_auth_for` in their skill.toml is the entire rollout
-of their offer.
+(template, agent, save-as-default, shared auth). The offer only appears
+on a TTY, only when unanswered, and only on runs that were already
+interactive — a fully-flagged `--template X --agent Y` onboarding keeps
+its zero-prompt contract and is never asked. EOF (Ctrl-D) at the offer
+skips it without failing the develop (byre.config is already written by
+then) and records nothing. `config.Config` gains the
+`shared_auth_declined` key; the resolver strips it from every resolved
+config whatever layer carried it — it is inert outside onboarding.
+Existing installs pick the offer up via `byre skill update` (the store
+materialization is deliberately non-clobbering, so an already-installed
+companion skill.toml keeps its pre-0023 content until updated — the
+standard pickup path for every shipped skill change). When gemini's
+OAuth gate passes or grok's rebuild lands, declaring `shared_auth_for`
+in their skill.toml is the entire rollout of their offer.

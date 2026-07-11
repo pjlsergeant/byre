@@ -410,8 +410,10 @@ func DescribeSkills(skillsDir string) map[string]string {
 
 // SharedAuthCompanion returns the name of the skill declaring itself the
 // ready shared-auth companion for the given agent skill (shared_auth_for =
-// agent), or "" when none does. First sorted name wins if several declare it
-// (builtins never do).
+// agent), or "" when none does. Several skills claiming one agent is also ""
+// — refuse the ambiguity (the network_posture stance): sort order silently
+// picking which skill the onboarding "y" enables machine-wide would let a
+// hand-dropped near-namesake shadow the vetted builtin.
 func SharedAuthCompanion(skillsDir, agent string) string {
 	if agent == "" {
 		return ""
@@ -419,7 +421,7 @@ func SharedAuthCompanion(skillsDir, agent string) string {
 	names := list(skillsDir, func(sk Skill) bool {
 		return sk.File.SharedAuthFor == agent
 	})
-	if len(names) == 0 {
+	if len(names) != 1 {
 		return ""
 	}
 	return names[0]

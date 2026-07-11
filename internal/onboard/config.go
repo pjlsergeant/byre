@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
@@ -55,13 +53,9 @@ func WriteProjectConfig(destPath, template, agent string) error {
 // general-purpose writer.
 func SaveDefault(home, template, agent string) error {
 	path := filepath.Join(home, "default.config")
-	existing, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
+	content, err := readDefaultConfig(home)
+	if err != nil {
 		return err
-	}
-	content := string(existing)
-	if content == "" {
-		content = "# byre default.config — your favourites for new projects.\n"
 	}
 	content = setScalar(content, "template", template)
 	content = setScalar(content, "agent", agent)
@@ -101,7 +95,7 @@ func SharedAuthAnswered(home, agent, companion string) bool {
 // already present. Same surgical philosophy as SaveDefault.
 func EnableSharedAuth(home, companion string) error {
 	return appendDefaultListEntry(home, "skills", companion,
-		func(c config.Config) bool { return slices.Contains(c.Skills, companion) })
+		func(c config.Config) []string { return c.Skills })
 }
 
 // DeclineSharedAuth records a "no" to the shared-auth offer for agent in the
@@ -109,41 +103,37 @@ func EnableSharedAuth(home, companion string) error {
 // offer is made at most once per agent. No-op if already recorded.
 func DeclineSharedAuth(home, agent string) error {
 	return appendDefaultListEntry(home, "shared_auth_declined", agent,
-		func(c config.Config) bool { return slices.Contains(c.SharedAuthDeclined, agent) })
+		func(c config.Config) []string { return c.SharedAuthDeclined })
 }
 
 // appendDefaultListEntry surgically appends value to the top-level `key` list
-// in ~/.byre/default.config, creating the file or the list if absent. has
-// reports whether a parsed config already contains the value — checked before
-// editing (idempotence) and again on the edited text (the textual edit must
-// prove, by re-parse, that it produced exactly the intended config before
-// anything is written).
-func appendDefaultListEntry(home, key, value string, has func(config.Config) bool) error {
+// in ~/.byre/default.config, creating the file or the list if absent. field
+// projects the Config field the key decodes into, so one containment check
+// serves both the idempotence pre-check and the post-edit verification: the
+// textual edit must prove, by re-parsing through config's own parser, that it
+// produced exactly the intended config before anything is written.
+func appendDefaultListEntry(home, key, value string, field func(config.Config) []string) error {
 	path := filepath.Join(home, "default.config")
-	// Parse first: never textually edit a file we can't read, and skip the
-	// edit when the value is already there.
-	cfg, err := config.ParseFile(path)
+	// One read feeds the pre-check, the edit, and the verify, so they can
+	// never disagree about the file's content.
+	content, err := readDefaultConfig(home)
 	if err != nil {
+		return err
+	}
+	cfg, err := config.Parse([]byte(content))
+	if err != nil {
+		// Never textually edit a file we can't read.
 		return fmt.Errorf("%s: %w — add %q to `%s` there by hand", path, err, value, key)
 	}
-	if has(cfg) {
+	if slices.Contains(field(cfg), value) {
 		return nil
 	}
 
-	existing, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	content := string(existing)
-	if content == "" {
-		content = "# byre default.config — your favourites for new projects.\n"
-	}
 	edited, err := appendToTopLevelList(content, key, value)
 	if err == nil {
 		// Verify the edit SEMANTICALLY: the result must parse and contain the
 		// value. A surgical text edit that can't prove itself is refused.
-		var check config.Config
-		if md, derr := toml.Decode(edited, &check); derr != nil || len(md.Undecoded()) > 0 || !has(check) {
+		if check, perr := config.Parse([]byte(edited)); perr != nil || !slices.Contains(field(check), value) {
 			err = fmt.Errorf("edit did not verify")
 		}
 	}
@@ -152,6 +142,23 @@ func appendDefaultListEntry(home, key, value string, has func(config.Config) boo
 	}
 	// Atomic write, so a crash or concurrent save can't truncate the file.
 	return config.AtomicWrite(path, edited)
+}
+
+// defaultConfigStub heads a default.config the surgical writers create from
+// nothing — SaveDefault and appendDefaultListEntry must stamp the same one.
+const defaultConfigStub = "# byre default.config — your favourites for new projects.\n"
+
+// readDefaultConfig returns ~/.byre/default.config's content, or the stub for
+// a file that doesn't exist (or is empty) yet.
+func readDefaultConfig(home string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(home, "default.config"))
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	if len(b) == 0 {
+		return defaultConfigStub, nil
+	}
+	return string(b), nil
 }
 
 // appendToTopLevelList appends a quoted string to the top-level `key = [...]`
@@ -163,18 +170,7 @@ func appendToTopLevelList(content, key, value string) (string, error) {
 	lines := strings.Split(content, "\n")
 	i := findTopLevelScalar(lines, key)
 	if i < 0 {
-		newline := fmt.Sprintf("%s = [%q]", key, value)
-		insert := len(lines)
-		for j, l := range lines {
-			if strings.HasPrefix(strings.TrimSpace(l), "[") {
-				insert = j
-				break
-			}
-		}
-		out := append([]string{}, lines[:insert]...)
-		out = append(out, newline)
-		out = append(out, lines[insert:]...)
-		return strings.Join(out, "\n"), nil
+		return strings.Join(insertTopLevel(lines, fmt.Sprintf("%s = [%q]", key, value)), "\n"), nil
 	}
 
 	// Scan from the `=` for the array's matching `]`, tracking string and
@@ -273,8 +269,13 @@ func setScalar(content, key, value string) string {
 		lines[i] = newline
 		return strings.Join(lines, "\n")
 	}
-	// Append in the top-level region: just before the first section header (or
-	// at end if there are none).
+	return strings.Join(insertTopLevel(lines, newline), "\n")
+}
+
+// insertTopLevel splices newline into the top-level region: just before the
+// first section header, or at the end when there is none. Shared by the
+// surgical writers so new scalars and new lists land in the same place.
+func insertTopLevel(lines []string, newline string) []string {
 	insert := len(lines)
 	for j, l := range lines {
 		if strings.HasPrefix(strings.TrimSpace(l), "[") {
@@ -284,6 +285,5 @@ func setScalar(content, key, value string) string {
 	}
 	out := append([]string{}, lines[:insert]...)
 	out = append(out, newline)
-	out = append(out, lines[insert:]...)
-	return strings.Join(out, "\n")
+	return append(out, lines[insert:]...)
 }
