@@ -32,6 +32,7 @@ func TestDropletSourceBakesPathAndBox(t *testing.T) {
 		"</dev/null",                       // drops run detached (no terminal needed)
 		`tell application "Terminal"`,      // plain click opens the interactive beat
 		"repeat until busy of t or waited", // wait for the run to START (close-race fix)
+		"else if sawBusy then",             // never-went-busy is UNKNOWN: window stays open
 		"repeat while busy of t",           // ...and watches the run,
 		"do script cmd in front window",    // fresh-launch startup window reused (no stray second window)
 		`set cmd to "clear; `,              // the dedicated window opens on the prompt, not shell noise

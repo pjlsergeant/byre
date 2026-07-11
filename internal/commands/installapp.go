@@ -82,6 +82,7 @@ on run
 	-- Terminal has only just launched, run in that startup window instead —
 	-- but never hijack a window of an already-running Terminal, and only
 	-- reuse one that is sitting idle.
+	set sawBusy to false
 	set wasRunning to application "Terminal" is running
 	tell application "Terminal"
 		activate
@@ -102,6 +103,7 @@ on run
 				delay 0.1
 				set waited to waited + 1
 			end repeat
+			if busy of t then set sawBusy to true
 			repeat while busy of t
 				delay 0.2
 			end repeat
@@ -112,9 +114,13 @@ on run
 		do shell script "test -e " & quoted form of failFlag
 		set failed to true
 	end try
+	-- Close ONLY a run we actually observed start and finish: never-went-
+	-- busy is UNKNOWN (slow shell start, an Automation prompt), and closing
+	-- on unknown re-opens the terminate-processes race. Unknown leaves the
+	-- window; the user sees whatever it's doing.
 	if failed then
 		do shell script "rm -f " & quoted form of failFlag
-	else
+	else if sawBusy then
 		delay 0.5 -- let the final output land before the window goes
 		tell application "Terminal"
 			try
