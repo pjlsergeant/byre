@@ -92,6 +92,16 @@ on run
 		end if
 		set theTTY to tty of t
 		try
+			-- Wait for the run to START before waiting for it to end:
+			-- do script types the command and the shell takes a beat to
+			-- launch byre, so an immediate busy-poll sees idle and closed
+			-- the window ONTO the running process (field-found: Terminal's
+			-- terminate-processes dialog before anything else happened).
+			set waited to 0
+			repeat until busy of t or waited ≥ 50
+				delay 0.1
+				set waited to waited + 1
+			end repeat
 			repeat while busy of t
 				delay 0.2
 			end repeat
