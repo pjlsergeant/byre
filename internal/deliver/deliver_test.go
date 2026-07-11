@@ -634,3 +634,35 @@ func TestPermissionFailureStaysPartial(t *testing.T) {
 		t.Fatalf("no loud warning: %q", errw.String())
 	}
 }
+
+func TestPermissionDeniedWithDialPhrasingStaysPartial(t *testing.T) {
+	// Codex round-2 on the field fixes: a real docker permission error
+	// CONTAINS transport phrasing ("dial unix …: connect: permission
+	// denied") — the cause must win, keeping the loud partial path.
+	broken := &fakeEngine{name: "docker", idsErr: fmt.Errorf(
+		"Got permission denied while trying to connect to the Docker daemon socket: Get \"http://...\": dial unix /var/run/docker.sock: connect: permission denied")}
+	eng := box("podman", "aaa")
+	cfg, _, errw := testConfig(broken, eng)
+	_, err := Run(cfg, Options{}, []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "engine query failed") {
+		t.Fatalf("err = %v (permission failure must not be 'unreachable')", err)
+	}
+	if !strings.Contains(errw.String(), "warning") {
+		t.Fatalf("no loud warning: %q", errw.String())
+	}
+}
+
+func TestMissingSocketIsUnreachable(t *testing.T) {
+	// Pete's actual field error shape: podman socket file absent.
+	broken := &fakeEngine{name: "podman", idsErr: fmt.Errorf(
+		"exit status 125: unable to connect to Podman socket: Get \"http://d/v5.0.2/libpod/_ping\": dial unix /var/.../podman.sock: connect: no such file or directory")}
+	eng := box("docker", "aaa")
+	cfg, out, _ := testConfig(eng, broken)
+	src := writeFile(t, "f.txt", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "/inbox/f.txt") {
+		t.Fatalf("auto-pick should survive a missing socket: %q", out.String())
+	}
+}

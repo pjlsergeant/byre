@@ -213,13 +213,22 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 // louder path.
 func isUnreachable(err error) bool {
 	msg := strings.ToLower(err.Error())
+	// Cause overrides transport: a permission or TLS failure names a daemon
+	// that may well be RUNNING — always the loud partial path, even when the
+	// message also contains connection phrasing ("dial unix …: connect:
+	// permission denied" does).
+	for _, alive := range []string{"permission denied", "certificate", "tls:", "authoriz"} {
+		if strings.Contains(msg, alive) {
+			return false
+		}
+	}
 	for _, marker := range []string{
-		"cannot connect",              // docker: "Cannot connect to the Docker daemon"; podman: "Cannot connect to Podman"
-		"unable to connect to podman", // podman's socket message
-		"connection refused",
+		"cannot connect",                     // docker: "Cannot connect to the Docker daemon"; podman: "Cannot connect to Podman"
+		"unable to connect to podman",        // podman's socket message
+		"connection refused",                 // nothing listening
+		"connect: no such file or directory", // the socket doesn't exist — no daemon
 		"is the docker daemon running",
-		"podman machine init",   // podman's own no-machine hint
-		"dial unix", "dial tcp", // Go net dial failures surfaced verbatim
+		"podman machine init", // podman's own no-machine hint
 	} {
 		if strings.Contains(msg, marker) {
 			return true
