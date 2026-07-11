@@ -78,10 +78,10 @@ func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
 	// the lock file, so remove it after the lock is released.
 	var failed []string
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		if live, lerr := liveSession(r, paths.ID); lerr != nil {
-			return fmt.Errorf("checking for a running session: %w", lerr)
-		} else if len(live) > 0 {
-			return fmt.Errorf("a session started for this project (%s); aborting forget", shortID(live[0]))
+		// Abort on a session that started since the prompt, and dissolve any
+		// pre-start ownership marker before touching volumes.
+		if lerr := clearSessionMarkers(s.Err, r, paths.ID); lerr != nil {
+			return lerr
 		}
 		lockedVols, lerr := projectVolumes(r, paths.Home, paths.ID)
 		if lerr != nil {

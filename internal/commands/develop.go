@@ -121,8 +121,52 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		return ExitError{Code: ExitRefused} // refused, session already live
 	}
 
-	// Setup (generate + build) is serialized by the lock; the interactive
-	// session that follows is not.
+	// --self-edit hands the agent authorship of its own next sandbox; open the
+	// session with the warning. (The store snapshot backing the session-end
+	// diff is taken after setup below — setup itself writes the store.)
+	if selfEdit {
+		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to grant itself full access to your host on the next run.")
+		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
+	}
+	params, err := runParams(paths, rv, image, selfEdit, s.TTY)
+	if err != nil {
+		return err
+	}
+	// Netns-hook plumbing is decided before the container exists: the
+	// per-invocation nonce label is the hooks' ownership proof (see naming.go)
+	// and must be on the CREATE argv below. Without a nonce (no randomness)
+	// the hooks are skipped and the launch gate fails the launch closed.
+	var netnsLabel string
+	var netnsEnv map[string]string
+	hooks := rv.skills.NetnsInits()
+	if len(hooks) > 0 {
+		if nonce := runNonce(); nonce != "" {
+			netnsLabel = runKey + "=" + nonce
+			params.Labels = append(params.Labels, netnsLabel)
+			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
+			// union of every enabled skill's declared egress plus the config
+			// `egress` key (ADR 0019) — computed here, so it can't come from
+			// baked image ENV. Copy params.Env so the added key doesn't leak
+			// into the box's own runtime env.
+			netnsEnv = make(map[string]string, len(params.Env)+1)
+			for k, v := range params.Env {
+				netnsEnv[k] = v
+			}
+			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
+		} else {
+			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
+		}
+	}
+
+	// Setup (generate + build + seed) AND container creation are serialized by
+	// the lock; the interactive session that follows is not (the lock is
+	// per-project, and sibling worktrees running concurrently is the point).
+	// Creating the container under the lock closes the race with reset/forget:
+	// from here until exit the container — in ANY state, started or not — is
+	// this session's ownership marker. The destructive commands take the same
+	// lock and must dissolve that marker (clearSessionMarkers) before touching
+	// volumes; if one does, the start below fails loudly instead of the
+	// session launching against wiped, engine-recreated volumes.
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
 		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false); berr != nil {
 			return berr
@@ -135,75 +179,59 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
 		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
 		if p := rv.skills.AgentPrefs(); rv.cfg.SeedPrefs && p != nil {
-			return seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, os.Getuid(), os.Getgid())
+			if err := seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, os.Getuid(), os.Getgid()); err != nil {
+				return err
+			}
+		}
+		// The container name makes the session atomic: losing the name means a
+		// concurrent develop won the race (a session is now live — report it)
+		// or a leftover container holds it (say which and how to clear it).
+		if cerr := r.Create(runner.CreateArgs(params)); cerr != nil {
+			if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
+				reportRunning(s.Err, r.Engine(), live)
+				return ExitError{Code: ExitRefused} // refused, session already live
+			}
+			return fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	// --self-edit hands the agent authorship of its own next sandbox; open the
-	// session with the warning and snapshot the store so the session can close
-	// by showing exactly what the agent touched (reportSelfEditChanges below).
+	// Snapshot the store only now, after setup wrote its own files into it, so
+	// the session-end diff (reportSelfEditChanges) shows what the AGENT
+	// touched, not byre's own staging.
 	var store storeSnapshot
 	if selfEdit {
-		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to grant itself full access to your host on the next run.")
-		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
 		store = snapshotStore(paths.Dir)
 	}
-	params, err := runParams(paths, rv, image, selfEdit, s.TTY)
-	if err != nil {
-		return err
-	}
+
 	// Every real session opens by showing the walls going up: the terse
-	// exposure lines. Printed only once runParams has assembled the actual
-	// invocation — a session that fails to launch gets no walls claimed.
-	// (Residual, consciously accepted: losing the container-name race to a
-	// concurrent develop still prints them; the refusal that follows
-	// supersedes the claim, and the self-edit warning above shares the same
-	// pre-run property.) The config UI renders the same tally
-	// (config.Exposure owns the words); `byre status` is the detailed,
-	// attributed view.
+	// exposure lines. Printed only once the container exists — a launch that
+	// failed setup or lost the name race gets no walls claimed. (The self-edit
+	// warning above is consciously pre-create: it guards a decision, not a
+	// session.) The config UI renders the same tally (config.Exposure owns the
+	// words); `byre status` is the detailed, attributed view.
 	exp := exposureOf(rv, selfEdit)
 	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
 	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
 	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
-	// OUTSIDE the box, concurrently with the attached run: the box's launcher
-	// waits at its launch gate until the hooks land. The container gets a
-	// per-invocation nonce label as the hooks' ownership proof (see naming.go);
-	// without a nonce (no randomness) the hooks are skipped and the gate fails
-	// the launch closed. The wait after the run keeps the goroutine from
-	// outliving develop (and its s.Err writes).
+	// OUTSIDE the box, concurrently with the attached session: the box's
+	// launcher waits at its launch gate until the hooks land. The wait after
+	// the session keeps the goroutine from outliving develop (and its s.Err
+	// writes).
 	var netnsWait func()
-	if hooks := rv.skills.NetnsInits(); len(hooks) > 0 {
-		if nonce := runNonce(); nonce != "" {
-			label := runKey + "=" + nonce
-			params.Labels = append(params.Labels, label)
-			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
-			// union of every enabled skill's declared egress plus the config
-			// `egress` key (ADR 0019) — computed here, so it can't come from
-			// baked image ENV. Copy params.Env so the added key doesn't leak
-			// into the box's own runtime env.
-			netnsEnv := make(map[string]string, len(params.Env)+1)
-			for k, v := range params.Env {
-				netnsEnv[k] = v
-			}
-			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
-			done := make(chan struct{})
-			finished := make(chan struct{})
-			go func() {
-				defer close(finished)
-				runNetnsInits(r, s.Err, label, image, hooks, netnsEnv, done)
-			}()
-			netnsWait = func() { close(done); <-finished }
-		} else {
-			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
-		}
+	if len(hooks) > 0 && netnsLabel != "" {
+		done := make(chan struct{})
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			runNetnsInits(r, s.Err, netnsLabel, image, hooks, netnsEnv, done)
+		}()
+		netnsWait = func() { close(done); <-finished }
 	}
 
-	// The container name makes this atomic: if a concurrent develop won the
-	// race, our run fails and a session is now live — report it.
-	runErr := r.Run(runner.RunArgs(params))
+	runErr := r.StartAttach(containerName(paths))
 	if netnsWait != nil {
 		netnsWait()
 	}
@@ -217,13 +245,20 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			reportRunning(s.Err, r.Engine(), live)
 			return ExitError{Code: ExitRefused} // refused, session already live
 		}
+		// A start that never ran leaves the created container behind (--rm only
+		// fires on exit); remove it best-effort so the name isn't stranded. A
+		// forceless rm can't kill a running session, and after a normal agent
+		// exit the container is already gone — both failures are ignorable.
+		_ = r.ContainerRemove(containerName(paths))
 		// Distinguish the agent/container's own exit from a byre failure: docker
 		// reserves 125-127 for engine-level failures (cannot run / not
 		// executable / not found), so only codes below that are passed through
 		// as the agent's own status (no byre error banner). Anything else —
 		// 125-127, a signal-terminated process (ExitCode() == -1), or a
 		// non-ExitError failure (e.g. the engine binary itself couldn't run) —
-		// stays a byre error.
+		// stays a byre error. (`start` reports engine-level failures — e.g. the
+		// marker container removed by a concurrent reset — as exit 1 with the
+		// cause on stderr, so those pass through as an ordinary failed status.)
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			if code := exitErr.ExitCode(); code >= 0 && code < 125 {

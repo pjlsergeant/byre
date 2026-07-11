@@ -62,11 +62,12 @@ func rehome(s Streams, paths project.Paths, oldID string, r engineRunner, uid, g
 		return err
 	}
 	return withTwoSetupLocks(s.Err, paths.LockFile, oldLock, func() error {
+		// Both ids' sessions block a migration; a pre-start marker on either id
+		// (a develop between create and start) is dissolved so that develop
+		// fails loudly rather than launching mid-migration.
 		for _, id := range []string{oldID, newID} {
-			if live, err := r.RunningContainersByLabel(labelKey + "=" + id); err != nil {
-				return fmt.Errorf("checking for a running session: %w", err)
-			} else if len(live) > 0 {
-				return fmt.Errorf("a session is running for %s (%s); exit it before rehome", id, shortID(live[0]))
+			if err := clearSessionMarkers(s.Err, r, id); err != nil {
+				return err
 			}
 		}
 

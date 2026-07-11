@@ -42,13 +42,27 @@ func TestBuildArgvNoCacheAndBuildArgs(t *testing.T) {
 	}
 }
 
-func TestRunPassesArgsThrough(t *testing.T) {
-	r, gotArgs := argvRunner(Docker)
-	if err := r.Run([]string{"run", "--rm", "-it", "img.dev-1"}); err != nil {
+func TestCreatePassesArgsThrough(t *testing.T) {
+	var gotArgs []string
+	r := &Runner{engine: Docker, capture: func(name string, args ...string) (string, error) {
+		gotArgs = append([]string{name}, args...)
+		return "deadbeef\n", nil
+	}}
+	if err := r.Create([]string{"create", "--rm", "-it", "img.dev-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if want := "docker run --rm -it img.dev-1"; strings.Join(*gotArgs, " ") != want {
-		t.Fatalf("Run argv = %q, want %q", strings.Join(*gotArgs, " "), want)
+	if want := "docker create --rm -it img.dev-1"; strings.Join(gotArgs, " ") != want {
+		t.Fatalf("Create argv = %q, want %q", strings.Join(gotArgs, " "), want)
+	}
+}
+
+func TestStartAttachArgv(t *testing.T) {
+	r, gotArgs := argvRunner(Docker)
+	if err := r.StartAttach("byre-x"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "docker start --attach --interactive byre-x"; strings.Join(*gotArgs, " ") != want {
+		t.Fatalf("StartAttach argv = %q, want %q", strings.Join(*gotArgs, " "), want)
 	}
 }
 

@@ -104,6 +104,45 @@ func TestResetRechecksLiveUnderLock(t *testing.T) {
 	}
 }
 
+// A develop between its container create (under the lock) and start leaves a
+// created-but-not-started container: reset must remove that ownership marker
+// (making the develop's start fail loudly) before wiping volumes.
+func TestResetRemovesPreStartMarker(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{
+		vols:          map[string]bool{volumeName(p.ID, "cache"): true},
+		allContainers: map[string][]string{labelKey + "=" + p.ID: {"feed0000beef"}},
+	}
+	s, _, _ := testStreams("", false)
+	if err := reset(s, p, f, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.rmContainers) != 1 || f.rmContainers[0] != "feed0000beef" {
+		t.Fatalf("pre-start marker not removed: %v", f.rmContainers)
+	}
+	if len(f.removed) != 1 {
+		t.Fatalf("volumes should still be wiped after the marker dissolves: %v", f.removed)
+	}
+}
+
+// If the marker can't be removed (forceless rm refuses: the session started in
+// the window), reset must abort without touching volumes.
+func TestResetAbortsWhenMarkerRemovalFails(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{
+		vols:          map[string]bool{volumeName(p.ID, "cache"): true},
+		allContainers: map[string][]string{labelKey + "=" + p.ID: {"feed0000beef"}},
+		failRmCont:    map[string]bool{"feed0000beef": true},
+	}
+	s, _, _ := testStreams("", false)
+	if err := reset(s, p, f, true); err == nil {
+		t.Fatal("expected abort when the marker can't be removed")
+	}
+	if len(f.removed) != 0 {
+		t.Fatalf("must not wipe volumes when the marker survives: %v", f.removed)
+	}
+}
+
 func TestResetPartialWipeReported(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{
