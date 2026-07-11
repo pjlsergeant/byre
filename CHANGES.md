@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Onboarding offers shared auth** (ADR 0023): when the first-run
+  picker's chosen agent has a ready shared-auth companion skill (one
+  declaring the new `shared_auth_for` key — claude and codex today),
+  it asks "Use shared auth for <agent>? [y/N]" once. Yes enables the
+  companion machine-wide (`skills` in `~/.byre/default.config`, written
+  surgically — comments preserved, every edit re-parsed and verified
+  before writing); no is remembered in the picker-owned
+  `shared_auth_declined` list, so the offer never nags. Gemini
+  (OAuth gate-pending) and grok (broken) deliberately don't declare
+  the key and are never offered.
+
 - **Lifecycle correctness batch** (2026-07-11 external-review triage):
   - `develop` now creates the session container **under the setup lock**
     and starts it after release, closing the window where a concurrent
