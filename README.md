@@ -257,13 +257,19 @@ SSH, and with whole directories. See [docs/deliver.md](docs/deliver.md).
 
 ### Get tab completion for byre commands?
 
-tldr: `byre completion <your-shell> --install`
+tldr: `eval "$(byre completion bash)"` in your shell's startup file.
 
 Completions cover every command and flag — bash, zsh, fish, and powershell.
-`--install` writes the script where your shell will find it and prints the
-path (byre never edits your shell's rc files; if one line is needed there,
-it prints the line instead). Without `--install` the script prints to
-stdout, for people who keep their own arrangements.
+One line in your rc file regenerates the script at shell startup (~3ms), so
+it never goes stale across byre upgrades and needs no extra packages:
+
+```sh
+eval "$(byre completion bash)"        # ~/.bashrc
+source <(byre completion zsh)         # ~/.zshrc, after compinit
+byre completion fish | source         # ~/.config/fish/config.fish
+```
+
+`byre completion --help` has the powershell line and the details.
 
 ### Stop using byre?
 

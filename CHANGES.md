@@ -1,5 +1,17 @@
 # Changes
 
+## Unreleased
+
+- **`byre completion --install` removed** (added earlier in v0.1.5,
+  walked back the same day): the recommended setup is now one line in
+  your shell's startup file -- `eval "$(byre completion bash)"` and
+  friends, shown in `byre completion --help`. It regenerates at shell
+  startup (~3ms), never goes stale across upgrades, works without the
+  bash-completion package (the script carries its own fallback), and
+  byre writes no files into shell-managed directories. If you ran
+  `--install` while it existed, the written script keeps working --
+  delete the path it printed whenever you switch to the eval line.
+
 ## v0.1.5 -- 2026-07-11
 
 - **New `byre deliver`** (ADR 0021): get files from the host into a running

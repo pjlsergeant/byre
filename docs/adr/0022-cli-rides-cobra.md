@@ -54,20 +54,27 @@ byre doesn't need yet). Help and error wording are cobra-shaped
 appear in the command list; `--flag=value` works uniformly (the old
 loops accepted it on deliver but rejected it on develop).
 
-`byre completion <shell> --install` (Pete's follow-on ask) writes the
-script where the shell will find it and prints the path -- the
-deliver-app doctrine applied to a completion script (generated
-artifact, printed path, idempotent regeneration, foreign same-named
-files refused). The ruling that shaped it: **byre never edits shell rc
-files.** Fish and bash have XDG autoload locations; zsh has no
-standard user autoload dir, so the cascade tries Homebrew's
-site-functions and falls back to `~/.zfunc` while printing the one
-fpath line for the user to add themselves; powershell gets no
---install because its profile IS an rc file. byre's own completion
-command replaces cobra's stock one to carry the flag (the hidden
-__complete machinery is untouched). Install stays out of release
-plumbing (no brew/install.sh wiring) -- a README "How do I" entry owns
-it.
+`byre completion <shell> --install` shipped in v0.1.5 and was
+**REVERSED the same day** (Pete's call, after field-testing it): the
+recommended setup is the per-shell eval/source line in the user's own
+rc file, and `--install` is gone. What the field test established:
+the static file bought little and cost real machinery. The scripts
+are live shims (candidates come from the hidden `__complete` command
+at TAB time), so staleness was never the issue -- but the static bash
+file only loads through the bash-completion package's autoload dirs,
+while `eval "$(byre completion bash)"` works with no package at all
+(the script carries an `_init_completion` fallback), and regeneration
+costs ~3ms of shell startup. The eval line also gave powershell a
+story `--install` had refused, and deleted the ownership-marker/
+site-functions-cascade machinery that had taken four review rounds to
+harden. Files written by v0.1.5's `--install` keep working; users
+delete them at the printed path when they switch. Two things
+survive the reversal: byre's own completion command (its help now IS
+the per-shell instructions, and bare/unknown invocations stay exit 2)
+and the **never-edit-rc-files** ruling -- the user adds the eval line
+themselves, exactly the shape of the fpath line the zsh installer
+used to print. Install remains out of release plumbing; the README
+"How do I" entry owns it.
 
 Consciously accepted (review round 1, Pete-ratified): a value-taking
 flag consumes a following `--help` -- `byre develop --template --help`
