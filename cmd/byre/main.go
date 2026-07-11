@@ -170,7 +170,12 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		rehomeCmd(a, dir, s),
 		forgetCmd(a, dir, s),
 		versionCmd(a, s),
+		completionCmd(s),
 	)
+	// byre ships its own completion command (above) so it can offer
+	// --install; the hidden __complete machinery the scripts call is
+	// unaffected by disabling the stock visible command.
+	root.CompletionOptions.DisableDefaultCmd = true
 	return root
 }
 
