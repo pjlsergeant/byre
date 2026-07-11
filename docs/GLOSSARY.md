@@ -135,7 +135,8 @@ wiring), leaving the agent skill untouched. The shared-auth trio
 
 **Shared-auth offer**:
 The first-run picker's one-time question -- "Share one <agent> login
-across all your projects?" -- asked when the chosen agent has a companion skill declaring
+across all byre projects on this machine?" -- asked when the chosen
+agent has a companion skill declaring
 `shared_auth_for` (the author's vouch that the mechanism is ready to
 offer; a broken or gate-pending companion omits it). Yes enables the
 companion in `default.config`'s `skills`; no is remembered in

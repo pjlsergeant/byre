@@ -2,9 +2,10 @@
 
 The first-run picker now asks one more question: when the chosen agent
 has a **ready** shared-auth companion skill (ADR 0017), it offers to
-enable it — "Share one claude login across all your projects? [y/N]",
-after a line naming the status quo (per-project logins) and the
-mechanism — with the machine-wide scope spelled out in the wording. Yes appends the companion to `skills`
+enable it — "Share one claude login across all byre projects on this
+machine (claude-shared-auth)? [y/N]" — one line carrying the whole
+decision: one login, every project, this machine, and the mechanism's
+name. Yes appends the companion to `skills`
 in `~/.byre/default.config`; no is recorded there too
 (`shared_auth_declined`), so the offer is made **at most once per
 agent**, never per project. Decided 2026-07-11.
