@@ -58,13 +58,14 @@ Three choices carry the design:
   which skill a "y" enables machine-wide, and a hand-dropped
   near-namesake must not shadow the vetted builtin.
 
-Consequences: the picker asks up to three questions plus the offer
-(template, agent, save-as-default, shared auth). The offer only appears
-on a TTY, only when unanswered, and only on runs that were already
-interactive — a fully-flagged `--template X --agent Y` onboarding keeps
-its zero-prompt contract and is never asked. EOF (Ctrl-D) at the offer
-skips it without failing the develop (byre.config is already written by
-then) and records nothing. `config.Config` gains the
+Consequences: the picker asks up to three questions plus the offer —
+template, agent, shared auth, save-as-default, the offer directly after
+the agent question it belongs to. It only appears on a TTY, only when
+unanswered, and only on runs that were already interactive — a
+fully-flagged `--template X --agent Y` onboarding keeps its zero-prompt
+contract and is never asked. Every answer is collected before anything
+is written, so EOF (Ctrl-D) anywhere in the picker — the offer included
+— aborts onboarding with no side effects. `config.Config` gains the
 `shared_auth_declined` key; the resolver strips it from every resolved
 config whatever layer carried it — it is inert outside onboarding.
 Existing installs pick the offer up via `byre skill update` (the store

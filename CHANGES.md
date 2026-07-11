@@ -10,10 +10,12 @@
   companion machine-wide (`skills` in `~/.byre/default.config`, written
   surgically — comments preserved, every edit re-parsed and verified
   before writing); no is remembered in the picker-owned
-  `shared_auth_declined` list, so the offer never nags. Fully-flagged
+  `shared_auth_declined` list, so the offer never nags. The offer
+  follows the agent question directly (before "save as default"), and
+  all answers are collected before anything is written — Ctrl-D
+  anywhere in the picker aborts with no side effects. Fully-flagged
   onboardings (`--template` + `--agent`) keep their zero-prompt
-  contract and are never asked; Ctrl-D at the question skips it
-  without failing the run. Gemini (OAuth gate-pending) and grok
+  contract and are never asked. Gemini (OAuth gate-pending) and grok
   (broken) deliberately don't declare the key and are never offered;
   existing installs pick the offer up with `byre skill update`.
 
