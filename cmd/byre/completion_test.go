@@ -107,8 +107,9 @@ func TestCompletionInstallFish(t *testing.T) {
 	// the user appended their own lines to is theirs now, and a foreign
 	// file quoting the marker mid-body is still foreign.
 	for name, content := range map[string]string{
-		"user-appended": "#compdef byre\n" + completionMarker + "\ncomplete -c byre -a mine\n",
-		"marker-quoted": "# not byre's; ignore the line \"" + completionMarker + "\" here\ncomplete -c byre\n",
+		"user-appended":  "#compdef byre\n" + completionMarker + "\ncomplete -c byre -a mine\n",
+		"marker-quoted":  "# not byre's; ignore the line \"" + completionMarker + "\" here\ncomplete -c byre\n",
+		"marker-in-line": "complete -c byre\n# see also " + completionMarker + "\n",
 	} {
 		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
 			t.Fatal(err)

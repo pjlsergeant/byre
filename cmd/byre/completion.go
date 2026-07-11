@@ -120,7 +120,9 @@ func writeCompletion(target string, script []byte) error {
 	existing, err := os.ReadFile(target)
 	switch {
 	case err == nil:
-		if !bytes.HasSuffix(existing, []byte(completionMarker+"\n")) {
+		// The marker must be exactly the final LINE: preceded by a newline
+		// (never a fragment of a longer foreign line) and ending the file.
+		if !bytes.HasSuffix(existing, []byte("\n"+completionMarker+"\n")) {
 			return fmt.Errorf("refusing to overwrite %s — it exists and byre didn't write it (or it was edited since); move it aside and re-run", target)
 		}
 	case !errors.Is(err, fs.ErrNotExist):
