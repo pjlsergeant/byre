@@ -50,12 +50,14 @@ func TestNotifyDarwinIsAnAutoDismissingDialog(t *testing.T) {
 	// Success = dialog that gives up; failure = sticky dialog.
 	calls := stubRunOut(t)
 	notify("darwin", "t", "ok", false)
-	if got := (*calls)[0]; !strings.Contains(got, "display dialog") || !strings.Contains(got, "giving up after 4") {
-		t.Fatalf("success should auto-dismiss: %q", got)
+	if got := (*calls)[0]; !strings.Contains(got, "display dialog") || !strings.Contains(got, "giving up after 5") ||
+		!strings.Contains(got, "closes itself") {
+		t.Fatalf("success should auto-dismiss AND say so: %q", got)
 	}
 	notify("darwin", "t", "bad", true)
-	if got := (*calls)[1]; !strings.Contains(got, "display dialog") || strings.Contains(got, "giving up") || !strings.Contains(got, "icon caution") {
-		t.Fatalf("failure should be sticky: %q", got)
+	if got := (*calls)[1]; !strings.Contains(got, "display dialog") || strings.Contains(got, "giving up") ||
+		strings.Contains(got, "closes itself") || !strings.Contains(got, "icon caution") {
+		t.Fatalf("failure should be sticky and not claim to close: %q", got)
 	}
 }
 

@@ -40,9 +40,13 @@ func notify(goos string, title, body string, sticky bool) {
 			s = strings.ReplaceAll(s, `\`, `\\`)
 			return strings.ReplaceAll(s, `"`, `\"`)
 		}
-		icon, dismiss := "note", " giving up after 4"
+		icon, dismiss := "note", " giving up after 5"
 		if sticky {
 			icon, dismiss = "caution", ""
+		} else {
+			// An auto-closing dialog with an OK button reads as haunted
+			// unless it SAYS it self-dismisses.
+			body += "\n\n(this window closes itself)"
 		}
 		script := fmt.Sprintf(`display dialog "%s" with title "%s" buttons {"OK"} default button 1 with icon %s%s`,
 			esc(body), esc(title), icon, dismiss)
