@@ -21,6 +21,10 @@ type Choice struct {
 	Template    string // "" means none
 	Agent       string // "" means none
 	SaveDefault bool
+	// SharedAuthCompanion is the companion skill the shared-auth offer (ADR
+	// 0023) named — "" when the offer wasn't made — and SharedAuth its answer.
+	SharedAuthCompanion string
+	SharedAuth          bool
 }
 
 // Favourite is one axis's stored default. Stored is what default.config holds
@@ -38,12 +42,17 @@ type Favourite struct {
 // Pick runs the interactive picker. templates and agents are the available
 // options (a "none" choice is always offered); tmplFav/agentFav are the user's
 // favourites — Effective pre-selected so an empty answer accepts it.
+// companionFor returns the ready, unanswered shared-auth companion for an
+// agent ("" = no offer; nil disables offers): when it names one, the offer is
+// asked right after the agent question — agent questions stay together, and
+// every answer is collected before the caller writes anything, so an EOF
+// anywhere in the picker aborts with no side effects.
 //
 // The prompting functions here take a *bufio.Reader, not an io.Reader, on
 // purpose: a caller asking more than one question MUST thread one shared
 // reader through them, or the first question's buffering eats the later
 // answers — the signature makes that invariant compile-enforced.
-func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite) (Choice, error) {
+func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, companionFor func(agent string) string) (Choice, error) {
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
 	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(tmplFav.Effective))
@@ -53,6 +62,15 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	agent, err := ask(out, r, "Agent", withNone(agents), orNone(agentFav.Effective))
 	if err != nil {
 		return Choice{}, err
+	}
+	companion, sharedAuth := "", false
+	if companionFor != nil {
+		if companion = companionFor(fromNone(agent)); companion != "" {
+			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent), companion)
+			if err != nil {
+				return Choice{}, err
+			}
+		}
 	}
 	// Choosing exactly what default.config already stores is not news:
 	// offering to save it would be noise (and the save a no-op). Only ask when
@@ -69,9 +87,11 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	}
 
 	return Choice{
-		Template:    fromNone(tmpl),
-		Agent:       fromNone(agent),
-		SaveDefault: save,
+		Template:            fromNone(tmpl),
+		Agent:               fromNone(agent),
+		SaveDefault:         save,
+		SharedAuthCompanion: companion,
+		SharedAuth:          sharedAuth,
 	}, nil
 }
 

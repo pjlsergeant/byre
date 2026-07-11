@@ -102,7 +102,7 @@ func TestOnboardPartialFlagWritesConfig(t *testing.T) {
 // must not re-ask — the offer happens at most once per agent.
 func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
 	p, proj := onboardPaths(t)
-	// Template: none, Agent: claude, save-as-default: n, shared auth: n.
+	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
 	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
@@ -128,11 +128,11 @@ func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
 	if err := p2.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	s2, _, errBuf2 := testStreams("\nclaude\nn\n", true)
+	s2, _, errBuf2 := testStreams("\nclaude\nn\n", true) // template, agent, save — no offer in between
 	if err := onboardIfNeeded(s2, proj2, p2, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf2.String(), "shared auth") {
+	if strings.Contains(errBuf2.String(), "Share one") {
 		t.Fatalf("declined offer must not be re-asked:\n%s", errBuf2.String())
 	}
 }
@@ -142,7 +142,8 @@ func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
 // companion, so there is no second source of truth.
 func TestOnboardSharedAuthAcceptEnablesCompanion(t *testing.T) {
 	p, proj := onboardPaths(t)
-	s, _, errBuf := testStreams("\nclaude\nn\ny\n", true)
+	// Template: none, Agent: claude, shared auth: y, save-as-default: n.
+	s, _, errBuf := testStreams("\nclaude\ny\nn\n", true)
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +185,7 @@ func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "shared auth") {
+	if strings.Contains(errBuf.String(), "Share one") {
 		t.Fatalf("no ready companion — no offer:\n%s", errBuf.String())
 	}
 }
@@ -197,7 +198,7 @@ func TestOnboardFullyFlaggedMakesNoOffer(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "none", "claude"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "shared auth") {
+	if strings.Contains(errBuf.String(), "Share one") {
 		t.Fatalf("fully-flagged onboarding must stay non-interactive:\n%s", errBuf.String())
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
@@ -205,23 +206,20 @@ func TestOnboardFullyFlaggedMakesNoOffer(t *testing.T) {
 	}
 }
 
-// Ctrl-D (EOF) at the optional shared-auth question must not fail a develop
-// whose onboarding already succeeded — and records nothing.
-func TestOnboardSharedAuthEOFSkips(t *testing.T) {
+// EOF (Ctrl-D) anywhere in the picker — including at the shared-auth offer —
+// aborts onboarding BEFORE anything is written: all answers are collected
+// first, so an aborted run leaves no half-done state.
+func TestOnboardEOFMidPickerWritesNothing(t *testing.T) {
 	p, proj := onboardPaths(t)
-	// Template, agent, save-default answered; input ends before the offer.
-	s, _, _ := testStreams("\nclaude\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
-		t.Fatalf("EOF at the offer must not fail onboarding: %v", err)
+	// Template and agent answered; input ends at the shared-auth offer.
+	s, _, _ := testStreams("\nclaude\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err == nil {
+		t.Fatal("EOF mid-picker should abort onboarding")
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
-		t.Fatalf("byre.config should have been written: %v", err)
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
+		t.Fatalf("aborted onboarding must write no byre.config: %v", err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.SharedAuthDeclined) != 0 || slices.Contains(cfg.Skills, "claude-shared-auth") {
-		t.Fatalf("no answer — nothing may be recorded: %+v", cfg)
+	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
+		t.Fatalf("aborted onboarding must record nothing: %v", err)
 	}
 }

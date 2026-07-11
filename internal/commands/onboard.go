@@ -60,6 +60,16 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
+	// The shared-auth offer's gate (ADR 0023): only an agent with a ready
+	// companion, only while unanswered.
+	companionFor := func(agent string) string {
+		c := skills.SharedAuthCompanion(skillsDir, agent)
+		if c == "" || onboard.SharedAuthAnswered(paths.Home, agent, c) {
+			return ""
+		}
+		return c
+	}
+
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
 	// proceeds from the cascade.
 	if !anyFlag {
@@ -68,7 +78,8 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		}
 		choice, err := onboard.Pick(s.Err, in, templates, agents,
 			onboard.Favourite{Stored: rawT, Effective: defT},
-			onboard.Favourite{Stored: rawA, Effective: defA})
+			onboard.Favourite{Stored: rawA, Effective: defA},
+			companionFor)
 		if err != nil {
 			return err
 		}
@@ -81,7 +92,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			}
 			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
-		return offerSharedAuth(s.Err, in, s.TTY, paths.Home, skillsDir, choice.Agent)
+		return applySharedAuth(s.Err, paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth)
 	}
 
 	// Resolve explicitly-flagged axes first, so a bad flag value fails fast —
@@ -124,39 +135,33 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		}
 		a = v
 	}
+	// The shared-auth offer joins the other prompts, BEFORE anything is
+	// written (an EOF mid-prompting aborts with no side effects). Both axes
+	// flag-fixed = the caller asked for a fully non-interactive onboarding
+	// (scripts, wrappers): no prompts means no offer either; a
+	// partially-flagged TTY run was already interactive, so it rides along.
+	companion, sharedAuth := "", false
+	if s.TTY && !(tFixed && aFixed) {
+		if companion = companionFor(a); companion != "" {
+			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion)
+			if err != nil {
+				return err
+			}
+			sharedAuth = yes
+		}
+	}
 	if err := writeAndReport(s.Err, cfgPath, t, a); err != nil {
 		return err
 	}
-	// Both axes flag-fixed = the caller asked for a fully non-interactive
-	// onboarding (scripts, wrappers): no prompts means no shared-auth offer
-	// either. A partially-flagged TTY run was already interactive, so the
-	// offer rides along.
-	if tFixed && aFixed {
-		return nil
-	}
-	return offerSharedAuth(s.Err, in, s.TTY, paths.Home, skillsDir, a)
+	return applySharedAuth(s.Err, paths.Home, a, companion, sharedAuth)
 }
 
-// offerSharedAuth asks the one-time shared-auth question (ADR 0023) when the
-// chosen agent has a READY companion skill (one declaring shared_auth_for)
-// and the user hasn't answered before. Yes enables the companion in
-// ~/.byre/default.config — machine-wide, the honest scope of a shared login;
-// no is recorded there too (shared_auth_declined), so the offer never nags.
-// No-op off a TTY.
-func offerSharedAuth(w io.Writer, in *bufio.Reader, tty bool, home, skillsDir, agent string) error {
-	if !tty || agent == "" {
-		return nil
-	}
-	companion := skills.SharedAuthCompanion(skillsDir, agent)
-	if companion == "" || onboard.SharedAuthAnswered(home, agent, companion) {
-		return nil
-	}
-	yes, err := onboard.OfferSharedAuth(w, in, agent, companion)
-	if err != nil {
-		// A read error (Ctrl-D, closed stdin) at this OPTIONAL question must
-		// not fail a develop whose onboarding already succeeded — byre.config
-		// is written. Skip: nothing recorded, shared auth stays available by
-		// hand (or at the next project's onboarding).
+// applySharedAuth records the shared-auth offer's answer (ADR 0023): yes
+// enables the companion in ~/.byre/default.config — machine-wide, the honest
+// scope of a shared login; no is recorded there too (shared_auth_declined),
+// so the offer never nags. No-op when the offer wasn't made (companion "").
+func applySharedAuth(w io.Writer, home, agent, companion string, yes bool) error {
+	if companion == "" {
 		return nil
 	}
 	if yes {
