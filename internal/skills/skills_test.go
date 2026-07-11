@@ -532,6 +532,24 @@ func TestResolveRejectsRelativeNetnsInit(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsTwoNetnsInits(t *testing.T) {
+	dir := t.TempDir()
+	// The launch gate is opened by the hook's own script, so a second hook
+	// could run after the agent was already released — refuse the ambiguity
+	// (same stance as two posture declarations).
+	writeSkill(t, dir, "fw1", "[runtime]\nnetns_init = \"/usr/local/bin/fw1\"\n", nil)
+	writeSkill(t, dir, "fw2", "[runtime]\nnetns_init = \"/usr/local/bin/fw2\"\n", nil)
+	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, dir)
+	if err == nil {
+		t.Fatal("two skills declaring a netns_init must be rejected")
+	}
+	for _, want := range []string{"fw1", "fw2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q: %v", want, err)
+		}
+	}
+}
+
 func TestEgressUnionAndAttribution(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "claude", "[runtime]\negress = [\"api.anthropic.com\", \"claude.ai\"]\n", nil)

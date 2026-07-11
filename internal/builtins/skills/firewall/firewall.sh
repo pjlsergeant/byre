@@ -173,4 +173,8 @@ log "egress deny-by-default applied: ${#v4rules[@]} IPv4 / ${#v6rules[@]} IPv6 a
 # poll-connects and proceeds. Shared netns = shared loopback, so this is the
 # whole signaling channel — stateless, nothing to go stale across restarts.
 # The timeout stops the helper hanging forever if the launcher already died.
+# NOTE: the hook opening the gate itself is only sound while byre permits a
+# single netns_init per box (skill resolution enforces this); a second hook
+# would run after the agent was already released. Multi-hook composition
+# needs Go-owned gate signaling first (see commands/netns.go).
 timeout 60 nc -l 127.0.0.1 "$gate_port" >/dev/null 2>&1 || true
