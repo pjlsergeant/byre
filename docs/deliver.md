@@ -35,7 +35,15 @@ then:
 
 ```
 $ byre deliver
-byre: 🖼  image on the clipboard — press ctrl-v to deliver it (cmd-v won't work for images) · ctrl-c cancels
+
+  byre deliver
+
+  🖼  image on the clipboard
+
+  press ctrl-v to deliver it
+    (cmd-v won't work for images)
+
+  ctrl-c cancels
 ```
 
 The prompt samples your clipboard's *types* (never the content), says

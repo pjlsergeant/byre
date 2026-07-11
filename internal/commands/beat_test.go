@@ -61,22 +61,35 @@ func TestBeatModelViewTruncatesToWidth(t *testing.T) {
 	m, _ := beatModel{}.Update(tea.WindowSizeMsg{Width: 30, Height: 24})
 	m2, _ := m.Update(clipSampleMsg{types: []string{"image/png"}})
 	view := m2.(beatModel).View()
-	visible := 0
-	inEsc := false
-	for _, r := range view {
-		switch {
-		case r == 0x1b:
-			inEsc = true
-		case inEsc:
-			if r == 'm' {
-				inEsc = false
+	for _, line := range strings.Split(view, "\n") {
+		visible := 0
+		inEsc := false
+		for _, r := range line {
+			switch {
+			case r == 0x1b:
+				inEsc = true
+			case inEsc:
+				if r == 'm' {
+					inEsc = false
+				}
+			default:
+				visible++
 			}
-		default:
-			visible++
+		}
+		if visible > 30 {
+			t.Fatalf("line not truncated: %d visible chars in %q", visible, line)
 		}
 	}
-	if visible > 30 {
-		t.Fatalf("view not truncated: %d visible chars in %q", visible, view)
+}
+
+func TestBeatPromptIsRoomy(t *testing.T) {
+	// A dedicated window is not a status bar: title, status, action, footer.
+	block := beatPrompt([]string{"image/png"})
+	if got := strings.Count(block, "\n"); got < 6 {
+		t.Fatalf("prompt should breathe (want multi-line, got %d newlines): %q", got, block)
+	}
+	if !strings.Contains(block, "byre deliver") || !strings.Contains(block, "ctrl-c cancels") {
+		t.Fatalf("missing title/footer: %q", block)
 	}
 }
 

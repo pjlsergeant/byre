@@ -158,16 +158,22 @@ func captureUntilPasteEnd(r *bufio.Reader, out *bytes.Buffer) {
 // NOTHING (no text representation, no event to catch — field-verified
 // 2026-07-10). An empty/unreadable board still tells the whole story.
 func beatPrompt(types []string) string {
+	var status, action string
 	switch {
 	case hasType(types, typeFileRefs):
-		return "byre: 📎 copied files on the clipboard — ctrl-v (or cmd-v) delivers them · ctrl-c cancels"
+		status = "📎 copied files on the clipboard"
+		action = "ctrl-v (or cmd-v) delivers them"
 	case pickImageType(types) != "":
-		return "byre: 🖼  image on the clipboard — press " + rainbow("ctrl-v") + " to deliver it (cmd-v won't work for images) · ctrl-c cancels"
+		status = "🖼  image on the clipboard"
+		action = "press " + rainbow("ctrl-v") + " to deliver it\n  (cmd-v won't work for images)"
 	case hasType(types, "text/plain"):
-		return "byre: 📝 text on the clipboard — ctrl-v / cmd-v delivers it, or paste/drag a file here · ctrl-c cancels"
+		status = "📝 text on the clipboard"
+		action = "ctrl-v / cmd-v delivers it —\n  or paste or drag a file here"
 	default:
-		return "byre: 📋 clipboard looks empty — copy something (this line updates), or paste/drag a file here · ctrl-c cancels"
+		status = "📋 clipboard looks empty"
+		action = "copy something — this screen follows your clipboard —\n  or paste or drag a file here"
 	}
+	return "\n  " + pickTitleStyle.Render("byre deliver") + "\n\n  " + status + "\n\n  " + action + "\n\n  " + pickDimStyle.Render("ctrl-c cancels") + "\n"
 }
 
 // The LIVE beat is a Bubble Tea program — the house TUI owns raw mode,
@@ -229,11 +235,17 @@ func (m beatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m beatModel) View() string {
-	line := beatPrompt(m.types)
-	if m.width > 0 {
-		line = ansi.Truncate(line, m.width-1, "…")
+	block := beatPrompt(m.types)
+	if m.width <= 0 {
+		return block
 	}
-	return line
+	// Clamp per line: bubbletea's renderer miscounts wrapped lines, and the
+	// beat should read airily, not reflow.
+	lines := strings.Split(block, "\n")
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, m.width-1, "…")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // rainbow paints a word one 256-color hue per character, bold — reserved for
