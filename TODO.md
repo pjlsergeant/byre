@@ -115,7 +115,8 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 - [ ] **Rootless Podman keep-id path.** Design settled: generic-UID image on
   the rootless path, run with `--userns=keep-id`, mode-select on the
-  existing `runner.IsRootlessPodman` detection. Today's detect-and-warn
+  existing `runner.IsRootlessPodman` detection. Today's detect-and-refuse
+  (`BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides; 2026-07-11 review batch)
   stays until this lands; add integration coverage when it does. Background:
   `docs/adr/0008-build-time-uid-bake.md`. Promotes if the agent-runnable-
   tests design picks nested podman.

@@ -62,6 +62,40 @@ func TestWarnRootlessPodman(t *testing.T) {
 	}
 }
 
+// develop refuses under rootless Podman: the launch is known to create
+// wrong-owned files (baked-UID model vs userns remap), so it must not
+// complete silently. BYRE_ALLOW_ROOTLESS_PODMAN=1 overrides with the warning
+// retained; a detection error stays a quiet proceed (never refuse on a guess).
+func TestRequireRootfulEngine(t *testing.T) {
+	var buf bytes.Buffer
+	if err := requireRootfulEngine(&buf, &fakeRunner{rootless: true}); err == nil {
+		t.Fatal("rootless Podman must be refused without the override")
+	} else if !strings.Contains(err.Error(), "BYRE_ALLOW_ROOTLESS_PODMAN") {
+		t.Errorf("refusal should name the override: %v", err)
+	}
+
+	t.Setenv("BYRE_ALLOW_ROOTLESS_PODMAN", "1")
+	buf.Reset()
+	if err := requireRootfulEngine(&buf, &fakeRunner{rootless: true}); err != nil {
+		t.Fatalf("override must proceed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "rootless Podman detected") {
+		t.Errorf("override must keep the detailed warning: %q", buf.String())
+	}
+
+	t.Setenv("BYRE_ALLOW_ROOTLESS_PODMAN", "")
+	buf.Reset()
+	if err := requireRootfulEngine(&buf, &fakeRunner{rootlessErr: errors.New("boom")}); err != nil {
+		t.Fatalf("a detection error must not refuse: %v", err)
+	}
+	if err := requireRootfulEngine(&buf, &fakeRunner{}); err != nil {
+		t.Fatalf("rootful must proceed: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("quiet cases must stay quiet: %q", buf.String())
+	}
+}
+
 func TestDockerfilePrintsWithoutTouchingContext(t *testing.T) {
 	t.Setenv("BYRE_HOME", t.TempDir())
 	proj := t.TempDir()

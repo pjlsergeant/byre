@@ -90,7 +90,9 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit boo
 // exit-status mapping. Split from Develop (which does the host-side resolution
 // and onboarding) so it can run end-to-end against a fake engine.
 func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool) error {
-	warnRootlessPodman(s.Err, r)
+	if err := requireRootfulEngine(s.Err, r); err != nil {
+		return err
+	}
 
 	// Worktrees inherit the project image (ADR 0009), so file build inputs
 	// (`files` sources) resolve from the main worktree, not this one. (Config

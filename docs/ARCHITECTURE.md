@@ -155,8 +155,10 @@ shelling out to the engine CLI, never the SDK (ADR 0002). `engine =
 Caveat -- **rootless Podman is not a free win.** The chassis bakes the
 host UID/GID assuming a rootful daemon; rootless remaps user namespaces,
 so the ownership math differs. The rootless keep-id path is designed but
-sequenced later (ADR 0008); until then byre detects rootless Podman and
-warns.
+sequenced later (ADR 0008); until then `byre develop` detects rootless
+Podman and refuses (the launch is known to create wrong-owned files);
+`BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides with the warning retained, the
+same shape as the root-host refusal (`BYRE_ALLOW_ROOT=1`).
 
 ## Box lifecycle
 
