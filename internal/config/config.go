@@ -191,10 +191,10 @@ type Config struct {
 	// SharedAuthDeclined lists agent skills whose onboarding shared-auth offer
 	// (ADR 0023) the user declined — so the picker asks each at most once.
 	// Picker-owned state in ~/.byre/default.config, like the template/agent
-	// favourites: resolveWith zeroes the default layer's copy so it can't
-	// leak into a resolved config from where it's actually kept, and only
-	// onboarding reads or writes it (straight from the file, no cascade). A
-	// "yes" has no key of its own — it IS the companion skill in `skills`.
+	// favourites: resolveWith strips it from every resolved config no matter
+	// which layer carried it, and only onboarding reads or writes it
+	// (straight from the file, never through the cascade). A "yes" has no
+	// key of its own — it IS the companion skill in `skills`.
 	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
 
 	Apt       []string          `toml:"apt,omitempty"`
@@ -283,10 +283,8 @@ func resolveWith(home string, proj Config) (Config, error) {
 	// config (a project's template/agent come from its own byre.config, which the
 	// picker writes). default.config still contributes base/apt/env/etc. The
 	// picker reads the favourites from the file directly (onboard.Favourites).
-	// shared_auth_declined is picker-owned in the same way (ADR 0023).
 	def.Template = ""
 	def.Agent = ""
-	def.SharedAuthDeclined = nil
 
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
@@ -310,6 +308,10 @@ func resolveWith(home string, proj Config) (Config, error) {
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
+	// shared_auth_declined is picker-owned state (ADR 0023), not container
+	// config: whatever layer carries it, it never reaches a resolved config —
+	// onboarding reads it straight from default.config, nothing else may.
+	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -328,16 +330,33 @@ func ParseFile(path string) (Config, error) {
 // (the cascade tolerates absent layers); an unknown key is an error, so a
 // typo can't silently produce a default.
 func loadFile(path string) (Config, error) {
-	var c Config
-	md, err := toml.DecodeFile(path, &c)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Config{}, nil
 		}
+		return Config{}, err
+	}
+	c, err := Parse(b)
+	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
+	return c, nil
+}
+
+// Parse decodes one TOML layer from raw bytes, under the same rules as
+// loadFile (an unknown key is an error). Exported so the onboarding surgical
+// writers can pre-check and verify their textual edits against the ONE parser
+// that will actually read the file back (ADR 0023) — a second hand-rolled
+// decode would drift from these rules.
+func Parse(content []byte) (Config, error) {
+	var c Config
+	md, err := toml.Decode(string(content), &c)
+	if err != nil {
+		return Config{}, err
+	}
 	if und := md.Undecoded(); len(und) > 0 {
-		return Config{}, fmt.Errorf("%s: unknown key(s): %v", path, und)
+		return Config{}, fmt.Errorf("unknown key(s): %v", und)
 	}
 	return c, nil
 }

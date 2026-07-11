@@ -9,9 +9,12 @@
   companion machine-wide (`skills` in `~/.byre/default.config`, written
   surgically — comments preserved, every edit re-parsed and verified
   before writing); no is remembered in the picker-owned
-  `shared_auth_declined` list, so the offer never nags. Gemini
-  (OAuth gate-pending) and grok (broken) deliberately don't declare
-  the key and are never offered.
+  `shared_auth_declined` list, so the offer never nags. Fully-flagged
+  onboardings (`--template` + `--agent`) keep their zero-prompt
+  contract and are never asked; Ctrl-D at the question skips it
+  without failing the run. Gemini (OAuth gate-pending) and grok
+  (broken) deliberately don't declare the key and are never offered;
+  existing installs pick the offer up with `byre skill update`.
 
 - **Lifecycle correctness batch** (2026-07-11 external-review triage):
   - `develop` now creates the session container **under the setup lock**

@@ -17,9 +17,10 @@ import (
 )
 
 // onboardIfNeeded runs the first-run picker (or applies flags) when a project
-// has no byre.config. With flags it's non-interactive; on a TTY it prompts with
-// favourites pre-selected; on a non-TTY with no flags it does nothing (develop
-// proceeds from the cascade defaults).
+// has no byre.config. With BOTH flags it's non-interactive (no prompts at all,
+// including the shared-auth offer); on a TTY it prompts for whatever the flags
+// left open, favourites pre-selected; on a non-TTY with no flags it does
+// nothing (develop proceeds from the cascade defaults).
 func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string) error {
 	anyFlag := flagTemplate != "" || flagAgent != ""
 
@@ -80,7 +81,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			}
 			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
-		return offerSharedAuth(s.Err, in, paths.Home, skillsDir, choice.Agent)
+		return offerSharedAuth(s.Err, in, s.TTY, paths.Home, skillsDir, choice.Agent)
 	}
 
 	// Resolve explicitly-flagged axes first, so a bad flag value fails fast —
@@ -126,10 +127,14 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if err := writeAndReport(s.Err, cfgPath, t, a); err != nil {
 		return err
 	}
-	if !s.TTY {
+	// Both axes flag-fixed = the caller asked for a fully non-interactive
+	// onboarding (scripts, wrappers): no prompts means no shared-auth offer
+	// either. A partially-flagged TTY run was already interactive, so the
+	// offer rides along.
+	if tFixed && aFixed {
 		return nil
 	}
-	return offerSharedAuth(s.Err, in, paths.Home, skillsDir, a)
+	return offerSharedAuth(s.Err, in, s.TTY, paths.Home, skillsDir, a)
 }
 
 // offerSharedAuth asks the one-time shared-auth question (ADR 0023) when the
@@ -137,9 +142,9 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 // and the user hasn't answered before. Yes enables the companion in
 // ~/.byre/default.config — machine-wide, the honest scope of a shared login;
 // no is recorded there too (shared_auth_declined), so the offer never nags.
-// Only called on a TTY.
-func offerSharedAuth(w io.Writer, in io.Reader, home, skillsDir, agent string) error {
-	if agent == "" {
+// No-op off a TTY.
+func offerSharedAuth(w io.Writer, in *bufio.Reader, tty bool, home, skillsDir, agent string) error {
+	if !tty || agent == "" {
 		return nil
 	}
 	companion := skills.SharedAuthCompanion(skillsDir, agent)
@@ -148,7 +153,11 @@ func offerSharedAuth(w io.Writer, in io.Reader, home, skillsDir, agent string) e
 	}
 	yes, err := onboard.OfferSharedAuth(w, in, agent, companion)
 	if err != nil {
-		return err
+		// A read error (Ctrl-D, closed stdin) at this OPTIONAL question must
+		// not fail a develop whose onboarding already succeeded — byre.config
+		// is written. Skip: nothing recorded, shared auth stays available by
+		// hand (or at the next project's onboarding).
+		return nil
 	}
 	if yes {
 		if err := onboard.EnableSharedAuth(home, companion); err != nil {

@@ -793,3 +793,19 @@ func TestParseEgress(t *testing.T) {
 		}
 	}
 }
+
+// shared_auth_declined is stripped from EVERY resolved config, whatever layer
+// carried it — picker-owned state must not ride the cascade (ADR 0023).
+func TestSharedAuthDeclinedNeverResolves(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	writeProjectCfg(t, proj, "agent = \"claude\"\nshared_auth_declined = [\"claude\"]\n")
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SharedAuthDeclined) != 0 {
+		t.Fatalf("project-layer shared_auth_declined must be stripped from the resolved config, got %v", cfg.SharedAuthDeclined)
+	}
+}

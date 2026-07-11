@@ -640,3 +640,14 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 		}
 	}
 }
+
+// Two skills claiming the same agent is refused (no offer), not resolved by
+// sort order — a hand-dropped near-namesake must not shadow the builtin.
+func TestSharedAuthCompanionRefusesAmbiguity(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "aa-auth", "shared_auth_for = \"claude\"\n", nil)
+	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
+	if got := SharedAuthCompanion(dir, "claude"); got != "" {
+		t.Fatalf("two declarers must yield no companion, got %q", got)
+	}
+}

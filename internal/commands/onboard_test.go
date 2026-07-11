@@ -118,8 +118,8 @@ func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
 		t.Fatalf("shared_auth_declined = %v", cfg.SharedAuthDeclined)
 	}
 
-	// A second project, same home: the offer must not reappear — the input
-	// carries NO answer for it, so re-asking would hit EOF and error.
+	// A second project, same home: the offer must not reappear (the input
+	// carries no answer for it; a re-ask would show in the output).
 	proj2 := t.TempDir()
 	p2, err := project.Resolve(proj2)
 	if err != nil {
@@ -186,5 +186,42 @@ func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 	}
 	if strings.Contains(errBuf.String(), "shared auth") {
 		t.Fatalf("no ready companion — no offer:\n%s", errBuf.String())
+	}
+}
+
+// Both flags given = the caller asked for non-interactive onboarding: no
+// shared-auth offer, no stdin reads, even on a TTY.
+func TestOnboardFullyFlaggedMakesNoOffer(t *testing.T) {
+	p, proj := onboardPaths(t)
+	s, _, errBuf := testStreams("", true) // empty stdin: any prompt would EOF
+	if err := onboardIfNeeded(s, proj, p, "none", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "shared auth") {
+		t.Fatalf("fully-flagged onboarding must stay non-interactive:\n%s", errBuf.String())
+	}
+	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
+		t.Fatalf("no offer — nothing may be recorded in default.config: %v", err)
+	}
+}
+
+// Ctrl-D (EOF) at the optional shared-auth question must not fail a develop
+// whose onboarding already succeeded — and records nothing.
+func TestOnboardSharedAuthEOFSkips(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Template, agent, save-default answered; input ends before the offer.
+	s, _, _ := testStreams("\nclaude\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatalf("EOF at the offer must not fail onboarding: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
+		t.Fatalf("byre.config should have been written: %v", err)
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SharedAuthDeclined) != 0 || slices.Contains(cfg.Skills, "claude-shared-auth") {
+		t.Fatalf("no answer — nothing may be recorded: %+v", cfg)
 	}
 }
