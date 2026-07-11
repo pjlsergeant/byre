@@ -20,6 +20,17 @@
   `--no-clip` to skip). The inbox dies with the box -- re-deliver, it's one
   command. Boxes built before this release need one rebuild to gain
   `/inbox`. User guide: docs/deliver.md.
+- **New `byre deliver --install-app`**: generates the deliver app -- a
+  "Byre Deliver" Dock/Finder drag target and a right-click "Deliver to
+  Byre" Quick Action on macOS (assembled locally by `osacompile` from a
+  readable AppleScript source shipped inside the bundle -- nothing
+  prebuilt, nothing to notarize), a `.desktop` launcher on Linux. Drop
+  files on it, or open it plain to deliver the clipboard; outcomes
+  arrive as OS notifications (which no-TTY graphical launches of
+  `byre deliver` now use generally). Re-run after moving the byre
+  binary; `--box` bakes a fixed target; uninstall by deleting the
+  printed paths. Regeneration never clobbers a same-named artifact
+  byre didn't write.
 - **`byre rehome` validates the old id**: a malformed id (anything byre
   couldn't have generated) is refused up front instead of being used as a
   store path component.

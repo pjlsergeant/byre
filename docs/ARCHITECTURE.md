@@ -510,9 +510,19 @@ landed paths always print to stdout (the machine contract, one per
 line) and best-effort ride the host clipboard back (pbcopy / wl-copy /
 xclip, or OSC 52 through SSH); the no-arg clipboard import waits for a
 paste gesture on a TTY and reads the system pasteboard directly (file
-references → image → text). Every degraded nicety states itself on
-stderr. Mechanics in `internal/deliver`; decisions in ADR 0021; user
-behavior (and the what-works-where matrix) in `docs/deliver.md`.
+references → image → text); graphical launches (no TTY, GUI present)
+also report via OS notification. Every degraded nicety states itself
+on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021;
+user behavior (and the what-works-where matrix) in `docs/deliver.md`.
+
+`byre deliver --install-app` materializes the deliver app — generated,
+readable host artifacts whose only job is invoking `byre deliver`: an
+AppleScript droplet assembled by the OS's own `osacompile` (source
+shipped inside the bundle; nothing prebuilt crosses a machine boundary,
+so no signing certificate is involved — ad-hoc codesign runs as Apple
+Silicon belt-and-braces), a Finder Quick Action, and a Linux `.desktop`
+entry. Regeneration replaces only artifacts carrying byre's generated
+marker; a same-named file byre didn't write is refused.
 
 ## Platform note
 

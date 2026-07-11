@@ -113,7 +113,29 @@
       paste text, Ctrl-D → delivered as text. **Images over SSH are
       expected to NOT work** — that's the documented degradation.
 
-## 7. Linux GUI (optional)
+## 7. The deliver app (macOS)
+
+- [ ] `byre deliver --install-app` → prints the .app and .workflow paths;
+      no errors; `Byre Deliver.app` appears in ~/Applications with the
+      byre icon (Finder may need a moment / a relaunch to show it).
+- [ ] Open the bundle's `Contents/Resources/droplet.applescript` → the
+      readable generated source, with your byre path baked in.
+- [ ] Drag the app to the Dock; drop a file on it → notification
+      ("… → /inbox… — path copied to the clipboard"); Cmd-V into the
+      agent works. FIRST use: expect macOS permission prompts once.
+- [ ] Click the app with nothing selected (or open it) → clipboard mode:
+      whatever's on the clipboard delivers, notification reports it.
+- [ ] Right-click a file in Finder → Quick Actions → "Deliver to Byre" →
+      same flow. (May need enabling once under System Settings →
+      Extensions → Finder if macOS doesn't show it immediately.)
+- [ ] With two boxes running, drop a file on the app → the graphical
+      picker dialog appears (osascript choose-from-list).
+- [ ] Re-run `--install-app` → regenerates in place, no complaints.
+- [ ] Gatekeeper check: the app launches without any "unidentified
+      developer" dialog (it's locally generated, never quarantined) —
+      if macOS complains here, note the exact wording.
+
+## 8. Linux GUI (optional)
 
 - [ ] With two boxes and no TTY (e.g. a `.desktop` launcher or
       `setsid byre deliver <file> < /dev/null`) on X11/Wayland →

@@ -103,12 +103,33 @@ deliver again (it's one command). Deliveries never land in `/workspace`,
 so your repo stays clean. Boxes built before this feature don't have an
 `/inbox`; rebuild with `byre develop`.
 
+## The deliver app
+
+You can't drag files onto a bare binary in the Dock -- so byre generates
+you an app:
+
+```
+$ byre deliver --install-app
+/Users/you/Applications/Byre Deliver.app
+/Users/you/Library/Services/Deliver to Byre.workflow
+```
+
+Drag **Byre Deliver** to your Dock and drop files on it, or open it with
+nothing to deliver your clipboard; outcomes arrive as notifications
+("shot.png → /inbox -- path copied to the clipboard"). The right-click
+**Deliver to Byre** Quick Action does the same from Finder's context
+menu. On Linux you get a `.desktop` launcher instead.
+
+The app is a *generated, readable artifact* -- its AppleScript source
+ships inside the bundle (`Contents/Resources/droplet.applescript`), it's
+assembled on your machine by macOS's own `osacompile` (nothing prebuilt,
+so no signing or notarization is ever involved), and re-running
+`--install-app` regenerates it -- do that if you move the byre binary.
+`--box <id>` bakes a fixed target box in. First use triggers macOS's
+one-time permission prompts. To uninstall, delete the printed paths.
+
 ## Not here yet
 
 - **Remote delivery** (`byre deliver ssh://host file`) -- routing a
-  delivery through another machine running byre.
-- **The deliver app** (`byre deliver --install-app`) -- a Dock/Finder
-  drag target ("Byre Deliver") and a right-click Quick Action
-  ("Deliver to Byre").
-
-Both are designed (ADR 0021) and land as follow-on tranches.
+  delivery through another machine running byre. Designed (ADR 0021),
+  lands as a follow-on tranche.
