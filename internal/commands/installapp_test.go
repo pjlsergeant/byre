@@ -333,3 +333,16 @@ func TestInstallDarwinRegenerationLeavesNoRemnants(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneratedArtifactsWidenPATH(t *testing.T) {
+	// Field-found: Finder's sparse PATH hid Docker Desktop from byre —
+	// both launchers must export the widened PATH to byre's children.
+	src := dropletSource("/usr/local/bin/byre", "")
+	if !strings.Contains(src, `PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin\" `) {
+		t.Fatalf("droplet lacks the PATH prefix:\n%s", src)
+	}
+	_, wflow := quickActionFiles("/usr/local/bin/byre", "")
+	if !strings.Contains(wflow, xmlEscape(launchPATH)) {
+		t.Fatalf("quick action lacks the PATH prefix:\n%s", wflow)
+	}
+}

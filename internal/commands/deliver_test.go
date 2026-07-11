@@ -60,3 +60,12 @@ func TestDeliverWiringUIDMismatch(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestDeliverZeroEnginesIsHonest(t *testing.T) {
+	var out, errw bytes.Buffer
+	s := Streams{Out: &out, Err: &errw, In: strings.NewReader(""), TTY: false}
+	_, err := deliverWith(s, t.TempDir(), deliver.Options{}, deliver.PathSources([]string{"x"}), nil, 501, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "no container engine") || strings.Contains(err.Error(), "no running byre boxes") {
+		t.Fatalf("err = %v (zero engines must not claim zero boxes)", err)
+	}
+}

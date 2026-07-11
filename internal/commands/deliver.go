@@ -188,6 +188,12 @@ var stdinIsPiped = func() bool {
 }
 
 func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.Source, engines []sessionRunner, uid int, clip *deliver.Clipboard, pick func([]deliver.Session) (deliver.Session, bool, error)) ([]string, error) {
+	if len(engines) == 0 {
+		// Zero ENGINES must not masquerade as zero boxes (field-found
+		// 2026-07-10: a Finder-launched byre couldn't see Docker Desktop on
+		// its sparse PATH and claimed "no running byre boxes").
+		return nil, fmt.Errorf("no container engine (docker or podman) found on PATH — if this ran from the Dock or Finder, the environment's PATH may be too sparse to see it")
+	}
 	cfg := deliver.Config{
 		ProjectLabel: labelKey,
 		WorkdirLabel: workdirKey,

@@ -21,6 +21,13 @@ import (
 //
 // This file holds the pure generators; install.go-side wiring writes them.
 
+// launchPATH widens the sparse Finder/Automator environment (PATH is just
+// /usr/bin:/bin:/usr/sbin:/sbin there) so byre's CHILDREN resolve — the
+// engine CLI above all: Docker Desktop symlinks into /usr/local/bin, brew
+// podman into /opt/homebrew/bin. Field-found 2026-07-10: without this the
+// Quick Action reported "no running byre boxes" with a box plainly running.
+const launchPATH = `PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" `
+
 // dropletSource is the AppleScript for the "Byre Deliver" droplet. The byre
 // path is baked at generation time (Finder launches carry a sparse PATH);
 // well-known locations are fallbacks, and byre-not-found is reported via
@@ -64,7 +71,9 @@ end run
 
 on runByre(args)
 	try
-		do shell script quoted form of byreBinary() & " deliver` + asQuote(extra) + `" & args & " </dev/null"
+		-- The PATH prefix reaches byre's children (the docker/podman CLI):
+		-- Finder launches carry a sparse PATH that can't see Docker Desktop.
+		do shell script "` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + `" & args & " </dev/null"
 	on error errMsg
 		-- byre notifies its own outcomes; this catches byre failing to RUN.
 		display notification errMsg with title "Byre Deliver"
@@ -80,7 +89,7 @@ func quickActionFiles(byrePath, box string) (infoPlist, documentWflow string) {
 	if box != "" {
 		extra = " --box " + shQuote(box)
 	}
-	command := shQuote(byrePath) + " deliver" + extra + ` "$@" </dev/null`
+	command := launchPATH + shQuote(byrePath) + " deliver" + extra + ` "$@" </dev/null`
 	infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
