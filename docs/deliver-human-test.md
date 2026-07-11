@@ -1,14 +1,14 @@
-# `byre deliver` v1 — human test script (real machine)
+# `byre deliver` — human test script (real machine)
 
-> Working doc. The in-box suite can't touch the macOS surface, real
-> terminals, or a live engine — this checklist is that coverage. Run on
-> your Mac; the Linux and SSH sections are optional extras. Delete or
-> absorb with the rest of the design workspace when v1 ships.
+> The in-box suite can't touch the macOS surface, real terminals, or a
+> live engine — this checklist is that coverage. Run it on a real Mac
+> after changes to the deliver surface; the Linux and SSH sections are
+> optional extras.
 
 ## Setup (once)
 
-- [ ] Build + install the branch binary on the host:
-      `go build -o ~/.local/bin/byre . ` (from the `copypaste` checkout)
+- [ ] Build + install the binary under test on the host:
+      `go build -o ~/.local/bin/byre .`
       — `byre version` should NOT be a released tag.
 - [ ] In a test project: `byre develop`. **The box must be built from this
       binary** (the image bakes `/inbox`) — if the project had an image,

@@ -39,17 +39,16 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   lands in .devloop/.dbg.*), and its "~7 days" token-lifetime comment is
   wrong (~6h access tokens). Record the mechanics in
   docs/agent-credential-mechanics.md when the fix lands.
-- [ ] **`byre deliver` follow-on tranches** (v1 SHIPPED 2026-07-10 —
-  merged after two reviewer loops + one field round; design of record
-  `docs/deliver/decisions.md` incl. field amendments, rationale ADR
-  0021, user guide docs/deliver.md). Remaining, separately shippable:
-  `ssh://` remote delivery (frozen mini-protocol: --proto / --porcelain
-  / --consume, designed); `--install-app` deliver app ("Byre Deliver"
-  bundle + "Deliver to Byre" Quick Action + .desktop, designed).
+- [ ] **`byre deliver` follow-on tranches** (v1 + the deliver app
+  SHIPPED 2026-07-10/11 — rationale ADR 0021 incl. field amendments,
+  user guide docs/deliver.md; the docs/deliver/ design workspace is
+  absorbed + deleted, full record in git history). Remaining,
+  separately shippable: `ssh://` remote delivery (frozen mini-protocol:
+  --proto / --porcelain / --consume, designed in ADR 0021).
   Also outstanding: finish the human-test checklist
-  (docs/deliver/human-test.md — image Ctrl-V, drag, SSH sections);
-  delete the docs/deliver/ workspace once the tranches land; gated
-  BYRE_DOCKER_TESTS deliver cases ride the agent-runnable-tests item.
+  (docs/deliver-human-test.md — the SSH section and unticked extras);
+  gated BYRE_DOCKER_TESTS deliver cases ride the agent-runnable-tests
+  item.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows

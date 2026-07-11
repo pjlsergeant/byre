@@ -488,8 +488,9 @@ project from cwd, it discovers running boxes across every installed
 engine (`ps` filtered on the `byre.project` label; each hit keeps engine
 affinity for the later exec) and resolves a target through a cascade —
 `--box` (unique prefix), cwd match walking ancestor directories against
-the `byre.workdir` label, sole owned session (disabled when an engine
-query failed: a partial pool can't prove "exactly one"), interactive
+the `byre.workdir` label, sole owned session (an unreachable engine
+quietly counts as zero; any other failed query disables this step -- a
+partial pool can't prove "exactly one"), interactive
 picker (Bubble Tea on a TTY, osascript/zenity/kdialog on a graphical
 launch), else an error listing the candidates. Discovery filters to
 boxes whose `BYRE_UID` matches the caller — an accident filter, not
@@ -509,8 +510,11 @@ Host capabilities are probed per axis and degrade independently: the
 landed paths always print to stdout (the machine contract, one per
 line) and best-effort ride the host clipboard back (pbcopy / wl-copy /
 xclip, or OSC 52 through SSH); the no-arg clipboard import waits for a
-paste gesture on a TTY and reads the system pasteboard directly (file
-references → image → text); graphical launches (no TTY, GUI present)
+paste gesture on a TTY and classifies the captured paste -- text
+mirroring the pasteboard is a real paste (read the pasteboard
+out-of-band: file references → image → text), existing absolute host
+paths are a drag onto the window (delivered as files), anything else
+is literal pasted text; graphical launches (no TTY, GUI present)
 also report via OS notification. Every degraded nicety states itself
 on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021;
 user behavior (and the what-works-where matrix) in `docs/deliver.md`.
