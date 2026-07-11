@@ -10,9 +10,12 @@ import (
 // Forget implements `byre forget`: completely remove byre's host-side state for
 // the current directory — its named volumes, its image, and its
 // ~/.byre/projects/<id>/ dir (which holds the config, the adoption record, and
-// the build context). It does NOT touch the project tree; a committed
-// <project>/byre.config is yours to keep. Refuses while a session is live; names
-// everything before deleting.
+// the build context). "Completely" means every INSTALLED engine is inspected
+// and cleaned: state can live in an engine the config no longer names, and
+// deleting the store while the other engine still held credentials would be a
+// false success. It does NOT touch the project tree; a committed
+// <project>/byre.config is yours to keep. Refuses while a session is live;
+// names everything before deleting.
 func Forget(s Streams, projectDir string, force bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
@@ -21,47 +24,65 @@ func Forget(s Streams, projectDir string, force bool) error {
 	if err := paths.Bootstrap(); err != nil { // ensures the dir+lock exist for the lock
 		return err
 	}
-	r, err := resolveEngine(s.Err, projectDir)
+	engines, err := lifecycleEngines()
 	if err != nil {
 		return err
 	}
-	return forget(s, paths, r, force)
+	return forget(s, paths, engines, force)
 }
 
-func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
-	if live, err := liveSession(r, paths.ID); err != nil {
-		return fmt.Errorf("checking for a running session: %w", err)
-	} else if len(live) > 0 {
-		return fmt.Errorf("a session is running for this project (%s); exit it before forget", shortID(live[0]))
-	}
-
-	vols, err := projectVolumes(r, paths.Home, paths.ID)
-	if err != nil {
-		return err
-	}
+func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) error {
+	multi := len(engines) > 1
 	// Both the current UID-qualified tag and the legacy unqualified `byre-<id>`
 	// tag (a project built before the build-time-UID milestone): forget removes
 	// whichever exist so it never leaves an orphaned image behind.
 	candidates := []string{imageTag(paths.ID, os.Getuid(), os.Getgid()), "byre-" + paths.ID}
-	var images []string
-	for _, img := range candidates {
-		has, ierr := r.ImageExists(img)
-		if ierr != nil {
-			return ierr
+
+	// Preview pass: any engine that can't be fully inspected fails the command
+	// before anything is deleted — "completely removed" must never be claimed
+	// over an engine that couldn't be queried.
+	type engineState struct {
+		r    engineRunner
+		vols []string
+		imgs []string
+	}
+	var states []engineState
+	for _, r := range engines {
+		if live, err := liveSession(r, paths.ID); err != nil {
+			return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
+		} else if len(live) > 0 {
+			return fmt.Errorf("a session is running for this project (%s%s); exit it before forget", shortID(live[0]), engineSuffix(multi, r))
 		}
-		if has {
-			images = append(images, img)
+		st := engineState{r: r}
+		var err error
+		st.vols, err = projectVolumes(r, paths.Home, paths.ID)
+		if err != nil {
+			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
 		}
+		for _, img := range candidates {
+			has, ierr := r.ImageExists(img)
+			if ierr != nil {
+				return fmt.Errorf("checking image %s (%s): %w", img, r.Engine(), ierr)
+			}
+			if has {
+				st.imgs = append(st.imgs, img)
+			}
+		}
+		states = append(states, st)
 	}
 
 	noteSharedVolumes(s.Err, paths)
-	noteMachineVolumes(s.Err, r, os.Getuid())
-	fmt.Fprintf(s.Err, "byre forget will permanently delete for %s:\n", paths.ID)
-	for _, v := range vols {
-		fmt.Fprintf(s.Err, "  - volume %s\n", v)
+	for _, st := range states {
+		noteMachineVolumes(s.Err, st.r, os.Getuid())
 	}
-	for _, img := range images {
-		fmt.Fprintf(s.Err, "  - image %s\n", img)
+	fmt.Fprintf(s.Err, "byre forget will permanently delete for %s:\n", paths.ID)
+	for _, st := range states {
+		for _, v := range st.vols {
+			fmt.Fprintf(s.Err, "  - volume %s%s\n", v, engineSuffix(multi, st.r))
+		}
+		for _, img := range st.imgs {
+			fmt.Fprintf(s.Err, "  - image %s%s\n", img, engineSuffix(multi, st.r))
+		}
 	}
 	fmt.Fprintf(s.Err, "  - %s/  (config, adoption record, build context)\n", paths.Dir)
 
@@ -73,35 +94,37 @@ func forget(s Streams, paths project.Paths, r engineRunner, force bool) error {
 		}
 	}
 
-	// Remove volumes + image under the lock (re-checking live and re-listing, so
-	// state created since the preview is also removed); the projects dir holds
-	// the lock file, so remove it after the lock is released.
+	// Remove volumes + images under the lock (re-checking live and re-listing,
+	// so state created since the preview is also removed); the projects dir
+	// holds the lock file, so remove it after the lock is released.
 	var failed []string
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		// Abort on a session that started since the prompt, and dissolve any
-		// pre-start ownership marker before touching volumes.
-		if lerr := clearSessionMarkers(s.Err, r, paths.ID); lerr != nil {
-			return lerr
-		}
-		lockedVols, lerr := projectVolumes(r, paths.Home, paths.ID)
-		if lerr != nil {
-			return lerr
-		}
-		for _, v := range lockedVols {
-			if rerr := r.VolumeRemove(v); rerr != nil {
-				fmt.Fprintf(s.Err, "byre: FAILED to remove volume %s: %v\n", v, rerr)
-				failed = append(failed, v)
+		for _, r := range engines {
+			// Abort on a session that started since the prompt, and dissolve any
+			// pre-start ownership marker before touching volumes.
+			if lerr := clearSessionMarkers(s.Err, r, paths.ID); lerr != nil {
+				return lerr
 			}
-		}
-		for _, img := range candidates {
-			nowImage, ierr := r.ImageExists(img)
-			if ierr != nil {
-				fmt.Fprintf(s.Err, "byre: could not check image %s: %v\n", img, ierr)
-				failed = append(failed, img) // unknown -> don't remove local state
-			} else if nowImage {
-				if rerr := r.ImageRemove(img); rerr != nil {
-					fmt.Fprintf(s.Err, "byre: FAILED to remove image %s: %v\n", img, rerr)
-					failed = append(failed, img)
+			lockedVols, lerr := projectVolumes(r, paths.Home, paths.ID)
+			if lerr != nil {
+				return fmt.Errorf("listing volumes (%s): %w", r.Engine(), lerr)
+			}
+			for _, v := range lockedVols {
+				if rerr := r.VolumeRemove(v); rerr != nil {
+					fmt.Fprintf(s.Err, "byre: FAILED to remove volume %s%s: %v\n", v, engineSuffix(multi, r), rerr)
+					failed = append(failed, v)
+				}
+			}
+			for _, img := range candidates {
+				nowImage, ierr := r.ImageExists(img)
+				if ierr != nil {
+					fmt.Fprintf(s.Err, "byre: could not check image %s%s: %v\n", img, engineSuffix(multi, r), ierr)
+					failed = append(failed, img) // unknown -> don't remove local state
+				} else if nowImage {
+					if rerr := r.ImageRemove(img); rerr != nil {
+						fmt.Fprintf(s.Err, "byre: FAILED to remove image %s%s: %v\n", img, engineSuffix(multi, r), rerr)
+						failed = append(failed, img)
+					}
 				}
 			}
 		}

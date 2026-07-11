@@ -292,6 +292,10 @@ func (f *fakeRunner) Build(tag, dockerfile, contextDir string, noCache bool, bui
 
 var _ engineRunner = (*fakeRunner)(nil)
 
+// engines wraps fakes as the []engineRunner slice the lifecycle commands
+// (reset, forget, rehome) take — one entry per installed engine.
+func engines(rs ...engineRunner) []engineRunner { return rs }
+
 // testStreams builds Streams over buffers: the returned buffers capture Out
 // and Err, in feeds prompts, tty marks stdin as interactive.
 func testStreams(in string, tty bool) (Streams, *bytes.Buffer, *bytes.Buffer) {

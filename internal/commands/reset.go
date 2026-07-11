@@ -10,8 +10,10 @@ import (
 )
 
 // Reset implements `byre reset`: wipe ALL of this project's named volumes (only
-// volumes — not the image). It names what dies first, refuses while a session is
-// live, and serializes with the setup lock. force skips the confirmation prompt.
+// volumes — not the image), across EVERY installed engine — the volumes may
+// live in an engine the config no longer names. It names what dies first,
+// refuses while a session is live, and serializes with the setup lock. force
+// skips the confirmation prompt.
 func Reset(s Streams, projectDir string, force bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
@@ -20,11 +22,11 @@ func Reset(s Streams, projectDir string, force bool) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	r, err := resolveEngine(s.Err, projectDir)
+	engines, err := lifecycleEngines()
 	if err != nil {
 		return err
 	}
-	return reset(s, paths, r, force)
+	return reset(s, paths, engines, force)
 }
 
 // liveSession lists the running containers of the project (any of its worktrees).
@@ -59,31 +61,43 @@ func clearSessionMarkers(w io.Writer, r sessionRunner, id string) error {
 	return nil
 }
 
-func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
-	// Fast fail: never wipe volumes out from under a running session.
-	if live, err := liveSession(r, paths.ID); err != nil {
-		return fmt.Errorf("checking for a running session: %w", err)
-	} else if len(live) > 0 {
-		return fmt.Errorf("a session is running for this project (%s); exit it before reset", shortID(live[0]))
+func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) error {
+	multi := len(engines) > 1
+	// Fast fail: never wipe volumes out from under a running session — on any
+	// engine. A query failure is fatal: an engine that can't be inspected
+	// can't be declared session-free (or cleaned).
+	total := 0
+	for _, r := range engines {
+		if live, err := liveSession(r, paths.ID); err != nil {
+			return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
+		} else if len(live) > 0 {
+			return fmt.Errorf("a session is running for this project (%s%s); exit it before reset", shortID(live[0]), engineSuffix(multi, r))
+		}
+		vols, err := projectVolumes(r, paths.Home, paths.ID)
+		if err != nil {
+			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+		}
+		total += len(vols)
+		// The machine-volume note comes before the empty-case return: a project
+		// whose ONLY volumes are machine-scoped must still hear what was spared
+		// and why (review finding on ADR 0017).
+		noteMachineVolumes(s.Err, r, os.Getuid())
 	}
-
-	vols, err := projectVolumes(r, paths.Home, paths.ID)
-	if err != nil {
-		return err
-	}
-	// The machine-volume note comes before the empty-case return: a project
-	// whose ONLY volumes are machine-scoped must still hear what was spared
-	// and why (review finding on ADR 0017).
-	noteMachineVolumes(s.Err, r, os.Getuid())
-	if len(vols) == 0 {
+	if total == 0 {
 		fmt.Fprintf(s.Err, "byre: no volumes to reset for %s\n", paths.ID)
 		return nil
 	}
 
 	noteSharedVolumes(s.Err, paths)
 	fmt.Fprintf(s.Err, "byre reset will permanently delete these volumes for %s:\n", paths.ID)
-	for _, v := range vols {
-		fmt.Fprintf(s.Err, "  - %s\n", v)
+	for _, r := range engines {
+		vols, err := projectVolumes(r, paths.Home, paths.ID)
+		if err != nil {
+			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+		}
+		for _, v := range vols {
+			fmt.Fprintf(s.Err, "  - %s%s\n", v, engineSuffix(multi, r))
+		}
 	}
 	fmt.Fprintln(s.Err, "State volumes (e.g. agent credentials) will need to be re-created/re-authed on next develop.")
 
@@ -97,32 +111,38 @@ func reset(s Streams, paths project.Paths, r engineRunner, force bool) error {
 
 	// Serialize with develop's setup so we don't race a concurrent build/seed.
 	return withSetupLock(s.Err, paths.LockFile, func() error {
-		// Under the lock: abort on a session that started since the prompt, and
-		// dissolve any pre-start ownership marker before touching volumes.
-		if err := clearSessionMarkers(s.Err, r, paths.ID); err != nil {
-			return err
-		}
-
-		// Re-list under the lock so a volume created since the prompt (e.g. by a
-		// concurrent setup that has since finished) is also wiped, not stranded.
-		vols, err := projectVolumes(r, paths.Home, paths.ID)
-		if err != nil {
-			return err
-		}
-
-		// Continue through all volumes (don't leave a half-wipe on first error);
-		// report a summary and fail if any failed.
 		var failed []string
-		for _, v := range vols {
-			if err := r.VolumeRemove(v); err != nil {
-				fmt.Fprintf(s.Err, "byre: FAILED to remove %s: %v\n", v, err)
-				failed = append(failed, v)
-				continue
+		volsTotal := 0
+		for _, r := range engines {
+			// Under the lock, per engine: abort on a session that started since
+			// the prompt, and dissolve any pre-start ownership marker before
+			// touching volumes.
+			if err := clearSessionMarkers(s.Err, r, paths.ID); err != nil {
+				return err
 			}
-			fmt.Fprintf(s.Err, "byre: removed %s\n", v)
+
+			// Re-list under the lock so a volume created since the prompt (e.g. by
+			// a concurrent setup that has since finished) is also wiped, not
+			// stranded.
+			vols, err := projectVolumes(r, paths.Home, paths.ID)
+			if err != nil {
+				return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+			}
+			volsTotal += len(vols)
+
+			// Continue through all volumes (don't leave a half-wipe on first
+			// error); report a summary and fail if any failed.
+			for _, v := range vols {
+				if err := r.VolumeRemove(v); err != nil {
+					fmt.Fprintf(s.Err, "byre: FAILED to remove %s%s: %v\n", v, engineSuffix(multi, r), err)
+					failed = append(failed, v)
+					continue
+				}
+				fmt.Fprintf(s.Err, "byre: removed %s%s\n", v, engineSuffix(multi, r))
+			}
 		}
 		if len(failed) > 0 {
-			return fmt.Errorf("reset incomplete: %d of %d volumes not removed (%s)", len(failed), len(vols), strings.Join(failed, ", "))
+			return fmt.Errorf("reset incomplete: %d of %d volumes not removed (%s)", len(failed), volsTotal, strings.Join(failed, ", "))
 		}
 		return nil
 	})

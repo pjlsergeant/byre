@@ -17,7 +17,7 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err != nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.migrated) != 2 {
@@ -43,7 +43,7 @@ func TestRehomeRefusesLive(t *testing.T) {
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
 	if len(f.created) != 0 {
@@ -59,7 +59,7 @@ func TestRehomeConflictAborts(t *testing.T) {
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected conflict error")
 	}
 	if len(f.created) != 0 || len(f.migrated) != 0 {
@@ -76,7 +76,7 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 		failMigrate: failDst,
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected copy failure")
 	}
 	// Old volumes must NOT be removed (rollback keeps originals).
@@ -99,7 +99,7 @@ func TestRehomeRefusesMalformedID(t *testing.T) {
 func TestRehomeSameIDErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, p.ID, &fakeRunner{}, 1000, 1000); err == nil {
+	if err := rehome(s, p, p.ID, engines(&fakeRunner{}), 1000, 1000); err == nil {
 		t.Fatal("expected error rehoming to the same id")
 	}
 }
@@ -108,7 +108,7 @@ func TestRehomeNoImageErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{"byre-oldid-cache": true}} // no images
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected error when no image exists for the copy")
 	}
 }
@@ -122,7 +122,7 @@ func TestRehomeFallsBackToLegacyImageTag(t *testing.T) {
 		images: map[string]bool{"byre-oldid": true}, // legacy tag only, not UID-qualified
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err != nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
 		t.Fatalf("rehome should fall back to the legacy image tag: %v", err)
 	}
 	if len(f.migrated) != 1 {

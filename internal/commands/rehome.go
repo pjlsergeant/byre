@@ -41,14 +41,14 @@ func Rehome(s Streams, projectDir, oldID string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	r, err := resolveEngine(s.Err, projectDir)
+	engines, err := lifecycleEngines()
 	if err != nil {
 		return err
 	}
-	return rehome(s, paths, oldID, r, os.Getuid(), os.Getgid())
+	return rehome(s, paths, oldID, engines, os.Getuid(), os.Getgid())
 }
 
-func rehome(s Streams, paths project.Paths, oldID string, r engineRunner, uid, gid int) error {
+func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner, uid, gid int) error {
 	newID := paths.ID
 	if oldID == newID {
 		return fmt.Errorf("already homed here (id %s)", newID)
@@ -62,71 +62,96 @@ func rehome(s Streams, paths project.Paths, oldID string, r engineRunner, uid, g
 		return err
 	}
 	return withTwoSetupLocks(s.Err, paths.LockFile, oldLock, func() error {
-		// Both ids' sessions block a migration; a pre-start marker on either id
-		// (a develop between create and start) is dissolved so that develop
-		// fails loudly rather than launching mid-migration.
-		for _, id := range []string{oldID, newID} {
-			if err := clearSessionMarkers(s.Err, r, id); err != nil {
-				return err
+		multi := len(engines) > 1
+		// Both ids' sessions block a migration, on every installed engine; a
+		// pre-start marker on either id (a develop between create and start) is
+		// dissolved so that develop fails loudly rather than launching
+		// mid-migration.
+		for _, r := range engines {
+			for _, id := range []string{oldID, newID} {
+				if err := clearSessionMarkers(s.Err, r, id); err != nil {
+					return err
+				}
 			}
 		}
 
-		oldPrefix := "byre-" + oldID + "-"
-		oldVols, err := projectVolumes(r, paths.Home, oldID)
-		if err != nil {
-			return err
+		// Volumes are engine-local (there is no cross-engine copy vehicle), so
+		// each engine's old volumes migrate within that engine.
+		migratedAny := false
+		for _, r := range engines {
+			if err := rehomeVolumes(s, paths, oldID, r, uid, gid, multi, &migratedAny); err != nil {
+				return err
+			}
 		}
-		if len(oldVols) == 0 {
+		if !migratedAny {
 			fmt.Fprintf(s.Err, "byre: no volumes found for old id %s; nothing to migrate\n", oldID)
 			return nil
-		}
-
-		// An image is needed to run the copy; prefer the old one, else the new one.
-		image, err := pickCopyImage(r, oldID, newID, uid, gid)
-		if err != nil {
-			return err
-		}
-
-		// Pre-check all destinations for conflicts before mutating anything.
-		type pair struct{ src, dst string }
-		var plan []pair
-		for _, src := range oldVols {
-			dst := "byre-" + newID + "-" + strings.TrimPrefix(src, oldPrefix)
-			exists, err := r.VolumeExists(dst)
-			if err != nil {
-				return err
-			}
-			if exists {
-				return fmt.Errorf("destination volume %s already exists; resolve the conflict (e.g. byre reset) before rehome", dst)
-			}
-			plan = append(plan, pair{src, dst})
-		}
-
-		// Copy each old volume into a fresh destination. On any failure, roll back
-		// the destinations created so far and leave the originals intact.
-		var created []string
-		for _, p := range plan {
-			if err := r.VolumeCreate(p.dst); err != nil {
-				rollback(r, created)
-				return fmt.Errorf("creating %s: %w", p.dst, err)
-			}
-			created = append(created, p.dst)
-			if err := r.MigrateVolume(p.src, p.dst, image, uid, gid); err != nil {
-				rollback(r, created)
-				return fmt.Errorf("copying %s -> %s: %w", p.src, p.dst, err)
-			}
-			fmt.Fprintf(s.Err, "byre: migrated %s -> %s\n", p.src, p.dst)
-		}
-
-		// All copies succeeded — now remove the originals.
-		for _, p := range plan {
-			if err := r.VolumeRemove(p.src); err != nil {
-				fmt.Fprintf(s.Err, "byre: warning: copied but could not remove old volume %s: %v\n", p.src, err)
-			}
 		}
 		fmt.Fprintf(s.Err, "byre: rehomed %s -> %s. Run `byre develop` to rebuild the image.\n", oldID, newID)
 		return nil
 	})
+}
+
+// rehomeVolumes migrates one engine's old-id volumes onto the new id:
+// conflict-check every destination, copy-then-remove each volume (Docker has
+// no rename), roll back created destinations on failure. Sets *migrated when
+// this engine had anything to move.
+func rehomeVolumes(s Streams, paths project.Paths, oldID string, r engineRunner, uid, gid int, multi bool, migrated *bool) error {
+	newID := paths.ID
+	oldPrefix := "byre-" + oldID + "-"
+	oldVols, err := projectVolumes(r, paths.Home, oldID)
+	if err != nil {
+		return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+	}
+	if len(oldVols) == 0 {
+		return nil
+	}
+	*migrated = true
+
+	// An image is needed to run the copy; prefer the old one, else the new one.
+	image, err := pickCopyImage(r, oldID, newID, uid, gid)
+	if err != nil {
+		return err
+	}
+
+	// Pre-check all destinations for conflicts before mutating anything.
+	type pair struct{ src, dst string }
+	var plan []pair
+	for _, src := range oldVols {
+		dst := "byre-" + newID + "-" + strings.TrimPrefix(src, oldPrefix)
+		exists, err := r.VolumeExists(dst)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return fmt.Errorf("destination volume %s already exists%s; resolve the conflict (e.g. byre reset) before rehome", dst, engineSuffix(multi, r))
+		}
+		plan = append(plan, pair{src, dst})
+	}
+
+	// Copy each old volume into a fresh destination. On any failure, roll back
+	// the destinations created so far and leave the originals intact.
+	var created []string
+	for _, p := range plan {
+		if err := r.VolumeCreate(p.dst); err != nil {
+			rollback(r, created)
+			return fmt.Errorf("creating %s: %w", p.dst, err)
+		}
+		created = append(created, p.dst)
+		if err := r.MigrateVolume(p.src, p.dst, image, uid, gid); err != nil {
+			rollback(r, created)
+			return fmt.Errorf("copying %s -> %s: %w", p.src, p.dst, err)
+		}
+		fmt.Fprintf(s.Err, "byre: migrated %s -> %s%s\n", p.src, p.dst, engineSuffix(multi, r))
+	}
+
+	// All copies succeeded — now remove the originals.
+	for _, p := range plan {
+		if err := r.VolumeRemove(p.src); err != nil {
+			fmt.Fprintf(s.Err, "byre: warning: copied but could not remove old volume %s: %v\n", p.src, err)
+		}
+	}
+	return nil
 }
 
 func pickCopyImage(r imageRunner, oldID, newID string, uid, gid int) (string, error) {
