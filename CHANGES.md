@@ -5,7 +5,8 @@
 - **Onboarding offers shared auth** (ADR 0023): when the first-run
   picker's chosen agent has a ready shared-auth companion skill (one
   declaring the new `shared_auth_for` key — claude and codex today),
-  it asks "Use shared auth for <agent>? [y/N]" once. Yes enables the
+  it asks "Share one <agent> login across all your projects? [y/N]"
+  once. Yes enables the
   companion machine-wide (`skills` in `~/.byre/default.config`, written
   surgically — comments preserved, every edit re-parsed and verified
   before writing); no is remembered in the picker-owned

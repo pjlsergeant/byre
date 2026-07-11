@@ -134,8 +134,8 @@ wiring), leaving the agent skill untouched. The shared-auth trio
 (`claude-shared-auth` etc., ADR 0017) are the canonical examples.
 
 **Shared-auth offer**:
-The first-run picker's one-time question -- "Use shared auth for
-<agent>?" -- asked when the chosen agent has a companion skill declaring
+The first-run picker's one-time question -- "Share one <agent> login
+across all your projects?" -- asked when the chosen agent has a companion skill declaring
 `shared_auth_for` (the author's vouch that the mechanism is ready to
 offer; a broken or gate-pending companion omits it). Yes enables the
 companion in `default.config`'s `skills`; no is remembered in
