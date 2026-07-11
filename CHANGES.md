@@ -35,6 +35,13 @@
   notifications are experimental and unverified across desktop
   environments -- the terminal `byre deliver` flows are the supported
   Linux path.**
+- **Tab completion + restructured help** (ADR 0022): the CLI now rides
+  cobra. `byre completion bash|zsh|fish|powershell` prints a completion
+  script covering every command and flag (`byre completion zsh --help`
+  has the install line); help gained `Flags:` sections and
+  `byre help <command>`; `--flag=value` now works everywhere. Exit
+  codes and command behavior are unchanged; error and usage wording
+  shifted to cobra's shape.
 - **`byre rehome` validates the old id**: a malformed id (anything byre
   couldn't have generated) is refused up front instead of being used as a
   store path component.
