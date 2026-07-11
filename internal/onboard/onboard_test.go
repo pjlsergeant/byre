@@ -1,6 +1,7 @@
 package onboard
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -228,5 +229,41 @@ func TestSaveDefaultRemovesOnEmpty(t *testing.T) {
 	}
 	if tmpl, _ := Favourites(home); tmpl != "" {
 		t.Fatalf("empty template should be removed, got %q", tmpl)
+	}
+}
+
+func TestOfferSharedAuth(t *testing.T) {
+	var out bytes.Buffer
+	yes, err := OfferSharedAuth(&out, strings.NewReader("y\n"), "claude", "claude-shared-auth")
+	if err != nil || !yes {
+		t.Fatalf("yes = %v, err = %v", yes, err)
+	}
+	// The wording must carry the real scope: machine-wide, not this project.
+	if !strings.Contains(out.String(), "machine") || !strings.Contains(out.String(), "claude-shared-auth") {
+		t.Fatalf("offer must name the machine-wide scope and the companion skill:\n%s", out.String())
+	}
+	// Default is No: an empty answer declines.
+	yes, err = OfferSharedAuth(&out, strings.NewReader("\n"), "claude", "claude-shared-auth")
+	if err != nil || yes {
+		t.Fatalf("empty answer must decline, got yes = %v, err = %v", yes, err)
+	}
+}
+
+// Prompting functions reuse a caller-supplied *bufio.Reader instead of
+// re-wrapping it: a second bufio over the same source would drop what the
+// first buffered ahead, eating the answers to later questions.
+func TestPromptsShareABufferedReader(t *testing.T) {
+	var out bytes.Buffer
+	in := bufio.NewReader(strings.NewReader("node\ncodex\nn\ny\n"))
+	c, err := Pick(&out, in, []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Template != "node" || c.Agent != "codex" || c.SaveDefault {
+		t.Fatalf("choice = %+v", c)
+	}
+	yes, err := OfferSharedAuth(&out, in, "codex", "codex-shared-auth")
+	if err != nil || !yes {
+		t.Fatalf("the shared-auth answer was buffered by Pick's reader and must still be readable: yes = %v, err = %v", yes, err)
 	}
 }
