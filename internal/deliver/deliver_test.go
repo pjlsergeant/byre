@@ -530,3 +530,15 @@ func TestUnreadableIdentityNotBlamedOnUIDFilter(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestBoxNoMatchNamesUnusableSessions(t *testing.T) {
+	// Round-2 residual: --box aimed at a box whose identity is unreadable
+	// must not claim nothing matched without mentioning the unusable session.
+	eng := box("docker", "aaa")
+	eng.envErr = fmt.Errorf("inspect broke")
+	cfg, _, _ := testConfig(eng)
+	_, err := Run(cfg, Options{Box: "proj-aaa"}, []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "readable dev identity") {
+		t.Fatalf("err = %v", err)
+	}
+}

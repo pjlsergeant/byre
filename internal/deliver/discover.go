@@ -129,7 +129,7 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 		case 1:
 			return matches[0], nil
 		case 0:
-			return Session{}, fmt.Errorf("no running box matches --box %q%s", opts.Box, hiddenHint(p))
+			return Session{}, fmt.Errorf("no running box matches --box %q%s%s", opts.Box, hiddenHint(p), unusableNote(p))
 		default:
 			return Session{}, fmt.Errorf("--box %q is ambiguous:\n%s", opts.Box, sessionList(matches))
 		}
