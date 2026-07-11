@@ -300,9 +300,11 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir() // no byre.config
 
-	// default.config sets template/agent (picker pre-selections) plus base/apt.
+	// default.config sets template/agent (picker pre-selections) and
+	// shared_auth_declined (the picker's asked-and-refused record, ADR 0023)
+	// plus base/apt.
 	writeFile(t, filepath.Join(home, "default.config"),
-		"agent = \"claude\"\ntemplate = \"node\"\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
+		"agent = \"claude\"\ntemplate = \"node\"\nshared_auth_declined = [\"claude\"]\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
 
 	cfg, err := Load(proj)
 	if err != nil {
@@ -311,6 +313,10 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	// template/agent must NOT cascade from default.config...
 	if cfg.Agent != "" {
 		t.Errorf("default agent must not cascade, got %q", cfg.Agent)
+	}
+	// ...nor the picker-owned decline record...
+	if len(cfg.SharedAuthDeclined) != 0 {
+		t.Errorf("shared_auth_declined must not cascade, got %v", cfg.SharedAuthDeclined)
 	}
 	if cfg.Base != "debian:bookworm" {
 		t.Errorf("default template must not apply (base should stay debian), got %q", cfg.Base)
@@ -534,25 +540,26 @@ func TestListTemplates(t *testing.T) {
 // a field to Config forces adding it both here and to Merge.
 func sampleConfig() Config {
 	return Config{
-		Engine:         "podman",
-		Template:       "go",
-		Agent:          "claude",
-		Base:           "debian:bookworm",
-		SeedPrefs:      true,
-		WorktreeBase:   "sibling",
-		Apt:            []string{"jq"},
-		NpmGlobal:      []string{"typescript"},
-		Env:            map[string]string{"K": "v"},
-		Files:          map[string]string{"a.txt": "/opt/a.txt"},
-		Skills:         []string{"devloop"},
-		Egress:         []string{"grafana.com"},
-		EgressOffered:  []string{"registry.npmjs.org"},
-		Mounts:         []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
-		Volumes:        []Volume{{Name: "v", Role: "cache", Target: "/c"}},
-		Ports:          []Port{{Container: 8080}},
-		DockerfilePre:  []string{"RUN true"},
-		DockerfilePost: []string{"RUN false"},
-		RunArgs:        []string{"--cap-add=X"},
+		Engine:             "podman",
+		Template:           "go",
+		Agent:              "claude",
+		Base:               "debian:bookworm",
+		SeedPrefs:          true,
+		WorktreeBase:       "sibling",
+		Apt:                []string{"jq"},
+		NpmGlobal:          []string{"typescript"},
+		Env:                map[string]string{"K": "v"},
+		Files:              map[string]string{"a.txt": "/opt/a.txt"},
+		Skills:             []string{"devloop"},
+		SharedAuthDeclined: []string{"claude"},
+		Egress:             []string{"grafana.com"},
+		EgressOffered:      []string{"registry.npmjs.org"},
+		Mounts:             []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
+		Volumes:            []Volume{{Name: "v", Role: "cache", Target: "/c"}},
+		Ports:              []Port{{Container: 8080}},
+		DockerfilePre:      []string{"RUN true"},
+		DockerfilePost:     []string{"RUN false"},
+		RunArgs:            []string{"--cap-add=X"},
 	}
 }
 
