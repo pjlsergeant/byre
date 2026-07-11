@@ -103,3 +103,35 @@ func TestBestEffortClaimIsHedged(t *testing.T) {
 		t.Fatalf("best-effort claim not hedged: %q", errw.String())
 	}
 }
+
+func TestDataSourceConfirmationStatesKindAndSizeNeverContent(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, out, errw := testConfig(eng)
+	secret := "hunter2-super-secret"
+	landed, err := RunSources(cfg, Options{}, []Source{{Data: []byte(secret), Name: "clipboard-x.txt", Kind: "clipboard text"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 || landed[0] != "/inbox/clipboard-x.txt" {
+		t.Fatalf("landed = %v", landed)
+	}
+	msg := errw.String()
+	if !strings.Contains(msg, "delivered clipboard text (20 bytes) → /inbox/clipboard-x.txt") {
+		t.Fatalf("confirmation missing kind+size: %q", msg)
+	}
+	if strings.Contains(msg, "hunter2") || strings.Contains(out.String(), "hunter2") {
+		t.Fatal("content leaked into output")
+	}
+}
+
+func TestReaderSourceCountsBytes(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	_, err := RunSources(cfg, Options{}, []Source{{Reader: strings.NewReader("12345"), Name: "stdin-x", Kind: "stdin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "delivered stdin (5 bytes)") {
+		t.Fatalf("no counted confirmation: %q", errw.String())
+	}
+}

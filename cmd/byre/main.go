@@ -217,12 +217,19 @@ started by 'byre develop'.`,
 	{
 		name:    "deliver",
 		summary: "Deliver files from the host into a running box's /inbox.",
-		help: `Usage: byre deliver [--box <id>] [--skip-uid-check] <path>...
+		help: `Usage: byre deliver [flags] [<path>... | -]
 
 Get files into a running box: each path streams into the box's /inbox
 (names preserved, collisions uniquified, never overwritten) and the landed
 in-box path prints to stdout, one per line — paste it into the agent prompt.
 Directories deliver recursively, preserving structure, as one path.
+
+With no paths, byre delivers your CLIPBOARD: on a terminal it waits for a
+paste gesture (Ctrl-V or Cmd-V — the beat where you check what's on the
+clipboard), then reads the system clipboard directly, so copied files,
+screenshots, and text all work. Import priority: file references → image →
+text; captures land as clipboard-<timestamp> named for their actual format.
+'-' (or piped stdin) streams stdin into a single file.
 
 The box is found machine-wide: --box picks explicitly (unique id or project
 prefix); otherwise a box whose workdir contains the current directory wins;
@@ -235,6 +242,7 @@ that, and when no clipboard path exists byre says so — the printed path is
 always the contract.
 
   --box <id>        deliver to this box (unique id or project prefix)
+  --name <base>     landing filename for stdin ('-') content
   --skip-uid-check  include (and permit) boxes owned by other users
   --no-clip         don't copy the landed paths to the clipboard`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
@@ -250,20 +258,32 @@ always the contract.
 					opts.Box = rest[i]
 				case strings.HasPrefix(rest[i], "--box="):
 					opts.Box = strings.TrimPrefix(rest[i], "--box=")
+				case rest[i] == "--name":
+					i++
+					if i >= len(rest) {
+						return usageError("byre deliver: --name needs a value")
+					}
+					opts.Name = rest[i]
+				case strings.HasPrefix(rest[i], "--name="):
+					opts.Name = strings.TrimPrefix(rest[i], "--name=")
 				case rest[i] == "--skip-uid-check":
 					opts.SkipUIDCheck = true
 				case rest[i] == "--no-clip":
 					opts.NoClip = true
 				case rest[i] == "-":
-					return usageError("byre deliver: stdin mode ('-') lands with the clipboard step of this feature")
+					paths = append(paths, "-")
 				case strings.HasPrefix(rest[i], "-"):
 					return usageError(fmt.Sprintf("byre deliver: unknown flag %q", rest[i]))
 				default:
 					paths = append(paths, rest[i])
 				}
 			}
-			if len(paths) == 0 {
-				return usageError("byre deliver: nothing to deliver — pass one or more paths (clipboard mode lands with a later step of this feature)")
+			if len(paths) > 1 {
+				for _, p := range paths {
+					if p == "-" {
+						return usageError("byre deliver: '-' (stdin) cannot be mixed with path arguments")
+					}
+				}
 			}
 			return a.deliver(s, dir, opts, paths)
 		},

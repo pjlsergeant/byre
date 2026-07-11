@@ -48,6 +48,7 @@ type Options struct {
 	Box          string // explicit target: id or project prefix (cascade step 0)
 	SkipUIDCheck bool   // include (and permit) boxes owned by other uids
 	NoClip       bool   // skip the clipboard round-trip's return leg
+	Name         string // landing basename for stdin captures (--name)
 }
 
 // Config is the host-side wiring deliver needs but must not derive itself.
@@ -66,10 +67,15 @@ type Config struct {
 	Clip        *Clipboard // host clipboard write path; nil = unavailable
 }
 
-// Run delivers each source path into the selected box and returns the landed
-// in-box paths (top-level: one per file argument, one per directory argument).
-// Failures are per-source: successes stay, the error reports the count.
+// Run delivers path arguments — RunSources over PathSources.
 func Run(cfg Config, opts Options, paths []string) ([]string, error) {
+	return RunSources(cfg, opts, PathSources(paths))
+}
+
+// RunSources delivers each source into the selected box and returns the
+// landed in-box paths (top-level: one per source; a directory is one path).
+// Failures are per-source: successes stay, the error reports the count.
+func RunSources(cfg Config, opts Options, sources []Source) ([]string, error) {
 	sess, err := selectSession(cfg, opts)
 	if err != nil {
 		return nil, err
@@ -79,8 +85,8 @@ func Run(cfg Config, opts Options, paths []string) ([]string, error) {
 
 	var landed []string
 	failed := 0
-	for _, p := range paths {
-		got, err := deliverPath(cfg, sess, p)
+	for _, src := range sources {
+		got, err := deliverSource(cfg, sess, src)
 		// A partial directory returns BOTH a path and an error: the path is
 		// real and still prints; the error (and exit code) carry completeness.
 		if got != "" {
@@ -94,7 +100,7 @@ func Run(cfg Config, opts Options, paths []string) ([]string, error) {
 	}
 	shipClipboard(cfg, opts, landed)
 	if failed > 0 {
-		return landed, fmt.Errorf("%d of %d deliveries failed", failed, len(paths))
+		return landed, fmt.Errorf("%d of %d deliveries failed", failed, len(sources))
 	}
 	return landed, nil
 }
