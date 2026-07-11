@@ -171,3 +171,20 @@ func TestDraggedPathsMultipleFiles(t *testing.T) {
 		t.Fatalf("mixed existence must not be a drag: %v", got)
 	}
 }
+
+func TestDraggedPathsShellSpecialCharacters(t *testing.T) {
+	// Terminals backslash-escape any special char in a dragged name, not
+	// just spaces (codex field-fix review).
+	dir := t.TempDir()
+	real := filepath.Join(dir, "a&b (final)'.txt")
+	if err := os.WriteFile(real, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	escaped := strings.NewReplacer(
+		" ", `\ `, "&", `\&`, "(", `\(`, ")", `\)`, "'", `\'`,
+	).Replace(real)
+	got := draggedPaths(escaped)
+	if len(got) != 1 || got[0] != real {
+		t.Fatalf("draggedPaths(%q) = %v, want %q", escaped, got, real)
+	}
+}

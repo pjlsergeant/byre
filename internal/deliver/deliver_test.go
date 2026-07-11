@@ -618,3 +618,19 @@ func TestPartialWarningIsOneLine(t *testing.T) {
 		t.Fatalf("engine essay leaked into the warning: %q", errw.String())
 	}
 }
+
+func TestPermissionFailureStaysPartial(t *testing.T) {
+	// A permission/TLS failure against a possibly-RUNNING daemon must keep
+	// the loud partial-pool semantics, not classify as unreachable (codex
+	// field-fix review: sessions exist and are merely invisible).
+	broken := &fakeEngine{name: "docker", idsErr: fmt.Errorf("permission denied while trying to connect to the Docker daemon socket")}
+	eng := box("podman", "aaa")
+	cfg, _, errw := testConfig(broken, eng)
+	_, err := Run(cfg, Options{}, []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "engine query failed") {
+		t.Fatalf("err = %v (auto-pick must stay disabled)", err)
+	}
+	if !strings.Contains(errw.String(), "warning") {
+		t.Fatalf("no loud warning: %q", errw.String())
+	}
+}

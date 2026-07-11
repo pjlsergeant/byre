@@ -202,13 +202,24 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 
 // isUnreachable classifies can't-talk-to-the-daemon failures (podman machine
 // not started, docker daemon down) by their message — the engine CLIs give no
-// typed errors across an exec boundary. Heuristic on purpose; a miss just
-// means the louder partial-pool path, never a wrong delivery.
+// typed errors across an exec boundary. The markers are deliberately
+// CONNECTION-shaped (dial/refused/daemon-not-running phrasings), not generic:
+// a permission or TLS failure against a RUNNING daemon must take the louder
+// partial-pool path, since its sessions exist and are merely invisible.
+// Safety note either way: an engine byre cannot connect to is one byre cannot
+// exec into — its sessions are undeliverable this run regardless — so a
+// zero-classification never sends a delivery somewhere wrong, only proceeds
+// past boxes that couldn't have received it. A missed marker just means the
+// louder path.
 func isUnreachable(err error) bool {
 	msg := strings.ToLower(err.Error())
 	for _, marker := range []string{
-		"cannot connect", "unable to connect", "connection refused",
-		"is the docker daemon running", "podman machine init",
+		"cannot connect",              // docker: "Cannot connect to the Docker daemon"; podman: "Cannot connect to Podman"
+		"unable to connect to podman", // podman's socket message
+		"connection refused",
+		"is the docker daemon running",
+		"podman machine init",   // podman's own no-machine hint
+		"dial unix", "dial tcp", // Go net dial failures surfaced verbatim
 	} {
 		if strings.Contains(msg, marker) {
 			return true

@@ -104,19 +104,22 @@ func importFromPaste(s Streams, reader *clipBackend, text []byte, stamp string) 
 }
 
 // draggedPaths recognizes a terminal drag: absolute path(s), shell-escaped
-// spaces (`My\ File.txt`), space-separated when multiple. ABSOLUTE is
-// required — pasted prose that happens to name a relative file must stay
-// text, never surprise-deliver a file.
+// (terminals backslash-escape ANY special character in a dragged name —
+// spaces, `&`, parens, quotes — so `\X` unescapes to X generally), space-
+// separated when multiple. ABSOLUTE is required — pasted prose that happens
+// to name a relative file must stay text, never surprise-deliver a file —
+// and every token must exist; a miss means the whole paste stays text.
 func draggedPaths(s string) []string {
-	if p := strings.ReplaceAll(s, `\ `, " "); pathExists(p) {
+	// One path first (spaces might be separators OR escaped content).
+	if p := shellUnescape(s); pathExists(p) {
 		return []string{p}
 	}
 	var toks []string
 	var cur strings.Builder
 	for i := 0; i < len(s); i++ {
 		switch {
-		case s[i] == '\\' && i+1 < len(s) && s[i+1] == ' ':
-			cur.WriteByte(' ')
+		case s[i] == '\\' && i+1 < len(s):
+			cur.WriteByte(s[i+1]) // escaped char: literal, never a separator
 			i++
 		case s[i] == ' ':
 			if cur.Len() > 0 {
@@ -139,6 +142,18 @@ func draggedPaths(s string) []string {
 		}
 	}
 	return toks
+}
+
+// shellUnescape resolves unquoted backslash escapes (`\X` → X).
+func shellUnescape(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 func pathExists(p string) bool {
