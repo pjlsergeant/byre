@@ -172,9 +172,10 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		versionCmd(a, s),
 		completionCmd(s),
 	)
-	// byre ships its own completion command (above) so it can offer
-	// --install; the hidden __complete machinery the scripts call is
-	// unaffected by disabling the stock visible command.
+	// byre ships its own completion command (above) so its help carries the
+	// per-shell setup lines and bare/unknown invocations stay usage errors;
+	// the hidden __complete machinery the scripts call is unaffected by
+	// disabling the stock visible command.
 	root.CompletionOptions.DisableDefaultCmd = true
 	return root
 }
