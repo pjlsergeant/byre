@@ -44,6 +44,10 @@
 
 description = "BROKEN — failed its field gate: the shared login dies within hours and clobbers per-box logins. Don't enable; rebuild pending (see skill.toml)."
 
+# Deliberately NO `shared_auth_for` (the ADR 0023 onboarding offer): the skill
+# is broken (see the field-gate failure above). Declare it after the API-key
+# rebuild passes its gate.
+
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-grok-shared-auth" }
 

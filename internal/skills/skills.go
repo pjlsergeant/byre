@@ -69,7 +69,14 @@ type File struct {
 	// the point of choice. Optional for hand-dropped skills; every builtin
 	// carries one.
 	Description string `toml:"description"`
-	Build       struct {
+	// SharedAuthFor declares this skill as the shared-auth companion (ADR
+	// 0017) for the named agent skill, making it OFFERABLE: the onboarding
+	// picker asks "use shared auth?" when that agent is selected. Declaring
+	// the key is the author VOUCHING the companion is ready to enable —
+	// a broken or gate-pending companion (grok-shared-auth, gemini's OAuth
+	// path) omits it and stays a hand-enabled expert option.
+	SharedAuthFor string `toml:"shared_auth_for"`
+	Build         struct {
 		Apt        []string          `toml:"apt"`
 		NpmGlobal  []string          `toml:"npm_global"`
 		Dockerfile []string          `toml:"dockerfile"` // raw build lines
@@ -399,6 +406,23 @@ func DescribeSkills(skillsDir string) map[string]string {
 		}
 	}
 	return out
+}
+
+// SharedAuthCompanion returns the name of the skill declaring itself the
+// ready shared-auth companion for the given agent skill (shared_auth_for =
+// agent), or "" when none does. First sorted name wins if several declare it
+// (builtins never do).
+func SharedAuthCompanion(skillsDir, agent string) string {
+	if agent == "" {
+		return ""
+	}
+	names := list(skillsDir, func(sk Skill) bool {
+		return sk.File.SharedAuthFor == agent
+	})
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
 }
 
 // ListAgentSkills returns the names of skills in skillsDir that provide an
