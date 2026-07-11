@@ -130,13 +130,24 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	if err := d.run("codesign", "--force", "--deep", "--sign", "-", staged); err != nil {
 		fmt.Fprintf(s.Err, "byre: warning: ad-hoc codesign failed (%v) — the app usually still runs; if macOS refuses it, this is why\n", err)
 	}
-	// The swap: only now does the old (verified byre-generated) app go away.
+	// The swap, with the old app held as a restorable backup until the new
+	// one is actually in place — no window where a rename failure leaves
+	// NEITHER bundle installed.
 	if appExists {
-		if err := os.RemoveAll(appPath); err != nil {
-			return err
+		backup := filepath.Join(appDir, ".Byre Deliver.previous.app")
+		_ = os.RemoveAll(backup)
+		if err := os.Rename(appPath, backup); err != nil {
+			_ = os.RemoveAll(staged)
+			return fmt.Errorf("setting the old app aside: %w", err)
 		}
-	}
-	if err := os.Rename(staged, appPath); err != nil {
+		if err := os.Rename(staged, appPath); err != nil {
+			_ = os.Rename(backup, appPath) // restore the working app
+			_ = os.RemoveAll(staged)
+			return fmt.Errorf("installing the assembled app (old app restored): %w", err)
+		}
+		_ = os.RemoveAll(backup)
+	} else if err := os.Rename(staged, appPath); err != nil {
+		_ = os.RemoveAll(staged)
 		return fmt.Errorf("installing the assembled app: %w", err)
 	}
 	_ = d.run("touch", appPath) // nudge Finder's icon cache

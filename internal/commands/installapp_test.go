@@ -318,3 +318,18 @@ func TestQuickActionCarriesMarker(t *testing.T) {
 		t.Fatal("document.wflow lacks the generated marker")
 	}
 }
+
+func TestInstallDarwinRegenerationLeavesNoRemnants(t *testing.T) {
+	d, _ := testDeps(t, "darwin")
+	s, _, _ := testStreams("", false)
+	for i := 0; i < 2; i++ { // install, then regenerate
+		if err := installApp(s, "", d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, remnant := range []string{".Byre Deliver.staged.app", ".Byre Deliver.previous.app"} {
+		if _, err := os.Stat(d.home + "/Applications/" + remnant); !os.IsNotExist(err) {
+			t.Fatalf("%s left behind: %v", remnant, err)
+		}
+	}
+}
