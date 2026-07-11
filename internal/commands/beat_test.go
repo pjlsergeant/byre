@@ -155,12 +155,19 @@ func TestBeatPromptSamplesTheClipboard(t *testing.T) {
 	}
 }
 
-func TestBeatPromptImageWarnsAboutCmdVAndBoldsCtrlV(t *testing.T) {
+func TestBeatPromptImageWarnsAboutCmdVAndRainbowsCtrlV(t *testing.T) {
 	got := beatPrompt([]string{"image/png"})
 	if !strings.Contains(got, "cmd-v won't work") {
 		t.Fatalf("image prompt must warn about Cmd-V: %q", got)
 	}
-	if !strings.Contains(got, "\x1b[1mctrl-v\x1b[22m") {
-		t.Fatalf("ctrl-v should be bold when it matters most: %q", got)
+	// One hue per character, bold, cleanly reset after.
+	for _, want := range []string{"\x1b[1;38;5;196mc", "\x1b[1;38;5;208mt", "\x1b[1;38;5;129mv", "\x1b[22;39m"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("ctrl-v should be rainbow where it matters most: missing %q in %q", want, got)
+		}
+	}
+	// The other prompts stay plain: rainbow is signal, not decoration.
+	if plain := beatPrompt([]string{"text/plain"}); strings.Contains(plain, "38;5;") {
+		t.Fatalf("text prompt should not be rainbow: %q", plain)
 	}
 }

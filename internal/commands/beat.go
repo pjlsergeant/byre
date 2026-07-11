@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -157,12 +158,11 @@ func captureUntilPasteEnd(r *bufio.Reader, out *bytes.Buffer) {
 // NOTHING (no text representation, no event to catch — field-verified
 // 2026-07-10). An empty/unreadable board still tells the whole story.
 func beatPrompt(types []string) string {
-	const bold, plain = "\x1b[1m", "\x1b[22m"
 	switch {
 	case hasType(types, typeFileRefs):
 		return "byre: 📎 copied files on the clipboard — ctrl-v (or cmd-v) delivers them · ctrl-c cancels"
 	case pickImageType(types) != "":
-		return "byre: 🖼  image on the clipboard — press " + bold + "ctrl-v" + plain + " to deliver it (cmd-v won't work for images) · ctrl-c cancels"
+		return "byre: 🖼  image on the clipboard — press " + rainbow("ctrl-v") + " to deliver it (cmd-v won't work for images) · ctrl-c cancels"
 	case hasType(types, "text/plain"):
 		return "byre: 📝 text on the clipboard — ctrl-v / cmd-v delivers it, or paste/drag a file here · ctrl-c cancels"
 	default:
@@ -234,6 +234,20 @@ func (m beatModel) View() string {
 		line = ansi.Truncate(line, m.width-1, "…")
 	}
 	return line
+}
+
+// rainbow paints a word one 256-color hue per character, bold — reserved for
+// THE key: the image prompt's ctrl-v, where macOS muscle memory (cmd-v) fails
+// silently. Rainbow everywhere would be decoration; rainbow here is signal.
+// 256-color, not truecolor: Terminal.app never learned truecolor.
+func rainbow(word string) string {
+	hues := []int{196, 208, 226, 46, 33, 129} // red orange yellow green blue purple
+	var b strings.Builder
+	for i, r := range word {
+		fmt.Fprintf(&b, "\x1b[1;38;5;%dm%c", hues[i%len(hues)], r)
+	}
+	b.WriteString("\x1b[22;39m") // unbold, default foreground
+	return b.String()
 }
 
 // runPasteBeat runs the beat. With a pasteboard reader it's the live Bubble
