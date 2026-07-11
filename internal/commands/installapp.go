@@ -74,7 +74,9 @@ on run
 	-- flag file on failure: success closes the window (whatever the
 	-- profile says); a failure's window stays open to read.
 	set failFlag to do shell script "mktemp -u /tmp/byre-deliver-fail.XXXXXX"
-	set cmd to "` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + ` || touch " & quoted form of failFlag & "; exit"
+	-- clear first: the window is dedicated, and byre's paste prompt should
+	-- be the first thing read — not the login banner and the echoed command.
+	set cmd to "clear; ` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + ` || touch " & quoted form of failFlag & "; exit"
 	-- Launching Terminal opens its default startup window; do script would
 	-- then add a SECOND one (field-found: a stray unused window). When
 	-- Terminal has only just launched, run in that startup window instead —
