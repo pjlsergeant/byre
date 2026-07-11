@@ -295,11 +295,18 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	defer func() {
 		if stopLive != nil {
 			stopLive()
-			fmt.Fprint(s.Err, "\r\x1b[2K") // erase the live prompt line
 		}
-		fmt.Fprint(f, "\x1b[?2004l")
+		// Restore FIRST: it's an ioctl and cannot block on output, so the
+		// terminal leaves raw mode no matter what. Any write below that then
+		// blocks (suspended tty, full buffer) hangs a COOKED terminal —
+		// where ctrl-c works again — instead of wedging a raw one (review
+		// finding: an erase-before-restore write could block the restore
+		// itself).
 		_ = xterm.Restore(f.Fd(), state)
-		if stopSampler == nil {
+		fmt.Fprint(f, "\x1b[?2004l")
+		if stopLive != nil {
+			fmt.Fprint(s.Err, "\r\x1b[2K") // erase the live prompt line
+		} else {
 			fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
 		}
 	}()
