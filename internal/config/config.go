@@ -12,6 +12,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -596,8 +597,18 @@ func (c Config) validatePorts(layer bool) error {
 		if p.Host < 0 || p.Host > 65535 {
 			return fmt.Errorf("port %d: host port %d out of range (0-65535; 0 = same as the container port)", p.Container, p.Host)
 		}
-		if strings.IndexFunc(p.Interface, func(r rune) bool { return r < 0x20 }) >= 0 {
-			return fmt.Errorf("port %d: interface must not contain control characters", p.Container)
+		// The interface is embedded in docker's colon-delimited -p grammar, so
+		// only a canonical IPv4 literal is accepted: hostnames, IPv6 (whose
+		// colons would split the -p value; bracketed rendering is unbuilt),
+		// whitespace, and non-canonical spellings would otherwise pass config
+		// validation and collision analysis, then fail or change meaning at
+		// engine invocation. Canonical-form equality also keeps the collision
+		// checks honest (one spelling per address).
+		if p.Interface != "" {
+			ip := net.ParseIP(p.Interface)
+			if ip == nil || ip.To4() == nil || ip.String() != p.Interface {
+				return fmt.Errorf("port %d: interface %q must be an IPv4 address literal (e.g. 127.0.0.1 or 0.0.0.0); hostnames and IPv6 are not supported", p.Container, p.Interface)
+			}
 		}
 		iface, host := PortEffective(p)
 		ifaces := byHostPort[host]

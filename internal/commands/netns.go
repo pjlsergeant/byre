@@ -74,6 +74,13 @@ var runNonce = func() string {
 // printed and nothing else is done: the launch gate never opens, so the box
 // times out and dies closed rather than running unprotected. Enforcement
 // lives in the gate, not in this goroutine.
+//
+// The gate is opened by the hook's own script when it finishes (the firewall
+// skill's final nc), which is only sound because skill resolution rejects a
+// second netns_init: with two hooks the first would release the agent before
+// the second ran. If multi-hook composition is ever built, gate signaling
+// must move here — opened by byre only after EVERY hook succeeds — before
+// the resolution restriction is lifted.
 func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks []skills.NetnsHook, env map[string]string, done <-chan struct{}) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()

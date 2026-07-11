@@ -5,8 +5,17 @@
 # ~/.byre/default.config). Mechanism (mirrors codex-shared-auth):
 # $GROK_HOME/auth.json becomes a symlink into the machine-scoped identity
 # volume; the first `grok login --device-auth` in any box writes through the
-# dangling link into the shared volume. Grok's ~7-day token expiry is the case
-# FOR sharing: re-auth becomes once per machine, not once per box per week.
+# dangling link into the shared volume. Grok's short token expiry (~6h access
+# tokens) was the case FOR sharing: re-auth once per machine, not per box.
+#
+# 🛑 GATE FAILED IN THE FIELD (2026-07-10, twice in one day; see TODO.md):
+# grok's refresh rotation is single-use and does NOT propagate through the
+# shared file, so the shared credential dies within hours of whoever authed
+# last ("ServerRejected", unrecoverable) — and the firstrun heal then CLOBBERS
+# working per-box logins with the corpse. DO NOT ENABLE until this skill is
+# rebuilt on grok's env-based API-key path (rotation-immune, mirrors
+# claude-shared-auth). The plain grok skill is fine: per-box logins rotate
+# correctly. The original gate framing is kept below for the record.
 #
 # ⚠ GATE PENDING (ADR 0017 / docs/agent-credential-mechanics.md): the Grok CLI
 # is closed source, so the two claims the symlink mechanism rests on are
@@ -33,7 +42,7 @@
 # skill's own login hook keeps its anti-planting symlink removal for any
 # OTHER symlink; links into /home/dev/.byre-identity/ are recognized as ours.
 
-description = "Share one Grok login across all your projects (gate-pending, see skill.toml)."
+description = "BROKEN — failed its field gate: the shared login dies within hours and clobbers per-box logins. Don't enable; rebuild pending (see skill.toml)."
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-grok-shared-auth" }

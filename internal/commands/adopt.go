@@ -136,31 +136,43 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	fmt.Fprint(s.Err, "Adopt this config? byre will build & run with it. [y/N] ")
 	if !confirmed(s.In) {
 		// The no sticks (see declinedRecord): record these bytes so develop
-		// stops asking until the proposal changes.
-		if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(declinedPath, []byte(h), 0o644); err != nil {
+		// stops asking until the proposal changes. AtomicWrite (the shared
+		// config-writer discipline) so a crash can't leave a truncated record.
+		if err := config.AtomicWrite(declinedPath, h); err != nil {
 			return err
 		}
 		fmt.Fprintf(s.Err, "byre: not adopted; leaving the existing config in place. This version won't ask again — editing %s re-prompts, or delete %s to reconsider.\n", config.ProjectConfigName, declinedPath)
 		return nil
 	}
 
-	if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(storePath, content, 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(recordPath, []byte(h), 0o644); err != nil {
-		return err
-	}
-	// A stale decline of some earlier version has been superseded by this
-	// adoption; clear it so state stays one-of (adopted wins anyway).
-	_ = os.Remove(declinedPath)
-	fmt.Fprintf(s.Err, "byre: adopted into %s\n", storePath)
-	return nil
+	// The write phase runs under the project's setup lock: adoption replaces
+	// the store config that a concurrent develop/config-editor may be reading
+	// or writing, so serialize with them (this can't police external editors
+	// or a self-editing agent; it prevents torn writes and two byre processes
+	// adopting past each other). The proposal is re-read under the lock and
+	// adopted only if it still holds the bytes the human just reviewed —
+	// review happened outside the lock, and consent was to those bytes.
+	return withSetupLock(s.Err, paths.LockFile, func() error {
+		cur, rerr := os.ReadFile(proposed)
+		if rerr != nil {
+			return fmt.Errorf("re-reading %s before adopting: %w", proposed, rerr)
+		}
+		if proposalHash(cur) != h {
+			fmt.Fprintf(s.Err, "byre: %s changed while you were reviewing; not adopting — re-run develop to review the new version.\n", proposed)
+			return nil
+		}
+		if err := config.AtomicWrite(storePath, string(content)); err != nil {
+			return err
+		}
+		if err := config.AtomicWrite(recordPath, h); err != nil {
+			return err
+		}
+		// A stale decline of some earlier version has been superseded by this
+		// adoption; clear it so state stays one-of (adopted wins anyway).
+		_ = os.Remove(declinedPath)
+		fmt.Fprintf(s.Err, "byre: adopted into %s\n", storePath)
+		return nil
+	})
 }
 
 // proposalState reports the state of a committed <project>/byre.config relative

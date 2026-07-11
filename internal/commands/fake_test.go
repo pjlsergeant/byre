@@ -30,27 +30,33 @@ type fakeRunner struct {
 	rootlessErr error
 
 	// sessions
-	live         map[string][]string // label -> running container ids
-	liveSecond   map[string][]string // consulted from the 2nd query on (lock re-check races)
-	liveErr      error
-	liveCalls    int
-	env          map[string]string // ContainerEnv of any id
-	envErr       error
-	labels       map[string]string // ContainerLabels of any id
-	labelsErr    error
-	execInputs   []string // ExecInput: "id uid:gid args <-stdin"
-	execInputErr error
-	runErr       error
-	runHook      func() // called inside Run: "while the session is live"
-	execErr      error
-	runs         [][]string
-	execs        []string // "id uid:gid workdir cmd..."
-	netnsErr     error
-	netnsInits   []string // NetnsInit: "container entrypoint"
-	netMode      string   // NetworkMode result; "" means "bridge" (private netns)
-	netModeErr   error
-	stops        []string // Stop: container ids
-	stopErr      error
+	live          map[string][]string // label -> running container ids
+	liveSecond    map[string][]string // consulted from the 2nd query on (lock re-check races)
+	liveErr       error
+	liveCalls     int
+	allContainers map[string][]string // label -> ANY-state ids (ContainersByLabel; pre-start markers)
+	allErr        error
+	rmContainers  []string          // ContainerRemove calls
+	failRmCont    map[string]bool   // container ids whose removal fails (started meanwhile)
+	env           map[string]string // ContainerEnv of any id
+	envErr        error
+	labels        map[string]string // ContainerLabels of any id
+	labelsErr     error
+	execInputs    []string // ExecInput: "id uid:gid args <-stdin"
+	execInputErr  error
+	creates       [][]string // Create argvs
+	createErr     error
+	starts        []string // StartAttach: container names
+	runErr        error    // StartAttach result
+	runHook       func()   // called inside StartAttach: "while the session is live"
+	execErr       error
+	execs         []string // "id uid:gid workdir cmd..."
+	netnsErr      error
+	netnsInits    []string // NetnsInit: "container entrypoint"
+	netMode       string   // NetworkMode result; "" means "bridge" (private netns)
+	netModeErr    error
+	stops         []string // Stop: container ids
+	stopErr       error
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -149,11 +155,42 @@ func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[stri
 	return f.netnsErr
 }
 
-func (f *fakeRunner) Run(args []string) error {
+// ContainersByLabel answers with the any-state extras only (fake simplicity:
+// tests exercising the marker path set allContainers; the running-session
+// aborts happen at RunningContainersByLabel before this is consulted).
+func (f *fakeRunner) ContainersByLabel(label string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.runs = append(f.runs, args)
-	f.ops = append(f.ops, "run")
+	if f.allErr != nil {
+		return nil, f.allErr
+	}
+	return f.allContainers[label], nil
+}
+
+func (f *fakeRunner) ContainerRemove(container string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failRmCont[container] {
+		return fmt.Errorf("rm %s: container is running", container)
+	}
+	f.rmContainers = append(f.rmContainers, container)
+	f.ops = append(f.ops, "rmcontainer "+container)
+	return nil
+}
+
+func (f *fakeRunner) Create(args []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.creates = append(f.creates, args)
+	f.ops = append(f.ops, "createbox")
+	return f.createErr
+}
+
+func (f *fakeRunner) StartAttach(container string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.starts = append(f.starts, container)
+	f.ops = append(f.ops, "start")
 	if f.runHook != nil {
 		f.runHook()
 	}
@@ -254,6 +291,10 @@ func (f *fakeRunner) Build(tag, dockerfile, contextDir string, noCache bool, bui
 }
 
 var _ engineRunner = (*fakeRunner)(nil)
+
+// engines wraps fakes as the []engineRunner slice the lifecycle commands
+// (reset, forget, rehome) take — one entry per installed engine.
+func engines(rs ...engineRunner) []engineRunner { return rs }
 
 // testStreams builds Streams over buffers: the returned buffers capture Out
 // and Err, in feeds prompts, tty marks stdin as interactive.

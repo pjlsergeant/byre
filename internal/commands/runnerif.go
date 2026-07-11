@@ -18,11 +18,14 @@ type sessionRunner interface {
 	Engine() runner.Engine
 	IsRootlessPodman() (bool, error)
 	RunningContainersByLabel(label string) ([]string, error)
+	ContainersByLabel(label string) ([]string, error)
 	ContainerEnv(id string) (map[string]string, error)
 	ContainerLabels(id string) (map[string]string, error)
 	NetworkMode(container string) (string, error)
 	Stop(container string) error
-	Run(args []string) error
+	Create(args []string) error
+	StartAttach(container string) error
+	ContainerRemove(container string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string) error
 	Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error
 	ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error)

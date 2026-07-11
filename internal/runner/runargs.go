@@ -45,6 +45,18 @@ type RunParams struct {
 	TTY             bool          // allocate a pseudo-TTY (-t); set only when stdin is an actual terminal, so a piped/non-interactive invocation (CI, an agent driving byre) doesn't fail with "the input device is not a TTY"
 }
 
+// CreateArgs builds the argv (after the engine name) for `docker create` — the
+// same invocation RunArgs assembles, but creating the container without
+// starting it. develop creates the container under the setup lock (so the
+// name claim and the freshly seeded volumes appear atomically to lifecycle
+// commands) and starts/attaches after releasing it (Runner.StartAttach);
+// `create` accepts the whole `run` flag surface, --rm included.
+func CreateArgs(p RunParams) []string {
+	args := RunArgs(p)
+	args[0] = "create"
+	return args
+}
+
 // RunArgs builds the argv (after the engine name) for `docker run`.
 //
 // Ordering encodes the ADR 0006 contract: byre's own flags first, then the raw

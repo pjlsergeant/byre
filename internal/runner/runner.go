@@ -118,16 +118,46 @@ func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildAr
 	return r.stream(string(r.engine), append(args, contextDir)...)
 }
 
-// Run runs a container from the assembled run argv.
-func (r *Runner) Run(args []string) error {
-	return r.stream(string(r.engine), args...)
+// Create creates (without starting) a container from the assembled create
+// argv (CreateArgs). The container name is the handle for the StartAttach
+// that follows; a name conflict surfaces here, in the engine's stderr.
+// Output is captured (create prints the id), not streamed.
+func (r *Runner) Create(args []string) error {
+	_, err := r.capture(string(r.engine), args...)
+	return err
+}
+
+// StartAttach starts a created container in the foreground: attached, with
+// stdin open (the -i/-t attach shape was fixed at create time). The exit
+// status is the container's own, like `docker run`'s — but unlike run, an
+// engine-level start failure exits 1, not the reserved 125-127 band, so
+// callers can't fully distinguish it from an agent exit 1; the engine's
+// stderr (streamed) names the cause.
+func (r *Runner) StartAttach(container string) error {
+	return r.stream(string(r.engine), "start", "--attach", "--interactive", container)
 }
 
 // RunningContainersByLabel returns the ids of running containers carrying label
 // ("key=value"). Normally at most one (the container name enforces uniqueness),
 // but callers handle the list explicitly.
 func (r *Runner) RunningContainersByLabel(label string) ([]string, error) {
-	out, err := r.capture(string(r.engine), "ps", "-q", "--filter", "label="+label)
+	return r.containersByLabel(label, false)
+}
+
+// ContainersByLabel is RunningContainersByLabel over containers in ANY state
+// (created/exited/running). Lifecycle commands use it to see a develop that
+// has created its container under the setup lock but not yet started it —
+// the pre-start ownership marker (see commands' clearSessionMarkers).
+func (r *Runner) ContainersByLabel(label string) ([]string, error) {
+	return r.containersByLabel(label, true)
+}
+
+func (r *Runner) containersByLabel(label string, all bool) ([]string, error) {
+	args := []string{"ps", "-q", "--filter", "label=" + label}
+	if all {
+		args = append(args, "-a")
+	}
+	out, err := r.capture(string(r.engine), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +168,15 @@ func (r *Runner) RunningContainersByLabel(label string) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// ContainerRemove removes a container — deliberately WITHOUT force, so it can
+// only ever remove a container that isn't running. Lifecycle commands rely on
+// that: removing a pre-start marker succeeds, while a session that started in
+// the meantime makes the removal fail and the caller abort.
+func (r *Runner) ContainerRemove(container string) error {
+	_, err := r.capture(string(r.engine), "rm", container)
+	return err
 }
 
 // ContainerEnv returns a running container's configured environment (image ENV

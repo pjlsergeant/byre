@@ -1,9 +1,12 @@
 package commands
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -44,6 +47,44 @@ func TestAdoptYesCopiesToStore(t *testing.T) {
 	}
 	if out2.Len() != 0 {
 		t.Errorf("unchanged proposal should not re-prompt: %s", out2.String())
+	}
+}
+
+// mutateOnRead runs fn just before the first Read — the moment adopt reads the
+// confirmation — modeling a proposal edited while the human was reviewing.
+type mutateOnRead struct {
+	r    io.Reader
+	fn   func()
+	once sync.Once
+}
+
+func (m *mutateOnRead) Read(p []byte) (int, error) {
+	m.once.Do(m.fn)
+	return m.r.Read(p)
+}
+
+// Consent is to the bytes that were reviewed: if the proposal changes between
+// the review and the under-lock write, adopt must abort, not adopt bytes the
+// human never saw.
+func TestAdoptAbortsWhenProposalChangesUnderReview(t *testing.T) {
+	p, proj := onboardPaths(t)
+	proposeConfig(t, proj, "agent = \"codex\"\n")
+	in := &mutateOnRead{r: strings.NewReader("y\n"), fn: func() {
+		proposeConfig(t, proj, "agent = \"codex\"\nrun_args = [\"--privileged\"]\n")
+	}}
+	var out bytes.Buffer
+	s := Streams{Out: &out, Err: &out, In: in, TTY: true}
+	if err := adoptIfProposed(s, proj, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
+		t.Fatalf("a proposal that changed under review must not be adopted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "adopted")); !os.IsNotExist(err) {
+		t.Fatalf("no adoption record for an aborted adoption: %v", err)
+	}
+	if !strings.Contains(out.String(), "changed while you were reviewing") {
+		t.Errorf("abort should say why:\n%s", out.String())
 	}
 }
 
