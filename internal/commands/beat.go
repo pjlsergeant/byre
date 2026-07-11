@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
-	"sync/atomic"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 )
 
@@ -42,10 +42,12 @@ const (
 	beatText // degraded capture: content in hand
 )
 
-// beatLoop consumes raw keystrokes and decides. canRead says a pasteboard
-// read path exists; without one the loop captures pasted/typed text until
-// Ctrl-D. Pure over an io.Reader so tests drive it byte-by-byte.
-func beatLoop(in io.Reader, canRead bool) (beatAction, []byte, error) {
+// beatLoop is the DEGRADED beat (no pasteboard read path — SSH'd into a
+// headless box): raw keystrokes, capturing pasted/typed text until Ctrl-D,
+// preserving content byte-for-byte (ESC-bearing pastes included — the reason
+// this path stays hand-rolled while the live beat rides Bubble Tea). Pure
+// over an io.Reader so tests drive it byte-by-byte.
+func beatLoop(in io.Reader) (beatAction, []byte, error) {
 	r := bufio.NewReader(in)
 	var captured bytes.Buffer
 	capturing := false
@@ -60,42 +62,26 @@ func beatLoop(in io.Reader, canRead bool) (beatAction, []byte, error) {
 		switch {
 		case b == 0x03: // ctrl-c
 			return beatCancelled, nil, nil
-		case b == 0x04: // ctrl-d: ends a degraded capture (ignored otherwise)
-			if !canRead {
-				return beatText, captured.Bytes(), nil
-			}
-		case b == 0x16: // ctrl-v: the app-level gesture
-			if canRead {
-				return beatGesture, nil, nil
-			}
-			capturing = true // degraded: nothing to read; keep waiting for text
+		case b == 0x04: // ctrl-d ends the capture
+			return beatText, captured.Bytes(), nil
+		case b == 0x16: // ctrl-v: nothing to read here; keep waiting for text
+			capturing = true
 		case b == 0x1b: // possible bracketed-paste marker ESC [ 2 0 0 ~ / 2 0 1 ~
 			seq, consumed := readBracketMarker(r)
 			if seq == pasteStart {
-				if canRead {
-					// Capture the streamed text and hand it up: it's evidence
-					// (real clipboard paste vs drag-typed path), not noise.
-					var text bytes.Buffer
-					captureUntilPasteEnd(r, &text)
-					return beatPaste, text.Bytes(), nil
-				}
 				capturing = true
 				captureUntilPasteEnd(r, &captured)
 				// Paste captured; Ctrl-D still confirms (multi-paste allowed).
 				continue
 			}
-			// Some other escape sequence. While waiting for a gesture it's
-			// terminal chrome (an arrow key) — ignore it. In a degraded
-			// capture it's CONTENT and must arrive intact.
-			if !canRead && capturing {
+			// Some other escape sequence: it's CONTENT and must arrive intact.
+			if capturing {
 				captured.WriteByte(0x1b)
 				captured.Write(consumed)
 			}
 		default:
-			if !canRead {
-				capturing = true
-				captured.WriteByte(b)
-			}
+			capturing = true
+			captured.WriteByte(b)
 		}
 	}
 }
@@ -184,131 +170,105 @@ func beatPrompt(types []string) string {
 	}
 }
 
-// runPasteBeat wraps beatLoop in a real terminal: raw mode (so Ctrl-V and the
-// paste arrive as bytes, not line-buffered input) and bracketed-paste mode on
-// the terminal for the duration.
+// The LIVE beat is a Bubble Tea program — the house TUI owns raw mode,
+// restore-on-exit, and in-place repaints that survive line wrapping (the
+// hand-rolled \r-erase redraw stacked lines the moment the prompt wrapped,
+// field-found 2026-07-10). Bracketed paste arrives as a first-class event;
+// sampling is sequential by construction (the next tick is scheduled only
+// when the previous read returns, so a hung pasteboard owner stalls the
+// prompt, never accumulates subprocesses or blocks quitting).
+
+type clipSampleMsg struct{ types []string }
+type clipTickMsg struct{}
+
+type beatModel struct {
+	reader *clipBackend
+	types  []string
+	width  int
+	action beatAction
+	text   []byte
+}
+
+func (m beatModel) Init() tea.Cmd { return m.sample }
+
+func (m beatModel) sample() tea.Msg {
+	types, err := m.reader.listTypes()
+	if err != nil {
+		types = nil // degrade the prompt, never wedge it
+	}
+	return clipSampleMsg{types: types}
+}
+
+func (m beatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case clipSampleMsg:
+		m.types = msg.types
+		return m, tea.Tick(1200*time.Millisecond, func(time.Time) tea.Msg { return clipTickMsg{} })
+	case clipTickMsg:
+		return m, m.sample
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+	case tea.KeyMsg:
+		if msg.Paste {
+			// A bracketed paste: the streamed text is EVIDENCE (real Cmd-V
+			// vs a drag-typed path) — the caller classifies it.
+			m.action = beatPaste
+			m.text = []byte(string(msg.Runes))
+			return m, tea.Quit
+		}
+		switch msg.Type {
+		case tea.KeyCtrlV:
+			m.action = beatGesture
+			return m, tea.Quit
+		case tea.KeyCtrlC, tea.KeyEsc:
+			m.action = beatCancelled
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m beatModel) View() string {
+	line := beatPrompt(m.types)
+	if m.width > 0 {
+		line = ansi.Truncate(line, m.width-1, "…")
+	}
+	return line
+}
+
+// runPasteBeat runs the beat. With a pasteboard reader it's the live Bubble
+// Tea prompt (rendered to STDERR — stdout stays the contract); without one
+// it's the raw-mode degraded capture.
 func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	f, ok := s.In.(*os.File)
 	if !ok {
 		return beatCancelled, nil, fmt.Errorf("the paste beat needs a terminal on stdin")
 	}
-	canRead := reader != nil
-	var stopSampler chan struct{}
-	var samplerDone chan struct{}
-	var stopLive func()
-	if canRead {
-		// The LIVE prompt: redraw in place as the clipboard changes. Types
-		// only, ~1.2s cadence (one cheap listTypes subprocess per tick,
-		// only while the beat waits), redraw only on change (no flicker).
-		// Reads run SEQUENTIALLY in the sampler goroutine: a hung clipboard
-		// tool (unresponsive pasteboard owner) blocks further ticks instead
-		// of accumulating hung subprocesses — at most one is ever
-		// outstanding (review finding). Cleanup joins with a BOUNDED wait so
-		// that one hang can't hold the terminal raw, and the stopped flag is
-		// checked before every draw so a late responder never scribbles on a
-		// restored terminal.
-		var stopped atomic.Bool
-		var drawMu sync.Mutex
-		draw := func(line string) {
-			if stopped.Load() {
-				return
-			}
-			drawMu.Lock()
-			defer drawMu.Unlock()
-			if stopped.Load() { // re-check under the lock: shutdown may have won
-				return
-			}
-			fmt.Fprint(s.Err, "\r\x1b[2K"+line)
+	if reader != nil {
+		m := beatModel{reader: reader, action: beatCancelled}
+		res, err := tea.NewProgram(m, tea.WithOutput(s.Err), tea.WithInput(f)).Run()
+		if err != nil {
+			return beatCancelled, nil, fmt.Errorf("paste beat: %w", err)
 		}
-		var last string
-		sample := func() {
-			types, err := reader.listTypes()
-			if err != nil {
-				types = nil
-			}
-			if line := beatPrompt(types); line != last {
-				last = line
-				draw(line)
-			}
-		}
-		sample()
-		stopSampler = make(chan struct{})
-		samplerDone = make(chan struct{})
-		go func() {
-			defer close(samplerDone)
-			tick := time.NewTicker(1200 * time.Millisecond)
-			defer tick.Stop()
-			for {
-				select {
-				case <-stopSampler:
-					return
-				case <-tick.C:
-					sample()
-				}
-			}
-		}()
-		stopLive = func() {
-			stopped.Store(true)
-			close(stopSampler)
-			// Try to win the draw lock: holding it (even momentarily) proves
-			// no write is in flight, so nothing lands after restore. Bounded,
-			// like the join below — the deliberate residual is a stderr
-			// write BLOCKED >500ms (a ctrl-s-suspended tty), where one late
-			// line beats wedging the terminal raw forever.
-			deadline := time.Now().Add(500 * time.Millisecond)
-			locked := false
-			for {
-				if drawMu.TryLock() {
-					locked = true
-					break
-				}
-				if time.Now().After(deadline) {
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			if locked {
-				drawMu.Unlock() // held even momentarily = no write in flight
-			}
-			select { // bounded: one hung read must not wedge the exit
-			case <-samplerDone:
-			case <-time.After(500 * time.Millisecond):
-			}
-		}
-	} else {
-		fmt.Fprintln(s.Err, "byre: no clipboard access here — paste text to deliver it (text only; ctrl-d to finish, ctrl-c to cancel)")
+		final := res.(beatModel)
+		return final.action, final.text, nil
 	}
+
+	fmt.Fprintln(s.Err, "byre: no clipboard access here — paste text to deliver it (text only; ctrl-d to finish, ctrl-c to cancel)")
 	state, err := xterm.MakeRaw(f.Fd())
 	if err != nil {
-		if stopLive != nil {
-			stopLive()
-			fmt.Fprint(s.Err, "\r\x1b[2K") // don't leave the live line dangling
-		}
 		return beatCancelled, nil, fmt.Errorf("raw terminal mode: %w", err)
 	}
 	// Mode sequences are NOT chrome: they must reach the terminal DEVICE that
 	// drives input (the same one MakeRaw touched), not stderr — with stderr
-	// redirected, an armed-on-stderr sequence never reaches the terminal and
-	// Cmd-V silently stops registering. Writing to the stdin TTY fd works
-	// (it's the terminal device); human prompts stay on s.Err.
+	// redirected, an armed-on-stderr sequence never reaches the terminal.
 	fmt.Fprint(f, "\x1b[?2004h") // bracketed paste on
 	defer func() {
-		if stopLive != nil {
-			stopLive()
-		}
-		// Restore FIRST: it's an ioctl and cannot block on output, so the
-		// terminal leaves raw mode no matter what. Any write below that then
-		// blocks (suspended tty, full buffer) hangs a COOKED terminal —
-		// where ctrl-c works again — instead of wedging a raw one (review
-		// finding: an erase-before-restore write could block the restore
-		// itself).
+		// Restore FIRST: it's an ioctl and cannot block on output; a blocked
+		// write after it hangs a COOKED terminal where ctrl-c works.
 		_ = xterm.Restore(f.Fd(), state)
 		fmt.Fprint(f, "\x1b[?2004l")
-		if stopLive != nil {
-			fmt.Fprint(s.Err, "\r\x1b[2K") // erase the live prompt line
-		} else {
-			fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
-		}
+		fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
 	}()
-	return beatLoop(f, canRead)
+	return beatLoop(f)
 }

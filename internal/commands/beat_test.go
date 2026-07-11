@@ -3,115 +3,141 @@ package commands
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestBeatCtrlVIsTheGesture(t *testing.T) {
-	action, _, err := beatLoop(strings.NewReader("\x16"), true)
-	if err != nil || action != beatGesture {
-		t.Fatalf("action = %v err = %v", action, err)
+// --- the LIVE beat (Bubble Tea model) ---
+
+func beatKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
+
+func TestBeatModelCtrlVIsTheGesture(t *testing.T) {
+	m, cmd := beatModel{action: beatCancelled}.Update(beatKey(tea.KeyCtrlV))
+	if got := m.(beatModel); got.action != beatGesture || cmd == nil {
+		t.Fatalf("action = %v cmd = %v", got.action, cmd)
 	}
 }
 
-func TestBeatBracketedPasteCapturesTextAsEvidence(t *testing.T) {
-	// Cmd-V arrives as a bracketed paste; the streamed text is returned so
-	// the caller can tell a real clipboard paste from a drag-typed path
-	// (field-found 2026-07-10: drags paste text that was never on the
-	// pasteboard — discarding it delivered a stale clipboard).
-	in := "\x1b[200~some pasted text\x1b[201~"
-	action, text, err := beatLoop(strings.NewReader(in), true)
-	if err != nil || action != beatPaste {
-		t.Fatalf("action = %v err = %v", action, err)
-	}
-	if string(text) != "some pasted text" {
-		t.Fatalf("streamed paste text should be captured, got %q", text)
+func TestBeatModelPasteCapturesTextAsEvidence(t *testing.T) {
+	// Cmd-V arrives as a bracketed paste; the text is returned so the caller
+	// can tell a real clipboard paste from a drag-typed path (field-found
+	// 2026-07-10: drags paste text that was never on the pasteboard).
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/Users/p/authors.txt "), Paste: true}
+	m, cmd := beatModel{action: beatCancelled}.Update(msg)
+	got := m.(beatModel)
+	if got.action != beatPaste || string(got.text) != "/Users/p/authors.txt " || cmd == nil {
+		t.Fatalf("action=%v text=%q cmd=%v", got.action, got.text, cmd)
 	}
 }
 
-func TestBeatCtrlCCancels(t *testing.T) {
-	action, _, err := beatLoop(strings.NewReader("\x03"), true)
+func TestBeatModelCtrlCCancels(t *testing.T) {
+	m, cmd := beatModel{action: beatCancelled}.Update(beatKey(tea.KeyCtrlC))
+	if got := m.(beatModel); got.action != beatCancelled || cmd == nil {
+		t.Fatalf("action = %v cmd = %v", got.action, cmd)
+	}
+}
+
+func TestBeatModelEnterIsNotAGesture(t *testing.T) {
+	m, cmd := beatModel{action: beatCancelled}.Update(beatKey(tea.KeyEnter))
+	if got := m.(beatModel); got.action != beatCancelled || cmd != nil {
+		t.Fatalf("enter must not fire or quit: action=%v cmd=%v", got.action, cmd)
+	}
+}
+
+func TestBeatModelSampleUpdatesPromptAndReschedules(t *testing.T) {
+	m, cmd := beatModel{}.Update(clipSampleMsg{types: []string{"image/png"}})
+	got := m.(beatModel)
+	if !strings.Contains(got.View(), "image on the clipboard") {
+		t.Fatalf("view = %q", got.View())
+	}
+	if cmd == nil {
+		t.Fatal("a sample must schedule the next tick")
+	}
+}
+
+func TestBeatModelViewTruncatesToWidth(t *testing.T) {
+	// The hand-rolled redraw stacked lines when the prompt wrapped; the tea
+	// view truncates to the window instead.
+	m, _ := beatModel{}.Update(tea.WindowSizeMsg{Width: 30, Height: 24})
+	m2, _ := m.Update(clipSampleMsg{types: []string{"image/png"}})
+	view := m2.(beatModel).View()
+	visible := 0
+	inEsc := false
+	for _, r := range view {
+		switch {
+		case r == 0x1b:
+			inEsc = true
+		case inEsc:
+			if r == 'm' {
+				inEsc = false
+			}
+		default:
+			visible++
+		}
+	}
+	if visible > 30 {
+		t.Fatalf("view not truncated: %d visible chars in %q", visible, view)
+	}
+}
+
+// --- the DEGRADED beat (raw loop; content must survive byte-for-byte) ---
+
+func TestBeatLoopCtrlCCancels(t *testing.T) {
+	action, _, err := beatLoop(strings.NewReader("\x03"))
 	if err != nil || action != beatCancelled {
 		t.Fatalf("action = %v err = %v", action, err)
 	}
 }
 
-func TestBeatEnterIsNotAGesture(t *testing.T) {
-	// Enter isn't semantically paste: a newline then ctrl-c must cancel, not fire.
-	action, _, err := beatLoop(strings.NewReader("\r\n\x03"), true)
+func TestBeatLoopEOFCancels(t *testing.T) {
+	action, _, err := beatLoop(strings.NewReader(""))
 	if err != nil || action != beatCancelled {
 		t.Fatalf("action = %v err = %v", action, err)
 	}
 }
 
-func TestBeatEOFCancels(t *testing.T) {
-	action, _, err := beatLoop(strings.NewReader(""), true)
-	if err != nil || action != beatCancelled {
-		t.Fatalf("action = %v err = %v", action, err)
-	}
-}
-
-func TestBeatDegradedCapturesPastedText(t *testing.T) {
-	// No pasteboard read path: the bracketed paste's text IS the content,
-	// ended by ctrl-d.
+func TestBeatLoopCapturesPastedText(t *testing.T) {
 	in := "\x1b[200~the actual content\x1b[201~\x04"
-	action, text, err := beatLoop(strings.NewReader(in), false)
-	if err != nil || action != beatText {
-		t.Fatalf("action = %v err = %v", action, err)
-	}
-	if string(text) != "the actual content" {
-		t.Fatalf("text = %q", text)
+	action, text, err := beatLoop(strings.NewReader(in))
+	if err != nil || action != beatText || string(text) != "the actual content" {
+		t.Fatalf("action=%v text=%q err=%v", action, text, err)
 	}
 }
 
-func TestBeatDegradedCapturesTypedText(t *testing.T) {
-	action, text, err := beatLoop(strings.NewReader("typed\x04"), false)
-	if err != nil || action != beatText {
-		t.Fatalf("action = %v err = %v", action, err)
-	}
-	if string(text) != "typed" {
-		t.Fatalf("text = %q", text)
+func TestBeatLoopCapturesTypedText(t *testing.T) {
+	action, text, err := beatLoop(strings.NewReader("typed\x04"))
+	if err != nil || action != beatText || string(text) != "typed" {
+		t.Fatalf("action=%v text=%q err=%v", action, text, err)
 	}
 }
 
-func TestBeatDegradedEOFWithContentDelivers(t *testing.T) {
-	// A ssh channel closing after the paste still yields the content.
-	action, text, err := beatLoop(strings.NewReader("\x1b[200~x\x1b[201~"), false)
+func TestBeatLoopEOFWithContentDelivers(t *testing.T) {
+	action, text, err := beatLoop(strings.NewReader("\x1b[200~x\x1b[201~"))
 	if err != nil || action != beatText || string(text) != "x" {
 		t.Fatalf("action=%v text=%q err=%v", action, text, err)
 	}
 }
 
-func TestBeatOtherEscapeSequencesIgnored(t *testing.T) {
-	// An arrow key (ESC [ A) must not confuse the loop; ctrl-v after it fires.
-	action, _, err := beatLoop(strings.NewReader("\x1b[A\x16"), true)
-	if err != nil || action != beatGesture {
-		t.Fatalf("action = %v err = %v", action, err)
-	}
-}
-
-func TestBeatDegradedPreservesEscapesInContent(t *testing.T) {
-	// Review finding: pasted content containing ESC (ANSI-colored logs) must
-	// arrive byte-for-byte, not have escape-ish runs eaten.
+func TestBeatLoopPreservesEscapesInContent(t *testing.T) {
+	// Pasted content containing ESC (ANSI-colored logs) must arrive
+	// byte-for-byte — the reason this path stays hand-rolled.
 	in := "\x1b[200~red:\x1b[31mtext\x1b[0m done\x1b[201~\x04"
-	action, text, err := beatLoop(strings.NewReader(in), false)
-	if err != nil || action != beatText {
-		t.Fatalf("action = %v err = %v", action, err)
-	}
-	if string(text) != "red:\x1b[31mtext\x1b[0m done" {
-		t.Fatalf("content corrupted: %q", text)
+	action, text, err := beatLoop(strings.NewReader(in))
+	if err != nil || action != beatText || string(text) != "red:\x1b[31mtext\x1b[0m done" {
+		t.Fatalf("action=%v text=%q err=%v", action, text, err)
 	}
 }
 
-func TestBeatDegradedPreservesEscOutsidePaste(t *testing.T) {
-	action, text, err := beatLoop(strings.NewReader("a\x1b[31mb\x04"), false)
+func TestBeatLoopPreservesEscOutsidePaste(t *testing.T) {
+	action, text, err := beatLoop(strings.NewReader("a\x1b[31mb\x04"))
 	if err != nil || action != beatText || string(text) != "a\x1b[31mb" {
 		t.Fatalf("action=%v text=%q err=%v", action, text, err)
 	}
 }
 
+// --- the prompt (shared) ---
+
 func TestBeatPromptSamplesTheClipboard(t *testing.T) {
-	// Claude Code's move, adapted: types are sampled up front so the prompt
-	// says what's on offer — and steers image holders to ctrl-v, since their
-	// Cmd-V never reaches a terminal. Types only, never content.
 	cases := []struct {
 		types []string
 		want  string

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
@@ -40,7 +41,13 @@ const typeFileRefs = "file-refs" // normalized tag for file references
 // original (%w), so callers that must distinguish exit codes — a dialog's
 // cancel-exit vs a broken tool — can errors.As their way to the ExitError.
 var clipRunOut = func(name string, args ...string) ([]byte, error) {
-	out, err := exec.Command(name, args...).Output()
+	cmd := exec.Command(name, args...)
+	// Children leave the tty's foreground process group: Terminal.app's
+	// title shows the fg group's active process, and the beat's sampler
+	// spawning a child every tick made the title flash byre↔osascript
+	// (field-found 2026-07-10). None of these tools read the tty.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
 			return nil, fmt.Errorf("%s (%s): %w", name, strings.TrimSpace(string(ee.Stderr)), err)

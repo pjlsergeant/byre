@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
 )
@@ -25,6 +26,9 @@ var (
 	clipLookPath = exec.LookPath
 	clipRunTool  = func(name string, args []string, stdin string) error {
 		cmd := exec.Command(name, args...)
+		// Out of the fg process group, like clipRunOut: keeps clipboard
+		// helpers out of Terminal's active-process title.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		cmd.Stdin = strings.NewReader(stdin)
 		out, err := cmd.CombinedOutput()
 		if err != nil && len(out) > 0 {
