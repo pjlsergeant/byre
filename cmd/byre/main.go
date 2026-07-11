@@ -31,6 +31,7 @@ type app struct {
 	forget        func(s commands.Streams, dir string, force bool) error
 	shell         func(s commands.Streams, dir string) error
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
+	installApp    func(s commands.Streams, box string) error
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
 	skillUpdate   func(s commands.Streams) error
 	rebuild       func(s commands.Streams, dir string) error
@@ -52,6 +53,7 @@ var realApp = app{
 	forget:           commands.Forget,
 	shell:            commands.Shell,
 	deliver:          commands.Deliver,
+	installApp:       commands.InstallApp,
 	worktree:         commands.Worktree,
 	skillUpdate:      commands.SkillUpdate,
 	rebuild:          commands.Rebuild,
@@ -241,15 +243,25 @@ wl-copy / xclip, or OSC 52 through SSH), ready to paste; --no-clip skips
 that, and when no clipboard path exists byre says so — the printed path is
 always the contract.
 
+'byre deliver --install-app' installs the DELIVER APP instead: a generated
+"Byre Deliver" drag target (macOS: a Dock/Finder droplet plus a right-click
+"Deliver to Byre" Quick Action; Linux: a .desktop launcher). Drop files on
+it, or open it plain to deliver the clipboard; outcomes arrive as
+notifications. Re-run it after moving byre; --box bakes a fixed target in.
+
   --box <id>        deliver to this box (unique id or project prefix)
   --name <base>     landing filename for stdin ('-') content
   --skip-uid-check  include (and permit) boxes owned by other users
-  --no-clip         don't copy the landed paths to the clipboard`,
+  --no-clip         don't copy the landed paths to the clipboard
+  --install-app     install the deliver app instead of delivering`,
 		run: func(a app, s commands.Streams, dir string, rest []string) error {
 			var opts deliver.Options
 			var paths []string
+			installApp := false
 			for i := 0; i < len(rest); i++ {
 				switch {
+				case rest[i] == "--install-app":
+					installApp = true
 				case rest[i] == "--box":
 					i++
 					if i >= len(rest) {
@@ -277,6 +289,12 @@ always the contract.
 				default:
 					paths = append(paths, rest[i])
 				}
+			}
+			if installApp {
+				if len(paths) > 0 || opts.Name != "" || opts.SkipUIDCheck || opts.NoClip {
+					return usageError("byre deliver --install-app: takes only an optional --box")
+				}
+				return a.installApp(s, opts.Box)
 			}
 			if len(paths) > 1 {
 				for _, p := range paths {
