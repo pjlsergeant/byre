@@ -37,8 +37,10 @@
   Linux path.**
 - **Tab completion + restructured help** (ADR 0022): the CLI now rides
   cobra. `byre completion bash|zsh|fish|powershell` prints a completion
-  script covering every command and flag (`byre completion zsh --help`
-  has the install line); help gained `Flags:` sections and
+  script covering every command and flag, and `--install` (all but
+  powershell) writes it where your shell will find it and prints the
+  path — byre never edits shell rc files; when zsh needs one fpath
+  line, it prints the line instead. Help gained `Flags:` sections and
   `byre help <command>`; `--flag=value` now works everywhere. Exit
   codes and command behavior are unchanged; error and usage wording
   shifted to cobra's shape.

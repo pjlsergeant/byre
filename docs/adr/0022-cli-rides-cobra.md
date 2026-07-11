@@ -52,9 +52,22 @@ running engine discovery on every TAB is a latency/failure surface
 byre doesn't need yet). Help and error wording are cobra-shaped
 ("unknown flag: --bogus", `Flags:` sections); `help` and `completion`
 appear in the command list; `--flag=value` works uniformly (the old
-loops accepted it on deliver but rejected it on develop). Completion
-install is documented as a README "How do I" entry -- a manual step,
-not release plumbing.
+loops accepted it on deliver but rejected it on develop).
+
+`byre completion <shell> --install` (Pete's follow-on ask) writes the
+script where the shell will find it and prints the path -- the
+deliver-app doctrine applied to a completion script (generated
+artifact, printed path, idempotent regeneration, foreign same-named
+files refused). The ruling that shaped it: **byre never edits shell rc
+files.** Fish and bash have XDG autoload locations; zsh has no
+standard user autoload dir, so the cascade tries Homebrew's
+site-functions and falls back to `~/.zfunc` while printing the one
+fpath line for the user to add themselves; powershell gets no
+--install because its profile IS an rc file. byre's own completion
+command replaces cobra's stock one to carry the flag (the hidden
+__complete machinery is untouched). Install stays out of release
+plumbing (no brew/install.sh wiring) -- a README "How do I" entry owns
+it.
 
 Consciously accepted (review round 1, Pete-ratified): a value-taking
 flag consumes a following `--help` -- `byre develop --template --help`
