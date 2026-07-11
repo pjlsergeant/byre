@@ -486,6 +486,14 @@ func TestValidatePorts(t *testing.T) {
 		"container out of range": {Ports: []Port{{Container: 0}}},
 		"host out of range":      {Ports: []Port{{Container: 80, Host: 99999}}},
 		"dup host binding":       {Ports: []Port{{Container: 80, Host: 8080}, {Container: 81, Host: 8080}}},
+		// The interface lands in docker's colon-delimited -p grammar: only a
+		// canonical IPv4 literal may pass, or the value fails (or changes
+		// meaning) at engine invocation instead of at validation.
+		"hostname interface":      {Ports: []Port{{Container: 80, Interface: "localhost"}}},
+		"ipv6 interface":          {Ports: []Port{{Container: 80, Interface: "::1"}}},
+		"mapped-ipv4 spelling":    {Ports: []Port{{Container: 80, Interface: "::ffff:127.0.0.1"}}},
+		"whitespace interface":    {Ports: []Port{{Container: 80, Interface: " 127.0.0.1"}}},
+		"colon-bearing interface": {Ports: []Port{{Container: 80, Interface: "127.0.0.1:80"}}},
 	}
 	for name, c := range bad {
 		if err := c.Validate(); err == nil {
