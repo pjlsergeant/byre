@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.6 -- 2026-07-11
 
 - **`byre completion --install` removed** (added earlier in v0.1.5,
   walked back the same day): the recommended setup is now one line in
