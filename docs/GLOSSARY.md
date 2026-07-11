@@ -133,6 +133,15 @@ enabled alongside it, carrying only the delta (a volume, a hook, some
 wiring), leaving the agent skill untouched. The shared-auth trio
 (`claude-shared-auth` etc., ADR 0017) are the canonical examples.
 
+**Shared-auth offer**:
+The first-run picker's one-time question -- "Use shared auth for
+<agent>?" -- asked when the chosen agent has a companion skill declaring
+`shared_auth_for` (the author's vouch that the mechanism is ready to
+offer; a broken or gate-pending companion omits it). Yes enables the
+companion in `default.config`'s `skills`; no is remembered in
+`shared_auth_declined`, picker-owned there like the favourites, so the
+offer is made at most once per agent. ADR 0023.
+
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
 the launcher sources (sorted, best-effort, unprivileged) after firstrun

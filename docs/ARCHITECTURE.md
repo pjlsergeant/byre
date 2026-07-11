@@ -367,7 +367,12 @@ first-run prompt and exported to the agent process by a **launch env
 hook**
 (`/etc/byre/env.d/*.sh`, sourced by the launcher after firstrun hooks,
 immediately before exec -- the chassis mechanism for skills that must
-put env into the agent process).
+put env into the agent process). A companion whose mechanism is ready
+declares `shared_auth_for = "<agent>"` in its skill.toml, and the
+first-run picker then offers it once when that agent is chosen -- yes
+enables it machine-wide in `default.config`, no is remembered in the
+picker-owned `shared_auth_declined` (ADR 0023). Gemini-OAuth and grok
+deliberately don't declare it until their gates pass.
 
 ## The chassis
 
