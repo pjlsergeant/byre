@@ -15,6 +15,13 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
+- [ ] **`byre deliver` v1** (dispatched 2026-07-10): host→box file
+  delivery — path args / clipboard / stdin into `/inbox`, path back on
+  stdout + clipboard. Design of record: `docs/deliver/decisions.md`
+  (grilled + twice-reviewed); rationale: ADR 0021. v1 = core discovery/
+  transport + clipboard both directions + pickers, one reviewed feature.
+  Follow-on tranches (separately shippable, not started): `ssh://`
+  remote delivery; `--install-app` deliver app.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
@@ -90,7 +97,10 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 - [ ] **Drag-and-drop into the boxed terminal.** Dropping a file pastes its
   host path, meaningless in-box. Needs a design pass: translate paths under
   the project dir to `/workspace`, treat outside paths as a grant question,
-  survey per-terminal drop behavior.
+  survey per-terminal drop behavior. Partially superseded by `byre deliver`
+  (Now): dropping onto the deliver app covers get-this-file-in-the-box;
+  what remains here is only drop-directly-onto-the-running-terminal
+  ergonomics.
 - [ ] **gemini OAuth gate.** Two concurrent gemini boxes sharing one OAuth
   credential, run past the ~1h token expiry; neither dying = OAuth sharing
   is safe. The API-key path is already verified
