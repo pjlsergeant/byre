@@ -175,7 +175,8 @@ func installBash(script []byte, s commands.Streams) error {
 		return err
 	}
 	fmt.Fprintln(s.Out, target)
-	fmt.Fprintln(s.Err, "byre: loaded by the bash-completion package (macOS's stock bash 3.2 can't) — restart your shell")
+	fmt.Fprintln(s.Err, "byre: restart your shell — bash loads this via the bash-completion package")
+	fmt.Fprintln(s.Err, "byre: if TAB still doesn't complete byre, install that package: apt/dnf install bash-completion, or brew install bash-completion@2 (needs brew's bash — macOS's stock bash 3.2 is too old for it)")
 	return nil
 }
 
