@@ -316,7 +316,14 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if installApp {
-				if len(args) > 0 || opts.Name != "" || opts.SkipUIDCheck || opts.NoClip {
+				// Changed(), not the parsed values: --no-clip=false is still
+				// a supplied flag the exclusivity promise rejects.
+				for _, f := range []string{"name", "skip-uid-check", "no-clip"} {
+					if cmd.Flags().Changed(f) {
+						return usageError("byre deliver --install-app: takes only an optional --box")
+					}
+				}
+				if len(args) > 0 {
 					return usageError("byre deliver --install-app: takes only an optional --box")
 				}
 				return a.installApp(s, opts.Box)

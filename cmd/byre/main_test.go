@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/commands"
+	"github.com/pjlsergeant/byre/internal/deliver"
 )
 
 // recorderApp returns an app whose every command records its call into calls
@@ -33,7 +34,13 @@ func recorderApp(calls map[string]string) app {
 		forget: func(_ commands.Streams, dir string, force bool) error {
 			return note("forget", dir+" "+boolStr(force))
 		},
-		shell: func(_ commands.Streams, dir string) error { return note("shell", dir) },
+		shell:         func(_ commands.Streams, dir string) error { return note("shell", dir) },
+		ejectfirewall: func(_ commands.Streams, dir string) error { return note("ejectfirewall", dir) },
+		deliver: func(_ commands.Streams, dir string, opts deliver.Options, paths []string) error {
+			return note("deliver", strings.Join([]string{dir, opts.Box, opts.Name,
+				boolStr(opts.SkipUIDCheck), boolStr(opts.NoClip), strings.Join(paths, ",")}, " "))
+		},
+		installApp: func(_ commands.Streams, box string) error { return note("install-app", box) },
 		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
 		},
@@ -79,6 +86,12 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"reset", "-y"}, "reset", "/proj true"},
 		{[]string{"forget", "--force"}, "forget", "/proj true"},
 		{[]string{"shell"}, "shell", "/proj"},
+		{[]string{"ejectfirewall"}, "ejectfirewall", "/proj"},
+		{[]string{"deliver", "a.txt", "b.txt"}, "deliver", "/proj   false false a.txt,b.txt"},
+		{[]string{"deliver", "--box", "x", "--no-clip", "f"}, "deliver", "/proj x  false true f"},
+		{[]string{"deliver", "--box=x", "--name=n.txt", "--skip-uid-check", "-"}, "deliver", "/proj x n.txt true false -"},
+		{[]string{"deliver", "--install-app"}, "install-app", ""},
+		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", "abc"},
 		{[]string{"worktree", "feat"}, "worktree", "/proj feat  false"},
 		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x true"},
 		{[]string{"skill", "update"}, "skill update", "-"},
@@ -109,17 +122,21 @@ func TestRunDispatch(t *testing.T) {
 // in main) without dispatching any command.
 func TestRunUsageErrors(t *testing.T) {
 	cases := [][]string{
-		{},                         // no command
-		{"bogus"},                  // unknown command
-		{"dockerfile", "extra"},    // operands after a no-arg command
-		{"develop", "--template"},  // flag missing its value
-		{"develop", "--bogus"},     // unknown flag
-		{"config", "--bogus"},      // unknown flag
-		{"status", "--bogus"},      // unknown flag
-		{"reset", "--bogus"},       // unknown flag
-		{"worktree"},               // missing name
-		{"worktree", "--bogus"},    // unknown flag
-		{"worktree", "a", "b"},     // extra operand
+		{},                                    // no command
+		{"bogus"},                             // unknown command
+		{"dockerfile", "extra"},               // operands after a no-arg command
+		{"develop", "--template"},             // flag missing its value
+		{"develop", "--bogus"},                // unknown flag
+		{"config", "--bogus"},                 // unknown flag
+		{"status", "--bogus"},                 // unknown flag
+		{"reset", "--bogus"},                  // unknown flag
+		{"worktree"},                          // missing name
+		{"worktree", "--bogus"},               // unknown flag
+		{"worktree", "a", "b"},                // extra operand
+		{"deliver", "--bogus"},                // unknown flag
+		{"deliver", "-", "x.txt"},             // stdin mixed with paths
+		{"deliver", "--install-app", "x.txt"}, // install-app takes no paths
+		{"deliver", "--install-app", "--no-clip=false"}, // supplied flag, even =false
 		{"skill"},                  // missing subcommand
 		{"skill", "bogus"},         // unknown subcommand
 		{"rehome", "old", "extra"}, // extra operand (bare rehome is valid: it lists candidates)
