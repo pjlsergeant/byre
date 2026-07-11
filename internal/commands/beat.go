@@ -245,8 +245,18 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 		return beatCancelled, nil, fmt.Errorf("the paste beat needs a terminal on stdin")
 	}
 	if reader != nil {
+		// Bubble Tea arms bracketed paste through its OUTPUT writer — with
+		// stderr redirected those sequences never reach the terminal and
+		// Cmd-V arrives unbracketed (the same disarm bug fixed once in the
+		// hand-rolled version). When stderr isn't a TTY, render on the
+		// terminal device itself (the stdin fd — field-verified writable
+		// when it's a tty).
+		out := io.Writer(s.Err)
+		if stdErrFile, ok := s.Err.(*os.File); !ok || !isTTY(stdErrFile) {
+			out = f
+		}
 		m := beatModel{reader: reader, action: beatCancelled}
-		res, err := tea.NewProgram(m, tea.WithOutput(s.Err), tea.WithInput(f)).Run()
+		res, err := tea.NewProgram(m, tea.WithOutput(out), tea.WithInput(f)).Run()
 		if err != nil {
 			return beatCancelled, nil, fmt.Errorf("paste beat: %w", err)
 		}
@@ -259,10 +269,9 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 	if err != nil {
 		return beatCancelled, nil, fmt.Errorf("raw terminal mode: %w", err)
 	}
-	// Mode sequences are NOT chrome: they must reach the terminal DEVICE that
-	// drives input (the same one MakeRaw touched), not stderr — with stderr
-	// redirected, an armed-on-stderr sequence never reaches the terminal.
-	fmt.Fprint(f, "\x1b[?2004h") // bracketed paste on
+	// The restore is registered BEFORE any tty write: if the arm write below
+	// blocks (flow-controlled output), the deferred restore must already be
+	// scheduled or the terminal stays raw with no way back.
 	defer func() {
 		// Restore FIRST: it's an ioctl and cannot block on output; a blocked
 		// write after it hangs a COOKED terminal where ctrl-c works.
@@ -270,5 +279,9 @@ func runPasteBeat(s Streams, reader *clipBackend) (beatAction, []byte, error) {
 		fmt.Fprint(f, "\x1b[?2004l")
 		fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
 	}()
+	// Mode sequences are NOT chrome: they must reach the terminal DEVICE that
+	// drives input (the same one MakeRaw touched), not stderr — with stderr
+	// redirected, an armed-on-stderr sequence never reaches the terminal.
+	fmt.Fprint(f, "\x1b[?2004h") // bracketed paste on
 	return beatLoop(f)
 }
