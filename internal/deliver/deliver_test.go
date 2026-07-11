@@ -23,10 +23,11 @@ type fakeEngine struct {
 	envErr   error
 	labelErr error
 
-	inbox    map[string]bool // existing in-box names, relative to /inbox
-	execErr  error
-	streams  []string // "id name<-content" per delivered file
-	execArgs [][]string
+	inbox     map[string]bool // existing in-box names, relative to /inbox
+	execErr   error
+	failMkdir bool     // interior mkdirScript execs fail
+	streams   []string // "id name<-content" per delivered file
+	execArgs  [][]string
 }
 
 func (f *fakeEngine) Name() string { return f.name }
@@ -80,6 +81,9 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 		n := claim("", args[0], args[1])
 		return "/inbox/" + n + "\n", nil
 	default: // mkdirScript: dir
+		if f.failMkdir {
+			return "", fmt.Errorf("mkdir refused")
+		}
 		return "", nil
 	}
 }
@@ -540,5 +544,45 @@ func TestBoxNoMatchNamesUnusableSessions(t *testing.T) {
 	_, err := Run(cfg, Options{Box: "proj-aaa"}, []string{"x"})
 	if err == nil || !strings.Contains(err.Error(), "readable dev identity") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDirectoryRenameIsNoted(t *testing.T) {
+	// grok review finding: a control-char DIRECTORY name was sanitized
+	// silently while files printed a note.
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	dir := t.TempDir()
+	weird := filepath.Join(dir, "pro\nj")
+	mustMkdir(t, weird)
+	mustWrite(t, filepath.Join(weird, "a.txt"), "A")
+	landed, err := Run(cfg, Options{}, []string{weird})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 || landed[0] != "/inbox/pro_j" {
+		t.Fatalf("landed = %v", landed)
+	}
+	if !strings.Contains(errw.String(), "renamed") {
+		t.Fatalf("silent dir rename: %q", errw.String())
+	}
+}
+
+func TestDirSummaryCountsFailedDirEntries(t *testing.T) {
+	// grok review finding: with only an interior mkdir failing, the summary
+	// claimed "N of N files" — the failed-entries count must be visible.
+	eng := box("docker", "aaa")
+	eng.failMkdir = true
+	cfg, _, errw := testConfig(eng)
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	mustMkdir(t, filepath.Join(proj, "sub"))
+	mustWrite(t, filepath.Join(proj, "a.txt"), "A")
+	_, err := Run(cfg, Options{}, []string{proj})
+	if err == nil {
+		t.Fatal("expected the partial-delivery error")
+	}
+	if !strings.Contains(errw.String(), "1 entry failed") {
+		t.Fatalf("summary hides the failed dir entry: %q", errw.String())
 	}
 }

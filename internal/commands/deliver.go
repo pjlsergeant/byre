@@ -57,11 +57,11 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 			}
 			return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
 		}
-		return readClipboard(*reader, time.Now)
+		return readClipboard(*reader, time.Now, s.Err)
 	case stdinIsPiped():
 		return []deliver.Source{stdinSource(s.In)}, nil
 	case reader != nil: // graphical / detached launch: read immediately
-		return readClipboard(*reader, time.Now)
+		return readClipboard(*reader, time.Now, s.Err)
 	default:
 		return nil, fmt.Errorf("nothing to deliver: no paths, no piped stdin, and no clipboard access — pass a path or pipe content in")
 	}

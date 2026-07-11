@@ -165,7 +165,12 @@ func graphicalPickTool(goos string, getenv func(string) string) func([]deliver.S
 				}
 				out, err := clipRunOut("zenity", args...)
 				if err != nil {
-					return deliver.Session{}, false, nil // zenity exits 1 on cancel
+					// Exit 1 is the user pressing Cancel; anything else is a
+					// broken dialog and must not masquerade as a choice.
+					if exitCode(err) == 1 {
+						return deliver.Session{}, false, nil
+					}
+					return deliver.Session{}, false, fmt.Errorf("picker dialog: %w", err)
 				}
 				return matchPick(sessions, strings.TrimSpace(string(out)))
 			}
@@ -178,7 +183,10 @@ func graphicalPickTool(goos string, getenv func(string) string) func([]deliver.S
 				}
 				out, err := clipRunOut("kdialog", args...)
 				if err != nil {
-					return deliver.Session{}, false, nil // cancel exits nonzero
+					if exitCode(err) == 1 { // cancel
+						return deliver.Session{}, false, nil
+					}
+					return deliver.Session{}, false, fmt.Errorf("picker dialog: %w", err)
 				}
 				return matchPick(sessions, strings.TrimSpace(string(out)))
 			}

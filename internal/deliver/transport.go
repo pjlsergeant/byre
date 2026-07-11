@@ -156,7 +156,11 @@ func deliverStream(cfg Config, sess Session, content io.Reader, name, destDir st
 // structure. Per-source-entry failures don't stop the walk: successes stay,
 // the summary and returned error carry the count (decisions D9).
 func deliverDir(cfg Config, sess Session, src string) (string, error) {
-	stem, ext, _ := splitName(filepath.Base(src))
+	base := filepath.Base(src)
+	stem, ext, sanitized := splitName(base)
+	if sanitized {
+		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", base, stem+ext)
+	}
 	out, err := sess.Engine.ExecInput(sess.ID, sess.UID, sess.GID, strings.NewReader(""),
 		"sh", "-c", dirScript, "byre-deliver", stem, ext)
 	if err != nil {
@@ -234,11 +238,21 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	if failed > 0 {
 		// The path stays useful and still prints; the exit code and this
 		// count carry the truth — the path alone never asserts completeness.
-		fmt.Fprintf(cfg.Err, "byre: delivered %s — %d of %d files, %s\n", root, okFiles, files, sizeString(bytes))
+		// `failed` counts ENTRIES (files and interior dirs both), so a
+		// dirs-only failure can't hide behind an "N of N files" line.
+		fmt.Fprintf(cfg.Err, "byre: delivered %s — %d of %d files, %s; %d %s failed\n",
+			root, okFiles, files, sizeString(bytes), failed, plural(failed, "entry", "entries"))
 		return root, fmt.Errorf("delivering %s/: %d entries failed", src, failed)
 	}
 	fmt.Fprintf(cfg.Err, "byre: delivered %s — %d files, %s\n", root, files, sizeString(bytes))
 	return root, nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // dirOf is filepath.Dir but "" (not ".") for a bare name, so interior dest

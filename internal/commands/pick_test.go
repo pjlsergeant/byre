@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -104,5 +106,37 @@ func TestMatchPick(t *testing.T) {
 	}
 	if _, _, err := matchPick(sessions, "nonsense"); err == nil {
 		t.Fatal("unknown answer must error, not guess")
+	}
+}
+
+func TestGraphicalPickerToolFailureIsNotCancel(t *testing.T) {
+	// A broken dialog must surface as an error; only exit 1 is a user cancel.
+	stubClipTools(t, "zenity")
+	orig := clipRunOut
+	t.Cleanup(func() { clipRunOut = orig })
+	clipRunOut = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("zenity: cannot open display")
+	}
+	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}))
+	_, ok, err := p(pickSessions())
+	if ok || err == nil {
+		t.Fatalf("broken dialog masqueraded as a choice: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestGraphicalPickerExitOneIsCancel(t *testing.T) {
+	stubClipTools(t, "zenity")
+	orig := clipRunOut
+	t.Cleanup(func() { clipRunOut = orig })
+	// A genuine ExitError with code 1 (zenity's cancel), wrapped the way the
+	// real seam wraps it.
+	_, realErr := exec.Command("sh", "-c", "exit 1").Output()
+	clipRunOut = func(name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("zenity: %w", realErr)
+	}
+	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}))
+	_, ok, err := p(pickSessions())
+	if ok || err != nil {
+		t.Fatalf("cancel (exit 1) should be a clean no: ok=%v err=%v", ok, err)
 	}
 }

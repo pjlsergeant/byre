@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestReadClipboardFileRefsWinOverImageAndText(t *testing.T) {
 		[]string{typeFileRefs, "image/png", "text/plain"},
 		map[string][]byte{typeFileRefs: []byte("/Users/p/shot.png\n/Users/p/b c.pdf\n")},
 	)
-	sources, err := readClipboard(cb, fixedNow)
+	sources, err := readClipboard(cb, fixedNow, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,7 @@ func TestReadClipboardImageBeatsText(t *testing.T) {
 		[]string{"image/png", "text/plain"},
 		map[string][]byte{"image/png": []byte("PNGBYTES")},
 	)
-	sources, err := readClipboard(cb, fixedNow)
+	sources, err := readClipboard(cb, fixedNow, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestReadClipboardImageBeatsText(t *testing.T) {
 func TestReadClipboardImageExtensionIsHonest(t *testing.T) {
 	// A TIFF on the board must not be named .png (decisions D11).
 	cb := backend([]string{"image/tiff"}, map[string][]byte{"image/tiff": []byte("TIFF")})
-	sources, err := readClipboard(cb, fixedNow)
+	sources, err := readClipboard(cb, fixedNow, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestReadClipboardImageExtensionIsHonest(t *testing.T) {
 
 func TestReadClipboardText(t *testing.T) {
 	cb := backend([]string{"text/plain"}, map[string][]byte{"text/plain": []byte("hello")})
-	sources, err := readClipboard(cb, fixedNow)
+	sources, err := readClipboard(cb, fixedNow, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestReadClipboardText(t *testing.T) {
 
 func TestReadClipboardEmptyErrors(t *testing.T) {
 	cb := backend(nil, nil)
-	_, err := readClipboard(cb, fixedNow)
+	_, err := readClipboard(cb, fixedNow, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "nothing deliverable") {
 		t.Fatalf("err = %v", err)
 	}
@@ -89,7 +90,7 @@ func TestReadClipboardEmptyFileRefsFallThrough(t *testing.T) {
 		[]string{typeFileRefs, "text/plain"},
 		map[string][]byte{typeFileRefs: []byte("\n"), "text/plain": []byte("t")},
 	)
-	sources, err := readClipboard(cb, fixedNow)
+	sources, err := readClipboard(cb, fixedNow, io.Discard)
 	if err != nil || len(sources) != 1 || sources[0].Kind != "clipboard text" {
 		t.Fatalf("sources = %+v err = %v", sources, err)
 	}
@@ -137,5 +138,48 @@ func TestNormalizeLinuxTypes(t *testing.T) {
 	}
 	if pickImageType(types) != "image/png" {
 		t.Fatalf("png should win: %v", types)
+	}
+}
+
+func TestParseDarwinClipInfoJPEGAndGIF(t *testing.T) {
+	types := parseDarwinClipInfo("«class JPEG», 88, «class GIFf», 12, string, 4")
+	if !hasType(types, "image/jpeg") || !hasType(types, "image/gif") {
+		t.Fatalf("types = %v", types)
+	}
+	if pickImageType(types) != "image/jpeg" {
+		t.Fatalf("first image type should win absent png: %v", types)
+	}
+}
+
+func TestReadClipboardFetchErrorFallsThrough(t *testing.T) {
+	// A type the backend advertises but can't serve must degrade to the next
+	// tier, not take working text down with it (grok review finding).
+	cb := clipBackend{
+		listTypes: func() ([]string, error) { return []string{typeFileRefs, "image/png", "text/plain"}, nil },
+		fetch: func(typ string) ([]byte, error) {
+			if typ == "text/plain" {
+				return []byte("survivor"), nil
+			}
+			return nil, fmt.Errorf("tool exploded")
+		},
+	}
+	var warn strings.Builder
+	sources, err := readClipboard(cb, fixedNow, &warn)
+	if err != nil || len(sources) != 1 || string(sources[0].Data) != "survivor" {
+		t.Fatalf("sources = %+v err = %v", sources, err)
+	}
+	if !strings.Contains(warn.String(), "trying the next representation") {
+		t.Fatalf("no degrade note: %q", warn.String())
+	}
+}
+
+func TestReadClipboardAllFetchesFailSurfacesFirstError(t *testing.T) {
+	cb := clipBackend{
+		listTypes: func() ([]string, error) { return []string{"image/png"}, nil },
+		fetch:     func(string) ([]byte, error) { return nil, fmt.Errorf("boom") },
+	}
+	_, err := readClipboard(cb, fixedNow, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v", err)
 	}
 }

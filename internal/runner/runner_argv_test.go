@@ -178,7 +178,7 @@ func TestExecInputArgv(t *testing.T) {
 	if gotStdin != "payload" {
 		t.Fatalf("ExecInput stdin = %q, want payload", gotStdin)
 	}
-	want := "docker exec -i -u 501:20 ctr1 sh -c script byre-deliver report .pdf"
+	want := "docker exec -i -u 501:20 -e HOME=/home/dev ctr1 sh -c script byre-deliver report .pdf"
 	if got := strings.Join(gotArgs, " "); got != want {
 		t.Fatalf("ExecInput argv = %q, want %q", got, want)
 	}

@@ -2,7 +2,9 @@ package commands
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -34,33 +36,54 @@ type clipBackend struct {
 
 const typeFileRefs = "file-refs" // normalized tag for file references
 
-// clipRunOut is the capture-exec seam for read tools.
+// clipRunOut is the capture-exec seam for read tools. Errors wrap the
+// original (%w), so callers that must distinguish exit codes — a dialog's
+// cancel-exit vs a broken tool — can errors.As their way to the ExitError.
 var clipRunOut = func(name string, args ...string) ([]byte, error) {
 	out, err := exec.Command(name, args...).Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, fmt.Errorf("%s: %s", name, strings.TrimSpace(string(ee.Stderr)))
+			return nil, fmt.Errorf("%s (%s): %w", name, strings.TrimSpace(string(ee.Stderr)), err)
 		}
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return out, nil
 }
 
-// readClipboard reads the highest-priority representation into sources.
-func readClipboard(cb clipBackend, now func() time.Time) ([]deliver.Source, error) {
+// exitCode digs the child's exit code out of a wrapped clipRunOut error
+// (-1 when there is none — a lookup or I/O failure, not a tool exit).
+func exitCode(err error) int {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return -1
+}
+
+// readClipboard reads the highest-priority representation into sources. A
+// FAILED fetch of a higher tier degrades to the next with a warning (same as
+// an empty one) — a compositor advertising a type it can't serve must not
+// take working text down with it. Only when no tier delivers does the first
+// failure surface.
+func readClipboard(cb clipBackend, now func() time.Time, warn io.Writer) ([]deliver.Source, error) {
 	types, err := cb.listTypes()
 	if err != nil {
 		return nil, fmt.Errorf("reading clipboard types: %w", err)
 	}
 	stamp := now().Format("20060102-150405")
+	var firstErr error
+	degrade := func(what string, err error) {
+		fmt.Fprintf(warn, "byre: clipboard %s read failed (%v); trying the next representation\n", what, err)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 
 	if hasType(types, typeFileRefs) {
 		raw, err := cb.fetch(typeFileRefs)
 		if err != nil {
-			return nil, fmt.Errorf("reading clipboard file references: %w", err)
-		}
-		paths := parseFileRefs(string(raw))
-		if len(paths) > 0 {
+			degrade("file-references", err)
+		} else if paths := parseFileRefs(string(raw)); len(paths) > 0 {
 			return deliver.PathSources(paths), nil
 		}
 		// Fall through: a furl/uri-list type with nothing usable behind it.
@@ -68,9 +91,8 @@ func readClipboard(cb clipBackend, now func() time.Time) ([]deliver.Source, erro
 	if imgType := pickImageType(types); imgType != "" {
 		raw, err := cb.fetch(imgType)
 		if err != nil {
-			return nil, fmt.Errorf("reading clipboard image: %w", err)
-		}
-		if len(raw) > 0 {
+			degrade("image", err)
+		} else if len(raw) > 0 {
 			return []deliver.Source{{
 				Data: raw,
 				Name: "clipboard-" + stamp + extFor(imgType),
@@ -81,15 +103,17 @@ func readClipboard(cb clipBackend, now func() time.Time) ([]deliver.Source, erro
 	if hasType(types, "text/plain") {
 		raw, err := cb.fetch("text/plain")
 		if err != nil {
-			return nil, fmt.Errorf("reading clipboard text: %w", err)
-		}
-		if len(raw) > 0 {
+			degrade("text", err)
+		} else if len(raw) > 0 {
 			return []deliver.Source{{
 				Data: raw,
 				Name: "clipboard-" + stamp + ".txt",
 				Kind: "clipboard text",
 			}}, nil
 		}
+	}
+	if firstErr != nil {
+		return nil, fmt.Errorf("reading the clipboard: %w", firstErr)
 	}
 	return nil, fmt.Errorf("the clipboard holds nothing deliverable (no files, image, or text)")
 }
@@ -190,6 +214,10 @@ func darwinBackend() clipBackend {
 					return clipRunOut("pngpaste", "-")
 				}
 				return darwinClipData("PNGf")
+			case "image/jpeg":
+				return darwinClipData("JPEG")
+			case "image/gif":
+				return darwinClipData("GIFf")
 			case "image/tiff":
 				return darwinClipData("TIFF")
 			case "text/plain":
@@ -223,6 +251,12 @@ func parseDarwinClipInfo(info string) []string {
 	}
 	if strings.Contains(info, "«class PNGf»") {
 		add("image/png")
+	}
+	if strings.Contains(info, "«class JPEG»") {
+		add("image/jpeg")
+	}
+	if strings.Contains(info, "«class GIFf»") {
+		add("image/gif")
 	}
 	if strings.Contains(info, "«class TIFF»") {
 		add("image/tiff")

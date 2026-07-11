@@ -170,9 +170,14 @@ func runPasteBeat(s Streams, canRead bool) (beatAction, []byte, error) {
 	if err != nil {
 		return beatCancelled, nil, fmt.Errorf("raw terminal mode: %w", err)
 	}
-	fmt.Fprint(s.Err, "\x1b[?2004h") // bracketed paste on
+	// Mode sequences are NOT chrome: they must reach the terminal DEVICE that
+	// drives input (the same one MakeRaw touched), not stderr — with stderr
+	// redirected, an armed-on-stderr sequence never reaches the terminal and
+	// Cmd-V silently stops registering. Writing to the stdin TTY fd works
+	// (it's the terminal device); human prompts stay on s.Err.
+	fmt.Fprint(f, "\x1b[?2004h") // bracketed paste on
 	defer func() {
-		fmt.Fprint(s.Err, "\x1b[?2004l")
+		fmt.Fprint(f, "\x1b[?2004l")
 		_ = xterm.Restore(f.Fd(), state)
 		fmt.Fprintln(s.Err) // raw mode ate the echo; end the prompt line
 	}()

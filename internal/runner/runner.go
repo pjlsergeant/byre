@@ -173,14 +173,16 @@ func (r *Runner) ContainerLabels(id string) (map[string]string, error) {
 // ExecInput runs a non-interactive command in a running container as the given
 // uid:gid, feeding it stdin and capturing its stdout — deliver's exec-stream
 // transport (content goes in, the landed in-box path comes back). No -t (never
-// a terminal), no -w/-e (deliver's scripts use absolute paths and need no env).
+// a terminal), no -w. HOME is set like Exec's callers set it (the launcher
+// exports it at run time, so `exec` doesn't inherit it — ADR 0021's attach
+// model is byre shell's, HOME included); /home/dev is the chassis dev home.
 func (r *Runner) ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
 	return r.captureIn(stdin, string(r.engine), execInputArgs(containerID, uid, gid, command...)...)
 }
 
 // execInputArgs builds the engine `exec -i` argv (pure, for testing).
 func execInputArgs(containerID string, uid, gid int, command ...string) []string {
-	args := []string{"exec", "-i", "-u", fmt.Sprintf("%d:%d", uid, gid), containerID}
+	args := []string{"exec", "-i", "-u", fmt.Sprintf("%d:%d", uid, gid), "-e", "HOME=/home/dev", containerID}
 	return append(args, command...)
 }
 
