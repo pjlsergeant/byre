@@ -8,6 +8,8 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/pjlsergeant/byre/internal/commands"
 	"github.com/pjlsergeant/byre/internal/deliver"
 )
@@ -17,9 +19,9 @@ import (
 // from Go's build info instead — see versionString.
 var version string
 
-// app is the set of command implementations run dispatches to. A struct (not
-// direct calls) so tests can pin the flag->function wiring with recorders
-// instead of executing real commands.
+// app is the set of command implementations the CLI dispatches to. A struct
+// (not direct calls) so tests can pin the flag->function wiring with
+// recorders instead of executing real commands.
 type app struct {
 	dockerfile    func(s commands.Streams, dir string) error
 	dockerrun     func(s commands.Streams, dir string) error
@@ -62,166 +64,229 @@ var realApp = app{
 	version:          printVersion,
 }
 
-// command is one byre subcommand: its one-line summary for the command list,
-// its full help for `byre <name> --help`, and its parse+dispatch function.
-// The top-level usage is GENERATED from this table, so a command (or flag
-// documented in its help) can't be forgotten there.
-type command struct {
-	name    string
-	summary string
-	help    string
-	run     func(a app, s commands.Streams, dir string, rest []string) error
+func init() {
+	// Commands list in the order they're registered (develop first), not
+	// alphabetically — the top of the help is the happy path.
+	cobra.EnableCommandSorting = false
 }
 
-var cmdTable = []command{
-	{
-		name:    "develop",
-		summary: "Set up and run the project container in the foreground.",
-		help: `Usage: byre develop [--template <name>] [--agent <name>] [--self-edit]
+// usageError is a command-line parse failure: main prints it to stderr and
+// exits 2, distinct from a byre failure (1) and an agent/refusal code.
+type usageError string
 
-Set up (generate + build the image) and run the project container in the
-foreground. First run onboards the project (creates its host-side config).
+func (e usageError) Error() string { return string(e) }
 
-  --template <name>  template for a NEW project's config (first run only; "none" to skip)
-  --agent <name>     agent for a NEW project's config (first run only; "none" to skip)
-  --self-edit        mount this project's host-side store read-write so the
-                     agent can edit its own byre.config — a deliberate grant,
-                     applied on the next develop`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			var tmpl, agent string
-			selfEdit := false
-			for i := 0; i < len(rest); i++ {
-				switch {
-				case rest[i] == "--template":
-					i++
-					if i >= len(rest) {
-						return usageError("byre develop: --template needs a value")
-					}
-					tmpl = rest[i]
-				case rest[i] == "--agent":
-					i++
-					if i >= len(rest) {
-						return usageError("byre develop: --agent needs a value")
-					}
-					agent = rest[i]
-				case rest[i] == "--self-edit":
-					selfEdit = true
-				default:
-					return usageError(fmt.Sprintf("byre develop: unknown argument %q", rest[i]))
-				}
+// noArgsU rejects unexpected operands after a subcommand, as a usageError so
+// main exits 2 without dispatching (cobra's own validators return plain
+// errors, which would be misreported as byre failures).
+func noArgsU(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return usageError(fmt.Sprintf("%s: unexpected arguments %v", cmd.CommandPath(), args))
+	}
+	return nil
+}
+
+// newRootCmd builds the byre command tree wired to a's implementations.
+// Built fresh per invocation: flag state lives in the closures, and tests
+// exercise the real tree with recorder apps.
+func newRootCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "byre",
+		Short: "Run an AI coding agent in a throwaway, project-scoped container.",
+		Long: `byre — run an AI coding agent in a throwaway, project-scoped container.
+
+Run byre in the project directory you want to develop.`,
+		// byre owns error printing and the exit-code contract (usage = 2,
+		// byre failure = 1, agent/refusal codes passed through): cobra must
+		// neither print errors nor dump usage after them.
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		// ArbitraryArgs so unknown commands reach RunE (instead of cobra's
+		// untyped legacyArgs error) and come back as usageError.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return usageError(fmt.Sprintf("byre: unknown command %q\n\n%s", args[0], strings.TrimRight(cmd.UsageString(), "\n")))
 			}
+			return usageError(strings.TrimRight(cmd.UsageString(), "\n"))
+		},
+	}
+	root.SetOut(s.Out)
+	root.SetErr(s.Err)
+	// cobra's default usage template (v1.10.2), with one change: the
+	// runnable use-line is skipped for the ROOT command. Root carries a RunE
+	// only so bare/unknown invocations become usageErrors (exit 2) — showing
+	// "byre [flags]" would advertise a bare invocation that does nothing.
+	// Children inherit this template and keep their use-lines (HasParent).
+	root.SetUsageTemplate(`Usage:{{if and .Runnable .HasParent}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+Examples:
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
+
+Available Commands:{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+
+{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+
+Additional Commands:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`)
+	// Flag parse failures (unknown flag, missing value) become usageErrors,
+	// prefixed with the command path so the message names the culprit.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return usageError(cmd.CommandPath() + ": " + err.Error())
+	})
+
+	root.AddCommand(
+		developCmd(a, dir, s),
+		configCmd(a, dir, s),
+		dockerfileCmd(a, dir, s),
+		dockerrunCmd(a, dir, s),
+		ejectfirewallCmd(a, dir, s),
+		statusCmd(a, dir, s),
+		shellCmd(a, dir, s),
+		deliverCmd(a, dir, s),
+		worktreeCmd(a, dir, s),
+		skillCmd(a, s),
+		resetCmd(a, dir, s),
+		rebuildCmd(a, dir, s),
+		rehomeCmd(a, dir, s),
+		forgetCmd(a, dir, s),
+		versionCmd(a, s),
+	)
+	return root
+}
+
+func developCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var tmpl, agent string
+	var selfEdit bool
+	c := &cobra.Command{
+		Use:   "develop",
+		Short: "Set up and run the project container in the foreground.",
+		Long: `Set up (generate + build the image) and run the project container in the
+foreground. First run onboards the project (creates its host-side config).`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.develop(s, dir, tmpl, agent, selfEdit)
 		},
-	},
-	{
-		name:    "config",
-		summary: "Edit this project's config interactively.",
-		help: `Usage: byre config [--global]
+	}
+	c.Flags().StringVar(&tmpl, "template", "", `template for a NEW project's config (first run only; "none" to skip)`)
+	c.Flags().StringVar(&agent, "agent", "", `agent for a NEW project's config (first run only; "none" to skip)`)
+	c.Flags().BoolVar(&selfEdit, "self-edit", false, "mount this project's host-side store read-write so the agent can edit its own byre.config — a deliberate grant, applied on the next develop")
+	return c
+}
 
-Open the interactive editor for this project's host-side config
-(~/.byre/projects/<id>/byre.config). Raw fields are shown, not edited.
-
-  --global  edit your global defaults (~/.byre/default.config) instead`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			global := false
-			for _, arg := range rest {
-				switch arg {
-				case "--global":
-					global = true
-				default:
-					return usageError(fmt.Sprintf("byre config: unknown argument %q", arg))
-				}
-			}
+func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var global bool
+	c := &cobra.Command{
+		Use:   "config",
+		Short: "Edit this project's config interactively.",
+		Long: `Open the interactive editor for this project's host-side config
+(~/.byre/projects/<id>/byre.config). Raw fields are shown, not edited.`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.config(s, dir, global)
 		},
-	},
-	{
-		name:    "dockerfile",
-		summary: "Print the generated Dockerfile for this directory.",
-		help: `Usage: byre dockerfile
+	}
+	c.Flags().BoolVar(&global, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	return c
+}
 
-Print the Dockerfile byre would build for this directory. Side-effect-free.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if err := noArgs("dockerfile", rest); err != nil {
-				return err
-			}
+func dockerfileCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "dockerfile",
+		Short: "Print the generated Dockerfile for this directory.",
+		Long:  `Print the Dockerfile byre would build for this directory. Side-effect-free.`,
+		Args:  noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.dockerfile(s, dir)
 		},
-	},
-	{
-		name:    "dockerrun",
-		summary: "Print the docker/podman run command byre would use.",
-		help: `Usage: byre dockerrun
+	}
+}
 
-Print the exact docker/podman run invocation byre would use for this project —
+func dockerrunCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "dockerrun",
+		Short: "Print the docker/podman run command byre would use.",
+		Long: `Print the exact docker/podman run invocation byre would use for this project —
 the run-time counterpart to 'byre dockerfile'. Side-effect-free.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if err := noArgs("dockerrun", rest); err != nil {
-				return err
-			}
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.dockerrun(s, dir)
 		},
-	},
-	{
-		name:    "ejectfirewall",
-		summary: "Print the firewall sidecar as a standalone script.",
-		help: `Usage: byre ejectfirewall
+	}
+}
 
-Print, as a shell script, the firewall sidecar byre runs for this project —
+func ejectfirewallCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "ejectfirewall",
+		Short: "Print the firewall sidecar as a standalone script.",
+		Long: `Print, as a shell script, the firewall sidecar byre runs for this project —
 the one piece of the box 'byre dockerfile' + 'byre dockerrun' can't carry.
 Run the printed script right after starting the box; it applies the resolved
 egress allowlist from outside and opens the launch gate. Side-effect-free;
 errors if no firewall (netns hook) is enabled.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if err := noArgs("ejectfirewall", rest); err != nil {
-				return err
-			}
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.ejectfirewall(s, dir)
 		},
-	},
-	{
-		name:    "status",
-		summary: "Show resolved config, mounts, skills, container state.",
-		help: `Usage: byre status [--self-edit]
+	}
+}
 
-Show the resolved view of this project: agent, engine, mounts, ports, volumes,
-skill grants, and whether a session is running.
-
-  --self-edit  also show the grant 'develop --self-edit' would add`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			selfEdit := false
-			for _, arg := range rest {
-				switch arg {
-				case "--self-edit":
-					selfEdit = true
-				default:
-					return usageError(fmt.Sprintf("byre status: unknown argument %q", arg))
-				}
-			}
+func statusCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var selfEdit bool
+	c := &cobra.Command{
+		Use:   "status",
+		Short: "Show resolved config, mounts, skills, container state.",
+		Long: `Show the resolved view of this project: agent, engine, mounts, ports, volumes,
+skill grants, and whether a session is running.`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.status(s, dir, selfEdit)
 		},
-	},
-	{
-		name:    "shell",
-		summary: "Open a shell (as the dev user) in the running session.",
-		help: `Usage: byre shell
+	}
+	c.Flags().BoolVar(&selfEdit, "self-edit", false, "also show the grant 'develop --self-edit' would add")
+	return c
+}
 
-Open an interactive shell in this project's running container, as the dev
+func shellCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "shell",
+		Short: "Open a shell (as the dev user) in the running session.",
+		Long: `Open an interactive shell in this project's running container, as the dev
 user — for agent logins, running tests, poking around. Needs a session
 started by 'byre develop'.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if err := noArgs("shell", rest); err != nil {
-				return err
-			}
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.shell(s, dir)
 		},
-	},
-	{
-		name:    "deliver",
-		summary: "Deliver files from the host into a running box's /inbox.",
-		help: `Usage: byre deliver [flags] [<path>... | -]
+	}
+}
 
-Get files into a running box: each path streams into the box's /inbox
+func deliverCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var opts deliver.Options
+	var installApp bool
+	c := &cobra.Command{
+		Use:   "deliver [<path>... | -]",
+		Short: "Deliver files from the host into a running box's /inbox.",
+		Long: `Get files into a running box: each path streams into the box's /inbox
 (names preserved, collisions uniquified, never overwritten) and the landed
 in-box path prints to stdout, one per line — paste it into the agent prompt.
 Directories deliver recursively, preserving structure, as one path.
@@ -247,207 +312,171 @@ always the contract.
 "Byre Deliver" drag target (macOS: a Dock/Finder droplet plus a right-click
 "Deliver to Byre" Quick Action; Linux: a .desktop launcher). Drop files on
 it, or open it plain to deliver the clipboard; outcomes arrive as
-notifications. Re-run it after moving byre; --box bakes a fixed target in.
-
-  --box <id>        deliver to this box (unique id or project prefix)
-  --name <base>     landing filename for stdin ('-') content
-  --skip-uid-check  include (and permit) boxes owned by other users
-  --no-clip         don't copy the landed paths to the clipboard
-  --install-app     install the deliver app instead of delivering`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			var opts deliver.Options
-			var paths []string
-			installApp := false
-			for i := 0; i < len(rest); i++ {
-				switch {
-				case rest[i] == "--install-app":
-					installApp = true
-				case rest[i] == "--box":
-					i++
-					if i >= len(rest) {
-						return usageError("byre deliver: --box needs a value")
-					}
-					opts.Box = rest[i]
-				case strings.HasPrefix(rest[i], "--box="):
-					opts.Box = strings.TrimPrefix(rest[i], "--box=")
-				case rest[i] == "--name":
-					i++
-					if i >= len(rest) {
-						return usageError("byre deliver: --name needs a value")
-					}
-					opts.Name = rest[i]
-				case strings.HasPrefix(rest[i], "--name="):
-					opts.Name = strings.TrimPrefix(rest[i], "--name=")
-				case rest[i] == "--skip-uid-check":
-					opts.SkipUIDCheck = true
-				case rest[i] == "--no-clip":
-					opts.NoClip = true
-				case rest[i] == "-":
-					paths = append(paths, "-")
-				case strings.HasPrefix(rest[i], "-"):
-					return usageError(fmt.Sprintf("byre deliver: unknown flag %q", rest[i]))
-				default:
-					paths = append(paths, rest[i])
-				}
-			}
+notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if installApp {
-				if len(paths) > 0 || opts.Name != "" || opts.SkipUIDCheck || opts.NoClip {
+				if len(args) > 0 || opts.Name != "" || opts.SkipUIDCheck || opts.NoClip {
 					return usageError("byre deliver --install-app: takes only an optional --box")
 				}
 				return a.installApp(s, opts.Box)
 			}
-			if len(paths) > 1 {
-				for _, p := range paths {
+			if len(args) > 1 {
+				for _, p := range args {
 					if p == "-" {
 						return usageError("byre deliver: '-' (stdin) cannot be mixed with path arguments")
 					}
 				}
 			}
-			return a.deliver(s, dir, opts, paths)
+			return a.deliver(s, dir, opts, args)
 		},
-	},
-	{
-		name:    "worktree",
-		summary: "Create a git worktree and start a parallel session in it.",
-		help: `Usage: byre worktree <name> [--path <dir>] [--self-edit]
+	}
+	c.Flags().StringVar(&opts.Box, "box", "", "deliver to this box (unique id or project prefix)")
+	c.Flags().StringVar(&opts.Name, "name", "", "landing filename for stdin ('-') content")
+	c.Flags().BoolVar(&opts.SkipUIDCheck, "skip-uid-check", false, "include (and permit) boxes owned by other users")
+	c.Flags().BoolVar(&opts.NoClip, "no-clip", false, "don't copy the landed paths to the clipboard")
+	c.Flags().BoolVar(&installApp, "install-app", false, "install the deliver app instead of delivering")
+	return c
+}
 
-Create a linked git worktree for branch <name> and run 'byre develop' in
+func worktreeCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var path string
+	var selfEdit bool
+	c := &cobra.Command{
+		Use:   "worktree <name>",
+		Short: "Create a git worktree and start a parallel session in it.",
+		Long: `Create a linked git worktree for branch <name> and run 'byre develop' in
 it — a parallel agent that inherits this project's config, volumes, and
 image. Location: --path, or the configured worktree_base ("sibling" = a
 sibling dir <repo>-<name>, or a directory to put worktrees under); with
-neither set, byre refuses rather than guessing.
-
-  --path <dir>  create the worktree at an explicit path
-  --self-edit   forward 'develop --self-edit' for the new session`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			var name, path string
-			selfEdit := false
-			for i := 0; i < len(rest); i++ {
-				switch {
-				case rest[i] == "--path":
-					i++
-					if i >= len(rest) {
-						return usageError("byre worktree: --path needs a value")
-					}
-					path = rest[i]
-				case rest[i] == "--self-edit":
-					selfEdit = true
-				case strings.HasPrefix(rest[i], "-"):
-					return usageError(fmt.Sprintf("byre worktree: unknown flag %q", rest[i]))
-				case name == "":
-					name = rest[i]
-				default:
-					return usageError(fmt.Sprintf("byre worktree: unexpected argument %q", rest[i]))
-				}
-			}
-			if name == "" {
+neither set, byre refuses rather than guessing.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			switch {
+			case len(args) < 1:
 				return usageError("usage: byre worktree <name> [--path <dir>] [--self-edit]")
+			case len(args) > 1:
+				return usageError(fmt.Sprintf("byre worktree: unexpected argument %q", args[1]))
 			}
-			return a.worktree(s, dir, name, path, selfEdit)
+			return nil
 		},
-	},
-	{
-		name:    "skill",
-		summary: "skill update: re-materialize byre's built-in skills and templates.",
-		help: `Usage: byre skill update
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.worktree(s, dir, args[0], path, selfEdit)
+		},
+	}
+	c.Flags().StringVar(&path, "path", "", "create the worktree at an explicit path")
+	c.Flags().BoolVar(&selfEdit, "self-edit", false, "forward 'develop --self-edit' for the new session")
+	return c
+}
 
-Re-materialize byre's built-in skills and templates into ~/.byre, picking up
+func skillCmd(a app, s commands.Streams) *cobra.Command {
+	skill := &cobra.Command{
+		Use:   "skill",
+		Short: "skill update: re-materialize byre's built-in skills and templates.",
+		// Anything that isn't `skill update` is a usage error (exit 2), not
+		// cobra's default show-help-exit-0 for a bare parent command.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre skill update   (re-materialize byre's built-in skills and templates)")
+		},
+	}
+	skill.AddCommand(&cobra.Command{
+		Use:   "update",
+		Short: "Re-materialize byre's built-in skills and templates.",
+		Long: `Re-materialize byre's built-in skills and templates into ~/.byre, picking up
 shipped updates (a locally-modified copy is backed up under skills.bak/ or
 templates.bak/). Follow with 'byre rebuild' to apply skill changes to the
 image.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if len(rest) != 1 || rest[0] != "update" {
-				return usageError("usage: byre skill update   (re-materialize byre's built-in skills and templates)")
-			}
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.skillUpdate(s)
 		},
-	},
-	{
-		name:    "reset",
-		summary: "Wipe this project's named volumes.",
-		help: `Usage: byre reset [--force|-y]
+	})
+	return skill
+}
 
-Permanently delete ALL of this project's named volumes (agent credentials,
-caches — not the image). Prompts first; refuses while a session is running.
-
-  --force, -y  skip the confirmation prompt`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			force, err := parseForce("reset", rest)
-			if err != nil {
-				return err
-			}
+func resetCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var force bool
+	c := &cobra.Command{
+		Use:   "reset",
+		Short: "Wipe this project's named volumes.",
+		Long: `Permanently delete ALL of this project's named volumes (agent credentials,
+caches — not the image). Prompts first; refuses while a session is running.`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.reset(s, dir, force)
 		},
-	},
-	{
-		name:    "rebuild",
-		summary: "Rebuild the image with the cache disabled.",
-		help: `Usage: byre rebuild
+	}
+	c.Flags().BoolVarP(&force, "force", "y", false, "skip the confirmation prompt")
+	return c
+}
 
-Regenerate the build context and rebuild this project's image with
+func rebuildCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rebuild",
+		Short: "Rebuild the image with the cache disabled.",
+		Long: `Regenerate the build context and rebuild this project's image with
 --no-cache, picking up new upstream tool/package versions. Volumes are
 untouched; the next 'byre develop' runs the fresh image.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if err := noArgs("rebuild", rest); err != nil {
-				return err
-			}
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.rebuild(s, dir)
 		},
-	},
-	{
-		name:    "rehome",
-		summary: "Re-point this directory's identity after a move.",
-		help: `Usage: byre rehome [<old-id>]
+	}
+}
 
-After moving/renaming the project directory (which changes its path-derived
+func rehomeCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rehome [<old-id>]",
+		Short: "Re-point this directory's identity after a move.",
+		Long: `After moving/renaming the project directory (which changes its path-derived
 id), migrate the previous id's volumes onto the new identity. <old-id> is the
 previous project id. Run 'byre rehome' bare to list likely candidates —
 stored projects whose recorded path no longer exists, most recently used
 first — instead of spelunking in ~/.byre/projects/.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			switch len(rest) {
-			case 0:
-				return a.rehomeCandidates(s, dir)
-			case 1:
-				return a.rehome(s, dir, rest[0])
-			default:
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 1 {
 				return usageError("usage: byre rehome [<old-id>]")
 			}
+			return nil
 		},
-	},
-	{
-		name:    "forget",
-		summary: "Remove all byre host-side state for this directory.",
-		help: `Usage: byre forget [--force|-y]
-
-Completely remove byre's host-side state for this directory: named volumes,
-the image, and ~/.byre/projects/<id>/ (config, adoption record, build
-context). Your project tree is left alone. Prompts first.
-
-  --force, -y  skip the confirmation prompt`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			force, err := parseForce("forget", rest)
-			if err != nil {
-				return err
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return a.rehomeCandidates(s, dir)
 			}
+			return a.rehome(s, dir, args[0])
+		},
+	}
+}
+
+func forgetCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var force bool
+	c := &cobra.Command{
+		Use:   "forget",
+		Short: "Remove all byre host-side state for this directory.",
+		Long: `Completely remove byre's host-side state for this directory: named volumes,
+the image, and ~/.byre/projects/<id>/ (config, adoption record, build
+context). Your project tree is left alone. Prompts first.`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.forget(s, dir, force)
 		},
-	},
-	{
-		name:    "version",
-		summary: "Print the byre version.",
-		help: `Usage: byre version
+	}
+	c.Flags().BoolVarP(&force, "force", "y", false, "skip the confirmation prompt")
+	return c
+}
 
-Print the byre version ('byre --version' works too). Release binaries
+func versionCmd(a app, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the byre version.",
+		Long: `Print the byre version ('byre --version' works too). Release binaries
 report their tag; other builds report what Go recorded in the binary's
 build info — a module or pseudo-version, or (devel) when nothing was.`,
-		run: func(a app, s commands.Streams, dir string, rest []string) error {
-			if err := noArgs("version", rest); err != nil {
-				return err
-			}
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.version(s)
 		},
-	},
+	}
 }
 
 // versionString resolves what `byre version` prints, in priority order: the
@@ -480,25 +509,6 @@ func printVersion(s commands.Streams) error {
 	return err
 }
 
-// usageText renders the top-level help from the command table.
-func usageText() string {
-	var b strings.Builder
-	b.WriteString("byre — run an AI coding agent in a throwaway, project-scoped container.\n")
-	b.WriteString("\nUsage: byre <command> [args]\n\nCommands:\n")
-	for _, c := range cmdTable {
-		fmt.Fprintf(&b, "  %-11s %s\n", c.name, c.summary)
-	}
-	b.WriteString("\nRun byre in the project directory you want to develop.\n")
-	b.WriteString("Use 'byre <command> --help' for details on a command.")
-	return b.String()
-}
-
-// usageError is a command-line parse failure: main prints it to stderr and
-// exits 2, distinct from a byre failure (1) and an agent/refusal code.
-type usageError string
-
-func (e usageError) Error() string { return string(e) }
-
 func main() {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -515,59 +525,17 @@ func main() {
 }
 
 // run parses argv (everything after the program name) and dispatches via the
-// command table. All parse failures come back as usageError; anything else is
+// cobra tree. All parse failures come back as usageError; anything else is
 // the command's own error, exit-mapped by main.
 func run(a app, args []string, dir string, s commands.Streams) error {
-	if len(args) < 1 {
-		return usageError(usageText())
+	if len(args) > 0 && args[0] == "--version" {
+		// Alias, not a second code path: the `version` command does the work,
+		// so both spellings share help, operand checking, and dispatch.
+		args = append([]string{"version"}, args[1:]...)
 	}
-	name, rest := args[0], args[1:]
-	if name == "-h" || name == "--help" || name == "help" {
-		fmt.Fprintln(s.Out, usageText())
-		return nil
-	}
-	if name == "--version" {
-		// Alias, not a second code path: the table entry does the work, so
-		// both spellings share help, operand checking, and dispatch.
-		name = "version"
-	}
-	for _, c := range cmdTable {
-		if c.name != name {
-			continue
-		}
-		// -h/--help anywhere in the subcommand's args prints its help. Checked
-		// before parsing, so 'byre worktree --help' is help, not an unknown flag.
-		for _, arg := range rest {
-			if arg == "-h" || arg == "--help" {
-				fmt.Fprintln(s.Out, c.help)
-				return nil
-			}
-		}
-		return c.run(a, s, dir, rest)
-	}
-	return usageError(fmt.Sprintf("byre: unknown command %q\n\n%s", name, usageText()))
-}
-
-// noArgs rejects unexpected operands after a subcommand.
-func noArgs(cmd string, rest []string) error {
-	if len(rest) > 0 {
-		return usageError(fmt.Sprintf("byre %s: unexpected arguments %v", cmd, rest))
-	}
-	return nil
-}
-
-// parseForce parses the shared --force/-y flag of the destructive commands.
-func parseForce(cmd string, rest []string) (bool, error) {
-	force := false
-	for _, arg := range rest {
-		switch arg {
-		case "--force", "-y":
-			force = true
-		default:
-			return false, usageError(fmt.Sprintf("byre %s: unknown argument %q", cmd, arg))
-		}
-	}
-	return force, nil
+	root := newRootCmd(a, dir, s)
+	root.SetArgs(args)
+	return root.Execute()
 }
 
 // fatal reports err and exits. An ExitError carries a process-level exit code

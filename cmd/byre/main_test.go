@@ -146,7 +146,7 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 		if err := run(recorderApp(map[string]string{}), argv, "/proj", s); err != nil {
 			t.Errorf("%v: help must not error: %v", argv, err)
 		}
-		if !strings.Contains(out.String(), "Usage: byre <command>") {
+		if !strings.Contains(out.String(), "Available Commands:") {
 			t.Errorf("%v: expected usage on stdout, got %q", argv, out.String())
 		}
 	}
@@ -193,44 +193,58 @@ func TestVersionString(t *testing.T) {
 	}
 }
 
+// commandNames enumerates the registered subcommands off a throwaway tree —
+// the successor to iterating the old command table.
+func commandNames() []string {
+	s, _ := testStreams()
+	root := newRootCmd(recorderApp(map[string]string{}), "/proj", s)
+	var names []string
+	for _, c := range root.Commands() {
+		names = append(names, c.Name())
+	}
+	return names
+}
+
 // TestRunSubcommandHelp pins per-subcommand --help: prints that command's
-// usage, dispatches nothing, exits clean — for every table entry, -h included.
+// usage, dispatches nothing, exits clean — for every command, -h included.
 func TestRunSubcommandHelp(t *testing.T) {
-	for _, c := range cmdTable {
+	for _, name := range commandNames() {
 		for _, flag := range []string{"--help", "-h"} {
 			calls := map[string]string{}
 			s, out := testStreams()
-			if err := run(recorderApp(calls), []string{c.name, flag}, "/proj", s); err != nil {
-				t.Errorf("byre %s %s must not error: %v", c.name, flag, err)
+			if err := run(recorderApp(calls), []string{name, flag}, "/proj", s); err != nil {
+				t.Errorf("byre %s %s must not error: %v", name, flag, err)
 			}
 			if len(calls) != 0 {
-				t.Errorf("byre %s %s must not dispatch: %v", c.name, flag, calls)
+				t.Errorf("byre %s %s must not dispatch: %v", name, flag, calls)
 			}
-			if !strings.Contains(out.String(), "Usage: byre "+c.name) {
-				t.Errorf("byre %s %s output missing its usage line: %q", c.name, flag, out.String())
+			if !strings.Contains(out.String(), "byre "+name) {
+				t.Errorf("byre %s %s output missing its usage line: %q", name, flag, out.String())
 			}
 		}
 	}
 }
 
-// TestUsageTextCoversTable pins that the generated top-level usage lists every
-// command, and that develop's flags are documented in its help — the omission
-// that motivated generating usage from the table.
-func TestUsageTextCoversTable(t *testing.T) {
-	u := usageText()
-	for _, c := range cmdTable {
-		if !strings.Contains(u, "\n  "+c.name) {
-			t.Errorf("top-level usage missing command %q:\n%s", c.name, u)
+// TestRootHelpCoversCommands pins that the top-level help lists every
+// registered command, and that develop's flags are documented in its help —
+// the omission that motivated generating usage in the first place.
+func TestRootHelpCoversCommands(t *testing.T) {
+	s, out := testStreams()
+	if err := run(recorderApp(map[string]string{}), []string{"--help"}, "/proj", s); err != nil {
+		t.Fatalf("--help: %v", err)
+	}
+	for _, name := range commandNames() {
+		if !strings.Contains(out.String(), name) {
+			t.Errorf("top-level help missing command %q:\n%s", name, out.String())
 		}
 	}
-	for _, c := range cmdTable {
-		if c.name != "develop" {
-			continue
-		}
-		for _, flag := range []string{"--template", "--agent", "--self-edit"} {
-			if !strings.Contains(c.help, flag) {
-				t.Errorf("develop help missing %s", flag)
-			}
+	s2, out2 := testStreams()
+	if err := run(recorderApp(map[string]string{}), []string{"develop", "--help"}, "/proj", s2); err != nil {
+		t.Fatalf("develop --help: %v", err)
+	}
+	for _, flag := range []string{"--template", "--agent", "--self-edit"} {
+		if !strings.Contains(out2.String(), flag) {
+			t.Errorf("develop help missing %s", flag)
 		}
 	}
 }
