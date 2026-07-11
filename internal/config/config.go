@@ -188,6 +188,15 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
+	// SharedAuthDeclined lists agent skills whose onboarding shared-auth offer
+	// (ADR 0023) the user declined — so the picker asks each at most once.
+	// Picker-owned state in ~/.byre/default.config, like the template/agent
+	// favourites: resolveWith zeroes the default layer's copy so it can't
+	// leak into a resolved config from where it's actually kept, and only
+	// onboarding reads or writes it (straight from the file, no cascade). A
+	// "yes" has no key of its own — it IS the companion skill in `skills`.
+	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
+
 	Apt       []string          `toml:"apt,omitempty"`
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
@@ -274,8 +283,10 @@ func resolveWith(home string, proj Config) (Config, error) {
 	// config (a project's template/agent come from its own byre.config, which the
 	// picker writes). default.config still contributes base/apt/env/etc. The
 	// picker reads the favourites from the file directly (onboard.Favourites).
+	// shared_auth_declined is picker-owned in the same way (ADR 0023).
 	def.Template = ""
 	def.Agent = ""
+	def.SharedAuthDeclined = nil
 
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
@@ -352,6 +363,7 @@ func Merge(base, over Config) Config {
 	out.Apt = mergeStrings(base.Apt, over.Apt)
 	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
+	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
 	out.Egress = mergeStrings(base.Egress, over.Egress)
 	out.EgressOffered = mergeStrings(base.EgressOffered, over.EgressOffered)
 
