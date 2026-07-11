@@ -88,11 +88,13 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 
 // OfferSharedAuth asks the one-time shared-auth question (ADR 0023) for the
 // chosen agent: whether to enable its companion skill machine-wide. The
-// wording carries the scope — the answer lands in default.config, not the
-// project — and defaults to No, like every other yes/no here.
+// wording carries the whole decision — the status quo (per-project logins),
+// the alternative, its scope (the answer lands in default.config, not the
+// project), and the mechanism's name — and defaults to No, like every other
+// yes/no here.
 func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string) (bool, error) {
-	fmt.Fprintf(out, "%s supports shared auth: one login for every byre project on this machine (skill %q).\n", agent, companion)
-	return askYesNo(out, r, fmt.Sprintf("Use shared auth for %s?", agent))
+	fmt.Fprintf(out, "By default each project's box gets its own %s login. The %q skill shares one login across every byre project on this machine instead.\n", agent, companion)
+	return askYesNo(out, r, fmt.Sprintf("Share one %s login across all your projects?", agent))
 }
 
 // ask prompts for one choice among options, pre-selecting def. An empty answer

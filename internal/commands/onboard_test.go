@@ -107,7 +107,7 @@ func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Use shared auth for claude?") {
+	if !strings.Contains(errBuf.String(), "Share one claude login across all your projects?") {
 		t.Fatalf("expected the shared-auth offer:\n%s", errBuf.String())
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
