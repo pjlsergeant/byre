@@ -75,9 +75,19 @@ on run
 	-- profile says); a failure's window stays open to read.
 	set failFlag to do shell script "mktemp -u /tmp/byre-deliver-fail.XXXXXX"
 	set cmd to "` + asQuote(launchPATH) + `" & quoted form of byreBinary() & " deliver` + asQuote(extra) + ` || touch " & quoted form of failFlag & "; exit"
+	-- Launching Terminal opens its default startup window; do script would
+	-- then add a SECOND one (field-found: a stray unused window). When
+	-- Terminal has only just launched, run in that startup window instead —
+	-- but never hijack a window of an already-running Terminal, and only
+	-- reuse one that is sitting idle.
+	set wasRunning to application "Terminal" is running
 	tell application "Terminal"
 		activate
-		set t to do script cmd
+		if not wasRunning and (count of windows) > 0 and busy of selected tab of front window is false then
+			set t to do script cmd in front window
+		else
+			set t to do script cmd
+		end if
 		set theTTY to tty of t
 		try
 			repeat while busy of t
