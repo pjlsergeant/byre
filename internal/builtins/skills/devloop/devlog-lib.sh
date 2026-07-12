@@ -16,8 +16,11 @@
 # unlinked (one level — its target is never touched) so writes can't be
 # redirected elsewhere, any other non-regular node stands down too, and the
 # content is then FORCED atomically (temp + rename — never written through an
-# existing node, never trusting what's there). Returns nonzero only when the
-# directory itself can't be provided; the .gitignore write is best-effort.
+# existing node, never trusting what's there). Returns 0 only when the dir
+# exists AND self-ignores: a caller that writes artifacts into a non-ignoring
+# dir would strand them as committable untracked files (and byre-codereview's
+# tree tripwire would fire on its own temp files), so every degraded outcome
+# is warn + nonzero — callers that can shrug (the firstrun hook) mask it.
 byre_devlog_dir() {
   d="$1/.byre-devlog"
   # A non-directory node at .byre-devlog (a user file, or a planted symlink
@@ -37,10 +40,14 @@ byre_devlog_dir() {
     rm -f "$gi"
   elif [ -e "$gi" ] && [ ! -f "$gi" ]; then
     echo "byre devlog: $gi exists and is not a regular file — leaving it alone; $d is NOT self-ignoring until it is moved" >&2
-    return 0
+    return 1
   fi
   tmp="$d/.gitignore.tmp.$$"
   rm -rf "$tmp"
-  { printf '*\n' > "$tmp" && mv -f "$tmp" "$gi"; } || rm -f "$tmp"
+  if ! { printf '*\n' > "$tmp" && mv -f "$tmp" "$gi"; }; then
+    rm -f "$tmp"
+    echo "byre devlog: could not write $gi — $d is NOT self-ignoring" >&2
+    return 1
+  fi
   return 0
 }
