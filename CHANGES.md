@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.7 -- 2026-07-12
 
 - **`byre config`: ctrl+q quits the form** (pairing with ctrl+s save), and
   the dirty-quit confirmation now arms and confirms on any quit key --
