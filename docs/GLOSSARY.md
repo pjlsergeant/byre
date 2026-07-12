@@ -141,7 +141,7 @@ the chosen agent has a companion skill declaring
 offer; a broken or gate-pending companion omits it). Yes enables the
 companion in `default.config`'s `skills`; no is remembered in
 `shared_auth_declined`, picker-owned there like the favourites, so the
-offer is made at most once per agent. ADR 0023.
+offer is made at most once per agent. ADR 0024.
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts

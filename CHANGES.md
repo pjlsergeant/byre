@@ -2,23 +2,37 @@
 
 ## Unreleased
 
-- **Onboarding offers shared auth** (ADR 0023): when the first-run
+- **Onboarding offers shared auth** (ADR 0024): when the first-run
   picker's chosen agent has a ready shared-auth companion skill (one
-  declaring the new `shared_auth_for` key — claude and codex today),
+  declaring the new `shared_auth_for` key -- claude and codex today),
   it asks "Share one <agent> login across all byre projects on this
   machine (<agent>-shared-auth)? [y/N]" once. Yes enables the
   companion machine-wide (`skills` in `~/.byre/default.config`, written
-  surgically — comments preserved, every edit re-parsed and verified
+  surgically -- comments preserved, every edit re-parsed and verified
   before writing); no is remembered in the picker-owned
   `shared_auth_declined` list, so the offer never nags. The offer
   follows the agent question directly (before "save as default"), and
-  all answers are collected before anything is written — Ctrl-D
+  all answers are collected before anything is written -- Ctrl-D
   anywhere in the picker aborts with no side effects. Fully-flagged
   onboardings (`--template` + `--agent`) keep their zero-prompt
   contract and are never asked. Gemini (OAuth gate-pending) and grok
-  (broken) deliberately don't declare the key and are never offered;
-  existing installs pick the offer up with `byre skill update`.
-
+  (retired, ADR 0023) deliberately don't declare the key and are never
+  offered; existing installs pick the offer up with `byre skill update`.
+- **grok-shared-auth RETIRED** (ADR 0023). The symlinked-credential design
+  failed its field gates: grok rotates a single-use refresh token every ~6h
+  and writes via temp+rename, so the shared copy forks, dies, and the
+  skill's every-launch heal then clobbered working per-box logins with the
+  dead credential. The skill is now a resolvable no-op stub (configs naming
+  it still launch; the picker shows the retirement); the grok skill's login
+  hook removes any symlinked auth.json, healing damaged boxes at next
+  launch. Grok logs in per project -- that path is unaffected and correct.
+  Rebuild designs (auth broker on `GROK_AUTH_PROVIDER_COMMAND`; watcher +
+  refresh jitter) are parked with their gates in
+  `docs/grok-shared-auth-v2-designs.md`; mechanics and field evidence in
+  `docs/agent-credential-mechanics.md` §6. Ride-along corrections: the
+  "~7 days" grok token lifetime in hooks/messages was wrong (~6h access
+  tokens, silent refresh), and `XAI_API_KEY` is a fallback the stored login
+  SHADOWS, not an override (vendor auth guide).
 - **Lifecycle correctness batch** (2026-07-11 external-review triage):
   - `develop` now creates the session container **under the setup lock**
     and starts it after release, closing the window where a concurrent

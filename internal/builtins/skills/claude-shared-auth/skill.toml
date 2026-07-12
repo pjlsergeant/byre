@@ -21,7 +21,7 @@
 description = "Share one Claude login across all your projects (machine-wide token)."
 
 # Offerable at onboarding: when claude is picked as the agent, the first-run
-# picker offers to enable this skill machine-wide (ADR 0023). Declaring the
+# picker offers to enable this skill machine-wide (ADR 0024). Declaring the
 # key vouches the mechanism is ready (verified live, ADR 0017).
 shared_auth_for = "claude"
 

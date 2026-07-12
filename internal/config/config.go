@@ -189,7 +189,7 @@ type Config struct {
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
 	// SharedAuthDeclined lists agent skills whose onboarding shared-auth offer
-	// (ADR 0023) the user declined — so the picker asks each at most once.
+	// (ADR 0024) the user declined — so the picker asks each at most once.
 	// Picker-owned state in ~/.byre/default.config, like the template/agent
 	// favourites: resolveWith strips it from every resolved config no matter
 	// which layer carried it, and only onboarding reads or writes it
@@ -308,7 +308,7 @@ func resolveWith(home string, proj Config) (Config, error) {
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
-	// shared_auth_declined is picker-owned state (ADR 0023), not container
+	// shared_auth_declined is picker-owned state (ADR 0024), not container
 	// config: whatever layer carries it, it never reaches a resolved config —
 	// onboarding reads it straight from default.config, nothing else may.
 	resolved.SharedAuthDeclined = nil
@@ -347,7 +347,7 @@ func loadFile(path string) (Config, error) {
 // Parse decodes one TOML layer from raw bytes, under the same rules as
 // loadFile (an unknown key is an error). Exported so the onboarding surgical
 // writers can pre-check and verify their textual edits against the ONE parser
-// that will actually read the file back (ADR 0023) — a second hand-rolled
+// that will actually read the file back (ADR 0024) — a second hand-rolled
 // decode would drift from these rules.
 func Parse(content []byte) (Config, error) {
 	var c Config

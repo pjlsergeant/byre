@@ -28,11 +28,12 @@
 # (~/.grok/docs/user-guide/02-authentication.md) documents it — but the
 # TOP-LEVEL vendor README lags the binary and omits the flag, so don't "fix"
 # this against that README.
-# NOTE: the credential expires after
-# ~7 days (vendor docs: "Tokens expire after 7 days"); re-auth is the same
-# command. Alternatively a static XAI_API_KEY (from console.x.ai — separate
-# API billing) takes precedence over the file credential; export it via
-# project env to skip file auth entirely.
+# NOTE: access tokens last ~6h and refresh silently via a SINGLE-USE refresh
+# token (the "7 days" in older vendor docs is not the working lifetime;
+# rotation is why grok-shared-auth was retired — ADR 0023). Re-auth, when the
+# chain can't renew, is the same command. Alternatively a static XAI_API_KEY
+# (from console.x.ai — separate API billing) skips file auth; the vendor doc
+# says a stored session login takes precedence over the key, so don't mix.
 
 description = "The Grok CLI agent (Grok Build); login persists per project."
 
@@ -97,8 +98,9 @@ context_target = "/home/dev/.grok-home/AGENTS.md"
 
 # grok auth is NOT seeded from the host (ADR 0007: byre reads nothing from the
 # host). Log in per-box via the device-auth hook above; the .grok state volume
-# persists the login across rebuilds. For one login across all your projects,
-# enable grok-shared-auth alongside this skill.
+# persists the login across rebuilds. There is NO working shared-auth for
+# grok: single-use token rotation killed the file-sharing design (ADR 0023;
+# rebuild designs parked in docs/grok-shared-auth-v2-designs.md).
 
 [[volumes]]
 name = ".grok"

@@ -22,7 +22,7 @@ type Choice struct {
 	Agent       string // "" means none
 	SaveDefault bool
 	// SharedAuthCompanion is the companion skill the shared-auth offer (ADR
-	// 0023) named — "" when the offer wasn't made — and SharedAuth its answer.
+	// 0024) named — "" when the offer wasn't made — and SharedAuth its answer.
 	SharedAuthCompanion string
 	SharedAuth          bool
 }
@@ -106,7 +106,7 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 	return fromNone(v), nil
 }
 
-// OfferSharedAuth asks the one-time shared-auth question (ADR 0023) for the
+// OfferSharedAuth asks the one-time shared-auth question (ADR 0024) for the
 // chosen agent: whether to enable its companion skill machine-wide. One line
 // carrying the whole decision — one login, every byre project, this machine
 // (the answer lands in default.config, not the project), and the mechanism's
