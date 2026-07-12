@@ -98,8 +98,9 @@ context_target = "/home/dev/.grok-home/AGENTS.md"
 
 # grok auth is NOT seeded from the host (ADR 0007: byre reads nothing from the
 # host). Log in per-box via the device-auth hook above; the .grok state volume
-# persists the login across rebuilds. For one login across all your projects,
-# enable grok-shared-auth alongside this skill.
+# persists the login across rebuilds. There is NO working shared-auth for
+# grok: single-use token rotation killed the file-sharing design (ADR 0023;
+# rebuild designs parked in docs/grok-shared-auth-v2-designs.md).
 
 [[volumes]]
 name = ".grok"

@@ -14,9 +14,6 @@
 # after a logout).
 command -v grok >/dev/null 2>&1 || exit 0
 export GROK_HOME="${GROK_HOME:-/home/dev/.grok-home}"
-# A static XAI_API_KEY makes the file login unnecessary (grok uses the key as
-# a fallback when no session credential exists — so don't create one).
-[ -n "$XAI_API_KEY" ] && exit 0
 cred="$GROK_HOME/auth.json"
 # A symlinked credential never counts — drop it so a clean re-login writes a
 # fresh regular file a planted link can't redirect. This also heals boxes the
@@ -24,8 +21,20 @@ cred="$GROK_HOME/auth.json"
 # identity volume now points at a dead credential, and grok's refresh
 # rotation means the shared file can never come back — remove it and log in
 # per box. (The ADR 0017 carve-out that kept identity-volume links is gone
-# with the retirement.)
-[ -L "$cred" ] && rm -f "$cred"
+# with the retirement.) Runs BEFORE the XAI_API_KEY short-circuit below: a
+# stored credential shadows the key, so a dead link left in place would
+# override a working key. Removal is announced, not silent — the link may
+# be the user's own arrangement, and they should know it stopped working.
+if [ -L "$cred" ]; then
+  if rm -f "$cred" 2>/dev/null; then
+    echo "byre: removed symlinked grok credential (symlinks never count; shared-auth is retired, ADR 0023) — grok logs in per project." >&2
+  else
+    echo "byre: WARNING — could not remove symlinked grok credential $cred; it shadows any XAI_API_KEY and grok auth will misbehave until it's removed by hand." >&2
+  fi
+fi
+# A static XAI_API_KEY makes the file login unnecessary (grok uses the key as
+# a fallback when no session credential exists — so don't create one).
+[ -n "$XAI_API_KEY" ] && exit 0
 # Already authenticated? grok has no `login status` probe (unlike codex), so
 # the guard is a shape sniff: auth.json is scope-keyed maps of {"key": token}
 # (the vendor installer's own parser), so a credential-bearing file contains

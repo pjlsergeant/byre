@@ -947,6 +947,31 @@ func TestGrokLoginHookHealsRetiredSymlink(t *testing.T) {
 	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
 		t.Fatal("valid credential must short-circuit the login; one was attempted")
 	}
+
+	// Healing must run BEFORE the XAI_API_KEY short-circuit: a stored
+	// credential shadows the key (vendor auth guide), so a dead link left in
+	// place would override a working key. Link removed, key path taken (no
+	// login attempted).
+	home3 := t.TempDir()
+	cred3 := filepath.Join(home3, "auth.json")
+	if err := os.Symlink(filepath.Join(home3, "nowhere"), cred3); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", hook)
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+":/usr/bin:/bin",
+		"GROK_HOME="+home3,
+		"XAI_API_KEY=xai-static-key",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	if _, err := os.Lstat(cred3); !os.IsNotExist(err) {
+		t.Fatal("API-key boxes must still shed a symlinked credential (it would shadow the key)")
+	}
+	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+		t.Fatal("with XAI_API_KEY set, no file login should be attempted")
+	}
 }
 
 // The claude-shared-auth hook seeds onboarding-complete state on a FRESH
