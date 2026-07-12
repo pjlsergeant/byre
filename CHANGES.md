@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **`byre config`: ctrl+q quits the form** (pairing with ctrl+s save), and
+  the dirty-quit confirmation now arms and confirms on any quit key --
+  esc, ctrl+c, or ctrl+q; the banner names all three.
 - **Onboarding offers shared auth** (ADR 0024): when the first-run
   picker's chosen agent has a ready shared-auth companion skill (one
   declaring the new `shared_auth_for` key -- claude and codex today),
