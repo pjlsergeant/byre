@@ -290,12 +290,13 @@ report_failure_codex() {
 run_resume_codex() {
   local sid="$1"
   echo "Continuing previous review session (codex) — this may take several minutes..."
-  if codex exec resume --skip-git-repo-check --json --sandbox read-only \
-       "$sid" "$PROMPT" < /dev/null > "$DBG" 2>&1; then
+  # The resume subcommand rejects --sandbox ("unexpected argument", clap exit 2
+  # — every resume then fell back to a fresh review, silently), but it takes -c
+  # overrides, and sandbox_mode is the same knob by its config name. It DOES
+  # accept --output-last-message, so the fresh path's extraction works here too.
+  if codex exec resume --skip-git-repo-check --json -c sandbox_mode="read-only" \
+       "$sid" "$PROMPT" --output-last-message "$OUT" < /dev/null > "$DBG" 2>&1; then
     new=$(extract_codex_session); [ -n "$new" ] && [ "$new" != "null" ] && echo "$new" > "$SESSION_FILE"
-    grep '"type":"item.completed"' "$DBG" \
-      | grep -E '"type":"(agent_message|assistant_message)"' | tail -1 \
-      | jq -r '.item.text // .item.output_text // (.item.content[]?.text // empty)' > "$OUT" 2>/dev/null || true
     if [ -s "$OUT" ]; then cat "$OUT"; record_review; else echo "(could not extract final message; raw: $DBG)"; fi
     cleanup
   else
