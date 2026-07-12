@@ -599,6 +599,17 @@ func TestCtrlQQuits(t *testing.T) {
 	if _, cmd = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ}); cmd == nil {
 		t.Fatal("second ctrl+q should discard and quit")
 	}
+
+	// ctrl+c must not clear the armed confirm — a second ctrl+c also quits.
+	m.confirmQuit = false
+	mm, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = mm.(model)
+	if !m.confirmQuit {
+		t.Fatal("first ctrl+c on a dirty form should arm the confirm")
+	}
+	if _, cmd = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Fatal("second ctrl+c should discard and quit")
+	}
 }
 
 // newModel must not report the freshly-opened config as dirty, an unknown engine

@@ -383,7 +383,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key != "esc" && key != "ctrl+q" {
+	if key != "esc" && key != "ctrl+q" && key != "ctrl+c" {
 		m.confirmQuit = false
 	}
 	switch key {
