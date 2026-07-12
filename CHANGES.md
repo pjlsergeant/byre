@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.9 -- 2026-07-12
 
 - **Config UI: ctrl+s and ctrl+q work from every screen.** ctrl+s saves the
   file from anywhere -- on the item and text editors it accepts the open edit
