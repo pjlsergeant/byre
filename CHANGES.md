@@ -18,7 +18,10 @@
   `skills = ["codex", "codereview", ...]`; a rebuild with only devloop
   enabled no longer ships `byre-codereview`. devloop keeps the workflow
   conventions, the diary, and the scratch volume. The two skills share the
-  devlog dir without depending on each other.
+  devlog dir without depending on each other. **Upgrade step**: run
+  `byre skill update` -- a store materialized before the split still holds
+  the old devloop copy, whose `byre-codereview` would silently win over the
+  new skill's at rebuild (and keep recreating `.devloop/`).
 - **`.devloop/` is now `.byre-devlog/`** (breaking, by design): the
   self-ignoring working-tree dir for the agent diary and review log is named
   for byre, not for one skill (glossary: "devlog dir"). There is no automatic
