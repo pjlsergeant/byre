@@ -411,7 +411,6 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// on-disk file, so unsaved structured edits would be lost or clobbered.
 		if m.dirty() {
 			m.errMsg = "save (ctrl+s) or discard changes before editing the file in $EDITOR"
-			m.confirmQuit = false
 			return m, nil
 		}
 		m.errMsg = ""
