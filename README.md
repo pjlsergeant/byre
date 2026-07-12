@@ -57,7 +57,7 @@ You need Docker (or Podman) running on the host.
 
 ## Quickstart
 
-The first `byre develop` in a project asks two questions (template and agent) and remembers your answers: your favourites become the pre-selected defaults. Log the agent in once; the login persists, per project, across
+The first `byre develop` in a project asks a few quick questions (template, agent, and -- for agents that support it -- whether this box shares a machine-wide login) and remembers your answers: your favourites become the pre-selected defaults. Log the agent in once; the login persists, per project, across
 rebuilds. To skip the questions:
 
 ```sh
