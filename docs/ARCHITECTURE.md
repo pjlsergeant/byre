@@ -464,7 +464,6 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   every grant and who granted it, network posture + egress,
                   volumes, raw blocks verbatim-but-flagged, session state.
 
-                      Agent:        claude
                       Project id:   repo-abc123
                       Agent:        claude
                       Engine:       docker
