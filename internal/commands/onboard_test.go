@@ -164,6 +164,41 @@ func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	if !strings.Contains(errBuf.String(), "skills=claude-shared-auth") {
 		t.Fatalf("the wrote-line must show the opted skill:\n%s", errBuf.String())
 	}
+
+	// The ADR's central claim: a yes is NOT machine-wide. A second project,
+	// same home, must still be asked about its own box.
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	s2, _, errBuf2 := testStreams("\nclaude\nn\nn\n", true)
+	if err := onboardIfNeeded(s2, proj2, p2, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf2.String(), "Opt this box into claude shared credentials?") {
+		t.Fatalf("one box's yes must not settle the question for the next box:\n%s", errBuf2.String())
+	}
+}
+
+// A shared_auth_declined left behind by v0.1.7's machine-wide offer is inert:
+// it must not suppress the per-box offer (and must not break onboarding).
+func TestOnboardVestigialDeclinedKeyDoesNotSuppressOffer(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte("shared_auth_declined = [\"claude\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
+	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials?") {
+		t.Fatalf("a v0.1.7 decline must not silence the per-box offer:\n%s", errBuf.String())
+	}
 }
 
 // The flag path prompts too: --agent fixes the agent, the template is asked on

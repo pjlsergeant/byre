@@ -344,10 +344,10 @@ func loadFile(path string) (Config, error) {
 }
 
 // Parse decodes one TOML layer from raw bytes, under the same rules as
-// loadFile (an unknown key is an error). Exported so the onboarding surgical
-// writers can pre-check and verify their textual edits against the ONE parser
-// that will actually read the file back (ADR 0024) — a second hand-rolled
-// decode would drift from these rules.
+// loadFile (an unknown key is an error). ParseFile's in-memory sibling: any
+// caller verifying config content must go through the ONE parser that will
+// actually read the file back — a second hand-rolled decode would drift from
+// these rules.
 func Parse(content []byte) (Config, error) {
 	var c Config
 	md, err := toml.Decode(string(content), &c)

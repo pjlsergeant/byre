@@ -31,8 +31,9 @@
 description = "Share one Gemini login across all your projects (API-key path verified; OAuth path gate-pending, see skill.toml)."
 
 # Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): the OAuth
-# path is still gate-pending above, and the offer would enable this for every
-# gemini user, not just the gate-runners. Declare it once the gate passes.
+# path is still gate-pending above, and the offer would put a gate-pending
+# mechanism in front of every gemini user at onboarding, not just the
+# gate-runners. Declare it once the gate passes.
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-gemini-shared-auth" }
