@@ -45,7 +45,7 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
   alongside bundle sharing (e.g. "how do I eject this skill"). Delivery
-  shape TBD -- likely how devloop's conventions ride in.
+  shape TBD -- likely how devlog's conventions ride in.
 - [ ] **Skill & template bundle sharing + trust surface.** A bundle/install
   format for skills and templates -- today it's built-ins plus hand-dropped
   `~/.byre/skills/<name>/`, and templates have no sharing story at all. Its

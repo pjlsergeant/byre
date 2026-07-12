@@ -937,6 +937,53 @@ func TestDevloopRenamedStub(t *testing.T) {
 	}
 }
 
+// TestDevloopRenameUpgradePath pins the path an EXISTING store takes through
+// the rename: materialization is non-clobbering, so a store holding the full
+// pre-rename devloop keeps it — the stub is NOT automatic (CHANGES says so) —
+// until `byre skill update`, which must swap the old copy for the stub and
+// install devlog alongside. This composition bit once already today (the
+// codereview split's pre-split store clobber), hence its own test.
+func TestDevloopRenameUpgradePath(t *testing.T) {
+	dest := t.TempDir()
+	old := filepath.Join(dest, "devloop")
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in for any pre-rename materialized copy: full skill shape,
+	// content differing from the shipped stub.
+	oldToml := "description = \"Dev-workflow conventions plus the byre-codereview loop.\"\n\n[build]\nfiles = { \"codereview.sh\" = \"/usr/local/bin/byre-codereview\" }\n"
+	if err := os.WriteFile(filepath.Join(old, "skill.toml"), []byte(oldToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-clobbering materialization leaves the old full copy in place.
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(old, "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != oldToml {
+		t.Fatalf("materialization must not clobber the existing devloop copy; got %q", b)
+	}
+
+	// skill update swaps it for the stub and devlog is present.
+	if _, err := UpdateSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	b, err = os.ReadFile(filepath.Join(old, "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "RENAMED to devlog") {
+		t.Errorf("skill update must replace the old devloop with the stub; got %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "devlog", "skill.toml")); err != nil {
+		t.Errorf("devlog must be present after update: %v", err)
+	}
+}
+
 // TestGrokLoginHookHealsRetiredSymlink drives the real grok-login hook with a
 // stub `grok` binary. The retirement (ADR 0023) made the anti-planting rule
 // absolute again: a symlinked auth.json NEVER counts — even a link into the

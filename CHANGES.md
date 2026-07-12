@@ -29,7 +29,10 @@
   a no-op stub keeps configs naming `devloop` resolving (they launch, but
   contribute no diary/conventions/scratch until renamed -- the stub's
   description says so). Scratch volumes are keyed by volume name, so a
-  renamed box picks its data straight back up.
+  renamed box picks its data straight back up. **The stub is not automatic
+  on upgrade**: a store materialized earlier still holds the full old
+  devloop, which keeps winning until the same `byre skill update` the
+  codereview split already requires (below).
 - **`.devloop/` is now `.byre-devlog/`** (breaking, by design): the
   self-ignoring working-tree dir for the agent diary and review log is named
   for byre, not for one skill (glossary: "devlog dir"). There is no automatic
