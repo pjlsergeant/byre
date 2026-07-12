@@ -609,7 +609,7 @@ func TestSharedAuthCompanion(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "claude", "[agent]\ncommand = \"claude\"\nstate = \"s\"\n\n[[volumes]]\nname = \"s\"\nrole = \"state\"\ntarget = \"/home/dev/.claude\"\n", nil)
 	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
-	writeSkill(t, dir, "grok-shared-auth", "description = \"BROKEN — no shared_auth_for, so never offered\"\n", nil)
+	writeSkill(t, dir, "grok-shared-auth", "description = \"RETIRED — no shared_auth_for, so never offered\"\n", nil)
 
 	if got := SharedAuthCompanion(dir, "claude"); got != "claude-shared-auth" {
 		t.Fatalf("SharedAuthCompanion(claude) = %q, want claude-shared-auth", got)
@@ -623,7 +623,7 @@ func TestSharedAuthCompanion(t *testing.T) {
 }
 
 // The builtin declarations are load-bearing: claude/codex offer at onboarding;
-// gemini (OAuth gate-pending) and grok (broken) deliberately must NOT.
+// gemini (OAuth gate-pending) and grok (retired) deliberately must NOT.
 func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "skills")
 	if err := builtins.MaterializeSkills(dir); err != nil {
@@ -633,7 +633,7 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 		"claude": "claude-shared-auth",
 		"codex":  "codex-shared-auth",
 		"gemini": "", // OAuth gate-pending (see gemini-shared-auth/skill.toml)
-		"grok":   "", // broken (see grok-shared-auth/skill.toml)
+		"grok":   "", // retired (see grok-shared-auth/skill.toml)
 	} {
 		if got := SharedAuthCompanion(dir, agent); got != want {
 			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)

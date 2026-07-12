@@ -26,18 +26,34 @@ func WriteProjectConfig(destPath, template, agent string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
-	// O_EXCL: atomically refuse to overwrite an existing config (no Stat/Write
-	// race with a concurrent first-run).
-	f, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	// Sibling temp file, then link(2) into place: the link fails if destPath
+	// exists, keeping the refuse-to-overwrite guarantee atomic (no Stat/Write
+	// race with a concurrent first-run) — and an interrupted write can never
+	// leave a partial byre.config, whose mere existence marks the project as
+	// onboarded and blocks a re-run.
+	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".byre-onboard-*")
 	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.WriteString(b.String()); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return err
+	}
+	if err := os.Link(tmpName, destPath); err != nil {
 		if os.IsExist(err) {
 			return fmt.Errorf("%s already exists; not overwriting", destPath)
 		}
 		return err
 	}
-	defer f.Close()
-	_, err = f.WriteString(b.String())
-	return err
+	return nil
 }
 
 // SaveDefault updates the template/agent scalars in ~/.byre/default.config
