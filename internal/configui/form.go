@@ -383,11 +383,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key != "esc" {
+	if key != "esc" && key != "ctrl+q" {
 		m.confirmQuit = false
 	}
 	switch key {
-	case "ctrl+c", "esc":
+	case "ctrl+c", "esc", "ctrl+q":
 		if m.dirty() && !m.confirmQuit {
 			m.confirmQuit = true // View shows the confirm prompt
 			return m, nil
@@ -560,7 +560,7 @@ func (m model) viewForm() string {
 	b.WriteString("\n")
 	switch {
 	case m.confirmQuit:
-		b.WriteString(errStyle.Render("● Unsaved changes — press esc again to discard, or ctrl+s to save"))
+		b.WriteString(errStyle.Render("● Unsaved changes — press esc/^q again to discard, or ctrl+s to save"))
 	case m.errMsg != "":
 		b.WriteString(errStyle.Render("✗ " + m.errMsg))
 	case m.dirty():
@@ -576,7 +576,7 @@ func (m model) viewForm() string {
 		b.WriteString("\n" + errStyle.Render("⚠ this file has hand-written comments — ^s rewrites it and DROPS them (raw blocks survive; use ^e to edit without losing comments)"))
 	}
 	b.WriteString("\n" + dimStyle.Render("Saves to: "+m.filePath))
-	b.WriteString("\n" + dimStyle.Render("↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · esc quit"))
+	b.WriteString("\n" + dimStyle.Render("↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · ^q quit"))
 	return b.String()
 }
 
