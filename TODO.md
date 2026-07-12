@@ -32,6 +32,11 @@ the rationale lives.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
+- [ ] (S) **docker-host skill** (Pete, 2026-07-12): the ergonomic host-daemon
+  grant -- docker.sock mount + docker CLI + docker-group run_arg (all
+  expressible in skill.toml today), plus a status/launch line that degrades
+  the containment claim precisely (deliberate-escape containment gone;
+  accident-scale isolation intact). Host-verify the socket gid on Linux.
 - [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
   `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
@@ -70,6 +75,10 @@ the rationale lives.
   `runner.IsRootlessPodman` (background: ADR 0008). Today's
   detect-and-refuse stays until this lands; add integration coverage with
   it.
+- [ ] (L) **Service sidecars** (Pete, 2026-07-12): config declares containers
+  byre runs beside the box (postgres, redis, ...) and networks in -- the
+  agent gets endpoints, never the daemon. Covers the compose-deps case
+  without the docker-host grant.
 - [ ] (XL) **Skill & template bundle sharing + trust surface.** A
   bundle/install format for skills and templates; its safety half ships with
   it (how loudly grants surface at install/develop, approval gate or not).
