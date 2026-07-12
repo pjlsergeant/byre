@@ -27,13 +27,16 @@
   contribute no diary/conventions/scratch until renamed -- the stub's
   description says so). Scratch volumes are keyed by volume name, so a
   renamed box picks its data straight back up.
-- **One upgrade step covers both changes above**: run `byre skill update`.
-  A store materialized before this release still holds the old full
-  devloop -- its `byre-codereview` would silently win over the new skill's
-  at rebuild and keep recreating `.devloop/`, and the rename stub is not
-  automatic either (materialization never clobbers an existing store
-  copy). One update swaps in the stub, installs `devlog`, and ends the
-  old-script shadowing.
+- **Upgrading through both changes above takes two steps.** (1) Run
+  `byre skill update`: a store materialized before this release still
+  holds the old full devloop -- its `byre-codereview` would silently win
+  over the new skill's at rebuild and keep recreating `.devloop/`, and
+  the rename stub is not automatic either (materialization never clobbers
+  an existing store copy); the update swaps in the stub and installs
+  `devlog`. (2) Edit each config's `skills` list: `devloop` -> `devlog`,
+  and add `codereview` wherever you want the reviewer -- the update can't
+  do that for you, and until it's done the stub means those boxes launch
+  without diary/conventions/scratch.
 - **`.devloop/` is now `.byre-devlog/`** (breaking, by design): the
   self-ignoring working-tree dir for the agent diary and review log is named
   for byre, not for one skill (glossary: "devlog dir"). There is no automatic
