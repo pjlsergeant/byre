@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.1.8 -- 2026-07-12
 
 - **Consent surfaces stop under-stating scope** (doctrine audit,
   2026-07-12). The adoption review's ⚠ summary now covers every Grant
