@@ -19,8 +19,12 @@ func recorderApp(calls map[string]string) app {
 	return app{
 		dockerfile: func(_ commands.Streams, dir string) error { return note("dockerfile", dir) },
 		dockerrun:  func(_ commands.Streams, dir string) error { return note("dockerrun", dir) },
-		develop: func(_ commands.Streams, dir, tmpl, agent string, selfEdit bool) error {
-			return note("develop", strings.Join([]string{dir, tmpl, agent, boolStr(selfEdit)}, " "))
+		develop: func(_ commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error {
+			sa := "unset"
+			if sharedAuth != nil {
+				sa = boolStr(*sharedAuth)
+			}
+			return note("develop", strings.Join([]string{dir, tmpl, agent, sa, boolStr(selfEdit)}, " "))
 		},
 		config: func(_ commands.Streams, dir string, global bool) error {
 			return note("config", dir+" "+boolStr(global))
@@ -75,12 +79,16 @@ func TestRunDispatch(t *testing.T) {
 	}{
 		{[]string{"dockerfile"}, "dockerfile", "/proj"},
 		{[]string{"dockerrun"}, "dockerrun", "/proj"},
-		{[]string{"develop"}, "develop", "/proj   false"},
-		{[]string{"develop", "--template", "go", "--agent", "codex", "--self-edit"}, "develop", "/proj go codex true"},
+		{[]string{"develop"}, "develop", "/proj   unset false"},
+		{[]string{"develop", "--template", "go", "--agent", "codex", "--self-edit"}, "develop", "/proj go codex unset true"},
+		// --shared-auth is tri-state: unset (ask when interactive), an explicit
+		// yes, or an explicit no — the wiring must preserve which one it was.
+		{[]string{"develop", "--agent", "claude", "--shared-auth"}, "develop", "/proj  claude true false"},
+		{[]string{"develop", "--agent", "claude", "--shared-auth=false"}, "develop", "/proj  claude false false"},
 		// A value-taking flag consumes a following --help (standard
 		// docker/kubectl behavior; ADR 0022, Pete-ratified) — this DISPATCHES,
 		// it does not print help. Do not restore a pre-parse help scan.
-		{[]string{"develop", "--template", "--help"}, "develop", "/proj --help  false"},
+		{[]string{"develop", "--template", "--help"}, "develop", "/proj --help  unset false"},
 		{[]string{"config"}, "config", "/proj false"},
 		{[]string{"config", "--global"}, "config", "/proj true"},
 		{[]string{"status"}, "status", "/proj false"},

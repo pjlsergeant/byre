@@ -17,12 +17,16 @@ import (
 )
 
 // onboardIfNeeded runs the first-run picker (or applies flags) when a project
-// has no byre.config. With BOTH flags it's non-interactive (no prompts at all,
-// including the shared-auth offer); on a TTY it prompts for whatever the flags
-// left open, favourites pre-selected; on a non-TTY with no flags it does
-// nothing (develop proceeds from the cascade defaults).
-func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string) error {
-	anyFlag := flagTemplate != "" || flagAgent != ""
+// has no byre.config. With BOTH axis flags it's non-interactive (no prompts at
+// all, including the shared-auth offer); on a TTY it prompts for whatever the
+// flags left open, favourites pre-selected; on a non-TTY with no flags it does
+// nothing (develop proceeds from the cascade defaults). A given --shared-auth
+// IS the offer's answer (either way), so the question is never asked; a
+// non-TTY partially-flagged run errors instead of guessing the open axis from
+// a favourite — favourites answer prompts, they don't consent for a new
+// project, and there is no prompt to answer on a pipe.
+func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string, flagSharedAuth *bool) error {
+	anyFlag := flagTemplate != "" || flagAgent != "" || flagSharedAuth != nil
 
 	// The project's config lives in the host-side store, NOT the project tree, so
 	// the (rw-mounted) project can't define its own sandbox.
@@ -36,7 +40,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			if c, e := config.Load(projectDir); e == nil && c.Agent != "" {
 				cur = fmt.Sprintf(" (currently agent=%s)", c.Agent)
 			}
-			return fmt.Errorf("this project is already configured%s — --template/--agent only apply when creating a config.\nReconfigure by editing %s, or run 'byre forget' then re-run.", cur, cfgPath)
+			return fmt.Errorf("this project is already configured%s — --template/--agent/--shared-auth only apply when creating a config.\nReconfigure by editing %s, or run 'byre forget' then re-run.", cur, cfgPath)
 		}
 		return nil
 	}
@@ -129,10 +133,18 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		a, aFixed = v, true
 	}
 
-	// Choose any un-flagged axis: prompt for it on a TTY (the picker, just that
-	// axis), or fall back to the favourite on a non-TTY. (At least one axis is
-	// flag-fixed here, so at most one axis prompt happens.) We never silently
-	// inherit the favourite for an un-flagged axis on a TTY.
+	// An un-flagged axis needs an answer, and on a non-TTY nobody can give
+	// one: refuse rather than guess. A favourite is what Enter means at a
+	// prompt — there is no Enter on a pipe, and silently writing it into a
+	// NEW project's config would turn a preference into an unconsented,
+	// persistent choice.
+	if !s.TTY && !(tFixed && aFixed) {
+		return fmt.Errorf("non-interactive onboarding needs both --template and --agent (pass %q to skip one) — run on a TTY to be asked for the rest", "none")
+	}
+
+	// Choose any un-flagged axis: prompt for it on a TTY (the picker, just
+	// that axis). We never silently inherit the favourite for an un-flagged
+	// axis.
 	if s.TTY && (!tFixed || !aFixed) {
 		fmt.Fprintln(s.Err, "byre: no byre.config — choosing the rest interactively (Enter accepts [default]).")
 	}
@@ -150,13 +162,22 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		}
 		a = v
 	}
-	// The shared-auth offer joins the other prompts, BEFORE anything is
-	// written (an EOF mid-prompting aborts with no side effects). Both axes
-	// flag-fixed = the caller asked for a fully non-interactive onboarding
-	// (scripts, wrappers): no prompts means no offer either; a
-	// partially-flagged TTY run was already interactive, so it rides along.
+	// A given --shared-auth IS the answer: apply it (loudly refusing a yes
+	// the chosen agent has no ready companion for) and never ask. Otherwise
+	// the offer joins the other prompts, BEFORE anything is written (an EOF
+	// mid-prompting aborts with no side effects). Both axes flag-fixed = the
+	// caller asked for a fully non-interactive onboarding (scripts,
+	// wrappers): no prompts means no offer either; a partially-flagged TTY
+	// run was already interactive, so it rides along.
 	companion, sharedAuth := "", false
-	if s.TTY && !(tFixed && aFixed) {
+	if flagSharedAuth != nil {
+		if *flagSharedAuth {
+			if companion = skills.SharedAuthCompanion(skillsDir, a); companion == "" {
+				return fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
+			}
+			sharedAuth = true
+		}
+	} else if s.TTY && !(tFixed && aFixed) {
 		var pref bool
 		if companion, pref = companionFor(a); companion != "" {
 			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion, pref)

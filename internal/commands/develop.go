@@ -39,11 +39,13 @@ const ExitRefused = 3
 // lock and run the container in the foreground. If a container is already
 // running for this directory, report it (and how to act) instead of starting one.
 //
-// flagTemplate/flagAgent come from --template/--agent (empty = unspecified).
+// flagTemplate/flagAgent come from --template/--agent (empty = unspecified);
+// flagSharedAuth from --shared-auth (nil = not given: the picker asks when
+// interactive; set = the shared-auth answer itself, no question asked).
 // selfEdit (--self-edit) bind-mounts this project's host-side store
 // (~/.byre/projects/<id>/, not all of ~/.byre) read-write at selfEditTarget so
 // the agent can edit its own byre.config — a deliberate grant.
-func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit bool) error {
+func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool) error {
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
@@ -65,7 +67,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, selfEdit boo
 	}
 	// First-run onboarding: with no host-side config, pick (or apply flags / fall
 	// back to the cascade on non-TTY) and write the store's byre.config.
-	if err := onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent); err != nil {
+	if err := onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth); err != nil {
 		return err
 	}
 	// Validate bind sources before any build/seed side effects: a comma would

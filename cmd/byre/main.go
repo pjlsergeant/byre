@@ -26,7 +26,7 @@ type app struct {
 	dockerfile    func(s commands.Streams, dir string) error
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
-	develop       func(s commands.Streams, dir, tmpl, agent string, selfEdit bool) error
+	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error
 	config        func(s commands.Streams, dir string, global bool) error
 	status        func(s commands.Streams, dir string, selfEdit bool) error
 	reset         func(s commands.Streams, dir string, force bool) error
@@ -183,6 +183,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 func developCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var tmpl, agent string
 	var selfEdit bool
+	var sharedAuth bool
 	c := &cobra.Command{
 		Use:   "develop",
 		Short: "Set up and run the project container in the foreground.",
@@ -190,11 +191,16 @@ func developCmd(a app, dir string, s commands.Streams) *cobra.Command {
 foreground. First run onboards the project (creates its host-side config).`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.develop(s, dir, tmpl, agent, selfEdit)
+			var sharedAuthFlag *bool
+			if cmd.Flags().Changed("shared-auth") {
+				sharedAuthFlag = &sharedAuth
+			}
+			return a.develop(s, dir, tmpl, agent, sharedAuthFlag, selfEdit)
 		},
 	}
 	c.Flags().StringVar(&tmpl, "template", "", `template for a NEW project's config (first run only; "none" to skip)`)
 	c.Flags().StringVar(&agent, "agent", "", `agent for a NEW project's config (first run only; "none" to skip)`)
+	c.Flags().BoolVar(&sharedAuth, "shared-auth", false, `opt a NEW project's box into the chosen agent's shared credentials without the question (=false declines it; first run only)`)
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "mount this project's host-side store read-write so the agent can edit its own byre.config — a deliberate grant, applied on the next develop")
 	return c
 }
