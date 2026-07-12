@@ -82,6 +82,20 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   enabled skills, enter prefills the add editor. Pure documentation, no
   validation. Example targets: `GEMINI_API_KEY`. (ADR 0019 removed the
   original motivating case, `FIREWALL_ALLOW`.)
+- [ ] **Config UI: nest shared-auth companions under their agent** (Pete,
+  2026-07-12): the skills screen renders a `shared_auth_for` skill as an
+  indented child of its agent's row, so the pairing is visible where you
+  enable it. Sketch:
+
+      Agent skills
+        [ ] claude  -- The Claude Code agent; login persists per project.
+            [ ] claude-shared-auth  -- Share one Claude login across all
+                your projects (machine volume)
+
+- [ ] **Config UI: global keys** (Pete, 2026-07-12): ctrl+s saves from
+  anywhere (not just the top-level form); ctrl+q jumps up one level from
+  anywhere (screen -> form -> quit, with the existing dirty-quit confirm
+  at the top).
 - [ ] **Config UI: env secret-masking.** env values render in plaintext in
   the form; mask them (reveal on demand) so a shoulder-surf or screenshot
   doesn't leak tokens.
