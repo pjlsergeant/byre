@@ -15,18 +15,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
-- [ ] **URGENT: byre-codereview `--continue` never resumes** (Pete,
-  2026-07-12) — every `--continue` prints "Resume failed — falling back
-  to a fresh review" (codex reviewer; 3 attempts during the shared-auth
-  branch review + 2 more during the bare-reviews merge, this box). The
-  loop still converges but each round pays a cold start and loses the
-  reviewer's session context — and the fallback is quiet enough to go
-  unnoticed. Diagnose: is the stored session id (.byre-devlog/
-  .review-session) stale/invalid, did the codex CLI's resume interface
-  change, or did the script's update break the resume path? Fix or make
-  the failure loud. The script now lives in the codereview skill
-  (bare-reviews merged 2026-07-12); fix it there. Deliberately deferred
-  out of the bare-reviews session (Pete's call).
 - [ ] **byre-codereview: pre-flight grok auth probe/timeout** — expired
   auth = headless HANG on a device prompt today, silent in background runs
   (the live device code lands in .byre-devlog/.dbg.*). Retirement removed the
