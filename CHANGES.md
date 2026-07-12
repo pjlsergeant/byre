@@ -13,15 +13,12 @@
   tripwire, and the review log (tagged "raw") all still apply; the review
   policy is whatever your prompt says.
 - **`byre-codereview` is its own skill** (behavior change for devloop users):
-  the review script and its loop conventions moved from the devloop skill to
-  a new `codereview` builtin. A box that wants the reviewer now enables
-  `skills = ["codex", "codereview", ...]`; a rebuild with only devloop
-  enabled no longer ships `byre-codereview`. devloop keeps the workflow
-  conventions, the diary, and the scratch volume. The two skills share the
-  devlog dir without depending on each other. **Upgrade step**: run
-  `byre skill update` -- a store materialized before the split still holds
-  the old devloop copy, whose `byre-codereview` would silently win over the
-  new skill's at rebuild (and keep recreating `.devloop/`).
+  the review script and its loop conventions moved out of the old devloop
+  skill into a new `codereview` builtin. A box that wants the reviewer now
+  enables `skills = ["codex", "codereview", ...]`; the dev-workflow half
+  (conventions, diary, scratch volume) stays behind in what is now the
+  `devlog` skill (renamed in this same release -- next bullet). The two
+  skills share the devlog dir without depending on each other.
 - **The devloop skill is now `devlog`**: the dev-workflow skill (diary,
   devlog dir bootstrap, scratch volume) is named for the devlog dir it
   curates -- devloop-the-skill next to devlog-the-dir was a two-letter
@@ -29,10 +26,14 @@
   a no-op stub keeps configs naming `devloop` resolving (they launch, but
   contribute no diary/conventions/scratch until renamed -- the stub's
   description says so). Scratch volumes are keyed by volume name, so a
-  renamed box picks its data straight back up. **The stub is not automatic
-  on upgrade**: a store materialized earlier still holds the full old
-  devloop, which keeps winning until the same `byre skill update` the
-  codereview split already requires (below).
+  renamed box picks its data straight back up.
+- **One upgrade step covers both changes above**: run `byre skill update`.
+  A store materialized before this release still holds the old full
+  devloop -- its `byre-codereview` would silently win over the new skill's
+  at rebuild and keep recreating `.devloop/`, and the rename stub is not
+  automatic either (materialization never clobbers an existing store
+  copy). One update swaps in the stub, installs `devlog`, and ends the
+  old-script shadowing.
 - **`.devloop/` is now `.byre-devlog/`** (breaking, by design): the
   self-ignoring working-tree dir for the agent diary and review log is named
   for byre, not for one skill (glossary: "devlog dir"). There is no automatic
