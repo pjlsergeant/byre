@@ -241,9 +241,11 @@ machine, rent one.)*
 tldr: `byre config` and enable the relevant _x-shared-auth_ skill(s) for the
 agent(s) you'll use on the box.
 
-By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth, grok-shared-auth) move that to once per
+By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per
 machine. The login lives in a shared volume that reset/forget deliberately never
 touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
+(Grok has no shared-auth: its token rotation can't be file-shared, so it logs
+in per project -- [ADR 0023](docs/adr/0023-grok-shared-auth-retired.md).)
 
 ### Paste images and files into the box?
 

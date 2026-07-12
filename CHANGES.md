@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **grok-shared-auth RETIRED** (ADR 0023). The symlinked-credential design
+  failed its field gates: grok rotates a single-use refresh token every ~6h
+  and writes via temp+rename, so the shared copy forks, dies, and the
+  skill's every-launch heal then clobbered working per-box logins with the
+  dead credential. The skill is now a resolvable no-op stub (configs naming
+  it still launch; the picker shows the retirement); the grok skill's login
+  hook removes any symlinked auth.json, healing damaged boxes at next
+  launch. Grok logs in per project — that path is unaffected and correct.
+  Rebuild designs (auth broker on `GROK_AUTH_PROVIDER_COMMAND`; watcher +
+  refresh jitter) are parked with their gates in
+  `docs/grok-shared-auth-v2-designs.md`; mechanics and field evidence in
+  `docs/agent-credential-mechanics.md` §6. Ride-along corrections: the
+  "~7 days" grok token lifetime in hooks/messages was wrong (~6h access
+  tokens, silent refresh), and `XAI_API_KEY` is a fallback the stored login
+  SHADOWS, not an override (vendor auth guide).
 - **Lifecycle correctness batch** (2026-07-11 external-review triage):
   - `develop` now creates the session container **under the setup lock**
     and starts it after release, closing the window where a concurrent

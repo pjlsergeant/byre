@@ -345,7 +345,7 @@ run_resume_grok() {
 # ordinary error lines and would send people into a pointless re-login loop.
 report_failure_grok() {
   if grep -qiE 'token_expired|refresh token|not logged in|sign in|401|invalid api key' "$DBG" 2>/dev/null; then
-    echo "byre-codereview: grok may need re-authentication (its tokens expire after ~7 days)." >&2
+    echo "byre-codereview: grok may need re-authentication (its ~6h tokens refresh silently until the chain dies)." >&2
     echo "  Run 'byre shell', then: grok login --device-auth" >&2
     echo "  Debug log: $DBG" >&2
   else

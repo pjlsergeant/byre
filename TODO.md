@@ -15,30 +15,22 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
-- [ ] **URGENT: rebuild grok-shared-auth on the API-key path** (Pete,
-  2026-07-10). The symlinked-auth.json design FAILED ITS GATE in the field
-  (twice in one day on the byre-dev box): grok's refresh rotation is
-  single-use and does NOT propagate through the shared file, so the shared
-  credential is dead within ~6h of whoever authed last ("ServerRejected",
-  unrecoverable) — and the firstrun hook's every-launch heal then CLOBBERS
-  working per-box logins with the corpse ("shared wins" was designed for
-  logout-forks, not for a stale shared copy). Presents as "grok randomly
-  breaks", hangs headless runs on an interactive device prompt. Evidence:
-  2026-07-10 diary; shared file /home/dev/.byre-identity/grok/auth.json
-  mtime Jul 9 18:55 vs its 00:55 expiry; ~/.grok-home/logs/unified.jsonl
-  ("auth recovery: disk token expired" / "refresh_chain short-circuit on
-  permanent failure"). The fix: drop the symlink mechanism entirely and
-  ride grok's env-based API-key auth (skips file auth; rotation-immune;
-  mirrors claude-shared-auth's token-not-files shape — the skill.toml
-  already notes the env path). Until rebuilt: the skill is a footgun —
-  update its description to say so (or pull it from the picker), and note
-  that the grok skill ITSELF is fine (per-box plain-file logins rotate
-  correctly). Related cheap fixes to ride along: byre-codereview grows a
-  pre-flight grok auth probe/timeout (expired auth = headless HANG on a
-  device prompt today, silent in background runs; the live device code
-  lands in .devloop/.dbg.*), and its "~7 days" token-lifetime comment is
-  wrong (~6h access tokens). Record the mechanics in
-  docs/agent-credential-mechanics.md when the fix lands.
+- [x] ~~**URGENT: rebuild grok-shared-auth on the API-key path**~~ (Pete,
+  2026-07-10) — RESOLVED BY RETIREMENT instead, 2026-07-12 (ADR 0023). The
+  API-key path was RULED OUT on cost (xAI API billing is separate from the
+  sub, ~50x at agent volumes); the skill is now a resolvable no-op stub and
+  grok-login.sh removes any symlinked auth.json (heals clobbered boxes at
+  next launch). Per-box logins are the supported shape. Two rebuild designs
+  parked in docs/grok-shared-auth-v2-designs.md (see Parked); field
+  mechanics recorded in docs/agent-credential-mechanics.md §6. The "~7
+  days" lifetime comments are fixed (~6h access tokens). Still open, next
+  item:
+- [ ] **byre-codereview: pre-flight grok auth probe/timeout** — expired
+  auth = headless HANG on a device prompt today, silent in background runs
+  (the live device code lands in .devloop/.dbg.*). Retirement removed the
+  shared-corpse *cause*, but any per-box chain that dies still hangs the
+  reviewer the same way. Cheap: a bounded `timeout ... grok -p PONG` probe
+  before the review, bail with the re-auth hint on failure.
 - [ ] **`byre deliver` follow-on tranches** (v1 + the deliver app
   SHIPPED 2026-07-10/11 — rationale ADR 0021 incl. field amendments,
   user guide docs/deliver.md; the docs/deliver/ design workspace is
@@ -154,6 +146,14 @@ Disciplines and tripwires, not tasks.
 Decided negatives, recorded so they don't get re-raised. Rationale lives in
 the docs cited and in git history.
 
+- **grok-shared-auth rebuild** -- PARKED 2026-07-12 (ADR 0023), ideas for a
+  future build, not a decided negative. Two gated designs in
+  docs/grok-shared-auth-v2-designs.md: auth broker on grok's
+  `GROK_AUTH_PROVIDER_COMMAND` seam (no resident process, closes the
+  refresh race; design-killer gate: does grok re-invoke the provider when
+  the token dies?) and fork-shipping watcher + refresh jitter (accepts a
+  rare cold-start race). Run the gates BEFORE building; get second
+  opinions. The `XAI_API_KEY` path stays ruled out on cost (~50x the sub).
 - **Secret-manager seed backend** (`pass` / resolved-reference seed kind) --
   host-path + config-literal seeding covers the single-user case. Design
   constraint if ever revived: the seed-source model reserves room for a

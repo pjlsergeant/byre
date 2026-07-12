@@ -9,41 +9,31 @@
 # rebuilds). Best-effort: skip with Ctrl-C (or if it fails/times out) and the
 # box still launches — re-auth later with `grok login --device-auth` (plain
 # `grok login` starts a browser-redirect flow that cannot complete in a
-# no-browser sandbox). NOTE: grok credentials expire after ~7 days, so this
-# command is also the routine re-auth path, not just first-run.
+# no-browser sandbox). NOTE: grok access tokens last ~6h and refresh silently;
+# --device-auth is only needed again when the chain can no longer renew (or
+# after a logout).
 command -v grok >/dev/null 2>&1 || exit 0
 export GROK_HOME="${GROK_HOME:-/home/dev/.grok-home}"
-# A static XAI_API_KEY takes precedence over the file credential — with one
-# set, the file login is unnecessary.
+# A static XAI_API_KEY makes the file login unnecessary (grok uses the key as
+# a fallback when no session credential exists — so don't create one).
 [ -n "$XAI_API_KEY" ] && exit 0
 cred="$GROK_HOME/auth.json"
-# A symlinked credential must never count — drop it so a clean re-login writes a
-# fresh regular file a planted link can't redirect. ONE exception (ADR 0017):
-# grok-shared-auth's own link into the identity volume is legitimate, and a
-# DANGLING one is its expected first-login state (the login below writes
-# through it into the shared volume) — it must be kept, never removed. The
-# narrowing is accepted: the agent can already read the credential the link
-# would redirect.
-shared_auth=""
-if [ -L "$cred" ]; then
-  # Canonicalize the target's PARENT dir (the final auth.json may be absent --
-  # dangling is the expected first-login state); a lexical prefix check would
-  # accept planted ..-traversals and reject legitimate relative links.
-  # Relative targets resolve from the link's own directory.
-  target="$(readlink "$cred")"
-  tdir="$(cd "$GROK_HOME" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || tdir=""
-  case "$tdir/" in
-  /home/dev/.byre-identity/*) shared_auth=1 ;;
-  *) rm -f "$cred" ;;
-  esac
-fi
+# A symlinked credential never counts — drop it so a clean re-login writes a
+# fresh regular file a planted link can't redirect. This also heals boxes the
+# retired grok-shared-auth skill damaged (ADR 0023): its link into the
+# identity volume now points at a dead credential, and grok's refresh
+# rotation means the shared file can never come back — remove it and log in
+# per box. (The ADR 0017 carve-out that kept identity-volume links is gone
+# with the retirement.)
+[ -L "$cred" ] && rm -f "$cred"
 # Already authenticated? grok has no `login status` probe (unlike codex), so
 # the guard is a shape sniff: auth.json is scope-keyed maps of {"key": token}
 # (the vendor installer's own parser), so a credential-bearing file contains
 # a "key" member. This catches the empty/truncated artifacts an interrupted
 # login could leave (which a bare -s test would wrongly count as logged in)
-# but not an EXPIRED token — grok tokens last ~7 days — which surfaces at use
-# time, where the fix is the same command: `grok login --device-auth`.
+# but not a chain that can no longer refresh — that surfaces at use time
+# (headless grok HANGS on a device prompt then; field-observed 2026-07-10),
+# where the fix is the same command: `grok login --device-auth`.
 [ -s "$cred" ] && grep -q '"key"' "$cred" 2>/dev/null && exit 0
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
@@ -52,11 +42,7 @@ trap 'echo; echo "byre: grok login skipped. To do it later, open another termina
 
 echo ""
 echo "=== byre: first-run Grok login ==="
-if [ -n "$shared_auth" ]; then
-  echo "Authorize below; stored machine-wide (shared-auth: all your byre projects). Ctrl-C to skip."
-else
-  echo "Authorize below; stored per-project, survives rebuilds. Ctrl-C to skip."
-fi
+echo "Authorize below; stored per-project, survives rebuilds. Ctrl-C to skip."
 echo ""
 # Bound the wait so a stale/unused device code can't hold the box open for long;
 # on timeout/failure we fall through to launch. --foreground keeps grok in the

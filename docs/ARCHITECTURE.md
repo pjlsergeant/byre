@@ -354,14 +354,16 @@ copy-semantics breaks rotating OAuth tokens): agents log in once in the
 box and the state volume persists the login per-project. `seed_prefs`
 (ADR 0013) is the curated, non-secret exception for agent prefs. The
 **shared-auth companion skills** (`claude-shared-auth`,
-`codex-shared-auth`, `gemini-shared-auth`, `grok-shared-auth`; ADR 0017)
+`codex-shared-auth`, `gemini-shared-auth`; ADR 0017)
 make one login
 serve every project WITHOUT host copying: the credential lives in a
 machine-scoped identity volume and byre reads nothing from the host --
-Codex, Gemini, and Grok log in once in any box (the credential lands in
+Codex and Gemini log in once in any box (the credential lands in
 the shared volume through symlinks; Gemini's API-key path is verified,
-Gemini-OAuth and Grok sharing gate-pending -- see the skills and ADR
-0017's verification record); Claude uses a user-minted `claude
+Gemini-OAuth gate-pending -- see the skills and ADR
+0017's verification record); Grok has NO shared-auth (its single-use
+rotation failed the file-sharing gates in the field; retired, ADR 0023);
+Claude uses a user-minted `claude
 setup-token` pasted at a
 first-run prompt and exported to the agent process by a **launch env
 hook**

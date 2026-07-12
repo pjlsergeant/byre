@@ -1,54 +1,26 @@
-# Built-in companion skill: grok-shared-auth (ADR 0017).
+# Built-in companion skill: grok-shared-auth — RETIRED (ADR 0023).
 #
-# One Grok login for every byre project on this machine. Enabled ALONGSIDE the
-# grok skill (skills = ["grok-shared-auth"], typically in
-# ~/.byre/default.config). Mechanism (mirrors codex-shared-auth):
-# $GROK_HOME/auth.json becomes a symlink into the machine-scoped identity
-# volume; the first `grok login --device-auth` in any box writes through the
-# dangling link into the shared volume. Grok's short token expiry (~6h access
-# tokens) was the case FOR sharing: re-auth once per machine, not per box.
+# v1 shared one Grok login across boxes the codex way: $GROK_HOME/auth.json
+# symlinked into a machine-scoped identity volume. It FAILED ITS FIELD GATE
+# (2026-07-10, twice in one day): grok refreshes its OAuth pair every ~6h by
+# spending a SINGLE-USE refresh token and writing the result via temp+rename
+# — which replaces the symlink with a private local file. The rotated pair
+# never reaches the shared volume, the shared copy's chain dies within hours
+# ("ServerRejected", unrecoverable), and v1's every-launch symlink heal then
+# clobbered working per-box logins with the corpse. Full mechanics:
+# docs/agent-credential-mechanics.md; decision record: docs/adr/0023.
 #
-# 🛑 GATE FAILED IN THE FIELD (2026-07-10, twice in one day; see TODO.md):
-# grok's refresh rotation is single-use and does NOT propagate through the
-# shared file, so the shared credential dies within hours of whoever authed
-# last ("ServerRejected", unrecoverable) — and the firstrun heal then CLOBBERS
-# working per-box logins with the corpse. DO NOT ENABLE until this skill is
-# rebuilt on grok's env-based API-key path (rotation-immune, mirrors
-# claude-shared-auth). The plain grok skill is fine: per-box logins rotate
-# correctly. The original gate framing is kept below for the record.
+# This stub stays so a config naming "grok-shared-auth" still resolves — it
+# contributes NOTHING (no hooks, no volumes; boxes fall back to per-box
+# logins, which rotate correctly). The grok skill's own login hook now
+# removes any symlinked auth.json, healing boxes v1 damaged. The old
+# machine volume (byre-machine-u<uid>-grok-identity) is no longer mounted;
+# it holds only the dead credential and can be removed by hand.
 #
-# ⚠ GATE PENDING (ADR 0017 / docs/agent-credential-mechanics.md): the Grok CLI
-# is closed source, so the two claims the symlink mechanism rests on are
-# UNVERIFIED — this skill ships to RUN the gates, not because they passed:
-#   1. Write pattern — does the CLI write auth.json IN PLACE (the symlink
-#      survives, codex-shaped) or via temp+rename (the symlink is replaced by
-#      a regular file and the credential silently forks, Claude-shaped)?
-#      Cheap gate: log in via the firstrun hook, then confirm auth.json is
-#      still a symlink and the credential landed in the identity volume.
-#   2. Refresh rotation — tokens expire after ~7 days and refresh silently
-#      via the stored refresh_token; whether refresh tokens are single-use is
-#      unknown. Gate: two concurrent boxes, force a refresh (set
-#      GROK_AUTH_EARLY_INVALIDATION_SECS very high so the token always reads
-#      as expiring), confirm neither session dies. Record results in ADR 0017.
-# Favorable evidence: the CLI maintains an auth.json.lock beside the
-# credential (some cross-process write coordination exists — semantics
-# unverified, and the lock file stays per-box local, so cross-box refreshes
-# race at worst codex-benignly). A static XAI_API_KEY is the rotation-proof
-# fallback (separate API billing, console.x.ai).
-#
-# The firstrun hook re-asserts the symlink EVERY launch, healing the
-# logout-fork: `grok logout` clears the credential, and a later login would
-# otherwise write a local file, silently forking the identity. The grok
-# skill's own login hook keeps its anti-planting symlink removal for any
-# OTHER symlink; links into /home/dev/.byre-identity/ are recognized as ours.
+# Two rebuild designs are PARKED, not dead — an auth broker riding grok's
+# GROK_AUTH_PROVIDER_COMMAND seam, and a fork-shipping watcher + refresh
+# jitter: docs/grok-shared-auth-v2-designs.md. (The env API-key path is
+# ruled out: xAI API billing is separate from the subscription and ~50x the
+# cost at agent volumes.)
 
-description = "BROKEN — failed its field gate: the shared login dies within hours and clobbers per-box logins. Don't enable; rebuild pending (see skill.toml)."
-
-[build]
-files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-grok-shared-auth" }
-
-[[volumes]]
-name = "grok-identity"
-role = "state"
-target = "/home/dev/.byre-identity/grok"
-scope = "machine"
+description = "RETIRED — grok's single-use token rotation can't be file-shared (2026-07-10 field failure; ADR 0023). Boxes log in per project; rebuild designs are parked in docs/grok-shared-auth-v2-designs.md."
