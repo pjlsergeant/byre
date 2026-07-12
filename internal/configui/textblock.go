@@ -18,6 +18,10 @@ func (m model) openText(f fieldID) model {
 	m.ta.Focus() // else the textarea ignores typing
 	m.mode = modeText
 	m.status = ""
+	// Same rule as the other screen entries: a stale form error must not ride
+	// in (the overlay doesn't render errMsg, so it would lurk invisibly and
+	// reappear on cancel).
+	m.errMsg = ""
 	return m
 }
 

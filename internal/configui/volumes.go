@@ -60,6 +60,13 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// A clear is destructive, so it takes an explicit y/n confirm.
 	if m.volPendClear >= 0 {
 		switch msg.String() {
+		case "ctrl+s":
+			// ctrl+s means save on every screen, including mid-confirm — but it
+			// is not a "y": the pending destructive question resolves in the
+			// safe direction (cancelled) so the Saved ✓ note has room to show.
+			m.volPendClear = -1
+			m.volErr = ""
+			return m.save(), nil
 		case "y", "Y":
 			vol := m.volList[m.volPendClear]
 			m.volPendClear = -1

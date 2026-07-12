@@ -1003,7 +1003,11 @@ func TestCtrlQGoesUpOneLevel(t *testing.T) {
 		t.Error("ctrl+q in the item editor should cancel to the list")
 	}
 	m.mode = modeForm
+	m.errMsg = "stale"
 	m = m.openText(fRunArgs)
+	if m.errMsg != "" {
+		t.Error("opening the text overlay must clear a stale form error (it renders nowhere in the overlay)")
+	}
 	if mm, _ := m.updateText(ctrlQ); mm.(model).mode != modeForm {
 		t.Error("ctrl+q in the text overlay should cancel to the form")
 	}
@@ -1079,6 +1083,21 @@ func TestCtrlSSavesFromSubScreens(t *testing.T) {
 	}
 	if back, _ := config.ParseFile(path); len(back.Apt) != 2 {
 		t.Fatalf("invalid item must not be saved around: %v", back.Apt)
+	}
+
+	// Mid volume-clear confirm: ctrl+s still saves, resolving the pending
+	// destructive question in the safe direction (cancelled, not confirmed).
+	m.mode = modeVolumes
+	m.volList = []VolumeStatus{{Name: ".x", Exists: true}}
+	m.volPendClear = 0
+	m.apt = append(m.apt, "curl")
+	mm, _ = m.updateVolumes(ctrlS)
+	m = mm.(model)
+	if m.volPendClear != -1 || m.mode != modeVolumes {
+		t.Fatalf("ctrl+s mid clear-confirm should cancel the confirm and stay (pend=%d mode=%v)", m.volPendClear, m.mode)
+	}
+	if m.dirty() {
+		t.Fatal("ctrl+s mid clear-confirm should have saved")
 	}
 
 	// Text overlay: ctrl+s accepts the buffer and saves.
