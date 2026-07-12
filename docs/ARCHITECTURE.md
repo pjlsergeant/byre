@@ -371,13 +371,14 @@ hook**
 immediately before exec -- the chassis mechanism for skills that must
 put env into the agent process). A companion whose mechanism is ready
 declares `shared_auth_for = "<agent>"` in its skill.toml, and the
-first-run picker then asks, per box, whether to opt that box into the
-shared credentials -- yes puts the companion in the project's
-`byre.config` `skills`. Save-as-default carries the answer machine-wide
-(`default.config`'s `skills`, or `shared_auth_declined` for a saved no);
-either saved default suppresses the offer on later boxes (ADR 0025).
-Gemini-OAuth (gate-pending) and grok (retired) deliberately
-don't declare it.
+first-run picker then asks, at every box's onboarding, whether to opt
+that box in -- yes puts the companion in the project's `byre.config`
+`skills`, the only grant the answer makes. Save-as-default stores the
+answer as a favourite (the picker-owned `shared_auth` list) that
+prefills the next box's offer; the offer is skipped only when the
+companion is already hand-granted machine-wide in `default.config`
+`skills`, a key the picker never writes (ADR 0025). Gemini-OAuth
+(gate-pending) and grok (retired) deliberately don't declare it.
 
 ## The chassis
 

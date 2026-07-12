@@ -2,26 +2,27 @@
 
 ## Unreleased
 
-- **The shared-auth offer is per box; save-default carries the
-  preference** (ADR 0025, rescoping v0.1.7's ADR 0024). The onboarding
-  question is now "Opt this box into <agent> shared credentials?
-  [y/N]": yes puts the companion skill in **this project's**
-  `byre.config` `skills` (the same representation as a hand-enabled
-  skill, written in the same atomic byre.config creation); no enables
-  nothing. The offer itself never writes machine-level state -- v0.1.7
-  had one project's answer silently set a machine-wide default,
-  stretching a single box's consent across all of them. Scaling up now
-  rides the question that already exists for it: saying yes to "Save
-  these as your default for new projects?" saves ALL the answers --
-  template, agent, and the shared-auth one. A saved yes enables the
-  companion machine-wide (`default.config` `skills`; new boxes get
-  shared credentials and the offer stops), a saved no records the
-  agent in `shared_auth_declined` (new boxes aren't offered); the save
-  confirmation states the effect and where to undo it, and deleting
-  either entry re-arms the offer. v0.1.7's records read exactly like
-  those saved defaults, so upgrading changes no one's effective
-  behavior. The save question now also appears when only the
-  shared-auth answer is news (template/agent matching the favourites).
+- **The shared-auth offer is per box; the saved answer is a favourite,
+  never a grant** (ADR 0025, rescoping v0.1.7's ADR 0024). Every box's
+  onboarding asks "Opt this box into <agent> shared credentials?": yes
+  puts the companion skill in **this project's** `byre.config` `skills`
+  (the same representation as a hand-enabled skill, written in the same
+  atomic byre.config creation) -- the only grant the answer ever makes;
+  no writes nothing. Saying yes to "Save these as your default for new
+  projects?" saves the answer alongside the template/agent favourites
+  (the picker-owned `shared_auth` list): the next box's offer then
+  prefills [Y/n], so opting in costs one Enter -- but every box still
+  gets its own question and its own byre.config entry. The picker never
+  writes `default.config`'s `skills`; that stays a deliberate hand-made
+  (or `byre config --global`) machine-wide grant, and is the one thing
+  that suppresses the offer (the cascade already covers the box). This
+  replaces v0.1.7's behavior, where one project's answer silently set a
+  machine-wide default: a "y" enabled the companion for every future
+  box and an "n" was a permanent never-ask (`shared_auth_declined` --
+  now vestigial: still parsed, read by nothing; old decliners are
+  simply asked again per box, default No; an old machine-wide "y" keeps
+  working as the hand-grant it is). Unrecognized input at a prefilled
+  [Y/n] never opts in.
 
 ## v0.1.7 -- 2026-07-12
 

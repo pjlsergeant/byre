@@ -259,19 +259,41 @@ func TestSaveDefaultRemovesOnEmpty(t *testing.T) {
 
 func TestOfferSharedAuth(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude")
+	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude", false)
 	if err != nil || !yes {
 		t.Fatalf("yes = %v, err = %v", yes, err)
 	}
 	// The wording must carry the real scope of the write: this box, opting
 	// into an existing shared mechanism — never "all projects".
-	if !strings.Contains(out.String(), "Opt this box into claude shared credentials?") {
-		t.Fatalf("offer must be the per-box question:\n%s", out.String())
+	if !strings.Contains(out.String(), "Opt this box into claude shared credentials? [y/N]") {
+		t.Fatalf("offer must be the per-box question, defaulting No:\n%s", out.String())
 	}
-	// Default is No: an empty answer declines.
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude")
+	// No preference: an empty answer declines.
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", false)
 	if err != nil || yes {
 		t.Fatalf("empty answer must decline, got yes = %v, err = %v", yes, err)
+	}
+}
+
+// A saved yes-preference prefills the offer like a favourite: Enter accepts
+// it, an explicit n overrides it, and unrecognized input never lands on the
+// granting side whatever the default.
+func TestOfferSharedAuthPrefilledYes(t *testing.T) {
+	var out bytes.Buffer
+	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", true)
+	if err != nil || !yes {
+		t.Fatalf("Enter must accept the saved yes: yes = %v, err = %v", yes, err)
+	}
+	if !strings.Contains(out.String(), "[Y/n]") {
+		t.Fatalf("a saved yes must show as the prefilled default:\n%s", out.String())
+	}
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", true)
+	if err != nil || yes {
+		t.Fatalf("explicit n must override the preference: yes = %v, err = %v", yes, err)
+	}
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", true)
+	if err != nil || yes {
+		t.Fatalf("garbage must never grant, even under a yes default: yes = %v, err = %v", yes, err)
 	}
 }
 
@@ -287,7 +309,7 @@ func TestPromptsShareABufferedReader(t *testing.T) {
 	if c.Template != "node" || c.Agent != "codex" || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	yes, err := OfferSharedAuth(&out, in, "codex")
+	yes, err := OfferSharedAuth(&out, in, "codex", false)
 	if err != nil || !yes {
 		t.Fatalf("the shared-auth answer was buffered by Pick's reader and must still be readable: yes = %v, err = %v", yes, err)
 	}
@@ -298,11 +320,11 @@ func TestPromptsShareABufferedReader(t *testing.T) {
 // skipped when companionFor names no companion.
 func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	var out bytes.Buffer
-	companions := func(agent string) string {
+	companions := func(agent string) (string, bool) {
 		if agent == "codex" {
-			return "codex-shared-auth"
+			return "codex-shared-auth", false
 		}
-		return ""
+		return "", false
 	}
 	// Template none, agent codex, shared auth y, save-default n.
 	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\ncodex\ny\nn\n")), []string{"go"}, []string{"claude", "codex"}, fav(""), fav(""), companions)
@@ -326,27 +348,48 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	}
 }
 
-// A shared-auth answer is always news (the offer's gate skips agents whose
-// answer is already the machine default), so the save-default question must
-// appear even when template and agent exactly match the stored favourites —
-// otherwise a favourites user could never save their shared-auth preference.
-func TestPickAsksSaveWhenOnlySharedAuthIsNews(t *testing.T) {
-	var out bytes.Buffer
-	companions := func(agent string) string {
-		if agent == "codex" {
-			return "codex-shared-auth"
+// The save question follows one rule for every axis of "these": ask exactly
+// when saving would change stored state. A shared-auth answer differing from
+// its saved preference is news even when template/agent match the favourites;
+// an answer matching the preference is not.
+func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
+	companionsWithPref := func(pref bool) func(string) (string, bool) {
+		return func(agent string) (string, bool) {
+			if agent == "codex" {
+				return "codex-shared-auth", pref
+			}
+			return "", false
 		}
-		return ""
 	}
-	// Template and agent accepted from favourites; shared auth y; save y.
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\ny\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companions)
+
+	// No stored preference, answer y: news — save question appears.
+	var out bytes.Buffer
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\ny\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companionsWithPref(false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Save these") {
-		t.Fatalf("the shared-auth answer is unsaved news — the save question must appear:\n%s", out.String())
+	if !strings.Contains(out.String(), "Save these") || !c.SaveDefault || !c.SharedAuth {
+		t.Fatalf("an answer differing from the stored preference is news: %+v\n%s", c, out.String())
 	}
-	if !c.SaveDefault || !c.SharedAuth || c.SharedAuthCompanion != "codex-shared-auth" {
-		t.Fatalf("choice = %+v", c)
+
+	// Stored yes-preference, Enter accepts it: everything matches stored
+	// state — no save question, and the input carries no answer for one.
+	out.Reset()
+	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\n\n\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companionsWithPref(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Save these") || c.SaveDefault || !c.SharedAuth {
+		t.Fatalf("accepting the stored preference is not news: %+v\n%s", c, out.String())
+	}
+
+	// Stored yes-preference, explicit n: news again.
+	out.Reset()
+	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\n\nn\nn\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companionsWithPref(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Save these") || c.SharedAuth {
+		t.Fatalf("overriding the stored preference is news: %+v\n%s", c, out.String())
 	}
 }

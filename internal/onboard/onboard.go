@@ -24,9 +24,10 @@ type Choice struct {
 	// SharedAuthCompanion is the companion skill the shared-auth offer (ADR
 	// 0025) named — "" when the offer wasn't made — and SharedAuth its answer:
 	// whether THIS box opts into the shared credentials (the companion goes
-	// into this project's byre.config). The offer alone writes nothing
-	// machine-level; with SaveDefault set, the caller also records the
-	// answer as the machine default (SaveSharedAuthDefault).
+	// into this project's byre.config, the only grant the answer ever makes).
+	// With SaveDefault set, the caller also saves the answer as the
+	// preference prefilling future offers (SaveSharedAuthDefault) — a
+	// favourite, not a grant.
 	SharedAuthCompanion string
 	SharedAuth          bool
 }
@@ -46,17 +47,18 @@ type Favourite struct {
 // Pick runs the interactive picker. templates and agents are the available
 // options (a "none" choice is always offered); tmplFav/agentFav are the user's
 // favourites — Effective pre-selected so an empty answer accepts it.
-// companionFor returns the ready shared-auth companion this box could still
-// opt into for an agent ("" = no offer; nil disables offers): when it names
-// one, the offer is asked right after the agent question — agent questions
-// stay together, and every answer is collected before the caller writes
-// anything, so an EOF anywhere in the picker aborts with no side effects.
+// companionFor returns the ready shared-auth companion this box could opt
+// into for an agent ("" = no offer; nil disables offers) plus the saved
+// preference prefilling the offer's default answer: when it names one, the
+// offer is asked right after the agent question — agent questions stay
+// together, and every answer is collected before the caller writes anything,
+// so an EOF anywhere in the picker aborts with no side effects.
 //
 // The prompting functions here take a *bufio.Reader, not an io.Reader, on
 // purpose: a caller asking more than one question MUST thread one shared
 // reader through them, or the first question's buffering eats the later
 // answers — the signature makes that invariant compile-enforced.
-func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, companionFor func(agent string) string) (Choice, error) {
+func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, companionFor func(agent string) (companion string, prefYes bool)) (Choice, error) {
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
 	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(tmplFav.Effective))
@@ -67,10 +69,10 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	if err != nil {
 		return Choice{}, err
 	}
-	companion, sharedAuth := "", false
+	companion, sharedAuth, sharedPref := "", false, false
 	if companionFor != nil {
-		if companion = companionFor(fromNone(agent)); companion != "" {
-			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent))
+		if companion, sharedPref = companionFor(fromNone(agent)); companion != "" {
+			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent), sharedPref)
 			if err != nil {
 				return Choice{}, err
 			}
@@ -82,11 +84,10 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	// the stored favourite (compared against Stored, not Effective: with a
 	// stale favourite the two differ, saving is NOT a no-op, and the offer is
 	// the user's one chance to overwrite the stale value), or a shared-auth
-	// offer that was asked at all: its gate already ensures the answer isn't
-	// recorded machine-wide yet, so "these" — ALL the answers just given,
-	// shared auth included — is always worth saving then.
+	// answer differing from its saved preference. One rule for all the axes
+	// of "these".
 	save := false
-	if fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored || companion != "" {
+	if fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored || (companion != "" && sharedAuth != sharedPref) {
 		save, err = askYesNo(out, r, "Save these as your default for new projects?")
 		if err != nil {
 			return Choice{}, err
@@ -116,12 +117,14 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 // OfferSharedAuth asks the shared-auth question (ADR 0025) for the chosen
 // agent: whether THIS box opts into the machine's shared credentials. The
 // scope in the wording is the scope of the write — a "y" puts the companion
-// skill in this project's byre.config and touches nothing machine-level, so
-// the question mentions only this box. Defaults to No, like every other
-// yes/no here. companion is unnamed here on purpose: the mechanism's skill
-// name is config plumbing, not part of the decision.
-func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent string) (bool, error) {
-	return askYesNo(out, r, fmt.Sprintf("Opt this box into %s shared credentials?", agent))
+// skill in this project's byre.config, the only thing the answer ever
+// grants. prefYes is the saved preference: it prefills the default answer
+// ([Y/n] instead of [y/N]) exactly as the favourites prefill template/agent
+// — Enter accepts it, and only an explicit "y" or a Yes default grants.
+// companion is unnamed here on purpose: the mechanism's skill name is config
+// plumbing, not part of the decision.
+func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent string, prefYes bool) (bool, error) {
+	return askYesNoDefault(out, r, fmt.Sprintf("Opt this box into %s shared credentials?", agent), prefYes)
 }
 
 // ask prompts for one choice among options, pre-selecting def. An empty answer
@@ -147,7 +150,18 @@ func ask(out io.Writer, r *bufio.Reader, label string, options []string, def str
 }
 
 func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
-	fmt.Fprintf(out, "%s [y/N]: ", label)
+	return askYesNoDefault(out, r, label, false)
+}
+
+// askYesNoDefault prompts [Y/n] or [y/N] per def; an empty answer accepts the
+// default. Everything else only counts as yes when it is an explicit y/yes —
+// unrecognized input never lands on the granting side, whatever the default.
+func askYesNoDefault(out io.Writer, r *bufio.Reader, label string, def bool) (bool, error) {
+	marker := "y/N"
+	if def {
+		marker = "Y/n"
+	}
+	fmt.Fprintf(out, "%s [%s]: ", label, marker)
 	line, err := r.ReadString('\n')
 	if err != nil && line == "" {
 		return false, err
@@ -155,6 +169,8 @@ func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "y", "yes":
 		return true, nil
+	case "":
+		return def, nil
 	default:
 		return false, nil
 	}

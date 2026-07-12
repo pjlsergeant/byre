@@ -188,14 +188,21 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
-	// SharedAuthDeclined lists agent skills whose shared-auth offer the user
-	// declined AND saved as their default (ADR 0025) — new boxes then aren't
-	// offered. Picker-owned state in ~/.byre/default.config, like the
-	// template/agent favourites: resolveWith strips it from every resolved
-	// config no matter which layer carried it, and only onboarding reads or
-	// writes it (straight from the file, never through the cascade). Only
-	// the save-default consent writes it; the offer alone never does. A
-	// saved "yes" has no key of its own — it IS the companion in `skills`.
+	// SharedAuth lists agent skills whose saved shared-auth preference is
+	// "yes" (ADR 0025): the per-box offer then prefills [Y/n] instead of
+	// [y/N] — a preference over future ANSWERS, never a grant (each box's
+	// actual enablement is the companion in its own byre.config `skills`).
+	// Picker-owned state in ~/.byre/default.config, like the template/agent
+	// favourites: resolveWith strips it from every resolved config no matter
+	// which layer carried it, and only onboarding reads or writes it
+	// (straight from the file, never through the cascade).
+	SharedAuth []string `toml:"shared_auth,omitempty"`
+
+	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
+	// shared-auth offer recorded declines here; nothing reads it anymore —
+	// the offer's default is already No, so a decline needs no record. It
+	// stays decodable only so configs v0.1.7 wrote still parse (Parse
+	// rejects unknown keys); resolveWith strips it like all picker state.
 	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
 
 	Apt       []string          `toml:"apt,omitempty"`
@@ -309,9 +316,11 @@ func resolveWith(home string, proj Config) (Config, error) {
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
-	// shared_auth_declined is picker-owned state (ADR 0025), not container
-	// config: whatever layer carries it, it never reaches a resolved config —
-	// onboarding reads it straight from default.config, nothing else may.
+	// shared_auth (and the vestigial shared_auth_declined) is picker-owned
+	// state (ADR 0025), not container config: whatever layer carries it, it
+	// never reaches a resolved config — onboarding reads it straight from
+	// default.config, nothing else may.
+	resolved.SharedAuth = nil
 	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
@@ -383,6 +392,7 @@ func Merge(base, over Config) Config {
 	out.Apt = mergeStrings(base.Apt, over.Apt)
 	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
+	out.SharedAuth = mergeStrings(base.SharedAuth, over.SharedAuth)
 	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
 	out.Egress = mergeStrings(base.Egress, over.Egress)
 	out.EgressOffered = mergeStrings(base.EgressOffered, over.EgressOffered)

@@ -1,12 +1,13 @@
 # Onboarding offers shared auth, once per agent
 
 > Superseded in part by ADR 0025 (2026-07-12): the offer survives, but
-> its scope was wrong -- the question is now per box ("Opt this box into
-> <agent> shared credentials?") and a yes lands in the project's
-> `byre.config`. Machine-level recording moved to the explicit
-> save-default consent: only "Save these as your default?" writes
-> `default.config`'s `skills` or `shared_auth_declined`. The readiness
-> gate (`shared_auth_for`) and the offer's placement are unchanged.
+> its scope was wrong -- the question is now asked per box ("Opt this
+> box into <agent> shared credentials?"), a yes lands only in that
+> project's `byre.config`, and the saved answer is a favourite (the
+> picker-owned `shared_auth` list, prefilling future offers), never a
+> machine-level grant; `shared_auth_declined` is vestigial. The
+> readiness gate (`shared_auth_for`) and the offer's placement are
+> unchanged.
 
 The first-run picker now asks one more question: when the chosen agent
 has a **ready** shared-auth companion skill (ADR 0017), it offers to

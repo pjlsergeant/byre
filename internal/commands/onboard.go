@@ -61,16 +61,16 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	in := bufio.NewReader(s.In)
 
 	// The shared-auth offer's gate (ADR 0025): only an agent with a ready
-	// companion, and only while no machine-wide default settles the question
-	// — a companion already in default.config's skills (the cascade gives
-	// this box shared credentials regardless) or a saved decline
-	// (shared_auth_declined: the user asked new boxes not to be offered).
-	companionFor := func(agent string) string {
+	// companion, and only when the companion isn't already granted
+	// machine-wide (in default.config's skills, hand-made — then the cascade
+	// covers every box and a per-box answer would be a lie). The second
+	// return is the saved preference prefilling the offer's default answer.
+	companionFor := func(agent string) (string, bool) {
 		c := skills.SharedAuthCompanion(skillsDir, agent)
-		if c == "" || onboard.SharedAuthAnswered(paths.Home, agent, c) {
-			return ""
+		if c == "" || onboard.SharedAuthAlreadyOn(paths.Home, c) {
+			return "", false
 		}
-		return c
+		return c, onboard.SharedAuthPreference(paths.Home, agent)
 	}
 
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
@@ -96,14 +96,16 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 				return err
 			}
 			// "These" is every answer just given: when the shared-auth offer
-			// was part of them, its answer becomes the machine default too —
-			// the save-default consent is the ONLY thing that ever writes it.
+			// was among them, its answer is saved as the preference that
+			// prefills future offers — a favourite exactly like template and
+			// agent, never a grant (each box's grant is only ever its own
+			// byre.config, written below).
 			if choice.SharedAuthCompanion != "" {
-				if err := onboard.SaveSharedAuthDefault(paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
+				if err := onboard.SaveSharedAuthDefault(paths.Home, choice.Agent, choice.SharedAuth); err != nil {
 					return err
 				}
 			}
-			fmt.Fprintln(s.Err, "byre: saved as your default for new projects."+sharedAuthSavedNote(choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth))
+			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
 		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent, optedSkills(choice.SharedAuthCompanion, choice.SharedAuth))
 	}
@@ -155,8 +157,9 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// partially-flagged TTY run was already interactive, so it rides along.
 	companion, sharedAuth := "", false
 	if s.TTY && !(tFixed && aFixed) {
-		if companion = companionFor(a); companion != "" {
-			yes, err := onboard.OfferSharedAuth(s.Err, in, a)
+		var pref bool
+		if companion, pref = companionFor(a); companion != "" {
+			yes, err := onboard.OfferSharedAuth(s.Err, in, a, pref)
 			if err != nil {
 				return err
 			}
@@ -166,24 +169,10 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
-// sharedAuthSavedNote extends the saved-as-default confirmation with what the
-// shared-auth part of the save means for new boxes — the one write here whose
-// effect isn't a mere pre-selection, so it must be said out loud (and where to
-// undo it: both records are plain entries in ~/.byre/default.config).
-func sharedAuthSavedNote(agent, companion string, yes bool) string {
-	if companion == "" {
-		return ""
-	}
-	if yes {
-		return fmt.Sprintf(" New boxes share the %s login (%s in ~/.byre/default.config's skills; remove it there to undo).", agent, companion)
-	}
-	return fmt.Sprintf(" New boxes won't be offered %s shared credentials (shared_auth_declined in ~/.byre/default.config; remove it there to be re-asked).", agent)
-}
-
 // optedSkills turns the shared-auth offer's outcome (ADR 0025) into the
 // skills to write into this box's byre.config: the companion on a yes,
-// nothing otherwise — an unsaved "no" is not recorded anywhere; the next
-// project's onboarding simply asks about its own box.
+// nothing otherwise — a "no" is not recorded anywhere; the next project's
+// onboarding simply asks about its own box.
 func optedSkills(companion string, yes bool) []string {
 	if companion == "" || !yes {
 		return nil

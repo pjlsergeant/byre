@@ -301,8 +301,8 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	proj := t.TempDir() // no byre.config
 
 	// default.config sets template/agent (picker pre-selections) and
-	// shared_auth_declined (the picker's saved-decline record, ADR 0025)
-	// plus base/apt.
+	// shared_auth_declined (vestigial v0.1.7 picker state, ADR 0025 — must
+	// still parse and never cascade) plus base/apt.
 	writeFile(t, filepath.Join(home, "default.config"),
 		"agent = \"claude\"\ntemplate = \"node\"\nshared_auth_declined = [\"claude\"]\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
 
@@ -551,6 +551,7 @@ func sampleConfig() Config {
 		Env:                map[string]string{"K": "v"},
 		Files:              map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:             []string{"devloop"},
+		SharedAuth:         []string{"claude"},
 		SharedAuthDeclined: []string{"claude"},
 		Egress:             []string{"grafana.com"},
 		EgressOffered:      []string{"registry.npmjs.org"},
@@ -794,16 +795,20 @@ func TestParseEgress(t *testing.T) {
 	}
 }
 
-// shared_auth_declined is stripped from EVERY resolved config, whatever layer
-// carried it — picker-owned state must not ride the cascade (ADR 0025).
-func TestSharedAuthDeclinedNeverResolves(t *testing.T) {
+// shared_auth (and the vestigial shared_auth_declined) is stripped from
+// EVERY resolved config, whatever layer carried it — picker-owned state must
+// not ride the cascade (ADR 0025).
+func TestSharedAuthKeysNeverResolve(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir()
-	writeProjectCfg(t, proj, "agent = \"claude\"\nshared_auth_declined = [\"claude\"]\n")
+	writeProjectCfg(t, proj, "agent = \"claude\"\nshared_auth = [\"claude\"]\nshared_auth_declined = [\"claude\"]\n")
 	cfg, err := Load(proj)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(cfg.SharedAuth) != 0 {
+		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %v", cfg.SharedAuth)
 	}
 	if len(cfg.SharedAuthDeclined) != 0 {
 		t.Fatalf("project-layer shared_auth_declined must be stripped from the resolved config, got %v", cfg.SharedAuthDeclined)

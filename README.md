@@ -243,13 +243,13 @@ agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
 by hand.
 
 By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per
-machine. For claude and codex the picker asks per box, when that agent is
-chosen: "Opt this box into <agent> shared credentials?" -- yes enables the
-skill for that project (its `byre.config`). To make your answer the
-machine-wide default, say yes to the next question ("Save these as your
-default?"): a saved yes gives every new box shared credentials, a saved
-no stops new boxes being offered, and either is a plain entry in
-`~/.byre/default.config` you can remove to be re-asked. On
+machine. For claude and codex every project's first run asks: "Opt this
+box into <agent> shared credentials?" -- yes enables the skill for that
+project (its `byre.config`), and only for it. Saying yes to "Save these
+as your default?" remembers your answer like the template/agent
+favourites: the next box's question just defaults to it, one Enter to
+accept. (Enabling the skill by hand in `~/.byre/default.config` is the
+machine-wide route -- then the question stops.) On
 an install that predates the offer, run `byre skill update` once so the
 companion skills carry the offer metadata. The
 login lives in a shared volume that reset/forget deliberately never
