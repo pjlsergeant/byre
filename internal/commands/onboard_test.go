@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -177,7 +178,7 @@ func TestOnboardFlagPathOffersSharedAuth(t *testing.T) {
 	}
 }
 
-// An agent with no READY companion (grok's is broken and declares no
+// An agent with no READY companion (grok's is retired and declares no
 // shared_auth_for) gets no offer.
 func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 	p, proj := onboardPaths(t)
@@ -221,5 +222,32 @@ func TestOnboardEOFMidPickerWritesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
 		t.Fatalf("aborted onboarding must record nothing: %v", err)
+	}
+}
+
+// A failed default.config write (recording the offer's answer) must abort
+// onboarding BEFORE byre.config is written: once byre.config exists this
+// project never onboards again, so the machine-level record goes first and a
+// failure leaves the whole flow re-runnable.
+func TestOnboardSharedAuthWriteFailureLeavesProjectUnonboarded(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Materialize the store first, then make home read-only: default.config's
+	// atomic write (a temp file in home) fails, while byre.config (in the
+	// project's store subdir) stays writable — exactly the wedge that would
+	// strand a half-onboarded project.
+	if err := builtins.EnsureStore(p.Home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p.Home, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(p.Home, 0o755) })
+	// Template: none, agent: claude, shared auth: y, save-as-default: n.
+	s, _, _ := testStreams("\nclaude\ny\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err == nil {
+		t.Fatal("a failed shared-auth record must abort onboarding")
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
+		t.Fatalf("byre.config must not exist after an aborted onboarding (it would never re-run): %v", err)
 	}
 }

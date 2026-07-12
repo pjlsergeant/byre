@@ -60,7 +60,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
-	// The shared-auth offer's gate (ADR 0023): only an agent with a ready
+	// The shared-auth offer's gate (ADR 0024): only an agent with a ready
 	// companion, only while unanswered.
 	companionFor := func(agent string) string {
 		c := skills.SharedAuthCompanion(skillsDir, agent)
@@ -83,16 +83,20 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		if err != nil {
 			return err
 		}
-		if err := writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent); err != nil {
-			return err
-		}
+		// Machine-level records first, the project's byre.config LAST: once
+		// byre.config exists this project never onboards again, so a failed
+		// default.config write must abort while onboarding can still re-run
+		// (the recorded answers are idempotent and skip their prompts).
 		if choice.SaveDefault {
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
 			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
-		return applySharedAuth(s.Err, paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth)
+		if err := applySharedAuth(s.Err, paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
+			return err
+		}
+		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent)
 	}
 
 	// Resolve explicitly-flagged axes first, so a bad flag value fails fast —
@@ -150,13 +154,16 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			sharedAuth = yes
 		}
 	}
-	if err := writeAndReport(s.Err, cfgPath, t, a); err != nil {
+	// Machine-level record first, byre.config last (same rationale as the
+	// no-flag path): a failed default.config write aborts an onboarding that
+	// can still re-run.
+	if err := applySharedAuth(s.Err, paths.Home, a, companion, sharedAuth); err != nil {
 		return err
 	}
-	return applySharedAuth(s.Err, paths.Home, a, companion, sharedAuth)
+	return writeAndReport(s.Err, cfgPath, t, a)
 }
 
-// applySharedAuth records the shared-auth offer's answer (ADR 0023): yes
+// applySharedAuth records the shared-auth offer's answer (ADR 0024): yes
 // enables the companion in ~/.byre/default.config — machine-wide, the honest
 // scope of a shared login; no is recorded there too (shared_auth_declined),
 // so the offer never nags. No-op when the offer wasn't made (companion "").

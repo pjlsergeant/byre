@@ -75,7 +75,7 @@ func Favourites(home string) (template, agent string) {
 	return cfg.Template, cfg.Agent
 }
 
-// SharedAuthAnswered reports whether the shared-auth offer (ADR 0023) for
+// SharedAuthAnswered reports whether the shared-auth offer (ADR 0024) for
 // agent is already answered in ~/.byre/default.config: yes = the companion
 // skill is in `skills`; no = the agent is in `shared_auth_declined`. An
 // unreadable/unparsable file counts as answered — the picker must not nag
@@ -137,11 +137,14 @@ func appendDefaultListEntry(home, key, value string, field func(config.Config) [
 			err = fmt.Errorf("edit did not verify")
 		}
 	}
+	if err == nil {
+		// Atomic write, so a crash or concurrent save can't truncate the file.
+		err = config.AtomicWrite(path, edited)
+	}
 	if err != nil {
 		return fmt.Errorf("could not update %s (%v) — add %q to `%s` there by hand", path, err, value, key)
 	}
-	// Atomic write, so a crash or concurrent save can't truncate the file.
-	return config.AtomicWrite(path, edited)
+	return nil
 }
 
 // defaultConfigStub heads a default.config the surgical writers create from
