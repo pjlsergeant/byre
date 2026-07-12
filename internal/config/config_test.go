@@ -851,3 +851,44 @@ func TestSharedAuthKeysNeverResolve(t *testing.T) {
 		t.Fatalf("project-layer shared_auth_declined must be stripped from the resolved config, got %v", cfg.SharedAuthDeclined)
 	}
 }
+
+// env_from_host (ADR 0026): byre's core git-identity layer is a real config
+// layer — on by default, visible in the resolved config, disable-able and
+// overridable per key by any higher layer; sources beyond git: are reserved.
+func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	writeProjectCfg(t, proj, "agent = \"none\"\n")
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EnvFromHost["GIT_AUTHOR_NAME"] != "git:user.name" || cfg.EnvFromHost["GIT_COMMITTER_EMAIL"] != "git:user.email" {
+		t.Fatalf("shipped core defaults must resolve on: %v", cfg.EnvFromHost)
+	}
+
+	// A higher layer disables one key and redirects another.
+	proj2 := t.TempDir()
+	writeProjectCfg(t, proj2, "agent = \"none\"\n[env_from_host]\nGIT_AUTHOR_NAME = \"\"\nGIT_COMMITTER_NAME = \"git:custom.name\"\n")
+	cfg2, err := Load(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.EnvFromHost["GIT_AUTHOR_NAME"] != "" {
+		t.Fatalf("a layer's \"\" must disable the key: %v", cfg2.EnvFromHost)
+	}
+	if cfg2.EnvFromHost["GIT_COMMITTER_NAME"] != "git:custom.name" {
+		t.Fatalf("a layer must override a core source: %v", cfg2.EnvFromHost)
+	}
+
+	// env: sources are reserved until deliberately designed.
+	bad := Config{EnvFromHost: map[string]string{"FOO": "env:SECRET"}}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "git:") {
+		t.Fatalf("env: source must be rejected loudly, got %v", err)
+	}
+	badKey := Config{EnvFromHost: map[string]string{"BAD KEY": "git:user.name"}}
+	if err := badKey.Validate(); err == nil {
+		t.Fatal("invalid env key must be rejected")
+	}
+}

@@ -56,6 +56,22 @@ func (m model) lowerNow() config.Config {
 	return config.Merge(m.inh.Default, m.inh.Templates[t])
 }
 
+// hostEnvNow is the effective env_from_host view at this editor: byre's core
+// layer (the shipped git identity) under the lower layers under this file's
+// own entries, disabled ("") keys dropped. Read-only in the UI — the rows
+// exist so the passthrough is never invisible where env is inspected;
+// changing it is a hand edit (`env_from_host` in this file).
+func (m model) hostEnvNow() map[string]string {
+	merged := config.Merge(config.Merge(config.Config{EnvFromHost: config.CoreEnvFromHost()}, m.lowerNow()), m.base).EnvFromHost
+	out := map[string]string{}
+	for k, v := range merged {
+		if v != "" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // lowerSource names the sublayer an inherited entry comes from -- the current
 // template's raw layer wins over the default (it's the later layer), matching
 // merge order. has reports whether a raw layer carries the entry.

@@ -42,6 +42,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = skillRowNote(r)
 			return m, nil
 		}
+		if r.kind == rowHostEnv {
+			m.status = hostEnvRowNote()
+			return m, nil
+		}
 		m.menuRow = r
 		m.menuCur = 0
 		m.mode = modeMenu
@@ -238,6 +242,12 @@ func skillRowNote(r listRow) string {
 	return "granted by " + r.source + " — disable it in Skills to remove"
 }
 
+// hostEnvRowNote points at the two hand edits that change the passthrough
+// (ADR 0026): disabling the key, or shadowing it with an explicit env value.
+func hostEnvRowNote() string {
+	return "host passthrough — set KEY = \"\" under env_from_host in this file to disable, or an [env] KEY to override"
+}
+
 // deadEndNote explains a keypress the cascade can't honor for this row.
 func deadEndNote(f fieldID, r listRow) string {
 	if f == fEnv && r.kind == rowInherited {
@@ -245,6 +255,9 @@ func deadEndNote(f fieldID, r listRow) string {
 	}
 	if r.kind == rowSkill {
 		return skillRowNote(r)
+	}
+	if r.kind == rowHostEnv {
+		return hostEnvRowNote()
 	}
 	return ""
 }
