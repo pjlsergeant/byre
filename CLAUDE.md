@@ -56,8 +56,10 @@ byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
 
 - **Go 1.22+**, single static binary. Module `github.com/pjlsergeant/byre`
   (full path so `go install .../cmd/byre@latest` resolves).
-- CLI: hand-rolled per-command arg loops + manual subcommand dispatch (no
-  `flag` package; minimal deps).
+- CLI: `spf13/cobra` command tree in `cmd/byre` (ADR 0022). The `app` struct
+  seam keeps flag->function wiring test-pinned; the exit-code contract
+  (usage errors = 2) is byre's, preserved deliberately around cobra.
+  Dependencies are added on demonstrated merit, not collected.
 - TOML config via `github.com/BurntSushi/toml` (byre's own merge/`!name` layer).
 - Container engine: shells out to the `docker`/`podman` **CLI** (no SDK).
 - Layout: `cmd/byre`, `internal/{project,config,gen,build,runner,skills,

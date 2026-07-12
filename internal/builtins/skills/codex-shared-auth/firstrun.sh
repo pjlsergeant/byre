@@ -17,6 +17,8 @@ mkdir -p "$IDENTITY_DIR" "$CODEX_HOME" 2>/dev/null || exit 0
 # already has a real auth.json and the shared copy doesn't exist yet, MOVE the
 # file into the identity volume (it becomes the machine-wide credential).
 if [ -f "$cred" ] && [ ! -L "$cred" ] && [ ! -e "$SHARED" ]; then
+  # Say it out loud: this box's login is becoming THE machine credential.
+  echo "byre codex-shared-auth: promoting this box's existing Codex login to the machine-wide shared credential" >&2
   mv "$cred" "$SHARED" 2>/dev/null || true
 fi
 
@@ -26,6 +28,10 @@ fi
 # file AND a shared credential exist, the shared one wins (the local copy is
 # a fork; discarding it is the healing).
 if [ ! -L "$cred" ] || [ "$(readlink "$cred")" != "$SHARED" ]; then
+  if [ -f "$cred" ] && [ ! -L "$cred" ] && [ -e "$SHARED" ]; then
+    # Say it out loud: a local fork is being discarded for the shared login.
+    echo "byre codex-shared-auth: replacing this box's local Codex login with the machine-wide shared credential (the local copy was a post-logout fork)" >&2
+  fi
   rm -f "$cred"
   ln -s "$SHARED" "$cred" 2>/dev/null || true
 fi

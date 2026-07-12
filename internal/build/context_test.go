@@ -75,7 +75,7 @@ func TestAssembleWritesAgentFiles(t *testing.T) {
 		t.Errorf("agent script wrong: %s", script)
 	}
 	ctx, err := os.ReadFile(paths.ContextDir + "/" + gen.AgentContextName)
-	if err != nil || string(ctx) != "be concise" {
+	if err != nil || string(ctx) != chassisContext+"\n\nbe concise" {
 		t.Errorf("agent context wrong: %q %v", ctx, err)
 	}
 }
@@ -201,7 +201,7 @@ func TestAssembleWritesAgentContextTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName))
-	if err != nil || string(ctx) != "workflow rules" {
+	if err != nil || string(ctx) != chassisContext+"\n\nworkflow rules" {
 		t.Fatalf("context file wrong: %q err=%v", ctx, err)
 	}
 	tgt, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextTargetName))
@@ -215,15 +215,16 @@ func TestAssembleWritesAgentContextTarget(t *testing.T) {
 
 func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	paths := bootstrapped(t)
-	// Target set, no skill context: the target + self-edit note are still baked
-	// (so the launcher can place a --self-edit note), but no agent-context.md.
+	// Target set, no skill context: the target + self-edit note are baked, and
+	// the context file still exists — the chassis paragraph (the /inbox fact)
+	// rides every box even with no skill contributing context.
 	res := skills.Resolved{Agent: &skills.AgentContrib{ContextTarget: "/home/dev/.claude/CLAUDE.md"}}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(paths.ContextDir, gen.AgentContextName)); !os.IsNotExist(err) {
-		t.Error("agent-context.md should NOT be written without skill context")
+	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext {
+		t.Errorf("agent-context.md should carry exactly the chassis paragraph without skill context: %q %v", ctx, err)
 	}
 	if _, err := os.Stat(filepath.Join(paths.ContextDir, gen.AgentContextTargetName)); err != nil {
 		t.Errorf("target file should be written when the agent declares a target: %v", err)
@@ -321,9 +322,14 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextTargetName, gen.SelfEditDocName} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); !os.IsNotExist(err) {
 			t.Errorf("stale %s survived an agent-less re-assemble: %v", name, err)
 		}
+	}
+	// agent-context.md is no longer conditional: the chassis paragraph keeps it
+	// present (and truthful) on every box, agent or not.
+	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext {
+		t.Errorf("agent-context.md should persist with the chassis paragraph: %q %v", ctx, err)
 	}
 }

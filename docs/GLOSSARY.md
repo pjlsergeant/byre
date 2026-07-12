@@ -25,7 +25,7 @@ One foreground run of a project's box (one `byre develop`, one container).
 Single-session per project directory; parallelism comes from worktrees.
 
 **Agent**:
-The AI coding CLI (Claude, Codex, Gemini) that runs inside the box. byre is
+The AI coding CLI (Claude, Codex, Gemini, Grok) that runs inside the box. byre is
 not an agent; it runs one.
 
 **Engine**:
@@ -41,6 +41,30 @@ selected agent's command.
 The launcher's wait, at its very top, for the firewall ready signal before
 anything else runs. No signal within the timeout kills the box -- it fails
 closed, never launches open.
+
+**Deliver**:
+Getting a file from the host into a running box, human-initiated: `byre
+deliver` streams path arguments, the host clipboard, or stdin into the
+box's inbox and hands the in-box path back (stdout + host clipboard).
+Machine-scoped -- the one verb that picks a box by discovery, not cwd.
+(ADR 0021)
+_Avoid_: drop, ingest, airlock (all lost the naming)
+
+**Inbox**:
+Where delivered files land in the box: `/inbox`, a dev-owned directory
+baked into the image, dead with the container -- re-deliver rather than
+expect it to survive. Always spelled as the absolute path in output and
+docs. (ADR 0021)
+_Avoid_: airlock (connotes a two-way chamber; this is one-way and
+human-initiated)
+
+**Deliver app**:
+The generated host-side drag target `byre deliver --install-app` writes:
+a readable macOS `.app` (display name "Byre Deliver") or Linux
+`.desktop` entry whose only job is invoking `byre deliver` on what you
+drop. The Finder Quick Action is "Deliver to Byre". (ADR 0021)
+_Avoid_: droplet (DigitalOcean owns it), materialize (reserved for
+built-in skill copies), shim
 
 ### Config
 
@@ -109,6 +133,22 @@ enabled alongside it, carrying only the delta (a volume, a hook, some
 wiring), leaving the agent skill untouched. The shared-auth trio
 (`claude-shared-auth` etc., ADR 0017) are the canonical examples.
 
+**Shared-auth offer**:
+The first-run picker's per-box question -- "Opt this box into <agent>
+shared credentials?" -- asked at every onboarding whose chosen agent
+has a companion skill declaring `shared_auth_for` (the author's vouch
+that the mechanism is ready to offer; a broken or gate-pending
+companion omits it). Yes puts the companion in the project's
+`byre.config` `skills` -- the only grant the answer ever makes; no
+writes nothing. "Save these as your default?" saves the answer as a
+favourite (the picker-owned, cascade-inert `shared_auth` list), which
+only prefills the next box's offer ([Y/n, i for info] vs [y/N, i for info]). Answering `i`
+prints exactly what each answer writes (naming the companion skill),
+then re-asks. The one suppression: the companion already granted
+machine-wide by hand in `default.config` `skills` -- the picker itself
+never writes that key.
+ADR 0025 (superseding ADR 0024's machine-wide recording).
+
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
 the launcher sources (sorted, best-effort, unprivileged) after firstrun
@@ -149,7 +189,8 @@ overwritten.
 agent diary, the code-review log. A convention established by builtin
 skills, not core behavior; each skill that uses it ensures it exists
 (hardened, via the shared devlog lib), so no skill depends on another.
-Born as `.devloop/`; the lib migrates an old-name dir in place.
+Born as `.devloop/`; the old name is dropped, not migrated -- an existing
+old dir is left untouched, renamed by hand if its history matters.
 _Avoid_: naming it after any one skill -- that coupling is why it was
 renamed.
 
@@ -280,7 +321,9 @@ split out), ports, env vars, and the network stance — spoken in one shared
 voice on two surfaces: atop the config UI's form, and as `byre:` lines at
 launch (where the implicit `/workspace` mount and, when active, the
 `--self-edit` store mount are named too). Counts only; `byre status`
-is the detailed, attributed view.
+is the detailed, attributed view for everything except plain env
+values: the host passthrough (`env_from_host`) is attributed there,
+and the full variable list lives in the config editor's Env screen.
 Called "exposure", not "grants": a config-literal env var is counted (it
 reaches the box) but is not a Grant.
 _Avoid_: grant summary (env vars in the tally aren't all grants)

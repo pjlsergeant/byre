@@ -74,7 +74,7 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	// Hand off to develop in the new worktree. If it fails, the worktree is still
 	// valid — retry with `byre develop` there, or drop it with `git worktree
 	// remove` — so we don't roll back a successful checkout on a develop error.
-	return Develop(s, target, "", "", selfEdit)
+	return Develop(s, target, "", "", nil, selfEdit)
 }
 
 // worktreeLeaf is the single-directory name for a worktree: <repo>-<name>, with

@@ -25,8 +25,8 @@ unverifiable from source).
 | Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` | `config.toml`, `skills/`, `AGENTS.md` (global rules) |
 | Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees | `models_cache.json`, `logs/`, `upload_queue/`, `marketplace-cache/`, `downloads/` (binary!) |
 | Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | **none** (open feature requests) | `GROK_HOME` (**verified**: moves auth + sessions + config) |
-| Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; **unverified** (gate 1, grok-shared-auth) |
-| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) | ~7-day expiry, silent OIDC refresh; rotation **unverified** (gate 2) |
+| Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; temp+rename **inferred from the 2026-07-10 field failure** (symlink replaced -- gate 1 FAILED; see §6) |
+| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) | ~6h access tokens, silent OIDC refresh; **single-use with chain revocation inferred** (gate 2 FAILED in the field -- see §6) |
 | Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) | **none** -- `XAI_API_KEY` only (different billing); native `grok login --device-auth` |
 | Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" | silent; its own installer reads `auth.json` tokens for authenticated downloads (empirically: a copied credential works) |
 
@@ -373,25 +373,33 @@ scopes -- `https://auth.x.ai::<client-id>` (OIDC) and
 
 ### 2. Credential write patterns
 
-**Unverified** -- closed source, and forcing a rewrite requires a login or a
-refresh (a refresh against a live shared credential risks invalidating the
-host's session if rotation turns out single-use, so it was not run
-unilaterally). The `auth.json.lock` sibling shows the CLI coordinates writes
-across processes on one machine; whether the write is in-place (symlink
-survives) or temp+rename (symlink replaced) is **gate 1** for
-`grok-shared-auth`, cheaply testable: device-auth login through the asserted
-symlink, then check the link survived and the credential landed in the
-identity volume.
+**Gate 1 FAILED in the field (2026-07-10; see §6).** Originally unverified
+-- closed source, and forcing a rewrite risked the live credential. The
+field answered it: refreshed pairs never reached the shared file through
+the symlink (its mtime froze at login time while boxes kept refreshing),
+which is the temp+rename signature -- the rename replaces the symlink with
+a private local file and the credential silently forks. Direct strace
+confirmation is still worthwhile before any rebuild (the parked designs'
+gate), but file-sharing through a symlink is dead as a mechanism.
 
 ### 3. Refresh-token rotation semantics
 
-Vendor docs: consumer tokens "expire after 7 days"; OIDC tokens
-"auto-refresh silently via the stored `refresh_token`";
-`GROK_AUTH_EARLY_INVALIDATION_SECS` (default 300) controls how early a token
-is treated as expired -- setting it very high forces refresh-on-next-use,
-which is the lever for **gate 2** (two concurrent boxes, forced refresh,
-neither session dies -- same gate as Gemini OAuth). Whether refresh tokens
-are single-use is undocumented and unverified.
+**Gate 2 FAILED in the field (2026-07-10; see §6).** Vendor docs: consumer
+tokens "expire after 7 days"; OIDC tokens "auto-refresh silently via the
+stored `refresh_token`"; `GROK_AUTH_EARLY_INVALIDATION_SECS` (default 300)
+controls how early a token is treated as expired. The field corrected two
+things. First, the working lifetime is the ACCESS token's **~6h**, not "7
+days" -- the shared copy expired the same night it was minted. Second,
+rotation is effectively **single-use with permanent chain failure**: the
+stale shared pair went "ServerRejected" with `refresh_chain short-circuit
+on permanent failure` in the event log, unrecoverable short of a fresh
+login. (Strictly, the field evidence cannot distinguish "reuse revoked the
+chain" from "the pair aged out unrefreshed"; byre's working assumption is
+revoke-on-reuse, the standard OAuth breach response. The replay experiment
+that would isolate it is recorded in the parked designs doc.) Sessions
+re-read `auth.json` lazily on expiry ("auth recovery: disk token expired"),
+not via a file watch -- rotation does not kill in-flight access tokens,
+which is why concurrent sessions on ONE real file coexist.
 
 ### 4. Env overrides
 
@@ -407,9 +415,14 @@ are single-use is undocumented and unverified.
   so under the split the bundled review/design/execute-plan/pr-babysit
   skills silently vanish unless `$GROK_HOME/bundled` is symlinked to the
   extraction dir (byre's grok-bundled firstrun hook does exactly that).
-- `XAI_API_KEY` -- static API key (console.x.ai, separate API billing), takes
-  precedence over the file credential; rotation-proof by construction, same
-  status as Gemini's API-key path.
+- `XAI_API_KEY` -- static API key (console.x.ai, separate API billing);
+  rotation-proof by construction. CORRECTED 2026-07-11: the shipped auth
+  guide says the key is a **fallback** -- "if you have already signed in
+  interactively, the stored session token takes precedence" -- so a stored
+  login SHADOWS the key (the reverse of what this doc first recorded). Also
+  ruled out as the shared-auth path on cost: xAI API billing is a separate
+  pay-per-token track (no subscription credits), ~50x the flat subscription
+  at coding-agent volumes.
 - `GROK_AUTH_PROVIDER_COMMAND` -- delegate auth to an external binary whose
   stdout becomes the stored token; the enterprise/SSO escape hatch.
 - No plan-scoped long-lived token equivalent to `claude setup-token`.
@@ -420,14 +433,53 @@ Silent on copying `auth.json` between machines. Adjacent evidence both ways:
 the vendor's own `install.sh` parses `~/.grok/auth.json` and uses the token
 to authenticate downloads (the file is treated as the canonical, portable
 credential), and a host-minted credential seeded into a fresh `GROK_HOME`
-worked for inference in this box; but the 7-day expiry means any shared copy
-goes stale fast without a shared refresh path -- which is exactly what the
-gate-pending symlink mechanism would provide. Native headless login exists:
+worked for inference in this box; but the ~6h access-token lifetime means
+any shared copy goes stale within hours without a shared refresh path --
+and the symlink mechanism that was meant to provide one failed its field
+gate (§6). Native headless login exists:
 `grok login --device-auth` (aliased `--device-code`) -- documented by
 `grok login --help` on 0.2.93 and by the shipped user guide
 (`~/.grok/docs/user-guide/02-authentication.md`); the TOP-LEVEL vendor README
 lags the binary and does not mention the flag. The in-box side of the flow
 uses `accounts.x.ai/oauth2/device` (observed live, unauthenticated probe).
+
+### 6. Field failure record and retirement (2026-07-10/12, ADR 0023)
+
+`grok-shared-auth` v1 (the codex-shaped symlink) shipped 2026-07-09 to run
+gates 1 and 2; both failed within a day, twice. Timeline and evidence:
+shared `/home/dev/.byre-identity/grok/auth.json` mtime frozen at Jul 9
+18:55 against a 00:55 expiry; `unified.jsonl` logged "auth recovery: disk
+token expired" then `refresh_chain short-circuit on permanent failure`
+("ServerRejected"). Refreshes rename-forked into per-box files (gate 1);
+the frozen shared pair died permanently within hours (gate 2); and the
+skill's every-launch "shared wins" heal then clobbered working per-box
+logins with the corpse. User-facing shape: "grok randomly breaks", and
+headless runs (`grok -p`) HANG on an interactive device prompt -- grok's
+auth-failure fallback is interactive login, and the device code lands in a
+debug file nobody is watching.
+
+Findings from the retirement investigation (2026-07-11, this box):
+
+- `auth.json.lock` content is `PID:timestamp` (`23185:1783753745`), i.e. a
+  create-exclusively / steal-if-stale lockfile, and it persists after grok
+  exits. PID liveness is meaningless across container PID namespaces, so
+  **grok's own lock cannot serialize refreshes between boxes** no matter
+  how the files are shared -- this forecloses "share the whole GROK_HOME"
+  as a fix, and any lock-symlink scheme besides (`O_EXCL` creation does
+  not follow symlinks).
+- `GROK_AUTH_PROVIDER_COMMAND` (shipped user guide only; no public
+  footprint): grok delegates credential acquisition to an external command
+  -- stderr surfaces to the user, **stdout is stored as the access token**,
+  non-zero exit falls back to interactive login. This inverts the
+  acts-first/observed-after problem and is the seam under the parked
+  "auth broker" rebuild design.
+
+Resolution: the skill is retired to a resolvable no-op stub; the grok
+skill's login hook removes ANY symlinked `auth.json` (healing damaged
+boxes at next launch); per-box logins are the supported shape. Two rebuild
+designs (auth broker; fork-shipping watcher + refresh jitter) are PARKED
+with their own gates in `docs/grok-shared-auth-v2-designs.md`. The
+`XAI_API_KEY` path is ruled out on cost (see §4).
 
 ## Implications for the shared-auth split
 
@@ -470,17 +522,17 @@ Per agent, what goes in the shared identity volume vs per-project volume:
   mounting into `~/.gemini` itself.
 
 **Grok CLI**
-- Shared identity: `auth.json` (both write claims gate-pending -- see the
-  Grok section; the symlink mechanism ships to run the gates, mirroring the
-  Gemini-OAuth stance).
+- Shared identity: **none, currently** -- the symlinked `auth.json` failed
+  both its gates in the field and the skill is retired (§6, ADR 0023);
+  per-box logins are the supported shape, rebuild designs parked.
 - Per-project: `sessions/`, `memory/<project-slug>-<hash8>/`, `config.toml`
   (holds per-project-ish UI prefs plus `[custom_endpoints]` API keys -- the
   secret-capable field is also why grok has no prefs seeding),
   `agent_id`, `worktrees.db`, caches.
-- Unsplittable-by-mount: none known root-level; but `auth.json.lock` stays
-  per-project while its target is shared, so lock-based write coordination
-  does not extend across boxes (codex-shaped benign-race residual at worst,
-  pending gate 2).
+- The lock caveat that was recorded here as a benign residual turned out
+  load-bearing: `auth.json.lock` stays per-box while its target is shared,
+  and the race it leaves open is NOT codex-benign -- grok's rotation makes
+  it fatal (§3, §6).
 - `GROK_HOME` moves the tree (verified) but cannot split it -- same as
   `CODEX_HOME`.
 

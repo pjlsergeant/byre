@@ -7,32 +7,25 @@
 
 # byre_devlog_dir <root>: ensure <root>/.byre-devlog exists, is a REAL
 # directory, and self-ignores (its .gitignore is "*", so nothing in it is ever
-# committed). The dir was born as .devloop/; an old-name dir left by a
-# pre-rename box is migrated into place first, so diaries and review logs
-# carry over — but only when it carries byre's own self-ignore marker (a
-# .gitignore reading "*" — modulo trailing newlines, which the $(cat)
-# comparison strips; byre forced that content on every touch): a project's
-# unrelated .devloop/ dir is NOT byre's to move. Hardened against planted nodes: a symlink (tested with -L,
-# no-follow) or any non-dir at .byre-devlog, and a symlink/non-regular
-# .gitignore, are removed first so writes can't be redirected elsewhere; the
-# self-ignore content is then FORCED atomically (temp + rename — never written
-# through an existing node, never trusting what's there). Returns nonzero only
-# when the directory itself can't be provided; the .gitignore write is
-# best-effort.
+# committed). The dir was born as .devloop/; the rename dropped that name
+# outright — an old dir is never read, moved, or deleted (rename it by hand to
+# keep its history). Nothing user-placed is ever destroyed: a symlink (tested
+# with -L, no-follow) or any non-dir at .byre-devlog is NOT ours to remove —
+# warn and stand down for the session instead. Inside a directory we do own,
+# the self-ignore marker is byre's own file: a symlink/non-regular .gitignore
+# is removed so writes can't be redirected elsewhere, and the content is then
+# FORCED atomically (temp + rename — never written through an existing node,
+# never trusting what's there). Returns nonzero only when the directory itself
+# can't be provided; the .gitignore write is best-effort.
 byre_devlog_dir() {
   d="$1/.byre-devlog"
-  # Old-name migration: only a REAL old dir moves (a planted symlink is left
-  # where it is — never followed, never deleted), only when it proves itself
-  # byre's via the self-ignore marker (a regular .gitignore whose content is
-  # "*" modulo trailing newlines), and never onto an existing new-name node,
-  # which the hardening below owns instead. Best-effort: a failed mv just means a fresh dir.
-  old="$1/.devloop"
-  if [ ! -e "$d" ] && [ ! -L "$d" ] && [ -d "$old" ] && [ ! -L "$old" ] \
-     && [ -f "$old/.gitignore" ] && [ ! -L "$old/.gitignore" ] \
-     && [ "$(cat "$old/.gitignore" 2>/dev/null)" = "*" ]; then
-    mv "$old" "$d" 2>/dev/null || true
+  # A non-directory node at .byre-devlog (a user file, or a planted symlink
+  # that would redirect our writes) is NOT ours to destroy: warn and stand
+  # down — the devlog degrades for the session instead of silently deleting it.
+  if [ -L "$d" ] || { [ -e "$d" ] && [ ! -d "$d" ]; }; then
+    echo "byre devlog: $d exists and is not a directory — leaving it alone; the devlog's working files (DIARY.md, reviews.md) are unavailable until it is moved" >&2
+    return 1
   fi
-  if [ -L "$d" ] || { [ -e "$d" ] && [ ! -d "$d" ]; }; then rm -rf "$d"; fi
   mkdir -p "$d" || return 1
   gi="$d/.gitignore"
   if [ -L "$gi" ] || { [ -e "$gi" ] && [ ! -f "$gi" ]; }; then rm -rf "$gi"; fi

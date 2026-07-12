@@ -47,7 +47,7 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 		NpmGlobal:    cfg.NpmGlobal,
 		Skills:       genSkills,
 		AgentCmd:     res.AgentCommand() != "",
-		AgentContext: res.Context() != "",
+		AgentContext: true, // the chassis paragraph makes context non-empty on every box
 		// Bake the target (and the self-edit note) whenever the agent declares
 		// where it reads memory — even with no skill context — so the launcher can
 		// still place a --self-edit note there.
@@ -116,10 +116,16 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 			return "", err
 		}
 	}
-	if ctx := res.Context(); ctx != "" {
-		if err := os.WriteFile(ctxPath(paths, gen.AgentContextName), []byte(ctx), 0o644); err != nil {
-			return "", err
-		}
+	// The chassis speaks first: mechanism facts every box carries (today, the
+	// deliver inbox), then the skills' opinions in enable order. Chassis text
+	// is a mechanism description like /workspace — not a skill's opinion — so
+	// it rides every box, not a skill toggle (ADR 0021).
+	ctx := chassisContext
+	if sc := res.Context(); sc != "" {
+		ctx += "\n\n" + sc
+	}
+	if err := os.WriteFile(ctxPath(paths, gen.AgentContextName), []byte(ctx), 0o644); err != nil {
+		return "", err
 	}
 	if target := res.AgentContextTarget(); target != "" {
 		if err := os.WriteFile(ctxPath(paths, gen.AgentContextTargetName), []byte(target+"\n"), 0o644); err != nil {
@@ -133,6 +139,11 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	}
 	return df, nil
 }
+
+// chassisContext is the byre-mechanism paragraph every box's agent context
+// carries — facts about the box itself, not workflow opinions (those belong
+// to skills). One sentence per mechanism; keep it lean.
+const chassisContext = "Files the user delivers from the host land in /inbox, owned by you. The inbox is ephemeral (it dies with the container) — treat it as a hand-off point, not storage."
 
 // selfEditDoc is placed into the agent's memory only when a session is started
 // with --self-edit, so the agent knows it can edit its own byre sandbox config —

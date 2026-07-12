@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -576,6 +577,42 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 	}
 }
 
+// ctrl+q quits from the form screen: immediately when clean, and via the same
+// press-again-to-discard confirm as esc when there are unsaved changes.
+func TestCtrlQQuits(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
+	if _, cmd := m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ}); cmd == nil {
+		t.Fatal("ctrl+q on a clean form should quit")
+	}
+
+	m = m.openText(fRunArgs)
+	m.ta.SetValue("--privileged")
+	mm, _ := m.updateText(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = mm.(model)
+	if !m.dirty() {
+		t.Fatal("setup: model should be dirty")
+	}
+	mm, cmd := m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m = mm.(model)
+	if cmd != nil || !m.confirmQuit {
+		t.Fatalf("first ctrl+q on a dirty form should arm the confirm, not quit (confirmQuit=%v)", m.confirmQuit)
+	}
+	if _, cmd = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ}); cmd == nil {
+		t.Fatal("second ctrl+q should discard and quit")
+	}
+
+	// ctrl+c must not clear the armed confirm — a second ctrl+c also quits.
+	m.confirmQuit = false
+	mm, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = mm.(model)
+	if !m.confirmQuit {
+		t.Fatal("first ctrl+c on a dirty form should arm the confirm")
+	}
+	if _, cmd = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Fatal("second ctrl+c should discard and quit")
+	}
+}
+
 // newModel must not report the freshly-opened config as dirty, an unknown engine
 // must round-trip (not coerce to podman), and touching a field flips dirty.
 func TestModelDirtyAndUnknownEngineRoundTrip(t *testing.T) {
@@ -907,5 +944,39 @@ func TestSkillsMarkerEdgeCases(t *testing.T) {
 	m2 = mm.(model)
 	if contains(m2.skills, "!claude") {
 		t.Fatalf("toggle should clear the stale marker: %v", m2.skills)
+	}
+}
+
+// clipHeight windows tall frames: cursor row visible, footer (status/confirm
+// banner + key help) pinned, hidden directions marked, short frames untouched.
+func TestClipHeight(t *testing.T) {
+	var lines []string
+	for i := 0; i < 40; i++ {
+		lines = append(lines, fmt.Sprintf("row %d", i))
+	}
+	lines[30] = "▸ focused row"
+	lines[38] = "● Unsaved changes — confirm banner"
+	frame := strings.Join(lines, "\n")
+
+	got := clipHeight(frame, 20)
+	if !strings.Contains(got, "▸ focused row") {
+		t.Fatalf("cursor row must stay visible:\n%s", got)
+	}
+	if !strings.Contains(got, "confirm banner") {
+		t.Fatalf("the footer (dirty-quit banner lives there) must be pinned:\n%s", got)
+	}
+	if !strings.Contains(got, "more above") {
+		t.Fatalf("hidden top content must be marked:\n%s", got)
+	}
+	if n := strings.Count(got, "\n") + 1; n > 19 {
+		t.Fatalf("frame must fit the terminal: %d lines", n)
+	}
+
+	// A frame that fits is untouched, and an unknown height is a no-op.
+	if got := clipHeight("a\nb", 20); got != "a\nb" {
+		t.Fatalf("short frame must pass through: %q", got)
+	}
+	if got := clipHeight(frame, 0); got != frame {
+		t.Fatalf("unknown height must pass through")
 	}
 }

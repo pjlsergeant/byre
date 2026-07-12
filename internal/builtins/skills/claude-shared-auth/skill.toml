@@ -1,8 +1,9 @@
 # Built-in companion skill: claude-shared-auth (ADR 0017).
 #
-# One Claude login for every byre project on this machine. Enabled ALONGSIDE
-# the claude agent skill (skills = ["claude-shared-auth"], typically in
-# ~/.byre/default.config); it contributes only the delta — the machine-scoped
+# One Claude login shared by every byre box that opts in. Enabled ALONGSIDE
+# the claude agent skill (skills = ["claude-shared-auth"] — per box via the
+# onboarding offer's yes in the project's byre.config, or machine-wide by
+# hand in ~/.byre/default.config); it contributes only the delta — the machine-scoped
 # identity volume, a first-run paste prompt, and a launch env hook — and leaves
 # the claude skill untouched.
 #
@@ -19,6 +20,11 @@
 # to this project's own in-box login, exactly as without this skill.
 
 description = "Share one Claude login across all your projects (machine-wide token)."
+
+# Offerable at onboarding: when claude is picked as the agent, the first-run
+# picker offers to opt that box into the shared credentials (ADR 0025).
+# Declaring the key vouches the mechanism is ready (verified live, ADR 0017).
+shared_auth_for = "claude"
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-claude-shared-auth", "env.sh" = "/etc/byre/env.d/50-claude-shared-auth.sh" }

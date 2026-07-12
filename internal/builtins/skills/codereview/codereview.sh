@@ -107,8 +107,8 @@ fi
 # dir (its own .gitignore is "*"), so the review log and agent diary persist via
 # the workspace mount but never land in git and need no per-project .gitignore
 # entry. byre_devlog_dir (shared lib, shipped alongside this script) provides
-# the dir — migrating a pre-rename .devloop/ — hardened against planted
-# symlinks/nodes.
+# the dir; a user-placed node at that path is never destroyed — the lib warns
+# and stands down, which under set -e ends the review here, loudly.
 if root=$(git rev-parse --show-toplevel 2>/dev/null); then
   cd "$root"
 else
@@ -469,7 +469,7 @@ report_failure_claude() {
 # ordinary error lines and would send people into a pointless re-login loop.
 report_failure_grok() {
   if grep -qiE 'token_expired|refresh token|not logged in|sign in|401|invalid api key' "$DBG" 2>/dev/null; then
-    echo "byre-codereview: grok may need re-authentication (its tokens expire after ~7 days)." >&2
+    echo "byre-codereview: grok may need re-authentication (its ~6h tokens refresh silently until the chain dies)." >&2
     echo "  Run 'byre shell', then: grok login --device-auth" >&2
     echo "  Debug log: $DBG" >&2
   else

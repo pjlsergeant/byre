@@ -11,6 +11,12 @@
 #      stash for the agent's working files that survives container restarts
 #      and rebuilds, unlike /tmp and the rest of the container fs.
 #
+# Workspace write: devloop maintains `.byre-devlog/` at the WORKSPACE root
+# (the diary and review log live there, self-gitignored). It creates the
+# directory and forces `.byre-devlog/.gitignore` on every launch; a
+# non-directory node at that path (a user file, a planted symlink) is never
+# destroyed — devloop warns and stands down for the session instead.
+#
 # The review loop lives in its own skill now: enable `codereview` (plus a
 # reviewer skill such as codex or grok) for `byre-codereview`. Historical note:
 # this skill shipped that script before the split; a box rebuilt with only

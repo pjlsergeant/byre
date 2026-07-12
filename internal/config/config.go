@@ -12,6 +12,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -187,14 +188,43 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
+	// SharedAuth lists agent skills whose saved shared-auth preference is
+	// "yes" (ADR 0025): the per-box offer then prefills [Y/n] instead of
+	// [y/N] — a preference over future ANSWERS, never a grant (each box's
+	// actual enablement is the companion in its own byre.config `skills`).
+	// Picker-owned state in ~/.byre/default.config, like the template/agent
+	// favourites: resolveWith strips it from every resolved config no matter
+	// which layer carried it, and only onboarding reads or writes it
+	// (straight from the file, never through the cascade).
+	SharedAuth []string `toml:"shared_auth,omitempty"`
+
+	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
+	// shared-auth offer recorded declines here; nothing reads it anymore —
+	// the offer's default is already No, so a decline needs no record. It
+	// stays decodable only so configs v0.1.7 wrote still parse (Parse
+	// rejects unknown keys); resolveWith strips it like all picker state.
+	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
+
 	Apt       []string          `toml:"apt,omitempty"`
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
-	Files     map[string]string `toml:"files,omitempty"`
-	Skills    []string          `toml:"skills,omitempty"`
-	Mounts    []Mount           `toml:"mounts,omitempty"`
-	Volumes   []Volume          `toml:"volumes,omitempty"`
-	Ports     []Port            `toml:"ports,omitempty"`
+	// EnvFromHost passes named HOST values into the box's runtime env — the
+	// one deliberate host→box data channel, and a Grant (adoption flags
+	// additions beyond the shipped defaults; status attributes it). Value
+	// grammar: "git:<config-key>" (read via `git config --get` on the host
+	// at launch; an empty host value sets nothing) or "" (disables the key —
+	// how a layer drops a lower layer's entry). Other source schemes
+	// ("env:...") are RESERVED and rejected until deliberately designed —
+	// arbitrary host-env passthrough is a much bigger grant. byre ships
+	// CoreEnvFromHost on by default (host git identity, so box commits are
+	// attributed to the developer); an explicit [env] KEY in any layer beats
+	// the passthrough for that key.
+	EnvFromHost map[string]string `toml:"env_from_host,omitempty"`
+	Files       map[string]string `toml:"files,omitempty"`
+	Skills      []string          `toml:"skills,omitempty"`
+	Mounts      []Mount           `toml:"mounts,omitempty"`
+	Volumes     []Volume          `toml:"volumes,omitempty"`
+	Ports       []Port            `toml:"ports,omitempty"`
 	// Egress is the user's firewall-allowlist extension (ADR 0019): extra
 	// `host[:port]` endpoints (port defaults to 443) unioned with every
 	// enabled skill's declared egress. A grant under a restrictive posture;
@@ -276,10 +306,20 @@ func resolveWith(home string, proj Config) (Config, error) {
 	def.Template = ""
 	def.Agent = ""
 
+	// The core layer sits under everything: byre's own shipped defaults,
+	// today only the host git identity passthrough. A real config layer (not
+	// hardcoded plumbing) so any higher layer can see, override, or disable
+	// it per key, and the legibility surfaces count it like the grant it is.
+	def = Merge(Config{EnvFromHost: CoreEnvFromHost()}, def)
+
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
-	// default ⊕ template ⊕ project.
-	templateName := proj.Template
+	// default ⊕ template ⊕ project. "none" is a real stored value, not
+	// absence: an empty scalar means "inherit", so the sentinel is how a
+	// project says "explicitly nothing" and WINS over a template's choice
+	// (an explicit no-agent answer must not be silently overridden). It is
+	// resolved out below — no resolved config ever carries it.
+	templateName := FromNone(proj.Template)
 	var tmpl Config
 	if templateName != "" {
 		tmplPath := TemplatePath(filepath.Join(home, "templates"), templateName)
@@ -298,6 +338,16 @@ func resolveWith(home string, proj Config) (Config, error) {
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
+	// Resolve the "none" sentinel out: it exists to beat lower layers in the
+	// merge, and means empty everywhere downstream.
+	resolved.Template = FromNone(resolved.Template)
+	resolved.Agent = FromNone(resolved.Agent)
+	// shared_auth (and the vestigial shared_auth_declined) is picker-owned
+	// state (ADR 0025), not container config: whatever layer carries it, it
+	// never reaches a resolved config — onboarding reads it straight from
+	// default.config, nothing else may.
+	resolved.SharedAuth = nil
+	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -316,16 +366,33 @@ func ParseFile(path string) (Config, error) {
 // (the cascade tolerates absent layers); an unknown key is an error, so a
 // typo can't silently produce a default.
 func loadFile(path string) (Config, error) {
-	var c Config
-	md, err := toml.DecodeFile(path, &c)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Config{}, nil
 		}
+		return Config{}, err
+	}
+	c, err := Parse(b)
+	if err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
+	return c, nil
+}
+
+// Parse decodes one TOML layer from raw bytes, under the same rules as
+// loadFile (an unknown key is an error). ParseFile's in-memory sibling: any
+// caller verifying config content must go through the ONE parser that will
+// actually read the file back — a second hand-rolled decode would drift from
+// these rules.
+func Parse(content []byte) (Config, error) {
+	var c Config
+	md, err := toml.Decode(string(content), &c)
+	if err != nil {
+		return Config{}, err
+	}
 	if und := md.Undecoded(); len(und) > 0 {
-		return Config{}, fmt.Errorf("%s: unknown key(s): %v", path, und)
+		return Config{}, fmt.Errorf("unknown key(s): %v", und)
 	}
 	return c, nil
 }
@@ -351,11 +418,14 @@ func Merge(base, over Config) Config {
 	out.Apt = mergeStrings(base.Apt, over.Apt)
 	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
+	out.SharedAuth = mergeStrings(base.SharedAuth, over.SharedAuth)
+	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
 	out.Egress = mergeStrings(base.Egress, over.Egress)
 	out.EgressOffered = mergeStrings(base.EgressOffered, over.EgressOffered)
 
 	// Maps: union, over wins per key.
 	out.Env = mergeMap(base.Env, over.Env)
+	out.EnvFromHost = mergeMap(base.EnvFromHost, over.EnvFromHost)
 	out.Files = mergeMap(base.Files, over.Files)
 
 	// Structured named lists: union keyed by identity, with `!name` removal.
@@ -450,6 +520,15 @@ func (c Config) validateScalars(layer bool) error {
 	// where their build blocks are resolved (see internal/skills).
 	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
 		return err
+	}
+
+	for k, src := range c.EnvFromHost {
+		if !envKeyRe.MatchString(k) {
+			return fmt.Errorf("env_from_host key %q: not a valid environment variable name", k)
+		}
+		if err := validateHostSource(src); err != nil {
+			return fmt.Errorf("env_from_host %s: %w", k, err)
+		}
 	}
 
 	// Skill names have no config-side grammar (they resolve against the store's
@@ -596,8 +675,18 @@ func (c Config) validatePorts(layer bool) error {
 		if p.Host < 0 || p.Host > 65535 {
 			return fmt.Errorf("port %d: host port %d out of range (0-65535; 0 = same as the container port)", p.Container, p.Host)
 		}
-		if strings.IndexFunc(p.Interface, func(r rune) bool { return r < 0x20 }) >= 0 {
-			return fmt.Errorf("port %d: interface must not contain control characters", p.Container)
+		// The interface is embedded in docker's colon-delimited -p grammar, so
+		// only a canonical IPv4 literal is accepted: hostnames, IPv6 (whose
+		// colons would split the -p value; bracketed rendering is unbuilt),
+		// whitespace, and non-canonical spellings would otherwise pass config
+		// validation and collision analysis, then fail or change meaning at
+		// engine invocation. Canonical-form equality also keeps the collision
+		// checks honest (one spelling per address).
+		if p.Interface != "" {
+			ip := net.ParseIP(p.Interface)
+			if ip == nil || ip.To4() == nil || ip.String() != p.Interface {
+				return fmt.Errorf("port %d: interface %q must be an IPv4 address literal (e.g. 127.0.0.1 or 0.0.0.0); hostnames and IPv6 are not supported", p.Container, p.Interface)
+			}
 		}
 		iface, host := PortEffective(p)
 		ifaces := byHostPort[host]
@@ -932,6 +1021,42 @@ func ListTemplates(templatesDir string) []string {
 	}
 	sort.Strings(ts)
 	return ts
+}
+
+// CoreEnvFromHost is byre's shipped env_from_host layer: the host git
+// identity, on by default so box commits are attributed to the developer
+// (ADR 0026). resolveWith merges it UNDER default.config — a real config
+// layer any higher layer can override or disable per key (`KEY = ""`), never
+// hardcoded plumbing the legibility surfaces can't see.
+func CoreEnvFromHost() map[string]string {
+	return map[string]string{
+		"GIT_AUTHOR_NAME":     "git:user.name",
+		"GIT_COMMITTER_NAME":  "git:user.name",
+		"GIT_AUTHOR_EMAIL":    "git:user.email",
+		"GIT_COMMITTER_EMAIL": "git:user.email",
+	}
+}
+
+// gitConfigKeyRe bounds a git config key to section.name shapes; the value is
+// passed to `git config --get` as a single argv element (never a shell), the
+// allowlist just keeps configs legible and typo-loud.
+var gitConfigKeyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
+
+// validateHostSource checks one env_from_host source: "" (disabled) or
+// "git:<config-key>". Everything else — notably "env:..." — is reserved:
+// arbitrary host-env passthrough is a far bigger grant than git identity and
+// stays rejected until it is deliberately designed.
+func validateHostSource(src string) error {
+	if src == "" {
+		return nil // disabled — how a layer drops a lower layer's entry
+	}
+	if key, ok := strings.CutPrefix(src, "git:"); ok {
+		if !gitConfigKeyRe.MatchString(key) {
+			return fmt.Errorf("source %q: %q is not a valid git config key", src, key)
+		}
+		return nil
+	}
+	return fmt.Errorf("source %q: only \"git:<config-key>\" sources (and \"\" to disable) are supported today", src)
 }
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and

@@ -69,7 +69,15 @@ type File struct {
 	// the point of choice. Optional for hand-dropped skills; every builtin
 	// carries one.
 	Description string `toml:"description"`
-	Build       struct {
+	// SharedAuthFor declares this skill as the shared-auth companion (ADR
+	// 0017) for the named agent skill, making it OFFERABLE: when that agent
+	// is selected, the onboarding picker asks whether to opt that box into
+	// the agent's shared credentials (ADR 0025). Declaring the key is the
+	// author VOUCHING the companion is ready to enable — a broken or
+	// gate-pending companion (grok-shared-auth, gemini's OAuth path) omits
+	// it and stays a hand-enabled expert option.
+	SharedAuthFor string `toml:"shared_auth_for"`
+	Build         struct {
 		Apt        []string          `toml:"apt"`
 		NpmGlobal  []string          `toml:"npm_global"`
 		Dockerfile []string          `toml:"dockerfile"` // raw build lines
@@ -401,6 +409,25 @@ func DescribeSkills(skillsDir string) map[string]string {
 	return out
 }
 
+// SharedAuthCompanion returns the name of the skill declaring itself the
+// ready shared-auth companion for the given agent skill (shared_auth_for =
+// agent), or "" when none does. Several skills claiming one agent is also ""
+// — refuse the ambiguity (the network_posture stance): sort order silently
+// picking which skill the onboarding "y" enables for a box would let a
+// hand-dropped near-namesake shadow the vetted builtin.
+func SharedAuthCompanion(skillsDir, agent string) string {
+	if agent == "" {
+		return ""
+	}
+	names := list(skillsDir, func(sk Skill) bool {
+		return sk.File.SharedAuthFor == agent
+	})
+	if len(names) != 1 {
+		return ""
+	}
+	return names[0]
+}
+
 // ListAgentSkills returns the names of skills in skillsDir that provide an
 // [agent] command (i.e. can be selected as `agent`), sorted.
 func ListAgentSkills(skillsDir string) []string {
@@ -504,6 +531,7 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 	var res Resolved
 	envSetBy := map[string]string{} // env key -> skill that set it
 	postureBy := ""                 // skill that declared network_posture
+	netnsBy := ""                   // skill that declared netns_init
 	agentFound := cfg.Agent == ""
 
 	for _, name := range names {
@@ -562,8 +590,21 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 		}
 		// netns_init runs as root in the box's netns; require an absolute image
 		// path so it stays legible data (the script itself is skill-shipped).
-		if p := f.Runtime.NetnsInit; p != "" && !filepath.IsAbs(p) {
-			return Resolved{}, fmt.Errorf("skill %q: netns_init %q must be an absolute image path", name, p)
+		// And exactly ONE hook per box (mirroring the posture rule above): the
+		// launch gate is opened by the hook's own script when it finishes (see
+		// the firewall skill), so with two hooks the first would release the
+		// agent before the second ran — its setup silently unapplied. If
+		// multi-hook composition is ever wanted, gate signaling must first
+		// move into byre's orchestrator (opened only after EVERY hook
+		// succeeds); until then, refuse the ambiguity.
+		if p := f.Runtime.NetnsInit; p != "" {
+			if !filepath.IsAbs(p) {
+				return Resolved{}, fmt.Errorf("skill %q: netns_init %q must be an absolute image path", name, p)
+			}
+			if netnsBy != "" {
+				return Resolved{}, fmt.Errorf("skills %q and %q both declare a netns_init; disable one", netnsBy, name)
+			}
+			netnsBy = name
 		}
 		// egress entries feed a firewall allowlist and are passed to the netns
 		// helper as data; validate host[:port] shape up front so a typo fails

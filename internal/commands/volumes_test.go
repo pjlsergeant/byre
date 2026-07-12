@@ -81,7 +81,7 @@ func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
 	p, dir := testPaths(t)
 	orphan := machineVolumeName(os.Getuid(), "claude-identity")
 	f := &fakeRunner{vols: map[string]bool{orphan: true}}
-	a := &volumeAdmin{r: f, paths: p, projectDir: dir}
+	a := &volumeAdmin{rs: []engineRunner{f}, paths: p, projectDir: dir}
 
 	list, err := a.List()
 	if err != nil {
@@ -101,5 +101,42 @@ func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
 	}
 	if len(f.removed) != 1 || f.removed[0] != orphan {
 		t.Fatalf("orphan cleared under the wrong name: %v", f.removed)
+	}
+}
+
+// With BOTH engines installed a machine volume can live on each: the volumes
+// screen — the advertised deliberate-delete route — must show one row per
+// engine copy and clear exactly the row's engine, or its "logged out
+// everywhere" claim is false while the other engine keeps the login alive
+// (the lifecycle-batch bug class; audit finding).
+func TestVolumeAdminListsAndClearsPerEngine(t *testing.T) {
+	p, dir := testPaths(t)
+	orphan := machineVolumeName(os.Getuid(), "claude-identity")
+	docker := &fakeRunner{engine: "docker", vols: map[string]bool{orphan: true}}
+	podman := &fakeRunner{engine: "podman", vols: map[string]bool{orphan: true}}
+	a := &volumeAdmin{rs: []engineRunner{docker, podman}, paths: p, projectDir: dir}
+
+	list, err := a.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var engines []string
+	for _, v := range list {
+		if v.Name == "claude-identity" && v.Orphan {
+			engines = append(engines, v.Engine)
+		}
+	}
+	if len(engines) != 2 || engines[0] == engines[1] {
+		t.Fatalf("each engine's copy must be its own row, got %v", engines)
+	}
+
+	if err := a.Clear(configui.VolumeStatus{Name: "claude-identity", Machine: true, Orphan: true, Engine: "podman"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(podman.removed) != 1 || podman.removed[0] != orphan {
+		t.Fatalf("podman row must clear on podman: %v", podman.removed)
+	}
+	if len(docker.removed) != 0 {
+		t.Fatalf("clearing one engine's row must not touch the other: %v", docker.removed)
 	}
 }

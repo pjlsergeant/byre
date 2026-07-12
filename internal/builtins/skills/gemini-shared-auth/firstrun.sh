@@ -19,11 +19,15 @@ for f in gemini-credentials.json oauth_creds.json google_accounts.json installat
   # Adopt an existing per-project login rather than clobbering it: a real
   # file with no shared copy MOVES in and becomes the machine-wide one.
   if [ -f "$local_f" ] && [ ! -L "$local_f" ] && [ ! -e "$shared" ]; then
+    echo "byre gemini-shared-auth: promoting this box's $f to the machine-wide shared credential" >&2
     mv "$local_f" "$shared" 2>/dev/null || true
   fi
   # Assert the symlink; when both a local file and a shared copy exist, the
   # shared one wins (the local file is a fork; discarding it is the healing).
   if [ ! -L "$local_f" ] || [ "$(readlink "$local_f")" != "$shared" ]; then
+    if [ -f "$local_f" ] && [ ! -L "$local_f" ] && [ -e "$shared" ]; then
+      echo "byre gemini-shared-auth: replacing this box's local $f with the machine-wide shared copy (the local file was a fork)" >&2
+    fi
     rm -f "$local_f"
     ln -s "$shared" "$local_f" 2>/dev/null || true
   fi

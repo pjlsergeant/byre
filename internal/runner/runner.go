@@ -8,6 +8,7 @@ package runner
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -53,25 +54,28 @@ func Detect(setting string, look LookPath) (Engine, error) {
 	}
 }
 
-// Runner invokes a container engine via its CLI. The three exec seams are
+// Runner invokes a container engine via its CLI. The exec seams are
 // injectable so command assembly can be unit-tested without a real engine:
 // stream connects child stdio (interactive build/run/exec); capture returns
 // stdout (ps/inspect); streamIn is stream with a caller-supplied stdin
-// (piping literal content into a container).
+// (piping literal content into a container); captureIn is capture with a
+// caller-supplied stdin (streaming content in AND reading a result back).
 type Runner struct {
-	engine   Engine
-	stream   func(name string, args ...string) error
-	capture  func(name string, args ...string) (string, error)
-	streamIn func(stdin io.Reader, name string, args ...string) error
+	engine    Engine
+	stream    func(name string, args ...string) error
+	capture   func(name string, args ...string) (string, error)
+	streamIn  func(stdin io.Reader, name string, args ...string) error
+	captureIn func(stdin io.Reader, name string, args ...string) (string, error)
 }
 
 // New returns a Runner for the given engine using real exec.
 func New(e Engine) *Runner {
 	return &Runner{
-		engine:   e,
-		stream:   streamExec,
-		capture:  captureExec,
-		streamIn: streamInExec,
+		engine:    e,
+		stream:    streamExec,
+		capture:   captureExec,
+		streamIn:  streamInExec,
+		captureIn: captureInExec,
 	}
 }
 
@@ -114,16 +118,46 @@ func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildAr
 	return r.stream(string(r.engine), append(args, contextDir)...)
 }
 
-// Run runs a container from the assembled run argv.
-func (r *Runner) Run(args []string) error {
-	return r.stream(string(r.engine), args...)
+// Create creates (without starting) a container from the assembled create
+// argv (CreateArgs). The container name is the handle for the StartAttach
+// that follows; a name conflict surfaces here, in the engine's stderr.
+// Output is captured (create prints the id), not streamed.
+func (r *Runner) Create(args []string) error {
+	_, err := r.capture(string(r.engine), args...)
+	return err
+}
+
+// StartAttach starts a created container in the foreground: attached, with
+// stdin open (the -i/-t attach shape was fixed at create time). The exit
+// status is the container's own, like `docker run`'s — but unlike run, an
+// engine-level start failure exits 1, not the reserved 125-127 band, so
+// callers can't fully distinguish it from an agent exit 1; the engine's
+// stderr (streamed) names the cause.
+func (r *Runner) StartAttach(container string) error {
+	return r.stream(string(r.engine), "start", "--attach", "--interactive", container)
 }
 
 // RunningContainersByLabel returns the ids of running containers carrying label
 // ("key=value"). Normally at most one (the container name enforces uniqueness),
 // but callers handle the list explicitly.
 func (r *Runner) RunningContainersByLabel(label string) ([]string, error) {
-	out, err := r.capture(string(r.engine), "ps", "-q", "--filter", "label="+label)
+	return r.containersByLabel(label, false)
+}
+
+// ContainersByLabel is RunningContainersByLabel over containers in ANY state
+// (created/exited/running). Lifecycle commands use it to see a develop that
+// has created its container under the setup lock but not yet started it —
+// the pre-start ownership marker (see commands' clearSessionMarkers).
+func (r *Runner) ContainersByLabel(label string) ([]string, error) {
+	return r.containersByLabel(label, true)
+}
+
+func (r *Runner) containersByLabel(label string, all bool) ([]string, error) {
+	args := []string{"ps", "-q", "--filter", "label=" + label}
+	if all {
+		args = append(args, "-a")
+	}
+	out, err := r.capture(string(r.engine), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +170,15 @@ func (r *Runner) RunningContainersByLabel(label string) ([]string, error) {
 	return ids, nil
 }
 
+// ContainerRemove removes a container — deliberately WITHOUT force, so it can
+// only ever remove a container that isn't running. Lifecycle commands rely on
+// that: removing a pre-start marker succeeds, while a session that started in
+// the meantime makes the removal fail and the caller abort.
+func (r *Runner) ContainerRemove(container string) error {
+	_, err := r.capture(string(r.engine), "rm", container)
+	return err
+}
+
 // ContainerEnv returns a running container's configured environment (image ENV
 // plus the `-e` vars set at run time), so callers can act on the identity/env
 // the session ACTUALLY started with rather than re-deriving it.
@@ -145,6 +188,41 @@ func (r *Runner) ContainerEnv(id string) (map[string]string, error) {
 		return nil, err
 	}
 	return parseEnvLines(out), nil
+}
+
+// ContainerLabels returns a running container's labels, so callers can read
+// the identity byre stamped at run time (byre.project / byre.workdir) off the
+// container itself rather than re-deriving it from host state.
+func (r *Runner) ContainerLabels(id string) (map[string]string, error) {
+	out, err := r.capture(string(r.engine), "inspect", "-f", "{{json .Config.Labels}}", id)
+	if err != nil {
+		return nil, err
+	}
+	labels := map[string]string{}
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" || trimmed == "null" {
+		return labels, nil
+	}
+	if err := json.Unmarshal([]byte(trimmed), &labels); err != nil {
+		return nil, fmt.Errorf("parsing container labels: %w", err)
+	}
+	return labels, nil
+}
+
+// ExecInput runs a non-interactive command in a running container as the given
+// uid:gid, feeding it stdin and capturing its stdout — deliver's exec-stream
+// transport (content goes in, the landed in-box path comes back). No -t (never
+// a terminal), no -w. HOME is set like Exec's callers set it (the launcher
+// exports it at run time, so `exec` doesn't inherit it — ADR 0021's attach
+// model is byre shell's, HOME included); /home/dev is the chassis dev home.
+func (r *Runner) ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
+	return r.captureIn(stdin, string(r.engine), execInputArgs(containerID, uid, gid, command...)...)
+}
+
+// execInputArgs builds the engine `exec -i` argv (pure, for testing).
+func execInputArgs(containerID string, uid, gid int, command ...string) []string {
+	args := []string{"exec", "-i", "-u", fmt.Sprintf("%d:%d", uid, gid), "-e", "HOME=/home/dev", containerID}
+	return append(args, command...)
 }
 
 // NetworkMode returns a container's network mode as the engine reports it
@@ -385,6 +463,21 @@ func streamInExec(stdin io.Reader, name string, args ...string) error {
 	cmd.Stdin = stdin
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+func captureInExec(stdin io.Reader, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = stdin
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		// Surface the child's stderr — otherwise failures are just "exit status 1".
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return string(out), fmt.Errorf("%s: %s", err, msg)
+		}
+	}
+	return string(out), err
 }
 
 func captureExec(name string, args ...string) (string, error) {

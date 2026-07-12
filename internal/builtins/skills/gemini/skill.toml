@@ -9,7 +9,10 @@
 # NodeSource, then `npm install -g` (global, on PATH). Config/credentials live in
 # a per-project .gemini state volume. No seed.
 
-description = "The Gemini CLI agent; login persists per project."
+# The visible description must carry the DRAFT status above: the picker is the
+# point of choice, and a finished-sounding line over an unverified autonomy
+# flag and auth flow would be a legibility failure.
+description = "The Gemini CLI agent; login persists per project. EXPERIMENTAL: autonomy flag and auth flow not yet live-verified."
 
 [build]
 apt = ["curl", "ca-certificates"]

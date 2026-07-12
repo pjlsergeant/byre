@@ -295,14 +295,52 @@ func TestLoadCascade(t *testing.T) {
 	}
 }
 
+// A stored "none" is a real answer, not absence: it beats a template's agent
+// in the merge (an empty scalar would inherit it), and resolves to empty —
+// no resolved config ever carries the sentinel (audit finding 5).
+func TestNoneSentinelBeatsTemplateAgent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+
+	tmplDir := filepath.Join(home, "templates", "opinionated")
+	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(tmplDir, "template.config"), "agent = \"claude\"\n")
+	writeProjectCfg(t, proj, "template = \"opinionated\"\nagent = \"none\"\n")
+
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent != "" {
+		t.Fatalf("an explicit none must beat the template's agent, got %q", cfg.Agent)
+	}
+
+	// And template = "none" resolves as no template at all, not a lookup of
+	// a template named "none".
+	proj2 := t.TempDir()
+	writeProjectCfg(t, proj2, "template = \"none\"\nagent = \"none\"\n")
+	cfg2, err := Load(proj2)
+	if err != nil {
+		t.Fatalf("template=none must not be looked up as a template dir: %v", err)
+	}
+	if cfg2.Template != "" || cfg2.Agent != "" {
+		t.Fatalf("sentinels must resolve to empty, got template=%q agent=%q", cfg2.Template, cfg2.Agent)
+	}
+}
+
 func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir() // no byre.config
 
-	// default.config sets template/agent (picker pre-selections) plus base/apt.
+	// default.config sets template/agent (picker pre-selections) and
+	// shared_auth_declined (vestigial v0.1.7 picker state, ADR 0025 — must
+	// still parse and never cascade) plus base/apt.
 	writeFile(t, filepath.Join(home, "default.config"),
-		"agent = \"claude\"\ntemplate = \"node\"\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
+		"agent = \"claude\"\ntemplate = \"node\"\nshared_auth_declined = [\"claude\"]\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
 
 	cfg, err := Load(proj)
 	if err != nil {
@@ -311,6 +349,10 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	// template/agent must NOT cascade from default.config...
 	if cfg.Agent != "" {
 		t.Errorf("default agent must not cascade, got %q", cfg.Agent)
+	}
+	// ...nor the picker-owned decline record...
+	if len(cfg.SharedAuthDeclined) != 0 {
+		t.Errorf("shared_auth_declined must not cascade, got %v", cfg.SharedAuthDeclined)
 	}
 	if cfg.Base != "debian:bookworm" {
 		t.Errorf("default template must not apply (base should stay debian), got %q", cfg.Base)
@@ -486,6 +528,14 @@ func TestValidatePorts(t *testing.T) {
 		"container out of range": {Ports: []Port{{Container: 0}}},
 		"host out of range":      {Ports: []Port{{Container: 80, Host: 99999}}},
 		"dup host binding":       {Ports: []Port{{Container: 80, Host: 8080}, {Container: 81, Host: 8080}}},
+		// The interface lands in docker's colon-delimited -p grammar: only a
+		// canonical IPv4 literal may pass, or the value fails (or changes
+		// meaning) at engine invocation instead of at validation.
+		"hostname interface":      {Ports: []Port{{Container: 80, Interface: "localhost"}}},
+		"ipv6 interface":          {Ports: []Port{{Container: 80, Interface: "::1"}}},
+		"mapped-ipv4 spelling":    {Ports: []Port{{Container: 80, Interface: "::ffff:127.0.0.1"}}},
+		"whitespace interface":    {Ports: []Port{{Container: 80, Interface: " 127.0.0.1"}}},
+		"colon-bearing interface": {Ports: []Port{{Container: 80, Interface: "127.0.0.1:80"}}},
 	}
 	for name, c := range bad {
 		if err := c.Validate(); err == nil {
@@ -526,25 +576,28 @@ func TestListTemplates(t *testing.T) {
 // a field to Config forces adding it both here and to Merge.
 func sampleConfig() Config {
 	return Config{
-		Engine:         "podman",
-		Template:       "go",
-		Agent:          "claude",
-		Base:           "debian:bookworm",
-		SeedPrefs:      true,
-		WorktreeBase:   "sibling",
-		Apt:            []string{"jq"},
-		NpmGlobal:      []string{"typescript"},
-		Env:            map[string]string{"K": "v"},
-		Files:          map[string]string{"a.txt": "/opt/a.txt"},
-		Skills:         []string{"devloop"},
-		Egress:         []string{"grafana.com"},
-		EgressOffered:  []string{"registry.npmjs.org"},
-		Mounts:         []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
-		Volumes:        []Volume{{Name: "v", Role: "cache", Target: "/c"}},
-		Ports:          []Port{{Container: 8080}},
-		DockerfilePre:  []string{"RUN true"},
-		DockerfilePost: []string{"RUN false"},
-		RunArgs:        []string{"--cap-add=X"},
+		Engine:             "podman",
+		Template:           "go",
+		Agent:              "claude",
+		Base:               "debian:bookworm",
+		SeedPrefs:          true,
+		WorktreeBase:       "sibling",
+		Apt:                []string{"jq"},
+		NpmGlobal:          []string{"typescript"},
+		Env:                map[string]string{"K": "v"},
+		Files:              map[string]string{"a.txt": "/opt/a.txt"},
+		Skills:             []string{"devloop"},
+		SharedAuth:         []string{"claude"},
+		SharedAuthDeclined: []string{"claude"},
+		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
+		Egress:             []string{"grafana.com"},
+		EgressOffered:      []string{"registry.npmjs.org"},
+		Mounts:             []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
+		Volumes:            []Volume{{Name: "v", Role: "cache", Target: "/c"}},
+		Ports:              []Port{{Container: 8080}},
+		DockerfilePre:      []string{"RUN true"},
+		DockerfilePost:     []string{"RUN false"},
+		RunArgs:            []string{"--cap-add=X"},
 	}
 }
 
@@ -776,5 +829,66 @@ func TestParseEgress(t *testing.T) {
 		if _, _, err := ParseEgress(bad); err == nil {
 			t.Errorf("ParseEgress(%q) should fail", bad)
 		}
+	}
+}
+
+// shared_auth (and the vestigial shared_auth_declined) is stripped from
+// EVERY resolved config, whatever layer carried it — picker-owned state must
+// not ride the cascade (ADR 0025).
+func TestSharedAuthKeysNeverResolve(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	writeProjectCfg(t, proj, "agent = \"claude\"\nshared_auth = [\"claude\"]\nshared_auth_declined = [\"claude\"]\n")
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SharedAuth) != 0 {
+		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %v", cfg.SharedAuth)
+	}
+	if len(cfg.SharedAuthDeclined) != 0 {
+		t.Fatalf("project-layer shared_auth_declined must be stripped from the resolved config, got %v", cfg.SharedAuthDeclined)
+	}
+}
+
+// env_from_host (ADR 0026): byre's core git-identity layer is a real config
+// layer — on by default, visible in the resolved config, disable-able and
+// overridable per key by any higher layer; sources beyond git: are reserved.
+func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	writeProjectCfg(t, proj, "agent = \"none\"\n")
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EnvFromHost["GIT_AUTHOR_NAME"] != "git:user.name" || cfg.EnvFromHost["GIT_COMMITTER_EMAIL"] != "git:user.email" {
+		t.Fatalf("shipped core defaults must resolve on: %v", cfg.EnvFromHost)
+	}
+
+	// A higher layer disables one key and redirects another.
+	proj2 := t.TempDir()
+	writeProjectCfg(t, proj2, "agent = \"none\"\n[env_from_host]\nGIT_AUTHOR_NAME = \"\"\nGIT_COMMITTER_NAME = \"git:custom.name\"\n")
+	cfg2, err := Load(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.EnvFromHost["GIT_AUTHOR_NAME"] != "" {
+		t.Fatalf("a layer's \"\" must disable the key: %v", cfg2.EnvFromHost)
+	}
+	if cfg2.EnvFromHost["GIT_COMMITTER_NAME"] != "git:custom.name" {
+		t.Fatalf("a layer must override a core source: %v", cfg2.EnvFromHost)
+	}
+
+	// env: sources are reserved until deliberately designed.
+	bad := Config{EnvFromHost: map[string]string{"FOO": "env:SECRET"}}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "git:") {
+		t.Fatalf("env: source must be rejected loudly, got %v", err)
+	}
+	badKey := Config{EnvFromHost: map[string]string{"BAD KEY": "git:user.name"}}
+	if err := badKey.Validate(); err == nil {
+		t.Fatal("invalid env key must be rejected")
 	}
 }

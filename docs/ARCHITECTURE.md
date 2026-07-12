@@ -155,8 +155,10 @@ shelling out to the engine CLI, never the SDK (ADR 0002). `engine =
 Caveat -- **rootless Podman is not a free win.** The chassis bakes the
 host UID/GID assuming a rootful daemon; rootless remaps user namespaces,
 so the ownership math differs. The rootless keep-id path is designed but
-sequenced later (ADR 0008); until then byre detects rootless Podman and
-warns.
+sequenced later (ADR 0008); until then `byre develop` detects rootless
+Podman and refuses (the launch is known to create wrong-owned files);
+`BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides with the warning retained, the
+same shape as the root-host refusal (`BYRE_ALLOW_ROOT=1`).
 
 ## Box lifecycle
 
@@ -352,20 +354,31 @@ copy-semantics breaks rotating OAuth tokens): agents log in once in the
 box and the state volume persists the login per-project. `seed_prefs`
 (ADR 0013) is the curated, non-secret exception for agent prefs. The
 **shared-auth companion skills** (`claude-shared-auth`,
-`codex-shared-auth`, `gemini-shared-auth`, `grok-shared-auth`; ADR 0017)
+`codex-shared-auth`, `gemini-shared-auth`; ADR 0017)
 make one login
 serve every project WITHOUT host copying: the credential lives in a
 machine-scoped identity volume and byre reads nothing from the host --
-Codex, Gemini, and Grok log in once in any box (the credential lands in
+Codex and Gemini log in once in any box (the credential lands in
 the shared volume through symlinks; Gemini's API-key path is verified,
-Gemini-OAuth and Grok sharing gate-pending -- see the skills and ADR
-0017's verification record); Claude uses a user-minted `claude
+Gemini-OAuth gate-pending -- see the skills and ADR
+0017's verification record); Grok has NO shared-auth (its single-use
+rotation failed the file-sharing gates in the field; retired, ADR 0023);
+Claude uses a user-minted `claude
 setup-token` pasted at a
 first-run prompt and exported to the agent process by a **launch env
 hook**
 (`/etc/byre/env.d/*.sh`, sourced by the launcher after firstrun hooks,
 immediately before exec -- the chassis mechanism for skills that must
-put env into the agent process).
+put env into the agent process). A companion whose mechanism is ready
+declares `shared_auth_for = "<agent>"` in its skill.toml, and the
+first-run picker then asks, at every box's onboarding, whether to opt
+that box in -- yes puts the companion in the project's `byre.config`
+`skills`, the only grant the answer makes. Save-as-default stores the
+answer as a favourite (the picker-owned `shared_auth` list) that
+prefills the next box's offer; the offer is skipped only when the
+companion is already hand-granted machine-wide in `default.config`
+`skills`, a key the picker never writes (ADR 0025). Gemini-OAuth
+(gate-pending) and grok (retired) deliberately don't declare it.
 
 ## The chassis
 
@@ -426,9 +439,10 @@ which re-resolves automatically once git's own pointers are repaired).
 
 Every command is either *lifecycle* (`develop`, `worktree`, `reset`,
 `rebuild`, `rehome`, `forget`) or *inspection* (`status`, `dockerfile`,
-`shell`, `config`). **No command mutates config behind your back** --
-config is edited by you (in files, or explicitly in the `byre config`
-editor); `develop` and friends only read it and act.
+`shell`, `config`) -- plus one *transfer* verb, `deliver` (below).
+**No command mutates config behind your back** -- config is edited by
+you (in files, or explicitly in the `byre config` editor); `develop`
+and friends only read it and act.
 
 ```
 byre develop      Set up if needed (generate, build-on-cache-miss) and run the
@@ -450,16 +464,18 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   every grant and who granted it, network posture + egress,
                   volumes, raw blocks verbatim-but-flagged, session state.
 
+                      Project id:   repo-abc123
                       Agent:        claude
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
                       Network:      open
+                      Ports:        none
                       Host mounts:  none
-                      Skills:       devloop
-                      State vols:   .claude          (per-project)
-                      Cache vols:   node_modules     (per-project)
+                      Skills:       claude, devloop
+                      State vols:   .claude
+                      Cache vols:   none
+                      Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values passed in; env_from_host)
                       Raw run args: --cap-add=SYS_PTRACE   (passed through; not introspected)
-                      Dockerfile:   ~/.byre/projects/<project_id>/Dockerfile.generated
                       Container:    not running
 
 byre dockerfile   Print the generated Dockerfile for this directory.
@@ -467,15 +483,66 @@ byre dockerfile   Print the generated Dockerfile for this directory.
 byre config       Interactive editor for this project's host-side config
                   (--global for the baseline).
 
-byre rehome       Re-point a moved directory's identity (migrate volumes) onto
-                  its new path-derived id.
+byre rehome       Re-point a moved directory's identity onto its new
+                  path-derived id: migrate volumes and the stored config,
+                  then retire the old id's store and image.
 
 byre forget       Remove all of byre's host-side state for this directory --
                   volumes, image, ~/.byre/projects/<id>/. Never touches the
                   project tree.
 
 byre skill update Re-materialize built-in skills into ~/.byre/skills/.
+
+byre deliver      Stream files (or the clipboard, or stdin) from the host into
+                  a running box's /inbox. User docs: docs/deliver.md.
 ```
+
+### Deliver
+
+`byre deliver` is the one **machine-scoped** verb: instead of deriving a
+project from cwd, it discovers running boxes across every installed
+engine (`ps` filtered on the `byre.project` label; each hit keeps engine
+affinity for the later exec) and resolves a target through a cascade —
+`--box` (unique prefix), cwd match walking ancestor directories against
+the `byre.workdir` label, sole owned session (an unreachable engine
+quietly counts as zero; any other failed query disables this step -- a
+partial pool can't prove "exactly one"), interactive
+picker (Bubble Tea on a TTY, osascript/zenity/kdialog on a graphical
+launch), else an error listing the candidates. Discovery filters to
+boxes whose `BYRE_UID` matches the caller — an accident filter, not
+confinement (`--skip-uid-check` reveals and permits the rest).
+
+Transport is an `exec -i` per file, as the container's own
+`BYRE_UID:BYRE_GID` (the `byre shell` attach model), running a POSIX-sh
+script that streams stdin to a dotfile temp under `set -C` (noclobber)
+and claims the final name with `ln` — link(2) fails EEXIST atomically,
+so collisions uniquify (`report-2.pdf`) with no overwrite window, and a
+died stream leaves no half-file under a real name. Directories claim
+their top-level name with an atomic `mkdir` and stream the tree
+per-file. `/inbox` itself is baked by the chassis: dev-owned under
+root-owned `/`, so the boxed agent can't replace it with a symlink.
+
+Host capabilities are probed per axis and degrade independently: the
+landed paths always print to stdout (the machine contract, one per
+line) and best-effort ride the host clipboard back (pbcopy / wl-copy /
+xclip, or OSC 52 through SSH); the no-arg clipboard import waits for a
+paste gesture on a TTY and classifies the captured paste -- text
+mirroring the pasteboard is a real paste (read the pasteboard
+out-of-band: file references → image → text), existing absolute host
+paths are a drag onto the window (delivered as files), anything else
+is literal pasted text; graphical launches (no TTY, GUI present)
+also report via OS notification. Every degraded nicety states itself
+on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021;
+user behavior (and the what-works-where matrix) in `docs/deliver.md`.
+
+`byre deliver --install-app` materializes the deliver app — generated,
+readable host artifacts whose only job is invoking `byre deliver`: an
+AppleScript droplet assembled by the OS's own `osacompile` (source
+shipped inside the bundle; nothing prebuilt crosses a machine boundary,
+so no signing certificate is involved — ad-hoc codesign runs as Apple
+Silicon belt-and-braces), a Finder Quick Action, and a Linux `.desktop`
+entry. Regeneration replaces only artifacts carrying byre's generated
+marker; a same-named file byre didn't write is refused.
 
 ## Platform note
 

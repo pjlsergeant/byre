@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
@@ -532,6 +533,24 @@ func TestResolveRejectsRelativeNetnsInit(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsTwoNetnsInits(t *testing.T) {
+	dir := t.TempDir()
+	// The launch gate is opened by the hook's own script, so a second hook
+	// could run after the agent was already released — refuse the ambiguity
+	// (same stance as two posture declarations).
+	writeSkill(t, dir, "fw1", "[runtime]\nnetns_init = \"/usr/local/bin/fw1\"\n", nil)
+	writeSkill(t, dir, "fw2", "[runtime]\nnetns_init = \"/usr/local/bin/fw2\"\n", nil)
+	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, dir)
+	if err == nil {
+		t.Fatal("two skills declaring a netns_init must be rejected")
+	}
+	for _, want := range []string{"fw1", "fw2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q: %v", want, err)
+		}
+	}
+}
+
 func TestEgressUnionAndAttribution(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "claude", "[runtime]\negress = [\"api.anthropic.com\", \"claude.ai\"]\n", nil)
@@ -580,5 +599,55 @@ func TestEgressPortDefaultsTo443(t *testing.T) {
 	}
 	if h, p, err := parseEgress("deb.debian.org:80"); err != nil || h != "deb.debian.org" || p != 80 {
 		t.Fatalf("parseEgress explicit = (%q,%d,%v)", h, p, err)
+	}
+}
+
+// SharedAuthCompanion maps an agent to the skill VOUCHING itself ready as
+// that agent's shared-auth companion (shared_auth_for). No declaration — a
+// broken or gate-pending companion — means no onboarding offer.
+func TestSharedAuthCompanion(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "claude", "[agent]\ncommand = \"claude\"\nstate = \"s\"\n\n[[volumes]]\nname = \"s\"\nrole = \"state\"\ntarget = \"/home/dev/.claude\"\n", nil)
+	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
+	writeSkill(t, dir, "grok-shared-auth", "description = \"RETIRED — no shared_auth_for, so never offered\"\n", nil)
+
+	if got := SharedAuthCompanion(dir, "claude"); got != "claude-shared-auth" {
+		t.Fatalf("SharedAuthCompanion(claude) = %q, want claude-shared-auth", got)
+	}
+	if got := SharedAuthCompanion(dir, "grok"); got != "" {
+		t.Fatalf("an undeclared companion must not be offered, got %q", got)
+	}
+	if got := SharedAuthCompanion(dir, ""); got != "" {
+		t.Fatalf("no agent, no companion, got %q", got)
+	}
+}
+
+// The builtin declarations are load-bearing: claude/codex offer at onboarding;
+// gemini (OAuth gate-pending) and grok (retired) deliberately must NOT.
+func TestBuiltinSharedAuthDeclarations(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "skills")
+	if err := builtins.MaterializeSkills(dir); err != nil {
+		t.Fatal(err)
+	}
+	for agent, want := range map[string]string{
+		"claude": "claude-shared-auth",
+		"codex":  "codex-shared-auth",
+		"gemini": "", // OAuth gate-pending (see gemini-shared-auth/skill.toml)
+		"grok":   "", // retired (see grok-shared-auth/skill.toml)
+	} {
+		if got := SharedAuthCompanion(dir, agent); got != want {
+			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)
+		}
+	}
+}
+
+// Two skills claiming the same agent is refused (no offer), not resolved by
+// sort order — a hand-dropped near-namesake must not shadow the builtin.
+func TestSharedAuthCompanionRefusesAmbiguity(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "aa-auth", "shared_auth_for = \"claude\"\n", nil)
+	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
+	if got := SharedAuthCompanion(dir, "claude"); got != "" {
+		t.Fatalf("two declarers must yield no companion, got %q", got)
 	}
 }

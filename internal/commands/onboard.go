@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -16,11 +17,16 @@ import (
 )
 
 // onboardIfNeeded runs the first-run picker (or applies flags) when a project
-// has no byre.config. With flags it's non-interactive; on a TTY it prompts with
-// favourites pre-selected; on a non-TTY with no flags it does nothing (develop
-// proceeds from the cascade defaults).
-func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string) error {
-	anyFlag := flagTemplate != "" || flagAgent != ""
+// has no byre.config. With BOTH axis flags it's non-interactive (no prompts at
+// all, including the shared-auth offer); on a TTY it prompts for whatever the
+// flags left open, favourites pre-selected; on a non-TTY with no flags it does
+// nothing (develop proceeds from the cascade defaults). A given --shared-auth
+// IS the offer's answer (either way), so the question is never asked; a
+// non-TTY partially-flagged run errors instead of guessing the open axis from
+// a favourite — favourites answer prompts, they don't consent for a new
+// project, and there is no prompt to answer on a pipe.
+func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string, flagSharedAuth *bool) error {
+	anyFlag := flagTemplate != "" || flagAgent != "" || flagSharedAuth != nil
 
 	// The project's config lives in the host-side store, NOT the project tree, so
 	// the (rw-mounted) project can't define its own sandbox.
@@ -34,7 +40,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			if c, e := config.Load(projectDir); e == nil && c.Agent != "" {
 				cur = fmt.Sprintf(" (currently agent=%s)", c.Agent)
 			}
-			return fmt.Errorf("this project is already configured%s — --template/--agent only apply when creating a config.\nReconfigure by editing %s, or run 'byre forget' then re-run.", cur, cfgPath)
+			return fmt.Errorf("this project is already configured%s — --template/--agent/--shared-auth only apply when creating a config.\nReconfigure by editing %s, or run 'byre forget' then re-run.", cur, cfgPath)
 		}
 		return nil
 	}
@@ -54,28 +60,58 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	defT := keepIfIn(rawT, templates)
 	defA := keepIfIn(rawA, agents)
 
+	// One buffered reader for ALL onboarding prompts: a fresh bufio per
+	// question would drop whatever the previous one buffered ahead.
+	in := bufio.NewReader(s.In)
+
+	// The shared-auth offer's gate (ADR 0025): only an agent with a ready
+	// companion, and only when the companion isn't already granted
+	// machine-wide (in default.config's skills, hand-made — then the cascade
+	// covers every box and a per-box answer would be a lie). The second
+	// return is the saved preference prefilling the offer's default answer.
+	companionFor := func(agent string) (string, bool) {
+		c := skills.SharedAuthCompanion(skillsDir, agent)
+		if c == "" || onboard.SharedAuthAlreadyOn(paths.Home, c) {
+			return "", false
+		}
+		return c, onboard.SharedAuthPreference(paths.Home, agent)
+	}
+
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
 	// proceeds from the cascade.
 	if !anyFlag {
 		if !s.TTY {
 			return nil
 		}
-		choice, err := onboard.Pick(s.Err, s.In, templates, agents,
+		choice, err := onboard.Pick(s.Err, in, templates, agents,
 			onboard.Favourite{Stored: rawT, Effective: defT},
-			onboard.Favourite{Stored: rawA, Effective: defA})
+			onboard.Favourite{Stored: rawA, Effective: defA},
+			companionFor)
 		if err != nil {
 			return err
 		}
-		if err := writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent); err != nil {
-			return err
-		}
+		// Machine-level records first, the project's byre.config LAST: once
+		// byre.config exists this project never onboards again, so a failed
+		// default.config write must abort while onboarding can still re-run
+		// (the recorded answers are idempotent and skip their prompts on the
+		// re-run).
 		if choice.SaveDefault {
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
+			// "These" is every answer just given: when the shared-auth offer
+			// was among them, its answer is saved as the preference that
+			// prefills future offers — a favourite exactly like template and
+			// agent, never a grant (each box's grant is only ever its own
+			// byre.config, written below).
+			if choice.SharedAuthCompanion != "" {
+				if err := onboard.SaveSharedAuthDefault(paths.Home, choice.Agent, choice.SharedAuth); err != nil {
+					return err
+				}
+			}
 			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
-		return nil
+		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent, optedSkills(choice.SharedAuthCompanion, choice.SharedAuth))
 	}
 
 	// Resolve explicitly-flagged axes first, so a bad flag value fails fast —
@@ -97,33 +133,81 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		a, aFixed = v, true
 	}
 
-	// Choose any un-flagged axis: prompt for it on a TTY (the picker, just that
-	// axis), or fall back to the favourite on a non-TTY. (At least one axis is
-	// flag-fixed here, so at most one prompt happens.) We never silently inherit
-	// the favourite for an un-flagged axis on a TTY.
+	// An un-flagged axis needs an answer, and on a non-TTY nobody can give
+	// one: refuse rather than guess. A favourite is what Enter means at a
+	// prompt — there is no Enter on a pipe, and silently writing it into a
+	// NEW project's config would turn a preference into an unconsented,
+	// persistent choice.
+	if !s.TTY && !(tFixed && aFixed) {
+		return fmt.Errorf("non-interactive onboarding needs both --template and --agent (pass %q to skip one) — run on a TTY to be asked for the rest", "none")
+	}
+
+	// Choose any un-flagged axis: prompt for it on a TTY (the picker, just
+	// that axis). We never silently inherit the favourite for an un-flagged
+	// axis.
 	if s.TTY && (!tFixed || !aFixed) {
 		fmt.Fprintln(s.Err, "byre: no byre.config — choosing the rest interactively (Enter accepts [default]).")
 	}
 	if !tFixed && s.TTY {
-		v, err := onboard.AskAxis(s.Err, s.In, "Template", templates, defT)
+		v, err := onboard.AskAxis(s.Err, in, "Template", templates, defT)
 		if err != nil {
 			return err
 		}
 		t = v
 	}
 	if !aFixed && s.TTY {
-		v, err := onboard.AskAxis(s.Err, s.In, "Agent", agents, defA)
+		v, err := onboard.AskAxis(s.Err, in, "Agent", agents, defA)
 		if err != nil {
 			return err
 		}
 		a = v
 	}
-	return writeAndReport(s.Err, cfgPath, t, a)
+	// A given --shared-auth IS the answer: apply it (loudly refusing a yes
+	// the chosen agent has no ready companion for) and never ask. Otherwise
+	// the offer joins the other prompts, BEFORE anything is written (an EOF
+	// mid-prompting aborts with no side effects). Both axes flag-fixed = the
+	// caller asked for a fully non-interactive onboarding (scripts,
+	// wrappers): no prompts means no offer either; a partially-flagged TTY
+	// run was already interactive, so it rides along.
+	companion, sharedAuth := "", false
+	if flagSharedAuth != nil {
+		if *flagSharedAuth {
+			if companion = skills.SharedAuthCompanion(skillsDir, a); companion == "" {
+				return fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
+			}
+			sharedAuth = true
+		}
+	} else if s.TTY && !(tFixed && aFixed) {
+		var pref bool
+		if companion, pref = companionFor(a); companion != "" {
+			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion, pref)
+			if err != nil {
+				return err
+			}
+			sharedAuth = yes
+		}
+	}
+	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
-func writeAndReport(w io.Writer, configPath, template, agent string) error {
-	if err := onboard.WriteProjectConfig(configPath, template, agent); err != nil {
+// optedSkills turns the shared-auth offer's outcome (ADR 0025) into the
+// skills to write into this box's byre.config: the companion on a yes,
+// nothing otherwise — a "no" is not recorded anywhere; the next project's
+// onboarding simply asks about its own box.
+func optedSkills(companion string, yes bool) []string {
+	if companion == "" || !yes {
+		return nil
+	}
+	return []string{companion}
+}
+
+func writeAndReport(w io.Writer, configPath, template, agent string, skills []string) error {
+	if err := onboard.WriteProjectConfig(configPath, template, agent, skills); err != nil {
 		return err
+	}
+	if len(skills) > 0 {
+		fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s, skills=%s)\n", configPath, config.OrNone(template), config.OrNone(agent), strings.Join(skills, ", "))
+		return nil
 	}
 	fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s)\n", configPath, config.OrNone(template), config.OrNone(agent))
 	return nil

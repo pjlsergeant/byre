@@ -43,8 +43,8 @@ func TestDevelopRefusesWhenSessionLive(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 		t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
 	}
-	if len(f.builds) != 0 || len(f.runs) != 0 {
-		t.Fatalf("must not build or run when a session is live: builds=%v runs=%v", f.builds, f.runs)
+	if len(f.builds) != 0 || len(f.creates) != 0 || len(f.starts) != 0 {
+		t.Fatalf("must not build or run when a session is live: builds=%v creates=%v starts=%v", f.builds, f.creates, f.starts)
 	}
 	// No walls go up on a refusal: the exposure lines describe a run that
 	// isn't happening.
@@ -70,23 +70,29 @@ func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 	if len(f.seeded) != 1 || f.seeded[0] != volumeName(p.ID, ".claude") {
 		t.Fatalf("expected the state volume seeded, got %v", f.seeded)
 	}
-	if len(f.runs) != 1 {
-		t.Fatalf("expected one run, got %v", f.runs)
+	if len(f.creates) != 1 || len(f.starts) != 1 {
+		t.Fatalf("expected one create + one start, got creates=%v starts=%v", f.creates, f.starts)
 	}
-	// Build, then seed, then run — seeding uses the image just built, and the
-	// interactive run must come after setup completes.
+	// Build, then seed, then create (all under the setup lock — the created
+	// container is the ownership marker lifecycle commands key on), then the
+	// interactive start after the lock releases.
 	ops := strings.Join(f.ops, " | ")
-	bi, si, ri := strings.Index(ops, "build"), strings.Index(ops, "seed"), strings.Index(ops, "run")
-	if !(bi >= 0 && bi < si && si < ri) {
-		t.Fatalf("expected build < seed < run, got ops %v", f.ops)
+	bi, si := strings.Index(ops, "build"), strings.Index(ops, "seed")
+	ci, ti := strings.Index(ops, "createbox"), strings.Index(ops, "start")
+	if !(bi >= 0 && bi < si && si < ci && ci < ti) {
+		t.Fatalf("expected build < seed < create < start, got ops %v", f.ops)
 	}
-	// The run argv is the assembled `run ...` for this project's image.
-	argv := strings.Join(f.runs[0], " ")
-	if !strings.HasPrefix(argv, "run ") || !strings.Contains(argv, image) {
-		t.Fatalf("run argv doesn't run the built image: %s", argv)
+	// The create argv is the assembled `create ...` for this project's image.
+	argv := strings.Join(f.creates[0], " ")
+	if !strings.HasPrefix(argv, "create ") || !strings.Contains(argv, image) {
+		t.Fatalf("create argv doesn't use the built image: %s", argv)
 	}
 	if !strings.Contains(argv, "--name byre-"+p.WorktreeID) {
-		t.Fatalf("run argv missing the session container name: %s", argv)
+		t.Fatalf("create argv missing the session container name: %s", argv)
+	}
+	// The start targets the same name.
+	if f.starts[0] != "byre-"+p.WorktreeID {
+		t.Fatalf("start targets %q, want the session container name", f.starts[0])
 	}
 }
 
@@ -125,18 +131,32 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 	}
 }
 
-func TestDevelopRunRaceReportsRefusal(t *testing.T) {
+func TestDevelopCreateRaceReportsRefusal(t *testing.T) {
 	p, _ := testPaths(t)
-	// Nothing live at the fast path, run fails, and the re-check finds the
-	// winner's container: a concurrent develop won the container-name race.
+	// Nothing live at the fast path, the create loses the container-name race,
+	// and the re-check finds the winner's container: report the live session.
 	f := &fakeRunner{
-		runErr:     exitError(t, 125),
+		createErr:  errors.New("name /byre-x is already in use"),
 		liveSecond: liveWorkdir(p, "cafebabe0000"),
 	}
 	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
-		t.Fatalf("expected ExitError{%d} after losing the run race, got %v", ExitRefused, err)
+		t.Fatalf("expected ExitError{%d} after losing the create race, got %v", ExitRefused, err)
+	}
+	if len(f.starts) != 0 {
+		t.Fatalf("must not start after a failed create: %v", f.starts)
+	}
+}
+
+func TestDevelopCreateFailureNamesStaleContainer(t *testing.T) {
+	p, _ := testPaths(t)
+	// The create fails but no session is live: a leftover container (a crashed
+	// develop's marker) may hold the name — the error must say how to clear it.
+	f := &fakeRunner{createErr: errors.New("name /byre-x is already in use")}
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	if err == nil || !strings.Contains(err.Error(), "rm byre-"+p.WorktreeID) {
+		t.Fatalf("expected the stale-container hint, got %v", err)
 	}
 }
 
@@ -177,8 +197,8 @@ func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 	if !strings.Contains(stderr.String(), "byre: exposure: /workspace rw · self-edit rw\n") {
 		t.Errorf("expected self-edit in the exposure line: %s", stderr.String())
 	}
-	if argv := strings.Join(f.runs[0], " "); !strings.Contains(argv, "target="+selfEditTarget) {
-		t.Errorf("run argv missing the self-edit mount: %s", argv)
+	if argv := strings.Join(f.creates[0], " "); !strings.Contains(argv, "target="+selfEditTarget) {
+		t.Errorf("create argv missing the self-edit mount: %s", argv)
 	}
 	// Config untouched during the session: no diff noise at exit.
 	if strings.Contains(stderr.String(), "the project store changed") {
@@ -274,10 +294,10 @@ func TestDevelopRunsNetnsInitsOnceUp(t *testing.T) {
 	if len(f.netnsInits) != 1 || f.netnsInits[0] != id+" /usr/local/bin/byre-firewall" {
 		t.Fatalf("expected the netns hook applied to OUR container id, got %v", f.netnsInits)
 	}
-	// The nonce label must actually be on the run argv (asserted with the
+	// The nonce label must actually be on the create argv (asserted with the
 	// identity labels, after run_args) or the poll could never match.
-	if argv := strings.Join(f.runs[0], " "); !strings.Contains(argv, "--label byre.run=feedface") {
-		t.Errorf("run argv missing the nonce label: %s", argv)
+	if argv := strings.Join(f.creates[0], " "); !strings.Contains(argv, "--label byre.run=feedface") {
+		t.Errorf("create argv missing the nonce label: %s", argv)
 	}
 }
 
@@ -396,7 +416,7 @@ func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
 		t.Fatalf("no skill declares a hook; none must run: %v", f.netnsInits)
 	}
 	// And no nonce label is added when nothing consumes it.
-	if argv := strings.Join(f.runs[0], " "); strings.Contains(argv, "byre.run=") {
+	if argv := strings.Join(f.creates[0], " "); strings.Contains(argv, "byre.run=") {
 		t.Errorf("nonce label must not appear without netns hooks: %s", argv)
 	}
 }

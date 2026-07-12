@@ -108,6 +108,9 @@ var (
 	selFocus   = lipgloss.NewStyle().Reverse(true).Bold(true) // chosen option, focused row
 	dimStyle   = lipgloss.NewStyle().Faint(true)
 	errStyle   = lipgloss.NewStyle().Bold(true)
+	// warnStyle marks cross-project reach — the one thing in this UI that
+	// escapes the current scope must not blend in (ANSI yellow, bold).
+	warnStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 )
 
 // uiMode is the current screen: the field form, a list field's item browser, or
@@ -210,6 +213,7 @@ type model struct {
 	itemErr     string
 
 	width       int
+	height      int
 	errMsg      string
 	status      string
 	confirmQuit bool
@@ -241,6 +245,18 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills}},
+	}
+	// In default.config, template/agent are the first-run picker's
+	// PRE-SELECTIONS — the resolver strips them from every resolved config,
+	// so filing them under BUILD would claim they shape boxes. Their own
+	// section says what they actually do (audit finding: the global editor
+	// presented inert favourites as live machine-wide config).
+	if global {
+		sections = []section{
+			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
+			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills}},
+		}
 	}
 	// worktree_base is a global/host preference; only the --global editor shows it
 	// (in a project editor it would falsely read "unset — will refuse" whenever a
@@ -343,6 +359,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case editorClosedMsg:
 		return m.onEditorClosed(msg.err), nil
@@ -381,18 +398,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ---- form screen -----------------------------------------------------------
 
+// isQuitKey reports whether a key both arms and confirms the dirty-quit
+// prompt on the form screen. Any key that quits must also be excluded from
+// clearing confirmQuit, or a repeat press re-arms forever instead of quitting.
+func isQuitKey(k string) bool {
+	switch k {
+	case "esc", "ctrl+c", "ctrl+q":
+		return true
+	}
+	return false
+}
+
 func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key != "esc" {
-		m.confirmQuit = false
-	}
-	switch key {
-	case "ctrl+c", "esc":
+	if isQuitKey(key) {
 		if m.dirty() && !m.confirmQuit {
 			m.confirmQuit = true // View shows the confirm prompt
 			return m, nil
 		}
 		return m, tea.Quit
+	}
+	m.confirmQuit = false
+	switch key {
 	case "ctrl+s":
 		return m.save(), nil
 	case "ctrl+e":
@@ -401,7 +428,6 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// on-disk file, so unsaved structured edits would be lost or clobbered.
 		if m.dirty() {
 			m.errMsg = "save (ctrl+s) or discard changes before editing the file in $EDITOR"
-			m.confirmQuit = false
 			return m, nil
 		}
 		m.errMsg = ""
@@ -513,7 +539,80 @@ func (m model) View() string {
 	default:
 		v = m.viewForm()
 	}
-	return clipLines(v, m.width)
+	return clipLines(clipHeight(v, m.height), m.width)
+}
+
+// clipHeight windows the view vertically when it exceeds the terminal,
+// keeping the ▸ cursor row AND the frame's footer on screen. The inline
+// bubbletea renderer can't scroll: a frame taller than the terminal silently
+// pushes the TOP rows off (found live 2026-07-12: the --global form's extra
+// section cropped the title on short terminals). Every screen ends with its
+// status/confirm banner and key help — the dirty-quit confirmation lives
+// there (the clear-volume confirm too), so the footer is pinned visible and
+// only the body above it scrolls. Clipped content is never silent: a dim marker row
+// names each hidden direction, and moving the cursor scrolls the window.
+func clipHeight(s string, height int) string {
+	max := height - 1 // the inline renderer keeps one row for itself
+	lines := strings.Split(s, "\n")
+	if len(lines) <= max {
+		return s
+	}
+	pin := len(lines) - footerStart(lines)
+	bodyMax := max - pin
+	if bodyMax < 4 {
+		return s // unknown or absurd height: let the terminal cope
+	}
+	tail := lines[len(lines)-pin:]
+	body := lines[:len(lines)-pin]
+
+	focus := 0
+	for i, l := range body {
+		if strings.Contains(l, "▸") {
+			focus = i
+			break
+		}
+	}
+	start := 0
+	if focus > start+bodyMax-3 {
+		start = focus - (bodyMax - 3) // keep the cursor clear of the bottom edge
+	}
+	if start+bodyMax > len(body) {
+		start = len(body) - bodyMax
+	}
+	if start < 0 {
+		start = 0
+	}
+	out := append([]string{}, body[start:start+bodyMax]...)
+	if start > 0 {
+		out[0] = dimStyle.Render("··· (more above)")
+	}
+	if start+bodyMax < len(body) {
+		out[len(out)-1] = dimStyle.Render("··· (more below)")
+	}
+	return strings.Join(append(out, tail...), "\n")
+}
+
+// footerStart is where the pinned footer begins: the first blank separator
+// within the frame's final rows (every screen sets its footer — status or
+// confirm banner, optional warnings, path, key help — off with a blank
+// line; a multi-line confirm makes the footer taller, so the pin is sized
+// by looking, not by a fixed count). Capped so a pathological tail can't
+// eat the whole window; no separator found falls back to the last 4 rows.
+func footerStart(lines []string) int {
+	const maxPin = 8
+	from := len(lines) - maxPin
+	if from < 0 {
+		from = 0
+	}
+	for i := from; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			return i // include the separator: the visual gap survives
+		}
+	}
+	if len(lines) > 4 {
+		return len(lines) - 4
+	}
+	return 0
 }
 
 // clipLines truncates every rendered line to the terminal width (ANSI-aware).
@@ -560,7 +659,7 @@ func (m model) viewForm() string {
 	b.WriteString("\n")
 	switch {
 	case m.confirmQuit:
-		b.WriteString(errStyle.Render("● Unsaved changes — press esc again to discard, or ctrl+s to save"))
+		b.WriteString(errStyle.Render("● Unsaved changes — press esc/^q/^c again to discard, or ctrl+s to save"))
 	case m.errMsg != "":
 		b.WriteString(errStyle.Render("✗ " + m.errMsg))
 	case m.dirty():
@@ -576,7 +675,7 @@ func (m model) viewForm() string {
 		b.WriteString("\n" + errStyle.Render("⚠ this file has hand-written comments — ^s rewrites it and DROPS them (raw blocks survive; use ^e to edit without losing comments)"))
 	}
 	b.WriteString("\n" + dimStyle.Render("Saves to: "+m.filePath))
-	b.WriteString("\n" + dimStyle.Render("↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · esc quit"))
+	b.WriteString("\n" + dimStyle.Render("↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · ^q quit"))
 	return b.String()
 }
 

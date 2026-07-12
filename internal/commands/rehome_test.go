@@ -17,7 +17,7 @@ func TestRehomeMigratesAndRemovesOld(t *testing.T) {
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err != nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.migrated) != 2 {
@@ -43,7 +43,7 @@ func TestRehomeRefusesLive(t *testing.T) {
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
 	if len(f.created) != 0 {
@@ -59,7 +59,7 @@ func TestRehomeConflictAborts(t *testing.T) {
 		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected conflict error")
 	}
 	if len(f.created) != 0 || len(f.migrated) != 0 {
@@ -76,12 +76,165 @@ func TestRehomeRollbackOnCopyFailure(t *testing.T) {
 		failMigrate: failDst,
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected copy failure")
 	}
 	// Old volumes must NOT be removed (rollback keeps originals).
 	if slices.Contains(f.removed, "byre-oldid-.claude") || slices.Contains(f.removed, "byre-oldid-cache") {
 		t.Fatalf("originals removed despite rollback: %v", f.removed)
+	}
+}
+
+// The rehome transaction spans engines: a conflict on the SECOND engine must
+// surface before the first engine mutated anything — no source may be removed
+// until every engine's copies landed.
+func TestRehomeSecondEngineConflictLeavesFirstUntouched(t *testing.T) {
+	p, _ := testPaths(t)
+	docker := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	podman := &fakeRunner{
+		engine: "podman",
+		vols:   map[string]bool{"byre-oldid-cache": true, "byre-" + p.ID + "-cache": true}, // dst conflict
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(docker, podman), 1000, 1000); err == nil {
+		t.Fatal("expected the podman-side destination conflict to fail the rehome")
+	}
+	if len(docker.created) != 0 || len(docker.migrated) != 0 || len(docker.removed) != 0 {
+		t.Fatalf("docker must be untouched when podman's plan conflicts: created=%v migrated=%v removed=%v",
+			docker.created, docker.migrated, docker.removed)
+	}
+}
+
+// A copy failure on the second engine rolls back the FIRST engine's created
+// destinations too, with every source left intact.
+func TestRehomeCrossEngineRollbackOnCopyFailure(t *testing.T) {
+	p, _ := testPaths(t)
+	docker := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	podman := &fakeRunner{
+		engine:      "podman",
+		vols:        map[string]bool{"byre-oldid-cache": true},
+		images:      map[string]bool{imageTag("oldid", 1000, 1000): true},
+		failMigrate: "byre-" + p.ID + "-cache",
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(docker, podman), 1000, 1000); err == nil {
+		t.Fatal("expected the podman copy failure to fail the rehome")
+	}
+	// Docker's copy succeeded before podman failed — its destination must be
+	// rolled back and its source kept.
+	if !slices.Contains(docker.removed, "byre-"+p.ID+"-.claude") {
+		t.Errorf("docker's created destination must be rolled back: removed=%v", docker.removed)
+	}
+	if slices.Contains(docker.removed, "byre-oldid-.claude") || slices.Contains(podman.removed, "byre-oldid-cache") {
+		t.Errorf("no source may be removed on failure: docker=%v podman=%v", docker.removed, podman.removed)
+	}
+}
+
+// mkOldStore populates the old id's store dir the way a real project leaves
+// it: a path record pointing at the (now gone) old location, plus any files.
+func mkOldStore(t *testing.T, home, oldID string, files map[string]string) string {
+	t.Helper()
+	dir := filepath.Join(home, "projects", oldID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "path"), []byte("/gone/old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// The stored config follows the identity, and a completed rehome retires the
+// old id: its store dir (else it haunts the candidate list forever) and its
+// image.
+func TestRehomeMigratesStoreAndRetiresOldID(t *testing.T) {
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{
+		"byre.config": "agent = \"claude\"\n",
+		"adopted":     "abc123",
+	})
+	f := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
+	if err != nil || string(b) != "agent = \"claude\"\n" {
+		t.Fatalf("stored config not migrated: %v / %q", err, b)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "adopted")); err != nil {
+		t.Errorf("adoption record not migrated: %v", err)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Errorf("old store must be removed after a successful rehome (it would haunt the candidate list): %v", err)
+	}
+	if len(f.rmImages) != 1 || f.rmImages[0] != imageTag("oldid", 1000, 1000) {
+		t.Errorf("old image not retired: %v", f.rmImages)
+	}
+}
+
+// A conflicting config at the new id is never clobbered — and the old store
+// (holding the only copy of the old config) is kept for hand reconciliation.
+func TestRehomeKeepsOldStoreOnConfigConflict(t *testing.T) {
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{"byre.config": "agent = \"claude\"\n"})
+	if err := os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("agent = \"codex\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, out := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
+	if string(b) != "agent = \"codex\"\n" {
+		t.Fatalf("new id's config must not be clobbered: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(oldDir, "byre.config")); err != nil {
+		t.Errorf("old store must survive a conflict (only copy of the old config): %v", err)
+	}
+	if !strings.Contains(out.String(), "NOT copied") {
+		t.Errorf("conflict should be reported:\n%s", out.String())
+	}
+}
+
+// A store-only project (config adopted, volumes long gone) still rehomes: the
+// config moves and the old id is retired — this is not the 'nothing found'
+// case.
+func TestRehomeStoreOnlyProject(t *testing.T) {
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{"byre.config": "agent = \"claude\"\n"})
+	f := &fakeRunner{}
+	s, _, out := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
+		t.Fatalf("store-only config not migrated: %v", err)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Errorf("old store must be removed: %v", err)
+	}
+	if !strings.Contains(out.String(), "rehomed oldid") {
+		t.Errorf("store-only rehome should report success:\n%s", out.String())
 	}
 }
 
@@ -99,7 +252,7 @@ func TestRehomeRefusesMalformedID(t *testing.T) {
 func TestRehomeSameIDErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, p.ID, &fakeRunner{}, 1000, 1000); err == nil {
+	if err := rehome(s, p, p.ID, engines(&fakeRunner{}), 1000, 1000); err == nil {
 		t.Fatal("expected error rehoming to the same id")
 	}
 }
@@ -108,7 +261,7 @@ func TestRehomeNoImageErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{"byre-oldid-cache": true}} // no images
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err == nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
 		t.Fatal("expected error when no image exists for the copy")
 	}
 }
@@ -122,7 +275,7 @@ func TestRehomeFallsBackToLegacyImageTag(t *testing.T) {
 		images: map[string]bool{"byre-oldid": true}, // legacy tag only, not UID-qualified
 	}
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", f, 1000, 1000); err != nil {
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
 		t.Fatalf("rehome should fall back to the legacy image tag: %v", err)
 	}
 	if len(f.migrated) != 1 {

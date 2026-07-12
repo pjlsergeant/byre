@@ -1,8 +1,10 @@
 # Built-in companion skill: codex-shared-auth (ADR 0017).
 #
-# One Codex login for every byre project on this machine. Enabled ALONGSIDE
-# the codex skill (skills = ["codex-shared-auth"], typically in
-# ~/.byre/default.config). Mechanism: $CODEX_HOME/auth.json becomes a symlink
+# One Codex login shared by every byre box that opts in. Enabled ALONGSIDE
+# the codex skill (skills = ["codex-shared-auth"] — per box via the onboarding
+# offer's yes in the project's byre.config, or machine-wide by hand in
+# ~/.byre/default.config). Mechanism:
+# $CODEX_HOME/auth.json becomes a symlink
 # into the machine-scoped identity volume — safe for Codex specifically
 # because it writes credentials IN PLACE (source-verified) and OpenAI's docs
 # endorse moving auth.json between machines; the first `codex login` in any
@@ -23,6 +25,11 @@
 # race benignly (last-writer-wins on a still-valid token).
 
 description = "Share one Codex login across all your projects."
+
+# Offerable at onboarding: when codex is picked as the agent, the first-run
+# picker offers to opt that box into the shared credentials (ADR 0025).
+# Declaring the key vouches the mechanism is ready (verified live, ADR 0017).
+shared_auth_for = "codex"
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-codex-shared-auth" }

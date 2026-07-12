@@ -25,6 +25,7 @@ const (
 	rowStaleMarker                // a removal marker matching nothing inherited
 	rowSkill                      // skill-contributed; read-only here
 	rowOffered                    // a declared-but-closed egress door (ADR 0020)
+	rowHostEnv                    // env_from_host passthrough (ADR 0026); read-only here
 )
 
 // listRow is one row of a list screen's effective view. idx points into the
@@ -259,6 +260,13 @@ func (m model) envRows() []listRow {
 			rows = append(rows, listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk})
 		}
 	}
+	// The env_from_host passthrough (ADR 0026), read-only with its source: it
+	// lands in the box's env, so it must be visible wherever env is
+	// inspected — byre's own shipped git-identity defaults included.
+	hostEnv := m.hostEnvNow()
+	for _, k := range sortedKeys(hostEnv) {
+		rows = append(rows, listRow{kind: rowHostEnv, text: k + " <- host " + hostEnv[k], source: "env_from_host"})
+	}
 	return rows
 }
 
@@ -440,6 +448,9 @@ func (m model) exposureNow() config.Exposure {
 			envKeys[k] = true
 		}
 	}
+	for k := range m.hostEnvNow() {
+		envKeys[k] = true
+	}
 	e.Env = len(envKeys)
 	e.Posture = m.postureNow()
 	// The allowlist size only means something under a posture; without one the
@@ -480,6 +491,11 @@ func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 		case rowSkill:
 			effective++
 			fromSkills++
+		case rowHostEnv:
+			// Host passthrough is effective env inherited from below this
+			// file (byre's core layer at the deepest).
+			effective++
+			inherited++
 		case rowOffered:
 			offered++
 		}

@@ -865,112 +865,139 @@ func TestGrokBundledHookBehavior(t *testing.T) {
 	}
 }
 
-// TestGrokSharedAuthCompositionResolves pins the grok-shared-auth companion
-// composing with the grok skill: the machine-scoped identity volume and the
-// 00-prefixed symlink-assert hook sorting BEFORE grok's own login hook in the
-// launcher's glob order (the login hook must see the asserted link).
-func TestGrokSharedAuthCompositionResolves(t *testing.T) {
+// TestGrokSharedAuthRetiredStub pins the RETIRED shape (ADR 0023): the skill
+// must still RESOLVE (configs naming it must not break a launch) while
+// contributing nothing — no hooks, no volumes, no identity mount. The
+// description carries the retirement notice into the picker. If a rebuild
+// lands (docs/grok-shared-auth-v2-designs.md), this test is the one to
+// replace.
+func TestGrokSharedAuthRetiredStub(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
 	res, err := skills.Resolve(config.Config{Agent: "grok", Skills: []string{"grok-shared-auth"}}, dest)
 	if err != nil {
-		t.Fatalf("grok + grok-shared-auth failed to resolve: %v", err)
+		t.Fatalf("a config naming the retired skill must still resolve: %v", err)
 	}
-	var hook bool
 	for _, b := range res.BuildBlocks() {
-		for _, sf := range b.Files {
-			if b.Name == "grok-shared-auth" && sf.Dest == "/etc/byre/firstrun.d/00-grok-shared-auth" {
-				hook = true
-			}
+		if b.Name != "grok-shared-auth" {
+			continue
+		}
+		if len(b.Files) != 0 {
+			t.Errorf("retired stub must ship no files, got %+v", b.Files)
 		}
 	}
-	if !hook {
-		t.Error("symlink-assert hook not shipped")
-	}
-	if !("00-grok-shared-auth" < "grok-login") {
-		t.Error("hook ordering invariant broken: companion must sort before grok-login")
-	}
-	var identity bool
 	for _, v := range res.Volumes() {
-		if v.Name == "grok-identity" && v.MachineScoped() && v.Target == "/home/dev/.byre-identity/grok" {
-			identity = true
+		if v.Name == "grok-identity" {
+			t.Errorf("retired stub must not mount the identity volume: %+v", v)
 		}
 	}
-	if !identity {
-		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
+	b, err := os.ReadFile(filepath.Join(dest, "grok-shared-auth", "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "RETIRED") {
+		t.Error("retirement notice missing from the skill description")
 	}
 }
 
-// runGrokSharedAuthHook executes the real materialized symlink-assert hook
-// against a temp identity base + GROK_HOME (the BYRE_IDENTITY_BASE seam).
-func runGrokSharedAuthHook(t *testing.T, identityBase, grokHome string) {
-	t.Helper()
+// TestGrokLoginHookHealsRetiredSymlink drives the real grok-login hook with a
+// stub `grok` binary. The retirement (ADR 0023) made the anti-planting rule
+// absolute again: a symlinked auth.json NEVER counts — even a link into the
+// identity volume holding credential-shaped content (v1's carve-out kept
+// exactly that, which is how dead shared credentials clobbered working
+// boxes). The hook must remove the link and proceed to a fresh login; a
+// valid REGULAR file must still short-circuit the login entirely.
+func TestGrokLoginHookHealsRetiredSymlink(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	hook := filepath.Join(dest, "grok-shared-auth", "firstrun.sh")
-	cmd := exec.Command("bash", hook)
-	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "GROK_HOME="+grokHome)
+	hook := filepath.Join(dest, "grok", "grok-login.sh")
+
+	// Stub grok on PATH: records that a login was attempted, succeeds.
+	bin := t.TempDir()
+	stamp := filepath.Join(bin, "login-attempted")
+	stub := "#!/bin/sh\ntouch " + stamp + "\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(home string) {
+		t.Helper()
+		cmd := exec.Command("sh", hook)
+		cmd.Env = append(os.Environ(),
+			"PATH="+bin+":/usr/bin:/bin",
+			"GROK_HOME="+home,
+			"XAI_API_KEY=", // must not short-circuit
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+
+	// A symlinked credential — even dressed as v1's identity-volume link with
+	// valid-looking shared content — is removed and a fresh login runs.
+	home := t.TempDir()
+	shared := filepath.Join(home, "identity-volume", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shared, []byte(`{"scope":{"key":"dead-but-plausible"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cred := filepath.Join(home, "auth.json")
+	if err := os.Symlink(shared, cred); err != nil {
+		t.Fatal(err)
+	}
+	run(home)
+	if _, err := os.Lstat(cred); !os.IsNotExist(err) {
+		t.Fatalf("symlinked credential must be removed, still present (%v)", err)
+	}
+	if _, err := os.Stat(stamp); err != nil {
+		t.Fatal("removal must fall through to a fresh login; none was attempted")
+	}
+
+	// A valid regular file short-circuits: kept, no login attempted.
+	if err := os.Remove(stamp); err != nil {
+		t.Fatal(err)
+	}
+	home2 := t.TempDir()
+	cred2 := filepath.Join(home2, "auth.json")
+	if err := os.WriteFile(cred2, []byte(`{"scope":{"key":"live"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(home2)
+	if b, err := os.ReadFile(cred2); err != nil || !strings.Contains(string(b), "live") {
+		t.Fatalf("valid per-box credential must be left alone: %v %q", err, b)
+	}
+	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+		t.Fatal("valid credential must short-circuit the login; one was attempted")
+	}
+
+	// Healing must run BEFORE the XAI_API_KEY short-circuit: a stored
+	// credential shadows the key (vendor auth guide), so a dead link left in
+	// place would override a working key. Link removed, key path taken (no
+	// login attempted).
+	home3 := t.TempDir()
+	cred3 := filepath.Join(home3, "auth.json")
+	if err := os.Symlink(filepath.Join(home3, "nowhere"), cred3); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", hook)
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+":/usr/bin:/bin",
+		"GROK_HOME="+home3,
+		"XAI_API_KEY=xai-static-key",
+	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
 	}
-}
-
-// The grok symlink-assert hook's four behaviors, driven for real: fresh box
-// gets a dangling link; an existing per-project login is ADOPTED (moved, then
-// linked); a local fork is healed in favor of the shared credential; and the
-// whole thing is idempotent. Mirrors TestCodexSharedAuthHookBehavior.
-func TestGrokSharedAuthHookBehavior(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
-	shared := filepath.Join(base, "grok", "auth.json")
-	cred := filepath.Join(home, "auth.json")
-
-	// 1. Fresh: dangling symlink pointing at the (absent) shared credential.
-	runGrokSharedAuthHook(t, base, home)
-	if got, err := os.Readlink(cred); err != nil || got != shared {
-		t.Fatalf("fresh run should leave a dangling link to %q, got %q (%v)", shared, got, err)
+	if _, err := os.Lstat(cred3); !os.IsNotExist(err) {
+		t.Fatal("API-key boxes must still shed a symlinked credential (it would shadow the key)")
 	}
-	if _, err := os.Stat(shared); !os.IsNotExist(err) {
-		t.Fatalf("fresh run must not fabricate a shared credential")
-	}
-
-	// 2. Adopt: a real local login and no shared copy — the file MOVES in.
-	if err := os.Remove(cred); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cred, []byte(`{"adopted":true}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runGrokSharedAuthHook(t, base, home)
-	if b, err := os.ReadFile(shared); err != nil || string(b) != `{"adopted":true}` {
-		t.Fatalf("existing login not adopted into the shared volume: %v %q", err, b)
-	}
-	if got, _ := os.Readlink(cred); got != shared {
-		t.Fatalf("adopted cred not re-linked: %q", got)
-	}
-
-	// 3. Heal a fork: local plain file AND shared credential — shared wins.
-	if err := os.Remove(cred); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cred, []byte(`{"fork":true}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runGrokSharedAuthHook(t, base, home)
-	if b, _ := os.ReadFile(shared); string(b) != `{"adopted":true}` {
-		t.Fatalf("shared credential clobbered by a fork: %q", b)
-	}
-	if got, _ := os.Readlink(cred); got != shared {
-		t.Fatalf("fork not healed to the link: %q", got)
-	}
-
-	// 4. Idempotent: run again, nothing changes.
-	runGrokSharedAuthHook(t, base, home)
-	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
-		t.Fatalf("idempotent re-run changed the credential: %q", b)
+	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+		t.Fatal("with XAI_API_KEY set, no file login should be attempted")
 	}
 }
 

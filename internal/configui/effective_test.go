@@ -259,7 +259,7 @@ func TestSkillRowEnterIsPointer(t *testing.T) {
 func TestMenuChoicesPerKind(t *testing.T) {
 	labels := func(f fieldID, r listRow) string {
 		var out []string
-		for _, c := range rowChoices(f, r) {
+		for _, c := range (model{}).rowChoices(f, r) {
 			out = append(out, c.label)
 		}
 		return strings.Join(out, ",")
@@ -284,6 +284,19 @@ func TestMenuChoicesPerKind(t *testing.T) {
 	}
 	if got := labels(fMounts, listRow{kind: rowSkill}); got != "" {
 		t.Errorf("skill rows must have no menu: %q", got)
+	}
+	// The offered-door action's label states the scope of the write: the
+	// project editor writes this project; the --global editor writes
+	// default.config — every project — and must say so, emphasized.
+	if got := labels(fEgress, listRow{kind: rowOffered}); got != "Open in this project" {
+		t.Errorf("project-mode offered menu: %q", got)
+	}
+	var g []string
+	for _, c := range (model{global: true}).rowChoices(fEgress, listRow{kind: rowOffered}) {
+		g = append(g, c.label)
+	}
+	if len(g) != 1 || !strings.Contains(g[0], "every project on this machine") {
+		t.Errorf("global-mode offered menu must state machine scope: %q", g)
 	}
 }
 
@@ -318,8 +331,9 @@ func TestListSummariesCountEffectiveState(t *testing.T) {
 	if got := m.renderValue(fApt, false); !strings.Contains(got, "3 packages") || !strings.Contains(got, "2 inherited") {
 		t.Errorf("apt summary: %q", got)
 	}
-	// env: GIT_EDITOR inherited + DOCKER_HOST from the docker skill = 2.
-	if got := m.renderValue(fEnv, false); !strings.Contains(got, "2 vars") || !strings.Contains(got, "1 from skills") {
+	// env: GIT_EDITOR inherited + DOCKER_HOST from the docker skill + the 4
+	// shipped env_from_host git-identity keys (ADR 0026) = 6.
+	if got := m.renderValue(fEnv, false); !strings.Contains(got, "6 vars") || !strings.Contains(got, "1 from skills") {
 		t.Errorf("env summary: %q", got)
 	}
 	// mounts: 1 inherited + 1 skill; ports: 1 inherited.
@@ -643,12 +657,13 @@ func TestExposureNowAndFormLine(t *testing.T) {
 	m := effectiveModel()
 	e := m.exposureNow()
 	// 1 inherited mount (default) + 1 skill mount; 1 inherited port;
-	// GIT_EDITOR inherited + DOCKER_HOST from the skill; no posture skill.
+	// GIT_EDITOR inherited + DOCKER_HOST from the skill + 4 shipped
+	// env_from_host keys; no posture skill.
 	if e.Mounts != 2 || e.DisabledMounts != 0 {
 		t.Errorf("mounts = %d (+%d disabled), want 2 (+0)", e.Mounts, e.DisabledMounts)
 	}
-	if e.Ports != 1 || e.Env != 2 {
-		t.Errorf("ports/env = %d/%d, want 1/2", e.Ports, e.Env)
+	if e.Ports != 1 || e.Env != 6 {
+		t.Errorf("ports/env = %d/%d, want 1/6 (incl. the 4 shipped env_from_host keys)", e.Ports, e.Env)
 	}
 	if e.Posture != "" || e.Egress != 0 {
 		t.Errorf("no posture skill enabled, got posture %q egress %d", e.Posture, e.Egress)
@@ -656,7 +671,7 @@ func TestExposureNowAndFormLine(t *testing.T) {
 	if e.RawRunArgs || e.RawBuild {
 		t.Errorf("no raw config in the test bed: %+v", e)
 	}
-	want := "exposure: 2 host mounts · 1 port · 2 env vars · network open"
+	want := "exposure: 2 host mounts · 1 port · 6 env vars · network open"
 	if got := m.viewForm(); !strings.Contains(got, want) {
 		t.Errorf("form missing %q:\n%s", want, got)
 	}
@@ -683,8 +698,8 @@ func TestExposureNowDisabledMountsAndPosture(t *testing.T) {
 	if e.Mounts != 2 || e.DisabledMounts != 1 {
 		t.Errorf("mounts = %d (+%d disabled), want 2 (+1)", e.Mounts, e.DisabledMounts)
 	}
-	if e.Env != 2 { // GIT_EDITOR + DOCKER_HOST (key restated locally and by the skill)
-		t.Errorf("env = %d, want 2", e.Env)
+	if e.Env != 6 { // GIT_EDITOR + DOCKER_HOST (restated key folds) + 4 shipped env_from_host
+		t.Errorf("env = %d, want 6", e.Env)
 	}
 	if e.Posture != "deny-by-default" {
 		t.Errorf("posture = %q, want deny-by-default", e.Posture)

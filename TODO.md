@@ -15,6 +15,29 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
+- [ ] **URGENT: byre-codereview `--continue` never resumes** (Pete,
+  2026-07-12) — during the shared-auth-branch review, every `--continue`
+  printed "Resume failed — falling back to a fresh review" (codex
+  reviewer, 3 attempts, this box). The loop still converges but each
+  round pays a cold start and loses the reviewer's session context —
+  and the fallback is quiet enough to go unnoticed. Diagnose: is the
+  stored session id (.devloop/.review-session) stale/invalid, did the
+  codex CLI's resume interface change, or did the script's update
+  break the resume path? Fix or make the failure loud.
+- [ ] **byre-codereview: pre-flight grok auth probe/timeout** — expired
+  auth = headless HANG on a device prompt today, silent in background runs
+  (the live device code lands in .devloop/.dbg.*). Retirement removed the
+  shared-corpse *cause*, but any per-box chain that dies still hangs the
+  reviewer the same way. Cheap: a bounded `timeout ... grok -p PONG` probe
+  before the review, bail with the re-auth hint on failure.
+- [ ] **`byre deliver` follow-on tranches** (v1 + the deliver app
+  SHIPPED 2026-07-10/11 — rationale ADR 0021 incl. field amendments,
+  user guide docs/deliver.md; the docs/deliver/ design workspace is
+  absorbed + deleted, full record in git history). Remaining,
+  separately shippable: `ssh://` remote delivery (frozen mini-protocol:
+  --proto / --porcelain / --consume, designed in ADR 0021).
+  Also outstanding: gated BYRE_DOCKER_TESTS deliver cases ride the
+  agent-runnable-tests item.
 - [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
   the store: version-controlling `~/.byre`, composing skills, layering over
   provided skills instead of editing them in place. Start minimal; grows
@@ -83,14 +106,18 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 - [ ] **Rootless Podman keep-id path.** Design settled: generic-UID image on
   the rootless path, run with `--userns=keep-id`, mode-select on the
-  existing `runner.IsRootlessPodman` detection. Today's detect-and-warn
+  existing `runner.IsRootlessPodman` detection. Today's detect-and-refuse
+  (`BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides; 2026-07-11 review batch)
   stays until this lands; add integration coverage when it does. Background:
   `docs/adr/0008-build-time-uid-bake.md`. Promotes if the agent-runnable-
   tests design picks nested podman.
 - [ ] **Drag-and-drop into the boxed terminal.** Dropping a file pastes its
   host path, meaningless in-box. Needs a design pass: translate paths under
   the project dir to `/workspace`, treat outside paths as a grant question,
-  survey per-terminal drop behavior.
+  survey per-terminal drop behavior. Partially superseded by `byre deliver`
+  (Now): dropping onto the deliver app covers get-this-file-in-the-box;
+  what remains here is only drop-directly-onto-the-running-terminal
+  ergonomics.
 - [ ] **gemini OAuth gate.** Two concurrent gemini boxes sharing one OAuth
   credential, run past the ~1h token expiry; neither dying = OAuth sharing
   is safe. The API-key path is already verified
@@ -118,6 +145,14 @@ Disciplines and tripwires, not tasks.
 Decided negatives, recorded so they don't get re-raised. Rationale lives in
 the docs cited and in git history.
 
+- **grok-shared-auth rebuild** -- PARKED 2026-07-12 (ADR 0023), ideas for a
+  future build, not a decided negative. Two gated designs in
+  docs/grok-shared-auth-v2-designs.md: auth broker on grok's
+  `GROK_AUTH_PROVIDER_COMMAND` seam (no resident process, closes the
+  refresh race; design-killer gate: does grok re-invoke the provider when
+  the token dies?) and fork-shipping watcher + refresh jitter (accepts a
+  rare cold-start race). Run the gates BEFORE building; get second
+  opinions. The `XAI_API_KEY` path stays ruled out on cost (~50x the sub).
 - **Secret-manager seed backend** (`pass` / resolved-reference seed kind) --
   host-path + config-literal seeding covers the single-user case. Design
   constraint if ever revived: the seed-source model reserves room for a

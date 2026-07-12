@@ -61,6 +61,14 @@ func (m model) skillEntries() []skillEntry {
 		agentSet[a] = true
 	}
 	primary := fromNone(m.agentOpts[m.agentSel])
+	// In the --global editor the agent picker is an onboarding FAVOURITE —
+	// it enables nothing anywhere — so there is no primary agent to lock on:
+	// a "[x] (primary agent)" row would claim a machine-wide enable that
+	// isn't happening, and the lock would silently prevent enabling that
+	// agent's skill machine-wide via this screen (audit finding).
+	if m.global {
+		primary = ""
+	}
 	enabledHere, removedHere := splitSkillLayer(m.skills)
 	inherited := map[string]bool{}
 	for _, n := range m.inheritedNow() {

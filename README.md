@@ -18,7 +18,7 @@ $ cd ~/my-project && byre develop
 **Good to know**:
 
 * Single, self-contained, MIT-licensed binary
-* Ships with agent skills for Claude Code, Codex, and Gemini, or bring your own
+* Ships with agent skills for Claude Code, Codex, Gemini, and Grok, or bring your own
 * Low magic: the Dockerfiles it generates are right there to read
 * Grant more access from the TUI in seconds, relaunch and /resume
 
@@ -57,7 +57,7 @@ You need Docker (or Podman) running on the host.
 
 ## Quickstart
 
-The first `byre develop` in a project asks two questions (template and agent) and remembers your answers: your favourites become the pre-selected defaults. Log the agent in once; the login persists, per project, across
+The first `byre develop` in a project asks a few quick questions (template, agent, and -- for agents that support it -- whether this box shares a machine-wide login) and remembers your answers: your favourites become the pre-selected defaults. Log the agent in once; the login persists, per project, across
 rebuilds. To skip the questions:
 
 ```sh
@@ -84,7 +84,7 @@ Container:    running (0d95f3a2c1b4)
 ## Your toolkit, every folder
 
 byre ships templates for go, node, and python, and agent skills for
-Claude, Codex, and Gemini; the first `byre develop` asks which you want,
+Claude, Codex, Gemini, and Grok; the first `byre develop` asks which you want,
 and that's the setup.
 
 But you and your agent can build powerful templates and skills, and add
@@ -238,12 +238,50 @@ machine, rent one.)*
 
 ### Save my LLM credentials so I don't need to re-auth for each box?
 
-tldr: `byre config` and enable the relevant _x-shared-auth_ skill(s) for the
-agent(s) you'll use on the box.
+tldr: say **y** when the first-run picker offers shared auth for your
+agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
+by hand.
 
-By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth, grok-shared-auth) move that to once per
-machine. The login lives in a shared volume that reset/forget deliberately never
+By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per
+machine. For claude and codex every project's first run asks: "Opt this
+box into <agent> shared credentials?" -- yes enables the skill for that
+project (its `byre.config`), and only for it. Saying yes to "Save these
+as your default?" remembers your answer like the template/agent
+favourites: the next box's question just defaults to it, one Enter to
+accept. (Enabling the skill by hand in `~/.byre/default.config` is the
+machine-wide route -- then the question stops.) On
+an install that predates the offer, run `byre skill update` once so the
+companion skills carry the offer metadata. The
+login lives in a shared volume that reset/forget deliberately never
 touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
+(Grok has no shared-auth: its token rotation can't be file-shared, so it logs
+in per project -- [ADR 0023](docs/adr/0023-grok-shared-auth-retired.md).)
+
+### Paste images and files into the box?
+
+tldr: `byre deliver <file>` — or just `byre deliver` and paste.
+
+Anything you deliver lands in the box's `/inbox` and the in-box path comes
+back on your clipboard, ready to Cmd-V into the agent prompt. With no
+arguments byre reads your *clipboard* — so screenshot, `byre deliver`,
+paste, done. Works from any directory (it finds your running box), over
+SSH, and with whole directories. See [docs/deliver.md](docs/deliver.md).
+
+### Get tab completion for byre commands?
+
+tldr: `eval "$(byre completion bash)"` in your shell's startup file.
+
+Completions cover every command and flag — bash, zsh, fish, and powershell.
+One line in your rc file regenerates the script at shell startup (~3ms), so
+it never goes stale across byre upgrades and needs no extra packages:
+
+```sh
+eval "$(byre completion bash)"        # ~/.bashrc
+source <(byre completion zsh)         # ~/.zshrc, after compinit
+byre completion fish | source         # ~/.config/fish/config.fish
+```
+
+`byre completion --help` has the powershell line and the details.
 
 ### Stop using byre?
 
@@ -288,5 +326,4 @@ Linux and macOS, over Docker or Podman (rootful; rootless Podman coming soon). b
 runs unprivileged as you and files land correctly owned. Debian-derived base
 images only.
 
-Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Build notes:
-[devlog](https://pjlsergeant.github.io/byre/).
+Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
