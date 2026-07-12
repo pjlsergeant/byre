@@ -110,7 +110,13 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	fmt.Fprintf(s.Err, "\nThis project %s — review it before byre runs with it:\n  %s\n", headline, proposed)
 	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", config.OrNone(cfg.Base), config.OrNone(cfg.Agent), config.OrNone(proposal.Template))
 	for _, g := range grants {
-		fmt.Fprintf(s.Err, "  ⚠ %s\n", g)
+		line := g.Text
+		// Cross-project reach is bold yellow on a TTY: the one grant class
+		// that escapes this box must not blend into the per-box rows.
+		if g.CrossProject && s.TTY {
+			line = "\x1b[1;33m" + line + "\x1b[0m"
+		}
+		fmt.Fprintf(s.Err, "  ⚠ %s\n", line)
 	}
 	// With a store config in place, adoption REPLACES it wholesale — so the
 	// review shows the delta against it, including any host-local lines
@@ -201,42 +207,52 @@ func proposalState(projectDir string, paths project.Paths) string {
 // config with the full grant summary. Best-effort: if the cascade or skills
 // can't be expanded, it falls back to the raw proposal and says so, so a failure
 // to expand never hides grants behind an empty summary.
-func adoptionView(paths project.Paths, proposal config.Config) (config.Config, []string) {
+func adoptionView(paths project.Paths, proposal config.Config) (config.Config, []grantLine) {
 	_ = builtins.EnsureStore(paths.Home)
 	skillsDir := filepath.Join(paths.Home, "skills")
 
 	effective, err := config.ResolveProposed(proposal)
 	if err != nil {
-		return proposal, append(grantSummary(proposal),
-			"could not expand the cascade ("+err.Error()+") — grants shown are from the raw file only")
+		grants := append(grantSummary(proposal), egressGrantLine(proposal.Egress, "", "", false)...)
+		return proposal, append(grants,
+			grantLine{Text: "could not expand the cascade (" + err.Error() + ") — grants shown are from the raw file only"})
 	}
 	grants := grantSummary(effective)
 	res, rerr := skills.Resolve(effective, skillsDir)
 	if rerr != nil {
+		grants = append(grants, egressGrantLine(effective.Egress, "", "", false)...)
 		return effective, append(grants,
-			"could not expand skills ("+rerr.Error()+") — their grants are NOT shown")
+			grantLine{Text: "could not expand skills (" + rerr.Error() + ") — their grants are NOT shown"})
 	}
+	posture, postureSkill := res.NetworkPosture()
+	grants = append(grants, egressGrantLine(effective.Egress, posture, postureSkill, true)...)
 	return effective, append(grants, skillGrantSummary(res)...)
 }
 
 // skillGrantSummary lists the runtime grants the enabled skills contribute, so
-// they're shown at adoption time alongside the config-level grants.
-func skillGrantSummary(res skills.Resolved) []string {
-	var s []string
+// they're shown at adoption time alongside the config-level grants. Skill
+// volumes appear exactly when they reach beyond this box: machine scope
+// (cross-project — the shared-credential shape) or a host seed. Per-project
+// volumes are the sandbox model itself, not a grant.
+func skillGrantSummary(res skills.Resolved) []grantLine {
+	var s []grantLine
 	for _, g := range res.Grants() {
 		for _, m := range g.Mounts {
-			s = append(s, fmt.Sprintf("skill %q mounts %s -> %s (%s)", g.Skill, m.Host, m.Target, orDefault(m.Mode, "ro")))
+			s = append(s, grantLine{Text: fmt.Sprintf("skill %q mounts %s -> %s (%s)", g.Skill, m.Host, m.Target, orDefault(m.Mode, "ro"))})
 		}
 		if len(g.Caps) > 0 {
-			s = append(s, fmt.Sprintf("skill %q adds capabilities: %s", g.Skill, strings.Join(g.Caps, ", ")))
+			s = append(s, grantLine{Text: fmt.Sprintf("skill %q adds capabilities: %s", g.Skill, strings.Join(g.Caps, ", "))})
 		}
 		if len(g.RunArgs) > 0 {
-			s = append(s, fmt.Sprintf("skill %q adds raw docker run args (can grant --privileged, the docker socket, host net): %s", g.Skill, strings.Join(g.RunArgs, " ")))
+			s = append(s, grantLine{Text: fmt.Sprintf("skill %q adds raw docker run args (can grant --privileged, the docker socket, host net): %s", g.Skill, strings.Join(g.RunArgs, " "))})
 		}
 	}
 	for _, v := range res.Volumes() {
+		if v.MachineScoped() {
+			s = append(s, grantLine{Text: fmt.Sprintf("skill volume %q is machine-scoped — shared with every project on this machine; this box can read and write it", v.Name), CrossProject: true})
+		}
 		if v.Seed != nil && v.Seed.Host != "" {
-			s = append(s, fmt.Sprintf("skill volume %q seeds from host path: %s", v.Name, v.Seed.Host))
+			s = append(s, grantLine{Text: fmt.Sprintf("skill volume %q seeds from host path: %s", v.Name, v.Seed.Host)})
 		}
 	}
 	n := 0
@@ -244,15 +260,34 @@ func skillGrantSummary(res skills.Resolved) []string {
 		n += len(b.Dockerfile)
 	}
 	if n > 0 {
-		s = append(s, fmt.Sprintf("skills inject %d raw Dockerfile line(s)", n))
+		s = append(s, grantLine{Text: fmt.Sprintf("skills inject %d raw Dockerfile line(s)", n)})
 	}
 	return s
 }
 
+// grantLine is one ⚠ row of the adoption review. CrossProject marks rows
+// whose grant reaches beyond this box — machine-scoped volumes today — so
+// cross-scope reach renders emphasized and can't hide in the list.
+type grantLine struct {
+	Text         string
+	CrossProject bool
+}
+
+func plainGrants(texts ...string) []grantLine {
+	out := make([]grantLine, len(texts))
+	for i, t := range texts {
+		out[i] = grantLine{Text: t}
+	}
+	return out
+}
+
 // grantSummary lists the parts of a proposed config that grant power — the
-// things a reviewer must see before adopting, since they can widen the sandbox.
-func grantSummary(c config.Config) []string {
-	var s []string
+// things a reviewer must see before adopting, since they can widen the
+// sandbox. It must cover every category the glossary calls a Grant; egress is
+// the one exception handled by the caller (its live/inert status needs the
+// resolved posture, which needs the skills expanded).
+func grantSummary(c config.Config) []grantLine {
+	var s []grantLine
 	if len(c.Mounts) > 0 {
 		var m []string
 		for _, x := range c.Mounts {
@@ -264,21 +299,69 @@ func grantSummary(c config.Config) []string {
 			}
 			m = append(m, fmt.Sprintf("%s->%s(%s)", x.Host, x.Target, mode))
 		}
-		s = append(s, "mounts host paths: "+strings.Join(m, ", "))
+		s = append(s, grantLine{Text: "mounts host paths: " + strings.Join(m, ", ")})
 	}
 	if len(c.RunArgs) > 0 {
-		s = append(s, "raw docker run args (can grant --privileged, the docker socket, host net): "+strings.Join(c.RunArgs, " "))
+		s = append(s, grantLine{Text: "raw docker run args (can grant --privileged, the docker socket, host net): " + strings.Join(c.RunArgs, " ")})
 	}
 	if n := len(c.DockerfilePre) + len(c.DockerfilePost); n > 0 {
-		s = append(s, fmt.Sprintf("injects %d raw Dockerfile line(s) (arbitrary build commands)", n))
+		s = append(s, grantLine{Text: fmt.Sprintf("injects %d raw Dockerfile line(s) (arbitrary build commands)", n)})
 	}
 	for _, v := range c.Volumes {
+		// A machine-scoped volume is cross-project reach — the shared-
+		// credential mechanism is exactly this shape — and MUST be the
+		// loudest line here, whatever the volume claims to hold.
+		if v.MachineScoped() {
+			s = append(s, grantLine{Text: fmt.Sprintf("machine-scoped volume %q — shared with every project on this machine; this box can read and write it", v.Name), CrossProject: true})
+		}
 		if v.Seed != nil && v.Seed.Host != "" {
-			s = append(s, "seeds a volume from a host path: "+v.Seed.Host)
+			s = append(s, grantLine{Text: "seeds a volume from a host path: " + v.Seed.Host})
 		}
 	}
+	if ports := portGrantList(c.Ports); len(ports) > 0 {
+		s = append(s, grantLine{Text: "binds host ports: " + strings.Join(ports, ", ")})
+	}
 	if len(c.Skills) > 0 {
-		s = append(s, "enables skills (each can add mounts/caps/run_args): "+strings.Join(c.Skills, ", "))
+		s = append(s, grantLine{Text: "enables skills (each can add mounts/caps/run_args/volumes): " + strings.Join(c.Skills, ", ")})
 	}
 	return s
+}
+
+// portGrantList renders the effective port bindings compactly (removal
+// markers grant nothing and are skipped).
+func portGrantList(ports []config.Port) []string {
+	var out []string
+	for _, p := range ports {
+		if p.Remove {
+			continue
+		}
+		host := p.Host
+		if host == 0 {
+			host = p.Container
+		}
+		out = append(out, fmt.Sprintf("%s:%d->%d", orDefault(p.Interface, "127.0.0.1"), host, p.Container))
+	}
+	return out
+}
+
+// egressGrantLine renders the config-level egress allowlist entries with
+// their honest status: live when a resolved skill declares a restrictive
+// posture, inert-until otherwise. postureKnown=false (the cascade or skills
+// could not be expanded) falls back to the conditional phrasing — an entry is
+// one posture-flip from a grant, so it is never hidden (the disabled-mount
+// stance). Skill-declared egress is NOT summarized: those are the skill
+// author's vouched functional endpoints, not the proposal's ask.
+func egressGrantLine(entries []string, posture, postureSkill string, postureKnown bool) []grantLine {
+	if len(entries) == 0 {
+		return nil
+	}
+	list := strings.Join(entries, ", ")
+	switch {
+	case postureKnown && posture != "":
+		return plainGrants(fmt.Sprintf("opens firewall egress to: %s (live — skill %q sets posture %q)", list, postureSkill, posture))
+	case postureKnown:
+		return plainGrants(fmt.Sprintf("adds egress allowlist entries: %s (inert now — no restrictive posture enabled; live the moment one is)", list))
+	default:
+		return plainGrants(fmt.Sprintf("adds egress allowlist entries: %s (live under a restrictive network posture)", list))
+	}
 }

@@ -108,6 +108,9 @@ var (
 	selFocus   = lipgloss.NewStyle().Reverse(true).Bold(true) // chosen option, focused row
 	dimStyle   = lipgloss.NewStyle().Faint(true)
 	errStyle   = lipgloss.NewStyle().Bold(true)
+	// warnStyle marks cross-project reach — the one thing in this UI that
+	// escapes the current scope must not blend in (ANSI yellow, bold).
+	warnStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 )
 
 // uiMode is the current screen: the field form, a list field's item browser, or

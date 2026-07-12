@@ -259,7 +259,7 @@ func TestSkillRowEnterIsPointer(t *testing.T) {
 func TestMenuChoicesPerKind(t *testing.T) {
 	labels := func(f fieldID, r listRow) string {
 		var out []string
-		for _, c := range rowChoices(f, r) {
+		for _, c := range (model{}).rowChoices(f, r) {
 			out = append(out, c.label)
 		}
 		return strings.Join(out, ",")
@@ -284,6 +284,19 @@ func TestMenuChoicesPerKind(t *testing.T) {
 	}
 	if got := labels(fMounts, listRow{kind: rowSkill}); got != "" {
 		t.Errorf("skill rows must have no menu: %q", got)
+	}
+	// The offered-door action's label states the scope of the write: the
+	// project editor writes this project; the --global editor writes
+	// default.config — every project — and must say so, emphasized.
+	if got := labels(fEgress, listRow{kind: rowOffered}); got != "Open in this project" {
+		t.Errorf("project-mode offered menu: %q", got)
+	}
+	var g []string
+	for _, c := range (model{global: true}).rowChoices(fEgress, listRow{kind: rowOffered}) {
+		g = append(g, c.label)
+	}
+	if len(g) != 1 || !strings.Contains(g[0], "every project on this machine") {
+		t.Errorf("global-mode offered menu must state machine scope: %q", g)
 	}
 }
 

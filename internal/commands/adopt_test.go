@@ -325,11 +325,19 @@ func TestAdoptBuiltinTemplateOnFreshHome(t *testing.T) {
 	}
 }
 
+func grantTexts(lines []grantLine) string {
+	var out []string
+	for _, l := range lines {
+		out = append(out, l.Text)
+	}
+	return strings.Join(out, "\n")
+}
+
 func TestGrantSummaryMarksDisabledMounts(t *testing.T) {
-	got := strings.Join(grantSummary(config.Config{Mounts: []config.Mount{
+	got := grantTexts(grantSummary(config.Config{Mounts: []config.Mount{
 		{Host: "/a", Target: "/a", Mode: "rw"},
 		{Host: "/b", Target: "/b", Mode: "rw", Disabled: true},
-	}}), "\n")
+	}}))
 	if !strings.Contains(got, "/a->/a(rw)") {
 		t.Errorf("active mount missing: %q", got)
 	}
@@ -337,5 +345,57 @@ func TestGrantSummaryMarksDisabledMounts(t *testing.T) {
 	// the reviewer must see it, marked, not have it hidden.
 	if !strings.Contains(got, "/b->/b(rw, disabled)") {
 		t.Errorf("disabled mount should be shown marked: %q", got)
+	}
+}
+
+// The summary's charter (nothing smuggled unseen) covers every Grant class:
+// machine-scoped volumes — the shared-credential shape, and the only grant
+// that crosses project scope — plus ports and egress.
+func TestGrantSummaryFlagsMachineVolumesPortsEgress(t *testing.T) {
+	lines := grantSummary(config.Config{
+		Volumes: []config.Volume{
+			{Name: "claude-identity", Role: "state", Target: "/x", Scope: "machine"},
+			{Name: "cache", Role: "cache", Target: "/c"}, // per-project: quiet
+		},
+		Ports: []config.Port{{Container: 3000}, {Container: 8080, Host: 80, Interface: "0.0.0.0"}, {Container: 9999, Remove: true}},
+	})
+	got := grantTexts(lines)
+	if !strings.Contains(got, `machine-scoped volume "claude-identity"`) || !strings.Contains(got, "every project on this machine") {
+		t.Errorf("machine-scoped volume must be flagged loudly: %q", got)
+	}
+	if strings.Contains(got, `"cache"`) {
+		t.Errorf("per-project volumes are the sandbox model, not a grant: %q", got)
+	}
+	var cross bool
+	for _, l := range lines {
+		if strings.Contains(l.Text, "claude-identity") && l.CrossProject {
+			cross = true
+		}
+	}
+	if !cross {
+		t.Error("the machine-volume line must carry the cross-project emphasis flag")
+	}
+	if !strings.Contains(got, "binds host ports: 127.0.0.1:3000->3000, 0.0.0.0:80->8080") {
+		t.Errorf("ports must be summarized (removal markers skipped): %q", got)
+	}
+	if strings.Contains(got, "9999") {
+		t.Errorf("a removal marker grants nothing: %q", got)
+	}
+}
+
+// Egress is summarized with its honest posture status, and never hidden even
+// when the cascade can't be expanded.
+func TestEgressGrantLineStatus(t *testing.T) {
+	if got := grantTexts(egressGrantLine([]string{"a.com", "b.com:8443"}, "restricted", "firewall", true)); !strings.Contains(got, "live — skill \"firewall\" sets posture \"restricted\"") {
+		t.Errorf("posture-live phrasing: %q", got)
+	}
+	if got := grantTexts(egressGrantLine([]string{"a.com"}, "", "", true)); !strings.Contains(got, "inert now") {
+		t.Errorf("no-posture phrasing: %q", got)
+	}
+	if got := grantTexts(egressGrantLine([]string{"a.com"}, "", "", false)); !strings.Contains(got, "under a restrictive network posture") {
+		t.Errorf("unknown-posture fallback phrasing: %q", got)
+	}
+	if lines := egressGrantLine(nil, "p", "s", true); lines != nil {
+		t.Errorf("no entries — no line: %v", lines)
 	}
 }

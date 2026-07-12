@@ -67,7 +67,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // row has none (the dead-ends read as information, not errors).
 func (m model) accelerate(r listRow, key string) (tea.Model, tea.Cmd) {
 	m.status = ""
-	for _, c := range rowChoices(m.listField, r) {
+	for _, c := range m.rowChoices(m.listField, r) {
 		if c.key == key {
 			return m.applyRowAct(c.act, r)
 		}
@@ -98,8 +98,12 @@ type menuChoice struct {
 }
 
 // rowChoices is what the menu offers for a row: exactly what the cascade
-// supports for that field and kind, nothing refused after the fact.
-func rowChoices(f fieldID, r listRow) []menuChoice {
+// supports for that field and kind, nothing refused after the fact. A method
+// because the offered-door action's label must state the scope of the write:
+// in the --global editor "this project" would be a lie — the entry lands in
+// default.config, i.e. every project on this machine (the wording-equals-
+// write rule; the action itself is legitimate, ADR 0020's hand-grant path).
+func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 	switch r.kind {
 	case rowLocal, rowOverride:
 		return []menuChoice{{"Edit", "e", actEdit}, {"Delete", "d", actDelete}}
@@ -120,13 +124,16 @@ func rowChoices(f fieldID, r listRow) []menuChoice {
 	case rowStaleMarker:
 		return []menuChoice{{"Clear marker", "d", actRestore}}
 	case rowOffered:
+		if m.global {
+			return []menuChoice{{warnStyle.Render("⚠ Open for every project on this machine"), "o", actOpen}}
+		}
 		return []menuChoice{{"Open in this project", "o", actOpen}}
 	}
 	return nil // rowSkill: no menu; the list screen shows a pointer instead
 }
 
 func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	choices := rowChoices(m.listField, m.menuRow)
+	choices := m.rowChoices(m.listField, m.menuRow)
 	if cur, ok := cursorMove(msg.String(), m.menuCur, len(choices)); ok {
 		m.menuCur = cur
 		return m, nil
@@ -173,6 +180,12 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		// The opened door becomes THIS layer's own egress entry: user-authored,
 		// user-attributed, closable like any other (ADR 0020).
 		m.egress = append(m.egress, r.ident)
+		// In the --global editor that layer is default.config: say the scope
+		// of what just happened, where to undo it (delete the entry here),
+		// and how a single project opts back out.
+		if m.global {
+			m.status = r.ident + " opened for every project on this machine (entry in default.config; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
+		}
 	}
 	if n := len(m.fieldRows(m.listField)); m.listCur > n {
 		m.listCur = n
@@ -733,7 +746,7 @@ func (m model) viewMenu() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.menuRow.text))
 	b.WriteString(dimStyle.Render("Set in: "+setIn(m.menuRow)) + "\n\n")
-	choices := rowChoices(m.listField, m.menuRow)
+	choices := m.rowChoices(m.listField, m.menuRow)
 	for i, c := range choices {
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.menuCur, c.label+dimStyle.Render("  "+c.key)))
 	}
