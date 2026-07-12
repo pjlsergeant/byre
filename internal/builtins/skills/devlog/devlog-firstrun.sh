@@ -1,5 +1,5 @@
 #!/bin/sh
-# devloop firstrun hook — runs as the dev user, each launch, before the agent
+# devlog firstrun hook — runs as the dev user, each launch, before the agent
 # starts. Ensures the project's .byre-devlog/ dir exists and is self-ignoring
 # (see byre_devlog_dir in the shared lib), so the agent diary and review log
 # persist via the workspace mount but never land in git, with no per-project

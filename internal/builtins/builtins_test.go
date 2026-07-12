@@ -94,7 +94,7 @@ func TestMaterializeDoesNotClobber(t *testing.T) {
 }
 
 // TestSelfHostCompositionResolves verifies byre's own self-hosting config
-// (Claude agent + codex + codereview + devloop + grok, mirroring byre.config)
+// (Claude agent + codex + codereview + devlog + grok, mirroring byre.config)
 // resolves end-to-end: codereview ships the byre-codereview script, the
 // workflow context reaches the agent's memory file, and codex's reviewer apt
 // dep is present.
@@ -103,11 +103,11 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "codereview", "devloop", "grok"}}, dest)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "codereview", "devlog", "grok"}}, dest)
 	if err != nil {
 		t.Fatalf("self-host composition failed to resolve: %v", err)
 	}
-	// codereview ships byre-codereview; devloop ships its firstrun hook; both
+	// codereview ships byre-codereview; devlog ships its firstrun hook; both
 	// ship the devlog lib (identical copies — see TestDevlogLibCopiesIdentical);
 	// codex ships its first-run login hook into the launcher's firstrun.d.
 	shipped := map[string]bool{} // "skill dest" -> present
@@ -119,8 +119,8 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	for _, want := range []string{
 		"codereview /usr/local/bin/byre-codereview",
 		"codereview /usr/local/lib/byre-devlog-lib.sh",
-		"devloop /etc/byre/firstrun.d/devloop",
-		"devloop /usr/local/lib/byre-devlog-lib.sh",
+		"devlog /etc/byre/firstrun.d/devlog",
+		"devlog /usr/local/lib/byre-devlog-lib.sh",
 		"codex /etc/byre/firstrun.d/codex-login",
 		"grok /etc/byre/firstrun.d/grok-login",
 		"grok /etc/byre/firstrun.d/grok-bundled",
@@ -129,7 +129,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
 		}
 	}
-	// devloop contributes the persistent scratch volume and advertises it.
+	// devlog contributes the persistent scratch volume and advertises it.
 	var scratchVol bool
 	for _, v := range res.Volumes() {
 		if v.Name == "scratch" && v.Role == "state" && v.Target == "/home/dev/scratch" {
@@ -137,7 +137,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		}
 	}
 	if !scratchVol {
-		t.Errorf("devloop did not contribute the scratch state volume: %+v", res.Volumes())
+		t.Errorf("devlog did not contribute the scratch state volume: %+v", res.Volumes())
 	}
 	if got := res.Env()["BYRE_SCRATCH"]; got != "/home/dev/scratch" {
 		t.Errorf("BYRE_SCRATCH = %q, want /home/dev/scratch", got)
@@ -150,7 +150,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		t.Errorf("codereview loop context not present in agent context")
 	}
 	if !strings.Contains(res.Context(), "DIARY.md") {
-		t.Errorf("devloop workflow context not present in agent context")
+		t.Errorf("devlog workflow context not present in agent context")
 	}
 	// codex contributes the reviewer binary install (its build block is present).
 	var codexBlock bool
@@ -182,8 +182,8 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Mirrors this repo's own byre.config skill set (codex + codereview +
-	// devloop + grok).
-	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "codereview", "devloop", "grok"}}
+	// devlog + grok).
+	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "codereview", "devlog", "grok"}}
 	res, err := skills.Resolve(cfg, skillsDir)
 	if err != nil {
 		t.Fatal(err)
@@ -224,11 +224,11 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 }
 
 // TestDevlogLibCopiesIdentical pins the deliberate duplication of the devlog
-// helper lib: devloop and codereview each ship their own copy (no cross-skill
+// helper lib: devlog and codereview each ship their own copy (no cross-skill
 // dependency mechanism exists), both to the same image path. They must stay
 // byte-identical or the shipped file depends on skill enable order.
 func TestDevlogLibCopiesIdentical(t *testing.T) {
-	a, err := fs.ReadFile(fsys, "skills/devloop/devlog-lib.sh")
+	a, err := fs.ReadFile(fsys, "skills/devlog/devlog-lib.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestDevlogLibCopiesIdentical(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(a, b) {
-		t.Errorf("devlog-lib.sh copies differ between devloop and codereview; edit both together")
+		t.Errorf("devlog-lib.sh copies differ between devlog and codereview; edit both together")
 	}
 }
 
@@ -899,6 +899,41 @@ func TestGrokSharedAuthRetiredStub(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "RETIRED") {
 		t.Error("retirement notice missing from the skill description")
+	}
+}
+
+// TestDevloopRenamedStub pins the devloop -> devlog rename's compat stub: a
+// config naming "devloop" must still resolve (an unknown user's build must
+// not break), contributing nothing — no files, no context, no scratch volume.
+// The description carries the rename pointer into the picker.
+func TestDevloopRenamedStub(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"devloop"}}, dest)
+	if err != nil {
+		t.Fatalf("a config naming the renamed skill must still resolve: %v", err)
+	}
+	for _, b := range res.BuildBlocks() {
+		if b.Name == "devloop" && len(b.Files) != 0 {
+			t.Errorf("renamed stub must ship no files, got %+v", b.Files)
+		}
+	}
+	for _, v := range res.Volumes() {
+		if v.Name == "scratch" {
+			t.Errorf("renamed stub must not mount the scratch volume: %+v", v)
+		}
+	}
+	if strings.Contains(res.Context(), "DIARY.md") {
+		t.Error("renamed stub must not contribute the workflow context")
+	}
+	b, err := os.ReadFile(filepath.Join(dest, "devloop", "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "RENAMED to devlog") {
+		t.Error("rename pointer missing from the skill description")
 	}
 }
 

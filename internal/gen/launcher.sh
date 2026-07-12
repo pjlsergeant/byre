@@ -92,7 +92,7 @@ fi 2>/dev/null || true
 
 # First-run hooks — agent skills drop scripts here. They run as the dev user
 # (the launcher is unprivileged), so a hook does its own user-level setup directly
-# (codex device-auth login → the .codex volume; devloop → /workspace). A hook that
+# (codex device-auth login → the .codex volume; devlog → /workspace). A hook that
 # needs root is not supported: skills declaring privileged setup would need an
 # explicit, status-visible grant, not a blanket-root entrypoint.
 if [ -d /etc/byre/firstrun.d ]; then

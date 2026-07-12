@@ -22,6 +22,14 @@
   `byre skill update` -- a store materialized before the split still holds
   the old devloop copy, whose `byre-codereview` would silently win over the
   new skill's at rebuild (and keep recreating `.devloop/`).
+- **The devloop skill is now `devlog`**: the dev-workflow skill (diary,
+  devlog dir bootstrap, scratch volume) is named for the devlog dir it
+  curates -- devloop-the-skill next to devlog-the-dir was a two-letter
+  confusion generator. Swap `devloop` for `devlog` in your `skills` lists;
+  a no-op stub keeps configs naming `devloop` resolving (they launch, but
+  contribute no diary/conventions/scratch until renamed -- the stub's
+  description says so). Scratch volumes are keyed by volume name, so a
+  renamed box picks its data straight back up.
 - **`.devloop/` is now `.byre-devlog/`** (breaking, by design): the
   self-ignoring working-tree dir for the agent diary and review log is named
   for byre, not for one skill (glossary: "devlog dir"). There is no automatic

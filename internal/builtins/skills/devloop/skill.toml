@@ -1,51 +1,16 @@
-# Built-in skill: devloop — byre's reusable development workflow.
+# Built-in skill: devloop — RENAMED to devlog.
 #
-# Delivers three things to any project box:
-#   1. The workflow conventions (diary discipline, autonomy, commit discipline,
-#      test-before-commit) as agent context, placed where the agent reads its
-#      memory.
-#   2. The devlog dir bootstrap — a firstrun hook that ensures the project's
-#      .byre-devlog/ exists and self-ignores, so the agent diary persists via
-#      the workspace mount but never lands in git.
-#   3. A persistent scratch volume at /home/dev/scratch ($BYRE_SCRATCH) — a
-#      stash for the agent's working files that survives container restarts
-#      and rebuilds, unlike /tmp and the rest of the container fs.
+# The dev-workflow skill (diary, devlog dir bootstrap, scratch volume) is now
+# named "devlog", matching the .byre-devlog/ dir it curates — the old
+# devloop-vs-devlog near-name pair confused the people using it. Same rename
+# session, 2026-07-12; the review loop had already moved to the separate
+# `codereview` skill.
 #
-# Workspace write: devloop maintains `.byre-devlog/` at the WORKSPACE root
-# (the diary and review log live there, self-gitignored). It creates the
-# directory and forces `.byre-devlog/.gitignore` on every launch; a
-# non-directory node at that path (a user file, a planted symlink) is never
-# destroyed — devloop warns and stands down for the session instead.
-#
-# The review loop lives in its own skill now: enable `codereview` (plus a
-# reviewer skill such as codex or grok) for `byre-codereview`. Historical note:
-# this skill shipped that script before the split; a box rebuilt with only
-# devloop enabled no longer has it. The devlog-dir helper lib is shipped by
-# BOTH skills (identical copies, pinned by a builtins test), so each works
-# without the other.
-#
-# A project's own CLAUDE.md/AGENTS.md still applies on top of the conventions
-# here.
+# This stub stays so a config naming "devloop" still resolves — it contributes
+# NOTHING (no context, no hooks, no volumes: no diary conventions, no
+# .byre-devlog/ bootstrap, and the scratch volume is not mounted — its data is
+# untouched and remounts when the box switches). Edit the config's `skills`
+# list: devloop -> devlog. The scratch volume's name ("scratch") is unchanged,
+# so a renamed box picks its data straight back up.
 
-description = "Dev-workflow conventions: diary, devlog dir, scratch volume."
-
-[build]
-files = { "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devlog-lib.sh" = "/usr/local/lib/byre-devlog-lib.sh" }
-
-[runtime]
-# Advertise the scratch volume so the agent and scripts can find it without
-# hardcoding the path.
-env = { BYRE_SCRATCH = "/home/dev/scratch" }
-
-[context]
-file = "context.md"
-
-# The agent's persistent stash. The container fs (including /tmp) is throwaway —
-# it dies on every restart and rebuild, which happens constantly when byre
-# develops itself (--self-edit restarts to apply config changes). This named
-# volume survives those. role=state: persistence is the point; clearing it is a
-# conscious data loss, not a cache eviction.
-[[volumes]]
-name = "scratch"
-role = "state"
-target = "/home/dev/scratch"
+description = "RENAMED to devlog — swap this entry for \"devlog\" in your skills list (same skill: diary, devlog dir, scratch volume; this stub contributes nothing)."

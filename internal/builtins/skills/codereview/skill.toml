@@ -29,7 +29,7 @@
 # see the script), so it relies on the edit-tool strip + tripwire + the box
 # boundary.
 #
-# Self-contained: the devlog-dir helper lib is shipped here too (the devloop
+# Self-contained: the devlog-dir helper lib is shipped here too (the devlog
 # skill ships an identical copy — pinned by a builtins test — so neither skill
 # needs the other).
 

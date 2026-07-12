@@ -186,13 +186,15 @@ overwritten.
 **Devlog dir**:
 `.byre-devlog/` at the working-tree root -- the self-ignoring dir (its own
 `.gitignore` is `*`) where box-side skills keep their working files: the
-agent diary, the code-review log. A convention established by builtin
-skills, not core behavior; each skill that uses it ensures it exists
-(hardened, via the shared devlog lib), so no skill depends on another.
+agent diary, the code-review log. A convention that belongs to byre, not to
+any one skill: the devlog skill curates it (bootstraps the dir, keeps the
+diary), but each skill that writes there ensures it exists itself (hardened,
+via the shared devlog lib), so codereview never needs devlog installed.
 Born as `.devloop/`; the old name is dropped, not migrated -- an existing
-old dir is left untouched, renamed by hand if its history matters.
-_Avoid_: naming it after any one skill -- that coupling is why it was
-renamed.
+old dir is left untouched, renamed by hand if its history matters. The
+devloop *skill* was renamed to devlog in the same breath (a no-op stub
+keeps old configs resolving): dir and skill had drifted two letters apart,
+which confused more than it distinguished.
 
 ### Grants, mounts, volumes
 

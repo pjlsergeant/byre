@@ -230,7 +230,7 @@ apt         = ["build-essential"]
 npm_global  = ["prettier"]                    # extra global tools (the agent skill installs the agent)
 env         = { FOO = "bar" }                 # literals, baked into the image (not a grant)
 files       = { "./seed" = "/opt/..." }       # copied into image, read-only
-skills      = ["devloop", "firewall"]
+skills      = ["devlog", "firewall"]
 mounts      = [ ... ]                         # host-bind mounts (see Mounts & volumes)
 ports       = [{ container = 3000 }]          # published ports; binds 127.0.0.1 unless
                                               # interface says otherwise, host defaults to container
@@ -471,7 +471,7 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                       Network:      open
                       Ports:        none
                       Host mounts:  none
-                      Skills:       claude, devloop
+                      Skills:       claude, devlog
                       State vols:   .claude
                       Cache vols:   none
                       Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values passed in; env_from_host)

@@ -31,7 +31,7 @@ byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
   as the agent). Authenticate once per box with `codex login`.
 - **codereview** — ships **`byre-codereview`** (on `PATH`) and the review-loop
   conventions.
-- **devloop** — the dev-workflow conventions (diary, commit discipline, the
+- **devlog** — the dev-workflow conventions (diary, commit discipline, the
   scratch volume). Both skills' conventions are placed in the box as agent
   memory, so the workflow rules below are reinforced automatically.
 

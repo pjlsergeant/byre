@@ -1,7 +1,7 @@
 #!/bin/sh
-# byre devlog shared shell lib — sourced by the devloop firstrun hook and
+# byre devlog shared shell lib — sourced by the devlog firstrun hook and
 # byre-codereview, never executed directly. Shipped to
-# /usr/local/lib/byre-devlog-lib.sh by BOTH the devloop and codereview skills
+# /usr/local/lib/byre-devlog-lib.sh by BOTH the devlog and codereview skills
 # (identical copies, pinned by a builtins test), so each skill works without
 # the other.
 

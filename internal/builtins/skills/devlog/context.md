@@ -1,4 +1,4 @@
-# Dev workflow (devloop)
+# Dev workflow (devlog)
 
 byre placed this guidance here; it applies to every session in this box. A
 project may add its own `CLAUDE.md` in the repo on top of it.
