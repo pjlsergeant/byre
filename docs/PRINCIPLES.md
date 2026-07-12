@@ -93,6 +93,31 @@ Implications:
 - byre is not a policy engine; "grant", not "permission" (see the
   glossary).
 
+## 5. Consent is scoped to the box
+
+**No box gains a capability without its own question.** A grant's consent
+lives at the scope of its effect: a per-project capability is answered per
+project (a config entry in that project's byre.config, a question at that
+box's onboarding or adoption); machine-wide grants are hand-made only
+(default.config, `byre config --global`) and never manufactured from one
+project's answer. The 2026-07-12 shared-auth episode (ADR 0024 -> 0025)
+is the type specimen: one box's "y" became every future box's silent
+default -- twice, the second time behind an extra question, because a
+question in front of a default grant is still a default grant.
+
+Implications:
+
+- Preferences and grants are different kinds: picker-owned preference
+  keys (favourites, `shared_auth`) are cascade-inert and only change what
+  the next question pre-selects; keys with teeth (`skills`, `egress`,
+  `mounts`) are never written by a picker on a scope the user didn't
+  answer for.
+- Wording equals write: every consent prompt states the actual scope and
+  effect of the write its answer triggers, and Enter-through a default
+  never grants beyond the current box.
+- The mechanism's scope is not the decision's scope: a machine-scoped
+  volume does not make opting in machine-scoped.
+
 ## What byre is not
 
 Boundary statements, kept here so they don't get re-argued feature by

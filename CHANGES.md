@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+- **Consent surfaces stop under-stating scope** (doctrine audit,
+  2026-07-12). The adoption review's ⚠ summary now covers every Grant
+  class: machine-scoped volumes -- the shared-credential shape, the one
+  grant that crosses project scope -- get a bold-yellow line whether
+  declared by the config or a skill (skill volumes never surfaced at
+  all before), ports get a line, and egress entries always appear with
+  their honest live/inert status under the resolved posture. The global
+  config editor's offered-egress action stops saying "Open in this
+  project" while writing default.config: in --global mode it reads
+  "⚠ Open for every project on this machine" and the confirmation
+  names the file and both undo routes.
+- **env_from_host: the host git identity becomes visible, overridable
+  config** (ADR 0026). The GIT_AUTHOR/COMMITTER_* passthrough was
+  invisible plumbing; it is now byre's shipped default layer of a real
+  config key (`env_from_host = { KEY = "git:<config-key>" }`, `""`
+  disables a key, explicit `[env]` beats it; `env:` sources are
+  reserved and rejected). Counted in the launch exposure tally, one
+  attributed `Host env:` row in `byre status`, read-only rows in the
+  config editor's Env screen, and flagged at adoption when a proposal
+  asks for anything beyond the shipped defaults.
+- **Onboarding: explicit beats implicit** (doctrine audit). A non-TTY
+  partially-flagged onboarding errors (naming both flags and `none`)
+  instead of silently writing your machine favourite into a new
+  project's config -- a favourite is what Enter means, and a pipe has
+  no Enter. The new tri-state `--shared-auth` flag answers the offer
+  for automation (yes opts the box in via its own byre.config, loudly
+  refusing agents with no ready companion). And `"none"` is now a
+  stored answer that WINS: a template's `agent` can no longer silently
+  override a project's explicit no-agent choice.
+- **The config UI's Volumes screen sweeps every installed engine** --
+  one row per engine copy, clears exactly the row's engine, and says
+  the clear is engine-local when both docker and podman are installed
+  (the advertised machine-volume delete route could previously leave a
+  live login on the engine your config didn't name).
+- **Legibility batch**: the --global editor files template/agent under
+  ONBOARDING FAVOURITES (they prefill the picker; they configure no
+  box) and drops the false "(primary agent)" locked row -- enabling an
+  agent's skill machine-wide via the global Skills screen now actually
+  works; shared-auth firstrun hooks say aloud when they promote a
+  per-box login to the machine credential or replace a fork; devloop
+  warns and stands down instead of silently destroying a non-directory
+  `.devloop`; assorted doc drift (firewall base list is offered, not
+  unioned; real `byre status` output in ARCHITECTURE; grok restored to
+  the agent lists).
+
 - **The shared-auth offer is per box; the saved answer is a favourite,
   never a grant** (ADR 0025, rescoping v0.1.7's ADR 0024). Every box's
   onboarding asks "Opt this box into <agent> shared credentials?": yes
