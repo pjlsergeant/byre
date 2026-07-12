@@ -345,11 +345,12 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 // exposureOf tallies the resolved view for the launch exposure lines. The
 // counts must match what actually happens at run time: disabled mounts
 // produce no bind (runParams skips them), ports come from config only, env is
-// the distinct keys the box gets (baked config env ∪ skill runtime env — a
-// skill restating a config key is one variable, not two), and egress is the
-// enforced deduped union. Plumbing env (BYRE_UID, git identity) isn't counted
-// — it's how every box works, not this box's exposure; when named host-env
-// passthrough lands it joins the count, being a real grant. The network claim
+// the distinct keys the box gets (baked config env ∪ skill runtime env ∪ the
+// env_from_host passthrough — a restated key is one variable, not two), and
+// egress is the enforced deduped union. Plumbing env (BYRE_UID) isn't counted
+// — it's how every box works, not this box's exposure; env_from_host IS
+// counted: named host-value passthrough is a real grant, however it got
+// configured (the shipped git-identity defaults included). The network claim
 // mirrors status's networkLine honesty rules. --self-edit's rw store mount
 // gets its own named segment (like status's Self-edit row), not a bump of the
 // host-mount count. A worktree's same-path git binds are consciously NOT
@@ -365,6 +366,11 @@ func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 	}
 	for k := range rv.skills.Env() {
 		envKeys[k] = true
+	}
+	for k, src := range rv.cfg.EnvFromHost {
+		if src != "" {
+			envKeys[k] = true
+		}
 	}
 	e := config.Exposure{
 		Workspace:  true,

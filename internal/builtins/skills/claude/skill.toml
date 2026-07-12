@@ -41,6 +41,12 @@ env = { CLAUDE_CONFIG_DIR = "/home/dev/.claude", DEVCONTAINER = "true", COLORTER
 # Egress this agent needs if a firewall skill is enabled (host[:port], default
 # 443). The firewall unions every enabled skill's egress into its allowlist, so
 # claude carries its OWN endpoints rather than the firewall hardcoding them.
+# statsig.anthropic.com (telemetry/feature flags) is deliberately classed
+# functional, not offered (maintainer ruling, 2026-07-12): it is first-party,
+# in the same trust domain as the API endpoint the agent already reaches, so
+# closing it buys zero containment — it would only encode byre's opinion
+# about telemetry, which is not byre's fight. Same reasoning covers claude.ai
+# and console.anthropic.com (login flows).
 egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.anthropic.com"]
 
 [agent]

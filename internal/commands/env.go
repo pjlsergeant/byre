@@ -3,19 +3,36 @@ package commands
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
-// addGitIdentity copies only the host git user.name/user.email into env as the
-// GIT_*_NAME/EMAIL vars — the one narrow exception to host-env isolation.
-func addGitIdentity(env map[string]string) {
-	if name := gitConfig("user.name"); name != "" {
-		env["GIT_AUTHOR_NAME"] = name
-		env["GIT_COMMITTER_NAME"] = name
+// addEnvFromHost applies the resolved env_from_host passthrough (ADR 0026):
+// each entry's host-side source value lands in env unless the source is
+// disabled (""), the host has no value, or an explicit [env] KEY exists in
+// the config — an explicit value in any layer beats the passthrough default.
+func addEnvFromHost(env map[string]string, cfg config.Config) {
+	for k, src := range cfg.EnvFromHost {
+		if src == "" {
+			continue
+		}
+		if _, explicit := cfg.Env[k]; explicit {
+			continue
+		}
+		if v := hostSourceValue(src); v != "" {
+			env[k] = v
+		}
 	}
-	if email := gitConfig("user.email"); email != "" {
-		env["GIT_AUTHOR_EMAIL"] = email
-		env["GIT_COMMITTER_EMAIL"] = email
+}
+
+// hostSourceValue reads one env_from_host source on the host. Unknown schemes
+// read as empty — validation already refused them at config load; this is
+// just the belt to that suspender.
+func hostSourceValue(src string) string {
+	if key, ok := strings.CutPrefix(src, "git:"); ok {
+		return gitConfig(key)
 	}
+	return ""
 }
 
 func gitConfig(key string) string {

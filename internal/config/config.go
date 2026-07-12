@@ -208,11 +208,23 @@ type Config struct {
 	Apt       []string          `toml:"apt,omitempty"`
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
-	Files     map[string]string `toml:"files,omitempty"`
-	Skills    []string          `toml:"skills,omitempty"`
-	Mounts    []Mount           `toml:"mounts,omitempty"`
-	Volumes   []Volume          `toml:"volumes,omitempty"`
-	Ports     []Port            `toml:"ports,omitempty"`
+	// EnvFromHost passes named HOST values into the box's runtime env — the
+	// one deliberate host→box data channel, and a Grant (adoption flags
+	// additions beyond the shipped defaults; status attributes it). Value
+	// grammar: "git:<config-key>" (read via `git config --get` on the host
+	// at launch; an empty host value sets nothing) or "" (disables the key —
+	// how a layer drops a lower layer's entry). Other source schemes
+	// ("env:...") are RESERVED and rejected until deliberately designed —
+	// arbitrary host-env passthrough is a much bigger grant. byre ships
+	// CoreEnvFromHost on by default (host git identity, so box commits are
+	// attributed to the developer); an explicit [env] KEY in any layer beats
+	// the passthrough for that key.
+	EnvFromHost map[string]string `toml:"env_from_host,omitempty"`
+	Files       map[string]string `toml:"files,omitempty"`
+	Skills      []string          `toml:"skills,omitempty"`
+	Mounts      []Mount           `toml:"mounts,omitempty"`
+	Volumes     []Volume          `toml:"volumes,omitempty"`
+	Ports       []Port            `toml:"ports,omitempty"`
 	// Egress is the user's firewall-allowlist extension (ADR 0019): extra
 	// `host[:port]` endpoints (port defaults to 443) unioned with every
 	// enabled skill's declared egress. A grant under a restrictive posture;
@@ -293,6 +305,12 @@ func resolveWith(home string, proj Config) (Config, error) {
 	// picker reads the favourites from the file directly (onboard.Favourites).
 	def.Template = ""
 	def.Agent = ""
+
+	// The core layer sits under everything: byre's own shipped defaults,
+	// today only the host git identity passthrough. A real config layer (not
+	// hardcoded plumbing) so any higher layer can see, override, or disable
+	// it per key, and the legibility surfaces count it like the grant it is.
+	def = Merge(Config{EnvFromHost: CoreEnvFromHost()}, def)
 
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
@@ -407,6 +425,7 @@ func Merge(base, over Config) Config {
 
 	// Maps: union, over wins per key.
 	out.Env = mergeMap(base.Env, over.Env)
+	out.EnvFromHost = mergeMap(base.EnvFromHost, over.EnvFromHost)
 	out.Files = mergeMap(base.Files, over.Files)
 
 	// Structured named lists: union keyed by identity, with `!name` removal.
@@ -501,6 +520,15 @@ func (c Config) validateScalars(layer bool) error {
 	// where their build blocks are resolved (see internal/skills).
 	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
 		return err
+	}
+
+	for k, src := range c.EnvFromHost {
+		if !envKeyRe.MatchString(k) {
+			return fmt.Errorf("env_from_host key %q: not a valid environment variable name", k)
+		}
+		if err := validateHostSource(src); err != nil {
+			return fmt.Errorf("env_from_host %s: %w", k, err)
+		}
 	}
 
 	// Skill names have no config-side grammar (they resolve against the store's
@@ -993,6 +1021,42 @@ func ListTemplates(templatesDir string) []string {
 	}
 	sort.Strings(ts)
 	return ts
+}
+
+// CoreEnvFromHost is byre's shipped env_from_host layer: the host git
+// identity, on by default so box commits are attributed to the developer
+// (ADR 0026). resolveWith merges it UNDER default.config — a real config
+// layer any higher layer can override or disable per key (`KEY = ""`), never
+// hardcoded plumbing the legibility surfaces can't see.
+func CoreEnvFromHost() map[string]string {
+	return map[string]string{
+		"GIT_AUTHOR_NAME":     "git:user.name",
+		"GIT_COMMITTER_NAME":  "git:user.name",
+		"GIT_AUTHOR_EMAIL":    "git:user.email",
+		"GIT_COMMITTER_EMAIL": "git:user.email",
+	}
+}
+
+// gitConfigKeyRe bounds a git config key to section.name shapes; the value is
+// passed to `git config --get` as a single argv element (never a shell), the
+// allowlist just keeps configs legible and typo-loud.
+var gitConfigKeyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
+
+// validateHostSource checks one env_from_host source: "" (disabled) or
+// "git:<config-key>". Everything else — notably "env:..." — is reserved:
+// arbitrary host-env passthrough is a far bigger grant than git identity and
+// stays rejected until it is deliberately designed.
+func validateHostSource(src string) error {
+	if src == "" {
+		return nil // disabled — how a layer drops a lower layer's entry
+	}
+	if key, ok := strings.CutPrefix(src, "git:"); ok {
+		if !gitConfigKeyRe.MatchString(key) {
+			return fmt.Errorf("source %q: %q is not a valid git config key", src, key)
+		}
+		return nil
+	}
+	return fmt.Errorf("source %q: only \"git:<config-key>\" sources (and \"\" to disable) are supported today", src)
 }
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and

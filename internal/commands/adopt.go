@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -321,10 +322,36 @@ func grantSummary(c config.Config) []grantLine {
 	if ports := portGrantList(c.Ports); len(ports) > 0 {
 		s = append(s, grantLine{Text: "binds host ports: " + strings.Join(ports, ", ")})
 	}
+	// env_from_host beyond byre's own shipped git-identity defaults is a
+	// proposal asking for HOST values — exactly what this summary exists to
+	// surface. The core entries are every box's baseline (visible in status),
+	// not this proposal's ask, so they don't cry wolf here.
+	if extra := extraHostEnv(c.EnvFromHost); len(extra) > 0 {
+		s = append(s, grantLine{Text: "passes host values into the box's env: " + strings.Join(extra, ", ")})
+	}
 	if len(c.Skills) > 0 {
 		s = append(s, grantLine{Text: "enables skills (each can add mounts/caps/run_args/volumes): " + strings.Join(c.Skills, ", ")})
 	}
 	return s
+}
+
+// extraHostEnv lists env_from_host entries (sorted) that differ from byre's
+// shipped CoreEnvFromHost defaults — the additions a proposal is actually
+// asking for. Disabled ("") entries grant nothing and are skipped.
+func extraHostEnv(m map[string]string) []string {
+	core := config.CoreEnvFromHost()
+	var keys []string
+	for k, src := range m {
+		if src != "" && core[k] != src {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		out[i] = k + " <- " + m[k]
+	}
+	return out
 }
 
 // portGrantList renders the effective port bindings compactly (removal

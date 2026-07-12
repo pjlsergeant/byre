@@ -11,8 +11,9 @@ import (
 	"github.com/pjlsergeant/byre/internal/runner"
 )
 
-// runParams assembles the run invocation: workspace bind, host UID/GID and git
-// identity as env, config mounts, and named volumes scoped to this project. The
+// runParams assembles the run invocation: workspace bind, host UID/GID and the
+// env_from_host passthrough as env, config mounts, and named volumes scoped to
+// this project. The
 // image already bakes the UID/GID (the container runs as that user), so BYRE_UID/
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
@@ -24,7 +25,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	for k, v := range rv.skills.Env() { // skill runtime env
 		env[k] = v
 	}
-	addGitIdentity(env) // git identity wins over skill env for those keys
+	addEnvFromHost(env, rv.cfg) // host passthrough beats skill env for its keys; explicit [env] beats it
 
 	binds := make([]runner.BindMount, 0, len(rv.mounts))
 	for _, m := range rv.mounts {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -24,7 +25,8 @@ type statusInfo struct {
 	Binds           []config.Mount
 	Ports           []config.Port
 	Volumes         []config.Volume
-	Grants          []skills.Grant // per-skill runtime grants (attribution)
+	Grants          []skills.Grant    // per-skill runtime grants (attribution)
+	EnvFromHost     map[string]string // resolved host-value passthrough (KEY -> source, ADR 0026)
 	RunArgs         []string
 	BuildRaw        []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
 	NetPosture      string               // a skill's declared network posture ("" = default open)
@@ -69,6 +71,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		RunArgs:        cfg.RunArgs,
 		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs: len(cfg.RunArgs) > 0,
+		EnvFromHost:    cfg.EnvFromHost,
 	}
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
@@ -148,6 +151,26 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 
 	renderStatus(s.Out, info)
 	return nil
+}
+
+// hostEnvRow renders the live env_from_host entries deterministically
+// (sorted; disabled "" entries omitted), or "" when there are none.
+func hostEnvRow(m map[string]string) string {
+	var keys []string
+	for k, src := range m {
+		if src != "" {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	sort.Strings(keys)
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + " <- " + m[k]
+	}
+	return strings.Join(parts, ", ") + "  (host values passed in; env_from_host)"
 }
 
 // renderStatus writes the flat, scannable "what can this thing touch?" block.
@@ -266,6 +289,14 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// none are declared -- most boxes have no shared volumes to report.
 	if len(machine) > 0 {
 		row("Shared vols", strings.Join(machine, ", ")+"  (machine-wide, all your projects)")
+	}
+
+	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate
+	// host->box data channel, attributed source by source — the shipped git
+	// identity included (byre's own defaults get no invisibility pass).
+	// Disable with `KEY = ""` under env_from_host in any config layer.
+	if hostEnv := hostEnvRow(s.EnvFromHost); hostEnv != "" {
+		row("Host env", hostEnv)
 	}
 
 	// Skill-granted runtime holes, attributed to the skill that opened them.

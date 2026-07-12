@@ -589,6 +589,7 @@ func sampleConfig() Config {
 		Skills:             []string{"devloop"},
 		SharedAuth:         []string{"claude"},
 		SharedAuthDeclined: []string{"claude"},
+		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
 		Egress:             []string{"grafana.com"},
 		EgressOffered:      []string{"registry.npmjs.org"},
 		Mounts:             []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
