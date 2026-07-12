@@ -44,9 +44,9 @@ func WriteProjectConfig(destPath, template, agent string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
-		return err
-	}
+	// The file keeps CreateTemp's private 0600 — the same mode every other
+	// byre config writer (config.AtomicWrite) produces, and byre.config is
+	// read only by byre as this user.
 	if err := os.Link(tmpName, destPath); err != nil {
 		if os.IsExist(err) {
 			return fmt.Errorf("%s already exists; not overwriting", destPath)
