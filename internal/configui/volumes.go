@@ -24,7 +24,10 @@ type VolumeAdmin interface {
 	SharedNote() string
 }
 
-// VolumeStatus is one project volume for display.
+// VolumeStatus is one project volume for display — one row PER ENGINE when
+// more than one is installed: a volume can exist on docker and podman at
+// once, each copy its own row, or "cleared" would be a per-engine truth
+// wearing machine-wide words.
 type VolumeStatus struct {
 	Name    string // logical name (e.g. ".claude")
 	Role    string // "state" | "cache"
@@ -32,6 +35,7 @@ type VolumeStatus struct {
 	Exists  bool   // whether the engine volume currently exists on disk
 	Machine bool   // machine-scoped: shared across ALL the user's projects
 	Orphan  bool   // machine-scoped volume no longer declared by any enabled skill/config
+	Engine  string // the engine this row was listed from (labels rows when several are installed)
 }
 
 // openVolumes loads the project's volumes and enters the volumes screen. A list
@@ -105,12 +109,16 @@ func (m model) viewVolumes() string {
 	if len(m.volList) == 0 {
 		b.WriteString(dimStyle.Render("  (no volumes declared for this project)\n"))
 	}
+	multiEngine := volEngines(m.volList) > 1
 	for i, v := range m.volList {
 		state := dimStyle.Render("empty")
 		if v.Exists {
 			state = "present"
 		}
 		line := fmt.Sprintf("%-14s %-6s %-24s %s", v.Name, v.Role, v.Target, state)
+		if multiEngine {
+			line += " [" + v.Engine + "]"
+		}
 		switch {
 		case v.Orphan:
 			line += dimStyle.Render("  (shared: all your projects — no longer declared)")
@@ -129,9 +137,16 @@ func (m model) viewVolumes() string {
 	b.WriteString("\n")
 	switch {
 	case m.volPendClear >= 0:
-		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", m.volList[m.volPendClear].Name)
-		if m.volList[m.volPendClear].Machine {
+		pend := m.volList[m.volPendClear]
+		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", pend.Name)
+		if pend.Machine {
 			msg += "\nShared by ALL your projects — clearing it affects every one (a shared agent login logs out everywhere)."
+		}
+		// With several engines installed the clear is engine-local — say so,
+		// or "logged out everywhere" overclaims while the other engine's
+		// same-named copy keeps the login alive.
+		if multiEngine {
+			msg += fmt.Sprintf("\nThis clears the %s copy only — a same-named volume on another engine is its own row.", pend.Engine)
 		}
 		if m.vols != nil {
 			if note := m.vols.SharedNote(); note != "" {
@@ -145,6 +160,16 @@ func (m model) viewVolumes() string {
 
 	b.WriteString("\n\n" + dimStyle.Render("↑/↓ move · c clear · esc back"))
 	return b.String()
+}
+
+// volEngines counts the distinct engines among the rows — the label and the
+// engine-local clear note only appear when there is more than one.
+func volEngines(rows []VolumeStatus) int {
+	set := map[string]bool{}
+	for _, v := range rows {
+		set[v.Engine] = true
+	}
+	return len(set)
 }
 
 func volDescription(v VolumeStatus) string {

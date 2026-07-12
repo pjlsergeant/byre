@@ -11,7 +11,6 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/configui"
 	"github.com/pjlsergeant/byre/internal/project"
-	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -105,27 +104,30 @@ func Config(s Streams, projectDir string, global bool) error {
 
 // volumeAdmin is the engine-backed configui.VolumeAdmin for a project: it lists
 // the resolved volume set (config + skills) with on-disk presence, and clears a
-// volume. It mirrors `byre reset`, scoped to one volume.
+// volume. It mirrors `byre reset`, scoped to one volume — including reset's
+// every-installed-engine stance: this screen is the advertised deliberate-
+// delete route for machine volumes, and "logged out everywhere" would be a
+// lie if a same-named volume survived on the engine the config doesn't name
+// (the lifecycle-batch bug class; audit finding).
 type volumeAdmin struct {
-	r          engineRunner
+	rs         []engineRunner
 	paths      project.Paths
 	projectDir string
 }
 
 // newVolumeAdmin builds the volume admin for a project, or returns nil (so the
-// editor omits the Volumes section) when the config or engine won't resolve. The
-// section is shown even with zero volumes — the screen re-resolves on each open,
-// so volumes added later (e.g. via $EDITOR) appear without restarting.
+// editor omits the Volumes section) when the config or engines won't resolve.
+// The section is shown even with zero volumes — the screen re-resolves on each
+// open, so volumes added later (e.g. via $EDITOR) appear without restarting.
 func newVolumeAdmin(paths project.Paths, projectDir string) configui.VolumeAdmin {
-	rv, err := resolve(paths, projectDir)
-	if err != nil {
+	if _, err := resolve(paths, projectDir); err != nil {
 		return nil
 	}
-	eng, err := runner.Detect(rv.cfg.Engine, nil)
+	rs, err := lifecycleEngines()
 	if err != nil {
 		return nil // no engine → can't list/clear; hide the section
 	}
-	return &volumeAdmin{r: runner.New(eng), paths: paths, projectDir: projectDir}
+	return &volumeAdmin{rs: rs, paths: paths, projectDir: projectDir}
 }
 
 func dedupeVolumes(vs []config.Volume) []config.Volume {
@@ -159,31 +161,37 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 		return nil, err
 	}
 	defs := dedupeVolumes(rv.volumes)
-	out := make([]configui.VolumeStatus, 0, len(defs))
-	declared := map[string]bool{}
-	for _, v := range defs {
-		exists, err := a.r.VolumeExists(scopedVolumeName(a.paths.ID, os.Getuid(), v))
+	var out []configui.VolumeStatus
+	// One pass per installed engine: a volume (declared or orphaned) can
+	// exist on both docker and podman, and each copy is its own row — the
+	// delete route must show and clear every copy, or "removed" is false.
+	for _, r := range a.rs {
+		eng := string(r.Engine())
+		declared := map[string]bool{}
+		for _, v := range defs {
+			exists, err := r.VolumeExists(scopedVolumeName(a.paths.ID, os.Getuid(), v))
+			if err != nil {
+				return nil, err
+			}
+			if v.MachineScoped() {
+				declared[v.Name] = true
+			}
+			out = append(out, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists, Machine: v.MachineScoped(), Engine: eng})
+		}
+		// Orphaned machine-scoped volumes: present on the engine but no longer
+		// declared by any enabled skill/config (e.g. shared-auth disabled after a
+		// login). Listed so the deliberate-delete route reset/forget advertises
+		// keeps working for them (review finding on ADR 0017's logout story).
+		prefix := fmt.Sprintf("byre-machine-u%d-", os.Getuid())
+		engineVols, err := r.VolumesByPrefix(prefix)
 		if err != nil {
 			return nil, err
 		}
-		if v.MachineScoped() {
-			declared[v.Name] = true
-		}
-		out = append(out, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists, Machine: v.MachineScoped()})
-	}
-	// Orphaned machine-scoped volumes: present on the engine but no longer
-	// declared by any enabled skill/config (e.g. shared-auth disabled after a
-	// login). Listed so the deliberate-delete route reset/forget advertises
-	// keeps working for them (review finding on ADR 0017's logout story).
-	prefix := fmt.Sprintf("byre-machine-u%d-", os.Getuid())
-	engineVols, err := a.r.VolumesByPrefix(prefix)
-	if err != nil {
-		return nil, err
-	}
-	for _, ev := range engineVols {
-		name := strings.TrimPrefix(ev, prefix)
-		if !declared[name] {
-			out = append(out, configui.VolumeStatus{Name: name, Exists: true, Machine: true, Orphan: true})
+		for _, ev := range engineVols {
+			name := strings.TrimPrefix(ev, prefix)
+			if !declared[name] {
+				out = append(out, configui.VolumeStatus{Name: name, Exists: true, Machine: true, Orphan: true, Engine: eng})
+			}
 		}
 	}
 	return out, nil
@@ -195,9 +203,10 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 // scope decides the Docker name: an orphaned machine volume may share its
 // logical name with a declared project one, so name alone is ambiguous.
 func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
+	r := a.runnerFor(v.Engine)
 	// io.Discard: this runs inside the TUI; a waiting note would corrupt the screen.
 	return withSetupLock(io.Discard, a.paths.LockFile, func() error {
-		if live, err := liveSession(a.r, a.paths.ID); err != nil {
+		if live, err := liveSession(r, a.paths.ID); err != nil {
 			return fmt.Errorf("checking for a running session: %w", err)
 		} else if len(live) > 0 {
 			return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
@@ -207,13 +216,24 @@ func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
 			// the this-project guard above isn't enough: refuse while ANY byre
 			// session runs (bare label key = presence filter). Clearing it is
 			// the machine-wide logout story (ADR 0017).
-			if live, lerr := a.r.RunningContainersByLabel(labelKey); lerr != nil {
+			if live, lerr := r.RunningContainersByLabel(labelKey); lerr != nil {
 				return fmt.Errorf("checking for running byre sessions: %w", lerr)
 			} else if len(live) > 0 {
 				return fmt.Errorf("this volume is shared by ALL your projects and a byre session is running (%s) — exit every session before clearing it", shortID(live[0]))
 			}
-			return a.r.VolumeRemove(machineVolumeName(os.Getuid(), v.Name))
+			return r.VolumeRemove(machineVolumeName(os.Getuid(), v.Name))
 		}
-		return a.r.VolumeRemove(volumeName(a.paths.ID, v.Name))
+		return r.VolumeRemove(volumeName(a.paths.ID, v.Name))
 	})
+}
+
+// runnerFor maps a row's engine label back to its runner; rows always carry
+// the engine they were listed from.
+func (a *volumeAdmin) runnerFor(engine string) engineRunner {
+	for _, r := range a.rs {
+		if string(r.Engine()) == engine {
+			return r
+		}
+	}
+	return a.rs[0]
 }
