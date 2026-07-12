@@ -295,6 +295,42 @@ func TestLoadCascade(t *testing.T) {
 	}
 }
 
+// A stored "none" is a real answer, not absence: it beats a template's agent
+// in the merge (an empty scalar would inherit it), and resolves to empty —
+// no resolved config ever carries the sentinel (audit finding 5).
+func TestNoneSentinelBeatsTemplateAgent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+
+	tmplDir := filepath.Join(home, "templates", "opinionated")
+	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(tmplDir, "template.config"), "agent = \"claude\"\n")
+	writeProjectCfg(t, proj, "template = \"opinionated\"\nagent = \"none\"\n")
+
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent != "" {
+		t.Fatalf("an explicit none must beat the template's agent, got %q", cfg.Agent)
+	}
+
+	// And template = "none" resolves as no template at all, not a lookup of
+	// a template named "none".
+	proj2 := t.TempDir()
+	writeProjectCfg(t, proj2, "template = \"none\"\nagent = \"none\"\n")
+	cfg2, err := Load(proj2)
+	if err != nil {
+		t.Fatalf("template=none must not be looked up as a template dir: %v", err)
+	}
+	if cfg2.Template != "" || cfg2.Agent != "" {
+		t.Fatalf("sentinels must resolve to empty, got template=%q agent=%q", cfg2.Template, cfg2.Agent)
+	}
+}
+
 func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)

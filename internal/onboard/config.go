@@ -19,12 +19,12 @@ import (
 func WriteProjectConfig(destPath, template, agent string, skills []string) error {
 	var b strings.Builder
 	b.WriteString("# Created by byre.\n")
-	if template != "" {
-		fmt.Fprintf(&b, "template = %q\n", template)
-	}
-	if agent != "" {
-		fmt.Fprintf(&b, "agent = %q\n", agent)
-	}
+	// Both axes are recorded explicitly — "none" is a real answer, stored as
+	// the literal sentinel so it WINS over a template's (or any lower
+	// layer's) choice in the cascade; an omitted scalar would mean "inherit"
+	// and let a template silently override the user's explicit no.
+	fmt.Fprintf(&b, "template = %q\n", config.OrNone(template))
+	fmt.Fprintf(&b, "agent = %q\n", config.OrNone(agent))
 	if len(skills) > 0 {
 		quoted := make([]string, len(skills))
 		for i, s := range skills {

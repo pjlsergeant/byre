@@ -296,8 +296,12 @@ func resolveWith(home string, proj Config) (Config, error) {
 
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
-	// default ⊕ template ⊕ project.
-	templateName := proj.Template
+	// default ⊕ template ⊕ project. "none" is a real stored value, not
+	// absence: an empty scalar means "inherit", so the sentinel is how a
+	// project says "explicitly nothing" and WINS over a template's choice
+	// (an explicit no-agent answer must not be silently overridden). It is
+	// resolved out below — no resolved config ever carries it.
+	templateName := FromNone(proj.Template)
 	var tmpl Config
 	if templateName != "" {
 		tmplPath := TemplatePath(filepath.Join(home, "templates"), templateName)
@@ -316,6 +320,10 @@ func resolveWith(home string, proj Config) (Config, error) {
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
+	// Resolve the "none" sentinel out: it exists to beat lower layers in the
+	// merge, and means empty everywhere downstream.
+	resolved.Template = FromNone(resolved.Template)
+	resolved.Agent = FromNone(resolved.Agent)
 	// shared_auth (and the vestigial shared_auth_declined) is picker-owned
 	// state (ADR 0025), not container config: whatever layer carries it, it
 	// never reaches a resolved config — onboarding reads it straight from

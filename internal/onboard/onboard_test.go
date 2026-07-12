@@ -183,14 +183,17 @@ func TestWriteProjectConfigWritesOptedSkills(t *testing.T) {
 	}
 }
 
-func TestWriteProjectConfigOmitsNone(t *testing.T) {
+// An explicit "none" answer is stored as the literal sentinel — an omitted
+// scalar would mean "inherit" and let a template silently override the
+// user's explicit no (audit finding 5).
+func TestWriteProjectConfigStoresNoneExplicitly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "byre.config")
 	if err := WriteProjectConfig(path, "", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
-	if strings.Contains(string(b), "template") {
-		t.Errorf("empty template should be omitted: %s", b)
+	if !strings.Contains(string(b), `template = "none"`) {
+		t.Errorf("an explicit none must be stored, not omitted: %s", b)
 	}
 }
 
