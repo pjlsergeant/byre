@@ -16,12 +16,14 @@
 # exits instead of running open. See gen/launcher.sh.
 #
 # Allowlist: DERIVED — byre unions every enabled skill's [runtime] egress
-# declarations (each agent skill carries its own API endpoints; this skill
-# carries only the generic base below) and passes the union to the helper as
-# BYRE_EGRESS. Entries are host[:port], port defaulting to 443, and each rule
-# is scoped to that TCP port, not all-ports to the IP (shared CDN addresses
-# front many tenants). Extend per project via the `egress` config key
-# (egress = ["host1", "host2:8443"], ADR 0019), same grammar.
+# declarations (each agent skill carries its own API endpoints) plus the
+# config `egress` key and passes the union to the helper as BYRE_EGRESS.
+# This skill's own generic base list (git hosting, registries) is OFFERED,
+# not unioned (ADR 0020): the doors below ship closed and open only per
+# explicit grant. Entries are host[:port], port defaulting to 443, and each
+# rule is scoped to that TCP port, not all-ports to the IP (shared CDN
+# addresses front many tenants). Extend per project via the `egress` config
+# key (egress = ["host1", "host2:8443"], ADR 0019), same grammar.
 # IPs are resolved at apply time — a snapshot; a CDN rotating a domain's IPs
 # mid-session makes that host start failing (closed, not open). Restart the
 # session to re-resolve.

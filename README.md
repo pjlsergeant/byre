@@ -18,7 +18,7 @@ $ cd ~/my-project && byre develop
 **Good to know**:
 
 * Single, self-contained, MIT-licensed binary
-* Ships with agent skills for Claude Code, Codex, and Gemini, or bring your own
+* Ships with agent skills for Claude Code, Codex, Gemini, and Grok, or bring your own
 * Low magic: the Dockerfiles it generates are right there to read
 * Grant more access from the TUI in seconds, relaunch and /resume
 
@@ -84,7 +84,7 @@ Container:    running (0d95f3a2c1b4)
 ## Your toolkit, every folder
 
 byre ships templates for go, node, and python, and agent skills for
-Claude, Codex, and Gemini; the first `byre develop` asks which you want,
+Claude, Codex, Gemini, and Grok; the first `byre develop` asks which you want,
 and that's the setup.
 
 But you and your agent can build powerful templates and skills, and add

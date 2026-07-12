@@ -245,6 +245,18 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills}},
 	}
+	// In default.config, template/agent are the first-run picker's
+	// PRE-SELECTIONS — the resolver strips them from every resolved config,
+	// so filing them under BUILD would claim they shape boxes. Their own
+	// section says what they actually do (audit finding: the global editor
+	// presented inert favourites as live machine-wide config).
+	if global {
+		sections = []section{
+			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
+			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills}},
+		}
+	}
 	// worktree_base is a global/host preference; only the --global editor shows it
 	// (in a project editor it would falsely read "unset — will refuse" whenever a
 	// global default is actually inherited).

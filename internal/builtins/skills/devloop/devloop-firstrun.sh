@@ -7,4 +7,4 @@
 ws=/workspace
 [ -d "$ws" ] || exit 0
 . /usr/local/lib/byre-devloop-lib.sh 2>/dev/null || exit 0
-byre_devloop_dir "$ws" 2>/dev/null || true
+byre_devloop_dir "$ws" || true

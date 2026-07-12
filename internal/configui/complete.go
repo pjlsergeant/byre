@@ -116,7 +116,14 @@ func (m model) assemble() config.Config {
 	// The primary agent is implied by `agent`, so never write it into `skills`
 	// (even if it lingers in m.skills from a config that listed it before it became
 	// primary) — the locked row shows it on via the agent, not via this list.
+	// EXCEPT in the --global editor: there `agent` is an onboarding favourite
+	// that enables nothing, so a skills entry naming it is the user's real
+	// (and only) way to enable that skill machine-wide — stripping it made
+	// the choice silently impossible (audit finding).
 	primaryAgent := fromNone(m.agentOpts[m.agentSel])
+	if m.global {
+		primaryAgent = ""
+	}
 	out.Skills = nil
 	for _, s := range m.skills {
 		if s != primaryAgent {

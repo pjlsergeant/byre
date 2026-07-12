@@ -13,7 +13,13 @@
 # can't be provided; the .gitignore write is best-effort.
 byre_devloop_dir() {
   d="$1/.devloop"
-  if [ -L "$d" ] || { [ -e "$d" ] && [ ! -d "$d" ]; }; then rm -rf "$d"; fi
+  # A non-directory node at .devloop (a user file, or a planted symlink that
+  # would redirect our writes) is NOT ours to destroy: warn and stand down —
+  # devloop degrades for the session instead of silently deleting it.
+  if [ -L "$d" ] || { [ -e "$d" ] && [ ! -d "$d" ]; }; then
+    echo "byre devloop: $d exists and is not a directory — leaving it alone; devloop's working files (DIARY.md, reviews.md) are unavailable until it is moved" >&2
+    return 1
+  fi
   mkdir -p "$d" || return 1
   gi="$d/.gitignore"
   if [ -L "$gi" ] || { [ -e "$gi" ] && [ ! -f "$gi" ]; }; then rm -rf "$gi"; fi

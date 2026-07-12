@@ -465,15 +465,18 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   volumes, raw blocks verbatim-but-flagged, session state.
 
                       Agent:        claude
+                      Project id:   repo-abc123
+                      Agent:        claude
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
                       Network:      open
+                      Ports:        none
                       Host mounts:  none
-                      Skills:       devloop
-                      State vols:   .claude          (per-project)
-                      Cache vols:   node_modules     (per-project)
+                      Skills:       claude, devloop
+                      State vols:   .claude
+                      Cache vols:   none
+                      Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values passed in; env_from_host)
                       Raw run args: --cap-add=SYS_PTRACE   (passed through; not introspected)
-                      Dockerfile:   ~/.byre/projects/<project_id>/Dockerfile.generated
                       Container:    not running
 
 byre dockerfile   Print the generated Dockerfile for this directory.

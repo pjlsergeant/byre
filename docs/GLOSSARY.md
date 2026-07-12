@@ -25,7 +25,7 @@ One foreground run of a project's box (one `byre develop`, one container).
 Single-session per project directory; parallelism comes from worktrees.
 
 **Agent**:
-The AI coding CLI (Claude, Codex, Gemini) that runs inside the box. byre is
+The AI coding CLI (Claude, Codex, Gemini, Grok) that runs inside the box. byre is
 not an agent; it runs one.
 
 **Engine**:
@@ -310,7 +310,9 @@ split out), ports, env vars, and the network stance — spoken in one shared
 voice on two surfaces: atop the config UI's form, and as `byre:` lines at
 launch (where the implicit `/workspace` mount and, when active, the
 `--self-edit` store mount are named too). Counts only; `byre status`
-is the detailed, attributed view.
+is the detailed, attributed view for everything except plain env
+values: the host passthrough (`env_from_host`) is attributed there,
+and the full variable list lives in the config editor's Env screen.
 Called "exposure", not "grants": a config-literal env var is counted (it
 reaches the box) but is not a Grant.
 _Avoid_: grant summary (env vars in the tally aren't all grants)
