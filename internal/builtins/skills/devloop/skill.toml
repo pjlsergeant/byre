@@ -1,51 +1,36 @@
 # Built-in skill: devloop — byre's reusable development workflow.
 #
 # Delivers three things to any project box:
-#   1. `byre-codereview` — an independent code-review script (shipped via
-#      [build].files, on PATH at /usr/local/bin/byre-codereview). Codex drives
-#      it by default; `--reviewer grok` (or BYRE_REVIEWER=grok) uses grok when
-#      that skill is enabled too.
-#   2. The workflow conventions (commit discipline, the review loop, test-before-
-#      commit) as agent context, placed where the agent reads its memory.
+#   1. The workflow conventions (diary discipline, autonomy, commit discipline,
+#      test-before-commit) as agent context, placed where the agent reads its
+#      memory.
+#   2. The devlog dir bootstrap — a firstrun hook that ensures the project's
+#      .byre-devlog/ exists and self-ignores, so the agent diary persists via
+#      the workspace mount but never lands in git.
 #   3. A persistent scratch volume at /home/dev/scratch ($BYRE_SCRATCH) — a
 #      stash for the agent's working files that survives container restarts
 #      and rebuilds, unlike /tmp and the rest of the container fs.
 #
-# Workspace write: devloop maintains `.devloop/` at the WORKSPACE root (the
-# diary and review log live there, self-gitignored). It creates the directory
-# and forces `.devloop/.gitignore` on every launch; a non-directory node at
-# that path (a user file, a planted symlink) is never destroyed — devloop
-# warns and stands down for the session instead.
+# Workspace write: devloop maintains `.byre-devlog/` at the WORKSPACE root
+# (the diary and review log live there, self-gitignored). It creates the
+# directory and forces `.byre-devlog/.gitignore` on every launch; a
+# non-directory node at that path (a user file, a planted symlink) is never
+# destroyed — devloop warns and stands down for the session instead.
 #
-# Pairs with a reviewer skill, which installs the binary the script drives:
+# The review loop lives in its own skill now: enable `codereview` (plus a
+# reviewer skill such as codex or grok) for `byre-codereview`. Historical note:
+# this skill shipped that script before the split; a box rebuilt with only
+# devloop enabled no longer has it. The devlog-dir helper lib is shipped by
+# BOTH skills (identical copies, pinned by a builtins test), so each works
+# without the other.
 #
-#   skills = ["codex", "devloop"]          # codex reviews (the default)
-#   skills = ["codex", "grok", "devloop"]  # both available; --reviewer picks
-#
-# The reviewer skill provides the reviewer; devloop provides the script +
-# conventions. The reviewer is NOT launched as the agent — it's the second
-# opinion. Authenticate once per box with the device flow (`codex login
-# --device-auth` / `grok login --device-auth`; both CLIs' plain `login` starts
-# a browser-redirect flow that cannot complete in a no-browser sandbox). A
-# project's own CLAUDE.md/AGENTS.md still applies on top of the conventions
+# A project's own CLAUDE.md/AGENTS.md still applies on top of the conventions
 # here.
-#
-# Review execution policy (encoded in the script's prompt, checked by its
-# tripwire): the reviewer may run cheap targeted read-only probes to put
-# evidence behind a specific finding, but never builds or the test suite (the
-# author owns green), and never anything that mutates the tree — the script
-# re-hashes the working tree after each run and warns if it changed. codex
-# additionally runs under its own OS-level read-only sandbox; grok cannot
-# (its Landlock profiles silently break tool execution inside a container —
-# see the script), so it relies on the edit-tool strip + tripwire + the box
-# boundary.
 
-description = "Dev-workflow conventions plus the byre-codereview loop."
+description = "Dev-workflow conventions: diary, devlog dir, scratch volume."
 
 [build]
-apt = ["jq"] # codereview.sh parses codex --json output with jq
-files = { "codereview.sh" = "/usr/local/bin/byre-codereview", "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devloop-lib.sh" = "/usr/local/lib/byre-devloop-lib.sh" }
-dockerfile = ["RUN chmod +x /usr/local/bin/byre-codereview"]
+files = { "devloop-firstrun.sh" = "/etc/byre/firstrun.d/devloop", "devlog-lib.sh" = "/usr/local/lib/byre-devlog-lib.sh" }
 
 [runtime]
 # Advertise the scratch volume so the agent and scripts can find it without

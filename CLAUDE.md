@@ -25,13 +25,15 @@ agent writes Go, runs `go build`, and runs unit tests; the actual `byre develop`
 ## Dev environment (self-hosted)
 
 byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
-**Go + Claude** box with two skills:
+**Go + Claude** box with these skills:
 
 - **codex** — installs the `codex` binary (the independent reviewer; not launched
   as the agent). Authenticate once per box with `codex login`.
-- **devloop** — ships **`byre-codereview`** (on `PATH`) and the dev-workflow
-  conventions. Those conventions are placed in the box as agent memory, so the
-  workflow rules below are reinforced automatically.
+- **codereview** — ships **`byre-codereview`** (on `PATH`) and the review-loop
+  conventions.
+- **devloop** — the dev-workflow conventions (diary, commit discipline, the
+  scratch volume). Both skills' conventions are placed in the box as agent
+  memory, so the workflow rules below are reinforced automatically.
 
 > The `moarcode/` dir is the **legacy bootstrap harness** (gitignored, not part
 > of byre) used to develop byre before it could host itself. If you are running

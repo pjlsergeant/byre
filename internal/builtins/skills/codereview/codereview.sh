@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 # byre-codereview — an independent second-opinion review of the current changes.
-# Shipped by the devloop skill; pairs with a reviewer skill that installs the
-# reviewer binary: codex (the default) and/or grok. Reviews the working tree's
-# git changes and prints findings, and appends them to .devloop/reviews.md.
+# Shipped by the codereview skill; pairs with a reviewer skill that installs the
+# reviewer binary: codex (the default), grok, and/or claude. Reviews the working
+# tree's git changes and prints findings, and appends them to
+# .byre-devlog/reviews.md.
 #
 #   byre-codereview                        # review current changes (codex)
 #   byre-codereview "focus area"           # focus the review
 #   byre-codereview --continue "..."       # re-check after fixes (resumes session)
 #   byre-codereview --reviewer grok "..."  # use grok as the reviewer
+#   byre-codereview --raw "prompt"         # your prompt verbatim, no review prompt
 #
 # BYRE_REVIEWER sets the default reviewer (codex when unset).
+#
+# --raw replaces the built-in review prompt entirely: the arguments become the
+# whole prompt (required). The mechanics stay — reviewer enforcement flags,
+# session resume, the tripwire, the reviews.md log (tagged "raw") — but the
+# execution policy below is only as strong as YOUR prompt, and the truncation
+# marker check is skipped since nothing mandates a "Probes run:" section.
 #
 # Review execution policy (the prompt below enforces it, the tripwire checks
 # it): the reviewer may run cheap, targeted, read-only probes to put evidence
@@ -28,7 +36,11 @@ Usage:
   byre-codereview                        review current changes
   byre-codereview "focus area"           review current changes, focused on a topic
   byre-codereview --continue "..."       re-check after fixes (resumes prior session)
-  byre-codereview --reviewer <name> ...  choose the reviewer: codex (default) | grok
+  byre-codereview --reviewer <name> ...  choose the reviewer: codex (default) | grok | claude
+  byre-codereview --raw "prompt"         send YOUR prompt verbatim (skips the
+                                         built-in review prompt; mechanics stay)
+  byre-codereview --raw -- "--anything"  -- ends option parsing, so option-shaped
+                                         prompt text passes through
 
 BYRE_REVIEWER sets the default reviewer.
 EOF
@@ -36,9 +48,15 @@ EOF
 
 REVIEWER="${BYRE_REVIEWER:-codex}"
 CONTINUE=false
+RAW=false
 FOCUS=()
 expect_reviewer=false
+ddash=false
 for arg in "$@"; do
+  if [ "$ddash" = true ]; then
+    FOCUS+=("$arg")
+    continue
+  fi
   if [ "$expect_reviewer" = true ]; then
     REVIEWER="$arg"
     expect_reviewer=false
@@ -47,55 +65,71 @@ for arg in "$@"; do
   case "$arg" in
     -h|--help) usage; exit 0 ;;
     --continue) CONTINUE=true ;;
+    --raw) RAW=true ;;
     --reviewer) expect_reviewer=true ;;
     --reviewer=*) REVIEWER="${arg#--reviewer=}" ;;
+    # Everything after -- is prompt text, never an option — the only way an
+    # option-shaped prompt ("--help") can reach the reviewer, raw or focused.
+    --) ddash=true ;;
     *) FOCUS+=("$arg") ;;
   esac
 done
 if [ "$expect_reviewer" = true ]; then
-  echo "byre-codereview: --reviewer needs a value (codex | grok)." >&2
+  echo "byre-codereview: --reviewer needs a value (codex | grok | claude)." >&2
+  exit 2
+fi
+if [ "$RAW" = true ] && [ "${#FOCUS[@]}" -eq 0 ]; then
+  echo "byre-codereview: --raw needs a prompt (the arguments become the whole prompt)." >&2
   exit 2
 fi
 
 case "$REVIEWER" in
-  codex|grok) ;;
+  codex|grok|claude) ;;
   *)
-    echo "byre-codereview: unsupported reviewer '$REVIEWER' (codex | grok)." >&2
+    echo "byre-codereview: unsupported reviewer '$REVIEWER' (codex | grok | claude)." >&2
     exit 2
     ;;
 esac
 
 if ! command -v "$REVIEWER" >/dev/null 2>&1; then
   echo "byre-codereview: $REVIEWER not found on PATH." >&2
-  echo "  Add the $REVIEWER skill (skills = [\"$REVIEWER\", \"devloop\"]) and rebuild." >&2
-  if [ "$REVIEWER" = codex ]; then other=grok; else other=codex; fi
-  if command -v "$other" >/dev/null 2>&1; then
-    echo "  ($other is available: byre-codereview --reviewer $other)" >&2
-  fi
+  echo "  Add the $REVIEWER skill (skills = [\"$REVIEWER\", \"codereview\"]) and rebuild." >&2
+  for other in codex grok claude; do
+    [ "$other" = "$REVIEWER" ] && continue
+    if command -v "$other" >/dev/null 2>&1; then
+      echo "  ($other is available: byre-codereview --reviewer $other)" >&2
+    fi
+  done
   exit 127
 fi
 
-# Persisted artifacts live in .devloop/ at the repo root — a self-ignoring dir
-# (its own .gitignore is "*"), so the review log and agent diary persist via the
-# workspace mount but never land in git and need no per-project .gitignore entry.
-# byre_devloop_dir (shared lib, shipped alongside this script) provides the dir,
-# hardened against planted symlinks/nodes.
+# Persisted artifacts live in .byre-devlog/ at the repo root — a self-ignoring
+# dir (its own .gitignore is "*"), so the review log and agent diary persist via
+# the workspace mount but never land in git and need no per-project .gitignore
+# entry. byre_devlog_dir (shared lib, shipped alongside this script) provides
+# the dir; a user-placed node at that path is never destroyed — the lib warns
+# and stands down, which under set -e ends the review here, loudly.
 if root=$(git rev-parse --show-toplevel 2>/dev/null); then
   cd "$root"
 else
   root="$PWD"
 fi
-. /usr/local/lib/byre-devloop-lib.sh
-byre_devloop_dir "$root"
-REVIEW_DIR="$root/.devloop"
+. /usr/local/lib/byre-devlog-lib.sh
+byre_devlog_dir "$root"
+REVIEW_DIR="$root/.byre-devlog"
 LOG_FILE="$REVIEW_DIR/reviews.md"
 # Sessions are per-reviewer: resuming a codex thread with grok (or vice versa)
 # is meaningless. The codex file keeps its historical name so a box upgraded
 # mid-loop can still --continue.
 case "$REVIEWER" in
-  codex) SESSION_FILE="$REVIEW_DIR/.review-session" ;;
-  grok)  SESSION_FILE="$REVIEW_DIR/.review-session-grok" ;;
+  codex)  SESSION_FILE="$REVIEW_DIR/.review-session" ;;
+  grok)   SESSION_FILE="$REVIEW_DIR/.review-session-grok" ;;
+  claude) SESSION_FILE="$REVIEW_DIR/.review-session-claude" ;;
 esac
+
+# RUN_NOTE annotates the "Running..." line: raw mode says so instead of echoing
+# the whole prompt back as a "focus".
+if [ "$RAW" = true ]; then RUN_NOTE=" (raw)"; else RUN_NOTE="${FOCUS:+ (focus: ${FOCUS[*]})}"; fi
 
 read -r -d '' PROMPT <<'EOF' || true
 You are PURELY a code-review agent: you review, the author fixes. Do not modify
@@ -124,7 +158,11 @@ commands you executed beyond the git reads above ("none" if none). Give the
 full report as your final message.
 EOF
 
-if [ "${#FOCUS[@]}" -gt 0 ]; then
+if [ "$RAW" = true ]; then
+  # --raw: the arguments ARE the prompt. The enforcement flags and tripwire
+  # still apply; the policy the built-in prompt encodes does not.
+  PROMPT="${FOCUS[*]}"
+elif [ "${#FOCUS[@]}" -gt 0 ]; then
   PROMPT="$PROMPT
 
 Pay particular attention to: ${FOCUS[*]}"
@@ -138,7 +176,7 @@ cleanup() { rm -f "$OUT" "$DBG"; }
 # content diff + untracked-file CONTENT hashes (porcelain alone only lists
 # untracked NAMES, so a content-only edit to an existing untracked file would
 # slip through; ls-files -o is plumbing, so it also sidesteps a
-# status.showUntrackedFiles=no config). Gitignored files (including .devloop/,
+# status.showUntrackedFiles=no config). Gitignored files (including .byre-devlog/,
 # where this script's own log and temp files live) are deliberately outside
 # the snapshot. Empty outside git — the tripwire is inert there, matching the
 # rest of the script's non-repo degradation.
@@ -185,8 +223,10 @@ record_review() {
   # Tail-anchored, not body-wide: a review that QUOTES the mandate mid-body
   # (any review of this script would) and then dies must still be flagged —
   # the marker only counts as the trailing section it was mandated to be.
+  # Raw runs skip the check entirely: only the built-in prompt mandates the
+  # section, so its absence marks nothing.
   note=""
-  if ! tail -n 40 "$OUT" 2>/dev/null | grep -qi 'probes run'; then
+  if [ "$RAW" != true ] && ! tail -n 40 "$OUT" 2>/dev/null | grep -qi 'probes run'; then
     note=" — POSSIBLY TRUNCATED: missing the mandated 'Probes run:' section"
     {
       echo ""
@@ -195,7 +235,9 @@ record_review() {
       echo "  APPARENT ABSENCE of findings — accordingly."
     } >&2
   fi
-  { printf '\n## %s (%s)%s\n\n' "$(date -u +%FT%TZ)" "$REVIEWER" "$note"; cat "$OUT"; } >> "$LOG_FILE"
+  raw_tag=""
+  [ "$RAW" = true ] && raw_tag=", raw"
+  { printf '\n## %s (%s%s)%s\n\n' "$(date -u +%FT%TZ)" "$REVIEWER" "$raw_tag" "$note"; cat "$OUT"; } >> "$LOG_FILE"
 }
 
 extract_codex_session() {
@@ -207,7 +249,7 @@ run_fresh_codex() {
   # Starting fresh: drop any prior session up front, so an interrupted run can't
   # leave a stale session that a later --continue would wrongly resume.
   rm -f "$SESSION_FILE"
-  echo "Running code review (codex)${FOCUS:+ (focus: ${FOCUS[*]})} — this may take several minutes..."
+  echo "Running code review (codex)${RUN_NOTE} — this may take several minutes..."
   # --sandbox read-only: OS-level enforcement on top of the prompt — codex can
   # read the repo and exec read-only probes, but writes are blocked, so a
   # prompt-injection in the code under review can't act. A probe that needs to
@@ -304,7 +346,7 @@ grok_startup_error() { head -n1 "$OUT" 2>/dev/null | grep -q "^Couldn.t create s
 
 run_fresh_grok() {
   rm -f "$SESSION_FILE"
-  echo "Running code review (grok)${FOCUS:+ (focus: ${FOCUS[*]})} — this may take several minutes..."
+  echo "Running code review (grok)${RUN_NOTE} — this may take several minutes..."
   # -s pre-assigns the session UUID (grok creates it), so --continue can
   # --resume it later without parsing any output.
   local sid; sid=$(cat /proc/sys/kernel/random/uuid)
@@ -338,6 +380,88 @@ run_resume_grok() {
     [ -s "$OUT" ] && cat "$OUT" >&2
     echo "Resume failed — falling back to a fresh review." >&2
     rm -f "$SESSION_FILE"; run_fresh_grok
+  fi
+}
+
+# Claude reviewer notes (all claims verified in-box 2026-07-10).
+# - INDEPENDENCE CAVEAT: when claude is also the box's authoring agent, this is
+#   a second PASS by the same model family, not a second opinion. Prefer codex
+#   or grok when they're available; claude earns its keep as the reviewer in a
+#   box where it's the only CLI, or as a differently-prompted extra pass.
+# - Enforcement, same honest ordering as grok: the box boundary and the
+#   tripwire are what actually hold; the tool strip is best-effort narrowing.
+#   --disallowedTools strips the file-edit tools plus Task (a spawned subagent
+#   would get the full toolset — the same bypass grok closes via
+#   GROK_SUBAGENTS=0). --allowedTools Bash keeps git reads and cheap probes
+#   working (headless runs auto-DENY any tool that would prompt — a deny, not
+#   grok's silent death), so free-form writes remain POSSIBLE — that's what
+#   the tripwire is for. No codex-style OS sandbox is applied.
+# - --safe-mode keeps the REVIEWED repo's claude customizations (settings,
+#   hooks, plugins, MCP servers, CLAUDE.md) from loading: without it a
+#   malicious repo's hooks would execute at reviewer startup — code running
+#   BEFORE the prompt or denylist gets a say. The review prompt is
+#   self-contained, so the reviewer loses nothing it needs.
+# - The PROMPT rides stdin: --allowedTools/--disallowedTools are variadic and
+#   swallow a trailing prompt argument (each prompt word became a bogus
+#   permission rule when passed after them).
+# - Sessions: --session-id pre-assigns the UUID, like grok's -s; --resume works
+#   headless, repeatedly, against the SAME id. A run that dies early can still
+#   consume its pre-assigned id ("already in use"), which is one more reason
+#   every fresh run mints a new one.
+CLAUDE_TOOL_STRIP="Edit,Write,NotebookEdit,TodoWrite,Task"
+
+run_fresh_claude() {
+  rm -f "$SESSION_FILE"
+  echo "Running code review (claude)${RUN_NOTE} — this may take several minutes..."
+  local sid; sid=$(cat /proc/sys/kernel/random/uuid)
+  if printf '%s' "$PROMPT" | claude -p --safe-mode --session-id "$sid" \
+       --allowedTools "Bash" --disallowedTools "$CLAUDE_TOOL_STRIP" \
+       > "$OUT" 2> "$DBG"; then
+    # Exit 0 with nothing to say has no legitimate reading — never record it
+    # as a clean review (grok's lesson, applied preemptively).
+    if [ ! -s "$OUT" ]; then
+      echo "byre-codereview: claude produced no output despite exit 0." >&2
+      echo "  Debug log: $DBG" >&2
+      rm -f "$OUT" "$SESSION_FILE"; exit 1
+    fi
+    echo "$sid" > "$SESSION_FILE"
+    cat "$OUT"; record_review; cleanup
+  else
+    # Surface whatever partial output exists — claude prints some failures
+    # (e.g. "Not logged in") to STDOUT, and they'd otherwise vanish with the
+    # temp file.
+    [ -s "$OUT" ] && cat "$OUT" >&2
+    report_failure_claude
+    rm -f "$OUT" "$SESSION_FILE"; exit 1
+  fi
+}
+
+run_resume_claude() {
+  local sid="$1"
+  echo "Continuing previous review session (claude) — this may take several minutes..."
+  if printf '%s' "$PROMPT" | claude -p --safe-mode --resume "$sid" \
+       --allowedTools "Bash" --disallowedTools "$CLAUDE_TOOL_STRIP" \
+       > "$OUT" 2> "$DBG" && [ -s "$OUT" ]; then
+    cat "$OUT"; record_review; cleanup
+  else
+    # Same partial-output courtesy as the fresh path before the fallback eats it.
+    [ -s "$OUT" ] && cat "$OUT" >&2
+    echo "Resume failed — falling back to a fresh review." >&2
+    rm -f "$SESSION_FILE"; run_fresh_claude
+  fi
+}
+
+# "Not logged in · Please run /login" arrives on STDOUT with exit 1 (verified),
+# so the auth grep covers $OUT as well as the debug log. Tight patterns only,
+# same rationale as grok's.
+report_failure_claude() {
+  if grep -qiE 'not logged in|please run /login|oauth token.*(expired|revoked)|invalid api key|401' "$OUT" "$DBG" 2>/dev/null; then
+    echo "byre-codereview: claude authentication failed." >&2
+    echo "  Log in once in the box (run 'claude', then /login). If this box rides a" >&2
+    echo "  shared token (claude-shared-auth), see that skill's notes instead." >&2
+    echo "  Debug log: $DBG" >&2
+  else
+    echo "byre-codereview: review failed. Debug log: $DBG" >&2
   fi
 }
 

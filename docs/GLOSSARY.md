@@ -183,6 +183,17 @@ Writing a built-in skill's files into `~/.byre/skills/<name>/` as editable
 copies. Stale copies are refreshed by `byre skill update`, never silently
 overwritten.
 
+**Devlog dir**:
+`.byre-devlog/` at the working-tree root -- the self-ignoring dir (its own
+`.gitignore` is `*`) where box-side skills keep their working files: the
+agent diary, the code-review log. A convention established by builtin
+skills, not core behavior; each skill that uses it ensures it exists
+(hardened, via the shared devlog lib), so no skill depends on another.
+Born as `.devloop/`; the old name is dropped, not migrated -- an existing
+old dir is left untouched, renamed by hand if its history matters.
+_Avoid_: naming it after any one skill -- that coupling is why it was
+renamed.
+
 ### Grants, mounts, volumes
 
 **Grant**:

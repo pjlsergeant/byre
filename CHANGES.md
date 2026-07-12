@@ -1,5 +1,35 @@
 # Changes
 
+## Unreleased
+
+- **`byre-codereview --reviewer claude`**: Claude joins codex and grok as a
+  reviewer, driven headless (`claude -p`) with edit tools and subagents
+  stripped and sessions resumable via `--continue`. Caveat, stated in the
+  shipped context too: claude reviewing the claude agent's own work is a
+  second pass, not a second opinion -- prefer a different-model reviewer
+  when one is installed.
+- **`byre-codereview --raw "prompt"`**: sends your prompt verbatim instead
+  of the built-in review prompt. Enforcement flags, session resume, the
+  tripwire, and the review log (tagged "raw") all still apply; the review
+  policy is whatever your prompt says.
+- **`byre-codereview` is its own skill** (behavior change for devloop users):
+  the review script and its loop conventions moved from the devloop skill to
+  a new `codereview` builtin. A box that wants the reviewer now enables
+  `skills = ["codex", "codereview", ...]`; a rebuild with only devloop
+  enabled no longer ships `byre-codereview`. devloop keeps the workflow
+  conventions, the diary, and the scratch volume. The two skills share the
+  devlog dir without depending on each other. **Upgrade step**: run
+  `byre skill update` -- a store materialized before the split still holds
+  the old devloop copy, whose `byre-codereview` would silently win over the
+  new skill's at rebuild (and keep recreating `.devloop/`).
+- **`.devloop/` is now `.byre-devlog/`** (breaking, by design): the
+  self-ignoring working-tree dir for the agent diary and review log is named
+  for byre, not for one skill (glossary: "devlog dir"). There is no automatic
+  migration -- an existing `.devloop/` is never read, moved, or deleted;
+  rename it by hand (`mv .devloop .byre-devlog`) to keep its history, and
+  note a box built from a pre-rename image recreates `.devloop/` until its
+  next rebuild.
+
 ## v0.1.8 -- 2026-07-12
 
 - **Consent surfaces stop under-stating scope** (doctrine audit,

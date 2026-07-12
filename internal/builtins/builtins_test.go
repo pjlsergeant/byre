@@ -1,6 +1,8 @@
 package builtins
 
 import (
+	"bytes"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,20 +94,22 @@ func TestMaterializeDoesNotClobber(t *testing.T) {
 }
 
 // TestSelfHostCompositionResolves verifies byre's own self-hosting config
-// (Claude agent + codex + devloop + grok, mirroring byre.config) resolves
-// end-to-end: devloop ships the byre-codereview script, the workflow context
-// reaches the agent's memory file, and codex's reviewer apt dep is present.
+// (Claude agent + codex + codereview + devloop + grok, mirroring byre.config)
+// resolves end-to-end: codereview ships the byre-codereview script, the
+// workflow context reaches the agent's memory file, and codex's reviewer apt
+// dep is present.
 func TestSelfHostCompositionResolves(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
 	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "devloop", "grok"}}, dest)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "codereview", "devloop", "grok"}}, dest)
 	if err != nil {
 		t.Fatalf("self-host composition failed to resolve: %v", err)
 	}
-	// devloop ships byre-codereview and its firstrun hook; codex ships its
-	// first-run login hook into the launcher's firstrun.d.
+	// codereview ships byre-codereview; devloop ships its firstrun hook; both
+	// ship the devlog lib (identical copies — see TestDevlogLibCopiesIdentical);
+	// codex ships its first-run login hook into the launcher's firstrun.d.
 	shipped := map[string]bool{} // "skill dest" -> present
 	for _, b := range res.BuildBlocks() {
 		for _, sf := range b.Files {
@@ -113,9 +117,10 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"devloop /usr/local/bin/byre-codereview",
+		"codereview /usr/local/bin/byre-codereview",
+		"codereview /usr/local/lib/byre-devlog-lib.sh",
 		"devloop /etc/byre/firstrun.d/devloop",
-		"devloop /usr/local/lib/byre-devloop-lib.sh", // shared hardening lib both scripts source
+		"devloop /usr/local/lib/byre-devlog-lib.sh",
 		"codex /etc/byre/firstrun.d/codex-login",
 		"grok /etc/byre/firstrun.d/grok-login",
 		"grok /etc/byre/firstrun.d/grok-bundled",
@@ -142,6 +147,9 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		t.Errorf("context target wrong: %q", res.AgentContextTarget())
 	}
 	if !strings.Contains(res.Context(), "byre-codereview") {
+		t.Errorf("codereview loop context not present in agent context")
+	}
+	if !strings.Contains(res.Context(), "DIARY.md") {
 		t.Errorf("devloop workflow context not present in agent context")
 	}
 	// codex contributes the reviewer binary install (its build block is present).
@@ -156,10 +164,10 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	}
 }
 
-// TestDevloopBuildStagesAndOrders assembles a real build context for the
-// devloop composition and checks that its shipped files are staged and the
+// TestSelfHostBuildStagesAndOrders assembles a real build context for the
+// self-host composition and checks that its shipped files are staged and the
 // generated Dockerfile COPYs byre-codereview before the chmod that uses it.
-func TestDevloopBuildStagesAndOrders(t *testing.T) {
+func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	paths, err := project.Resolve(t.TempDir())
@@ -173,8 +181,9 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 	if err := MaterializeSkills(skillsDir); err != nil {
 		t.Fatal(err)
 	}
-	// Mirrors this repo's own byre.config skill set (codex + devloop + grok).
-	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "devloop", "grok"}}
+	// Mirrors this repo's own byre.config skill set (codex + codereview +
+	// devloop + grok).
+	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "codereview", "devloop", "grok"}}
 	res, err := skills.Resolve(cfg, skillsDir)
 	if err != nil {
 		t.Fatal(err)
@@ -184,11 +193,11 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The script is staged into the build context.
-	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "devloop", "codereview.sh")); err != nil {
+	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "codereview", "codereview.sh")); err != nil {
 		t.Fatalf("codereview.sh not staged: %v", err)
 	}
 	// COPY of byre-codereview must precede the chmod that makes it executable.
-	cp := strings.Index(df, gen.CopyLine("skills/devloop/codereview.sh", "/usr/local/bin/byre-codereview"))
+	cp := strings.Index(df, gen.CopyLine("skills/codereview/codereview.sh", "/usr/local/bin/byre-codereview"))
 	chmod := strings.Index(df, "chmod +x /usr/local/bin/byre-codereview")
 	if cp < 0 || chmod < 0 || cp > chmod {
 		t.Fatalf("COPY must precede chmod (copy=%d chmod=%d):\n%s", cp, chmod, df)
@@ -211,6 +220,24 @@ func TestDevloopBuildStagesAndOrders(t *testing.T) {
 		if !strings.Contains(df, gen.CopyLine(src, dst)) {
 			t.Errorf("grok hook COPY missing (%s -> %s):\n%s", src, dst, df)
 		}
+	}
+}
+
+// TestDevlogLibCopiesIdentical pins the deliberate duplication of the devlog
+// helper lib: devloop and codereview each ship their own copy (no cross-skill
+// dependency mechanism exists), both to the same image path. They must stay
+// byte-identical or the shipped file depends on skill enable order.
+func TestDevlogLibCopiesIdentical(t *testing.T) {
+	a, err := fs.ReadFile(fsys, "skills/devloop/devlog-lib.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := fs.ReadFile(fsys, "skills/codereview/devlog-lib.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Errorf("devlog-lib.sh copies differ between devloop and codereview; edit both together")
 	}
 }
 
