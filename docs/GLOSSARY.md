@@ -142,9 +142,11 @@ companion omits it). Yes puts the companion in the project's
 `byre.config` `skills` -- the only grant the answer ever makes; no
 writes nothing. "Save these as your default?" saves the answer as a
 favourite (the picker-owned, cascade-inert `shared_auth` list), which
-only prefills the next box's offer ([Y/n] vs [y/N]). The one
-suppression: the companion already granted machine-wide by hand in
-`default.config` `skills` -- the picker itself never writes that key.
+only prefills the next box's offer ([Y/n/i] vs [y/N/i]). Answering `i`
+prints exactly what each answer writes (naming the companion skill),
+then re-asks. The one suppression: the companion already granted
+machine-wide by hand in `default.config` `skills` -- the picker itself
+never writes that key.
 ADR 0025 (superseding ADR 0024's machine-wide recording).
 
 **Launch env hooks**:

@@ -44,8 +44,8 @@ The mechanics:
   is inert as configuration. The write is surgical (one line, re-parse
   verified, refused with a do-it-by-hand error on shapes it can't
   follow or a file it can't parse).
-- **Prefill is not auto-grant.** A `[Y/n]` offer accepts on Enter or an
-  explicit y; unrecognized input never lands on the granting side,
+- **Prefill is not auto-grant.** A `[Y/n/i]` offer accepts on Enter or
+  an explicit y; unrecognized input never lands on the granting side,
   whatever the default.
 - **One suppression only**: the companion already in `default.config`'s
   `skills` — a hand-made (or `byre config --global`) machine-wide
@@ -66,4 +66,8 @@ away; the per-box grant is the consent. The fully-flagged zero-prompt
 contract is unchanged (no prompts, no offer, no writes beyond
 byre.config). The wording deliberately drops the companion skill's
 name: which skill implements the mechanism is config plumbing, legible
-in the written `byre.config`, not part of the decision.
+in the written `byre.config`, not part of the decision. That detail
+lives one keystroke away instead: answering `i` prints exactly what
+each answer writes — y's file and scope, n's nothing, the save
+question's prefill-only effect — naming the companion, then re-asks.
+Legibility offered, never forced.

@@ -72,7 +72,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	companion, sharedAuth, sharedPref := "", false, false
 	if companionFor != nil {
 		if companion, sharedPref = companionFor(fromNone(agent)); companion != "" {
-			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent), sharedPref)
+			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent), companion, sharedPref)
 			if err != nil {
 				return Choice{}, err
 			}
@@ -119,12 +119,41 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 // scope in the wording is the scope of the write — a "y" puts the companion
 // skill in this project's byre.config, the only thing the answer ever
 // grants. prefYes is the saved preference: it prefills the default answer
-// ([Y/n] instead of [y/N]) exactly as the favourites prefill template/agent
-// — Enter accepts it, and only an explicit "y" or a Yes default grants.
-// companion is unnamed here on purpose: the mechanism's skill name is config
-// plumbing, not part of the decision.
-func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent string, prefYes bool) (bool, error) {
-	return askYesNoDefault(out, r, fmt.Sprintf("Opt this box into %s shared credentials?", agent), prefYes)
+// ([Y/n/i] instead of [y/N/i]) exactly as the favourites prefill
+// template/agent — Enter accepts it, and only an explicit "y" or a Yes
+// default grants. The question itself omits the companion's skill name (it
+// is config plumbing, not part of the decision); "i" is where that detail
+// lives — it prints exactly what each answer writes, then re-asks.
+func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
+	marker := "y/N/i"
+	if prefYes {
+		marker = "Y/n/i"
+	}
+	for {
+		fmt.Fprintf(out, "Opt this box into %s shared credentials? [%s]: ", agent, marker)
+		line, err := r.ReadString('\n')
+		if err != nil && line == "" {
+			return false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, nil
+		case "":
+			return prefYes, nil
+		case "i":
+			fmt.Fprintf(out, `  y — use the machine's shared %s login for this box: %q is added to
+      this project's byre.config (remove it there to undo). Nothing
+      outside this project changes.
+  n — this box logs in on its own; nothing is recorded anywhere.
+  Saving as your default afterwards only pre-selects the answer for the
+  next project's question; it never enables anything by itself.
+`, agent, companion)
+		default:
+			// Same stance as every yes/no here: unrecognized input never
+			// lands on the granting side, whatever the default.
+			return false, nil
+		}
+	}
 }
 
 // ask prompts for one choice among options, pre-selecting def. An empty answer

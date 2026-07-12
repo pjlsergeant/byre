@@ -159,7 +159,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if s.TTY && !(tFixed && aFixed) {
 		var pref bool
 		if companion, pref = companionFor(a); companion != "" {
-			yes, err := onboard.OfferSharedAuth(s.Err, in, a, pref)
+			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion, pref)
 			if err != nil {
 				return err
 			}

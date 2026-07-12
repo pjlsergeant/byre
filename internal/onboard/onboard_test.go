@@ -259,19 +259,44 @@ func TestSaveDefaultRemovesOnEmpty(t *testing.T) {
 
 func TestOfferSharedAuth(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude", false)
+	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude", "claude-shared-auth", false)
 	if err != nil || !yes {
 		t.Fatalf("yes = %v, err = %v", yes, err)
 	}
 	// The wording must carry the real scope of the write: this box, opting
 	// into an existing shared mechanism — never "all projects".
-	if !strings.Contains(out.String(), "Opt this box into claude shared credentials? [y/N]") {
+	if !strings.Contains(out.String(), "Opt this box into claude shared credentials? [y/N/i]") {
 		t.Fatalf("offer must be the per-box question, defaulting No:\n%s", out.String())
 	}
 	// No preference: an empty answer declines.
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", false)
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", false)
 	if err != nil || yes {
 		t.Fatalf("empty answer must decline, got yes = %v, err = %v", yes, err)
+	}
+}
+
+// "i" prints exactly what each answer writes — scopes, the companion's name,
+// the save question's prefill-only effect — then re-asks; it never consumes
+// the answer itself.
+func TestOfferSharedAuthInfo(t *testing.T) {
+	var out bytes.Buffer
+	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("i\ny\n")), "claude", "claude-shared-auth", false)
+	if err != nil || !yes {
+		t.Fatalf("after info the real answer must still be read: yes = %v, err = %v", yes, err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"this project's byre.config", // y's write and scope
+		`"claude-shared-auth"`,       // the mechanism, named where detail belongs
+		"nothing is recorded",        // n's write
+		"never enables anything",     // save-default's prefill-only effect
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("info must state %q:\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "Opt this box") != 2 {
+		t.Fatalf("info must re-ask the question:\n%s", got)
 	}
 }
 
@@ -280,18 +305,18 @@ func TestOfferSharedAuth(t *testing.T) {
 // granting side whatever the default.
 func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", true)
+	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", true)
 	if err != nil || !yes {
 		t.Fatalf("Enter must accept the saved yes: yes = %v, err = %v", yes, err)
 	}
-	if !strings.Contains(out.String(), "[Y/n]") {
+	if !strings.Contains(out.String(), "[Y/n/i]") {
 		t.Fatalf("a saved yes must show as the prefilled default:\n%s", out.String())
 	}
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", true)
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", "claude-shared-auth", true)
 	if err != nil || yes {
 		t.Fatalf("explicit n must override the preference: yes = %v, err = %v", yes, err)
 	}
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", true)
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", "claude-shared-auth", true)
 	if err != nil || yes {
 		t.Fatalf("garbage must never grant, even under a yes default: yes = %v, err = %v", yes, err)
 	}
@@ -309,7 +334,7 @@ func TestPromptsShareABufferedReader(t *testing.T) {
 	if c.Template != "node" || c.Agent != "codex" || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	yes, err := OfferSharedAuth(&out, in, "codex", false)
+	yes, err := OfferSharedAuth(&out, in, "codex", "codex-shared-auth", false)
 	if err != nil || !yes {
 		t.Fatalf("the shared-auth answer was buffered by Pick's reader and must still be readable: yes = %v, err = %v", yes, err)
 	}
