@@ -381,18 +381,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ---- form screen -----------------------------------------------------------
 
+// isQuitKey reports whether a key both arms and confirms the dirty-quit
+// prompt on the form screen. Any key that quits must also be excluded from
+// clearing confirmQuit, or a repeat press re-arms forever instead of quitting.
+func isQuitKey(k string) bool {
+	switch k {
+	case "esc", "ctrl+c", "ctrl+q":
+		return true
+	}
+	return false
+}
+
 func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key != "esc" && key != "ctrl+q" && key != "ctrl+c" {
-		m.confirmQuit = false
-	}
-	switch key {
-	case "ctrl+c", "esc", "ctrl+q":
+	if isQuitKey(key) {
 		if m.dirty() && !m.confirmQuit {
 			m.confirmQuit = true // View shows the confirm prompt
 			return m, nil
 		}
 		return m, tea.Quit
+	}
+	m.confirmQuit = false
+	switch key {
 	case "ctrl+s":
 		return m.save(), nil
 	case "ctrl+e":
@@ -560,7 +570,7 @@ func (m model) viewForm() string {
 	b.WriteString("\n")
 	switch {
 	case m.confirmQuit:
-		b.WriteString(errStyle.Render("● Unsaved changes — press esc/^q again to discard, or ctrl+s to save"))
+		b.WriteString(errStyle.Render("● Unsaved changes — press esc/^q/^c again to discard, or ctrl+s to save"))
 	case m.errMsg != "":
 		b.WriteString(errStyle.Render("✗ " + m.errMsg))
 	case m.dirty():
