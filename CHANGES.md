@@ -2,23 +2,26 @@
 
 ## Unreleased
 
-- **The shared-auth offer is per box** (ADR 0025, rescoping v0.1.7's
-  ADR 0024). The onboarding question is now "Opt this box into <agent>
-  shared credentials? [y/N]": yes puts the companion skill in **this
-  project's** `byre.config` `skills` (the same representation as a
-  hand-enabled skill, written in the same atomic byre.config creation);
-  no records nothing, and the next project's onboarding asks about its
-  own box. Nothing machine-level is written either way -- v0.1.7 had
-  one project's answer set a machine-wide default (yes enabled the
-  companion for every future box; no was a permanent never-ask in
-  `shared_auth_declined`), stretching a single box's consent across all
-  of them. The offer is skipped when the companion is already enabled
-  machine-wide in `default.config` (hand-set or a v0.1.7 "y") -- the
-  cascade already covers that box. A `shared_auth_declined` left behind
-  by v0.1.7 still parses but is inert: nothing reads it, and the
-  affected agent is simply offered again, per box. Machine-wide
-  enablement stays available by hand (`default.config` `skills`, or
-  `byre config`); onboarding just never makes that choice for you.
+- **The shared-auth offer is per box; save-default carries the
+  preference** (ADR 0025, rescoping v0.1.7's ADR 0024). The onboarding
+  question is now "Opt this box into <agent> shared credentials?
+  [y/N]": yes puts the companion skill in **this project's**
+  `byre.config` `skills` (the same representation as a hand-enabled
+  skill, written in the same atomic byre.config creation); no enables
+  nothing. The offer itself never writes machine-level state -- v0.1.7
+  had one project's answer silently set a machine-wide default,
+  stretching a single box's consent across all of them. Scaling up now
+  rides the question that already exists for it: saying yes to "Save
+  these as your default for new projects?" saves ALL the answers --
+  template, agent, and the shared-auth one. A saved yes enables the
+  companion machine-wide (`default.config` `skills`; new boxes get
+  shared credentials and the offer stops), a saved no records the
+  agent in `shared_auth_declined` (new boxes aren't offered); the save
+  confirmation states the effect and where to undo it, and deleting
+  either entry re-arms the offer. v0.1.7's records read exactly like
+  those saved defaults, so upgrading changes no one's effective
+  behavior. The save question now also appears when only the
+  shared-auth answer is news (template/agent matching the favourites).
 
 ## v0.1.7 -- 2026-07-12
 

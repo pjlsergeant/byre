@@ -76,12 +76,15 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	}
 	// Choosing exactly what default.config already stores is not news:
 	// offering to save it would be noise (and the save a no-op). Only ask when
-	// saving would change the stored favourites — whether the choice was
-	// accepted with Enter or retyped. Compared against Stored, not Effective:
-	// with a stale favourite the two differ, saving is NOT a no-op, and the
-	// offer is the user's one chance to overwrite the stale value.
+	// saving would change the stored state — a template/agent differing from
+	// the stored favourite (compared against Stored, not Effective: with a
+	// stale favourite the two differ, saving is NOT a no-op, and the offer is
+	// the user's one chance to overwrite the stale value), or a shared-auth
+	// offer that was asked at all: its gate already ensures the answer isn't
+	// recorded machine-wide yet, so "these" — ALL the answers just given,
+	// shared auth included — is always worth saving then.
 	save := false
-	if fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored {
+	if fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored || companion != "" {
 		save, err = askYesNo(out, r, "Save these as your default for new projects?")
 		if err != nil {
 			return Choice{}, err

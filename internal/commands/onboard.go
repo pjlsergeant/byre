@@ -61,12 +61,13 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	in := bufio.NewReader(s.In)
 
 	// The shared-auth offer's gate (ADR 0025): only an agent with a ready
-	// companion, and only when the companion isn't already on machine-wide
-	// (then the cascade gives this box shared credentials regardless, and the
-	// per-box question would be asking about a switch already thrown).
+	// companion, and only while no machine-wide default settles the question
+	// — a companion already in default.config's skills (the cascade gives
+	// this box shared credentials regardless) or a saved decline
+	// (shared_auth_declined: the user asked new boxes not to be offered).
 	companionFor := func(agent string) string {
 		c := skills.SharedAuthCompanion(skillsDir, agent)
-		if c == "" || onboard.SharedAuthAlreadyOn(paths.Home, c) {
+		if c == "" || onboard.SharedAuthAnswered(paths.Home, agent, c) {
 			return ""
 		}
 		return c
@@ -85,15 +86,24 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		if err != nil {
 			return err
 		}
-		// Machine-level record first, the project's byre.config LAST: once
+		// Machine-level records first, the project's byre.config LAST: once
 		// byre.config exists this project never onboards again, so a failed
 		// default.config write must abort while onboarding can still re-run
-		// (the saved default is idempotent and skips its prompt on the re-run).
+		// (the recorded answers are idempotent and skip their prompts on the
+		// re-run).
 		if choice.SaveDefault {
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
-			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
+			// "These" is every answer just given: when the shared-auth offer
+			// was part of them, its answer becomes the machine default too —
+			// the save-default consent is the ONLY thing that ever writes it.
+			if choice.SharedAuthCompanion != "" {
+				if err := onboard.SaveSharedAuthDefault(paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
+					return err
+				}
+			}
+			fmt.Fprintln(s.Err, "byre: saved as your default for new projects."+sharedAuthSavedNote(choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth))
 		}
 		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent, optedSkills(choice.SharedAuthCompanion, choice.SharedAuth))
 	}
@@ -156,10 +166,24 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
+// sharedAuthSavedNote extends the saved-as-default confirmation with what the
+// shared-auth part of the save means for new boxes — the one write here whose
+// effect isn't a mere pre-selection, so it must be said out loud (and where to
+// undo it: both records are plain entries in ~/.byre/default.config).
+func sharedAuthSavedNote(agent, companion string, yes bool) string {
+	if companion == "" {
+		return ""
+	}
+	if yes {
+		return fmt.Sprintf(" New boxes share the %s login (%s in ~/.byre/default.config's skills; remove it there to undo).", agent, companion)
+	}
+	return fmt.Sprintf(" New boxes won't be offered %s shared credentials (shared_auth_declined in ~/.byre/default.config; remove it there to be re-asked).", agent)
+}
+
 // optedSkills turns the shared-auth offer's outcome (ADR 0025) into the
 // skills to write into this box's byre.config: the companion on a yes,
-// nothing otherwise — a "no" is not recorded anywhere; the next project's
-// onboarding simply asks about its own box.
+// nothing otherwise — an unsaved "no" is not recorded anywhere; the next
+// project's onboarding simply asks about its own box.
 func optedSkills(companion string, yes bool) []string {
 	if companion == "" || !yes {
 		return nil

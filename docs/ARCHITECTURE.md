@@ -373,9 +373,10 @@ put env into the agent process). A companion whose mechanism is ready
 declares `shared_auth_for = "<agent>"` in its skill.toml, and the
 first-run picker then asks, per box, whether to opt that box into the
 shared credentials -- yes puts the companion in the project's
-`byre.config` `skills`, no records nothing, and the question is skipped
-when the companion is already enabled machine-wide in `default.config`
-(ADR 0025). Gemini-OAuth (gate-pending) and grok (retired) deliberately
+`byre.config` `skills`. Save-as-default carries the answer machine-wide
+(`default.config`'s `skills`, or `shared_auth_declined` for a saved no);
+either saved default suppresses the offer on later boxes (ADR 0025).
+Gemini-OAuth (gate-pending) and grok (retired) deliberately
 don't declare it.
 
 ## The chassis

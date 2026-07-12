@@ -325,3 +325,28 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 		t.Fatalf("no companion — no offer: %+v\n%s", c, out.String())
 	}
 }
+
+// A shared-auth answer is always news (the offer's gate skips agents whose
+// answer is already the machine default), so the save-default question must
+// appear even when template and agent exactly match the stored favourites —
+// otherwise a favourites user could never save their shared-auth preference.
+func TestPickAsksSaveWhenOnlySharedAuthIsNews(t *testing.T) {
+	var out bytes.Buffer
+	companions := func(agent string) string {
+		if agent == "codex" {
+			return "codex-shared-auth"
+		}
+		return ""
+	}
+	// Template and agent accepted from favourites; shared auth y; save y.
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\ny\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Save these") {
+		t.Fatalf("the shared-auth answer is unsaved news — the save question must appear:\n%s", out.String())
+	}
+	if !c.SaveDefault || !c.SharedAuth || c.SharedAuthCompanion != "codex-shared-auth" {
+		t.Fatalf("choice = %+v", c)
+	}
+}

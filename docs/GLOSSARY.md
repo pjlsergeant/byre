@@ -139,9 +139,12 @@ shared credentials?" -- asked when the chosen agent has a companion
 skill declaring `shared_auth_for` (the author's vouch that the
 mechanism is ready to offer; a broken or gate-pending companion omits
 it). Yes puts the companion in the project's `byre.config` `skills`;
-no records nothing -- the next box is asked about itself. Skipped when
-the companion is already enabled machine-wide in `default.config`.
-ADR 0025 (superseding ADR 0024's machine-wide recording).
+no enables nothing. Saying yes to "Save these as your default?" then
+saves the shared-auth answer with the favourites: a saved yes enables
+the companion machine-wide (`default.config` `skills`), a saved no
+records `shared_auth_declined` -- either suppresses the offer on new
+boxes, and deleting the entry re-arms it. ADR 0025 (superseding ADR
+0024's offer-writes-machine-state recording).
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts

@@ -188,12 +188,14 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
-	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
-	// shared-auth offer wrote it to ~/.byre/default.config; the offer is
-	// per-box now (the answer lives in the project's byre.config `skills`)
-	// and nothing reads this key anymore. It stays decodable only so configs
-	// v0.1.7 wrote still parse (Parse rejects unknown keys); resolveWith
-	// strips it from every resolved config, same as before.
+	// SharedAuthDeclined lists agent skills whose shared-auth offer the user
+	// declined AND saved as their default (ADR 0025) — new boxes then aren't
+	// offered. Picker-owned state in ~/.byre/default.config, like the
+	// template/agent favourites: resolveWith strips it from every resolved
+	// config no matter which layer carried it, and only onboarding reads or
+	// writes it (straight from the file, never through the cascade). Only
+	// the save-default consent writes it; the offer alone never does. A
+	// saved "yes" has no key of its own — it IS the companion in `skills`.
 	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
 
 	Apt       []string          `toml:"apt,omitempty"`
@@ -307,9 +309,9 @@ func resolveWith(home string, proj Config) (Config, error) {
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
-	// shared_auth_declined is a vestigial key (ADR 0025) tolerated only so
-	// v0.1.7-written configs still parse: whatever layer carries it, it never
-	// reaches a resolved config, and nothing reads it at all anymore.
+	// shared_auth_declined is picker-owned state (ADR 0025), not container
+	// config: whatever layer carries it, it never reaches a resolved config —
+	// onboarding reads it straight from default.config, nothing else may.
 	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err

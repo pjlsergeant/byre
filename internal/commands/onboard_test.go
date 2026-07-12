@@ -98,9 +98,9 @@ func TestOnboardPartialFlagWritesConfig(t *testing.T) {
 	}
 }
 
-// Full picker on a TTY: declining the shared-auth offer records NOTHING —
-// the offer is per box (ADR 0025), so a later project's onboarding asks
-// about its own box again.
+// Full picker on a TTY: declining the shared-auth offer WITHOUT saving
+// records nothing — the offer is per box (ADR 0025), so a later project's
+// onboarding asks about its own box again.
 func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
@@ -141,9 +141,9 @@ func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	}
 }
 
-// Accepting the offer opts THIS box in: the companion lands in the project's
-// byre.config skills — the same representation as a hand-enabled skill —
-// and nothing machine-level is touched.
+// Accepting the offer WITHOUT saving opts only THIS box in: the companion
+// lands in the project's byre.config skills — the same representation as a
+// hand-enabled skill — and nothing machine-level is touched.
 func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: y, save-as-default: n.
@@ -184,20 +184,100 @@ func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	}
 }
 
-// A shared_auth_declined left behind by v0.1.7's machine-wide offer is inert:
-// it must not suppress the per-box offer (and must not break onboarding).
-func TestOnboardVestigialDeclinedKeyDoesNotSuppressOffer(t *testing.T) {
+// A shared_auth_declined in default.config — saved by the picker, hand-set,
+// or left behind by v0.1.7 — is the "don't offer on new boxes" default: the
+// offer must not appear (delete the entry to be re-asked).
+func TestOnboardSavedDeclineKeySuppressesOffer(t *testing.T) {
 	p, proj := onboardPaths(t)
 	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte("shared_auth_declined = [\"claude\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
-	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
+	// Template: none, Agent: claude, save-as-default: n — no offer between.
+	s, _, errBuf := testStreams("\nclaude\nn\n", true)
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials?") {
-		t.Fatalf("a v0.1.7 decline must not silence the per-box offer:\n%s", errBuf.String())
+	if strings.Contains(errBuf.String(), "Opt this box") {
+		t.Fatalf("a saved decline must suppress the offer:\n%s", errBuf.String())
+	}
+}
+
+// Declining the offer and SAVING makes "don't offer" the machine default:
+// shared_auth_declined is written (alongside the favourites) and the next
+// box's onboarding skips the question entirely.
+func TestOnboardDeclineSavedBecomesDefault(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Template: none, Agent: claude, shared auth: n, save-as-default: y.
+	s, _, errBuf := testStreams("\nclaude\nn\ny\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.SharedAuthDeclined) != 1 || cfg.SharedAuthDeclined[0] != "claude" {
+		t.Fatalf("shared_auth_declined = %v", cfg.SharedAuthDeclined)
+	}
+	if !strings.Contains(errBuf.String(), "won't be offered") {
+		t.Fatalf("the save confirmation must state the new-box effect:\n%s", errBuf.String())
+	}
+
+	// Next box: favourites pre-answer template/agent, the offer is settled,
+	// and saving would change nothing — no questions consume input at all.
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	s2, _, errBuf2 := testStreams("\n\n", true)
+	if err := onboardIfNeeded(s2, proj2, p2, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf2.String(), "Opt this box") {
+		t.Fatalf("a saved decline must suppress the next box's offer:\n%s", errBuf2.String())
+	}
+}
+
+// Accepting the offer and SAVING makes shared credentials the machine
+// default: the companion lands in default.config's skills (the hand-enable
+// representation), so the cascade covers every new box and the offer stops.
+func TestOnboardAcceptSavedBecomesMachineDefault(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Template: none, Agent: claude, shared auth: y, save-as-default: y.
+	s, _, errBuf := testStreams("\nclaude\ny\ny\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cfg.Skills, "claude-shared-auth") {
+		t.Fatalf("a saved yes must enable the companion machine-wide, skills = %v", cfg.Skills)
+	}
+	if !strings.Contains(errBuf.String(), "New boxes share the claude login") {
+		t.Fatalf("the save confirmation must state the new-box effect:\n%s", errBuf.String())
+	}
+
+	// Next box: the machine default covers it — no offer.
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	s2, _, errBuf2 := testStreams("\n\n", true)
+	if err := onboardIfNeeded(s2, proj2, p2, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf2.String(), "Opt this box") {
+		t.Fatalf("a saved yes must suppress the next box's offer:\n%s", errBuf2.String())
 	}
 }
 
