@@ -129,9 +129,11 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeForm
 		return m, nil
+	case "ctrl+s":
+		return m.save(), nil
 	case " ", "x", "enter":
 		if m.skillCur < len(entries) {
 			e := entries[m.skillCur]
@@ -220,10 +222,10 @@ func (m model) viewSkills() string {
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.skillCur, line))
 	}
 
-	if m.status != "" {
-		b.WriteString("\n" + dimStyle.Render(m.status))
+	if note := m.subFooterNote(); note != "" {
+		b.WriteString("\n" + note)
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · space toggle (inherited: adds/removes a !name override) · esc back"))
+	b.WriteString("\n" + dimStyle.Render("↑/↓ move · space toggle (inherited: adds/removes a !name override) · ^s save · esc back"))
 	return b.String()
 }
 

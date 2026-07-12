@@ -26,10 +26,12 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeForm
 		m.status = ""
 		return m, nil
+	case "ctrl+s":
+		return m.save(), nil // global save-in-place; feedback via subFooterNote
 	case "a":
 		return m.startItem(-1), nil
 	case "enter":
@@ -143,9 +145,11 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeList
 		return m, nil
+	case "ctrl+s":
+		return m.save(), nil
 	case "enter", " ":
 		if m.menuCur < len(choices) {
 			m.mode = modeList
@@ -375,11 +379,20 @@ func (m *model) onModePicker() bool { return m.itemHasMode && m.itemFocus == len
 
 func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeList
 		return m, nil
-	case "enter", "ctrl+s":
+	case "enter":
 		return m.commitItem(), nil
+	case "ctrl+s":
+		// Global save: accept the open item first — a ^s that silently dropped
+		// the row being typed would be lossy — then write the file. An invalid
+		// item keeps the editor open with its error and saves nothing.
+		next := m.commitItem()
+		if next.itemErr != "" {
+			return next, nil
+		}
+		return next.save(), nil
 	case "tab", "down":
 		m.focusItem(m.itemFocus + 1)
 		return m, nil
@@ -717,10 +730,10 @@ func (m model) viewList() string {
 		fmt.Fprintf(&b, "%s\n", cursorLine(false, dimStyle.Render(addLine)))
 	}
 
-	if m.status != "" {
-		b.WriteString("\n" + dimStyle.Render(m.status))
+	if note := m.subFooterNote(); note != "" {
+		b.WriteString("\n" + note)
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter actions · a add · esc back"))
+	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter actions · a add · ^s save · esc back"))
 	return b.String()
 }
 
@@ -766,7 +779,10 @@ func (m model) viewMenu() string {
 	if m.listField == fEnv && m.menuRow.kind == rowInherited {
 		b.WriteString("\n" + dimStyle.Render("(can't unset from this layer — edit the "+m.menuRow.source+" config to remove)"))
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter apply · esc back"))
+	if note := m.subFooterNote(); note != "" {
+		b.WriteString("\n" + note)
+	}
+	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter apply · ^s save · esc back"))
 	return b.String()
 }
 
@@ -826,9 +842,9 @@ func (m model) viewItem() string {
 	if m.itemErr != "" {
 		b.WriteString("\n" + errStyle.Render("✗ "+m.itemErr))
 	}
-	hint := "tab next · enter save · esc cancel"
+	hint := "tab next · enter accept · ^s save · esc cancel"
 	if m.listField == fMounts {
-		hint = "tab next · → accept suggestion · ←/→ mode · enter save · esc cancel"
+		hint = "tab next · → accept suggestion · ←/→ mode · enter accept · ^s save · esc cancel"
 	}
 	b.WriteString("\n\n" + dimStyle.Render(hint))
 	return b.String()

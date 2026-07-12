@@ -447,18 +447,23 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycle(1)
 		return m, nil
 	case "enter":
+		// Entering a screen clears the form's transient status AND its error:
+		// sub-screens render errMsg too (ctrl+s works everywhere), so a stale
+		// form error must not follow the user in.
 		switch f := m.field(); {
 		case isListField(f):
 			m.listField = f
 			m.listCur = 0
 			m.mode = modeList
 			m.status = ""
+			m.errMsg = ""
 		case f == fVolumes:
 			return m.openVolumes(), nil
 		case f == fSkills:
 			m.skillCur = 0
 			m.mode = modeSkills
 			m.status = ""
+			m.errMsg = ""
 		case isTextField(f):
 			return m.openText(f), textarea.Blink
 		case f == fWorktreeSibling:
@@ -849,6 +854,20 @@ func cursorLine(selected bool, line string) string {
 		return focusStyle.Render("▸ ") + focusStyle.Render(line)
 	}
 	return "  " + line
+}
+
+// subFooterNote is the status/error line the sub-screens show above their key
+// help. The form's footer owns the rich save/dirty banner; ctrl+s works from
+// every screen, so its outcome — a save error especially — must be visible
+// where it was pressed, not wait for the user to happen back to the form.
+func (m model) subFooterNote() string {
+	if m.errMsg != "" {
+		return errStyle.Render("✗ " + m.errMsg)
+	}
+	if m.status != "" {
+		return dimStyle.Render(m.status)
+	}
+	return ""
 }
 
 // ---- small shared helpers ----------------------------------------------------

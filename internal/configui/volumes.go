@@ -52,6 +52,7 @@ func (m model) openVolumes() model {
 	m.volErr = ""
 	m.mode = modeVolumes
 	m.status = ""
+	m.errMsg = ""
 	return m
 }
 
@@ -73,7 +74,7 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		case "n", "N", "esc", "ctrl+c":
+		case "n", "N", "esc", "ctrl+c", "ctrl+q":
 			m.volPendClear = -1
 			m.volErr = ""
 		}
@@ -85,9 +86,11 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeForm
 		return m, nil
+	case "ctrl+s":
+		return m.save(), nil
 	case "c", "d", "x":
 		if len(m.volList) == 0 {
 			return m, nil
@@ -156,9 +159,11 @@ func (m model) viewVolumes() string {
 		b.WriteString(errStyle.Render(msg + " [y/n]"))
 	case m.volErr != "":
 		b.WriteString(errStyle.Render("✗ " + m.volErr))
+	default:
+		b.WriteString(m.subFooterNote())
 	}
 
-	b.WriteString("\n\n" + dimStyle.Render("↑/↓ move · c clear · esc back"))
+	b.WriteString("\n\n" + dimStyle.Render("↑/↓ move · c clear · ^s save · esc back"))
 	return b.String()
 }
 

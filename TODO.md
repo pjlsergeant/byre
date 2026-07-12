@@ -20,9 +20,6 @@ the rationale lives.
 - [ ] (XS) **Config UI: nest shared-auth companions under their agent**
   (Pete, 2026-07-12): render a `shared_auth_for` skill as an indented child
   of its agent's row, so the pairing is visible where you enable it.
-- [ ] (XS) **Config UI: global keys** (Pete, 2026-07-12): ctrl+s saves from
-  anywhere; ctrl+q jumps up one level from anywhere (screen -> form -> quit,
-  keeping the existing dirty-quit confirm at the top).
 - [ ] (S) **byre-codereview: pre-flight grok auth probe.** Expired grok auth
   = headless HANG on a device prompt, silent in background runs. Cheap fix: a
   bounded `timeout ... grok -p PONG` probe first; bail with the re-auth hint.

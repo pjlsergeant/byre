@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Config UI: ctrl+s and ctrl+q work from every screen.** ctrl+s saves the
+  file from anywhere -- on the item and text editors it accepts the open edit
+  first (an invalid item keeps its editor open and saves nothing), elsewhere
+  it saves in place; save feedback shows on the screen where you pressed it.
+  ctrl+q goes up one level from anywhere (screen -> form -> quit), with the
+  usual unsaved-changes confirm at the top. In the raw-text overlay ctrl+s
+  now writes the file too (it used to only stage the buffer).
+- **`byre-codereview --continue` now actually resumes codex sessions**: the
+  resume path passed `--sandbox`, which `codex exec resume` rejects, so every
+  codex `--continue` silently fell back to a fresh review. The sandbox rides
+  a `-c sandbox_mode` override instead (verified enforcing on resume).
 - **`byre-codereview --reviewer claude`**: Claude joins codex and grok as a
   reviewer, driven headless (`claude -p`) with edit tools and subagents
   stripped and sessions resumable via `--continue`. Caveat, stated in the

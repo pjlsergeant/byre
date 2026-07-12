@@ -530,14 +530,14 @@ func TestPortsEditorAndSectionOrder(t *testing.T) {
 }
 
 // Raw text fields (run_args, dockerfile_*) are editable in-UI: ctrl+s accepts the
-// buffer into the config, esc discards; both flip/leave dirty correctly.
+// buffer into the config and saves the file, esc discards.
 func TestRawTextFieldEditRoundTrip(t *testing.T) {
 	// An indented, blank-line-containing dockerfile_pre must survive untouched.
 	cfg := config.Config{
 		RunArgs:       []string{"--privileged"},
 		DockerfilePre: []string{"RUN foo \\", "    && bar", "", "RUN baz"},
 	}
-	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, false)
+	m := newModel("t", filepath.Join(t.TempDir(), "x.config"), cfg, nil, nil, nil, nil, Inherited{}, nil, false)
 	if m.dirty() {
 		t.Fatal("a fresh config with raw fields must not be dirty")
 	}
@@ -553,7 +553,7 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 		t.Fatalf("typing ignored — textarea not focused (got %q)", got)
 	}
 
-	// Edit run_args and accept.
+	// Edit run_args and accept: ctrl+s applies the buffer AND saves the file.
 	m = m.openText(fRunArgs)
 	m.ta.SetValue("--cap-add=NET_ADMIN\n--privileged")
 	mm, _ := m.updateText(tea.KeyMsg{Type: tea.KeyCtrlS})
@@ -564,8 +564,8 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 	if out := m.assemble(); len(out.RunArgs) != 2 || out.RunArgs[0] != "--cap-add=NET_ADMIN" {
 		t.Fatalf("run_args not applied: %v", out.RunArgs)
 	}
-	if !m.dirty() {
-		t.Fatal("editing run_args should mark the model dirty")
+	if !m.savedOnce || m.dirty() {
+		t.Fatalf("ctrl+s should have saved the accepted buffer: err=%q", m.errMsg)
 	}
 	// esc discards an edit — dockerfile_pre stays the original verbatim.
 	m = m.openText(fDockerfilePre)
@@ -585,10 +585,7 @@ func TestCtrlQQuits(t *testing.T) {
 		t.Fatal("ctrl+q on a clean form should quit")
 	}
 
-	m = m.openText(fRunArgs)
-	m.ta.SetValue("--privileged")
-	mm, _ := m.updateText(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m = mm.(model)
+	m.ti.SetValue("debian:custom") // touch the base-image field: dirty, nothing saved
 	if !m.dirty() {
 		t.Fatal("setup: model should be dirty")
 	}
@@ -978,5 +975,123 @@ func TestClipHeight(t *testing.T) {
 	}
 	if got := clipHeight(frame, 0); got != frame {
 		t.Fatalf("unknown height must pass through")
+	}
+}
+
+// ctrl+q goes up one level from every screen (screen -> form; nested screens
+// pop one layer), mirroring esc — the form-level quit-with-confirm is pinned
+// by TestCtrlQQuits.
+func TestCtrlQGoesUpOneLevel(t *testing.T) {
+	ctrlQ := tea.KeyMsg{Type: tea.KeyCtrlQ}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, []string{"devlog"}, nil, Inherited{}, &fakeVols{}, false)
+
+	m.mode = modeSkills
+	if mm, _ := m.updateSkills(ctrlQ); mm.(model).mode != modeForm {
+		t.Error("ctrl+q on the skills screen should return to the form")
+	}
+	m.mode = modeList
+	m.listField = fApt
+	if mm, _ := m.updateList(ctrlQ); mm.(model).mode != modeForm {
+		t.Error("ctrl+q on a list screen should return to the form")
+	}
+	m.mode = modeMenu
+	if mm, _ := m.updateMenu(ctrlQ); mm.(model).mode != modeList {
+		t.Error("ctrl+q on the row menu should pop to the list, not the form")
+	}
+	m = m.startItem(-1)
+	if mm, _ := m.updateItem(ctrlQ); mm.(model).mode != modeList {
+		t.Error("ctrl+q in the item editor should cancel to the list")
+	}
+	m.mode = modeForm
+	m = m.openText(fRunArgs)
+	if mm, _ := m.updateText(ctrlQ); mm.(model).mode != modeForm {
+		t.Error("ctrl+q in the text overlay should cancel to the form")
+	}
+	m.mode = modeVolumes
+	if mm, _ := m.updateVolumes(ctrlQ); mm.(model).mode != modeForm {
+		t.Error("ctrl+q on the volumes screen should return to the form")
+	}
+	// The clear-confirm is its own level: ctrl+q cancels it, staying on volumes.
+	m.mode = modeVolumes
+	m.volList = []VolumeStatus{{Name: ".x", Exists: true}}
+	m.volPendClear = 0
+	mm, _ := m.updateVolumes(ctrlQ)
+	if got := mm.(model); got.mode != modeVolumes || got.volPendClear != -1 {
+		t.Errorf("ctrl+q mid clear-confirm should cancel the confirm only (mode=%v pend=%d)", got.mode, got.volPendClear)
+	}
+}
+
+// ctrl+s saves to disk from every screen: in place on the browse screens, and
+// on the item/text editors it accepts the open edit first — never dropping or
+// half-saving what's being typed.
+func TestCtrlSSavesFromSubScreens(t *testing.T) {
+	ctrlS := tea.KeyMsg{Type: tea.KeyCtrlS}
+	path := filepath.Join(t.TempDir(), "x.config")
+	m := newModel("t", path, config.Config{}, nil, nil, []string{"devlog"}, nil, Inherited{}, nil, false)
+
+	// Skills: toggle one on, ctrl+s writes the file and stays on the screen.
+	m.mode = modeSkills
+	mm, _ := m.updateSkills(key(" "))
+	mm, _ = mm.(model).updateSkills(ctrlS)
+	m = mm.(model)
+	if m.mode != modeSkills {
+		t.Fatalf("ctrl+s should save in place, not leave the skills screen (mode=%v)", m.mode)
+	}
+	if !m.savedOnce || m.dirty() {
+		t.Fatalf("ctrl+s on the skills screen should have saved: err=%q", m.errMsg)
+	}
+	if back, err := config.ParseFile(path); err != nil || len(back.Skills) != 1 || back.Skills[0] != "devlog" {
+		t.Fatalf("saved file wrong: %v %v", back.Skills, err)
+	}
+
+	// List screen: ctrl+s saves in place too.
+	m.mode = modeList
+	m.listField = fApt
+	m.apt = []string{"jq"}
+	mm, _ = m.updateList(ctrlS)
+	m = mm.(model)
+	if m.mode != modeList || m.dirty() {
+		t.Fatalf("ctrl+s on a list screen should save in place (mode=%v dirty=%v)", m.mode, m.dirty())
+	}
+
+	// Item editor: ctrl+s accepts the open item, then saves.
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("ripgrep")
+	mm, _ = m.updateItem(ctrlS)
+	m = mm.(model)
+	if m.mode != modeList {
+		t.Fatalf("item ctrl+s should land on the list after commit+save (mode=%v)", m.mode)
+	}
+	if m.dirty() {
+		t.Fatal("item ctrl+s should have committed AND saved")
+	}
+	if back, _ := config.ParseFile(path); len(back.Apt) != 2 || back.Apt[1] != "ripgrep" {
+		t.Fatalf("open item not committed into the save: %v", back.Apt)
+	}
+
+	// Invalid open item: the editor stays with its error, nothing is written.
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("")
+	mm, _ = m.updateItem(ctrlS)
+	m = mm.(model)
+	if m.mode != modeItem || m.itemErr == "" {
+		t.Fatalf("invalid item must keep the editor open with the error (mode=%v err=%q)", m.mode, m.itemErr)
+	}
+	if back, _ := config.ParseFile(path); len(back.Apt) != 2 {
+		t.Fatalf("invalid item must not be saved around: %v", back.Apt)
+	}
+
+	// Text overlay: ctrl+s accepts the buffer and saves.
+	m.mode = modeForm
+	m.itemErr = ""
+	m = m.openText(fRunArgs)
+	m.ta.SetValue("--privileged")
+	mm, _ = m.updateText(ctrlS)
+	m = mm.(model)
+	if m.mode != modeForm || m.dirty() {
+		t.Fatalf("text ctrl+s should accept and save (mode=%v dirty=%v)", m.mode, m.dirty())
+	}
+	if back, _ := config.ParseFile(path); len(back.RunArgs) != 1 || back.RunArgs[0] != "--privileged" {
+		t.Fatalf("text buffer not in the save: %v", back.RunArgs)
 	}
 }

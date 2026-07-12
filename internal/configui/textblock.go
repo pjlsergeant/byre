@@ -45,17 +45,19 @@ func (m *model) setText(f fieldID, v string) {
 }
 
 // updateText routes keys to the text-block overlay: ctrl+s accepts the buffer
-// into the working field (still not written to disk until the form's ctrl+s),
-// esc/ctrl+c cancel and discard. As with the item editor, ctrl+c here only backs
-// out of this edit — it never quits the whole editor.
+// into the working field and saves the file (^s means SAVE on every screen;
+// enter is a newline here, so there's no separate accept-only key — staging a
+// text edit without writing goes esc + re-open), esc/ctrl+c/ctrl+q cancel and
+// discard. As with the item editor, ctrl+c here only backs out of this edit —
+// it never quits the whole editor.
 func (m model) updateText(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+s":
 		m.setText(m.textField, m.ta.Value())
 		m.mode = modeForm
 		m.ta.Blur()
-		return m, nil
-	case "esc", "ctrl+c":
+		return m.save(), nil
+	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeForm
 		m.ta.Blur()
 		return m, nil
@@ -71,7 +73,7 @@ func (m model) viewText() string {
 	if key := rawFieldKey[m.textField]; key != "" {
 		title += dimStyle.Render("  (" + key + ")") // keep the TOML key discoverable
 	}
-	return fmt.Sprintf("%s\n\n%s — ctrl+s accept · esc cancel\n%s\n\n%s\n",
+	return fmt.Sprintf("%s\n\n%s — ctrl+s accept + save · esc cancel\n%s\n\n%s\n",
 		title,
 		dimStyle.Render("edit "+fieldLabel[m.textField]),
 		dimStyle.Render("("+hint+")"),
