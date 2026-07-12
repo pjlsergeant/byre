@@ -548,23 +548,22 @@ func (m model) View() string {
 // pushes the TOP rows off (found live 2026-07-12: the --global form's extra
 // section cropped the title on short terminals). Every screen ends with its
 // status/confirm banner and key help — the dirty-quit confirmation lives
-// there, so the last footerPin lines are pinned visible and only the body
-// above them scrolls. Clipped content is never silent: a dim marker row
+// there (the clear-volume confirm too), so the footer is pinned visible and
+// only the body above it scrolls. Clipped content is never silent: a dim marker row
 // names each hidden direction, and moving the cursor scrolls the window.
-const footerPin = 4
-
 func clipHeight(s string, height int) string {
 	max := height - 1 // the inline renderer keeps one row for itself
-	if max-footerPin < 4 {
-		return s // unknown or absurd height: let the terminal cope
-	}
 	lines := strings.Split(s, "\n")
 	if len(lines) <= max {
 		return s
 	}
-	tail := lines[len(lines)-footerPin:]
-	body := lines[:len(lines)-footerPin]
-	bodyMax := max - footerPin
+	pin := len(lines) - footerStart(lines)
+	bodyMax := max - pin
+	if bodyMax < 4 {
+		return s // unknown or absurd height: let the terminal cope
+	}
+	tail := lines[len(lines)-pin:]
+	body := lines[:len(lines)-pin]
 
 	focus := 0
 	for i, l := range body {
@@ -591,6 +590,29 @@ func clipHeight(s string, height int) string {
 		out[len(out)-1] = dimStyle.Render("··· (more below)")
 	}
 	return strings.Join(append(out, tail...), "\n")
+}
+
+// footerStart is where the pinned footer begins: the first blank separator
+// within the frame's final rows (every screen sets its footer — status or
+// confirm banner, optional warnings, path, key help — off with a blank
+// line; a multi-line confirm makes the footer taller, so the pin is sized
+// by looking, not by a fixed count). Capped so a pathological tail can't
+// eat the whole window; no separator found falls back to the last 4 rows.
+func footerStart(lines []string) int {
+	const maxPin = 8
+	from := len(lines) - maxPin
+	if from < 0 {
+		from = 0
+	}
+	for i := from; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			return i // include the separator: the visual gap survives
+		}
+	}
+	if len(lines) > 4 {
+		return len(lines) - 4
+	}
+	return 0
 }
 
 // clipLines truncates every rendered line to the terminal width (ANSI-aware).
