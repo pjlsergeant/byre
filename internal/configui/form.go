@@ -213,6 +213,7 @@ type model struct {
 	itemErr     string
 
 	width       int
+	height      int
 	errMsg      string
 	status      string
 	confirmQuit bool
@@ -358,6 +359,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case editorClosedMsg:
 		return m.onEditorClosed(msg.err), nil
@@ -537,7 +539,49 @@ func (m model) View() string {
 	default:
 		v = m.viewForm()
 	}
-	return clipLines(v, m.width)
+	return clipLines(clipHeight(v, m.height), m.width)
+}
+
+// clipHeight windows the view vertically when it exceeds the terminal,
+// keeping the ▸ cursor row on screen. The inline bubbletea renderer can't
+// scroll: a frame taller than the terminal silently pushes the TOP rows off
+// (found live 2026-07-12: the --global form's extra section cropped the
+// title on short terminals). Clipped content is never silent — a dim marker
+// row names each hidden direction; moving the cursor scrolls the window.
+func clipHeight(s string, height int) string {
+	max := height - 1 // the inline renderer keeps one row for itself
+	if height <= 4 {
+		return s // unknown or absurd height: let the terminal cope
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) <= max {
+		return s
+	}
+	focus := 0
+	for i, l := range lines {
+		if strings.Contains(l, "▸") {
+			focus = i
+			break
+		}
+	}
+	start := 0
+	if focus > start+max-3 {
+		start = focus - (max - 3) // keep the cursor clear of the bottom edge
+	}
+	if start+max > len(lines) {
+		start = len(lines) - max
+	}
+	if start < 0 {
+		start = 0
+	}
+	out := append([]string{}, lines[start:start+max]...)
+	if start > 0 {
+		out[0] = dimStyle.Render("··· (more above)")
+	}
+	if start+max < len(lines) {
+		out[len(out)-1] = dimStyle.Render("··· (more below)")
+	}
+	return strings.Join(out, "\n")
 }
 
 // clipLines truncates every rendered line to the terminal width (ANSI-aware).

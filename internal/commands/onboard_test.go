@@ -249,7 +249,7 @@ func TestOnboardVestigialDeclinedKeyDoesNotSuppressOffer(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials? [y/N/i]") {
+	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials? [y/N, i for info]") {
 		t.Fatalf("a v0.1.7 decline must not silence the per-box offer:\n%s", errBuf.String())
 	}
 }
@@ -290,7 +290,7 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf2.String(), "Opt this box into claude shared credentials? [Y/n/i]") {
+	if !strings.Contains(errBuf2.String(), "Opt this box into claude shared credentials? [Y/n, i for info]") {
 		t.Fatalf("the next box must be asked, prefilled from the preference:\n%s", errBuf2.String())
 	}
 	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"))
@@ -315,7 +315,7 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "[Y/n/i]") {
+	if !strings.Contains(errBuf.String(), "[Y/n, i for info]") {
 		t.Fatalf("the stored yes must prefill the offer:\n%s", errBuf.String())
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))

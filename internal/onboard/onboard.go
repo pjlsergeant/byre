@@ -125,9 +125,9 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 // is config plumbing, not part of the decision); "i" is where that detail
 // lives — it prints exactly what each answer writes, then re-asks.
 func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
-	marker := "y/N/i"
+	marker := "y/N, i for info"
 	if prefYes {
-		marker = "Y/n/i"
+		marker = "Y/n, i for info"
 	}
 	for {
 		fmt.Fprintf(out, "Opt this box into %s shared credentials? [%s]: ", agent, marker)
@@ -141,13 +141,17 @@ func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, pr
 		case "":
 			return prefYes, nil
 		case "i":
-			fmt.Fprintf(out, `  y — use the machine's shared %s login for this box: %q is added to
-      this project's byre.config (remove it there to undo). Nothing
-      outside this project changes.
-  n — this box logs in on its own; nothing is recorded anywhere.
-  Saving as your default afterwards only pre-selects the answer for the
-  next project's question; it never enables anything by itself.
-`, agent, companion)
+			fmt.Fprintf(out, `
+  y — this box uses the machine-wide shared %s login.
+      Writes one line — %q — into THIS project's byre.config
+      (delete it there to undo). No other project changes.
+  n — this box keeps its own separate %s login (log in inside the box).
+      Writes nothing, anywhere.
+  Afterwards, "Save these as your default?" only changes which answer is
+  pre-selected at the NEXT project's question — saving never
+  opts any box in by itself.
+
+`, agent, companion, agent)
 		default:
 			// Same stance as every yes/no here: unrecognized input never
 			// lands on the granting side, whatever the default.

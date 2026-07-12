@@ -67,7 +67,7 @@
   now vestigial: still parsed, read by nothing; old decliners are
   simply asked again per box, default No; an old machine-wide "y" keeps
   working as the hand-grant it is). Unrecognized input at a prefilled
-  offer never opts in, and answering `i` ([y/N/i]) prints exactly what
+  offer never opts in, and answering `i` ([y/N, i for info]) prints exactly what
   each answer writes -- scopes, the companion skill's name, the save
   question's prefill-only effect -- then re-asks.
 

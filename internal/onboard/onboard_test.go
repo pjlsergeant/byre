@@ -268,7 +268,7 @@ func TestOfferSharedAuth(t *testing.T) {
 	}
 	// The wording must carry the real scope of the write: this box, opting
 	// into an existing shared mechanism — never "all projects".
-	if !strings.Contains(out.String(), "Opt this box into claude shared credentials? [y/N/i]") {
+	if !strings.Contains(out.String(), "Opt this box into claude shared credentials? [y/N, i for info]") {
 		t.Fatalf("offer must be the per-box question, defaulting No:\n%s", out.String())
 	}
 	// No preference: an empty answer declines.
@@ -289,10 +289,10 @@ func TestOfferSharedAuthInfo(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"this project's byre.config", // y's write and scope
+		"THIS project's byre.config", // y's write and scope
 		`"claude-shared-auth"`,       // the mechanism, named where detail belongs
-		"nothing is recorded",        // n's write
-		"never enables anything",     // save-default's prefill-only effect
+		"Writes nothing",             // n's write
+		"opts any box in by itself",  // save-default's prefill-only effect
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("info must state %q:\n%s", want, got)
@@ -312,7 +312,7 @@ func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 	if err != nil || !yes {
 		t.Fatalf("Enter must accept the saved yes: yes = %v, err = %v", yes, err)
 	}
-	if !strings.Contains(out.String(), "[Y/n/i]") {
+	if !strings.Contains(out.String(), "[Y/n, i for info]") {
 		t.Fatalf("a saved yes must show as the prefilled default:\n%s", out.String())
 	}
 	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", "claude-shared-auth", true)

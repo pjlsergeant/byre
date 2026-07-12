@@ -44,7 +44,7 @@ The mechanics:
   is inert as configuration. The write is surgical (one line, re-parse
   verified, refused with a do-it-by-hand error on shapes it can't
   follow or a file it can't parse).
-- **Prefill is not auto-grant.** A `[Y/n/i]` offer accepts on Enter or
+- **Prefill is not auto-grant.** A `[Y/n, i for info]` offer accepts on Enter or
   an explicit y; unrecognized input never lands on the granting side,
   whatever the default.
 - **One suppression only**: the companion already in `default.config`'s
