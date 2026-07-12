@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -943,5 +944,39 @@ func TestSkillsMarkerEdgeCases(t *testing.T) {
 	m2 = mm.(model)
 	if contains(m2.skills, "!claude") {
 		t.Fatalf("toggle should clear the stale marker: %v", m2.skills)
+	}
+}
+
+// clipHeight windows tall frames: cursor row visible, footer (status/confirm
+// banner + key help) pinned, hidden directions marked, short frames untouched.
+func TestClipHeight(t *testing.T) {
+	var lines []string
+	for i := 0; i < 40; i++ {
+		lines = append(lines, fmt.Sprintf("row %d", i))
+	}
+	lines[30] = "▸ focused row"
+	lines[38] = "● Unsaved changes — confirm banner"
+	frame := strings.Join(lines, "\n")
+
+	got := clipHeight(frame, 20)
+	if !strings.Contains(got, "▸ focused row") {
+		t.Fatalf("cursor row must stay visible:\n%s", got)
+	}
+	if !strings.Contains(got, "confirm banner") {
+		t.Fatalf("the footer (dirty-quit banner lives there) must be pinned:\n%s", got)
+	}
+	if !strings.Contains(got, "more above") {
+		t.Fatalf("hidden top content must be marked:\n%s", got)
+	}
+	if n := strings.Count(got, "\n") + 1; n > 19 {
+		t.Fatalf("frame must fit the terminal: %d lines", n)
+	}
+
+	// A frame that fits is untouched, and an unknown height is a no-op.
+	if got := clipHeight("a\nb", 20); got != "a\nb" {
+		t.Fatalf("short frame must pass through: %q", got)
+	}
+	if got := clipHeight(frame, 0); got != frame {
+		t.Fatalf("unknown height must pass through")
 	}
 }

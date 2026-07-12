@@ -543,45 +543,54 @@ func (m model) View() string {
 }
 
 // clipHeight windows the view vertically when it exceeds the terminal,
-// keeping the ▸ cursor row on screen. The inline bubbletea renderer can't
-// scroll: a frame taller than the terminal silently pushes the TOP rows off
-// (found live 2026-07-12: the --global form's extra section cropped the
-// title on short terminals). Clipped content is never silent — a dim marker
-// row names each hidden direction; moving the cursor scrolls the window.
+// keeping the ▸ cursor row AND the frame's footer on screen. The inline
+// bubbletea renderer can't scroll: a frame taller than the terminal silently
+// pushes the TOP rows off (found live 2026-07-12: the --global form's extra
+// section cropped the title on short terminals). Every screen ends with its
+// status/confirm banner and key help — the dirty-quit confirmation lives
+// there, so the last footerPin lines are pinned visible and only the body
+// above them scrolls. Clipped content is never silent: a dim marker row
+// names each hidden direction, and moving the cursor scrolls the window.
+const footerPin = 4
+
 func clipHeight(s string, height int) string {
 	max := height - 1 // the inline renderer keeps one row for itself
-	if height <= 4 {
+	if max-footerPin < 4 {
 		return s // unknown or absurd height: let the terminal cope
 	}
 	lines := strings.Split(s, "\n")
 	if len(lines) <= max {
 		return s
 	}
+	tail := lines[len(lines)-footerPin:]
+	body := lines[:len(lines)-footerPin]
+	bodyMax := max - footerPin
+
 	focus := 0
-	for i, l := range lines {
+	for i, l := range body {
 		if strings.Contains(l, "▸") {
 			focus = i
 			break
 		}
 	}
 	start := 0
-	if focus > start+max-3 {
-		start = focus - (max - 3) // keep the cursor clear of the bottom edge
+	if focus > start+bodyMax-3 {
+		start = focus - (bodyMax - 3) // keep the cursor clear of the bottom edge
 	}
-	if start+max > len(lines) {
-		start = len(lines) - max
+	if start+bodyMax > len(body) {
+		start = len(body) - bodyMax
 	}
 	if start < 0 {
 		start = 0
 	}
-	out := append([]string{}, lines[start:start+max]...)
+	out := append([]string{}, body[start:start+bodyMax]...)
 	if start > 0 {
 		out[0] = dimStyle.Render("··· (more above)")
 	}
-	if start+max < len(lines) {
+	if start+bodyMax < len(body) {
 		out[len(out)-1] = dimStyle.Render("··· (more below)")
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(append(out, tail...), "\n")
 }
 
 // clipLines truncates every rendered line to the terminal width (ANSI-aware).
