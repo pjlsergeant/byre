@@ -576,6 +576,42 @@ func TestRawTextFieldEditRoundTrip(t *testing.T) {
 	}
 }
 
+// ctrl+q quits from the form screen: immediately when clean, and via the same
+// press-again-to-discard confirm as esc when there are unsaved changes.
+func TestCtrlQQuits(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
+	if _, cmd := m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ}); cmd == nil {
+		t.Fatal("ctrl+q on a clean form should quit")
+	}
+
+	m = m.openText(fRunArgs)
+	m.ta.SetValue("--privileged")
+	mm, _ := m.updateText(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m = mm.(model)
+	if !m.dirty() {
+		t.Fatal("setup: model should be dirty")
+	}
+	mm, cmd := m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	m = mm.(model)
+	if cmd != nil || !m.confirmQuit {
+		t.Fatalf("first ctrl+q on a dirty form should arm the confirm, not quit (confirmQuit=%v)", m.confirmQuit)
+	}
+	if _, cmd = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlQ}); cmd == nil {
+		t.Fatal("second ctrl+q should discard and quit")
+	}
+
+	// ctrl+c must not clear the armed confirm — a second ctrl+c also quits.
+	m.confirmQuit = false
+	mm, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = mm.(model)
+	if !m.confirmQuit {
+		t.Fatal("first ctrl+c on a dirty form should arm the confirm")
+	}
+	if _, cmd = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Fatal("second ctrl+c should discard and quit")
+	}
+}
+
 // newModel must not report the freshly-opened config as dirty, an unknown engine
 // must round-trip (not coerce to podman), and touching a field flips dirty.
 func TestModelDirtyAndUnknownEngineRoundTrip(t *testing.T) {
