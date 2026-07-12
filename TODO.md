@@ -1,206 +1,128 @@
 # TODO
 
 **This file is authoritative.** It is the single source of truth for what is
-open, planned, and consciously dropped -- and it is *edited directly* to set
+open and what was consciously dropped -- and it is *edited directly* to set
 direction: whatever this file says the TODO is, that IS the TODO. Agents:
-re-read it at the start of a session, take priorities from it as marching
-orders, and keep it live. Finished and dropped items are *removed* and take
-their rationale with them -- git history is the archive. Don't restructure or
-reprioritize it unprompted. Rationale lives in the ADRs and docs linked per
-item; when one of them disagrees with this file about status, scope, or
-priority, this file wins.
+re-read it at the start of a session, and keep it live. Finished and dropped
+items are *removed* and take their rationale with them -- git history is the
+archive. Don't restructure it unprompted. Rationale lives in the ADRs and
+docs linked per item; when one of them disagrees with this file about status
+or scope, this file wins.
 
-Sections are priority tiers -- Now, Next, Someday -- plus Standing
-(disciplines, not tasks) and Parked (decided negatives).
+Every item carries a t-shirt size -- (XS), (S), (M), (L), (XL) -- estimating
+effort to ship, and the list is ordered smallest-first. **Order and size say nothing
+about importance**; the file deliberately carries no priority signal. Keep
+items to 2-3 lines: what it is, who/when if it matters, one pointer to where
+the rationale lives.
 
-## Now
+## Open
 
-- [ ] **byre-codereview: pre-flight grok auth probe/timeout** — expired
-  auth = headless HANG on a device prompt today, silent in background runs
-  (the live device code lands in .byre-devlog/.dbg.*). Retirement removed the
-  shared-corpse *cause*, but any per-box chain that dies still hangs the
-  reviewer the same way. Cheap: a bounded `timeout ... grok -p PONG` probe
-  before the review, bail with the re-auth hint on failure.
-- [ ] **`byre deliver` follow-on tranches** (v1 + the deliver app
-  SHIPPED 2026-07-10/11 — rationale ADR 0021 incl. field amendments,
-  user guide docs/deliver.md; the docs/deliver/ design workspace is
-  absorbed + deleted, full record in git history). Remaining,
-  separately shippable: `ssh://` remote delivery (frozen mini-protocol:
-  --proto / --porcelain / --consume, designed in ADR 0021).
-  Also outstanding: gated BYRE_DOCKER_TESTS deliver cases ride the
-  agent-runnable-tests item.
-- [ ] **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents in
-  the store: version-controlling `~/.byre`, composing skills, layering over
-  provided skills instead of editing them in place. Start minimal; grows
-  alongside bundle sharing (e.g. "how do I eject this skill"). Delivery
-  shape TBD -- likely how devlog's conventions ride in.
-- [ ] **Skill & template bundle sharing + trust surface.** A bundle/install
-  format for skills and templates -- today it's built-ins plus hand-dropped
-  `~/.byre/skills/<name>/`, and templates have no sharing story at all. Its
-  safety half ships with it: skills carry real grants, so decide how loudly
-  grants are surfaced at install/develop and whether there's an approval
-  gate. Full `skill.toml` semantics (ordering, dependencies, conflicts) stay
-  deferred to a skills milestone.
-- [ ] **Agent-runnable integration tests.** The gated `BYRE_DOCKER_TESTS=1`
-  suite needs a Docker host the agent can reach. Design pass across: nested
-  rootless podman in-box (pulls the keep-id work forward), a CI job (cheap,
-  guards every push), a docker-capable host VM (e.g. a smolmachines
-  instance). Not mutually exclusive. Unlocks most of the test debt below.
-
-## Next
-
-- [ ] **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
-  `opencode-shared-auth` builtin pair, following the grok playbook
-  (commits 0d9f59f..2cfd8fb are the worked example). Per-agent facts to
-  establish empirically before writing the skill.toml: install shape
-  (binary location vs state dir — does it need the codex/grok split?),
-  config-dir relocation env, headless/device login flow and whether the
-  credential rotates (gates like grok's if unverifiable), autonomy flag,
-  global rules/context file for `context_target`, egress endpoints
-  (OpenCode is multi-provider, so the functional-egress set depends on
-  the configured provider — may need thought vs ADR 0020), headless
-  permission mode (grok's silent-death lesson: verify tool calls work
-  under a FRESH config), and whether byre-codereview should learn it as
-  a third reviewer. Record findings in
-  docs/agent-credential-mechanics.md like the others.
-- [ ] **Skill env guidance strings** (Pete, 2026-07-08): let a skill
-  declare env vars it CONSUMES, each with a one-line guidance string
-  (shape sketch: `[[runtime.env_docs]]` with name + guidance); the config
-  UI's env screen shows a dim suggestion row per declared var from
-  enabled skills, enter prefills the add editor. Pure documentation, no
-  validation. Example targets: `GEMINI_API_KEY`. (ADR 0019 removed the
-  original motivating case, `FIREWALL_ALLOW`.)
-- [ ] **Config UI: nest shared-auth companions under their agent** (Pete,
-  2026-07-12): the skills screen renders a `shared_auth_for` skill as an
-  indented child of its agent's row, so the pairing is visible where you
-  enable it. Sketch:
-
-      Agent skills
-        [ ] claude  -- The Claude Code agent; login persists per project.
-            [ ] claude-shared-auth  -- Share one Claude login across all
-                your projects (machine volume)
-
-- [ ] **Config UI: global keys** (Pete, 2026-07-12): ctrl+s saves from
-  anywhere (not just the top-level form); ctrl+q jumps up one level from
-  anywhere (screen -> form -> quit, with the existing dirty-quit confirm
-  at the top).
-- [ ] **Config UI: env secret-masking.** env values render in plaintext in
-  the form; mask them (reveal on demand) so a shoulder-surf or screenshot
-  doesn't leak tokens.
-- [ ] **Host-side test session.** The end-to-end cases that stay manual
-  until agent-runnable tests exist; shrinks to whatever that item doesn't
-  automate. The unit layer already pins build-time behavior.
-  - fresh `develop`: host-UID-owned files in `/home/dev` and `/workspace`,
-    fresh cache volume, no root phase / chown / gosu in the launch path
-  - `internal/builtins`: a fresh volume comes up owned by the baked UID
-  - live worktree run: git commit in-box + two concurrent sessions (main
-    tree + worktree)
-  - shared-auth machinery: automated coverage for the hand-verified
-    behavior (`docs/adr/0017-shared-agent-identity.md`)
-  - firewall fail-closed after `docker restart` (launch-path cases already
-    pass)
-- [ ] **Site.** Landing page + real docs, devlog demoted to `/devlog/`; the
-  decided shape lives in `docs/marketing/positioning.md` "Site plan".
-- [ ] **TERM + timezone + host-env passthrough.** Pass host TERM and TZ into
-  every box via the chassis (the box currently guesses both), plus a config
-  key for named host env vars (shape TBD, e.g. `env_passthrough = ["FOO"]`).
-  Per `docs/GLOSSARY.md` a passed-through var IS a grant: name it in
-  `byre status` and the config UI's GRANTS section.
-
-## Someday
-
-- [ ] **Rootless Podman keep-id path.** Design settled: generic-UID image on
-  the rootless path, run with `--userns=keep-id`, mode-select on the
-  existing `runner.IsRootlessPodman` detection. Today's detect-and-refuse
-  (`BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides; 2026-07-11 review batch)
-  stays until this lands; add integration coverage when it does. Background:
-  `docs/adr/0008-build-time-uid-bake.md`. Promotes if the agent-runnable-
-  tests design picks nested podman.
-- [ ] **Drag-and-drop into the boxed terminal.** Dropping a file pastes its
-  host path, meaningless in-box. Needs a design pass: translate paths under
-  the project dir to `/workspace`, treat outside paths as a grant question,
-  survey per-terminal drop behavior. Partially superseded by `byre deliver`
-  (Now): dropping onto the deliver app covers get-this-file-in-the-box;
-  what remains here is only drop-directly-onto-the-running-terminal
-  ergonomics.
-- [ ] **gemini OAuth gate.** Two concurrent gemini boxes sharing one OAuth
-  credential, run past the ~1h token expiry; neither dying = OAuth sharing
-  is safe. The API-key path is already verified
-  (`docs/adr/0017-shared-agent-identity.md` verification record).
+- [ ] (XS) **Config UI: nest shared-auth companions under their agent**
+  (Pete, 2026-07-12): render a `shared_auth_for` skill as an indented child
+  of its agent's row, so the pairing is visible where you enable it.
+- [ ] (XS) **Config UI: global keys** (Pete, 2026-07-12): ctrl+s saves from
+  anywhere; ctrl+q jumps up one level from anywhere (screen -> form -> quit,
+  keeping the existing dirty-quit confirm at the top).
+- [ ] (S) **byre-codereview: pre-flight grok auth probe.** Expired grok auth
+  = headless HANG on a device prompt, silent in background runs. Cheap fix: a
+  bounded `timeout ... grok -p PONG` probe first; bail with the re-auth hint.
+- [ ] (S) **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents
+  in the store: version-controlling `~/.byre`, composing skills, layering
+  over provided skills instead of editing in place. Start minimal; grows
+  alongside bundle sharing.
+- [ ] (S) **Config UI: env secret-masking.** env values render in plaintext
+  in the form; mask them (reveal on demand).
+- [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
+  OAuth credential, run past the ~1h token expiry; neither dying = OAuth
+  sharing is safe. API-key path already verified (ADR 0017).
+- [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
+  `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
+  2cfd8fb). Establish the per-agent facts empirically first (install shape,
+  state-dir env, headless login + rotation, autonomy flag, context file,
+  egress, headless permission mode -- grok's silent-death lesson); record in
+  docs/agent-credential-mechanics.md. Maybe a third reviewer.
+- [ ] (M) **Skill env guidance strings** (Pete, 2026-07-08): skills declare
+  env vars they CONSUME with a one-line guidance string (sketch:
+  `[[runtime.env_docs]]`); config UI env screen shows a dim suggestion row
+  per declared var. Pure documentation, no validation. Example:
+  `GEMINI_API_KEY`.
+- [ ] (M) **TERM + timezone + host-env passthrough.** Pass host TERM and TZ
+  via the chassis, plus a config key for named host env vars. Per
+  docs/GLOSSARY.md a passed-through var IS a grant: surface it in `byre
+  status` and the config UI GRANTS section.
+- [ ] (M) **Host-side test session.** The end-to-end cases that stay manual
+  until agent-runnable tests exist: fresh-develop file ownership + launch
+  path, builtins fresh-volume UID, concurrent worktree sessions, shared-auth
+  coverage (ADR 0017), firewall fail-closed after `docker restart`.
+- [ ] (M) **Drag-and-drop into the boxed terminal.** Mostly superseded by
+  `byre deliver`; what remains is drop-directly-onto-the-running-terminal
+  ergonomics. Needs a design pass: path translation, outside paths as a
+  grant question, per-terminal drop behavior.
+- [ ] (L) **`byre deliver`: ssh:// remote delivery.** The remaining tranche
+  of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/deliver.md); the
+  mini-protocol is frozen there (--proto / --porcelain / --consume). Gated
+  deliver test cases ride the agent-runnable-tests item.
+- [ ] (L) **Agent-runnable integration tests.** The gated
+  `BYRE_DOCKER_TESTS=1` suite needs a Docker host the agent can reach.
+  Design pass across nested rootless podman, a CI job, and a docker-capable
+  host VM (not mutually exclusive). Unlocks most of the manual test debt.
+- [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
+  the decided shape lives in docs/marketing/positioning.md "Site plan".
+- [ ] (L) **Rootless Podman keep-id path.** Design settled: generic-UID
+  image on the rootless path, `--userns=keep-id`, mode-select on
+  `runner.IsRootlessPodman` (background: ADR 0008). Today's
+  detect-and-refuse stays until this lands; add integration coverage with
+  it.
+- [ ] (XL) **Skill & template bundle sharing + trust surface.** A
+  bundle/install format for skills and templates; its safety half ships with
+  it (how loudly grants surface at install/develop, approval gate or not).
+  Full `skill.toml` semantics stay deferred to a skills milestone.
 
 ## Standing
 
 Disciplines and tripwires, not tasks.
 
-- **Status/marketing lockstep:** the README/site show `byre status` output
-  as proof; re-verify it against status.go after any status change so the
-  proof doesn't become a lie.
+- **Status/marketing lockstep:** README/site show `byre status` output as
+  proof; re-verify against status.go after any status change.
 - **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
-  statement; the plain what-it-is sentence under it is mandatory
-  mitigation. If cold readers keep bouncing post-launch, revisit it.
-  (Background: `docs/marketing/positioning.md` "Copy bank".)
-- **`internal/commands` split tripwire:** the package is ~25 files with no
-  internal boundaries (2026-07-09 external review). Don't split it as a
-  project; next time substantial work lands there, carve the area being
-  touched into its own package (e.g. status, lifecycle, store) instead of
-  adding to the pile.
+  statement; the plain what-it-is sentence under it is mandatory mitigation.
+  If cold readers bounce post-launch, revisit
+  (docs/marketing/positioning.md "Copy bank").
+- **`internal/commands` split tripwire:** ~25 files, no internal boundaries
+  (2026-07-09 external review). Don't split as a project; next substantial
+  work there carves the touched area into its own package.
 
 ## Parked / consciously not doing
 
 Decided negatives, recorded so they don't get re-raised. Rationale lives in
 the docs cited and in git history.
 
-- **grok-shared-auth rebuild** -- PARKED 2026-07-12 (ADR 0023), ideas for a
-  future build, not a decided negative. Two gated designs in
-  docs/grok-shared-auth-v2-designs.md: auth broker on grok's
-  `GROK_AUTH_PROVIDER_COMMAND` seam (no resident process, closes the
-  refresh race; design-killer gate: does grok re-invoke the provider when
-  the token dies?) and fork-shipping watcher + refresh jitter (accepts a
-  rare cold-start race). Run the gates BEFORE building; get second
-  opinions. The `XAI_API_KEY` path stays ruled out on cost (~50x the sub).
-- **Secret-manager seed backend** (`pass` / resolved-reference seed kind) --
-  host-path + config-literal seeding covers the single-user case. Design
-  constraint if ever revived: the seed-source model reserves room for a
-  resolved-reference kind, so don't hardcode new code paths to "path".
-- **Automatic volume migration** for the baked-UID upgrade -- a no-op in
-  practice; recovery is `byre reset` + re-login (documented, no code).
-- **run_args `--user`/`--userns` detect-and-warn** -- author-only footguns;
+- **grok-shared-auth rebuild** -- PARKED 2026-07-12 (ADR 0023); two gated
+  designs in docs/grok-shared-auth-v2-designs.md, run the gates BEFORE
+  building. `XAI_API_KEY` stays ruled out on cost.
+- **Secret-manager seed backend** -- host-path + config-literal covers the
+  single-user case. If revived: the seed-source model reserves a
+  resolved-reference kind; don't hardcode new paths to "path".
+- **Automatic volume migration** for the baked-UID upgrade -- no-op in
+  practice; recovery is `byre reset` + re-login (documented).
+- **run_args `--user`/`--userns` detect-and-warn** -- author-only footgun;
   one-sentence spec caveat instead of code.
-- ~~**Machine-wide `shared` volume scope**~~ -- REVERSED by ADR 0017: agent
-  identity turned out to be the natural boundary the original ruling said
-  didn't exist. Machine-scoped volumes shipped with shared auth.
-- **Hardening the project store against a --self-edit agent** (symlink
-  checks, byre.config writes, path record, lock) -- reverted (0f35743). A
-  --self-edit agent already authors the next develop's config and build
-  context through the front door, so store-symlink defenses protect a
-  boundary that doesn't exist; `--self-edit` means trusting the agent with
-  the host, full stop. Reviewers WILL re-find this class -- conscious
-  negative, don't re-fix.
-- **Runtime-only env** (moving config `env` from baked ENV layers to
-  run-time `-e`) -- no security value under the threat model: byre images
-  never leave the machine (no push path) and daemon access is
-  root-equivalent, so no adversary can read a layer who can't already
-  read everything (2026-07-09 external-review grilling; the layers fact
-  is documented in SECURITY.md/README). If ever revived it's build-cache
-  QoL for the env-UX cluster (guidance strings, masking), never secret
-  protection -- and build-time env visibility (e.g. GOTOOLCHAIN consumed
-  by dockerfile_pre) is load-bearing, so any change needs a build_env
-  story.
-- **Agent `command` argv validation** (quoting/allowlisting the skill
-  [agent] command) -- documented as a deliberate shell fragment instead
-  (agentScript comment + SECURITY.md "A skill is trusted code",
-  2026-07-09 external-review triage). An enabled skill already runs
-  anything via raw [build].dockerfile and launch hooks; the typed-field
-  allowlists are legibility, not containment. Reviewers will re-find
-  this; don't re-fix.
-- **Structured (field/row-addressable) config validation errors** -- the
-  config-UI drift fix is shared predicates + `ValidateLayer` as the only
-  completeness gate (2026-07-09 grilling); prose errors plus open-editor
-  context attribute well enough. Revive trigger: a consumer that needs
-  attribution WITHOUT an open editor for context (form-level Save, adopt
-  file review, or any third consumer beyond UI+CLI). Until then, improve
-  error strings in place; don't build the path algebra.
-- **Path nannying** (refusing to run on dangerous dirs) -- "a knife needs
-  to be sharp"; Pete runs byre on `~/.byre` itself.
+- ~~**Machine-wide `shared` volume scope**~~ -- REVERSED by ADR 0017;
+  machine-scoped volumes shipped with shared auth.
+- **Hardening the project store against a --self-edit agent** -- reverted
+  (0f35743); `--self-edit` means trusting the agent with the host, full
+  stop. Reviewers WILL re-find this class -- don't re-fix.
+- **Runtime-only env** -- no security value under the threat model (images
+  never leave the machine; daemon access is root-equivalent; documented in
+  SECURITY.md). If revived it's build-cache QoL and needs a build_env story.
+- **Agent `command` argv validation** -- documented as a deliberate shell
+  fragment instead (SECURITY.md "A skill is trusted code"); typed-field
+  allowlists are legibility, not containment. Don't re-fix.
+- **Structured (field-addressable) config validation errors** -- shared
+  predicates + `ValidateLayer` is the completeness gate; prose errors
+  attribute well enough. Revive trigger: a consumer needing attribution
+  WITHOUT an open editor.
+- **Path nannying** (refusing dangerous dirs) -- "a knife needs to be
+  sharp"; Pete runs byre on `~/.byre` itself.
 - **claude-pod feature steals** -- reviewed, nothing adopted, no public
   mention.
