@@ -22,7 +22,9 @@ type Choice struct {
 	Agent       string // "" means none
 	SaveDefault bool
 	// SharedAuthCompanion is the companion skill the shared-auth offer (ADR
-	// 0024) named — "" when the offer wasn't made — and SharedAuth its answer.
+	// 0025) named — "" when the offer wasn't made — and SharedAuth its answer:
+	// whether THIS box opts into the shared credentials (the companion goes
+	// into this project's byre.config, never a machine-level file).
 	SharedAuthCompanion string
 	SharedAuth          bool
 }
@@ -42,11 +44,11 @@ type Favourite struct {
 // Pick runs the interactive picker. templates and agents are the available
 // options (a "none" choice is always offered); tmplFav/agentFav are the user's
 // favourites — Effective pre-selected so an empty answer accepts it.
-// companionFor returns the ready, unanswered shared-auth companion for an
-// agent ("" = no offer; nil disables offers): when it names one, the offer is
-// asked right after the agent question — agent questions stay together, and
-// every answer is collected before the caller writes anything, so an EOF
-// anywhere in the picker aborts with no side effects.
+// companionFor returns the ready shared-auth companion this box could still
+// opt into for an agent ("" = no offer; nil disables offers): when it names
+// one, the offer is asked right after the agent question — agent questions
+// stay together, and every answer is collected before the caller writes
+// anything, so an EOF anywhere in the picker aborts with no side effects.
 //
 // The prompting functions here take a *bufio.Reader, not an io.Reader, on
 // purpose: a caller asking more than one question MUST thread one shared
@@ -66,7 +68,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	companion, sharedAuth := "", false
 	if companionFor != nil {
 		if companion = companionFor(fromNone(agent)); companion != "" {
-			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent), companion)
+			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent))
 			if err != nil {
 				return Choice{}, err
 			}
@@ -106,13 +108,15 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 	return fromNone(v), nil
 }
 
-// OfferSharedAuth asks the one-time shared-auth question (ADR 0024) for the
-// chosen agent: whether to enable its companion skill machine-wide. One line
-// carrying the whole decision — one login, every byre project, this machine
-// (the answer lands in default.config, not the project), and the mechanism's
-// name — defaulting to No, like every other yes/no here.
-func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string) (bool, error) {
-	return askYesNo(out, r, fmt.Sprintf("Share one %s login across all byre projects on this machine (%s)?", agent, companion))
+// OfferSharedAuth asks the shared-auth question (ADR 0025) for the chosen
+// agent: whether THIS box opts into the machine's shared credentials. The
+// scope in the wording is the scope of the write — a "y" puts the companion
+// skill in this project's byre.config and touches nothing machine-level, so
+// the question mentions only this box. Defaults to No, like every other
+// yes/no here. companion is unnamed here on purpose: the mechanism's skill
+// name is config plumbing, not part of the decision.
+func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent string) (bool, error) {
+	return askYesNo(out, r, fmt.Sprintf("Opt this box into %s shared credentials?", agent))
 }
 
 // ask prompts for one choice among options, pre-selecting def. An empty answer

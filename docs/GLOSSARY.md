@@ -134,14 +134,14 @@ wiring), leaving the agent skill untouched. The shared-auth trio
 (`claude-shared-auth` etc., ADR 0017) are the canonical examples.
 
 **Shared-auth offer**:
-The first-run picker's one-time question -- "Share one <agent> login
-across all byre projects on this machine (<companion>)?" -- asked when
-the chosen agent has a companion skill declaring
-`shared_auth_for` (the author's vouch that the mechanism is ready to
-offer; a broken or gate-pending companion omits it). Yes enables the
-companion in `default.config`'s `skills`; no is remembered in
-`shared_auth_declined`, picker-owned there like the favourites, so the
-offer is made at most once per agent. ADR 0024.
+The first-run picker's per-box question -- "Opt this box into <agent>
+shared credentials?" -- asked when the chosen agent has a companion
+skill declaring `shared_auth_for` (the author's vouch that the
+mechanism is ready to offer; a broken or gate-pending companion omits
+it). Yes puts the companion in the project's `byre.config` `skills`;
+no records nothing -- the next box is asked about itself. Skipped when
+the companion is already enabled machine-wide in `default.config`.
+ADR 0025 (superseding ADR 0024's machine-wide recording).
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts

@@ -25,8 +25,8 @@
 description = "Share one Codex login across all your projects."
 
 # Offerable at onboarding: when codex is picked as the agent, the first-run
-# picker offers to enable this skill machine-wide (ADR 0024). Declaring the
-# key vouches the mechanism is ready (verified live, ADR 0017).
+# picker offers to opt that box into the shared credentials (ADR 0025).
+# Declaring the key vouches the mechanism is ready (verified live, ADR 0017).
 shared_auth_for = "codex"
 
 [build]

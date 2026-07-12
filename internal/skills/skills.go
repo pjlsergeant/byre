@@ -71,8 +71,8 @@ type File struct {
 	Description string `toml:"description"`
 	// SharedAuthFor declares this skill as the shared-auth companion (ADR
 	// 0017) for the named agent skill, making it OFFERABLE: when that agent
-	// is selected, the onboarding picker asks to share one login across all
-	// byre projects on the machine (ADR 0024). Declaring the key is the
+	// is selected, the onboarding picker asks whether to opt that box into
+	// the agent's shared credentials (ADR 0025). Declaring the key is the
 	// author VOUCHING the companion is ready to enable — a broken or
 	// gate-pending companion (grok-shared-auth, gemini's OAuth path) omits
 	// it and stays a hand-enabled expert option.
@@ -413,7 +413,7 @@ func DescribeSkills(skillsDir string) map[string]string {
 // ready shared-auth companion for the given agent skill (shared_auth_for =
 // agent), or "" when none does. Several skills claiming one agent is also ""
 // — refuse the ambiguity (the network_posture stance): sort order silently
-// picking which skill the onboarding "y" enables machine-wide would let a
+// picking which skill the onboarding "y" enables for a box would let a
 // hand-dropped near-namesake shadow the vetted builtin.
 func SharedAuthCompanion(skillsDir, agent string) string {
 	if agent == "" {

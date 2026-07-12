@@ -1,5 +1,25 @@
 # Changes
 
+## Unreleased
+
+- **The shared-auth offer is per box** (ADR 0025, rescoping v0.1.7's
+  ADR 0024). The onboarding question is now "Opt this box into <agent>
+  shared credentials? [y/N]": yes puts the companion skill in **this
+  project's** `byre.config` `skills` (the same representation as a
+  hand-enabled skill, written in the same atomic byre.config creation);
+  no records nothing, and the next project's onboarding asks about its
+  own box. Nothing machine-level is written either way -- v0.1.7 had
+  one project's answer set a machine-wide default (yes enabled the
+  companion for every future box; no was a permanent never-ask in
+  `shared_auth_declined`), stretching a single box's consent across all
+  of them. The offer is skipped when the companion is already enabled
+  machine-wide in `default.config` (hand-set or a v0.1.7 "y") -- the
+  cascade already covers that box. A `shared_auth_declined` left behind
+  by v0.1.7 still parses but is inert: nothing reads it, and the
+  affected agent is simply offered again, per box. Machine-wide
+  enablement stays available by hand (`default.config` `skills`, or
+  `byre config`); onboarding just never makes that choice for you.
+
 ## v0.1.7 -- 2026-07-12
 
 - **`byre config`: ctrl+q quits the form** (pairing with ctrl+s save), and

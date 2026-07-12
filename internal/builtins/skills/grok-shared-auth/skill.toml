@@ -23,7 +23,7 @@
 # ruled out: xAI API billing is separate from the subscription and ~50x the
 # cost at agent volumes.)
 
-# Deliberately NO `shared_auth_for` (the ADR 0024 onboarding offer): a retired
+# Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): a retired
 # skill is never put in front of users. A rebuild declares it only after
 # passing its gates (docs/grok-shared-auth-v2-designs.md).
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // fav is the common case: the stored favourite is valid, so it is also the
@@ -144,7 +146,7 @@ func TestPickNone(t *testing.T) {
 
 func TestWriteProjectConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store", "byre.config") // parent created by WriteProjectConfig
-	if err := WriteProjectConfig(path, "go", "claude"); err != nil {
+	if err := WriteProjectConfig(path, "go", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
@@ -152,15 +154,38 @@ func TestWriteProjectConfig(t *testing.T) {
 	if !strings.Contains(s, `template = "go"`) || !strings.Contains(s, `agent = "claude"`) {
 		t.Fatalf("byre.config content: %s", s)
 	}
+	if strings.Contains(s, "skills") {
+		t.Fatalf("no opted skills — no skills key: %s", s)
+	}
 	// Refuses to overwrite.
-	if err := WriteProjectConfig(path, "node", "codex"); err == nil {
+	if err := WriteProjectConfig(path, "node", "codex", nil); err == nil {
 		t.Fatal("should refuse to overwrite an existing byre.config")
+	}
+}
+
+// A yes to the shared-auth offer (ADR 0025) rides into THIS box's config as a
+// plain skills entry — the same representation a hand-enabled skill uses.
+func TestWriteProjectConfigWritesOptedSkills(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "byre.config")
+	if err := WriteProjectConfig(path, "go", "claude", []string{"claude-shared-auth"}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), `skills = ["claude-shared-auth"]`) {
+		t.Fatalf("byre.config content: %s", b)
+	}
+	cfg, err := config.ParseFile(path)
+	if err != nil {
+		t.Fatalf("written config must parse: %v", err)
+	}
+	if len(cfg.Skills) != 1 || cfg.Skills[0] != "claude-shared-auth" {
+		t.Fatalf("skills = %v", cfg.Skills)
 	}
 }
 
 func TestWriteProjectConfigOmitsNone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "byre.config")
-	if err := WriteProjectConfig(path, "", "claude"); err != nil {
+	if err := WriteProjectConfig(path, "", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
@@ -234,16 +259,17 @@ func TestSaveDefaultRemovesOnEmpty(t *testing.T) {
 
 func TestOfferSharedAuth(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude", "claude-shared-auth")
+	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude")
 	if err != nil || !yes {
 		t.Fatalf("yes = %v, err = %v", yes, err)
 	}
-	// The wording must carry the real scope: machine-wide, not this project.
-	if !strings.Contains(out.String(), "machine") || !strings.Contains(out.String(), "claude-shared-auth") {
-		t.Fatalf("offer must name the machine-wide scope and the companion skill:\n%s", out.String())
+	// The wording must carry the real scope of the write: this box, opting
+	// into an existing shared mechanism — never "all projects".
+	if !strings.Contains(out.String(), "Opt this box into claude shared credentials?") {
+		t.Fatalf("offer must be the per-box question:\n%s", out.String())
 	}
 	// Default is No: an empty answer declines.
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth")
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude")
 	if err != nil || yes {
 		t.Fatalf("empty answer must decline, got yes = %v, err = %v", yes, err)
 	}
@@ -261,7 +287,7 @@ func TestPromptsShareABufferedReader(t *testing.T) {
 	if c.Template != "node" || c.Agent != "codex" || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	yes, err := OfferSharedAuth(&out, in, "codex", "codex-shared-auth")
+	yes, err := OfferSharedAuth(&out, in, "codex")
 	if err != nil || !yes {
 		t.Fatalf("the shared-auth answer was buffered by Pick's reader and must still be readable: yes = %v, err = %v", yes, err)
 	}
@@ -286,7 +312,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	if c.SharedAuthCompanion != "codex-shared-auth" || !c.SharedAuth || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	if offer, save := strings.Index(out.String(), "Share one codex login"), strings.Index(out.String(), "Save these"); offer < 0 || save < 0 || offer > save {
+	if offer, save := strings.Index(out.String(), "Opt this box into codex"), strings.Index(out.String(), "Save these"); offer < 0 || save < 0 || offer > save {
 		t.Fatalf("the offer must precede the save-default question:\n%s", out.String())
 	}
 	// An agent without a companion gets no offer.
@@ -295,7 +321,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.SharedAuthCompanion != "" || c.SharedAuth || strings.Contains(out.String(), "Share one") {
+	if c.SharedAuthCompanion != "" || c.SharedAuth || strings.Contains(out.String(), "Opt this box") {
 		t.Fatalf("no companion — no offer: %+v\n%s", c, out.String())
 	}
 }

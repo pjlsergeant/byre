@@ -12,9 +12,11 @@ import (
 )
 
 // WriteProjectConfig writes a byre.config (the host-side store path) from the
-// chosen template/agent (omitting either if empty). It refuses to overwrite an
-// existing config and creates the parent dir if needed.
-func WriteProjectConfig(destPath, template, agent string) error {
+// chosen template/agent (omitting either if empty) and any skills the picker
+// enabled for this box — today only the shared-auth companion when its offer
+// (ADR 0025) was answered yes. It refuses to overwrite an existing config and
+// creates the parent dir if needed.
+func WriteProjectConfig(destPath, template, agent string, skills []string) error {
 	var b strings.Builder
 	b.WriteString("# Created by byre.\n")
 	if template != "" {
@@ -22,6 +24,13 @@ func WriteProjectConfig(destPath, template, agent string) error {
 	}
 	if agent != "" {
 		fmt.Fprintf(&b, "agent = %q\n", agent)
+	}
+	if len(skills) > 0 {
+		quoted := make([]string, len(skills))
+		for i, s := range skills {
+			quoted[i] = fmt.Sprintf("%q", s)
+		}
+		fmt.Fprintf(&b, "skills = [%s]\n", strings.Join(quoted, ", "))
 	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
@@ -91,80 +100,23 @@ func Favourites(home string) (template, agent string) {
 	return cfg.Template, cfg.Agent
 }
 
-// SharedAuthAnswered reports whether the shared-auth offer (ADR 0024) for
-// agent is already answered in ~/.byre/default.config: yes = the companion
-// skill is in `skills`; no = the agent is in `shared_auth_declined`. An
-// unreadable/unparsable file counts as answered — the picker must not nag
-// through (or surgically edit) a file it can't read.
-func SharedAuthAnswered(home, agent, companion string) bool {
+// SharedAuthAlreadyOn reports whether companion is already enabled machine-wide
+// (in ~/.byre/default.config's `skills`) — then every box gets it from the
+// cascade and the per-box offer (ADR 0025) would be asking about a switch
+// that's already thrown. An unreadable/unparsable file reads as not-on: the
+// offer's "y" writes only this project's byre.config, so there is no file
+// here the picker would need to edit — and a genuinely broken default.config
+// fails the develop loudly right after onboarding anyway.
+func SharedAuthAlreadyOn(home, companion string) bool {
 	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
 	if err != nil {
-		return true
+		return false
 	}
-	return slices.Contains(cfg.Skills, companion) || slices.Contains(cfg.SharedAuthDeclined, agent)
+	return slices.Contains(cfg.Skills, companion)
 }
 
-// EnableSharedAuth records a "yes" to the shared-auth offer: it surgically
-// appends companion to the top-level `skills` list in ~/.byre/default.config
-// (creating file or list as needed) — the same representation a hand-enabled
-// companion skill uses, so there is no second source of truth. No-op if
-// already present. Same surgical philosophy as SaveDefault.
-func EnableSharedAuth(home, companion string) error {
-	return appendDefaultListEntry(home, "skills", companion,
-		func(c config.Config) []string { return c.Skills })
-}
-
-// DeclineSharedAuth records a "no" to the shared-auth offer for agent in the
-// picker-owned `shared_auth_declined` list in ~/.byre/default.config, so the
-// offer is made at most once per agent. No-op if already recorded.
-func DeclineSharedAuth(home, agent string) error {
-	return appendDefaultListEntry(home, "shared_auth_declined", agent,
-		func(c config.Config) []string { return c.SharedAuthDeclined })
-}
-
-// appendDefaultListEntry surgically appends value to the top-level `key` list
-// in ~/.byre/default.config, creating the file or the list if absent. field
-// projects the Config field the key decodes into, so one containment check
-// serves both the idempotence pre-check and the post-edit verification: the
-// textual edit must prove, by re-parsing through config's own parser, that it
-// produced exactly the intended config before anything is written.
-func appendDefaultListEntry(home, key, value string, field func(config.Config) []string) error {
-	path := filepath.Join(home, "default.config")
-	// One read feeds the pre-check, the edit, and the verify, so they can
-	// never disagree about the file's content.
-	content, err := readDefaultConfig(home)
-	if err != nil {
-		return err
-	}
-	cfg, err := config.Parse([]byte(content))
-	if err != nil {
-		// Never textually edit a file we can't read.
-		return fmt.Errorf("%s: %w — add %q to `%s` there by hand", path, err, value, key)
-	}
-	if slices.Contains(field(cfg), value) {
-		return nil
-	}
-
-	edited, err := appendToTopLevelList(content, key, value)
-	if err == nil {
-		// Verify the edit SEMANTICALLY: the result must parse and contain the
-		// value. A surgical text edit that can't prove itself is refused.
-		if check, perr := config.Parse([]byte(edited)); perr != nil || !slices.Contains(field(check), value) {
-			err = fmt.Errorf("edit did not verify")
-		}
-	}
-	if err == nil {
-		// Atomic write, so a crash or concurrent save can't truncate the file.
-		err = config.AtomicWrite(path, edited)
-	}
-	if err != nil {
-		return fmt.Errorf("could not update %s (%v) — add %q to `%s` there by hand", path, err, value, key)
-	}
-	return nil
-}
-
-// defaultConfigStub heads a default.config the surgical writers create from
-// nothing — SaveDefault and appendDefaultListEntry must stamp the same one.
+// defaultConfigStub heads a default.config the surgical writer creates from
+// nothing.
 const defaultConfigStub = "# byre default.config — your favourites for new projects.\n"
 
 // readDefaultConfig returns ~/.byre/default.config's content, or the stub for
@@ -178,80 +130,6 @@ func readDefaultConfig(home string) (string, error) {
 		return defaultConfigStub, nil
 	}
 	return string(b), nil
-}
-
-// appendToTopLevelList appends a quoted string to the top-level `key = [...]`
-// assignment, or adds the assignment (in the top-level region, like setScalar)
-// when the key is absent. The existing array may span lines and carry
-// comments; brackets inside strings and comments are ignored. Any shape it
-// can't follow is an error — the caller refuses rather than guesses.
-func appendToTopLevelList(content, key, value string) (string, error) {
-	lines := strings.Split(content, "\n")
-	i := findTopLevelScalar(lines, key)
-	if i < 0 {
-		return strings.Join(insertTopLevel(lines, fmt.Sprintf("%s = [%q]", key, value)), "\n"), nil
-	}
-
-	// Scan from the `=` for the array's matching `]`, tracking string and
-	// comment state so brackets inside them don't count. lastToken remembers
-	// the last significant char inside the array, deciding whether the
-	// insertion needs a separating comma.
-	depth := 0
-	var lastToken byte
-	for li := i; li < len(lines); li++ {
-		l := lines[li]
-		start := 0
-		if li == i {
-			eq := strings.IndexByte(l, '=')
-			if eq < 0 {
-				break
-			}
-			start = eq + 1
-		}
-		var inStr byte // active quote char, 0 outside strings
-		for ci := start; ci < len(l); ci++ {
-			c := l[ci]
-			switch {
-			case inStr != 0:
-				if inStr == '"' && c == '\\' {
-					ci++ // escaped char in a basic string
-				} else if c == inStr {
-					inStr = 0
-				}
-			case c == '"' || c == '\'':
-				inStr = c
-				lastToken = c
-			case c == '#':
-				ci = len(l) // comment runs to end of line
-			case c == '[':
-				depth++
-				if depth == 1 {
-					lastToken = c
-				}
-			case c == ']':
-				depth--
-				if depth == 0 {
-					sep := ", "
-					if lastToken == '[' || lastToken == ',' {
-						sep = "" // empty array, or a trailing comma already there
-					}
-					lines[li] = l[:ci] + sep + fmt.Sprintf("%q", value) + l[ci:]
-					return strings.Join(lines, "\n"), nil
-				}
-			default:
-				if depth >= 1 && c != ' ' && c != '\t' {
-					lastToken = c
-				}
-			}
-		}
-		// inStr resets per line: TOML values on a `key =` line only continue
-		// across lines inside an ARRAY, and multi-line strings aren't part of
-		// the shapes this editor follows (the caller verifies and refuses).
-		if depth == 0 {
-			break // assignment ended without an array we could follow
-		}
-	}
-	return "", fmt.Errorf("could not find the end of the `%s` list", key)
 }
 
 // findTopLevelScalar returns the line index of a top-level `key =` assignment
@@ -292,8 +170,7 @@ func setScalar(content, key, value string) string {
 }
 
 // insertTopLevel splices newline into the top-level region: just before the
-// first section header, or at the end when there is none. Shared by the
-// surgical writers so new scalars and new lists land in the same place.
+// first section header, or at the end when there is none.
 func insertTopLevel(lines []string, newline string) []string {
 	insert := len(lines)
 	for j, l := range lines {

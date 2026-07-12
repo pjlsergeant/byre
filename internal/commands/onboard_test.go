@@ -98,29 +98,32 @@ func TestOnboardPartialFlagWritesConfig(t *testing.T) {
 	}
 }
 
-// Full picker on a TTY: declining the shared-auth offer is recorded in
-// default.config (shared_auth_declined), and a later project's onboarding
-// must not re-ask — the offer happens at most once per agent.
-func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
+// Full picker on a TTY: declining the shared-auth offer records NOTHING —
+// the offer is per box (ADR 0025), so a later project's onboarding asks
+// about its own box again.
+func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
 	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Share one claude login across all byre projects on this machine (claude-shared-auth)?") {
+	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials?") {
 		t.Fatalf("expected the shared-auth offer:\n%s", errBuf.String())
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	// A "no" leaves no trace: nothing was saved, so no default.config at all.
+	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
+		t.Fatalf("declining must record nothing machine-level: %v", err)
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.SharedAuthDeclined) != 1 || cfg.SharedAuthDeclined[0] != "claude" {
-		t.Fatalf("shared_auth_declined = %v", cfg.SharedAuthDeclined)
+	if len(cfg.Skills) != 0 {
+		t.Fatalf("declining must not enable the companion for this box: %v", cfg.Skills)
 	}
 
-	// A second project, same home: the offer must not reappear (the input
-	// carries no answer for it; a re-ask would show in the output).
+	// A second project, same home: its box gets its own offer.
 	proj2 := t.TempDir()
 	p2, err := project.Resolve(proj2)
 	if err != nil {
@@ -129,39 +132,42 @@ func TestOnboardSharedAuthDeclineRecordedAndNotReasked(t *testing.T) {
 	if err := p2.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	s2, _, errBuf2 := testStreams("\nclaude\nn\n", true) // template, agent, save — no offer in between
+	s2, _, errBuf2 := testStreams("\nclaude\nn\nn\n", true)
 	if err := onboardIfNeeded(s2, proj2, p2, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf2.String(), "Share one") {
-		t.Fatalf("declined offer must not be re-asked:\n%s", errBuf2.String())
+	if !strings.Contains(errBuf2.String(), "Opt this box into claude shared credentials?") {
+		t.Fatalf("the offer is per box — the next box must be asked:\n%s", errBuf2.String())
 	}
 }
 
-// Accepting the offer enables the companion skill machine-wide: it lands in
-// default.config's skills list — the same representation as a hand-enabled
-// companion, so there is no second source of truth.
-func TestOnboardSharedAuthAcceptEnablesCompanion(t *testing.T) {
+// Accepting the offer opts THIS box in: the companion lands in the project's
+// byre.config skills — the same representation as a hand-enabled skill —
+// and nothing machine-level is touched.
+func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: y, save-as-default: n.
 	s, _, errBuf := testStreams("\nclaude\ny\nn\n", true)
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(cfg.Skills, "claude-shared-auth") {
-		t.Fatalf("accepting must enable the companion in default.config, skills = %v", cfg.Skills)
+		t.Fatalf("accepting must enable the companion in this box's byre.config, skills = %v", cfg.Skills)
 	}
-	if !strings.Contains(errBuf.String(), "every project on this machine") {
-		t.Fatalf("the confirmation must state the machine-wide scope:\n%s", errBuf.String())
+	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
+		t.Fatalf("a per-box yes must not write default.config: %v", err)
+	}
+	if !strings.Contains(errBuf.String(), "skills=claude-shared-auth") {
+		t.Fatalf("the wrote-line must show the opted skill:\n%s", errBuf.String())
 	}
 }
 
 // The flag path prompts too: --agent fixes the agent, the template is asked on
-// a TTY, and the shared-auth offer follows.
+// a TTY, and the shared-auth offer follows — landing in this box's config.
 func TestOnboardFlagPathOffersSharedAuth(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none (Enter), shared auth: y.
@@ -169,12 +175,37 @@ func TestOnboardFlagPathOffersSharedAuth(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "claude"); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(cfg.Skills, "claude-shared-auth") {
 		t.Fatalf("skills = %v", cfg.Skills)
+	}
+}
+
+// A companion already enabled machine-wide (hand-set, or a v0.1.7 "y") means
+// this box gets shared credentials from the cascade regardless — asking would
+// be offering a switch already thrown, so the offer is suppressed.
+func TestOnboardNoOfferWhenCompanionAlreadyOnMachineWide(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte("skills = [\"claude-shared-auth\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Template: none, Agent: claude, save-as-default: n — no offer between.
+	s, _, errBuf := testStreams("\nclaude\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "Opt this box") {
+		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
+	}
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Skills) != 0 {
+		t.Fatalf("no offer — byre.config must not duplicate the machine-wide skill: %v", cfg.Skills)
 	}
 }
 
@@ -186,7 +217,7 @@ func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Share one") {
+	if strings.Contains(errBuf.String(), "Opt this box") {
 		t.Fatalf("no ready companion — no offer:\n%s", errBuf.String())
 	}
 }
@@ -199,7 +230,7 @@ func TestOnboardFullyFlaggedMakesNoOffer(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "none", "claude"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Share one") {
+	if strings.Contains(errBuf.String(), "Opt this box") {
 		t.Fatalf("fully-flagged onboarding must stay non-interactive:\n%s", errBuf.String())
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
@@ -225,11 +256,11 @@ func TestOnboardEOFMidPickerWritesNothing(t *testing.T) {
 	}
 }
 
-// A failed default.config write (recording the offer's answer) must abort
-// onboarding BEFORE byre.config is written: once byre.config exists this
-// project never onboards again, so the machine-level record goes first and a
-// failure leaves the whole flow re-runnable.
-func TestOnboardSharedAuthWriteFailureLeavesProjectUnonboarded(t *testing.T) {
+// A failed default.config write (saving the favourites) must abort onboarding
+// BEFORE byre.config is written: once byre.config exists this project never
+// onboards again, so the machine-level record goes first and a failure leaves
+// the whole flow re-runnable.
+func TestOnboardSaveDefaultWriteFailureLeavesProjectUnonboarded(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Materialize the store first, then make home read-only: default.config's
 	// atomic write (a temp file in home) fails, while byre.config (in the
@@ -242,10 +273,10 @@ func TestOnboardSharedAuthWriteFailureLeavesProjectUnonboarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(p.Home, 0o755) })
-	// Template: none, agent: claude, shared auth: y, save-as-default: n.
-	s, _, _ := testStreams("\nclaude\ny\nn\n", true)
+	// Template: none, agent: claude, shared auth: n, save-as-default: y.
+	s, _, _ := testStreams("\nclaude\nn\ny\n", true)
 	if err := onboardIfNeeded(s, proj, p, "", ""); err == nil {
-		t.Fatal("a failed shared-auth record must abort onboarding")
+		t.Fatal("a failed save-default must abort onboarding")
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
 		t.Fatalf("byre.config must not exist after an aborted onboarding (it would never re-run): %v", err)

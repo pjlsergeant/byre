@@ -60,11 +60,13 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
-	// The shared-auth offer's gate (ADR 0024): only an agent with a ready
-	// companion, only while unanswered.
+	// The shared-auth offer's gate (ADR 0025): only an agent with a ready
+	// companion, and only when the companion isn't already on machine-wide
+	// (then the cascade gives this box shared credentials regardless, and the
+	// per-box question would be asking about a switch already thrown).
 	companionFor := func(agent string) string {
 		c := skills.SharedAuthCompanion(skillsDir, agent)
-		if c == "" || onboard.SharedAuthAnswered(paths.Home, agent, c) {
+		if c == "" || onboard.SharedAuthAlreadyOn(paths.Home, c) {
 			return ""
 		}
 		return c
@@ -83,20 +85,17 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		if err != nil {
 			return err
 		}
-		// Machine-level records first, the project's byre.config LAST: once
+		// Machine-level record first, the project's byre.config LAST: once
 		// byre.config exists this project never onboards again, so a failed
 		// default.config write must abort while onboarding can still re-run
-		// (the recorded answers are idempotent and skip their prompts).
+		// (the saved default is idempotent and skips its prompt on the re-run).
 		if choice.SaveDefault {
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
 			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
-		if err := applySharedAuth(s.Err, paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
-			return err
-		}
-		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent)
+		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent, optedSkills(choice.SharedAuthCompanion, choice.SharedAuth))
 	}
 
 	// Resolve explicitly-flagged axes first, so a bad flag value fails fast —
@@ -147,47 +146,34 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	companion, sharedAuth := "", false
 	if s.TTY && !(tFixed && aFixed) {
 		if companion = companionFor(a); companion != "" {
-			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion)
+			yes, err := onboard.OfferSharedAuth(s.Err, in, a)
 			if err != nil {
 				return err
 			}
 			sharedAuth = yes
 		}
 	}
-	// Machine-level record first, byre.config last (same rationale as the
-	// no-flag path): a failed default.config write aborts an onboarding that
-	// can still re-run.
-	if err := applySharedAuth(s.Err, paths.Home, a, companion, sharedAuth); err != nil {
-		return err
-	}
-	return writeAndReport(s.Err, cfgPath, t, a)
+	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
-// applySharedAuth records the shared-auth offer's answer (ADR 0024): yes
-// enables the companion in ~/.byre/default.config — machine-wide, the honest
-// scope of a shared login; no is recorded there too (shared_auth_declined),
-// so the offer never nags. No-op when the offer wasn't made (companion "").
-func applySharedAuth(w io.Writer, home, agent, companion string, yes bool) error {
-	if companion == "" {
+// optedSkills turns the shared-auth offer's outcome (ADR 0025) into the
+// skills to write into this box's byre.config: the companion on a yes,
+// nothing otherwise — a "no" is not recorded anywhere; the next project's
+// onboarding simply asks about its own box.
+func optedSkills(companion string, yes bool) []string {
+	if companion == "" || !yes {
 		return nil
 	}
-	if yes {
-		if err := onboard.EnableSharedAuth(home, companion); err != nil {
-			return err
-		}
-		fmt.Fprintf(w, "byre: enabled %q for every project on this machine (skills in ~/.byre/default.config; remove it there to undo).\n", companion)
-		return nil
-	}
-	if err := onboard.DeclineSharedAuth(home, agent); err != nil {
-		return err
-	}
-	fmt.Fprintf(w, "byre: okay — you won't be asked again for %s (shared_auth_declined in ~/.byre/default.config; remove it there to be re-asked).\n", agent)
-	return nil
+	return []string{companion}
 }
 
-func writeAndReport(w io.Writer, configPath, template, agent string) error {
-	if err := onboard.WriteProjectConfig(configPath, template, agent); err != nil {
+func writeAndReport(w io.Writer, configPath, template, agent string, skills []string) error {
+	if err := onboard.WriteProjectConfig(configPath, template, agent, skills); err != nil {
 		return err
+	}
+	if len(skills) > 0 {
+		fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s, skills=%s)\n", configPath, config.OrNone(template), config.OrNone(agent), strings.Join(skills, ", "))
+		return nil
 	}
 	fmt.Fprintf(w, "byre: wrote %s (template=%s, agent=%s)\n", configPath, config.OrNone(template), config.OrNone(agent))
 	return nil

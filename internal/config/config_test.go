@@ -301,8 +301,8 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	proj := t.TempDir() // no byre.config
 
 	// default.config sets template/agent (picker pre-selections) and
-	// shared_auth_declined (the picker's asked-and-refused record, ADR 0024)
-	// plus base/apt.
+	// shared_auth_declined (vestigial v0.1.7 picker state, ADR 0025 — must
+	// still parse and still never cascade) plus base/apt.
 	writeFile(t, filepath.Join(home, "default.config"),
 		"agent = \"claude\"\ntemplate = \"node\"\nshared_auth_declined = [\"claude\"]\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
 
@@ -795,7 +795,8 @@ func TestParseEgress(t *testing.T) {
 }
 
 // shared_auth_declined is stripped from EVERY resolved config, whatever layer
-// carried it — picker-owned state must not ride the cascade (ADR 0024).
+// carried it — the key is vestigial (ADR 0025), tolerated only so v0.1.7-
+// written configs still parse, and must never ride the cascade.
 func TestSharedAuthDeclinedNeverResolves(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
