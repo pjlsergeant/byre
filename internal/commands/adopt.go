@@ -328,18 +328,16 @@ func grantSummary(c config.Config) []grantLine {
 }
 
 // portGrantList renders the effective port bindings compactly (removal
-// markers grant nothing and are skipped).
+// markers grant nothing and are skipped). PortEffective owns the publish
+// defaults; this list must show exactly what the runtime will bind.
 func portGrantList(ports []config.Port) []string {
 	var out []string
 	for _, p := range ports {
 		if p.Remove {
 			continue
 		}
-		host := p.Host
-		if host == 0 {
-			host = p.Container
-		}
-		out = append(out, fmt.Sprintf("%s:%d->%d", orDefault(p.Interface, "127.0.0.1"), host, p.Container))
+		iface, host := config.PortEffective(p)
+		out = append(out, fmt.Sprintf("%s:%d->%d", iface, host, p.Container))
 	}
 	return out
 }
