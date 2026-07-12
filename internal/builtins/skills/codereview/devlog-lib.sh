@@ -12,11 +12,12 @@
 # keep its history). Nothing user-placed is ever destroyed: a symlink (tested
 # with -L, no-follow) or any non-dir at .byre-devlog is NOT ours to remove —
 # warn and stand down for the session instead. Inside a directory we do own,
-# the self-ignore marker is byre's own file: a symlink/non-regular .gitignore
-# is removed so writes can't be redirected elsewhere, and the content is then
-# FORCED atomically (temp + rename — never written through an existing node,
-# never trusting what's there). Returns nonzero only when the directory itself
-# can't be provided; the .gitignore write is best-effort.
+# the self-ignore marker is byre's own file: a planted symlink there is
+# unlinked (one level — its target is never touched) so writes can't be
+# redirected elsewhere, any other non-regular node stands down too, and the
+# content is then FORCED atomically (temp + rename — never written through an
+# existing node, never trusting what's there). Returns nonzero only when the
+# directory itself can't be provided; the .gitignore write is best-effort.
 byre_devlog_dir() {
   d="$1/.byre-devlog"
   # A non-directory node at .byre-devlog (a user file, or a planted symlink
@@ -28,7 +29,16 @@ byre_devlog_dir() {
   fi
   mkdir -p "$d" || return 1
   gi="$d/.gitignore"
-  if [ -L "$gi" ] || { [ -e "$gi" ] && [ ! -f "$gi" ]; }; then rm -rf "$gi"; fi
+  # The marker itself: a symlink is removed (one level, never its target —
+  # left in place, mv would treat a link-to-directory as a destination dir
+  # and write THROUGH it); any other non-regular node (a user-made directory,
+  # say) is not ours to destroy — say so and leave the dir un-self-ignored.
+  if [ -L "$gi" ]; then
+    rm -f "$gi"
+  elif [ -e "$gi" ] && [ ! -f "$gi" ]; then
+    echo "byre devlog: $gi exists and is not a regular file — leaving it alone; $d is NOT self-ignoring until it is moved" >&2
+    return 0
+  fi
   tmp="$d/.gitignore.tmp.$$"
   rm -rf "$tmp"
   { printf '*\n' > "$tmp" && mv -f "$tmp" "$gi"; } || rm -f "$tmp"
