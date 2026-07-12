@@ -24,7 +24,9 @@ type Choice struct {
 	// SharedAuthCompanion is the companion skill the shared-auth offer (ADR
 	// 0025) named — "" when the offer wasn't made — and SharedAuth its answer:
 	// whether THIS box opts into the shared credentials (the companion goes
-	// into this project's byre.config, never a machine-level file).
+	// into this project's byre.config). The offer alone writes nothing
+	// machine-level; with SaveDefault set, the caller also records the
+	// answer as the machine default (SaveSharedAuthDefault).
 	SharedAuthCompanion string
 	SharedAuth          bool
 }
