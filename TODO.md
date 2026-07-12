@@ -15,16 +15,6 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
 
 ## Now
 
-- [x] ~~**URGENT: rebuild grok-shared-auth on the API-key path**~~ (Pete,
-  2026-07-10) — RESOLVED BY RETIREMENT instead, 2026-07-12 (ADR 0023). The
-  API-key path was RULED OUT on cost (xAI API billing is separate from the
-  sub, ~50x at agent volumes); the skill is now a resolvable no-op stub and
-  grok-login.sh removes any symlinked auth.json (heals clobbered boxes at
-  next launch). Per-box logins are the supported shape. Two rebuild designs
-  parked in docs/grok-shared-auth-v2-designs.md (see Parked); field
-  mechanics recorded in docs/agent-credential-mechanics.md §6. The "~7
-  days" lifetime comments are fixed (~6h access tokens). Still open, next
-  item:
 - [ ] **URGENT: byre-codereview `--continue` never resumes** (Pete,
   2026-07-12) — during the shared-auth-branch review, every `--continue`
   printed "Resume failed — falling back to a fresh review" (codex
