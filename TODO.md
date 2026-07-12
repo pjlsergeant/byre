@@ -25,6 +25,15 @@ Sections are priority tiers -- Now, Next, Someday -- plus Standing
   mechanics recorded in docs/agent-credential-mechanics.md §6. The "~7
   days" lifetime comments are fixed (~6h access tokens). Still open, next
   item:
+- [ ] **URGENT: byre-codereview `--continue` never resumes** (Pete,
+  2026-07-12) — during the shared-auth-branch review, every `--continue`
+  printed "Resume failed — falling back to a fresh review" (codex
+  reviewer, 3 attempts, this box). The loop still converges but each
+  round pays a cold start and loses the reviewer's session context —
+  and the fallback is quiet enough to go unnoticed. Diagnose: is the
+  stored session id (.devloop/.review-session) stale/invalid, did the
+  codex CLI's resume interface change, or did the script's update
+  break the resume path? Fix or make the failure loud.
 - [ ] **byre-codereview: pre-flight grok auth probe/timeout** — expired
   auth = headless HANG on a device prompt today, silent in background runs
   (the live device code lands in .devloop/.dbg.*). Retirement removed the
