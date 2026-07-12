@@ -322,5 +322,4 @@ Linux and macOS, over Docker or Podman (rootful; rootless Podman coming soon). b
 runs unprivileged as you and files land correctly owned. Debian-derived base
 images only.
 
-Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Build notes:
-[devlog](https://pjlsergeant.github.io/byre/).
+Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
