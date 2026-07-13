@@ -157,9 +157,26 @@ the wrong boundary):
   the gid the box will actually see; byre injects that. Uses the box's own
   just-built image; no host-OS branching. A probe failure is attributed, not
   silently defaulted.
-- HOST-VERIFY BEFORE BUILD (still the biggest empirical unknown): that the
-  probe returns a usable gid on real Docker Desktop/macOS and that
-  `--group-add <that gid>` actually grants socket access there.
+- HOST-VERIFIED 2026-07-13 on Pete's Mac (Docker Desktop 4.37.2, engine
+  27.4.0, apple silicon). Results, gate CLEARED:
+  - The probe (`docker run -v /var/run/docker.sock:/var/run/docker.sock
+    alpine stat -c %g <sock>`) returned gid **0** -- Desktop's VM serves the
+    daemon socket root-OWNED, so the presented group is root (0).
+  - `docker run --user 501:501 --group-add 0 -v <sock>:<sock> docker:cli
+    docker version` printed a full Server: section -> access granted.
+  - Negative control (`--user 501:501`, NO group-add) -> "permission denied"
+    -> plain non-root access is closed; the group-add is what opens it.
+  - So on Desktop byre injects `--group-add 0`; on native Linux the probe
+    will instead return the `docker` group gid (e.g. 999) with the socket
+    0660 root:docker. Different value, same mechanism -- vindicates the
+    engine-side probe over any hardcoded/host-classified gid.
+  - COLLATERAL NOTE: gid 0 means dev joins GROUP 0 (root group) in the box,
+    gaining group-read to root-group files there. Benign (the daemon grant is
+    already total), but it makes the "sock_groups is itself a grant" rendering
+    (above) concrete -- on Desktop the collateral group IS group 0; say so.
+  - REMAINING (low risk, not blocking): the same probe+group-add on native
+    Linux -- the standard docker-socket-in-container pattern, works
+    everywhere, but not yet run by Pete. Confirm opportunistically.
 
 ### D4. Missing socket = attributed WARNING, not refusal (REVISED round 1)
 
@@ -171,6 +188,16 @@ use). The engine already fails closed. Also, on Docker Desktop a host-side
 `os.Stat` is not authoritative -- bind sources resolve inside the VM, where
 the socket exists whenever Desktop runs even if the mac-side path is absent;
 a host stat could wrongly refuse a launch that would work.
+
+HOST-CONFIRMED 2026-07-13: on Pete's Mac `ls -l /var/run/docker.sock` -> "No
+such file" (active context is `desktop-linux` -> ~/.docker/run/docker.sock;
+the "allow default socket" setting is off), YET
+`-v /var/run/docker.sock:/var/run/docker.sock` mounted a live socket (reached
+"permission denied", not "cannot connect"). So (a) a host-stat refusal WOULD
+have wrongly blocked a working launch -- the warning-not-refusal call is
+vindicated; and (b) `/var/run/docker.sock` is the correct mount SOURCE on
+Desktop (the VM serves the canonical path) -- no need to special-case
+~/.docker/run/docker.sock as the source.
 
 REVISED (Pete-accepted): byre stats the source and, if missing or not a
 socket, prints an ATTRIBUTED WARNING naming the skill and likely cause
@@ -336,10 +363,12 @@ Fix (Pete-accepted): a small generic core addition + a skill hook.
 - Design review round 2 (this rev) by codex + grok BEFORE building; new big
   findings re-grilled with Pete.
 - HOST-VERIFY (Pete), gating the build:
-  - Docker Desktop/macOS: the in-container socket gid, and the gid-discovery
-    path (host stat vs probe container). Biggest unknown (D3).
-  - sock_groups `--group-add` mechanism end-to-end on real Linux.
-  - docker / compose / buildx function in-box.
+  - Docker Desktop/macOS: DONE 2026-07-13 (see D3) -- probe gid = 0,
+    `--group-add 0` grants access, negative control denied, `/var/run/
+    docker.sock` is a valid Desktop mount source. Gate CLEARED.
+  - sock_groups `--group-add` mechanism end-to-end on real Linux: REMAINING,
+    low risk (standard pattern), not blocking.
+  - docker / compose / buildx function in-box: at build time.
 - Unit: skill.toml parse (sock_groups, containment incl. single-line/control
   -char/length validation); runner `--group-add` injection + gid-probe seam;
   sock_groups grant rendering in status/adoption; missing/not-a-socket source
