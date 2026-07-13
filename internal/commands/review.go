@@ -17,8 +17,10 @@ import (
 // into preset apply per D17). Best-effort: if the cascade or skills can't be
 // expanded, it falls back to the raw layer and says so, so a failure to
 // expand never hides grants behind an empty summary.
+// effectiveReview is READ-ONLY -- no store-ensure. `preset inspect` must
+// mutate nothing (its "Nothing written" is a promise), and apply's caller
+// has already ensured the store.
 func effectiveReview(paths project.Paths, proposal config.Config) (config.Config, []grantLine) {
-	_ = builtins.EnsureStore(paths.Home)
 	cat, _ := builtins.LoadCatalogRaw(paths.Home)
 
 	effective, err := config.ResolveProposed(proposal)

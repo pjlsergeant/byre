@@ -86,9 +86,11 @@ verbatim -- a swapped build command must never hide behind an unchanged
 count), machine-wide wording, and the affected boxes from a conservative
 syntactic reference scan of stored configs. Installing an id that stored
 configs already reference is **activation** and gets the same consent.
-Every state-changing step demands a TTY confirm or `--yes`; a fresh,
-unreferenced install is a verified download that grants nothing --
-"installed -- grants nothing until enabled in a box" is the boundary.
+Replacement, uninstall, and activating installs demand a TTY confirm or
+`--yes`; a FRESH, unreferenced install is a verified download that
+grants nothing, so it confirms on a TTY and **proceeds in a pipe**
+(scriptable bootstrap matters) -- "installed -- grants nothing until
+enabled in a box" is the boundary.
 Store mutations run under a store-global lock with crash-safe ordering
 (snapshot, then index atomically, then superseded-snapshot delete; the
 consent's precondition is re-checked under the lock).

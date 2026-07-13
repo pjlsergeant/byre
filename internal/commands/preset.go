@@ -97,6 +97,11 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	if err != nil {
 		return err
 	}
+	// The diff the user reviews is against THIS store config; capture it so
+	// the landing step can prove the review is still true (the config
+	// editor, --self-edit, or another byre may write it meanwhile).
+	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
+	reviewedStore, reviewedStoreErr := os.ReadFile(storePath)
 	renderPresetReview(s, paths, projectDir, preset, content, still, "Apply")
 
 	// Step 6: confirm; write the reviewed bytes as the project's byre.config
@@ -108,18 +113,26 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return nil
 	}
 	h := packages.HashBytes(content)
-	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	return withSetupLock(s.Err, paths.LockFile, func() error {
 		if cur, _, _, rerr := readPreset(projectDir, arg); rerr == nil && packages.HashBytes(cur) != h {
 			// Only re-checkable for path sources that still exist; a changed
 			// file must not land bytes the human did not review.
 			return fmt.Errorf("%s changed while you were reviewing; re-run preset apply", source)
 		}
+		// The reviewed diff must still be true: consent was to replacing THAT
+		// config, not whatever landed since (config editor, --self-edit,
+		// another byre process).
+		curStore, curErr := os.ReadFile(storePath)
+		if (reviewedStoreErr == nil) != (curErr == nil) || (curErr == nil && !bytes.Equal(curStore, reviewedStore)) {
+			return fmt.Errorf("this project's byre.config changed while you were reviewing; re-run preset apply to review against the current config")
+		}
 		if err := config.AtomicWrite(storePath, string(content)); err != nil {
 			return err
 		}
 		if err := config.AtomicWrite(filepath.Join(paths.Dir, appliedRecord), h+"\n"+source); err != nil {
-			return err
+			// The config landed; only the marker failed. Say exactly that --
+			// drift will read "unapplied/diverged" until a re-apply records it.
+			return fmt.Errorf("byre.config was applied, but recording the applied marker failed (%w) -- re-run preset apply to record it", err)
 		}
 		fmt.Fprintf(s.Err, "byre: applied %s into %s\n", source, storePath)
 		return nil
@@ -127,14 +140,13 @@ func PresetApply(s Streams, projectDir, arg string) error {
 }
 
 // PresetInspect implements `byre preset inspect [<uri>|<path>]`: the D16c
-// review without the chauffeur and without the write. Read-only, so it works
-// in a pipe.
+// review without the chauffeur and without the write. GENUINELY read-only --
+// no store-ensure (which would regenerate the mirror and run the record
+// sweep); the catalog is built from what exists -- so "Nothing written" is
+// true and a piped inspection mutates nothing.
 func PresetInspect(s Streams, projectDir, arg string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
-		return err
-	}
-	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
 	content, source, legacyName, err := readPreset(projectDir, arg)
@@ -182,23 +194,19 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 		}
 		return nil, "", false, fmt.Errorf("no %s here (and no legacy %s); pass a path or URI", PresetName, config.ProjectConfigName)
 	}
-	kind, err := packages.ParseSourceURI(arg)
+	// Every explicit source rides the hardened package fetcher: https gets
+	// the D1h bounds and origin rules; file:/paths get the real file-URI
+	// parse (localhost-only) and the same size bound -- never a raw
+	// prefix-trimmed ReadFile.
+	if _, err := packages.ParseSourceURI(arg); err != nil {
+		return nil, "", false, err
+	}
+	var f packages.Fetcher
+	b, _, err := f.FetchManifest(arg)
 	if err != nil {
 		return nil, "", false, err
 	}
-	if kind == "https" {
-		var f packages.Fetcher
-		b, _, err := f.FetchManifest(arg)
-		if err != nil {
-			return nil, "", false, err
-		}
-		return b, arg, false, nil
-	}
-	b, err := os.ReadFile(strings.TrimPrefix(arg, "file://"))
-	if err != nil {
-		return nil, "", false, err
-	}
-	return b, arg, strings.HasSuffix(arg, config.ProjectConfigName), nil
+	return b, arg, filepath.Base(arg) == config.ProjectConfigName, nil
 }
 
 // parsePreset strict-parses preset bytes as one config layer. A preset is a
@@ -282,7 +290,8 @@ func renderPresetReview(s Streams, paths project.Paths, projectDir string, prese
 		} else {
 			fmt.Fprintln(s.Err, "Changes vs your current byre.config -- applying replaces the whole file:")
 			for _, l := range unifiedDiff("your current config", "preset", string(store), string(content)) {
-				fmt.Fprintln(s.Err, l)
+				// Diff lines carry hostile preset bytes too (D1h).
+				fmt.Fprintln(s.Err, packages.EscapeTerminal(l))
 			}
 			fmt.Fprintln(s.Err, "------")
 		}

@@ -79,8 +79,10 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 // sweepAdoptionRecords is the D17 half of the migration sweep: per project
 // store, `adopted` (the sha of the last adopted repo config) becomes an
 // `applied` marker -- hash line, then a source line marking the migration --
-// and `declined` records are removed. Idempotent and best-effort: a store
-// too broken to sweep fails the next strict path loudly.
+// and `declined` records are removed. Idempotent, and it NEVER deletes the
+// only copy of the history: `adopted` is removed only once an `applied`
+// marker provably exists (already there, or the migrated write -- staged
+// then renamed, so a crash cannot leave a truncated marker -- succeeded).
 func sweepAdoptionRecords(home string) {
 	entries, err := os.ReadDir(filepath.Join(home, "projects"))
 	if err != nil {
@@ -94,14 +96,40 @@ func sweepAdoptionRecords(home string) {
 		adopted := filepath.Join(dir, "adopted")
 		applied := filepath.Join(dir, "applied")
 		if b, err := os.ReadFile(adopted); err == nil {
-			if _, err := os.Stat(applied); os.IsNotExist(err) {
+			switch _, statErr := os.Stat(applied); {
+			case statErr == nil:
+				// A marker already exists; the old record is redundant.
+				_ = os.Remove(adopted)
+			case os.IsNotExist(statErr):
 				h := strings.TrimSpace(string(b))
-				_ = os.WriteFile(applied, []byte(h+"\n(migrated from a pre-preset adoption record)\n"), 0o644)
+				if atomicWriteFile(applied, h+"\n(migrated from a pre-preset adoption record)\n") == nil {
+					_ = os.Remove(adopted)
+				}
+				// Write failed: keep `adopted`; the next sweep retries.
+			default:
+				// Stat failed for an unknown reason: touch nothing.
 			}
-			_ = os.Remove(adopted)
 		}
 		_ = os.Remove(filepath.Join(dir, "declined"))
 	}
+}
+
+// atomicWriteFile is the temp+rename discipline for small store records.
+func atomicWriteFile(path, content string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // findLegacyDirs returns store-relative paths of flat skill/template dirs

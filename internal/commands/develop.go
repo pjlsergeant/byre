@@ -104,9 +104,10 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 
 	// Worktrees inherit the project image (ADR 0009), so file build inputs
-	// (`files` sources) resolve from the main worktree, not this one. (Config
-	// is different: a byre.config proposal IS read from this worktree and can
-	// be adopted into the shared store.) Say so every session: a branch that
+	// (`files` sources) resolve from the main worktree, not this one. (A
+	// repo-shipped byre.preset is different: preset apply reads it from this
+	// worktree, and the drift note reflects this worktree's copy.) Say so
+	// every session: a branch that
 	// edits a build input would otherwise silently run an image built from
 	// other content.
 	if paths.IsWorktree {

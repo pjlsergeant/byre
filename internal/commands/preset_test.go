@@ -391,3 +391,104 @@ func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
 		t.Fatalf("escapeMultiline = %q", got)
 	}
 }
+
+// Inspect must mutate NOTHING in the store -- no mirror regen, no record
+// sweep (its "Nothing written" line is a promise, codex P1).
+func TestPresetInspectMutatesNothing(t *testing.T) {
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
+	// Plant records the store-ensure sweep would touch.
+	os.WriteFile(filepath.Join(p.Dir, "adopted"), []byte("deadbeef"), 0o644)
+	os.WriteFile(filepath.Join(p.Dir, "declined"), []byte("cafef00d"), 0o644)
+	s, _, _ := testStreams("", false)
+	if err := PresetInspect(s, proj, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "adopted")); err != nil {
+		t.Error("inspect must not run the record sweep")
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "declined")); err != nil {
+		t.Error("inspect must not delete declined records")
+	}
+	if _, err := os.Stat(filepath.Join(p.Home, "bundled")); !os.IsNotExist(err) {
+		t.Error("inspect must not regenerate the bundled mirror")
+	}
+}
+
+// Consent is to replacing the REVIEWED store config: a concurrent write to
+// byre.config between review and the locked landing must abort (codex P1).
+func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"codex\"\n")
+	storePath := filepath.Join(p.Dir, "byre.config")
+	os.MkdirAll(p.Dir, 0o755)
+	os.WriteFile(storePath, []byte("agent = \"claude\"\n"), 0o644)
+	in := &mutateOnRead{r: strings.NewReader("y\n"), fn: func() {
+		os.WriteFile(storePath, []byte("agent = \"grok\"\n"), 0o644)
+	}}
+	s := Streams{Out: io.Discard, Err: io.Discard, In: in, TTY: true}
+	err := PresetApply(s, proj, "")
+	if err == nil || !strings.Contains(err.Error(), "byre.config changed while you were reviewing") {
+		t.Fatalf("concurrent store-config change must abort, got %v", err)
+	}
+	b, _ := os.ReadFile(storePath)
+	if string(b) != "agent = \"grok\"\n" {
+		t.Fatalf("aborted apply must not overwrite the concurrent edit: %s", b)
+	}
+}
+
+// The sweep must never delete the only history copy: a failed applied-write
+// keeps the adopted record for the next sweep (both reviewers, P1).
+func TestAdoptionRecordSweepKeepsHistoryOnWriteFailure(t *testing.T) {
+	home := t.TempDir()
+	pdir := filepath.Join(home, "projects", "someproj")
+	os.MkdirAll(pdir, 0o755)
+	os.WriteFile(filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
+	// Make the applied write fail: applied's target is an unwritable dir --
+	// simulate by making the project dir read-only.
+	if err := os.Chmod(pdir, 0o555); err != nil {
+		t.Skip("cannot chmod")
+	}
+	t.Cleanup(func() { os.Chmod(pdir, 0o755) })
+	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(pdir, 0o755)
+	if _, err := os.Stat(filepath.Join(pdir, "adopted")); err != nil {
+		t.Fatal("adopted must survive a failed migration write")
+	}
+	if _, err := os.Stat(filepath.Join(pdir, "applied")); !os.IsNotExist(err) {
+		t.Fatal("no applied marker should exist after the failed write")
+	}
+	// Next sweep (writable again) completes the migration.
+	if err := packages.EnsureStore(home, nil, "v9.9.8", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(pdir, "applied")); err != nil {
+		t.Fatal("retry sweep must complete the migration")
+	}
+	if _, err := os.Stat(filepath.Join(pdir, "adopted")); !os.IsNotExist(err) {
+		t.Fatal("adopted removed only after a successful write")
+	}
+}
+
+// file: preset sources get the real URI parse, not a prefix trim (grok).
+func TestPresetReadFileURI(t *testing.T) {
+	_, proj := onboardPaths(t)
+	elsewhere := filepath.Join(t.TempDir(), "team.preset")
+	os.WriteFile(elsewhere, []byte("agent = \"none\"\n"), 0o644)
+	for _, arg := range []string{elsewhere, "file://" + elsewhere, "file://localhost" + elsewhere} {
+		if _, _, _, err := readPreset(proj, arg); err != nil {
+			t.Errorf("readPreset(%q): %v", arg, err)
+		}
+	}
+	if _, _, _, err := readPreset(proj, "file://evil.example/x"); err == nil {
+		t.Error("non-local file host must be rejected")
+	}
+	// Exact-basename legacy detection: not-byre.config is NOT legacy-named.
+	notLegacy := filepath.Join(t.TempDir(), "not-byre.config")
+	os.WriteFile(notLegacy, []byte("agent = \"none\"\n"), 0o644)
+	if _, _, legacy, err := readPreset(proj, notLegacy); err != nil || legacy {
+		t.Errorf("suffix match must not trigger the legacy note (legacy=%v err=%v)", legacy, err)
+	}
+}
