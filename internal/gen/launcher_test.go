@@ -167,3 +167,32 @@ func TestLauncherEnvdAbsentProceeds(t *testing.T) {
 		t.Fatalf("missing env.d dir must be a no-op (exit %d): %s", code, out)
 	}
 }
+
+// The /etc/profile.d shim sources env.d so a LOGIN SHELL (e.g. `byre shell`)
+// gets the same env.d-provided environment the launcher gives the agent. This
+// is what closes the D-M2 shell-path gap: COMPOSE_PROJECT_NAME etc. reach a
+// hand-typed shell, not just the agent.
+func TestProfileEnvShimSourcesEnvd(t *testing.T) {
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "byre-env.sh")
+	if err := os.WriteFile(shim, ProfileEnvScript(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	envd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(envd, "50-proof.sh"), []byte("export BYRE_SHIM_PROOF=yes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Source the shim the way /etc/profile does, then assert the export landed.
+	c := exec.Command("bash", "-c", `. "$1"; test "$BYRE_SHIM_PROOF" = yes`, "bash", shim)
+	c.Env = append(os.Environ(), "BYRE_ENVD_DIR="+envd)
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("profile.d shim did not source env.d into the shell: %v (%s)", err, out)
+	}
+
+	// No env.d dir -> a login shell must still start cleanly (no error).
+	c2 := exec.Command("bash", "-c", `. "$1"; true`, "bash", shim)
+	c2.Env = append(os.Environ(), "BYRE_ENVD_DIR="+filepath.Join(dir, "nope"))
+	if out, err := c2.CombinedOutput(); err != nil {
+		t.Fatalf("profile.d shim must be a no-op with no env.d dir: %v (%s)", err, out)
+	}
+}

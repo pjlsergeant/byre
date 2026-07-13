@@ -40,6 +40,7 @@ type fakeRunner struct {
 	failRmCont    map[string]bool   // container ids whose removal fails (started meanwhile)
 	env           map[string]string // ContainerEnv of any id
 	envErr        error
+	execEnv       map[string]string // env map passed to the last Exec
 	labels        map[string]string // ContainerLabels of any id
 	labelsErr     error
 	execInputs    []string // ExecInput: "id uid:gid args <-stdin"
@@ -220,6 +221,7 @@ func (f *fakeRunner) StartAttach(container string) error {
 
 func (f *fakeRunner) Exec(id string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error {
 	f.execs = append(f.execs, fmt.Sprintf("%s %d:%d %s %s", id, uid, gid, workdir, strings.Join(command, " ")))
+	f.execEnv = env
 	f.ops = append(f.ops, "exec")
 	return f.execErr
 }

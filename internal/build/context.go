@@ -111,6 +111,11 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	if err := os.WriteFile(ctxPath(paths, gen.LauncherName), gen.LauncherScript(), 0o755); err != nil {
 		return "", err
 	}
+	// The /etc/profile.d shim that sources env.d for login shells (COPYed by the
+	// core block); 0644, sourced not executed.
+	if err := os.WriteFile(ctxPath(paths, gen.ProfileEnvName), gen.ProfileEnvScript(), 0o644); err != nil {
+		return "", err
+	}
 	if cmd := res.AgentCommand(); cmd != "" {
 		if err := os.WriteFile(ctxPath(paths, gen.AgentCmdName), agentScript(cmd), 0o755); err != nil {
 			return "", err

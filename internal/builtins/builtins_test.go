@@ -1134,14 +1134,13 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 	}
 }
 
-// The claude-shared-auth env hook is SOURCED by the launcher (it must never
-// exit) and exports the shared token stripped of whitespace. When a leftover
-// per-project login sits alongside the token it warns on stderr: interactive
-// Claude prefers the stored credential and stops refreshing it, so such a box
-// 401s ~8h after that login (host-verified 2026-07-07). The file is Claude's,
-// so the hook only moves it aside with the user's yes: an interactive launch
-// offers the move (default Y), a non-interactive one warns and leaves it.
-func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
+// The claude-shared-auth env.sh hook is SOURCED (by the launcher and, via
+// /etc/profile.d, by every login shell), so it is a PURE env-setter: it exports
+// the shared token stripped of whitespace and does nothing else -- no warning,
+// no prompt, no file move even when a leftover per-project login sits alongside
+// the token. That remediation moved to firstrun.sh (tested below), because
+// sourcing env.d into every login shell must never re-fire a prompt.
+func TestClaudeSharedAuthEnvHookExportsOnly(t *testing.T) {
 	dest := t.TempDir()
 	if err := MaterializeSkills(dest); err != nil {
 		t.Fatal(err)
@@ -1150,10 +1149,7 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 	// Source the hook the way the launcher does, then record what it exported.
 	// A clean env (no inherited CLAUDE_CODE_OAUTH_TOKEN) keeps the no-token
 	// cases honest when the test itself runs inside a token-authed box.
-	// stdin == nil sources the hook the non-interactive way the test always
-	// has; a non-nil stdin also sets the BYRE_ASSUME_TTY test seam so the
-	// offer path runs and reads the scripted answer.
-	runWith := func(base, cfg string, stdin *string) (token, output string) {
+	run := func(base, cfg string) (token, output string) {
 		t.Helper()
 		tokenOut := filepath.Join(t.TempDir(), "token.out")
 		cmd := exec.Command("bash", "-c", `. "$0"; printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN" >"$1"`, hook, tokenOut)
@@ -1163,10 +1159,6 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 			}
 		}
 		cmd.Env = append(cmd.Env, "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
-		if stdin != nil {
-			cmd.Env = append(cmd.Env, "BYRE_ASSUME_TTY=1")
-			cmd.Stdin = strings.NewReader(*stdin)
-		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("sourcing the hook failed: %v (%s)", err, out)
@@ -1176,10 +1168,6 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 			t.Fatalf("hook exited the sourcing shell: %v", err)
 		}
 		return string(b), string(out)
-	}
-	run := func(base, cfg string) (token, output string) {
-		t.Helper()
-		return runWith(base, cfg, nil)
 	}
 	seed := func(token string) (base, cfg string) {
 		t.Helper()
@@ -1193,22 +1181,80 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 		return base, cfg
 	}
 
-	// Token with trailing newline, no leftover login -> exported stripped, silent.
+	// Token with trailing newline -> exported stripped, silent.
 	base, cfg := seed("sk-ant-oat01-x\n")
 	if tok, out := run(base, cfg); tok != "sk-ant-oat01-x" || out != "" {
 		t.Fatalf("clean export broken: token=%q output=%q", tok, out)
 	}
 
-	// Leftover .credentials.json alongside the token, no TTY -> still
-	// exported, warns, and the file stays put (no user to say yes).
+	// A leftover .credentials.json must NOT make the pure env hook say anything
+	// or touch the file -- that is firstrun.sh's job now.
 	creds := filepath.Join(cfg, ".credentials.json")
 	if err := os.WriteFile(creds, []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	tok, out := run(base, cfg)
-	if tok != "sk-ant-oat01-x" {
-		t.Fatalf("leftover login must not block the export: token=%q", tok)
+	if tok, out := run(base, cfg); tok != "sk-ant-oat01-x" || out != "" {
+		t.Fatalf("env hook must stay pure/silent with a leftover login: token=%q output=%q", tok, out)
 	}
+	if _, err := os.Stat(creds); err != nil {
+		t.Fatalf("env hook must not touch the login: %v", err)
+	}
+
+	// No token / whitespace-only token -> nothing exported, silent.
+	base2, cfg2 := t.TempDir(), t.TempDir()
+	if tok, out := run(base2, cfg2); tok != "" || out != "" {
+		t.Fatalf("no-token launch must stay silent: token=%q output=%q", tok, out)
+	}
+	base3, cfg3 := seed(" \n")
+	if tok, out := run(base3, cfg3); tok != "" || out != "" {
+		t.Fatalf("whitespace token must be treated as absent: token=%q output=%q", tok, out)
+	}
+}
+
+// The stale-per-project-login remediation lives in firstrun.sh (EXECUTED every
+// launch, self-guarded on the token), not env.sh: interactive Claude prefers a
+// stored .credentials.json over the env token and stops refreshing it, so such
+// a box 401s ~8h after that login (host-verified 2026-07-07). The file is
+// Claude's, so it is moved only with the user's yes: interactive offers the
+// move (default Y), non-interactive warns and leaves it.
+func TestClaudeSharedAuthFirstrunRemediatesStaleLogin(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "claude-shared-auth", "firstrun.sh")
+	seed := func() (base, cfg string) {
+		t.Helper()
+		base, cfg = t.TempDir(), t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, "claude", "token"), []byte("sk-ant-oat01-x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return base, cfg
+	}
+	// Execute firstrun.sh (it is a command hook, not sourced). stdin != nil sets
+	// the BYRE_ASSUME_TTY seam so the interactive offer runs and reads the answer.
+	run := func(base, cfg string, stdin *string) string {
+		t.Helper()
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
+		if stdin != nil {
+			cmd.Env = append(cmd.Env, "BYRE_ASSUME_TTY=1")
+			cmd.Stdin = strings.NewReader(*stdin)
+		}
+		out, _ := cmd.CombinedOutput() // firstrun exits 0; ignore status
+		return string(out)
+	}
+
+	// Leftover login, no TTY -> warns and leaves the file put (no user to say yes).
+	base, cfg := seed()
+	creds := filepath.Join(cfg, ".credentials.json")
+	if err := os.WriteFile(creds, []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := run(base, cfg, nil)
 	if !strings.Contains(out, "401") || !strings.Contains(out, ".credentials.json") {
 		t.Fatalf("warning missing or unactionable: %q", out)
 	}
@@ -1216,20 +1262,19 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 		t.Fatalf("non-interactive launch must not touch the login: %v", err)
 	}
 
-	// Interactive decline ("n") -> file stays put, told how to fix by hand.
+	// Interactive decline ("n") -> file stays, told how to fix by hand.
 	answer := "n\n"
-	if _, out := runWith(base, cfg, &answer); !strings.Contains(out, "left in place") {
+	if out := run(base, cfg, &answer); !strings.Contains(out, "left in place") {
 		t.Fatalf("declined offer should say the file was left: %q", out)
 	}
 	if _, err := os.Stat(creds); err != nil {
 		t.Fatalf("declining the offer must leave the login: %v", err)
 	}
 
-	// Interactive accept (bare Enter = default Y) -> moved to .bak, exported.
+	// Interactive accept (bare Enter = default Y) -> moved to .bak.
 	answer = "\n"
-	tok, out = runWith(base, cfg, &answer)
-	if tok != "sk-ant-oat01-x" || !strings.Contains(out, "moved") {
-		t.Fatalf("accepted offer broken: token=%q output=%q", tok, out)
+	if out := run(base, cfg, &answer); !strings.Contains(out, "moved") {
+		t.Fatalf("accepted offer broken: output=%q", out)
 	}
 	if _, err := os.Stat(creds); !os.IsNotExist(err) {
 		t.Fatal("accepted offer must move the login aside")
@@ -1238,22 +1283,10 @@ func TestClaudeSharedAuthEnvHookExportsAndWarns(t *testing.T) {
 		t.Fatalf("moved login must land at .bak: %v", err)
 	}
 
-	// No token file -> nothing exported, no warning even with a leftover login.
-	base2, cfg2 := t.TempDir(), t.TempDir()
-	if err := os.WriteFile(filepath.Join(cfg2, ".credentials.json"), []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if tok, out := run(base2, cfg2); tok != "" || out != "" {
-		t.Fatalf("no-token launch must stay silent: token=%q output=%q", tok, out)
-	}
-
-	// Whitespace-only token file -> treated as absent: no export, no warning.
-	base3, cfg3 := seed(" \n")
-	if err := os.WriteFile(filepath.Join(cfg3, ".credentials.json"), []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if tok, out := run(base3, cfg3); tok != "" || out != "" {
-		t.Fatalf("whitespace token must be treated as absent: token=%q output=%q", tok, out)
+	// No leftover login -> silent, no move.
+	base2, cfg2 := seed()
+	if out := run(base2, cfg2, nil); strings.Contains(out, "401") {
+		t.Fatalf("clean box must not warn: %q", out)
 	}
 }
 
@@ -1362,34 +1395,46 @@ func TestDockerHostSkillResolves(t *testing.T) {
 	if len(res.Egress()) != 0 {
 		t.Fatalf("egress should be empty: %v", res.Egress())
 	}
-	// Build block: Docker apt repo + ce-cli packages.
+	// Build block rendered through gen: a GOLDEN, not substring greps against
+	// the skill's own text. This pins the apt-repo RUN's line ordering and `\`
+	// continuations AND the COPY placement of the env.d hook relative to the
+	// RUN -- the drift a substring check is blind to.
 	var block skills.BuildBlock
 	for _, b := range res.BuildBlocks() {
 		if b.Name == "docker-host" {
 			block = b
 		}
 	}
-	joined := strings.Join(block.Dockerfile, "\n")
-	for _, want := range []string{
-		"download.docker.com/linux",
-		"docker-ce-cli",
-		"docker-compose-plugin",
-		"docker-buildx-plugin",
-		"VERSION_CODENAME",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("dockerfile missing %q:\n%s", want, joined)
-		}
-	}
-	// env.d hook for COMPOSE_PROJECT_NAME.
-	var hasEnv bool
+	gb := gen.SkillBlock{Name: block.Name, Apt: block.Apt, NpmGlobal: block.NpmGlobal}
 	for _, sf := range block.Files {
-		if sf.Dest == "/etc/byre/env.d/50-docker-host.sh" {
-			hasEnv = true
+		if gb.Files == nil {
+			gb.Files = map[string]string{}
 		}
+		gb.Files["skills/docker-host/"+sf.Rel] = sf.Dest
 	}
-	if !hasEnv {
-		t.Errorf("env.d hook not shipped: %+v", block.Files)
+	gb.Dockerfile = block.Dockerfile
+	full := gen.Dockerfile(gen.Input{Base: "debian:bookworm", Skills: []gen.SkillBlock{gb}})
+	const wantSection = `# skill: docker-host
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends 'ca-certificates' 'curl' \
+ && rm -rf /var/lib/apt/lists/*
+COPY "skills/docker-host/env.sh" "/etc/byre/env.d/50-docker-host.sh"
+RUN . /etc/os-release \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
+ && chmod a+r /etc/apt/keyrings/docker.asc \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin \
+ && rm -rf /var/lib/apt/lists/*
+`
+	if !strings.Contains(full, wantSection) {
+		start := strings.Index(full, "# skill: docker-host")
+		got := full
+		if start >= 0 {
+			got = full[start:]
+		}
+		t.Errorf("docker-host generated block drifted from golden.\n--- want ---\n%s\n--- got ---\n%s", wantSection, got)
 	}
 	// Agent context against the accident class.
 	ctx := res.Context()
