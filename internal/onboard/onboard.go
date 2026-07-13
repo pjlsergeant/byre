@@ -55,9 +55,11 @@ type Favourite struct {
 type SharedAuthOffer struct {
 	// Claimants are display names of companions to offer (already filtered for
 	// machine-wide enablement). Labels[i] is the provenance label for
-	// Claimants[i] (e.g. "bundled, byre's").
-	Claimants []string
-	Labels    []string // same length as Claimants
+	// Claimants[i] (e.g. "bundled, byre's"). VolumeNotes[i] is that claimant's
+	// own machine-volume disclosure (may be empty).
+	Claimants   []string
+	Labels      []string // same length as Claimants
+	VolumeNotes []string // same length as Claimants; per-claimant (D2 round 3)
 	// PrefYes is a legacy yes-inclination with no pick (array shape).
 	PrefYes bool
 	// PrefPick is a saved companion display name to preselect in the picker
@@ -67,8 +69,6 @@ type SharedAuthOffer struct {
 	// StalePickNotice is printed once when a stored pick is missing/INVALID
 	// (the stored entry is left untouched until the next save).
 	StalePickNotice string
-	// VolumeNote is optional machine-volume disclosure for the companion grant.
-	VolumeNote string
 }
 
 // Pick runs the interactive picker. templates and agents are the available
@@ -174,6 +174,13 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 	if offer.StalePickNotice != "" {
 		fmt.Fprintln(out, offer.StalePickNotice)
 	}
+	volNote := func(i int) string {
+		if i >= 0 && i < len(offer.VolumeNotes) {
+			return offer.VolumeNotes[i]
+		}
+		return ""
+	}
+
 	if len(offer.Claimants) == 1 {
 		c := offer.Claimants[0]
 		label := ""
@@ -185,8 +192,8 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 		if prefYes {
 			marker = "Y/n, i for info"
 		}
-		if offer.VolumeNote != "" {
-			fmt.Fprintf(out, "  %s\n", offer.VolumeNote)
+		if vn := volNote(0); vn != "" {
+			fmt.Fprintf(out, "  %s\n", vn)
 		}
 		for {
 			if label != "" {
@@ -218,8 +225,8 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
   opts any box in by itself.
 
 `, agent, c, c, agent)
-				if offer.VolumeNote != "" {
-					fmt.Fprintf(out, "  %s\n", offer.VolumeNote)
+				if vn := volNote(0); vn != "" {
+					fmt.Fprintf(out, "  %s\n", vn)
 				}
 			default:
 				return "", false, nil
@@ -227,7 +234,7 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 		}
 	}
 
-	// Multi-claim picker (D2b).
+	// Multi-claim picker (D2b): per-claimant volume notes under each row.
 	fmt.Fprintf(out, "Several shared-auth companions claim %s:\n", agent)
 	pre := 0 // 1-based prefill index; 0 = none
 	for i, c := range offer.Claimants {
@@ -236,14 +243,14 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 			label = "  (" + offer.Labels[i] + ")"
 		}
 		fmt.Fprintf(out, "  %d) %s%s\n", i+1, c, label)
+		if vn := volNote(i); vn != "" {
+			fmt.Fprintf(out, "      %s\n", vn)
+		}
 		if offer.PrefPick != "" && c == offer.PrefPick {
 			pre = i + 1
 		}
 	}
 	fmt.Fprintln(out, "  N) none")
-	if offer.VolumeNote != "" {
-		fmt.Fprintf(out, "  %s\n", offer.VolumeNote)
-	}
 	def := "N"
 	if pre > 0 {
 		def = fmt.Sprintf("%d", pre)

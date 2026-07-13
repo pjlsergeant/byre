@@ -50,25 +50,37 @@ func ParseManifestCore(content []byte) (m Manifest, ok bool, err error) {
 
 // CheckCompatibility validates stage-1 compatibility against this byre:
 // package_api (when set) must equal PackageAPI; requires_byre (when set) must
-// match byreVersion. byreVersion is the executable's semver (see version.Semver).
-// Empty optional fields are allowed (local packages).
+// match byreVersion. byreVersion is the executable's compat semver
+// (version.Semver). A devel binary (0.0.0-devel) PASSES every requires_byre
+// constraint -- a dev build is newer than everything by definition (compat
+// check, not security). Empty optional fields are allowed (local packages).
 func CheckCompatibility(m Manifest, byreVersion string) error {
 	if m.PackageAPI != 0 && m.PackageAPI != PackageAPI {
 		return fmt.Errorf("package_api %d is not supported (this byre speaks package_api %d)", m.PackageAPI, PackageAPI)
 	}
 	if m.RequiresByre != "" {
-		ok, err := MatchConstraint(byreVersion, m.RequiresByre)
-		if err != nil {
-			return fmt.Errorf("requires_byre %q: %w", m.RequiresByre, err)
-		}
-		if !ok {
-			return fmt.Errorf("requires byre %s; you have %s", m.RequiresByre, byreVersion)
+		if isDevelCompat(byreVersion) {
+			// Dev binary: skip the constraint.
+		} else {
+			ok, err := MatchConstraint(byreVersion, m.RequiresByre)
+			if err != nil {
+				return fmt.Errorf("requires_byre %q: %w", m.RequiresByre, err)
+			}
+			if !ok {
+				return fmt.Errorf("requires byre %s; you have %s", m.RequiresByre, byreVersion)
+			}
 		}
 	}
 	if k := m.Kind; k != "" && k != string(KindSkill) && k != string(KindTemplate) {
 		return fmt.Errorf("kind %q: want %q or %q", k, KindSkill, KindTemplate)
 	}
 	return nil
+}
+
+// isDevelCompat reports the explicit devel bypass for requires_byre.
+func isDevelCompat(v string) bool {
+	v = strings.TrimSpace(v)
+	return v == "0.0.0-devel" || strings.HasPrefix(v, "0.0.0-devel")
 }
 
 // RequiredManifestFields reports whether a package that claims to be

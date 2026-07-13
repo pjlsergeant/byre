@@ -26,7 +26,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	}
 	// Best-effort: the editor should still open on a store that won't
 	// prepare; develop's strict path reports the failure.
-	_ = builtins.EnsureStore(home)
+	_ = builtins.EnsureStoreOut(home, s.Err)
 	cat, _ := builtins.LoadCatalogRaw(home)
 	templates := config.ListTemplatesCatalog(cat)
 	agents := skills.ListAgentSkills(cat)

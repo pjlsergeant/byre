@@ -30,7 +30,7 @@ func TestAliasEquivalenceAndBangCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Use resolveWithCatalog directly (avoids project.Resolve store layout).
-	cat, err := packages.LoadCatalog(home, BundledFS(), "0.2.0")
+	cat, err := packages.LoadCatalog(home, BundledFS(), "0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestBareAndCanonicalAgentEquivalent(t *testing.T) {
 	ByreVersion = func() string { return "0.2.0" }
 	t.Cleanup(func() { BundledFS = nil; ByreVersion = nil })
 
-	cat, err := packages.LoadCatalog(home, BundledFS(), "0.2.0")
+	cat, err := packages.LoadCatalog(home, BundledFS(), "0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}

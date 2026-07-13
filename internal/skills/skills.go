@@ -567,6 +567,27 @@ func Load(cat *packages.Catalog, name string) (Skill, error) {
 	return loadEntry(ent)
 }
 
+func init() {
+	// Eager stage-2 for local skill catalog rows (round 3): primary only.
+	packages.Stage2Skill = ValidatePrimaryBytes
+}
+
+// ValidatePrimaryBytes is the stage-2 skill.toml check used by catalog ingest
+// and validate: strip [package], strict-decode schema (unknown keys fail).
+// Does not resolve context files or build payloads (no extra I/O).
+func ValidatePrimaryBytes(raw []byte) error {
+	body := packages.StripPackageTable(raw)
+	var f File
+	md, err := toml.Decode(string(body), &f)
+	if err != nil {
+		return err
+	}
+	if und := md.Undecoded(); len(und) > 0 {
+		return fmt.Errorf("unknown key(s) in skill.toml: %v", und)
+	}
+	return nil
+}
+
 // loadEntry strict-parses a skill entry's primary file (stage 2 after the
 // catalog's stage-1 [package] check).
 func loadEntry(ent *packages.Entry) (Skill, error) {

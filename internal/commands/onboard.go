@@ -46,9 +46,11 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		return nil
 	}
 
-	// Catalog lists options / resolves flags (bundled from embed.FS). Notices
-	// on stderr so a first post-upgrade onboard surfaces LEGACY rows (D10).
-	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
+	// Catalog lists options / resolves flags. Silent EnsureStore: develop
+	// already ran EnsureStoreOut so a second noticed call would double-print
+	// LEGACY lines (round 3). Standalone paths without a prior notice still
+	// prepare the store; they just skip the human lines here.
+	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(paths.Home)
@@ -217,15 +219,15 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 		}
 		offer.Claimants = append(offer.Claimants, display)
 		offer.Labels = append(offer.Labels, label)
-		// Machine-volume note once, from the first claimant that has one.
-		if offer.VolumeNote == "" {
-			for _, v := range c.File.Volumes {
-				if v.MachineScoped() {
-					offer.VolumeNote = fmt.Sprintf("Note: companion mounts machine-scoped volume %q (shared credentials).", v.Name)
-					break
-				}
+		// Per-claimant machine-volume disclosure (round 3).
+		vol := ""
+		for _, v := range c.File.Volumes {
+			if v.MachineScoped() {
+				vol = fmt.Sprintf("Note: mounts machine-scoped volume %q (shared credentials).", v.Name)
+				break
 			}
 		}
+		offer.VolumeNotes = append(offer.VolumeNotes, vol)
 	}
 	offer.PrefYes = onboard.SharedAuthPreference(home, agent)
 	pick := onboard.SharedAuthPick(home, agent)

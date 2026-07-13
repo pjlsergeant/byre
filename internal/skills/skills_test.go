@@ -24,7 +24,7 @@ func testHome(t *testing.T) string {
 // catFor builds a local-only catalog for home (no bundled FS).
 func catFor(t *testing.T, home string) *packages.Catalog {
 	t.Helper()
-	cat, err := packages.LoadCatalog(home, nil, "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,7 +647,7 @@ func TestSharedAuthCompanion(t *testing.T) {
 // gemini (OAuth gate-pending) and grok (retired) deliberately must NOT.
 func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 	home := t.TempDir()
-	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0")
+	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,7 +21,7 @@ import (
 func testCat(t *testing.T) (home string, cat *packages.Catalog) {
 	t.Helper()
 	home = t.TempDir()
-	cat, err := packages.LoadCatalog(home, FS(), "0.2.0")
+	cat, err := packages.LoadCatalog(home, FS(), "0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}

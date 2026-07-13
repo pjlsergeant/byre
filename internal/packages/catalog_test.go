@@ -1,11 +1,14 @@
 package packages
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/BurntSushi/toml"
 )
 
 func bundledFS() fstest.MapFS {
@@ -16,9 +19,113 @@ func bundledFS() fstest.MapFS {
 	}
 }
 
+func TestDisplayVsCompatVersion(t *testing.T) {
+	home := t.TempDir()
+	cat, err := LoadCatalog(home, bundledFS(), "v9.9.9", "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent.Version != "v9.9.9" {
+		t.Fatalf("display version = %q, want v9.9.9", ent.Version)
+	}
+	if !strings.Contains(ent.ProvenanceLabel(), "v9.9.9") {
+		t.Fatalf("provenance label = %q", ent.ProvenanceLabel())
+	}
+	// Compat path: local package requiring >=9.0.0 loads under compat 9.9.9.
+	dir := filepath.Join(home, "skills", "need9")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `[package]
+id = "need9"
+package_api = 1
+requires_byre = ">=9.0.0"
+kind = "skill"
+`
+	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat2, err := LoadCatalog(home, bundledFS(), "v9.9.9", "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat2.ResolveName("need9"); err != nil {
+		t.Fatalf("compat should accept requires_byre: %v", err)
+	}
+	// Devel bypass: requires >=99 still loads.
+	body2 := `[package]
+id = "need99"
+package_api = 1
+requires_byre = ">=99.0.0"
+kind = "skill"
+`
+	dir2 := filepath.Join(home, "skills", "need99")
+	os.MkdirAll(dir2, 0o755)
+	os.WriteFile(filepath.Join(dir2, "skill.toml"), []byte(body2), 0o644)
+	cat3, err := LoadCatalog(home, nil, "(devel)", "0.0.0-devel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// need99 only
+	os.RemoveAll(filepath.Join(home, "skills", "need9"))
+	os.RemoveAll(filepath.Join(home, "skills", "claude"))
+	cat3, err = LoadCatalog(home, nil, "(devel)", "0.0.0-devel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat3.ResolveName("need99"); err != nil {
+		t.Fatalf("devel must load requires_byre >=99: %v", err)
+	}
+}
+
+func TestEagerStage2UnknownKey(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "skills", "typo")
+	os.MkdirAll(dir, 0o755)
+	old := Stage2Skill
+	Stage2Skill = func(raw []byte) error {
+		body := StripPackageTable(raw)
+		type empty struct{}
+		md, err := toml.Decode(string(body), &empty{})
+		if err != nil {
+			return err
+		}
+		if und := md.Undecoded(); len(und) > 0 {
+			return fmt.Errorf("unknown key(s) in skill.toml: %v", und)
+		}
+		return nil
+	}
+	t.Cleanup(func() { Stage2Skill = old })
+	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("typo_key = true\n"), 0o644)
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ent *Entry
+	for _, e := range cat.List(KindSkill) {
+		if e.ID == "typo" && e.Provenance == ProvInvalid {
+			ent = e
+			break
+		}
+	}
+	if ent == nil {
+		t.Fatal("expected INVALID typo skill")
+	}
+	if !strings.Contains(ent.Reason, "unknown key") {
+		t.Fatalf("want unknown key reason, got %q", ent.Reason)
+	}
+	if _, err := cat.ResolveName("typo"); err == nil {
+		t.Fatal("resolve should hard-error on INVALID")
+	}
+}
+
 func TestCatalogAliasExpansion(t *testing.T) {
 	home := t.TempDir()
-	cat, err := LoadCatalog(home, bundledFS(), "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +166,7 @@ func TestCatalogLegacyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cat, err := LoadCatalog(home, bundledFS(), "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +265,7 @@ target = "/home/dev/.claude"
 	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := LoadCatalog(home, bundledFS(), "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +297,7 @@ requires_byre = ">=99.0.0"
 	if err := os.WriteFile(filepath.Join(evil, "skill.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := LoadCatalog(home, bundledFS(), "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}

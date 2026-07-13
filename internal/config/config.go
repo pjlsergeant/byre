@@ -29,13 +29,22 @@ import (
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
-// BundledFS and ByreVersion are wired by the builtins package (init) so config
-// can build a catalog without importing builtins (avoids an import cycle).
-// Tests may set them to a fixture FS / fixed version.
+// BundledFS / ByreVersion / ByreCompat are wired by the builtins package (init)
+// so config can build a catalog without importing builtins (avoids an import
+// cycle). Tests may set them to a fixture FS / fixed version.
 var (
 	BundledFS   func() fs.FS
-	ByreVersion func() string
+	ByreVersion func() string // display (version.String)
+	ByreCompat  func() string // requires_byre only (version.Semver)
 )
+
+func init() {
+	// Eager template stage-2 for catalog local ingest (round 3).
+	packages.Stage2Template = func(raw []byte) error {
+		_, err := ParseTemplateBody(raw)
+		return err
+	}
+}
 
 // catalogFor builds the multi-provider catalog for home.
 func catalogFor(home string) (*packages.Catalog, error) {
@@ -43,13 +52,19 @@ func catalogFor(home string) (*packages.Catalog, error) {
 	if BundledFS != nil {
 		bundled = BundledFS()
 	}
-	ver := "0.0.0-devel"
+	display := "0.0.0-devel"
 	if ByreVersion != nil {
 		if v := ByreVersion(); v != "" {
-			ver = v
+			display = v
 		}
 	}
-	return packages.LoadCatalog(home, bundled, ver)
+	compat := display
+	if ByreCompat != nil {
+		if v := ByreCompat(); v != "" {
+			compat = v
+		}
+	}
+	return packages.LoadCatalog(home, bundled, display, compat)
 }
 
 // ProjectConfigName is the fixed per-project config filename.

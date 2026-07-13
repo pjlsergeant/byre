@@ -37,12 +37,20 @@ type Entry struct {
 
 	// Manifest holds the stage-1 [package] core when present.
 	Manifest Manifest
+
+	// LooksLikeAgent is set for local skill problem rows when the primary
+	// contains an [agent] table (so the agent picker can list them disabled).
+	LooksLikeAgent bool
 }
 
 // Catalog is the multi-provider package index for one store (D1).
 type Catalog struct {
-	Home    string
-	ByreVer string // semver used for requires_byre / bundled version stamps
+	Home string
+	// DisplayVer is the human-facing byre version (version.String): bundled
+	// Manifest.Version, provenance labels, mirror stamp alignment (D4d).
+	DisplayVer string
+	// CompatVer is the parseable semver for requires_byre only (version.Semver).
+	CompatVer string
 
 	// entries keyed by canonical ID. Aliases are not keys -- Resolve expands.
 	byID map[string]*Entry
@@ -52,18 +60,42 @@ type Catalog struct {
 	protected map[string]string // bare -> reason
 	// ordered for stable List.
 	order []string
+
+	// Stage2Skill / Stage2Template run eager stage-2 classification on local
+	// packages at ingest (Pete ruling, round 3). Taken from package-level
+	// Stage2Skill/Stage2Template hooks at LoadCatalog time. Bundled packages
+	// never use these.
+	Stage2Skill    func(primary []byte) error
+	Stage2Template func(primary []byte) error
 }
+
+// Stage2 hooks for eager local classification. Wired by skills/config init
+// so packages does not import them (would cycle).
+var (
+	Stage2Skill    func(primary []byte) error
+	Stage2Template func(primary []byte) error
+)
 
 // LoadCatalog builds the catalog from bundled embed content and the local
 // store under home. It does not mutate the store (EnsureStore does that).
 // bundled is an fs.FS whose top-level dirs are "skills" and "templates".
-func LoadCatalog(home string, bundled fs.FS, byreVer string) (*Catalog, error) {
+// displayVer is shown to humans; compatVer feeds requires_byre only.
+func LoadCatalog(home string, bundled fs.FS, displayVer, compatVer string) (*Catalog, error) {
+	if displayVer == "" {
+		displayVer = compatVer
+	}
+	if compatVer == "" {
+		compatVer = displayVer
+	}
 	c := &Catalog{
-		Home:      home,
-		ByreVer:   byreVer,
-		byID:      map[string]*Entry{},
-		aliases:   map[string]string{},
-		protected: map[string]string{},
+		Home:           home,
+		DisplayVer:     displayVer,
+		CompatVer:      compatVer,
+		byID:           map[string]*Entry{},
+		aliases:        map[string]string{},
+		protected:      map[string]string{},
+		Stage2Skill:    Stage2Skill,
+		Stage2Template: Stage2Template,
 	}
 	// Retired names are protected even when not currently bundled (D15).
 	for bare, tomb := range RetiredNames {
@@ -128,10 +160,10 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 			desc := peekDescription(raw)
 			m := Manifest{
 				ID:           id,
-				Version:      c.ByreVer,
+				Version:      c.DisplayVer, // D4d: equals the byre release string
 				Kind:         string(kind.kind),
 				PackageAPI:   PackageAPI,
-				RequiresByre: ">=" + trimV(c.ByreVer),
+				RequiresByre: ">=" + trimV(c.CompatVer),
 				Description:  desc,
 			}
 			if core, ok, _ := ParseManifestCore(raw); ok {
@@ -234,9 +266,9 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 	// Legacy: bare dir name matches protected/retired -> never load (D10).
 	if IsBare(id) && c.IsProtected(id) {
 		reason := c.protected[id]
-		c.addProblem(id, kind, ProvLegacy,
+		c.addProblemAgent(id, kind, ProvLegacy,
 			"legacy materialized copy of "+reason+"; never loaded. Fork to keep edits, or archive via store-ensure offer.",
-			dir)
+			dir, kind == KindSkill && looksLikeAgent(raw))
 		return nil
 	}
 
@@ -249,7 +281,7 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 	// scoped failure). A hostile declared id must never displace a bundled
 	// catalog entry (D1b).
 	if hasPkg {
-		if err := CheckCompatibility(m, c.ByreVer); err != nil {
+		if err := CheckCompatibility(m, c.CompatVer); err != nil {
 			c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 			return nil
 		}
@@ -286,6 +318,22 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		return nil
 	}
 
+	// Eager stage-2 classification (round 3): local packages that fail the
+	// same strict parse as Load/validate become INVALID rows. Primary only —
+	// no payload/context file I/O. Bundled packages skip this.
+	if kind == KindSkill && c.Stage2Skill != nil {
+		if err := c.Stage2Skill(raw); err != nil {
+			c.addProblemAgent(id, kind, ProvInvalid, err.Error(), dir, looksLikeAgent(raw))
+			return nil
+		}
+	}
+	if kind == KindTemplate && c.Stage2Template != nil {
+		if err := c.Stage2Template(raw); err != nil {
+			c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
+			return nil
+		}
+	}
+
 	desc := m.Description
 	if desc == "" {
 		desc = peekDescription(raw)
@@ -301,6 +349,28 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		Manifest:    m,
 	}
 	return c.put(ent)
+}
+
+// looksLikeAgent reports whether a skill primary contains an [agent] table
+// (cheap string scan; used for agent-picker inclusion of INVALID rows).
+func looksLikeAgent(raw []byte) bool {
+	return strings.Contains(string(raw), "[agent]")
+}
+
+// addProblemAgent is addProblem with LooksLikeAgent set on the row.
+func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason, dir string, agent bool) {
+	c.addProblem(id, kind, prov, reason, dir)
+	// Find the row we just wrote (path key or sibling of bundled).
+	if ent, ok := c.byID[id]; ok && ent.Provenance == prov {
+		ent.LooksLikeAgent = agent
+		return
+	}
+	if ent, ok := c.byID[id+"#"+string(prov)]; ok {
+		ent.LooksLikeAgent = agent
+	}
+	if ent, ok := c.byID[id+"#legacy"]; ok && prov == ProvLegacy {
+		ent.LooksLikeAgent = agent
+	}
 }
 
 func (c *Catalog) put(ent *Entry) error {

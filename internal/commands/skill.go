@@ -57,7 +57,7 @@ func pkgList(s Streams, kind packages.Kind) error {
 	if err != nil {
 		return err
 	}
-	if err := builtins.EnsureStore(home); err != nil {
+	if err := builtins.EnsureStoreOut(home, s.Err); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(home)
@@ -100,7 +100,7 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := builtins.EnsureStore(home); err != nil {
+	if err := builtins.EnsureStoreOut(home, s.Err); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(home)
@@ -280,16 +280,59 @@ func printTemplateInspect(w io.Writer, ent *packages.Entry) {
 		fmt.Fprintf(w, "  egress: %s\n", packages.EscapeTerminal(e))
 	}
 	for _, m := range cfg.Mounts {
-		fmt.Fprintf(w, "  mount: %s -> %s\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target))
+		mode := m.Mode
+		if mode == "" {
+			mode = "ro"
+		}
+		if m.Disabled {
+			mode += ", disabled"
+		}
+		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), mode)
 	}
 	for _, v := range cfg.Volumes {
-		fmt.Fprintf(w, "  volume: %s (%s) -> %s\n", packages.EscapeTerminal(v.Name), v.Role, packages.EscapeTerminal(v.Target))
+		scope := v.Scope
+		if scope == "" {
+			scope = "project"
+		}
+		line := fmt.Sprintf("  volume: %s (%s, %s) -> %s", packages.EscapeTerminal(v.Name), v.Role, scope, packages.EscapeTerminal(v.Target))
+		if v.Seed != nil {
+			if v.Seed.Host != "" {
+				line += fmt.Sprintf(" [seed host=%s]", packages.EscapeTerminal(v.Seed.Host))
+			} else if v.Seed.Literal != "" {
+				line += " [seed literal]"
+			}
+		}
+		fmt.Fprintln(w, line)
+	}
+	for _, p := range cfg.Ports {
+		iface, host := config.PortEffective(p)
+		fmt.Fprintf(w, "  port: %s:%d -> container %d\n", packages.EscapeTerminal(iface), host, p.Container)
 	}
 	for _, k := range sortedMapKeys(cfg.Env) {
 		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.Env[k]))
 	}
+	for _, k := range sortedMapKeys(cfg.EnvFromHost) {
+		fmt.Fprintf(w, "  env_from_host: %s <- %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.EnvFromHost[k]))
+	}
+	if n := len(cfg.RunArgs); n > 0 {
+		fmt.Fprintf(w, "  run_args: %d (raw docker flags)\n", n)
+	}
+	if n := len(cfg.Files); n > 0 {
+		names := sortedMapKeys(cfg.Files)
+		shown := names
+		if len(shown) > 8 {
+			shown = append(shown[:8], "...")
+		}
+		fmt.Fprintf(w, "  files: %d (%s)\n", n, strings.Join(shown, ", "))
+	}
 	if n := len(cfg.DockerfilePre) + len(cfg.DockerfilePost); n > 0 {
 		fmt.Fprintf(w, "  dockerfile lines: %d (pre+post)\n", n)
+	}
+	if cfg.WorktreeBase != "" {
+		fmt.Fprintf(w, "  worktree_base: %s\n", packages.EscapeTerminal(cfg.WorktreeBase))
+	}
+	if cfg.SeedPrefs {
+		fmt.Fprintln(w, "  seed_prefs: true")
 	}
 }
 
@@ -317,7 +360,7 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 	if err != nil {
 		return err
 	}
-	if err := builtins.EnsureStore(home); err != nil {
+	if err := builtins.EnsureStoreOut(home, s.Err); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(home)
@@ -452,7 +495,7 @@ func pkgInit(s Streams, kind packages.Kind, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := builtins.EnsureStore(home); err != nil {
+	if err := builtins.EnsureStoreOut(home, s.Err); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(home)
@@ -538,7 +581,7 @@ func pkgValidate(s Streams, kind packages.Kind, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := builtins.EnsureStore(home); err != nil {
+	if err := builtins.EnsureStoreOut(home, s.Err); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(home)
