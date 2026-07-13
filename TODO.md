@@ -29,14 +29,20 @@ the rationale lives.
   alongside bundle sharing.
 - [ ] (S) **Config UI: env secret-masking.** env values render in plaintext
   in the form; mask them (reveal on demand).
+- [ ] (S) **`!host` egress closures** (Pete, 2026-07-13): `!host` in the config
+  `egress` key closes that endpoint under deny-by-default -- subtracting from
+  the derived allowlist INCLUDING skill-declared entries (today skill egress
+  unions in after the cascade, out of `!name`'s reach); status shows the entry
+  as removed-by-config, not vanished. Use case: claude minus statsig.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
-- [ ] (S) **docker-host skill** (Pete, 2026-07-12): the ergonomic host-daemon
-  grant -- docker.sock mount + docker CLI + docker-group run_arg (all
-  expressible in skill.toml today), plus a status/launch line that degrades
-  the containment claim precisely (deliberate-escape containment gone;
-  accident-scale isolation intact). Host-verify the socket gid on Linux.
+- [ ] (M) **docker-host skill** (Pete, 2026-07-12): the ergonomic host-daemon
+  grant. Design settled via /grilling 2026-07-13, full record in
+  docs/docker-host-design.md; grew to (M): needs core `sock_groups` +
+  `containment` keys and generic missing-mount-source launch refusal. GATE:
+  codex + grok design review before building; host-verify socket gid on
+  Linux AND Docker Desktop.
 - [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
   `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
@@ -52,6 +58,11 @@ the rationale lives.
   via the chassis, plus a config key for named host env vars. Per
   docs/GLOSSARY.md a passed-through var IS a grant: surface it in `byre
   status` and the config UI GRANTS section.
+- [ ] (M) **Open-denylist firewall mode** (Pete, 2026-07-13): otherwise-open
+  network with the config's `!host` closures enforced (default ACCEPT, DROP
+  the named hosts) via the same netns_init vehicle; posture claim like
+  "open (N hosts blocked)". Best-effort IP-snapshot blocking -- aimed at
+  well-behaved clients (telemetry), worded so.
 - [ ] (M) **Host-side test session.** The end-to-end cases that stay manual
   until agent-runnable tests exist: fresh-develop file ownership + launch
   path, builtins fresh-volume UID, concurrent worktree sessions, shared-auth
