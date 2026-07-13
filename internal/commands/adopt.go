@@ -112,9 +112,9 @@ func adoptIfProposed(s Streams, projectDir string, paths project.Paths) error {
 	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", config.OrNone(cfg.Base), config.OrNone(cfg.Agent), config.OrNone(proposal.Template))
 	for _, g := range grants {
 		line := g.Text
-		// Cross-project reach is bold yellow on a TTY: the one grant class
-		// that escapes this box must not blend into the per-box rows.
-		if g.CrossProject && s.TTY {
+		// Containment and cross-project reach are bold yellow on a TTY: both
+		// escape this box's warranty and must not blend into per-box rows.
+		if (g.Containment || g.CrossProject) && s.TTY {
 			line = "\x1b[1;33m" + line + "\x1b[0m"
 		}
 		fmt.Fprintf(s.Err, "  ⚠ %s\n", line)
@@ -227,33 +227,62 @@ func adoptionView(paths project.Paths, proposal config.Config) (config.Config, [
 	}
 	posture, postureSkill := res.NetworkPosture()
 	grants = append(grants, egressGrantLine(effective.Egress, posture, postureSkill, true)...)
-	return effective, append(grants, skillGrantSummary(res)...)
+	grants = append(grants, skillGrantSummary(res)...)
+	return effective, sortGrantLines(grants)
+}
+
+// sortGrantLines puts containment holes first, then cross-project reach, then
+// the rest -- stable within each class so enable order is preserved.
+func sortGrantLines(in []grantLine) []grantLine {
+	var contain, cross, rest []grantLine
+	for _, g := range in {
+		switch {
+		case g.Containment:
+			contain = append(contain, g)
+		case g.CrossProject:
+			cross = append(cross, g)
+		default:
+			rest = append(rest, g)
+		}
+	}
+	return append(append(contain, cross...), rest...)
 }
 
 // skillGrantSummary lists the runtime grants the enabled skills contribute, so
 // they're shown at adoption time alongside the config-level grants. Skill
 // volumes appear exactly when they reach beyond this box: machine scope
 // (cross-project — the shared-credential shape) or a host seed. Per-project
-// volumes are the sandbox model itself, not a grant.
+// volumes are the sandbox model itself, not a grant. Containment declarations
+// are a separate top-sorted class (above cross-project): a standing host-wide
+// hole must not hide below machine volumes.
 func skillGrantSummary(res skills.Resolved) []grantLine {
-	var s []grantLine
+	var contain, cross, rest []grantLine
+	for _, c := range res.Containments() {
+		contain = append(contain, grantLine{
+			Text:        fmt.Sprintf("skill %q: %s", c.Skill, c.Text),
+			Containment: true,
+		})
+	}
 	for _, g := range res.Grants() {
 		for _, m := range g.Mounts {
-			s = append(s, grantLine{Text: fmt.Sprintf("skill %q mounts %s -> %s (%s)", g.Skill, m.Host, m.Target, orDefault(m.Mode, "ro"))})
+			rest = append(rest, grantLine{Text: fmt.Sprintf("skill %q mounts %s -> %s (%s)", g.Skill, m.Host, m.Target, orDefault(m.Mode, "ro"))})
 		}
 		if len(g.Caps) > 0 {
-			s = append(s, grantLine{Text: fmt.Sprintf("skill %q adds capabilities: %s", g.Skill, strings.Join(g.Caps, ", "))})
+			rest = append(rest, grantLine{Text: fmt.Sprintf("skill %q adds capabilities: %s", g.Skill, strings.Join(g.Caps, ", "))})
 		}
 		if len(g.RunArgs) > 0 {
-			s = append(s, grantLine{Text: fmt.Sprintf("skill %q adds raw docker run args (can grant --privileged, the docker socket, host net): %s", g.Skill, strings.Join(g.RunArgs, " "))})
+			rest = append(rest, grantLine{Text: fmt.Sprintf("skill %q adds raw docker run args (can grant --privileged, the docker socket, host net): %s", g.Skill, strings.Join(g.RunArgs, " "))})
+		}
+		for _, p := range g.SockGroups {
+			rest = append(rest, grantLine{Text: fmt.Sprintf("skill %q grants sock group access via %s (gid resolved at launch; wider than the named path)", g.Skill, p)})
 		}
 	}
 	for _, v := range res.Volumes() {
 		if v.MachineScoped() {
-			s = append(s, grantLine{Text: fmt.Sprintf("skill volume %q is machine-scoped — shared with every project on this machine; this box can read and write it", v.Name), CrossProject: true})
+			cross = append(cross, grantLine{Text: fmt.Sprintf("skill volume %q is machine-scoped — shared with every project on this machine; this box can read and write it", v.Name), CrossProject: true})
 		}
 		if v.Seed != nil && v.Seed.Host != "" {
-			s = append(s, grantLine{Text: fmt.Sprintf("skill volume %q seeds from host path: %s", v.Name, v.Seed.Host)})
+			rest = append(rest, grantLine{Text: fmt.Sprintf("skill volume %q seeds from host path: %s", v.Name, v.Seed.Host)})
 		}
 	}
 	n := 0
@@ -261,16 +290,19 @@ func skillGrantSummary(res skills.Resolved) []grantLine {
 		n += len(b.Dockerfile)
 	}
 	if n > 0 {
-		s = append(s, grantLine{Text: fmt.Sprintf("skills inject %d raw Dockerfile line(s)", n)})
+		rest = append(rest, grantLine{Text: fmt.Sprintf("skills inject %d raw Dockerfile line(s)", n)})
 	}
-	return s
+	// Top-sort: containment, then cross-project, then the rest.
+	return append(append(contain, cross...), rest...)
 }
 
-// grantLine is one ⚠ row of the adoption review. CrossProject marks rows
-// whose grant reaches beyond this box — machine-scoped volumes today — so
-// cross-scope reach renders emphasized and can't hide in the list.
+// grantLine is one ⚠ row of the adoption review. Containment marks the
+// loudest class (host-wide hole); CrossProject marks reach beyond this box
+// (machine-scoped volumes). Both render emphasized; containment sorts above
+// cross-project so a docker-host-class grant can't hide below shared volumes.
 type grantLine struct {
 	Text         string
+	Containment  bool
 	CrossProject bool
 }
 

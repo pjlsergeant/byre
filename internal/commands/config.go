@@ -54,11 +54,12 @@ func Config(s Streams, projectDir string, global bool) error {
 	for _, n := range skillOpts {
 		if sk, serr := skills.Load(skillsDir, n); serr == nil {
 			inh.Skills[n] = configui.SkillRuntime{
-				Mounts:  sk.File.Runtime.Mounts,
-				Env:     sk.File.Runtime.Env,
-				Egress:  sk.File.Runtime.Egress,
-				Offered: sk.File.Runtime.EgressOffered,
-				Posture: sk.File.Runtime.NetworkPosture,
+				Mounts:      sk.File.Runtime.Mounts,
+				Env:         sk.File.Runtime.Env,
+				Egress:      sk.File.Runtime.Egress,
+				Offered:     sk.File.Runtime.EgressOffered,
+				Posture:     sk.File.Runtime.NetworkPosture,
+				Containment: sk.File.Runtime.Containment,
 			}
 		}
 	}
