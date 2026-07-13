@@ -97,8 +97,9 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 				return err
 			}
 			// Shared-auth: yes+companion writes table-shape pick; decline
-			// removes the agent's entry (no stored "no").
-			if choice.Agent != "" {
+			// removes the agent's entry (no stored "no"). Only when the offer
+			// was made — a no-offer save must not touch the stored favourite.
+			if choice.SharedAuthOffered && choice.Agent != "" {
 				if err := onboard.SaveSharedAuthDefaultPick(paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
 					return err
 				}

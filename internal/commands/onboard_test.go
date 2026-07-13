@@ -380,6 +380,33 @@ func TestOnboardNoOfferWhenCompanionAlreadyOnMachineWide(t *testing.T) {
 	}
 }
 
+// A save-as-default after a NO-OFFER onboard must not touch the stored
+// shared-auth favourite: the preference belongs to a question that was
+// never asked this time.
+func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Companion machine-wide (suppresses the offer) + a stored pick.
+	def := "skills = [\"claude-shared-auth\"]\nshared_auth = { claude = \"claude-shared-auth\" }\n"
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte(def), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Template: none, Agent: claude, save-as-default: y — no offer between.
+	s, _, errBuf := testStreams("\nclaude\ny\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "Opt this box") {
+		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
+	}
+	got, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SharedAuth.CompanionPick("claude") != "claude-shared-auth" {
+		t.Fatalf("stored pick must survive a no-offer save, got %+v", got.SharedAuth)
+	}
+}
+
 // An agent with no READY companion (grok's is retired and declares no
 // shared_auth_for) gets no offer.
 func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {

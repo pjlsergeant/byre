@@ -30,6 +30,10 @@ type Choice struct {
 	// favourite, not a grant.
 	SharedAuthCompanion string
 	SharedAuth          bool
+	// SharedAuthOffered is whether the offer was actually made. The saved
+	// preference is only touched when it was: a save after a no-offer onboard
+	// must not delete a stored favourite for a question never asked.
+	SharedAuthOffered bool
 }
 
 // Favourite is one axis's stored default. Stored is what default.config holds
@@ -132,6 +136,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 		SaveDefault:         save,
 		SharedAuthCompanion: companion,
 		SharedAuth:          sharedAuth,
+		SharedAuthOffered:   hadOffer,
 	}, nil
 }
 
@@ -149,12 +154,11 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 // OfferSharedAuth is the single-claimant form (kept for tests and flag paths).
 // Prefer OfferSharedAuthChoice when provenance labels or multi-claim apply.
 func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
-	companion, yes, err := OfferSharedAuthChoice(out, r, agent, SharedAuthOffer{
+	_, yes, err := OfferSharedAuthChoice(out, r, agent, SharedAuthOffer{
 		Claimants: []string{companion},
 		Labels:    []string{""},
 		PrefYes:   prefYes,
 	})
-	_ = companion
 	return yes, err
 }
 

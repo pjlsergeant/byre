@@ -121,12 +121,11 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 				c.addProblem(id, kind.kind, ProvInvalid, "bundled primary missing: "+err.Error(), "")
 				continue
 			}
-			// Bundled manifests get a generated [package] header (D4d). The
-			// on-embed skill.toml may lack one; we synthesize at load time.
+			// Bundled manifests are synthesized at load (D4d) — id/version/
+			// kind/api/requires always take the generated values; only the
+			// description may come from the file. The mirror's on-disk header
+			// is written separately by EnsureStore (mirrorPrimary).
 			desc := peekDescription(raw)
-			hdr := GenerateBundledHeader(id, string(kind.kind), c.ByreVer, desc)
-			// Prefer an already-present [package] for description etc., but
-			// always force version/id/kind/api/requires to the generated values.
 			m := Manifest{
 				ID:           id,
 				Version:      c.ByreVer,
@@ -140,7 +139,6 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 					m.Description = core.Description
 				}
 			}
-			_ = hdr // generated for mirror path (EnsureStore), not stored on Entry
 			ent := &Entry{
 				ID:          id,
 				Alias:       bare,
