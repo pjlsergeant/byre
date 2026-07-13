@@ -1,6 +1,11 @@
 # Changes
 
-## Unreleased
+## v0.2.0 -- 2026-07-13
+
+**Breaking:** the `codereview` and `devlog` skills moved out of the binary
+(their bare names are retired; the error tells you the one-time install),
+and the develop-time adoption prompt is gone in favor of `byre preset
+apply`. Both migrations are automatic or one command -- details below.
 
 - **Presets replace the adoption offer.** A repo-shipped config is now like
   `package.json`: cloning gives you a file, not a prompt. The conventional
@@ -39,6 +44,16 @@
   update` is a no-op stub (bundled packages update with byre itself);
   materialized copies under `~/.byre/skills/` from older releases are never
   loaded -- byre offers `byre skill archive-legacy` to move them aside.
+- **Store honesty under failure.** A broken installed snapshot is repairable
+  in place (the printed digest-pinned reinstall command re-lands the exact
+  verified bytes, with consent) and stays removable; an installed id can
+  never change kind; uninstalling one side of a contested id says exactly
+  who -- if anyone -- provides the id afterwards. The passive preset drift
+  check reads under the same size bound as `preset apply`.
+- **Picker polish.** Description-only compatibility stubs (`devloop`,
+  `grok-shared-auth`) are no longer offered in pickers -- there is nothing
+  to enable; a config already naming one still shows it. Dev builds label
+  bundled packages `bundled (devel)` instead of a pseudo-version string.
 - **`docker-host` skill**: optional grant of the host's Docker daemon via
   its socket. Installs `docker-ce-cli` + compose + buildx from Docker's
   apt repo; mounts `/var/run/docker.sock`; runner probes the socket gid
