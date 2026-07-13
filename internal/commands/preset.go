@@ -350,16 +350,13 @@ func presetState(projectDir string, paths project.Paths) (state string, legacyNa
 	content, err := readPresetBounded(p)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			// Present but unreadable or over the manifest bound: it provably
-			// is not the version any marker recorded (apply enforces the same
-			// bound), and apply will explain the real failure loudly.
-			return "unapplied", false
+			return stateSansContent(paths), false
 		}
 		p = filepath.Join(projectDir, config.ProjectConfigName)
 		content, err = readPresetBounded(p)
 		if err != nil {
 			if !os.IsNotExist(err) {
-				return "unapplied", true
+				return stateSansContent(paths), true
 			}
 			return "", false
 		}
@@ -374,6 +371,18 @@ func presetState(projectDir string, paths project.Paths) (state string, legacyNa
 		return "applied", legacyName
 	}
 	return "diverged", legacyName
+}
+
+// stateSansContent is the drift state for a preset that exists but whose
+// bytes cannot be inspected (unreadable, or over the manifest bound): whatever
+// it holds provably is not the version any marker recorded -- apply enforces
+// the same bound -- but an existing marker still proves an application
+// happened, so the honest state is diverged, not never-applied.
+func stateSansContent(paths project.Paths) string {
+	if _, err := os.Stat(filepath.Join(paths.Dir, appliedRecord)); err == nil {
+		return "diverged"
+	}
+	return "unapplied"
 }
 
 // readPresetBounded reads a local preset file under the same size bound the

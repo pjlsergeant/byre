@@ -392,6 +392,7 @@ func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 		return err
 	}
 	var ent *packages.Entry
+	var contested *packages.Entry
 	if row, present := idx[cat.ExpandAlias(id)]; present {
 		// The index is authoritative for what uninstall can remove: the
 		// catalog may hold an INVALID row (broken snapshot) or a CONFLICT row
@@ -404,6 +405,12 @@ func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 			k = kind
 		}
 		ent = &packages.Entry{ID: cat.ExpandAlias(id), Kind: k, Provenance: packages.ProvInstalled}
+		// A CONFLICT row means another claimant survives this removal and
+		// becomes the id's sole provider -- that is activation, not cleanup,
+		// and the consent below must say so.
+		if cr, ok := cat.Lookup(id); ok && cr.Provenance == packages.ProvConflict {
+			contested = cr
+		}
 	} else {
 		var ok bool
 		ent, ok = cat.Lookup(id)
@@ -426,8 +433,16 @@ func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 	}
 
 	hits := scanReferences(home, cat, ent.ID)
+	if contested != nil {
+		fmt.Fprintf(s.Err, "byre: %s is contested: %s\n", ent.ID, packages.EscapeTerminal(contested.Reason))
+		fmt.Fprintln(s.Err, "Removing the installed copy leaves the other claimant as this id's SOLE provider -- it loads normally from then on.")
+	}
 	if len(hits) > 0 {
-		fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes hit a resolve error at next develop:\n%s", ent.ID, renderRefHits(hits))
+		if contested != nil {
+			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes run the surviving claimant at next launch:\n%s", ent.ID, renderRefHits(hits))
+		} else {
+			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes hit a resolve error at next develop:\n%s", ent.ID, renderRefHits(hits))
+		}
 	}
 	if err := requireConsent(s, yes, fmt.Sprintf("Uninstall %s? [y/N]: ", ent.ID)); err != nil {
 		return err
@@ -436,7 +451,10 @@ func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: uninstalled %s\n", ent.ID)
-	if len(hits) > 0 {
+	switch {
+	case contested != nil:
+		fmt.Fprintln(s.Err, "      The surviving claimant now provides this id; referencing boxes load it at their next launch.")
+	case len(hits) > 0:
 		fmt.Fprintln(s.Err, "      Referencing boxes will print the reinstall remedy when they next resolve.")
 	}
 	return nil

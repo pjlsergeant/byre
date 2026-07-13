@@ -595,3 +595,22 @@ func TestPresetStateBoundsOversizedPreset(t *testing.T) {
 		t.Fatalf("state = %q, want unapplied for an oversized preset", state)
 	}
 }
+
+// An uninspectable preset must not erase known history: with an applied
+// marker on record, the honest state is diverged (an application happened;
+// what ships now is provably something else), never "not applied".
+func TestPresetStateOversizedWithMarkerIsDiverged(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Dir, appliedRecord), []byte("abc123\nsomewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("# padding padding padding padding padding\n", packages.MaxManifestBytes/40)
+	shipPreset(t, proj, PresetName, big)
+	state, _ := presetState(proj, p)
+	if state != "diverged" {
+		t.Fatalf("state = %q, want diverged (marker proves an application happened)", state)
+	}
+}

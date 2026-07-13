@@ -399,6 +399,54 @@ func TestUninstallRemovesBrokenInstall(t *testing.T) {
 	}
 }
 
+// Uninstalling the installed side of a contested id is activation, not
+// cleanup: the local claimant becomes the sole provider and referencing
+// boxes run IT -- the consent must say so, not promise a resolve error.
+func TestUninstallContestedIdDisclosesTakeover(t *testing.T) {
+	home := installHome(t)
+	uri, _ := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := SkillInstall(discardStreams(), uri, "", false); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, "skills", "pete", "tool")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("description = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pdir := filepath.Join(home, "projects", "someproj")
+	os.MkdirAll(pdir, 0o755)
+	os.WriteFile(filepath.Join(pdir, "byre.config"), []byte("agent = \"none\"\nskills = [\"pete/tool\"]\n"), 0o644)
+
+	s, _, errBuf := testStreams("", false)
+	if err := SkillUninstall(s, "pete/tool", true); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "contested") || !strings.Contains(out, "surviving claimant") {
+		t.Fatalf("contested uninstall must disclose the takeover:\n%s", out)
+	}
+	if strings.Contains(out, "resolve error") || strings.Contains(out, "reinstall remedy") {
+		t.Fatalf("contested uninstall must not promise a resolve error:\n%s", out)
+	}
+	if !strings.Contains(out, "someproj") {
+		t.Fatalf("referencing box must be named:\n%s", out)
+	}
+	// And the takeover is real: the local package now provides the id.
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent.Provenance != packages.ProvLocal {
+		t.Fatalf("survivor should be the local package, got %+v", ent)
+	}
+}
+
 func TestInspectURIDoesNotInstall(t *testing.T) {
 	home := installHome(t)
 	uri, digest := publishSkill(t, "pete/tool", "1.0.0", "")
