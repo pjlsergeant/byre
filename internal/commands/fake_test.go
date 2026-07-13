@@ -57,6 +57,12 @@ type fakeRunner struct {
 	netModeErr    error
 	stops         []string // Stop: container ids
 	stopErr       error
+	// sock_groups probe (ProbeSockGroup): default gid 0 success; probeErr fails.
+	probeGID   int
+	probeErr   error
+	probes     []string // "image host target"
+	desktop    bool
+	desktopErr error
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -153,6 +159,21 @@ func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[stri
 	f.netnsInits = append(f.netnsInits, container+" "+entrypoint)
 	f.ops = append(f.ops, "netnsinit "+entrypoint)
 	return f.netnsErr
+}
+
+func (f *fakeRunner) ProbeSockGroup(image, hostPath, targetPath string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.probes = append(f.probes, image+" "+hostPath+" "+targetPath)
+	f.ops = append(f.ops, "probesock "+targetPath)
+	if f.probeErr != nil {
+		return 0, f.probeErr
+	}
+	return f.probeGID, nil
+}
+
+func (f *fakeRunner) IsDockerDesktop() (bool, error) {
+	return f.desktop, f.desktopErr
 }
 
 // ContainersByLabel answers with the any-state extras only (fake simplicity:

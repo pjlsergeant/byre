@@ -187,6 +187,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 				return err
 			}
 		}
+		// sock_groups: engine-side gid probe (needs the just-built image) +
+		// host-source warning (engine stays the authority; Desktop suppressed).
+		// Must land on params before Create so --group-add is on the argv.
+		warnSockSources(r, s.Err, params, rv.skills)
+		applySockGroups(r, s.Err, image, &params, rv.skills)
 		// The container name makes the session atomic: losing the name means a
 		// concurrent develop won the race (a session is now live — report it)
 		// or a leftover container holds it (say which and how to clear it).
@@ -219,6 +224,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	exp := exposureOf(rv, selfEdit)
 	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
 	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
+	// Containment holes (e.g. docker-host): loud standing grant, at least
+	// self-edit's 🛑 weight. Skill-owned text; byre frames and attributes.
+	for _, c := range rv.skills.Containments() {
+		fmt.Fprintf(s.Err, "byre: 🛑 containment hole: %s  (skill: %s)\n", c.Text, c.Skill)
+	}
 	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
 	// OUTSIDE the box, concurrently with the attached session: the box's
 	// launcher waits at its launch gate until the hooks land. The wait after

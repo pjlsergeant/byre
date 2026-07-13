@@ -18,9 +18,14 @@ import (
 // BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
 // the dev user.
 func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty bool) (runner.RunParams, error) {
+	// BYRE_UID/GID: shell identity. BYRE_PROJECT/WORKTREE: plumbing legibility
+	// for skills (docker-host keys compose on WorktreeID -- Paths.ID is shared
+	// across worktrees, so project-keyed compose would still collide).
 	env := map[string]string{
-		"BYRE_UID": fmt.Sprintf("%d", os.Getuid()),
-		"BYRE_GID": fmt.Sprintf("%d", os.Getgid()),
+		"BYRE_UID":      fmt.Sprintf("%d", os.Getuid()),
+		"BYRE_GID":      fmt.Sprintf("%d", os.Getgid()),
+		"BYRE_PROJECT":  paths.ID,
+		"BYRE_WORKTREE": paths.WorktreeID,
 	}
 	for k, v := range rv.skills.Env() { // skill runtime env
 		env[k] = v
