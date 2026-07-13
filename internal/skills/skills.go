@@ -576,16 +576,25 @@ func init() {
 // and validate: strip [package], strict-decode schema (unknown keys fail).
 // Does not resolve context files or build payloads (no extra I/O).
 func ValidatePrimaryBytes(raw []byte) error {
+	_, err := ParsePrimaryBytes(raw)
+	return err
+}
+
+// ParsePrimaryBytes strict-parses skill.toml bytes into the File schema
+// (stage 2, primary only -- no payload/context I/O). Used by install's grant
+// summary, which must render what a manifest DECLARES before any snapshot
+// exists to load.
+func ParsePrimaryBytes(raw []byte) (File, error) {
 	body := packages.StripPackageTable(raw)
 	var f File
 	md, err := toml.Decode(string(body), &f)
 	if err != nil {
-		return err
+		return File{}, err
 	}
 	if und := md.Undecoded(); len(und) > 0 {
-		return fmt.Errorf("unknown key(s) in skill.toml: %v", und)
+		return File{}, fmt.Errorf("unknown key(s) in skill.toml: %v", und)
 	}
-	return nil
+	return f, nil
 }
 
 // loadEntry strict-parses a skill entry's primary file (stage 2 after the

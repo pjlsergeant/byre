@@ -395,7 +395,7 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 		Short: "Manage skill packages (list, inspect, fork, init, validate, update).",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usageError("usage: byre skill list|inspect|fork|init|validate|update|archive-legacy")
+			return usageError("usage: byre skill list|inspect|install|uninstall|fork|init|validate|pack|update|archive-legacy")
 		},
 	}
 	skill.AddCommand(
@@ -406,10 +406,18 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillList(s) },
 		},
 		&cobra.Command{
-			Use:   "inspect <id>",
-			Short: "Show skill package metadata and grants.",
+			Use:   "inspect <id|uri>",
+			Short: "Show skill package metadata and grants (URIs fetch without installing).",
 			Args:  cobra.ExactArgs(1),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInspect(s, args[0]) },
+		},
+		installCmd(s, "skill", commands.SkillInstall),
+		uninstallCmd(s, "skill", commands.SkillUninstall),
+		&cobra.Command{
+			Use:   "pack <name>",
+			Short: "Emit the distribution manifest for a local skill (D5c).",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillPack(s, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "fork <id> <new-id>",
@@ -451,13 +459,46 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 	return skill
 }
 
+// installCmd / uninstallCmd build the shared install/uninstall verbs for both
+// package nouns (D8 parity, D9 flags: --digest pins bytes, --yes is the
+// non-TTY consent for state-changing steps).
+func installCmd(s commands.Streams, noun string, fn func(commands.Streams, string, string, bool) error) *cobra.Command {
+	var digest string
+	var yes bool
+	c := &cobra.Command{
+		Use:   "install <manifest-uri>",
+		Short: "Fetch, verify, and snapshot a " + noun + " package (grants nothing until enabled).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fn(s, args[0], digest, yes)
+		},
+	}
+	c.Flags().StringVar(&digest, "digest", "", "expected package digest (sha256:...); mismatch fails the install")
+	c.Flags().BoolVar(&yes, "yes", false, "confirm replacement/activation without a prompt (required in a pipe)")
+	return c
+}
+
+func uninstallCmd(s commands.Streams, noun string, fn func(commands.Streams, string, bool) error) *cobra.Command {
+	var yes bool
+	c := &cobra.Command{
+		Use:   "uninstall <id>",
+		Short: "Remove an installed " + noun + " package (referencing boxes are listed first).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fn(s, args[0], yes)
+		},
+	}
+	c.Flags().BoolVar(&yes, "yes", false, "confirm without a prompt (required in a pipe)")
+	return c
+}
+
 func templateCmd(s commands.Streams) *cobra.Command {
 	tmpl := &cobra.Command{
 		Use:   "template",
 		Short: "Manage template packages (list, inspect, fork, init, validate).",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usageError("usage: byre template list|inspect|fork|init|validate")
+			return usageError("usage: byre template list|inspect|install|uninstall|fork|init|validate|pack")
 		},
 	}
 	tmpl.AddCommand(
@@ -468,10 +509,18 @@ func templateCmd(s commands.Streams) *cobra.Command {
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateList(s) },
 		},
 		&cobra.Command{
-			Use:   "inspect <id>",
-			Short: "Show template package metadata.",
+			Use:   "inspect <id|uri>",
+			Short: "Show template package metadata (URIs fetch without installing).",
 			Args:  cobra.ExactArgs(1),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInspect(s, args[0]) },
+		},
+		installCmd(s, "template", commands.TemplateInstall),
+		uninstallCmd(s, "template", commands.TemplateUninstall),
+		&cobra.Command{
+			Use:   "pack <name>",
+			Short: "Emit the distribution manifest for a local template (D5c).",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplatePack(s, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "fork <id> <new-id>",

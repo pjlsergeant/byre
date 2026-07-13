@@ -109,6 +109,12 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	}
 	ent, ok := cat.Lookup(id)
 	if !ok {
+		// Not a catalog ID: a URI/path inspects the remote manifest without
+		// installing anything (D8). IDs always win -- this is only reached
+		// for names the catalog does not know.
+		if looksLikeURI(id) {
+			return inspectURI(s, kind, id)
+		}
 		if _, err := cat.ResolveName(id); err != nil {
 			return err
 		}
@@ -123,6 +129,13 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	}
 	fmt.Fprintf(s.Out, "Kind:        %s\n", ent.Kind)
 	fmt.Fprintf(s.Out, "Version:     %s\n", packages.EscapeTerminal(ent.Version))
+	if ent.Provenance == packages.ProvInstalled {
+		fmt.Fprintf(s.Out, "Digest:      sha256:%s\n", packages.EscapeTerminal(ent.Digest))
+		if ent.SourceURI != "" {
+			// Provenance of acquisition, never an instruction byre follows (D9a).
+			fmt.Fprintf(s.Out, "Acquired:    %s\n", packages.EscapeTerminal(ent.SourceURI))
+		}
+	}
 	fmt.Fprintf(s.Out, "Provenance:  %s\n", packages.EscapeTerminal(ent.ProvenanceLabel()))
 	if ent.Description != "" {
 		fmt.Fprintf(s.Out, "Description: %s\n", packages.EscapeTerminal(ent.Description))
@@ -162,7 +175,12 @@ func inspectSourcePath(home string, ent *packages.Entry) string {
 // printSkillInspect renders the full pre-trust contribution set (D8): structured
 // grants one line each; freeform build as counts + names, not inline dumps.
 func printSkillInspect(w io.Writer, sk skills.Skill) {
-	f := sk.File
+	printSkillContributions(w, sk.File)
+}
+
+// printSkillContributions is printSkillInspect over the declared schema alone
+// -- install's grant summary renders a manifest that has no loaded Skill yet.
+func printSkillContributions(w io.Writer, f skills.File) {
 	rt := f.Runtime
 	fmt.Fprintln(w, "\nContributions:")
 	if f.Agent != nil && f.Agent.Command != "" {
@@ -254,6 +272,12 @@ func printTemplateInspect(w io.Writer, ent *packages.Entry) {
 	if err != nil {
 		return
 	}
+	printTemplateShape(w, raw)
+}
+
+// printTemplateShape renders a template's shape keys from primary bytes --
+// shared by inspect and install's grant summary.
+func printTemplateShape(w io.Writer, raw []byte) {
 	cfg, err := config.ParseTemplateBody(raw)
 	if err != nil {
 		// Still show what we can from a lenient strip+parse for broken templates.
