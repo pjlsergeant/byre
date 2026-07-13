@@ -126,26 +126,15 @@ func (s SharedAuthPref) EncodeTOMLLine() string {
 		return ""
 	}
 	if len(s.Pick) > 0 {
-		// Inline table: shared_auth = { claude = "claude-shared-auth" }
+		// Table shape: any pick present -> table of picks only; Yes-without-
+		// pick agents are omitted (they re-ask). Save always writes a pick
+		// when it knows one.
 		keys := make([]string, 0, len(s.Pick))
 		for k := range s.Pick {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		parts := make([]string, 0, len(keys))
-		// Also preserve legacy Yes agents with no pick as agent = ""? No --
-		// design: next save rewrites in the new shape; Yes-only without pick
-		// can stay as array. If we have ANY pick, encode only picks (Yes
-		// agents without pick are dropped on rewrite -- they re-ask fresh).
-		// Actually keep Yes agents that aren't in Pick as array form is
-		// lost when we write table. Encode picks only when present; Yes-only
-		// agents get an empty-string pick? Better: write table with picks,
-		// and for Yes-without-pick write them as agent = "" which we treat
-		// as yes-inclination? That's ambiguous.
-		//
-		// Simpler: if only Yes (no picks), array. If any pick, table of picks
-		// ONLY; Yes-without-pick agents are omitted (user re-answers). The
-		// save path always writes a pick when it knows one.
 		for _, k := range keys {
 			parts = append(parts, fmt.Sprintf("%s = %q", k, s.Pick[k]))
 		}

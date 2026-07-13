@@ -410,10 +410,7 @@ func canonicalizeLayer(cat *packages.Catalog, c *Config) {
 	}
 }
 
-// loadTemplateLayer loads a template package as a cascade Config layer:
-// stage-1 [package] already checked by the catalog; stage-2 strips [package]
-// and strict-parses the remainder. Composition keys (skills, agent, sources)
-// are validation errors (D3b).
+// loadTemplateLayer loads a template package as a cascade Config layer.
 func loadTemplateLayer(cat *packages.Catalog, name string) (Config, error) {
 	ent, err := cat.ResolveName(name)
 	if err != nil {
@@ -426,46 +423,52 @@ func loadTemplateLayer(cat *packages.Catalog, name string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
 	}
-	body := packages.StripPackageTable(raw)
-	// Reject composition keys before Parse so the error copy is D3b's, not
-	// "unknown key" from a future [sources] or a skills field.
-	if err := rejectTemplateComposition(body); err != nil {
-		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
-	}
-	c, err := Parse(body)
+	c, err := ParseTemplateBody(raw)
 	if err != nil {
-		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
-	}
-	// Belt-and-braces: even if Parse accepted empty defaults, refuse composition.
-	if len(c.Skills) > 0 || c.Agent != "" {
-		return Config{}, fmt.Errorf("template %q: composition belongs in a preset (skills/agent are not allowed in template.config)", ent.ID)
-	}
-	if err := c.ValidateLayer(); err != nil {
 		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
 	}
 	return c, nil
 }
 
-// rejectTemplateComposition scans raw template.config bytes for banned
-// composition keys (D3b, D16b): skills, agent, [sources].
+// ParseTemplateBody is the stage-2 template check used by cascade load and
+// `byre template validate`: strip [package], ban composition keys (D3b),
+// strict-parse as Config, ValidateLayer.
+func ParseTemplateBody(raw []byte) (Config, error) {
+	body := packages.StripPackageTable(raw)
+	if err := rejectTemplateComposition(body); err != nil {
+		return Config{}, err
+	}
+	c, err := Parse(body)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := c.ValidateLayer(); err != nil {
+		return Config{}, err
+	}
+	return c, nil
+}
+
+// rejectTemplateComposition bans the composition KEYS skills, agent, and
+// [sources] when present at all — even when empty (D3b: "a skills or agent
+// key in template.config is a validation error").
 func rejectTemplateComposition(body []byte) error {
-	// Lenient partial decode of just the banned fields.
 	var probe struct {
 		Skills  []string       `toml:"skills"`
 		Agent   string         `toml:"agent"`
 		Sources map[string]any `toml:"sources"`
 	}
-	if _, err := toml.Decode(string(body), &probe); err != nil {
-		// Parse will surface the real error; don't double-report.
+	md, err := toml.Decode(string(body), &probe)
+	if err != nil {
+		// Let Parse surface the real syntax error.
 		return nil
 	}
-	if len(probe.Skills) > 0 {
+	if md.IsDefined("skills") {
 		return fmt.Errorf("composition belongs in a preset (skills is not allowed in template.config)")
 	}
-	if probe.Agent != "" {
+	if md.IsDefined("agent") {
 		return fmt.Errorf("composition belongs in a preset (agent is not allowed in template.config)")
 	}
-	if len(probe.Sources) > 0 {
+	if md.IsDefined("sources") {
 		return fmt.Errorf("composition belongs in a preset ([sources] is not allowed in template.config)")
 	}
 	return nil
@@ -508,8 +511,18 @@ func Parse(content []byte) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if und := md.Undecoded(); len(und) > 0 {
-		return Config{}, fmt.Errorf("unknown key(s): %v", und)
+	// SharedAuthPref's UnmarshalTOML consumes shared_auth, but BurntSushi still
+	// reports nested keys (shared_auth.claude) as Undecoded. Drop those; any
+	// other undecoded key is a real typo.
+	var real []toml.Key
+	for _, k := range md.Undecoded() {
+		if len(k) > 0 && k[0] == "shared_auth" {
+			continue
+		}
+		real = append(real, k)
+	}
+	if len(real) > 0 {
+		return Config{}, fmt.Errorf("unknown key(s): %v", real)
 	}
 	return c, nil
 }
