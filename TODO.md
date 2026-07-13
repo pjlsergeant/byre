@@ -84,10 +84,11 @@ the rationale lives.
   byre runs beside the box (postgres, redis, ...) and networks in -- the
   agent gets endpoints, never the daemon. Covers the compose-deps case
   without the docker-host grant.
-- [ ] (XL) **Skill & template bundle sharing + trust surface.** A
-  bundle/install format for skills and templates; its safety half ships with
-  it (how loudly grants surface at install/develop, approval gate or not).
-  Full `skill.toml` semantics stay deferred to a skills milestone.
+- [ ] (XL) **Skills milestone: packages, immutable bundled, install, presets.**
+  IN PROGRESS (Pete, 2026-07-13): design of record is
+  docs/skill-packages-design.md rev 4 (grilled + 2 codex/grok design rounds;
+  one PENDING ruling: template agent key). Supersedes the old bundle-sharing
+  item; 4 build phases, grok builds, codex final sign-off.
 
 ## Standing
 
