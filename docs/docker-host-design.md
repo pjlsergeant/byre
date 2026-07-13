@@ -1,10 +1,12 @@
-# docker-host skill -- design of record (pre-build, rev 3)
+# docker-host skill -- design of record (rev 4, BUILT)
 
-Status: design settled with Pete via /grilling 2026-07-13; revised same day
-through TWO rounds of independent design review (codex + grok; dispositions
-for both rounds at the end). This document is the build spec. Reviewers:
-challenge the decisions on their merits; nothing here is sacred except
-where a standing principle or ADR is cited.
+Status: design settled with Pete via /grilling 2026-07-13; revised through two
+rounds of independent design review (codex + grok), Desktop + Linux
+host-verified, then BUILT (grok single-shot on branch docker-host-skill) and
+build-reviewed (codex + claude). Build-review dispositions are at the very end.
+This document is the design of record. Reviewers: challenge the decisions on
+their merits; nothing here is sacred except where a standing principle or ADR
+is cited.
 
 Working-doc lifecycle (deliver precedent): absorbed into an ADR +
 docs/docker-host.md when built, then deleted; git history is the archive.
@@ -141,7 +143,12 @@ it.
 dev access to EVERY inode carrying that gid in the box, not just the named
 socket -- so it must be rendered as an attributed grant in status/adoption
 (a `Grant.SockGroups`-style field beside Mounts/Caps/RunArgs), showing the
-declared path and the derived gid. For docker-host the daemon grant dominates
+declared PATH and that the access is wider than that path. The numeric gid is
+deliberately NOT surfaced (build-review disposition, finding 4): status and
+adoption run before any probe, so the number isn't even known there, and
+"gid 0 vs 989" changes no user decision -- the collateral MEANING ("wider than
+the named path") is the honest legibility; the digits are debug detail carried
+only on the probe's failure path. For docker-host the daemon grant dominates
 it, but the mechanism is generic (a future `pcscd`/lower-power skill's
 collateral group access matters). Each entry must resolve to an active bind
 target; a discovery failure is attributed, never silently skipped.
@@ -450,6 +457,42 @@ Round-2 findings:
   ACCEPTED -> rendered as an attributed grant with path + derived gid.
 - LOW D4 Desktop false-negative warning (grok): ACCEPTED -> suppress/soften
   on Desktop or warn only after create failure.
+
+## Build-review dispositions (grok single-shot build; codex + claude review, /grilling)
+
+grok built the whole skill in one pass on branch docker-host-skill; suite green,
+faithful to the design. codex's build review found 5 edges (none architectural);
+all five /grilled with Pete:
+
+- HIGH: `COMPOSE_PROJECT_NAME` (and any env.d export) never reaches `byre shell`
+  -- env.d is sourced only by the launcher; `byre shell` does `docker exec`
+  bypassing it. A pre-existing byre-wide gap docker-host exposed. FIXED, and the
+  fix uncovered a deeper wart: `claude-shared-auth/env.sh` (a "sourced" env
+  hook) smuggled in an interactive `read` + credential-file `mv`, so blanket-
+  sourcing env.d into every login shell would re-fire a prompt. Resolution
+  (Pete-ruled): (1) env.d hooks are PURE env-setters by contract; the
+  claude-shared-auth remediation moved to its firstrun.sh (executed every
+  launch, the right home for a command); (2) a baked `/etc/profile.d/byre-env.sh`
+  shim sources env.d for login shells; (3) `byre shell` passes the container's
+  `BYRE_*` plumbing through the exec so the shim's hooks have their inputs. The
+  launcher keeps its own guarded sourcing (belt-and-suspenders); no shared
+  snippet needed once hooks are pure.
+- MED: missing-socket warning false-fires on remote Docker contexts. WON'T-FIX
+  -- the false warning needs byre's OWN engine pointed at a remote/Desktop
+  context; native + Desktop (already suppressed) are correct. The agent driving
+  a remote daemon via its own context is downstream of the grant and doesn't
+  touch byre's stat; one-line context.md note that it can.
+- MED: containment validation missed Unicode C1 controls (U+0085, U+009B).
+  FIXED -- swapped the hand-rolled ASCII check to `unicode.IsControl` (simpler +
+  complete). Reframed as a footgun guard for the skill AUTHOR, not a security
+  boundary (skills are trusted code).
+- MED: probed gid computed then discarded; nothing renders the number.
+  WON'T-FIX -- status/adopt run before any probe (can't know it), and 0-vs-989
+  changes no user decision; the grant line's "wider than the named path"
+  already carries the meaning. The digits are debug detail (D3 reconciled).
+- LOW: the docker-host Dockerfile "test" was a tautological substring grep of
+  the skill's own text. FIXED -- replaced with a real gen golden that pins the
+  apt-repo RUN's ordering/continuations and the env.d COPY placement.
 
 ## Related decisions banked during the same grilling (separate TODOs)
 

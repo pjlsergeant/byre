@@ -32,14 +32,17 @@ type statusInfo struct {
 	NetPosture      string               // a skill's declared network posture ("" = default open)
 	NetPostureSkill string               // the skill declaring it
 	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
-	ProjectRunArgs  bool                 // the PROJECT's own raw run_args present (degrades the posture claim)
-	Container       string               // this dir's running container id, or "" if none
-	SiblingSessions []string             // short ids of OTHER live sessions in this project (worktrees sharing these volumes)
-	Rootless        bool                 // true if the engine is rootless Podman (unsupported ownership)
-	EngineErr       string               // why the engine/container state is unknown, if applicable
-	SkillErr        string               // why skills couldn't be resolved, if applicable
-	SelfEdit        string               // host store path when --self-edit is active, else ""
-	Proposal        string               // note about a committed <project>/byre.config, if any
+	// Containments are skill-declared containment holes (warranty disclaimer).
+	// Multi-declarer: all shown; other status rows stay unqualified.
+	Containments    []skills.ContainmentDecl
+	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
+	Container       string   // this dir's running container id, or "" if none
+	SiblingSessions []string // short ids of OTHER live sessions in this project (worktrees sharing these volumes)
+	Rootless        bool     // true if the engine is rootless Podman (unsupported ownership)
+	EngineErr       string   // why the engine/container state is unknown, if applicable
+	SkillErr        string   // why skills couldn't be resolved, if applicable
+	SelfEdit        string   // host store path when --self-edit is active, else ""
+	Proposal        string   // note about a committed <project>/byre.config, if any
 }
 
 // Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
@@ -115,6 +118,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			// so status must show those holes too — attributed to config, not a
 			// skill — or it under-reports what the box can reach.
 			info.Egress = append(info.Egress, configEgress(cfg.Egress)...)
+			info.Containments = res.Containments()
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -203,6 +207,18 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Worktree of", s.WorktreeOf+"  (config, volumes, image inherited)")
 	}
 	row("Network", networkLine(s))
+
+	// Containment: warranty disclaimer for skill-declared holes (e.g.
+	// docker-host). Other rows stay unqualified -- they describe what byre
+	// built and still hold for the box; this row disclaims the hole once.
+	// Multi-declarer: each skill gets its own attributed row.
+	for i, c := range s.Containments {
+		label := "Containment"
+		if i > 0 {
+			label = ""
+		}
+		row(label, fmt.Sprintf("🛑 HOLE -- %s  (skill: %s)", c.Text, c.Skill))
+	}
 
 	// When a firewall posture is in effect, list its allowlist so "what can
 	// this box reach?" is legible — each host:port attributed to the skill that
@@ -317,6 +333,11 @@ func renderStatus(w io.Writer, s statusInfo) {
 		}
 		if g.NetnsInit != "" {
 			parts = append(parts, "netns init "+g.NetnsInit+" (run as root + NET_ADMIN, outside the box)")
+		}
+		for _, p := range g.SockGroups {
+			// Gid is resolved engine-side at launch; status names the path so
+			// the collateral group grant is visible even before probe.
+			parts = append(parts, "sock group access via "+p+" (gid resolved at launch; wider than the named path)")
 		}
 		row(label, g.Skill+": "+strings.Join(parts, "; "))
 	}

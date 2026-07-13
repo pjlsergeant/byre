@@ -40,6 +40,7 @@ type fakeRunner struct {
 	failRmCont    map[string]bool   // container ids whose removal fails (started meanwhile)
 	env           map[string]string // ContainerEnv of any id
 	envErr        error
+	execEnv       map[string]string // env map passed to the last Exec
 	labels        map[string]string // ContainerLabels of any id
 	labelsErr     error
 	execInputs    []string // ExecInput: "id uid:gid args <-stdin"
@@ -57,6 +58,12 @@ type fakeRunner struct {
 	netModeErr    error
 	stops         []string // Stop: container ids
 	stopErr       error
+	// sock_groups probe (ProbeSockGroup): default gid 0 success; probeErr fails.
+	probeGID   int
+	probeErr   error
+	probes     []string // "image host target"
+	desktop    bool
+	desktopErr error
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -155,6 +162,21 @@ func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[stri
 	return f.netnsErr
 }
 
+func (f *fakeRunner) ProbeSockGroup(image, hostPath, targetPath string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.probes = append(f.probes, image+" "+hostPath+" "+targetPath)
+	f.ops = append(f.ops, "probesock "+targetPath)
+	if f.probeErr != nil {
+		return 0, f.probeErr
+	}
+	return f.probeGID, nil
+}
+
+func (f *fakeRunner) IsDockerDesktop() (bool, error) {
+	return f.desktop, f.desktopErr
+}
+
 // ContainersByLabel answers with the any-state extras only (fake simplicity:
 // tests exercising the marker path set allContainers; the running-session
 // aborts happen at RunningContainersByLabel before this is consulted).
@@ -199,6 +221,7 @@ func (f *fakeRunner) StartAttach(container string) error {
 
 func (f *fakeRunner) Exec(id string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error {
 	f.execs = append(f.execs, fmt.Sprintf("%s %d:%d %s %s", id, uid, gid, workdir, strings.Join(command, " ")))
+	f.execEnv = env
 	f.ops = append(f.ops, "exec")
 	return f.execErr
 }

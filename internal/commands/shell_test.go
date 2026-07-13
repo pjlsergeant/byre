@@ -47,6 +47,34 @@ func TestShellExecsAsContainerDevUser(t *testing.T) {
 	}
 }
 
+// The shell must pass the container's BYRE_* plumbing through the exec so the
+// /etc/profile.d shim's env.d hooks have their inputs (docker-host's
+// COMPOSE_PROJECT_NAME reads BYRE_WORKTREE). Non-BYRE_ container env stays out;
+// HOME is set to the baked dev home, not inherited.
+func TestShellPassesByreEnvThrough(t *testing.T) {
+	p, proj := testPaths(t)
+	holder := &fakeRunner{
+		live: liveWorkdir(p, "abc123def456"),
+		env: map[string]string{
+			"BYRE_UID": "1000", "BYRE_GID": "1000",
+			"BYRE_WORKTREE": "wt-xyz", "BYRE_PROJECT": "proj",
+			"PATH": "/should/not/propagate",
+		},
+	}
+	if err := shell(discardStreams(), proj, []sessionRunner{holder}); err != nil {
+		t.Fatal(err)
+	}
+	if holder.execEnv["BYRE_WORKTREE"] != "wt-xyz" || holder.execEnv["BYRE_PROJECT"] != "proj" {
+		t.Fatalf("BYRE_* not passed through: %v", holder.execEnv)
+	}
+	if holder.execEnv["HOME"] == "" {
+		t.Fatalf("HOME must be set to the baked dev home: %v", holder.execEnv)
+	}
+	if _, ok := holder.execEnv["PATH"]; ok {
+		t.Fatalf("non-BYRE_ container env must not propagate: %v", holder.execEnv)
+	}
+}
+
 func TestShellFailsClosedWithoutContainerUID(t *testing.T) {
 	p, proj := testPaths(t)
 	holder := &fakeRunner{

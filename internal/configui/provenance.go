@@ -21,6 +21,9 @@ type SkillRuntime struct {
 	// Posture is the skill's declared network_posture ("" = none). The Egress
 	// screen uses it to say whether anything enforces the allowlist.
 	Posture string
+	// Containment is the skill's declared containment hole one-liner ("" =
+	// none). Shown on the skills screen when the skill is enabled.
+	Containment string
 }
 
 // Inherited is the editor's provenance input. The lower layers ride RAW (not

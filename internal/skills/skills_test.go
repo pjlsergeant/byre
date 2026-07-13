@@ -651,3 +651,101 @@ func TestSharedAuthCompanionRefusesAmbiguity(t *testing.T) {
 		t.Fatalf("two declarers must yield no companion, got %q", got)
 	}
 }
+
+func TestResolveSockGroupsAndContainment(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "dh", `
+[runtime]
+mounts = [{ host = "/var/run/docker.sock", target = "/var/run/docker.sock", mode = "rw" }]
+sock_groups = ["/var/run/docker.sock"]
+containment = "docker-host opens a containment hole -- skim docs/docker-host.md"
+egress = []
+`, nil)
+	res, err := Resolve(config.Config{Skills: []string{"dh"}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sgs := res.SockGroups()
+	if len(sgs) != 1 || sgs[0].Skill != "dh" || sgs[0].Path != "/var/run/docker.sock" {
+		t.Fatalf("SockGroups = %+v", sgs)
+	}
+	cs := res.Containments()
+	if len(cs) != 1 || cs[0].Skill != "dh" || !strings.Contains(cs[0].Text, "containment hole") {
+		t.Fatalf("Containments = %+v", cs)
+	}
+	grants := res.Grants()
+	if len(grants) != 1 || len(grants[0].SockGroups) != 1 || grants[0].SockGroups[0] != "/var/run/docker.sock" {
+		t.Fatalf("Grant.SockGroups = %+v", grants)
+	}
+	if len(grants[0].Mounts) != 1 {
+		t.Fatalf("expected mount on grant: %+v", grants[0])
+	}
+}
+
+func TestResolveMultiContainment(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "a", `[runtime]
+containment = "hole A"
+`, nil)
+	writeSkill(t, dir, "b", `[runtime]
+containment = "hole B"
+`, nil)
+	res, err := Resolve(config.Config{Skills: []string{"a", "b"}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := res.Containments()
+	if len(cs) != 2 || cs[0].Text != "hole A" || cs[1].Text != "hole B" {
+		t.Fatalf("multi-declarer must render all in enable order: %+v", cs)
+	}
+}
+
+func TestResolveRejectsSockGroupsWithoutMount(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "dh", `[runtime]
+sock_groups = ["/var/run/docker.sock"]
+`, nil)
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+		t.Fatal("sock_groups without matching mount target must be rejected")
+	}
+}
+
+func TestResolveRejectsRelativeSockGroup(t *testing.T) {
+	dir := t.TempDir()
+	// sock_groups path is relative; rejected regardless of mounts.
+	writeSkill(t, dir, "dh", `[runtime]
+mounts = [{ host = "/h", target = "/t", mode = "rw" }]
+sock_groups = ["relative"]
+`, nil)
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+		t.Fatal("relative sock_groups path must be rejected")
+	}
+}
+
+func TestResolveRejectsContainmentNewline(t *testing.T) {
+	dir := t.TempDir()
+	// Literal newline inside the TOML string is invalid TOML; use the escaped
+	// form so Load succeeds and validateContainment rejects the decoded value.
+	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \"hole\\nNetwork: open\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+		t.Fatal("containment with newline must be rejected")
+	}
+}
+
+func TestValidateContainmentControlChar(t *testing.T) {
+	if err := validateContainment("hole\x01forged"); err == nil {
+		t.Fatal("control char must be rejected")
+	}
+	if err := validateContainment("ok one-liner"); err != nil {
+		t.Fatalf("valid containment rejected: %v", err)
+	}
+}
+
+func TestResolveRejectsContainmentTooLong(t *testing.T) {
+	dir := t.TempDir()
+	long := strings.Repeat("x", containmentMaxLen+1)
+	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \""+long+"\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+		t.Fatal("overlong containment must be rejected")
+	}
+}

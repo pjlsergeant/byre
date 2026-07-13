@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 func proposeConfig(t *testing.T, projectDir, content string) {
@@ -397,5 +398,30 @@ func TestEgressGrantLineStatus(t *testing.T) {
 	}
 	if lines := egressGrantLine(nil, "p", "s", true); lines != nil {
 		t.Errorf("no entries — no line: %v", lines)
+	}
+}
+
+func TestSkillGrantSummaryContainmentTopSorted(t *testing.T) {
+	var sf skills.File
+	sf.Runtime.Containment = "docker-host opens a containment hole -- skim docs"
+	sf.Runtime.Mounts = []config.Mount{{Host: "/var/run/docker.sock", Target: "/var/run/docker.sock", Mode: "rw"}}
+	sf.Runtime.SockGroups = []string{"/var/run/docker.sock"}
+	sf.Volumes = []config.Volume{{Name: "id", Role: "state", Target: "/x", Scope: "machine"}}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "docker-host", File: sf}}}
+	lines := skillGrantSummary(res)
+	if len(lines) < 2 {
+		t.Fatalf("expected containment + other grants: %+v", lines)
+	}
+	if !lines[0].Containment || !strings.Contains(lines[0].Text, "containment hole") {
+		t.Fatalf("containment must be first: %+v", lines[0])
+	}
+	// After full sort, containment still tops cross-project.
+	mixed := append([]grantLine{{Text: "plain"}, {Text: "machine", CrossProject: true}}, lines...)
+	sorted := sortGrantLines(mixed)
+	if !sorted[0].Containment {
+		t.Fatalf("sortGrantLines containment first: %+v", sorted)
+	}
+	if !sorted[1].CrossProject {
+		t.Fatalf("cross-project second: %+v", sorted)
 	}
 }

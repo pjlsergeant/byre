@@ -207,3 +207,78 @@ func TestRunArgsPublishesPorts(t *testing.T) {
 		t.Fatalf("expected -p 127.0.0.1:8080:8080 in %v", args)
 	}
 }
+
+func TestRunArgsGroupAdds(t *testing.T) {
+	args := RunArgs(RunParams{
+		Image:     "img",
+		GroupAdds: []int{989, 0},
+		Caps:      []string{"NET_ADMIN"},
+	})
+	// Sorted numeric gids; --group-add after caps, before image.
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--group-add 0") || !strings.Contains(joined, "--group-add 989") {
+		t.Fatalf("group-add missing: %v", args)
+	}
+	// Order: sorted 0 then 989
+	i0 := indexOf(args, "0")
+	i989 := indexOf(args, "989")
+	// Find the --group-add preceding each
+	if i0 < 0 || i989 < 0 || args[i0-1] != "--group-add" || args[i989-1] != "--group-add" {
+		t.Fatalf("--group-add flags malformed: %v", args)
+	}
+	if i0 > i989 {
+		t.Errorf("gids should be sorted: %v", args)
+	}
+	img := lastIndexOf(args, "img")
+	if i989 > img {
+		t.Errorf("group-add must precede image: %v", args)
+	}
+}
+
+func TestProbeSockGroupArgs(t *testing.T) {
+	args := probeSockGroupArgs("byre-img", "/var/run/docker.sock", "/var/run/docker.sock")
+	joined := strings.Join(args, " ")
+	for _, want := range []string{
+		"run", "--rm", "--user", "0:0", "--entrypoint", "stat",
+		"type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock",
+		"byre-img", "-c", "%g", "/var/run/docker.sock",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("probe args missing %q: %v", want, args)
+		}
+	}
+}
+
+func TestProbeSockGroupParsesGID(t *testing.T) {
+	r := New(Docker)
+	r.capture = func(name string, args ...string) (string, error) {
+		return "989\n", nil
+	}
+	gid, err := r.ProbeSockGroup("img", "/h", "/t")
+	if err != nil || gid != 989 {
+		t.Fatalf("ProbeSockGroup = %d, %v; want 989", gid, err)
+	}
+}
+
+func TestIsDockerDesktop(t *testing.T) {
+	r := New(Docker)
+	r.capture = func(name string, args ...string) (string, error) {
+		return "Docker Desktop\n", nil
+	}
+	ok, err := r.IsDockerDesktop()
+	if err != nil || !ok {
+		t.Fatalf("Desktop detect: %v %v", ok, err)
+	}
+	r.capture = func(name string, args ...string) (string, error) {
+		return "Debian GNU/Linux 12 (bookworm)\n", nil
+	}
+	ok, err = r.IsDockerDesktop()
+	if err != nil || ok {
+		t.Fatalf("native Linux should not be Desktop: %v %v", ok, err)
+	}
+	r2 := New(Podman)
+	ok, err = r2.IsDockerDesktop()
+	if err != nil || ok {
+		t.Fatalf("Podman is never Desktop: %v %v", ok, err)
+	}
+}

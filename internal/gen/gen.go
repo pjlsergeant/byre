@@ -24,6 +24,21 @@ var launcherScript []byte
 // assembler writes these to <context>/byre-launch.
 func LauncherScript() []byte { return launcherScript }
 
+// ProfileEnvName is the build-context filename of the /etc/profile.d shim that
+// sources env.d for login shells (so `byre shell` sessions get the same
+// env.d-provided environment the launcher gives the agent).
+const ProfileEnvName = "byre-profile-env.sh"
+
+// profileEnvPath is where the core block installs the profile.d shim.
+const profileEnvPath = "/etc/profile.d/byre-env.sh"
+
+//go:embed profile-env.sh
+var profileEnvScript []byte
+
+// ProfileEnvScript returns the constant profile.d env shim bytes. The
+// build-context assembler writes these to <context>/byre-profile-env.sh.
+func ProfileEnvScript() []byte { return profileEnvScript }
+
 // Input is the generation input. It carries plain fields (no config dependency)
 // so the generator stays standalone; callers map the resolved config onto it.
 type Input struct {
@@ -117,7 +132,12 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// health-monitored services, so we never want one regardless.
 	"HEALTHCHECK NONE\n" +
 	"COPY " + LauncherName + " " + launcherPath + "\n" +
-	"RUN chmod +x " + launcherPath + "\n"
+	"RUN chmod +x " + launcherPath + "\n" +
+	// Login shells (e.g. `byre shell`) source /etc/profile.d/*.sh; this shim
+	// sources env.d there so a shell session gets the same env.d-provided
+	// environment the launcher gives the agent (COMPOSE_PROJECT_NAME, shared
+	// tokens). env.d hooks are pure env-setters, so this is safe and quiet.
+	"COPY " + ProfileEnvName + " " + profileEnvPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
 // FROM, the template block, the constant core block, skill blocks,

@@ -259,3 +259,39 @@ func indexOf(s []string, v string) int {
 	}
 	return -1
 }
+
+func TestRunParamsProjectAndWorktreeEnv(t *testing.T) {
+	paths, _ := testPaths(t)
+	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Env["BYRE_PROJECT"] != paths.ID {
+		t.Errorf("BYRE_PROJECT = %q, want %q", p.Env["BYRE_PROJECT"], paths.ID)
+	}
+	if p.Env["BYRE_WORKTREE"] != paths.WorktreeID {
+		t.Errorf("BYRE_WORKTREE = %q, want %q", p.Env["BYRE_WORKTREE"], paths.WorktreeID)
+	}
+	// Plain project: WorktreeID == ID.
+	if paths.WorktreeID != paths.ID {
+		t.Fatalf("testPaths should be a plain project; got ID=%q WorktreeID=%q", paths.ID, paths.WorktreeID)
+	}
+}
+
+func TestRunParamsWorktreeDistinctEnv(t *testing.T) {
+	// Worktree paths: WorktreeID differs from ID so compose can key on it.
+	paths := project.Paths{
+		ID: "projid", WorktreeID: "wtid", WorkDir: "/wt", Canonical: "/main",
+		Home: t.TempDir(), Dir: t.TempDir(),
+	}
+	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Env["BYRE_PROJECT"] != "projid" || p.Env["BYRE_WORKTREE"] != "wtid" {
+		t.Fatalf("env: PROJECT=%q WORKTREE=%q", p.Env["BYRE_PROJECT"], p.Env["BYRE_WORKTREE"])
+	}
+	if p.Env["BYRE_PROJECT"] == p.Env["BYRE_WORKTREE"] {
+		t.Fatal("worktree must keep PROJECT and WORKTREE distinct")
+	}
+}

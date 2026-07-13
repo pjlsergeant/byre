@@ -231,3 +231,54 @@ func TestConfigEgressAttributed(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderStatusContainmentAndSockGroups(t *testing.T) {
+	var b bytes.Buffer
+	renderStatus(&b, statusInfo{
+		Engine:    "docker",
+		Canonical: "/p",
+		Skills:    []string{"docker-host"},
+		Containments: []skills.ContainmentDecl{{
+			Skill: "docker-host",
+			Text:  "docker-host opens a containment hole -- skim docs/docker-host.md",
+		}},
+		Grants: []skills.Grant{{
+			Skill:      "docker-host",
+			Mounts:     []config.Mount{{Host: "/var/run/docker.sock", Target: "/var/run/docker.sock", Mode: "rw"}},
+			SockGroups: []string{"/var/run/docker.sock"},
+		}},
+	})
+	out := b.String()
+	for _, want := range []string{
+		"Containment:", "🛑 HOLE", "docker-host opens a containment hole", "(skill: docker-host)",
+		"Skill grants:", "sock group access via /var/run/docker.sock",
+		"mounts /var/run/docker.sock",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status missing %q:\n%s", want, out)
+		}
+	}
+	// Network row must stay unqualified (warranty model: hole is separate).
+	if !hasField(out, "Network:", "open") {
+		t.Errorf("Network row should stay open/unqualified:\n%s", out)
+	}
+}
+
+func TestRenderStatusMultiContainment(t *testing.T) {
+	var b bytes.Buffer
+	renderStatus(&b, statusInfo{
+		Engine:    "docker",
+		Canonical: "/p",
+		Containments: []skills.ContainmentDecl{
+			{Skill: "docker-host", Text: "hole A"},
+			{Skill: "podman-host", Text: "hole B"},
+		},
+	})
+	out := b.String()
+	if !strings.Contains(out, "hole A") || !strings.Contains(out, "hole B") {
+		t.Fatalf("multi-declarer not both shown:\n%s", out)
+	}
+	if !strings.Contains(out, "(skill: docker-host)") || !strings.Contains(out, "(skill: podman-host)") {
+		t.Fatalf("both skills must be attributed:\n%s", out)
+	}
+}

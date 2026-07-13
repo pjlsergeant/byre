@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -306,6 +307,58 @@ func execArgs(containerID string, uid, gid int, workdir string, env map[string]s
 func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
 	_, err := r.capture(string(r.engine), netnsInitArgs(image, container, entrypoint, env)...)
 	return err
+}
+
+// ProbeSockGroup discovers the gid the box will see on targetPath by running a
+// one-shot probe container with the same bind the box will get. Engine-side
+// for every case (Docker Desktop's VM and remote contexts split host/VM, so a
+// host-side stat can report a gid the in-container socket does not carry).
+// image is the box's own just-built image (has core tools; entrypoint bypassed).
+// Returns the numeric gid; a probe failure is returned to the caller for
+// attributed warning -- never silently defaulted.
+func (r *Runner) ProbeSockGroup(image, hostPath, targetPath string) (int, error) {
+	out, err := r.capture(string(r.engine), probeSockGroupArgs(image, hostPath, targetPath)...)
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(out)
+	gid, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("probe returned non-numeric gid %q: %w", s, err)
+	}
+	return gid, nil
+}
+
+// probeSockGroupArgs builds the engine-side gid probe argv (pure, for testing).
+// --entrypoint bypasses the box launcher; --user 0 so the probe can read any
+// socket mode; the bind matches the box's own mount.
+func probeSockGroupArgs(image, hostPath, targetPath string) []string {
+	return []string{
+		"run", "--rm",
+		"--user", "0:0",
+		"--entrypoint", "stat",
+		"--mount", fmt.Sprintf("type=bind,source=%s,target=%s", hostPath, targetPath),
+		image,
+		"-c", "%g", targetPath,
+	}
+}
+
+// IsDockerDesktop reports whether the engine is Docker Desktop (macOS, Windows,
+// or Desktop-for-Linux). Used to soften host-side socket-source warnings: under
+// Desktop the bind resolves inside the VM, so a missing host path is a
+// false-negative, not a real failure. A query error returns false, nil-ish
+// via the error so callers can stay quiet rather than warn on a guess.
+func (r *Runner) IsDockerDesktop() (bool, error) {
+	if r.engine != Docker {
+		return false, nil
+	}
+	// OperatingSystem is "Docker Desktop" on Desktop; native Linux reports the
+	// host OS (e.g. "Debian GNU/Linux ..."). Name alone is unreliable.
+	out, err := r.capture(string(r.engine), "info", "--format", "{{.OperatingSystem}}")
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(strings.ToLower(out), "docker desktop"), nil
 }
 
 // netnsInitArgs builds the netns-init helper argv (pure, for testing). Env

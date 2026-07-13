@@ -1,5 +1,20 @@
 # Changes
 
+## Unreleased
+
+- **`docker-host` skill**: optional grant of the host's Docker daemon via
+  its socket. Installs `docker-ce-cli` + compose + buildx from Docker's
+  apt repo; mounts `/var/run/docker.sock`; runner probes the socket gid
+  engine-side and injects numeric `--group-add` (no hardcoded gid; works
+  on Docker Desktop and native Linux). New skill keys: `sock_groups`
+  (attributed grant) and `containment` (warranty disclaimer on status,
+  launch, adoption, and config UI -- multi-declarer renders all). Missing
+  socket is an attributed warning, not a refusal (engine stays authority;
+  Desktop host-stat false-negatives suppressed). Core plumbing:
+  `BYRE_PROJECT` + `BYRE_WORKTREE` in every box; compose project name
+  defaults to `byre-$BYRE_WORKTREE` so sibling worktrees do not collide.
+  User-facing discussion: `docs/docker-host.md`.
+
 ## v0.1.9 -- 2026-07-12
 
 - **Config UI: ctrl+s and ctrl+q work from every screen.** ctrl+s saves the

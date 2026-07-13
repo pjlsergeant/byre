@@ -133,6 +133,16 @@ enabled alongside it, carrying only the delta (a volume, a hook, some
 wiring), leaving the agent skill untouched. The shared-auth trio
 (`claude-shared-auth` etc., ADR 0017) are the canonical examples.
 
+**docker-host**:
+The builtin skill that grants the box access to the **host's Docker
+daemon** via its socket (`/var/run/docker.sock`). Not docker-in-docker
+(no nested daemon); not a Podman host skill. Installs client CLI +
+compose + buildx; mounts the socket; runner injects numeric
+`--group-add` from an engine-side gid probe (`sock_groups`); declares a
+`containment` hole so status/launch/adoption/config UI disclaim the
+warranty for anything done through the socket. User-facing discussion:
+`docs/docker-host.md`.
+
 **Shared-auth offer**:
 The first-run picker's per-box question -- "Opt this box into <agent>
 shared credentials?" -- asked at every onboarding whose chosen agent

@@ -24,8 +24,47 @@ seed_onboarding() {
   fi
 }
 
+# A leftover per-project login alongside the shared token is a time bomb:
+# interactive Claude quietly prefers the stored credential over the env token
+# and stops refreshing it, so the box starts failing with "401 Invalid
+# authentication credentials" roughly 8h after that login, while /status still
+# claims env-token auth (host-verified 2026-07-07, three boxes). The file is
+# Claude's, not ours, so moving it aside needs the user's yes: offer when stdin
+# is interactive (default Y -- declining is the deliberate act), warn-only
+# otherwise. This lives HERE (firstrun.d, executed every launch) rather than in
+# env.sh (sourced env-setter): a prompt + file move is a command, not an env
+# export, and sourcing env.d into every login shell must never re-fire it. The
+# read is bounded -- a TTY does not imply an attending human, and a hook must
+# not hang the launch; timeout falls back to warn-only. The TTY override is a
+# test seam (the launch gate's env-override precedent).
+remediate_stale_login() {
+  creds="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}/.credentials.json"
+  [ -s "$creds" ] || return 0
+  {
+    echo "byre: warning — this box has a per-project Claude login alongside the shared token."
+    echo "      Claude prefers the stored login and stops refreshing it, so this box will 401"
+    echo "      roughly 8h after that login."
+  } >&2
+  if [ -t 0 ] || [ -n "${BYRE_ASSUME_TTY:-}" ]; then
+    printf "byre: move it aside now (to .credentials.json.bak) so the shared token wins? [Y/n] " >&2
+    IFS= read -r -t 60 ans || ans="n"
+    case "$ans" in
+      ""|[Yy]*)
+        if mv -f -- "$creds" "$creds.bak" 2>/dev/null; then
+          echo "byre: moved — this session runs on the shared token." >&2
+        else
+          echo "byre: move failed — fix by hand: mv \"$creds\"{,.bak} and relaunch." >&2
+        fi
+        return 0
+        ;;
+    esac
+  fi
+  echo "byre: left in place — fix later with: mv \"$creds\"{,.bak} and relaunch." >&2
+}
+
 if [ -s "$TOKEN_FILE" ]; then
   seed_onboarding
+  remediate_stale_login
   exit 0
 fi
 [ -t 0 ] || exit 0

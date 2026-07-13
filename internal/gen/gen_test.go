@@ -35,6 +35,7 @@ ENV PATH=/home/dev/.local/bin:$PATH
 HEALTHCHECK NONE
 COPY byre-launch /usr/local/bin/byre-launch
 RUN chmod +x /usr/local/bin/byre-launch
+COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
 
 # --- skills ---
 

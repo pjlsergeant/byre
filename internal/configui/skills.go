@@ -220,6 +220,14 @@ func (m model) viewSkills() string {
 			line += dimStyle.Render("  — " + d)
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.skillCur, line))
+		// Containment hole: same skill-owned one-liner as status/adoption, so
+		// enabling the skill in the GRANTS-adjacent skills view never hides
+		// the warranty disclaimer.
+		if e.on() {
+			if c := m.inh.Skills[e.name].Containment; c != "" {
+				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      🛑 "+c))
+			}
+		}
 	}
 
 	if note := m.subFooterNote(); note != "" {
