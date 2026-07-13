@@ -374,3 +374,20 @@ func TestPresetApplyExplicitPath(t *testing.T) {
 		t.Errorf("marker must record the explicit source: %q", rec)
 	}
 }
+
+// The rendered preset body must keep its line structure (EscapeTerminal
+// alone strips newlines) while still neutralizing ANSI in hostile content.
+func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
+	_, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"none\"\napt = [\"jq\"]\n")
+	s, _, errBuf := testStreams("n\n", true)
+	if err := PresetApply(s, proj, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), "agent = \"none\"\napt = [\"jq\"]") {
+		t.Fatalf("preset body must render with newlines intact:\n%s", errBuf.String())
+	}
+	if got := escapeMultiline("a\x1b[31mred\nb"); got != "ared\nb" {
+		t.Fatalf("escapeMultiline = %q", got)
+	}
+}

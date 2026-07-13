@@ -287,8 +287,19 @@ func renderPresetReview(s Streams, paths project.Paths, projectDir string, prese
 			fmt.Fprintln(s.Err, "------")
 		}
 	} else {
-		fmt.Fprintf(s.Err, "--- preset ---\n%s\n------\n", strings.TrimRight(packages.EscapeTerminal(string(content)), "\n"))
+		fmt.Fprintf(s.Err, "--- preset ---\n%s\n------\n", escapeMultiline(string(content)))
 	}
+}
+
+// escapeMultiline terminal-escapes hostile text LINE BY LINE -- EscapeTerminal
+// strips every control character including newlines, which would collapse a
+// rendered file body into one unreadable run.
+func escapeMultiline(text string) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = packages.EscapeTerminal(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // presetState reports the D17 drift state of a repo-shipped preset relative
