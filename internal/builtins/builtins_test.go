@@ -163,6 +163,12 @@ func TestByreConfigSourcesAgreeWithTombstones(t *testing.T) {
 		if !strings.Contains(tomb, hint.URI) {
 			t.Errorf("%s tombstone URI drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.URI)
 		}
+		// digest is optional in [sources] generally, but REQUIRED here: an
+		// empty one would make the Contains check below vacuously pass --
+		// the exact regression this test exists to prevent.
+		if hint.Digest == "" {
+			t.Fatalf("byre.config [sources] %q lost its digest pin", id)
+		}
 		if !strings.Contains(tomb, hint.Digest) {
 			t.Errorf("%s tombstone digest drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.Digest)
 		}
