@@ -12,6 +12,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/onboard"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -45,8 +46,9 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		return nil
 	}
 
-	// Catalog lists options / resolves flags (bundled from embed.FS).
-	if err := builtins.EnsureStore(paths.Home); err != nil {
+	// Catalog lists options / resolves flags (bundled from embed.FS). Notices
+	// on stderr so a first post-upgrade onboard surfaces LEGACY rows (D10).
+	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(paths.Home)
@@ -66,64 +68,11 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
-	// The shared-auth offer's gate (ADR 0025 / D2): claimants from the catalog
-	// with provenance labels. Multi-claim -> picker; single-claim keeps
-	// [y/N]. Suppressed only when the companion is already machine-wide.
-	// The second return is the saved preference prefilling the default answer.
-	companionFor := func(agent string) (string, bool) {
-		claimants := skills.SharedAuthClaimants(cat, agent)
-		// Filter out companions already granted machine-wide.
-		var live []skills.Skill
-		for _, c := range claimants {
-			name := c.Name
-			if ent, ok := cat.Lookup(c.Name); ok && ent.Alias != "" {
-				name = ent.Alias
-			}
-			if !onboard.SharedAuthAlreadyOn(paths.Home, name) && !onboard.SharedAuthAlreadyOn(paths.Home, c.Name) {
-				live = append(live, c)
-			}
-		}
-		if len(live) == 0 {
-			return "", false
-		}
-		// Single claim: return display name for config write.
-		if len(live) == 1 {
-			c := live[0]
-			name := c.Name
-			if ent, ok := cat.Lookup(c.Name); ok && ent.Alias != "" {
-				name = ent.Alias
-			}
-			return name, onboard.SharedAuthPreference(paths.Home, agent)
-		}
-		// Multi-claim: signal with a sentinel the picker handles via
-		// companionFor returning the first and PickSharedAuth doing the rest.
-		// For the Pick path we need a richer callback -- see companionPickers.
-		// Fall through: return "" so Pick uses the multi-claim path when we
-		// wire it; for now pick the bundled-first claimant like a default
-		// prefill and still offer the single-claim question on the first.
-		// Real multi-claim picker is in OfferSharedAuthPick.
-		name := live[0].Name
-		if ent, ok := cat.Lookup(live[0].Name); ok && ent.Alias != "" {
-			name = ent.Alias
-		}
-		return name, onboard.SharedAuthPreference(paths.Home, agent)
+	// Shared-auth offer (ADR 0025 / D2): all catalog claimants with provenance
+	// labels; multi-claim -> numbered picker; single-claim keeps [y/N].
+	sharedAuthFor := func(agent string) onboard.SharedAuthOffer {
+		return buildSharedAuthOffer(paths.Home, cat, agent)
 	}
-	// Multi-claim picker: used when more than one companion remains.
-	companionPicker := func(agent string) []skills.Skill {
-		claimants := skills.SharedAuthClaimants(cat, agent)
-		var live []skills.Skill
-		for _, c := range claimants {
-			name := c.Name
-			if ent, ok := cat.Lookup(c.Name); ok && ent.Alias != "" {
-				name = ent.Alias
-			}
-			if !onboard.SharedAuthAlreadyOn(paths.Home, name) && !onboard.SharedAuthAlreadyOn(paths.Home, c.Name) {
-				live = append(live, c)
-			}
-		}
-		return live
-	}
-	_ = companionPicker // used when Pick is extended; single-claim path above
 
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
 	// proceeds from the cascade.
@@ -134,7 +83,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		choice, err := onboard.Pick(s.Err, in, templates, agents,
 			onboard.Favourite{Stored: rawT, Effective: defT},
 			onboard.Favourite{Stored: rawA, Effective: defA},
-			companionFor)
+			sharedAuthFor)
 		if err != nil {
 			return err
 		}
@@ -147,13 +96,10 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
-			// "These" is every answer just given: when the shared-auth offer
-			// was among them, its answer is saved as the preference that
-			// prefills future offers — a favourite exactly like template and
-			// agent, never a grant (each box's grant is only ever its own
-			// byre.config, written below).
-			if choice.SharedAuthCompanion != "" {
-				if err := onboard.SaveSharedAuthDefault(paths.Home, choice.Agent, choice.SharedAuth); err != nil {
+			// Shared-auth: yes+companion writes table-shape pick; decline
+			// removes the agent's entry (no stored "no").
+			if choice.Agent != "" {
+				if err := onboard.SaveSharedAuthDefaultPick(paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
 					return err
 				}
 			}
@@ -226,16 +172,77 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			sharedAuth = true
 		}
 	} else if s.TTY && !(tFixed && aFixed) {
-		var pref bool
-		if companion, pref = companionFor(a); companion != "" {
-			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion, pref)
+		offer := sharedAuthFor(a)
+		if len(offer.Claimants) > 0 {
+			var err error
+			companion, sharedAuth, err = onboard.OfferSharedAuthChoice(s.Err, in, a, offer)
 			if err != nil {
 				return err
 			}
-			sharedAuth = yes
 		}
 	}
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
+}
+
+// buildSharedAuthOffer assembles the D2 offer for agent: live claimants with
+// provenance labels, saved pick prefill, and a stale-pick notice when needed.
+func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onboard.SharedAuthOffer {
+	var offer onboard.SharedAuthOffer
+	if agent == "" || cat == nil {
+		return offer
+	}
+	claimants := skills.SharedAuthClaimants(cat, agent)
+	for _, c := range claimants {
+		display := c.Name
+		label := "local"
+		if ent, ok := cat.Lookup(c.Name); ok {
+			if ent.Alias != "" {
+				display = ent.Alias
+			}
+			switch ent.Provenance {
+			case packages.ProvBundled:
+				label = "bundled, byre's"
+			case packages.ProvInstalled:
+				label = "installed, third-party"
+				if ent.Version != "" {
+					label = "installed " + ent.Version + ", third-party"
+				}
+			case packages.ProvLocal:
+				label = "local"
+			}
+		}
+		if onboard.SharedAuthAlreadyOn(home, display) || onboard.SharedAuthAlreadyOn(home, c.Name) {
+			continue
+		}
+		offer.Claimants = append(offer.Claimants, display)
+		offer.Labels = append(offer.Labels, label)
+		// Machine-volume note once, from the first claimant that has one.
+		if offer.VolumeNote == "" {
+			for _, v := range c.File.Volumes {
+				if v.MachineScoped() {
+					offer.VolumeNote = fmt.Sprintf("Note: companion mounts machine-scoped volume %q (shared credentials).", v.Name)
+					break
+				}
+			}
+		}
+	}
+	offer.PrefYes = onboard.SharedAuthPreference(home, agent)
+	pick := onboard.SharedAuthPick(home, agent)
+	if pick != "" {
+		// Prefill only if the pick is still among live claimants.
+		for _, c := range offer.Claimants {
+			if c == pick {
+				offer.PrefPick = pick
+				break
+			}
+		}
+		if offer.PrefPick == "" {
+			// Saved pick missing/INVALID: no prefill + notice; leave store alone.
+			offer.StalePickNotice = fmt.Sprintf("your saved pick %q is no longer installed", pick)
+			offer.PrefYes = false
+		}
+	}
+	return offer
 }
 
 // optedSkills turns the shared-auth offer's outcome (ADR 0025) into the
