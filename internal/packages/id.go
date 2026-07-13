@@ -104,6 +104,18 @@ func LocalDir(id string) string {
 	return id // nested path IS the id for local packages
 }
 
+// ShellArg single-quotes an argument for a printed, copy-pasteable command
+// when it contains shell-significant characters (same rule as the develop
+// eject path's shellArg). Remedy text embeds hint-controlled URIs -- a
+// hostile hint must buy an install review, not command injection on paste.
+func ShellArg(s string) string {
+	const unsafe = " \t\n\"'$\\|&;<>*?(){}[]~!#"
+	if s != "" && !strings.ContainsAny(s, unsafe) && !strings.ContainsRune(s, '`') {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // EscapeTerminal strips control characters and ANSI CSI/OSC sequences from a
 // string that will be printed as DATA on a terminal surface (D1h). Keeps
 // printable runes only.

