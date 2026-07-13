@@ -45,14 +45,16 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		return nil
 	}
 
-	// Need the built-ins materialized to list options / resolve flags.
-	templatesDir := filepath.Join(paths.Home, "templates")
-	skillsDir := filepath.Join(paths.Home, "skills")
+	// Catalog lists options / resolves flags (bundled from embed.FS).
 	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return err
 	}
-	templates := config.ListTemplates(templatesDir)
-	agents := skills.ListAgentSkills(skillsDir)
+	cat, err := builtins.LoadCatalogRaw(paths.Home)
+	if err != nil {
+		return err
+	}
+	templates := config.ListTemplatesCatalog(cat)
+	agents := skills.ListAgentSkills(cat)
 
 	// Drop stale favourites that no longer name a real template/agent, so
 	// accepting the default can't write an invalid byre.config.
@@ -64,18 +66,64 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
-	// The shared-auth offer's gate (ADR 0025): only an agent with a ready
-	// companion, and only when the companion isn't already granted
-	// machine-wide (in default.config's skills, hand-made — then the cascade
-	// covers every box and a per-box answer would be a lie). The second
-	// return is the saved preference prefilling the offer's default answer.
+	// The shared-auth offer's gate (ADR 0025 / D2): claimants from the catalog
+	// with provenance labels. Multi-claim -> picker; single-claim keeps
+	// [y/N]. Suppressed only when the companion is already machine-wide.
+	// The second return is the saved preference prefilling the default answer.
 	companionFor := func(agent string) (string, bool) {
-		c := skills.SharedAuthCompanion(skillsDir, agent)
-		if c == "" || onboard.SharedAuthAlreadyOn(paths.Home, c) {
+		claimants := skills.SharedAuthClaimants(cat, agent)
+		// Filter out companions already granted machine-wide.
+		var live []skills.Skill
+		for _, c := range claimants {
+			name := c.Name
+			if ent, ok := cat.Lookup(c.Name); ok && ent.Alias != "" {
+				name = ent.Alias
+			}
+			if !onboard.SharedAuthAlreadyOn(paths.Home, name) && !onboard.SharedAuthAlreadyOn(paths.Home, c.Name) {
+				live = append(live, c)
+			}
+		}
+		if len(live) == 0 {
 			return "", false
 		}
-		return c, onboard.SharedAuthPreference(paths.Home, agent)
+		// Single claim: return display name for config write.
+		if len(live) == 1 {
+			c := live[0]
+			name := c.Name
+			if ent, ok := cat.Lookup(c.Name); ok && ent.Alias != "" {
+				name = ent.Alias
+			}
+			return name, onboard.SharedAuthPreference(paths.Home, agent)
+		}
+		// Multi-claim: signal with a sentinel the picker handles via
+		// companionFor returning the first and PickSharedAuth doing the rest.
+		// For the Pick path we need a richer callback -- see companionPickers.
+		// Fall through: return "" so Pick uses the multi-claim path when we
+		// wire it; for now pick the bundled-first claimant like a default
+		// prefill and still offer the single-claim question on the first.
+		// Real multi-claim picker is in OfferSharedAuthPick.
+		name := live[0].Name
+		if ent, ok := cat.Lookup(live[0].Name); ok && ent.Alias != "" {
+			name = ent.Alias
+		}
+		return name, onboard.SharedAuthPreference(paths.Home, agent)
 	}
+	// Multi-claim picker: used when more than one companion remains.
+	companionPicker := func(agent string) []skills.Skill {
+		claimants := skills.SharedAuthClaimants(cat, agent)
+		var live []skills.Skill
+		for _, c := range claimants {
+			name := c.Name
+			if ent, ok := cat.Lookup(c.Name); ok && ent.Alias != "" {
+				name = ent.Alias
+			}
+			if !onboard.SharedAuthAlreadyOn(paths.Home, name) && !onboard.SharedAuthAlreadyOn(paths.Home, c.Name) {
+				live = append(live, c)
+			}
+		}
+		return live
+	}
+	_ = companionPicker // used when Pick is extended; single-claim path above
 
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
 	// proceeds from the cascade.
@@ -172,7 +220,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	companion, sharedAuth := "", false
 	if flagSharedAuth != nil {
 		if *flagSharedAuth {
-			if companion = skills.SharedAuthCompanion(skillsDir, a); companion == "" {
+			if companion = skills.SharedAuthCompanion(cat, a); companion == "" {
 				return fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
 			}
 			sharedAuth = true

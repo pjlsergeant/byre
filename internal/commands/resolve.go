@@ -2,10 +2,10 @@ package commands
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -16,6 +16,7 @@ import (
 type resolved struct {
 	cfg     config.Config
 	skills  skills.Resolved
+	cat     *packages.Catalog
 	mounts  []config.Mount  // config mounts, then skill contributions
 	volumes []config.Volume // config volumes, then skill contributions
 }
@@ -43,21 +44,24 @@ func (rv resolved) validate() error {
 // resolve loads the config cascade and the enabled skills for a project, and
 // re-validates the combined mount/volume set (config + skill contributions).
 func resolve(paths project.Paths, projectDir string) (resolved, error) {
-	// Materialize built-ins before loading config (templates feed the cascade)
-	// and resolving skills.
+	// Ensure store (bundled mirror + legacy notice) before cascade + catalog.
 	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return resolved{}, err
 	}
-	skillsDir := filepath.Join(paths.Home, "skills")
+	cat, err := builtins.LoadCatalogRaw(paths.Home)
+	if err != nil {
+		return resolved{}, err
+	}
 	cfg, err := config.Load(projectDir)
 	if err != nil {
 		return resolved{}, err
 	}
-	res, err := skills.Resolve(cfg, skillsDir)
+	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		return resolved{}, err
 	}
 	rv := combine(cfg, res)
+	rv.cat = cat
 	if err := rv.validate(); err != nil {
 		return resolved{}, err
 	}

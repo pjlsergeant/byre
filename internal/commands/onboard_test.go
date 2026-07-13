@@ -61,8 +61,9 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when a flag is passed to an already-configured project")
 	}
-	// Names the current agent and the full path to the file.
-	if !strings.Contains(err.Error(), "agent=claude") || !strings.Contains(err.Error(), cfg) {
+	// Names the current agent (canonical byre/claude after catalog expand)
+	// and the full path to the file.
+	if (!strings.Contains(err.Error(), "agent=claude") && !strings.Contains(err.Error(), "agent=byre/claude")) || !strings.Contains(err.Error(), cfg) {
 		t.Fatalf("error should name the current agent and the file path: %v", err)
 	}
 	// Without a flag, an existing config is fine (no error, no prompt).
@@ -269,8 +270,8 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(cfg.SharedAuth, "claude") {
-		t.Fatalf("a saved yes must store the preference, shared_auth = %v", cfg.SharedAuth)
+	if !cfg.SharedAuth.HasYes("claude") {
+		t.Fatalf("a saved yes must store the preference, shared_auth = %+v", cfg.SharedAuth)
 	}
 	if len(cfg.Skills) != 0 {
 		t.Fatalf("the picker must NEVER write default.config's skills: %v", cfg.Skills)
@@ -322,8 +323,8 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.SharedAuth) != 0 {
-		t.Fatalf("a saved no must remove the preference, shared_auth = %v", cfg.SharedAuth)
+	if !cfg.SharedAuth.Empty() {
+		t.Fatalf("a saved no must remove the preference, shared_auth = %+v", cfg.SharedAuth)
 	}
 	// And the box itself was not opted in.
 	pcfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))

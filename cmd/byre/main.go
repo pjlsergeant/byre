@@ -12,11 +12,12 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/commands"
 	"github.com/pjlsergeant/byre/internal/deliver"
+	byreversion "github.com/pjlsergeant/byre/internal/version"
 )
 
-// version is stamped by release builds (goreleaser passes
-// -ldflags "-X main.version=vX.Y.Z"). Unstamped builds resolve a version
-// from Go's build info instead — see versionString.
+// version is stamped by release builds for backwards-compatible ldflags
+// (-X main.version=vX.Y.Z). Prefer -X github.com/pjlsergeant/byre/internal/version.Version
+// going forward; both are honored.
 var version string
 
 // app is the set of command implementations the CLI dispatches to. A struct
@@ -165,6 +166,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		deliverCmd(a, dir, s),
 		worktreeCmd(a, dir, s),
 		skillCmd(a, s),
+		templateCmd(s),
 		resetCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
 		rehomeCmd(a, dir, s),
@@ -390,27 +392,113 @@ neither set, byre refuses rather than guessing.`,
 func skillCmd(a app, s commands.Streams) *cobra.Command {
 	skill := &cobra.Command{
 		Use:   "skill",
-		Short: "skill update: re-materialize byre's built-in skills and templates.",
-		// Anything that isn't `skill update` is a usage error (exit 2), not
-		// cobra's default show-help-exit-0 for a bare parent command.
-		Args: cobra.ArbitraryArgs,
+		Short: "Manage skill packages (list, inspect, fork, init, validate, update).",
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usageError("usage: byre skill update   (re-materialize byre's built-in skills and templates)")
+			return usageError("usage: byre skill list|inspect|fork|init|validate|update|archive-legacy")
 		},
 	}
-	skill.AddCommand(&cobra.Command{
-		Use:   "update",
-		Short: "Re-materialize byre's built-in skills and templates.",
-		Long: `Re-materialize byre's built-in skills and templates into ~/.byre, picking up
-shipped updates (a locally-modified copy is backed up under skills.bak/ or
-templates.bak/). Follow with 'byre rebuild' to apply skill changes to the
-image.`,
-		Args: noArgsU,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.skillUpdate(s)
+	skill.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List skill packages in the catalog.",
+			Args:  noArgsU,
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillList(s) },
 		},
-	})
+		&cobra.Command{
+			Use:   "inspect <id>",
+			Short: "Show skill package metadata and grants.",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInspect(s, args[0]) },
+		},
+		&cobra.Command{
+			Use:   "fork <id> <new-id>",
+			Short: "Fork an immutable skill into a local editable package.",
+			Args:  cobra.ExactArgs(2),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillFork(s, args[0], args[1]) },
+		},
+		&cobra.Command{
+			Use:   "init <name>",
+			Short: "Scaffold a new local skill package.",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInit(s, args[0]) },
+		},
+		&cobra.Command{
+			Use:   "validate [name]",
+			Short: "Two-stage parse and resolve-check a skill (or all).",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				name := ""
+				if len(args) == 1 {
+					name = args[0]
+				}
+				return commands.SkillValidate(s, name)
+			},
+		},
+		&cobra.Command{
+			Use:   "update",
+			Short: "Explain that bundled packages update with byre itself (D11 stub).",
+			Args:  noArgsU,
+			RunE:  func(cmd *cobra.Command, args []string) error { return a.skillUpdate(s) },
+		},
+		&cobra.Command{
+			Use:   "archive-legacy",
+			Short: "Move LEGACY materialized dirs to skills.legacy/ / templates.legacy/.",
+			Args:  noArgsU,
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillArchiveLegacy(s) },
+		},
+	)
 	return skill
+}
+
+func templateCmd(s commands.Streams) *cobra.Command {
+	tmpl := &cobra.Command{
+		Use:   "template",
+		Short: "Manage template packages (list, inspect, fork, init, validate).",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre template list|inspect|fork|init|validate")
+		},
+	}
+	tmpl.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List template packages in the catalog.",
+			Args:  noArgsU,
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateList(s) },
+		},
+		&cobra.Command{
+			Use:   "inspect <id>",
+			Short: "Show template package metadata.",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInspect(s, args[0]) },
+		},
+		&cobra.Command{
+			Use:   "fork <id> <new-id>",
+			Short: "Fork an immutable template into a local editable package.",
+			Args:  cobra.ExactArgs(2),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateFork(s, args[0], args[1]) },
+		},
+		&cobra.Command{
+			Use:   "init <name>",
+			Short: "Scaffold a new local template package.",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInit(s, args[0]) },
+		},
+		&cobra.Command{
+			Use:   "validate [name]",
+			Short: "Two-stage parse a template (or all).",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				name := ""
+				if len(args) == 1 {
+					name = args[0]
+				}
+				return commands.TemplateValidate(s, name)
+			},
+		},
+	)
+	return tmpl
 }
 
 func resetCmd(a app, dir string, s commands.Streams) *cobra.Command {
@@ -499,14 +587,15 @@ build info — a module or pseudo-version, or (devel) when nothing was.`,
 }
 
 // versionString resolves what `byre version` prints, in priority order: the
-// release-stamped tag, then the version Go recorded in build info (the module
-// version for `go install ...@vX` builds; on Go 1.24+ a plain `go build` in a
-// clone gets a VCS-derived pseudo-version here too), then "(devel)" — with
-// the VCS revision appended when one was recorded, so even a build with no
-// version anywhere is still identifiable.
+// release-stamped tag (main.version or internal/version.Version), then the
+// version Go recorded in build info, then "(devel)" with a short VCS
+// revision when available.
 func versionString(stamped string, bi *debug.BuildInfo) string {
 	if stamped != "" {
 		return stamped
+	}
+	if byreversion.Version != "" {
+		return byreversion.Version
 	}
 	if bi == nil {
 		return "(devel)"
@@ -516,13 +605,21 @@ func versionString(stamped string, bi *debug.BuildInfo) string {
 	}
 	for _, s := range bi.Settings {
 		if s.Key == "vcs.revision" && s.Value != "" {
-			return "(devel) " + s.Value[:min(12, len(s.Value))]
+			n := 12
+			if len(s.Value) < n {
+				n = len(s.Value)
+			}
+			return "(devel) " + s.Value[:n]
 		}
 	}
 	return "(devel)"
 }
 
 func printVersion(s commands.Streams) error {
+	// Propagate legacy main.version stamp into the shared package once.
+	if version != "" && byreversion.Version == "" {
+		byreversion.Version = version
+	}
 	bi, _ := debug.ReadBuildInfo()
 	_, err := fmt.Fprintln(s.Out, "byre "+versionString(version, bi))
 	return err

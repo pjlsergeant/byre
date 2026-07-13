@@ -69,13 +69,14 @@ Ask the box what it can touch, any time:
 ```text
 $ byre status
 Project id:   my-project-pjl-069d95
-Agent:        claude
+Agent:        byre/claude
+Template:     byre/go                 bundled 0.2.0
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
 Network:      open
 Ports:        none
 Host mounts:  none
-Skills:       claude
+Skills:       byre/claude             bundled 0.2.0
 State vols:   .claude
 Cache vols:   node_modules
 Container:    running (0d95f3a2c1b4)
@@ -159,7 +160,9 @@ proposal: byre shows you its grants and asks before adopting it.
 | `byre forget [--force]` | Remove all of byre's host-side state for this directory. Never touches your project tree. |
 | `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
-| `byre skill update` | Re-materialize built-in skills after upgrading byre. |
+| `byre skill list` / `inspect` / `fork` | Discover, inspect, and fork skill packages. |
+| `byre skill update` | Transitional: bundled packages update with byre itself. |
+| `byre template list` / `inspect` / `fork` | Same verbs for template packages. |
 | `byre version` | Which byre is this? Release tag, module version, or build info. |
 
 ## Worktrees: parallel agents, the git way

@@ -210,7 +210,7 @@ func proposalState(projectDir string, paths project.Paths) string {
 // to expand never hides grants behind an empty summary.
 func adoptionView(paths project.Paths, proposal config.Config) (config.Config, []grantLine) {
 	_ = builtins.EnsureStore(paths.Home)
-	skillsDir := filepath.Join(paths.Home, "skills")
+	cat, _ := builtins.LoadCatalogRaw(paths.Home)
 
 	effective, err := config.ResolveProposed(proposal)
 	if err != nil {
@@ -219,7 +219,7 @@ func adoptionView(paths project.Paths, proposal config.Config) (config.Config, [
 			grantLine{Text: "could not expand the cascade (" + err.Error() + ") — grants shown are from the raw file only"})
 	}
 	grants := grantSummary(effective)
-	res, rerr := skills.Resolve(effective, skillsDir)
+	res, rerr := skills.Resolve(effective, cat)
 	if rerr != nil {
 		grants = append(grants, egressGrantLine(effective.Egress, "", "", false)...)
 		return effective, append(grants,

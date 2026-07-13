@@ -19,7 +19,6 @@ package commands
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,18 +29,21 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
-// buildFirewallImage materializes the built-in skills, resolves a
-// firewall-only project, and builds its real image. Returns the image tag and
-// the resolved env to pass the netns helper.
+// buildFirewallImage prepares the store, resolves a firewall-only project, and
+// builds its real image. Returns the image tag and the resolved env to pass
+// the netns helper.
 func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]string) {
 	t.Helper()
 	p, _ := testPaths(t)
-	skillsDir := filepath.Join(p.Home, "skills")
-	if err := builtins.MaterializeSkills(skillsDir); err != nil {
+	if err := builtins.EnsureStore(p.Home); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{Skills: []string{"firewall"}}
-	res, err := skills.Resolve(cfg, skillsDir)
+	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		t.Fatalf("resolve firewall skill: %v", err)
 	}
