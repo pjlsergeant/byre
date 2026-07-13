@@ -161,8 +161,10 @@ proposal: byre shows you its grants and asks before adopting it.
 | `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
 | `byre skill list` / `inspect` / `fork` | Discover, inspect, and fork skill packages. |
+| `byre skill install <uri>` / `uninstall` | Fetch, hash-verify, and snapshot a skill package — grants nothing until enabled in a box. |
+| `byre skill pack <name>` | Emit a local skill's distribution manifest (payload hashes + digest). |
 | `byre skill update` | Transitional: bundled packages update with byre itself. |
-| `byre template list` / `inspect` / `fork` | Same verbs for template packages. |
+| `byre template list` / `inspect` / `fork` / `install` / `pack` | Same verbs for template packages. |
 | `byre version` | Which byre is this? Release tag, module version, or build info. |
 
 ## Worktrees: parallel agents, the git way
