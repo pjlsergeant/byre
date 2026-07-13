@@ -141,3 +141,43 @@ func TestParseSourceURI(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchManifestRedirectRebasesPayloads(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/old/skill.toml", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/new/v2/skill.toml", http.StatusFound)
+	})
+	mux.HandleFunc("/new/v2/skill.toml", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("m")) })
+	mux.HandleFunc("/new/v2/hook.sh", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("new")) })
+	mux.HandleFunc("/old/hook.sh", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("OLD")) })
+	f, base := tlsFetcher(t, mux)
+	_, src, err := f.FetchManifest(base + "/old/skill.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := int64(MaxPayloadTotal)
+	pay, err := f.FetchPayload(src, "hook.sh", &budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Relative to where the manifest WAS OBTAINED (post-redirect), D5d.
+	if string(pay) != "new" {
+		t.Fatalf("payload must resolve against the final manifest URL, got %q", pay)
+	}
+}
+
+func TestFileURIPath(t *testing.T) {
+	for raw, want := range map[string]string{
+		"file:///tmp/pkg/skill.toml":          "/tmp/pkg/skill.toml",
+		"file://localhost/tmp/pkg/skill.toml": "/tmp/pkg/skill.toml",
+		"/plain/path/skill.toml":              "/plain/path/skill.toml",
+	} {
+		got, err := fileURIPath(raw)
+		if err != nil || got != want {
+			t.Errorf("fileURIPath(%q) = %q, %v (want %q)", raw, got, err, want)
+		}
+	}
+	if _, err := fileURIPath("file://evil.example/x"); err == nil {
+		t.Fatal("non-local file host must be rejected")
+	}
+}

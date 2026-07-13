@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -124,14 +125,25 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 			Digest: acq.Digest, Version: acq.Core.Version, Kind: string(kind),
 			URI: uri, InstalledAt: time.Now().UTC().Format(time.RFC3339),
 		},
+		// The consent above was given against this prior state; the land
+		// step re-checks it under the store lock (TOCTOU guard).
+		ExpectPrior: old.Digest,
 	}
 	if err := packages.WithStoreLock(home, func() error { return packages.LandSnapshot(home, snap) }); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: installed %s %s (sha256:%s...)\n", id, acq.Core.Version, short(acq.Digest))
-	// The boundary (D9b): installation is acquisition; enablement in a config
-	// is consent, per box, as ever.
-	fmt.Fprintln(s.Err, "      Installed -- grants nothing until enabled in a box.")
+	// The closer must not walk back the consent narrative just accepted:
+	// only a FRESH, unreferenced install grants nothing (D9b); replacement
+	// and activation change what referencing boxes run next launch.
+	switch {
+	case replacing:
+		fmt.Fprintln(s.Err, "      Boxes referencing this id run the new code at their next launch.")
+	case len(hits) > 0:
+		fmt.Fprintln(s.Err, "      The boxes listed above run it at their next launch.")
+	default:
+		fmt.Fprintln(s.Err, "      Installed -- grants nothing until enabled in a box.")
+	}
 	return nil
 }
 
@@ -239,32 +251,59 @@ func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *pac
 		return
 	}
 	oldLines := grantLines(acq.Kind, oldRaw)
-	var fresh []string
-	for l := range grantLines(acq.Kind, acq.Manifest) {
+	newLines := grantLines(acq.Kind, acq.Manifest)
+	var fresh, dropped []string
+	for l := range newLines {
 		if !oldLines[l] {
 			fresh = append(fresh, l)
 		}
 	}
-	if len(fresh) == 0 {
-		return
+	for l := range oldLines {
+		if !newLines[l] {
+			dropped = append(dropped, l)
+		}
 	}
 	sort.Strings(fresh)
-	fmt.Fprintln(w, "New or widened grant declarations in the package:")
-	for _, l := range fresh {
-		fmt.Fprintf(w, "  + %s\n", l)
+	sort.Strings(dropped)
+	if len(fresh) > 0 {
+		fmt.Fprintln(w, "New or widened grant declarations in the package:")
+		for _, l := range fresh {
+			fmt.Fprintf(w, "  + %s\n", l)
+		}
+	}
+	if len(dropped) > 0 {
+		// Removals change the trust surface too (D9a: CHANGED contributions).
+		fmt.Fprintln(w, "No longer declared:")
+		for _, l := range dropped {
+			fmt.Fprintf(w, "  - %s\n", l)
+		}
 	}
 }
 
 // grantLines renders a manifest's contribution summary and returns its lines
-// as a set, for declaration-level diffing.
+// as a set, for declaration-level diffing. Unlike inspect (counts, per the
+// depth ruling), the DIFF must be content-sensitive: raw Dockerfile commands
+// and run_args are included verbatim (escaped, marked not-introspected) so a
+// replacement cannot swap build code behind an unchanged count (D5e).
 func grantLines(kind packages.Kind, raw []byte) map[string]bool {
 	var b strings.Builder
 	if kind == packages.KindSkill {
 		if f, err := skills.ParsePrimaryBytes(raw); err == nil {
 			printSkillContributions(&b, f)
+			for _, l := range f.Build.Dockerfile {
+				fmt.Fprintf(&b, "dockerfile (not introspected): %s\n", packages.EscapeTerminal(l))
+			}
 		}
 	} else {
 		printTemplateShape(&b, raw)
+		if cfg, err := config.ParseTemplateBody(raw); err == nil {
+			for _, l := range append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...) {
+				fmt.Fprintf(&b, "dockerfile (not introspected): %s\n", packages.EscapeTerminal(l))
+			}
+			for _, a := range cfg.RunArgs {
+				fmt.Fprintf(&b, "run_arg: %s\n", packages.EscapeTerminal(a))
+			}
+		}
 	}
 	out := map[string]bool{}
 	for _, l := range strings.Split(b.String(), "\n") {

@@ -158,14 +158,39 @@ type Snapshot struct {
 	Files    map[string][]byte
 	Exec     map[string]bool
 	Entry    IndexEntry
+
+	// ExpectPrior is the index digest the caller's consent decision was
+	// based on ("" = the id was absent). The land step re-checks it UNDER
+	// the lock: a concurrent install that changed the reviewed state must
+	// not ride a consent given for a different state.
+	ExpectPrior string
 }
+
+// ErrStoreChanged reports that the index moved between the consent decision
+// and the store lock; the caller re-runs so the review reflects reality.
+var ErrStoreChanged = fmt.Errorf("the installed-package index changed while confirming; re-run to review the current state")
 
 // LandSnapshot writes a snapshot and flips the index, crash-safe (D7c):
 // snapshot directory completely first, index atomically second, superseded
 // snapshot deleted last. Call inside WithStoreLock.
 func LandSnapshot(home string, s Snapshot) error {
+	// Re-check the consent precondition under the lock (TOCTOU guard).
+	idx0, err := ReadIndex(home)
+	if err != nil {
+		return err
+	}
+	if idx0[s.ID].Digest != s.ExpectPrior {
+		return ErrStoreChanged
+	}
 	final := SnapshotDir(home, s.Digest)
-	if _, err := os.Stat(final); os.IsNotExist(err) {
+	switch _, err := os.Stat(final); {
+	case err == nil:
+		// Same digest already on disk: content-addressed, nothing to write.
+	case !os.IsNotExist(err):
+		// A Stat failure is NOT "already present": indexing a snapshot we
+		// cannot prove exists breaks D7c's ordering guarantee.
+		return err
+	default:
 		stage, err := os.MkdirTemp(packagesDir(home), ".stage-")
 		if err != nil {
 			return err
@@ -191,18 +216,13 @@ func LandSnapshot(home string, s Snapshot) error {
 			return err
 		}
 	}
-	// Same digest already on disk: content-addressed, nothing to write.
 
-	idx, err := ReadIndex(home)
-	if err != nil {
+	old, had := idx0[s.ID]
+	idx0[s.ID] = s.Entry
+	if err := writeIndex(home, idx0); err != nil {
 		return err
 	}
-	old, had := idx[s.ID]
-	idx[s.ID] = s.Entry
-	if err := writeIndex(home, idx); err != nil {
-		return err
-	}
-	if had && old.Digest != s.Digest && !digestReferenced(idx, old.Digest) {
+	if had && old.Digest != s.Digest && !digestReferenced(idx0, old.Digest) {
 		// Superseded snapshot deleted last; rollback is reinstalling the old
 		// manifest URI -- the source is the archive, not our disk.
 		_ = os.RemoveAll(SnapshotDir(home, old.Digest))

@@ -47,7 +47,10 @@ func ValidateFilesList(entries []FileEntry, primary string) error {
 	if len(entries) > MaxPayloadFiles {
 		return fmt.Errorf("files list has %d entries (limit %d)", len(entries), MaxPayloadFiles)
 	}
-	seenDest := map[string]string{} // lowercased -> original
+	// Pre-seed with the primary so no payload can collide with the manifest
+	// even on a case-insensitive filesystem (SKILL.TOML would overwrite the
+	// snapshot's primary and break the digest's integrity claim).
+	seenDest := map[string]string{strings.ToLower(primary): primary}
 	for i, e := range entries {
 		where := fmt.Sprintf("files[%d]", i)
 		if err := validRelPath(e.Src); err != nil {
@@ -56,7 +59,7 @@ func ValidateFilesList(entries []FileEntry, primary string) error {
 		if err := validRelPath(e.Dest); err != nil {
 			return fmt.Errorf("%s dest %q: %w", where, e.Dest, err)
 		}
-		if e.Dest == primary {
+		if strings.EqualFold(e.Dest, primary) {
 			return fmt.Errorf("%s dest %q: the primary file has no files entry (the manifest is the primary file)", where, e.Dest)
 		}
 		if !validSHA256(e.SHA256) {
@@ -72,14 +75,19 @@ func ValidateFilesList(entries []FileEntry, primary string) error {
 }
 
 // validRelPath admits clean, relative, slash-separated paths that stay inside
-// the package: no absolute paths, no drive/network prefixes, no traversal, no
-// backslashes (one canonical separator), no control characters.
+// the package: no absolute paths, no drive/network prefixes, no traversal --
+// including ENCODED traversal (D5d: '%' is rejected outright; an origin
+// server or intermediary may decode %2e%2e into dots we already refused) --
+// no backslashes (one canonical separator), no control characters.
 func validRelPath(p string) error {
 	if p == "" {
 		return fmt.Errorf("empty path")
 	}
 	if strings.ContainsRune(p, '\\') {
 		return fmt.Errorf("use '/' separators")
+	}
+	if strings.ContainsRune(p, '%') {
+		return fmt.Errorf("percent-encoding is rejected (encoded traversal, D5d)")
 	}
 	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return fmt.Errorf("must be relative")

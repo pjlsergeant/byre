@@ -72,6 +72,12 @@ func TestReplaceDeletesSupersededSnapshot(t *testing.T) {
 	if err := WithStoreLock(home, func() error { return LandSnapshot(home, v1) }); err != nil {
 		t.Fatal(err)
 	}
+	// The replacement's consent was given against v1's digest (TOCTOU guard):
+	// landing without the right ExpectPrior must refuse.
+	if err := WithStoreLock(home, func() error { return LandSnapshot(home, v2) }); err != ErrStoreChanged {
+		t.Fatalf("stale ExpectPrior must refuse with ErrStoreChanged, got %v", err)
+	}
+	v2.ExpectPrior = v1.Digest
 	if err := WithStoreLock(home, func() error { return LandSnapshot(home, v2) }); err != nil {
 		t.Fatal(err)
 	}

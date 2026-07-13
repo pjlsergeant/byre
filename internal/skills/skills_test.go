@@ -809,13 +809,13 @@ target = "/home/dev/.claude"
 func TestResolveMissingSkillPrintsSourceHint(t *testing.T) {
 	cat := catFor(t, t.TempDir())
 	cfg := config.Config{Skills: []string{"pete/linter"}, Sources: map[string]config.SourceHint{
-		"pete/linter": {URI: "https://example.test/linter/skill.toml", Digest: "sha256:8fe3", From: "project config"},
+		"pete/linter": {URI: "https://example.test/linter/skill.toml", Digest: "sha256:8fe3000000000000000000000000000000000000000000000000000000000000", From: "project config"},
 	}}
 	_, err := Resolve(cfg, cat)
 	if err == nil {
 		t.Fatal("missing skill must error")
 	}
-	want := "byre skill install https://example.test/linter/skill.toml --digest sha256:8fe3"
+	want := "byre skill install https://example.test/linter/skill.toml --digest sha256:8fe3000000000000000000000000000000000000000000000000000000000000"
 	if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "hint from project config") {
 		t.Fatalf("remedy missing:\n%v", err)
 	}

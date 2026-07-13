@@ -239,8 +239,11 @@ func (c *Catalog) loadInstalled() error {
 		dir := SnapshotDir(c.Home, row.Digest)
 		raw, err := os.ReadFile(filepath.Join(dir, prim))
 		if err != nil {
+			// The exact command, digest-pinned (D9e): a bare URI reinstall
+			// would silently accept different bytes.
 			c.addProblem(id, kind, ProvInvalid,
-				fmt.Sprintf("snapshot missing or unreadable (%v); reinstall: byre %s install %s", err, kind, row.URI), dir)
+				fmt.Sprintf("snapshot missing or unreadable (%v); reinstall: byre %s install %s --digest sha256:%s",
+					err, kind, EscapeTerminal(row.URI), row.Digest), dir)
 			continue
 		}
 		m, _, err := ParseManifestCore(raw)

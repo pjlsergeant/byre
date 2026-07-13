@@ -74,18 +74,23 @@ func (f *Fetcher) FetchManifest(raw string) ([]byte, *Source, error) {
 		return nil, nil, fmt.Errorf("manifest uri: %w", err)
 	}
 	origin := "https://" + u.Host
-	body, err := f.httpGet(u.String(), origin, MaxManifestBytes, "manifest")
+	body, final, err := f.httpGet(u.String(), origin, MaxManifestBytes, "manifest")
 	if err != nil {
 		return nil, nil, err
 	}
-	base := *u
-	base.Path = filepath.ToSlash(filepath.Dir(u.Path)) + "/"
+	// Payloads resolve relative to where the manifest WAS OBTAINED (D5d):
+	// after same-origin redirects, the final response URL, not the request.
+	base := *final
+	base.Path = filepath.ToSlash(filepath.Dir(final.Path)) + "/"
 	base.RawQuery, base.Fragment = "", ""
 	return body, &Source{URI: raw, origin: origin, baseURL: &base}, nil
 }
 
 func (f *Fetcher) fetchManifestFile(raw string) ([]byte, *Source, error) {
-	p := strings.TrimPrefix(raw, "file://")
+	p, err := fileURIPath(raw)
+	if err != nil {
+		return nil, nil, err
+	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return nil, nil, err
@@ -141,7 +146,7 @@ func (f *Fetcher) FetchPayload(src *Source, rel string, budget *int64) ([]byte, 
 		if resolved.Scheme != "https" || "https://"+resolved.Host != src.origin {
 			return nil, fmt.Errorf("payload src %q resolves outside the manifest origin %s", rel, src.origin)
 		}
-		body, err = f.httpGet(resolved.String(), src.origin, limit, "payload "+rel)
+		body, _, err = f.httpGet(resolved.String(), src.origin, limit, "payload "+rel)
 	}
 	if err != nil {
 		return nil, err
@@ -173,9 +178,30 @@ func (f *Fetcher) fetchPayloadFile(src *Source, rel string, limit int64) ([]byte
 	return os.ReadFile(real)
 }
 
+// fileURIPath extracts the filesystem path from a file: URI or plain path.
+// A real URL parse, not a prefix trim: file://localhost/x and file:///x both
+// mean /x; any other host is rejected (a file: URI cannot name a remote).
+func fileURIPath(raw string) (string, error) {
+	if !strings.HasPrefix(raw, "file:") {
+		return raw, nil // plain filesystem path
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("file uri: %w", err)
+	}
+	if u.Host != "" && u.Host != "localhost" {
+		return "", fmt.Errorf("file uri %q: host %q is not local", raw, u.Host)
+	}
+	if u.Path == "" {
+		return "", fmt.Errorf("file uri %q has no path", raw)
+	}
+	return filepath.FromSlash(u.Path), nil
+}
+
 // httpGet fetches a URL with the origin pinned across redirects (D5d), a
-// bounded body size, and a bounded timeout (D1h).
-func (f *Fetcher) httpGet(rawURL, origin string, limit int64, what string) ([]byte, error) {
+// bounded body size, and a bounded timeout (D1h). Returns the FINAL response
+// URL so relative resolution follows same-origin redirects.
+func (f *Fetcher) httpGet(rawURL, origin string, limit int64, what string) ([]byte, *url.URL, error) {
 	base := f.Client
 	if base == nil {
 		base = http.DefaultClient
@@ -197,18 +223,18 @@ func (f *Fetcher) httpGet(rawURL, origin string, limit int64, what string) ([]by
 	}
 	resp, err := client.Get(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", what, err)
+		return nil, nil, fmt.Errorf("fetch %s: %w", what, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch %s: %s", what, resp.Status)
+		return nil, nil, fmt.Errorf("fetch %s: %s", what, resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", what, err)
+		return nil, nil, fmt.Errorf("fetch %s: %w", what, err)
 	}
 	if int64(len(body)) > limit {
-		return nil, fmt.Errorf("fetch %s: exceeds the %d-byte limit", what, limit)
+		return nil, nil, fmt.Errorf("fetch %s: exceeds the %d-byte limit", what, limit)
 	}
-	return body, nil
+	return body, resp.Request.URL, nil
 }

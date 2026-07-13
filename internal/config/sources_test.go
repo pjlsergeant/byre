@@ -13,7 +13,7 @@ func TestSourcesParseMergeAndTemplateRemedy(t *testing.T) {
 	home := t.TempDir()
 	// default.config hints an id; the project overrides it (last-wins by id).
 	def := `[sources]
-"pete/box" = { uri = "https://old.example/box/template.config", digest = "sha256:aaaa" }
+"pete/box" = { uri = "https://old.example/box/template.config", digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
 `
 	if err := os.WriteFile(filepath.Join(home, "default.config"), []byte(def), 0o644); err != nil {
 		t.Fatal(err)
@@ -25,7 +25,7 @@ func TestSourcesParseMergeAndTemplateRemedy(t *testing.T) {
 	proj := Config{
 		Template: "pete/box",
 		Sources: map[string]SourceHint{
-			"pete/box": {URI: "https://new.example/box/template.config", Digest: "sha256:bbbb"},
+			"pete/box": {URI: "https://new.example/box/template.config", Digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 		},
 	}
 	_, err = resolveWithCatalog(home, proj, cat)
@@ -33,7 +33,7 @@ func TestSourcesParseMergeAndTemplateRemedy(t *testing.T) {
 		t.Fatal("missing template must error")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "byre template install https://new.example/box/template.config --digest sha256:bbbb") {
+	if !strings.Contains(msg, "byre template install https://new.example/box/template.config --digest sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") {
 		t.Fatalf("remedy must use the winning (project) hint, kind-correct:\n%s", msg)
 	}
 	if !strings.Contains(msg, "hint from project config") {
@@ -66,7 +66,7 @@ func TestSourcesValidation(t *testing.T) {
 	if err := (Config{Sources: map[string]SourceHint{"x/y": {URI: "https://x", Digest: "8fe3"}}}).ValidateLayer(); err == nil {
 		t.Fatal("digest without sha256: prefix must fail validation")
 	}
-	if err := (Config{Sources: map[string]SourceHint{"x/y": {URI: "https://x", Digest: "sha256:8fe3"}}}).ValidateLayer(); err != nil {
+	if err := (Config{Sources: map[string]SourceHint{"x/y": {URI: "https://x", Digest: "sha256:8fe3000000000000000000000000000000000000000000000000000000000000"}}}).ValidateLayer(); err != nil {
 		t.Fatal(err)
 	}
 }

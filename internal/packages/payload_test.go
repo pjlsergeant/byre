@@ -60,6 +60,8 @@ func TestValidateFilesListRejects(t *testing.T) {
 			{Src: "b", Dest: "readme.md", SHA256: good},
 		}},
 		{"control char", []FileEntry{{Src: "x", Dest: "a\x1b[31mb", SHA256: good}}},
+		{"encoded traversal", []FileEntry{{Src: "%2e%2e/x", Dest: "x", SHA256: good}}},
+		{"primary case collision", []FileEntry{{Src: "x", Dest: "SKILL.TOML", SHA256: good}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

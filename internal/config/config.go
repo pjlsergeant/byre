@@ -79,11 +79,12 @@ type SourceHint struct {
 
 // InstallHint renders the exact install command for a missing package (D9e):
 // kind-correct verb, --digest when the hint carries one, attributed to the
-// layer that supplied it.
+// layer that supplied it. Hint fields are hostile input (a preset controls
+// them, D1h): terminal-escaped before rendering.
 func (h SourceHint) InstallHint(kind string) string {
-	cmd := fmt.Sprintf("byre %s install %s", kind, h.URI)
+	cmd := fmt.Sprintf("byre %s install %s", kind, packages.EscapeTerminal(h.URI))
 	if h.Digest != "" {
-		cmd += " --digest " + h.Digest
+		cmd += " --digest " + packages.EscapeTerminal(h.Digest)
 	}
 	if h.From != "" {
 		return fmt.Sprintf("%s   (hint from %s)", cmd, h.From)
@@ -977,8 +978,17 @@ func (c Config) ValidateLayer() error {
 		if strings.TrimSpace(h.URI) == "" {
 			return fmt.Errorf("[sources] %q: uri is required (a hint that names nowhere hints nothing)", id)
 		}
-		if h.Digest != "" && !strings.HasPrefix(h.Digest, "sha256:") {
-			return fmt.Errorf("[sources] %q: digest must be sha256:<hex>", id)
+		// The printed remedy must be a copyable command: no whitespace or
+		// control characters in the URI (hostile-hint hardening, D1h).
+		if strings.IndexFunc(h.URI, func(r rune) bool {
+			return r <= 0x20 || r == 0x7f
+		}) >= 0 {
+			return fmt.Errorf("[sources] %q: uri must not contain whitespace or control characters", id)
+		}
+		// A truncated pin would ALWAYS refuse at install (which compares the
+		// full digest): require the real thing.
+		if h.Digest != "" && !validSourceDigest(h.Digest) {
+			return fmt.Errorf("[sources] %q: digest must be sha256:<64 hex chars>", id)
 		}
 	}
 	seenTargets := map[string]string{} // target -> what claims it
@@ -1064,6 +1074,20 @@ func mergeStrings(base, over []string) []string {
 		out = removeString(out, rm)
 	}
 	return out
+}
+
+// validSourceDigest requires sha256: + exactly 64 hex characters.
+func validSourceDigest(d string) bool {
+	hexPart, ok := strings.CutPrefix(d, "sha256:")
+	if !ok || len(hexPart) != 64 {
+		return false
+	}
+	for _, r := range hexPart {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeSources folds [sources] hints last-wins by package id (D16b).
