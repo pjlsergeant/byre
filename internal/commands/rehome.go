@@ -196,7 +196,7 @@ func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bo
 	if _, e := os.Stat(filepath.Join(oldDir, "path")); e == nil {
 		found = true
 	}
-	for _, name := range []string{config.ProjectConfigName, adoptedRecord, declinedRecord} {
+	for _, name := range []string{config.ProjectConfigName, appliedRecord} {
 		src := filepath.Join(oldDir, name)
 		content, rerr := os.ReadFile(src)
 		if rerr != nil {

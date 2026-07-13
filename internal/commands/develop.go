@@ -62,14 +62,15 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
-	// Worktree: announce the inherited identity up front, so any onboarding/adopt
+	// Worktree: announce the inherited identity up front, so any onboarding
 	// prompts below are understood as configuring the whole project (all its worktrees).
 	announceWorktree(s.Err, paths)
-	// A committed <project>/byre.config is a proposal: offer to review + adopt it
-	// into the host-side store (never trusted automatically — it's in the box's
-	// rw mount). Runs before onboarding so adopting satisfies "already configured".
-	if err := adoptIfProposed(s, projectDir, paths); err != nil {
-		return err
+	// A repo-shipped preset is like package.json: cloning gives you a file,
+	// not a prompt (D17 — the adoption offer is retired). Passive visibility
+	// only: state 1 (not applied) and state 3 (diverged) get one note; the
+	// steady state is silent. `byre preset apply` is the solicited flow.
+	if note := presetNote(projectDir, paths); note != "" {
+		fmt.Fprintf(s.Err, "byre: %s\n", note)
 	}
 	// First-run onboarding: with no host-side config, pick (or apply flags / fall
 	// back to the cascade on non-TTY) and write the store's byre.config.

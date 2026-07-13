@@ -144,7 +144,7 @@ func TestRetiredNamesTombstone(t *testing.T) {
 // hints must name exactly the URIs and digests the D15 tombstones print --
 // disagreement means a release updated one copy and not the other.
 func TestByreConfigSourcesAgreeWithTombstones(t *testing.T) {
-	cfg, err := config.ParseFile(filepath.Join("..", "..", "byre.config"))
+	cfg, err := config.ParseFile(filepath.Join("..", "..", "byre.preset"))
 	if err != nil {
 		t.Fatal(err)
 	}

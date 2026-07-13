@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Presets replace the adoption offer.** A repo-shipped config is now like
+  `package.json`: cloning gives you a file, not a prompt. The conventional
+  name is **`byre.preset`** (`byre.config` is reserved for the box's live
+  consent document); a legacy repo `byre.config` still works with a rename
+  note. `byre preset apply [<uri>|<path>]` is the one solicited flow: it
+  validates the preset, walks you through installing any missing packages it
+  references (each install gets its own grant summary and confirm --
+  declining any still completes the apply honestly), shows the composed
+  box's full grant review with a diff against your current config, and
+  writes `byre.config` on confirm. `byre preset inspect` is the same review
+  without the write. Drift is passive and legible: develop and status note
+  "not applied" and "differs from the version you applied" (steady state is
+  silent); the states derive from an `applied` marker recorded at apply
+  time. **Migration:** the develop-time "adopt this byre.config?" prompt is
+  gone; existing `adopted` records migrate to `applied` markers
+  automatically (your history lands in the right drift state), and sticky
+  `declined` records are deleted -- with no unsolicited prompt there is
+  nothing to decline.
 - **Skills are packages; `codereview` and `devlog` moved out of the binary.**
   Byre now has a real package model: bundled packages live inside the byre
   binary (immutable, `byre/*` ids, display mirror at `~/.byre/bundled/`),

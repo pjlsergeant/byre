@@ -142,8 +142,11 @@ belong to the agents' own auth flows.
 
 byre reads config only from its host-side store, never from inside the
 project -- the project mount is read-write, so the agent could edit a
-config that lived there. A `byre.config` committed in a repo is a
-proposal: byre shows you its grants and asks before adopting it.
+config that lived there. A repo can ship a `byre.preset` -- a saved
+answer to setup's questions -- but cloning gives you a file, not a
+prompt: nothing takes effect until you run `byre preset apply`, which
+walks you through any missing package installs, shows the composed
+box's grants, and writes the project's config on your confirm.
 
 ## Commands
 
@@ -161,6 +164,7 @@ proposal: byre shows you its grants and asks before adopting it.
 | `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
 | `byre skill list` / `inspect` / `fork` | Discover, inspect, and fork skill packages. |
+| `byre preset apply` / `inspect` | Review and apply a repo's `byre.preset` (or any path/URI) as this project's config. |
 | `byre skill install <uri>` / `uninstall` | Fetch, hash-verify, and snapshot a skill package — grants nothing until enabled in a box. |
 | `byre skill pack <name>` | Emit a local skill's distribution manifest (payload hashes + digest). |
 | `byre skill update` | Transitional: bundled packages update with byre itself. |

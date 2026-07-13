@@ -24,7 +24,7 @@ agent writes Go, runs `go build`, and runs unit tests; the actual `byre develop`
 
 ## Dev environment (self-hosted)
 
-byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
+byre develops itself. `byre develop` in this repo (config applied from `byre.preset`) builds a
 **Go + Claude** box with these skills:
 
 - **codex** — installs the `codex` binary (the independent reviewer; not launched
@@ -38,10 +38,10 @@ byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
 **One-shot bootstrap (fresh machine):** `codereview` and `devlog` moved out of
 the byre binary (2026-07-13) into
 [pjlsergeant-byre-skills](https://github.com/pjlsergeant/pjlsergeant-byre-skills).
-On a machine that has never installed them, `byre develop` here fails loudly
-with the exact install commands (they are pinned in this repo's `byre.config`
-`[sources]` block); run the two `byre skill install ...` commands it prints,
-once per machine, and re-run develop.
+On a fresh clone, `byre preset apply` here reviews this repo's `byre.preset`
+and chauffeurs the two installs (once per machine); the preset's `[sources]`
+block pins their URIs and digests. A config that references the qualified ids
+without the installs fails loudly at develop with those exact commands.
 
 > The `moarcode/` dir is the **legacy bootstrap harness** (gitignored, not part
 > of byre) used to develop byre before it could host itself. If you are running

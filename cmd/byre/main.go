@@ -167,6 +167,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		worktreeCmd(a, dir, s),
 		skillCmd(a, s),
 		templateCmd(s),
+		presetCmd(dir, s),
 		resetCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
 		rehomeCmd(a, dir, s),
@@ -457,6 +458,45 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 		},
 	)
 	return skill
+}
+
+// presetCmd is the D16 noun: a preset is a saved answer to onboarding's
+// questions -- a config proposal from anywhere -- reviewed and applied as the
+// project's byre.config. Not a package: no identity, no install.
+func presetCmd(dir string, s commands.Streams) *cobra.Command {
+	preset := &cobra.Command{
+		Use:   "preset",
+		Short: "Review and apply a config preset (byre.preset, a path, or an https URI).",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre preset apply|inspect [<uri>|<path>]")
+		},
+	}
+	optArg := func(args []string) string {
+		if len(args) == 1 {
+			return args[0]
+		}
+		return ""
+	}
+	preset.AddCommand(
+		&cobra.Command{
+			Use:   "apply [<uri>|<path>]",
+			Short: "Chauffeur missing installs, review the composed box, write byre.config.",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.PresetApply(s, dir, optArg(args))
+			},
+		},
+		&cobra.Command{
+			Use:   "inspect [<uri>|<path>]",
+			Short: "The apply review without the write (read-only).",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.PresetInspect(s, dir, optArg(args))
+			},
+		},
+	)
+	return preset
 }
 
 // installCmd / uninstallCmd build the shared install/uninstall verbs for both

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -71,9 +70,26 @@ func requireRootfulEngine(warn io.Writer, r sessionRunner) error {
 }
 
 // confirmed reads a line and returns true only for an affirmative answer.
+// It reads BYTE-AT-A-TIME, never buffering ahead: flows that chain several
+// confirms over one stdin (preset apply's chauffeur, then its own confirm)
+// would otherwise lose every answer after the first inside a discarded
+// bufio buffer — the same trap onboarding's shared-reader rule guards.
 func confirmed(stdin io.Reader) bool {
-	line, _ := bufio.NewReader(stdin).ReadString('\n')
-	switch strings.ToLower(strings.TrimSpace(line)) {
+	var line []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := stdin.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				break
+			}
+			line = append(line, buf[0])
+		}
+		if err != nil {
+			break
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(string(line))) {
 	case "y", "yes":
 		return true
 	default:

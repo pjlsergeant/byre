@@ -36,7 +36,9 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 	}
 	stampPath := filepath.Join(home, stampName)
 	cur, _ := os.ReadFile(stampPath)
-	needMirror := strings.TrimSpace(string(cur)) != byreVer
+	// A nil bundled FS (tests, partial fixtures) has no mirror to write --
+	// same tolerance LoadCatalog extends.
+	needMirror := bundled != nil && strings.TrimSpace(string(cur)) != byreVer
 	if needMirror {
 		if err := writeMirror(home, bundled, byreVer); err != nil {
 			return fmt.Errorf("bundled mirror: %w", err)
@@ -51,6 +53,13 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 			fmt.Fprintf(out, "byre: refreshed ~/.byre/bundled mirror for %s\n", byreVer)
 		}
 	}
+
+	// D17 record sweep: pre-preset adoption records migrate to `applied`
+	// markers (same concept -- the sha of what the project took on -- so
+	// adopted projects land in the right drift state instead of losing
+	// their history); sticky-decline records are deleted (with no
+	// unsolicited prompt there is nothing to decline).
+	sweepAdoptionRecords(home)
 
 	// LEGACY notice: dirs under skills/templates whose bare names are
 	// protected (bundled or retired). Never load them; offer archive once
@@ -67,6 +76,34 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 	return nil
 }
 
+// sweepAdoptionRecords is the D17 half of the migration sweep: per project
+// store, `adopted` (the sha of the last adopted repo config) becomes an
+// `applied` marker -- hash line, then a source line marking the migration --
+// and `declined` records are removed. Idempotent and best-effort: a store
+// too broken to sweep fails the next strict path loudly.
+func sweepAdoptionRecords(home string) {
+	entries, err := os.ReadDir(filepath.Join(home, "projects"))
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(home, "projects", e.Name())
+		adopted := filepath.Join(dir, "adopted")
+		applied := filepath.Join(dir, "applied")
+		if b, err := os.ReadFile(adopted); err == nil {
+			if _, err := os.Stat(applied); os.IsNotExist(err) {
+				h := strings.TrimSpace(string(b))
+				_ = os.WriteFile(applied, []byte(h+"\n(migrated from a pre-preset adoption record)\n"), 0o644)
+			}
+			_ = os.Remove(adopted)
+		}
+		_ = os.Remove(filepath.Join(dir, "declined"))
+	}
+}
+
 // findLegacyDirs returns store-relative paths of flat skill/template dirs
 // whose names match a currently-bundled or retired bare name.
 func findLegacyDirs(home string, bundled fs.FS) []string {
@@ -75,6 +112,9 @@ func findLegacyDirs(home string, bundled fs.FS) []string {
 		protected[bare] = true
 	}
 	for _, sub := range []string{"skills", "templates"} {
+		if bundled == nil {
+			break
+		}
 		entries, err := fs.ReadDir(bundled, sub)
 		if err != nil {
 			continue

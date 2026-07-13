@@ -163,7 +163,7 @@ func TestRehomeMigratesStoreAndRetiresOldID(t *testing.T) {
 	p, _ := testPaths(t)
 	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{
 		"byre.config": "agent = \"claude\"\n",
-		"adopted":     "abc123",
+		"applied":     "abc123\n/some/repo/byre.preset",
 	})
 	f := &fakeRunner{
 		vols:   map[string]bool{"byre-oldid-.claude": true},
@@ -177,8 +177,8 @@ func TestRehomeMigratesStoreAndRetiresOldID(t *testing.T) {
 	if err != nil || string(b) != "agent = \"claude\"\n" {
 		t.Fatalf("stored config not migrated: %v / %q", err, b)
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "adopted")); err != nil {
-		t.Errorf("adoption record not migrated: %v", err)
+	if _, err := os.Stat(filepath.Join(p.Dir, "applied")); err != nil {
+		t.Errorf("applied marker not migrated: %v", err)
 	}
 	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
 		t.Errorf("old store must be removed after a successful rehome (it would haunt the candidate list): %v", err)

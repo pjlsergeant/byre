@@ -87,14 +87,9 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	if selfEdit {
 		info.SelfEdit = paths.Dir
 	}
-	switch proposalState(projectDir, paths) {
-	case "pending":
-		info.Proposal = "repo ships a byre.config — PENDING review (run develop to adopt)"
-	case "adopted":
-		info.Proposal = "running an adopted repo byre.config"
-	case "declined":
-		info.Proposal = "repo ships a byre.config — DECLINED (editing it re-prompts)"
-	}
+	// D17 drift states: passive visibility of a repo-shipped preset, states
+	// 1 (not applied) and 3 (diverged); the steady state stays silent.
+	info.Proposal = presetNote(projectDir, paths)
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
 	// skill, its .claude state volume, skill mounts) are shown, not just the
 	// config-level view. Best-effort: a resolution error is surfaced, not fatal.
@@ -226,7 +221,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Template", "(none)")
 	}
 	if s.Proposal != "" {
-		row("Repo config", s.Proposal)
+		row("Preset", s.Proposal)
 	}
 	if s.EngineErr != "" {
 		row("Engine", s.Engine+"  (not found: "+s.EngineErr+")")
