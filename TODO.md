@@ -85,11 +85,11 @@ the rationale lives.
   agent gets endpoints, never the daemon. Covers the compose-deps case
   without the docker-host grant.
 - [ ] (XL) **Skills milestone: packages, immutable bundled, install, presets.**
-  IN PROGRESS (Pete, 2026-07-13): design of record is
-  docs/WIP/skill-packages-design.md rev 6 FINAL (grilled + 3 codex/grok
-  design rounds, no open forks). Supersedes the old bundle-sharing item;
-  4 build phases (phase-1 grok dispatch:
-  .byre-devlog/skills-phase1-grok-dispatch.md), codex final sign-off.
+  PHASES 1-4 BUILT + docs landed (Pete, 2026-07-13; ADR 0029 absorbed the
+  WIP design doc). Remaining: phase-4 review loop + codex final milestone
+  sign-off, then this item closes and spawns the deferred follow-ups
+  (pocock 1.0.1 grilling fold-in, claude-skills.d/claude-mcp.d convention,
+  private-https package fetch, bundled display digests in inspect).
 
 ## Standing
 

@@ -196,12 +196,16 @@ Resolution: `default ⊕ template ⊕ project`.
 
 **The project layer lives host-side, NOT in the project tree** (ADR
 0003): a config inside the rw-mounted project would let the boxed agent
-rewrite its own sandbox. A committed `<project>/byre.config` is a
-**proposal** -- shown to the human (as a diff against the current store
-config when one exists -- adoption replaces the whole file) and
-**adopted** into the host-side store only on explicit `[y/N]`. Both
-answers are sha256-recorded: yes and no each stick until the proposal's
-bytes change, and status names the declined state. Non-TTY never adopts. `--self-edit` is the one announced exception: the
+rewrite its own sandbox. A repo can ship a **preset** -- conventionally
+`byre.preset`, a complete config proposal (ADR 0029; a legacy-named
+in-repo `byre.config` is accepted with a rename note) -- but cloning
+gives you a file, not a prompt: nothing takes effect until an explicit
+`byre preset apply`, which chauffeurs installs for missing packages,
+shows the composed box's full grant review (with a diff against the
+current store config -- applying replaces the whole file), and writes
+the store `byre.config` on confirm, recording an `applied` marker. Drift
+from the applied version is a passive develop/status note, never a
+question. `--self-edit` is the one announced exception: the
 session opens with a loud escalation warning and closes by reporting what
 changed in the project store -- byre.config as a content diff (it applies
 on the next develop), every other file listed as added/changed/deleted.
@@ -306,10 +310,15 @@ A non-agent skill simply omits `[agent]`. Skills are template-independent:
 they drop onto any *supported* base identically ("supported" = the
 Debian-derived family of *The chassis*: a skill may assume `apt`, a POSIX
 shell, and root at build time, nothing more specific). Each skill gets its
-own insertion slot and its own Docker layers. Built-in skills are
-**materialized** to `~/.byre/skills/<name>/` as editable copies;
-`byre skill update` refreshes stale ones (materialize never silently
-overwrites).
+own insertion slot and its own Docker layers. Skills and templates are
+**packages** (ADR 0029) with three provenances: **bundled** live inside
+the byre binary, immutable, under `byre/*` ids (a display mirror sits at
+`~/.byre/bundled/`, never loaded from); **local** are editable
+directories under `~/.byre/skills|templates/`; **installed** are
+content-addressed, hash-verified snapshots acquired with
+`byre skill install <manifest-url>` and inert until a config enables
+them. To edit an immutable package, `byre skill fork` it into a local
+one. `docs/skills.md` is the user guide.
 
 Enabling a skill is trusting it (PRINCIPLES.md #2): skill content is
 validated for legibility, not as a trust boundary. A skill's grants (a
@@ -491,7 +500,11 @@ byre forget       Remove all of byre's host-side state for this directory --
                   volumes, image, ~/.byre/projects/<id>/. Never touches the
                   project tree.
 
-byre skill update Re-materialize built-in skills into ~/.byre/skills/.
+byre skill ...    list / inspect <id|url> / install / uninstall / fork /
+                  init / validate / pack -- the package verbs (same set on
+                  `byre template ...`). See docs/skills.md.
+byre preset ...   apply / inspect -- review and apply a config preset
+                  (byre.preset, a path, or an https URI).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox. User docs: docs/deliver.md.

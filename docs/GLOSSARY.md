@@ -122,6 +122,98 @@ A portable bundle that contributes to any layer byre controls: build
 state (named volumes). All opinions live in skills; enabling a skill is
 trusting it.
 
+**Package**:
+The distribution unit: a skill or a template (one package = one kind;
+both nouns share the verb set). Identified by a canonical id --
+`owner/name`, or bare for local packages -- with three provenances:
+bundled, local, installed. Enabling remains the only grant: a package's
+existence changes what is *available*, never what runs. (ADR 0029.)
+
+**Bundled package**:
+A package inside the byre binary, loaded from `embed.FS` only --
+structurally immutable. Ids are `byre/<name>`; `byre/*` is permanently
+reserved, and a bundled package always owns its bare name as an alias.
+The display mirror at `~/.byre/bundled/` is for humans (regenerated per
+version, never loaded from).
+
+**Local package**:
+An editable directory under `~/.byre/skills|templates/` (bare or
+`owner/name` nested); the id defaults to the store path. The directory
+is the package: no manifest hashes, no install lifecycle.
+
+**Installed package**:
+A content-addressed, hash-verified snapshot under
+`~/.byre/packages/<digest>/`, acquired with `byre skill|template
+install <manifest-url>` and recorded in the store index. Installed ids
+must be qualified (`owner/name`). Immutable; edit by forking.
+
+**Fork**:
+`byre skill|template fork <id> <new-id>`: copy an immutable (bundled or
+installed) package into a local, editable one under a new id. The only
+artifact-to-source transition; provenance in the fork is a documentary
+comment, never read for resolution or trust.
+
+**Manifest**:
+A package's `[package]` block in its primary file (`skill.toml` /
+`template.config`): id, version, kind, `package_api`, `requires_byre`.
+Parsed in two stages -- the frozen core leniently (compatibility errors
+stay legible), then the full file strictly. For installed packages the
+manifest also carries the exhaustive `[[package.files]]` payload list
+with per-file sha256.
+
+**Package digest**:
+The sha256 over a package's manifest bytes plus its sorted payload
+records -- the identity of *what was acquired*. Keys the snapshot dir,
+the same-id no-op rule, and `--digest` pins in printed install commands.
+Never a runtime attestation (snapshots live on user-writable disk).
+
+**Catalog**:
+The per-store index of every package byre can see -- bundled, installed,
+local -- plus per-identity problem rows (INVALID / conflict / LEGACY)
+that list and pickers show disabled-with-reason and resolution rejects
+only when referenced. One resolution function serves every name surface;
+config canonicalizes references through it before cascade merge.
+
+**Retired name**:
+A bare name a past byre release bundled and a later release does not.
+Permanently protected in an in-binary table with a tombstone remedy (the
+exact pinned install command): the name never returns to the free pool.
+First retirees: `codereview`, `devlog`.
+
+**LEGACY row**:
+The catalog's marker for a leftover materialized copy of a bundled or
+retired name under `~/.byre/skills|templates/`: never loaded, listed
+with its reason, archived aside by `byre skill archive-legacy`.
+
+**`[sources]` hint**:
+A config/preset table mapping package ids to `{ uri, digest }`
+acquisition hints. Never auto-fetched: anywhere byre reports a missing
+package it prints the exact, kind-correct install command from the map,
+attributed to the layer that supplied it.
+
+**Preset**:
+A saved answer to onboarding's questions: a complete config proposal in
+byre.config format, from anywhere -- conventionally `byre.preset` in a
+repo. Not a package (no identity, no version, no install). Applied only
+via `byre preset apply` (review + chauffeur + confirm + write);
+`byre.config` is reserved for the box's live consent document.
+
+**Chauffeur**:
+The inside-apply walk-through of a preset's missing packages: each gets
+its normal, kind-specific install flow with its own grant summary and
+confirm. Not the banned transitive install (which is silent fetching) --
+N explicit consents the user solicited by invoking apply. The
+solicitation rule: byre initiates acquisition walk-throughs only inside
+flows the user invoked to compose a box; a third party's document gets
+reports and exact commands, never prompts.
+
+**Applied marker**:
+The per-project record `preset apply` writes (sha256 of the applied
+preset bytes + its source). The three drift states derive from it: not
+applied; applied-and-matching (silent); diverged ("the repo's preset
+differs from the version you applied"). It proves preset-vs-applied
+only -- live-config edits are yours, not drift.
+
 **Agent skill**:
 A skill with an `[agent]` table: contributes the agent's CLI, its launch
 command, and its state volume. The `agent` config scalar selects which one
@@ -188,10 +280,11 @@ block, skill blocks, project block.
 _Avoid_: infra layer (collides with cascade layers and Docker image
 layers), users block; "plumbing" stays informal prose for core's job
 
-**Materialize**:
-Writing a built-in skill's files into `~/.byre/skills/<name>/` as editable
-copies. Stale copies are refreshed by `byre skill update`, never silently
-overwritten.
+**Materialize** (historical):
+Pre-package-model (ADR 0029) vocabulary: writing a built-in skill's files
+into `~/.byre/skills/<name>/` as editable copies. The mechanism is deleted;
+use the word only to describe what was removed. Leftover materialized dirs
+are LEGACY rows, archived by `byre skill archive-legacy`.
 
 **Devlog dir**:
 `.byre-devlog/` at the working-tree root -- the self-ignoring dir (its own

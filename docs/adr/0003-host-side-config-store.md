@@ -1,5 +1,10 @@
 # Project config lives host-side; an in-tree byre.config is a proposal
 
+> Superseded in part by ADR 0029 (2026-07-13): the host-side-store premise
+> stands; the offer-and-adopt-on-develop clause is reversed. A repo-shipped
+> config is now a preset (`byre.preset`) applied only via the explicit
+> `byre preset apply` flow -- cloning gives you a file, not a prompt.
+
 The config that defines the sandbox must live outside the sandbox: the
 project layer is stored under `~/.byre/projects/<id>/`, never read live
 from the project tree. A `byre.config` committed in the repo would sit on
