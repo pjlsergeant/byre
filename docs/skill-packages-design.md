@@ -1,8 +1,9 @@
-# Skill packages: identity, immutable bundled content, installation
+# Skill packages: identity, immutable bundled content, installation, presets
 
-**Status:** Design of record, rev 2 (grilled with Pete 2026-07-13, all rulings
-his; rev 2 amends after codex + grok design review round 1 -- mechanical
-findings folded in, doctrine-shaped findings marked **[PENDING]** for Pete)
+**Status:** Design of record, rev 3 (grilled with Pete 2026-07-13, all rulings
+his; rev 2 folded codex + grok design round 1; rev 3 resolves the three
+pending doctrine forks and adds the preset model + adoption retirement from
+the follow-on grilling)
 **Lifecycle:** working doc -- absorb into an ADR + docs/skills.md when built,
 then delete (the docker-host-design.md pattern). Git history keeps it
 regardless.
@@ -32,6 +33,10 @@ And its companion, ratified verbatim:
 > selection, attributed grants, immutable when bundled or installed, fork to
 > edit, same namespace rules.
 
+Alongside packages, a **preset** (D16) is a byre.config-format file
+distributed from anywhere and applied explicitly -- and the unsolicited
+repo-config adoption offer is retired with it (D17).
+
 `devlog` and `codereview` move out of the bundle into a first-party repo
 (`github.com/pjlsergeant/byre-skills`) and become the installation
 mechanism's first real cargo.
@@ -39,10 +44,10 @@ mechanism's first real cargo.
 ## Motivation
 
 A skill can run arbitrary image-build commands as root, mount host sockets,
-open egress, alter agent instructions, and be the agent. A template -- a full
-config-cascade layer -- can set mounts, ports, env, an agent, and enable
-skills. This breadth is the product's differentiation, and it makes
-provenance and exact contents part of the safety story.
+open egress, alter agent instructions, and be the agent. A template -- a
+config-cascade layer -- can set base image, env, volumes, offered egress.
+This breadth is the product's differentiation, and it makes provenance and
+exact contents part of the safety story.
 
 The current model weakens that story:
 
@@ -64,22 +69,25 @@ authoring, forking, and installation to actually exist.
 ## Non-goals
 
 No marketplace or registry; no dependency resolution between packages; no
-automatic installation from project config (a config referencing a missing
-package errors with the install hint -- it never fetches); no automatic
+silent fetching, ever (interactive, per-package-consented acquisition walks
+exist only inside flows the user explicitly invoked -- D16c); no automatic
 updates; no signatures or publisher identity; no policing of what a package
 may do (legibility, not gates); no reproducibility claims for raw Dockerfile
-commands; no user-defined alias table (deferred; revive if qualified-ID
-fatigue proves real -- unlikely, since the config UI drop-down is the primary
-enablement surface and nobody types IDs).
+commands; no user-defined alias table (deferred; the config UI drop-down is
+the primary enablement surface and nobody types IDs).
 
 ## Terminology (GLOSSARY-bound)
 
 - **Package** -- a manifest plus the payload files it names. Comes in two
   kinds: skill and template.
-- **Template** -- the box's **type**: the config preset it starts from.
+- **Template** -- the box's **type**: the shape preset it starts from.
   Cascade semantics -- defaults you override per-key; exactly one per box.
+  Shape only: a template never references skills (D3b).
 - **Skill** -- a box **capability**: contributions you add. Union semantics,
   attributed, many per box.
+- **Preset** -- a saved answer to onboarding's questions: a
+  byre.config-format file obtained from anywhere and applied explicitly.
+  Not a package; no identity, version, or installation (D16).
 - **Bundled / Installed / Local** -- the three provenance kinds, above.
 - **Fork** -- an explicit copy of an immutable package into a new local
   identity. Records its origin as documentation; nothing may ever depend on
@@ -88,6 +96,8 @@ enablement surface and nobody types IDs).
   `file:` in v1). Transport, never identity.
 - **Retired name** -- a bare name a past byre release bundled and a later
   release does not. Stays protected (D15).
+- **Adoption** -- RETIRED as an offer (D17). `byre.config` in a repo is
+  renamed `byre.preset` and is inert until applied.
 - **Materialize** -- RETIRED. The mechanism it named is deleted.
 
 ## D1 -- Identity
@@ -153,71 +163,84 @@ and the selected template, **before** merging. This is a real dependency
 inversion (config currently path-joins `~/.byre/templates/<name>` directly)
 and is priced into phase 1.
 
-**D1h.** ID grammar and hostile-input handling (new; from review). Canonical
+**D1h.** ID grammar and hostile-input handling (from review). Canonical
 IDs match `segment(/segment)?` where `segment = [a-z0-9][a-z0-9-]{0,63}`;
 lowercase only, no dots, no leading `!`, and the literal `none` is reserved
-(config sentinel). Everything a remote manifest controls (IDs, versions,
-descriptions, paths, raw Dockerfile lines) is terminal-escaped before
-rendering -- control characters and ANSI sequences must not be able to forge
-grant rows or prompt text (same rule the containment key already follows).
-Fetch limits: manifest <= 256 KiB, <= 64 payload files, streamed payload
-cap (default 64 MiB total), bounded timeouts. Raw Dockerfile content stays
-semantically uninterpreted but is always escaped for display.
+(config sentinel). Everything a remote manifest or preset controls (IDs,
+versions, descriptions, paths, raw Dockerfile lines) is terminal-escaped
+before rendering -- control characters and ANSI sequences must not be able
+to forge grant rows or prompt text (same rule the containment key already
+follows). Fetch limits: manifest <= 256 KiB, <= 64 payload files, streamed
+payload cap (default 64 MiB total), bounded timeouts. Raw Dockerfile
+content stays semantically uninterpreted but is always escaped for display.
 
-## D2 -- Companion pairing across forks
+## D2 -- Companions: pairing, offers, favourites (rev 3: ruling landed)
 
 `shared_auth_for` pairs by exact canonical ID. A fork of `byre/claude` is a
 different agent; the bundled companion does not follow it. Fork provenance
-stays purely documentary (D6), and credential-gating machinery must name its
-agent exactly -- auto-pairing the shared-credential volume with code byre no
-longer warrants would be backwards. `byre skill fork` prints the note: fork
-the companion too (a one-line `shared_auth_for` edit) if the forked agent
-needs shared credentials.
+stays purely documentary (D6). `byre skill fork` prints the note: fork the
+companion too (a one-line `shared_auth_for` edit) if the forked agent needs
+shared credentials. References to `byre/*` are unrestricted (they are the
+same class as `agent = "byre/gemini"` in a config); only ID *claims* are
+protected.
 
-Two rules made explicit after review:
+**D2a. Offer eligibility -- all claimants, provenance-labeled.** Packages
+enter the catalog only by explicit user act (the agent cannot run
+host-side installs), so the onboarding shared-auth offer presents **every**
+catalog claimant for the chosen agent, labeled: `bundled, byre's` /
+`installed <ver>, third-party` / `local`. Refusing to offer what the user
+deliberately installed would be nannying; legibility, not gates. Bundled
+claimants list first. The single-claimant case keeps today's `[y/N]` shape
+plus a provenance line and the companion's one-line grant reality
+(machine-scoped credential volume, named). A package's companionship claim
+is also disclosed at install time in the D9b grant summary ("declares
+itself a shared-auth companion for byre/gemini"), so the offer is never a
+surprise appearance.
 
-- **Multi-claim refusal stays.** Today `SharedAuthCompanion` returns nothing
-  when more than one skill claims the same agent; that fail-closed rule is
-  preserved across the multi-provider catalog and becomes a stated
-  invariant, not an accident.
-- **[PENDING Pete] Offer eligibility.** An installed-but-never-enabled
-  package can declare `shared_auth_for = "byre/gemini"` and would today
-  enter the onboarding offer path -- a one-keystroke route to a
-  machine-scoped credential volume, recommended by core. Recommendation:
-  **only bundled companions are ever auto-offered**; installed or local
-  companions work fully when enabled by hand in a config, but core never
-  proposes them. (Alternative: offer with loud provenance in the prompt.
-  Not recommended -- the offer is a recommendation, and core should not
-  recommend code byre does not warrant.)
+**D2b. Multiple claimants -- a picker, not fail-closed vanishing.** Today's
+multi-claim rule silently suppresses the offer; under the catalog that
+would let a stranger's reference switch off byre's own courtesy. Replaced
+by a provenance-labeled picker (bundled first, `N` = none available).
 
-## D3 -- Templates are packages, full parity
+**D2c. Favourites prefill; only save-as-default writes them.** The
+`shared_auth` favourite upgrades from an agent list to **agent ->
+companion pick** -- picker-owned, cascade-stripped, prefill-only, exactly
+like every other favourite. The saved pick preselects its row in the next
+box's picker and Enter accepts it: consent is answering *this box's* live
+question; prefill is ergonomics (the template/agent favourites precedent).
+Favourites are written **only** by answering "Save these as your default?"
+-- the offer/picker answer itself affects only this box. Sanitized like
+every favourite: a pick that is uninstalled or no longer claims the agent
+silently drops and the picker asks fresh. A *new* claimant appearing never
+moves the preselection -- it just appears, labeled. The only state that
+skips the question entirely remains a companion already enabled in config
+-- the file with teeth.
+
+## D3 -- Templates are packages; templates are shape (rev 3: ruling landed)
 
 **D3a.** Template = the box's type (one per box, cascade semantics); skill =
 a capability (many, union semantics, attributed). Both concepts earn their
 keep; neither absorbs the other.
 
-**D3b.** Distribution makes templates a trust surface for the first time:
-a template layer can set mounts, ports, env, an agent, and enable skills.
-Ruling: **selecting a template is trusting it**, symmetrical with enabling a
-skill. Byre's job is legibility -- `template inspect` shows every key it
-sets with grants prominent; `byre status` and the exposure line attribute
-template-contributed grants to the template. No restricted key set for
-installed templates: restricting content is policing, which byre refuses
-(same ruling as docker-host's Network row).
+**D3b. Templates never reference skills.** A `skills` key (or `agent`
+composition beyond the existing cascade-default `agent`) in a
+`template.config` is a validation error: "composition belongs in a preset"
+(D16). Rationale: a template that *enables* skills makes "I picked a
+template" stand in for "I granted what those skills grant" -- visibility is
+not consent, and convenience never justifies a default grant. With
+composition removed, a template's consent surface is exactly its own file:
+selecting a template is trusting it, and `template inspect` / `byre status`
+/ the exposure line render and attribute its direct keys (base, env,
+volumes, egress_offered, ...) with grant-bearing keys prominent. No
+restricted key set beyond the no-composition rule: restricting *content* is
+policing, which byre refuses (docker-host Network-row precedent). No
+recursive rendering machinery is needed anywhere -- the hole is closed
+structurally, not disclosed around.
 
-**[PENDING Pete] Point-of-consent depth.** Both reviewers converged on the
-same hole: a template that *enables skills* (`skills = ["docker-host"]`)
-makes "I selected this template" stand in for "I enabled docker-host" --
-and a picker showing only ID/description does not state the effect of the
-write (PRINCIPLES #5). Recommendation: at every selection surface
-(`template inspect`, the onboarding template pick, adoption of a config
-that sets a template, and replace-confirm), byre renders the template's
-keys **plus the recursively resolved grant summaries of the skills it
-enables** (containment lines, sock_groups, mounts, egress -- attributed),
-and flags enabled skills that are not present. Cost acknowledged: config
-resolution today flattens the cascade and loses provenance; meeting this
-requires provenance-bearing resolved config values (or an equivalent
-second resolution), which is real phase-1 work, priced in.
+(Today's bundled templates set base/egress_offered only and no shipped
+template enables skills, so nothing breaks. The template `agent` key stays
+a plain cascade default -- onboarding's agent picker already surfaces it as
+a live, prefilled question.)
 
 **D3c.** Full CLI parity: `byre template list / inspect / install /
 uninstall / fork / init / validate / pack` -- shared engine, per-kind verbs,
@@ -225,11 +248,8 @@ uninstall / fork / init / validate / pack` -- shared engine, per-kind verbs,
 against verb: `byre skill install` of a template manifest errors and prints
 the right command (and vice versa).
 
-**D3d.** One package = one kind. "Our company's Rails setup" is several
-co-hosted manifests installed independently -- a distribution convenience,
-not a package concept. A distributed template that enables skills the user
-lacks produces the missing-package error with the install hint; never
-transitive installation.
+**D3d.** One package = one kind. A distributed composition ("our company's
+Rails box") is a **preset** (D16), not a package property.
 
 **D3e.** Bundled templates: `go`, `node`, `python` (aliases per D1c). Byre
 publishes no installable templates in v1; the capability ships anyway
@@ -319,19 +339,19 @@ Dockerfile line downloads. Inspection distinguishes hash-verified payloads,
 typed package-manager declarations (apt/npm), raw Dockerfile commands
 (verbatim, marked not-introspected), and runtime grants.
 
-**D5f.** The package digest (new; from review) is defined, not implied:
-sha256 over a domain-separated canonical encoding of (manifest bytes) +
-(sorted list of destination path, payload sha256, executable bit). The
-manifest is inside the preimage -- contributions and grants live there, and
-a digest that excluded it would let a manifest change ride an unchanged
-digest. This digest keys the snapshot directory, the index entry, and the
-same-ID no-op rule (D9a). **Integrity claim scope:** the digest establishes
-what was acquired; snapshots live on user-writable disk, so byre verifies
-at acquisition and does not re-hash on every load (a `verify` subcommand
-can be added on demand). Status wording says "installed 1.1.0
-(sha256:8fe3...)" -- provenance of acquisition, not a runtime attestation.
-Same honesty rule as `--self-edit`: a writable store is host trust
-(SECURITY.md already says so for config; extend it to packages).
+**D5f.** The package digest is defined, not implied: sha256 over a
+domain-separated canonical encoding of (manifest bytes) + (sorted list of
+destination path, payload sha256, executable bit). The manifest is inside
+the preimage -- contributions and grants live there, and a digest that
+excluded it would let a manifest change ride an unchanged digest. This
+digest keys the snapshot directory, the index entry, and the same-ID no-op
+rule (D9a). **Integrity claim scope:** the digest establishes what was
+acquired; snapshots live on user-writable disk, so byre verifies at
+acquisition and does not re-hash on every load (a `verify` subcommand can
+be added on demand). Status wording says "installed 1.1.0 (sha256:8fe3...)"
+-- provenance of acquisition, not a runtime attestation. Same honesty rule
+as `--self-edit`: a writable store is host trust (SECURITY.md already says
+so for config; extend it to packages).
 
 ## D6 -- Fork
 
@@ -390,7 +410,7 @@ configs (source), not installed snapshots (reproducible artifacts).
 
 ## D8 -- CLI surface
 
-Both nouns, full parity (D3c):
+Both package nouns, full parity (D3c):
 
 ```
 byre skill list                 ID, version, kind, provenance; INVALID/conflict/LEGACY rows shown
@@ -403,6 +423,13 @@ byre skill init <name>          scaffold with commented example
 byre skill validate [<name>]    two-stage parse + resolve-check
 byre skill pack <name>          emit distribution manifest
 byre skill update               transitional stub; see D11
+```
+
+Plus the preset verbs (not a package -- see D16):
+
+```
+byre preset apply [<uri>|<path>]   default ./byre.preset; review + write byre.config
+byre preset inspect [<uri>|<path>] the review without the write
 ```
 
 One verb for inspection (`inspect`, the doctrinal word); no `show`, no
@@ -433,24 +460,20 @@ channel, and no concept of latest. The recorded manifest URI and install
 time are provenance for humans, never an instruction byre follows.
 
 **D9b.** First install prints the same grant summary `inspect` leads with
-(mounts, caps, sock_groups, containment, egress, run_args -- attributed and
-prominent; for templates, the D3b recursive rendering), then confirms, then
-states the boundary: **installed -- grants nothing until enabled in a box.**
+(mounts, caps, sock_groups, containment, egress, run_args, companionship
+claims -- attributed and prominent), then confirms, then states the
+boundary: **installed -- grants nothing until enabled in a box.**
 Installation is acquisition; enablement in a config is consent, per box, as
-ever.
+ever. `install` accepts `--digest sha256:...` and fails on mismatch (D12).
 
-**[PENDING Pete] D9b'. Dangling references make some installs activations.**
-Codex's blocker 1, and it is correct: if a stored config already references
-`acme/foo` (enabled while installed, or typed in anticipation, or left
-dangling after an uninstall), then installing `acme/foo` turns a
-currently-failing box into one that runs new trusted code at next launch --
-acquisition and activation collapse, without a per-box question (violates
-the D9b boundary and PRINCIPLES #5 as written). Recommendation: the install
-path runs the D9d effective-reference scan **first**; if any box already
-references the candidate ID, the install is treated like a replacement --
-affected boxes enumerated, grant summary shown, TTY confirm or `--yes`
-required (the non-TTY free pass in D9c applies only when the scan finds
-nothing). Cheap (the scan exists for uninstall) and closes the boundary.
+**D9b'. Install-as-activation (rev 3: ruling landed -- yes).** If stored
+configs already reference the candidate ID (dangling -- written in
+anticipation, left by an uninstall, or applied from a preset while
+declining the install), installing it flips those boxes from failing to
+running new code at next launch. The install path therefore runs the D9d
+reference scan **first**; on any hit the install is treated like a
+replacement -- affected boxes enumerated, grant summary shown, TTY confirm
+or `--yes`. Truly-new IDs stay frictionless.
 
 **D9c.** Non-TTY: fresh install of a new ID **with no existing references**
 proceeds (it is a verified download that grants nothing -- and scriptable
@@ -459,25 +482,23 @@ installs (D9b') refuse in a pipe without `--yes`; state-changing
 confirmation never defaults.
 
 **D9d.** The reference scan resolves **effective** configs through the
-catalog -- project configs (`~/.byre/projects/*/byre.config`),
-`default.config`, and the template layer each selects (local or installed),
-so a skill referenced only via a template is still found. A local file
-walk plus catalog lookups; no engine calls. Uninstall lists affected
-projects, confirms, removes the snapshot under the store lock. A project
-left referencing a missing package hits the resolve error with the install
-hint at next develop -- loud, attributed, self-repairing.
+catalog -- project configs (`~/.byre/projects/*/byre.config`) and
+`default.config`, including each project's selected template -- so nothing
+referencing the ID is missed. A local file walk plus catalog lookups; no
+engine calls. Uninstall lists affected projects, confirms, removes the
+snapshot under the store lock. A project left referencing a missing
+package hits the resolve error at next develop -- loud, attributed,
+self-repairing via D9e.
 
-**D9e.** A config referencing a missing or INVALID package always errors
-with the exact remedy. For names byre itself retired from the bundle, the
-remedy comes from the D15 tombstone table (for `codereview`/`devlog`: the
-pinned `pjlsergeant/...` install command + config edit, printed verbatim).
+**D9e. Missing-reference errors always print the remedy.** The resolve
+error names the missing ID and prints the exact install command --
+including URI and digest when the config carries a `[sources]` hint (D16b),
+and the D15 tombstone text for names byre itself retired. It never
+fetches: acquisition on a third party's initiative is banned (D16c).
 
 ## D10 -- Migration from materialized stores
 
-Minimal by ruling ("I am the only user"), and safe by construction -- but
-rev 2 corrects two review-found holes: the sweep must not depend on anyone
-running the D11 stub, and byte-comparison against current shipped content
-is meaningless once `[package]` headers change every bundled file.
+Minimal by ruling ("I am the only user"), and safe by construction:
 
 - The migration **rides the version-stamped store-ensure path** (the same
   hook that regenerates the D7b mirror), so it runs on the first invocation
@@ -496,6 +517,10 @@ is meaningless once `[package]` headers change every bundled file.
   LEGACY; hand-made templates keep working).
 - No config auto-rewrite ever -- configs are consent documents; the D9e
   error guides each project.
+- Repo-shipped `byre.config` files: byre stops reading them (D17); a
+  status note explains the rename to `byre.preset` and the explicit apply.
+  Already-adopted store configs are untouched -- they are the project's
+  live config and remain so.
 - Pete's own store: hand-fixed in-session at ship time, per precedent.
 
 ## D11 -- `byre skill update` transitional stub
@@ -519,14 +544,13 @@ github.com/pjlsergeant/byre-skills/
   doc** (`/v1.0.0/`, not `/main/`); `main` is for development. Honesty note
   from review: a git tag is a convention, not an integrity guarantee -- tags
   can be moved. Install pins bytes locally at acquisition (digest recorded);
-  handed-out hints SHOULD carry the expected digest, and `install` accepts
-  an optional `--digest sha256:...` that fails the install on mismatch --
-  cheap end-to-end integrity for printed instructions without a signature
-  system.
+  handed-out hints SHOULD carry the expected digest via `--digest
+  sha256:...` -- cheap end-to-end integrity for printed instructions
+  without a signature system.
 - `devlog-lib.sh` stays duplicated into both packages -- packages are
   self-contained; no shared-payload mechanism.
 - The source of truth **moves**: `internal/builtins/skills/{devlog,
-  codereview}` are deleted from the byre repo. Byre's own `byre.config`
+  codereview}` are deleted from the byre repo. Byre's own config
   references the qualified IDs; the self-hosted dev-box bootstrap gains one
   documented install step (a one-shot host-side bootstrap note in
   CLAUDE.md/README -- CI and fresh clones fail loudly via D9e until it
@@ -559,7 +583,7 @@ package safe.
 Standing tripwire applies: status output appears in README/site as proof;
 re-verify after these changes.
 
-## D15 -- Retired names (new; from review)
+## D15 -- Retired names
 
 When a package leaves the bundled roster, its bare name does **not** return
 to the free pool: it joins a small, permanent, in-binary **retired names
@@ -567,12 +591,10 @@ table** -- `{name -> one-line tombstone}`. Retired names stay protected
 exactly like bundled bare names (no local or installed package may claim
 them; legacy dirs bearing them are LEGACY rows, D10). Rationale: freeing a
 name byre's own documentation and users' configs spent releases typing is
-habit-typosquatting bait, and both reviewers found the same hole
-independently.
+habit-typosquatting bait; both reviewers found the hole independently.
 
 Doctrine note (PRINCIPLES #2, "core knows no skill by name"): the table is
-core knowing **its own history**, not opinions about the ecosystem -- names
-byre once shipped and what CHANGES says happened to them. The
+core knowing **its own history**, not opinions about the ecosystem. The
 `pjlsergeant/...` install hints inside the `codereview`/`devlog` tombstones
 are a migration aid and may be trimmed to bare "retired; see CHANGES" text
 in a later release; the protection itself is permanent.
@@ -580,6 +602,79 @@ in a later release; the protection itself is permanent.
 Initial table: `codereview`, `devlog` (move, D12). `devloop` and
 `grok-shared-auth` remain bundled stubs, not retirees, until someday they
 join this table instead.
+
+## D16 -- Presets (new in rev 3)
+
+**D16a. A preset is a byre.config-format file, not a package.** Template =
+the box's type; skill = a capability; **preset = a saved answer to
+onboarding's questions**: a complete config proposal (template, skills,
+env, mounts, ports, ...) obtained from anywhere -- a repo file, an https
+URI, a path, a gist. No `[package]` header, no identity, no version, no
+digest bookkeeping, no installation, no catalog entry ("I don't think we
+need versioning or anything"). The conventional in-repo filename is
+**`byre.preset`**; `byre.config` is reserved for the box's live consent
+document and nothing else wears its name.
+
+**D16b. `[sources]` hints (config vocabulary, so presets get it free).**
+A config/preset may annotate package references with acquisition hints:
+
+```toml
+skills = ["pjlsergeant/codereview"]
+
+[sources]
+"pjlsergeant/codereview" = { uri = "https://raw.github.../skill.toml", digest = "sha256:8fe3..." }
+```
+
+Hints are never auto-fetched. Anywhere byre reports a missing package
+(D9e, preset review), it prints the exact `byre skill install --digest ...
+<uri>` from the map instead of a shrug. A hostile hint buys the attacker
+an install review, not running code. Digest optional but recommended in
+published presets.
+
+**D16c. Apply flow, and the solicitation rule.** `byre preset apply
+[<uri>|<path>]` (default `./byre.preset`) fetches, then runs the
+adoption-style review -- full grant summary of every key and every
+referenced skill, provenance-labeled; missing skills marked with their
+`[sources]` hints -- and on confirm writes the project's `byre.config`
+(existing config: the review shows the diff, reusing the adoption diff
+machinery). Inside apply, byre offers to **walk through installing missing
+skills**: each gets the normal, individual install flow -- manifest
+fetched, its own grant summary, its own confirm, digest verified. That is
+not the banned transitive install (which is *silent* fetching); it is byre
+chauffeuring the user through N explicit consents they solicited.
+
+The rule, stated once: **byre initiates acquisition walk-throughs only
+inside flows the user explicitly invoked to compose a box (preset apply).
+Anywhere a third party's document introduces the references -- a cloned
+repo, a develop that trips on dangling refs -- byre reports, prints exact
+commands, and stops.** Different headspaces: "I am building a box" versus
+"my box wants things." Declining an install inside apply still completes
+the apply honestly: the reference stays in the written config, marked, and
+that box fails loudly at develop with the D9e remedy (which is why D9b'
+guards later installs of already-referenced IDs). Non-TTY apply refuses
+(the review is the point).
+
+## D17 -- Adoption retires; repo configs become presets (new in rev 3)
+
+The unsolicited adoption offer ("this repo ships a byre.config -- adopt?
+[y/N]") is **removed**. A repo-shipped config is like `package.json`:
+cloning gives you a file, not a prompt, and nothing reads it into effect
+until you explicitly apply it.
+
+- The file is renamed by convention to **`byre.preset`** and goes through
+  `byre preset apply` like any preset (D16c). One mechanism, always
+  solicited, so the chauffeur is always appropriate inside it.
+- With no unsolicited prompt there is nothing to decline: the sticky
+  decline records and re-prompt-on-edit machinery are deleted. The
+  adoption *review and diff* code survives as the preset apply review.
+  This supersedes recently shipped adoption behavior (the 2026-07-10
+  adopt/decline work) -- eyes open, superseding ADR to say so.
+- Passive visibility, never questions: fresh-clone `byre develop` onboards
+  normally and prints one inert line -- "this repo ships a byre.preset
+  (not applied); `byre preset apply` to review it" -- and `byre status`
+  carries the matching row, including "differs from your byre.config"
+  later, like an outdated lockfile. A repo shipping a legacy-named
+  `byre.config` gets the same note plus the rename hint (D10).
 
 ## D14 -- What this deletes
 
@@ -590,24 +685,30 @@ join this table instead.
 - The devloop-rename upgrade-path machinery and its tests (stubs stay; the
   clobber-avoidance dance goes).
 - `byre skill update`'s current meaning (after the D11 stub release).
+- The adoption offer, sticky declines, and re-prompt-on-edit (D17); the
+  review/diff machinery survives inside preset apply.
+- The fail-closed companion multi-claim vanishing act (replaced by the
+  D2b picker).
 
 ## Docs shipping with the milestone
 
-New ADR (this design); GLOSSARY (package, bundled/installed/local, fork,
-manifest URI, retired name, template = "the box's type", the symmetry
-doctrine line, materialize retired); ARCHITECTURE (skills section + store
-layout); **docs/skills.md** -- the promotion-facing user guide (discover,
-inspect, install, author, fork, publish); README how-do-I + install
-example; CHANGES; the byre-skills repo README.
+New ADR (this design; supersedes the adoption-offer ADR in part); GLOSSARY
+(package, bundled/installed/local, fork, manifest URI, retired name,
+preset, byre.preset, template = "the box's type" and "shape only", the
+symmetry doctrine line, adoption retired-as-offer, materialize retired);
+ARCHITECTURE (skills section + store layout + preset flow); **docs/
+skills.md** -- the promotion-facing user guide (discover, inspect, install,
+author, fork, publish, presets); README how-do-I + install example;
+CHANGES; the byre-skills repo README.
 
-SECURITY.md additions (all from review, all wording work): "a skill is
-trusted code" extended to installed packages and templates; third-party
-templates are **full cascade layers**, not language presets; a hash is
-integrity, never publisher identity or endorsement; `file:` installs are
-"installing an unsigned tree from that path" (prefer tag-pinned https +
-`--digest` in shared instructions); package immutability, like config, is
-host-side integrity -- `--self-edit` and any host process can write the
-store.
+SECURITY.md additions (all wording work): "a skill is trusted code"
+extended to installed packages and templates; a template is a full config
+layer, not a "language preset"; a preset is a config proposal reviewed at
+apply; a hash is integrity, never publisher identity or endorsement;
+`file:` installs are "installing an unsigned tree from that path" (prefer
+tag-pinned https + `--digest` in shared instructions); package
+immutability, like config, is host-side integrity -- `--self-edit` and any
+host process can write the store.
 
 ## Build order
 
@@ -616,39 +717,40 @@ next starts. Sizing honesty (from review, both reviewers): phase 1 is a
 large rewrite, not a refactor -- bare single-path-element names and the flat
 skills dir are load-bearing in the loader, staging escape checks, every
 `skillsDir` call site, template cascade loading, onboarding, and the config
-UI; `EnsureStore` is the spine every command crosses; and D1g/D3b push the
+UI; `EnsureStore` is the spine every command crosses; and D1g pushes the
 catalog **into** config resolution. Priced in, not discovered later.
 
 1. **The model.** Two-stage `[package]` parsing; catalog + package-
    filesystem abstraction (nested local dirs per D1a); bundled loading from
    `embed.FS` + the D7b mirror; generated bundled manifests (D4d); alias/
    protected/retired/INVALID/conflict rules; catalog-aware config
-   resolution with template provenance (D1g, D3b); D10 sweep on the
-   store-ensure path; `list`/`inspect`/`fork`/`init`/`validate` for both
-   nouns; D11 stub; D13 rendering; tests rewritten, D14 deletions.
+   resolution (D1g); template no-composition validation (D3b); D10 sweep
+   on the store-ensure path; `list`/`inspect`/`fork`/`init`/`validate` for
+   both nouns; D11 stub; D13 rendering; D2 offer/picker/favourite rework;
+   tests rewritten, D14 deletions (adoption offer removal included -- it
+   simplifies phase 1's consent surfaces).
 2. **Installation.** `https:`/`file:` manifest fetch with D1h/D5d
    hardening; digest verification (D5f); content-addressed store + index +
    store lock (D7c); `install`/`uninstall`/`pack`; the D9 flows including
-   the reference scan.
+   the reference scan and D9b'.
 3. **The move.** byre-skills repo populated (pushes are Pete's, host-side);
    devlog/codereview deleted from builtins; D15 tombstones wired; byre's
    own config + docs updated; Pete's store hand-fixed.
+4. **Presets.** `byre preset apply`/`inspect` over the surviving adoption
+   review/diff machinery + `[sources]` + the chauffeur (D16); the D17
+   rename notes; byre's own repo ships a `byre.preset`.
 
 **Acceptance (definition of done):** on a clean store, install both skills
 from the real GitHub URIs and self-host byre's own dev box with them --
-the dogfood, end to end.
+the dogfood, end to end. Preset acceptance: `byre preset apply` on a fresh
+clone of a repo shipping `byre.preset` composes a working box, chauffeured
+installs included.
 
-## Open items -- pending Pete's rulings
+## Open items
 
-1. **D2 offer eligibility:** bundled-only auto-offers for shared-auth
-   companions (recommended), or offer-with-loud-provenance.
-2. **D3b consent depth:** recursive grant rendering at template selection
-   surfaces (recommended, priced), or defer some surfaces.
-3. **D9b' install-as-activation:** reference scan gates fresh installs
-   (recommended), or keep all fresh installs frictionless.
-
-Consciously deferred (rulings already implied by proportionality, listed
-for the record): per-box before/after diffs at replacement (D9a); re-hash
-on every load (D5f -- verify-at-acquisition instead); user-defined alias
-table; OCI/signatures/mirrors; template publishing by us; trimming
-tombstone install-hints to bare text.
+None pending -- all three rev-2 forks ruled (D2, D3b, D9b'), and the preset/
+adoption branch is settled (D16/D17). Consciously deferred, for the
+record: per-box before/after diffs at replacement (D9a); re-hash on every
+load (D5f); user-defined alias table; OCI/signatures/mirrors; template
+publishing by us; trimming tombstone install-hints; uninstall-scan
+courtesies beyond the store walk.
