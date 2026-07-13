@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 
@@ -815,9 +816,10 @@ func validateContainment(s string) error {
 		if r == '\n' || r == '\r' {
 			return fmt.Errorf("must be a single line (no newlines)")
 		}
-		// Control chars (except the plain space already allowed above via the
-		// printable path) can forge adjacent status rows when rendered.
-		if r < 0x20 || r == 0x7f {
+		// Any control char (ASCII C0/DEL and Unicode C1 like U+0085 NEL,
+		// U+009B CSI) can forge adjacent status rows or terminal escapes when
+		// rendered on the four surfaces; unicode.IsControl covers them all.
+		if unicode.IsControl(r) {
 			return fmt.Errorf("must not contain control characters")
 		}
 	}
