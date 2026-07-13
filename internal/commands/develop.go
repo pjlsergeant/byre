@@ -81,7 +81,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err := checkMountPaths(paths); err != nil {
 		return err
 	}
-	rv, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
@@ -43,12 +44,11 @@ func (rv resolved) validate() error {
 
 // resolve loads the config cascade and the enabled skills for a project, and
 // re-validates the combined mount/volume set (config + skill contributions).
-func resolve(paths project.Paths, projectDir string) (resolved, error) {
-	// Ensure store (bundled mirror + legacy notices on stderr) before cascade.
-	// Notice writer is optional at this layer -- callers that have Streams
-	// should prefer EnsureStoreOut; resolve is used from develop which will
-	// have already prepared the store with notices when possible.
-	if err := builtins.EnsureStore(paths.Home); err != nil {
+// notices receives store-ensure human lines (mirror regen, LEGACY) — pass the
+// caller's s.Err; the once-per-process gate in builtins keeps develop's
+// earlier noticed call from doubling. nil = silent (tests).
+func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolved, error) {
+	if err := builtins.EnsureStoreOut(paths.Home, notices); err != nil {
 		return resolved{}, err
 	}
 	cat, err := builtins.LoadCatalogRaw(paths.Home)

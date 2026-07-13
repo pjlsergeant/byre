@@ -21,7 +21,7 @@ func Dockerfile(s Streams, projectDir string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	rv, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func DockerRun(s Streams, projectDir string) error {
 	if err := checkMountPaths(paths); err != nil {
 		return err
 	}
-	rv, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	rv, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}

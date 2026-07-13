@@ -267,19 +267,26 @@ func printTemplateInspect(w io.Writer, ent *packages.Entry) {
 	if cfg.Engine != "" {
 		fmt.Fprintf(w, "  engine: %s\n", packages.EscapeTerminal(cfg.Engine))
 	}
+	// Templates are cascade LAYERS: `!name` entries, `target = "!x"` mounts,
+	// and `remove = true` ports subtract from lower layers. Render them as
+	// removals, never as grants — the trust surface must agree with the merge.
 	for _, a := range cfg.Apt {
-		fmt.Fprintf(w, "  apt: %s\n", packages.EscapeTerminal(a))
+		fmt.Fprintf(w, "  %s\n", listLine("apt", a))
 	}
 	for _, a := range cfg.NpmGlobal {
-		fmt.Fprintf(w, "  npm_global: %s\n", packages.EscapeTerminal(a))
+		fmt.Fprintf(w, "  %s\n", listLine("npm_global", a))
 	}
 	for _, e := range cfg.EgressOffered {
-		fmt.Fprintf(w, "  egress_offered: %s\n", packages.EscapeTerminal(e))
+		fmt.Fprintf(w, "  %s\n", listLine("egress_offered", e))
 	}
 	for _, e := range cfg.Egress {
-		fmt.Fprintf(w, "  egress: %s\n", packages.EscapeTerminal(e))
+		fmt.Fprintf(w, "  %s\n", listLine("egress", e))
 	}
 	for _, m := range cfg.Mounts {
+		if name, ok := strings.CutPrefix(m.Target, "!"); ok && name != "" {
+			fmt.Fprintf(w, "  removes mount: %s\n", packages.EscapeTerminal(name))
+			continue
+		}
 		mode := m.Mode
 		if mode == "" {
 			mode = "ro"
@@ -290,6 +297,10 @@ func printTemplateInspect(w io.Writer, ent *packages.Entry) {
 		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), mode)
 	}
 	for _, v := range cfg.Volumes {
+		if name, ok := strings.CutPrefix(v.Name, "!"); ok && name != "" {
+			fmt.Fprintf(w, "  removes volume: %s\n", packages.EscapeTerminal(name))
+			continue
+		}
 		scope := v.Scope
 		if scope == "" {
 			scope = "project"
@@ -305,6 +316,10 @@ func printTemplateInspect(w io.Writer, ent *packages.Entry) {
 		fmt.Fprintln(w, line)
 	}
 	for _, p := range cfg.Ports {
+		if p.Remove {
+			fmt.Fprintf(w, "  removes port: container %d\n", p.Container)
+			continue
+		}
 		iface, host := config.PortEffective(p)
 		fmt.Fprintf(w, "  port: %s:%d -> container %d\n", packages.EscapeTerminal(iface), host, p.Container)
 	}
@@ -334,6 +349,15 @@ func printTemplateInspect(w io.Writer, ent *packages.Entry) {
 	if cfg.SeedPrefs {
 		fmt.Fprintln(w, "  seed_prefs: true")
 	}
+}
+
+// listLine renders one string-list entry, showing `!name` cascade markers as
+// removals instead of grants.
+func listLine(key, val string) string {
+	if name, ok := strings.CutPrefix(val, "!"); ok && name != "" {
+		return fmt.Sprintf("removes %s: %s", key, packages.EscapeTerminal(name))
+	}
+	return fmt.Sprintf("%s: %s", key, packages.EscapeTerminal(val))
 }
 
 func sortedMapKeys(m map[string]string) []string {

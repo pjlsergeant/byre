@@ -26,7 +26,7 @@ func Rebuild(s Streams, projectDir string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	rv, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}

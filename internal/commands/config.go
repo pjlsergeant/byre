@@ -142,7 +142,7 @@ type volumeAdmin struct {
 // The section is shown even with zero volumes — the screen re-resolves on each
 // open, so volumes added later (e.g. via $EDITOR) appear without restarting.
 func newVolumeAdmin(paths project.Paths, projectDir string) configui.VolumeAdmin {
-	if _, err := resolve(paths, projectDir); err != nil {
+	if _, err := resolve(paths, projectDir, nil); err != nil {
 		return nil
 	}
 	rs, err := lifecycleEngines()
@@ -178,7 +178,7 @@ func (a *volumeAdmin) SharedNote() string {
 // List re-resolves the config from disk so the volume set reflects the current
 // state (e.g. after a $EDITOR edit to [[volumes]] or the agent), not a snapshot.
 func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
-	rv, err := resolve(a.paths, a.projectDir)
+	rv, err := resolve(a.paths, a.projectDir, nil)
 	if err != nil {
 		return nil, err
 	}

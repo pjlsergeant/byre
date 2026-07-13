@@ -544,20 +544,16 @@ func (m model) skipDisabled(opts []string, start, dir int) int {
 }
 
 // optProv / optDisabled look up catalog provenance for template/agent options.
+// Both go through Lookup, which expands aliases: a name that resolves to a
+// loadable package is NEVER disabled, even when a same-named problem row
+// exists — a LEGACY materialized `claude` dir must not grey out the valid
+// bundled `claude` option (sibling-keyed problem rows shadow nothing).
 func (m model) optProv(name string) string {
 	if m.inh.Catalog == nil || name == "" || name == noneOption {
 		return ""
 	}
 	if ent, ok := m.inh.Catalog.Lookup(name); ok {
 		return ent.ProvenanceLabel()
-	}
-	// Problem rows may only appear under sibling map keys; scan list.
-	for _, ent := range m.inh.Catalog.List("") {
-		if ent.DisplayName() == name || ent.ID == name {
-			if ent.Provenance == packages.ProvInvalid || ent.Provenance == packages.ProvLegacy || ent.Provenance == packages.ProvConflict {
-				return ent.ProvenanceLabel()
-			}
-		}
 	}
 	return ""
 }
@@ -566,14 +562,16 @@ func (m model) optDisabled(name string) string {
 	if m.inh.Catalog == nil || name == "" || name == noneOption {
 		return ""
 	}
-	for _, ent := range m.inh.Catalog.List("") {
-		if (ent.DisplayName() == name || ent.ID == name) &&
-			(ent.Provenance == packages.ProvInvalid || ent.Provenance == packages.ProvLegacy || ent.Provenance == packages.ProvConflict) {
-			if ent.Reason != "" {
-				return ent.Reason
-			}
-			return string(ent.Provenance)
+	ent, ok := m.inh.Catalog.Lookup(name)
+	if !ok {
+		return ""
+	}
+	switch ent.Provenance {
+	case packages.ProvInvalid, packages.ProvLegacy, packages.ProvConflict:
+		if ent.Reason != "" {
+			return ent.Reason
 		}
+		return string(ent.Provenance)
 	}
 	return ""
 }

@@ -351,9 +351,18 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 	return c.put(ent)
 }
 
-// looksLikeAgent reports whether a skill primary contains an [agent] table
-// (cheap string scan; used for agent-picker inclusion of INVALID rows).
+// looksLikeAgent reports whether a skill primary declares an [agent] table
+// (used for agent-picker inclusion of INVALID rows). A lenient TOML decode is
+// authoritative — stage-2 failures are usually unknown keys, which still parse
+// leniently. Only when the file is not TOML at all does the raw substring
+// fallback apply (best-effort classification of an unparsable file).
 func looksLikeAgent(raw []byte) bool {
+	var probe struct {
+		Agent map[string]any `toml:"agent"`
+	}
+	if md, err := toml.Decode(string(raw), &probe); err == nil {
+		return md.IsDefined("agent")
+	}
 	return strings.Contains(string(raw), "[agent]")
 }
 
