@@ -705,6 +705,12 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		}
 		sk, err := Load(cat, name)
 		if err != nil {
+			// Missing-reference errors always print the remedy (D9e): the
+			// exact install command when a [sources] hint names one. Never
+			// fetched -- acquisition on a third party's initiative is banned.
+			if hint, ok := cfg.Sources[name]; ok {
+				return Resolved{}, fmt.Errorf("%w\n  install it: %s", err, hint.InstallHint("skill"))
+			}
 			return Resolved{}, err
 		}
 		// Use canonical name everywhere downstream.

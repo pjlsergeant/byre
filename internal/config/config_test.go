@@ -585,6 +585,7 @@ func sampleConfig() Config {
 		Files:              map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:             []string{"devloop"},
 		SharedAuth:         SharedAuthPref{Yes: []string{"claude"}},
+		Sources:            map[string]SourceHint{"pete/x": {URI: "https://example.test/x/skill.toml", Digest: "sha256:ab", From: "project config"}},
 		SharedAuthDeclined: []string{"claude"},
 		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
 		Egress:             []string{"grafana.com"},

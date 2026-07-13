@@ -67,6 +67,30 @@ func catalogFor(home string) (*packages.Catalog, error) {
 	return packages.LoadCatalog(home, bundled, display, compat)
 }
 
+// SourceHint is one [sources] acquisition hint (D16b). From names the cascade
+// layer the winning hint came from ("project config" / "default config") so a
+// lower layer overriding a digest is visible; it is set during resolution,
+// never written by users.
+type SourceHint struct {
+	URI    string `toml:"uri"`
+	Digest string `toml:"digest,omitempty"`
+	From   string `toml:"-"`
+}
+
+// InstallHint renders the exact install command for a missing package (D9e):
+// kind-correct verb, --digest when the hint carries one, attributed to the
+// layer that supplied it.
+func (h SourceHint) InstallHint(kind string) string {
+	cmd := fmt.Sprintf("byre %s install %s", kind, h.URI)
+	if h.Digest != "" {
+		cmd += " --digest " + h.Digest
+	}
+	if h.From != "" {
+		return fmt.Sprintf("%s   (hint from %s)", cmd, h.From)
+	}
+	return cmd
+}
+
 // ProjectConfigName is the fixed per-project config filename.
 const ProjectConfigName = "byre.config"
 
@@ -237,6 +261,14 @@ type Config struct {
 	// resolved config; only onboarding reads or writes it.
 	SharedAuth SharedAuthPref `toml:"shared_auth,omitempty"`
 
+	// Sources are acquisition hints for package references (D16b): package
+	// id -> where to install it from. Hints are NEVER auto-fetched --
+	// acquisition on a third party's initiative is banned; anywhere byre
+	// reports a missing package it prints the exact install command from
+	// this map instead of a shrug. Merged last-wins by id across the
+	// cascade; banned in template.config (templates reference no packages).
+	Sources map[string]SourceHint `toml:"sources,omitempty"`
+
 	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
 	// shared-auth offer recorded declines here; nothing reads it anymore —
 	// the offer's default is already No, so a decline needs no record. It
@@ -372,6 +404,12 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	canonicalizeLayer(cat, &def)
 	canonicalizeLayer(cat, &proj)
 
+	// [sources] layer attribution (D16b): the printed install command names
+	// the layer the winning hint came from, so a lower layer overriding a
+	// digest is visible. Set before Merge's last-wins-by-id map fold.
+	stampSources(&def, "default config")
+	stampSources(&proj, "project config")
+
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
 	// default ⊕ template ⊕ project. "none" is a real stored value, not
@@ -384,6 +422,11 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	if templateName != "" {
 		tmpl, err = loadTemplateLayer(cat, templateName)
 		if err != nil {
+			// D9e: a missing template prints its kind-correct install command
+			// when any layer carries a [sources] hint for it.
+			if hint, ok := mergeSources(def.Sources, proj.Sources)[templateName]; ok {
+				return Config{}, fmt.Errorf("%w\n  install it: %s", err, hint.InstallHint("template"))
+			}
 			return Config{}, err
 		}
 		// Templates are shape only (D3b): already validated in loadTemplateLayer.
@@ -422,6 +465,22 @@ func canonicalizeLayer(cat *packages.Catalog, c *Config) {
 	}
 	for i, s := range c.Skills {
 		c.Skills[i] = cat.ExpandAlias(s)
+	}
+	// [sources] keys are package references too (D16b).
+	if len(c.Sources) > 0 {
+		canon := make(map[string]SourceHint, len(c.Sources))
+		for id, h := range c.Sources {
+			canon[cat.ExpandAlias(id)] = h
+		}
+		c.Sources = canon
+	}
+}
+
+// stampSources records which cascade layer a hint came from (D16b).
+func stampSources(c *Config, layer string) {
+	for id, h := range c.Sources {
+		h.From = layer
+		c.Sources[id] = h
 	}
 }
 
@@ -574,6 +633,7 @@ func Merge(base, over Config) Config {
 
 	// Maps: union, over wins per key.
 	out.Env = mergeMap(base.Env, over.Env)
+	out.Sources = mergeSources(base.Sources, over.Sources)
 	out.EnvFromHost = mergeMap(base.EnvFromHost, over.EnvFromHost)
 	out.Files = mergeMap(base.Files, over.Files)
 
@@ -913,6 +973,14 @@ func (c Config) ValidateLayer() error {
 	if err := c.validateScalars(true); err != nil {
 		return err
 	}
+	for id, h := range c.Sources {
+		if strings.TrimSpace(h.URI) == "" {
+			return fmt.Errorf("[sources] %q: uri is required (a hint that names nowhere hints nothing)", id)
+		}
+		if h.Digest != "" && !strings.HasPrefix(h.Digest, "sha256:") {
+			return fmt.Errorf("[sources] %q: digest must be sha256:<hex>", id)
+		}
+	}
 	seenTargets := map[string]string{} // target -> what claims it
 	for _, m := range c.Mounts {
 		if isRemoval(m.Target) {
@@ -994,6 +1062,21 @@ func mergeStrings(base, over []string) []string {
 	}
 	for _, rm := range removals {
 		out = removeString(out, rm)
+	}
+	return out
+}
+
+// mergeSources folds [sources] hints last-wins by package id (D16b).
+func mergeSources(base, over map[string]SourceHint) map[string]SourceHint {
+	if len(base) == 0 && len(over) == 0 {
+		return nil
+	}
+	out := make(map[string]SourceHint, len(base)+len(over))
+	for id, h := range base {
+		out[id] = h
+	}
+	for id, h := range over {
+		out[id] = h
 	}
 	return out
 }

@@ -803,3 +803,20 @@ target = "/home/dev/.claude"
 		t.Fatalf("names = %v", res.Names())
 	}
 }
+
+// D9e: a missing skill with a [sources] hint prints the exact install
+// command; without one, the plain not-found error stands.
+func TestResolveMissingSkillPrintsSourceHint(t *testing.T) {
+	cat := catFor(t, t.TempDir())
+	cfg := config.Config{Skills: []string{"pete/linter"}, Sources: map[string]config.SourceHint{
+		"pete/linter": {URI: "https://example.test/linter/skill.toml", Digest: "sha256:8fe3", From: "project config"},
+	}}
+	_, err := Resolve(cfg, cat)
+	if err == nil {
+		t.Fatal("missing skill must error")
+	}
+	want := "byre skill install https://example.test/linter/skill.toml --digest sha256:8fe3"
+	if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "hint from project config") {
+		t.Fatalf("remedy missing:\n%v", err)
+	}
+}
