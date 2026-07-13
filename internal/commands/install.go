@@ -433,14 +433,27 @@ func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 	}
 
 	hits := scanReferences(home, cat, ent.ID)
+	// A contested id with exactly two claimants means removal ACTIVATES the
+	// survivor; with more (installed + local skill + local template), the
+	// remaining claimants keep conflicting and boxes keep failing. An empty
+	// claimant list (a conflict row from an unexpected path) gets the
+	// conservative wording -- never promise activation we cannot prove.
+	takeover := contested != nil && len(contested.Claimants) == 2
 	if contested != nil {
 		fmt.Fprintf(s.Err, "byre: %s is contested: %s\n", ent.ID, packages.EscapeTerminal(contested.Reason))
-		fmt.Fprintln(s.Err, "Removing the installed copy leaves the other claimant as this id's SOLE provider -- it loads normally from then on.")
+		if takeover {
+			fmt.Fprintln(s.Err, "Removing the installed copy leaves the other claimant as this id's SOLE provider -- it loads normally from then on.")
+		} else {
+			fmt.Fprintln(s.Err, "Removing the installed copy leaves the id contested among the remaining claimants -- it stays unresolvable until one remains.")
+		}
 	}
 	if len(hits) > 0 {
-		if contested != nil {
+		switch {
+		case takeover:
 			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes run the surviving claimant at next launch:\n%s", ent.ID, renderRefHits(hits))
-		} else {
+		case contested != nil:
+			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes keep hitting the conflict error at next develop:\n%s", ent.ID, renderRefHits(hits))
+		default:
 			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes hit a resolve error at next develop:\n%s", ent.ID, renderRefHits(hits))
 		}
 	}
@@ -452,8 +465,10 @@ func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 	}
 	fmt.Fprintf(s.Err, "byre: uninstalled %s\n", ent.ID)
 	switch {
-	case contested != nil:
+	case takeover:
 		fmt.Fprintln(s.Err, "      The surviving claimant now provides this id; referencing boxes load it at their next launch.")
+	case contested != nil:
+		fmt.Fprintln(s.Err, "      The id remains contested among the remaining claimants.")
 	case len(hits) > 0:
 		fmt.Fprintln(s.Err, "      Referencing boxes will print the reinstall remedy when they next resolve.")
 	}

@@ -447,6 +447,45 @@ func TestUninstallContestedIdDisclosesTakeover(t *testing.T) {
 	}
 }
 
+// With THREE claimants (installed + local skill + local template), removing
+// the installed copy must not promise activation: the locals still conflict
+// and referencing boxes keep failing. The disclosure must name every claimant.
+func TestUninstallMultiClaimantStaysContested(t *testing.T) {
+	home := installHome(t)
+	uri, _ := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := SkillInstall(discardStreams(), uri, "", false); err != nil {
+		t.Fatal(err)
+	}
+	sdir := filepath.Join(home, "skills", "pete", "tool")
+	os.MkdirAll(sdir, 0o755)
+	os.WriteFile(filepath.Join(sdir, "skill.toml"), []byte("description = \"local\"\n"), 0o644)
+	tdir := filepath.Join(home, "templates", "pete", "tool")
+	os.MkdirAll(tdir, 0o755)
+	os.WriteFile(filepath.Join(tdir, "template.config"), []byte("base = \"debian:stable\"\n"), 0o644)
+
+	s, _, errBuf := testStreams("", false)
+	if err := SkillUninstall(s, "pete/tool", true); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "contested among the remaining claimants") {
+		t.Fatalf("multi-claimant uninstall must not promise activation:\n%s", out)
+	}
+	if strings.Contains(out, "SOLE provider") || strings.Contains(out, "surviving claimant now provides") {
+		t.Fatalf("must not promise a survivor while two claimants remain:\n%s", out)
+	}
+	if !strings.Contains(out, sdir) || !strings.Contains(out, tdir) {
+		t.Fatalf("disclosure must name every claimant:\n%s", out)
+	}
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.ResolveName("pete/tool"); err == nil {
+		t.Fatal("id must stay conflicted after removing one of three claimants")
+	}
+}
+
 func TestInspectURIDoesNotInstall(t *testing.T) {
 	home := installHome(t)
 	uri, digest := publishSkill(t, "pete/tool", "1.0.0", "")

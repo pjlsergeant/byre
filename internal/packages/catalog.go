@@ -25,6 +25,10 @@ type Entry struct {
 	Reason string
 	// ConflictWith names the other location when Provenance == ProvConflict.
 	ConflictWith string
+	// Claimants lists EVERY location fighting over the id of a conflict row,
+	// in load order -- an id can have more than two (installed + local skill
+	// + local template), and remedies need the full set.
+	Claimants []string
 
 	// Loading: either Dir (local/legacy on disk) or FS+Sub (bundled embed).
 	// Installed snapshots (phase 2) will also use Dir under packages/<digest>.
@@ -482,8 +486,14 @@ func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason,
 
 func (c *Catalog) put(ent *Entry) error {
 	if prev, ok := c.byID[ent.ID]; ok {
-		// Scoped conflict (D1e): replace both with conflict rows.
-		reason := fmt.Sprintf("duplicate id %q: %s and %s", ent.ID, locationOf(prev), locationOf(ent))
+		// Scoped conflict (D1e): replace both with conflict rows. A third or
+		// later claimant joins the existing row's claimant list -- the reason
+		// must name every location, not just the latest pair.
+		if prev.Provenance != ProvConflict {
+			prev.Claimants = []string{locationOf(prev)}
+		}
+		prev.Claimants = append(prev.Claimants, locationOf(ent))
+		reason := fmt.Sprintf("duplicate id %q: %s", ent.ID, strings.Join(prev.Claimants, " and "))
 		prev.Provenance = ProvConflict
 		prev.Reason = reason
 		prev.ConflictWith = locationOf(ent)
