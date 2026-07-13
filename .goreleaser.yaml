@@ -21,7 +21,7 @@ builds:
     # v-prefixed so `byre version` prints the same string a
     # `go install ...@vX.Y.Z` build reports from module build info.
     ldflags:
-      - -s -w -X main.version=v{{ .Version }}
+      - -s -w -X main.version=v{{ .Version }} -X github.com/pjlsergeant/byre/internal/version.Version=v{{ .Version }}
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
