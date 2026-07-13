@@ -1,9 +1,9 @@
 # Skill packages: identity, immutable bundled content, installation, presets
 
-**Status:** Design of record, rev 4 (grilled with Pete 2026-07-13, all rulings
-his; rev 2 folded codex + grok design round 1; rev 3 resolved the pending
-doctrine forks and added the preset model + adoption retirement; rev 4 folds
-design round 2 -- one fork **[PENDING]**: template `agent`, D3b)
+**Status:** Design of record, rev 5 -- FINAL (grilled with Pete 2026-07-13,
+all rulings his; rev 2 folded codex + grok design round 1; rev 3 resolved
+the doctrine forks and added presets + adoption retirement; rev 4 folded
+design round 2; rev 5 lands the last ruling: template `agent` banned)
 **Lifecycle:** working doc -- absorb into an ADR + docs/skills.md when built,
 then delete (the docker-host-design.md pattern). Git history keeps it
 regardless.
@@ -82,7 +82,8 @@ the primary enablement surface and nobody types IDs).
   kinds: skill and template.
 - **Template** -- the box's **type**: the shape preset it starts from.
   Cascade semantics -- defaults you override per-key; exactly one per box.
-  Shape only: a template never references skills (D3b).
+  Shape only: a template never references packages -- no `skills`, no
+  `agent` (D3b).
 - **Skill** -- a box **capability**: contributions you add. Union semantics,
   attributed, many per box.
 - **Preset** -- a saved answer to onboarding's questions: a
@@ -229,9 +230,17 @@ skips the question entirely remains a companion already enabled in config
 a capability (many, union semantics, attributed). Both concepts earn their
 keep; neither absorbs the other.
 
-**D3b. Templates never reference skills.** A `skills` key in a
-`template.config` is a validation error: "composition belongs in a preset"
-(D16). Rationale: a template that *enables* skills makes "I picked a
+**D3b. Templates never reference packages.** A `skills` **or `agent`** key
+in a `template.config` is a validation error: "composition belongs in a
+preset" (D16). The agent half closes the round-2 residual both reviewers
+found: the agent is a skill (ADR 0005), so a template `agent` was implicit
+enablement of the highest-power skill class through a key the `skills` ban
+left open. Nothing is lost: a composition that wants an agent is a preset;
+a machine-wide usual agent is `default.config` (the user's own layer, not
+a package); onboarding's picker already asks per box. Bonus simplification:
+the "`none` sentinel beats template agent" special case loses its reason
+to exist. A hand-made local template that sets `agent` today goes INVALID
+with an error naming the fix (move it to a preset or your config). Rationale: a template that *enables* skills makes "I picked a
 template" stand in for "I granted what those skills grant" -- visibility is
 not consent, and convenience never justifies a default grant. With
 composition removed, a template's consent surface is exactly its own file:
@@ -243,22 +252,8 @@ policing, which byre refuses (docker-host Network-row precedent). No
 recursive rendering machinery is needed anywhere -- the hole is closed
 structurally, not disclosed around.
 
-(Today's bundled templates set base/egress_offered only and no shipped
-template enables skills, so nothing breaks.)
-
-**[PENDING Pete] The template `agent` key.** Both round-2 reviewers found
-the same residual: `agent = "..."` in a template still *implicitly enables
-that agent skill* through the cascade (ADR 0005: the agent is a skill) --
-the highest-power skill class riding in on a key D3b left open. Onboarding's
-agent picker only fires at onboarding; a box that gains `template = "..."`
-later (config UI, hand edit) inherits and enables the agent unasked.
-Options: (1) **ban `agent` in template.config too** -- composition,
-including "which agent", belongs to presets and explicit config; (2) make
-template `agent` prefill-only recommendation metadata (never effective in
-the cascade); (3) accept as residual and require the agent skill's grant
-summary at template selection. Recommendation: **(1)** -- it completes
-"template = shape", it is one more validation error beside the `skills`
-one, and no shipped template sets `agent` today.
+(Today's bundled templates set base/egress_offered only; no shipped
+template sets `skills` or `agent`, so nothing breaks.)
 
 **D3c.** Full CLI parity: `byre template list / inspect / install /
 uninstall / fork / init / validate / pack` -- shared engine, per-kind verbs,
@@ -821,10 +816,8 @@ installs included.
 
 ## Open items
 
-One pending: **the template `agent` key** (D3b, both round-2 reviewers;
-recommendation: ban it in template.config, completing "template = shape").
-
-Consciously deferred, for the record: per-box before/after diffs at
+None pending -- every fork carries Pete's ruling (grilling + two review
+rounds, 2026-07-13). Consciously deferred, for the record: per-box before/after diffs at
 replacement (D9a); re-hash on every load (D5f); user-defined alias table;
 OCI/signatures/mirrors; template publishing by us; trimming tombstone
 install-hints; uninstall-scan courtesies beyond the store walk; a preset
