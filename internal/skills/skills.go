@@ -146,6 +146,26 @@ type File struct {
 	} `toml:"context"`
 }
 
+// IsStub reports whether a skill contributes NOTHING to a box -- no build
+// content, no runtime grants, no volumes, no agent, no context, no
+// companionship claim: a description-only compatibility shell (devloop,
+// grok-shared-auth). Stubs exist so configs naming them keep resolving; a
+// picker has nothing to offer for one -- it is only shown when a config
+// already references it (so it can be un-referenced).
+func IsStub(f File) bool {
+	rt := f.Runtime
+	return f.Agent == nil &&
+		f.SharedAuthFor == "" &&
+		len(f.Build.Apt) == 0 && len(f.Build.NpmGlobal) == 0 &&
+		len(f.Build.Dockerfile) == 0 && len(f.Build.Files) == 0 &&
+		len(rt.Env) == 0 && len(rt.RunArgs) == 0 && len(rt.Caps) == 0 &&
+		len(rt.Mounts) == 0 && rt.NetworkPosture == "" && rt.NetnsInit == "" &&
+		len(rt.Egress) == 0 && len(rt.EgressOffered) == 0 &&
+		len(rt.SockGroups) == 0 && rt.Containment == "" &&
+		len(f.Volumes) == 0 &&
+		f.Context.Text == "" && f.Context.File == ""
+}
+
 // Skill is a loaded skill with its context text resolved. Files is filled by
 // Resolve (Load alone doesn't validate build files). Name is the canonical
 // package ID (aliases are expanded at load).

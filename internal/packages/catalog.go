@@ -735,6 +735,12 @@ func (e *Entry) DisplayName() string {
 func (e *Entry) ProvenanceLabel() string {
 	switch e.Provenance {
 	case ProvBundled:
+		// Dev builds carry "(devel) <rev>" or a module pseudo-version --
+		// either repeated on every bundled row is noise; inspect keeps the
+		// full version. A release tag ("v0.2.0") stays.
+		if strings.HasPrefix(e.Version, "(devel)") || len(e.Version) > 20 {
+			return "bundled (devel)"
+		}
 		if e.Version != "" {
 			return "bundled " + e.Version
 		}

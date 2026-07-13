@@ -15,6 +15,18 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
+// skillOpts is ListSkills minus unofferable stubs (see the call site).
+func skillOpts(cat *packages.Catalog) []string {
+	var out []string
+	for _, n := range skills.ListSkills(cat) {
+		if sk, err := skills.Load(cat, n); err == nil && skills.IsStub(sk.File) {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
 // Config implements `byre config` — the interactive editor for this project's
 // host-side store config (~/.byre/projects/<id>/byre.config), and, with global,
 // the global ~/.byre/default.config. Both are byre-owned/host-side, so editing
@@ -30,7 +42,11 @@ func Config(s Streams, projectDir string, global bool) error {
 	cat, _ := builtins.LoadCatalogRaw(home)
 	templates := config.ListTemplatesCatalog(cat)
 	agents := skills.ListAgentSkills(cat)
-	skillOpts := skills.ListSkills(cat)
+	// Stubs (description-only compatibility shells: devloop,
+	// grok-shared-auth) are not OFFERED: a picker has nothing to enable.
+	// A config that already references one still shows it -- skillEntries
+	// unions the config-side names back in, so it stays un-referenceable.
+	skillOpts := skillOpts(cat)
 	skillDescs := skills.DescribeSkills(cat)
 	// Provenance inputs (ADR 0018): the resolved lower cascade per template,
 	// so the project editor can mark inherited entries instead of showing the

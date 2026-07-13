@@ -1245,3 +1245,20 @@ func TestDockerHostComposeEnvHook(t *testing.T) {
 		t.Errorf("worktrees must not share COMPOSE_PROJECT_NAME: both %q", out)
 	}
 }
+
+// The bundled stubs (devloop, grok-shared-auth) contribute nothing and must
+// classify as stubs -- pickers do not offer them; every other bundled skill
+// must NOT (a real skill misclassified as a stub would vanish from pickers).
+func TestBundledStubClassification(t *testing.T) {
+	_, cat := testCat(t)
+	stubs := map[string]bool{"devloop": true, "grok-shared-auth": true}
+	for _, name := range skills.ListSkills(cat) {
+		sk, err := skills.Load(cat, name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := skills.IsStub(sk.File); got != stubs[name] {
+			t.Errorf("IsStub(%s) = %v, want %v", name, got, stubs[name])
+		}
+	}
+}
