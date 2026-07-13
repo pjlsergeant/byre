@@ -1,0 +1,55 @@
+# Built-in skill: docker-host -- grant the box the host's Docker daemon.
+#
+# Design of record: docs/docker-host-design.md. User-facing security discussion:
+# docs/docker-host.md. This skill is the ergonomic form of a grant already
+# expressible by hand (socket mount + CLI + group); its value is bundling that
+# with honest, loud legibility.
+#
+# What it does:
+#   - Installs docker-ce-cli + compose + buildx from Docker's official apt repo
+#     (client only -- no engine, no daemon in the box).
+#   - Mounts /var/run/docker.sock read-write and asks the runner for numeric
+#     --group-add of the socket's owning gid (engine-side probe; never hardcoded).
+#   - Declares a containment hole so status/launch/adoption/config UI disclaim
+#     the warranty for anything done through the socket.
+#   - Sets COMPOSE_PROJECT_NAME from BYRE_WORKTREE so sibling worktrees don't
+#     collide on host compose stacks.
+#
+# Explicitly NOT: docker-in-docker, not a Podman host skill (would need its own
+# verified facts). For compose-deps WITHOUT this grant, see the service-sidecars
+# TODO. Egress is empty: the CLI speaks a unix socket; daemon-side network
+# activity is the host's, covered by the containment disclaimer.
+
+description = "Access to the host's Docker daemon via its socket (root-equivalent grant)."
+
+[build]
+# ca-certificates + curl for the keyring fetch; the docker packages themselves
+# come from Docker's apt repo via the dockerfile block (not Debian's archive --
+# docker.io pulls a full engine into a box whose point is no daemon).
+apt = ["ca-certificates", "curl"]
+files = { "env.sh" = "/etc/byre/env.d/50-docker-host.sh" }
+dockerfile = [
+  "RUN . /etc/os-release \\",
+  " && install -m 0755 -d /etc/apt/keyrings \\",
+  " && curl -fsSL \"https://download.docker.com/linux/${ID}/gpg\" -o /etc/apt/keyrings/docker.asc \\",
+  " && chmod a+r /etc/apt/keyrings/docker.asc \\",
+  " && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable\" > /etc/apt/sources.list.d/docker.list \\",
+  " && apt-get update \\",
+  " && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin \\",
+  " && rm -rf /var/lib/apt/lists/*",
+]
+
+[runtime]
+# Socket bind + group reachability. sock_groups is itself a grant wider than
+# the named path (dev gains group access to every inode carrying that gid).
+# The runner probes the gid engine-side and injects --group-add <gid>.
+mounts = [{ host = "/var/run/docker.sock", target = "/var/run/docker.sock", mode = "rw" }]
+sock_groups = ["/var/run/docker.sock"]
+# Warranty disclaimer (skills-only, multi-declarer renders all). Status and
+# launch frame this with 🛑; adoption/config UI print it as a top warning.
+containment = "docker-host opens a containment hole -- it can drive the host's Docker daemon. The guarantees below still describe the box; byre makes no warranty for what's done through this hole. At least skim docs/docker-host.md before enabling."
+# CLI speaks a unix socket; open zero network doors.
+egress = []
+
+[context]
+file = "context.md"

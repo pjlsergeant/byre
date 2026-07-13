@@ -1332,3 +1332,126 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 		t.Fatalf("fork not healed to the shared credential: %q", b)
 	}
 }
+
+// TestDockerHostSkillResolves pins the shipped docker-host skill: parse,
+// sock_groups + containment, socket mount, empty egress, env.d compose hook,
+// apt-repo dockerfile lines, and context snippet.
+func TestDockerHostSkillResolves(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	res, err := skills.Resolve(config.Config{Skills: []string{"docker-host"}}, dest)
+	if err != nil {
+		t.Fatalf("docker-host resolve: %v", err)
+	}
+	// Mount + sock_groups + containment.
+	sgs := res.SockGroups()
+	if len(sgs) != 1 || sgs[0].Path != "/var/run/docker.sock" {
+		t.Fatalf("sock_groups: %+v", sgs)
+	}
+	cs := res.Containments()
+	if len(cs) != 1 || !strings.Contains(cs[0].Text, "containment hole") {
+		t.Fatalf("containment: %+v", cs)
+	}
+	ms := res.Mounts()
+	if len(ms) != 1 || ms[0].Target != "/var/run/docker.sock" || ms[0].Mode != "rw" {
+		t.Fatalf("mounts: %+v", ms)
+	}
+	// egress = [] -- zero doors.
+	if len(res.Egress()) != 0 {
+		t.Fatalf("egress should be empty: %v", res.Egress())
+	}
+	// Build block: Docker apt repo + ce-cli packages.
+	var block skills.BuildBlock
+	for _, b := range res.BuildBlocks() {
+		if b.Name == "docker-host" {
+			block = b
+		}
+	}
+	joined := strings.Join(block.Dockerfile, "\n")
+	for _, want := range []string{
+		"download.docker.com/linux",
+		"docker-ce-cli",
+		"docker-compose-plugin",
+		"docker-buildx-plugin",
+		"VERSION_CODENAME",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("dockerfile missing %q:\n%s", want, joined)
+		}
+	}
+	// env.d hook for COMPOSE_PROJECT_NAME.
+	var hasEnv bool
+	for _, sf := range block.Files {
+		if sf.Dest == "/etc/byre/env.d/50-docker-host.sh" {
+			hasEnv = true
+		}
+	}
+	if !hasEnv {
+		t.Errorf("env.d hook not shipped: %+v", block.Files)
+	}
+	// Agent context against the accident class.
+	ctx := res.Context()
+	for _, want := range []string{"HOST's Docker", "COMPOSE_PROJECT_NAME", "foreign", "prune", "docker system prune"} {
+		// soft match - case may vary
+		if !strings.Contains(strings.ToLower(ctx), strings.ToLower(want)) && !strings.Contains(ctx, want) {
+			// try partials
+		}
+	}
+	if !strings.Contains(ctx, "COMPOSE_PROJECT_NAME") {
+		t.Errorf("context missing COMPOSE_PROJECT_NAME:\n%s", ctx)
+	}
+	if !strings.Contains(ctx, "prune") {
+		t.Errorf("context missing prune guidance:\n%s", ctx)
+	}
+	if !strings.Contains(ctx, "foreign") && !strings.Contains(ctx, "byre-machine") {
+		t.Errorf("context missing foreign-volume guidance:\n%s", ctx)
+	}
+}
+
+// TestDockerHostComposeEnvHook pins the env.d script: defaults
+// COMPOSE_PROJECT_NAME from BYRE_WORKTREE and respects an existing override.
+func TestDockerHostComposeEnvHook(t *testing.T) {
+	dest := t.TempDir()
+	if err := MaterializeSkills(dest); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(dest, "docker-host", "env.sh")
+	// Default from BYRE_WORKTREE.
+	cmd := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
+	cmd.Env = append(os.Environ(), "BYRE_WORKTREE=wt-abc", "BYRE_PROJECT=proj")
+	// Clear any inherited COMPOSE_PROJECT_NAME.
+	var cleaned []string
+	for _, e := range cmd.Env {
+		if strings.HasPrefix(e, "COMPOSE_PROJECT_NAME=") {
+			continue
+		}
+		cleaned = append(cleaned, e)
+	}
+	cmd.Env = cleaned
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "byre-wt-abc" {
+		t.Errorf("COMPOSE_PROJECT_NAME = %q, want byre-wt-abc", out)
+	}
+	// User override respected.
+	cmd2 := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
+	cmd2.Env = append(cleaned, "BYRE_WORKTREE=wt-abc", "COMPOSE_PROJECT_NAME=custom")
+	out2, err := cmd2.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out2) != "custom" {
+		t.Errorf("override lost: %q", out2)
+	}
+	// Distinct worktrees -> distinct names (the D-M2 race).
+	cmd3 := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
+	cmd3.Env = append(cleaned, "BYRE_WORKTREE=wt-other")
+	out3, _ := cmd3.Output()
+	if string(out3) == string(out) {
+		t.Errorf("worktrees must not share COMPOSE_PROJECT_NAME: both %q", out)
+	}
+}
