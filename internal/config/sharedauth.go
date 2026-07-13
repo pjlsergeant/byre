@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // SharedAuthPref is the dual-shape shared_auth favourite (D2c):
@@ -148,23 +149,12 @@ func (s SharedAuthPref) EncodeTOMLLine() string {
 		for _, k := range keys {
 			parts = append(parts, fmt.Sprintf("%s = %q", k, s.Pick[k]))
 		}
-		return "shared_auth = { " + joinComma(parts) + " }"
+		return "shared_auth = { " + strings.Join(parts, ", ") + " }"
 	}
 	// Legacy array shape.
 	quoted := make([]string, len(s.Yes))
 	for i, a := range s.Yes {
 		quoted[i] = fmt.Sprintf("%q", a)
 	}
-	return "shared_auth = [" + joinComma(quoted) + "]"
-}
-
-func joinComma(parts []string) string {
-	out := ""
-	for i, p := range parts {
-		if i > 0 {
-			out += ", "
-		}
-		out += p
-	}
-	return out
+	return "shared_auth = [" + strings.Join(quoted, ", ") + "]"
 }
