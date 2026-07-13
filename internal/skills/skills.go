@@ -1,10 +1,11 @@
-// Package skills loads skill bundles from ~/.byre/skills/<name>/ and resolves
-// their contributions to the layers byre controls: build (per-skill Dockerfile
-// block), runtime (mounts/env/caps/run_args), state (named volumes), agent
-// context, and — for agent skills — the launch command.
+// Package skills loads skill packages from the multi-provider catalog and
+// resolves their contributions to the layers byre controls: build (per-skill
+// Dockerfile block), runtime (mounts/env/caps/run_args), state (named volumes),
+// agent context, and — for agent skills — the launch command.
 //
 // "The agent is a skill": the `agent` config scalar names which enabled skill
-// provides the default launch command.
+// provides the default launch command. Names are resolved through the catalog
+// (aliases expand to canonical IDs) before load.
 package skills
 
 import (
@@ -19,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // postureRe bounds a declared network_posture to a short display label —
@@ -145,12 +147,14 @@ type File struct {
 }
 
 // Skill is a loaded skill with its context text resolved. Files is filled by
-// Resolve (Load alone doesn't validate build files).
+// Resolve (Load alone doesn't validate build files). Name is the canonical
+// package ID (aliases are expanded at load).
 type Skill struct {
 	Name    string
 	File    File
 	Context string      // resolved context snippet
 	Files   []SkillFile // resolved [build].files, sorted by source
+	dir     string      // host directory for payload resolution (set by loadEntry)
 }
 
 // Grant records a single skill's runtime grants, for legible attribution in
@@ -453,110 +457,189 @@ func (r Resolved) AgentPrefs() *PrefsSpec {
 	return r.Agent.Prefs
 }
 
-// ListSkills returns the names of all skills in skillsDir, sorted. This is the
-// full set selectable via the `skills` list — including agent skills, which can
-// legitimately be enabled as a plain skill (e.g. codex installed for
-// byre-codereview while claude is the launched agent), separate from the
-// `agent` choice.
-func ListSkills(skillsDir string) []string {
-	return list(skillsDir, func(Skill) bool { return true })
+// ListSkills returns display names of all loadable skills in the catalog,
+// sorted. Bundled skills appear under their bare alias (D1c); local/installed
+// under their canonical ID. This is the set selectable via the `skills` list —
+// including agent skills, which can legitimately be enabled as a plain skill.
+func ListSkills(cat *packages.Catalog) []string {
+	return list(cat, func(Skill) bool { return true })
 }
 
 // DescribeSkills returns each cleanly-loading skill's one-line description,
-// keyed by name. Skills without a description are absent from the map (the
-// caller renders nothing rather than a placeholder). Broken skills are
-// skipped, mirroring ListSkills.
-func DescribeSkills(skillsDir string) map[string]string {
+// keyed by display name. Skills without a description are absent from the map.
+func DescribeSkills(cat *packages.Catalog) map[string]string {
 	out := map[string]string{}
-	for _, name := range ListSkills(skillsDir) {
-		if sk, err := Load(skillsDir, name); err == nil && sk.File.Description != "" {
+	for _, name := range ListSkills(cat) {
+		if sk, err := Load(cat, name); err == nil && sk.File.Description != "" {
 			out[name] = sk.File.Description
 		}
 	}
 	return out
 }
 
-// SharedAuthCompanion returns the name of the skill declaring itself the
-// ready shared-auth companion for the given agent skill (shared_auth_for =
-// agent), or "" when none does. Several skills claiming one agent is also ""
-// — refuse the ambiguity (the network_posture stance): sort order silently
-// picking which skill the onboarding "y" enables for a box would let a
-// hand-dropped near-namesake shadow the vetted builtin.
-func SharedAuthCompanion(skillsDir, agent string) string {
-	if agent == "" {
-		return ""
+// SharedAuthClaimants returns every loadable skill that declares itself a
+// shared-auth companion for agent (exact canonical-ID match after alias
+// expansion, D2). Bundled claimants list first; order among peers is by
+// display name. Empty when none claim.
+func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
+	if agent == "" || cat == nil {
+		return nil
 	}
-	names := list(skillsDir, func(sk Skill) bool {
-		return sk.File.SharedAuthFor == agent
-	})
-	if len(names) != 1 {
-		return ""
+	// Pairing is by exact canonical ID (D2).
+	agentCanon := cat.ExpandAlias(agent)
+	if agentCanon == "none" || agentCanon == "" {
+		return nil
 	}
-	return names[0]
+	var bundled, other []Skill
+	for _, ent := range cat.ListLoadable(packages.KindSkill) {
+		sk, err := loadEntry(ent)
+		if err != nil {
+			continue
+		}
+		claim := cat.ExpandAlias(sk.File.SharedAuthFor)
+		if claim == "" || claim != agentCanon {
+			continue
+		}
+		if ent.Provenance == packages.ProvBundled {
+			bundled = append(bundled, sk)
+		} else {
+			other = append(other, sk)
+		}
+	}
+	sort.Slice(bundled, func(i, j int) bool { return bundled[i].Name < bundled[j].Name })
+	sort.Slice(other, func(i, j int) bool { return other[i].Name < other[j].Name })
+	return append(bundled, other...)
 }
 
-// ListAgentSkills returns the names of skills in skillsDir that provide an
-// [agent] command (i.e. can be selected as `agent`), sorted.
-func ListAgentSkills(skillsDir string) []string {
-	return list(skillsDir, func(sk Skill) bool {
+// SharedAuthCompanion returns the single ready shared-auth companion for
+// agent, or "" when none or several claim (legacy single-claim helper). Prefer
+// SharedAuthClaimants + picker for D2 multi-claim.
+func SharedAuthCompanion(cat *packages.Catalog, agent string) string {
+	cs := SharedAuthClaimants(cat, agent)
+	if len(cs) != 1 {
+		return ""
+	}
+	// Prefer display/alias form for writing into config.
+	if ent, ok := cat.Lookup(cs[0].Name); ok && ent.Alias != "" {
+		return ent.Alias
+	}
+	return cs[0].Name
+}
+
+// ListAgentSkills returns display names of skills that provide an [agent]
+// command (i.e. can be selected as `agent`), sorted.
+func ListAgentSkills(cat *packages.Catalog) []string {
+	return list(cat, func(sk Skill) bool {
 		return sk.File.Agent != nil && sk.File.Agent.Command != ""
 	})
 }
 
-// list returns the sorted names of skills in skillsDir that load cleanly and
-// satisfy keep. Broken skills are skipped rather than failing the listing;
-// non-dirs and dot-prefixed entries (temp/stash dirs from `byre skill update`,
-// backups) are not skills.
-func list(skillsDir string, keep func(Skill) bool) []string {
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
+// list returns sorted display names of loadable skills that satisfy keep.
+func list(cat *packages.Catalog, keep func(Skill) bool) []string {
+	if cat == nil {
 		return nil
 	}
 	var out []string
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		sk, err := Load(skillsDir, e.Name())
+	for _, ent := range cat.ListLoadable(packages.KindSkill) {
+		sk, err := loadEntry(ent)
 		if err != nil || !keep(sk) {
 			continue
 		}
-		out = append(out, e.Name())
+		out = append(out, ent.DisplayName())
 	}
 	sort.Strings(out)
 	return out
 }
 
-// Load reads and resolves a single skill from skillsDir/<name>/skill.toml.
-func Load(skillsDir, name string) (Skill, error) {
-	dir := filepath.Join(skillsDir, name)
-	var f File
-	md, err := toml.DecodeFile(filepath.Join(dir, "skill.toml"), &f)
+// Load reads and resolves a single skill by name (alias or canonical ID)
+// through the catalog.
+func Load(cat *packages.Catalog, name string) (Skill, error) {
+	if cat == nil {
+		return Skill{}, fmt.Errorf("skill %q: no catalog", name)
+	}
+	ent, err := cat.ResolveName(name)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return Skill{}, fmt.Errorf("skill %q not found in %s", name, skillsDir)
-		}
 		return Skill{}, fmt.Errorf("skill %q: %w", name, err)
+	}
+	if ent.Kind != packages.KindSkill {
+		return Skill{}, fmt.Errorf("package %q is a %s, not a skill", ent.ID, ent.Kind)
+	}
+	return loadEntry(ent)
+}
+
+func init() {
+	// Eager stage-2 for local skill catalog rows (round 3): primary only.
+	packages.Stage2Skill = ValidatePrimaryBytes
+}
+
+// ValidatePrimaryBytes is the stage-2 skill.toml check used by catalog ingest
+// and validate: strip [package], strict-decode schema (unknown keys fail).
+// Does not resolve context files or build payloads (no extra I/O).
+func ValidatePrimaryBytes(raw []byte) error {
+	_, err := ParsePrimaryBytes(raw)
+	return err
+}
+
+// ParsePrimaryBytes strict-parses skill.toml bytes into the File schema
+// (stage 2, primary only -- no payload/context I/O). Used by install's grant
+// summary, which must render what a manifest DECLARES before any snapshot
+// exists to load.
+func ParsePrimaryBytes(raw []byte) (File, error) {
+	body := packages.StripPackageTable(raw)
+	var f File
+	md, err := toml.Decode(string(body), &f)
+	if err != nil {
+		return File{}, err
+	}
+	if und := md.Undecoded(); len(und) > 0 {
+		return File{}, fmt.Errorf("unknown key(s) in skill.toml: %v", und)
+	}
+	return f, nil
+}
+
+// loadEntry strict-parses a skill entry's primary file (stage 2 after the
+// catalog's stage-1 [package] check).
+func loadEntry(ent *packages.Entry) (Skill, error) {
+	raw, err := ent.ReadPrimary()
+	if err != nil {
+		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
+	}
+	// Stage 2: strip [package] so the strict skill schema does not see it.
+	body := packages.StripPackageTable(raw)
+
+	var f File
+	md, err := toml.Decode(string(body), &f)
+	if err != nil {
+		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
 	}
 	// byre owns the skill.toml schema — a typo'd key is an error, not a silent
 	// no-op that produces a broken skill.
 	if und := md.Undecoded(); len(und) > 0 {
-		return Skill{}, fmt.Errorf("skill %q: unknown key(s) in skill.toml: %v", name, und)
+		return Skill{}, fmt.Errorf("skill %q: unknown key(s) in skill.toml: %v", ent.ID, und)
+	}
+	// Prefer [package].description when the body has none.
+	if f.Description == "" && ent.Description != "" {
+		f.Description = ent.Description
 	}
 
+	dir, err := ent.HostDir()
+	if err != nil {
+		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
+	}
 	ctx := f.Context.Text
 	if f.Context.File != "" {
 		path, perr := skillRelPath(dir, f.Context.File)
 		if perr != nil {
-			return Skill{}, fmt.Errorf("skill %q: %w", name, perr)
+			return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
 		}
 		b, rerr := os.ReadFile(path)
 		if rerr != nil {
-			return Skill{}, fmt.Errorf("skill %q context: %w", name, rerr)
+			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
 		}
 		ctx = string(b)
 	}
-	return Skill{Name: name, File: f, Context: ctx}, nil
+	// Skill.Name is the canonical ID (comparisons, grants, status).
+	return Skill{Name: ent.ID, File: f, Context: ctx, dir: dir}, nil
 }
 
 // skillRelPath resolves a skill-relative file path, rejecting absolute paths,
@@ -588,30 +671,50 @@ func skillRelPath(dir, rel string) (string, error) {
 }
 
 // Resolve loads and validates every enabled skill (the cfg.Skills list, plus
-// the cfg.Agent skill enabled implicitly). The selected agent's skill must
-// exist and provide an [agent] command. Cross-skill env-key conflicts are an
-// error: two skills setting the SAME key to DIFFERENT values would otherwise
-// resolve by enable order — silent and surprising.
-func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
+// the cfg.Agent skill enabled implicitly). Names are expanded through the
+// catalog (aliases -> canonical IDs). The selected agent's skill must exist
+// and provide an [agent] command. Cross-skill env-key conflicts are an error:
+// two skills setting the SAME key to DIFFERENT values would otherwise resolve
+// by enable order — silent and surprising.
+func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
+	if cat == nil {
+		return Resolved{}, fmt.Errorf("skills: no catalog")
+	}
+	// Expand aliases so enable-order comparisons and agent matching use
+	// canonical IDs. Config resolution (D1g) should already have done this;
+	// re-expanding is idempotent and keeps Resolve self-contained for tests.
+	cfg.Agent = cat.ExpandAlias(cfg.Agent)
+	for i, s := range cfg.Skills {
+		cfg.Skills[i] = cat.ExpandAlias(s)
+	}
 	names := enabledSkillNames(cfg)
 
 	var res Resolved
 	envSetBy := map[string]string{} // env key -> skill that set it
 	postureBy := ""                 // skill that declared network_posture
 	netnsBy := ""                   // skill that declared netns_init
-	agentFound := cfg.Agent == ""
+	agentFound := cfg.Agent == "" || cfg.Agent == "none"
 
 	for _, name := range names {
-		// Validate before Load: a skill name is a single path element. An unsafe
-		// name ("../x") would let Load read outside skillsDir and would escape the
-		// build-context staging dir (skills/<name>/...).
-		if err := validateSkillName(name); err != nil {
-			return Resolved{}, err
+		if name == "" || name == "none" {
+			continue
 		}
-		sk, err := Load(skillsDir, name)
+		// ID grammar is the load-bearing name check (D1h); rejects path escapes.
+		if err := packages.ValidateID(strings.TrimPrefix(name, "!"), true); err != nil {
+			return Resolved{}, fmt.Errorf("invalid skill name %q: %w", name, err)
+		}
+		sk, err := Load(cat, name)
 		if err != nil {
+			// Missing-reference errors always print the remedy (D9e): the
+			// exact install command when a [sources] hint names one. Never
+			// fetched -- acquisition on a third party's initiative is banned.
+			if hint, ok := cfg.Sources[name]; ok {
+				return Resolved{}, fmt.Errorf("%w\n  install it: %s", err, hint.InstallHint("skill"))
+			}
 			return Resolved{}, err
 		}
+		// Use canonical name everywhere downstream.
+		name = sk.Name
 		f := sk.File
 
 		// A skill's build content is interpolated into the same generated
@@ -628,7 +731,7 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 		// Files this skill ships into the image. Resolve sources within the skill
 		// dir (reject escapes) and require absolute destinations. Sorted by source
 		// for deterministic build-context staging and COPY emission.
-		dir := filepath.Join(skillsDir, name)
+		dir := sk.dir
 		for _, src := range sortedKeys(f.Build.Files) {
 			dest := f.Build.Files[src]
 			if !filepath.IsAbs(dest) {
@@ -826,13 +929,11 @@ func validateContainment(s string) error {
 	return nil
 }
 
-// validateSkillName requires a skill name to be a single, non-relative path
-// element — so it can't escape skillsDir on Load or the build-context staging dir.
+// validateSkillName requires a skill name to match the package ID grammar
+// (D1h), so it can't escape the store or the build-context staging dir.
 func validateSkillName(name string) error {
-	if name == "" || name == "." || name == ".." ||
-		strings.ContainsRune(name, '/') || strings.ContainsRune(name, '\\') ||
-		strings.ContainsRune(name, filepath.Separator) {
-		return fmt.Errorf("invalid skill name %q (must be a single path element)", name)
+	if err := packages.ValidateID(name, true); err != nil {
+		return fmt.Errorf("invalid skill name %q: %w", name, err)
 	}
 	return nil
 }

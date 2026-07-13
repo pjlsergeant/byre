@@ -61,8 +61,9 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when a flag is passed to an already-configured project")
 	}
-	// Names the current agent and the full path to the file.
-	if !strings.Contains(err.Error(), "agent=claude") || !strings.Contains(err.Error(), cfg) {
+	// Names the current agent (canonical byre/claude after catalog expand)
+	// and the full path to the file.
+	if (!strings.Contains(err.Error(), "agent=claude") && !strings.Contains(err.Error(), "agent=byre/claude")) || !strings.Contains(err.Error(), cfg) {
 		t.Fatalf("error should name the current agent and the file path: %v", err)
 	}
 	// Without a flag, an existing config is fine (no error, no prompt).
@@ -249,7 +250,7 @@ func TestOnboardVestigialDeclinedKeyDoesNotSuppressOffer(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials? [y/N, i for info]") {
+	if !strings.Contains(errBuf.String(), "Opt this box into claude shared credentials?") {
 		t.Fatalf("a v0.1.7 decline must not silence the per-box offer:\n%s", errBuf.String())
 	}
 }
@@ -269,8 +270,8 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(cfg.SharedAuth, "claude") {
-		t.Fatalf("a saved yes must store the preference, shared_auth = %v", cfg.SharedAuth)
+	if !cfg.SharedAuth.HasYes("claude") {
+		t.Fatalf("a saved yes must store the preference, shared_auth = %+v", cfg.SharedAuth)
 	}
 	if len(cfg.Skills) != 0 {
 		t.Fatalf("the picker must NEVER write default.config's skills: %v", cfg.Skills)
@@ -290,7 +291,8 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf2.String(), "Opt this box into claude shared credentials? [Y/n, i for info]") {
+	if !strings.Contains(errBuf2.String(), "Opt this box into claude shared credentials?") ||
+		!strings.Contains(errBuf2.String(), "[Y/n, i for info]") {
 		t.Fatalf("the next box must be asked, prefilled from the preference:\n%s", errBuf2.String())
 	}
 	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"))
@@ -322,8 +324,8 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.SharedAuth) != 0 {
-		t.Fatalf("a saved no must remove the preference, shared_auth = %v", cfg.SharedAuth)
+	if !cfg.SharedAuth.Empty() {
+		t.Fatalf("a saved no must remove the preference, shared_auth = %+v", cfg.SharedAuth)
 	}
 	// And the box itself was not opted in.
 	pcfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
@@ -375,6 +377,33 @@ func TestOnboardNoOfferWhenCompanionAlreadyOnMachineWide(t *testing.T) {
 	}
 	if len(cfg.Skills) != 0 {
 		t.Fatalf("no offer — byre.config must not duplicate the machine-wide skill: %v", cfg.Skills)
+	}
+}
+
+// A save-as-default after a NO-OFFER onboard must not touch the stored
+// shared-auth favourite: the preference belongs to a question that was
+// never asked this time.
+func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// Companion machine-wide (suppresses the offer) + a stored pick.
+	def := "skills = [\"claude-shared-auth\"]\nshared_auth = { claude = \"claude-shared-auth\" }\n"
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte(def), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Template: none, Agent: claude, save-as-default: y — no offer between.
+	s, _, errBuf := testStreams("\nclaude\ny\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "Opt this box") {
+		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
+	}
+	got, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SharedAuth.CompanionPick("claude") != "claude-shared-auth" {
+		t.Fatalf("stored pick must survive a no-offer save, got %+v", got.SharedAuth)
 	}
 }
 

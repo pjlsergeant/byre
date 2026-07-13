@@ -6,6 +6,7 @@ package configui
 
 import (
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // SkillRuntime is one skill's runtime contribution, shown read-only in the
@@ -24,6 +25,14 @@ type SkillRuntime struct {
 	// Containment is the skill's declared containment hole one-liner ("" =
 	// none). Shown on the skills screen when the skill is enabled.
 	Containment string
+	// Provenance is the package provenance (bundled/local/installed/...) for
+	// D13 dim-row labels; empty when unknown.
+	Provenance string
+	// ProvLabel is the human label ("bundled 0.2.0", "local", ...).
+	ProvLabel string
+	// DisabledReason, when set, marks the row disabled-with-reason (INVALID,
+	// conflict, LEGACY) rather than selectable (D13).
+	DisabledReason string
 }
 
 // Inherited is the editor's provenance input. The lower layers ride RAW (not
@@ -44,6 +53,9 @@ type Inherited struct {
 	// consulted for whatever skill set is currently effective in the form --
 	// toggling a skill adds/removes its rows live.
 	Skills map[string]SkillRuntime
+	// Catalog is optional; when set, skill/template rows can show provenance
+	// and disable INVALID/conflict/LEGACY entries (D13).
+	Catalog *packages.Catalog
 }
 
 // lowerNow is the lower-layer resolved config (default ⊕ template) under the

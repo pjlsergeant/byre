@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // skillEntry is one row of the skills multi-select.
@@ -19,6 +20,10 @@ type skillEntry struct {
 	enabledHere bool // this layer's own `skills` list names it
 	inherited   bool // a LOWER cascade layer (default/template) enables it
 	removedHere bool // this layer carries a `!name` removal marker for it
+	// Provenance label (dimmed) and optional disabled reason (INVALID/
+	// conflict/LEGACY) — D13. disabled rows are not toggleable.
+	provLabel string
+	disabled  string // non-empty => disabled-with-reason
 }
 
 // on reports the entry's EFFECTIVE state — what the resolved cascade enables —
@@ -111,10 +116,37 @@ func (m model) skillEntries() []skillEntry {
 			inherited:   inherited[n],
 			removedHere: removedHere[n],
 		}
+		if rt, ok := m.inh.Skills[n]; ok {
+			e.provLabel = rt.ProvLabel
+			e.disabled = rt.DisabledReason
+		}
 		if agentSet[n] || n == primary {
 			e.agent = true
 			agent = append(agent, e)
 		} else {
+			nonAgent = append(nonAgent, e)
+		}
+	}
+	// Problem rows from the catalog (INVALID/conflict/LEGACY) appear
+	// disabled-with-reason rather than vanishing (D13).
+	if m.inh.Catalog != nil {
+		for _, ent := range m.inh.Catalog.ListProblemRows(packages.KindSkill) {
+			name := ent.DisplayName()
+			if name == "" {
+				name = ent.ID
+			}
+			if seen[name] || seen[ent.ID] {
+				continue
+			}
+			seen[name] = true
+			e := skillEntry{
+				name:      name,
+				provLabel: ent.ProvenanceLabel(),
+				disabled:  ent.Reason,
+			}
+			if ent.Reason == "" {
+				e.disabled = string(ent.Provenance)
+			}
 			nonAgent = append(nonAgent, e)
 		}
 	}
@@ -138,6 +170,10 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.skillCur < len(entries) {
 			e := entries[m.skillCur]
 			m.status = "" // every press restates or clears the guidance; never stale
+			if e.disabled != "" {
+				m.status = e.disabled
+				return m, nil
+			}
 			// Toggling peels one layer of state at a time, so every press has
 			// exactly one legible effect on THIS layer's list:
 			//   enabled here            -> drop the local entry
@@ -200,11 +236,18 @@ func (m model) viewSkills() string {
 		prevAgent = e.agent
 
 		box := "[ ]"
-		if e.on() {
+		if e.disabled != "" {
+			box = "[-]"
+		} else if e.on() {
 			box = "[x]"
 		}
 		line := box + " " + e.name
+		if e.provLabel != "" {
+			line += dimStyle.Render("  " + e.provLabel)
+		}
 		switch {
+		case e.disabled != "":
+			line += dimStyle.Render("  (" + e.disabled + ")")
 		case e.locked && e.removedHere:
 			line += dimStyle.Render("  (primary agent — stale !" + e.name + " marker, toggle to clear)")
 		case e.locked:
@@ -223,7 +266,7 @@ func (m model) viewSkills() string {
 		// Containment hole: same skill-owned one-liner as status/adoption, so
 		// enabling the skill in the GRANTS-adjacent skills view never hides
 		// the warranty disclaimer.
-		if e.on() {
+		if e.on() && e.disabled == "" {
 			if c := m.inh.Skills[e.name].Containment; c != "" {
 				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      🛑 "+c))
 			}

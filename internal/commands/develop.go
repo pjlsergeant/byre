@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/build"
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -56,6 +57,11 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
+	// Store-ensure (bundled mirror + LEGACY notices) rides every develop so an
+	// upgraded byre surfaces D10 without requiring `skill update` (D7b/D10).
+	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
+		return err
+	}
 	// Worktree: announce the inherited identity up front, so any onboarding/adopt
 	// prompts below are understood as configuring the whole project (all its worktrees).
 	announceWorktree(s.Err, paths)
@@ -75,7 +81,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err := checkMountPaths(paths); err != nil {
 		return err
 	}
-	rv, err := resolve(paths, projectDir)
+	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}

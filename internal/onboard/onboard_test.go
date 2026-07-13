@@ -348,11 +348,11 @@ func TestPromptsShareABufferedReader(t *testing.T) {
 // skipped when companionFor names no companion.
 func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	var out bytes.Buffer
-	companions := func(agent string) (string, bool) {
+	companions := func(agent string) SharedAuthOffer {
 		if agent == "codex" {
-			return "codex-shared-auth", false
+			return SharedAuthOffer{Claimants: []string{"codex-shared-auth"}, Labels: []string{"bundled, byre's"}}
 		}
-		return "", false
+		return SharedAuthOffer{}
 	}
 	// Template none, agent codex, shared auth y, save-default n.
 	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\ncodex\ny\nn\n")), []string{"go"}, []string{"claude", "codex"}, fav(""), fav(""), companions)
@@ -381,12 +381,16 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 // its saved preference is news even when template/agent match the favourites;
 // an answer matching the preference is not.
 func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
-	companionsWithPref := func(pref bool) func(string) (string, bool) {
-		return func(agent string) (string, bool) {
+	companionsWithPref := func(pref bool) func(string) SharedAuthOffer {
+		return func(agent string) SharedAuthOffer {
 			if agent == "codex" {
-				return "codex-shared-auth", pref
+				return SharedAuthOffer{
+					Claimants: []string{"codex-shared-auth"},
+					Labels:    []string{"bundled, byre's"},
+					PrefYes:   pref,
+				}
 			}
-			return "", false
+			return SharedAuthOffer{}
 		}
 	}
 

@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"bytes"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -12,19 +11,40 @@ import (
 	"github.com/pjlsergeant/byre/internal/build"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
-func TestMaterializeWritesClaudeSkill(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
+// testCat builds a catalog over a fresh home with bundled embed.FS.
+func testCat(t *testing.T) (home string, cat *packages.Catalog) {
+	t.Helper()
+	home = t.TempDir()
+	cat, err := packages.LoadCatalog(home, FS(), "0.2.0", "0.2.0")
+	if err != nil {
 		t.Fatal(err)
 	}
-	toml := filepath.Join(dest, "claude", "skill.toml")
-	b, err := os.ReadFile(toml)
+	return home, cat
+}
+
+// skillDir returns the host directory for a bundled/local skill (extracted embed).
+func skillDir(t *testing.T, cat *packages.Catalog, name string) string {
+	t.Helper()
+	ent, err := cat.ResolveName(name)
 	if err != nil {
-		t.Fatalf("claude skill not materialized: %v", err)
+		t.Fatal(err)
+	}
+	dir, err := ent.HostDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestBundledClaudeInEmbed(t *testing.T) {
+	b, err := fs.ReadFile(FS(), "skills/claude/skill.toml")
+	if err != nil {
+		t.Fatalf("claude skill not in embed: %v", err)
 	}
 	if !strings.Contains(string(b), "[agent]") || !strings.Contains(string(b), "claude") {
 		t.Errorf("claude skill.toml content unexpected:\n%s", b)
@@ -35,12 +55,9 @@ func TestMaterializeWritesClaudeSkill(t *testing.T) {
 // resolve as agents (catches TOML/structure errors without a Docker build —
 // codex/gemini are still drafts pending host verification of install/auth).
 func TestBuiltinAgentSkillsResolve(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
+	_, cat := testCat(t)
 	for _, agent := range []string{"claude", "codex", "gemini", "grok"} {
-		res, err := skills.Resolve(config.Config{Agent: agent}, dest)
+		res, err := skills.Resolve(config.Config{Agent: agent}, cat)
 		if err != nil {
 			t.Errorf("agent %q: resolve failed: %v", agent, err)
 			continue
@@ -54,62 +71,30 @@ func TestBuiltinAgentSkillsResolve(t *testing.T) {
 	}
 }
 
-func TestMaterializeTemplatesAndListAgents(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeTemplates(filepath.Join(dest, "templates")); err != nil {
-		t.Fatal(err)
-	}
+func TestCatalogTemplatesAndListAgents(t *testing.T) {
+	_, cat := testCat(t)
 	for _, n := range []string{"go", "node", "python"} {
-		if _, err := os.Stat(filepath.Join(dest, "templates", n, "template.config")); err != nil {
-			t.Errorf("template %q not materialized: %v", n, err)
+		if _, err := cat.ResolveName(n); err != nil {
+			t.Errorf("template %q: %v", n, err)
 		}
 	}
-	if err := MaterializeSkills(filepath.Join(dest, "skills")); err != nil {
-		t.Fatal(err)
-	}
-	agents := skills.ListAgentSkills(filepath.Join(dest, "skills"))
+	agents := skills.ListAgentSkills(cat)
 	if len(agents) != 4 {
 		t.Errorf("expected 4 agent skills (claude/codex/gemini/grok), got %v", agents)
 	}
 }
 
-func TestMaterializeDoesNotClobber(t *testing.T) {
-	dest := t.TempDir()
-	// Pre-create a user-edited claude skill.
-	claudeDir := filepath.Join(dest, "claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	custom := filepath.Join(claudeDir, "skill.toml")
-	if err := os.WriteFile(custom, []byte("# my edit\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(custom)
-	if string(b) != "# my edit\n" {
-		t.Errorf("Materialize clobbered an existing skill: %q", b)
-	}
-}
-
-// TestSelfHostCompositionResolves verifies byre's own self-hosting config
-// (Claude agent + codex + codereview + devlog + grok, mirroring byre.config)
-// resolves end-to-end: codereview ships the byre-codereview script, the
-// workflow context reaches the agent's memory file, and codex's reviewer apt
-// dep is present.
+// TestSelfHostCompositionResolves verifies the BUNDLED slice of byre's own
+// self-hosting config (Claude agent + codex + grok). codereview and devlog
+// moved out of the binary (D12, 2026-07-13) -- their content is pinned by the
+// pjlsergeant-byre-skills repo and the host-side dogfood, not this suite; here
+// we pin that their RETIRED bare names fail with the exact install remedy.
 func TestSelfHostCompositionResolves(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "codereview", "devlog", "grok"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "grok"}}, cat)
 	if err != nil {
-		t.Fatalf("self-host composition failed to resolve: %v", err)
+		t.Fatalf("bundled self-host slice failed to resolve: %v", err)
 	}
-	// codereview ships byre-codereview; devlog ships its firstrun hook; both
-	// ship the devlog lib (identical copies — see TestDevlogLibCopiesIdentical);
-	// codex ships its first-run login hook into the launcher's firstrun.d.
 	shipped := map[string]bool{} // "skill dest" -> present
 	for _, b := range res.BuildBlocks() {
 		for _, sf := range b.Files {
@@ -117,50 +102,81 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"codereview /usr/local/bin/byre-codereview",
-		"codereview /usr/local/lib/byre-devlog-lib.sh",
-		"devlog /etc/byre/firstrun.d/devlog",
-		"devlog /usr/local/lib/byre-devlog-lib.sh",
-		"codex /etc/byre/firstrun.d/codex-login",
-		"grok /etc/byre/firstrun.d/grok-login",
-		"grok /etc/byre/firstrun.d/grok-bundled",
+		"byre/codex /etc/byre/firstrun.d/codex-login",
+		"byre/grok /etc/byre/firstrun.d/grok-login",
+		"byre/grok /etc/byre/firstrun.d/grok-bundled",
 	} {
 		if !shipped[want] {
 			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
 		}
 	}
-	// devlog contributes the persistent scratch volume and advertises it.
-	var scratchVol bool
-	for _, v := range res.Volumes() {
-		if v.Name == "scratch" && v.Role == "state" && v.Target == "/home/dev/scratch" {
-			scratchVol = true
-		}
-	}
-	if !scratchVol {
-		t.Errorf("devlog did not contribute the scratch state volume: %+v", res.Volumes())
-	}
-	if got := res.Env()["BYRE_SCRATCH"]; got != "/home/dev/scratch" {
-		t.Errorf("BYRE_SCRATCH = %q, want /home/dev/scratch", got)
-	}
 	// Workflow context reaches Claude's memory file.
 	if res.AgentContextTarget() != "/home/dev/.claude/CLAUDE.md" {
 		t.Errorf("context target wrong: %q", res.AgentContextTarget())
 	}
-	if !strings.Contains(res.Context(), "byre-codereview") {
-		t.Errorf("codereview loop context not present in agent context")
+}
+
+// TestRetiredNamesTombstone pins the D15 cut-over: the bare names byre used
+// to bundle fail with the EXACT pinned install command (URI and digest, not
+// just their shapes), and cannot be reclaimed by a local package.
+func TestRetiredNamesTombstone(t *testing.T) {
+	_, cat := testCat(t)
+	want := map[string]string{
+		"codereview": "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml --digest sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f, then reference pjlsergeant/codereview",
+		"devlog":     "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml --digest sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12, then reference pjlsergeant/devlog",
 	}
-	if !strings.Contains(res.Context(), "DIARY.md") {
-		t.Errorf("devlog workflow context not present in agent context")
-	}
-	// codex contributes the reviewer binary install (its build block is present).
-	var codexBlock bool
-	for _, b := range res.BuildBlocks() {
-		if b.Name == "codex" {
-			codexBlock = true
+	for bare, remedy := range want {
+		_, err := cat.ResolveName(bare)
+		if err == nil {
+			t.Fatalf("%s must not resolve after the move", bare)
+		}
+		if !strings.Contains(err.Error(), remedy) {
+			t.Errorf("%s tombstone must carry the exact pinned remedy:\nwant substring: %s\ngot: %v", bare, remedy, err)
 		}
 	}
-	if !codexBlock {
-		t.Errorf("codex skill block missing from composition")
+	if !cat.IsProtected("devlog") || !cat.IsProtected("codereview") {
+		t.Error("retired names must stay protected (D15)")
+	}
+}
+
+// TestByreConfigSourcesAgreeWithTombstones is the drift lock between the four
+// hand-duplicated URI/digest pairs: this repo's own byre.config [sources]
+// hints must name exactly the URIs and digests the D15 tombstones print --
+// disagreement means a release updated one copy and not the other.
+func TestByreConfigSourcesAgreeWithTombstones(t *testing.T) {
+	cfg, err := config.ParseFile(filepath.Join("..", "..", "byre.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for bare, id := range map[string]string{
+		"codereview": "pjlsergeant/codereview",
+		"devlog":     "pjlsergeant/devlog",
+	} {
+		hint, ok := cfg.Sources[id]
+		if !ok {
+			t.Fatalf("byre.config [sources] missing %q", id)
+		}
+		tomb := packages.RetiredTombstone(bare)
+		if tomb == "" {
+			t.Fatalf("no tombstone for %q", bare)
+		}
+		// ParseFile does not run ValidateLayer, so empty fields parse fine --
+		// and Contains(x, "") passes vacuously. Both pins must exist to compare.
+		if hint.URI == "" {
+			t.Fatalf("byre.config [sources] %q lost its uri", id)
+		}
+		if !strings.Contains(tomb, hint.URI) {
+			t.Errorf("%s tombstone URI drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.URI)
+		}
+		// digest is optional in [sources] generally, but REQUIRED here: an
+		// empty one would make the Contains check below vacuously pass --
+		// the exact regression this test exists to prevent.
+		if hint.Digest == "" {
+			t.Fatalf("byre.config [sources] %q lost its digest pin", id)
+		}
+		if !strings.Contains(tomb, hint.Digest) {
+			t.Errorf("%s tombstone digest drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.Digest)
+		}
 	}
 }
 
@@ -177,14 +193,16 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	if err := paths.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	skillsDir := filepath.Join(paths.Home, "skills")
-	if err := MaterializeSkills(skillsDir); err != nil {
+	if err := EnsureStore(paths.Home); err != nil {
 		t.Fatal(err)
 	}
-	// Mirrors this repo's own byre.config skill set (codex + codereview +
-	// devlog + grok).
-	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "codereview", "devlog", "grok"}}
-	res, err := skills.Resolve(cfg, skillsDir)
+	_, cat := testCat(t)
+	_ = cat
+	// The bundled slice of this repo's own byre.config skill set (codex +
+	// grok; codereview/devlog are installed packages now, covered by the
+	// host-side dogfood).
+	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "grok"}}
+	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,27 +210,17 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The script is staged into the build context.
-	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "codereview", "codereview.sh")); err != nil {
-		t.Fatalf("codereview.sh not staged: %v", err)
-	}
-	// COPY of byre-codereview must precede the chmod that makes it executable.
-	cp := strings.Index(df, gen.CopyLine("skills/codereview/codereview.sh", "/usr/local/bin/byre-codereview"))
-	chmod := strings.Index(df, "chmod +x /usr/local/bin/byre-codereview")
-	if cp < 0 || chmod < 0 || cp > chmod {
-		t.Fatalf("COPY must precede chmod (copy=%d chmod=%d):\n%s", cp, chmod, df)
-	}
 	// codex's first-run login hook is staged and COPYd to firstrun.d.
-	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "codex", "codex-login.sh")); err != nil {
+	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "byre", "codex", "codex-login.sh")); err != nil {
 		t.Fatalf("codex-login.sh not staged: %v", err)
 	}
-	if !strings.Contains(df, gen.CopyLine("skills/codex/codex-login.sh", "/etc/byre/firstrun.d/codex-login")) {
+	if !strings.Contains(df, gen.CopyLine("skills/byre/codex/codex-login.sh", "/etc/byre/firstrun.d/codex-login")) {
 		t.Errorf("codex login hook COPY missing:\n%s", df)
 	}
 	// grok's two firstrun hooks are staged and COPYd likewise.
 	for src, dst := range map[string]string{
-		"skills/grok/grok-login.sh":   "/etc/byre/firstrun.d/grok-login",
-		"skills/grok/grok-bundled.sh": "/etc/byre/firstrun.d/grok-bundled",
+		"skills/byre/grok/grok-login.sh":   "/etc/byre/firstrun.d/grok-login",
+		"skills/byre/grok/grok-bundled.sh": "/etc/byre/firstrun.d/grok-bundled",
 	} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, filepath.FromSlash(src))); err != nil {
 			t.Fatalf("%s not staged: %v", src, err)
@@ -223,150 +231,22 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	}
 }
 
-// TestDevlogLibCopiesIdentical pins the deliberate duplication of the devlog
-// helper lib: devlog and codereview each ship their own copy (no cross-skill
-// dependency mechanism exists), both to the same image path. They must stay
-// byte-identical or the shipped file depends on skill enable order.
-func TestDevlogLibCopiesIdentical(t *testing.T) {
-	a, err := fs.ReadFile(fsys, "skills/devlog/devlog-lib.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := fs.ReadFile(fsys, "skills/codereview/devlog-lib.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(a, b) {
-		t.Errorf("devlog-lib.sh copies differ between devlog and codereview; edit both together")
-	}
-}
-
-func TestUpdateSkillsOverwritesAndBacksUp(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	// User-edit the codex skill.
-	codexToml := filepath.Join(dest, "codex", "skill.toml")
-	if err := os.WriteFile(codexToml, []byte("# my local edit\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	updated, err := UpdateSkills(dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// codex should be updated (it differs); the edited copy backed up.
-	var codexBak string
-	for _, u := range updated {
-		if u.Name == "codex" {
-			codexBak = u.Backup
-		}
-	}
-	if codexBak == "" {
-		t.Fatalf("codex should have been updated with a backup, got %+v", updated)
-	}
-	// The reported backup actually holds the edited content.
-	if b, _ := os.ReadFile(filepath.Join(codexBak, "skill.toml")); string(b) != "# my local edit\n" {
-		t.Errorf("reported backup %s does not contain the edit: %q", codexBak, b)
-	}
-	if b, _ := os.ReadFile(codexToml); string(b) == "# my local edit\n" {
-		t.Errorf("codex skill.toml was not overwritten with the shipped version")
-	}
-	// The edit was preserved in an append-only backup slot (skills.bak/codex.*).
-	if n := countBackups(t, dest, "codex"); n != 1 {
-		t.Errorf("want 1 codex backup, got %d", n)
-	}
-}
-
-// countBackups counts skills.bak/<name>.* backup dirs.
-func countBackups(t *testing.T, dest, name string) int {
-	t.Helper()
-	entries, err := os.ReadDir(dest + ".bak")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0
-		}
-		t.Fatal(err)
-	}
-	n := 0
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), name+".") {
-			n++
-		}
-	}
-	return n
-}
-
-// Each update of a differing copy keeps its OWN backup — backups are append-only
-// and never deleted, so distinct successive edits are all recoverable.
-func TestUpdateSkillsBackupsAppendOnly(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	codexToml := filepath.Join(dest, "codex", "skill.toml")
-	edits := []string{"# edit one\n", "# edit two\n"}
-	for i, edit := range edits {
-		if err := os.WriteFile(codexToml, []byte(edit), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := UpdateSkills(dest); err != nil {
-			t.Fatal(err)
-		}
-		if n := countBackups(t, dest, "codex"); n != i+1 {
-			t.Fatalf("after %d edits, want %d backups, got %d", i+1, i+1, n)
-		}
-	}
-	// Both distinct edits are recoverable from the (separate) backups.
-	entries, _ := os.ReadDir(dest + ".bak")
-	found := map[string]bool{}
-	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "codex.") {
-			continue
-		}
-		b, _ := os.ReadFile(filepath.Join(dest+".bak", e.Name(), "skill.toml"))
-		found[string(b)] = true
-	}
-	for _, edit := range edits {
-		if !found[edit] {
-			t.Errorf("edit %q was not preserved in any backup; have %v", edit, found)
-		}
-	}
-}
-
-func TestUpdateSkillsIdempotent(t *testing.T) {
-	dest := t.TempDir()
-	if _, err := UpdateSkills(dest); err != nil { // fresh install
-		t.Fatal(err)
-	}
-	updated, err := UpdateSkills(dest) // second run: nothing changed
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(updated) != 0 {
-		t.Errorf("a second update with no changes should report nothing, got %v", updated)
-	}
-}
-
 // claude/gemini install their binaries OUTSIDE their state dir, so they wipe it
 // after install (a fresh state volume then starts clean). Each wipe must come
 // after the installer that created the residue.
 func TestAgentSkillsCleanStateDir(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
+	_, cat := testCat(t)
 	for _, c := range []struct{ agent, install, clean string }{
 		{"claude", "install.sh", "rm -rf /home/dev/.claude"},
 		{"gemini", "npm install -g", "rm -rf /home/dev/.gemini"},
 	} {
-		res, err := skills.Resolve(config.Config{Agent: c.agent}, dest)
+		res, err := skills.Resolve(config.Config{Agent: c.agent}, cat)
 		if err != nil {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
 		installAt, cleanAt := -1, -1
 		for _, b := range res.BuildBlocks() {
-			if b.Name != c.agent {
+			if b.Name != "byre/"+c.agent && b.Name != c.agent {
 				continue
 			}
 			for i, line := range b.Dockerfile {
@@ -388,20 +268,17 @@ func TestAgentSkillsCleanStateDir(t *testing.T) {
 // so they must NOT wipe it (doing so deletes the binary and leaves dangling
 // symlinks).
 func TestBinaryDirAgentsDoNotWipeIt(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
+	_, cat := testCat(t)
 	for _, c := range []struct{ agent, binDir string }{
 		{"codex", "/home/dev/.codex"},
 		{"grok", "/home/dev/.grok"},
 	} {
-		res, err := skills.Resolve(config.Config{Agent: c.agent}, dest)
+		res, err := skills.Resolve(config.Config{Agent: c.agent}, cat)
 		if err != nil {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
 		for _, b := range res.BuildBlocks() {
-			if b.Name != c.agent {
+			if b.Name != "byre/"+c.agent && b.Name != c.agent {
 				continue
 			}
 			for _, line := range b.Dockerfile {
@@ -417,15 +294,12 @@ func TestBinaryDirAgentsDoNotWipeIt(t *testing.T) {
 // dotdir where the installer puts the binary — otherwise the volume
 // masks/seeds-over the binary (the bug). Guards the decoupling.
 func TestStateVolumeSeparateFromBinaryDir(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
+	_, cat := testCat(t)
 	for _, c := range []struct{ agent, envKey, binDir, volName string }{
 		{"codex", "CODEX_HOME", "/home/dev/.codex", ".codex"},
 		{"grok", "GROK_HOME", "/home/dev/.grok", ".grok"},
 	} {
-		res, err := skills.Resolve(config.Config{Agent: c.agent}, dest)
+		res, err := skills.Resolve(config.Config{Agent: c.agent}, cat)
 		if err != nil {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
@@ -454,11 +328,16 @@ func TestStateVolumeSeparateFromBinaryDir(t *testing.T) {
 // /workspace/node_modules that masks the host's in the bind-mounted project, so
 // host (e.g. macOS) and container (Linux) deps stay separate.
 func TestNodeTemplateContainerNodeModules(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeTemplates(dest); err != nil {
+	_, cat := testCat(t)
+	ent, err := cat.ResolveName("node")
+	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(dest, "node", "template.config"))
+	raw, err := ent.ReadPrimary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse(packages.StripPackageTable(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,64 +357,19 @@ func TestNodeTemplateContainerNodeModules(t *testing.T) {
 
 // TestUpdateTemplatesOverwritesAndBacksUp mirrors the skills update test:
 // shipped template changes need the same pickup path (`byre skill update`).
-func TestUpdateTemplatesOverwritesAndBacksUp(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeTemplates(dest); err != nil {
-		t.Fatal(err)
-	}
-	goTmpl := filepath.Join(dest, "go", "template.config")
-	if err := os.WriteFile(goTmpl, []byte("# my local edit\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	changes, err := UpdateTemplates(dest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var goChange *Change
-	for i := range changes {
-		if changes[i].Name == "go" {
-			goChange = &changes[i]
-		}
-	}
-	if goChange == nil {
-		t.Fatalf("edited go template not updated: %+v", changes)
-	}
-	// The shipped content is restored...
-	b, _ := os.ReadFile(goTmpl)
-	if string(b) == "# my local edit\n" {
-		t.Error("update did not overwrite the edited template")
-	}
-	// ...and the prior copy is preserved where the change says.
-	if goChange.Backup == "" {
-		t.Fatal("a differing copy must be backed up")
-	}
-	prior, err := os.ReadFile(filepath.Join(goChange.Backup, "template.config"))
-	if err != nil || string(prior) != "# my local edit\n" {
-		t.Errorf("prior copy not preserved at %s: %q err=%v", goChange.Backup, prior, err)
-	}
-	// A second update is a no-op.
-	again, err := UpdateTemplates(dest)
-	if err != nil || len(again) != 0 {
-		t.Errorf("second update should change nothing: %+v err=%v", again, err)
-	}
-}
-
 // TestFirewallSkillResolves pins the firewall skill's contract: it declares
 // the posture and the netns hook (both consumed by core), stays composable
 // with an agent skill, and grants NOTHING to the box itself — no caps, no
 // run_args, no mounts. The box's only firewall-related content is inert
 // tooling; privileges live solely in the netns-init helper byre runs outside.
 func TestFirewallSkillResolves(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall"}}, cat)
 	if err != nil {
 		t.Fatalf("firewall + claude must resolve together: %v", err)
 	}
 	posture, by := res.NetworkPosture()
-	if posture != "deny-by-default" || by != "firewall" {
+	if posture != "deny-by-default" || by != "byre/firewall" {
 		t.Errorf("posture = %q by %q", posture, by)
 	}
 	hooks := res.NetnsInits()
@@ -543,7 +377,7 @@ func TestFirewallSkillResolves(t *testing.T) {
 		t.Errorf("netns hooks = %+v", hooks)
 	}
 	for _, sk := range res.Skills {
-		if sk.Name != "firewall" {
+		if sk.Name != "byre/firewall" {
 			continue
 		}
 		rt := sk.File.Runtime
@@ -572,11 +406,8 @@ func TestFirewallSkillResolves(t *testing.T) {
 // endpoints -- the skill's functional requirement. Everything else the
 // firewall knows about (git hosting, apt) is OFFERED, never auto-open.
 func TestFirewallComposesAgentEgress(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall"}}, cat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +421,7 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 			t.Errorf("%q must be offered, not auto-open; got: %s", closed, union)
 		}
 	}
-	fw, err := skills.Load(dest, "firewall")
+	fw, err := skills.Load(cat, "firewall")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +433,7 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 	}
 	// The firewall skill must NOT itself carry the agent endpoints (the whole
 	// point of the redesign): with claude NOT enabled, anthropic must be absent.
-	fwOnly, err := skills.Resolve(config.Config{Skills: []string{"firewall"}}, dest)
+	fwOnly, err := skills.Resolve(config.Config{Skills: []string{"firewall"}}, cat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,8 +442,8 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 	}
 	// Attribution: anthropic is credited to the claude skill, not the firewall.
 	for _, a := range res.EgressAllows() {
-		if strings.Contains(a.Host, "anthropic") && a.Skill != "claude" {
-			t.Errorf("anthropic egress attributed to %q, want claude", a.Skill)
+		if strings.Contains(a.Host, "anthropic") && a.Skill != "byre/claude" {
+			t.Errorf("anthropic egress attributed to %q, want byre/claude", a.Skill)
 		}
 	}
 }
@@ -623,11 +454,8 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 // so the firstrun hook sorts before agent-skill hooks), and the expiry brief
 // reaching the agent's context.
 func TestSharedAuthCompositionResolves(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"claude-shared-auth"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"claude-shared-auth"}}, cat)
 	if err != nil {
 		t.Fatalf("claude + claude-shared-auth failed to resolve: %v", err)
 	}
@@ -638,8 +466,8 @@ func TestSharedAuthCompositionResolves(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"claude-shared-auth /etc/byre/firstrun.d/00-claude-shared-auth",
-		"claude-shared-auth /etc/byre/env.d/50-claude-shared-auth.sh",
+		"byre/claude-shared-auth /etc/byre/firstrun.d/00-claude-shared-auth",
+		"byre/claude-shared-auth /etc/byre/env.d/50-claude-shared-auth.sh",
 	} {
 		if !shipped[want] {
 			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
@@ -664,18 +492,15 @@ func TestSharedAuthCompositionResolves(t *testing.T) {
 // 00-prefixed symlink-assert hook sorting BEFORE codex's own login hook in
 // the launcher's glob order (the login hook must see the asserted link).
 func TestCodexSharedAuthCompositionResolves(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "codex", Skills: []string{"codex-shared-auth"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "codex", Skills: []string{"codex-shared-auth"}}, cat)
 	if err != nil {
 		t.Fatalf("codex + codex-shared-auth failed to resolve: %v", err)
 	}
 	var hook bool
 	for _, b := range res.BuildBlocks() {
 		for _, sf := range b.Files {
-			if b.Name == "codex-shared-auth" && sf.Dest == "/etc/byre/firstrun.d/00-codex-shared-auth" {
+			if b.Name == "byre/codex-shared-auth" && sf.Dest == "/etc/byre/firstrun.d/00-codex-shared-auth" {
 				hook = true
 			}
 		}
@@ -701,11 +526,8 @@ func TestCodexSharedAuthCompositionResolves(t *testing.T) {
 // against a temp identity base + CODEX_HOME (the BYRE_IDENTITY_BASE seam).
 func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	t.Helper()
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "codex-shared-auth", "firstrun.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
 	cmd := exec.Command("bash", hook)
 	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "CODEX_HOME="+codexHome)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -777,11 +599,8 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 // bridge hook (without it the GROK_HOME split silently drops grok's bundled
 // product skills).
 func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "grok"}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "grok"}, cat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -799,7 +618,7 @@ func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
 	}
 	var login, bundled bool
 	for _, b := range res.BuildBlocks() {
-		if b.Name != "grok" {
+		if b.Name != "grok" && b.Name != "byre/grok" {
 			continue
 		}
 		for _, sf := range b.Files {
@@ -814,7 +633,7 @@ func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
 	if !login || !bundled {
 		t.Errorf("grok firstrun hooks not both shipped (login=%v bundled=%v)", login, bundled)
 	}
-	b, err := os.ReadFile(filepath.Join(dest, "grok", "grok-login.sh"))
+	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "grok"), "grok-login.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,11 +646,8 @@ func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
 // symlink to the image-side extraction dir; a real directory (a future grok
 // managing bundled/ in place) is left alone; and the assert is idempotent.
 func TestGrokBundledHookBehavior(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "grok", "grok-bundled.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "grok"), "grok-bundled.sh")
 	home := t.TempDir()
 	run := func() {
 		t.Helper()
@@ -872,11 +688,8 @@ func TestGrokBundledHookBehavior(t *testing.T) {
 // lands (docs/grok-shared-auth-v2-designs.md), this test is the one to
 // replace.
 func TestGrokSharedAuthRetiredStub(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "grok", Skills: []string{"grok-shared-auth"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "grok", Skills: []string{"grok-shared-auth"}}, cat)
 	if err != nil {
 		t.Fatalf("a config naming the retired skill must still resolve: %v", err)
 	}
@@ -893,7 +706,7 @@ func TestGrokSharedAuthRetiredStub(t *testing.T) {
 			t.Errorf("retired stub must not mount the identity volume: %+v", v)
 		}
 	}
-	b, err := os.ReadFile(filepath.Join(dest, "grok-shared-auth", "skill.toml"))
+	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "grok-shared-auth"), "skill.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -907,16 +720,13 @@ func TestGrokSharedAuthRetiredStub(t *testing.T) {
 // not break), contributing nothing — no files, no context, no scratch volume.
 // The description carries the rename pointer into the picker.
 func TestDevloopRenamedStub(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"devloop"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"devloop"}}, cat)
 	if err != nil {
 		t.Fatalf("a config naming the renamed skill must still resolve: %v", err)
 	}
 	for _, b := range res.BuildBlocks() {
-		if b.Name == "devloop" && len(b.Files) != 0 {
+		if b.Name == "byre/devloop" && len(b.Files) != 0 {
 			t.Errorf("renamed stub must ship no files, got %+v", b.Files)
 		}
 	}
@@ -928,7 +738,7 @@ func TestDevloopRenamedStub(t *testing.T) {
 	if strings.Contains(res.Context(), "DIARY.md") {
 		t.Error("renamed stub must not contribute the workflow context")
 	}
-	b, err := os.ReadFile(filepath.Join(dest, "devloop", "skill.toml"))
+	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "devloop"), "skill.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -937,52 +747,8 @@ func TestDevloopRenamedStub(t *testing.T) {
 	}
 }
 
-// TestDevloopRenameUpgradePath pins the path an EXISTING store takes through
-// the rename: materialization is non-clobbering, so a store holding the full
-// pre-rename devloop keeps it — the stub is NOT automatic (CHANGES says so) —
-// until `byre skill update`, which must swap the old copy for the stub and
-// install devlog alongside. This composition bit once already today (the
-// codereview split's pre-split store clobber), hence its own test.
-func TestDevloopRenameUpgradePath(t *testing.T) {
-	dest := t.TempDir()
-	old := filepath.Join(dest, "devloop")
-	if err := os.MkdirAll(old, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// A stand-in for any pre-rename materialized copy: full skill shape,
-	// content differing from the shipped stub.
-	oldToml := "description = \"Dev-workflow conventions plus the byre-codereview loop.\"\n\n[build]\nfiles = { \"codereview.sh\" = \"/usr/local/bin/byre-codereview\" }\n"
-	if err := os.WriteFile(filepath.Join(old, "skill.toml"), []byte(oldToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Non-clobbering materialization leaves the old full copy in place.
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(filepath.Join(old, "skill.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(b) != oldToml {
-		t.Fatalf("materialization must not clobber the existing devloop copy; got %q", b)
-	}
-
-	// skill update swaps it for the stub and devlog is present.
-	if _, err := UpdateSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	b, err = os.ReadFile(filepath.Join(old, "skill.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(b), "RENAMED to devlog") {
-		t.Errorf("skill update must replace the old devloop with the stub; got %q", b)
-	}
-	if _, err := os.Stat(filepath.Join(dest, "devlog", "skill.toml")); err != nil {
-		t.Errorf("devlog must be present after update: %v", err)
-	}
-}
+// Devloop rename upgrade-path dance deleted with materialization (D14);
+// the stub remains bundled and is covered by TestDevloopIsRenameStub.
 
 // TestGrokLoginHookHealsRetiredSymlink drives the real grok-login hook with a
 // stub `grok` binary. The retirement (ADR 0023) made the anti-planting rule
@@ -992,11 +758,8 @@ func TestDevloopRenameUpgradePath(t *testing.T) {
 // boxes). The hook must remove the link and proceed to a fresh login; a
 // valid REGULAR file must still short-circuit the login entirely.
 func TestGrokLoginHookHealsRetiredSymlink(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "grok", "grok-login.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "grok"), "grok-login.sh")
 
 	// Stub grok on PATH: records that a login was attempted, succeeds.
 	bin := t.TempDir()
@@ -1088,11 +851,8 @@ func TestGrokLoginHookHealsRetiredSymlink(t *testing.T) {
 // on .claude.json, not the env token -- host-verified 2026-07-07), and never
 // touches an existing .claude.json.
 func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "claude-shared-auth", "firstrun.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "claude-shared-auth"), "firstrun.sh")
 	run := func(base, cfg string) {
 		t.Helper()
 		cmd := exec.Command("bash", hook)
@@ -1141,11 +901,8 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 // the token. That remediation moved to firstrun.sh (tested below), because
 // sourcing env.d into every login shell must never re-fire a prompt.
 func TestClaudeSharedAuthEnvHookExportsOnly(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "claude-shared-auth", "env.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "claude-shared-auth"), "env.sh")
 	// Source the hook the way the launcher does, then record what it exported.
 	// A clean env (no inherited CLAUDE_CODE_OAUTH_TOKEN) keeps the no-token
 	// cases honest when the test itself runs inside a token-authed box.
@@ -1218,11 +975,8 @@ func TestClaudeSharedAuthEnvHookExportsOnly(t *testing.T) {
 // Claude's, so it is moved only with the user's yes: interactive offers the
 // move (default Y), non-interactive warns and leaves it.
 func TestClaudeSharedAuthFirstrunRemediatesStaleLogin(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "claude-shared-auth", "firstrun.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "claude-shared-auth"), "firstrun.sh")
 	seed := func() (base, cfg string) {
 		t.Helper()
 		base, cfg = t.TempDir(), t.TempDir()
@@ -1295,11 +1049,8 @@ func TestClaudeSharedAuthFirstrunRemediatesStaleLogin(t *testing.T) {
 // The skill is GATE PENDING (ADR 0017) -- these tests pin the mechanism, not
 // the rotation-safety claim, which only the host-side gate can settle.
 func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Agent: "gemini", Skills: []string{"gemini-shared-auth"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "gemini", Skills: []string{"gemini-shared-auth"}}, cat)
 	if err != nil {
 		t.Fatalf("gemini + gemini-shared-auth failed to resolve: %v", err)
 	}
@@ -1313,7 +1064,7 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
 	}
 
-	hook := filepath.Join(dest, "gemini-shared-auth", "firstrun.sh")
+	hook := filepath.Join(skillDir(t, cat, "gemini-shared-auth"), "firstrun.sh")
 	base, home := t.TempDir(), t.TempDir()
 	run := func() {
 		t.Helper()
@@ -1370,11 +1121,8 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 // sock_groups + containment, socket mount, empty egress, env.d compose hook,
 // apt-repo dockerfile lines, and context snippet.
 func TestDockerHostSkillResolves(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	res, err := skills.Resolve(config.Config{Skills: []string{"docker-host"}}, dest)
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Skills: []string{"docker-host"}}, cat)
 	if err != nil {
 		t.Fatalf("docker-host resolve: %v", err)
 	}
@@ -1401,7 +1149,7 @@ func TestDockerHostSkillResolves(t *testing.T) {
 	// RUN -- the drift a substring check is blind to.
 	var block skills.BuildBlock
 	for _, b := range res.BuildBlocks() {
-		if b.Name == "docker-host" {
+		if b.Name == "byre/docker-host" {
 			block = b
 		}
 	}
@@ -1410,15 +1158,15 @@ func TestDockerHostSkillResolves(t *testing.T) {
 		if gb.Files == nil {
 			gb.Files = map[string]string{}
 		}
-		gb.Files["skills/docker-host/"+sf.Rel] = sf.Dest
+		gb.Files["skills/byre/docker-host/"+sf.Rel] = sf.Dest
 	}
 	gb.Dockerfile = block.Dockerfile
 	full := gen.Dockerfile(gen.Input{Base: "debian:bookworm", Skills: []gen.SkillBlock{gb}})
-	const wantSection = `# skill: docker-host
+	const wantSection = `# skill: byre/docker-host
 RUN apt-get update \
  && apt-get install -y --no-install-recommends 'ca-certificates' 'curl' \
  && rm -rf /var/lib/apt/lists/*
-COPY "skills/docker-host/env.sh" "/etc/byre/env.d/50-docker-host.sh"
+COPY "skills/byre/docker-host/env.sh" "/etc/byre/env.d/50-docker-host.sh"
 RUN . /etc/os-release \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
@@ -1429,7 +1177,7 @@ RUN . /etc/os-release \
  && rm -rf /var/lib/apt/lists/*
 `
 	if !strings.Contains(full, wantSection) {
-		start := strings.Index(full, "# skill: docker-host")
+		start := strings.Index(full, "# skill: byre/docker-host")
 		got := full
 		if start >= 0 {
 			got = full[start:]
@@ -1458,11 +1206,8 @@ RUN . /etc/os-release \
 // TestDockerHostComposeEnvHook pins the env.d script: defaults
 // COMPOSE_PROJECT_NAME from BYRE_WORKTREE and respects an existing override.
 func TestDockerHostComposeEnvHook(t *testing.T) {
-	dest := t.TempDir()
-	if err := MaterializeSkills(dest); err != nil {
-		t.Fatal(err)
-	}
-	hook := filepath.Join(dest, "docker-host", "env.sh")
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "docker-host"), "env.sh")
 	// Default from BYRE_WORKTREE.
 	cmd := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
 	cmd.Env = append(os.Environ(), "BYRE_WORKTREE=wt-abc", "BYRE_PROJECT=proj")

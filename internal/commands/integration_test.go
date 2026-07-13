@@ -40,7 +40,7 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	r := requireEngineRunner(t)
 	p, proj := testPaths(t)
 
-	rv, err := resolve(p, proj)
+	rv, err := resolve(p, proj, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

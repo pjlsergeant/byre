@@ -3,12 +3,12 @@ package commands
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -17,6 +17,7 @@ import (
 // statusInfo is the resolved, display-ready view of a project for `byre status`.
 type statusInfo struct {
 	Agent           string
+	Template        string
 	Engine          string
 	ID              string
 	Canonical       string // the dir bound at /workspace (the worktree, for a worktree)
@@ -43,6 +44,7 @@ type statusInfo struct {
 	SkillErr        string   // why skills couldn't be resolved, if applicable
 	SelfEdit        string   // host store path when --self-edit is active, else ""
 	Proposal        string   // note about a committed <project>/byre.config, if any
+	Cat             *packages.Catalog
 }
 
 // Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
@@ -52,10 +54,11 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	if err != nil {
 		return err
 	}
-	// Materialize built-ins before loading config (templates feed the cascade).
-	// The error degrades the skills view below rather than failing status.
-	skillsDir := filepath.Join(paths.Home, "skills")
-	materializeErr := builtins.EnsureStore(paths.Home)
+	// Ensure store (bundled mirror) before loading config (templates feed the
+	// cascade). The error degrades the skills view below rather than failing
+	// status.
+	storeErr := builtins.EnsureStoreOut(paths.Home, s.Err)
+	cat, _ := builtins.LoadCatalogRaw(paths.Home)
 
 	cfg, err := config.Load(projectDir)
 	if err != nil {
@@ -64,6 +67,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 
 	info := statusInfo{
 		Agent:          cfg.Agent,
+		Template:       cfg.Template,
 		Engine:         cfg.Engine,
 		ID:             paths.ID,
 		Canonical:      paths.WorkDir, // what actually mounts at /workspace
@@ -75,6 +79,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs: len(cfg.RunArgs) > 0,
 		EnvFromHost:    cfg.EnvFromHost,
+		Cat:            cat,
 	}
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
@@ -93,9 +98,11 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
 	// skill, its .claude state volume, skill mounts) are shown, not just the
 	// config-level view. Best-effort: a resolution error is surfaced, not fatal.
-	if merr := materializeErr; merr != nil {
+	if merr := storeErr; merr != nil {
 		info.SkillErr = merr.Error()
-	} else if res, rerr := skills.Resolve(cfg, skillsDir); rerr != nil {
+	} else if cat == nil {
+		info.SkillErr = "catalog unavailable"
+	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
 		info.SkillErr = rerr.Error()
 	} else {
 		// Validate the combined config+skills set the SAME way develop/dockerfile
@@ -157,6 +164,27 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	return nil
 }
 
+// pkgLine formats "id  provenance" for status (D13). Falls back to the bare
+// name when the catalog has no entry.
+func pkgLine(cat *packages.Catalog, name string) string {
+	if name == "" {
+		return "(none)"
+	}
+	if cat == nil {
+		return name
+	}
+	ent, ok := cat.Lookup(name)
+	if !ok {
+		return name
+	}
+	id := ent.ID
+	if ent.Alias != "" && name == ent.Alias {
+		// Config wrote the friendly alias; status shows canonical + label.
+		id = ent.ID
+	}
+	return fmt.Sprintf("%-24s %s", id, ent.ProvenanceLabel())
+}
+
 // hostEnvRow renders the live env_from_host entries deterministically
 // (sorted; disabled "" entries omitted), or "" when there are none.
 func hostEnvRow(m map[string]string) string {
@@ -192,6 +220,11 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Project id", s.ID)
 	}
 	row("Agent", orDefault(s.Agent, "(none)"))
+	if s.Template != "" {
+		row("Template", pkgLine(s.Cat, s.Template))
+	} else {
+		row("Template", "(none)")
+	}
 	if s.Proposal != "" {
 		row("Repo config", s.Proposal)
 	}
@@ -293,8 +326,17 @@ func renderStatus(w io.Writer, s statusInfo) {
 
 	if s.SkillErr != "" {
 		row("Skills", strings.Join(s.Skills, ", ")+"  (unresolved: "+s.SkillErr+")")
+	} else if len(s.Skills) == 0 {
+		row("Skills", "none")
 	} else {
-		row("Skills", orDefault(strings.Join(s.Skills, ", "), "none"))
+		// D13: one row per skill with provenance label.
+		for i, name := range s.Skills {
+			label := "Skills"
+			if i > 0 {
+				label = ""
+			}
+			row(label, pkgLine(s.Cat, name))
+		}
 	}
 
 	state, cache, machine := splitVolumes(s.Volumes)

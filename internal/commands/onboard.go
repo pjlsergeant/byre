@@ -12,6 +12,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/onboard"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -45,14 +46,19 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		return nil
 	}
 
-	// Need the built-ins materialized to list options / resolve flags.
-	templatesDir := filepath.Join(paths.Home, "templates")
-	skillsDir := filepath.Join(paths.Home, "skills")
+	// Catalog lists options / resolves flags. Silent EnsureStore: develop
+	// already ran EnsureStoreOut so a second noticed call would double-print
+	// LEGACY lines (round 3). Standalone paths without a prior notice still
+	// prepare the store; they just skip the human lines here.
 	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return err
 	}
-	templates := config.ListTemplates(templatesDir)
-	agents := skills.ListAgentSkills(skillsDir)
+	cat, err := builtins.LoadCatalogRaw(paths.Home)
+	if err != nil {
+		return err
+	}
+	templates := config.ListTemplatesCatalog(cat)
+	agents := skills.ListAgentSkills(cat)
 
 	// Drop stale favourites that no longer name a real template/agent, so
 	// accepting the default can't write an invalid byre.config.
@@ -64,17 +70,10 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
-	// The shared-auth offer's gate (ADR 0025): only an agent with a ready
-	// companion, and only when the companion isn't already granted
-	// machine-wide (in default.config's skills, hand-made — then the cascade
-	// covers every box and a per-box answer would be a lie). The second
-	// return is the saved preference prefilling the offer's default answer.
-	companionFor := func(agent string) (string, bool) {
-		c := skills.SharedAuthCompanion(skillsDir, agent)
-		if c == "" || onboard.SharedAuthAlreadyOn(paths.Home, c) {
-			return "", false
-		}
-		return c, onboard.SharedAuthPreference(paths.Home, agent)
+	// Shared-auth offer (ADR 0025 / D2): all catalog claimants with provenance
+	// labels; multi-claim -> numbered picker; single-claim keeps [y/N].
+	sharedAuthFor := func(agent string) onboard.SharedAuthOffer {
+		return buildSharedAuthOffer(paths.Home, cat, agent)
 	}
 
 	// No flags at all: full picker on a TTY; on a non-TTY, don't prompt — develop
@@ -86,7 +85,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		choice, err := onboard.Pick(s.Err, in, templates, agents,
 			onboard.Favourite{Stored: rawT, Effective: defT},
 			onboard.Favourite{Stored: rawA, Effective: defA},
-			companionFor)
+			sharedAuthFor)
 		if err != nil {
 			return err
 		}
@@ -99,13 +98,11 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
 				return err
 			}
-			// "These" is every answer just given: when the shared-auth offer
-			// was among them, its answer is saved as the preference that
-			// prefills future offers — a favourite exactly like template and
-			// agent, never a grant (each box's grant is only ever its own
-			// byre.config, written below).
-			if choice.SharedAuthCompanion != "" {
-				if err := onboard.SaveSharedAuthDefault(paths.Home, choice.Agent, choice.SharedAuth); err != nil {
+			// Shared-auth: yes+companion writes table-shape pick; decline
+			// removes the agent's entry (no stored "no"). Only when the offer
+			// was made — a no-offer save must not touch the stored favourite.
+			if choice.SharedAuthOffered && choice.Agent != "" {
+				if err := onboard.SaveSharedAuthDefaultPick(paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
 					return err
 				}
 			}
@@ -172,22 +169,83 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	companion, sharedAuth := "", false
 	if flagSharedAuth != nil {
 		if *flagSharedAuth {
-			if companion = skills.SharedAuthCompanion(skillsDir, a); companion == "" {
+			if companion = skills.SharedAuthCompanion(cat, a); companion == "" {
 				return fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
 			}
 			sharedAuth = true
 		}
 	} else if s.TTY && !(tFixed && aFixed) {
-		var pref bool
-		if companion, pref = companionFor(a); companion != "" {
-			yes, err := onboard.OfferSharedAuth(s.Err, in, a, companion, pref)
+		offer := sharedAuthFor(a)
+		if len(offer.Claimants) > 0 {
+			var err error
+			companion, sharedAuth, err = onboard.OfferSharedAuthChoice(s.Err, in, a, offer)
 			if err != nil {
 				return err
 			}
-			sharedAuth = yes
 		}
 	}
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
+}
+
+// buildSharedAuthOffer assembles the D2 offer for agent: live claimants with
+// provenance labels, saved pick prefill, and a stale-pick notice when needed.
+func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onboard.SharedAuthOffer {
+	var offer onboard.SharedAuthOffer
+	if agent == "" || cat == nil {
+		return offer
+	}
+	claimants := skills.SharedAuthClaimants(cat, agent)
+	for _, c := range claimants {
+		display := c.Name
+		label := "local"
+		if ent, ok := cat.Lookup(c.Name); ok {
+			if ent.Alias != "" {
+				display = ent.Alias
+			}
+			switch ent.Provenance {
+			case packages.ProvBundled:
+				label = "bundled, byre's"
+			case packages.ProvInstalled:
+				label = "installed, third-party"
+				if ent.Version != "" {
+					label = "installed " + ent.Version + ", third-party"
+				}
+			case packages.ProvLocal:
+				label = "local"
+			}
+		}
+		if onboard.SharedAuthAlreadyOn(home, display) || onboard.SharedAuthAlreadyOn(home, c.Name) {
+			continue
+		}
+		offer.Claimants = append(offer.Claimants, display)
+		offer.Labels = append(offer.Labels, label)
+		// Per-claimant machine-volume disclosure (round 3).
+		vol := ""
+		for _, v := range c.File.Volumes {
+			if v.MachineScoped() {
+				vol = fmt.Sprintf("Note: mounts machine-scoped volume %q (shared credentials).", v.Name)
+				break
+			}
+		}
+		offer.VolumeNotes = append(offer.VolumeNotes, vol)
+	}
+	offer.PrefYes = onboard.SharedAuthPreference(home, agent)
+	pick := onboard.SharedAuthPick(home, agent)
+	if pick != "" {
+		// Prefill only if the pick is still among live claimants.
+		for _, c := range offer.Claimants {
+			if c == pick {
+				offer.PrefPick = pick
+				break
+			}
+		}
+		if offer.PrefPick == "" {
+			// Saved pick missing/INVALID: no prefill + notice; leave store alone.
+			offer.StalePickNotice = fmt.Sprintf("your saved pick %q is no longer installed", pick)
+			offer.PrefYes = false
+		}
+	}
+	return offer
 }
 
 // optedSkills turns the shared-auth offer's outcome (ADR 0025) into the

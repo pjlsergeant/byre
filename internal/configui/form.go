@@ -17,6 +17,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // Run shows the interactive editor for cfg and returns whether the config was
@@ -305,10 +306,19 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.ti.SetValue(cfg.Base)
 	m.tmplOpts = pickerOpts(m.templates, cfg.Template)
 	m.agentOpts = pickerOpts(m.agents, cfg.Agent)
+	// D13: problem rows appear in pickers disabled-with-reason (round 3).
+	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
+	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
 	m.engineOpts = []string{"auto", "docker", "podman"}
 	if cfg.Engine != "" && !contains(m.engineOpts, cfg.Engine) {
 		m.engineOpts = append(m.engineOpts, cfg.Engine)
 	}
+	// The initial selection stays on the stored value EVEN when it is a
+	// disabled problem row: the form writes whatever is selected on save, so
+	// moving the selection here would silently swap the user's template/agent
+	// just by opening the editor. Cycling away skips disabled rows (and can't
+	// come back) — changing off a broken value is deliberate, keeping it isn't
+	// a choice the editor makes for you.
 	m.tmplSel = indexOf(m.tmplOpts, orNone(cfg.Template))
 	m.agentSel = indexOf(m.agentOpts, orNone(cfg.Agent))
 	m.engineSel = indexOf(m.engineOpts, orDefault(cfg.Engine, "auto"))
@@ -501,9 +511,9 @@ func (m *model) cycle(dir int) {
 	case fWorktreeSibling:
 		m.wtSibling = !m.wtSibling
 	case fTemplate:
-		m.tmplSel = wrap(m.tmplSel+dir, len(m.tmplOpts))
+		m.tmplSel = m.skipDisabled(m.tmplOpts, wrap(m.tmplSel+dir, len(m.tmplOpts)), dir)
 	case fAgent:
-		m.agentSel = wrap(m.agentSel+dir, len(m.agentOpts))
+		m.agentSel = m.skipDisabled(m.agentOpts, wrap(m.agentSel+dir, len(m.agentOpts)), dir)
 	case fEngine:
 		m.engineSel = wrap(m.engineSel+dir, len(m.engineOpts))
 	default:
@@ -511,6 +521,59 @@ func (m *model) cycle(dir int) {
 			*in, _ = in.Update(tea.KeyMsg{Type: keyArrow(dir)})
 		}
 	}
+}
+
+// skipDisabled advances from start along dir until a non-disabled option or
+// a full wrap (then returns start). "none" is always selectable.
+func (m model) skipDisabled(opts []string, start, dir int) int {
+	if len(opts) == 0 {
+		return start
+	}
+	if dir == 0 {
+		dir = 1
+	}
+	i := start
+	for n := 0; n < len(opts); n++ {
+		name := opts[i]
+		if name == noneOption || m.optDisabled(name) == "" {
+			return i
+		}
+		i = wrap(i+dir, len(opts))
+	}
+	return start
+}
+
+// optProv / optDisabled look up catalog provenance for template/agent options.
+// Both go through Lookup, which expands aliases: a name that resolves to a
+// loadable package is NEVER disabled, even when a same-named problem row
+// exists — a LEGACY materialized `claude` dir must not grey out the valid
+// bundled `claude` option (sibling-keyed problem rows shadow nothing).
+func (m model) optProv(name string) string {
+	if m.inh.Catalog == nil || name == "" || name == noneOption {
+		return ""
+	}
+	if ent, ok := m.inh.Catalog.Lookup(name); ok {
+		return ent.ProvenanceLabel()
+	}
+	return ""
+}
+
+func (m model) optDisabled(name string) string {
+	if m.inh.Catalog == nil || name == "" || name == noneOption {
+		return ""
+	}
+	ent, ok := m.inh.Catalog.Lookup(name)
+	if !ok {
+		return ""
+	}
+	switch ent.Provenance {
+	case packages.ProvInvalid, packages.ProvLegacy, packages.ProvConflict:
+		if ent.Reason != "" {
+			return ent.Reason
+		}
+		return string(ent.Provenance)
+	}
+	return ""
 }
 
 func (m model) field() fieldID { return m.order[m.focus] }
@@ -716,9 +779,9 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		}
 		return dimStyle.Render("(unset — byre worktree will refuse)")
 	case fTemplate:
-		return renderSeg(m.tmplOpts, m.tmplSel, focused)
+		return m.renderPick(m.tmplOpts, m.tmplSel, focused)
 	case fAgent:
-		return renderSeg(m.agentOpts, m.agentSel, focused)
+		return m.renderPick(m.agentOpts, m.agentSel, focused)
 	case fEngine:
 		return renderSeg(m.engineOpts, m.engineSel, focused)
 	case fVolumes:
@@ -820,6 +883,68 @@ func renderSeg(opts []string, sel int, focused bool) string {
 		parts[i] = seg
 	}
 	return strings.Join(parts, " ")
+}
+
+// renderPick is renderSeg plus D13 provenance dimming and disabled-with-reason
+// for the selected option (template/agent pickers).
+func (m model) renderPick(opts []string, sel int, focused bool) string {
+	parts := make([]string, len(opts))
+	for i, o := range opts {
+		seg := "[" + o + "]"
+		if m.optDisabled(o) != "" {
+			// Disabled options stay visible but dimmed (not reverse-video even
+			// when selected -- cycle skips them so selection should not land).
+			seg = dimStyle.Render(seg)
+		} else if i == sel {
+			if focused {
+				seg = selFocus.Render(seg)
+			} else {
+				seg = selStyle.Render(seg)
+			}
+		}
+		parts[i] = seg
+	}
+	s := strings.Join(parts, " ")
+	if sel >= 0 && sel < len(opts) {
+		o := opts[sel]
+		if p := m.optProv(o); p != "" {
+			s += dimStyle.Render("  " + p)
+		}
+		if d := m.optDisabled(o); d != "" {
+			s += dimStyle.Render("  (" + d + ")")
+		}
+	}
+	return s
+}
+
+// appendPickerProblems adds catalog INVALID/conflict/LEGACY names of kind to
+// opts (agentsOnly: only LooksLikeAgent skill rows).
+func appendPickerProblems(opts []string, cat *packages.Catalog, kind packages.Kind, agentsOnly bool) []string {
+	if cat == nil {
+		return opts
+	}
+	seen := map[string]bool{}
+	for _, o := range opts {
+		seen[o] = true
+	}
+	for _, ent := range cat.ListProblemRows(kind) {
+		// The agent picker only lists skill problem rows whose primary carries
+		// an [agent] table (LooksLikeAgent, set at ingest) — a broken plain
+		// skill doesn't belong in the agent picker.
+		if agentsOnly && !ent.LooksLikeAgent {
+			continue
+		}
+		name := ent.DisplayName()
+		if name == "" {
+			name = ent.ID
+		}
+		if seen[name] || seen[ent.ID] {
+			continue
+		}
+		seen[name] = true
+		opts = append(opts, name)
+	}
+	return opts
 }
 
 // ---- cursor-list plumbing ----------------------------------------------------

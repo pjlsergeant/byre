@@ -117,65 +117,121 @@ func SharedAuthAlreadyOn(home, companion string) bool {
 }
 
 // SharedAuthPreference reports the saved shared-auth preference for agent:
-// whether the per-box offer should prefill Yes. It is the picker-owned
-// `shared_auth` list in ~/.byre/default.config — a preference over future
-// ANSWERS, exactly like the template/agent favourites, never a grant.
-// Missing or unparsable file = no preference (the offer defaults No).
+// whether the per-box offer should prefill Yes. Missing or unparsable file =
+// no preference (the offer defaults No). Covers both dual-shape forms (D2c).
 func SharedAuthPreference(home, agent string) bool {
 	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
 	if err != nil {
 		return false
 	}
-	return slices.Contains(cfg.SharedAuth, agent)
+	return cfg.SharedAuth.HasYes(agent)
+}
+
+// SharedAuthPick returns the saved companion pick for agent, or "" when the
+// preference is a legacy yes-inclination with no pick (or absent).
+func SharedAuthPick(home, agent string) string {
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	if err != nil {
+		return ""
+	}
+	return cfg.SharedAuth.CompanionPick(agent)
 }
 
 // SaveSharedAuthDefault records the shared-auth answer as agent's saved
-// preference (ADR 0025): yes adds agent to the picker-owned `shared_auth`
-// list, no removes it — the next box's offer prefills accordingly. Surgical
-// (the SaveDefault philosophy: rewrite only this one picker-owned line),
-// idempotent, and refused with a do-it-by-hand instruction when the file
-// can't be parsed; the edit must re-parse to exactly the intended list
-// before anything is written.
+// preference (ADR 0025 / D2c). yes with a non-empty companion writes the
+// table-shape pick; yes with empty companion writes a legacy-style
+// yes-inclination (array) only when no other picks exist; no removes the
+// agent from both shapes. Surgical, idempotent, and refused when the file
+// can't be parsed.
 func SaveSharedAuthDefault(home, agent string, yes bool) error {
+	return SaveSharedAuthDefaultPick(home, agent, "", yes)
+}
+
+// SaveSharedAuthDefaultPick is SaveSharedAuthDefault with an explicit
+// companion pick (D2c). companion is ignored when yes is false.
+func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	path := filepath.Join(home, "default.config")
-	// One read feeds the pre-check, the edit, and the verify, so they can
-	// never disagree about the file's content.
 	content, err := readDefaultConfig(home)
 	if err != nil {
 		return err
 	}
 	cfg, err := config.Parse([]byte(content))
 	if err != nil {
-		// Never textually edit a file we can't read.
 		return fmt.Errorf("%s: %w — set `shared_auth` there by hand", path, err)
 	}
-	want := cfg.SharedAuth
-	switch {
-	case yes && !slices.Contains(want, agent):
-		want = append(append([]string{}, want...), agent)
-	case !yes && slices.Contains(want, agent):
-		filtered := make([]string, 0, len(want))
-		for _, a := range want {
-			if a != agent {
-				filtered = append(filtered, a)
+	want := cfg.SharedAuth.Clone()
+	if yes {
+		if companion != "" {
+			if want.Pick == nil {
+				want.Pick = map[string]string{}
+			}
+			want.Pick[agent] = companion
+			// Drop any legacy Yes entry for this agent.
+			want.Yes = removeString(want.Yes, agent)
+		} else {
+			// Yes-inclination only: if we already have picks for others, add
+			// a pick-less agent as a Yes entry; when no picks at all, array.
+			if _, ok := want.Pick[agent]; ok {
+				// Already has a pick; leave it (yes without new pick keeps).
+			} else if !slices.Contains(want.Yes, agent) {
+				want.Yes = append(append([]string{}, want.Yes...), agent)
 			}
 		}
-		want = filtered
-	default:
-		return nil // already the stored preference
+	} else {
+		want.Yes = removeString(want.Yes, agent)
+		if want.Pick != nil {
+			delete(want.Pick, agent)
+			if len(want.Pick) == 0 {
+				want.Pick = nil
+			}
+		}
+	}
+	// No-op when the stored preference already matches.
+	if sharedAuthEqual(want, cfg.SharedAuth) {
+		return nil
 	}
 
-	edited := setList(content, "shared_auth", want)
-	// Verify the edit SEMANTICALLY: the result must parse to exactly the
-	// intended list. A surgical text edit that can't prove itself is refused.
-	if check, perr := config.Parse([]byte(edited)); perr != nil || !slices.Equal(check.SharedAuth, want) {
+	line := want.EncodeTOMLLine()
+	edited := setScalarLine(content, "shared_auth", line)
+	// Verify the edit SEMANTICALLY.
+	check, perr := config.Parse([]byte(edited))
+	if perr != nil || !sharedAuthEqual(check.SharedAuth, want) {
 		return fmt.Errorf("could not update %s (edit did not verify) — set `shared_auth` there by hand", path)
 	}
-	// Atomic write, so a crash or concurrent save can't truncate the file.
 	if err := config.AtomicWrite(path, edited); err != nil {
 		return fmt.Errorf("could not update %s (%v) — set `shared_auth` there by hand", path, err)
 	}
 	return nil
+}
+
+func removeString(ss []string, x string) []string {
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if s != x {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func sharedAuthEqual(a, b config.SharedAuthPref) bool {
+	if len(a.Yes) != len(b.Yes) {
+		return false
+	}
+	for i := range a.Yes {
+		if a.Yes[i] != b.Yes[i] {
+			return false
+		}
+	}
+	if len(a.Pick) != len(b.Pick) {
+		return false
+	}
+	for k, v := range a.Pick {
+		if b.Pick[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // defaultConfigStub heads a default.config the surgical writers create from

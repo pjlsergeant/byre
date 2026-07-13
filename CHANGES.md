@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Skills are packages; `codereview` and `devlog` moved out of the binary.**
+  Byre now has a real package model: bundled packages live inside the byre
+  binary (immutable, `byre/*` ids, display mirror at `~/.byre/bundled/`),
+  local packages are editable directories under `~/.byre/skills|templates/`,
+  and installed packages are content-addressed snapshots acquired with
+  `byre skill|template install <manifest-url> [--digest sha256:...]` --
+  fetched, hash-verified per file, and inert until a box's config enables
+  them. New verbs on both nouns: `install`, `uninstall`, `pack`, plus
+  `inspect <url>` to review a package without installing. `[sources]` in a
+  config records where its packages come from; missing packages print the
+  exact install command.
+  **Migration:** the `codereview` and `devlog` skills left the binary and
+  live at github.com/pjlsergeant/pjlsergeant-byre-skills. Their bare names
+  are permanently retired -- a config naming them gets the pinned install
+  command in the error; install once per machine, then reference
+  `pjlsergeant/codereview` / `pjlsergeant/devlog` in `skills`. `byre skill
+  update` is a no-op stub (bundled packages update with byre itself);
+  materialized copies under `~/.byre/skills/` from older releases are never
+  loaded -- byre offers `byre skill archive-legacy` to move them aside.
 - **`docker-host` skill**: optional grant of the host's Docker daemon via
   its socket. Installs `docker-ce-cli` + compose + buildx from Docker's
   apt repo; mounts `/var/run/docker.sock`; runner probes the socket gid

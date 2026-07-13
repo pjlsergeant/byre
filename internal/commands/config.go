@@ -10,6 +10,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/configui"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -23,44 +24,64 @@ func Config(s Streams, projectDir string, global bool) error {
 	if err != nil {
 		return err
 	}
-	templatesDir := filepath.Join(home, "templates")
-	skillsDir := filepath.Join(home, "skills")
 	// Best-effort: the editor should still open on a store that won't
-	// materialize; develop's strict path reports the failure.
-	_ = builtins.EnsureStore(home)
-	templates := config.ListTemplates(templatesDir)
-	agents := skills.ListAgentSkills(skillsDir)
-	skillOpts := skills.ListSkills(skillsDir)
-	skillDescs := skills.DescribeSkills(skillsDir)
+	// prepare; develop's strict path reports the failure.
+	_ = builtins.EnsureStoreOut(home, s.Err)
+	cat, _ := builtins.LoadCatalogRaw(home)
+	templates := config.ListTemplatesCatalog(cat)
+	agents := skills.ListAgentSkills(cat)
+	skillOpts := skills.ListSkills(cat)
+	skillDescs := skills.DescribeSkills(cat)
 	// Provenance inputs (ADR 0018): the resolved lower cascade per template,
 	// so the project editor can mark inherited entries instead of showing the
 	// layer's raw delta, plus each skill's runtime contribution for the
 	// read-only (skill:name) rows. Degrade on error (a broken template or
 	// skill just loses its marks); the --global editor gets no Lower -- it IS
 	// the base layer.
-	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}}
+	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}, Catalog: cat}
 	if !global {
 		inh.HasLower = true
 		if def, derr := config.ParseFile(filepath.Join(home, "default.config")); derr == nil {
 			inh.Default = def
 		}
 		inh.Templates = map[string]config.Config{}
-		for _, t := range templates {
-			if tc, terr := config.ParseFile(config.TemplatePath(templatesDir, t)); terr == nil {
-				inh.Templates[t] = tc
+		if cat != nil {
+			for _, t := range templates {
+				if ent, ok := cat.Lookup(t); ok && ent.Kind == packages.KindTemplate {
+					// Load template body as a Config for inheritance marks.
+					if raw, rerr := ent.ReadPrimary(); rerr == nil {
+						body := packages.StripPackageTable(raw)
+						if tc, terr := config.Parse(body); terr == nil {
+							inh.Templates[t] = tc
+						}
+					}
+				}
 			}
 		}
 	}
 	for _, n := range skillOpts {
-		if sk, serr := skills.Load(skillsDir, n); serr == nil {
-			inh.Skills[n] = configui.SkillRuntime{
+		if sk, serr := skills.Load(cat, n); serr == nil {
+			// Key by display name (what the picker lists) and canonical ID.
+			rt := configui.SkillRuntime{
 				Mounts:      sk.File.Runtime.Mounts,
 				Env:         sk.File.Runtime.Env,
 				Egress:      sk.File.Runtime.Egress,
 				Offered:     sk.File.Runtime.EgressOffered,
 				Posture:     sk.File.Runtime.NetworkPosture,
 				Containment: sk.File.Runtime.Containment,
+				Provenance:  "",
 			}
+			if cat != nil {
+				if ent, ok := cat.Lookup(n); ok {
+					rt.Provenance = string(ent.Provenance)
+					rt.ProvLabel = ent.ProvenanceLabel()
+					if ent.Provenance == "invalid" || ent.Provenance == "conflict" || ent.Provenance == "legacy" {
+						rt.DisabledReason = ent.Reason
+					}
+				}
+			}
+			inh.Skills[n] = rt
+			inh.Skills[sk.Name] = rt
 		}
 	}
 
@@ -121,7 +142,7 @@ type volumeAdmin struct {
 // The section is shown even with zero volumes — the screen re-resolves on each
 // open, so volumes added later (e.g. via $EDITOR) appear without restarting.
 func newVolumeAdmin(paths project.Paths, projectDir string) configui.VolumeAdmin {
-	if _, err := resolve(paths, projectDir); err != nil {
+	if _, err := resolve(paths, projectDir, nil); err != nil {
 		return nil
 	}
 	rs, err := lifecycleEngines()
@@ -157,7 +178,7 @@ func (a *volumeAdmin) SharedNote() string {
 // List re-resolves the config from disk so the volume set reflects the current
 // state (e.g. after a $EDITOR edit to [[volumes]] or the agent), not a snapshot.
 func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
-	rv, err := resolve(a.paths, a.projectDir)
+	rv, err := resolve(a.paths, a.projectDir, nil)
 	if err != nil {
 		return nil, err
 	}

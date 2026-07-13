@@ -30,6 +30,10 @@ type Choice struct {
 	// favourite, not a grant.
 	SharedAuthCompanion string
 	SharedAuth          bool
+	// SharedAuthOffered is whether the offer was actually made. The saved
+	// preference is only touched when it was: a save after a no-offer onboard
+	// must not delete a stored favourite for a question never asked.
+	SharedAuthOffered bool
 }
 
 // Favourite is one axis's stored default. Stored is what default.config holds
@@ -44,21 +48,40 @@ type Favourite struct {
 	Effective string
 }
 
+// SharedAuthOffer is what the caller passes for one agent's shared-auth
+// decision (D2): zero or more provenance-labeled claimants, a yes-inclination
+// prefill (legacy array), an optional saved companion pick, and a notice when
+// the saved pick is no longer available.
+type SharedAuthOffer struct {
+	// Claimants are display names of companions to offer (already filtered for
+	// machine-wide enablement). Labels[i] is the provenance label for
+	// Claimants[i] (e.g. "bundled, byre's"). VolumeNotes[i] is that claimant's
+	// own machine-volume disclosure (may be empty).
+	Claimants   []string
+	Labels      []string // same length as Claimants
+	VolumeNotes []string // same length as Claimants; per-claimant (D2 round 3)
+	// PrefYes is a legacy yes-inclination with no pick (array shape).
+	PrefYes bool
+	// PrefPick is a saved companion display name to preselect in the picker
+	// ("" = none). When non-empty and still among Claimants, multi-claim
+	// prefills that row; single-claim prefills Yes.
+	PrefPick string
+	// StalePickNotice is printed once when a stored pick is missing/INVALID
+	// (the stored entry is left untouched until the next save).
+	StalePickNotice string
+}
+
 // Pick runs the interactive picker. templates and agents are the available
 // options (a "none" choice is always offered); tmplFav/agentFav are the user's
 // favourites — Effective pre-selected so an empty answer accepts it.
-// companionFor returns the ready shared-auth companion this box could opt
-// into for an agent ("" = no offer; nil disables offers) plus the saved
-// preference prefilling the offer's default answer: when it names one, the
-// offer is asked right after the agent question — agent questions stay
-// together, and every answer is collected before the caller writes anything,
-// so an EOF anywhere in the picker aborts with no side effects.
+// sharedAuthFor returns the shared-auth offer for an agent (zero Claimants =
+// no offer). Every answer is collected before the caller writes anything.
 //
 // The prompting functions here take a *bufio.Reader, not an io.Reader, on
 // purpose: a caller asking more than one question MUST thread one shared
 // reader through them, or the first question's buffering eats the later
 // answers — the signature makes that invariant compile-enforced.
-func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, companionFor func(agent string) (companion string, prefYes bool)) (Choice, error) {
+func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, sharedAuthFor func(agent string) SharedAuthOffer) (Choice, error) {
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
 	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(tmplFav.Effective))
@@ -69,10 +92,19 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	if err != nil {
 		return Choice{}, err
 	}
-	companion, sharedAuth, sharedPref := "", false, false
-	if companionFor != nil {
-		if companion, sharedPref = companionFor(fromNone(agent)); companion != "" {
-			sharedAuth, err = OfferSharedAuth(out, r, fromNone(agent), companion, sharedPref)
+	companion, sharedAuth := "", false
+	// prefWouldYes is whether Enter (or accepting the default) yields yes —
+	// used to decide if the answer is "news" vs the stored favourite.
+	prefWouldYes := false
+	prefPick := ""
+	hadOffer := false
+	if sharedAuthFor != nil {
+		offer := sharedAuthFor(fromNone(agent))
+		if len(offer.Claimants) > 0 {
+			hadOffer = true
+			prefWouldYes = offer.PrefYes || offer.PrefPick != ""
+			prefPick = offer.PrefPick
+			companion, sharedAuth, err = OfferSharedAuthChoice(out, r, fromNone(agent), offer)
 			if err != nil {
 				return Choice{}, err
 			}
@@ -80,14 +112,18 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	}
 	// Choosing exactly what default.config already stores is not news:
 	// offering to save it would be noise (and the save a no-op). Only ask when
-	// saving would change the stored state — a template/agent differing from
-	// the stored favourite (compared against Stored, not Effective: with a
-	// stale favourite the two differ, saving is NOT a no-op, and the offer is
-	// the user's one chance to overwrite the stale value), or a shared-auth
-	// answer differing from its saved preference. One rule for all the axes
-	// of "these".
+	// saving would change the stored state.
 	save := false
-	if fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored || (companion != "" && sharedAuth != sharedPref) {
+	wantSaveNews := fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored
+	if hadOffer {
+		if sharedAuth != prefWouldYes {
+			wantSaveNews = true
+		} else if sharedAuth && companion != "" && prefPick != "" && companion != prefPick {
+			// Multi-claim: accepted a different pick than the saved one.
+			wantSaveNews = true
+		}
+	}
+	if wantSaveNews {
 		save, err = askYesNo(out, r, "Save these as your default for new projects?")
 		if err != nil {
 			return Choice{}, err
@@ -100,6 +136,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 		SaveDefault:         save,
 		SharedAuthCompanion: companion,
 		SharedAuth:          sharedAuth,
+		SharedAuthOffered:   hadOffer,
 	}, nil
 }
 
@@ -114,36 +151,72 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 	return fromNone(v), nil
 }
 
-// OfferSharedAuth asks the shared-auth question (ADR 0025) for the chosen
-// agent: whether THIS box opts into the machine's shared credentials. The
-// scope in the wording is the scope of the write — a "y" puts the companion
-// skill in this project's byre.config, the only thing the answer ever
-// grants. prefYes is the saved preference: it prefills the default answer
-// ([Y/n/i] instead of [y/N/i]) exactly as the favourites prefill
-// template/agent — Enter accepts it, and only an explicit "y" or a Yes
-// default grants. The question itself omits the companion's skill name (it
-// is config plumbing, not part of the decision); "i" is where that detail
-// lives — it prints exactly what each answer writes, then re-asks.
+// OfferSharedAuth is the single-claimant form (kept for tests and flag paths).
+// Prefer OfferSharedAuthChoice when provenance labels or multi-claim apply.
 func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
-	marker := "y/N, i for info"
-	if prefYes {
-		marker = "Y/n, i for info"
+	_, yes, err := OfferSharedAuthChoice(out, r, agent, SharedAuthOffer{
+		Claimants: []string{companion},
+		Labels:    []string{""},
+		PrefYes:   prefYes,
+	})
+	return yes, err
+}
+
+// OfferSharedAuthChoice runs the D2 shared-auth offer: single claimant keeps
+// [y/N] (plus provenance line and optional volume note); multi-claim is a
+// numbered picker (bundled-first already sorted by the caller), N = none.
+// Returns the chosen companion display name ("" on decline) and whether the
+// answer was yes.
+func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer SharedAuthOffer) (companion string, yes bool, err error) {
+	if len(offer.Claimants) == 0 {
+		return "", false, nil
 	}
-	for {
-		fmt.Fprintf(out, "Opt this box into %s shared credentials? [%s]: ", agent, marker)
-		line, err := r.ReadString('\n')
-		if err != nil && line == "" {
-			return false, err
+	if offer.StalePickNotice != "" {
+		fmt.Fprintln(out, offer.StalePickNotice)
+	}
+	volNote := func(i int) string {
+		if i >= 0 && i < len(offer.VolumeNotes) {
+			return offer.VolumeNotes[i]
 		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			return true, nil
-		case "":
-			return prefYes, nil
-		case "i":
-			fmt.Fprintf(out, `
-  y — this box uses the machine-wide shared %s login.
-      Writes one line — %q — into THIS project's byre.config
+		return ""
+	}
+
+	if len(offer.Claimants) == 1 {
+		c := offer.Claimants[0]
+		label := ""
+		if len(offer.Labels) > 0 && offer.Labels[0] != "" {
+			label = offer.Labels[0]
+		}
+		prefYes := offer.PrefYes || offer.PrefPick == c
+		marker := "y/N, i for info"
+		if prefYes {
+			marker = "Y/n, i for info"
+		}
+		if vn := volNote(0); vn != "" {
+			fmt.Fprintf(out, "  %s\n", vn)
+		}
+		for {
+			if label != "" {
+				fmt.Fprintf(out, "Opt this box into %s shared credentials? (%s, %s) [%s]: ", agent, c, label, marker)
+			} else {
+				fmt.Fprintf(out, "Opt this box into %s shared credentials? [%s]: ", agent, marker)
+			}
+			line, rerr := r.ReadString('\n')
+			if rerr != nil && line == "" {
+				return "", false, rerr
+			}
+			switch strings.ToLower(strings.TrimSpace(line)) {
+			case "y", "yes":
+				return c, true, nil
+			case "":
+				if prefYes {
+					return c, true, nil
+				}
+				return "", false, nil
+			case "i":
+				fmt.Fprintf(out, `
+  y — this box uses the machine-wide shared %s login via %q.
+      Writes one line — skills = [%q] — into THIS project's byre.config
       (delete it there to undo). No other project changes.
   n — this box keeps its own separate %s login (log in inside the box).
       Writes nothing, anywhere.
@@ -151,12 +224,57 @@ func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, pr
   pre-selected at the NEXT project's question — saving never
   opts any box in by itself.
 
-`, agent, companion, agent)
-		default:
-			// Same stance as every yes/no here: unrecognized input never
-			// lands on the granting side, whatever the default.
-			return false, nil
+`, agent, c, c, agent)
+				if vn := volNote(0); vn != "" {
+					fmt.Fprintf(out, "  %s\n", vn)
+				}
+			default:
+				return "", false, nil
+			}
 		}
+	}
+
+	// Multi-claim picker (D2b): per-claimant volume notes under each row.
+	fmt.Fprintf(out, "Several shared-auth companions claim %s:\n", agent)
+	pre := 0 // 1-based prefill index; 0 = none
+	for i, c := range offer.Claimants {
+		label := ""
+		if i < len(offer.Labels) && offer.Labels[i] != "" {
+			label = "  (" + offer.Labels[i] + ")"
+		}
+		fmt.Fprintf(out, "  %d) %s%s\n", i+1, c, label)
+		if vn := volNote(i); vn != "" {
+			fmt.Fprintf(out, "      %s\n", vn)
+		}
+		if offer.PrefPick != "" && c == offer.PrefPick {
+			pre = i + 1
+		}
+	}
+	fmt.Fprintln(out, "  N) none")
+	def := "N"
+	if pre > 0 {
+		def = fmt.Sprintf("%d", pre)
+	}
+	for {
+		fmt.Fprintf(out, "Pick a companion for this box [%s]: ", def)
+		line, rerr := r.ReadString('\n')
+		if rerr != nil && line == "" {
+			return "", false, rerr
+		}
+		ans := strings.TrimSpace(line)
+		if ans == "" {
+			ans = def
+		}
+		switch strings.ToLower(ans) {
+		case "n", "none":
+			return "", false, nil
+		}
+		// Numbered pick.
+		var n int
+		if _, perr := fmt.Sscanf(ans, "%d", &n); perr == nil && n >= 1 && n <= len(offer.Claimants) {
+			return offer.Claimants[n-1], true, nil
+		}
+		fmt.Fprintf(out, "  enter 1-%d or N\n", len(offer.Claimants))
 	}
 }
 
