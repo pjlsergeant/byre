@@ -269,8 +269,10 @@ func TestLoadCascade(t *testing.T) {
 	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Templates are shape only (D3b): no skills/agent. Composition is the
+	// project's (or a preset's) job.
 	writeFile(t, filepath.Join(tmplDir, "template.config"),
-		"base = \"node:22\"\napt = [\"build-essential\"]\nskills = [\"node-tools\"]\n")
+		"base = \"node:22\"\napt = [\"build-essential\"]\n")
 	writeProjectCfg(t, proj,
 		"template = \"node\"\nagent = \"claude\"\nskills = [\"proj\"]\n")
 
@@ -287,7 +289,7 @@ func TestLoadCascade(t *testing.T) {
 	if cfg.Agent != "claude" {
 		t.Errorf("agent: got %q", cfg.Agent)
 	}
-	if want := []string{"base", "node-tools", "proj"}; !reflect.DeepEqual(cfg.Skills, want) {
+	if want := []string{"base", "proj"}; !reflect.DeepEqual(cfg.Skills, want) {
 		t.Errorf("skills cascade: got %v want %v", cfg.Skills, want)
 	}
 	if want := []string{"build-essential"}; !reflect.DeepEqual(cfg.Apt, want) {
@@ -295,10 +297,10 @@ func TestLoadCascade(t *testing.T) {
 	}
 }
 
-// A stored "none" is a real answer, not absence: it beats a template's agent
-// in the merge (an empty scalar would inherit it), and resolves to empty —
-// no resolved config ever carries the sentinel (audit finding 5).
-func TestNoneSentinelBeatsTemplateAgent(t *testing.T) {
+// Templates may not set agent/skills (D3b). A hand-made template that does
+// is INVALID and Load fails when it is selected. template = "none" still
+// resolves as no template at all (not a lookup of a template named "none").
+func TestTemplateAgentBannedAndNoneSentinel(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir()
@@ -310,16 +312,11 @@ func TestNoneSentinelBeatsTemplateAgent(t *testing.T) {
 	writeFile(t, filepath.Join(tmplDir, "template.config"), "agent = \"claude\"\n")
 	writeProjectCfg(t, proj, "template = \"opinionated\"\nagent = \"none\"\n")
 
-	cfg, err := Load(proj)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Agent != "" {
-		t.Fatalf("an explicit none must beat the template's agent, got %q", cfg.Agent)
+	if _, err := Load(proj); err == nil {
+		t.Fatal("template with agent must be a validation error (composition belongs in a preset)")
 	}
 
-	// And template = "none" resolves as no template at all, not a lookup of
-	// a template named "none".
+	// template = "none" resolves as no template at all.
 	proj2 := t.TempDir()
 	writeProjectCfg(t, proj2, "template = \"none\"\nagent = \"none\"\n")
 	cfg2, err := Load(proj2)
@@ -558,14 +555,14 @@ func TestMergePortsDedup(t *testing.T) {
 }
 
 func TestListTemplates(t *testing.T) {
-	dir := t.TempDir()
+	home := t.TempDir()
 	for _, n := range []string{"go", "python"} {
-		td := filepath.Join(dir, n)
+		td := filepath.Join(home, "templates", n)
 		os.MkdirAll(td, 0o755)
 		os.WriteFile(filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(dir, "empty"), 0o755) // no template.config -> excluded
-	got := ListTemplates(dir)
+	os.MkdirAll(filepath.Join(home, "templates", "empty"), 0o755) // no template.config -> excluded
+	got := ListTemplates(home)
 	if len(got) != 2 || got[0] != "go" || got[1] != "python" {
 		t.Fatalf("ListTemplates = %v", got)
 	}
@@ -587,7 +584,7 @@ func sampleConfig() Config {
 		Env:                map[string]string{"K": "v"},
 		Files:              map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:             []string{"devloop"},
-		SharedAuth:         []string{"claude"},
+		SharedAuth:         SharedAuthPref{Yes: []string{"claude"}},
 		SharedAuthDeclined: []string{"claude"},
 		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
 		Egress:             []string{"grafana.com"},
@@ -844,8 +841,8 @@ func TestSharedAuthKeysNeverResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.SharedAuth) != 0 {
-		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %v", cfg.SharedAuth)
+	if !cfg.SharedAuth.Empty() {
+		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %+v", cfg.SharedAuth)
 	}
 	if len(cfg.SharedAuthDeclined) != 0 {
 		t.Fatalf("project-layer shared_auth_declined must be stripped from the resolved config, got %v", cfg.SharedAuthDeclined)

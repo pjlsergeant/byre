@@ -40,8 +40,9 @@ func TestSaveSharedAuthDefaultYesCreatesFileAndList(t *testing.T) {
 	if err := SaveSharedAuthDefault(home, "claude", true); err != nil {
 		t.Fatal(err)
 	}
-	if got := parsedDefault(t, home).SharedAuth; len(got) != 1 || got[0] != "claude" {
-		t.Fatalf("shared_auth = %v", got)
+	got := parsedDefault(t, home).SharedAuth
+	if !got.HasYes("claude") {
+		t.Fatalf("shared_auth = %+v", got)
 	}
 	if !SharedAuthPreference(home, "claude") {
 		t.Fatal("saved yes must read back as the preference")
@@ -66,8 +67,8 @@ func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {
 	if !slices.Equal(cfg.Skills, []string{"devloop"}) {
 		t.Fatalf("saving a preference must not write skills: %v", cfg.Skills)
 	}
-	if !slices.Equal(cfg.SharedAuth, []string{"claude"}) {
-		t.Fatalf("shared_auth = %v", cfg.SharedAuth)
+	if !cfg.SharedAuth.HasYes("claude") {
+		t.Fatalf("shared_auth = %+v", cfg.SharedAuth)
 	}
 }
 
@@ -79,8 +80,8 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	if err := SaveSharedAuthDefault(home, "claude", false); err != nil {
 		t.Fatal(err)
 	}
-	if got := parsedDefault(t, home).SharedAuth; !slices.Equal(got, []string{"codex"}) {
-		t.Fatalf("shared_auth = %v", got)
+	if got := parsedDefault(t, home).SharedAuth; !got.HasYes("codex") || got.HasYes("claude") {
+		t.Fatalf("shared_auth = %+v", got)
 	}
 	if err := SaveSharedAuthDefault(home, "codex", false); err != nil {
 		t.Fatal(err)

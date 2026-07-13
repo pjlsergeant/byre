@@ -21,10 +21,36 @@ import (
 	"strconv"
 	"strings"
 
+	"io/fs"
+
 	"github.com/BurntSushi/toml"
 
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
+
+// BundledFS and ByreVersion are wired by the builtins package (init) so config
+// can build a catalog without importing builtins (avoids an import cycle).
+// Tests may set them to a fixture FS / fixed version.
+var (
+	BundledFS   func() fs.FS
+	ByreVersion func() string
+)
+
+// catalogFor builds the multi-provider catalog for home.
+func catalogFor(home string) (*packages.Catalog, error) {
+	var bundled fs.FS
+	if BundledFS != nil {
+		bundled = BundledFS()
+	}
+	ver := "0.0.0-devel"
+	if ByreVersion != nil {
+		if v := ByreVersion(); v != "" {
+			ver = v
+		}
+	}
+	return packages.LoadCatalog(home, bundled, ver)
+}
 
 // ProjectConfigName is the fixed per-project config filename.
 const ProjectConfigName = "byre.config"
@@ -188,15 +214,13 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
-	// SharedAuth lists agent skills whose saved shared-auth preference is
-	// "yes" (ADR 0025): the per-box offer then prefills [Y/n] instead of
-	// [y/N] — a preference over future ANSWERS, never a grant (each box's
-	// actual enablement is the companion in its own byre.config `skills`).
-	// Picker-owned state in ~/.byre/default.config, like the template/agent
-	// favourites: resolveWith strips it from every resolved config no matter
-	// which layer carried it, and only onboarding reads or writes it
-	// (straight from the file, never through the cascade).
-	SharedAuth []string `toml:"shared_auth,omitempty"`
+	// SharedAuth is the picker-owned shared-auth favourite (ADR 0025 / D2c):
+	// a preference over future ANSWERS, never a grant. Dual-shape decode:
+	// legacy array ["claude"] = yes-inclination with no companion pick; table
+	// { claude = "claude-shared-auth" } = agent -> companion pick that
+	// prefills the multi-claim picker. resolveWith strips it from every
+	// resolved config; only onboarding reads or writes it.
+	SharedAuth SharedAuthPref `toml:"shared_auth,omitempty"`
 
 	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
 	// shared-auth offer recorded declines here; nothing reads it anymore —
@@ -293,7 +317,24 @@ func ResolveProposed(proj Config) (Config, error) {
 }
 
 // resolveWith applies the cascade default ⊕ template ⊕ proj.
+//
+// Package references (skills, agent, template, !markers) are canonicalized
+// through the catalog BEFORE merge (D1g), so `!byre/claude` cancels a lower
+// layer's bare `claude` after both expand to the same canonical ID.
 func resolveWith(home string, proj Config) (Config, error) {
+	// Catalog is required for alias expansion and template loading from
+	// embed.FS (bundled templates are no longer materialized into the store).
+	// Callers that care about the display mirror should EnsureStore first;
+	// the catalog reads bundled bytes from embed.FS directly.
+	cat, err := catalogFor(home)
+	if err != nil {
+		return Config{}, err
+	}
+	return resolveWithCatalog(home, proj, cat)
+}
+
+// resolveWithCatalog is the testable core of resolveWith.
+func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config, error) {
 	def, err := loadLayer(filepath.Join(home, "default.config"))
 	if err != nil {
 		return Config{}, err
@@ -312,6 +353,10 @@ func resolveWith(home string, proj Config) (Config, error) {
 	// it per key, and the legibility surfaces count it like the grant it is.
 	def = Merge(Config{EnvFromHost: CoreEnvFromHost()}, def)
 
+	// Canonicalize package references on every layer before merge (D1g).
+	canonicalizeLayer(cat, &def)
+	canonicalizeLayer(cat, &proj)
+
 	// The template name is itself a config value; only the project layer selects
 	// it. The template layer then sits in the middle of the cascade:
 	// default ⊕ template ⊕ project. "none" is a real stored value, not
@@ -322,19 +367,12 @@ func resolveWith(home string, proj Config) (Config, error) {
 	templateName := FromNone(proj.Template)
 	var tmpl Config
 	if templateName != "" {
-		tmplPath := TemplatePath(filepath.Join(home, "templates"), templateName)
-		// A selected template is an explicit dependency — a typo must fail
-		// loudly, not silently fall back to defaults.
-		if _, statErr := os.Stat(tmplPath); statErr != nil {
-			if errors.Is(statErr, os.ErrNotExist) {
-				return Config{}, fmt.Errorf("template %q not found (looked for %s)", templateName, tmplPath)
-			}
-			return Config{}, statErr
-		}
-		tmpl, err = loadLayer(tmplPath)
+		tmpl, err = loadTemplateLayer(cat, templateName)
 		if err != nil {
 			return Config{}, err
 		}
+		// Templates are shape only (D3b): already validated in loadTemplateLayer.
+		canonicalizeLayer(cat, &tmpl)
 	}
 
 	resolved := Merge(Merge(def, tmpl), proj)
@@ -346,12 +384,91 @@ func resolveWith(home string, proj Config) (Config, error) {
 	// state (ADR 0025), not container config: whatever layer carries it, it
 	// never reaches a resolved config — onboarding reads it straight from
 	// default.config, nothing else may.
-	resolved.SharedAuth = nil
+	resolved.SharedAuth = SharedAuthPref{}
 	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
 	}
 	return resolved, nil
+}
+
+// canonicalizeLayer expands package aliases on template/agent/skills (incl.
+// !removal markers) to canonical IDs. Unknown names are left as-is so a
+// missing-package error can fire later with a useful id.
+func canonicalizeLayer(cat *packages.Catalog, c *Config) {
+	if cat == nil || c == nil {
+		return
+	}
+	if c.Template != "" && c.Template != NoneLabel {
+		c.Template = cat.ExpandAlias(c.Template)
+	}
+	if c.Agent != "" && c.Agent != NoneLabel {
+		c.Agent = cat.ExpandAlias(c.Agent)
+	}
+	for i, s := range c.Skills {
+		c.Skills[i] = cat.ExpandAlias(s)
+	}
+}
+
+// loadTemplateLayer loads a template package as a cascade Config layer:
+// stage-1 [package] already checked by the catalog; stage-2 strips [package]
+// and strict-parses the remainder. Composition keys (skills, agent, sources)
+// are validation errors (D3b).
+func loadTemplateLayer(cat *packages.Catalog, name string) (Config, error) {
+	ent, err := cat.ResolveName(name)
+	if err != nil {
+		return Config{}, fmt.Errorf("template %q: %w", name, err)
+	}
+	if ent.Kind != packages.KindTemplate {
+		return Config{}, fmt.Errorf("package %q is a %s, not a template", ent.ID, ent.Kind)
+	}
+	raw, err := ent.ReadPrimary()
+	if err != nil {
+		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
+	}
+	body := packages.StripPackageTable(raw)
+	// Reject composition keys before Parse so the error copy is D3b's, not
+	// "unknown key" from a future [sources] or a skills field.
+	if err := rejectTemplateComposition(body); err != nil {
+		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
+	}
+	c, err := Parse(body)
+	if err != nil {
+		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
+	}
+	// Belt-and-braces: even if Parse accepted empty defaults, refuse composition.
+	if len(c.Skills) > 0 || c.Agent != "" {
+		return Config{}, fmt.Errorf("template %q: composition belongs in a preset (skills/agent are not allowed in template.config)", ent.ID)
+	}
+	if err := c.ValidateLayer(); err != nil {
+		return Config{}, fmt.Errorf("template %q: %w", ent.ID, err)
+	}
+	return c, nil
+}
+
+// rejectTemplateComposition scans raw template.config bytes for banned
+// composition keys (D3b, D16b): skills, agent, [sources].
+func rejectTemplateComposition(body []byte) error {
+	// Lenient partial decode of just the banned fields.
+	var probe struct {
+		Skills  []string       `toml:"skills"`
+		Agent   string         `toml:"agent"`
+		Sources map[string]any `toml:"sources"`
+	}
+	if _, err := toml.Decode(string(body), &probe); err != nil {
+		// Parse will surface the real error; don't double-report.
+		return nil
+	}
+	if len(probe.Skills) > 0 {
+		return fmt.Errorf("composition belongs in a preset (skills is not allowed in template.config)")
+	}
+	if probe.Agent != "" {
+		return fmt.Errorf("composition belongs in a preset (agent is not allowed in template.config)")
+	}
+	if len(probe.Sources) > 0 {
+		return fmt.Errorf("composition belongs in a preset ([sources] is not allowed in template.config)")
+	}
+	return nil
 }
 
 // loadFile decodes one TOML layer. A missing file is an empty layer; an unknown
@@ -418,7 +535,11 @@ func Merge(base, over Config) Config {
 	out.Apt = mergeStrings(base.Apt, over.Apt)
 	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
-	out.SharedAuth = mergeStrings(base.SharedAuth, over.SharedAuth)
+	// SharedAuth is picker state and is stripped from resolved configs; a
+	// last-wins merge keeps Parse+Merge of hand-edited layers well-defined.
+	if !over.SharedAuth.Empty() {
+		out.SharedAuth = over.SharedAuth.Clone()
+	}
 	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
 	out.Egress = mergeStrings(base.Egress, over.Egress)
 	out.EgressOffered = mergeStrings(base.EgressOffered, over.EgressOffered)
@@ -996,28 +1117,33 @@ func SortedEnvKeys(m map[string]string) []string {
 	return keys
 }
 
-// TemplatePath is the config file of template name under templatesDir — the
-// one place the templates/<name>/template.config convention is spelled.
+// TemplatePath is the on-disk path of a LOCAL template's primary file under
+// templatesDir. Bundled templates are not on disk in the store (they live in
+// embed.FS); prefer the catalog for loading. Kept for callers that write
+// local templates (fork/init).
 func TemplatePath(templatesDir, name string) string {
-	return filepath.Join(templatesDir, name, "template.config")
+	// Nested mapping: bare name or owner/name (D1a).
+	return filepath.Join(templatesDir, filepath.FromSlash(name), "template.config")
 }
 
-// ListTemplates returns the names of templates in templatesDir (dirs
-// containing a template.config), sorted. It lives here, with the cascade that
-// loads them, so the path convention isn't spelled in a second package.
-func ListTemplates(templatesDir string) []string {
-	entries, err := os.ReadDir(templatesDir)
+// ListTemplates returns display names of loadable templates from the catalog
+// for home (bundled bare aliases + local IDs), sorted.
+func ListTemplates(home string) []string {
+	cat, err := catalogFor(home)
 	if err != nil {
 		return nil
 	}
+	return ListTemplatesCatalog(cat)
+}
+
+// ListTemplatesCatalog is ListTemplates over an already-built catalog.
+func ListTemplatesCatalog(cat *packages.Catalog) []string {
+	if cat == nil {
+		return nil
+	}
 	var ts []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if _, err := os.Stat(TemplatePath(templatesDir, e.Name())); err == nil {
-			ts = append(ts, e.Name())
-		}
+	for _, ent := range cat.ListLoadable(packages.KindTemplate) {
+		ts = append(ts, ent.DisplayName())
 	}
 	sort.Strings(ts)
 	return ts
