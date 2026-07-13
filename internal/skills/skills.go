@@ -25,6 +25,11 @@ import (
 // characters that could forge the surrounding status annotations.
 var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
+// containmentMaxLen bounds a skill's [runtime] containment one-liner. Status,
+// launch, adoption, and the config UI print it as data on its own row; a long
+// blob would crowd the surfaces without adding honesty.
+const containmentMaxLen = 300
+
 // parseEgress delegates to the shared `host[:port]` grammar in config — the
 // egress config key (ADR 0019) and skill egress are validated by one parser.
 func parseEgress(entry string) (host string, port int, err error) {
@@ -115,6 +120,20 @@ type File struct {
 		// Convenience endpoints (registries, git hosting) belong here, not in
 		// Egress — deny-by-default means the user opens their own doors.
 		EgressOffered []string `toml:"egress_offered"`
+		// SockGroups lists absolute in-box paths whose owning group the runner
+		// must make reachable to the unprivileged dev user via numeric
+		// --group-add at create time (docker-host's socket grant). Each path
+		// must also be an active bind target on the same skill — the group
+		// grant is wider than the named inode (every inode carrying that gid),
+		// so it is itself an attributed grant (Grant.SockGroups).
+		SockGroups []string `toml:"sock_groups"`
+		// Containment is a skill-owned one-liner declaring a containment hole
+		// (e.g. host Docker socket access). Purely declarative: byre prints it
+		// attributed on status/launch/adoption/config UI and never inspects or
+		// enforces it. Unlike network_posture (single declarer), several skills
+		// may declare containment — all are rendered. Validated for single-line
+		// / no control chars / bounded length so it stays legible DATA.
+		Containment string `toml:"containment"`
 	} `toml:"runtime"`
 	Agent   *AgentContrib   `toml:"agent"`
 	Volumes []config.Volume `toml:"volumes"`
@@ -142,6 +161,9 @@ type Grant struct {
 	Caps      []string
 	RunArgs   []string
 	NetnsInit string // entrypoint run in the box's netns as root (see Runtime.NetnsInit)
+	// SockGroups are absolute in-box paths whose owning gid the runner will
+	// --group-add (see Runtime.SockGroups). Wider than the named path alone.
+	SockGroups []string
 }
 
 // SkillFile is one resolved file a skill ships into the image: a source inside
@@ -248,13 +270,57 @@ func (r Resolved) Volumes() []config.Volume {
 }
 
 // Grants projects each skill's runtime grants (mounts, caps, raw run args,
-// netns hooks) for attribution in status and the adoption review.
+// netns hooks, sock_groups) for attribution in status and the adoption review.
 func (r Resolved) Grants() []Grant {
 	var out []Grant
 	for _, sk := range r.Skills {
 		rt := sk.File.Runtime
-		if len(rt.Mounts) > 0 || len(rt.Caps) > 0 || len(rt.RunArgs) > 0 || rt.NetnsInit != "" {
-			out = append(out, Grant{Skill: sk.Name, Mounts: rt.Mounts, Caps: rt.Caps, RunArgs: rt.RunArgs, NetnsInit: rt.NetnsInit})
+		if len(rt.Mounts) > 0 || len(rt.Caps) > 0 || len(rt.RunArgs) > 0 || rt.NetnsInit != "" || len(rt.SockGroups) > 0 {
+			out = append(out, Grant{
+				Skill:      sk.Name,
+				Mounts:     rt.Mounts,
+				Caps:       rt.Caps,
+				RunArgs:    rt.RunArgs,
+				NetnsInit:  rt.NetnsInit,
+				SockGroups: append([]string{}, rt.SockGroups...),
+			})
+		}
+	}
+	return out
+}
+
+// SockGroup is one skill-declared sock_groups path (see Runtime.SockGroups),
+// attributed for probe failures and grant rendering.
+type SockGroup struct {
+	Skill string
+	Path  string // absolute in-box path (must match a bind target)
+}
+
+// SockGroups lists every enabled skill's sock_groups entries, in enable order.
+func (r Resolved) SockGroups() []SockGroup {
+	var out []SockGroup
+	for _, sk := range r.Skills {
+		for _, p := range sk.File.Runtime.SockGroups {
+			out = append(out, SockGroup{Skill: sk.Name, Path: p})
+		}
+	}
+	return out
+}
+
+// ContainmentDecl is one skill's declared containment hole one-liner, for
+// rendering on status/launch/adoption/config UI (see Runtime.Containment).
+type ContainmentDecl struct {
+	Skill string
+	Text  string
+}
+
+// Containments lists every enabled skill's containment declaration, in enable
+// order. Multi-declarer: all are returned; never last-wins.
+func (r Resolved) Containments() []ContainmentDecl {
+	var out []ContainmentDecl
+	for _, sk := range r.Skills {
+		if t := sk.File.Runtime.Containment; t != "" {
+			out = append(out, ContainmentDecl{Skill: sk.Name, Text: t})
 		}
 	}
 	return out
@@ -617,6 +683,33 @@ func Resolve(cfg config.Config, skillsDir string) (Resolved, error) {
 			}
 		}
 
+		// sock_groups: absolute paths that must also be active bind targets on
+		// this skill (the runner probes the bind and --group-adds the gid). A
+		// path with no matching mount would be a silent no-op — refuse.
+		targets := map[string]bool{}
+		for _, m := range f.Runtime.Mounts {
+			if !m.Disabled && m.Target != "" {
+				targets[m.Target] = true
+			}
+		}
+		for _, p := range f.Runtime.SockGroups {
+			if !filepath.IsAbs(p) {
+				return Resolved{}, fmt.Errorf("skill %q: sock_groups path %q must be absolute", name, p)
+			}
+			if !targets[p] {
+				return Resolved{}, fmt.Errorf("skill %q: sock_groups path %q must match an active mount target on the same skill", name, p)
+			}
+		}
+
+		// containment is printed on four surfaces; hold it to single-line /
+		// no-control-char / bounded length so a skill can't forge adjacent
+		// status rows. Multi-declarer is allowed (unlike network_posture).
+		if c := f.Runtime.Containment; c != "" {
+			if err := validateContainment(c); err != nil {
+				return Resolved{}, fmt.Errorf("skill %q: containment: %w", name, err)
+			}
+		}
+
 		// Cross-skill env conflicts: a differing value for the same key would be
 		// resolved by enable order — refuse instead. The same value twice is
 		// harmless (order-independent) and allowed.
@@ -703,6 +796,29 @@ func validatePrefs(p *PrefsSpec, state string) error {
 		// the curated-out secret-bearing files.
 		if !config.RelSafe(f) {
 			return fmt.Errorf("file %q must be relative and stay within from", f)
+		}
+	}
+	return nil
+}
+
+// validateContainment holds a skill's containment one-liner to the shape
+// status/launch/adoption/config UI can print as DATA: one line, no control
+// characters, bounded length. Empty is handled by the caller (no declaration).
+func validateContainment(s string) error {
+	if s != strings.TrimSpace(s) {
+		return fmt.Errorf("must not have leading/trailing whitespace")
+	}
+	if len(s) > containmentMaxLen {
+		return fmt.Errorf("must be at most %d characters", containmentMaxLen)
+	}
+	for _, r := range s {
+		if r == '\n' || r == '\r' {
+			return fmt.Errorf("must be a single line (no newlines)")
+		}
+		// Control chars (except the plain space already allowed above via the
+		// printable path) can forge adjacent status rows when rendered.
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("must not contain control characters")
 		}
 	}
 	return nil
