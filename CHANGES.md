@@ -13,7 +13,16 @@
   Desktop host-stat false-negatives suppressed). Core plumbing:
   `BYRE_PROJECT` + `BYRE_WORKTREE` in every box; compose project name
   defaults to `byre-$BYRE_WORKTREE` so sibling worktrees do not collide.
-  User-facing discussion: `docs/docker-host.md`.
+  User-facing discussion: `docs/docker-host.md`; design record: ADR 0027.
+- **`env.d` hooks are pure env-setters, and `byre shell` now shares the
+  agent's environment.** `env.d` hooks (which set launch-time environment)
+  are contractually export-only -- any command, prompt, or file mutation
+  belongs in `firstrun.d`. A baked `/etc/profile.d` shim sources `env.d`
+  into login shells, so a `byre shell` session gets the same env.d-provided
+  environment the agent does (e.g. `COMPOSE_PROJECT_NAME`, and the
+  `claude-shared-auth` token). `claude-shared-auth`'s interactive
+  stale-login remediation moved from its env hook to its firstrun hook
+  accordingly. Design record: ADR 0028.
 
 ## v0.1.9 -- 2026-07-12
 

@@ -84,5 +84,6 @@ describe what byre built and hold **for the box**. The Containment line
 disclaims everything done through the socket in one place -- including
 attacks not yet enumerated.
 
-See also: `docs/SECURITY.md` (daemon access is root-equivalent), the
+See also: `docs/SECURITY.md` (daemon access is root-equivalent),
+`docs/adr/0027-docker-host-daemon-access.md` (the design record), the
 skill's agent context under `~/.byre/skills/docker-host/context.md`.

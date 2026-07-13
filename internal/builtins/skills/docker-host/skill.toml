@@ -1,7 +1,7 @@
 # Built-in skill: docker-host -- grant the box the host's Docker daemon.
 #
-# Design of record: docs/docker-host-design.md. User-facing security discussion:
-# docs/docker-host.md. This skill is the ergonomic form of a grant already
+# Design record: docs/adr/0027-docker-host-daemon-access.md. User-facing
+# security discussion: docs/docker-host.md. This is the ergonomic form of a grant already
 # expressible by hand (socket mount + CLI + group); its value is bundling that
 # with honest, loud legibility.
 #
