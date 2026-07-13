@@ -57,7 +57,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// Ensure store (bundled mirror) before loading config (templates feed the
 	// cascade). The error degrades the skills view below rather than failing
 	// status.
-	storeErr := builtins.EnsureStore(paths.Home)
+	storeErr := builtins.EnsureStoreOut(paths.Home, s.Err)
 	cat, _ := builtins.LoadCatalogRaw(paths.Home)
 
 	cfg, err := config.Load(projectDir)

@@ -44,7 +44,10 @@ func (rv resolved) validate() error {
 // resolve loads the config cascade and the enabled skills for a project, and
 // re-validates the combined mount/volume set (config + skill contributions).
 func resolve(paths project.Paths, projectDir string) (resolved, error) {
-	// Ensure store (bundled mirror + legacy notice) before cascade + catalog.
+	// Ensure store (bundled mirror + legacy notices on stderr) before cascade.
+	// Notice writer is optional at this layer -- callers that have Streams
+	// should prefer EnsureStoreOut; resolve is used from develop which will
+	// have already prepared the store with notices when possible.
 	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return resolved{}, err
 	}

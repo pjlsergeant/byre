@@ -5,9 +5,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -128,33 +130,63 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	if ent.Reason != "" {
 		fmt.Fprintf(s.Out, "Status:      %s\n", packages.EscapeTerminal(ent.Reason))
 	}
-	if ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvLocal {
-		// Contributions / grants for skills.
-		if kind == packages.KindSkill && (ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvLocal) {
-			if sk, err := skills.Load(cat, ent.ID); err == nil {
-				printSkillGrants(s.Out, sk)
-			}
+	switch {
+	case kind == packages.KindSkill && (ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvLocal || ent.Provenance == packages.ProvInstalled):
+		if sk, err := skills.Load(cat, ent.ID); err == nil {
+			printSkillInspect(s.Out, sk)
 		}
+	case kind == packages.KindTemplate && (ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvLocal || ent.Provenance == packages.ProvInstalled):
+		printTemplateInspect(s.Out, ent)
+	}
+	// Source path for full review (D8): local dir or ~/.byre/bundled mirror.
+	srcPath := inspectSourcePath(home, ent)
+	if srcPath != "" {
+		fmt.Fprintf(s.Out, "\nSource: %s\n", srcPath)
 	}
 	if ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvInstalled {
-		fmt.Fprintln(s.Out, "\nThis package is immutable. To edit: byre", kind, "fork", ent.DisplayName(), "<new-id>")
+		fmt.Fprintln(s.Out, "This package is immutable. To edit: byre", kind, "fork", ent.DisplayName(), "<new-id>")
 	}
 	return nil
 }
 
-func printSkillGrants(w io.Writer, sk skills.Skill) {
-	rt := sk.File.Runtime
-	if len(rt.Mounts) == 0 && len(rt.Caps) == 0 && len(rt.RunArgs) == 0 &&
-		rt.NetnsInit == "" && len(rt.SockGroups) == 0 && rt.Containment == "" &&
-		sk.File.Agent == nil {
-		return
+func inspectSourcePath(home string, ent *packages.Entry) string {
+	if ent.Dir != "" {
+		return ent.Dir
 	}
-	fmt.Fprintln(w, "\nGrants / contributions:")
-	if sk.File.Agent != nil && sk.File.Agent.Command != "" {
-		fmt.Fprintf(w, "  agent command: %s\n", packages.EscapeTerminal(sk.File.Agent.Command))
+	if ent.Provenance == packages.ProvBundled && ent.Sub != "" {
+		return filepath.Join(home, "bundled", filepath.FromSlash(ent.Sub))
+	}
+	return ""
+}
+
+// printSkillInspect renders the full pre-trust contribution set (D8): structured
+// grants one line each; freeform build as counts + names, not inline dumps.
+func printSkillInspect(w io.Writer, sk skills.Skill) {
+	f := sk.File
+	rt := f.Runtime
+	fmt.Fprintln(w, "\nContributions:")
+	if f.Agent != nil && f.Agent.Command != "" {
+		fmt.Fprintf(w, "  agent command: %s\n", packages.EscapeTerminal(f.Agent.Command))
+		if f.Agent.State != "" {
+			fmt.Fprintf(w, "  agent state:   %s\n", packages.EscapeTerminal(f.Agent.State))
+		}
 	}
 	for _, m := range rt.Mounts {
-		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), m.Mode)
+		mode := m.Mode
+		if mode == "" {
+			mode = "ro"
+		}
+		if m.Disabled {
+			mode += ", disabled"
+		}
+		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), mode)
+	}
+	for _, v := range f.Volumes {
+		scope := v.Scope
+		if scope == "" {
+			scope = "project"
+		}
+		fmt.Fprintf(w, "  volume: %s (%s, %s) -> %s\n", packages.EscapeTerminal(v.Name), v.Role, scope, packages.EscapeTerminal(v.Target))
 	}
 	for _, c := range rt.Caps {
 		fmt.Fprintf(w, "  cap: %s\n", packages.EscapeTerminal(c))
@@ -165,15 +197,109 @@ func printSkillGrants(w io.Writer, sk skills.Skill) {
 	if rt.NetnsInit != "" {
 		fmt.Fprintf(w, "  netns_init: %s\n", packages.EscapeTerminal(rt.NetnsInit))
 	}
+	if rt.NetworkPosture != "" {
+		fmt.Fprintf(w, "  network_posture: %s\n", packages.EscapeTerminal(rt.NetworkPosture))
+	}
 	for _, p := range rt.SockGroups {
 		fmt.Fprintf(w, "  sock_groups: %s\n", packages.EscapeTerminal(p))
 	}
 	if rt.Containment != "" {
 		fmt.Fprintf(w, "  containment: %s\n", packages.EscapeTerminal(rt.Containment))
 	}
-	if sk.File.SharedAuthFor != "" {
-		fmt.Fprintf(w, "  shared_auth_for: %s\n", packages.EscapeTerminal(sk.File.SharedAuthFor))
+	for _, e := range rt.Egress {
+		fmt.Fprintf(w, "  egress: %s\n", packages.EscapeTerminal(e))
 	}
+	for _, e := range rt.EgressOffered {
+		fmt.Fprintf(w, "  egress_offered: %s\n", packages.EscapeTerminal(e))
+	}
+	for _, k := range sortedMapKeys(rt.Env) {
+		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.Env[k]))
+	}
+	if f.SharedAuthFor != "" {
+		fmt.Fprintf(w, "  shared_auth_for: %s\n", packages.EscapeTerminal(f.SharedAuthFor))
+	}
+	// Build summary: counts + names, not inline dumps.
+	var buildParts []string
+	if n := len(f.Build.Apt); n > 0 {
+		buildParts = append(buildParts, fmt.Sprintf("%d apt", n))
+	}
+	if n := len(f.Build.NpmGlobal); n > 0 {
+		buildParts = append(buildParts, fmt.Sprintf("%d npm_global", n))
+	}
+	if n := len(f.Build.Dockerfile); n > 0 {
+		buildParts = append(buildParts, fmt.Sprintf("%d dockerfile lines", n))
+	}
+	if len(buildParts) > 0 {
+		fmt.Fprintf(w, "  build: %s\n", strings.Join(buildParts, ", "))
+	}
+	if n := len(f.Build.Files); n > 0 {
+		names := sortedMapKeys(f.Build.Files)
+		shown := names
+		if len(shown) > 8 {
+			shown = append(shown[:8], "...")
+		}
+		fmt.Fprintf(w, "  files: %d (%s)\n", n, strings.Join(shown, ", "))
+	}
+	if f.Context.Text != "" || f.Context.File != "" {
+		src := "inline"
+		if f.Context.File != "" {
+			src = f.Context.File
+		}
+		fmt.Fprintf(w, "  context: present (%s)\n", packages.EscapeTerminal(src))
+	}
+}
+
+func printTemplateInspect(w io.Writer, ent *packages.Entry) {
+	raw, err := ent.ReadPrimary()
+	if err != nil {
+		return
+	}
+	cfg, err := config.ParseTemplateBody(raw)
+	if err != nil {
+		// Still show what we can from a lenient strip+parse for broken templates.
+		body := packages.StripPackageTable(raw)
+		cfg, _ = config.Parse(body)
+	}
+	fmt.Fprintln(w, "\nShape:")
+	if cfg.Base != "" {
+		fmt.Fprintf(w, "  base: %s\n", packages.EscapeTerminal(cfg.Base))
+	}
+	if cfg.Engine != "" {
+		fmt.Fprintf(w, "  engine: %s\n", packages.EscapeTerminal(cfg.Engine))
+	}
+	for _, a := range cfg.Apt {
+		fmt.Fprintf(w, "  apt: %s\n", packages.EscapeTerminal(a))
+	}
+	for _, a := range cfg.NpmGlobal {
+		fmt.Fprintf(w, "  npm_global: %s\n", packages.EscapeTerminal(a))
+	}
+	for _, e := range cfg.EgressOffered {
+		fmt.Fprintf(w, "  egress_offered: %s\n", packages.EscapeTerminal(e))
+	}
+	for _, e := range cfg.Egress {
+		fmt.Fprintf(w, "  egress: %s\n", packages.EscapeTerminal(e))
+	}
+	for _, m := range cfg.Mounts {
+		fmt.Fprintf(w, "  mount: %s -> %s\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target))
+	}
+	for _, v := range cfg.Volumes {
+		fmt.Fprintf(w, "  volume: %s (%s) -> %s\n", packages.EscapeTerminal(v.Name), v.Role, packages.EscapeTerminal(v.Target))
+	}
+	for _, k := range sortedMapKeys(cfg.Env) {
+		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.Env[k]))
+	}
+	if n := len(cfg.DockerfilePre) + len(cfg.DockerfilePost); n > 0 {
+		fmt.Fprintf(w, "  dockerfile lines: %d (pre+post)\n", n)
+	}
+}
+
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // SkillFork copies an immutable skill into the local store under newID (D6).
@@ -208,7 +334,7 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 	if err := packages.ValidateID(newID, true); err != nil {
 		return fmt.Errorf("new id: %w", err)
 	}
-	if cat.IsProtected(newID) || (packages.IsBare(newID) && cat.IsProtected(newID)) {
+	if packages.IsBare(newID) && cat.IsProtected(newID) {
 		return fmt.Errorf("%q is protected; pick a different id (e.g. yourname/%s)", newID, packages.BareName(newID))
 	}
 	if packages.Owner(newID) == "byre" {
@@ -446,26 +572,18 @@ func pkgValidate(s Streams, kind packages.Kind, name string) error {
 }
 
 func validateOne(s Streams, cat *packages.Catalog, ent *packages.Entry) error {
+	_ = s
 	if ent.Kind == packages.KindSkill {
 		_, err := skills.Load(cat, ent.ID)
 		return err
 	}
-	// Template: re-load via config path (composition check included).
 	raw, err := ent.ReadPrimary()
 	if err != nil {
 		return err
 	}
-	body := packages.StripPackageTable(raw)
-	// Use a tiny re-parse through packages + config by calling ResolveName
-	// already succeeded; stage-2 composition is checked when used as a
-	// cascade layer. Here: try Parse after strip.
-	// Direct check:
-	if strings.Contains(string(body), "skills") || strings.Contains(string(body), "agent") {
-		// Cheap pre-check; loadTemplateLayer is unexported. Inspect via catalog
-		// round-trip: ensure entry is loadable as template kind.
-	}
-	_ = s
-	return nil
+	// Same stage-2 path cascade load uses (composition ban + strict parse).
+	_, err = config.ParseTemplateBody(raw)
+	return err
 }
 
 // SkillArchiveLegacy moves LEGACY dirs aside (D10).

@@ -771,3 +771,35 @@ func TestResolveRejectsContainmentTooLong(t *testing.T) {
 		t.Fatal("overlong containment must be rejected")
 	}
 }
+
+func TestForkThenResolvePeteClaude(t *testing.T) {
+	home := testHome(t)
+	// Simulate a fork: local pete/claude with an agent block.
+	writeSkill(t, home, "pete/claude", `
+[package]
+id = "pete/claude"
+kind = "skill"
+
+[agent]
+command = "claude --yolo"
+state = ".claude"
+
+[[volumes]]
+name = ".claude"
+role = "state"
+target = "/home/dev/.claude"
+`, nil)
+	// Nested path: writeSkill uses home/skills/name — for pete/claude need nested.
+	// writeSkill joins home/skills/pete/claude when name has slash... check
+	cat := catFor(t, home)
+	res, err := Resolve(config.Config{Agent: "pete/claude"}, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AgentCommand() == "" {
+		t.Fatal("expected agent command")
+	}
+	if len(res.Names()) != 1 || res.Names()[0] != "pete/claude" {
+		t.Fatalf("names = %v", res.Names())
+	}
+}
