@@ -1,9 +1,11 @@
 # Skill packages: identity, immutable bundled content, installation, presets
 
-**Status:** Design of record, rev 5 -- FINAL (grilled with Pete 2026-07-13,
+**Status:** Design of record, rev 6 -- FINAL (grilled with Pete 2026-07-13,
 all rulings his; rev 2 folded codex + grok design round 1; rev 3 resolved
 the doctrine forks and added presets + adoption retirement; rev 4 folded
-design round 2; rev 5 lands the last ruling: template `agent` banned)
+design round 2; rev 5 landed the last ruling: template `agent` banned;
+rev 6 folds the clean-check residuals: applied marker, D9b' precision,
+kind-correct hints)
 **Lifecycle:** working doc -- absorb into an ADR + docs/skills.md when built,
 then delete (the docker-host-design.md pattern). Git history keeps it
 regardless.
@@ -651,8 +653,10 @@ skills = ["pjlsergeant/codereview"]
 ```
 
 Hints are never auto-fetched. Anywhere byre reports a missing package
-(D9e, preset review), it prints the exact `byre skill install --digest ...
-<uri>` from the map instead of a shrug. A hostile hint buys the attacker
+(D9e, preset review), it prints the exact install command from the map --
+**kind-correct** (`byre template install ...` for a template reference,
+`byre skill install ...` for skills and agents; D3c's kind/verb check
+would reject the wrong verb) -- instead of a shrug. A hostile hint buys the attacker
 an install review, not running code. Digest optional but recommended in
 published presets. Semantics (from review): entries merge across the
 cascade **last-wins by ID**, and the printed command names the layer the
@@ -664,9 +668,12 @@ nothing to hint about).
 **D16c. Apply flow, and the solicitation rule.** `byre preset apply
 [<uri>|<path>]` (default `./byre.preset`; when absent, a legacy-named
 `./byre.config` is accepted with the D17 rename note). The flow order is
-fixed (from review -- installs come **before** the write, so chauffeured
-installs are genuinely fresh and D9b' never fires inside apply, and the
-final review can actually be complete):
+fixed (from review -- installs come **before** the write, so the preset's
+own not-yet-written references never make a chauffeured install
+"activating"; note the precision: D9b' still runs inside the normal
+install flow, because *other* stored configs -- including this project's
+existing byre.config -- may already reference the ID, and the guard must
+catch those):
 
 1. Fetch and validate the exact preset bytes (D1h escaping applies).
 2. Identify every missing **package reference of any kind** -- skills,
@@ -681,7 +688,13 @@ final review can actually be complete):
    completeness it does not have). Against an existing `byre.config`,
    the review shows the diff (the adoption diff machinery survives here).
 6. Confirm; atomically write the reviewed bytes as the project's
-   `byre.config`.
+   `byre.config`, and record in the project store `applied` =
+   sha256(preset bytes) + the preset's source (URI/path). This is the
+   marker the D17 drift states derive from -- "no digest bookkeeping"
+   (D16a) means presets have no *package* identity or install lifecycle;
+   the project remembering what it applied is ordinary store state, and
+   deleting it would make D17's history claims unimplementable
+   (clean-check finding, both reviewers).
 
 The chauffeur is not the banned transitive install (which is *silent*
 fetching); it is byre walking the user through N explicit consents they
@@ -709,22 +722,29 @@ until you explicitly apply it.
   `byre preset apply` like any preset (D16c). One mechanism, always
   solicited, so the chauffeur is always appropriate inside it.
 - With no unsolicited prompt there is nothing to decline: the sticky
-  decline records and re-prompt-on-edit machinery are deleted (existing
-  `adopted`/`declined` records in stores become inert and are swept by the
-  D10 migration). The adoption *review and diff* code survives as the
+  decline records and re-prompt-on-edit machinery are deleted. `declined`
+  records are swept by the D10 migration; `adopted` records are **migrated
+  to `applied` markers** (same concept -- the sha of what this project took
+  on -- so existing adopted projects land in drift state 2/3 correctly
+  instead of losing their history). The adoption *review and diff* code survives as the
   preset apply review. This **partially supersedes ADR 0003**: its
   host-side-store premise stands; its offer-and-adopt-on-develop clause is
   reversed (and the 2026-07-10 sticky-decline work with it) -- the new ADR
   names it explicitly.
 - Passive visibility, never questions -- with the three states specified
   (from review, so drift is legible, not just absence):
+  The states derive from the `applied` marker (D16c step 6): no marker ->
+  1; marker == sha256(current preset file) -> 2; marker != -> 3. The
+  wording claims only what the marker proves (the preset file versus the
+  version you applied -- it says nothing about live-config edits, which
+  are yours and not drift):
   1. **Not applied**: "this repo ships a byre.preset (not applied);
      `byre preset apply` to review it."
   2. **Applied, matches**: no noise (steady state).
-  3. **Applied, diverged**: "the repo's byre.preset differs from this
-     project's byre.config (repo file changed since you applied it);
-     `byre preset apply` to review the changes" -- the outdated-lockfile
-     state, in both the develop preamble and a `byre status` row.
+  3. **Applied, diverged**: "the repo's byre.preset differs from the
+     version you applied; `byre preset apply` to review the changes" --
+     the outdated-lockfile state, in both the develop preamble and a
+     `byre status` row.
   A repo shipping a legacy-named `byre.config` gets the same notes plus
   the rename hint (D10), and `preset apply` accepts it as a fallback
   (D16c).

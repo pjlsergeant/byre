@@ -86,9 +86,10 @@ the rationale lives.
   without the docker-host grant.
 - [ ] (XL) **Skills milestone: packages, immutable bundled, install, presets.**
   IN PROGRESS (Pete, 2026-07-13): design of record is
-  docs/skill-packages-design.md rev 4 (grilled + 2 codex/grok design rounds;
-  one PENDING ruling: template agent key). Supersedes the old bundle-sharing
-  item; 4 build phases, grok builds, codex final sign-off.
+  docs/WIP/skill-packages-design.md rev 6 FINAL (grilled + 3 codex/grok
+  design rounds, no open forks). Supersedes the old bundle-sharing item;
+  4 build phases (phase-1 grok dispatch:
+  .byre-devlog/skills-phase1-grok-dispatch.md), codex final sign-off.
 
 ## Standing
 
