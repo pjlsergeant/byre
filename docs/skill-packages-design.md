@@ -1,9 +1,9 @@
 # Skill packages: identity, immutable bundled content, installation, presets
 
-**Status:** Design of record, rev 3 (grilled with Pete 2026-07-13, all rulings
-his; rev 2 folded codex + grok design round 1; rev 3 resolves the three
-pending doctrine forks and adds the preset model + adoption retirement from
-the follow-on grilling)
+**Status:** Design of record, rev 4 (grilled with Pete 2026-07-13, all rulings
+his; rev 2 folded codex + grok design round 1; rev 3 resolved the pending
+doctrine forks and added the preset model + adoption retirement; rev 4 folds
+design round 2 -- one fork **[PENDING]**: template `agent`, D3b)
 **Lifecycle:** working doc -- absorb into an ADR + docs/skills.md when built,
 then delete (the docker-host-design.md pattern). Git history keeps it
 regardless.
@@ -122,8 +122,10 @@ may claim it (that would reopen "who verifies first-party?"). Hence
 **D1c.** A bundled package always owns its bare name: `byre/<name>`
 automatically gets the alias `<name>`, and that bare name is protected -- no
 user or installed package may claim it as an ID. Uniform rule, no historical
-allowlist; the reserved set grows only when the bundled roster grows, which
-is already a deliberate release-notes event. Consequence accepted with eyes
+allowlist needed to *start* the set; the reserved set grows when the bundled
+roster grows (a deliberate release-notes event) and never shrinks -- names
+that leave the bundle move to the retired table (D15) rather than returning
+to the pool. Consequence accepted with eyes
 open: if byre later bundles `byre/opencode` and a user has a bare-ID local
 `opencode`, that package goes INVALID (scoped, loud, printed remedy: fork/
 rename + config edit). The documented convention keeps this rare: **bare IDs
@@ -205,7 +207,12 @@ by a provenance-labeled picker (bundled first, `N` = none available).
 **D2c. Favourites prefill; only save-as-default writes them.** The
 `shared_auth` favourite upgrades from an agent list to **agent ->
 companion pick** -- picker-owned, cascade-stripped, prefill-only, exactly
-like every other favourite. The saved pick preselects its row in the next
+like every other favourite. Compatibility (from review): v0.1 stores hold
+`shared_auth = ["claude"]` as a TOML array and the parser is strict, so the
+decoder accepts **both shapes** -- a legacy array entry is a yes-inclination
+with no pick (it prefills `[Y/n]` in the single-claimant case and does
+nothing in a picker; migration never invents a pick); the next
+save-as-default rewrites the entry in the new shape. The saved pick preselects its row in the next
 box's picker and Enter accepts it: consent is answering *this box's* live
 question; prefill is ergonomics (the template/agent favourites precedent).
 Favourites are written **only** by answering "Save these as your default?"
@@ -222,8 +229,7 @@ skips the question entirely remains a companion already enabled in config
 a capability (many, union semantics, attributed). Both concepts earn their
 keep; neither absorbs the other.
 
-**D3b. Templates never reference skills.** A `skills` key (or `agent`
-composition beyond the existing cascade-default `agent`) in a
+**D3b. Templates never reference skills.** A `skills` key in a
 `template.config` is a validation error: "composition belongs in a preset"
 (D16). Rationale: a template that *enables* skills makes "I picked a
 template" stand in for "I granted what those skills grant" -- visibility is
@@ -238,9 +244,21 @@ recursive rendering machinery is needed anywhere -- the hole is closed
 structurally, not disclosed around.
 
 (Today's bundled templates set base/egress_offered only and no shipped
-template enables skills, so nothing breaks. The template `agent` key stays
-a plain cascade default -- onboarding's agent picker already surfaces it as
-a live, prefilled question.)
+template enables skills, so nothing breaks.)
+
+**[PENDING Pete] The template `agent` key.** Both round-2 reviewers found
+the same residual: `agent = "..."` in a template still *implicitly enables
+that agent skill* through the cascade (ADR 0005: the agent is a skill) --
+the highest-power skill class riding in on a key D3b left open. Onboarding's
+agent picker only fires at onboarding; a box that gains `template = "..."`
+later (config UI, hand edit) inherits and enables the agent unasked.
+Options: (1) **ban `agent` in template.config too** -- composition,
+including "which agent", belongs to presets and explicit config; (2) make
+template `agent` prefill-only recommendation metadata (never effective in
+the cascade); (3) accept as residual and require the agent skill's grant
+summary at template selection. Recommendation: **(1)** -- it completes
+"template = shape", it is one more validation error beside the `skills`
+one, and no shipped template sets `agent` today.
 
 **D3c.** Full CLI parity: `byre template list / inspect / install /
 uninstall / fork / init / validate / pack` -- shared engine, per-kind verbs,
@@ -317,10 +335,14 @@ Hashes exist exactly where bytes cross a trust boundary, and nowhere else.
 **D5c.** `byre skill pack <name>` / `byre template pack <name>` emits the
 distribution manifest from a local package, hashes computed. Near-free
 (verification needs the same code) and required for our own publishing.
-Pack enumerates **every file in the package directory** (scripts, context
-files, hooks -- not just `[build].files` entries); an incomplete manifest
-that installs "successfully" and fails at enable is the failure mode this
-rule exists to prevent.
+Pack enumerates **every file in the package directory except the primary
+file itself** (scripts, context files, hooks -- not just `[build].files`
+entries); an incomplete manifest that installs "successfully" and fails at
+enable is the failure mode this rule exists to prevent. The primary file
+is excluded from its own `[[package.files]]` list by necessity -- it cannot
+contain its own hash (review-found fixed point) -- and needs no entry: the
+fetched manifest bytes *are* the primary file, and the package digest
+(D5f) covers them directly.
 
 **D5d.** v1 payload sources are **relative to the manifest only**, and
 "relative" is enforced after resolution, not syntax: network-path
@@ -445,10 +467,13 @@ declared ID:
 - ID not present anywhere: install.
 - Same ID, same digest (D5f): no-op.
 - Same ID, different digest: show version/digest, changed payloads and
-  contributions, with **new or widened grants called out separately**;
-  the prompt **states its machine-wide scope and enumerates affected
-  boxes** (from the D9d scan) -- replacement changes what those boxes run
-  next launch; confirm; atomic swap under the store lock.
+  contributions, with **new or widened grant declarations in the package
+  called out separately** (declarations, not per-box effective grants --
+  a project layer may override them; the wording must not imply every
+  affected box gains them); the prompt **states its machine-wide scope
+  and enumerates affected boxes** (from the D9d scan) -- replacement
+  changes what those boxes run next launch; confirm; atomic swap under
+  the store lock.
 - Different ID: install alongside.
 - Incompatible (`package_api` / `requires_byre`): reject before anything.
 
@@ -481,11 +506,16 @@ bootstrap matters). Replacement, uninstall, and reference-activating
 installs (D9b') refuse in a pipe without `--yes`; state-changing
 confirmation never defaults.
 
-**D9d.** The reference scan resolves **effective** configs through the
-catalog -- project configs (`~/.byre/projects/*/byre.config`) and
-`default.config`, including each project's selected template -- so nothing
-referencing the ID is missed. A local file walk plus catalog lookups; no
-engine calls. Uninstall lists affected projects, confirms, removes the
+**D9d.** The reference scan is a **conservative reference extractor**, not
+a full effective resolution (from review: the configs that matter most --
+dangling refs, INVALID packages -- are exactly the ones fail-fast
+resolution dies on). It collects package references syntactically per
+layer (skills, agent, template, `!` markers), canonicalizes them through
+the alias table, and follows each project's selected template's own
+references; a config that cannot be parsed well enough to *prove* it does
+not reference the candidate counts as a hit (guarded path). Scope: project
+configs (`~/.byre/projects/*/byre.config`) and `default.config`. A local
+file walk plus catalog lookups; no engine calls. Uninstall lists affected projects, confirms, removes the
 snapshot under the store lock. A project left referencing a missing
 package hits the resolve error at next develop -- loud, attributed,
 self-repairing via D9e.
@@ -629,19 +659,38 @@ Hints are never auto-fetched. Anywhere byre reports a missing package
 (D9e, preset review), it prints the exact `byre skill install --digest ...
 <uri>` from the map instead of a shrug. A hostile hint buys the attacker
 an install review, not running code. Digest optional but recommended in
-published presets.
+published presets. Semantics (from review): entries merge across the
+cascade **last-wins by ID**, and the printed command names the layer the
+hint came from ("hint from project config") so a lower layer overriding a
+digest is visible; `[sources]` in a `template.config` is a validation
+error (templates are shape and reference no packages, D3b -- they have
+nothing to hint about).
 
 **D16c. Apply flow, and the solicitation rule.** `byre preset apply
-[<uri>|<path>]` (default `./byre.preset`) fetches, then runs the
-adoption-style review -- full grant summary of every key and every
-referenced skill, provenance-labeled; missing skills marked with their
-`[sources]` hints -- and on confirm writes the project's `byre.config`
-(existing config: the review shows the diff, reusing the adoption diff
-machinery). Inside apply, byre offers to **walk through installing missing
-skills**: each gets the normal, individual install flow -- manifest
-fetched, its own grant summary, its own confirm, digest verified. That is
-not the banned transitive install (which is *silent* fetching); it is byre
-chauffeuring the user through N explicit consents they solicited.
+[<uri>|<path>]` (default `./byre.preset`; when absent, a legacy-named
+`./byre.config` is accepted with the D17 rename note). The flow order is
+fixed (from review -- installs come **before** the write, so chauffeured
+installs are genuinely fresh and D9b' never fires inside apply, and the
+final review can actually be complete):
+
+1. Fetch and validate the exact preset bytes (D1h escaping applies).
+2. Identify every missing **package reference of any kind** -- skills,
+   the selected template, the agent -- with their `[sources]` hints.
+3. Offer the chauffeur: each missing package gets its normal,
+   kind-specific install flow -- manifest fetched, its own grant summary,
+   its own confirm, digest verified. Declining any is allowed.
+4. Rebuild the catalog; recompute the effective config.
+5. Show the final review -- grant summary of every key and every
+   referenced package, provenance-labeled; anything still missing is
+   marked "not installed -- grants unknown" (the review never claims
+   completeness it does not have). Against an existing `byre.config`,
+   the review shows the diff (the adoption diff machinery survives here).
+6. Confirm; atomically write the reviewed bytes as the project's
+   `byre.config`.
+
+The chauffeur is not the banned transitive install (which is *silent*
+fetching); it is byre walking the user through N explicit consents they
+solicited.
 
 The rule, stated once: **byre initiates acquisition walk-throughs only
 inside flows the user explicitly invoked to compose a box (preset apply).
@@ -649,10 +698,10 @@ Anywhere a third party's document introduces the references -- a cloned
 repo, a develop that trips on dangling refs -- byre reports, prints exact
 commands, and stops.** Different headspaces: "I am building a box" versus
 "my box wants things." Declining an install inside apply still completes
-the apply honestly: the reference stays in the written config, marked, and
-that box fails loudly at develop with the D9e remedy (which is why D9b'
-guards later installs of already-referenced IDs). Non-TTY apply refuses
-(the review is the point).
+the apply honestly: the reference stays in the written config, marked in
+the step-5 review, and that box fails loudly at develop with the D9e
+remedy (which is why D9b' guards later installs of already-referenced
+IDs). Non-TTY apply refuses (the review is the point).
 
 ## D17 -- Adoption retires; repo configs become presets (new in rev 3)
 
@@ -665,16 +714,25 @@ until you explicitly apply it.
   `byre preset apply` like any preset (D16c). One mechanism, always
   solicited, so the chauffeur is always appropriate inside it.
 - With no unsolicited prompt there is nothing to decline: the sticky
-  decline records and re-prompt-on-edit machinery are deleted. The
-  adoption *review and diff* code survives as the preset apply review.
-  This supersedes recently shipped adoption behavior (the 2026-07-10
-  adopt/decline work) -- eyes open, superseding ADR to say so.
-- Passive visibility, never questions: fresh-clone `byre develop` onboards
-  normally and prints one inert line -- "this repo ships a byre.preset
-  (not applied); `byre preset apply` to review it" -- and `byre status`
-  carries the matching row, including "differs from your byre.config"
-  later, like an outdated lockfile. A repo shipping a legacy-named
-  `byre.config` gets the same note plus the rename hint (D10).
+  decline records and re-prompt-on-edit machinery are deleted (existing
+  `adopted`/`declined` records in stores become inert and are swept by the
+  D10 migration). The adoption *review and diff* code survives as the
+  preset apply review. This **partially supersedes ADR 0003**: its
+  host-side-store premise stands; its offer-and-adopt-on-develop clause is
+  reversed (and the 2026-07-10 sticky-decline work with it) -- the new ADR
+  names it explicitly.
+- Passive visibility, never questions -- with the three states specified
+  (from review, so drift is legible, not just absence):
+  1. **Not applied**: "this repo ships a byre.preset (not applied);
+     `byre preset apply` to review it."
+  2. **Applied, matches**: no noise (steady state).
+  3. **Applied, diverged**: "the repo's byre.preset differs from this
+     project's byre.config (repo file changed since you applied it);
+     `byre preset apply` to review the changes" -- the outdated-lockfile
+     state, in both the develop preamble and a `byre status` row.
+  A repo shipping a legacy-named `byre.config` gets the same notes plus
+  the rename hint (D10), and `preset apply` accepts it as a fallback
+  (D16c).
 
 ## D14 -- What this deletes
 
@@ -685,14 +743,17 @@ until you explicitly apply it.
 - The devloop-rename upgrade-path machinery and its tests (stubs stay; the
   clobber-avoidance dance goes).
 - `byre skill update`'s current meaning (after the D11 stub release).
-- The adoption offer, sticky declines, and re-prompt-on-edit (D17); the
-  review/diff machinery survives inside preset apply.
+- The adoption offer, sticky declines, and re-prompt-on-edit (D17; in
+  phase 4, never before preset apply ships); the review/diff machinery
+  survives inside preset apply.
 - The fail-closed companion multi-claim vanishing act (replaced by the
   D2b picker).
 
 ## Docs shipping with the milestone
 
-New ADR (this design; supersedes the adoption-offer ADR in part); GLOSSARY
+New ADR (this design; **partially supersedes ADR 0003** -- host-side store
+stands, offer-and-adopt-on-develop reversed -- and the 0024/0025 amendments
+the D2 favourite change implies); GLOSSARY
 (package, bundled/installed/local, fork, manifest URI, retired name,
 preset, byre.preset, template = "the box's type" and "shape only", the
 symmetry doctrine line, adoption retired-as-offer, materialize retired);
@@ -708,7 +769,10 @@ apply; a hash is integrity, never publisher identity or endorsement;
 `file:` installs are "installing an unsigned tree from that path" (prefer
 tag-pinned https + `--digest` in shared instructions); package
 immutability, like config, is host-side integrity -- `--self-edit` and any
-host process can write the store.
+host process can write the store; presets carry **no** integrity pin at
+all -- their trust story is the review at apply time, nothing else
+(review-time WYSIWYG; the packages a preset leads to are what carry
+digests).
 
 ## Build order
 
@@ -720,25 +784,34 @@ skills dir are load-bearing in the loader, staging escape checks, every
 UI; `EnsureStore` is the spine every command crosses; and D1g pushes the
 catalog **into** config resolution. Priced in, not discovered later.
 
+Sequencing rule (from review, both reviewers): **the adoption offer stays
+alive until preset apply exists** -- an intermediate release must never
+lack a team-shared-config path. Adoption removal ships in the same release
+as presets (phase 4), not phase 1.
+
 1. **The model.** Two-stage `[package]` parsing; catalog + package-
    filesystem abstraction (nested local dirs per D1a); bundled loading from
    `embed.FS` + the D7b mirror; generated bundled manifests (D4d); alias/
    protected/retired/INVALID/conflict rules; catalog-aware config
    resolution (D1g); template no-composition validation (D3b); D10 sweep
    on the store-ensure path; `list`/`inspect`/`fork`/`init`/`validate` for
-   both nouns; D11 stub; D13 rendering; D2 offer/picker/favourite rework;
-   tests rewritten, D14 deletions (adoption offer removal included -- it
-   simplifies phase 1's consent surfaces).
+   both nouns; D11 stub; D13 rendering; D2 offer/picker/favourite rework
+   (incl. the dual-shape favourite decode); tests rewritten, D14 deletions
+   **except** the adoption offer, which keeps working over the new catalog
+   until phase 4. Where practical, extract adoption's review/diff/
+   locked-write core into a generic review-and-apply primitive now, so
+   phase 4 reuses instead of resurrects.
 2. **Installation.** `https:`/`file:` manifest fetch with D1h/D5d
    hardening; digest verification (D5f); content-addressed store + index +
    store lock (D7c); `install`/`uninstall`/`pack`; the D9 flows including
-   the reference scan and D9b'.
+   the conservative reference scan and D9b'.
 3. **The move.** byre-skills repo populated (pushes are Pete's, host-side);
    devlog/codereview deleted from builtins; D15 tombstones wired; byre's
    own config + docs updated; Pete's store hand-fixed.
-4. **Presets.** `byre preset apply`/`inspect` over the surviving adoption
-   review/diff machinery + `[sources]` + the chauffeur (D16); the D17
-   rename notes; byre's own repo ships a `byre.preset`.
+4. **Presets + adoption retirement (one release).** `byre preset apply`/
+   `inspect` over the extracted review primitive + `[sources]` + the
+   chauffeur (D16); the D17 removal, rename notes, and three-state drift
+   copy; record sweep; byre's own repo ships a `byre.preset`.
 
 **Acceptance (definition of done):** on a clean store, install both skills
 from the real GitHub URIs and self-host byre's own dev box with them --
@@ -748,9 +821,11 @@ installs included.
 
 ## Open items
 
-None pending -- all three rev-2 forks ruled (D2, D3b, D9b'), and the preset/
-adoption branch is settled (D16/D17). Consciously deferred, for the
-record: per-box before/after diffs at replacement (D9a); re-hash on every
-load (D5f); user-defined alias table; OCI/signatures/mirrors; template
-publishing by us; trimming tombstone install-hints; uninstall-scan
-courtesies beyond the store walk.
+One pending: **the template `agent` key** (D3b, both round-2 reviewers;
+recommendation: ban it in template.config, completing "template = shape").
+
+Consciously deferred, for the record: per-box before/after diffs at
+replacement (D9a); re-hash on every load (D5f); user-defined alias table;
+OCI/signatures/mirrors; template publishing by us; trimming tombstone
+install-hints; uninstall-scan courtesies beyond the store walk; a preset
+integrity pin (review-time trust is the model).
