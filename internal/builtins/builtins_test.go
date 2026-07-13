@@ -117,26 +117,55 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 }
 
 // TestRetiredNamesTombstone pins the D15 cut-over: the bare names byre used
-// to bundle fail with the exact pinned install command, and cannot be
-// reclaimed by a local package.
+// to bundle fail with the EXACT pinned install command (URI and digest, not
+// just their shapes), and cannot be reclaimed by a local package.
 func TestRetiredNamesTombstone(t *testing.T) {
 	_, cat := testCat(t)
-	for bare, wantID := range map[string]string{
-		"codereview": "pjlsergeant/codereview",
-		"devlog":     "pjlsergeant/devlog",
-	} {
+	want := map[string]string{
+		"codereview": "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml --digest sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f, then reference pjlsergeant/codereview",
+		"devlog":     "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml --digest sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12, then reference pjlsergeant/devlog",
+	}
+	for bare, remedy := range want {
 		_, err := cat.ResolveName(bare)
 		if err == nil {
 			t.Fatalf("%s must not resolve after the move", bare)
 		}
-		msg := err.Error()
-		if !strings.Contains(msg, "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/") ||
-			!strings.Contains(msg, wantID) || !strings.Contains(msg, "--digest sha256:") {
-			t.Errorf("%s tombstone must carry the pinned remedy, got:\n%s", bare, msg)
+		if !strings.Contains(err.Error(), remedy) {
+			t.Errorf("%s tombstone must carry the exact pinned remedy:\nwant substring: %s\ngot: %v", bare, remedy, err)
 		}
 	}
 	if !cat.IsProtected("devlog") || !cat.IsProtected("codereview") {
 		t.Error("retired names must stay protected (D15)")
+	}
+}
+
+// TestByreConfigSourcesAgreeWithTombstones is the drift lock between the four
+// hand-duplicated URI/digest pairs: this repo's own byre.config [sources]
+// hints must name exactly the URIs and digests the D15 tombstones print --
+// disagreement means a release updated one copy and not the other.
+func TestByreConfigSourcesAgreeWithTombstones(t *testing.T) {
+	cfg, err := config.ParseFile(filepath.Join("..", "..", "byre.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for bare, id := range map[string]string{
+		"codereview": "pjlsergeant/codereview",
+		"devlog":     "pjlsergeant/devlog",
+	} {
+		hint, ok := cfg.Sources[id]
+		if !ok {
+			t.Fatalf("byre.config [sources] missing %q", id)
+		}
+		tomb := packages.RetiredTombstone(bare)
+		if tomb == "" {
+			t.Fatalf("no tombstone for %q", bare)
+		}
+		if !strings.Contains(tomb, hint.URI) {
+			t.Errorf("%s tombstone URI drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.URI)
+		}
+		if !strings.Contains(tomb, hint.Digest) {
+			t.Errorf("%s tombstone digest drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.Digest)
+		}
 	}
 }
 

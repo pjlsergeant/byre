@@ -12,7 +12,8 @@
 # untouched and remounts when the box switches). The full chain (2026-07-13):
 # devloop -> devlog -> pjlsergeant/devlog, which now lives OUTSIDE the byre
 # binary. Edit the config's `skills` list to "pjlsergeant/devlog" and install
-# it (`byre skill list` shows the command when it is missing). The scratch
+# it -- the resolve error for a missing/retired name prints the exact pinned
+# install command (so does `byre skill inspect devlog`). The scratch
 # volume's name ("scratch") is unchanged, so a renamed box picks its data
 # straight back up.
 
