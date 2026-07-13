@@ -160,6 +160,11 @@ func TestByreConfigSourcesAgreeWithTombstones(t *testing.T) {
 		if tomb == "" {
 			t.Fatalf("no tombstone for %q", bare)
 		}
+		// ParseFile does not run ValidateLayer, so empty fields parse fine --
+		// and Contains(x, "") passes vacuously. Both pins must exist to compare.
+		if hint.URI == "" {
+			t.Fatalf("byre.config [sources] %q lost its uri", id)
+		}
 		if !strings.Contains(tomb, hint.URI) {
 			t.Errorf("%s tombstone URI drifted from byre.config [sources]:\ntombstone: %s\nconfig:    %s", bare, tomb, hint.URI)
 		}
