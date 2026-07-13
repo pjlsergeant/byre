@@ -1,10 +1,10 @@
-# docker-host skill -- design of record (pre-build, rev 2)
+# docker-host skill -- design of record (pre-build, rev 3)
 
 Status: design settled with Pete via /grilling 2026-07-13; revised same day
-after independent design review (codex + grok, round 1 -- dispositions at
-the end). This document is the round-2 review input and the build spec.
-Reviewers: challenge the decisions on their merits; nothing here is sacred
-except where a standing principle or ADR is cited.
+through TWO rounds of independent design review (codex + grok; dispositions
+for both rounds at the end). This document is the build spec. Reviewers:
+challenge the decisions on their merits; nothing here is sacred except
+where a standing principle or ADR is cited.
 
 Working-doc lifecycle (deliver precedent): absorbed into an ADR +
 docs/docker-host.md when built, then deleted; git history is the archive.
@@ -71,6 +71,29 @@ attacks not yet enumerated (the sibling-container firewall flush is "done
 through the hole" -- already disclaimed). No per-row qualifier creep, no
 arbitrary patching of one wall.
 
+ROUND-2 CHALLENGE, CONSCIOUSLY DECLINED (Pete, both reviewers): byre already
+degrades the Network row for raw `run_args` ("deny-by-default (declared; raw
+run_args present -- not guaranteed)"), so a box with a harmless stray flag
+reads as LESS locked-down than a docker-host box whose Network row stays
+clean -- an inconsistency the reviewers wanted closed by degrading Network
+for containment skills too. DECLINED, because the two cases are different
+epistemics, not the same rule applied unevenly:
+- Raw run_args degrade the claim because byre CANNOT SEE what they do -- it
+  declines to vouch for its OWN construction under an unauditable layer
+  ("wall's up, but someone stapled argv I can't read to the launch").
+- docker-host is the opposite: byre's construction IS intact and byre CAN
+  see exactly what the skill does. The firewall rules are applied and
+  correct; there is a DECLARED DOOR beside a sound wall.
+Degrading the Network row for docker-host would collapse that distinction
+and make byre introspect a skill to re-score an unrelated claim -- exactly
+the "policing skills" role byre refuses (deny-by-default doctrine: byre is
+not complicit in pretending it audits skill behavior). The 🛑 HOLE line does
+the honest work: the wall is real, the escape is real, both are visible. The
+Network row keeps describing what byre built, which is TRUE. Codex's stronger
+"say the guarantees below are bypassable" is also declined for the same
+reason -- it invites reading the disclaimer as an admission byre policed the
+skill and found it wanting, rather than the skill declaring its own hole.
+
 ## Decisions
 
 ### D1. Name: `docker-host` (held, round 1)
@@ -114,14 +137,29 @@ the launcher is untouched. Generic, opinion-free core mechanism ("make this
 path's owning group reachable to dev"); any future socket-ish grant reuses
 it.
 
-Gid discovery:
-- Linux host: `stat -c %g` the socket source. Same kernel as the container,
-  so the host gid equals the in-container gid.
-- Docker Desktop / macOS: the mac-side gid does NOT necessarily match what
-  the in-VM socket presents. HOST-VERIFY BEFORE BUILD: what gid the
-  in-container socket carries, and whether a one-shot probe container
-  (same bind, `stat -c %g`, using the box's own just-built image) is the
-  right discovery path. This is the single biggest empirical unknown.
+`sock_groups` IS ITSELF A GRANT (round-2 codex): `--group-add <gid>` grants
+dev access to EVERY inode carrying that gid in the box, not just the named
+socket -- so it must be rendered as an attributed grant in status/adoption
+(a `Grant.SockGroups`-style field beside Mounts/Caps/RunArgs), showing the
+declared path and the derived gid. For docker-host the daemon grant dominates
+it, but the mechanism is generic (a future `pcscd`/lower-power skill's
+collateral group access matters). Each entry must resolve to an active bind
+target; a discovery failure is attributed, never silently skipped.
+
+Gid discovery (REVISED round 2 -- both reviewers: host-OS classification is
+the wrong boundary):
+- The discriminator is NOT Linux-vs-macOS. Docker Desktop FOR LINUX also runs
+  the engine in a VM with a per-user socket, and remote Docker contexts have
+  the same split -- so a host-side `stat` can report a gid the in-container
+  socket does not carry, on Linux too.
+- Discovery is therefore ENGINE-SIDE for every case: a one-shot probe
+  container with the same bind runs `stat -c %g` on the target and reports
+  the gid the box will actually see; byre injects that. Uses the box's own
+  just-built image; no host-OS branching. A probe failure is attributed, not
+  silently defaulted.
+- HOST-VERIFY BEFORE BUILD (still the biggest empirical unknown): that the
+  probe returns a usable gid on real Docker Desktop/macOS and that
+  `--group-add <that gid>` actually grants socket access there.
 
 ### D4. Missing socket = attributed WARNING, not refusal (REVISED round 1)
 
@@ -143,6 +181,15 @@ which is the footgun doctrine's actual lane -- legibility over the engine's
 opaque error, never a gate. Codex's socket-TYPE check (source exists but is
 a dir/file) folds into the same warning.
 
+DESKTOP FALSE-NEGATIVE (round-2, both): host `stat` is NOT authoritative
+under Docker Desktop -- the bind resolves in the VM, so the mac-side path can
+be absent/not-a-socket while the launch works. A naive warning would fire on
+every successful Desktop launch and train users to ignore it. Mitigation:
+suppress/soften the warning when the engine is Docker Desktop (detectable via
+`docker context`/`docker info`), or only surface it AFTER a create failure so
+the message attributes a launch that actually failed. Do not treat host
+`stat` as truth on Desktop.
+
 ### D5. Warnings: declarative `containment` key, skills-only (REVISED render)
 
 New `[runtime] containment = "<skill-owned one-liner>"`. Purely declarative,
@@ -154,6 +201,14 @@ MULTI-DECLARER RULE (grok round 1): unlike `network_posture` (single
 declarer, regex-shaped), `containment` may be declared by several skills
 (docker-host + a future podman-host). Render ALL, each attributed -- never
 last-wins, never silently drop one.
+
+OUTPUT-SAFETY VALIDATION (round-2 codex): `containment` is arbitrary
+skill-owned text rendered on four surfaces; an unvalidated newline or control
+sequence (`containment = "hole\nNetwork: deny-by-default"`) could FORGE
+adjacent rows. Skills are trusted code, but typed fields are still validated
+so they stay legible DATA (that is why `network_posture` is regex-bounded).
+Validate each declarer at load: single line, no control chars, bounded
+length; render each as its own attributed record.
 
 Rendering surfaces (all rendering, no gates -- the adoption prompt is the
 consent gate):
@@ -195,7 +250,13 @@ Linked from the skill.toml header, the containment strings, and a pointer
 section in SECURITY.md. Contents:
 1. What the grant is, plainly: socket access is root-equivalent on the host
    (`docker run -v /:/host` is a two-line takeover) -- the grant working as
-   designed, not a flaw.
+   designed, not a flaw. PLATFORM NUANCE (round-2 codex): this is exact on
+   native Linux. On Docker Desktop (mac, and Linux Desktop) the daemon and
+   container root live in a VM, so `-v /:/host` exposes the VM's `/`, not the
+   host `/`; native host files are reachable only through Desktop's configured
+   file sharing and keep native permissions. Still a full compromise of Docker
+   state, every byre volume, and shared native paths -- but the doc must say
+   "VM root + Docker assets + shared paths" for Desktop, not "your whole Mac."
 2. What survives vs what's gone: accident-scale isolation of the BOX'S OWN
    filesystem intact; containment of host state and other boxes GONE (see
    the honesty note below -- do not oversell "accidents stay in the box").
@@ -251,15 +312,23 @@ project name for every byre box on the machine -- two worktrees or projects
 collide on host containers/networks/volumes; one box's `compose down` tears
 down another's stack. Ordinary accident class.
 
+ROUND-2 CORRECTION (both reviewers, verified in project.go:134/145): keying
+compose on the PROJECT id is WRONG -- `Paths.ID` is SHARED across worktrees
+(config/volumes/image identity, ADR 0009); only `Paths.WorktreeID` is
+per-worktree. Two sibling worktrees would get the same COMPOSE_PROJECT_NAME
+and one's `compose down` still tears down the other's stack -- the exact race
+D-M2 targets. Compose must key on WorktreeID.
+
 Fix (Pete-accepted): a small generic core addition + a skill hook.
-- Core passes `BYRE_PROJECT=<project id>` into every box -- same class as
-  BYRE_UID, plumbing not a grant; generally-useful legibility (a box knowing
-  its own project id).
+- Core passes TWO env vars into every box, same class as BYRE_UID (plumbing,
+  not grants; generally-useful legibility): `BYRE_PROJECT=<Paths.ID>` (the
+  shared project identity) and `BYRE_WORKTREE=<Paths.WorktreeID>` (the
+  per-worktree id; equals ID for a plain project).
 - docker-host ships an env.d launch hook (claude-shared-auth precedent):
-  `export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-byre-$BYRE_PROJECT}"`
-  -- stable per project, distinct per worktree (worktrees have their own
-  ids), user override respected. NOT the container hostname (= container id,
-  changes every rebuild, would orphan stacks).
+  `export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-byre-$BYRE_WORKTREE}"`
+  -- stable per project for a plain checkout, DISTINCT per worktree, user
+  override respected. Keyed on WorktreeID, NOT the container hostname
+  (= container id, changes every rebuild, would orphan stacks).
 - context.md mentions it (D7) so the agent doesn't "fix" it away.
 
 ## Verification plan
@@ -271,11 +340,13 @@ Fix (Pete-accepted): a small generic core addition + a skill hook.
     path (host stat vs probe container). Biggest unknown (D3).
   - sock_groups `--group-add` mechanism end-to-end on real Linux.
   - docker / compose / buildx function in-box.
-- Unit: skill.toml parse (sock_groups, containment); runner `--group-add`
-  injection via injected seams; missing/not-a-socket source warning;
-  containment rendering on all four surfaces incl. multi-declarer; BYRE_PROJECT
-  plumbing + COMPOSE_PROJECT_NAME hook; golden Dockerfile output for the
-  apt-repo lines.
+- Unit: skill.toml parse (sock_groups, containment incl. single-line/control
+  -char/length validation); runner `--group-add` injection + gid-probe seam;
+  sock_groups grant rendering in status/adoption; missing/not-a-socket source
+  warning incl. Desktop suppression; containment rendering on all four
+  surfaces incl. multi-declarer; BYRE_PROJECT + BYRE_WORKTREE plumbing +
+  COMPOSE_PROJECT_NAME hook (worktree distinctness pinned); golden Dockerfile
+  output for the apt-repo lines.
 
 ## Round-1 review dispositions (codex + grok, 2026-07-13)
 
@@ -308,6 +379,40 @@ Both reviewers agreed to a striking degree; both called finding 1 build-blocking
 - LOW D5 multi-declarer merge (grok): ACCEPTED -> D5 render-all rule.
 
 Held with no change: D1, D2, D8, and the use of context.md (D7 shape).
+
+## Round-2 review dispositions (codex + grok, 2026-07-13, same day)
+
+Both confirmed the round-1 blockers resolved (launcher-root, `-v` premise,
+accident wording, shared-auth disclosure, multi-declarer composition).
+Round-2 findings:
+
+- HIGH D-M2 (both; verified project.go:134/145): BYRE_PROJECT does not
+  distinguish worktrees -- `Paths.ID` is shared, only `WorktreeID` differs;
+  same-project worktrees still collided. ACCEPTED -> compose keys on
+  `BYRE_WORKTREE` (= WorktreeID); BYRE_PROJECT kept as plumbing.
+- HIGH D5 warranty model (codex "redefines status away from its contract";
+  grok "raw run_args asymmetry -- a stray flag reads less trusted than a
+  known hole"): CONSCIOUSLY DECLINED by Pete; rationale recorded in the
+  warranty-model section. The two cases are different epistemics: raw
+  run_args = byre can't see what they do (declines to vouch for its OWN
+  construction under an unauditable layer); docker-host = construction
+  intact, declared door beside a sound wall. Degrading Network for a skill
+  would mean introspecting skills to re-score unrelated claims -- the
+  "policing skills" role byre refuses. The 🛑 HOLE line carries the signal.
+  DO NOT RE-RAISE without new facts.
+- MED D3/D4 gid discovery boundary (both): host-OS classification wrong
+  (Docker Desktop for Linux + remote contexts also split host/VM). ACCEPTED
+  -> engine-side probe for every case; no OS branching.
+- MED D6 Desktop root-equivalence overstated (codex): `-v /:/host` on
+  Desktop exposes the VM's /, not the native /. ACCEPTED -> platform nuance
+  in D6 item 1.
+- MED D5 containment string output-safety (codex): unvalidated text could
+  forge status rows. ACCEPTED -> single-line/control-char/length validation
+  at load.
+- MED D3 sock_groups is itself a grant wider than the socket (codex):
+  ACCEPTED -> rendered as an attributed grant with path + derived gid.
+- LOW D4 Desktop false-negative warning (grok): ACCEPTED -> suppress/soften
+  on Desktop or warn only after create failure.
 
 ## Related decisions banked during the same grilling (separate TODOs)
 
