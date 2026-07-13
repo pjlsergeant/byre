@@ -174,9 +174,16 @@ the wrong boundary):
     gaining group-read to root-group files there. Benign (the daemon grant is
     already total), but it makes the "sock_groups is itself a grant" rendering
     (above) concrete -- on Desktop the collateral group IS group 0; say so.
-  - REMAINING (low risk, not blocking): the same probe+group-add on native
-    Linux -- the standard docker-socket-in-container pattern, works
-    everywhere, but not yet run by Pete. Confirm opportunistically.
+  - NATIVE LINUX ALSO VERIFIED 2026-07-13 (Pete, Debian trixie, native
+    dockerd, engine 28.5.1, amd64; context `default` ->
+    unix:///var/run/docker.sock): probe gid = **989** (the docker group,
+    NON-zero); `--user 1000:1000 --group-add 989` -> full Server access;
+    negative control (no group-add) -> permission denied. Collateral is
+    NARROW here (dev joins only the docker group, not group 0 as on Desktop).
+  - CROSS-PLATFORM PAYOFF: the SAME probe returned 0 (Desktop) and 989
+    (native Linux) -- two different gids, one mechanism. This is the concrete
+    proof that engine-side probing beats any hardcoded gid or host-OS
+    branch. Gate CLEARED on both platforms; D3 is sound as designed.
 
 ### D4. Missing socket = attributed WARNING, not refusal (REVISED round 1)
 
@@ -366,8 +373,9 @@ Fix (Pete-accepted): a small generic core addition + a skill hook.
   - Docker Desktop/macOS: DONE 2026-07-13 (see D3) -- probe gid = 0,
     `--group-add 0` grants access, negative control denied, `/var/run/
     docker.sock` is a valid Desktop mount source. Gate CLEARED.
-  - sock_groups `--group-add` mechanism end-to-end on real Linux: REMAINING,
-    low risk (standard pattern), not blocking.
+  - sock_groups `--group-add` mechanism on native Linux: DONE 2026-07-13
+    (see D3) -- probe gid = 989, `--group-add 989` grants access, negative
+    control denied. Gate CLEARED on both platforms.
   - docker / compose / buildx function in-box: at build time.
 - Unit: skill.toml parse (sock_groups, containment incl. single-line/control
   -char/length validation); runner `--group-add` injection + gid-probe seam;
