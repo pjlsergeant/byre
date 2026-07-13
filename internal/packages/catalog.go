@@ -41,6 +41,12 @@ type Entry struct {
 	// LooksLikeAgent is set for local skill problem rows when the primary
 	// contains an [agent] table (so the agent picker can list them disabled).
 	LooksLikeAgent bool
+
+	// Digest is the D5f package digest (installed packages only): provenance
+	// of acquisition, shown in labels, never a runtime attestation.
+	Digest string
+	// SourceURI is where an installed package was acquired from (index row).
+	SourceURI string
 }
 
 // Catalog is the multi-provider package index for one store (D1).
@@ -102,6 +108,9 @@ func LoadCatalog(home string, bundled fs.FS, displayVer, compatVer string) (*Cat
 		c.protected[bare] = "retired: " + tomb
 	}
 	if err := c.loadBundled(bundled); err != nil {
+		return nil, err
+	}
+	if err := c.loadInstalled(); err != nil {
 		return nil, err
 	}
 	if err := c.loadLocal(filepath.Join(home, "skills"), KindSkill); err != nil {
@@ -188,6 +197,92 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 			if err := c.put(ent); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// loadInstalled ingests the installed-package index (D7). Problem states are
+// scoped per identity (D1e): a broken row is INVALID with a remedy, never a
+// catalog failure. Integrity was verified at acquisition; load trusts the
+// index and does not re-hash (D5f scope).
+func (c *Catalog) loadInstalled() error {
+	idx, err := ReadIndex(c.Home)
+	if err != nil {
+		// The index is byre-maintained infrastructure; unreadable means the
+		// store needs the user's attention, loudly.
+		return err
+	}
+	ids := make([]string, 0, len(idx))
+	for id := range idx {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		row := idx[id]
+		kind := Kind(row.Kind)
+		if kind != KindSkill && kind != KindTemplate {
+			c.addProblem(id, KindSkill, ProvInvalid,
+				fmt.Sprintf("index kind %q: want skill or template", row.Kind), "")
+			continue
+		}
+		prim := primaryFor(kind)
+		// Installed IDs must be qualified (D1d) and can never be byre/*.
+		if err := ValidateID(id, false); err != nil {
+			c.addProblem(id, kind, ProvInvalid, err.Error(), "")
+			continue
+		}
+		if Owner(id) == "byre" {
+			c.addProblem(id, kind, ProvInvalid, "byre/* is reserved for bundled packages", "")
+			continue
+		}
+		dir := SnapshotDir(c.Home, row.Digest)
+		raw, err := os.ReadFile(filepath.Join(dir, prim))
+		if err != nil {
+			c.addProblem(id, kind, ProvInvalid,
+				fmt.Sprintf("snapshot missing or unreadable (%v); reinstall: byre %s install %s", err, kind, row.URI), dir)
+			continue
+		}
+		m, _, err := ParseManifestCore(raw)
+		if err != nil {
+			c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
+			continue
+		}
+		if err := CheckCompatibility(m, c.CompatVer); err != nil {
+			c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
+			continue
+		}
+		// Eager stage-2 classification, same rule as local ingest.
+		if kind == KindSkill && c.Stage2Skill != nil {
+			if err := c.Stage2Skill(raw); err != nil {
+				c.addProblemAgent(id, kind, ProvInvalid, err.Error(), dir, looksLikeAgent(raw))
+				continue
+			}
+		}
+		if kind == KindTemplate && c.Stage2Template != nil {
+			if err := c.Stage2Template(raw); err != nil {
+				c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
+				continue
+			}
+		}
+		desc := m.Description
+		if desc == "" {
+			desc = peekDescription(raw)
+		}
+		ent := &Entry{
+			ID:          id,
+			Version:     row.Version,
+			Kind:        kind,
+			Provenance:  ProvInstalled,
+			Description: desc,
+			Dir:         dir,
+			Primary:     prim,
+			Manifest:    m,
+			Digest:      row.Digest,
+			SourceURI:   row.URI,
+		}
+		if err := c.put(ent); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -642,10 +737,16 @@ func (e *Entry) ProvenanceLabel() string {
 		}
 		return "bundled"
 	case ProvInstalled:
+		// "installed 1.1.0 (sha256:8fe3...)" -- provenance of acquisition,
+		// not a runtime attestation (D5f, D13).
+		label := "installed"
 		if e.Version != "" {
-			return "installed " + e.Version
+			label += " " + e.Version
 		}
-		return "installed"
+		if len(e.Digest) >= 8 {
+			label += " (sha256:" + e.Digest[:8] + "...)"
+		}
+		return label
 	case ProvLocal:
 		return "local"
 	case ProvLegacy:
