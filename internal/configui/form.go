@@ -313,11 +313,14 @@ func (m model) loadConfig(cfg config.Config) model {
 	if cfg.Engine != "" && !contains(m.engineOpts, cfg.Engine) {
 		m.engineOpts = append(m.engineOpts, cfg.Engine)
 	}
+	// The initial selection stays on the stored value EVEN when it is a
+	// disabled problem row: the form writes whatever is selected on save, so
+	// moving the selection here would silently swap the user's template/agent
+	// just by opening the editor. Cycling away skips disabled rows (and can't
+	// come back) — changing off a broken value is deliberate, keeping it isn't
+	// a choice the editor makes for you.
 	m.tmplSel = indexOf(m.tmplOpts, orNone(cfg.Template))
 	m.agentSel = indexOf(m.agentOpts, orNone(cfg.Agent))
-	// Never land on a disabled option as the initial selection.
-	m.tmplSel = m.skipDisabled(m.tmplOpts, m.tmplSel, 1)
-	m.agentSel = m.skipDisabled(m.agentOpts, m.agentSel, 1)
 	m.engineSel = indexOf(m.engineOpts, orDefault(cfg.Engine, "auto"))
 	m.apt = append([]string{}, cfg.Apt...)
 	m.env = envItems(cfg.Env)
@@ -927,14 +930,10 @@ func appendPickerProblems(opts []string, cat *packages.Catalog, kind packages.Ki
 		seen[o] = true
 	}
 	for _, ent := range cat.ListProblemRows(kind) {
+		// The agent picker only lists skill problem rows whose primary carries
+		// an [agent] table (LooksLikeAgent, set at ingest) — a broken plain
+		// skill doesn't belong in the agent picker.
 		if agentsOnly && !ent.LooksLikeAgent {
-			// Bundled LEGACY agent copies: bare name protected; still show if
-			// the id is a known agent bare name pattern -- LooksLikeAgent is
-			// set on ingest for [agent] bodies. LEGACY dirs of agent skills
-			// may not re-parse; mark agent bare names that are protected as
-			// candidate: if kind skill and bare is a retired/bundled name that
-			// has [agent] in the live catalog's alias sibling, skip unless
-			// LooksLikeAgent.
 			continue
 		}
 		name := ent.DisplayName()
