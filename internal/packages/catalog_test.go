@@ -110,3 +110,109 @@ func TestEnsureStoreMirror(t *testing.T) {
 		t.Fatalf("skills/ should be empty, got %v", entries)
 	}
 }
+
+func TestArchiveLegacyNameCollision(t *testing.T) {
+	home := t.TempDir()
+	// Seed a legacy claude dir and a pre-existing archive slot.
+	if err := os.MkdirAll(filepath.Join(home, "skills", "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "skills", "claude", "skill.toml"), []byte("x=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "skills.legacy", "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := ArchiveLegacy(home, bundledFS())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(moved) == 0 {
+		t.Fatal("expected to archive legacy claude")
+	}
+	if _, err := os.Stat(filepath.Join(home, "skills", "claude")); !os.IsNotExist(err) {
+		t.Fatal("legacy dir should be gone from skills/")
+	}
+}
+
+func TestForkThenResolve(t *testing.T) {
+	// Covered in commands via skill fork path; here: local pete/claude loads.
+	home := t.TempDir()
+	dir := filepath.Join(home, "skills", "pete", "claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `[package]
+id = "pete/claude"
+kind = "skill"
+
+[agent]
+command = "claude"
+state = ".claude"
+
+[[volumes]]
+name = ".claude"
+role = "state"
+target = "/home/dev/.claude"
+`
+	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := LoadCatalog(home, bundledFS(), "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent.Provenance != ProvLocal {
+		t.Fatalf("want local, got %s", ent.Provenance)
+	}
+}
+
+// A hostile local package declaring id = "byre/claude" (with a failing
+// requires_byre) must not evict the bundled entry from the catalog (D1b/D1e).
+func TestHostileLocalCannotEvictBundled(t *testing.T) {
+	home := t.TempDir()
+	evil := filepath.Join(home, "skills", "evil")
+	if err := os.MkdirAll(evil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Declared id steals byre/claude; requires_byre fails against 0.2.0.
+	body := `[package]
+id = "byre/claude"
+version = "9.9.9"
+kind = "skill"
+package_api = 1
+requires_byre = ">=99.0.0"
+`
+	if err := os.WriteFile(filepath.Join(evil, "skill.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := LoadCatalog(home, bundledFS(), "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("claude")
+	if err != nil {
+		t.Fatalf("bundled claude must still resolve: %v", err)
+	}
+	if ent.Provenance != ProvBundled || ent.ID != "byre/claude" {
+		t.Fatalf("got %+v", ent)
+	}
+	// Evil is INVALID under its store path, not under byre/claude.
+	evilEnt, ok := cat.Lookup("evil")
+	if !ok || evilEnt.Provenance != ProvInvalid {
+		// May be stored under "evil" key
+		var found bool
+		for _, e := range cat.List(KindSkill) {
+			if e.Dir == evil && e.Provenance == ProvInvalid {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("evil should be INVALID under store path; lookup=%v ent=%+v", ok, evilEnt)
+		}
+	}
+}

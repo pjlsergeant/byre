@@ -22,8 +22,9 @@ var fsys embed.FS
 func init() {
 	// Wire the catalog hooks config needs without config importing this
 	// package (would cycle: config tests import builtins which imports config).
+	// Compat paths use Semver so "(devel)" builds still parse requires_byre.
 	config.BundledFS = FS
-	config.ByreVersion = version.String
+	config.ByreVersion = version.Semver
 }
 
 // FS returns the embedded bundled packages filesystem. Top-level entries are
@@ -40,6 +41,8 @@ func EnsureStore(home string) error {
 }
 
 // EnsureStoreOut is EnsureStore with an optional notice writer.
+// The mirror stamp uses version.String() (human-facing); catalog compat
+// uses version.Semver() separately via LoadCatalog.
 func EnsureStoreOut(home string, notices io.Writer) error {
 	return packages.EnsureStore(home, fsys, version.String(), notices)
 }
@@ -49,13 +52,14 @@ func LoadCatalog(home string) (*packages.Catalog, error) {
 	if err := EnsureStore(home); err != nil {
 		return nil, err
 	}
-	return packages.LoadCatalog(home, fsys, version.String())
+	return LoadCatalogRaw(home)
 }
 
 // LoadCatalogRaw builds a catalog without EnsureStore (tests that manage the
-// store themselves).
+// store themselves). Compat checks use version.Semver so a "(devel)" binary
+// still accepts requires_byre constraints.
 func LoadCatalogRaw(home string) (*packages.Catalog, error) {
-	return packages.LoadCatalog(home, fsys, version.String())
+	return packages.LoadCatalog(home, fsys, version.Semver())
 }
 
 // ArchiveLegacy moves LEGACY materialized dirs aside (D10).

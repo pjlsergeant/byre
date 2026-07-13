@@ -63,11 +63,9 @@ func ValidateID(id string, bareOK bool) error {
 				return fmt.Errorf("package id %q: invalid segment %q (want [a-z0-9][a-z0-9-]{0,63})", id, p)
 			}
 		}
-		if parts[0] == "byre" {
-			// byre/* is permanently reserved for bundled-in-this-binary (D1b).
-			// Claiming it is only legal for the bundled provider itself; callers
-			// that accept user/installed IDs must reject it via IsProtected.
-		}
+		// byre/* is permanently reserved for bundled-in-this-binary (D1b).
+		// Claiming it is only legal for the bundled provider; local/installed
+		// paths reject it after ValidateID via Owner checks.
 	default:
 		return fmt.Errorf("package id %q: at most one '/' (owner/name)", id)
 	}

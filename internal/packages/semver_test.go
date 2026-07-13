@@ -40,3 +40,20 @@ func TestMatchConstraintBad(t *testing.T) {
 		t.Fatal("want error for bad constraint")
 	}
 }
+
+// A "(devel)"-shaped executable version maps via Semver to 0.0.0-devel and
+// still satisfies modest requires_byre constraints.
+func TestDevelCompatWithRequiresByre(t *testing.T) {
+	ok, err := MatchConstraint("0.0.0-devel", ">=0.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("0.0.0-devel should not satisfy >=0.1.0")
+	}
+	// Local packages on a no-VCS build still load when requires_byre is low.
+	ok, err = MatchConstraint("0.0.0-devel", ">=0.0.0")
+	if err != nil || !ok {
+		t.Fatalf("0.0.0-devel should satisfy >=0.0.0: ok=%v err=%v", ok, err)
+	}
+}

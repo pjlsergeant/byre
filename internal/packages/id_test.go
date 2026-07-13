@@ -60,9 +60,19 @@ func TestExpandAliasAndBundledID(t *testing.T) {
 }
 
 func TestEscapeTerminal(t *testing.T) {
+	// CSI color sequence + NUL + newline
 	in := "hello\x1b[31mred\x00world\n"
 	got := EscapeTerminal(in)
 	if got != "helloredworld" {
-		t.Fatalf("EscapeTerminal: %q", got)
+		t.Fatalf("EscapeTerminal CSI: %q", got)
+	}
+	// OSC (ESC ] ... BEL)
+	osc := "x\x1b]0;title\x07y"
+	if got := EscapeTerminal(osc); got != "xy" {
+		t.Fatalf("EscapeTerminal OSC: %q", got)
+	}
+	// Lone ESC
+	if got := EscapeTerminal("a\x1bb"); got != "ab" {
+		t.Fatalf("EscapeTerminal lone ESC: %q", got)
 	}
 }

@@ -140,6 +140,7 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 					m.Description = core.Description
 				}
 			}
+			_ = hdr // generated for mirror path (EnsureStore), not stored on Entry
 			ent := &Entry{
 				ID:          id,
 				Alias:       bare,
@@ -152,10 +153,6 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 				Primary:     kind.prim,
 				Manifest:    m,
 			}
-			// hdr is retained only for mirror writing (EnsureStore); load uses
-			// FS bytes + synthetic Manifest. Store generated header on the side
-			// via Description already set.
-			_ = hdr
 			c.protected[bare] = "bundled as " + id
 			c.aliases[bare] = id
 			if err := c.put(ent); err != nil {
@@ -250,9 +247,12 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 		return nil
 	}
+	// Problem rows for local dirs are ALWAYS keyed by the store-path id (D1e
+	// scoped failure). A hostile declared id must never displace a bundled
+	// catalog entry (D1b).
 	if hasPkg {
 		if err := CheckCompatibility(m, c.ByreVer); err != nil {
-			c.addProblem(idOr(m.ID, id), kind, ProvInvalid, err.Error(), dir)
+			c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 			return nil
 		}
 		if m.ID != "" && m.ID != id {
@@ -272,19 +272,19 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		canon = m.ID
 	}
 	if err := ValidateID(canon, true); err != nil {
-		c.addProblem(canon, kind, ProvInvalid, err.Error(), dir)
+		c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 		return nil
 	}
 	// Protected bare names cannot be claimed by local packages (D1c).
 	if IsBare(canon) && c.IsProtected(canon) {
-		c.addProblem(canon, kind, ProvInvalid,
+		c.addProblem(id, kind, ProvInvalid,
 			fmt.Sprintf("%q is protected (%s); pick another id or fork under a qualified name", canon, c.protected[canon]),
 			dir)
 		return nil
 	}
 	if Owner(canon) == "byre" {
-		// byre/* is bundled-only (D1b).
-		c.addProblem(canon, kind, ProvInvalid, "byre/* is reserved for bundled packages", dir)
+		// byre/* is bundled-only (D1b). Key by store path, not the claimed id.
+		c.addProblem(id, kind, ProvInvalid, "byre/* is reserved for bundled packages", dir)
 		return nil
 	}
 
@@ -303,13 +303,6 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		Manifest:    m,
 	}
 	return c.put(ent)
-}
-
-func idOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 func (c *Catalog) put(ent *Entry) error {
@@ -343,16 +336,18 @@ func locationOf(e *Entry) string {
 }
 
 func (c *Catalog) addProblem(id string, kind Kind, prov Provenance, reason, dir string) {
-	if prev, ok := c.byID[id]; ok && prev.Provenance == ProvBundled && prov == ProvLegacy {
-		// LEGACY row is additional signal; keep the bundled entry as the
-		// resolvable one and attach a sibling LEGACY key? Design: LEGACY rows
-		// appear in list. Use id+" (legacy)" for the problem row's map key
-		// so it does not displace the bundled package.
-		legacyID := id + "#legacy"
-		c.byID[legacyID] = &Entry{
+	// Never displace a bundled entry (D1b/D1e). Problem rows that would collide
+	// with a live bundled id are stored under a sibling key so list can still
+	// show them and ResolveName keeps returning the bundled package.
+	if prev, ok := c.byID[id]; ok && prev.Provenance == ProvBundled {
+		key := id + "#" + string(prov)
+		if prov == ProvLegacy {
+			key = id + "#legacy"
+		}
+		c.byID[key] = &Entry{
 			ID:         id,
 			Kind:       kind,
-			Provenance: ProvLegacy,
+			Provenance: prov,
 			Reason:     reason,
 			Dir:        dir,
 			Primary:    primaryFor(kind),
@@ -468,19 +463,23 @@ func (c *Catalog) List(kind Kind) []*Entry {
 	var out []*Entry
 	for _, key := range c.order {
 		ent := c.byID[key]
-		if kind != "" && ent.Kind != kind && ent.Kind != "" {
-			// LEGACY rows may have kind set; problem rows without kind pass.
-			if ent.Provenance != ProvLegacy && ent.Provenance != ProvInvalid && ent.Provenance != ProvConflict {
-				continue
-			}
-			if ent.Kind != "" && ent.Kind != kind {
-				continue
-			}
-		}
 		if kind != "" && ent.Kind != kind {
 			continue
 		}
 		out = append(out, ent)
+	}
+	return out
+}
+
+// ListProblemRows returns INVALID/conflict/LEGACY entries for kind (for
+// pickers that must show disabled-with-reason rows, D13).
+func (c *Catalog) ListProblemRows(kind Kind) []*Entry {
+	var out []*Entry
+	for _, ent := range c.List(kind) {
+		switch ent.Provenance {
+		case ProvInvalid, ProvConflict, ProvLegacy:
+			out = append(out, ent)
+		}
 	}
 	return out
 }

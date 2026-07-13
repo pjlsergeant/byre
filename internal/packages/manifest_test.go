@@ -76,3 +76,25 @@ func TestGenerateBundledHeader(t *testing.T) {
 		t.Fatal(h)
 	}
 }
+
+func TestStripPackageTableMidFile(t *testing.T) {
+	raw := []byte(`description = "hi"
+
+[build]
+apt = ["a"]
+
+[package]
+id = "x"
+version = "1"
+
+[runtime]
+env = { K = "v" }
+`)
+	out := string(StripPackageTable(raw))
+	if strings.Contains(out, "[package]") || strings.Contains(out, `id = "x"`) {
+		t.Fatalf("package table not stripped: %s", out)
+	}
+	if !strings.Contains(out, "[build]") || !strings.Contains(out, "[runtime]") {
+		t.Fatalf("body damaged: %s", out)
+	}
+}
