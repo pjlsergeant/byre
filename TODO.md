@@ -37,12 +37,6 @@ the rationale lives.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
-- [ ] (M) **docker-host skill** (Pete, 2026-07-12): the ergonomic host-daemon
-  grant. Design settled via /grilling 2026-07-13, full record in
-  docs/docker-host-design.md; grew to (M): needs core `sock_groups` +
-  `containment` keys and generic missing-mount-source launch refusal. GATE:
-  codex + grok design review before building; host-verify socket gid on
-  Linux AND Docker Desktop.
 - [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
   `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
