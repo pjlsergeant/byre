@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -346,11 +347,20 @@ func escapeMultiline(text string) string {
 // applied. Live-config edits are yours, not drift.
 func presetState(projectDir string, paths project.Paths) (state string, legacyName bool) {
 	p := filepath.Join(projectDir, PresetName)
-	content, err := os.ReadFile(p)
+	content, err := readPresetBounded(p)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			// Present but unreadable or over the manifest bound: it provably
+			// is not the version any marker recorded (apply enforces the same
+			// bound), and apply will explain the real failure loudly.
+			return "unapplied", false
+		}
 		p = filepath.Join(projectDir, config.ProjectConfigName)
-		content, err = os.ReadFile(p)
+		content, err = readPresetBounded(p)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				return "unapplied", true
+			}
 			return "", false
 		}
 		legacyName = true
@@ -364,6 +374,32 @@ func presetState(projectDir string, paths project.Paths) (state string, legacyNa
 		return "applied", legacyName
 	}
 	return "diverged", legacyName
+}
+
+// readPresetBounded reads a local preset file under the same size bound the
+// fetcher applies to manifests (D1h). The PASSIVE drift check runs on every
+// develop/status -- before anyone asked byre to read the repo's preset -- so
+// a cloned repository must not make it allocate an arbitrarily large file.
+// The stat gate is advisory; the limited read is what actually bounds it.
+func readPresetBounded(p string) ([]byte, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil {
+		return nil, err
+	} else if fi.Size() > packages.MaxManifestBytes {
+		return nil, fmt.Errorf("%s is %d bytes (limit %d)", p, fi.Size(), packages.MaxManifestBytes)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, packages.MaxManifestBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > packages.MaxManifestBytes {
+		return nil, fmt.Errorf("%s exceeds the %d byte limit", p, packages.MaxManifestBytes)
+	}
+	return b, nil
 }
 
 // presetNote renders the passive develop-preamble / status note for states 1

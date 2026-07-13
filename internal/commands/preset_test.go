@@ -580,3 +580,18 @@ func TestPresetInspectAbortsOnUnreadableStoreConfig(t *testing.T) {
 		t.Fatalf("unreadable config must abort inspect, got %v", err)
 	}
 }
+
+// The passive drift check runs on every develop/status, before anyone asked
+// byre to read the repo's preset -- a cloned repo must not make it allocate
+// an arbitrarily large file (the same D1h bound apply/inspect enforce).
+func TestPresetStateBoundsOversizedPreset(t *testing.T) {
+	p, proj := onboardPaths(t)
+	big := strings.Repeat("# padding padding padding padding padding\n", packages.MaxManifestBytes/40)
+	shipPreset(t, proj, PresetName, big)
+	state, _ := presetState(proj, p)
+	// Oversized is provably not the applied version (apply refuses the same
+	// bytes), so the honest passive state is unapplied.
+	if state != "unapplied" {
+		t.Fatalf("state = %q, want unapplied for an oversized preset", state)
+	}
+}

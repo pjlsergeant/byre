@@ -164,6 +164,12 @@ type Snapshot struct {
 	// the lock: a concurrent install that changed the reviewed state must
 	// not ride a consent given for a different state.
 	ExpectPrior string
+
+	// Repair forces a rewrite even when the snapshot directory already
+	// exists: content-addressing normally makes a present dir a no-write,
+	// but a caller repairing a broken snapshot (catalog INVALID row) knows
+	// the on-disk copy cannot be trusted.
+	Repair bool
 }
 
 // ErrStoreChanged reports that the index moved between the consent decision
@@ -183,14 +189,28 @@ func LandSnapshot(home string, s Snapshot) error {
 		return ErrStoreChanged
 	}
 	final := SnapshotDir(home, s.Digest)
+	needWrite := false
 	switch _, err := os.Stat(final); {
 	case err == nil:
-		// Same digest already on disk: content-addressed, nothing to write.
+		// Same digest already on disk: content-addressed, nothing to write --
+		// unless the caller is repairing a snapshot it knows is broken, in
+		// which case the stale dir is removed and rewritten in full. (A crash
+		// between the remove and the rename leaves the same broken state the
+		// repair was fixing; the reinstall remedy still applies.)
+		if s.Repair {
+			if err := os.RemoveAll(final); err != nil {
+				return err
+			}
+			needWrite = true
+		}
 	case !os.IsNotExist(err):
 		// A Stat failure is NOT "already present": indexing a snapshot we
 		// cannot prove exists breaks D7c's ordering guarantee.
 		return err
 	default:
+		needWrite = true
+	}
+	if needWrite {
 		stage, err := os.MkdirTemp(packagesDir(home), ".stage-")
 		if err != nil {
 			return err

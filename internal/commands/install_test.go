@@ -268,6 +268,137 @@ func TestUninstallScansAndRemoves(t *testing.T) {
 	}
 }
 
+// publishTemplate mirrors publishSkill for a payload-less template package.
+func publishTemplate(t *testing.T, id, version string) (manifestPath, digest string) {
+	t.Helper()
+	dir := t.TempDir()
+	manifest := []byte(`base = "debian:stable"
+
+[package]
+id = "` + id + `"
+version = "` + version + `"
+kind = "template"
+package_api = 1
+requires_byre = ">=0.1.0"
+description = "published test template"
+`)
+	manifestPath = filepath.Join(dir, "template.config")
+	if err := os.WriteFile(manifestPath, manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := packages.ParseManifestFiles(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manifestPath, packages.PackageDigest(manifest, packages.RecordsFromEntries(files))
+}
+
+// One id, one kind: a template must not replace an installed skill under the
+// same id, even with --yes -- stored references mean the old kind.
+func TestInstallRefusesCrossKindReplacement(t *testing.T) {
+	installHome(t)
+	skillURI, _ := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := SkillInstall(discardStreams(), skillURI, "", false); err != nil {
+		t.Fatal(err)
+	}
+	tmplURI, _ := publishTemplate(t, "pete/tool", "2.0.0")
+	err := TemplateInstall(discardStreams(), tmplURI, "", true)
+	if err == nil || !strings.Contains(err.Error(), "refusing to change its kind") {
+		t.Fatalf("cross-kind replacement must refuse, got %v", err)
+	}
+}
+
+// The reinstall remedy the catalog prints for a broken snapshot (same URI,
+// pinned digest) must actually repair it: the same-digest no-op yields to a
+// consented re-land, and the present-but-corrupt dir is rewritten.
+func TestInstallRepairsBrokenSnapshot(t *testing.T) {
+	home := installHome(t)
+	uri, digest := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := SkillInstall(discardStreams(), uri, "", false); err != nil {
+		t.Fatal(err)
+	}
+	prim := filepath.Join(packages.SnapshotDir(home, digest), "skill.toml")
+	if err := os.Remove(prim); err != nil {
+		t.Fatal(err)
+	}
+	// Repair flips referencing boxes from failing back to running: it is a
+	// state change, so a pipe without --yes refuses.
+	if err := SkillInstall(discardStreams(), uri, "sha256:"+digest, false); err == nil ||
+		!strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("repair in a pipe must demand --yes, got %v", err)
+	}
+	s, _, errBuf := testStreams("", false)
+	if err := SkillInstall(s, uri, "sha256:"+digest, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), "reinstalling the same verified bytes") {
+		t.Fatalf("repair must say what it is doing:\n%s", errBuf.String())
+	}
+	if _, err := os.Stat(prim); err != nil {
+		t.Fatalf("snapshot primary not restored: %v", err)
+	}
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent.Provenance != packages.ProvInstalled {
+		t.Fatalf("repaired package must resolve as installed, got %+v", ent)
+	}
+}
+
+// A replacement over a broken snapshot cannot diff grants against bytes that
+// are gone; it must show the candidate's declarations in full instead of
+// silently implying nothing changed.
+func TestReplacementOverBrokenSnapshotShowsFullGrants(t *testing.T) {
+	home := installHome(t)
+	v1, d1 := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := SkillInstall(discardStreams(), v1, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(packages.SnapshotDir(home, d1), "skill.toml")); err != nil {
+		t.Fatal(err)
+	}
+	v2, _ := publishSkill(t, "pete/tool", "2.0.0", `
+[runtime]
+caps = ["NET_ADMIN"]
+`)
+	s, _, errBuf := testStreams("", false)
+	if err := SkillInstall(s, v2, "", true); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "candidate grant declarations (in full") || !strings.Contains(out, "cap: NET_ADMIN") {
+		t.Fatalf("grants must be shown in full when the installed side is unreadable:\n%s", out)
+	}
+}
+
+// A broken snapshot's other remedy is removal: the INVALID catalog row must
+// not make the indexed package un-uninstallable.
+func TestUninstallRemovesBrokenInstall(t *testing.T) {
+	home := installHome(t)
+	uri, digest := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := SkillInstall(discardStreams(), uri, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(packages.SnapshotDir(home, digest), "skill.toml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := SkillUninstall(discardStreams(), "pete/tool", true); err != nil {
+		t.Fatalf("broken install must stay uninstallable, got %v", err)
+	}
+	idx, err := packages.ReadIndex(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx) != 0 {
+		t.Fatalf("index must be empty after uninstall, got %+v", idx)
+	}
+}
+
 func TestInspectURIDoesNotInstall(t *testing.T) {
 	home := installHome(t)
 	uri, digest := publishSkill(t, "pete/tool", "1.0.0", "")
