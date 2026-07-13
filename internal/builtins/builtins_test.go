@@ -1,7 +1,6 @@
 package builtins
 
 import (
-	"bytes"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -85,20 +84,17 @@ func TestCatalogTemplatesAndListAgents(t *testing.T) {
 	}
 }
 
-// TestSelfHostCompositionResolves verifies byre's own self-hosting config
-// (Claude agent + codex + codereview + devlog + grok, mirroring byre.config)
-// resolves end-to-end: codereview ships the byre-codereview script, the
-// workflow context reaches the agent's memory file, and codex's reviewer apt
-// dep is present.
+// TestSelfHostCompositionResolves verifies the BUNDLED slice of byre's own
+// self-hosting config (Claude agent + codex + grok). codereview and devlog
+// moved out of the binary (D12, 2026-07-13) -- their content is pinned by the
+// pjlsergeant-byre-skills repo and the host-side dogfood, not this suite; here
+// we pin that their RETIRED bare names fail with the exact install remedy.
 func TestSelfHostCompositionResolves(t *testing.T) {
 	_, cat := testCat(t)
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "codereview", "devlog", "grok"}}, cat)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "grok"}}, cat)
 	if err != nil {
-		t.Fatalf("self-host composition failed to resolve: %v", err)
+		t.Fatalf("bundled self-host slice failed to resolve: %v", err)
 	}
-	// codereview ships byre-codereview; devlog ships its firstrun hook; both
-	// ship the devlog lib (identical copies — see TestDevlogLibCopiesIdentical);
-	// codex ships its first-run login hook into the launcher's firstrun.d.
 	shipped := map[string]bool{} // "skill dest" -> present
 	for _, b := range res.BuildBlocks() {
 		for _, sf := range b.Files {
@@ -106,10 +102,6 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"byre/codereview /usr/local/bin/byre-codereview",
-		"byre/codereview /usr/local/lib/byre-devlog-lib.sh",
-		"byre/devlog /etc/byre/firstrun.d/devlog",
-		"byre/devlog /usr/local/lib/byre-devlog-lib.sh",
 		"byre/codex /etc/byre/firstrun.d/codex-login",
 		"byre/grok /etc/byre/firstrun.d/grok-login",
 		"byre/grok /etc/byre/firstrun.d/grok-bundled",
@@ -118,38 +110,33 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
 		}
 	}
-	// devlog contributes the persistent scratch volume and advertises it.
-	var scratchVol bool
-	for _, v := range res.Volumes() {
-		if v.Name == "scratch" && v.Role == "state" && v.Target == "/home/dev/scratch" {
-			scratchVol = true
-		}
-	}
-	if !scratchVol {
-		t.Errorf("devlog did not contribute the scratch state volume: %+v", res.Volumes())
-	}
-	if got := res.Env()["BYRE_SCRATCH"]; got != "/home/dev/scratch" {
-		t.Errorf("BYRE_SCRATCH = %q, want /home/dev/scratch", got)
-	}
 	// Workflow context reaches Claude's memory file.
 	if res.AgentContextTarget() != "/home/dev/.claude/CLAUDE.md" {
 		t.Errorf("context target wrong: %q", res.AgentContextTarget())
 	}
-	if !strings.Contains(res.Context(), "byre-codereview") {
-		t.Errorf("codereview loop context not present in agent context")
-	}
-	if !strings.Contains(res.Context(), "DIARY.md") {
-		t.Errorf("devlog workflow context not present in agent context")
-	}
-	// codex contributes the reviewer binary install (its build block is present).
-	var codexBlock bool
-	for _, b := range res.BuildBlocks() {
-		if b.Name == "byre/codex" {
-			codexBlock = true
+}
+
+// TestRetiredNamesTombstone pins the D15 cut-over: the bare names byre used
+// to bundle fail with the exact pinned install command, and cannot be
+// reclaimed by a local package.
+func TestRetiredNamesTombstone(t *testing.T) {
+	_, cat := testCat(t)
+	for bare, wantID := range map[string]string{
+		"codereview": "pjlsergeant/codereview",
+		"devlog":     "pjlsergeant/devlog",
+	} {
+		_, err := cat.ResolveName(bare)
+		if err == nil {
+			t.Fatalf("%s must not resolve after the move", bare)
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/") ||
+			!strings.Contains(msg, wantID) || !strings.Contains(msg, "--digest sha256:") {
+			t.Errorf("%s tombstone must carry the pinned remedy, got:\n%s", bare, msg)
 		}
 	}
-	if !codexBlock {
-		t.Errorf("codex skill block missing from composition")
+	if !cat.IsProtected("devlog") || !cat.IsProtected("codereview") {
+		t.Error("retired names must stay protected (D15)")
 	}
 }
 
@@ -171,9 +158,10 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	}
 	_, cat := testCat(t)
 	_ = cat
-	// Mirrors this repo's own byre.config skill set (codex + codereview +
-	// devlog + grok).
-	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "codereview", "devlog", "grok"}}
+	// The bundled slice of this repo's own byre.config skill set (codex +
+	// grok; codereview/devlog are installed packages now, covered by the
+	// host-side dogfood).
+	cfg := config.Config{Base: "golang:1.22-bookworm", Agent: "claude", Skills: []string{"codex", "grok"}}
 	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		t.Fatal(err)
@@ -181,16 +169,6 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	df, err := build.Assemble(paths, cfg, res)
 	if err != nil {
 		t.Fatal(err)
-	}
-	// The script is staged into the build context.
-	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "byre", "codereview", "codereview.sh")); err != nil {
-		t.Fatalf("codereview.sh not staged: %v", err)
-	}
-	// COPY of byre-codereview must precede the chmod that makes it executable.
-	cp := strings.Index(df, gen.CopyLine("skills/byre/codereview/codereview.sh", "/usr/local/bin/byre-codereview"))
-	chmod := strings.Index(df, "chmod +x /usr/local/bin/byre-codereview")
-	if cp < 0 || chmod < 0 || cp > chmod {
-		t.Fatalf("COPY must precede chmod (copy=%d chmod=%d):\n%s", cp, chmod, df)
 	}
 	// codex's first-run login hook is staged and COPYd to firstrun.d.
 	if _, err := os.Stat(filepath.Join(paths.ContextDir, "skills", "byre", "codex", "codex-login.sh")); err != nil {
@@ -210,24 +188,6 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 		if !strings.Contains(df, gen.CopyLine(src, dst)) {
 			t.Errorf("grok hook COPY missing (%s -> %s):\n%s", src, dst, df)
 		}
-	}
-}
-
-// TestDevlogLibCopiesIdentical pins the deliberate duplication of the devlog
-// helper lib: devlog and codereview each ship their own copy (no cross-skill
-// dependency mechanism exists), both to the same image path. They must stay
-// byte-identical or the shipped file depends on skill enable order.
-func TestDevlogLibCopiesIdentical(t *testing.T) {
-	a, err := fs.ReadFile(fsys, "skills/devlog/devlog-lib.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := fs.ReadFile(fsys, "skills/codereview/devlog-lib.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(a, b) {
-		t.Errorf("devlog-lib.sh copies differ between devlog and codereview; edit both together")
 	}
 }
 

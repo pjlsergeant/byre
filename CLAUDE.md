@@ -29,11 +29,19 @@ byre develops itself. `byre develop` in this repo (see `byre.config`) builds a
 
 - **codex** — installs the `codex` binary (the independent reviewer; not launched
   as the agent). Authenticate once per box with `codex login`.
-- **codereview** — ships **`byre-codereview`** (on `PATH`) and the review-loop
-  conventions.
-- **devlog** — the dev-workflow conventions (diary, commit discipline, the
-  scratch volume). Both skills' conventions are placed in the box as agent
-  memory, so the workflow rules below are reinforced automatically.
+- **pjlsergeant/codereview** — ships **`byre-codereview`** (on `PATH`) and the
+  review-loop conventions.
+- **pjlsergeant/devlog** — the dev-workflow conventions (diary, commit
+  discipline, the scratch volume). Both skills' conventions are placed in the
+  box as agent memory, so the workflow rules below are reinforced automatically.
+
+**One-shot bootstrap (fresh machine):** `codereview` and `devlog` moved out of
+the byre binary (2026-07-13) into
+[pjlsergeant-byre-skills](https://github.com/pjlsergeant/pjlsergeant-byre-skills).
+On a machine that has never installed them, `byre develop` here fails loudly
+with the exact install commands (they are pinned in this repo's `byre.config`
+`[sources]` block); run the two `byre skill install ...` commands it prints,
+once per machine, and re-run develop.
 
 > The `moarcode/` dir is the **legacy bootstrap harness** (gitignored, not part
 > of byre) used to develop byre before it could host itself. If you are running

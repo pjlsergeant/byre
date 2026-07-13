@@ -9,8 +9,11 @@
 # This stub stays so a config naming "devloop" still resolves — it contributes
 # NOTHING (no context, no hooks, no volumes: no diary conventions, no
 # .byre-devlog/ bootstrap, and the scratch volume is not mounted — its data is
-# untouched and remounts when the box switches). Edit the config's `skills`
-# list: devloop -> devlog. The scratch volume's name ("scratch") is unchanged,
-# so a renamed box picks its data straight back up.
+# untouched and remounts when the box switches). The full chain (2026-07-13):
+# devloop -> devlog -> pjlsergeant/devlog, which now lives OUTSIDE the byre
+# binary. Edit the config's `skills` list to "pjlsergeant/devlog" and install
+# it (`byre skill list` shows the command when it is missing). The scratch
+# volume's name ("scratch") is unchanged, so a renamed box picks its data
+# straight back up.
 
-description = "RENAMED to devlog — swap this entry for \"devlog\" in your skills list (same skill: diary, devlog dir, scratch volume; this stub contributes nothing)."
+description = "RENAMED, then moved out of byre — install pjlsergeant/devlog and put that in your skills list (same skill: diary, devlog dir, scratch volume; this stub contributes nothing)."
