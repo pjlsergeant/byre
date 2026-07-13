@@ -492,3 +492,54 @@ func TestPresetReadFileURI(t *testing.T) {
 		t.Errorf("suffix match must not trigger the legacy note (legacy=%v err=%v)", legacy, err)
 	}
 }
+
+// An EXISTING but unreadable byre.config must abort apply before the review
+// -- both reads failing must never read as "no current config" (codex P1).
+func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
+	os.MkdirAll(p.Dir, 0o755)
+	storePath := filepath.Join(p.Dir, "byre.config")
+	os.WriteFile(storePath, []byte("agent = \"claude\"\n"), 0o644)
+	if err := os.Chmod(storePath, 0o000); err != nil {
+		t.Skip("cannot chmod")
+	}
+	t.Cleanup(func() { os.Chmod(storePath, 0o644) })
+	s, _, _ := testStreams("y\n", true)
+	err := PresetApply(s, proj, "")
+	if err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("unreadable existing config must abort, got %v", err)
+	}
+	os.Chmod(storePath, 0o644)
+	b, _ := os.ReadFile(storePath)
+	if string(b) != "agent = \"claude\"\n" {
+		t.Fatalf("config must be untouched: %s", b)
+	}
+}
+
+// The conventional ./byre.preset gets the same size bound as explicit
+// sources (codex P2).
+func TestPresetConventionalPathIsBounded(t *testing.T) {
+	_, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, strings.Repeat("# pad\n", packages.MaxManifestBytes/6+1))
+	if _, _, _, err := readPreset(proj, ""); err == nil {
+		t.Fatal("oversized conventional preset must be rejected")
+	}
+}
+
+// createExclusive must not clobber a marker landed in the race window.
+func TestSweepDoesNotClobberConcurrentMarker(t *testing.T) {
+	home := t.TempDir()
+	pdir := filepath.Join(home, "projects", "someproj")
+	os.MkdirAll(pdir, 0o755)
+	os.WriteFile(filepath.Join(pdir, "adopted"), []byte("stalehash"), 0o644)
+	// A current marker lands "concurrently" (before the sweep's write).
+	os.WriteFile(filepath.Join(pdir, "applied"), []byte("freshhash\n./byre.preset"), 0o644)
+	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(pdir, "applied"))
+	if !strings.HasPrefix(string(b), "freshhash") {
+		t.Fatalf("sweep must never replace a live marker: %q", b)
+	}
+}

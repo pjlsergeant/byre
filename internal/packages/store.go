@@ -82,7 +82,8 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 // and `declined` records are removed. Idempotent, and it NEVER deletes the
 // only copy of the history: `adopted` is removed only once an `applied`
 // marker provably exists (already there, or the migrated write -- staged
-// then renamed, so a crash cannot leave a truncated marker -- succeeded).
+// then hard-linked into place, so a crash cannot leave a truncated marker
+// and a concurrent writer cannot be clobbered -- succeeded).
 func sweepAdoptionRecords(home string) {
 	entries, err := os.ReadDir(filepath.Join(home, "projects"))
 	if err != nil {
@@ -102,10 +103,15 @@ func sweepAdoptionRecords(home string) {
 				_ = os.Remove(adopted)
 			case os.IsNotExist(statErr):
 				h := strings.TrimSpace(string(b))
-				if atomicWriteFile(applied, h+"\n(migrated from a pre-preset adoption record)\n") == nil {
+				// Create-if-absent, atomically: EnsureStore runs outside the
+				// per-project setup lock, so a concurrent `preset apply` may
+				// write a CURRENT marker between the stat and here -- a
+				// replacing rename would clobber it with stale history.
+				if createExclusive(applied, h+"\n(migrated from a pre-preset adoption record)\n") == nil {
 					_ = os.Remove(adopted)
 				}
-				// Write failed: keep `adopted`; the next sweep retries.
+				// Write failed (including lost the race): keep `adopted`;
+				// the next sweep re-evaluates against the live marker.
 			default:
 				// Stat failed for an unknown reason: touch nothing.
 			}
@@ -114,22 +120,23 @@ func sweepAdoptionRecords(home string) {
 	}
 }
 
-// atomicWriteFile is the temp+rename discipline for small store records.
-func atomicWriteFile(path, content string) error {
+// createExclusive lands content at path atomically AND only if path does not
+// exist: full bytes staged to a temp file, then hard-linked into place --
+// link(2) fails on an existing destination, unlike rename(2), which replaces.
+func createExclusive(path, content string) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
 	}
+	defer os.Remove(tmp.Name())
 	if _, err := tmp.WriteString(content); err != nil {
 		tmp.Close()
-		os.Remove(tmp.Name())
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	return os.Link(tmp.Name(), path)
 }
 
 // findLegacyDirs returns store-relative paths of flat skill/template dirs

@@ -97,12 +97,19 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	if err != nil {
 		return err
 	}
-	// The diff the user reviews is against THIS store config; capture it so
-	// the landing step can prove the review is still true (the config
-	// editor, --self-edit, or another byre may write it meanwhile).
+	// The diff the user reviews is against THIS store config; capture ONE
+	// snapshot that feeds both the renderer and the locked compare, so the
+	// landing step can prove the review is still true (the config editor,
+	// --self-edit, or another byre may write it meanwhile). Unreadable-but-
+	// present is an abort, not "no config": replacing a file we could not
+	// show the user is exactly the unseen overwrite this flow forbids.
 	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	reviewedStore, reviewedStoreErr := os.ReadFile(storePath)
-	renderPresetReview(s, paths, projectDir, preset, content, still, "Apply")
+	if reviewedStoreErr != nil && !os.IsNotExist(reviewedStoreErr) {
+		return fmt.Errorf("cannot read this project's byre.config for the review diff: %w", reviewedStoreErr)
+	}
+	hasStore := reviewedStoreErr == nil
+	renderPresetReview(s, paths, preset, content, still, "Apply", reviewedStore, hasStore)
 
 	// Step 6: confirm; write the reviewed bytes as the project's byre.config
 	// and record the applied marker. Same discipline as every store write:
@@ -121,9 +128,13 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		}
 		// The reviewed diff must still be true: consent was to replacing THAT
 		// config, not whatever landed since (config editor, --self-edit,
-		// another byre process).
+		// another byre process). Any read failure here -- including a config
+		// that appeared or vanished -- aborts.
 		curStore, curErr := os.ReadFile(storePath)
-		if (reviewedStoreErr == nil) != (curErr == nil) || (curErr == nil && !bytes.Equal(curStore, reviewedStore)) {
+		if curErr != nil && !os.IsNotExist(curErr) {
+			return fmt.Errorf("cannot re-read this project's byre.config under the lock: %w", curErr)
+		}
+		if hasStore != (curErr == nil) || (curErr == nil && !bytes.Equal(curStore, reviewedStore)) {
 			return fmt.Errorf("this project's byre.config changed while you were reviewing; re-run preset apply to review against the current config")
 		}
 		if err := config.AtomicWrite(storePath, string(content)); err != nil {
@@ -164,7 +175,8 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	if err != nil {
 		return err
 	}
-	renderPresetReview(s, paths, projectDir, preset, content, missing, "Inspect")
+	inspStore, inspErr := os.ReadFile(filepath.Join(paths.Dir, config.ProjectConfigName))
+	renderPresetReview(s, paths, preset, content, missing, "Inspect", inspStore, inspErr == nil)
 	// Reports and exact commands, never prompts: a third party's document
 	// introducing references gets a report, not a walk-through (D16c).
 	for _, m := range missing {
@@ -182,14 +194,19 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 // bounds (D1h).
 func readPreset(projectDir, arg string) (content []byte, source string, legacyName bool, err error) {
 	if arg == "" {
+		// Conventional discovery still rides the hardened fetcher below --
+		// a cloned repo's preset is third-party input and gets the same
+		// 256KiB bound as an explicit source.
 		p := filepath.Join(projectDir, PresetName)
 		if _, statErr := os.Stat(p); statErr == nil {
-			b, err := os.ReadFile(p)
+			var f packages.Fetcher
+			b, _, err := f.FetchManifest(p)
 			return b, p, false, err
 		}
 		legacy := filepath.Join(projectDir, config.ProjectConfigName)
 		if _, statErr := os.Stat(legacy); statErr == nil {
-			b, err := os.ReadFile(legacy)
+			var f packages.Fetcher
+			b, _, err := f.FetchManifest(legacy)
 			return b, legacy, true, err
 		}
 		return nil, "", false, fmt.Errorf("no %s here (and no legacy %s); pass a path or URI", PresetName, config.ProjectConfigName)
@@ -269,7 +286,7 @@ func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 // referenced package, provenance-labeled; still-missing references are marked
 // "not installed -- grants unknown" (the review never claims completeness it
 // does not have); against an existing byre.config the review shows the diff.
-func renderPresetReview(s Streams, paths project.Paths, projectDir string, preset config.Config, content []byte, missing []missingRef, verb string) {
+func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb string, store []byte, hasStore bool) {
 	cfg, grants := effectiveReview(paths, preset)
 	fmt.Fprintf(s.Err, "\n%s preset -- the box this composes:\n", verb)
 	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", config.OrNone(cfg.Base), config.OrNone(cfg.Agent), config.OrNone(preset.Template))
@@ -283,8 +300,7 @@ func renderPresetReview(s Streams, paths project.Paths, projectDir string, prese
 	for _, m := range missing {
 		fmt.Fprintf(s.Err, "  ⚠ %s %s: not installed -- grants unknown\n", m.Kind, packages.EscapeTerminal(m.Name))
 	}
-	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
-	if store, serr := os.ReadFile(storePath); serr == nil {
+	if hasStore {
 		if bytes.Equal(store, content) {
 			fmt.Fprintf(s.Err, "--- identical to your current byre.config (applying just records that) ---\n")
 		} else {
