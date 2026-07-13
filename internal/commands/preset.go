@@ -176,6 +176,11 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 		return err
 	}
 	inspStore, inspErr := os.ReadFile(filepath.Join(paths.Dir, config.ProjectConfigName))
+	if inspErr != nil && !os.IsNotExist(inspErr) {
+		// Only absence means "no current config" -- a permission or I/O
+		// failure must not silently omit the promised diff.
+		return fmt.Errorf("cannot read this project's byre.config for the review diff: %w", inspErr)
+	}
 	renderPresetReview(s, paths, preset, content, missing, "Inspect", inspStore, inspErr == nil)
 	// Reports and exact commands, never prompts: a third party's document
 	// introducing references gets a report, not a walk-through (D16c).
@@ -289,9 +294,15 @@ func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb string, store []byte, hasStore bool) {
 	cfg, grants := effectiveReview(paths, preset)
 	fmt.Fprintf(s.Err, "\n%s preset -- the box this composes:\n", verb)
-	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n", config.OrNone(cfg.Base), config.OrNone(cfg.Agent), config.OrNone(preset.Template))
+	// Every rendered field below can carry preset-controlled bytes (D1h):
+	// escape BEFORE byre's own styling so hostile run_args/mount paths/skill
+	// names cannot forge grant rows or extra lines in the consent review.
+	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n",
+		packages.EscapeTerminal(config.OrNone(cfg.Base)),
+		packages.EscapeTerminal(config.OrNone(cfg.Agent)),
+		packages.EscapeTerminal(config.OrNone(preset.Template)))
 	for _, g := range grants {
-		line := g.Text
+		line := packages.EscapeTerminal(g.Text)
 		if (g.Containment || g.CrossProject) && s.TTY {
 			line = "\x1b[1;33m" + line + "\x1b[0m"
 		}

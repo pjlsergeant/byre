@@ -543,3 +543,40 @@ func TestSweepDoesNotClobberConcurrentMarker(t *testing.T) {
 		t.Fatalf("sweep must never replace a live marker: %q", b)
 	}
 }
+
+// Grant-summary lines carry preset-controlled bytes: the review escapes them
+// before styling, so hostile run_args cannot forge rows (codex round 3).
+func TestPresetReviewEscapesGrantLines(t *testing.T) {
+	_, proj := onboardPaths(t)
+	// Raw control bytes fail TOML parsing; the realistic vector is a TOML
+	// unicode escape that DECODES to ESC.
+	shipPreset(t, proj, PresetName, "agent = \"none\"\nrun_args = [\"--cap\\u001B[32madd=FAKE\"]\n")
+	s, _, errBuf := testStreams("n\n", true)
+	if err := PresetApply(s, proj, ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "\x1b[32m") {
+		t.Fatalf("grant line must not carry preset-controlled ANSI:\n%q", errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "--capadd=FAKE") {
+		t.Fatalf("escaped grant content must still render:\n%s", errBuf.String())
+	}
+}
+
+// Inspect treats only ABSENCE as no-config; other read failures abort
+// instead of silently omitting the promised diff (codex round 3).
+func TestPresetInspectAbortsOnUnreadableStoreConfig(t *testing.T) {
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
+	os.MkdirAll(p.Dir, 0o755)
+	storePath := filepath.Join(p.Dir, "byre.config")
+	os.WriteFile(storePath, []byte("agent = \"claude\"\n"), 0o644)
+	if err := os.Chmod(storePath, 0o000); err != nil {
+		t.Skip("cannot chmod")
+	}
+	t.Cleanup(func() { os.Chmod(storePath, 0o644) })
+	s := discardStreams()
+	if err := PresetInspect(s, proj, ""); err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("unreadable config must abort inspect, got %v", err)
+	}
+}
