@@ -37,6 +37,14 @@ the rationale lives.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
+- [ ] (S) **Pocock 1.0.1: fold grilling in** (Pete, 2026-07-13): move the
+  drawer copy of grilling into the published claude-skills-pocock package
+  (re-pack, new digest, Pete re-tags), then trim it from the local
+  claude-skills drawer. Order rule: grilling exists exactly once at every
+  step. Doubles as the first live replacement-flow test.
+- [ ] (S) **Bundled display digests in inspect** (D5b deferral, ADR 0029):
+  inspect on a bundled package shows no digest today; compute and show the
+  display digest so bundled/installed inspect output ranks equally.
 - [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
   `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
@@ -52,6 +60,13 @@ the rationale lives.
   via the chassis, plus a config key for named host env vars. Per
   docs/GLOSSARY.md a passed-through var IS a grant: surface it in `byre
   status` and the config UI GRANTS section.
+- [ ] (M) **claude-skills.d / claude-mcp.d convention**: byre/claude owns one
+  sync hook; a skill drops Claude Skills / MCP definitions into convention
+  dirs and they land in the box -- MCPs as byre skills with legible grants.
+  Sketch discussed 2026-07-13 (skills milestone close-out).
+- [ ] (M) **Private-https package fetch.** `skill install` has no auth story
+  for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
+  interaction with the origin-pinning rules before building.
 - [ ] (M) **Open-denylist firewall mode** (Pete, 2026-07-13): otherwise-open
   network with the config's `!host` closures enforced (default ACCEPT, DROP
   the named hosts) via the same netns_init vehicle; posture claim like
@@ -84,12 +99,6 @@ the rationale lives.
   byre runs beside the box (postgres, redis, ...) and networks in -- the
   agent gets endpoints, never the daemon. Covers the compose-deps case
   without the docker-host grant.
-- [ ] (XL) **Skills milestone: packages, immutable bundled, install, presets.**
-  PHASES 1-4 BUILT + docs landed (Pete, 2026-07-13; ADR 0029 absorbed the
-  WIP design doc). Remaining: phase-4 review loop + codex final milestone
-  sign-off, then this item closes and spawns the deferred follow-ups
-  (pocock 1.0.1 grilling fold-in, claude-skills.d/claude-mcp.d convention,
-  private-https package fetch, bundled display digests in inspect).
 
 ## Standing
 
