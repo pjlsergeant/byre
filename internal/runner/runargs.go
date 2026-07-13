@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"sort"
+	"strconv"
 )
 
 // BindMount is a host-path bind for `docker run -v host:target[:mode]`.
@@ -40,6 +41,7 @@ type RunParams struct {
 	Volumes         []NamedVolume
 	Ports           []PortPublish // -p publications (host-exposed container ports)
 	Caps            []string      // --cap-add (from skills)
+	GroupAdds       []int         // --group-add (numeric gids from sock_groups probe; no /etc/group entry needed)
 	RunArgs         []string      // raw passthrough, last-wins
 	Command         []string      // agent command; empty uses the image entrypoint default
 	TTY             bool          // allocate a pseudo-TTY (-t); set only when stdin is an actual terminal, so a piped/non-interactive invocation (CI, an agent driving byre) doesn't fail with "the input device is not a TTY"
@@ -102,6 +104,12 @@ func RunArgs(p RunParams) []string {
 	for _, c := range p.Caps {
 		args = append(args, "--cap-add", c)
 	}
+	// Numeric --group-add before raw run_args so a skill/project run_arg can
+	// still override (last-wins), matching Caps. Gids are sorted for
+	// deterministic argv (same class as env keys).
+	for _, g := range sortedInts(p.GroupAdds) {
+		args = append(args, "--group-add", strconv.Itoa(g))
+	}
 
 	// Raw passthrough — last-wins over byre's flags.
 	args = append(args, p.RunArgs...)
@@ -133,4 +141,13 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func sortedInts(in []int) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]int{}, in...)
+	sort.Ints(out)
+	return out
 }
