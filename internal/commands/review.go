@@ -175,7 +175,40 @@ func grantSummary(c config.Config) []grantLine {
 	if len(c.Skills) > 0 {
 		s = append(s, grantLine{Text: "enables skills (each can add mounts/caps/run_args/volumes): " + strings.Join(c.Skills, ", ")})
 	}
+	// MCP declarations are wiring, not grants (ADR 0033) — but a remote url
+	// implies egress and an env list names host values the box will want, so
+	// the reviewer sees what the wiring carries. `!name` closure markers
+	// remove wiring and grant nothing; skipped like port removal markers.
+	if lines := mcpWiringList(c.MCPs); len(lines) > 0 {
+		s = append(s, grantLine{Text: "wires MCP servers into the agent session: " + strings.Join(lines, ", ")})
+	}
 	return s
+}
+
+// mcpWiringList renders proposed [[mcp]] declarations compactly for the
+// adoption/preset review, carried reach spelled out per entry.
+func mcpWiringList(mcps []config.MCP) []string {
+	var out []string
+	for _, m := range mcps {
+		if strings.HasPrefix(m.Name, "!") {
+			continue
+		}
+		switch {
+		case m.Remote():
+			host, port, ok := m.Endpoint()
+			if ok {
+				out = append(out, fmt.Sprintf("%s (remote — implies egress to %s:%d)", m.Name, host, port))
+			} else {
+				out = append(out, m.Name+" (remote)")
+			}
+		default:
+			out = append(out, m.Name+" (local process)")
+		}
+		if len(m.Env) > 0 {
+			out[len(out)-1] += " consuming env " + strings.Join(m.Env, "/")
+		}
+	}
+	return out
 }
 
 // extraHostEnv lists env_from_host entries (sorted) that differ from byre's
