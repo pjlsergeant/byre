@@ -71,8 +71,10 @@ capabilities. A host-side agent quietly editing it defeats the entire
 design.
 
 So: do not add or widen grants -- mounts, env, ports, egress, volumes,
-skills, raw dockerfile/run_args blocks -- unless the user asked for that
-exact change, and say plainly what you wrote. The right route for config
+skills, the agent (naming a skill as ` + "`agent`" + ` enables it implicitly),
+the template (it pulls in a whole config layer), raw
+dockerfile/run_args blocks -- unless the user asked for that exact
+change, and say plainly what you wrote. The right route for config
 that originates in a repo is a ` + "`byre.preset`" + ` committed there and
 applied by the human with ` + "`byre preset apply`" + `; it gets a proper
 review, diff, and confirm. Do not bypass that flow by writing the store
@@ -82,8 +84,8 @@ file directly.
 
 The store has identity rules -- bare vs ` + "`owner/name`" + ` ids, names
 retired by old versions, digest-keyed snapshots, an install index.
-Hand-moved directories turn into conflict or LEGACY rows, not working
-packages.
+A hand-moved directory can land as a conflict or LEGACY row instead of
+a working package, and byre's index will not know it moved.
 
     byre skill list                       what the catalog sees, and why
     byre skill inspect <id|uri>           a package's full trust surface
@@ -125,8 +127,9 @@ rather than growing a monolith.
   ` + "`[package]`" + ` block in ` + "`skill.toml`" + `. Keep ` + "`byre skill validate`" + `
   clean.
 - A package's existence changes what is AVAILABLE, never what runs.
-  Enabling -- listing its id in a config layer's ` + "`skills = [...]`" + ` --
-  is the only grant, and enabling a skill is trusting it: its
+  Enabling is the only grant: listing the skill's id in a config
+  layer's ` + "`skills = [...]`" + `, or naming it as the layer's ` + "`agent`" + `
+  (which enables it implicitly). Enabling a skill is trusting it: its
   Dockerfile block builds the image and its grants open the box.
 - Grant minimally. Open only the skill's own functional endpoints
   (deny-by-default), and declare everything: an undeclared capability

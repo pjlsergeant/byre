@@ -183,9 +183,13 @@ func TestAgentsMDPinsItsClaims(t *testing.T) {
 	for _, want := range []string{
 		// Ownership contract, first paragraph.
 		"byre generates this file and rewrites it",
-		// The consent-document rule.
+		// The consent-document rule -- including the full grant model:
+		// `agent` and `template` widen the box too, not just the listed
+		// grant keys (grok review 2026-07-14).
 		"projects/<id>/byre.config",
 		"byre preset apply",
+		"enables it implicitly",
+		"the template (it pulls in a whole config layer)",
 		// Immutability + the sanctioned escape.
 		"NEVER edit anything here",
 		"byre skill fork",
