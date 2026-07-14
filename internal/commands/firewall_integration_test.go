@@ -175,8 +175,17 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 	// The marker prints on every successful pass through the gate; the sleep
 	// keeps the box running so the restart hits a live container, the way a
 	// real session would be hit.
+	//
+	// The gate timeout governs BOTH launches (env is fixed at create): it is
+	// the second launch's refusal wait, but also the first launch's budget to
+	// survive until the helper listens. Too tight and the first launch loses
+	// that race under a loaded engine (seen at 4s with the runner package's
+	// engine tests running in parallel): launcher fails closed before the
+	// helper listens, the helper's nc idles its full 60s, and the test dies
+	// confusingly late. 30s (the production default) keeps the race
+	// unlosable; the second phase pays it once as the refusal wait.
 	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
-		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=30",
 		image, "bash", "-c", "echo BOX_RAN; sleep 300")
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)

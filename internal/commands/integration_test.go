@@ -251,3 +251,132 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 		t.Errorf("credential not owned by the dev uid %d in project B's box; got:\n%s", uid, out)
 	}
 }
+
+// TestIntegrationConcurrentWorktreeSessions: worktree support against a live
+// engine (ADR 0009) — a linked worktree resolves to the same project (shared
+// image, shared project-scoped volumes) but its own box: distinct container
+// names so two sessions run SIMULTANEOUSLY, each seeing its own checkout at
+// /workspace, with a project volume live in both.
+func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
+	r := requireEngineRunner(t)
+	pMain, proj := testPaths(t)
+	if err := builtins.EnsureStore(pMain.Home); err != nil {
+		t.Fatal(err)
+	}
+
+	// A real repo with a real linked worktree (worktree resolution reads
+	// git's own metadata; no fake can stand in for it).
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = proj
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	if err := os.WriteFile(filepath.Join(proj, "shared.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-q", "-m", "seed")
+	wtDir := filepath.Join(t.TempDir(), "wt")
+	git("worktree", "add", "-q", "-b", "session-b", wtDir)
+	// Untracked sentinel: exists ONLY in the worktree checkout.
+	if err := os.WriteFile(filepath.Join(wtDir, "wt-only.txt"), []byte("wt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pWt, err := project.Resolve(wtDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pWt.IsWorktree {
+		t.Fatalf("worktree dir %s did not resolve as a worktree", wtDir)
+	}
+	if pWt.ID != pMain.ID {
+		t.Fatalf("worktree resolved to its own project ID %q, want main's %q (ADR 0009)", pWt.ID, pMain.ID)
+	}
+
+	cat, err := builtins.LoadCatalogRaw(pMain.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Volumes: []config.Volume{
+		{Name: "pvol", Target: "/home/dev/pvol", Role: "state"},
+	}}
+	res, err := skills.Resolve(cfg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rv := combine(cfg, res)
+
+	// One image, shared by both sessions (imageTag keys on the project ID).
+	image := imageTag(pMain.ID, os.Getuid(), os.Getgid())
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, pMain, cfg, res, image, false); err != nil {
+		t.Fatalf("image failed to build: %v", err)
+	}
+
+	paramsMain, err := runParams(pMain, rv, image, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paramsWt, err := runParams(pWt, rv, image, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paramsMain.Name == paramsWt.Name {
+		t.Fatalf("main and worktree boxes share container name %q — concurrent sessions impossible", paramsMain.Name)
+	}
+	if paramsMain.Volumes[0].Name != paramsWt.Volumes[0].Name {
+		t.Fatalf("project volume not shared into the worktree box: %q vs %q",
+			paramsMain.Volumes[0].Name, paramsWt.Volumes[0].Name)
+	}
+	_ = r.VolumeRemove(paramsMain.Volumes[0].Name)
+	t.Cleanup(func() {
+		_ = exec.Command(string(r.Engine()), "rm", "-f", paramsMain.Name).Run()
+		_ = exec.Command(string(r.Engine()), "rm", "-f", paramsWt.Name).Run()
+		_ = r.VolumeRemove(paramsMain.Volumes[0].Name)
+	})
+
+	// Box A (main): drop a token in the shared volume, assert the worktree
+	// sentinel is NOT in its checkout, park.
+	token := fmt.Sprintf("token-%d-%d", os.Getpid(), time.Now().UnixNano())
+	paramsMain.Command = []string{"bash", "-c", fmt.Sprintf(
+		"echo %s > /home/dev/pvol/wt-token && test ! -e /workspace/wt-only.txt && echo MAIN_OK; sleep 60", token)}
+	// Box B (worktree): wait for A's token through the shared volume, assert
+	// its own checkout, park. Both boxes RUNNING at once is the claim.
+	paramsWt.Command = []string{"bash", "-c",
+		`for i in $(seq 50); do [ -f /home/dev/pvol/wt-token ] && break; sleep 0.2; done
+cat /home/dev/pvol/wt-token && test -e /workspace/wt-only.txt && test -e /workspace/shared.txt && echo WT_OK; sleep 60`}
+
+	detach := func(p runner.RunParams) {
+		t.Helper()
+		args := runner.RunArgs(p)
+		args = append([]string{args[0], "-d"}, args[1:]...)
+		if out, err := exec.Command(string(r.Engine()), args...).CombinedOutput(); err != nil {
+			t.Fatalf("start %s: %v\n%s", p.Name, err, out)
+		}
+	}
+	detach(paramsMain)
+	detach(paramsWt)
+	waitRunning(t, r, paramsMain.Name)
+	waitRunning(t, r, paramsWt.Name)
+	waitForLog(t, r, paramsMain.Name, "MAIN_OK")
+	waitForLog(t, r, paramsWt.Name, "WT_OK")
+
+	// Both sessions live at the same instant.
+	for _, name := range []string{paramsMain.Name, paramsWt.Name} {
+		out, _ := exec.Command(string(r.Engine()), "inspect", "-f", "{{.State.Running}}", name).CombinedOutput()
+		if strings.TrimSpace(string(out)) != "true" {
+			t.Errorf("box %s not running during the concurrent window", name)
+		}
+	}
+	if logs := containerLogs(t, r, paramsWt.Name); !strings.Contains(logs, token) {
+		t.Errorf("worktree box never saw main box's token through the shared volume:\n%s", logs)
+	}
+}
