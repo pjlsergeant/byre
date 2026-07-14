@@ -158,6 +158,68 @@ func TestIntegrationFirewallFailsClosed(t *testing.T) {
 	}
 }
 
+// TestIntegrationFirewallRestartFailsClosed: a box that launched legitimately
+// and is then restarted (user's `docker restart`, daemon restart) comes up
+// with a FRESH netns — the rules are gone and nothing re-runs the helper. The
+// launcher must park at the gate again and time out: the box's command runs
+// exactly once, never a second time without a wall. This is the stale-state
+// half of fail-closed (launcher.sh: "times out again rather than trusting
+// stale state"); FailsClosed above covers the never-launched half.
+func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
+	r := requireEngineRunner(t)
+	image, env := buildFirewallImage(t, r)
+	name := "byre-inttest-fw-restart"
+	_ = exec.Command(string(r.Engine()), "rm", "-f", name).Run()
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
+
+	// The marker prints on every successful pass through the gate; the sleep
+	// keeps the box running so the restart hits a live container, the way a
+	// real session would be hit.
+	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
+		image, "bash", "-c", "echo BOX_RAN; sleep 300")
+	if out, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start box: %v\n%s", err, out)
+	}
+	waitRunning(t, r, name)
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall", env); err != nil {
+		t.Fatalf("netns init failed: %v", err)
+	}
+	waitForLog(t, r, name, "BOX_RAN") // first launch made it through the gate
+
+	// Restart: SIGKILL quickly (-t 1; PID-1 bash won't die to TERM), fresh
+	// netns, and nobody runs the helper again.
+	if out, err := exec.Command(string(r.Engine()), "restart", "-t", "1", name).CombinedOutput(); err != nil {
+		t.Fatalf("restart box: %v\n%s", err, out)
+	}
+
+	// The relaunched box must time out at the gate and exit non-zero.
+	if code := dockerWait(t, r, name); code == 0 {
+		t.Errorf("restarted box must exit non-zero when nothing re-opens the gate (fail closed)")
+	}
+	logs := containerLogs(t, r, name)
+	if got := strings.Count(logs, "BOX_RAN"); got != 1 {
+		t.Errorf("box command must run exactly once (the gated first launch), ran %d times:\n%s", got, logs)
+	}
+	if !strings.Contains(logs, "refusing to launch") {
+		t.Errorf("expected the launcher's fail-closed message on the restarted run; logs:\n%s", logs)
+	}
+}
+
+// waitForLog polls the container's logs until the marker appears, or fails
+// after a short deadline.
+func waitForLog(t *testing.T, r *runner.Runner, name, marker string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(containerLogs(t, r, name), marker) {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("container %s never logged %q", name, marker)
+}
+
 // waitRunning polls until the named container reports running (the netns must
 // exist before the helper can join it), or fails after a short deadline.
 func waitRunning(t *testing.T, r *runner.Runner, name string) {
