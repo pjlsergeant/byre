@@ -17,8 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **Config UI: env secret-masking.** env values render in plaintext
-  in the form; mask them (reveal on demand).
 - [ ] (S) **`!host` egress closures** (Pete, 2026-07-13): `!host` in the config
   `egress` key closes that endpoint under deny-by-default -- subtracting from
   the derived allowlist INCLUDING skill-declared entries (today skill egress
