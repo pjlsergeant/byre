@@ -642,6 +642,18 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 		f.Description = ent.Description
 	}
 
+	// A skill's mounts and volumes join the same docker run command as the
+	// config's own, so hold them to the same shape rules — config.Validate is
+	// the one owner of mount/volume shape (role, seed combinations, target
+	// grammar, host-path form) plus intra-skill name/target collisions.
+	// Checked at load so `byre skill validate` green means the skill's grants
+	// can actually run, instead of the shape error surfacing at the next
+	// develop. Cross-skill/config collisions remain the resolved set's check
+	// (commands.resolve).
+	if err := (config.Config{Mounts: f.Runtime.Mounts, Volumes: f.Volumes}).Validate(); err != nil {
+		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
+	}
+
 	dir, err := ent.HostDir()
 	if err != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)

@@ -779,10 +779,28 @@ func (c Config) validateScalars(layer bool) error {
 	return nil
 }
 
+// validateHostPath checks a host-side path field (a mount host, a seed host)
+// against the shape run assembly will demand of it (expandHostPath in
+// commands): `~`-anchored or absolute, and expressible in a docker --mount
+// value (no comma). Checked here so a bad path fails at save/validate with
+// the file open, not at the next develop.
+func validateHostPath(p string) error {
+	if p != "~" && !strings.HasPrefix(p, "~/") && !filepath.IsAbs(p) {
+		return fmt.Errorf("host path %q must be absolute or ~/…", p)
+	}
+	if strings.Contains(p, ",") {
+		return fmt.Errorf("host path %q cannot contain a comma (docker --mount can't express it)", p)
+	}
+	return nil
+}
+
 // validateMountShape checks one mount's own fields (not cross-entry collisions).
 func validateMountShape(m Mount) error {
 	if m.Host == "" {
 		return fmt.Errorf("mount %s: host path is required", m.Target)
+	}
+	if err := validateHostPath(m.Host); err != nil {
+		return fmt.Errorf("mount %s: %w", m.Target, err)
 	}
 	if m.Target == "" {
 		return errors.New("mount: target is required")
@@ -840,6 +858,11 @@ func validateVolumeShape(v Volume) error {
 		}
 		if v.Seed.Host == "" && v.Seed.Literal == "" {
 			return fmt.Errorf("volume %s: seed set but empty", v.Name)
+		}
+		if v.Seed.Host != "" {
+			if err := validateHostPath(v.Seed.Host); err != nil {
+				return fmt.Errorf("volume %s: seed %w", v.Name, err)
+			}
 		}
 		if v.Seed.Literal != "" {
 			if v.Seed.Path == "" {
