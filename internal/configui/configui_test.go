@@ -1315,6 +1315,9 @@ func TestMCPArgvRoundTrip(t *testing.T) {
 		{"server", "--label", "hello world"},
 		{"srv", `say "hi"`, ""},
 		{"plain", "args", "only"},
+		{"srv", `trailing backslash \`},
+		{"srv", `double \\ back`, `\" tricky`},
+		{`C:\bare\backslash`, "unquoted"},
 	}
 	for _, argv := range cases {
 		got, err := splitArgv(joinArgv(argv))

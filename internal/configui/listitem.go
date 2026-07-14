@@ -799,16 +799,20 @@ func mcpLine(mc config.MCP) string {
 
 // joinArgv/splitArgv are the editor's REVERSIBLE argv text form: elements
 // join on spaces; an element containing whitespace or a double quote renders
-// double-quoted with `\"` escapes, and splitArgv parses exactly that back.
-// Round-trip property: splitArgv(joinArgv(x)) == x for every argv config
-// validation admits (no control characters). Not a shell: no single quotes,
-// no variable expansion — just enough to keep `["--label", "hello world"]`
+// double-quoted, with `\\` and `\"` escapes inside the quotes (backslash
+// first, or a quoted arg ENDING in `\` would swallow its own closing quote —
+// codex review round 5). splitArgv parses exactly that back. Round-trip
+// property: splitArgv(joinArgv(x)) == x for every argv config validation
+// admits (no control characters). Not a shell: no single quotes, no
+// variable expansion — just enough to keep `["--label", "hello world"]`
 // intact through an open-and-commit (codex review round 4).
 func joinArgv(args []string) string {
 	parts := make([]string, len(args))
 	for i, a := range args {
 		if a == "" || strings.ContainsAny(a, " \t\"") {
-			parts[i] = `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
+			q := strings.ReplaceAll(a, `\`, `\\`)
+			q = strings.ReplaceAll(q, `"`, `\"`)
+			parts[i] = `"` + q + `"`
 		} else {
 			parts[i] = a
 		}
@@ -824,8 +828,8 @@ func splitArgv(s string) ([]string, error) {
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		switch {
-		case inQuote && r == '\\' && i+1 < len(rs) && rs[i+1] == '"':
-			cur.WriteRune('"')
+		case inQuote && r == '\\' && i+1 < len(rs) && (rs[i+1] == '"' || rs[i+1] == '\\'):
+			cur.WriteRune(rs[i+1])
 			i++
 		case r == '"':
 			inQuote = !inQuote
