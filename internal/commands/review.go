@@ -225,8 +225,13 @@ func egressGrantLine(entries []string, posture, postureSkill string, postureKnow
 	}
 	list := strings.Join(entries, ", ")
 	switch {
-	case postureKnown && posture != "":
+	case postureKnown && config.PostureEnforcesAllowlist(posture):
 		return plainGrants(fmt.Sprintf("opens firewall egress to: %s (live — skill %q sets posture %q)", list, postureSkill, posture))
+	case postureKnown && posture != "":
+		// open-denylist: the network is open, so allowlist entries are as
+		// unenforced as with no posture at all (ADR 0030) — saying "opens"
+		// would dress noise up as a grant.
+		return plainGrants(fmt.Sprintf("adds egress allowlist entries: %s (inert — posture %q leaves the network open; live under a restrictive one)", list, posture))
 	case postureKnown:
 		return plainGrants(fmt.Sprintf("adds egress allowlist entries: %s (inert now — no restrictive posture enabled; live the moment one is)", list))
 	default:

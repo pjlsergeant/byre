@@ -66,10 +66,16 @@ ipt() { iptables -w "$@"; }
 ipt6() { ip6tables -w "$@"; }
 
 # Is there a v6 stack in this netns at all? Without one there is nothing to
-# drop over v6 — skip rather than dying on missing modules.
+# drop over v6 — skip rather than dying on missing modules. But when closures
+# DID resolve to v6 addresses AND the namespace has non-loopback v6
+# interfaces (read straight from /proc — no iproute2 in the image), a broken
+# ip6tables would leave those addresses silently reachable under an
+# "N hosts blocked" claim: die instead, same ruling as an unresolvable host.
 ip6_ok=
 if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
   ip6_ok=1
+elif [ "${#v6rules[@]}" -gt 0 ] && grep -qsv ' lo$' /proc/net/if_inet6; then
+  die "closures resolved to IPv6 addresses but ip6tables is unavailable while this netns has IPv6 interfaces — they would stay reachable"
 else
   log "IPv6 unavailable in this netns; skipping ip6tables (nothing to block there)"
 fi
@@ -109,6 +115,15 @@ if [ "${#v4rules[@]}" -gt 0 ]; then
   read -r probe_ip probe_port <<<"${v4rules[0]}" || true
   if timeout 3 bash -c "exec 3<>/dev/tcp/$probe_ip/${probe_port:-443}" 2>/dev/null; then
     die "deny probe reached $probe_ip:${probe_port:-443} — drops are not effective"
+  fi
+fi
+# Same check per family: an IPv6-only closure must not go unverified (a
+# netns without v6 connectivity fails the connect anyway — unreachable and
+# blocked read the same, and both keep the promise).
+if [ -n "$ip6_ok" ] && [ "${#v6rules[@]}" -gt 0 ]; then
+  read -r probe6_ip probe6_port <<<"${v6rules[0]}" || true
+  if timeout 3 bash -c "exec 3<>/dev/tcp/$probe6_ip/${probe6_port:-443}" 2>/dev/null; then
+    die "deny probe reached [$probe6_ip]:${probe6_port:-443} — v6 drops are not effective"
   fi
 fi
 # The open probe is availability, not security: the network is supposed to be

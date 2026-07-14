@@ -75,6 +75,11 @@ func TestEgressGrantLineStatus(t *testing.T) {
 	if got := grantTexts(egressGrantLine([]string{"a.com"}, "", "", true)); !strings.Contains(got, "inert now") {
 		t.Errorf("no-posture phrasing: %q", got)
 	}
+	// open-denylist leaves the network open: allowlist entries are inert
+	// there, and the review must not dress them up as live grants (ADR 0030).
+	if got := grantTexts(egressGrantLine([]string{"a.com"}, config.PostureOpenDenylist, "firewall-open", true)); !strings.Contains(got, "inert") || strings.Contains(got, "live — skill") {
+		t.Errorf("open-denylist phrasing must read inert: %q", got)
+	}
 	if got := grantTexts(egressGrantLine([]string{"a.com"}, "", "", false)); !strings.Contains(got, "under a restrictive network posture") {
 		t.Errorf("unknown-posture fallback phrasing: %q", got)
 	}
