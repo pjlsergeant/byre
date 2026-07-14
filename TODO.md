@@ -40,9 +40,9 @@ the rationale lives.
   per declared var. Pure documentation, no validation. Example:
   `GEMINI_API_KEY`.
 - [ ] (M) **TERM + timezone + host-env passthrough.** Pass host TERM and TZ
-  via the chassis, plus a config key for named host env vars. Per
-  docs/GLOSSARY.md a passed-through var IS a grant: surface it in `byre
-  status` and the config UI GRANTS section.
+  via the chassis, plus a config key for named host env vars, perhaps CWD on
+  host. Per docs/GLOSSARY.md a passed-through var IS a grant: surface it in
+  `byre status` and the config UI GRANTS section.
 - [ ] (M) **claude-skills.d / claude-mcp.d convention**: byre/claude owns one
   sync hook; a skill drops Claude Skills / MCP definitions into convention
   dirs and they land in the box -- MCPs as byre skills with legible grants.
@@ -59,10 +59,6 @@ the rationale lives.
   until agent-runnable tests exist: fresh-develop file ownership + launch
   path, builtins fresh-volume UID, concurrent worktree sessions, shared-auth
   coverage (ADR 0017), firewall fail-closed after `docker restart`.
-- [ ] (M) **Drag-and-drop into the boxed terminal.** Mostly superseded by
-  `byre deliver`; what remains is drop-directly-onto-the-running-terminal
-  ergonomics. Needs a design pass: path translation, outside paths as a
-  grant question, per-terminal drop behavior.
 - [ ] (L) **`byre deliver`: ssh:// remote delivery.** The remaining tranche
   of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/DELIVER.md); the
   mini-protocol is frozen there (--proto / --porcelain / --consume). Gated
@@ -78,10 +74,6 @@ the rationale lives.
   `runner.IsRootlessPodman` (background: ADR 0008). Today's
   detect-and-refuse stays until this lands; add integration coverage with
   it.
-- [ ] (L) **Service sidecars** (Pete, 2026-07-12): config declares containers
-  byre runs beside the box (postgres, redis, ...) and networks in -- the
-  agent gets endpoints, never the daemon. Covers the compose-deps case
-  without the docker-host grant.
 
 ## Standing
 
@@ -96,6 +88,22 @@ Disciplines and tripwires, not tasks.
 - **`internal/commands` split tripwire:** ~25 files, no internal boundaries
   (2026-07-09 external review). Don't split as a project; next substantial
   work there carves the touched area into its own package.
+
+## Maybe someday
+
+Stuff Pete has nixed from the todo list. Not quite WONTFIX, but not something I
+plan to get to any time soon:
+
+- [ ] (M) **Drag-and-drop into the boxed terminal.** Mostly superseded by
+  `byre deliver`; what remains is drop-directly-onto-the-running-terminal
+  ergonomics. Needs a design pass: path translation, outside paths as a
+  grant question, per-terminal drop behavior.
+
+- [ ] (L) **Service sidecars** (Pete, 2026-07-12): config declares containers
+  byre runs beside the box (postgres, redis, ...) and networks in -- the
+  agent gets endpoints, never the daemon. Covers the compose-deps case
+  without the docker-host grant.
+
 
 ## Parked / consciously not doing
 
