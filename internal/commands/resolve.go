@@ -20,24 +20,37 @@ type resolved struct {
 	cat     *packages.Catalog
 	mounts  []config.Mount  // config mounts, then skill contributions
 	volumes []config.Volume // config volumes, then skill contributions
+	// mcps is the effective declared MCP set (config ∪ skills, minus config
+	// closures — skills.MCPSet); mcpErr is its cross-source duplicate reject,
+	// carried so validate() can surface it (combine stays error-free).
+	mcps   []skills.MCPDecl
+	mcpErr error
 }
 
 // combine forms the resolved view from a loaded config and its skills — the
-// single place the config+skill mount/volume union is built.
+// single place the config+skill mount/volume union and the effective MCP set
+// are built.
 func combine(cfg config.Config, res skills.Resolved) resolved {
+	mcps, mcpErr := skills.MCPSet(cfg, res)
 	return resolved{
 		cfg:     cfg,
 		skills:  res,
 		mounts:  append(append([]config.Mount{}, cfg.Mounts...), res.Mounts()...),
 		volumes: append(append([]config.Volume{}, cfg.Volumes...), res.Volumes()...),
+		mcps:    mcps,
+		mcpErr:  mcpErr,
 	}
 }
 
 // validate re-checks the combined mount/volume set for target/name collisions
-// across config and skills (each side is already valid on its own).
+// across config and skills (each side is already valid on its own), and the
+// cross-source MCP name collisions MCPSet rejected.
 func (rv resolved) validate() error {
 	if err := (config.Config{Mounts: rv.mounts, Volumes: rv.volumes}).Validate(); err != nil {
 		return fmt.Errorf("config + skills: %w", err)
+	}
+	if rv.mcpErr != nil {
+		return fmt.Errorf("config + skills: %w", rv.mcpErr)
 	}
 	return nil
 }

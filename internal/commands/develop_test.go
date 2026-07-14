@@ -554,3 +554,27 @@ func TestResolvedEgressClosuresSubtractSkillEntries(t *testing.T) {
 		t.Errorf("resolvedEgress = %v, want %v", got, want)
 	}
 }
+
+// The declared MCP set CARRIES egress: each remote server's URL endpoint plus
+// its declared extras join the allowlist (implied by the wiring), and a
+// config `!host` closure subtracts them like anything else — that closure
+// also renders on the MCP's own status row (endpoint-closed coupling).
+// Local (command) servers imply nothing.
+func TestResolvedEgressUnionsMCPImplied(t *testing.T) {
+	var toolkit skills.Skill
+	toolkit.Name = "pete/tools"
+	toolkit.File.MCPs = []config.MCP{
+		{Name: "linear", URL: "https://mcp.linear.app/mcp", Egress: []string{"auth.linear.app"}},
+		{Name: "local", Command: []string{"gh-mcp"}},
+	}
+	cfg := config.Config{
+		MCPs:         []config.MCP{{Name: "blocked", URL: "https://mcp.blocked.example/mcp"}},
+		EgressClosed: []string{"mcp.blocked.example"},
+	}
+	rv := combine(cfg, skills.Resolved{Skills: []skills.Skill{toolkit}})
+	got := resolvedEgress(rv)
+	want := []string{"mcp.linear.app:443", "auth.linear.app:443"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("resolvedEgress = %v, want %v", got, want)
+	}
+}

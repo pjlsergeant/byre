@@ -79,6 +79,18 @@ const (
 	SelfEditDocName        = "self-edit.md"
 )
 
+// MCPConfigName is the build-context filename of the canonical declared MCP
+// set; the core section below COPYs it to MCPConfigPath. The path and the
+// file's format (config.MCPConfigJSON) are a quasi-public contract: baked
+// into EVERY image, empty set included, so an agent command can reference it
+// unconditionally and any consumer (a reviewer CLI, a hand-wired tool) can
+// point at a stable path. Pinned by the golden test; changes are versioned
+// decisions.
+const (
+	MCPConfigName = "mcp.json"
+	MCPConfigPath = "/etc/byre/" + MCPConfigName
+)
+
 // DefaultBase is used when no base is configured (and no template supplies one).
 const DefaultBase = "debian:bookworm"
 
@@ -191,6 +203,12 @@ func Dockerfile(in Input) string {
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", SelfEditDocName, SelfEditDocName)
 		}
 	}
+
+	// The canonical declared MCP set — always baked (empty set included), so
+	// the path exists in every box regardless of agent or adapter. Placed
+	// after skills/agent so an mcp-set change never busts their layers.
+	b.WriteString("\n# --- mcp (canonical declared set; stable path) ---\n")
+	fmt.Fprintf(&b, "COPY %s %s\n", MCPConfigName, MCPConfigPath)
 
 	// Pre-create named-volume mount points owned by the baked UID: Docker seeds a
 	// fresh named volume from the image dir at its mount point (content AND

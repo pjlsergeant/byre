@@ -80,6 +80,66 @@ func TestAssembleWritesAgentFiles(t *testing.T) {
 	}
 }
 
+// The canonical MCP file is baked on EVERY assemble — empty set included —
+// so /etc/byre/mcp.json exists in every box and the claude skill's
+// --mcp-config flag is unconditionally safe. Declared sets render the
+// config+skill union minus config closures (skills.MCPSet), byte-stable.
+func TestAssembleWritesMCPConfig(t *testing.T) {
+	paths := bootstrapped(t)
+	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.MCPConfigName))
+	if err != nil {
+		t.Fatalf("mcp.json not written on the empty set: %v", err)
+	}
+	if string(b) != "{\n  \"mcpServers\": {}\n}\n" {
+		t.Fatalf("empty mcp.json = %q", b)
+	}
+
+	cfg := config.Config{
+		Base:      "node:22",
+		MCPs:      []config.MCP{{Name: "github", Command: []string{"gh-mcp", "stdio"}}},
+		MCPClosed: []string{"telemetry"},
+	}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "pete/tools", File: skills.File{MCPs: []config.MCP{
+		{Name: "linear", URL: "https://mcp.linear.app/mcp"},
+		{Name: "telemetry", Command: []string{"t"}},
+	}}}}}
+	df, err := Assemble(paths, cfg, res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(df, "COPY mcp.json /etc/byre/mcp.json") {
+		t.Errorf("mcp.json COPY missing:\n%s", df)
+	}
+	b, err = os.ReadFile(filepath.Join(paths.ContextDir, gen.MCPConfigName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{`"github"`, `"linear"`, `"url": "https://mcp.linear.app/mcp"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("mcp.json missing %s:\n%s", want, got)
+		}
+	}
+	// The closure reached the skill-declared server (post-union subtraction).
+	if strings.Contains(got, "telemetry") {
+		t.Errorf("closed server leaked into mcp.json:\n%s", got)
+	}
+}
+
+// A cross-source duplicate (the reject MCPSet owns) must fail Assemble too —
+// callers that skipped resolve()'s validate can't bake an ambiguous file.
+func TestAssembleRejectsDuplicateMCP(t *testing.T) {
+	paths := bootstrapped(t)
+	cfg := config.Config{Base: "node:22", MCPs: []config.MCP{{Name: "github", Command: []string{"a"}}}}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "pete/tools", File: skills.File{MCPs: []config.MCP{{Name: "github", Command: []string{"b"}}}}}}}
+	if _, err := Assemble(paths, cfg, res); err == nil || !strings.Contains(err.Error(), "declared by both") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestAssembleStagesFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	// Put a source file in the project dir (paths.Canonical).

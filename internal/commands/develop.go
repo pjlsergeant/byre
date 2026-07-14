@@ -425,9 +425,12 @@ func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 }
 
 // resolvedEgress is the full normalized allowlist the netns helper enforces:
-// every enabled skill's declared egress plus the config `egress` key
-// (ADR 0019), deduped as host:port. The config entries are already validated
-// by the resolved config, so a parse failure here is unreachable and skipped.
+// every enabled skill's declared egress, the config `egress` key (ADR 0019),
+// and the egress the declared MCP set CARRIES (each remote server's URL
+// endpoint plus its declared extras — implied by the wiring, attributed
+// mcp:<name> on status), deduped as host:port. The config entries are already
+// validated by the resolved config, so a parse failure here is unreachable
+// and skipped.
 func resolvedEgress(rv resolved) []string {
 	out := rv.skills.Egress()
 	seen := map[string]bool{}
@@ -440,6 +443,13 @@ func resolvedEgress(rv resolved) []string {
 			continue
 		}
 		hp := fmt.Sprintf("%s:%d", host, port)
+		if !seen[hp] {
+			seen[hp] = true
+			out = append(out, hp)
+		}
+	}
+	for _, a := range skills.MCPEgress(rv.mcps) {
+		hp := fmt.Sprintf("%s:%d", a.Host, a.Port)
 		if !seen[hp] {
 			seen[hp] = true
 			out = append(out, hp)

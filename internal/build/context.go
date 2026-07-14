@@ -121,6 +121,18 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 			return "", err
 		}
 	}
+	// The canonical declared MCP set — written on every assemble (the COPY is
+	// unconditional), empty set included, so /etc/byre/mcp.json exists in
+	// every box and an agent command can inject it unconditionally. resolve()
+	// already rejected cross-source duplicates; recomputing here keeps
+	// Assemble correct for callers that didn't.
+	mcps, err := skills.MCPSet(cfg, res)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(ctxPath(paths, gen.MCPConfigName), config.MCPConfigJSON(skills.MCPList(mcps)), 0o644); err != nil {
+		return "", err
+	}
 	// The chassis speaks first: mechanism facts every box carries (today, the
 	// deliver inbox), then the skills' opinions in enable order. Chassis text
 	// is a mechanism description like /workspace — not a skill's opinion — so

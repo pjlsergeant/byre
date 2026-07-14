@@ -36,8 +36,13 @@ dockerfile = [
 [runtime]
 # Keep ALL Claude state inside the .claude volume (otherwise Claude uses
 # ~/.claude.json at the home root, which isn't persisted). DEVCONTAINER helps it
-# run headless.
-env = { CLAUDE_CONFIG_DIR = "/home/dev/.claude", DEVCONTAINER = "true", COLORTERM = "truecolor" }
+# run headless. ENABLE_CLAUDEAI_MCP_SERVERS=false keeps the user's claude.ai
+# account connectors (remote MCP servers attached to the ACCOUNT, not this box)
+# out of the session: they are ambient host-account authority, and deny-by-
+# default means the box doesn't inherit them just because the login does
+# (verified: the var filters them from `claude mcp list`). Byre's own declared
+# [[mcp]] servers arrive via --mcp-config below, unaffected.
+env = { CLAUDE_CONFIG_DIR = "/home/dev/.claude", DEVCONTAINER = "true", COLORTERM = "truecolor", ENABLE_CLAUDEAI_MCP_SERVERS = "false" }
 # Egress this agent needs if a firewall skill is enabled (host[:port], default
 # 443). The firewall unions every enabled skill's egress into its allowlist, so
 # claude carries its OWN endpoints rather than the firewall hardcoding them.
@@ -50,7 +55,18 @@ env = { CLAUDE_CONFIG_DIR = "/home/dev/.claude", DEVCONTAINER = "true", COLORTER
 egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.anthropic.com"]
 
 [agent]
-command = "claude --dangerously-skip-permissions"
+# --mcp-config injects byre's declared [[mcp]] set (baked at /etc/byre/mcp.json,
+# present in every image — empty set included, so the flag is safe
+# unconditionally). Injection is the whole claude adapter: no state writes, no
+# registrar, exact per-session convergence by construction. Same-name semantics
+# (spike-verified 2026-07-15): an injected server SHADOWS a user-added state
+# twin (which never spawns); other user-added servers still union in. Attach
+# shells (`byre shell` -> claude) don't carry the flag — the shell is not the
+# agent session.
+command = "claude --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json"
+# mcp = "inject" is the author's vouch that the command above consumes the
+# baked file; status keys delivery reporting off it.
+mcp = "inject"
 state = ".claude"
 # Where Claude reads user memory: $CLAUDE_CONFIG_DIR/CLAUDE.md. byre places the
 # concatenated skill [context] here at runtime (the .claude volume is only mounted
