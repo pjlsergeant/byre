@@ -190,6 +190,8 @@ func TestAgentsMDPinsItsClaims(t *testing.T) {
 		"byre preset apply",
 		"enables it implicitly",
 		"the template (it pulls in a whole config layer)",
+		"skills = [...]",
+		"or naming it as the layer's",
 		// Immutability + the sanctioned escape.
 		"NEVER edit anything here",
 		"byre skill fork",
