@@ -1,5 +1,17 @@
 # Changes
 
+## Unreleased
+
+- **`skill|template pack` output is now a fixed point of pack.** Re-packing
+  a previously packed manifest (the documented publishing flow writes pack
+  output over the primary in place) used to accrete a duplicate generated
+  marker comment per round, and the source file's trailing-blank shape
+  leaked into the emitted bytes -- identical payloads could pack to
+  different digests. Pack now strips its own stale markers (only when
+  attached to a `[[package.files]]` block; lookalike lines in strings or
+  author comments survive) and normalizes trailing whitespace, so
+  `pack(pack(x)) == pack(x)` byte-for-byte, digest included.
+
 ## v0.2.0 -- 2026-07-13
 
 **Breaking:** the `codereview` and `devlog` skills moved out of the binary
