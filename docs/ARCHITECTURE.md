@@ -411,7 +411,10 @@ Build-time (the **core block**, identical everywhere, always cached):
   never runs as root and there is no runtime `gosu` (it stays installed
   as a *build-only* helper for skill installs).
 - Strip inherited `HEALTHCHECK`s (a base's probe could do network I/O
-  before a firewall gate lands -- ADR 0011).
+  before a firewall gate lands -- ADR 0011). Because the last
+  `HEALTHCHECK` in a Dockerfile wins, `HEALTHCHECK NONE` is re-asserted
+  at the tail alongside `USER`/`ENTRYPOINT`, so a raw skill or
+  `dockerfile_post` line can't reintroduce one.
 - Install the launcher as the constant ENTRYPOINT.
 
 Runtime constants:
