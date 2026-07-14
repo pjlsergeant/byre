@@ -16,11 +16,11 @@ import (
 	"github.com/pjlsergeant/byre/internal/deliver"
 )
 
-// Host clipboard READ for deliver's no-arg mode. Import priority (decisions
-// D17): file references → image → text. File references resolve to paths and
+// Host clipboard READ for deliver's no-arg mode. Import priority (ADR
+// 0021): file references → image → text. File references resolve to paths and
 // ride path mode; images and text land as clipboard-<timestamp> captures
 // whose extension follows the format the pasteboard ACTUALLY held (never
-// transcode, never mislabel — D11).
+// transcode, never mislabel).
 //
 // The backend normalizes both platforms to MIME-ish type tags so priority
 // and parsing are unit-testable; only the tool invocations are platform code.
@@ -153,7 +153,7 @@ func pickImageType(types []string) string {
 	return ""
 }
 
-// extFor names a capture after the format actually read (D11).
+// extFor names a capture after the format actually read (never mislabel).
 func extFor(mime string) string {
 	switch mime {
 	case "image/png":

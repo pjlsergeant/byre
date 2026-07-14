@@ -804,7 +804,7 @@ target = "/home/dev/.claude"
 	}
 }
 
-// D9e: a missing skill with a [sources] hint prints the exact install
+// A missing skill with a [sources] hint prints the exact install
 // command; without one, the plain not-found error stands.
 func TestResolveMissingSkillPrintsSourceHint(t *testing.T) {
 	cat := catFor(t, t.TempDir())

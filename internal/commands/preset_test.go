@@ -42,11 +42,11 @@ func TestPresetApplyWritesConfigAndMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("applied marker not written: %v", err)
 	}
-	// Marker = hash + source (D16c step 6).
+	// Marker = hash + source (apply step 6).
 	if !strings.Contains(string(rec), PresetName) {
 		t.Errorf("marker should record the source: %q", rec)
 	}
-	// Steady state (D17 state 2): no note.
+	// Steady state (drift state 2): no note.
 	if note := presetNote(proj, p); note != "" {
 		t.Errorf("applied+matching preset must be silent, got %q", note)
 	}
@@ -77,7 +77,7 @@ func TestPresetApplyDeclineWritesNothing(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.Dir, "applied")); !os.IsNotExist(err) {
 		t.Error("declined apply must not write the marker")
 	}
-	// No sticky decline exists anymore (D17): the state stays "unapplied"
+	// No sticky decline exists anymore: the state stays "unapplied"
 	// and the passive note keeps showing. Nothing re-prompts on its own.
 	if state, _ := presetState(proj, p); state != "unapplied" {
 		t.Errorf("state = %q, want unapplied", state)
@@ -199,7 +199,7 @@ func TestPresetApplyRejectsInvalidLayer(t *testing.T) {
 	}
 }
 
-// The chauffeur (D16c step 3): a preset referencing a missing package with a
+// The chauffeur (apply step 3): a preset referencing a missing package with a
 // [sources] hint walks the user through that package's own install consent;
 // the apply then reviews a complete catalog.
 func TestPresetApplyChauffeursHintedInstall(t *testing.T) {
@@ -238,7 +238,7 @@ skills = ["pete/linter"]
 
 // Declining a chauffeured install still completes the apply honestly: the
 // reference stays in the written config, the review marks it, the box fails
-// loudly at develop (D16c).
+// loudly at develop.
 func TestPresetApplyDeclinedInstallStillApplies(t *testing.T) {
 	p, proj := onboardPaths(t)
 	uri, digest := publishSkill(t, "pete/linter", "1.0.0", "")
@@ -297,7 +297,7 @@ skills = ["pete/linter"]
 	}
 }
 
-// The D17 record sweep: pre-preset `adopted` records migrate to `applied`
+// The record sweep: pre-preset `adopted` records migrate to `applied`
 // markers (history preserved into the drift states); `declined` records are
 // deleted (nothing left to decline).
 func TestAdoptionRecordSweep(t *testing.T) {
@@ -324,7 +324,7 @@ func TestAdoptionRecordSweep(t *testing.T) {
 	}
 }
 
-// Develop never prompts about a repo preset (D17): passive note only.
+// Develop never prompts about a repo preset: passive note only.
 func TestDevelopPresetNoteIsPassive(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
@@ -354,7 +354,7 @@ func TestPresetBuiltinTemplateOnFreshHome(t *testing.T) {
 	}
 }
 
-// An explicit path argument works (a preset can come from anywhere, D16a).
+// An explicit path argument works (a preset can come from anywhere).
 func TestPresetApplyExplicitPath(t *testing.T) {
 	p, proj := onboardPaths(t)
 	elsewhere := filepath.Join(t.TempDir(), "team.preset")
@@ -583,7 +583,7 @@ func TestPresetInspectAbortsOnUnreadableStoreConfig(t *testing.T) {
 
 // The passive drift check runs on every develop/status, before anyone asked
 // byre to read the repo's preset -- a cloned repo must not make it allocate
-// an arbitrarily large file (the same D1h bound apply/inspect enforce).
+// an arbitrarily large file (the same size bound apply/inspect enforce).
 func TestPresetStateBoundsOversizedPreset(t *testing.T) {
 	p, proj := onboardPaths(t)
 	big := strings.Repeat("# padding padding padding padding padding\n", packages.MaxManifestBytes/40)

@@ -1,11 +1,11 @@
 package packages
 
 // RetiredNames is the permanent in-binary table of bare names that a past
-// byre release bundled and a later release does not (D15). They stay
+// byre release bundled and a later release does not. They stay
 // protected exactly like bundled bare names -- no local or installed
-// package may claim them; legacy dirs bearing them are LEGACY rows (D10).
+// package may claim them; legacy dirs bearing them are LEGACY rows.
 //
-// Map values are one-line tombstones for D9e remedy text. The pinned install
+// Map values are one-line tombstones for remedy text. The pinned install
 // hints are a migration aid and may be trimmed to bare "retired; see CHANGES"
 // text in a later release; the name protection itself is permanent.
 var RetiredNames = map[string]string{

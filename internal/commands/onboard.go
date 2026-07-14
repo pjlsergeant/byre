@@ -70,7 +70,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// question would drop whatever the previous one buffered ahead.
 	in := bufio.NewReader(s.In)
 
-	// Shared-auth offer (ADR 0025 / D2): all catalog claimants with provenance
+	// Shared-auth offer (ADR 0025): all catalog claimants with provenance
 	// labels; multi-claim -> numbered picker; single-claim keeps [y/N].
 	sharedAuthFor := func(agent string) onboard.SharedAuthOffer {
 		return buildSharedAuthOffer(paths.Home, cat, agent)
@@ -187,7 +187,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
-// buildSharedAuthOffer assembles the D2 offer for agent: live claimants with
+// buildSharedAuthOffer assembles the shared-auth offer for agent: live claimants with
 // provenance labels, saved pick prefill, and a stale-pick notice when needed.
 func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onboard.SharedAuthOffer {
 	var offer onboard.SharedAuthOffer

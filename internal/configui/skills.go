@@ -22,7 +22,7 @@ type skillEntry struct {
 	inherited   bool // a LOWER cascade layer (default/template) enables it
 	removedHere bool // this layer carries a `!name` removal marker for it
 	// Provenance label (dimmed) and optional disabled reason (INVALID/
-	// conflict/LEGACY) — D13. disabled rows are not toggleable.
+	// conflict/LEGACY). disabled rows are not toggleable.
 	provLabel string
 	disabled  string // non-empty => disabled-with-reason
 }
@@ -129,7 +129,7 @@ func (m model) skillEntries() []skillEntry {
 		}
 	}
 	// Problem rows from the catalog (INVALID/conflict/LEGACY) appear
-	// disabled-with-reason rather than vanishing (D13).
+	// disabled-with-reason rather than vanishing.
 	if m.inh.Catalog != nil {
 		for _, ent := range m.inh.Catalog.ListProblemRows(packages.KindSkill) {
 			name := ent.DisplayName()
@@ -158,7 +158,7 @@ func (m model) skillEntries() []skillEntry {
 // nestSharedAuth moves each shared-auth companion (a skill declaring
 // shared_auth_for, ADR 0017/0025) out of the flat skills list and inserts it
 // as an indented child directly under its agent's row, so the pairing is
-// visible at the point of enablement. Pairing is by canonical ID (D2, alias
+// visible at the point of enablement. Pairing is by canonical ID (alias
 // expansion when a catalog is present). A companion whose agent has no row
 // stays a plain skill. Only non-agent rows nest: a skill that is itself
 // agent-capable keeps its top-level agent row (nesting one agent — possibly

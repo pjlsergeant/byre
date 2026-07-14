@@ -49,9 +49,9 @@ type Favourite struct {
 }
 
 // SharedAuthOffer is what the caller passes for one agent's shared-auth
-// decision (D2): zero or more provenance-labeled claimants, a yes-inclination
-// prefill (legacy array), an optional saved companion pick, and a notice when
-// the saved pick is no longer available.
+// decision (ADR 0025): zero or more provenance-labeled claimants, a
+// yes-inclination prefill (legacy array), an optional saved companion pick,
+// and a notice when the saved pick is no longer available.
 type SharedAuthOffer struct {
 	// Claimants are display names of companions to offer (already filtered for
 	// machine-wide enablement). Labels[i] is the provenance label for
@@ -59,7 +59,7 @@ type SharedAuthOffer struct {
 	// own machine-volume disclosure (may be empty).
 	Claimants   []string
 	Labels      []string // same length as Claimants
-	VolumeNotes []string // same length as Claimants; per-claimant (D2 round 3)
+	VolumeNotes []string // same length as Claimants; per-claimant
 	// PrefYes is a legacy yes-inclination with no pick (array shape).
 	PrefYes bool
 	// PrefPick is a saved companion display name to preselect in the picker
@@ -162,7 +162,7 @@ func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, pr
 	return yes, err
 }
 
-// OfferSharedAuthChoice runs the D2 shared-auth offer: single claimant keeps
+// OfferSharedAuthChoice runs the shared-auth offer: single claimant keeps
 // [y/N] (plus provenance line and optional volume note); multi-claim is a
 // numbered picker (bundled-first already sorted by the caller), N = none.
 // Returns the chosen companion display name ("" on decline) and whether the
@@ -234,7 +234,7 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 		}
 	}
 
-	// Multi-claim picker (D2b): per-claimant volume notes under each row.
+	// Multi-claim picker: per-claimant volume notes under each row.
 	fmt.Fprintf(out, "Several shared-auth companions claim %s:\n", agent)
 	pre := 0 // 1-based prefill index; 0 = none
 	for i, c := range offer.Claimants {

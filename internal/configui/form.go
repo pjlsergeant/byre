@@ -306,7 +306,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.ti.SetValue(cfg.Base)
 	m.tmplOpts = pickerOpts(m.templates, cfg.Template)
 	m.agentOpts = pickerOpts(m.agents, cfg.Agent)
-	// D13: problem rows appear in pickers disabled-with-reason (round 3).
+	// Problem rows appear in pickers disabled-with-reason.
 	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
 	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
 	m.engineOpts = []string{"auto", "docker", "podman"}
@@ -885,7 +885,7 @@ func renderSeg(opts []string, sel int, focused bool) string {
 	return strings.Join(parts, " ")
 }
 
-// renderPick is renderSeg plus D13 provenance dimming and disabled-with-reason
+// renderPick is renderSeg plus provenance dimming and disabled-with-reason
 // for the selected option (template/agent pickers).
 func (m model) renderPick(opts []string, sel int, focused bool) string {
 	parts := make([]string, len(opts))

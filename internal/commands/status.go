@@ -87,7 +87,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	if selfEdit {
 		info.SelfEdit = paths.Dir
 	}
-	// D17 drift states: passive visibility of a repo-shipped preset, states
+	// Preset drift states: passive visibility of a repo-shipped preset, states
 	// 1 (not applied) and 3 (diverged); the steady state stays silent.
 	info.Proposal = presetNote(projectDir, paths)
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
@@ -159,7 +159,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	return nil
 }
 
-// pkgLine formats "id  provenance" for status (D13). Falls back to the bare
+// pkgLine formats "id  provenance" for status. Falls back to the bare
 // name when the catalog has no entry.
 func pkgLine(cat *packages.Catalog, name string) string {
 	if name == "" {
@@ -324,7 +324,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	} else if len(s.Skills) == 0 {
 		row("Skills", "none")
 	} else {
-		// D13: one row per skill with provenance label.
+		// One row per skill with provenance label.
 		for i, name := range s.Skills {
 			label := "Skills"
 			if i > 0 {

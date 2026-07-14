@@ -25,12 +25,12 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 	}
 	landed, err := deliverWith(s, dir, opts, sources, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s))
 	// Graphical launches (the deliver app, a .desktop entry) have no terminal
-	// to read: the outcome ALSO goes to the notification center (D19).
+	// to read: the outcome ALSO goes to the notification center.
 	deliverNotify(s, landed, err)
 	return err
 }
 
-// deliverSources resolves the input mode (decisions D17-D19): path args →
+// deliverSources resolves the input mode (ADR 0021): path args →
 // files; `-` → stdin stream; no args on a TTY → the paste beat, then the
 // pasteboard; no args with piped stdin → stream it; no args, no TTY, no pipe
 // (a graphical launch) → read the pasteboard immediately. A nil, nil return
@@ -213,7 +213,7 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 	}
 	for _, r := range engines {
 		// Deliver inherits develop's rootless-Podman detect-and-warn (ADR
-		// 0008 via decisions D3): exec-stream ownership can be wrong there,
+		// 0008): exec-stream ownership can be wrong there,
 		// so the claim degrades up front; delivery itself is not blocked.
 		warnRootlessPodman(s.Err, r)
 		cfg.Engines = append(cfg.Engines, engineAdapter{r})

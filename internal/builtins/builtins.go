@@ -86,7 +86,8 @@ func ensureNotices(w io.Writer) io.Writer {
 	return w
 }
 
-// ArchiveLegacy moves LEGACY materialized dirs aside (D10).
+// ArchiveLegacy moves LEGACY materialized dirs aside (materialization is
+// retired -- ADR 0029).
 func ArchiveLegacy(home string) ([]string, error) {
 	return packages.ArchiveLegacy(home, fsys)
 }

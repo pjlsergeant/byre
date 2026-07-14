@@ -24,7 +24,7 @@ type Clipboard struct {
 // clipboardPayload is what lands on the clipboard: the delivered paths, one
 // per line, lazily quoted — the string you'd have typed by hand if you were
 // being careful, built for pasting into an agent prompt. stdout stays
-// unquoted; the two formats are deliberately different (decisions D12-D13).
+// unquoted; the two formats are deliberately different (ADR 0021).
 func clipboardPayload(paths []string) string {
 	quoted := make([]string, len(paths))
 	for i, p := range paths {

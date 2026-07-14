@@ -54,7 +54,7 @@ func TestReadClipboardImageBeatsText(t *testing.T) {
 }
 
 func TestReadClipboardImageExtensionIsHonest(t *testing.T) {
-	// A TIFF on the board must not be named .png (decisions D11).
+	// A TIFF on the board must not be named .png (never mislabel).
 	cb := backend([]string{"image/tiff"}, map[string][]byte{"image/tiff": []byte("TIFF")})
 	sources, err := readClipboard(cb, fixedNow, io.Discard)
 	if err != nil {

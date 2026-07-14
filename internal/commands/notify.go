@@ -8,7 +8,7 @@ import (
 )
 
 // OS notifications are deliver's feedback channel for GRAPHICAL launches
-// (decisions D19): the deliver app and .desktop entry run byre with no
+// (ADR 0021): the deliver app and .desktop entry run byre with no
 // terminal, so stdout/stderr land nowhere a human looks. When there's no TTY
 // but a GUI session exists, the outcome — success summary or failure — goes
 // to the notification center (osascript on macOS, notify-send on Linux;

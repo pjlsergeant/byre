@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// SharedAuthPref is the dual-shape shared_auth favourite (D2c):
+// SharedAuthPref is the dual-shape shared_auth favourite (ADR 0025):
 //
 //	shared_auth = ["claude"]                          # legacy: yes, no pick
 //	[shared_auth]
@@ -69,7 +69,7 @@ func (s SharedAuthPref) CompanionPick(agent string) string {
 	return s.Pick[agent]
 }
 
-// UnmarshalTOML accepts both array and table shapes (D2c).
+// UnmarshalTOML accepts both array and table shapes.
 func (s *SharedAuthPref) UnmarshalTOML(data interface{}) error {
 	switch v := data.(type) {
 	case []interface{}:

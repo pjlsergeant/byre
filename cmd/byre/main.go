@@ -416,7 +416,7 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 		uninstallCmd(s, "skill", commands.SkillUninstall),
 		&cobra.Command{
 			Use:   "pack <name>",
-			Short: "Emit the distribution manifest for a local skill (D5c).",
+			Short: "Emit the distribution manifest for a local skill.",
 			Args:  cobra.ExactArgs(1),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillPack(s, args[0]) },
 		},
@@ -446,7 +446,7 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "update",
-			Short: "Explain that bundled packages update with byre itself (D11 stub).",
+			Short: "Explain that bundled packages update with byre itself (stub).",
 			Args:  noArgsU,
 			RunE:  func(cmd *cobra.Command, args []string) error { return a.skillUpdate(s) },
 		},
@@ -460,7 +460,7 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 	return skill
 }
 
-// presetCmd is the D16 noun: a preset is a saved answer to onboarding's
+// presetCmd: a preset is a saved answer to onboarding's
 // questions -- a config proposal from anywhere -- reviewed and applied as the
 // project's byre.config. Not a package: no identity, no install.
 func presetCmd(dir string, s commands.Streams) *cobra.Command {
@@ -500,8 +500,8 @@ func presetCmd(dir string, s commands.Streams) *cobra.Command {
 }
 
 // installCmd / uninstallCmd build the shared install/uninstall verbs for both
-// package nouns (D8 parity, D9 flags: --digest pins bytes, --yes is the
-// non-TTY consent for state-changing steps).
+// package nouns, with identical flags: --digest pins bytes, --yes is the
+// non-TTY consent for state-changing steps.
 func installCmd(s commands.Streams, noun string, fn func(commands.Streams, string, string, bool) error) *cobra.Command {
 	var digest string
 	var yes bool
@@ -558,7 +558,7 @@ func templateCmd(s commands.Streams) *cobra.Command {
 		uninstallCmd(s, "template", commands.TemplateUninstall),
 		&cobra.Command{
 			Use:   "pack <name>",
-			Short: "Emit the distribution manifest for a local template (D5c).",
+			Short: "Emit the distribution manifest for a local template.",
 			Args:  cobra.ExactArgs(1),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplatePack(s, args[0]) },
 		},

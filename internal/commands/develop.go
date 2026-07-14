@@ -58,7 +58,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 		return err
 	}
 	// Store-ensure (bundled mirror + LEGACY notices) rides every develop so an
-	// upgraded byre surfaces D10 without requiring `skill update` (D7b/D10).
+	// upgraded byre surfaces them without requiring `skill update`.
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	// prompts below are understood as configuring the whole project (all its worktrees).
 	announceWorktree(s.Err, paths)
 	// A repo-shipped preset is like package.json: cloning gives you a file,
-	// not a prompt (D17 — the adoption offer is retired). Passive visibility
+	// not a prompt (the adoption offer is retired). Passive visibility
 	// only: state 1 (not applied) and state 3 (diverged) get one note; the
 	// steady state is silent. `byre preset apply` is the solicited flow.
 	if note := presetNote(projectDir, paths); note != "" {

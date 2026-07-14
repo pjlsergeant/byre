@@ -11,7 +11,7 @@ import (
 	"unicode"
 )
 
-// Kind discriminates package kinds. One package = one kind (D3d).
+// Kind discriminates package kinds. One package = one kind.
 type Kind string
 
 const (
@@ -31,13 +31,13 @@ const (
 	ProvConflict  Provenance = "conflict"
 )
 
-// ID grammar (D1h): segment(/segment)? where segment = [a-z0-9][a-z0-9-]{0,63}.
+// ID grammar: segment(/segment)? where segment = [a-z0-9][a-z0-9-]{0,63}.
 // Lowercase only; no dots; no leading '!'; the literal "none" is reserved.
 var (
 	segmentRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 )
 
-// ValidateID checks a canonical package ID against D1h. bareOK allows a single
+// ValidateID checks a canonical package ID against the grammar above. bareOK allows a single
 // segment (local packages may be bare; installed must be qualified).
 func ValidateID(id string, bareOK bool) error {
 	if id == "" {
@@ -64,7 +64,7 @@ func ValidateID(id string, bareOK bool) error {
 				return fmt.Errorf("package id %q: invalid segment %q (want [a-z0-9][a-z0-9-]{0,63})", id, p)
 			}
 		}
-		// byre/* is permanently reserved for bundled-in-this-binary (D1b).
+		// byre/* is permanently reserved for bundled-in-this-binary.
 		// Claiming it is only legal for the bundled provider; local/installed
 		// paths reject it after ValidateID via Owner checks.
 	default:
@@ -99,7 +99,7 @@ func BundledID(bare string) string {
 	return "byre/" + bare
 }
 
-// LocalDir maps a package ID to its store-relative directory path (D1a):
+// LocalDir maps a package ID to its store-relative directory path:
 // bare my-linter -> my-linter; qualified pete/claude -> pete/claude.
 func LocalDir(id string) string {
 	return id // nested path IS the id for local packages
@@ -118,7 +118,7 @@ func ShellArg(s string) string {
 }
 
 // EscapeTerminal strips control characters and ANSI CSI/OSC sequences from a
-// string that will be printed as DATA on a terminal surface (D1h). Keeps
+// string that will be printed as DATA on a terminal surface. Keeps
 // printable runes only.
 func EscapeTerminal(s string) string {
 	var b strings.Builder

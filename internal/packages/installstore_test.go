@@ -137,7 +137,7 @@ func TestOrphanSweep(t *testing.T) {
 		t.Fatal("non-digest dirs must be left alone")
 	}
 	if _, err := os.Stat(filepath.Join(packagesDir(home), ".gitignore")); err != nil {
-		t.Fatal("self-ignoring .gitignore must exist (D7d)")
+		t.Fatal("self-ignoring .gitignore must exist")
 	}
 }
 

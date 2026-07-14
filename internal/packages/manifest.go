@@ -8,10 +8,10 @@ import (
 )
 
 // PackageAPI is the manifest-format contract byre currently understands.
-// Bump only when the frozen [package] core itself changes (D4b/c).
+// Bump only when the frozen [package] core itself changes.
 const PackageAPI = 1
 
-// Manifest is the frozen [package] core (D4b), shared by skills and templates.
+// Manifest is the frozen [package] core, shared by skills and templates.
 // Stage-1 parse reads only these fields, leniently, for compatibility checks.
 type Manifest struct {
 	ID           string `toml:"id"`
@@ -29,7 +29,7 @@ type packageRoot struct {
 
 // ParseManifestCore is stage 1: extract [package] leniently (unknown keys
 // outside and inside [package] are ignored). Missing [package] returns a
-// zero Manifest and ok=false -- local packages may omit it (D4a).
+// zero Manifest and ok=false -- local packages may omit it.
 func ParseManifestCore(content []byte) (m Manifest, ok bool, err error) {
 	var root packageRoot
 	// Lenient: do NOT check Undecoded. Stage 1 must survive a newer package
@@ -151,7 +151,7 @@ func StripPackageTable(content []byte) []byte {
 }
 
 // GenerateBundledHeader returns the [package] TOML block injected into bundled
-// manifests at load/mirror time (D4d). version equals the byre release.
+// manifests at load/mirror time. version equals the byre release.
 func GenerateBundledHeader(id, kind, byreVersion, description string) string {
 	var b strings.Builder
 	b.WriteString("[package]\n")

@@ -269,7 +269,7 @@ func TestLoadCascade(t *testing.T) {
 	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Templates are shape only (D3b): no skills/agent. Composition is the
+	// Templates are shape only: no skills/agent. Composition is the
 	// project's (or a preset's) job.
 	writeFile(t, filepath.Join(tmplDir, "template.config"),
 		"base = \"node:22\"\napt = [\"build-essential\"]\n")
@@ -297,7 +297,7 @@ func TestLoadCascade(t *testing.T) {
 	}
 }
 
-// Templates may not set agent/skills (D3b). A hand-made template that does
+// Templates may not set agent/skills. A hand-made template that does
 // is INVALID and Load fails when it is selected. template = "none" still
 // resolves as no template at all (not a lookup of a template named "none").
 func TestTemplateAgentBannedAndNoneSentinel(t *testing.T) {

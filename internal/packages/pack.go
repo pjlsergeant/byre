@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-// Pack emits the distribution manifest for a LOCAL package (D5c): the primary
+// Pack emits the distribution manifest for a LOCAL package: the primary
 // file's body with a normalized [package] header and a generated, exhaustive
 // [[package.files]] list -- every file in the package directory except the
 // primary itself, hashes computed from disk. Returns the manifest bytes and
-// the package digest (D5f) over them.
+// the package digest over them.
 //
 // Pack refuses rather than inventing identity: the author must have declared
-// a qualified id (D1d), a version, and a requires_byre constraint in
+// a qualified id, a version, and a requires_byre constraint in
 // [package] -- those are publishing decisions. kind and package_api are
 // mechanical and filled in.
 func Pack(ent *Entry) ([]byte, string, error) {

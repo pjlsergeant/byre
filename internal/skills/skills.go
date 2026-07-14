@@ -478,7 +478,7 @@ func (r Resolved) AgentPrefs() *PrefsSpec {
 }
 
 // ListSkills returns display names of all loadable skills in the catalog,
-// sorted. Bundled skills appear under their bare alias (D1c); local/installed
+// sorted. Bundled skills appear under their bare alias; local/installed
 // under their canonical ID. This is the set selectable via the `skills` list —
 // including agent skills, which can legitimately be enabled as a plain skill.
 func ListSkills(cat *packages.Catalog) []string {
@@ -499,13 +499,13 @@ func DescribeSkills(cat *packages.Catalog) map[string]string {
 
 // SharedAuthClaimants returns every loadable skill that declares itself a
 // shared-auth companion for agent (exact canonical-ID match after alias
-// expansion, D2). Bundled claimants list first; order among peers is by
+// expansion). Bundled claimants list first; order among peers is by
 // display name. Empty when none claim.
 func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
 	if agent == "" || cat == nil {
 		return nil
 	}
-	// Pairing is by exact canonical ID (D2).
+	// Pairing is by exact canonical ID.
 	agentCanon := cat.ExpandAlias(agent)
 	if agentCanon == "none" || agentCanon == "" {
 		return nil
@@ -533,7 +533,7 @@ func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
 
 // SharedAuthCompanion returns the single ready shared-auth companion for
 // agent, or "" when none or several claim (legacy single-claim helper). Prefer
-// SharedAuthClaimants + picker for D2 multi-claim.
+// SharedAuthClaimants + picker for multi-claim.
 func SharedAuthCompanion(cat *packages.Catalog, agent string) string {
 	cs := SharedAuthClaimants(cat, agent)
 	if len(cs) != 1 {
@@ -701,7 +701,7 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		return Resolved{}, fmt.Errorf("skills: no catalog")
 	}
 	// Expand aliases so enable-order comparisons and agent matching use
-	// canonical IDs. Config resolution (D1g) should already have done this;
+	// canonical IDs. Config resolution should already have done this;
 	// re-expanding is idempotent and keeps Resolve self-contained for tests.
 	cfg.Agent = cat.ExpandAlias(cfg.Agent)
 	for i, s := range cfg.Skills {
@@ -719,13 +719,13 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		if name == "" || name == "none" {
 			continue
 		}
-		// ID grammar is the load-bearing name check (D1h); rejects path escapes.
+		// ID grammar is the load-bearing name check; rejects path escapes.
 		if err := packages.ValidateID(strings.TrimPrefix(name, "!"), true); err != nil {
 			return Resolved{}, fmt.Errorf("invalid skill name %q: %w", name, err)
 		}
 		sk, err := Load(cat, name)
 		if err != nil {
-			// Missing-reference errors always print the remedy (D9e): the
+			// Missing-reference errors always print the remedy: the
 			// exact install command when a [sources] hint names one. Never
 			// fetched -- acquisition on a third party's initiative is banned.
 			if hint, ok := cfg.Sources[name]; ok {
@@ -949,8 +949,8 @@ func validateContainment(s string) error {
 	return nil
 }
 
-// validateSkillName requires a skill name to match the package ID grammar
-// (D1h), so it can't escape the store or the build-context staging dir.
+// validateSkillName requires a skill name to match the package ID grammar,
+// so it can't escape the store or the build-context staging dir.
 func validateSkillName(name string) error {
 	if err := packages.ValidateID(name, true); err != nil {
 		return fmt.Errorf("invalid skill name %q: %w", name, err)

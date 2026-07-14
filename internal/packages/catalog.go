@@ -13,10 +13,10 @@ import (
 
 // Entry is one row in the catalog: a resolvable package, or a scoped problem
 // row (INVALID / conflict / LEGACY) that list surfaces and resolve rejects
-// only when referenced (D1e).
+// only when referenced.
 type Entry struct {
 	ID          string
-	Alias       string // bare name when this is a bundled package (D1c)
+	Alias       string // bare name when this is a bundled package
 	Version     string
 	Kind        Kind
 	Provenance  Provenance
@@ -46,27 +46,27 @@ type Entry struct {
 	// contains an [agent] table (so the agent picker can list them disabled).
 	LooksLikeAgent bool
 
-	// Digest is the D5f package digest (installed packages only): provenance
+	// Digest is the package digest (installed packages only): provenance
 	// of acquisition, shown in labels, never a runtime attestation.
 	Digest string
 	// SourceURI is where an installed package was acquired from (index row).
 	SourceURI string
 }
 
-// Catalog is the multi-provider package index for one store (D1).
+// Catalog is the multi-provider package index for one store.
 type Catalog struct {
 	Home string
 	// DisplayVer is the human-facing byre version (version.String): bundled
-	// Manifest.Version, provenance labels, mirror stamp alignment (D4d).
+	// Manifest.Version, provenance labels, mirror stamp alignment.
 	DisplayVer string
 	// CompatVer is the parseable semver for requires_byre only (version.Semver).
 	CompatVer string
 
 	// entries keyed by canonical ID. Aliases are not keys -- Resolve expands.
 	byID map[string]*Entry
-	// bare alias -> canonical ID (bundled only, D1c/D1f).
+	// bare alias -> canonical ID (bundled only).
 	aliases map[string]string
-	// protected bare names: bundled bare + retired (D1c, D15).
+	// protected bare names: bundled bare + retired.
 	protected map[string]string // bare -> reason
 	// ordered for stable List.
 	order []string
@@ -107,7 +107,7 @@ func LoadCatalog(home string, bundled fs.FS, displayVer, compatVer string) (*Cat
 		Stage2Skill:    Stage2Skill,
 		Stage2Template: Stage2Template,
 	}
-	// Retired names are protected even when not currently bundled (D15).
+	// Retired names are protected even when not currently bundled.
 	for bare, tomb := range RetiredNames {
 		c.protected[bare] = "retired: " + tomb
 	}
@@ -166,14 +166,14 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 				c.addProblem(id, kind.kind, ProvInvalid, "bundled primary missing: "+err.Error(), "")
 				continue
 			}
-			// Bundled manifests are synthesized at load (D4d) — id/version/
+			// Bundled manifests are synthesized at load — id/version/
 			// kind/api/requires always take the generated values; only the
 			// description may come from the file. The mirror's on-disk header
 			// is written separately by EnsureStore (mirrorPrimary).
 			desc := peekDescription(raw)
 			m := Manifest{
 				ID:           id,
-				Version:      c.DisplayVer, // D4d: equals the byre release string
+				Version:      c.DisplayVer, // equals the byre release string
 				Kind:         string(kind.kind),
 				PackageAPI:   PackageAPI,
 				RequiresByre: ">=" + trimV(c.CompatVer),
@@ -206,10 +206,10 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 	return nil
 }
 
-// loadInstalled ingests the installed-package index (D7). Problem states are
-// scoped per identity (D1e): a broken row is INVALID with a remedy, never a
+// loadInstalled ingests the installed-package index. Problem states are
+// scoped per identity: a broken row is INVALID with a remedy, never a
 // catalog failure. Integrity was verified at acquisition; load trusts the
-// index and does not re-hash (D5f scope).
+// index and does not re-hash.
 func (c *Catalog) loadInstalled() error {
 	idx, err := ReadIndex(c.Home)
 	if err != nil {
@@ -231,7 +231,7 @@ func (c *Catalog) loadInstalled() error {
 			continue
 		}
 		prim := primaryFor(kind)
-		// Installed IDs must be qualified (D1d) and can never be byre/*.
+		// Installed IDs must be qualified and can never be byre/*.
 		if err := ValidateID(id, false); err != nil {
 			c.addProblem(id, kind, ProvInvalid, err.Error(), "")
 			continue
@@ -243,7 +243,7 @@ func (c *Catalog) loadInstalled() error {
 		dir := SnapshotDir(c.Home, row.Digest)
 		raw, err := os.ReadFile(filepath.Join(dir, prim))
 		if err != nil {
-			// The exact command, digest-pinned (D9e): a bare URI reinstall
+			// The exact command, digest-pinned: a bare URI reinstall
 			// would silently accept different bytes.
 			c.addProblem(id, kind, ProvInvalid,
 				fmt.Sprintf("snapshot missing or unreadable (%v); reinstall: byre %s install %s --digest sha256:%s",
@@ -316,7 +316,7 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 	if kind == KindTemplate {
 		prim = "template.config"
 	}
-	// Two-level walk (D1a): root/<name>/prim or root/<owner>/<name>/prim.
+	// Two-level walk: root/<name>/prim or root/<owner>/<name>/prim.
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -365,7 +365,7 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		return nil
 	}
 
-	// Legacy: bare dir name matches protected/retired -> never load (D10).
+	// Legacy: bare dir name matches protected/retired -> never load.
 	if IsBare(id) && c.IsProtected(id) {
 		reason := c.protected[id]
 		c.addProblemAgent(id, kind, ProvLegacy,
@@ -379,9 +379,9 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 		return nil
 	}
-	// Problem rows for local dirs are ALWAYS keyed by the store-path id (D1e
-	// scoped failure). A hostile declared id must never displace a bundled
-	// catalog entry (D1b).
+	// Problem rows for local dirs are ALWAYS keyed by the store-path id
+	// (scoped failure). A hostile declared id must never displace a bundled
+	// catalog entry.
 	if hasPkg {
 		if err := CheckCompatibility(m, c.CompatVer); err != nil {
 			c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
@@ -398,7 +398,7 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 			return nil
 		}
 	}
-	// ID defaults to store-relative path (D1a).
+	// ID defaults to store-relative path.
 	canon := id
 	if hasPkg && m.ID != "" {
 		canon = m.ID
@@ -407,7 +407,7 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 		return nil
 	}
-	// Protected bare names cannot be claimed by local packages (D1c).
+	// Protected bare names cannot be claimed by local packages.
 	if IsBare(canon) && c.IsProtected(canon) {
 		c.addProblem(id, kind, ProvInvalid,
 			fmt.Sprintf("%q is protected (%s); pick another id or fork under a qualified name", canon, c.protected[canon]),
@@ -415,7 +415,7 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		return nil
 	}
 	if Owner(canon) == "byre" {
-		// byre/* is bundled-only (D1b). Key by store path, not the claimed id.
+		// byre/* is bundled-only. Key by store path, not the claimed id.
 		c.addProblem(id, kind, ProvInvalid, "byre/* is reserved for bundled packages", dir)
 		return nil
 	}
@@ -486,7 +486,7 @@ func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason,
 
 func (c *Catalog) put(ent *Entry) error {
 	if prev, ok := c.byID[ent.ID]; ok {
-		// Scoped conflict (D1e): replace both with conflict rows. A third or
+		// Scoped conflict: replace both with conflict rows. A third or
 		// later claimant joins the existing row's claimant list -- the reason
 		// must name every location, not just the latest pair.
 		if prev.Provenance != ProvConflict {
@@ -521,7 +521,7 @@ func locationOf(e *Entry) string {
 }
 
 func (c *Catalog) addProblem(id string, kind Kind, prov Provenance, reason, dir string) {
-	// Never displace a bundled entry (D1b/D1e). Problem rows that would collide
+	// Never displace a bundled entry. Problem rows that would collide
 	// with a live bundled id are stored under a sibling key so list can still
 	// show them and ResolveName keeps returning the bundled package.
 	if prev, ok := c.byID[id]; ok && prev.Provenance == ProvBundled {
@@ -571,7 +571,7 @@ func (c *Catalog) IsProtected(bare string) bool {
 }
 
 // ExpandAlias returns the canonical ID for a name: if it is a bundled bare
-// alias, the byre/<name> id; otherwise the name unchanged (D1f). Does not
+// alias, the byre/<name> id; otherwise the name unchanged. Does not
 // check existence.
 func (c *Catalog) ExpandAlias(name string) string {
 	name = strings.TrimSpace(name)
@@ -592,7 +592,7 @@ func (c *Catalog) ExpandAlias(name string) string {
 	return name
 }
 
-// ResolveName is the one resolution function every name surface uses (D1g).
+// ResolveName is the one resolution function every name surface uses.
 // It expands aliases and looks up the catalog. Missing, INVALID, conflict,
 // and LEGACY entries return an error. The returned Entry is always loadable
 // (bundled or local or installed).
@@ -657,7 +657,7 @@ func (c *Catalog) List(kind Kind) []*Entry {
 }
 
 // ListProblemRows returns INVALID/conflict/LEGACY entries for kind (for
-// pickers that must show disabled-with-reason rows, D13).
+// pickers that must show disabled-with-reason rows).
 func (c *Catalog) ListProblemRows(kind Kind) []*Entry {
 	var out []*Entry
 	for _, ent := range c.List(kind) {
@@ -670,7 +670,7 @@ func (c *Catalog) ListProblemRows(kind Kind) []*Entry {
 }
 
 // ListSkills returns loadable skill IDs (and aliases for bundled) for pickers.
-// Prefer alias when present so UIs keep writing friendly bare names (D1c).
+// Prefer alias when present so UIs keep writing friendly bare names.
 func (c *Catalog) ListSkills() []string {
 	return c.listNames(KindSkill, false)
 }
@@ -741,7 +741,7 @@ func (e *Entry) DisplayName() string {
 	return e.ID
 }
 
-// ProvenanceLabel is the short status/list label (D13).
+// ProvenanceLabel is the short status/list label.
 func (e *Entry) ProvenanceLabel() string {
 	switch e.Provenance {
 	case ProvBundled:
@@ -757,7 +757,7 @@ func (e *Entry) ProvenanceLabel() string {
 		return "bundled"
 	case ProvInstalled:
 		// "installed 1.1.0 (sha256:8fe3...)" -- provenance of acquisition,
-		// not a runtime attestation (D5f, D13).
+		// not a runtime attestation.
 		label := "installed"
 		if e.Version != "" {
 			label += " " + e.Version

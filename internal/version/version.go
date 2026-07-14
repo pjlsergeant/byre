@@ -5,7 +5,7 @@
 //	-X github.com/pjlsergeant/byre/internal/version.Version=vX.Y.Z
 //
 // Unstamped builds resolve from Go's module build info, then "(devel)".
-// Bundled package manifests carry this same string (D4d).
+// Bundled package manifests carry this same string (ADR 0029).
 package version
 
 import (

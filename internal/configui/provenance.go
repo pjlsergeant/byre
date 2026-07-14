@@ -31,12 +31,12 @@ type SkillRuntime struct {
 	// pairing is visible at the point of enablement.
 	SharedAuthFor string
 	// Provenance is the package provenance (bundled/local/installed/...) for
-	// D13 dim-row labels; empty when unknown.
+	// dim-row labels; empty when unknown.
 	Provenance string
 	// ProvLabel is the human label ("bundled 0.2.0", "local", ...).
 	ProvLabel string
 	// DisabledReason, when set, marks the row disabled-with-reason (INVALID,
-	// conflict, LEGACY) rather than selectable (D13).
+	// conflict, LEGACY) rather than selectable.
 	DisabledReason string
 }
 
@@ -59,7 +59,7 @@ type Inherited struct {
 	// toggling a skill adds/removes its rows live.
 	Skills map[string]SkillRuntime
 	// Catalog is optional; when set, skill/template rows can show provenance
-	// and disable INVALID/conflict/LEGACY entries (D13).
+	// and disable INVALID/conflict/LEGACY entries.
 	Catalog *packages.Catalog
 }
 

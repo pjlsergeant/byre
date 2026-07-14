@@ -14,14 +14,14 @@ import (
 // piece as argv ($1..) — names are NEVER spliced into script text — and print
 // the landed path as their only stdout, which the host captures.
 //
-// Write protocol (decisions D8): stream stdin to a dotfile temp created under
+// Write protocol (ADR 0021): stream stdin to a dotfile temp created under
 // `set -C` (noclobber = O_CREAT|O_EXCL, refusing to write through any
 // pre-existing name, planted symlinks included), then claim the final name
 // with ln — link(2) fails EEXIST atomically, so uniquify (`report.pdf` →
 // `report-2.pdf`) has no window in which two writers pick the same name and
 // no rename ever clobbers. A died stream leaves at worst an orphaned dotfile.
 //
-// /inbox integrity (D5-D7): the inbox must be a real directory. It is baked
+// /inbox integrity: the inbox must be a real directory. It is baked
 // dev-owned under root-owned / (the agent cannot replace it), so the check is
 // belt-and-braces; a box whose image predates the bake gets the rebuild error
 // (exit 3) rather than a root-exec backfill (reversed in review — ADR 0008).
@@ -79,8 +79,9 @@ done
 `
 
 // mkdirScript creates an interior directory of a claimed tree: $1 dir.
-// Plain mkdir -p — interior structure is ours by construction (see the
-// consciously-accepted race note in decisions D10).
+// Plain mkdir -p — interior structure is ours by construction; an agent
+// racing symlinks into the fresh tree is a consciously accepted race
+// (ADR 0021).
 const mkdirScript = `
 set -eu
 ` + inboxCheck + `
@@ -154,7 +155,7 @@ func deliverStream(cfg Config, sess Session, content io.Reader, name, destDir st
 
 // deliverDir claims /inbox/<dirname> and streams the tree into it, preserving
 // structure. Per-source-entry failures don't stop the walk: successes stay,
-// the summary and returned error carry the count (decisions D9).
+// the summary and returned error carry the count.
 func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	base := filepath.Base(src)
 	stem, ext, sanitized := splitName(base)

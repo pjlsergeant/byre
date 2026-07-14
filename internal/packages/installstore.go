@@ -13,15 +13,15 @@ import (
 	"github.com/pjlsergeant/byre/internal/lock"
 )
 
-// Installed-store layout (D7):
+// Installed-store layout:
 //
 //	~/.byre/packages/<sha256-digest>/   installed snapshots, immutable
 //	~/.byre/packages/index.toml         id -> {digest, version, kind, uri, installed_at}
-//	~/.byre/packages/.lock              store-global mutation lock (D7c)
-//	~/.byre/packages/.gitignore         self-ignoring (D7d)
+//	~/.byre/packages/.lock              store-global mutation lock
+//	~/.byre/packages/.gitignore         self-ignoring
 
 // IndexEntry is one installed package's index row. URI and InstalledAt are
-// provenance for humans, never an instruction byre follows (D9a).
+// provenance for humans, never an instruction byre follows.
 type IndexEntry struct {
 	Digest      string `toml:"digest"`
 	Version     string `toml:"version"`
@@ -95,14 +95,14 @@ func writeIndex(home string, idx map[string]IndexEntry) error {
 	return os.Rename(tmp.Name(), indexPath(home))
 }
 
-// WithStoreLock ensures the packages dir, takes the store-global lock (D7c),
+// WithStoreLock ensures the packages dir, takes the store-global lock,
 // sweeps orphans, and runs fn.
 func WithStoreLock(home string, fn func() error) error {
 	dir := packagesDir(home)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	// Self-ignoring store (D7d): installed snapshots are reproducible
+	// Self-ignoring store: installed snapshots are reproducible
 	// artifacts, not source.
 	gi := filepath.Join(dir, ".gitignore")
 	if _, err := os.Stat(gi); os.IsNotExist(err) {
@@ -119,7 +119,7 @@ func WithStoreLock(home string, fn func() error) error {
 
 var digestDirRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// sweepOrphans removes crash leftovers under the lock (D7c): staging temp
+// sweepOrphans removes crash leftovers under the lock: staging temp
 // dirs, and digest-named snapshot dirs the index does not reference. Runs
 // best-effort; the store must never fail to open because a sweep could not.
 func sweepOrphans(home string) {
@@ -148,7 +148,7 @@ func sweepOrphans(home string) {
 }
 
 // Snapshot is a fully-fetched, verified package ready to land: the manifest
-// bytes (which ARE the primary file, D5c) plus payload contents keyed by
+// bytes (which ARE the primary file) plus payload contents keyed by
 // package-relative destination.
 type Snapshot struct {
 	ID       string
@@ -176,7 +176,7 @@ type Snapshot struct {
 // and the store lock; the caller re-runs so the review reflects reality.
 var ErrStoreChanged = fmt.Errorf("the installed-package index changed while confirming; re-run to review the current state")
 
-// LandSnapshot writes a snapshot and flips the index, crash-safe (D7c):
+// LandSnapshot writes a snapshot and flips the index, crash-safe:
 // snapshot directory completely first, index atomically second, superseded
 // snapshot deleted last. Call inside WithStoreLock.
 func LandSnapshot(home string, s Snapshot) error {
@@ -205,7 +205,8 @@ func LandSnapshot(home string, s Snapshot) error {
 		}
 	case !os.IsNotExist(err):
 		// A Stat failure is NOT "already present": indexing a snapshot we
-		// cannot prove exists breaks D7c's ordering guarantee.
+		// cannot prove exists breaks the snapshot-first, index-second
+		// ordering guarantee.
 		return err
 	default:
 		needWrite = true

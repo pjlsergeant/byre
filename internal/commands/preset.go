@@ -14,15 +14,15 @@ import (
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
-// PresetName is the conventional in-repo preset filename (D16a). byre.config
+// PresetName is the conventional in-repo preset filename. byre.config
 // is reserved for the box's live consent document and nothing else wears its
 // name; a legacy-named repo byre.config is accepted as a preset with the
-// rename note (D17).
+// rename note.
 const PresetName = "byre.preset"
 
-// appliedRecord is the per-project marker `preset apply` writes (D16c step
+// appliedRecord is the per-project marker `preset apply` writes (apply step
 // 6): line 1 = sha256 of the applied preset bytes, line 2 = its source
-// (URI/path). The D17 drift states derive from it. Presets have no package
+// (URI/path). The drift states derive from it. Presets have no package
 // identity or install lifecycle -- the project remembering what it applied is
 // ordinary store state.
 const appliedRecord = "applied"
@@ -35,11 +35,11 @@ type missingRef struct {
 	Hint *config.SourceHint
 }
 
-// PresetApply implements `byre preset apply [<uri>|<path>]` (D16c): fetch and
+// PresetApply implements `byre preset apply [<uri>|<path>]`: fetch and
 // validate the preset, chauffeur installs for missing packages (each its own
 // consent; declining any is allowed), recompute, review, confirm, write.
 func PresetApply(s Streams, projectDir, arg string) error {
-	// Non-TTY apply refuses -- the review is the point (D16c).
+	// Non-TTY apply refuses -- the review is the point.
 	if !s.TTY {
 		return fmt.Errorf("preset apply is interactive (the review is the point) -- run it on a TTY")
 	}
@@ -77,7 +77,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	// consents they solicited by invoking apply. Installs come BEFORE the
 	// write so the preset's own not-yet-written references never make a
 	// chauffeured install "activating" (other stored configs may still
-	// trip D9b' inside the normal install flow, correctly).
+	// trip install-as-activation inside the normal install flow, correctly).
 	for _, m := range missing {
 		if m.Hint == nil {
 			fmt.Fprintf(s.Err, "byre: %s %q is not installed and the preset carries no [sources] hint -- install it yourself (byre %s install <manifest-url>) or continue without it.\n", m.Kind, m.Name, m.Kind)
@@ -87,8 +87,8 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		if err := installForKind(s, m.Kind, m.Hint.URI, m.Hint.Digest); err != nil {
 			// Declining (or a failed fetch) still completes the apply
 			// honestly: the reference stays in the written config, marked in
-			// the review, and the box fails loudly at develop with the D9e
-			// remedy.
+			// the review, and the box fails loudly at develop with the
+			// reinstall remedy.
 			fmt.Fprintf(s.Err, "byre: %q not installed (%v) -- continuing; the review marks it.\n", m.Name, err)
 		}
 	}
@@ -151,7 +151,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	})
 }
 
-// PresetInspect implements `byre preset inspect [<uri>|<path>]`: the D16c
+// PresetInspect implements `byre preset inspect [<uri>|<path>]`: the apply
 // review without the chauffeur and without the write. GENUINELY read-only --
 // no store-ensure (which would regenerate the mirror and run the record
 // sweep); the catalog is built from what exists -- so "Nothing written" is
@@ -184,7 +184,7 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	}
 	renderPresetReview(s, paths, preset, content, missing, "Inspect", inspStore, inspErr == nil)
 	// Reports and exact commands, never prompts: a third party's document
-	// introducing references gets a report, not a walk-through (D16c).
+	// introducing references gets a report, not a walk-through.
 	for _, m := range missing {
 		if m.Hint != nil {
 			fmt.Fprintf(s.Out, "  install it: %s\n", m.Hint.InstallHint(string(m.Kind)))
@@ -197,7 +197,7 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 // readPreset locates and fetches preset bytes: an explicit path/URI argument,
 // or the conventional ./byre.preset, or (legacy, with the rename note) a repo
 // ./byre.config. https fetches ride the hardened package fetcher and its
-// bounds (D1h).
+// bounds.
 func readPreset(projectDir, arg string) (content []byte, source string, legacyName bool, err error) {
 	if arg == "" {
 		// Conventional discovery still rides the hardened fetcher below --
@@ -218,7 +218,7 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 		return nil, "", false, fmt.Errorf("no %s here (and no legacy %s); pass a path or URI", PresetName, config.ProjectConfigName)
 	}
 	// Every explicit source rides the hardened package fetcher: https gets
-	// the D1h bounds and origin rules; file:/paths get the real file-URI
+	// the fetcher's bounds and origin rules; file:/paths get the real file-URI
 	// parse (localhost-only) and the same size bound -- never a raw
 	// prefix-trimmed ReadFile.
 	if _, err := packages.ParseSourceURI(arg); err != nil {
@@ -233,7 +233,7 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 }
 
 // parsePreset strict-parses preset bytes as one config layer. A preset is a
-// byre.config-format file, not a package (D16a): no [package] header.
+// byre.config-format file, not a package: no [package] header.
 func parsePreset(content []byte, source string) (config.Config, error) {
 	c, err := config.Parse(content)
 	if err != nil {
@@ -246,7 +246,7 @@ func parsePreset(content []byte, source string) (config.Config, error) {
 }
 
 // missingRefs collects every package reference the preset names that the
-// catalog cannot resolve -- skills, the selected template, the agent (D16c
+// catalog cannot resolve -- skills, the selected template, the agent (apply
 // step 2) -- with their [sources] hints. Removal markers are skipped:
 // removing something absent is a no-op, not an acquisition.
 func missingRefs(home string, preset config.Config) ([]missingRef, error) {
@@ -279,7 +279,7 @@ func missingRefs(home string, preset config.Config) ([]missingRef, error) {
 	return out, nil
 }
 
-// installForKind runs the normal, kind-specific install flow (D16c step 3):
+// installForKind runs the normal, kind-specific install flow (apply step 3):
 // manifest fetched, its own grant summary, its own confirm, digest verified.
 func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 	if kind == packages.KindTemplate {
@@ -288,14 +288,14 @@ func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 	return SkillInstall(s, uri, digest, false)
 }
 
-// renderPresetReview is D16c step 5: the grant summary of every key and every
+// renderPresetReview is apply step 5: the grant summary of every key and every
 // referenced package, provenance-labeled; still-missing references are marked
 // "not installed -- grants unknown" (the review never claims completeness it
 // does not have); against an existing byre.config the review shows the diff.
 func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb string, store []byte, hasStore bool) {
 	cfg, grants := effectiveReview(paths, preset)
 	fmt.Fprintf(s.Err, "\n%s preset -- the box this composes:\n", verb)
-	// Every rendered field below can carry preset-controlled bytes (D1h):
+	// Every rendered field below can carry preset-controlled bytes:
 	// escape BEFORE byre's own styling so hostile run_args/mount paths/skill
 	// names cannot forge grant rows or extra lines in the consent review.
 	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n",
@@ -318,7 +318,7 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 		} else {
 			fmt.Fprintln(s.Err, "Changes vs your current byre.config -- applying replaces the whole file:")
 			for _, l := range unifiedDiff("your current config", "preset", string(store), string(content)) {
-				// Diff lines carry hostile preset bytes too (D1h).
+				// Diff lines carry hostile preset bytes too.
 				fmt.Fprintln(s.Err, packages.EscapeTerminal(l))
 			}
 			fmt.Fprintln(s.Err, "------")
@@ -339,7 +339,7 @@ func escapeMultiline(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// presetState reports the D17 drift state of a repo-shipped preset relative
+// presetState reports the drift state of a repo-shipped preset relative
 // to the applied marker: "" (no preset file), "unapplied" (state 1),
 // "applied" (state 2, steady -- no noise), "diverged" (state 3). legacyName
 // is true when the repo file wears the legacy byre.config name. The wording
@@ -386,7 +386,7 @@ func stateSansContent(paths project.Paths) string {
 }
 
 // readPresetBounded reads a local preset file under the same size bound the
-// fetcher applies to manifests (D1h). The PASSIVE drift check runs on every
+// fetcher applies to manifests. The PASSIVE drift check runs on every
 // develop/status -- before anyone asked byre to read the repo's preset -- so
 // a cloned repository must not make it allocate an arbitrarily large file.
 // The stat gate is advisory; the limited read is what actually bounds it.
@@ -412,7 +412,7 @@ func readPresetBounded(p string) ([]byte, error) {
 }
 
 // presetNote renders the passive develop-preamble / status note for states 1
-// and 3 (state 2 is silent). Never a question (D17): a third party's document
+// and 3 (state 2 is silent). Never a question: a third party's document
 // gets a report and an exact command, not a prompt.
 func presetNote(projectDir string, paths project.Paths) string {
 	state, legacyName := presetState(projectDir, paths)

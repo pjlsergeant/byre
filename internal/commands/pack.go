@@ -11,7 +11,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/version"
 )
 
-// SkillPack / TemplatePack implement `byre skill|template pack <name>` (D5c):
+// SkillPack / TemplatePack implement `byre skill|template pack <name>`:
 // the distribution manifest on stdout, the digest and a ready install hint on
 // stderr.
 func SkillPack(s Streams, name string) error {
@@ -54,7 +54,7 @@ func pkgPack(s Streams, kind packages.Kind, name string) error {
 	return nil
 }
 
-// inspectURI handles `byre skill|template inspect <uri>` (D8, phase 2):
+// inspectURI handles `byre skill|template inspect <uri>` (phase 2):
 // fetch, verify, render the trust surface -- installing nothing.
 func inspectURI(s Streams, kind packages.Kind, uri string) error {
 	acq, err := packages.Acquire(&packages.Fetcher{}, uri, kind, version.Semver(), stage2For(kind))

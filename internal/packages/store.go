@@ -11,10 +11,10 @@ import (
 
 // Store stamp file: when its content matches the running byre version the
 // bundled mirror is considered current. Regenerating on every version change
-// is the D7b contract.
+// is the mirror contract.
 const stampName = "bundled/.byre-version"
 
-// EnsureStore prepares ~/.byre for use under the package model (D7b, D10):
+// EnsureStore prepares ~/.byre for use under the package model:
 //
 //  1. Ensure skills/ and templates/ dirs exist.
 //  2. Land the byre-owned AGENTS.md guide at the store root (rewritten
@@ -59,7 +59,7 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		}
 	}
 
-	// D17 record sweep: pre-preset adoption records migrate to `applied`
+	// Adoption-record sweep: pre-preset adoption records migrate to `applied`
 	// markers (same concept -- the sha of what the project took on -- so
 	// adopted projects land in the right drift state instead of losing
 	// their history); sticky-decline records are deleted (with no
@@ -81,7 +81,7 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 	return nil
 }
 
-// sweepAdoptionRecords is the D17 half of the migration sweep: per project
+// sweepAdoptionRecords is the adoption-record half of the migration sweep: per project
 // store, `adopted` (the sha of the last adopted repo config) becomes an
 // `applied` marker -- hash line, then a source line marking the migration --
 // and `declined` records are removed. Idempotent, and it NEVER deletes the
@@ -191,7 +191,7 @@ func findLegacyDirs(home string, bundled fs.FS) []string {
 }
 
 // ArchiveLegacy moves LEGACY dirs to skills.legacy/ and templates.legacy/
-// (D10 one-confirm archive). Returns the paths moved.
+// (one-confirm archive). Returns the paths moved.
 func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 	legacy := findLegacyDirs(home, bundled)
 	var moved []string
@@ -225,7 +225,7 @@ func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 }
 
 // writeMirror regenerates ~/.byre/bundled from embed.FS with a README and
-// generated [package] headers on primary files (D7b, D4d).
+// generated [package] headers on primary files.
 func writeMirror(home string, bundled fs.FS, byreVer string) error {
 	root := filepath.Join(home, "bundled")
 	// Replace the whole tree so deleted bundled packages disappear.
@@ -297,7 +297,7 @@ To modify a bundled package, fork it:
 }
 
 // mirrorPrimary rewrites a primary file for the mirror: strip any existing
-// [package] table and prepend a generated header (D4d).
+// [package] table and prepend a generated header.
 func mirrorPrimary(embedPath string, raw []byte, byreVer string) []byte {
 	// embedPath like skills/claude/skill.toml or templates/go/template.config
 	parts := strings.Split(filepath.ToSlash(embedPath), "/")

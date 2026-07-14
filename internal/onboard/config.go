@@ -118,7 +118,7 @@ func SharedAuthAlreadyOn(home, companion string) bool {
 
 // SharedAuthPreference reports the saved shared-auth preference for agent:
 // whether the per-box offer should prefill Yes. Missing or unparsable file =
-// no preference (the offer defaults No). Covers both dual-shape forms (D2c).
+// no preference (the offer defaults No). Covers both dual-shape forms.
 func SharedAuthPreference(home, agent string) bool {
 	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
 	if err != nil {
@@ -138,7 +138,7 @@ func SharedAuthPick(home, agent string) string {
 }
 
 // SaveSharedAuthDefault records the shared-auth answer as agent's saved
-// preference (ADR 0025 / D2c). yes with a non-empty companion writes the
+// preference (ADR 0025). yes with a non-empty companion writes the
 // table-shape pick; yes with empty companion writes a legacy-style
 // yes-inclination (array) only when no other picks exist; no removes the
 // agent from both shapes. Surgical, idempotent, and refused when the file
@@ -148,7 +148,7 @@ func SaveSharedAuthDefault(home, agent string, yes bool) error {
 }
 
 // SaveSharedAuthDefaultPick is SaveSharedAuthDefault with an explicit
-// companion pick (D2c). companion is ignored when yes is false.
+// companion pick. companion is ignored when yes is false.
 func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	path := filepath.Join(home, "default.config")
 	content, err := readDefaultConfig(home)

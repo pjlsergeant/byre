@@ -16,10 +16,10 @@ import (
 type refHit struct {
 	Where   string // human location: "project my-app" / "default.config"
 	Path    string
-	Guarded bool // unparsable config counted as a hit (D9d guarded path)
+	Guarded bool // unparsable config counted as a hit (the guarded path)
 }
 
-// scanReferences is the D9d conservative reference extractor: syntactic
+// scanReferences is the conservative reference extractor: syntactic
 // per-layer collection (skills, agent, template, ! markers) canonicalized
 // through the alias table -- never a full effective resolution, because the
 // configs that matter most (dangling refs, INVALID packages) are exactly the
@@ -27,7 +27,7 @@ type refHit struct {
 // enough to PROVE it does not reference the candidate counts as a hit.
 // Scope: every project config under ~/.byre/projects/ plus default.config.
 // A local file walk and catalog lookups; no engine calls. (Templates are
-// shape and reference no packages, D3b -- the template KEY itself is the
+// shape and reference no packages -- the template KEY itself is the
 // only template reference to follow.)
 func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	var hits []refHit
@@ -87,7 +87,7 @@ func configReferences(cat *packages.Catalog, cfg config.Config, id string) bool 
 }
 
 // renderRefHits is the shared "these boxes are affected" block for install
-// replacement/activation and uninstall prompts (D9a/D9b'/D9d).
+// replacement/activation and uninstall prompts.
 func renderRefHits(hits []refHit) string {
 	var b strings.Builder
 	for _, h := range hits {

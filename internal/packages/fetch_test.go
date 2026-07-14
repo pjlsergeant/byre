@@ -115,7 +115,7 @@ func TestFetchFileManifestAndContainment(t *testing.T) {
 	if pay, err := f.FetchPayload(src, "hooks/a.sh", &budget); err != nil || string(pay) != "hi" {
 		t.Fatalf("pay=%q err=%v", pay, err)
 	}
-	// Symlink escaping the manifest dir is rejected after resolution (D5d).
+	// Symlink escaping the manifest dir is rejected after resolution.
 	if _, err := f.FetchPayload(src, "link", &budget); err == nil {
 		t.Fatal("symlink escape must be rejected")
 	}
@@ -160,7 +160,7 @@ func TestFetchManifestRedirectRebasesPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Relative to where the manifest WAS OBTAINED (post-redirect), D5d.
+	// Relative to where the manifest WAS OBTAINED (post-redirect).
 	if string(pay) != "new" {
 		t.Fatalf("payload must resolve against the final manifest URL, got %q", pay)
 	}

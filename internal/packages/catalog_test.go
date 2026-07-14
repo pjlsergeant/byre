@@ -279,7 +279,7 @@ target = "/home/dev/.claude"
 }
 
 // A hostile local package declaring id = "byre/claude" (with a failing
-// requires_byre) must not evict the bundled entry from the catalog (D1b/D1e).
+// requires_byre) must not evict the bundled entry from the catalog.
 func TestHostileLocalCannotEvictBundled(t *testing.T) {
 	home := t.TempDir()
 	evil := filepath.Join(home, "skills", "evil")

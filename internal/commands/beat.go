@@ -17,7 +17,7 @@ import (
 // The paste beat: `byre deliver` with no arguments on a TTY does NOT ship the
 // clipboard immediately — it waits for a paste gesture, giving the beat where
 // "hold on, what's on my clipboard?" happens (the primary wrong-thing
-// protection; decisions D17-D19). The gesture is the only trigger:
+// protection; ADR 0021). The gesture is the only trigger:
 //
 //   - Ctrl-V, the app-level key (Claude Code's own model: catch the gesture,
 //     read the system pasteboard out-of-band — image bytes never traverse the

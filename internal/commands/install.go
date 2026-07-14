@@ -18,7 +18,7 @@ import (
 )
 
 // SkillInstall / TemplateInstall implement `byre skill|template install <uri>`
-// (D9). expectDigest is the optional --digest sha256:... pin; yes is --yes.
+// (ADR 0029). expectDigest is the optional --digest sha256:... pin; yes is --yes.
 func SkillInstall(s Streams, uri, expectDigest string, yes bool) error {
 	return pkgInstall(s, packages.KindSkill, uri, expectDigest, yes)
 }
@@ -72,7 +72,7 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 		return fmt.Errorf("%q is already installed as a %s; refusing to change its kind -- uninstall the %s first, then install this %s", id, old.Kind, old.Kind, kind)
 	}
 
-	// A local package already claiming the id is a D1e conflict-to-be: refuse
+	// A local package already claiming the id is a conflict-to-be: refuse
 	// with the remedy rather than manufacturing a conflict row. The one
 	// non-installed row allowed through is an INVALID row over an indexed id
 	// -- a broken installed package, exactly the state whose printed remedy
@@ -86,7 +86,7 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 		}
 	}
 
-	// Same ID, same digest: no-op (D9a) -- unless the installed copy is
+	// Same ID, same digest: no-op -- unless the installed copy is
 	// broken, where re-landing the same verified bytes IS the repair.
 	if replacing && old.Digest == acq.Digest && !brokenInstalled {
 		fmt.Fprintf(s.Err, "byre: %s %s is already installed (sha256:%s...) -- nothing to do\n", id, old.Version, acq.Digest[:8])
@@ -108,9 +108,9 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 			return err
 		}
 	case replacing:
-		// Same ID, different digest: replacement (D9a) -- machine-wide scope,
+		// Same ID, different digest: replacement -- machine-wide scope,
 		// affected boxes enumerated, package-level diff, grant declarations
-		// called out. TTY confirm or --yes; never a silent default (D9c).
+		// called out. TTY confirm or --yes; never a silent default.
 		fmt.Fprintf(s.Err, "byre: replacing %s\n", id)
 		fmt.Fprintf(s.Err, "  installed: %s (sha256:%s...)\n", old.Version, short(old.Digest))
 		fmt.Fprintf(s.Err, "  candidate: %s (sha256:%s...)\n", acq.Core.Version, short(acq.Digest))
@@ -126,7 +126,7 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 			return err
 		}
 	case len(hits) > 0:
-		// Install-as-activation (D9b'): dangling references flip from failing
+		// Install-as-activation: dangling references flip from failing
 		// to running new code. Treated like a replacement.
 		fmt.Fprintf(s.Err, "byre: %s is not installed, but stored configs already reference it -- installing ACTIVATES it there at next launch:\n%s", id, renderRefHits(hits))
 		printAcquiredSummary(s.Err, acq)
@@ -135,7 +135,7 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 		}
 	default:
 		// Fresh ID, no references: a verified download that grants nothing.
-		// TTY sees the summary and confirms; non-TTY proceeds (D9c).
+		// TTY sees the summary and confirms; non-TTY proceeds.
 		printAcquiredSummary(s.Err, acq)
 		if s.TTY && !yes {
 			fmt.Fprint(s.Err, "Install? [y/N]: ")
@@ -164,7 +164,7 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 	}
 	fmt.Fprintf(s.Err, "byre: installed %s %s (sha256:%s...)\n", id, acq.Core.Version, short(acq.Digest))
 	// The closer must not walk back the consent narrative just accepted:
-	// only a FRESH, unreferenced install grants nothing (D9b); replacement
+	// only a FRESH, unreferenced install grants nothing; replacement
 	// and activation change what referencing boxes run next launch.
 	switch {
 	case replacing && old.Digest == acq.Digest:
@@ -179,8 +179,8 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 	return nil
 }
 
-// requireConsent enforces D9c for state-changing steps: TTY asks; a pipe
-// refuses without --yes.
+// requireConsent enforces the consent rule for state-changing steps: TTY
+// asks; a pipe refuses without --yes.
 func requireConsent(s Streams, yes bool, prompt string) error {
 	if yes {
 		return nil
@@ -202,7 +202,7 @@ func short(digest string) string {
 	return digest
 }
 
-// printAcquiredSummary is the D9b grant summary: the same contribution set
+// printAcquiredSummary is the install grant summary: the same contribution set
 // inspect leads with, rendered from the acquired manifest.
 func printAcquiredSummary(w io.Writer, acq *packages.Acquired) {
 	fmt.Fprintf(w, "Package: %s %s (%s), sha256:%s...\n",
@@ -221,7 +221,7 @@ func printAcquiredSummary(w io.Writer, acq *packages.Acquired) {
 }
 
 // printPayloadDiff shows destination-level payload changes between the
-// installed snapshot's manifest and the candidate (D9a package-level diff).
+// installed snapshot's manifest and the candidate (package-level diff).
 func printPayloadDiff(w io.Writer, home string, old packages.IndexEntry, acq *packages.Acquired) {
 	oldEnt, err := readInstalledManifest(home, old, acq.Primary)
 	if err != nil {
@@ -275,7 +275,7 @@ func readInstalledManifest(home string, e packages.IndexEntry, primary string) (
 }
 
 // printGrantDelta calls out grant DECLARATIONS present in the candidate but
-// not the installed version (D9a: declarations, not per-box effective grants
+// not the installed version (declarations, not per-box effective grants
 // -- a project layer may override them).
 func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *packages.Acquired) {
 	oldRaw, err := readSnapshotPrimary(home, old.Digest, acq.Primary)
@@ -318,7 +318,7 @@ func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *pac
 		}
 	}
 	if len(dropped) > 0 {
-		// Removals change the trust surface too (D9a: CHANGED contributions).
+		// Removals change the trust surface too (they are CHANGED contributions).
 		fmt.Fprintln(w, "No longer declared:")
 		for _, l := range dropped {
 			fmt.Fprintf(w, "  - %s\n", l)
@@ -330,7 +330,7 @@ func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *pac
 // as a set, for declaration-level diffing. Unlike inspect (counts, per the
 // depth ruling), the DIFF must be content-sensitive: raw Dockerfile commands
 // and run_args are included verbatim (escaped, marked not-introspected) so a
-// replacement cannot swap build code behind an unchanged count (D5e).
+// replacement cannot swap build code behind an unchanged count.
 func grantLines(kind packages.Kind, raw []byte) map[string]bool {
 	var b strings.Builder
 	if kind == packages.KindSkill {
@@ -365,8 +365,8 @@ func readSnapshotPrimary(home, digest, primary string) ([]byte, error) {
 }
 
 // SkillUninstall / TemplateUninstall implement `byre skill|template uninstall
-// <id>` (D9d): scan effective configs, warn + confirm, remove under the store
-// lock. Uninstall always refuses in a pipe without --yes (D9c).
+// <id>`: scan effective configs, warn + confirm, remove under the store
+// lock. Uninstall always refuses in a pipe without --yes.
 func SkillUninstall(s Streams, id string, yes bool) error {
 	return pkgUninstall(s, packages.KindSkill, id, yes)
 }

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Fetch limits (D1h). Deny-by-default distribution: loosening later is
+// Fetch limits. Deny-by-default distribution: loosening later is
 // additive.
 const (
 	MaxManifestBytes  = 256 << 10 // 256 KiB
@@ -27,7 +27,7 @@ type Fetcher struct {
 }
 
 // Source is a resolved manifest location: the raw URI plus what is needed to
-// fetch siblings (payload sources are relative to the manifest ONLY, D5d).
+// fetch siblings (payload sources are relative to the manifest ONLY).
 type Source struct {
 	URI string
 	// https: origin ("https://host") payload URLs must stay within.
@@ -58,7 +58,7 @@ func ParseSourceURI(raw string) (kind string, err error) {
 	}
 }
 
-// FetchManifest retrieves manifest bytes (bounded, D1h) and returns the
+// FetchManifest retrieves manifest bytes (bounded) and returns the
 // Source payloads later resolve against.
 func (f *Fetcher) FetchManifest(raw string) ([]byte, *Source, error) {
 	kind, err := ParseSourceURI(raw)
@@ -78,7 +78,7 @@ func (f *Fetcher) FetchManifest(raw string) ([]byte, *Source, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// Payloads resolve relative to where the manifest WAS OBTAINED (D5d):
+	// Payloads resolve relative to where the manifest WAS OBTAINED:
 	// after same-origin redirects, the final response URL, not the request.
 	base := *final
 	base.Path = filepath.ToSlash(filepath.Dir(final.Path)) + "/"
@@ -114,7 +114,7 @@ func (f *Fetcher) fetchManifestFile(raw string) ([]byte, *Source, error) {
 	return body, &Source{URI: raw, baseDir: baseDir}, nil
 }
 
-// FetchPayload retrieves one payload source relative to the manifest (D5d).
+// FetchPayload retrieves one payload source relative to the manifest.
 // budget is the remaining total-bytes allowance across the install; it is
 // decremented by what was read.
 func (f *Fetcher) FetchPayload(src *Source, rel string, budget *int64) ([]byte, error) {
@@ -142,7 +142,7 @@ func (f *Fetcher) FetchPayload(src *Source, rel string, budget *int64) ([]byte, 
 			return nil, fmt.Errorf("payload src %q: %w", rel, perr)
 		}
 		resolved := u.ResolveReference(ref)
-		// Enforced after resolution, not syntax (D5d).
+		// Enforced after resolution, not syntax.
 		if resolved.Scheme != "https" || "https://"+resolved.Host != src.origin {
 			return nil, fmt.Errorf("payload src %q resolves outside the manifest origin %s", rel, src.origin)
 		}
@@ -161,7 +161,7 @@ func (f *Fetcher) fetchPayloadFile(src *Source, rel string, limit int64) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("payload %s: %w", rel, err)
 	}
-	// Containment after symlink resolution (D5d).
+	// Containment after symlink resolution.
 	if real != src.baseDir && !strings.HasPrefix(real, src.baseDir+string(filepath.Separator)) {
 		return nil, fmt.Errorf("payload %s escapes the manifest directory", rel)
 	}
@@ -198,8 +198,8 @@ func fileURIPath(raw string) (string, error) {
 	return filepath.FromSlash(u.Path), nil
 }
 
-// httpGet fetches a URL with the origin pinned across redirects (D5d), a
-// bounded body size, and a bounded timeout (D1h). Returns the FINAL response
+// httpGet fetches a URL with the origin pinned across redirects, a
+// bounded body size, and a bounded timeout. Returns the FINAL response
 // URL so relative resolution follows same-origin redirects.
 func (f *Fetcher) httpGet(rawURL, origin string, limit int64, what string) ([]byte, *url.URL, error) {
 	base := f.Client
@@ -214,7 +214,7 @@ func (f *Fetcher) httpGet(rawURL, origin string, limit int64, what string) ([]by
 			if len(via) >= maxRedirectsTotal {
 				return fmt.Errorf("too many redirects")
 			}
-			// Redirects are re-validated against the origin (D5d).
+			// Redirects are re-validated against the origin.
 			if req.URL.Scheme != "https" || "https://"+req.URL.Host != origin {
 				return fmt.Errorf("redirect to %s leaves the manifest origin %s", req.URL, origin)
 			}

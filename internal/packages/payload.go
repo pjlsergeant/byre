@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// FileEntry is one [[package.files]] row in an installed manifest (D5a):
+// FileEntry is one [[package.files]] row in an installed manifest:
 // every payload named with a manifest-relative source, a package-relative
 // destination, and its sha256. Exhaustive by contract -- installation fetches
 // exactly this list and nothing else.
@@ -22,7 +22,7 @@ type FileEntry struct {
 	Executable bool   `toml:"executable,omitempty"`
 }
 
-// MaxPayloadFiles bounds a manifest's files list (D1h).
+// MaxPayloadFiles bounds a manifest's files list.
 const MaxPayloadFiles = 64
 
 // ParseManifestFiles leniently extracts the [[package.files]] list from
@@ -39,10 +39,10 @@ func ParseManifestFiles(content []byte) ([]FileEntry, error) {
 	return root.Package.Files, nil
 }
 
-// ValidateFilesList enforces the D5a/D5d/D1h rules that do not need I/O:
+// ValidateFilesList enforces the files-list rules that do not need I/O:
 // bounded count; clean, relative, traversal-free sources and destinations;
 // well-formed sha256; destinations duplicate-free including case collisions;
-// no entry for the primary file (it cannot contain its own hash, D5c).
+// no entry for the primary file (it cannot contain its own hash).
 func ValidateFilesList(entries []FileEntry, primary string) error {
 	if len(entries) > MaxPayloadFiles {
 		return fmt.Errorf("files list has %d entries (limit %d)", len(entries), MaxPayloadFiles)
@@ -76,7 +76,7 @@ func ValidateFilesList(entries []FileEntry, primary string) error {
 
 // validRelPath admits clean, relative, slash-separated paths that stay inside
 // the package: no absolute paths, no drive/network prefixes, no traversal --
-// including ENCODED traversal (D5d: '%' is rejected outright; an origin
+// including ENCODED traversal ('%' is rejected outright; an origin
 // server or intermediary may decode %2e%2e into dots we already refused) --
 // no backslashes (one canonical separator), no control characters.
 func validRelPath(p string) error {
@@ -87,7 +87,7 @@ func validRelPath(p string) error {
 		return fmt.Errorf("use '/' separators")
 	}
 	if strings.ContainsRune(p, '%') {
-		return fmt.Errorf("percent-encoding is rejected (encoded traversal, D5d)")
+		return fmt.Errorf("percent-encoding is rejected (encoded traversal)")
 	}
 	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return fmt.Errorf("must be relative")
@@ -121,7 +121,7 @@ func HashBytes(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// PayloadRecord is one payload's digest-relevant identity (D5f): destination
+// PayloadRecord is one payload's digest-relevant identity: destination
 // path, content hash, executable bit.
 type PayloadRecord struct {
 	Dest       string
@@ -129,7 +129,7 @@ type PayloadRecord struct {
 	Executable bool
 }
 
-// PackageDigest is THE package digest (D5f): sha256 over a domain-separated
+// PackageDigest is THE package digest: sha256 over a domain-separated
 // canonical encoding of the manifest bytes plus the sorted payload records.
 // The manifest is inside the preimage -- contributions and grants live there,
 // and a digest that excluded it would let a manifest change ride an unchanged

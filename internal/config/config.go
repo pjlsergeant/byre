@@ -67,7 +67,7 @@ func catalogFor(home string) (*packages.Catalog, error) {
 	return packages.LoadCatalog(home, bundled, display, compat)
 }
 
-// SourceHint is one [sources] acquisition hint (D16b). From names the cascade
+// SourceHint is one [sources] acquisition hint. From names the cascade
 // layer the winning hint came from ("project config" / "default config") so a
 // lower layer overriding a digest is visible; it is set during resolution,
 // never written by users.
@@ -77,10 +77,10 @@ type SourceHint struct {
 	From   string `toml:"-"`
 }
 
-// InstallHint renders the exact install command for a missing package (D9e):
+// InstallHint renders the exact install command for a missing package:
 // kind-correct verb, --digest when the hint carries one, attributed to the
 // layer that supplied it. Hint fields are hostile input (a preset controls
-// them, D1h): terminal-escaped so they cannot forge output, AND shell-quoted
+// them): terminal-escaped so they cannot forge output, AND shell-quoted
 // so pasting the command cannot execute anything but byre.
 func (h SourceHint) InstallHint(kind string) string {
 	cmd := fmt.Sprintf("byre %s install %s", kind, packages.ShellArg(packages.EscapeTerminal(h.URI)))
@@ -255,7 +255,7 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
-	// SharedAuth is the picker-owned shared-auth favourite (ADR 0025 / D2c):
+	// SharedAuth is the picker-owned shared-auth favourite (ADR 0025):
 	// a preference over future ANSWERS, never a grant. Dual-shape decode:
 	// legacy array ["claude"] = yes-inclination with no companion pick; table
 	// { claude = "claude-shared-auth" } = agent -> companion pick that
@@ -263,7 +263,7 @@ type Config struct {
 	// resolved config; only onboarding reads or writes it.
 	SharedAuth SharedAuthPref `toml:"shared_auth,omitempty"`
 
-	// Sources are acquisition hints for package references (D16b): package
+	// Sources are acquisition hints for package references: package
 	// id -> where to install it from. Hints are NEVER auto-fetched --
 	// acquisition on a third party's initiative is banned; anywhere byre
 	// reports a missing package it prints the exact install command from
@@ -368,7 +368,7 @@ func ResolveProposed(proj Config) (Config, error) {
 // resolveWith applies the cascade default ⊕ template ⊕ proj.
 //
 // Package references (skills, agent, template, !markers) are canonicalized
-// through the catalog BEFORE merge (D1g), so `!byre/claude` cancels a lower
+// through the catalog BEFORE merge, so `!byre/claude` cancels a lower
 // layer's bare `claude` after both expand to the same canonical ID.
 func resolveWith(home string, proj Config) (Config, error) {
 	// Catalog is required for alias expansion and template loading from
@@ -402,11 +402,11 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// it per key, and the legibility surfaces count it like the grant it is.
 	def = Merge(Config{EnvFromHost: CoreEnvFromHost()}, def)
 
-	// Canonicalize package references on every layer before merge (D1g).
+	// Canonicalize package references on every layer before merge.
 	canonicalizeLayer(cat, &def)
 	canonicalizeLayer(cat, &proj)
 
-	// [sources] layer attribution (D16b): the printed install command names
+	// [sources] layer attribution: the printed install command names
 	// the layer the winning hint came from, so a lower layer overriding a
 	// digest is visible. Set before Merge's last-wins-by-id map fold.
 	stampSources(&def, "default config")
@@ -424,14 +424,14 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	if templateName != "" {
 		tmpl, err = loadTemplateLayer(cat, templateName)
 		if err != nil {
-			// D9e: a missing template prints its kind-correct install command
+			// A missing template prints its kind-correct install command
 			// when any layer carries a [sources] hint for it.
 			if hint, ok := mergeSources(def.Sources, proj.Sources)[templateName]; ok {
 				return Config{}, fmt.Errorf("%w\n  install it: %s", err, hint.InstallHint("template"))
 			}
 			return Config{}, err
 		}
-		// Templates are shape only (D3b): already validated in loadTemplateLayer.
+		// Templates are shape only: already validated in loadTemplateLayer.
 		canonicalizeLayer(cat, &tmpl)
 	}
 
@@ -468,7 +468,7 @@ func canonicalizeLayer(cat *packages.Catalog, c *Config) {
 	for i, s := range c.Skills {
 		c.Skills[i] = cat.ExpandAlias(s)
 	}
-	// [sources] keys are package references too (D16b).
+	// [sources] keys are package references too.
 	if len(c.Sources) > 0 {
 		canon := make(map[string]SourceHint, len(c.Sources))
 		for id, h := range c.Sources {
@@ -478,7 +478,7 @@ func canonicalizeLayer(cat *packages.Catalog, c *Config) {
 	}
 }
 
-// stampSources records which cascade layer a hint came from (D16b).
+// stampSources records which cascade layer a hint came from.
 func stampSources(c *Config, layer string) {
 	for id, h := range c.Sources {
 		h.From = layer
@@ -507,7 +507,7 @@ func loadTemplateLayer(cat *packages.Catalog, name string) (Config, error) {
 }
 
 // ParseTemplateBody is the stage-2 template check used by cascade load and
-// `byre template validate`: strip [package], ban composition keys (D3b),
+// `byre template validate`: strip [package], ban composition keys,
 // strict-parse as Config, ValidateLayer.
 func ParseTemplateBody(raw []byte) (Config, error) {
 	body := packages.StripPackageTable(raw)
@@ -525,8 +525,8 @@ func ParseTemplateBody(raw []byte) (Config, error) {
 }
 
 // rejectTemplateComposition bans the composition KEYS skills, agent, and
-// [sources] when present at all — even when empty (D3b: "a skills or agent
-// key in template.config is a validation error").
+// [sources] when present at all — even when empty (a skills or agent
+// key in template.config is a validation error).
 func rejectTemplateComposition(body []byte) error {
 	var probe struct {
 		Skills  []string       `toml:"skills"`
@@ -980,7 +980,7 @@ func (c Config) ValidateLayer() error {
 			return fmt.Errorf("[sources] %q: uri is required (a hint that names nowhere hints nothing)", id)
 		}
 		// The printed remedy must be a copyable command: no whitespace or
-		// control characters in the URI (hostile-hint hardening, D1h).
+		// control characters in the URI (hostile-hint hardening).
 		if strings.IndexFunc(h.URI, func(r rune) bool {
 			return r <= 0x20 || r == 0x7f
 		}) >= 0 {
@@ -1091,7 +1091,7 @@ func validSourceDigest(d string) bool {
 	return true
 }
 
-// mergeSources folds [sources] hints last-wins by package id (D16b).
+// mergeSources folds [sources] hints last-wins by package id.
 func mergeSources(base, over map[string]SourceHint) map[string]SourceHint {
 	if len(base) == 0 && len(over) == 0 {
 		return nil
@@ -1258,7 +1258,7 @@ func SortedEnvKeys(m map[string]string) []string {
 // embed.FS); prefer the catalog for loading. Kept for callers that write
 // local templates (fork/init).
 func TemplatePath(templatesDir, name string) string {
-	// Nested mapping: bare name or owner/name (D1a).
+	// Nested mapping: bare name or owner/name (ADR 0029).
 	return filepath.Join(templatesDir, filepath.FromSlash(name), "template.config")
 }
 

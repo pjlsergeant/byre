@@ -86,9 +86,10 @@ func TestCatalogTemplatesAndListAgents(t *testing.T) {
 
 // TestSelfHostCompositionResolves verifies the BUNDLED slice of byre's own
 // self-hosting config (Claude agent + codex + grok). codereview and devlog
-// moved out of the binary (D12, 2026-07-13) -- their content is pinned by the
-// pjlsergeant-byre-skills repo and the host-side dogfood, not this suite; here
-// we pin that their RETIRED bare names fail with the exact install remedy.
+// moved out of the binary (2026-07-13, ADR 0029) -- their content is pinned
+// by the pjlsergeant-byre-skills repo and the host-side dogfood, not this
+// suite; here we pin that their RETIRED bare names fail with the exact
+// install remedy.
 func TestSelfHostCompositionResolves(t *testing.T) {
 	_, cat := testCat(t)
 	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"codex", "grok"}}, cat)
@@ -116,9 +117,10 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	}
 }
 
-// TestRetiredNamesTombstone pins the D15 cut-over: the bare names byre used
-// to bundle fail with the EXACT pinned install command (URI and digest, not
-// just their shapes), and cannot be reclaimed by a local package.
+// TestRetiredNamesTombstone pins the retired-name cut-over (ADR 0029): the
+// bare names byre used to bundle fail with the EXACT pinned install command
+// (URI and digest, not just their shapes), and cannot be reclaimed by a
+// local package.
 func TestRetiredNamesTombstone(t *testing.T) {
 	_, cat := testCat(t)
 	want := map[string]string{
@@ -135,14 +137,14 @@ func TestRetiredNamesTombstone(t *testing.T) {
 		}
 	}
 	if !cat.IsProtected("devlog") || !cat.IsProtected("codereview") {
-		t.Error("retired names must stay protected (D15)")
+		t.Error("retired names must stay protected")
 	}
 }
 
 // TestByreConfigSourcesAgreeWithTombstones is the drift lock between the four
 // hand-duplicated URI/digest pairs: this repo's own byre.config [sources]
-// hints must name exactly the URIs and digests the D15 tombstones print --
-// disagreement means a release updated one copy and not the other.
+// hints must name exactly the URIs and digests the retired-name tombstones
+// print -- disagreement means a release updated one copy and not the other.
 func TestByreConfigSourcesAgreeWithTombstones(t *testing.T) {
 	cfg, err := config.ParseFile(filepath.Join("..", "..", "byre.preset"))
 	if err != nil {
@@ -747,7 +749,7 @@ func TestDevloopRenamedStub(t *testing.T) {
 	}
 }
 
-// Devloop rename upgrade-path dance deleted with materialization (D14);
+// Devloop rename upgrade-path dance deleted with materialization (ADR 0029);
 // the stub remains bundled and is covered by TestDevloopIsRenameStub.
 
 // TestGrokLoginHookHealsRetiredSymlink drives the real grok-login hook with a

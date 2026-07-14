@@ -6,7 +6,7 @@ import (
 )
 
 // Acquired is a fetched, fully-verified package that has not touched the
-// store yet: everything install needs to decide (D9) before landing bytes.
+// store yet: everything install needs to decide before landing bytes.
 type Acquired struct {
 	Core     Manifest
 	Kind     Kind
@@ -20,10 +20,11 @@ type Acquired struct {
 }
 
 // Acquire fetches and verifies a package from a manifest URI without
-// installing anything (D9a's "reject before anything" ordering): manifest
-// core + required fields + qualified ID (D1d) + kind/verb match (D3c) +
-// compatibility, then the exhaustive files list (D5a) with every payload
-// hash-verified (D5d/D1h limits), then the D5f digest.
+// installing anything ("reject before anything" ordering): manifest
+// core + required fields + qualified ID + kind/verb match +
+// compatibility, then the exhaustive files list with every payload
+// hash-verified (under the fetch containment and size limits), then the
+// package digest.
 func Acquire(f *Fetcher, uri string, kind Kind, compatVer string, stage2 func([]byte) error) (*Acquired, error) {
 	manifest, src, err := f.FetchManifest(uri)
 	if err != nil {

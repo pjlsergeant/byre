@@ -16,7 +16,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/version"
 )
 
-// SkillUpdate is the D11 transitional stub: bundled packages now update with
+// SkillUpdate is a transitional stub: bundled packages now update with
 // byre itself. Points at any LEGACY rows and exits 0.
 func SkillUpdate(s Streams) error {
 	home, err := project.Home()
@@ -46,10 +46,10 @@ func SkillUpdate(s Streams) error {
 	return nil
 }
 
-// SkillList prints catalog rows for skills (D8).
+// SkillList prints catalog rows for skills.
 func SkillList(s Streams) error { return pkgList(s, packages.KindSkill) }
 
-// TemplateList prints catalog rows for templates (D8).
+// TemplateList prints catalog rows for templates.
 func TemplateList(s Streams) error { return pkgList(s, packages.KindTemplate) }
 
 func pkgList(s Streams, kind packages.Kind) error {
@@ -110,7 +110,7 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	ent, ok := cat.Lookup(id)
 	if !ok {
 		// Not a catalog ID: a URI/path inspects the remote manifest without
-		// installing anything (D8). IDs always win -- this is only reached
+		// installing anything. IDs always win -- this is only reached
 		// for names the catalog does not know.
 		if looksLikeURI(id) {
 			return inspectURI(s, kind, id)
@@ -132,7 +132,7 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	if ent.Provenance == packages.ProvInstalled {
 		fmt.Fprintf(s.Out, "Digest:      sha256:%s\n", packages.EscapeTerminal(ent.Digest))
 		if ent.SourceURI != "" {
-			// Provenance of acquisition, never an instruction byre follows (D9a).
+			// Provenance of acquisition, never an instruction byre follows.
 			fmt.Fprintf(s.Out, "Acquired:    %s\n", packages.EscapeTerminal(ent.SourceURI))
 		}
 	}
@@ -151,7 +151,7 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	case kind == packages.KindTemplate && (ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvLocal || ent.Provenance == packages.ProvInstalled):
 		printTemplateInspect(s.Out, ent)
 	}
-	// Source path for full review (D8): local dir or ~/.byre/bundled mirror.
+	// Source path for full review: local dir or ~/.byre/bundled mirror.
 	srcPath := inspectSourcePath(home, ent)
 	if srcPath != "" {
 		fmt.Fprintf(s.Out, "\nSource: %s\n", srcPath)
@@ -172,7 +172,7 @@ func inspectSourcePath(home string, ent *packages.Entry) string {
 	return ""
 }
 
-// printSkillInspect renders the full pre-trust contribution set (D8): structured
+// printSkillInspect renders the full pre-trust contribution set: structured
 // grants one line each; freeform build as counts + names, not inline dumps.
 func printSkillInspect(w io.Writer, sk skills.Skill) {
 	printSkillContributions(w, sk.File)
@@ -393,7 +393,7 @@ func sortedMapKeys(m map[string]string) []string {
 	return keys
 }
 
-// SkillFork copies an immutable skill into the local store under newID (D6).
+// SkillFork copies an immutable skill into the local store under newID.
 func SkillFork(s Streams, id, newID string) error {
 	return pkgFork(s, packages.KindSkill, id, newID)
 }
@@ -454,7 +454,7 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 		return err
 	}
 
-	// Provenance comment at the top of the primary file (D6).
+	// Provenance comment at the top of the primary file.
 	primPath := filepath.Join(destDir, prim)
 	body, err := os.ReadFile(primPath)
 	if err != nil {
@@ -481,13 +481,13 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 	} else {
 		fmt.Fprintf(s.Err, "      To use it: add %q to %s (or set agent = %q) in your byre.config\n", newID, key, newID)
 	}
-	// Companion note when forking an agent skill (D2).
+	// Companion note when forking an agent skill.
 	if kind == packages.KindSkill {
 		if sk, err := skills.Load(cat, src.ID); err == nil && sk.File.Agent != nil {
 			fmt.Fprintln(s.Err, "      Note: a fork of an agent does not bring its shared-auth companion.")
 			fmt.Fprintln(s.Err, "      Fork the companion too (and set shared_auth_for) if the fork needs shared credentials.")
 		}
-		// Machine-volume warning (D6).
+		// Machine-volume warning.
 		if sk, err := skills.Load(cat, src.ID); err == nil {
 			for _, v := range sk.File.Volumes {
 				if v.MachineScoped() {
@@ -525,7 +525,7 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// SkillInit scaffolds a new local skill (D8).
+// SkillInit scaffolds a new local skill.
 func SkillInit(s Streams, name string) error {
 	return pkgInit(s, packages.KindSkill, name)
 }
@@ -614,7 +614,7 @@ base = "debian:bookworm-slim"
 `, id)
 }
 
-// SkillValidate two-stage-parses and resolve-checks a skill (D8).
+// SkillValidate two-stage-parses and resolve-checks a skill.
 func SkillValidate(s Streams, name string) error {
 	return pkgValidate(s, packages.KindSkill, name)
 }
@@ -677,7 +677,7 @@ func validateOne(s Streams, cat *packages.Catalog, ent *packages.Entry) error {
 	return err
 }
 
-// SkillArchiveLegacy moves LEGACY dirs aside (D10).
+// SkillArchiveLegacy moves LEGACY dirs aside.
 func SkillArchiveLegacy(s Streams) error {
 	home, err := project.Home()
 	if err != nil {

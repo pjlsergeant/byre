@@ -14,7 +14,7 @@ import (
 // effectiveReview resolves what a preset will EFFECTIVELY run as — the cascade
 // (default ⊕ template ⊕ preset) plus the skills it enables — and returns that
 // config with the full grant summary (the adoption review machinery, survived
-// into preset apply per D17). Best-effort: if the cascade or skills can't be
+// into preset apply). Best-effort: if the cascade or skills can't be
 // expanded, it falls back to the raw layer and says so, so a failure to
 // expand never hides grants behind an empty summary.
 // effectiveReview is READ-ONLY -- no store-ensure. `preset inspect` must
