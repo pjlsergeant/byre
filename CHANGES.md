@@ -13,15 +13,30 @@
   `!name` closures subtract LAST (ADR 0030 semantics), so one server can
   be dropped out of a toolkit skill. The effective set bakes
   deterministically to `/etc/byre/mcp.json` in every image (empty set
-  included -- the path is a stable contract). The claude skill injects it
-  into the agent session (`--mcp-config`; an injected server shadows a
-  same-name in-box addition, others union in) and now sets
+  included -- the path is a stable contract). Delivery is injection,
+  per-agent: the claude skill's command carries `--mcp-config` (an
+  injected server shadows a same-name in-box addition, others union in),
+  and the codex skill ships a launch wrapper deriving per-invocation `-c`
+  overrides from the same file (codex scrubs its servers' env, so
+  declared env NAMES ride the file's `x_byre_env` key into codex's
+  by-name `env_vars` passthrough). byre never writes an agent's MCP
+  state -- a designed state-writing registrar was deliberately walked
+  back (ADR 0033 records why). The claude skill also sets
   `ENABLE_CLAUDEAI_MCP_SERVERS=false`, keeping claude.ai account
   connectors out of the box -- ambient host-account authority is not
   inherited just because the login is. Agents without an MCP adapter
-  degrade honestly: status shows declared-but-NOT-delivered plus the
-  baked path. Remote OAuth stays agent-owned on the project volume
-  (`claude mcp login --no-browser` works headless via URL paste-back).
+  (gemini, grok) degrade honestly: status shows declared-but-NOT-
+  delivered plus the baked path. Remote OAuth stays agent-owned on the
+  project volume (`claude mcp login --no-browser` works headless via URL
+  paste-back).
+- **`byre mcp add|remove|list`.** CLI sugar over the `[[mcp]]` vocabulary:
+  `add` is add-or-update into the project's host-side config (`--global`
+  for default.config), `remove` is closure-smart (deletes the layer's own
+  block and/or writes `!name` when a lower layer or skill still declares
+  it -- saying which), `list` renders the effective attributed set through
+  status's own renderer. The interactive `byre config` editor gains a full
+  MCP screen: this layer's declarations editable, inherited ones
+  override-by-name, and skill-declared servers closable per entry.
 
 ## v0.4.0 -- 2026-07-14
 

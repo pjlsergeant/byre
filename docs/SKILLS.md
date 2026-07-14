@@ -89,8 +89,8 @@ egress (`mcp:<name>`) automatically; declare extra hosts (an OAuth
 authorize endpoint) in the block's own `egress`. Users can drop one of
 your servers without disabling the whole skill via `!name` in their
 config's mcp list. The declared set bakes to `/etc/byre/mcp.json`;
-delivery into the agent session is the agent skill's job (claude
-injects it), so a toolkit skill declares servers and stays
+delivery into the agent session is the agent skill's job (claude and
+codex inject it), so a toolkit skill declares servers and stays
 agent-agnostic.
 
 To publish, declare identity in `[package]` -- a qualified id

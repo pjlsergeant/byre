@@ -363,10 +363,15 @@ as attributed grants (`mcp:<name>`). The effective set -- config cascade
 closures (ADR 0030 semantics: a closure reaches a skill-declared server)
 -- bakes deterministically to **`/etc/byre/mcp.json` in every image**,
 empty set included; the path and format are a stable contract for
-anything that wants the set. Delivery is per-agent: the claude skill's
-command injects the file (`--mcp-config`), vouched by `[agent]
-mcp = "inject"`; an agent skill without an adapter degrades honestly --
-`byre status` shows declared-but-NOT-delivered plus the baked path.
+anything that wants the set. Delivery is injection, per-agent, vouched
+by `[agent] mcp = "inject"`: claude's command carries `--mcp-config`;
+codex's is a skill-owned wrapper deriving per-invocation `-c` overrides
+from the same file (byre never writes an agent's MCP state -- ADR 0033
+walked the state-writing registrar back). An agent skill without an
+adapter degrades honestly -- `byre status` shows
+declared-but-NOT-delivered plus the baked path. `byre mcp
+add|remove|list` is the CLI sugar (remove is closure-smart; --global
+targets default.config), and the config UI has the full editor screen.
 Tokens never enter byre files: `env = ["GITHUB_TOKEN"]` names what the
 server consumes, values arrive via `env_from_host`/`[env]`, and a box's
 stdio servers inherit the box env. Remote OAuth is agent-owned on the

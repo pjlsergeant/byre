@@ -166,6 +166,7 @@ box's grants, and writes the project's config on your confirm.
 | `byre forget [--force]` | Remove all of byre's host-side state for this directory. Never touches your project tree. |
 | `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
 | `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
+| `byre mcp add` / `remove` / `list` | Declare MCP servers for the box's agent session (`--global` for every project); remove understands the cascade. |
 | `byre skill list` / `inspect` / `fork` | Discover, inspect, and fork skill packages. |
 | `byre preset apply` / `inspect` | Review and apply a repo's `byre.preset` (or any path/URI) as this project's config. |
 | `byre skill install <uri>` / `uninstall` | Fetch, hash-verify, and snapshot a skill package — grants nothing until enabled in a box. |
