@@ -316,14 +316,17 @@ type Config struct {
 	// EnvFromHost passes named HOST values into the box's runtime env — the
 	// one deliberate host→box data channel, and a Grant (adoption flags
 	// additions beyond the shipped defaults; status attributes it). Value
-	// grammar: "git:<config-key>" (read via `git config --get` on the host
-	// at launch; an empty host value sets nothing) or "" (disables the key —
-	// how a layer drops a lower layer's entry). Other source schemes
-	// ("env:...") are RESERVED and rejected until deliberately designed —
-	// arbitrary host-env passthrough is a much bigger grant. byre ships
-	// CoreEnvFromHost on by default (host git identity, so box commits are
-	// attributed to the developer); an explicit [env] KEY in any layer beats
-	// the passthrough for that key.
+	// grammar is a CLOSED scheme set: "git:<config-key>" (read via
+	// `git config --get` on the host at launch), "env:<HOST_VAR>" (the host
+	// env var, absent = sets nothing), "tz:" (the host timezone — TZ env var
+	// if set, else the IANA name from the /etc/localtime symlink), or ""
+	// (disables the key — how a layer drops a lower layer's entry). Anything
+	// else is a validation error; a literal value belongs in [env], never
+	// here — env_from_host entries are grants, literals are config. byre
+	// ships CoreEnvFromHost on by default (host git identity so box commits
+	// are attributed to the developer, plus TERM and TZ so the box renders
+	// and timestamps like the terminal it runs in); an explicit [env] KEY in
+	// any layer beats the passthrough for that key.
 	EnvFromHost map[string]string `toml:"env_from_host,omitempty"`
 	Files       map[string]string `toml:"files,omitempty"`
 	Skills      []string          `toml:"skills,omitempty"`
@@ -1467,15 +1470,19 @@ func ListTemplatesCatalog(cat *packages.Catalog) []string {
 
 // CoreEnvFromHost is byre's shipped env_from_host layer: the host git
 // identity, on by default so box commits are attributed to the developer
-// (ADR 0026). resolveWith merges it UNDER default.config — a real config
-// layer any higher layer can override or disable per key (`KEY = ""`), never
-// hardcoded plumbing the legibility surfaces can't see.
+// (ADR 0026), plus TERM and TZ so the box renders and timestamps like the
+// terminal byre was launched from. resolveWith merges it UNDER
+// default.config — a real config layer any higher layer can override or
+// disable per key (`KEY = ""`), never hardcoded plumbing the legibility
+// surfaces can't see.
 func CoreEnvFromHost() map[string]string {
 	return map[string]string{
 		"GIT_AUTHOR_NAME":     "git:user.name",
 		"GIT_COMMITTER_NAME":  "git:user.name",
 		"GIT_AUTHOR_EMAIL":    "git:user.email",
 		"GIT_COMMITTER_EMAIL": "git:user.email",
+		"TERM":                "env:TERM",
+		"TZ":                  "tz:",
 	}
 }
 
@@ -1484,10 +1491,10 @@ func CoreEnvFromHost() map[string]string {
 // allowlist just keeps configs legible and typo-loud.
 var gitConfigKeyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
 
-// validateHostSource checks one env_from_host source: "" (disabled) or
-// "git:<config-key>". Everything else — notably "env:..." — is reserved:
-// arbitrary host-env passthrough is a far bigger grant than git identity and
-// stays rejected until it is deliberately designed.
+// validateHostSource checks one env_from_host source against the closed
+// scheme set: "" (disabled), "git:<config-key>", "env:<HOST_VAR>", or "tz:"
+// (no argument). Anything else is an error naming the legal schemes — a
+// literal value belongs in [env], not here (grants vs config).
 func validateHostSource(src string) error {
 	if src == "" {
 		return nil // disabled — how a layer drops a lower layer's entry
@@ -1498,7 +1505,19 @@ func validateHostSource(src string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("source %q: only \"git:<config-key>\" sources (and \"\" to disable) are supported today", src)
+	if name, ok := strings.CutPrefix(src, "env:"); ok {
+		if !envKeyRe.MatchString(name) {
+			return fmt.Errorf("source %q: %q is not a valid env var name", src, name)
+		}
+		return nil
+	}
+	if src == "tz:" {
+		return nil
+	}
+	if strings.HasPrefix(src, "tz:") {
+		return fmt.Errorf("source %q: \"tz:\" takes no argument (it always means the host timezone)", src)
+	}
+	return fmt.Errorf("source %q: supported sources are \"git:<config-key>\", \"env:<HOST_VAR>\", \"tz:\" (and \"\" to disable); a literal value belongs in [env]", src)
 }
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and

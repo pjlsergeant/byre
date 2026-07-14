@@ -331,9 +331,9 @@ func TestListSummariesCountEffectiveState(t *testing.T) {
 	if got := m.renderValue(fApt, false); !strings.Contains(got, "3 packages") || !strings.Contains(got, "2 inherited") {
 		t.Errorf("apt summary: %q", got)
 	}
-	// env: GIT_EDITOR inherited + DOCKER_HOST from the docker skill + the 4
-	// shipped env_from_host git-identity keys (ADR 0026) = 6.
-	if got := m.renderValue(fEnv, false); !strings.Contains(got, "6 vars") || !strings.Contains(got, "1 from skills") {
+	// env: GIT_EDITOR inherited + DOCKER_HOST from the docker skill + the 6
+	// shipped env_from_host keys (4 git-identity, ADR 0026, + TERM/TZ) = 8.
+	if got := m.renderValue(fEnv, false); !strings.Contains(got, "8 vars") || !strings.Contains(got, "1 from skills") {
 		t.Errorf("env summary: %q", got)
 	}
 	// mounts: 1 inherited + 1 skill; ports: 1 inherited.
@@ -746,13 +746,13 @@ func TestExposureNowAndFormLine(t *testing.T) {
 	m := effectiveModel()
 	e := m.exposureNow()
 	// 1 inherited mount (default) + 1 skill mount; 1 inherited port;
-	// GIT_EDITOR inherited + DOCKER_HOST from the skill + 4 shipped
-	// env_from_host keys; no posture skill.
+	// GIT_EDITOR inherited + DOCKER_HOST from the skill + 6 shipped
+	// env_from_host keys (git identity + TERM/TZ); no posture skill.
 	if e.Mounts != 2 || e.DisabledMounts != 0 {
 		t.Errorf("mounts = %d (+%d disabled), want 2 (+0)", e.Mounts, e.DisabledMounts)
 	}
-	if e.Ports != 1 || e.Env != 6 {
-		t.Errorf("ports/env = %d/%d, want 1/6 (incl. the 4 shipped env_from_host keys)", e.Ports, e.Env)
+	if e.Ports != 1 || e.Env != 8 {
+		t.Errorf("ports/env = %d/%d, want 1/8 (incl. the 6 shipped env_from_host keys)", e.Ports, e.Env)
 	}
 	if e.Posture != "" || e.Egress != 0 {
 		t.Errorf("no posture skill enabled, got posture %q egress %d", e.Posture, e.Egress)
@@ -760,7 +760,7 @@ func TestExposureNowAndFormLine(t *testing.T) {
 	if e.RawRunArgs || e.RawBuild {
 		t.Errorf("no raw config in the test bed: %+v", e)
 	}
-	want := "exposure: 2 host mounts · 1 port · 6 env vars · network open"
+	want := "exposure: 2 host mounts · 1 port · 8 env vars · network open"
 	if got := m.viewForm(); !strings.Contains(got, want) {
 		t.Errorf("form missing %q:\n%s", want, got)
 	}
@@ -787,8 +787,8 @@ func TestExposureNowDisabledMountsAndPosture(t *testing.T) {
 	if e.Mounts != 2 || e.DisabledMounts != 1 {
 		t.Errorf("mounts = %d (+%d disabled), want 2 (+1)", e.Mounts, e.DisabledMounts)
 	}
-	if e.Env != 6 { // GIT_EDITOR + DOCKER_HOST (restated key folds) + 4 shipped env_from_host
-		t.Errorf("env = %d, want 6", e.Env)
+	if e.Env != 8 { // GIT_EDITOR + DOCKER_HOST (restated key folds) + 6 shipped env_from_host
+		t.Errorf("env = %d, want 8", e.Env)
 	}
 	if e.Posture != "deny-by-default" {
 		t.Errorf("posture = %q, want deny-by-default", e.Posture)

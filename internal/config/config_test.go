@@ -965,9 +965,10 @@ func TestSharedAuthKeysNeverResolve(t *testing.T) {
 	}
 }
 
-// env_from_host (ADR 0026): byre's core git-identity layer is a real config
-// layer — on by default, visible in the resolved config, disable-able and
-// overridable per key by any higher layer; sources beyond git: are reserved.
+// env_from_host (ADR 0026): byre's core layer (git identity + TERM/TZ) is a
+// real config layer — on by default, visible in the resolved config,
+// disable-able and overridable per key by any higher layer; sources are a
+// closed scheme set (git:/env:/tz:).
 func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
@@ -979,6 +980,9 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 	}
 	if cfg.EnvFromHost["GIT_AUTHOR_NAME"] != "git:user.name" || cfg.EnvFromHost["GIT_COMMITTER_EMAIL"] != "git:user.email" {
 		t.Fatalf("shipped core defaults must resolve on: %v", cfg.EnvFromHost)
+	}
+	if cfg.EnvFromHost["TERM"] != "env:TERM" || cfg.EnvFromHost["TZ"] != "tz:" {
+		t.Fatalf("shipped TERM/TZ passthrough must resolve on: %v", cfg.EnvFromHost)
 	}
 
 	// A higher layer disables one key and redirects another.
@@ -995,10 +999,27 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 		t.Fatalf("a layer must override a core source: %v", cfg2.EnvFromHost)
 	}
 
-	// env: sources are reserved until deliberately designed.
-	bad := Config{EnvFromHost: map[string]string{"FOO": "env:SECRET"}}
-	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "git:") {
-		t.Fatalf("env: source must be rejected loudly, got %v", err)
+	// The scheme set is closed: env:/tz: are legal, anything else is a loud
+	// error naming the schemes; a literal value is pointed at [env].
+	ok := Config{EnvFromHost: map[string]string{
+		"GEMINI_API_KEY": "env:GEMINI_API_KEY",
+		"BOX_NAME":       "env:HOST_NAME",
+		"TZ":             "tz:",
+	}}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("env:/tz: sources must validate: %v", err)
+	}
+	bad := Config{EnvFromHost: map[string]string{"FOO": "literal-value"}}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "[env]") {
+		t.Fatalf("unknown source must be rejected pointing at [env], got %v", err)
+	}
+	badEnv := Config{EnvFromHost: map[string]string{"FOO": "env:not a var"}}
+	if err := badEnv.Validate(); err == nil {
+		t.Fatalf("env: with an invalid var name must be rejected, got %v", err)
+	}
+	badTz := Config{EnvFromHost: map[string]string{"TZ": "tz:Europe/London"}}
+	if err := badTz.Validate(); err == nil || !strings.Contains(err.Error(), "no argument") {
+		t.Fatalf("tz: with an argument must be rejected, got %v", err)
 	}
 	badKey := Config{EnvFromHost: map[string]string{"BAD KEY": "git:user.name"}}
 	if err := badKey.Validate(); err == nil {

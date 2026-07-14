@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 
@@ -32,6 +33,12 @@ func hostSourceValue(src string) string {
 	if key, ok := strings.CutPrefix(src, "git:"); ok {
 		return gitConfig(key)
 	}
+	if name, ok := strings.CutPrefix(src, "env:"); ok {
+		return os.Getenv(name)
+	}
+	if src == "tz:" {
+		return hostTimezone()
+	}
 	return ""
 }
 
@@ -41,4 +48,31 @@ func gitConfig(key string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// hostTimezone resolves the "tz:" source: the host's TZ env var when set,
+// else the IANA name read from the /etc/localtime symlink (Linux and macOS
+// both point it into a zoneinfo tree). Underivable — no TZ var and no
+// symlink — reads as empty, and the entry sets nothing, like an unset git
+// config key.
+func hostTimezone() string {
+	if tz := os.Getenv("TZ"); tz != "" {
+		return tz
+	}
+	target, err := os.Readlink("/etc/localtime")
+	if err != nil {
+		return ""
+	}
+	return tzFromZoneinfoPath(target)
+}
+
+// tzFromZoneinfoPath extracts the IANA zone name from a localtime symlink
+// target: everything after the last "zoneinfo/" path element.
+func tzFromZoneinfoPath(target string) string {
+	const marker = "zoneinfo/"
+	i := strings.LastIndex(target, marker)
+	if i < 0 {
+		return ""
+	}
+	return target[i+len(marker):]
 }
