@@ -82,7 +82,8 @@ func TestEnsureAgentsMDPreservesForeignFile(t *testing.T) {
 		t.Fatalf("takeover should say so; got: %q", out.String())
 	}
 
-	// Second foreign copy: .bak keeps the ORIGINAL.
+	// Second foreign copy: .bak keeps the ORIGINAL; the new copy is
+	// preserved too, under a unique-ified name.
 	if err := os.WriteFile(path, []byte("more notes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +92,13 @@ func TestEnsureAgentsMDPreservesForeignFile(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(bak); string(got) != "# my own notes\n" {
 		t.Fatalf(".bak clobbered by a later foreign copy; got %q", got)
+	}
+	baks, _ := filepath.Glob(path + ".bak-*")
+	if len(baks) != 1 {
+		t.Fatalf("expected one unique-ified backup, got %v", baks)
+	}
+	if got, _ := os.ReadFile(baks[0]); string(got) != "more notes\n" {
+		t.Fatalf("second foreign copy not preserved; got %q", got)
 	}
 
 	// A stale byre copy (title line intact) is replaced without a .bak.
@@ -106,6 +114,38 @@ func TestEnsureAgentsMDPreservesForeignFile(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != agentsMD {
 		t.Fatalf("stale byre copy not refreshed")
+	}
+}
+
+// Preservation is a precondition of the takeover: when the foreign file
+// cannot be moved aside, EnsureStore fails and the file stays untouched.
+func TestEnsureAgentsMDAbortsWhenPreservationFails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	home := t.TempDir()
+	path := filepath.Join(home, "AGENTS.md")
+	if err := os.WriteFile(path, []byte("# my own notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-create the store dirs so the failure below is the guide's, not
+	// the MkdirAll loop's.
+	for _, sub := range []string{"skills", "templates", "bundled"} {
+		if err := os.MkdirAll(filepath.Join(home, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Read-only store root: the preserving rename (and any write) must fail.
+	if err := os.Chmod(home, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(home, 0o755) })
+
+	if err := EnsureStore(home, nil, "test", nil); err == nil {
+		t.Fatalf("EnsureStore should fail when it cannot preserve a foreign AGENTS.md")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "# my own notes\n" {
+		t.Fatalf("foreign AGENTS.md touched despite failed preservation: %q", got)
 	}
 }
 

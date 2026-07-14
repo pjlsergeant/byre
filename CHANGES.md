@@ -10,7 +10,10 @@
   of editing in place, and the version-control conventions (git at the
   `skills/<owner>/` level, never the whole store). byre owns the file --
   edits are overwritten whenever it differs from the running binary's
-  copy.
+  copy. A pre-existing AGENTS.md that byre never wrote is preserved as
+  `AGENTS.md.bak` before the takeover -- preservation is a precondition,
+  never best-effort -- and a symlink at the path is replaced as a link,
+  never written through.
 - **`skill|template pack` output is now a fixed point of pack.** Re-packing
   a previously packed manifest (the documented publishing flow writes pack
   output over the primary in place) used to accrete a duplicate generated

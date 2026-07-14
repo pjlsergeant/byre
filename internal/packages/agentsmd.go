@@ -189,16 +189,21 @@ func ensureAgentsMD(home string, out io.Writer) error {
 			return nil
 		}
 		// Past byre writes all start with the stable title line; anything
-		// else (or unreadable) is user-placed -- preserve it. Rename, not
-		// copy, so an unreadable file is still saved whole. A .bak that
-		// already exists keeps the ORIGINAL takeover; later foreign copies
-		// are edits to a file whose first line says byre overwrites it.
+		// else (or unreadable) is user-placed -- preserve it, as a
+		// PRECONDITION of the takeover: if the preservation cannot
+		// complete, fail without touching the file. Rename, not copy, so
+		// an unreadable file is still saved whole; the backup name
+		// unique-ifies when AGENTS.md.bak is already occupied.
 		if rerr != nil || !bytes.HasPrefix(cur, []byte(agentsMDTitle)) {
-			bak := path + ".bak"
-			if _, berr := os.Lstat(bak); os.IsNotExist(berr) {
-				if os.Rename(path, bak) == nil && out != nil {
-					fmt.Fprintln(out, "byre: ~/.byre/AGENTS.md existed but is not byre's -- preserved it as AGENTS.md.bak")
-				}
+			bak, berr := reserveBakName(path)
+			if berr == nil {
+				berr = os.Rename(path, bak)
+			}
+			if berr != nil {
+				return fmt.Errorf("agents guide: cannot preserve the existing AGENTS.md (not byre's): %w", berr)
+			}
+			if out != nil {
+				fmt.Fprintf(out, "byre: ~/.byre/AGENTS.md existed but is not byre's -- preserved it as %s\n", filepath.Base(bak))
 			}
 		}
 	}
@@ -224,4 +229,21 @@ func ensureAgentsMD(home string, out io.Writer) error {
 		fmt.Fprintln(out, "byre: wrote ~/.byre/AGENTS.md (byre-owned agent guide)")
 	}
 	return nil
+}
+
+// reserveBakName picks a destination for preserving a foreign AGENTS.md:
+// plain .bak when free, otherwise a reserved unique .bak-* file that the
+// caller's rename replaces -- an existing backup (byre's own earlier
+// takeover or the user's) is never clobbered.
+func reserveBakName(path string) (string, error) {
+	bak := path + ".bak"
+	if _, err := os.Lstat(bak); os.IsNotExist(err) {
+		return bak, nil
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".bak-*")
+	if err != nil {
+		return "", err
+	}
+	f.Close()
+	return f.Name(), nil
 }
