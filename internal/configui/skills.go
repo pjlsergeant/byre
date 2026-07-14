@@ -160,7 +160,10 @@ func (m model) skillEntries() []skillEntry {
 // as an indented child directly under its agent's row, so the pairing is
 // visible at the point of enablement. Pairing is by canonical ID (D2, alias
 // expansion when a catalog is present). A companion whose agent has no row
-// stays a plain skill.
+// stays a plain skill. Only non-agent rows nest: a skill that is itself
+// agent-capable keeps its top-level agent row (nesting one agent — possibly
+// the locked primary — under another would misstate what it is), a shape no
+// real companion has anyway.
 func (m model) nestSharedAuth(nonAgent, agent []skillEntry) ([]skillEntry, []skillEntry) {
 	canon := func(n string) string {
 		if m.inh.Catalog != nil {
