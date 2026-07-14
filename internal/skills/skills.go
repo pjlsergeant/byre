@@ -383,6 +383,17 @@ type EgressAllow struct {
 // marked unenforced, when no posture is active — ADR 0019).
 const EgressFromConfig = "config"
 
+// PostureOpenDenylist is the posture VOCABULARY (not behavior) for an
+// otherwise-open network with the config's `!host` closures dropped — the
+// third posture value beside the default open ("") and the firewall's
+// deny-by-default. Core recognizing the label is what lets status render an
+// honest claim for it: the allowlist is meaningless noise under an open
+// network (suppressed, config rows marked unenforced — same treatment as
+// open), while the closures ARE the enforced list and print as such. A
+// posture skill declaring this label opts into that rendering; enforcement
+// still lives entirely in the skill's own netns hook.
+const PostureOpenDenylist = "open-denylist"
+
 // EgressAllows lists every enabled skill's egress entries, parsed and
 // attributed, in enable order. Resolve validated them, so parsing can't fail.
 func (r Resolved) EgressAllows() []EgressAllow {

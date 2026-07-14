@@ -62,19 +62,54 @@ func (m model) fieldRows(f fieldID) []listRow {
 	return nil
 }
 
-// egressRows mirrors aptRows: egress is a plain string list with `!entry`
-// removal, plus each effective skill's declared endpoints shown read-only
-// (normalized to host:port for display; identity stays the raw entry string).
+// egressRows mirrors aptRows in shape, but egress `!entry` markers are
+// CLOSURES, not plain removals: they survive the cascade and subtract from
+// the derived allowlist including skill-declared endpoints, matching on the
+// parsed grammar (a portless `!host` closes every port). The rows must tell
+// that story: a skill endpoint a closure reaches shows closed (with Restore
+// when the marker is this file's own), and a marker is only "stale" when it
+// matches nothing anywhere — lower entries, this file's entries, or skills.
 func (m model) egressRows() []listRow {
 	localIdx := map[string]int{}
-	markerIdx := map[string]int{}
 	for i, e := range m.egress {
-		if n, ok := strings.CutPrefix(e, "!"); ok {
-			markerIdx[n] = i
-		} else {
+		if !isRemovalName(e) {
 			localIdx[e] = i
 		}
 	}
+	// localMarkerFor finds this file's own closure matching an open entry.
+	localMarkerFor := func(entry string) (idx int, name string, ok bool) {
+		for i, e := range m.egress {
+			if n, isM := strings.CutPrefix(e, "!"); isM && config.EgressClosureMatches(n, entry) {
+				return i, n, true
+			}
+		}
+		return 0, "", false
+	}
+	// Lower-layer closures still active at this layer: a local plain entry
+	// re-opens (deletes) every closure it matches, same as the merge.
+	var lowerClosures []string
+	for _, c := range m.lowerNow().EgressClosed {
+		reopened := false
+		for e := range localIdx {
+			if config.EgressClosureMatches(c, e) {
+				reopened = true
+				break
+			}
+		}
+		if !reopened {
+			lowerClosures = append(lowerClosures, c)
+		}
+	}
+	lowerClosureFor := func(entry string) (name string, ok bool) {
+		for _, c := range lowerClosures {
+			if config.EgressClosureMatches(c, entry) {
+				return c, true
+			}
+		}
+		return "", false
+	}
+	markerMatched := map[int]bool{} // marker idx -> matched something (not stale)
+
 	lower := map[string]bool{}
 	var rows []listRow
 	for _, e := range m.lowerNow().Egress {
@@ -84,35 +119,54 @@ func (m model) egressRows() []listRow {
 		lower[e] = true
 		e := e
 		src := m.lowerSource(func(c config.Config) bool { return slices.Contains(c.Egress, e) })
-		switch {
-		case hasKey(markerIdx, e):
-			rows = append(rows, listRow{kind: rowRemoved, text: e, source: src, idx: markerIdx[e]})
-		case hasKey(localIdx, e):
-			rows = append(rows, listRow{kind: rowLocal, text: e, source: src, also: true, idx: localIdx[e]})
-		default:
-			rows = append(rows, listRow{kind: rowInherited, text: e, ident: e, source: src})
+		if i, _, ok := localMarkerFor(e); ok {
+			markerMatched[i] = true
+			rows = append(rows, listRow{kind: rowRemoved, text: e, source: src, idx: i})
+			continue
 		}
+		if hasKey(localIdx, e) {
+			rows = append(rows, listRow{kind: rowLocal, text: e, source: src, also: true, idx: localIdx[e]})
+			continue
+		}
+		rows = append(rows, listRow{kind: rowInherited, text: e, ident: e, source: src})
 	}
 	for i, e := range m.egress {
 		if isRemovalName(e) || lower[e] {
 			continue
 		}
-		if hasKey(markerIdx, e) {
-			rows = append(rows, listRow{kind: rowRemoved, text: e, idx: markerIdx[e]})
+		if mi, _, ok := localMarkerFor(e); ok {
+			markerMatched[mi] = true
+			rows = append(rows, listRow{kind: rowRemoved, text: e, idx: mi})
 			continue
 		}
 		rows = append(rows, listRow{kind: rowLocal, text: e, idx: i})
 	}
-	for i, e := range m.egress {
-		if n, ok := strings.CutPrefix(e, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
-			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
-		}
-	}
 	for _, sk := range m.effectiveSkills() {
 		for _, e := range m.inh.Skills[sk].Egress {
-			if host, port, err := config.ParseEgress(e); err == nil {
-				rows = append(rows, listRow{kind: rowSkill, text: host + ":" + strconv.Itoa(port), source: "skill:" + sk})
+			host, port, err := config.ParseEgress(e)
+			if err != nil {
+				continue
 			}
+			hp := host + ":" + strconv.Itoa(port)
+			if i, _, ok := localMarkerFor(hp); ok {
+				// Closed by this file's own marker: Restore (clear it) works.
+				markerMatched[i] = true
+				rows = append(rows, listRow{kind: rowRemoved, text: hp, source: "skill:" + sk, idx: i})
+				continue
+			}
+			if c, ok := lowerClosureFor(hp); ok {
+				// Closed by a lower layer's closure: nothing in THIS file to
+				// act on, so the row stays the menu-less rowSkill kind and
+				// the attribution carries the truth.
+				rows = append(rows, listRow{kind: rowSkill, text: hp, source: "skill:" + sk + " — closed by '!" + c + "'"})
+				continue
+			}
+			rows = append(rows, listRow{kind: rowSkill, text: hp, source: "skill:" + sk})
+		}
+	}
+	for i, e := range m.egress {
+		if n, ok := strings.CutPrefix(e, "!"); ok && !markerMatched[i] {
+			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
 		}
 	}
 
@@ -132,11 +186,23 @@ func (m model) egressRows() []listRow {
 	}
 	open := map[string]bool{}
 	addOpen := func(e string) {
-		if !isRemovalName(e) {
-			if n := normalize(e); n != "" {
-				open[n] = true
-			}
+		if isRemovalName(e) {
+			return
 		}
+		n := normalize(e)
+		if n == "" {
+			return
+		}
+		// An entry an active closure reaches is NOT open: the offered row may
+		// print (truthfully closed), and opening it writes a plain entry that
+		// re-opens per the cascade rules.
+		if _, _, ok := localMarkerFor(n); ok {
+			return
+		}
+		if _, ok := lowerClosureFor(n); ok {
+			return
+		}
+		open[n] = true
 	}
 	for _, e := range m.lowerNow().Egress {
 		addOpen(e)

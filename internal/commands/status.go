@@ -33,6 +33,7 @@ type statusInfo struct {
 	NetPosture      string               // a skill's declared network posture ("" = default open)
 	NetPostureSkill string               // the skill declaring it
 	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
+	EgressClosed    []string             // the config's `!host[:port]` closures that survived the cascade
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments    []skills.ContainmentDecl
@@ -76,6 +77,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		Ports:          cfg.Ports,
 		Volumes:        cfg.Volumes,
 		RunArgs:        cfg.RunArgs,
+		EgressClosed:   cfg.EgressClosed,
 		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs: len(cfg.RunArgs) > 0,
 		EnvFromHost:    cfg.EnvFromHost,
@@ -248,17 +250,21 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row(label, fmt.Sprintf("🛑 HOLE -- %s  (skill: %s)", c.Text, c.Skill))
 	}
 
-	// When a firewall posture is in effect, list its allowlist so "what can
-	// this box reach?" is legible — each host:port attributed to the skill that
-	// asked for it (deduped on host:port; first declarer wins the credit).
-	// With NO posture, skill-declared egress is suppressed (every agent skill
-	// declares endpoints; on an open network the list is meaningless noise) —
-	// but the user's own `egress` config entries still print, marked
-	// unenforced: config must not carry invisible teeth that a later skill
-	// toggle arms (ADR 0019).
+	// When an allowlist-enforcing posture is in effect, list the allowlist so
+	// "what can this box reach?" is legible — each host:port attributed to the
+	// skill that asked for it (deduped on host:port; first declarer wins the
+	// credit), and an entry a config closure subtracts shown as closed-by, not
+	// vanished (the whole point of `!host` reaching past the cascade). With NO
+	// such posture — the open default AND open-denylist, where the network is
+	// open — skill-declared egress is suppressed (every agent skill declares
+	// endpoints; on an open network the list is meaningless noise) — but the
+	// user's own `egress` config entries still print, marked unenforced:
+	// config must not carry invisible teeth that a later skill toggle arms
+	// (ADR 0019).
+	enforcesAllowlist := s.NetPosture != "" && s.NetPosture != skills.PostureOpenDenylist
 	egress := s.Egress
 	unenforced := ""
-	if s.NetPosture == "" {
+	if !enforcesAllowlist {
 		egress = nil
 		for _, a := range s.Egress {
 			if a.Skill == skills.EgressFromConfig {
@@ -281,8 +287,26 @@ func renderStatus(w io.Writer, s statusInfo) {
 				label = ""
 			}
 			first = false
+			if c, closed := closedBy(s.EgressClosed, a.Host, a.Port); closed && enforcesAllowlist {
+				row(label, fmt.Sprintf("%s  (%s — closed by config '!%s')", hp, a.Skill, c))
+				continue
+			}
 			row(label, fmt.Sprintf("%s  (%s%s)", hp, a.Skill, unenforced))
 		}
+	}
+	// The closures themselves, one row each — config that must never be
+	// invisible, whatever the posture. Under open-denylist they are THE
+	// enforced list; under deny-by-default they subtract from the allowlist
+	// above; with no posture they are declared and inert like every other
+	// egress entry.
+	first := true
+	for _, c := range s.EgressClosed {
+		label := "Closed"
+		if !first {
+			label = ""
+		}
+		first = false
+		row(label, closureLine(c, s))
 	}
 
 	if len(s.Ports) == 0 {
@@ -406,6 +430,37 @@ func renderStatus(w io.Writer, s statusInfo) {
 	}
 }
 
+// closedBy returns the config closure that subtracts the given host:port
+// from the derived allowlist, if any.
+func closedBy(closures []string, host string, port int) (string, bool) {
+	entry := fmt.Sprintf("%s:%d", host, port)
+	for _, c := range closures {
+		if config.EgressClosureMatches(c, entry) {
+			return c, true
+		}
+	}
+	return "", false
+}
+
+// closureLine renders one `!host[:port]` closure row per the active posture's
+// honesty rules: what a closure MEANS depends on what enforces it.
+func closureLine(c string, s statusInfo) string {
+	disp := c
+	if config.ClosurePortless(c) {
+		disp += " (every port)"
+	}
+	switch {
+	case s.SkillErr != "":
+		return disp + "  (config — posture unknown, skills unresolved)"
+	case s.NetPosture == skills.PostureOpenDenylist:
+		return disp + "  (config — blocked; skill: " + s.NetPostureSkill + ")"
+	case s.NetPosture == "":
+		return disp + "  (config — unenforced, network open)"
+	default:
+		return disp + "  (config — removed from the allowlist)"
+	}
+}
+
 // configEgress parses the resolved config's egress entries, attributed to
 // config, so status shows the user's extension holes alongside the skills'.
 // The resolved config is already validated, so parse failures can't happen;
@@ -437,6 +492,17 @@ func networkLine(s statusInfo) string {
 	if s.NetPosture == "" {
 		return "open"
 	}
+	claim := s.NetPosture
+	if claim == skills.PostureOpenDenylist {
+		// The claim carries the count (grilled 2026-07-14): the closures are
+		// the whole enforcement under this posture, so the top line says how
+		// many. "Best-effort" honesty (IP-snapshot blocking, aimed at
+		// well-behaved clients) lives in the skill's docs and Closed rows,
+		// not in a hedge here — byre either applied the drops or the box
+		// never launched (fail closed).
+		n := len(s.EgressClosed)
+		claim = fmt.Sprintf("%s (open network, %d %s blocked)", claim, n, plural(n, "host", "hosts"))
+	}
 	var raw []string
 	if s.ProjectRunArgs {
 		raw = append(raw, "raw run_args")
@@ -445,9 +511,9 @@ func networkLine(s statusInfo) string {
 		raw = append(raw, "raw build lines")
 	}
 	if len(raw) > 0 {
-		return s.NetPosture + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"
+		return claim + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"
 	}
-	return s.NetPosture + "  (skill: " + s.NetPostureSkill + ")"
+	return claim + "  (skill: " + s.NetPostureSkill + ")"
 }
 
 // portStatusLine renders a published port as "iface:host -> container", via

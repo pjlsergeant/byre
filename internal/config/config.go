@@ -170,6 +170,14 @@ func splitEgressEntry(entry string) (host string, port int, portless bool, err e
 	return host, port, portless, nil
 }
 
+// ClosurePortless reports whether a closure entry closes every port (it
+// names none). Exported so display surfaces can say "(every port)" without
+// restating the grammar (single-owner rule).
+func ClosurePortless(c string) bool {
+	_, _, portless, err := splitEgressEntry(c)
+	return err == nil && portless
+}
+
 // EgressClosureMatches reports whether a closure (a stripped `!` marker name,
 // "host" or "host:port") closes the given open egress entry. A portless
 // closure matches the host on any port; a ported one matches exactly. The

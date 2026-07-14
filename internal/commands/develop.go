@@ -431,5 +431,18 @@ func resolvedEgress(rv resolved) []string {
 			out = append(out, hp)
 		}
 	}
+	// Closures subtract LAST — after the skill union — which is what puts
+	// skill-declared entries in their reach (`claude` minus its statsig; the
+	// cascade merge already consumed any config entry a closure matched).
+	if len(rv.cfg.EgressClosed) > 0 {
+		kept := out[:0]
+		for _, hp := range out {
+			host, port, _ := config.ParseEgress(hp)
+			if _, closed := closedBy(rv.cfg.EgressClosed, host, port); !closed {
+				kept = append(kept, hp)
+			}
+		}
+		out = kept
+	}
 	return out
 }

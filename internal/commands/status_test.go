@@ -134,6 +134,15 @@ func TestNetworkLine(t *testing.T) {
 			"deny-by-default  (declared; raw run_args + raw build lines present — not guaranteed)"},
 		{"unresolved skills", statusInfo{SkillErr: "boom", NetPosture: ""},
 			"unknown  (skills unresolved)"},
+		{"open-denylist composes the blocked count", statusInfo{NetPosture: "open-denylist", NetPostureSkill: "firewall-open",
+			EgressClosed: []string{"statsig.anthropic.com", "telemetry.example.com:443"}},
+			"open-denylist (open network, 2 hosts blocked)  (skill: firewall-open)"},
+		{"open-denylist singular", statusInfo{NetPosture: "open-denylist", NetPostureSkill: "firewall-open",
+			EgressClosed: []string{"statsig.anthropic.com"}},
+			"open-denylist (open network, 1 host blocked)  (skill: firewall-open)"},
+		{"open-denylist degrades like any posture", statusInfo{NetPosture: "open-denylist", NetPostureSkill: "firewall-open",
+			EgressClosed: []string{"statsig.anthropic.com"}, ProjectRunArgs: true},
+			"open-denylist (open network, 1 host blocked)  (declared; raw run_args present — not guaranteed)"},
 	}
 	for _, c := range cases {
 		if got := networkLine(c.info); got != c.want {
@@ -215,6 +224,70 @@ func TestRenderStatusConfigEgressShownUnenforced(t *testing.T) {
 	if !strings.Contains(out, "api.anthropic.com:443") || strings.Contains(out, "unenforced") {
 		t.Errorf("posture on: full list, no unenforced tag:\n%s", out)
 	}
+}
+
+func TestRenderStatusClosures(t *testing.T) {
+	t.Run("deny-by-default: skill entry shown closed-by, not vanished", func(t *testing.T) {
+		var buf strings.Builder
+		renderStatus(&buf, statusInfo{
+			Agent:           "claude",
+			NetPosture:      "deny-by-default",
+			NetPostureSkill: "firewall",
+			Egress: []skills.EgressAllow{
+				{Skill: "claude", Host: "api.anthropic.com", Port: 443},
+				{Skill: "claude", Host: "statsig.anthropic.com", Port: 443},
+			},
+			EgressClosed: []string{"statsig.anthropic.com"},
+		})
+		out := buf.String()
+		if !strings.Contains(out, "statsig.anthropic.com:443  (claude — closed by config '!statsig.anthropic.com')") {
+			t.Errorf("closed skill entry must print as closed-by, not vanish:\n%s", out)
+		}
+		if !strings.Contains(out, "api.anthropic.com:443  (claude)") {
+			t.Errorf("unclosed entry must stay plain:\n%s", out)
+		}
+		if !strings.Contains(out, "Closed:") ||
+			!strings.Contains(out, "statsig.anthropic.com (every port)  (config — removed from the allowlist)") {
+			t.Errorf("closures must get their own attributed rows:\n%s", out)
+		}
+	})
+	t.Run("open-denylist: allowlist suppressed, closures are the enforced list", func(t *testing.T) {
+		var buf strings.Builder
+		renderStatus(&buf, statusInfo{
+			Agent:           "claude",
+			NetPosture:      "open-denylist",
+			NetPostureSkill: "firewall-open",
+			Egress: []skills.EgressAllow{
+				{Skill: "claude", Host: "api.anthropic.com", Port: 443},
+				{Skill: "config", Host: "grafana.com", Port: 443},
+			},
+			EgressClosed: []string{"statsig.anthropic.com", "telemetry.example.com:443"},
+		})
+		out := buf.String()
+		if strings.Contains(out, "api.anthropic.com") {
+			t.Errorf("skill egress is meaningless noise on an open network:\n%s", out)
+		}
+		if !strings.Contains(out, "grafana.com:443  (config — unenforced, network open)") {
+			t.Errorf("config egress prints unenforced under open-denylist:\n%s", out)
+		}
+		if !strings.Contains(out, "statsig.anthropic.com (every port)  (config — blocked; skill: firewall-open)") {
+			t.Errorf("portless closure row wrong:\n%s", out)
+		}
+		if !strings.Contains(out, "telemetry.example.com:443  (config — blocked; skill: firewall-open)") {
+			t.Errorf("ported closure row wrong:\n%s", out)
+		}
+	})
+	t.Run("no posture: closures print inert, not invisible", func(t *testing.T) {
+		var buf strings.Builder
+		renderStatus(&buf, statusInfo{
+			Agent:        "claude",
+			EgressClosed: []string{"statsig.anthropic.com"},
+		})
+		out := buf.String()
+		if !strings.Contains(out, "statsig.anthropic.com (every port)  (config — unenforced, network open)") {
+			t.Errorf("closure with no posture must print inert:\n%s", out)
+		}
+	})
 }
 
 func TestConfigEgressAttributed(t *testing.T) {
