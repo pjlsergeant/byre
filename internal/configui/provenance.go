@@ -25,6 +25,11 @@ type SkillRuntime struct {
 	// Containment is the skill's declared containment hole one-liner ("" =
 	// none). Shown on the skills screen when the skill is enabled.
 	Containment string
+	// SharedAuthFor names the agent skill this skill is the shared-auth
+	// companion for (ADR 0017/0025; "" = not a companion). The skills screen
+	// nests such a skill as an indented child of its agent's row so the
+	// pairing is visible at the point of enablement.
+	SharedAuthFor string
 	// Provenance is the package provenance (bundled/local/installed/...) for
 	// D13 dim-row labels; empty when unknown.
 	Provenance string

@@ -484,6 +484,55 @@ func TestSkillsScreenShowsDescriptions(t *testing.T) {
 	}
 }
 
+// A shared-auth companion (a skill declaring shared_auth_for) nests as an
+// indented child directly under its agent's row in the agent-skills section,
+// so the pairing is visible where you enable it. A companion whose agent has
+// no row stays a plain skill.
+func TestSkillsSharedAuthNestedUnderAgent(t *testing.T) {
+	cfg := config.Config{Agent: "claude"}
+	agents := []string{"claude", "codex"}
+	all := []string{"claude", "claude-shared-auth", "codex", "moarcode", "orphan-shared-auth"}
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"claude-shared-auth": {SharedAuthFor: "claude"},
+		"orphan-shared-auth": {SharedAuthFor: "gemini"}, // no gemini row anywhere
+	}}
+	m := newModel("t", "/tmp/x", cfg, nil, agents, all, nil, inh, nil, false)
+
+	entries := m.skillEntries()
+	idx := map[string]int{}
+	for i, e := range entries {
+		idx[e.name] = i
+	}
+	comp := entries[idx["claude-shared-auth"]]
+	if !comp.child || !comp.agent {
+		t.Fatalf("companion should be a nested child in the agent section: %+v", comp)
+	}
+	if idx["claude-shared-auth"] != idx["claude"]+1 {
+		t.Fatalf("companion should sit directly under its agent: %v", entries)
+	}
+	orphan := entries[idx["orphan-shared-auth"]]
+	if orphan.child || orphan.agent {
+		t.Fatalf("companion with no agent row should stay a plain skill: %+v", orphan)
+	}
+	if idx["moarcode"] > idx["claude"] {
+		t.Fatalf("plain skills should still sort before the agent section: %v", entries)
+	}
+
+	// The nested row renders indented under its agent.
+	view := m.viewSkills()
+	if !strings.Contains(view, "└ [ ] claude-shared-auth") {
+		t.Fatalf("nested companion not rendered indented:\n%s", view)
+	}
+
+	// Toggling the nested row still enables the companion by name.
+	m.skillCur = idx["claude-shared-auth"]
+	mm, _ := m.updateSkills(key(" "))
+	m = mm.(model)
+	if !contains(m.skills, "claude-shared-auth") {
+		t.Fatalf("space should enable the nested companion: %v", m.skills)
+	}
+}
+
 // A skill listed in `skills` that becomes the primary agent must not be written
 // back into `skills` (the agent field implies it).
 func TestSkillsPrimaryNotDoubleWritten(t *testing.T) {
