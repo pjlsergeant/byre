@@ -51,8 +51,9 @@ func ensureAgentsMD(home string, out io.Writer) error {
 		if rerr != nil || !bytes.HasPrefix(cur, []byte(agentsMDTitle)) {
 			bak, berr := reserveBakName(path)
 			if berr == nil {
-				if berr = os.Rename(path, bak); berr != nil {
-					// Don't leave an empty .bak-* placeholder behind.
+				if berr = os.Rename(path, bak); berr != nil && bak != path+".bak" {
+					// Drop the empty .bak-* placeholder CreateTemp made;
+					// the plain .bak branch created nothing to clean up.
 					_ = os.Remove(bak)
 				}
 			}
