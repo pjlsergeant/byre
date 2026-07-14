@@ -57,7 +57,7 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
 
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false); err != nil {
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, hostIdentity()); err != nil {
 		t.Fatalf("generated Dockerfile failed to build: %v", err)
 	}
 	if ok, err := r.ImageExists(image); err != nil || !ok {
@@ -110,7 +110,7 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 	rv := combine(cfg, res)
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false); err != nil {
+	if err := buildImage(r, p, cfg, res, image, false, hostIdentity()); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
@@ -119,7 +119,7 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	params, err := runParams(p, rv, image, false, false)
+	params, err := runParams(p, rv, image, false, false, hostIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,18 +203,18 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	uid, gid := os.Getuid(), os.Getgid()
 	imageA, imageB := imageTag(pA.ID, uid, gid), imageTag(pB.ID, uid, gid)
 	t.Cleanup(func() { _ = r.ImageRemove(imageA); _ = r.ImageRemove(imageB) })
-	if err := buildImage(r, pA, cfg, res, imageA, false); err != nil {
+	if err := buildImage(r, pA, cfg, res, imageA, false, hostIdentity()); err != nil {
 		t.Fatalf("project A image failed to build: %v", err)
 	}
-	if err := buildImage(r, pB, cfg, res, imageB, false); err != nil {
+	if err := buildImage(r, pB, cfg, res, imageB, false, hostIdentity()); err != nil {
 		t.Fatalf("project B image failed to build: %v", err)
 	}
 
-	paramsA, err := runParams(pA, rv, imageA, false, false)
+	paramsA, err := runParams(pA, rv, imageA, false, false, hostIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsB, err := runParams(pB, rv, imageB, false, false)
+	paramsB, err := runParams(pB, rv, imageB, false, false, hostIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,15 +318,15 @@ func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 	// One image, shared by both sessions (imageTag keys on the project ID).
 	image := imageTag(pMain.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, pMain, cfg, res, image, false); err != nil {
+	if err := buildImage(r, pMain, cfg, res, image, false, hostIdentity()); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
-	paramsMain, err := runParams(pMain, rv, image, false, false)
+	paramsMain, err := runParams(pMain, rv, image, false, false, hostIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsWt, err := runParams(pWt, rv, image, false, false)
+	paramsWt, err := runParams(pWt, rv, image, false, false, hostIdentity())
 	if err != nil {
 		t.Fatal(err)
 	}

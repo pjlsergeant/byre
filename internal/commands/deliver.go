@@ -212,11 +212,19 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 		Pick: pick,
 	}
 	for _, r := range engines {
-		// Deliver inherits develop's rootless-Podman detect-and-warn (ADR
-		// 0008): exec-stream ownership can be wrong there,
-		// so the claim degrades up front; delivery itself is not blocked.
+		// Rootless Podman WITHOUT keep-id support inherits develop's
+		// detect-and-warn (exec-stream ownership can be wrong there); the
+		// claim degrades up front, delivery itself is not blocked. Supported
+		// rootless Podman is a first-class path (ADR 0032) — and its per-user
+		// storage makes the engine caller-scoped, which discovery's uid
+		// accident-guard must know: a keep-id box's BYRE_UID is the generic
+		// in-container uid, not the caller's.
 		warnRootlessPodman(s.Err, r)
-		cfg.Engines = append(cfg.Engines, engineAdapter{r})
+		callerScoped := false
+		if rootless, rerr := r.IsRootlessPodman(); rerr == nil && rootless {
+			callerScoped = true
+		}
+		cfg.Engines = append(cfg.Engines, engineAdapter{r: r, callerScoped: callerScoped})
 	}
 	landed, err := deliver.RunSources(cfg, opts, sources)
 	if deliver.IsCancelled(err) {
@@ -227,9 +235,15 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 }
 
 // engineAdapter narrows a sessionRunner to deliver's Engine interface.
-type engineAdapter struct{ r sessionRunner }
+// callerScoped is decided at wiring time (one rootless probe per engine, not
+// per session).
+type engineAdapter struct {
+	r            sessionRunner
+	callerScoped bool
+}
 
-func (a engineAdapter) Name() string { return string(a.r.Engine()) }
+func (a engineAdapter) Name() string       { return string(a.r.Engine()) }
+func (a engineAdapter) CallerScoped() bool { return a.callerScoped }
 func (a engineAdapter) Sessions(label string) ([]string, error) {
 	return a.r.RunningContainersByLabel(label)
 }

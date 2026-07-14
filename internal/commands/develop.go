@@ -99,7 +99,12 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 // exit-status mapping. Split from Develop (which does the host-side resolution
 // and onboarding) so it can run end-to-end against a fake engine.
 func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool) error {
-	if err := requireRootfulEngine(s.Err, r); err != nil {
+	// Mode-select (ADR 0032): host identity on rootful engines, the generic
+	// keep-id identity under rootless Podman — or the old refusal where the
+	// engine can't do the mapping. Everything identity-shaped below (image
+	// tag, build args, seed chowns, BYRE_UID, --userns) follows this value.
+	ident, err := resolveIdentity(s.Err, r)
+	if err != nil {
 		return err
 	}
 
@@ -114,7 +119,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		fmt.Fprintf(s.Err, "byre: worktree session — the shared project image builds from the main worktree (%s); `files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
 	}
 
-	image := imageTag(paths.ID, os.Getuid(), os.Getgid())
+	image := imageTag(paths.ID, ident.UID, ident.GID)
 
 	// Fast path: a session is already running for THIS worktree — report it
 	// rather than racing the container name. Queried by the worktree label, not
@@ -140,7 +145,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to grant itself full access to your host on the next run.")
 		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
 	}
-	params, err := runParams(paths, rv, image, selfEdit, s.TTY)
+	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident)
 	if err != nil {
 		return err
 	}
@@ -185,18 +190,18 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// volumes; if one does, the start below fails loudly instead of the
 	// session launching against wiped, engine-recreated volumes.
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false); berr != nil {
+		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
 			return berr
 		}
 		// Seed fresh state volumes that declare a config-level seed, using the
 		// image we just built. One-time; existing volumes are left alone.
-		if err := seedVolumes(r, s.Err, paths, image, rv.volumes, os.Getuid(), os.Getgid()); err != nil {
+		if err := seedVolumes(r, s.Err, paths, image, rv.volumes, ident); err != nil {
 			return err
 		}
 		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
 		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
 		if p := rv.skills.AgentPrefs(); rv.cfg.SeedPrefs && p != nil {
-			if err := seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, os.Getuid(), os.Getgid()); err != nil {
+			if err := seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, ident); err != nil {
 				return err
 			}
 		}
@@ -253,7 +258,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		finished := make(chan struct{})
 		go func() {
 			defer close(finished)
-			runNetnsInits(r, s.Err, netnsLabel, image, hooks, netnsEnv, done)
+			runNetnsInits(r, s.Err, netnsLabel, image, hooks, netnsEnv, ident.KeepID, done)
 		}()
 		netnsWait = func() { close(done); <-finished }
 	}
@@ -298,13 +303,15 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 }
 
 // buildImage generates the build context and builds the project's image. The
-// build bakes the host UID/GID via --build-arg so /home/dev and the volume
-// mount points are born owned by the runtime user (no runtime chown).
-func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool) error {
+// build bakes the identity's UID/GID via --build-arg so /home/dev and the
+// volume mount points are born owned by the runtime user (no runtime chown)
+// — the host user's ids on the rootful path, the generic keep-id ids under
+// rootless Podman (ADR 0032).
+func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
 	if _, err := build.Assemble(paths, cfg, res); err != nil {
 		return err
 	}
-	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache, uidBuildArgs())
+	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache, uidBuildArgs(ident))
 }
 
 // requireNonRootHost refuses to build/run as uid or gid 0. byre bakes the
@@ -324,13 +331,14 @@ func requireNonRootHost(warn io.Writer) error {
 	return errors.New("refusing to run as root: byre would bake UID 0 as the container's dev user, so the agent would run as root and create root-owned files on your host mounts. Run byre as your normal user, or set BYRE_ALLOW_ROOT=1 to override anyway.")
 }
 
-// uidBuildArgs returns the --build-arg pairs that bake the invoking user's
-// UID/GID into the image. byre develop builds and runs as the same user in one
-// invocation, so build-UID == run-UID by construction.
-func uidBuildArgs() []string {
+// uidBuildArgs returns the --build-arg pairs that bake the identity's UID/GID
+// into the image. byre develop builds and runs in one invocation, so
+// build-identity == run-identity by construction: the invoking user on the
+// rootful path, the generic keep-id ids under rootless Podman.
+func uidBuildArgs(ident runner.Identity) []string {
 	return []string{
-		fmt.Sprintf("BYRE_UID=%d", os.Getuid()),
-		fmt.Sprintf("BYRE_GID=%d", os.Getgid()),
+		fmt.Sprintf("BYRE_UID=%d", ident.UID),
+		fmt.Sprintf("BYRE_GID=%d", ident.GID),
 	}
 }
 

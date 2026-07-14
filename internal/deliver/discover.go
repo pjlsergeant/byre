@@ -106,7 +106,12 @@ func inspect(cfg Config, opts Options, eng Engine, id string) (Session, sessionV
 		return s, sessionUnusable
 	}
 	s.UID, s.GID = uid, gid
-	s.Foreign = uid != cfg.CallerUID
+	// The uid filter is a cross-USER accident guard on a shared daemon. A
+	// caller-scoped engine (rootless Podman) can only show the caller's own
+	// boxes, so nothing there is foreign — and its keep-id boxes carry the
+	// in-container generic uid in BYRE_UID, which would misread as foreign if
+	// compared.
+	s.Foreign = !eng.CallerScoped() && uid != cfg.CallerUID
 	if s.Foreign && !opts.SkipUIDCheck {
 		return s, sessionForeign
 	}

@@ -26,11 +26,14 @@ type sessionRunner interface {
 	Create(args []string) error
 	StartAttach(container string) error
 	ContainerRemove(container string) error
-	NetnsInit(image, container, entrypoint string, env map[string]string) error
+	NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error
+	// SupportsKeepIDMapping reports whether the engine can do the explicit
+	// keep-id userns mapping (rootless Podman path — see resolveIdentity).
+	SupportsKeepIDMapping() (bool, error)
 	// ProbeSockGroup is the engine-side gid discovery for sock_groups (see
 	// runner.Runner.ProbeSockGroup). Used at create time so --group-add
 	// matches the gid the box will actually see.
-	ProbeSockGroup(image, hostPath, targetPath string) (int, error)
+	ProbeSockGroup(image, hostPath, targetPath, userns string) (int, error)
 	// IsDockerDesktop softens host-side socket-source warnings (Desktop
 	// resolves the bind inside a VM; a missing host path is a false-negative).
 	IsDockerDesktop() (bool, error)
@@ -45,10 +48,10 @@ type volumeRunner interface {
 	VolumeExists(name string) (bool, error)
 	VolumeCreate(name string) error
 	VolumeRemove(name string) error
-	SeedVolume(name, hostPath, image string, uid, gid int) error
-	SeedLiteral(volName, destPath, content, image string, uid, gid int) error
-	SeedFiles(volName, srcDir string, files []string, image string, uid, gid int) error
-	MigrateVolume(src, dst, image string, uid, gid int) error
+	SeedVolume(name, hostPath, image string, id runner.Identity) error
+	SeedLiteral(volName, destPath, content, image string, id runner.Identity) error
+	SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity) error
+	MigrateVolume(src, dst, image string, id runner.Identity) error
 }
 
 // imageRunner is the image surface: build and image lifecycle.

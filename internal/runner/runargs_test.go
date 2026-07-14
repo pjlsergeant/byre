@@ -236,7 +236,7 @@ func TestRunArgsGroupAdds(t *testing.T) {
 }
 
 func TestProbeSockGroupArgs(t *testing.T) {
-	args := probeSockGroupArgs("byre-img", "/var/run/docker.sock", "/var/run/docker.sock")
+	args := probeSockGroupArgs("byre-img", "/var/run/docker.sock", "/var/run/docker.sock", "")
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
 		"run", "--rm", "--user", "0:0", "--entrypoint", "stat",
@@ -254,7 +254,7 @@ func TestProbeSockGroupParsesGID(t *testing.T) {
 	r.capture = func(name string, args ...string) (string, error) {
 		return "989\n", nil
 	}
-	gid, err := r.ProbeSockGroup("img", "/h", "/t")
+	gid, err := r.ProbeSockGroup("img", "/h", "/t", "")
 	if err != nil || gid != 989 {
 		t.Fatalf("ProbeSockGroup = %d, %v; want 989", gid, err)
 	}

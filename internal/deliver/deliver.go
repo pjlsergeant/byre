@@ -30,6 +30,12 @@ type Engine interface {
 	// ExecInput runs a command in the container as uid:gid, feeding stdin and
 	// returning captured stdout.
 	ExecInput(id string, uid, gid int, stdin io.Reader, argv ...string) (string, error)
+	// CallerScoped reports that every session this engine can see was started
+	// by the calling user (rootless Podman: per-user storage). The uid
+	// accident-guard is then satisfied by construction — and must not compare
+	// ids: a keep-id box's BYRE_UID is the in-container generic uid, not the
+	// caller's (ADR 0032).
+	CallerScoped() bool
 }
 
 // Session is one running byre box, as discovery sees it.

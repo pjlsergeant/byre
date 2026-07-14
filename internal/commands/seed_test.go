@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
@@ -15,7 +16,7 @@ func TestSeedVolumesFreshSeedsOnce(t *testing.T) {
 		{Name: ".claude", Role: "state", Target: "/h/.claude", Seed: &config.Seed{Host: t.TempDir()}},
 		{Name: "cache", Role: "cache", Target: "/c"}, // not seeded
 	}
-	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
+	if err := seedVolumes(f, io.Discard, p, "img", vols, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	want := volumeName(p.ID, ".claude")
@@ -29,7 +30,7 @@ func TestSeedVolumesSkipsExisting(t *testing.T) {
 	name := volumeName(p.ID, ".claude")
 	f := &fakeRunner{vols: map[string]bool{name: true}}
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: t.TempDir()}}}
-	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
+	if err := seedVolumes(f, io.Discard, p, "img", vols, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.created) != 0 || len(f.seeded) != 0 {
@@ -41,7 +42,7 @@ func TestSeedVolumesRollbackOnFailure(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{failSeed: true}
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: t.TempDir()}}}
-	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err == nil {
+	if err := seedVolumes(f, io.Discard, p, "img", vols, runner.Identity{UID: 1000, GID: 1000}); err == nil {
 		t.Fatal("expected seed failure")
 	}
 	name := volumeName(p.ID, ".claude")
@@ -55,7 +56,7 @@ func TestSeedVolumesMissingHostSkips(t *testing.T) {
 	f := &fakeRunner{}
 	// Absolute host path that doesn't exist -> skip (empty volume), not fatal.
 	vols := []config.Volume{{Name: ".claude", Role: "state", Target: "/t", Seed: &config.Seed{Host: filepath.Join(t.TempDir(), "nope")}}}
-	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
+	if err := seedVolumes(f, io.Discard, p, "img", vols, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatalf("missing seed source should be skipped, got error: %v", err)
 	}
 	if len(f.created) != 0 || len(f.seeded) != 0 {
@@ -67,7 +68,7 @@ func TestSeedVolumesLiteralWritesOnce(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	vols := []config.Volume{{Name: "cfg", Role: "state", Target: "/t", Seed: &config.Seed{Literal: "hello", Path: "etc/foo.conf"}}}
-	if err := seedVolumes(f, io.Discard, p, "img", vols, 1000, 1000); err != nil {
+	if err := seedVolumes(f, io.Discard, p, "img", vols, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	want := volumeName(p.ID, "cfg") + ":etc/foo.conf=hello"
@@ -80,7 +81,7 @@ func TestSeedPrefsFreshSeedsOnce(t *testing.T) {
 	p, _ := testPaths(t)
 	from := t.TempDir() // an existing host source dir
 	f := &fakeRunner{}
-	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json", "themes"}, 1000, 1000); err != nil {
+	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json", "themes"}, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	want := volumeName(p.ID, ".claude") + ":keybindings.json,themes"
@@ -94,7 +95,7 @@ func TestSeedPrefsSkipsExisting(t *testing.T) {
 	name := volumeName(p.ID, ".claude")
 	from := t.TempDir()
 	f := &fakeRunner{vols: map[string]bool{name: true}}
-	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err != nil {
+	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.created) != 0 || len(f.fileSeed) != 0 {
@@ -106,7 +107,7 @@ func TestSeedPrefsMissingSourceSkips(t *testing.T) {
 	p, _ := testPaths(t)
 	from := filepath.Join(t.TempDir(), "nope") // does not exist
 	f := &fakeRunner{}
-	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err != nil {
+	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 		t.Fatalf("missing prefs source should be skipped, got error: %v", err)
 	}
 	if len(f.created) != 0 || len(f.fileSeed) != 0 {
@@ -126,7 +127,7 @@ func TestSeedPrefsNoOpWithoutSpec(t *testing.T) {
 		{".claude", "", []string{"x"}},
 		{".claude", t.TempDir(), nil},
 	} {
-		if err := seedPrefs(f, io.Discard, p, "img", c.state, c.from, c.files, 1000, 1000); err != nil {
+		if err := seedPrefs(f, io.Discard, p, "img", c.state, c.from, c.files, runner.Identity{UID: 1000, GID: 1000}); err != nil {
 			t.Fatalf("expected no-op, got error: %v", err)
 		}
 	}
@@ -139,7 +140,7 @@ func TestSeedPrefsRollbackOnFailure(t *testing.T) {
 	p, _ := testPaths(t)
 	from := t.TempDir()
 	f := &fakeRunner{failSeed: true}
-	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, 1000, 1000); err == nil {
+	if err := seedPrefs(f, io.Discard, p, "img", ".claude", from, []string{"keybindings.json"}, runner.Identity{UID: 1000, GID: 1000}); err == nil {
 		t.Fatal("expected prefs seed failure")
 	}
 	name := volumeName(p.ID, ".claude")

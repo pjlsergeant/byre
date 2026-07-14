@@ -11,19 +11,21 @@ import (
 	"github.com/pjlsergeant/byre/internal/runner"
 )
 
-// runParams assembles the run invocation: workspace bind, host UID/GID and the
-// env_from_host passthrough as env, config mounts, and named volumes scoped to
-// this project. The
-// image already bakes the UID/GID (the container runs as that user), so BYRE_UID/
-// BYRE_GID are set at runtime only so `byre shell` can read them back and exec as
-// the dev user.
-func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty bool) (runner.RunParams, error) {
-	// BYRE_UID/GID: shell identity. BYRE_PROJECT/WORKTREE: plumbing legibility
-	// for skills (docker-host keys compose on WorktreeID -- Paths.ID is shared
-	// across worktrees, so project-keyed compose would still collide).
+// runParams assembles the run invocation: workspace bind, the dev identity and
+// the env_from_host passthrough as env, config mounts, and named volumes scoped
+// to this project. The image already bakes the identity's UID/GID (the
+// container runs as that user), so BYRE_UID/BYRE_GID are set at runtime only so
+// `byre shell` and deliver can read them back and exec as the dev user.
+func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty bool, ident runner.Identity) (runner.RunParams, error) {
+	// BYRE_UID/GID: the box's IN-CONTAINER dev identity (shell/deliver exec as
+	// it) — the host user's ids on the rootful path, the generic keep-id ids
+	// under rootless Podman, where the userns maps them back to the host user.
+	// BYRE_PROJECT/WORKTREE: plumbing legibility for skills (docker-host keys
+	// compose on WorktreeID -- Paths.ID is shared across worktrees, so
+	// project-keyed compose would still collide).
 	env := map[string]string{
-		"BYRE_UID":      fmt.Sprintf("%d", os.Getuid()),
-		"BYRE_GID":      fmt.Sprintf("%d", os.Getgid()),
+		"BYRE_UID":      fmt.Sprintf("%d", ident.UID),
+		"BYRE_GID":      fmt.Sprintf("%d", ident.GID),
 		"BYRE_PROJECT":  paths.ID,
 		"BYRE_WORKTREE": paths.WorktreeID,
 	}
@@ -89,6 +91,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		Volumes:         vols,
 		Ports:           ports,
 		Caps:            rv.skills.Caps(),
+		Userns:          ident.Userns(),
 		// Skill run_args are generated grants; the project's own run_args come
 		// last so the project-level raw escape hatch wins (last-wins).
 		RunArgs: append(append([]string{}, rv.skills.RunArgs()...), rv.cfg.RunArgs...),

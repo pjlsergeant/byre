@@ -299,13 +299,16 @@ func execArgs(containerID string, uid, gid int, workdir string, env map[string]s
 // box's own image (the skill baked its tooling there; inert to the capless
 // agent inside). env is the box's resolved runtime env, re-passed so the
 // helper sees the same configuration (e.g. an allowlist extension var).
+// joinUserns joins the BOX's user namespace too (keep-id mode) — set when the
+// box runs under a non-default userns, since NET_ADMIN over its netns only
+// exists inside the userns that owns it.
 //
 // Output is captured, not streamed: the helper runs concurrently with the
 // box's interactive `run`, so it must not contend for the TTY. On failure the
 // engine's stderr is folded into the error; on success the launch gate
 // opening is the signal, not text.
-func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
-	_, err := r.capture(string(r.engine), netnsInitArgs(image, container, entrypoint, env)...)
+func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error {
+	_, err := r.capture(string(r.engine), netnsInitArgs(image, container, entrypoint, env, joinUserns)...)
 	return err
 }
 
@@ -314,10 +317,12 @@ func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]s
 // for every case (Docker Desktop's VM and remote contexts split host/VM, so a
 // host-side stat can report a gid the in-container socket does not carry).
 // image is the box's own just-built image (has core tools; entrypoint bypassed).
+// userns is the box's own --userns value (Identity.Userns; empty = none): a
+// gid probed under a different mapping would not be the gid the box sees.
 // Returns the numeric gid; a probe failure is returned to the caller for
 // attributed warning -- never silently defaulted.
-func (r *Runner) ProbeSockGroup(image, hostPath, targetPath string) (int, error) {
-	out, err := r.capture(string(r.engine), probeSockGroupArgs(image, hostPath, targetPath)...)
+func (r *Runner) ProbeSockGroup(image, hostPath, targetPath, userns string) (int, error) {
+	out, err := r.capture(string(r.engine), probeSockGroupArgs(image, hostPath, targetPath, userns)...)
 	if err != nil {
 		return 0, err
 	}
@@ -331,16 +336,20 @@ func (r *Runner) ProbeSockGroup(image, hostPath, targetPath string) (int, error)
 
 // probeSockGroupArgs builds the engine-side gid probe argv (pure, for testing).
 // --entrypoint bypasses the box launcher; --user 0 so the probe can read any
-// socket mode; the bind matches the box's own mount.
-func probeSockGroupArgs(image, hostPath, targetPath string) []string {
-	return []string{
+// socket mode; the bind matches the box's own mount, and so does the userns
+// mapping (gid numbers are only comparable inside one mapping).
+func probeSockGroupArgs(image, hostPath, targetPath, userns string) []string {
+	args := []string{
 		"run", "--rm",
 		"--user", "0:0",
 		"--entrypoint", "stat",
 		"--mount", fmt.Sprintf("type=bind,source=%s,target=%s", hostPath, targetPath),
+	}
+	args = appendUserns(args, userns)
+	return append(args,
 		image,
 		"-c", "%g", targetPath,
-	}
+	)
 }
 
 // IsDockerDesktop reports whether the engine is Docker Desktop (macOS, Windows,
@@ -362,13 +371,20 @@ func (r *Runner) IsDockerDesktop() (bool, error) {
 }
 
 // netnsInitArgs builds the netns-init helper argv (pure, for testing). Env
-// keys are sorted for deterministic argument order.
-func netnsInitArgs(image, container, entrypoint string, env map[string]string) []string {
+// keys are sorted for deterministic argument order. With joinUserns the
+// helper joins the box's own user namespace (--userns=container:<box>) — not
+// a fresh identical mapping: a netns is owned by the userns that created it,
+// and CAP_NET_ADMIN over it only exists inside that owner, so a sibling
+// namespace (even byte-identical) gets EPERM from iptables.
+func netnsInitArgs(image, container, entrypoint string, env map[string]string, joinUserns bool) []string {
 	args := []string{"run", "--rm",
 		"-u", "0:0",
 		"--net", "container:" + container,
 		"--cap-add", "NET_ADMIN",
 		"--entrypoint", entrypoint,
+	}
+	if joinUserns {
+		args = appendUserns(args, "container:"+container)
 	}
 	for _, k := range sortedKeys(env) {
 		args = append(args, "-e", k+"="+env[k])
@@ -412,15 +428,19 @@ func (r *Runner) ImageRemove(tag string) error {
 }
 
 // MigrateVolume copies the contents of src into dst (which must already exist),
-// chowning to uid:gid. Used by rehome (Docker has no volume rename). image
-// supplies cp/chown; the entrypoint is bypassed and it runs as root.
-func (r *Runner) MigrateVolume(src, dst, image string, uid, gid int) error {
-	script := fmt.Sprintf("cp -a /from/. /to/ && chown -R %d:%d /to", uid, gid)
-	return r.stream(string(r.engine), "run", "--rm",
-		"--entrypoint", "sh", "-u", "0:0",
+// chowning to the box identity. Used by rehome (Docker has no volume rename).
+// image supplies cp/chown; the entrypoint is bypassed and it runs as root, in
+// the box's own userns mapping when the identity carries one.
+func (r *Runner) MigrateVolume(src, dst, image string, id Identity) error {
+	script := fmt.Sprintf("cp -a /from/. /to/ && chown -R %d:%d /to", id.UID, id.GID)
+	args := []string{"run", "--rm",
+		"--entrypoint", "sh", "-u", "0:0"}
+	args = appendUserns(args, id.Userns())
+	args = append(args,
 		"--mount", "type=volume,source="+src+",target=/from,readonly",
 		"--mount", "type=volume,source="+dst+",target=/to",
 		image, "-c", script)
+	return r.stream(string(r.engine), args...)
 }
 
 // VolumesByPrefix lists existing volume names beginning with prefix.
@@ -446,44 +466,54 @@ func (r *Runner) VolumeRemove(name string) error {
 }
 
 // SeedVolume copies hostPath into a fresh named volume (a one-way copy — the
-// volume diverges immediately) and chowns it to uid:gid so credential writes
-// succeed regardless of the runtime UID mapping. image supplies cp/chown.
+// volume diverges immediately) and chowns it to the box identity so
+// credential writes succeed regardless of the runtime UID mapping. image
+// supplies cp/chown.
 //
-// It overrides the image ENTRYPOINT (the byre launcher) and runs as root, since
-// a fresh Docker volume is root-owned and the cp/chown must run privileged.
-func (r *Runner) SeedVolume(name, hostPath, image string, uid, gid int) error {
-	script := fmt.Sprintf("cp -a /src/. /dest/ && chown -R %d:%d /dest", uid, gid)
-	return r.stream(string(r.engine), "run", "--rm",
-		"--entrypoint", "sh", "-u", "0:0",
+// It overrides the image ENTRYPOINT (the byre launcher) and runs as root —
+// in the box's own userns mapping when the identity carries one, so the
+// chown target means what it will mean to the box — since a fresh volume is
+// root-owned and the cp/chown must run privileged.
+func (r *Runner) SeedVolume(name, hostPath, image string, id Identity) error {
+	script := fmt.Sprintf("cp -a /src/. /dest/ && chown -R %d:%d /dest", id.UID, id.GID)
+	args := []string{"run", "--rm",
+		"--entrypoint", "sh", "-u", "0:0"}
+	args = appendUserns(args, id.Userns())
+	args = append(args,
 		"--mount", "type=volume,source="+name+",target=/dest",
 		"--mount", "type=bind,source="+hostPath+",target=/src,readonly",
 		image, "-c", script)
+	return r.stream(string(r.engine), args...)
 }
 
 // SeedLiteral writes content to destPath inside a fresh named volume (creating
-// parent dirs) and chowns the volume to uid:gid. The content is piped via stdin
-// and destPath via an env var, so neither can inject shell. Runs as root with
-// the image entrypoint bypassed.
-func (r *Runner) SeedLiteral(volName, destPath, content, image string, uid, gid int) error {
-	script := fmt.Sprintf(`mkdir -p "/dest/$(dirname "$BYRE_DEST")" && cat > "/dest/$BYRE_DEST" && chown -R %d:%d /dest`, uid, gid)
+// parent dirs) and chowns the volume to the box identity. The content is piped
+// via stdin and destPath via an env var, so neither can inject shell. Runs as
+// root with the image entrypoint bypassed, in the box's own userns mapping
+// when the identity carries one.
+func (r *Runner) SeedLiteral(volName, destPath, content, image string, id Identity) error {
+	script := fmt.Sprintf(`mkdir -p "/dest/$(dirname "$BYRE_DEST")" && cat > "/dest/$BYRE_DEST" && chown -R %d:%d /dest`, id.UID, id.GID)
 	args := []string{"run", "--rm", "-i",
-		"--entrypoint", "sh", "-u", "0:0",
-		"-e", "BYRE_DEST=" + destPath,
-		"--mount", "type=volume,source=" + volName + ",target=/dest",
-		image, "-c", script}
+		"--entrypoint", "sh", "-u", "0:0"}
+	args = appendUserns(args, id.Userns())
+	args = append(args,
+		"-e", "BYRE_DEST="+destPath,
+		"--mount", "type=volume,source="+volName+",target=/dest",
+		image, "-c", script)
 	return r.streamIn(strings.NewReader(content), string(r.engine), args...)
 }
 
 // SeedFiles copies a curated subset of srcDir (the relative paths in files,
 // each a file or dir) into a fresh named volume at the SAME relative location,
-// then chowns the volume to uid:gid. Used to seed an agent's non-secret prefs
-// (theme, keybindings) into a fresh state volume. Like SeedVolume it overrides
-// the entrypoint and runs as root (a fresh volume is root-owned).
+// then chowns the volume to the box identity. Used to seed an agent's
+// non-secret prefs (theme, keybindings) into a fresh state volume. Like
+// SeedVolume it overrides the entrypoint and runs as root (a fresh volume is
+// root-owned), in the box's own userns mapping when the identity carries one.
 //
 // The file list is passed as positional ARGV (never interpolated into the
 // script), so a path can't inject shell. A listed path missing in srcDir is
 // skipped, not an error (the host may simply not have that pref yet).
-func (r *Runner) SeedFiles(volName, srcDir string, files []string, image string, uid, gid int) error {
+func (r *Runner) SeedFiles(volName, srcDir string, files []string, image string, id Identity) error {
 	// set -e so a failed mkdir/cp aborts with non-zero (the trailing chown must
 	// not mask a copy failure — the caller's rollback depends on the exit status).
 	// A listed path missing in /src is skipped via the [ -e ] guard, not a failure.
@@ -496,11 +526,13 @@ for f in "$@"; do
 done
 chown -R "$BYRE_OWNER" /dest`
 	args := []string{"run", "--rm",
-		"--entrypoint", "sh", "-u", "0:0",
-		"-e", fmt.Sprintf("BYRE_OWNER=%d:%d", uid, gid),
-		"--mount", "type=volume,source=" + volName + ",target=/dest",
-		"--mount", "type=bind,source=" + srcDir + ",target=/src,readonly",
-		image, "-c", script, "seed-prefs"}
+		"--entrypoint", "sh", "-u", "0:0"}
+	args = appendUserns(args, id.Userns())
+	args = append(args,
+		"-e", fmt.Sprintf("BYRE_OWNER=%d:%d", id.UID, id.GID),
+		"--mount", "type=volume,source="+volName+",target=/dest",
+		"--mount", "type=bind,source="+srcDir+",target=/src,readonly",
+		image, "-c", script, "seed-prefs")
 	args = append(args, files...)
 	return r.stream(string(r.engine), args...)
 }

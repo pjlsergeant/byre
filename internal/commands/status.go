@@ -40,7 +40,8 @@ type statusInfo struct {
 	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
 	Container       string   // this dir's running container id, or "" if none
 	SiblingSessions []string // short ids of OTHER live sessions in this project (worktrees sharing these volumes)
-	Rootless        bool     // true if the engine is rootless Podman (unsupported ownership)
+	Rootless        bool     // true if the engine is rootless Podman
+	KeepID          bool     // rootless Podman with keep-id mapping support (the supported rootless path)
 	EngineErr       string   // why the engine/container state is unknown, if applicable
 	SkillErr        string   // why skills couldn't be resolved, if applicable
 	SelfEdit        string   // host store path when --self-edit is active, else ""
@@ -133,6 +134,9 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		r := runner.New(eng)
 		if rootless, rerr := r.IsRootlessPodman(); rerr == nil && rootless {
 			info.Rootless = true
+			if ok, kerr := r.SupportsKeepIDMapping(); kerr == nil && ok {
+				info.KeepID = true
+			}
 		}
 		// This dir's own session: the worktree label, so it reflects THIS worktree,
 		// not a sibling (both carry the project label).
@@ -227,8 +231,10 @@ func renderStatus(w io.Writer, s statusInfo) {
 	}
 	if s.EngineErr != "" {
 		row("Engine", s.Engine+"  (not found: "+s.EngineErr+")")
+	} else if s.KeepID {
+		row("Engine", s.Engine+fmt.Sprintf("  (rootless — keep-id: the box's dev user is uid %d, mapped to you)", genericUID))
 	} else if s.Rootless {
-		row("Engine", s.Engine+"  (rootless — file ownership UNSUPPORTED in v0; use rootful)")
+		row("Engine", s.Engine+"  (rootless — this Podman lacks the keep-id mapping byre needs (4.3+); file ownership UNSUPPORTED)")
 	} else {
 		row("Engine", s.Engine)
 	}

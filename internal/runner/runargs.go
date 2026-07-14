@@ -42,6 +42,7 @@ type RunParams struct {
 	Ports           []PortPublish // -p publications (host-exposed container ports)
 	Caps            []string      // --cap-add (from skills)
 	GroupAdds       []int         // --group-add (numeric gids from sock_groups probe; no /etc/group entry needed)
+	Userns          string        // --userns value (Identity.Userns; rootless Podman keep-id); empty = no flag
 	RunArgs         []string      // raw passthrough, last-wins
 	Command         []string      // agent command; empty uses the image entrypoint default
 	TTY             bool          // allocate a pseudo-TTY (-t); set only when stdin is an actual terminal, so a piped/non-interactive invocation (CI, an agent driving byre) doesn't fail with "the input device is not a TTY"
@@ -110,6 +111,10 @@ func RunArgs(p RunParams) []string {
 	for _, g := range sortedInts(p.GroupAdds) {
 		args = append(args, "--group-add", strconv.Itoa(g))
 	}
+	// The userns mapping (rootless Podman keep-id) sits with byre's own flags:
+	// raw run_args after it can still override (author-owned footgun, same as
+	// --user — see docs/SECURITY.md).
+	args = appendUserns(args, p.Userns)
 
 	// Raw passthrough — last-wins over byre's flags.
 	args = append(args, p.RunArgs...)

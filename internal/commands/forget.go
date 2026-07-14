@@ -35,10 +35,6 @@ func Forget(s Streams, projectDir string, force bool) error {
 
 func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) error {
 	multi := len(engines) > 1
-	// Both the current UID-qualified tag and the legacy unqualified `byre-<id>`
-	// tag (a project built before the build-time-UID milestone): forget removes
-	// whichever exist so it never leaves an orphaned image behind.
-	candidates := []string{imageTag(paths.ID, os.Getuid(), os.Getgid()), "byre-" + paths.ID}
 
 	// Preview pass: any engine that can't be fully inspected fails the command
 	// before anything is deleted — "completely removed" must never be claimed
@@ -61,7 +57,11 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 		if err != nil {
 			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
 		}
-		for _, img := range candidates {
+		// Every tag this project may have built on THIS engine (identity-
+		// qualified, keep-id generic where the engine is rootless Podman, and
+		// the legacy unqualified tag): forget removes whichever exist so it
+		// never leaves an orphaned image behind.
+		for _, img := range imageTagCandidates(r, paths.ID, os.Getuid(), os.Getgid()) {
 			has, ierr := r.ImageExists(img)
 			if ierr != nil {
 				return fmt.Errorf("checking image %s (%s): %w", img, r.Engine(), ierr)
@@ -117,7 +117,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 					failed = append(failed, v)
 				}
 			}
-			for _, img := range candidates {
+			for _, img := range imageTagCandidates(r, paths.ID, os.Getuid(), os.Getgid()) {
 				nowImage, ierr := r.ImageExists(img)
 				if ierr != nil {
 					fmt.Fprintf(s.Err, "byre: could not check image %s%s: %v\n", img, engineSuffix(multi, r), ierr)

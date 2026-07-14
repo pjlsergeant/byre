@@ -7,13 +7,14 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 // seedVolumes seeds any fresh state volume that declares a host-path seed.
 // Seeding is one-time: an existing volume has already diverged and is left
 // alone. A failed seed rolls back (removes the volume) so a half-seeded volume
 // isn't later mistaken for "already seeded".
-func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image string, vols []config.Volume, uid, gid int) error {
+func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image string, vols []config.Volume, ident runner.Identity) error {
 	for _, v := range vols {
 		if v.Role != "state" || v.Seed == nil {
 			continue
@@ -34,7 +35,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 			if err := s.VolumeCreate(name); err != nil {
 				return err
 			}
-			if err := s.SeedLiteral(name, v.Seed.Path, v.Seed.Literal, image, uid, gid); err != nil {
+			if err := s.SeedLiteral(name, v.Seed.Path, v.Seed.Literal, image, ident); err != nil {
 				if rmErr := s.VolumeRemove(name); rmErr != nil {
 					return fmt.Errorf("literal-seeding %s failed (%w); rollback of %s also failed (%v)", v.Name, err, name, rmErr)
 				}
@@ -63,7 +64,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 		if err := s.VolumeCreate(name); err != nil {
 			return err
 		}
-		if err := s.SeedVolume(name, host, image, uid, gid); err != nil {
+		if err := s.SeedVolume(name, host, image, ident); err != nil {
 			if rmErr := s.VolumeRemove(name); rmErr != nil {
 				return fmt.Errorf("seeding %s from %s failed (%w); rollback of volume %s also failed (%v) — remove it manually before retrying", v.Name, host, err, name, rmErr)
 			}
@@ -80,7 +81,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 // alone. A missing host source dir is not an error (the box just starts without
 // seeded prefs). A failed seed rolls back (removes the volume) so a half-seeded
 // volume isn't later mistaken for "already seeded".
-func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentState, from string, files []string, uid, gid int) error {
+func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentState, from string, files []string, ident runner.Identity) error {
 	if agentState == "" || from == "" || len(files) == 0 {
 		return nil // nothing to seed (skill declares no prefs / no state volume)
 	}
@@ -110,7 +111,7 @@ func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentS
 	if err := s.VolumeCreate(name); err != nil {
 		return err
 	}
-	if err := s.SeedFiles(name, host, files, image, uid, gid); err != nil {
+	if err := s.SeedFiles(name, host, files, image, ident); err != nil {
 		if rmErr := s.VolumeRemove(name); rmErr != nil {
 			return fmt.Errorf("seeding prefs into %s failed (%w); rollback of volume %s also failed (%v) — remove it manually before retrying", agentState, err, name, rmErr)
 		}

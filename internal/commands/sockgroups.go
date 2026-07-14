@@ -39,7 +39,9 @@ func applySockGroups(r sessionRunner, w io.Writer, image string, params *runner.
 			fmt.Fprintf(w, "byre: warning: skill %q sock_groups path %q has no active bind -- skipping --group-add\n", sg.Skill, sg.Path)
 			continue
 		}
-		gid, err := r.ProbeSockGroup(image, host, sg.Path)
+		// The probe runs under the box's own userns mapping (params.Userns) so
+		// the gid it reports is the gid the box will actually see.
+		gid, err := r.ProbeSockGroup(image, host, sg.Path, params.Userns)
 		if err != nil {
 			fmt.Fprintf(w, "byre: warning: skill %q could not probe gid for %q: %v -- skipping --group-add\n", sg.Skill, sg.Path, err)
 			continue

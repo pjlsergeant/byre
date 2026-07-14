@@ -245,11 +245,66 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 	}
 }
 
+// The whole keep-id path through develop (ADR 0032): under rootless Podman
+// with mapping support, the image tag and build args carry the GENERIC
+// identity, the create argv carries --userns=keep-id, BYRE_UID/GID are the
+// in-container ids, and volume seeding runs under the same identity.
+func TestDevelopKeepIDPath(t *testing.T) {
+	p, _ := testPaths(t)
+	seedSrc := t.TempDir()
+	cfg := config.Config{Volumes: []config.Volume{
+		{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Seed: &config.Seed{Host: seedSrc}},
+	}}
+	f := &fakeRunner{engine: "podman", rootless: true, keepID: true}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err != nil {
+		t.Fatal(err)
+	}
+	image := imageTag(p.ID, genericUID, genericGID)
+	if len(f.builds) != 1 || f.builds[0] != image {
+		t.Fatalf("keep-id build must use the generic tag %s, got %v", image, f.builds)
+	}
+	if len(f.creates) != 1 {
+		t.Fatalf("expected one create, got %v", f.creates)
+	}
+	argv := strings.Join(f.creates[0], " ")
+	for _, want := range []string{
+		"--userns=keep-id:uid=1000,gid=1000",
+		"-e BYRE_UID=1000",
+		"-e BYRE_GID=1000",
+		image,
+	} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("create argv missing %q: %q", want, argv)
+		}
+	}
+	if len(f.seedIdents) != 1 || !f.seedIdents[0].KeepID || f.seedIdents[0].UID != genericUID {
+		t.Fatalf("seeding must run under the keep-id identity, got %+v", f.seedIdents)
+	}
+	if !strings.Contains(stderr.String(), "rootless Podman") {
+		t.Errorf("keep-id mode must be announced: %q", stderr.String())
+	}
+}
+
+// Under rootless Podman WITHOUT keep-id support, develop keeps the old
+// refusal — nothing is built or created.
+func TestDevelopRefusesUnsupportedRootless(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{engine: "podman", rootless: true}
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	if err == nil || !strings.Contains(err.Error(), "BYRE_ALLOW_ROOTLESS_PODMAN") {
+		t.Fatalf("expected the rootless refusal, got %v", err)
+	}
+	if len(f.builds) != 0 || len(f.creates) != 0 {
+		t.Fatalf("refusal must precede build/create: builds=%v creates=%v", f.builds, f.creates)
+	}
+}
+
 func TestRebuildBuildsNoCache(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	var out bytes.Buffer
-	if err := rebuild(&out, f, p, config.Config{}, skills.Resolved{}); err != nil {
+	if err := rebuild(&out, f, p, config.Config{}, skills.Resolved{}, hostIdentity()); err != nil {
 		t.Fatal(err)
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())

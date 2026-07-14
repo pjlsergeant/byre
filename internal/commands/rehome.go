@@ -13,6 +13,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 )
 
 // Rehome implements `byre rehome <old-id>`: migrate a previous project's named
@@ -143,7 +144,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 		// builds its own tag); retire it. A failure is warned, not fatal — the
 		// image is engine-side garbage, not migration state.
 		for _, r := range engines {
-			for _, img := range []string{imageTag(oldID, uid, gid), "byre-" + oldID} {
+			for _, img := range imageTagCandidates(r, oldID, uid, gid) {
 				has, ierr := r.ImageExists(img)
 				if ierr != nil {
 					fmt.Fprintf(s.Err, "byre: warning: could not check old image %s%s: %v\n", img, engineSuffix(multi, r), ierr)
@@ -230,11 +231,14 @@ func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bo
 }
 
 // enginePlan is one engine's slice of the rehome transaction: the volume
-// copies to run (already conflict-checked), the image to run them with, and
-// the destinations created so far — the cross-engine rollback list.
+// copies to run (already conflict-checked), the image and identity to run
+// them with (the chown target — this engine's keep-id generic identity under
+// rootless Podman, the host user otherwise), and the destinations created so
+// far — the cross-engine rollback list.
 type enginePlan struct {
 	r       engineRunner
 	image   string
+	ident   runner.Identity
 	pairs   []volPair
 	created []string
 }
@@ -248,7 +252,7 @@ type volPair struct{ src, dst string }
 func planRehomeVolumes(paths project.Paths, oldID string, r engineRunner, uid, gid int, multi bool) (enginePlan, error) {
 	newID := paths.ID
 	oldPrefix := "byre-" + oldID + "-"
-	pl := enginePlan{r: r}
+	pl := enginePlan{r: r, ident: engineIdentity(r, uid, gid)}
 	oldVols, err := projectVolumes(r, paths.Home, oldID)
 	if err != nil {
 		return pl, fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
@@ -256,8 +260,9 @@ func planRehomeVolumes(paths project.Paths, oldID string, r engineRunner, uid, g
 	if len(oldVols) == 0 {
 		return pl, nil
 	}
-	// An image is needed to run the copies; prefer the old one, else the new one.
-	pl.image, err = pickCopyImage(r, oldID, newID, uid, gid)
+	// An image is needed to run the copies; prefer the old id's, else the new
+	// id's, each across every tag it may have built on this engine.
+	pl.image, err = pickCopyImage(r, append(imageTagCandidates(r, oldID, uid, gid), imageTagCandidates(r, newID, uid, gid)...))
 	if err != nil {
 		return pl, err
 	}
@@ -285,7 +290,7 @@ func copyRehomeVolumes(s Streams, pl *enginePlan, uid, gid int, multi bool) erro
 			return fmt.Errorf("creating %s: %w", p.dst, err)
 		}
 		pl.created = append(pl.created, p.dst)
-		if err := pl.r.MigrateVolume(p.src, p.dst, pl.image, uid, gid); err != nil {
+		if err := pl.r.MigrateVolume(p.src, p.dst, pl.image, pl.ident); err != nil {
 			return fmt.Errorf("copying %s -> %s: %w", p.src, p.dst, err)
 		}
 		fmt.Fprintf(s.Err, "byre: migrated %s -> %s%s\n", p.src, p.dst, engineSuffix(multi, pl.r))
@@ -293,19 +298,18 @@ func copyRehomeVolumes(s Streams, pl *enginePlan, uid, gid int, multi bool) erro
 	return nil
 }
 
-func pickCopyImage(r imageRunner, oldID, newID string, uid, gid int) (string, error) {
-	// Try each id's current (UID-qualified) tag, then its legacy unqualified
-	// `byre-<id>` tag — a project built before the build-time-UID milestone still
-	// has only that. The copy one-shot (MigrateVolume) bypasses the entrypoint,
-	// runs as root, and chowns explicitly, so the image's own baked uid is
-	// irrelevant: any byre image for these ids works as the copy vehicle.
-	for _, id := range []string{oldID, newID} {
-		for _, img := range []string{imageTag(id, uid, gid), "byre-" + id} {
-			if ok, err := r.ImageExists(img); err != nil {
-				return "", err
-			} else if ok {
-				return img, nil
-			}
+func pickCopyImage(r imageRunner, candidates []string) (string, error) {
+	// candidates are each id's possible tags on this engine, preferred first
+	// (imageTagCandidates: identity-qualified, keep-id generic on rootless
+	// Podman, then the legacy unqualified tag). The copy one-shot
+	// (MigrateVolume) bypasses the entrypoint, runs as root, and chowns
+	// explicitly, so the image's own baked uid is irrelevant: any byre image
+	// for these ids works as the copy vehicle.
+	for _, img := range candidates {
+		if ok, err := r.ImageExists(img); err != nil {
+			return "", err
+		} else if ok {
+			return img, nil
 		}
 	}
 	return "", fmt.Errorf("no byre image exists to run the volume copy; run `byre develop` first")

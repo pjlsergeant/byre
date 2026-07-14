@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,9 @@ func TestWarnRootlessPodman(t *testing.T) {
 		c    *fakeRunner
 		warn bool
 	}{
-		{"rootless warns", &fakeRunner{rootless: true}, true},
+		{"rootless without keep-id warns", &fakeRunner{rootless: true}, true},
+		{"rootless with keep-id is quiet (supported path)", &fakeRunner{rootless: true, keepID: true}, false},
+		{"keep-id probe error warns", &fakeRunner{rootless: true, keepIDErr: errors.New("boom")}, true},
 		{"rootful is quiet", &fakeRunner{rootless: false}, false},
 		{"detection error is quiet", &fakeRunner{rootlessErr: errors.New("boom")}, false},
 	}
@@ -62,22 +65,43 @@ func TestWarnRootlessPodman(t *testing.T) {
 	}
 }
 
-// develop refuses under rootless Podman: the launch is known to create
-// wrong-owned files (baked-UID model vs userns remap), so it must not
-// complete silently. BYRE_ALLOW_ROOTLESS_PODMAN=1 overrides with the warning
-// retained; a detection error stays a quiet proceed (never refuse on a guess).
-func TestRequireRootfulEngine(t *testing.T) {
+// The identity mode-select (ADR 0032): rootful engines get the host identity
+// quietly; rootless Podman with keep-id mapping support gets the generic
+// keep-id identity, announced; rootless Podman without it keeps the old
+// refusal (BYRE_ALLOW_ROOTLESS_PODMAN=1 proceeds on the host identity with the
+// warning retained); a detection error stays a quiet rootful proceed.
+func TestResolveIdentity(t *testing.T) {
 	var buf bytes.Buffer
-	if err := requireRootfulEngine(&buf, &fakeRunner{rootless: true}); err == nil {
-		t.Fatal("rootless Podman must be refused without the override")
+
+	ident, err := resolveIdentity(&buf, &fakeRunner{rootless: true, keepID: true})
+	if err != nil {
+		t.Fatalf("supported rootless Podman must proceed: %v", err)
+	}
+	if ident.UID != genericUID || ident.GID != genericGID || !ident.KeepID {
+		t.Errorf("supported rootless Podman must select the generic keep-id identity, got %+v", ident)
+	}
+	if !strings.Contains(buf.String(), "--userns=keep-id:uid=1000,gid=1000") {
+		t.Errorf("keep-id mode must be announced with its mapping: %q", buf.String())
+	}
+
+	buf.Reset()
+	if _, err := resolveIdentity(&buf, &fakeRunner{rootless: true}); err == nil {
+		t.Fatal("rootless Podman without keep-id must be refused without the override")
 	} else if !strings.Contains(err.Error(), "BYRE_ALLOW_ROOTLESS_PODMAN") {
 		t.Errorf("refusal should name the override: %v", err)
+	}
+	if _, err := resolveIdentity(&buf, &fakeRunner{rootless: true, keepIDErr: errors.New("boom")}); err == nil {
+		t.Fatal("an unverifiable keep-id support claim must refuse, not guess")
 	}
 
 	t.Setenv("BYRE_ALLOW_ROOTLESS_PODMAN", "1")
 	buf.Reset()
-	if err := requireRootfulEngine(&buf, &fakeRunner{rootless: true}); err != nil {
+	ident, err = resolveIdentity(&buf, &fakeRunner{rootless: true})
+	if err != nil {
 		t.Fatalf("override must proceed: %v", err)
+	}
+	if ident.KeepID || ident.UID != os.Getuid() {
+		t.Errorf("override proceeds on the HOST identity, got %+v", ident)
 	}
 	if !strings.Contains(buf.String(), "rootless Podman detected") {
 		t.Errorf("override must keep the detailed warning: %q", buf.String())
@@ -85,14 +109,42 @@ func TestRequireRootfulEngine(t *testing.T) {
 
 	t.Setenv("BYRE_ALLOW_ROOTLESS_PODMAN", "")
 	buf.Reset()
-	if err := requireRootfulEngine(&buf, &fakeRunner{rootlessErr: errors.New("boom")}); err != nil {
-		t.Fatalf("a detection error must not refuse: %v", err)
-	}
-	if err := requireRootfulEngine(&buf, &fakeRunner{}); err != nil {
-		t.Fatalf("rootful must proceed: %v", err)
+	for name, f := range map[string]*fakeRunner{
+		"detection error": {rootlessErr: errors.New("boom")},
+		"rootful":         {},
+	} {
+		ident, err := resolveIdentity(&buf, f)
+		if err != nil {
+			t.Fatalf("%s must not refuse: %v", name, err)
+		}
+		if ident.KeepID || ident.UID != os.Getuid() || ident.GID != os.Getgid() {
+			t.Errorf("%s must select the host identity, got %+v", name, ident)
+		}
 	}
 	if buf.Len() != 0 {
 		t.Errorf("quiet cases must stay quiet: %q", buf.String())
+	}
+}
+
+// imageTagCandidates gates the generic keep-id tag on the ENGINE being
+// rootless Podman: on a shared rootful daemon a forget/rehome must never
+// capture a real uid-1000 user's image.
+func TestImageTagCandidates(t *testing.T) {
+	got := imageTagCandidates(&fakeRunner{}, "proj", 501, 501)
+	want := []string{"byre-proj-u501-g501", "byre-proj"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("rootful candidates = %v, want %v", got, want)
+	}
+	got = imageTagCandidates(&fakeRunner{rootless: true, keepID: true}, "proj", 501, 501)
+	want = []string{"byre-proj-u1000-g1000", "byre-proj-u501-g501", "byre-proj"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("keep-id candidates = %v, want %v", got, want)
+	}
+	// A host uid that IS the generic id must not duplicate the tag.
+	got = imageTagCandidates(&fakeRunner{rootless: true, keepID: true}, "proj", 1000, 1000)
+	want = []string{"byre-proj-u1000-g1000", "byre-proj"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("uid-1000 keep-id candidates = %v, want %v", got, want)
 	}
 }
 

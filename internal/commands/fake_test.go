@@ -28,6 +28,8 @@ type fakeRunner struct {
 	engine      runner.Engine // "" means docker
 	rootless    bool
 	rootlessErr error
+	keepID      bool // SupportsKeepIDMapping answer (rootless-Podman keep-id path)
+	keepIDErr   error
 
 	// sessions
 	live          map[string][]string // label -> running container ids
@@ -69,10 +71,11 @@ type fakeRunner struct {
 	vols        map[string]bool // existing named volumes
 	created     []string
 	removed     []string
-	seeded      []string // SeedVolume: name
-	literals    []string // SeedLiteral: name:dest=content
-	fileSeed    []string // SeedFiles: name:f1,f2
-	migrated    []string // MigrateVolume: src->dst
+	seeded      []string          // SeedVolume: name
+	seedIdents  []runner.Identity // SeedVolume: the identity each seed ran with
+	literals    []string          // SeedLiteral: name:dest=content
+	fileSeed    []string          // SeedFiles: name:f1,f2
+	migrated    []string          // MigrateVolume: src->dst
 	failSeed    bool
 	failMigrate string          // MigrateVolume dst to fail on
 	failRemove  map[string]bool // volume names whose removal fails
@@ -94,6 +97,8 @@ func (f *fakeRunner) Engine() runner.Engine {
 }
 
 func (f *fakeRunner) IsRootlessPodman() (bool, error) { return f.rootless, f.rootlessErr }
+
+func (f *fakeRunner) SupportsKeepIDMapping() (bool, error) { return f.keepID, f.keepIDErr }
 
 func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
 	f.mu.Lock()
@@ -154,18 +159,26 @@ func (f *fakeRunner) Stop(container string) error {
 	return f.stopErr
 }
 
-func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string) error {
+func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.netnsInits = append(f.netnsInits, container+" "+entrypoint)
+	rec := container + " " + entrypoint
+	if joinUserns {
+		rec += " userns"
+	}
+	f.netnsInits = append(f.netnsInits, rec)
 	f.ops = append(f.ops, "netnsinit "+entrypoint)
 	return f.netnsErr
 }
 
-func (f *fakeRunner) ProbeSockGroup(image, hostPath, targetPath string) (int, error) {
+func (f *fakeRunner) ProbeSockGroup(image, hostPath, targetPath, userns string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.probes = append(f.probes, image+" "+hostPath+" "+targetPath)
+	rec := image + " " + hostPath + " " + targetPath
+	if userns != "" {
+		rec += " userns=" + userns
+	}
+	f.probes = append(f.probes, rec)
 	f.ops = append(f.ops, "probesock "+targetPath)
 	if f.probeErr != nil {
 		return 0, f.probeErr
@@ -259,16 +272,17 @@ func (f *fakeRunner) VolumeRemove(name string) error {
 	return nil
 }
 
-func (f *fakeRunner) SeedVolume(name, hostPath, image string, uid, gid int) error {
+func (f *fakeRunner) SeedVolume(name, hostPath, image string, id runner.Identity) error {
 	if f.failSeed {
 		return io.EOF
 	}
 	f.seeded = append(f.seeded, name)
+	f.seedIdents = append(f.seedIdents, id)
 	f.ops = append(f.ops, "seed "+name)
 	return nil
 }
 
-func (f *fakeRunner) SeedLiteral(volName, destPath, content, image string, uid, gid int) error {
+func (f *fakeRunner) SeedLiteral(volName, destPath, content, image string, id runner.Identity) error {
 	if f.failSeed {
 		return io.EOF
 	}
@@ -277,7 +291,7 @@ func (f *fakeRunner) SeedLiteral(volName, destPath, content, image string, uid, 
 	return nil
 }
 
-func (f *fakeRunner) SeedFiles(volName, srcDir string, files []string, image string, uid, gid int) error {
+func (f *fakeRunner) SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity) error {
 	if f.failSeed {
 		return io.EOF
 	}
@@ -286,7 +300,7 @@ func (f *fakeRunner) SeedFiles(volName, srcDir string, files []string, image str
 	return nil
 }
 
-func (f *fakeRunner) MigrateVolume(src, dst, image string, uid, gid int) error {
+func (f *fakeRunner) MigrateVolume(src, dst, image string, id runner.Identity) error {
 	if dst == f.failMigrate {
 		return fmt.Errorf("copy boom")
 	}

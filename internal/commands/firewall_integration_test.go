@@ -56,7 +56,7 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false); err != nil {
+	if err := buildImage(r, p, cfg, res, image, false, hostIdentity()); err != nil {
 		t.Fatalf("firewall image failed to build: %v", err)
 	}
 	// Mirror develop's netns env exactly: BYRE_EGRESS is the full allowlist
@@ -242,7 +242,7 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
 	waitRunning(t, r, name)
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall", env); err != nil {
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall", env, false); err != nil {
 		t.Fatalf("netns init failed: %v", err)
 	}
 	waitForLog(t, r, name, "BOX_RAN") // first launch made it through the gate
@@ -293,7 +293,7 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false); err != nil {
+	if err := buildImage(r, p, cfg, res, image, false, hostIdentity()); err != nil {
 		t.Fatalf("firewall-open image failed to build: %v", err)
 	}
 	env := res.Env()
@@ -330,7 +330,7 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
 	waitRunning(t, r, name)
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env); err != nil {
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env, false); err != nil {
 		t.Fatalf("netns init failed: %v", err)
 	}
 
@@ -363,7 +363,7 @@ func TestIntegrationFirewallOpenUnresolvableFailsClosed(t *testing.T) {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
 	waitRunning(t, r, name)
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env); err == nil {
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env, false); err == nil {
 		t.Errorf("helper must fail on an unresolvable closure")
 	}
 	if code := dockerWait(t, r, name); code == 0 {

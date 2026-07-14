@@ -23,14 +23,16 @@ type fakeEngine struct {
 	envErr   error
 	labelErr error
 
-	inbox     map[string]bool // existing in-box names, relative to /inbox
-	execErr   error
-	failMkdir bool     // interior mkdirScript execs fail
-	streams   []string // "id name<-content" per delivered file
-	execArgs  [][]string
+	inbox        map[string]bool // existing in-box names, relative to /inbox
+	execErr      error
+	failMkdir    bool     // interior mkdirScript execs fail
+	streams      []string // "id name<-content" per delivered file
+	execArgs     [][]string
+	callerScoped bool // rootless engine: every visible session is the caller's
 }
 
-func (f *fakeEngine) Name() string { return f.name }
+func (f *fakeEngine) Name() string       { return f.name }
+func (f *fakeEngine) CallerScoped() bool { return f.callerScoped }
 func (f *fakeEngine) Sessions(label string) ([]string, error) {
 	return f.ids, f.idsErr
 }
@@ -161,6 +163,30 @@ func TestUIDFilterHidesForeign(t *testing.T) {
 	}
 	if len(landed) != 1 {
 		t.Fatalf("landed = %v", landed)
+	}
+}
+
+// A caller-scoped engine (rootless Podman) never marks a session foreign:
+// per-user storage means everything visible is the caller's, and a keep-id
+// box's BYRE_UID is the generic in-container uid (1000 ≠ caller 501 here) —
+// comparing it would hide the caller's own box (ADR 0032).
+func TestCallerScopedEngineSkipsUIDFilter(t *testing.T) {
+	eng := box("podman", "aaa")
+	eng.callerScoped = true
+	eng.env["aaa"]["BYRE_UID"] = "1000"
+	eng.env["aaa"]["BYRE_GID"] = "1000"
+	cfg, _, _ := testConfig(eng)
+	src := writeFile(t, "f", "x")
+	landed, err := Run(cfg, Options{}, []string{src})
+	if err != nil {
+		t.Fatalf("caller-scoped engine's keep-id box must be deliverable: %v", err)
+	}
+	if len(landed) != 1 {
+		t.Fatalf("landed = %v", landed)
+	}
+	// The exec must run as the box's recorded in-container identity.
+	if len(eng.execArgs) == 0 {
+		t.Fatal("no exec recorded")
 	}
 }
 

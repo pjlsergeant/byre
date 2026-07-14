@@ -1,10 +1,8 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/project"
@@ -34,39 +32,18 @@ func noteMachineVolumes(w io.Writer, r volumeRunner, uid int) {
 	fmt.Fprintln(w, "byre: to delete one deliberately: byre config -> Volumes -> clear.")
 }
 
-// rootlessPodmanWarning explains why rootless Podman is unsupported in v0: byre
-// bakes the host UID/GID into the image so the in-container uid matches the uid
-// on disk, which assumes a ROOTFUL daemon; rootless Podman's user-namespace remap
-// breaks that. A generic-uid image + --userns=keep-id is the planned fix.
-const rootlessPodmanWarning = "rootless Podman detected — byre bakes the host UID/GID into the image so files it writes land owned by you, which assumes a ROOTFUL daemon. Under rootless Podman the userns remap makes that wrong, so files in the project and volumes can end up owned by the wrong id. v0 supports rootful Docker/Podman only — use one of those for correct ownership."
-
-// warnRootlessPodman prints the rootless-Podman warning to w when r drives it. A
-// detection error is ignored — better silent than warning on a guess. Used by
-// commands acting on an EXISTING session (deliver); develop refuses instead
-// (requireRootfulEngine).
+// warnRootlessPodman warns, on w, when r drives rootless Podman WITHOUT the
+// keep-id mapping byre's rootless path needs — the remaining unsupported
+// case (supported rootless Podman is silent here: it's a first-class path,
+// ADR 0032). A detection error is ignored — better silent than warning on a
+// guess. Used by commands acting on an EXISTING session (deliver); develop
+// mode-selects and refuses instead (resolveIdentity).
 func warnRootlessPodman(w io.Writer, r sessionRunner) {
 	if rootless, err := r.IsRootlessPodman(); err == nil && rootless {
-		fmt.Fprintln(w, "byre: warning: "+rootlessPodmanWarning)
+		if ok, kerr := r.SupportsKeepIDMapping(); kerr != nil || !ok {
+			fmt.Fprintln(w, "byre: warning: "+rootlessPodmanUnsupported)
+		}
 	}
-}
-
-// requireRootfulEngine refuses to start a session under rootless Podman: the
-// launch is KNOWN to produce wrong-owned files in the project and volumes
-// (see rootlessPodmanWarning), so completing it silently corrupts ownership
-// on byre's primary path. BYRE_ALLOW_ROOTLESS_PODMAN=1 overrides with the
-// warning retained — the same shape as the root-host refusal
-// (requireNonRootHost / BYRE_ALLOW_ROOT). A detection error stays a quiet
-// proceed: better to run than to refuse on a guess.
-func requireRootfulEngine(warn io.Writer, r sessionRunner) error {
-	rootless, err := r.IsRootlessPodman()
-	if err != nil || !rootless {
-		return nil
-	}
-	if os.Getenv("BYRE_ALLOW_ROOTLESS_PODMAN") == "1" {
-		fmt.Fprintln(warn, "byre: WARNING: running anyway (BYRE_ALLOW_ROOTLESS_PODMAN=1). "+rootlessPodmanWarning)
-		return nil
-	}
-	return errors.New("refusing to run under rootless Podman: " + rootlessPodmanWarning + " Set BYRE_ALLOW_ROOTLESS_PODMAN=1 to proceed anyway.")
 }
 
 // confirmed reads a line and returns true only for an affirmative answer.

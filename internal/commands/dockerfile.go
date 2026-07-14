@@ -77,16 +77,21 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	image := imageTag(paths.ID, os.Getuid(), os.Getgid())
-	params, err := runParams(paths, rv, image, false, s.TTY)
-	if err != nil {
-		return err
-	}
 	// Best-effort engine name for the leading token; fall back to the configured
 	// value (or docker) so this stays informational when no engine is installed.
+	// The identity follows the engine (keep-id under rootless Podman) so the
+	// printed argv matches what develop would run — host identity when no
+	// engine is reachable.
 	engine := orDefault(rv.cfg.Engine, "docker")
+	ident := hostIdentity()
 	if eng, derr := runner.Detect(rv.cfg.Engine, nil); derr == nil {
 		engine = string(eng)
+		ident = engineIdentity(runner.New(eng), os.Getuid(), os.Getgid())
+	}
+	image := imageTag(paths.ID, ident.UID, ident.GID)
+	params, err := runParams(paths, rv, image, false, s.TTY, ident)
+	if err != nil {
+		return err
 	}
 	argv := append([]string{engine}, runner.RunArgs(params)...)
 	fmt.Fprintln(s.Out, shellCommand(argv))
@@ -121,10 +126,12 @@ func EjectFirewall(s Streams, projectDir string) error {
 		return fmt.Errorf("no netns hooks (firewall) enabled for this project — nothing to eject")
 	}
 	engine := orDefault(rv.cfg.Engine, "docker")
+	ident := hostIdentity()
 	if eng, derr := runner.Detect(rv.cfg.Engine, nil); derr == nil {
 		engine = string(eng)
+		ident = engineIdentity(runner.New(eng), os.Getuid(), os.Getgid())
 	}
-	image := imageTag(paths.ID, os.Getuid(), os.Getgid())
+	image := imageTag(paths.ID, ident.UID, ident.GID)
 
 	var b strings.Builder
 	b.WriteString("#!/bin/sh\n")
@@ -143,6 +150,12 @@ func EjectFirewall(s Streams, projectDir string) error {
 			"-e", "BYRE_EGRESS=" + strings.Join(resolvedEgress(rv), " "),
 			"-e", "BYRE_EGRESS_DENY=" + strings.Join(rv.cfg.EgressClosed, " "),
 		}))
+		// Keep-id boxes (rootless Podman) own their netns from inside their
+		// userns; the sidecar must join it or iptables gets EPERM (mirrors
+		// runner.NetnsInit).
+		if ident.KeepID {
+			b.WriteString(` --userns "container:$BOX"`)
+		}
 		b.WriteString(` --net "container:$BOX" ` + shellArg(image) + "\n")
 	}
 	_, err = io.WriteString(s.Out, b.String())

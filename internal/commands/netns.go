@@ -81,7 +81,10 @@ var runNonce = func() string {
 // the second ran. If multi-hook composition is ever built, gate signaling
 // must move here — opened by byre only after EVERY hook succeeds — before
 // the resolution restriction is lifted.
-func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks []skills.NetnsHook, env map[string]string, done <-chan struct{}) {
+// joinUserns is set when the box runs under a non-default userns (keep-id
+// mode): the hooks must join the box's own user namespace, since NET_ADMIN
+// over its netns exists only inside the userns that owns it.
+func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks []skills.NetnsHook, env map[string]string, joinUserns bool, done <-chan struct{}) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	var container string
@@ -123,7 +126,7 @@ func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks [
 		return
 	}
 	for _, h := range hooks {
-		if err := r.NetnsInit(image, container, h.Path, env); err != nil {
+		if err := r.NetnsInit(image, container, h.Path, env, joinUserns); err != nil {
 			fmt.Fprintf(warn, "byre: netns init (skill %q, %s) failed: %v\n", h.Skill, h.Path, err)
 			fmt.Fprintln(warn, "byre: the launch gate will not open — the box will time out and exit rather than run unprotected (failing closed).")
 			return
