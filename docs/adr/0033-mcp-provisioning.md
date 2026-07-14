@@ -75,13 +75,15 @@ and format are a quasi-public contract: golden-tested like the Dockerfile,
 format changes are versioned decisions. Env stanzas are deliberately absent
 from the render — inheritance delivers values, and a rendered `${VAR}` for
 an UNSET var passes the literal through as a garbage credential
-(spike-verified). Guarding the secret-free claim: a url carrying
-credentials (`user@host`) is refused at validation — same stance as
-`env_from_host` refusing literals — while a query string and the local
-command's argv stay allowed (legitimate shapes exist; a token-sniffing
-heuristic would be nannying) and bake into the image exactly like an
-`[env]` literal: `docker history` shows them, `byre mcp add` says so.
-Don't put secrets in any of them — tokens ride env names.
+(spike-verified). The secret-free claim means byre puts no secrets of its
+own making in the file; what the USER writes into a url (userinfo, query
+string) or a command's argv is theirs and bakes into the image exactly
+like an `[env]` literal — `docker history` shows it, `byre mcp add` says
+so, and nothing refuses it (footgun doctrine: the threat model is the
+agent, never the user; a basic-auth url — a self-hosted MCP behind a
+reverse proxy — is a real shape with no alternative spelling. A userinfo
+refusal shipped briefly out of a review round and was walked back by
+maintainer ruling). Tokens are still better ridden as env names.
 
 ## Adapters: injection-only
 

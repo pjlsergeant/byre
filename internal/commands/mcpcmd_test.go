@@ -73,9 +73,14 @@ func TestMCPAddRemoteAndLocal(t *testing.T) {
 	if err := MCPAdd(s, dir, false, "Bad_Name", []string{"x"}, nil, nil); err == nil {
 		t.Fatal("bad name must refuse")
 	}
-	if err := MCPAdd(s, dir, false, "creds", []string{"https://tok@h.example/mcp"}, nil, nil); err == nil ||
-		!strings.Contains(err.Error(), "credentials") {
-		t.Fatalf("url credentials must refuse: %v", err)
+	// A basic-auth url is the user's own choice (footgun doctrine): accepted,
+	// with the bakes-into-the-image disclosure printed.
+	errw.Reset()
+	if err := MCPAdd(s, dir, false, "proxied", []string{"https://tok@h.example/mcp"}, nil, nil); err != nil {
+		t.Fatalf("basic-auth url must be accepted: %v", err)
+	}
+	if !strings.Contains(errw.String(), "keep secrets out of the url") {
+		t.Errorf("bake disclosure missing: %s", errw)
 	}
 }
 

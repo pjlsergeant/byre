@@ -131,15 +131,15 @@ func ValidateMCP(m MCP) error {
 		if _, _, err := ParseEgress(u.Hostname()); err != nil {
 			return fmt.Errorf("mcp %s: url host %q: not expressible in byre's egress grammar (hostname or IPv4; IPv6 endpoints are unsupported)", m.Name, u.Hostname())
 		}
-		// user:pass@ is credential syntax with no legitimate MCP-endpoint use,
-		// and the URL bakes into a secret-free file in the image (ADR 0033) —
-		// same stance as env_from_host refusing literals: a secret in wiring
-		// costume is refused at the shape level, not policed. (A query string
-		// stays allowed — legitimate endpoint shapes exist — and bakes into
-		// the image like an [env] literal; the docs say so.)
-		if u.User != nil {
-			return fmt.Errorf("mcp %s: url must not carry credentials (user@host) — tokens ride env names + env_from_host, never the baked url", m.Name)
-		}
+		// Userinfo (user:pass@), query strings, and command argv are all
+		// ALLOWED to carry whatever the user puts there — including secrets,
+		// which then bake into the image like [env] literals. A refusal here
+		// shipped briefly (codex review round 1) and was walked back by
+		// maintainer ruling 2026-07-15: the threat model is the agent, never
+		// the user (footgun doctrine), and a basic-auth URL is a real shape
+		// (a self-hosted MCP behind a reverse proxy) with no alternative
+		// spelling — refusing it breaks a working setup to police the user's
+		// own config. The docs and `byre mcp add` disclose the bake instead.
 	}
 	for _, k := range m.Env {
 		if !envKeyRe.MatchString(k) {

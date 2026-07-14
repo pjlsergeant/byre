@@ -75,8 +75,6 @@ func TestMCPValidationRejects(t *testing.T) {
 		{"control char in command", MCP{Name: "x", Command: []string{"s\x1b[31m"}}, "control characters"},
 		{"bad scheme", MCP{Name: "x", URL: "ftp://h/m"}, "scheme must be"},
 		{"no host", MCP{Name: "x", URL: "https:///mcp"}, "missing a host"},
-		{"credentials in url", MCP{Name: "x", URL: "https://token@h.example/mcp"}, "must not carry credentials"},
-		{"userinfo pair in url", MCP{Name: "x", URL: "https://user:pass@h.example/mcp"}, "must not carry credentials"},
 		{"env value smuggled", MCP{Name: "x", Command: []string{"s"}, Env: []string{"TOKEN=abc"}}, "not a valid environment variable name"},
 		{"bad egress", MCP{Name: "x", Command: []string{"s"}, Egress: []string{"bad host"}}, "not a valid host"},
 	}
@@ -208,6 +206,23 @@ func TestMCPConfigJSONDeterministicAndShaped(t *testing.T) {
 	one := string(MCPConfigJSON([]MCP{{Name: "x", Command: []string{"srv"}}}))
 	if !strings.Contains(one, `"args": []`) {
 		t.Fatalf("argless command must render empty args: %s", one)
+	}
+}
+
+// A basic-auth url (user:pass@host) is ACCEPTED — a self-hosted MCP behind
+// a reverse proxy is a real shape with no alternative spelling, and the
+// footgun doctrine polices the agent, never the user (maintainer ruling
+// 2026-07-15, reversing a review-round refusal). The secret bakes into the
+// image like an [env] literal; docs + `byre mcp add` disclose it. The
+// endpoint derivation must strip the userinfo from the implied egress.
+func TestMCPAcceptsBasicAuthURL(t *testing.T) {
+	m := MCP{Name: "proxied", URL: "https://user:pass@mcp.internal.example/mcp"}
+	if err := ValidateMCP(m); err != nil {
+		t.Fatalf("basic-auth url must validate: %v", err)
+	}
+	host, port, ok := m.Endpoint()
+	if !ok || host != "mcp.internal.example" || port != 443 {
+		t.Fatalf("endpoint must strip userinfo: %s:%d ok=%v", host, port, ok)
 	}
 }
 
