@@ -81,10 +81,11 @@ func TestDockerfileCanonicalOrder(t *testing.T) {
 }
 
 // TestDockerfileLastHealthcheckIsNone pins the security property behind the
-// core block's HEALTHCHECK strip: the last HEALTHCHECK in a Dockerfile wins,
-// so a raw block (skill Dockerfile lines, project dockerfile_post)
-// reintroducing one must still lose to the tail re-assert — otherwise a
-// base-image-style probe reopens the pre-launch-gate network window.
+// tail HEALTHCHECK strip (the chassis' sole copy): the last HEALTHCHECK in a
+// Dockerfile wins, so a raw block (skill Dockerfile lines, project
+// dockerfile_post) reintroducing one must still lose to the tail instruction
+// — otherwise a base-image-style probe reopens the pre-launch-gate network
+// window.
 func TestDockerfileLastHealthcheckIsNone(t *testing.T) {
 	out := Dockerfile(Input{
 		Base: "node:22",
