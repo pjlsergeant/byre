@@ -198,6 +198,60 @@ func TestLoadRejectsUnknownKey(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsMalformedVolumesAndMounts pins mount/volume shape checking at
+// the skill boundary: `byre skill validate` (which is skills.Load) must reject
+// what develop would reject, not pass a skill that can't run. The shape rules
+// themselves are config.Validate's; this only pins that Load applies them.
+func TestLoadRejectsMalformedVolumesAndMounts(t *testing.T) {
+	cases := map[string]string{
+		"machine-scoped seed": `
+[[volumes]]
+name = "x"
+role = "state"
+target = "/home/dev/.x"
+scope = "machine"
+[volumes.seed]
+host = "~/.x"
+`,
+		"bad role": `
+[[volumes]]
+name = "x"
+role = "identity"
+target = "/home/dev/.x"
+`,
+		"escaping literal seed path": `
+[[volumes]]
+name = "x"
+role = "state"
+target = "/home/dev/.x"
+[volumes.seed]
+literal = "data"
+path = "../outside"
+`,
+		"relative mount host": `
+[runtime]
+mounts = [{ host = "run/docker.sock", target = "/var/run/docker.sock" }]
+`,
+		"duplicate volume name": `
+[[volumes]]
+name = "x"
+role = "state"
+target = "/home/dev/.x"
+[[volumes]]
+name = "x"
+role = "cache"
+target = "/home/dev/.y"
+`,
+	}
+	for name, toml := range cases {
+		dir := testHome(t)
+		writeSkill(t, dir, "broken", toml, nil)
+		if _, err := Load(catFor(t, dir), "broken"); err == nil {
+			t.Errorf("%s: Load accepted a skill that cannot run", name)
+		}
+	}
+}
+
 func TestResolveContextFileTraversalRejected(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "evil", "[context]\nfile = \"../../etc/passwd\"\n", nil)

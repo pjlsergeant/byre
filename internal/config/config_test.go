@@ -117,6 +117,33 @@ func TestValidateMountHostRequired(t *testing.T) {
 	}
 }
 
+// TestValidateHostPathShape pins host-path shape at validate time: run
+// assembly (expandHostPath) demands ~-anchored or absolute with no comma, and
+// a path that can't survive that must fail at save/validate with the file
+// open, not at the next develop.
+func TestValidateHostPathShape(t *testing.T) {
+	for name, host := range map[string]string{
+		"tilde": "~", "tilde slash": "~/.claude", "absolute": "/var/run/x.sock",
+	} {
+		c := Config{Mounts: []Mount{{Host: host, Target: "/t"}}}
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s mount host rejected: %v", name, err)
+		}
+	}
+	for name, host := range map[string]string{
+		"relative": "run/docker.sock", "dot relative": "./x", "tilde user": "~pete/x", "comma": "/a,b",
+	} {
+		c := Config{Mounts: []Mount{{Host: host, Target: "/t"}}}
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s mount host accepted; expandHostPath would refuse it at run assembly", name)
+		}
+	}
+	seeded := Config{Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Seed: &Seed{Host: "x/y"}}}}
+	if err := seeded.Validate(); err == nil {
+		t.Error("relative seed host accepted; expandHostPath would refuse it at seed time")
+	}
+}
+
 func TestValidateTargetCollisions(t *testing.T) {
 	cases := map[string]Config{
 		"dup mount target": {Mounts: []Mount{

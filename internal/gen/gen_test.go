@@ -42,6 +42,7 @@ COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
 # --- project block ---
 WORKDIR /workspace
 
+HEALTHCHECK NONE
 USER dev
 ENTRYPOINT ["/usr/local/bin/byre-launch"]
 `
@@ -77,6 +78,29 @@ func TestDockerfileCanonicalOrder(t *testing.T) {
 	// skill builds, and the core block stays cache-shared); ENTRYPOINT last.
 	if !(from < core && core < skills && skills < entry) {
 		t.Fatalf("sections out of order: FROM=%d core=%d skills=%d ENTRYPOINT=%d\n%s", from, core, skills, entry, out)
+	}
+}
+
+// TestDockerfileLastHealthcheckIsNone pins the security property behind the
+// core block's HEALTHCHECK strip: the last HEALTHCHECK in a Dockerfile wins,
+// so a raw block (skill Dockerfile lines, project dockerfile_post)
+// reintroducing one must still lose to the tail re-assert — otherwise a
+// base-image-style probe reopens the pre-launch-gate network window.
+func TestDockerfileLastHealthcheckIsNone(t *testing.T) {
+	out := Dockerfile(Input{
+		Base: "node:22",
+		Skills: []SkillBlock{{
+			Name:       "svc",
+			Dockerfile: []string{`HEALTHCHECK CMD curl -f http://localhost/ || exit 1`},
+		}},
+		DockerfilePost: []string{`HEALTHCHECK --interval=5s CMD wget -q http://localhost/`},
+	})
+	last := strings.LastIndex(out, "HEALTHCHECK")
+	if last < 0 {
+		t.Fatalf("no HEALTHCHECK emitted:\n%s", out)
+	}
+	if !strings.HasPrefix(out[last:], "HEALTHCHECK NONE\n") {
+		t.Fatalf("last HEALTHCHECK is not NONE (a raw block can reopen the pre-gate window):\n%s", out)
 	}
 }
 

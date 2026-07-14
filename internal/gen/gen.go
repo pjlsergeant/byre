@@ -129,7 +129,10 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// the container's netns independently of our ENTRYPOINT, so a base image's
 	// probe could do network I/O before a network-posture skill's launch gate
 	// lands (fail-open window). byre boxes are interactive sessions, not
-	// health-monitored services, so we never want one regardless.
+	// health-monitored services, so we never want one regardless. Last
+	// HEALTHCHECK wins, so Dockerfile() re-asserts NONE at the tail — this one
+	// only neutralizes the base image for the (root-run) build steps between
+	// here and there.
 	"HEALTHCHECK NONE\n" +
 	"COPY " + LauncherName + " " + launcherPath + "\n" +
 	"RUN chmod +x " + launcherPath + "\n" +
@@ -218,11 +221,19 @@ func Dockerfile(in Input) string {
 	writeNpm(&b, in.NpmGlobal)
 	writeRaw(&b, in.DockerfilePost)
 
+	// Re-assert HEALTHCHECK NONE after every raw block (skill Dockerfile lines,
+	// the project's dockerfile_post): the last HEALTHCHECK in a Dockerfile wins,
+	// so a raw line reintroducing one — a pasted service fragment is enough —
+	// would silently undo the core block's strip and reopen the pre-gate window
+	// documented there. Same tail posture as USER/ENTRYPOINT below: chassis-owned
+	// instructions come last so no raw block can override them.
+	b.WriteString("\nHEALTHCHECK NONE\n")
+
 	// Drop to the baked dev user for the runtime container. This comes after every
 	// build step (core block, skills, project block) so those still run as root, but
 	// before the ENTRYPOINT so the launcher and the agent run unprivileged — no
 	// runtime root, no gosu drop.
-	b.WriteString("\nUSER dev\n")
+	b.WriteString("USER dev\n")
 	fmt.Fprintf(&b, "ENTRYPOINT [%q]\n", launcherPath)
 	return b.String()
 }
