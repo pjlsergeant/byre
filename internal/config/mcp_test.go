@@ -165,7 +165,7 @@ func TestMCPMergeClosureSurvivesAndReopens(t *testing.T) {
 
 func TestMCPConfigJSONDeterministicAndShaped(t *testing.T) {
 	mcps := []MCP{
-		{Name: "linear", URL: "https://mcp.linear.app/mcp", Env: []string{"IGNORED"}},
+		{Name: "linear", URL: "https://mcp.linear.app/mcp", Env: []string{"LINEAR_KEY"}},
 		{Name: "github", Command: []string{"github-mcp-server", "stdio"}, Env: []string{"GITHUB_TOKEN"}},
 	}
 	got := string(MCPConfigJSON(mcps))
@@ -176,11 +176,17 @@ func TestMCPConfigJSONDeterministicAndShaped(t *testing.T) {
         "stdio"
       ],
       "command": "github-mcp-server",
-      "type": "stdio"
+      "type": "stdio",
+      "x_byre_env": [
+        "GITHUB_TOKEN"
+      ]
     },
     "linear": {
       "type": "http",
-      "url": "https://mcp.linear.app/mcp"
+      "url": "https://mcp.linear.app/mcp",
+      "x_byre_env": [
+        "LINEAR_KEY"
+      ]
     }
   }
 }
@@ -188,10 +194,11 @@ func TestMCPConfigJSONDeterministicAndShaped(t *testing.T) {
 	if got != want {
 		t.Fatalf("mcp.json mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
 	}
-	// Env stanzas are deliberately absent (inheritance delivers values; an
-	// unset ${VAR} would pass a literal through) — pin that.
-	if strings.Contains(got, "env") {
-		t.Fatalf("mcp.json must not carry env stanzas: %s", got)
+	// Claude-style env VALUE stanzas are deliberately absent (inheritance
+	// delivers values; an unset ${VAR} would pass a literal through); names
+	// ride the x_byre_env extension for scrubbed-env consumers — pin both.
+	if strings.Contains(got, `"env"`) {
+		t.Fatalf("mcp.json must not carry claude env stanzas: %s", got)
 	}
 	// The empty set is a real file, not an absent one.
 	if e := string(MCPConfigJSON(nil)); e != "{\n  \"mcpServers\": {}\n}\n" {

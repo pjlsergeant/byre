@@ -49,11 +49,14 @@
 description = "The Codex CLI agent; also the reviewer behind byre-codereview."
 
 [build]
-apt = ["curl", "ca-certificates", "gawk"]
+# jq: the MCP launch wrapper below parses /etc/byre/mcp.json with it.
+apt = ["curl", "ca-certificates", "gawk", "jq"]
 # First-run auth: ship a firstrun hook that runs `codex login --device-auth` on a
 # fresh box (guarded by auth.json), so byre-codereview works without hunting for a
 # shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
-files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login" }
+# codex-mcp-launch.sh: the MCP adapter — reads the canonical /etc/byre/mcp.json,
+# derives per-invocation `-c mcp_servers.*` overrides, execs codex (ADR 0033).
+files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login", "codex-mcp-launch.sh" = "/usr/local/bin/byre-codex-mcp-launch" }
 dockerfile = [
   # This comment line is emitted into the generated Dockerfile so the awk swap
   # isn't a mystery to anyone inspecting it.
@@ -65,6 +68,7 @@ dockerfile = [
   # volume mounts at CODEX_HOME (/home/dev/.codex-home) instead — so the binary
   # stays in this image dir, always present, never masked or wiped.
   "RUN test -x /home/dev/.local/bin/codex && ln -sf /home/dev/.local/bin/codex /usr/local/bin/codex",
+  "RUN chmod +x /usr/local/bin/byre-codex-mcp-launch",
 ]
 
 [runtime]
@@ -80,9 +84,19 @@ env = { CODEX_HOME = "/home/dev/.codex-home" }
 egress = ["api.openai.com", "auth.openai.com", "chatgpt.com"]
 
 [agent]
-# Flag per moarcode's `codex exec --dangerously-bypass-approvals-and-sandbox`;
+# The wrapper is byre's codex MCP adapter: it reads /etc/byre/mcp.json (baked
+# into every image; empty set = zero flags), derives `-c mcp_servers.*`
+# per-invocation overrides — live-verified state-free on codex 0.144.3, full
+# tool-call round trip — and execs codex with the flags below passed through.
+# Declared env NAMES ride codex's env_vars by-name passthrough (codex scrubs
+# the env it gives MCP servers, unlike claude's full inheritance). Attach
+# shells run plain `codex` and don't see byre's servers (same documented cost
+# as the claude adapter).
+# Bypass flag per moarcode's `codex exec --dangerously-bypass-approvals-and-sandbox`;
 # verify it applies to the interactive `codex` launch.
-command = "codex --dangerously-bypass-approvals-and-sandbox"
+command = "byre-codex-mcp-launch --dangerously-bypass-approvals-and-sandbox"
+# The author's vouch that the command consumes the baked file (ADR 0033).
+mcp = "inject"
 state = ".codex"
 # Codex reads global guidance from $CODEX_HOME/AGENTS.md (= the state volume).
 # HOST-VERIFY the path/filename codex actually reads.

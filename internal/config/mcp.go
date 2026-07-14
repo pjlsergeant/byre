@@ -253,26 +253,37 @@ func splitMCPs(mcps []MCP, mcpClosed []string) (open []MCP, closed []string) {
 // a quasi-public contract: pinned by gen's golden test; format changes are
 // versioned decisions.
 //
-// Env stanzas are DELIBERATELY absent: a box's stdio servers inherit the
-// full agent process env (spike-verified), so env_from_host/[env] values
-// reach them with no stanza — while a rendered `${NAME}` for an UNSET var
-// would pass the literal string through as a garbage credential. The
-// declaration's env list is legibility data for status, not file content.
+// Claude-style env VALUE stanzas are DELIBERATELY absent: claude's stdio
+// servers inherit the full agent process env (spike-verified), so
+// env_from_host/[env] values reach them with no stanza — while a rendered
+// `${NAME}` for an UNSET var would pass the literal string through as a
+// garbage credential. Declared env NAMES ride the `x_byre_env` extension
+// key instead (claude ignores it — spike-verified; a scrubbed-env consumer
+// like the codex adapter turns it into its by-name passthrough, e.g.
+// codex's env_vars).
 //
 // Determinism: encoding/json sorts map keys, so identical declarations
 // yield byte-identical output.
 func MCPConfigJSON(mcps []MCP) []byte {
 	servers := map[string]any{}
 	for _, m := range mcps {
+		entry := map[string]any{}
 		if m.Remote() {
-			servers[m.Name] = map[string]any{"type": "http", "url": m.URL}
-			continue
+			entry["type"] = "http"
+			entry["url"] = m.URL
+		} else {
+			args := m.Command[1:]
+			if args == nil {
+				args = []string{}
+			}
+			entry["type"] = "stdio"
+			entry["command"] = m.Command[0]
+			entry["args"] = args
 		}
-		args := m.Command[1:]
-		if args == nil {
-			args = []string{}
+		if len(m.Env) > 0 {
+			entry["x_byre_env"] = m.Env
 		}
-		servers[m.Name] = map[string]any{"type": "stdio", "command": m.Command[0], "args": args}
+		servers[m.Name] = entry
 	}
 	b, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	if err != nil {
