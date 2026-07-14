@@ -355,3 +355,123 @@ func TestRenderStatusMultiContainment(t *testing.T) {
 		t.Fatalf("both skills must be attributed:\n%s", out)
 	}
 }
+
+// MCP rows are configuration reporting: what's wired, from where, consumed
+// env verdicts, and the delivery line — never grant rows (carried egress
+// rides the Egress section, attributed mcp:<name>).
+func TestRenderStatusMCPRows(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent:    "byre/claude",
+		AgentMCP: "inject",
+		MCPs: []skills.MCPDecl{
+			{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "github", Command: []string{"gh-mcp", "stdio"}, Env: []string{"GITHUB_TOKEN", "GH_HOST"}}},
+			{Skill: "pete/tools", MCP: config.MCP{Name: "linear", URL: "https://mcp.linear.app/mcp"}},
+		},
+		EnvProvided: map[string]bool{"GITHUB_TOKEN": true},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "MCP servers:") {
+		t.Fatalf("MCP section missing:\n%s", out)
+	}
+	if !strings.Contains(out, "github — local: gh-mcp stdio  (config; consumes GITHUB_TOKEN (provided), GH_HOST (NOT provided by this box))") {
+		t.Errorf("local row wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "linear — remote: https://mcp.linear.app/mcp  (skill pete/tools)") {
+		t.Errorf("remote row wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "the agent session receives: github, linear  (injected via /etc/byre/mcp.json)") {
+		t.Errorf("inject delivery line wrong:\n%s", out)
+	}
+}
+
+// A registrar-less agent degrades honestly: declared-but-NOT-delivered, with
+// the baked path as the manual wiring point. No agent at all says where the
+// file is too.
+func TestRenderStatusMCPDeliveryDegrades(t *testing.T) {
+	decl := []skills.MCPDecl{{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "github", Command: []string{"gh-mcp"}}}}
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{Agent: "byre/gemini", MCPs: decl})
+	if out := buf.String(); !strings.Contains(out, "NOT delivered: agent skill byre/gemini has no MCP adapter") ||
+		!strings.Contains(out, "/etc/byre/mcp.json") {
+		t.Errorf("registrar-less degradation missing:\n%s", out)
+	}
+	buf.Reset()
+	renderStatus(&buf, statusInfo{MCPs: decl})
+	if out := buf.String(); !strings.Contains(out, "no agent selected") {
+		t.Errorf("agentless line missing:\n%s", out)
+	}
+	// Unresolved skills: delivery is unknown, never asserted.
+	buf.Reset()
+	renderStatus(&buf, statusInfo{Agent: "byre/claude", MCPs: decl, SkillErr: "boom"})
+	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
+		t.Errorf("unresolved delivery line missing:\n%s", out)
+	}
+}
+
+// Endpoint-closed coupling renders ON the MCP row — but only where closures
+// are enforced (an allowlist posture or open-denylist); on an open network
+// the closure is inert and the row must not claim non-operation. Local
+// servers with no declared egress get the outbound-unknown note under an
+// allowlist posture.
+func TestRenderStatusMCPEndpointClosedAndUnknownOutbound(t *testing.T) {
+	mcps := []skills.MCPDecl{
+		{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "linear", URL: "https://mcp.linear.app/mcp"}},
+		{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "github", Command: []string{"gh-mcp"}}},
+	}
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent: "byre/claude", AgentMCP: "inject",
+		NetPosture: "deny-by-default", NetPostureSkill: "firewall",
+		EgressClosed: []string{"mcp.linear.app"},
+		MCPs:         mcps,
+	})
+	out := buf.String()
+	if !strings.Contains(out, "endpoint closed by config '!mcp.linear.app' — not operational") {
+		t.Errorf("endpoint-closed note missing under allowlist posture:\n%s", out)
+	}
+	if !strings.Contains(out, "outbound unknown — under deny-by-default") {
+		t.Errorf("local unknown-outbound note missing:\n%s", out)
+	}
+
+	// Open-denylist: the closure IS enforced (dropped), so the claim stands;
+	// the unknown-outbound note does not (the network is open).
+	buf.Reset()
+	renderStatus(&buf, statusInfo{
+		Agent: "byre/claude", AgentMCP: "inject",
+		NetPosture: config.PostureOpenDenylist, NetPostureSkill: "firewall-open",
+		EgressClosed: []string{"mcp.linear.app"},
+		MCPs:         mcps,
+	})
+	out = buf.String()
+	if !strings.Contains(out, "not operational") {
+		t.Errorf("endpoint-closed note missing under open-denylist:\n%s", out)
+	}
+	if strings.Contains(out, "outbound unknown") {
+		t.Errorf("unknown-outbound must not print on an open network:\n%s", out)
+	}
+
+	// Open network: closures are inert — no non-operational claim, no
+	// unknown-outbound note.
+	buf.Reset()
+	renderStatus(&buf, statusInfo{
+		Agent: "byre/claude", AgentMCP: "inject",
+		EgressClosed: []string{"mcp.linear.app"},
+		MCPs:         mcps,
+	})
+	out = buf.String()
+	if strings.Contains(out, "not operational") || strings.Contains(out, "outbound unknown") {
+		t.Errorf("inert closure must not claim non-operation on an open network:\n%s", out)
+	}
+}
+
+// MCP `!name` closures render one row each, unconditionally — the declared
+// set is byre's own construction, so the removal is always in effect.
+func TestRenderStatusMCPClosedRows(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{MCPClosed: []string{"telemetry"}})
+	if out := buf.String(); !strings.Contains(out, "MCP closed:") ||
+		!strings.Contains(out, "!telemetry  (config — removed from the declared set)") {
+		t.Errorf("MCP closed row missing:\n%s", out)
+	}
+}

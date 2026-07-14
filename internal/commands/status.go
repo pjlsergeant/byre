@@ -8,6 +8,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -34,6 +35,16 @@ type statusInfo struct {
 	NetPostureSkill string               // the skill declaring it
 	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
 	EgressClosed    []string             // the config's `!host[:port]` closures that survived the cascade
+	// MCPs is the effective declared MCP set — wiring, not grants (its
+	// carried egress rides the Egress rows attributed mcp:<name>); MCPClosed
+	// is the config's `!name` MCP closures; AgentMCP is the selected agent's
+	// adapter vouch ("inject" = the agent command consumes the baked file);
+	// EnvProvided marks env keys this box actually supplies, for the
+	// consumes-X (provided / NOT provided) annotations.
+	MCPs        []skills.MCPDecl
+	MCPClosed   []string
+	AgentMCP    string
+	EnvProvided map[string]bool
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments    []skills.ContainmentDecl
@@ -79,10 +90,25 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		Volumes:        cfg.Volumes,
 		RunArgs:        cfg.RunArgs,
 		EgressClosed:   cfg.EgressClosed,
+		MCPClosed:      cfg.MCPClosed,
 		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs: len(cfg.RunArgs) > 0,
 		EnvFromHost:    cfg.EnvFromHost,
 		Cat:            cat,
+	}
+	// Config-declared MCPs stay visible even when skills fail to resolve (the
+	// same config-only degradation as every other row); the resolved set below
+	// replaces this with the skill union. MCPSet on an empty Resolved cannot
+	// conflict, so the error is structurally nil.
+	info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
+	info.EnvProvided = map[string]bool{}
+	for k := range cfg.Env {
+		info.EnvProvided[k] = true
+	}
+	for k, src := range cfg.EnvFromHost {
+		if src != "" {
+			info.EnvProvided[k] = true
+		}
 	}
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
@@ -123,7 +149,17 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			// so status must show those holes too — attributed to config, not a
 			// skill — or it under-reports what the box can reach.
 			info.Egress = append(info.Egress, configEgress(cfg.Egress)...)
+			// The declared MCP set's CARRIED egress — implied by the wiring,
+			// attributed mcp:<name>, closable like anything else.
+			info.Egress = append(info.Egress, skills.MCPEgress(rv.mcps)...)
 			info.Containments = res.Containments()
+			info.MCPs = rv.mcps
+			if res.Agent != nil {
+				info.AgentMCP = res.Agent.MCP
+			}
+			for k := range res.Env() {
+				info.EnvProvided[k] = true
+			}
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -374,6 +410,34 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Shared vols", strings.Join(machine, ", ")+"  (machine-wide, all your projects)")
 	}
 
+	// MCP servers: wiring, not grants (GLOSSARY) — configuration rows beside
+	// the volumes, contributing zero to exposure; the egress each declaration
+	// CARRIES already renders in the Egress rows above, attributed mcp:<name>.
+	// These rows are config-application reporting: what's wired, from where,
+	// what env it consumes (and whether this box provides it), and why it
+	// won't work when byre can tell (endpoint closed, outbound unknown).
+	for i, d := range s.MCPs {
+		label := "MCP servers"
+		if i > 0 {
+			label = ""
+		}
+		row(label, mcpStatusLine(d, s))
+	}
+	if len(s.MCPs) > 0 {
+		row("", mcpDeliveryLine(s))
+	}
+	// The `!name` MCP closures, one row each — configuration that must never
+	// be invisible (same stance as egress Closed rows). Unlike an egress
+	// closure these need no posture qualifier: the declared set is byre's own
+	// construction, so the removal is always in effect.
+	for i, c := range s.MCPClosed {
+		label := "MCP closed"
+		if i > 0 {
+			label = ""
+		}
+		row(label, "!"+c+"  (config — removed from the declared set)")
+	}
+
 	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate
 	// host->box data channel, attributed source by source — the shipped git
 	// identity included (byre's own defaults get no invisibility pass).
@@ -433,6 +497,71 @@ func renderStatus(w io.Writer, s statusInfo) {
 	if len(s.SiblingSessions) > 0 {
 		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s  (share these volumes)",
 			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", ")))
+	}
+}
+
+// mcpStatusLine renders one declared MCP server: what it is, who declared
+// it, what env it consumes (with a provided / NOT provided verdict per
+// name), and — when byre can tell — why it won't work: a remote endpoint a
+// config closure closes (only claimed where closures are actually enforced:
+// an allowlist posture subtracts it, open-denylist drops it; on an open
+// network the closure is inert and so is the claim), or a local server
+// whose outbound is unknown under an allowlist posture.
+func mcpStatusLine(d skills.MCPDecl, s statusInfo) string {
+	m := d.MCP
+	var b strings.Builder
+	if m.Remote() {
+		fmt.Fprintf(&b, "%s — remote: %s", m.Name, m.URL)
+	} else {
+		fmt.Fprintf(&b, "%s — local: %s", m.Name, strings.Join(m.Command, " "))
+	}
+	src := "config"
+	if d.Skill != skills.MCPFromConfig {
+		src = "skill " + d.Skill
+	}
+	notes := []string{src}
+	if len(m.Env) > 0 {
+		marks := make([]string, len(m.Env))
+		for i, k := range m.Env {
+			if s.EnvProvided[k] {
+				marks[i] = k + " (provided)"
+			} else {
+				marks[i] = k + " (NOT provided by this box)"
+			}
+		}
+		notes = append(notes, "consumes "+strings.Join(marks, ", "))
+	}
+	closuresEnforced := config.PostureEnforcesAllowlist(s.NetPosture) || s.NetPosture == config.PostureOpenDenylist
+	if host, port, ok := m.Endpoint(); ok && closuresEnforced {
+		if c, closed := closedBy(s.EgressClosed, host, port); closed {
+			notes = append(notes, fmt.Sprintf("endpoint closed by config '!%s' — not operational", c))
+		}
+	}
+	if !m.Remote() && len(m.Egress) == 0 && config.PostureEnforcesAllowlist(s.NetPosture) {
+		notes = append(notes, fmt.Sprintf("outbound unknown — under %s, declare egress on this mcp if the server needs the network", s.NetPosture))
+	}
+	return b.String() + "  (" + strings.Join(notes, "; ") + ")"
+}
+
+// mcpDeliveryLine says how (whether) the declared set reaches the agent
+// session. Injection is static truth — deterministic from the image — so it
+// speaks plainly; a registrar-less agent gets the honest degradation: the
+// set is baked at a stable path, the wiring into that agent is the user's.
+func mcpDeliveryLine(s statusInfo) string {
+	names := make([]string, len(s.MCPs))
+	for i, d := range s.MCPs {
+		names[i] = d.MCP.Name
+	}
+	list := strings.Join(names, ", ")
+	switch {
+	case s.SkillErr != "":
+		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.MCPConfigPath
+	case s.Agent == "":
+		return "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"
+	case s.AgentMCP == "inject":
+		return fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath)
+	default:
+		return fmt.Sprintf("-> NOT delivered: agent skill %s has no MCP adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.MCPConfigPath)
 	}
 }
 

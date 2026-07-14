@@ -241,6 +241,21 @@ func printSkillContributions(w io.Writer, f skills.File) {
 	for _, e := range rt.EgressOffered {
 		fmt.Fprintf(w, "  egress_offered: %s\n", packages.EscapeTerminal(e))
 	}
+	// MCP declarations: wiring, but part of the trust surface — a remote URL
+	// implies egress and the env list names what the server will consume.
+	for _, m := range f.MCPs {
+		if m.Remote() {
+			fmt.Fprintf(w, "  mcp: %s (remote: %s)\n", packages.EscapeTerminal(m.Name), packages.EscapeTerminal(m.URL))
+		} else {
+			fmt.Fprintf(w, "  mcp: %s (local: %s)\n", packages.EscapeTerminal(m.Name), packages.EscapeTerminal(strings.Join(m.Command, " ")))
+		}
+		for _, k := range m.Env {
+			fmt.Fprintf(w, "    consumes env: %s\n", packages.EscapeTerminal(k))
+		}
+		for _, e := range m.Egress {
+			fmt.Fprintf(w, "    egress: %s\n", packages.EscapeTerminal(e))
+		}
+	}
 	for _, k := range sortedMapKeys(rt.Env) {
 		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.Env[k]))
 	}
@@ -607,6 +622,13 @@ description = "TODO: one-line summary"
 # [runtime]
 # env = {}
 # env_docs = {}   # vars the skill CONSUMES: NAME = "one-line guidance"
+
+# MCP servers this skill wires into the box (names only in env — values
+# arrive via env_from_host/[env]; a remote url implies attributed egress).
+# [[mcp]]
+# name = "github"
+# command = ["github-mcp-server", "stdio"]
+# env = ["GITHUB_TOKEN"]
 
 # [context]
 # text = """
