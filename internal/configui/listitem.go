@@ -338,12 +338,12 @@ func (m model) startItem(idx int) model {
 		m.inputs = []textinput.Model{newInput(v)}
 	case fMCP:
 		// url XOR command discriminates remote vs local (no transport field —
-		// ADR 0033). Space-separated argv: an arg with embedded spaces is a
-		// hand edit (^e), same escape hatch as everything the UI can't spell.
+		// ADR 0033). The command field is the reversible argv form: space-
+		// separated, "double quotes" grouping an arg with spaces.
 		m.inputLabels = []string{
 			"Name",
 			"URL (remote server; blank = local)",
-			"Command (local argv, space-separated)",
+			`Command (argv; "quote args with spaces")`,
 			"Env names it consumes (space-separated)",
 			"Extra egress host[:port] (space-separated)",
 		}
@@ -638,11 +638,19 @@ func (m model) commitItem() model {
 		m.egress = putAt(m.egress, m.editIndex, entry)
 	case fMCP:
 		// Shape rules are config's (ValidateMCP — the same check the layer
-		// gate runs); the editor only parses its string inputs apart.
+		// gate runs); the editor only parses its string inputs apart. The
+		// command field round-trips through the quote-aware argv form
+		// (splitArgv/joinArgv), so an arg with embedded spaces survives an
+		// open-and-commit unchanged.
+		cmd, err := splitArgv(m.inputs[2].Value())
+		if err != nil {
+			m.itemErr = "command: " + err.Error()
+			return m
+		}
 		mc := config.MCP{
 			Name:    strings.TrimSpace(m.inputs[0].Value()),
 			URL:     strings.TrimSpace(m.inputs[1].Value()),
-			Command: strings.Fields(m.inputs[2].Value()),
+			Command: cmd,
 			Env:     strings.Fields(m.inputs[3].Value()),
 			Egress:  strings.Fields(m.inputs[4].Value()),
 		}
@@ -771,12 +779,14 @@ func portLine(p config.Port) string {
 
 // mcpLine renders one [[mcp]] declaration for rows and the dirty signature:
 // the same local/remote vocabulary status prints, plus the carried env names.
+// The command renders in the argv form the editor parses (joinArgv), so a
+// spaced arg reads as it round-trips.
 func mcpLine(mc config.MCP) string {
 	var b strings.Builder
 	if mc.Remote() {
 		fmt.Fprintf(&b, "%s — remote: %s", mc.Name, mc.URL)
 	} else {
-		fmt.Fprintf(&b, "%s — local: %s", mc.Name, strings.Join(mc.Command, " "))
+		fmt.Fprintf(&b, "%s — local: %s", mc.Name, joinArgv(mc.Command))
 	}
 	if len(mc.Env) > 0 {
 		fmt.Fprintf(&b, " (env: %s)", strings.Join(mc.Env, ", "))
@@ -785,6 +795,59 @@ func mcpLine(mc config.MCP) string {
 		fmt.Fprintf(&b, " (+egress: %s)", strings.Join(mc.Egress, ", "))
 	}
 	return b.String()
+}
+
+// joinArgv/splitArgv are the editor's REVERSIBLE argv text form: elements
+// join on spaces; an element containing whitespace or a double quote renders
+// double-quoted with `\"` escapes, and splitArgv parses exactly that back.
+// Round-trip property: splitArgv(joinArgv(x)) == x for every argv config
+// validation admits (no control characters). Not a shell: no single quotes,
+// no variable expansion — just enough to keep `["--label", "hello world"]`
+// intact through an open-and-commit (codex review round 4).
+func joinArgv(args []string) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		if a == "" || strings.ContainsAny(a, " \t\"") {
+			parts[i] = `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
+		} else {
+			parts[i] = a
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func splitArgv(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	inQuote, started := false, false
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		switch {
+		case inQuote && r == '\\' && i+1 < len(rs) && rs[i+1] == '"':
+			cur.WriteRune('"')
+			i++
+		case r == '"':
+			inQuote = !inQuote
+			started = true // "" is a deliberate empty element
+		case !inQuote && (r == ' ' || r == '\t'):
+			if started {
+				out = append(out, cur.String())
+				cur.Reset()
+				started = false
+			}
+		default:
+			cur.WriteRune(r)
+			started = true
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf(`unterminated " quote`)
+	}
+	if started {
+		out = append(out, cur.String())
+	}
+	return out, nil
 }
 
 // ---- rendering ---------------------------------------------------------------

@@ -1306,3 +1306,41 @@ func TestMCPSigTracksChanges(t *testing.T) {
 		t.Fatal("an MCP edit must flip the dirty signature")
 	}
 }
+
+// The argv text form must be REVERSIBLE: opening a declaration whose command
+// carries spaced/quoted args and committing it unchanged must not corrupt
+// the argv (codex review round 4 — join/Fields split "hello world" apart).
+func TestMCPArgvRoundTrip(t *testing.T) {
+	cases := [][]string{
+		{"server", "--label", "hello world"},
+		{"srv", `say "hi"`, ""},
+		{"plain", "args", "only"},
+	}
+	for _, argv := range cases {
+		got, err := splitArgv(joinArgv(argv))
+		if err != nil {
+			t.Fatalf("%v: %v", argv, err)
+		}
+		if strings.Join(got, "\x00") != strings.Join(argv, "\x00") {
+			t.Errorf("round trip lost data: %v -> %q -> %v", argv, joinArgv(argv), got)
+		}
+	}
+	if _, err := splitArgv(`bad "unterminated`); err == nil {
+		t.Error("unterminated quote must error")
+	}
+
+	// The regression as the user hits it: open the existing item, commit
+	// with no edits, argv unchanged.
+	m := newModel("t", "/tmp/x", config.Config{MCPs: []config.MCP{
+		{Name: "spaced", Command: []string{"server", "--label", "hello world"}},
+	}}, nil, nil, nil, nil, Inherited{}, nil, false)
+	m.listField = fMCP
+	m = m.startItem(0)
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("no-op commit errored: %s", m.itemErr)
+	}
+	if got := m.mcps[0].Command; len(got) != 3 || got[2] != "hello world" {
+		t.Fatalf("no-op open-and-commit corrupted argv: %v", got)
+	}
+}

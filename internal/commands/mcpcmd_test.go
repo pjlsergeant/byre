@@ -214,3 +214,29 @@ name = "!closed-one"
 		t.Errorf("empty-set pointer missing: %s", out)
 	}
 }
+
+// When the still-effective check CANNOT run (broken skill, unresolvable
+// cascade), remove must refuse rather than delete without a closure — a
+// swallowed failure would silently resurrect an inherited server once
+// resolution recovers (codex review round 4).
+func TestMCPRemoveRefusesWhenResolutionBroken(t *testing.T) {
+	dir, projPath, _, s, _ := mcpTestProject(t)
+	if err := os.WriteFile(projPath, []byte(`
+skills = ["no/such-skill"]
+
+[[mcp]]
+name = "own"
+command = ["srv"]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := MCPRemove(s, dir, false, "own")
+	if err == nil || !strings.Contains(err.Error(), "can't determine whether the name stays effective") {
+		t.Fatalf("broken resolution must refuse the remove: %v", err)
+	}
+	// Nothing was written.
+	cfg, _ := config.ParseFile(projPath)
+	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "own" {
+		t.Fatalf("refusal must leave the layer untouched: %+v", cfg.MCPs)
+	}
+}

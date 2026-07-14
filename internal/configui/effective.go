@@ -171,9 +171,11 @@ func hasMCPName(ms []config.MCP, name string) bool {
 }
 
 // mcpVals flattens a declaration for the override editor's prefill, in the
-// item editor's input order (name, url, command, env, egress).
+// item editor's input order (name, url, command, env, egress). The command
+// uses the reversible argv form (joinArgv) so a spaced arg survives the
+// prefill-and-commit round trip.
 func mcpVals(mc config.MCP) []string {
-	return []string{mc.Name, mc.URL, strings.Join(mc.Command, " "), strings.Join(mc.Env, " "), strings.Join(mc.Egress, " ")}
+	return []string{mc.Name, mc.URL, joinArgv(mc.Command), strings.Join(mc.Env, " "), strings.Join(mc.Egress, " ")}
 }
 
 // egressRows mirrors aptRows in shape, but egress `!entry` markers are

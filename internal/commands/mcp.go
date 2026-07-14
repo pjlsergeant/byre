@@ -147,23 +147,16 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 	}
 	cur.MCPs = kept
 
-	// Would the name still be effective without a closure? (project only)
+	// Would the name still be effective without a closure? (project only.)
+	// A failure here must REFUSE, not proceed: swallowing it would delete an
+	// own-layer override without the closure, silently resurrecting the
+	// inherited server once resolution recovers (codex review round 4).
 	stillEffective := false
 	if !global {
-		if home, herr := project.Home(); herr == nil {
-			if cat, cerr := builtins.LoadCatalogRaw(home); cerr == nil && cat != nil {
-				if effective, rerr := config.ResolveProposed(cur); rerr == nil {
-					if res, serr := skills.Resolve(effective, cat); serr == nil {
-						if set, merr := skills.MCPSet(effective, res); merr == nil {
-							for _, d := range set {
-								if d.MCP.Name == name {
-									stillEffective = true
-								}
-							}
-						}
-					}
-				}
-			}
+		var err error
+		stillEffective, err = mcpStillEffective(cur, name)
+		if err != nil {
+			return fmt.Errorf("mcp remove %s: can't determine whether the name stays effective from lower layers or skills (%w) — fix that first, or hand-edit %s", name, err, path)
 		}
 	}
 
@@ -193,6 +186,41 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 	}
 	fmt.Fprintln(s.Err, "byre: applies on the next develop.")
 	return nil
+}
+
+// mcpStillEffective reports whether name survives in the effective MCP set
+// with `cur` as the project layer (post tentative edit). Any resolution
+// failure is the CALLER's refusal, never a silent false.
+func mcpStillEffective(cur config.Config, name string) (bool, error) {
+	home, err := project.Home()
+	if err != nil {
+		return false, err
+	}
+	cat, err := builtins.LoadCatalogRaw(home)
+	if err != nil {
+		return false, err
+	}
+	if cat == nil {
+		return false, fmt.Errorf("catalog unavailable")
+	}
+	effective, err := config.ResolveProposed(cur)
+	if err != nil {
+		return false, err
+	}
+	res, err := skills.Resolve(effective, cat)
+	if err != nil {
+		return false, err
+	}
+	set, err := skills.MCPSet(effective, res)
+	if err != nil {
+		return false, err
+	}
+	for _, d := range set {
+		if d.MCP.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // MCPList implements `byre mcp list`: the effective declared set, rendered
