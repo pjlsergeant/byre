@@ -18,6 +18,13 @@ another doc disagrees with it on naming, one of them is wrong -- reconcile.
 rationale. Litmus: could it be "superseded by ADR-NNNN"? ADR. Would changing
 it re-litigate the project? Principle.
 
+**`docs/` holds settled references only** -- ALL-CAPS files, plus `adr/`
+(decision records) and `marketing/`. Anything with a lifecycle -- designs in
+flight, research drafts, parked options -- lives in `wip/` at the repo root
+and is DELETED when the work ships (absorbed into an ADR and/or the docs;
+git history keeps it -- see `wip/README.md`). Never start a working document
+in `docs/`.
+
 **byre runs on the host** (where Docker is). The dev *container* is where the
 agent writes Go, runs `go build`, and runs unit tests; the actual `byre develop`
 / integration runs happen host-side.
