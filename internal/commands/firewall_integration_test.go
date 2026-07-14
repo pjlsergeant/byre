@@ -31,9 +31,11 @@ import (
 )
 
 // buildFirewallImage prepares the store, resolves a firewall-only project, and
-// builds its real image. Returns the image tag and the resolved env to pass
-// the netns helper.
-func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]string) {
+// builds its real image. Returns the image tag, the resolved env to pass the
+// netns helper, and the identity the image was built with (keep-id under
+// rootless Podman — the boxes and helpers below must run in the same mode a
+// real session would).
+func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]string, runner.Identity) {
 	t.Helper()
 	p, _ := testPaths(t)
 	if err := builtins.EnsureStore(p.Home); err != nil {
@@ -54,9 +56,10 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	if err != nil {
 		t.Fatalf("resolve firewall skill: %v", err)
 	}
-	image := imageTag(p.ID, os.Getuid(), os.Getgid())
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, hostIdentity()); err != nil {
+	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("firewall image failed to build: %v", err)
 	}
 	// Mirror develop's netns env exactly: BYRE_EGRESS is the full allowlist
@@ -68,7 +71,7 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 		env = map[string]string{}
 	}
 	env["BYRE_EGRESS"] = strings.Join(resolvedEgress(combine(cfg, res)), " ")
-	return image, env
+	return image, env, ident
 }
 
 // uniqueName returns a recognizable, collision-free container name, so
@@ -76,6 +79,25 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 // live containers (the runner package's smokeName precedent).
 func uniqueName(kind string) string {
 	return fmt.Sprintf("byre-inttest-%s-%d-%d", kind, os.Getpid(), time.Now().UnixNano()%1_000_000)
+}
+
+// boxUserns / helperUserns are the keep-id flags a real session would carry
+// (empty slices on rootful engines): the box runs under the keep-id mapping
+// (runParams), and any helper joining its namespaces joins the box's own
+// userns (runner.NetnsInit) — an identical sibling mapping has no NET_ADMIN
+// over the box's netns.
+func boxUserns(ident runner.Identity) []string {
+	if u := ident.Userns(); u != "" {
+		return []string{"--userns=" + u}
+	}
+	return nil
+}
+
+func helperUserns(ident runner.Identity, box string) []string {
+	if ident.KeepID {
+		return []string{"--userns=container:" + box}
+	}
+	return nil
 }
 
 // dockerWait blocks until the named container exits and returns its exit code.
@@ -100,7 +122,7 @@ func dockerWait(t *testing.T, r *runner.Runner, name string) int {
 // only does after the rules verify.
 func TestIntegrationFirewallEgress(t *testing.T) {
 	r := requireEngineRunner(t)
-	image, env := buildFirewallImage(t, r)
+	image, env, ident := buildFirewallImage(t, r)
 	name := uniqueName("fw-egress")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
@@ -130,7 +152,8 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then echo ALLOW
 if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
 
 	// Start the box detached: the launcher comes up and parks at the gate.
-	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name, image, "bash", "-c", probe)
+	startArgs := append([]string{"run", "-d", "--name", name}, boxUserns(ident)...)
+	start := exec.Command(string(r.Engine()), append(startArgs, image, "bash", "-c", probe)...)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
@@ -147,6 +170,7 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_
 	helperArgs := []string{"run", "--rm", "-u", "0:0",
 		"--net", "container:" + name, "--cap-add", "NET_ADMIN",
 		"--entrypoint", "/usr/local/bin/byre-firewall"}
+	helperArgs = append(helperArgs, helperUserns(ident, name)...)
 	for k, v := range env {
 		helperArgs = append(helperArgs, "-e", k+"="+v)
 	}
@@ -158,9 +182,11 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_
 	}
 	// Snapshot the rules the helper actually installed, while the box (and
 	// so its netns) is still alive — same diagnosis-on-failure rationale.
-	if rules, derr := exec.Command(string(r.Engine()), "run", "--rm", "-u", "0:0",
-		"--net", "container:"+name, "--cap-add", "NET_ADMIN",
-		"--entrypoint", "iptables", image, "-S", "OUTPUT").CombinedOutput(); derr == nil {
+	dumpArgs := append([]string{"run", "--rm", "-u", "0:0",
+		"--net", "container:" + name, "--cap-add", "NET_ADMIN",
+		"--entrypoint", "iptables"}, helperUserns(ident, name)...)
+	if rules, derr := exec.Command(string(r.Engine()),
+		append(dumpArgs, image, "-S", "OUTPUT")...).CombinedOutput(); derr == nil {
 		t.Logf("netns OUTPUT rules:\n%s", rules)
 	} else {
 		t.Logf("netns rules dump failed: %v\n%s", derr, rules)
@@ -184,14 +210,14 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_
 // launch open. A short gate timeout keeps the test quick.
 func TestIntegrationFirewallFailsClosed(t *testing.T) {
 	r := requireEngineRunner(t)
-	image, _ := buildFirewallImage(t, r)
+	image, _, ident := buildFirewallImage(t, r)
 	name := uniqueName("fw-closed")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// If the gate ever opened, this marker would appear. It must not.
-	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
-		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
-		image, "bash", "-c", "echo GATE_OPENED_LEAK")
+	startArgs := append([]string{"run", "-d", "--name", name,
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4"}, boxUserns(ident)...)
+	start := exec.Command(string(r.Engine()), append(startArgs, image, "bash", "-c", "echo GATE_OPENED_LEAK")...)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
@@ -219,7 +245,7 @@ func TestIntegrationFirewallFailsClosed(t *testing.T) {
 // stale state"); FailsClosed above covers the never-launched half.
 func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 	r := requireEngineRunner(t)
-	image, env := buildFirewallImage(t, r)
+	image, env, ident := buildFirewallImage(t, r)
 	name := uniqueName("fw-restart")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
@@ -235,14 +261,14 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 	// helper listens, the helper's nc idles its full 60s, and the test dies
 	// confusingly late. 30s (the production default) keeps the race
 	// unlosable; the second phase pays it once as the refusal wait.
-	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
-		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=30",
-		image, "bash", "-c", "echo BOX_RAN; sleep 300")
+	startArgs := append([]string{"run", "-d", "--name", name,
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=30"}, boxUserns(ident)...)
+	start := exec.Command(string(r.Engine()), append(startArgs, image, "bash", "-c", "echo BOX_RAN; sleep 300")...)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
 	waitRunning(t, r, name)
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall", env, false); err != nil {
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall", env, ident.KeepID); err != nil {
 		t.Fatalf("netns init failed: %v", err)
 	}
 	waitForLog(t, r, name, "BOX_RAN") // first launch made it through the gate
@@ -271,7 +297,7 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 // closure rides the `egress` key as a `!` marker and must survive to
 // EgressClosed via the real merge (Merge extracts markers), the same road
 // develop's cascade takes.
-func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]string) {
+func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]string, runner.Identity) {
 	t.Helper()
 	p, _ := testPaths(t)
 	if err := builtins.EnsureStore(p.Home); err != nil {
@@ -291,9 +317,10 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 	if err != nil {
 		t.Fatalf("resolve firewall-open skill: %v", err)
 	}
-	image := imageTag(p.ID, os.Getuid(), os.Getgid())
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, hostIdentity()); err != nil {
+	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("firewall-open image failed to build: %v", err)
 	}
 	env := res.Env()
@@ -302,7 +329,7 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 	}
 	// Mirror develop's netns env: the helper enforces exactly the closures.
 	env["BYRE_EGRESS_DENY"] = strings.Join(cfg.EgressClosed, " ")
-	return image, env
+	return image, env, ident
 }
 
 // TestIntegrationFirewallOpenEgress: the open-denylist inverse of the core
@@ -311,7 +338,7 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 // because the gate opened, so gating rides along.
 func TestIntegrationFirewallOpenEgress(t *testing.T) {
 	r := requireEngineRunner(t)
-	image, env := buildFirewallOpenImage(t, r)
+	image, env, ident := buildFirewallOpenImage(t, r)
 	name := uniqueName("fwo-egress")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
@@ -325,12 +352,13 @@ func TestIntegrationFirewallOpenEgress(t *testing.T) {
 if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo OPEN_OK; else echo OPEN_FAIL; fi
 if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
 
-	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name, image, "bash", "-c", probe)
+	startArgs := append([]string{"run", "-d", "--name", name}, boxUserns(ident)...)
+	start := exec.Command(string(r.Engine()), append(startArgs, image, "bash", "-c", probe)...)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
 	waitRunning(t, r, name)
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env, false); err != nil {
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env, ident.KeepID); err != nil {
 		t.Fatalf("netns init failed: %v", err)
 	}
 
@@ -351,19 +379,19 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_
 // must never run its command.
 func TestIntegrationFirewallOpenUnresolvableFailsClosed(t *testing.T) {
 	r := requireEngineRunner(t)
-	image, env := buildFirewallOpenImage(t, r)
+	image, env, ident := buildFirewallOpenImage(t, r)
 	env["BYRE_EGRESS_DENY"] = "definitely-not-a-real-host.invalid"
 	name := uniqueName("fwo-badhost")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
-	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
-		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
-		image, "bash", "-c", "echo GATE_OPENED_LEAK")
+	startArgs := append([]string{"run", "-d", "--name", name,
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4"}, boxUserns(ident)...)
+	start := exec.Command(string(r.Engine()), append(startArgs, image, "bash", "-c", "echo GATE_OPENED_LEAK")...)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
 	waitRunning(t, r, name)
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env, false); err == nil {
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env, ident.KeepID); err == nil {
 		t.Errorf("helper must fail on an unresolvable closure")
 	}
 	if code := dockerWait(t, r, name); code == 0 {
@@ -421,7 +449,7 @@ func containerLogs(t *testing.T, r *runner.Runner, name string) string {
 // has its ip6tables removed before exec'ing the real script.
 func TestIntegrationFirewallV6GuardFailsClosed(t *testing.T) {
 	r := requireEngineRunner(t)
-	image, env := buildFirewallImage(t, r)
+	image, env, ident := buildFirewallImage(t, r)
 
 	netName := uniqueName("fw-v6net")
 	if out, err := exec.Command(string(r.Engine()), "network", "create",
@@ -432,10 +460,10 @@ func TestIntegrationFirewallV6GuardFailsClosed(t *testing.T) {
 
 	name := uniqueName("fw-v6guard")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
-	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
+	startArgs := append([]string{"run", "-d", "--name", name,
 		"--network", netName,
-		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
-		image, "bash", "-c", "echo GATE_OPENED_LEAK")
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4"}, boxUserns(ident)...)
+	start := exec.Command(string(r.Engine()), append(startArgs, image, "bash", "-c", "echo GATE_OPENED_LEAK")...)
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("start box: %v\n%s", err, out)
 	}
@@ -446,6 +474,7 @@ func TestIntegrationFirewallV6GuardFailsClosed(t *testing.T) {
 	helperArgs := []string{"run", "--rm", "-u", "0:0",
 		"--net", "container:" + name, "--cap-add", "NET_ADMIN",
 		"--entrypoint", "bash"}
+	helperArgs = append(helperArgs, helperUserns(ident, name)...)
 	for k, v := range env {
 		helperArgs = append(helperArgs, "-e", k+"="+v)
 	}

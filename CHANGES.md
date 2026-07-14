@@ -10,7 +10,9 @@
   user namespace; deliver knows rootless engines only show your own boxes.
   Rootless Podman older than 4.3 keeps the previous refusal
   (`BYRE_ALLOW_ROOTLESS_PODMAN=1` override unchanged), and rootful
-  Docker/Podman behavior is untouched.
+  Docker/Podman behavior is untouched. The whole gated integration suite
+  (firewall included) runs and passes on rootless Podman;
+  `BYRE_TEST_ENGINE` pins the suite to one engine on hosts with both.
 - **Boxes now inherit the host's TERM and timezone.** `TERM` and `TZ`
   join byre's shipped `env_from_host` layer alongside git identity (`TZ`
   from the host's TZ var, else the `/etc/localtime` symlink's IANA

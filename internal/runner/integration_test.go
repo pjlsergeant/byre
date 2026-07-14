@@ -26,9 +26,15 @@ func requireEngine(t *testing.T) *Runner {
 	if os.Getenv("BYRE_DOCKER_TESTS") != "1" {
 		t.Skip("set BYRE_DOCKER_TESTS=1 to run engine integration tests")
 	}
-	eng, err := Detect("auto", nil)
+	// BYRE_TEST_ENGINE pins the suite to one engine on a host with both
+	// (auto prefers docker); same knob as the commands-level gated tests.
+	setting := os.Getenv("BYRE_TEST_ENGINE")
+	if setting == "" {
+		setting = "auto"
+	}
+	eng, err := Detect(setting, nil)
 	if err != nil {
-		t.Fatalf("BYRE_DOCKER_TESTS=1 but no engine: %v", err)
+		t.Fatalf("BYRE_DOCKER_TESTS=1 but no engine (BYRE_TEST_ENGINE=%q): %v", setting, err)
 	}
 	t.Logf("engine: %s", eng)
 	return New(eng)

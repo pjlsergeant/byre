@@ -33,12 +33,35 @@ func requireEngineRunner(t *testing.T) *runner.Runner {
 	if os.Getenv("BYRE_DOCKER_TESTS") != "1" {
 		t.Skip("set BYRE_DOCKER_TESTS=1 to run byre integration tests")
 	}
-	eng, err := runner.Detect("auto", nil)
+	// BYRE_TEST_ENGINE pins the suite to one engine ("docker"/"podman") on a
+	// host that has both — Detect's auto prefers docker, which would silently
+	// leave the podman paths (rootless keep-id included) unexercised.
+	setting := os.Getenv("BYRE_TEST_ENGINE")
+	if setting == "" {
+		setting = "auto"
+	}
+	eng, err := runner.Detect(setting, nil)
 	if err != nil {
-		t.Fatalf("BYRE_DOCKER_TESTS=1 but no engine: %v", err)
+		t.Fatalf("BYRE_DOCKER_TESTS=1 but no engine (BYRE_TEST_ENGINE=%q): %v", setting, err)
 	}
 	t.Logf("engine: %s", eng)
 	return runner.New(eng)
+}
+
+// testIdentity resolves the identity develop would use on r — host identity
+// on rootful engines, the generic keep-id identity on rootless Podman — so
+// the gated tests build, run, and assert in the same mode a real session
+// would. Skips where develop itself would refuse (rootless without keep-id).
+func testIdentity(t *testing.T, r *runner.Runner) runner.Identity {
+	t.Helper()
+	ident, err := resolveIdentity(io.Discard, r)
+	if err != nil {
+		t.Skipf("engine unsupported for sessions: %v", err)
+	}
+	if ident.KeepID {
+		t.Logf("keep-id identity: %d:%d", ident.UID, ident.GID)
+	}
+	return ident
 }
 
 // TestIntegrationGeneratedImageBuildsAndRuns assembles the default (empty
@@ -55,10 +78,11 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	image := imageTag(p.ID, os.Getuid(), os.Getgid())
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
 
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, hostIdentity()); err != nil {
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("generated Dockerfile failed to build: %v", err)
 	}
 	if ok, err := r.ImageExists(image); err != nil || !ok {
@@ -72,8 +96,8 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built image failed to run: %v\n%s", err, out)
 	}
-	if got, want := string(out), strconv.Itoa(os.Getuid())+"\n"; got != want {
-		t.Fatalf("container runs as uid %q, want %q (host uid baked at build)", got, want)
+	if got, want := string(out), strconv.Itoa(ident.UID)+"\n"; got != want {
+		t.Fatalf("container runs as uid %q, want %q (the identity baked at build)", got, want)
 	}
 }
 
@@ -109,9 +133,10 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	rv := combine(cfg, res)
-	image := imageTag(p.ID, os.Getuid(), os.Getgid())
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, hostIdentity()); err != nil {
+	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
@@ -120,7 +145,7 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	params, err := runParams(p, rv, image, false, false, hostIdentity())
+	params, err := runParams(p, rv, image, false, false, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,12 +169,14 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 		t.Fatalf("launch through the real entrypoint failed: %v\n%s", err, out)
 	}
 	logs := string(out)
-	uid, gid := os.Getuid(), os.Getgid()
+	// In-box facts are the IDENTITY's (generic 1000 under keep-id); the
+	// host-side ownership assertion below stays the INVOKER's uid — mapping
+	// the two together is exactly what the mode promises.
 	for _, want := range []string{
-		fmt.Sprintf("ID=%d:%d:dev", uid, gid),
+		fmt.Sprintf("ID=%d:%d:dev", ident.UID, ident.GID),
 		"HOME=/home/dev PWD=/workspace PROJECT=" + p.ID,
 		"from-host",
-		fmt.Sprintf("VOL=%d:%d", uid, gid),
+		fmt.Sprintf("VOL=%d:%d", ident.UID, ident.GID),
 	} {
 		if !strings.Contains(logs, want) {
 			t.Errorf("launch output missing %q:\n%s", want, logs)
@@ -161,8 +188,8 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("box-written file never landed host-side: %v", err)
 	}
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != uid {
-		t.Errorf("box-written file owned by uid %d, want invoking uid %d", st.Uid, uid)
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+		t.Errorf("box-written file owned by uid %d, want invoking uid %d", st.Uid, os.Getuid())
 	}
 }
 
@@ -201,21 +228,21 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	}
 	rv := combine(cfg, res)
 
-	uid, gid := os.Getuid(), os.Getgid()
-	imageA, imageB := imageTag(pA.ID, uid, gid), imageTag(pB.ID, uid, gid)
+	ident := testIdentity(t, r)
+	imageA, imageB := imageTag(pA.ID, ident.UID, ident.GID), imageTag(pB.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(imageA); _ = r.ImageRemove(imageB) })
-	if err := buildImage(r, pA, cfg, res, imageA, false, hostIdentity()); err != nil {
+	if err := buildImage(r, pA, cfg, res, imageA, false, ident); err != nil {
 		t.Fatalf("project A image failed to build: %v", err)
 	}
-	if err := buildImage(r, pB, cfg, res, imageB, false, hostIdentity()); err != nil {
+	if err := buildImage(r, pB, cfg, res, imageB, false, ident); err != nil {
 		t.Fatalf("project B image failed to build: %v", err)
 	}
 
-	paramsA, err := runParams(pA, rv, imageA, false, false, hostIdentity())
+	paramsA, err := runParams(pA, rv, imageA, false, false, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsB, err := runParams(pB, rv, imageB, false, false, hostIdentity())
+	paramsB, err := runParams(pB, rv, imageB, false, false, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +276,8 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 		t.Errorf("project B box did not see project A's credential; got:\n%s", out)
 	}
 	// Labeled, newline-terminated: bare digits could hide inside the token.
-	if !strings.Contains(string(out), fmt.Sprintf("CRED_OWNER=%d\n", uid)) {
-		t.Errorf("credential not owned by the dev uid %d in project B's box; got:\n%s", uid, out)
+	if !strings.Contains(string(out), fmt.Sprintf("CRED_OWNER=%d\n", ident.UID)) {
+		t.Errorf("credential not owned by the dev uid %d in project B's box; got:\n%s", ident.UID, out)
 	}
 }
 
@@ -317,17 +344,18 @@ func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 	rv := combine(cfg, res)
 
 	// One image, shared by both sessions (imageTag keys on the project ID).
-	image := imageTag(pMain.ID, os.Getuid(), os.Getgid())
+	ident := testIdentity(t, r)
+	image := imageTag(pMain.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, pMain, cfg, res, image, false, hostIdentity()); err != nil {
+	if err := buildImage(r, pMain, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
-	paramsMain, err := runParams(pMain, rv, image, false, false, hostIdentity())
+	paramsMain, err := runParams(pMain, rv, image, false, false, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsWt, err := runParams(pWt, rv, image, false, false, hostIdentity())
+	paramsWt, err := runParams(pWt, rv, image, false, false, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
