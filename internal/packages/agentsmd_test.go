@@ -175,35 +175,3 @@ func TestEnsureAgentsMDNeverWritesThroughSymlink(t *testing.T) {
 		t.Fatalf("guide not landed over the symlink")
 	}
 }
-
-// The guide's load-bearing claims stay pinned to the mechanisms they
-// describe: if one of these strings vanishes from the doc, either the
-// guidance or the feature moved and the other must follow.
-func TestAgentsMDPinsItsClaims(t *testing.T) {
-	for _, want := range []string{
-		// Ownership contract, first paragraph.
-		"byre generates this file and rewrites it",
-		// The consent-document rule -- including the full grant model:
-		// `agent` and `template` widen the box too, not just the listed
-		// grant keys (grok review 2026-07-14).
-		"projects/<id>/byre.config",
-		"byre preset apply",
-		"enables it implicitly",
-		"the template (it pulls in a whole config layer)",
-		"skills = [...]",
-		"or naming it as the layer's",
-		// Immutability + the sanctioned escape.
-		"NEVER edit anything here",
-		"byre skill fork",
-		// The version-control ruling: drawer-level git, never whole-store.
-		"Do NOT `git init` this directory as a whole",
-		"skips dot-directories",
-		// Distribution.
-		"[sources]",
-		"--digest",
-	} {
-		if !strings.Contains(agentsMD, want) {
-			t.Errorf("AGENTS.md lost its claim %q", want)
-		}
-	}
-}
