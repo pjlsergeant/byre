@@ -56,6 +56,86 @@ func TestEnsureStoreLandsAgentsMD(t *testing.T) {
 	}
 }
 
+// A pre-existing AGENTS.md byre never wrote (agents conventionally create
+// one) is preserved as AGENTS.md.bak on takeover -- once: the .bak keeps
+// the original, later foreign copies are edits to a byre-owned file. A
+// PAST byre version (same title line, different body) is just replaced.
+func TestEnsureAgentsMDPreservesForeignFile(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "AGENTS.md")
+	bak := path + ".bak"
+
+	if err := os.WriteFile(path, []byte("# my own notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := EnsureStore(home, nil, "test", &out); err != nil {
+		t.Fatalf("EnsureStore: %v", err)
+	}
+	if got, _ := os.ReadFile(bak); string(got) != "# my own notes\n" {
+		t.Fatalf("foreign file not preserved as .bak; got %q", got)
+	}
+	if got, _ := os.ReadFile(path); string(got) != agentsMD {
+		t.Fatalf("guide not landed after takeover")
+	}
+	if !strings.Contains(out.String(), "preserved") {
+		t.Fatalf("takeover should say so; got: %q", out.String())
+	}
+
+	// Second foreign copy: .bak keeps the ORIGINAL.
+	if err := os.WriteFile(path, []byte("more notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureStore(home, nil, "test", nil); err != nil {
+		t.Fatalf("EnsureStore (second foreign): %v", err)
+	}
+	if got, _ := os.ReadFile(bak); string(got) != "# my own notes\n" {
+		t.Fatalf(".bak clobbered by a later foreign copy; got %q", got)
+	}
+
+	// A stale byre copy (title line intact) is replaced without a .bak.
+	os.Remove(bak)
+	if err := os.WriteFile(path, []byte(agentsMDTitle+"\nold byre words\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureStore(home, nil, "test", nil); err != nil {
+		t.Fatalf("EnsureStore (stale byre copy): %v", err)
+	}
+	if _, err := os.Lstat(bak); !os.IsNotExist(err) {
+		t.Fatalf("stale byre copy must not spawn a .bak")
+	}
+	if got, _ := os.ReadFile(path); string(got) != agentsMD {
+		t.Fatalf("stale byre copy not refreshed")
+	}
+}
+
+// A symlink at AGENTS.md is replaced as a link -- byre must never write
+// through it into the target (a notes file, a dotfiles repo, ...).
+func TestEnsureAgentsMDNeverWritesThroughSymlink(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(home, "elsewhere.md")
+	if err := os.WriteFile(target, []byte("linked notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "AGENTS.md")
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := EnsureStore(home, nil, "test", nil); err != nil {
+		t.Fatalf("EnsureStore: %v", err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "linked notes\n" {
+		t.Fatalf("symlink target was written through: %q", got)
+	}
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("AGENTS.md should now be a regular file, got mode %v (err %v)", fi.Mode(), err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != agentsMD {
+		t.Fatalf("guide not landed over the symlink")
+	}
+}
+
 // The guide's load-bearing claims stay pinned to the mechanisms they
 // describe: if one of these strings vanishes from the doc, either the
 // guidance or the feature moved and the other must follow.

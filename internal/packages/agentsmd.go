@@ -8,13 +8,17 @@ import (
 	"path/filepath"
 )
 
+// agentsMDTitle is how byre recognizes its own past writes across versions:
+// a file that does not start with it is user-placed and gets preserved, not
+// clobbered, on takeover. Keep it stable forever.
+const agentsMDTitle = "# ~/.byre -- a guide for coding agents\n"
+
 // agentsMD is the byre-owned guide landed at ~/.byre/AGENTS.md for coding
 // agents (and humans) operating on the store host-side. Ownership contract
 // (stated in its first paragraph): byre regenerates it, edits are
 // overwritten. Content is version-independent so the file only rewrites
 // when the binary's copy actually changes.
-const agentsMD = `# ~/.byre -- a guide for coding agents
-
+const agentsMD = agentsMDTitle + `
 byre generates this file and rewrites it as byre evolves. Do not edit it
 -- your edits will be overwritten. Keep notes in a file of your own; byre
 ignores anything in this directory it does not own.
@@ -91,7 +95,8 @@ packages.
     byre skill pack <name>                emit a distributable manifest
     byre skill archive-legacy             park leftover legacy dirs
 
-` + "`byre template`" + ` has the same verb set for templates. When byre reports
+` + "`byre template`" + ` has the same verbs (except ` + "`archive-legacy`" + `, which
+lives under ` + "`byre skill`" + ` and archives both kinds). When byre reports
 a missing package it prints the exact install command -- run that, don't
 improvise.
 
@@ -170,13 +175,49 @@ the README, architecture notes, and design records.
 // rewriting it whenever the on-disk copy differs from the binary's --
 // self-healing by design: this is the file that tells host-side agents
 // what not to touch, so a stale or edited copy is the worst one to keep.
+//
+// Two hazards of "byre owns this path" are handled here, not assumed away:
+// a pre-existing file byre never wrote (agents conventionally create
+// AGENTS.md) is moved aside to AGENTS.md.bak once, never destroyed; and the
+// write is stage+rename, which replaces a symlink at the path itself
+// rather than following it into some unrelated target file.
 func ensureAgentsMD(home string, out io.Writer) error {
 	path := filepath.Join(home, "AGENTS.md")
-	cur, err := os.ReadFile(path)
-	if err == nil && bytes.Equal(cur, []byte(agentsMD)) {
-		return nil
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() {
+		cur, rerr := os.ReadFile(path)
+		if rerr == nil && bytes.Equal(cur, []byte(agentsMD)) {
+			return nil
+		}
+		// Past byre writes all start with the stable title line; anything
+		// else (or unreadable) is user-placed -- preserve it. Rename, not
+		// copy, so an unreadable file is still saved whole. A .bak that
+		// already exists keeps the ORIGINAL takeover; later foreign copies
+		// are edits to a file whose first line says byre overwrites it.
+		if rerr != nil || !bytes.HasPrefix(cur, []byte(agentsMDTitle)) {
+			bak := path + ".bak"
+			if _, berr := os.Lstat(bak); os.IsNotExist(berr) {
+				if os.Rename(path, bak) == nil && out != nil {
+					fmt.Fprintln(out, "byre: ~/.byre/AGENTS.md existed but is not byre's -- preserved it as AGENTS.md.bak")
+				}
+			}
+		}
 	}
-	if err := os.WriteFile(path, []byte(agentsMD), 0o644); err != nil {
+	tmp, err := os.CreateTemp(home, ".agents-md-*")
+	if err != nil {
+		return fmt.Errorf("agents guide: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(agentsMD); err != nil {
+		tmp.Close()
+		return fmt.Errorf("agents guide: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("agents guide: %w", err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return fmt.Errorf("agents guide: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
 	if out != nil {
