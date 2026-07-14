@@ -233,3 +233,63 @@ conceded to codex).
 RESOLVED 2026-07-15: `!name` = ADR-0030 closures wholesale (sec. 1);
 mcp.json always baked, no opt-in gate (sec. 3c); token literals into
 volume-resident agent config allowed with disclosure (sec. 2).
+
+## Spike results (2026-07-15, this box: claude 2.1.209, codex 0.144.3, grok 0.2.101)
+
+1. **claude inject: GO, semantics ideal.** Headless `-p --mcp-config file`
+   connects and serves tool calls. `${VAR}` expands inside the config file's
+   `env` values, `${VAR:-default}` too -- tier-1 by-name indirection works
+   for claude. Spawned stdio servers inherit the FULL agent process env
+   (probe: ambient var not named in config present in server env), so
+   env_from_host values reach servers with no stanza at all. Same-name
+   shadowing: the injected entry WINS and the user-state twin never spawns
+   (its env-dump file was not written); other user-state servers still union
+   in. Exactly the apt-like semantics the design wanted, for free.
+2. **Registrar contract table** (state-writing protocol, if/when needed):
+   - codex: `mcp list --json` (authoritative, per-CODEX_HOME scope), add
+     overwrites in place (no remove-then-add), remove of a missing name
+     exits 0, `byre__` accepted. State = CODEX_HOME/config.toml. Also has
+     `env_vars` (pass-by-NAME env list) -- tier-1 indirection.
+   - grok: `mcp list --json` WITH scope attribution (`"scope": "user"`),
+     add-or-update in place, remove of a missing name exits 1 (registrar
+     must tolerate), `-s user` pins the volume-resident scope. `byre__`
+     accepted.
+   - gemini: NOT probed (CLI absent from this box); its adapter waits for
+     the OpenCode/gemini agent-mechanics pass.
+   - Residue note: the design-night probe's `byre__test` entry was still in
+     this box's ~/.grok user config (/bin/false); removed 2026-07-15.
+3. **OAuth lifecycle: partially open.** claude has per-name `mcp login` /
+   `mcp logout` verbs. Name-reuse re-inheritance (new server behind an old
+   name inheriting stale creds) is NOT probeable without a real OAuth
+   account -- documented hazard, verify at first live remote use. Under
+   claude-inject byre never mutates the credential store, so the hazard is
+   user-edit-driven, not byre-driven.
+4. **codex adapter choice: injection WINS.** `-c 'mcp_servers.<name>...'`
+   overrides are honored per-invocation and write NOTHING to config.toml
+   (verified: override visible in `mcp list --json`, state file untouched).
+   If/when codex becomes a selectable agent, its adapter is static `-c`
+   flags baked into the agent command -- no registrar, no namespace, no lock.
+5. **Headless remote OAuth: GO.** `claude mcp login --no-browser <name>`
+   prints the authorization URL and prompts for the PASTED redirect URL --
+   the localhost:randport callback listener never needs host reachability.
+   Requires an interactive terminal (the box session is one; headless -p is
+   not). For linear the authorize endpoint is on the declared host itself;
+   side-hosts remain declare-or-troubleshoot per the design.
+6. **ENABLE_CLAUDEAI_MCP_SERVERS:** design-night verification stands (var
+   filters account connectors). Today's scratch identity carries no
+   connectors, so re-probe was vacuous; the var is harmless when nothing is
+   filtered.
+
+## v1 scope (builder's calls, recorded for Pete's override)
+
+- **Adapters: claude-inject only.** grok-as-agent is retired (ADR 0023);
+  gemini is unprobed and takes the registrar-less degradation path (status:
+  declared-but-not-registered + exact manual commands); codex isn't a
+  selectable agent today -- when it is, injection is the adapter (spike 4).
+  The byre__ namespace protocol stays DESIGN (sec. 3b), first implemented
+  with whichever state-writing adapter arrives first.
+- **Connectors: filtered, no v1 re-enable knob.** ENABLE_CLAUDEAI_MCP_SERVERS
+  =false in the claude skill; account connectors are ambient host-account
+  authority, and deny-by-default means closed -- the knob is a consent
+  question for when a user asks. Documented, not warned.
+- **`byre mcp add` sugar: not in v1.** The declaration is three TOML lines.
