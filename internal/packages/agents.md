@@ -51,11 +51,14 @@ project tree, precisely so the agent in the box cannot grant itself
 capabilities. A host-side agent quietly editing it defeats the entire
 design.
 
-So: do not add or widen grants -- mounts, env, ports, egress, volumes,
-skills, the agent (naming a skill as `agent` enables it implicitly),
-the template (it pulls in a whole config layer), raw
-dockerfile/run_args blocks -- unless the user asked for that exact
-change, and say plainly what you wrote. The right route for config
+So: do not add or widen grants -- mounts, ports, env passed through
+from the host, egress entries under a restrictive posture, skills, the
+agent (naming a skill as `agent` enables it implicitly), the template
+(it pulls in a whole config layer). The rest of the file --
+config-literal env, volumes, raw dockerfile/run_args blocks -- is not,
+strictly, grants, but the same consent covers it. Change nothing
+unless the user asked for that exact change, and say plainly what you
+wrote. The right route for config
 that originates in a repo is a `byre.preset` committed there and
 applied by the human with `byre preset apply`; it gets a proper
 review, diff, and confirm. Do not bypass that flow by writing the store
