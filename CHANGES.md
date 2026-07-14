@@ -29,6 +29,19 @@
   (SECURITY.md, README pointer, the skill's own docs): hostname grants pin
   the IPs resolved at launch, and on per-query-rotating resolvers a granted
   host can start failing -- closed, never open -- seconds after launch.
+- **`skill inspect` shows a digest for bundled packages too** (computed
+  from the embedded payloads -- the ADR 0029 deferral), so bundled and
+  installed inspect output rank equally.
+- **Generated Dockerfiles emit `HEALTHCHECK NONE` once, at the tail.** The
+  tail placement means a raw block (skill Dockerfile lines,
+  `dockerfile_post`) reintroducing a healthcheck still loses -- a probe
+  would do network I/O before the launch gate lands -- and single emission
+  stops buildkit's MultipleInstructionsDisallowed warning on every build.
+- **Skill manifests are validated for mount/volume shape at load**, so
+  `byre skill validate` green means the skill's grants can actually run,
+  instead of a bad host path surfacing at the next develop. Config-side,
+  host paths on mounts and seeds are checked at save (absolute or `~/`,
+  no comma) for the same reason.
 
 - **`~/.byre/AGENTS.md`: a byre-owned guide for host-side coding agents.**
   Every store-mutating command now lands (and keeps current) an agent
