@@ -801,28 +801,74 @@ sock_groups = ["relative"]
 func TestResolveRejectsContainmentNewline(t *testing.T) {
 	dir := testHome(t)
 	// Literal newline inside the TOML string is invalid TOML; use the escaped
-	// form so Load succeeds and validateContainment rejects the decoded value.
+	// form so Load succeeds and validateOneLiner rejects the decoded value.
 	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \"hole\\nNetwork: open\"\n", nil)
 	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
 		t.Fatal("containment with newline must be rejected")
 	}
 }
 
-func TestValidateContainmentControlChar(t *testing.T) {
-	if err := validateContainment("hole\x01forged"); err == nil {
+func TestValidateOneLinerControlChar(t *testing.T) {
+	if err := validateOneLiner("hole\x01forged"); err == nil {
 		t.Fatal("control char must be rejected")
 	}
-	if err := validateContainment("ok one-liner"); err != nil {
-		t.Fatalf("valid containment rejected: %v", err)
+	if err := validateOneLiner("ok one-liner"); err != nil {
+		t.Fatalf("valid one-liner rejected: %v", err)
 	}
 }
 
 func TestResolveRejectsContainmentTooLong(t *testing.T) {
 	dir := t.TempDir()
-	long := strings.Repeat("x", containmentMaxLen+1)
+	long := strings.Repeat("x", oneLinerMaxLen+1)
 	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \""+long+"\"\n", nil)
 	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
 		t.Fatal("overlong containment must be rejected")
+	}
+}
+
+// env_docs (consumed-env guidance): declarations resolve into sorted,
+// attributed EnvDoc rows; keys are held to the env-key grammar and guidance
+// to the one-liner shape, with empty guidance refused.
+func TestResolveEnvDocs(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "gem", `[runtime.env_docs]
+GEMINI_API_KEY = "API key from aistudio.google.com; read at launch"
+ZED_TOKEN = "optional; unlocks the zed integration"
+`, nil)
+	writeSkill(t, dir, "other", `[runtime.env_docs]
+GEMINI_API_KEY = "also consumed here"
+`, nil)
+	res, err := Resolve(config.Config{Skills: []string{"other", "gem"}}, catFor(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := res.EnvDocs()
+	if len(docs) != 3 {
+		t.Fatalf("EnvDocs = %+v", docs)
+	}
+	// Sorted by var name then skill — two skills documenting one var is fine.
+	if docs[0].Name != "GEMINI_API_KEY" || docs[0].Skill != "gem" ||
+		docs[1].Name != "GEMINI_API_KEY" || docs[1].Skill != "other" ||
+		docs[2].Name != "ZED_TOKEN" || !strings.Contains(docs[2].Text, "optional") {
+		t.Fatalf("EnvDocs order/content: %+v", docs)
+	}
+}
+
+func TestResolveRejectsBadEnvDocs(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "badkey", "[runtime.env_docs]\n\"NOT A VAR\" = \"guidance\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"badkey"}}, catFor(t, dir)); err == nil {
+		t.Fatal("invalid env_docs key must be rejected")
+	}
+	dir2 := testHome(t)
+	writeSkill(t, dir2, "empty", "[runtime.env_docs]\nFOO = \"\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"empty"}}, catFor(t, dir2)); err == nil {
+		t.Fatal("empty env_docs guidance must be rejected")
+	}
+	dir3 := testHome(t)
+	writeSkill(t, dir3, "multiline", "[runtime.env_docs]\nFOO = \"line\\nline2\"\n", nil)
+	if _, err := Resolve(config.Config{Skills: []string{"multiline"}}, catFor(t, dir3)); err == nil {
+		t.Fatal("multi-line env_docs guidance must be rejected")
 	}
 }
 

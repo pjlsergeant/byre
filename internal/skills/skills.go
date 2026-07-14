@@ -28,10 +28,11 @@ import (
 // characters that could forge the surrounding status annotations.
 var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// containmentMaxLen bounds a skill's [runtime] containment one-liner. Status,
-// launch, adoption, and the config UI print it as data on its own row; a long
-// blob would crowd the surfaces without adding honesty.
-const containmentMaxLen = 300
+// oneLinerMaxLen bounds a skill's declared one-liners (containment,
+// env_docs guidance). Status, launch, adoption, and the config UI print them
+// as data on their own rows; a long blob would crowd the surfaces without
+// adding honesty.
+const oneLinerMaxLen = 300
 
 // parseEgress delegates to the shared `host[:port]` grammar in config — the
 // egress config key (ADR 0019) and skill egress are validated by one parser.
@@ -92,7 +93,15 @@ type File struct {
 		Files      map[string]string `toml:"files"`      // skill-relative src -> absolute image dest
 	} `toml:"build"`
 	Runtime struct {
-		Env     map[string]string `toml:"env"`
+		Env map[string]string `toml:"env"`
+		// EnvDocs documents env vars this skill CONSUMES but does not set:
+		// var name -> a one-line guidance string (where the value comes from,
+		// what it unlocks). Purely declarative — no validation of the box, no
+		// warning when unset; the config UI env screen renders each undeclared
+		// var as a dim suggestion row attributed to the skill. Guidance is
+		// held to the same single-line/no-control-char/bounded shape as
+		// containment so it stays legible DATA.
+		EnvDocs map[string]string `toml:"env_docs"`
 		RunArgs []string          `toml:"run_args"`
 		Caps    []string          `toml:"caps"`
 		Mounts  []config.Mount    `toml:"mounts"`
@@ -158,7 +167,7 @@ func IsStub(f File) bool {
 		f.SharedAuthFor == "" &&
 		len(f.Build.Apt) == 0 && len(f.Build.NpmGlobal) == 0 &&
 		len(f.Build.Dockerfile) == 0 && len(f.Build.Files) == 0 &&
-		len(rt.Env) == 0 && len(rt.RunArgs) == 0 && len(rt.Caps) == 0 &&
+		len(rt.Env) == 0 && len(rt.EnvDocs) == 0 && len(rt.RunArgs) == 0 && len(rt.Caps) == 0 &&
 		len(rt.Mounts) == 0 && rt.NetworkPosture == "" && rt.NetnsInit == "" &&
 		len(rt.Egress) == 0 && len(rt.EgressOffered) == 0 &&
 		len(rt.SockGroups) == 0 && rt.Containment == "" &&
@@ -348,6 +357,34 @@ func (r Resolved) Containments() []ContainmentDecl {
 			out = append(out, ContainmentDecl{Skill: sk.Name, Text: t})
 		}
 	}
+	return out
+}
+
+// EnvDoc is one skill's declared consumed-env guidance line (see
+// Runtime.EnvDocs): the skill reads Name at runtime; Text says how to supply
+// it. Attributed to the skill for suggestion rendering.
+type EnvDoc struct {
+	Skill string
+	Name  string
+	Text  string
+}
+
+// EnvDocs lists every enabled skill's env_docs declarations, sorted by var
+// name then skill, for stable rendering. Several skills documenting the same
+// var is fine — docs don't conflict; all rows are returned.
+func (r Resolved) EnvDocs() []EnvDoc {
+	var out []EnvDoc
+	for _, sk := range r.Skills {
+		for _, k := range sortedKeys(sk.File.Runtime.EnvDocs) {
+			out = append(out, EnvDoc{Skill: sk.Name, Name: k, Text: sk.File.Runtime.EnvDocs[k]})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Skill < out[j].Skill
+	})
 	return out
 }
 
@@ -845,8 +882,25 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		// no-control-char / bounded length so a skill can't forge adjacent
 		// status rows. Multi-declarer is allowed (unlike network_posture).
 		if c := f.Runtime.Containment; c != "" {
-			if err := validateContainment(c); err != nil {
+			if err := validateOneLiner(c); err != nil {
 				return Resolved{}, fmt.Errorf("skill %q: containment: %w", name, err)
+			}
+		}
+
+		// env_docs guidance is printed on the config UI env screen; keys are
+		// held to the env-key grammar and guidance to the containment shape
+		// (single line, no control chars, bounded). Empty guidance is refused:
+		// a suggestion row with nothing to say is a typo, not documentation.
+		if err := config.ValidateContent("", nil, nil, f.Runtime.EnvDocs); err != nil {
+			return Resolved{}, fmt.Errorf("skill %q: env_docs: %w", name, err)
+		}
+		for _, k := range sortedKeys(f.Runtime.EnvDocs) {
+			g := f.Runtime.EnvDocs[k]
+			if g == "" {
+				return Resolved{}, fmt.Errorf("skill %q: env_docs %s: guidance must not be empty", name, k)
+			}
+			if err := validateOneLiner(g); err != nil {
+				return Resolved{}, fmt.Errorf("skill %q: env_docs %s: %w", name, k, err)
 			}
 		}
 
@@ -941,15 +995,16 @@ func validatePrefs(p *PrefsSpec, state string) error {
 	return nil
 }
 
-// validateContainment holds a skill's containment one-liner to the shape
-// status/launch/adoption/config UI can print as DATA: one line, no control
-// characters, bounded length. Empty is handled by the caller (no declaration).
-func validateContainment(s string) error {
+// validateOneLiner holds a skill's declared one-liner (containment, env_docs
+// guidance) to the shape status/launch/adoption/config UI can print as DATA:
+// one line, no control characters, bounded length. Empty is handled by the
+// caller (no declaration / refused, per field).
+func validateOneLiner(s string) error {
 	if s != strings.TrimSpace(s) {
 		return fmt.Errorf("must not have leading/trailing whitespace")
 	}
-	if len(s) > containmentMaxLen {
-		return fmt.Errorf("must be at most %d characters", containmentMaxLen)
+	if len(s) > oneLinerMaxLen {
+		return fmt.Errorf("must be at most %d characters", oneLinerMaxLen)
 	}
 	for _, r := range s {
 		if r == '\n' || r == '\r' {

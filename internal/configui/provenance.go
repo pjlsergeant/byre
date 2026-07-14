@@ -15,7 +15,12 @@ import (
 type SkillRuntime struct {
 	Mounts []config.Mount
 	Env    map[string]string
-	Egress []string // functional endpoints, open with enablement (ADR 0019/0020)
+	// EnvDocs documents env vars the skill CONSUMES but does not set (var
+	// name -> one-line guidance). The env screen renders each var nothing
+	// else provides as a dim suggestion row; enter prefills the add editor.
+	// Pure documentation — an unset var is never flagged anywhere.
+	EnvDocs map[string]string
+	Egress  []string // functional endpoints, open with enablement (ADR 0019/0020)
 	// Offered is the skill's declared-but-CLOSED doors (ADR 0020): shown as
 	// switches; opening one writes the entry into the user's own egress.
 	Offered []string

@@ -81,6 +81,7 @@ func Config(s Streams, projectDir string, global bool) error {
 			rt := configui.SkillRuntime{
 				Mounts:        sk.File.Runtime.Mounts,
 				Env:           sk.File.Runtime.Env,
+				EnvDocs:       sk.File.Runtime.EnvDocs,
 				Egress:        sk.File.Runtime.Egress,
 				Offered:       sk.File.Runtime.EgressOffered,
 				Posture:       sk.File.Runtime.NetworkPosture,

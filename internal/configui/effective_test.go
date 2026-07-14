@@ -360,6 +360,63 @@ func TestViewListAnnotations(t *testing.T) {
 	}
 }
 
+// env_docs suggestion rows: a skill-documented consumed var nothing provides
+// renders as a dim suggestion attributed to the skill; any provider (a layer,
+// a skill's own env, the passthrough) makes it disappear; it is never counted
+// as effective env; enter opens the add editor with the key prefilled.
+func TestEnvDocSuggestionRows(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Skills["gemini"] = SkillRuntime{EnvDocs: map[string]string{
+		"GEMINI_API_KEY": "API key from aistudio.google.com",
+		"DOCKER_HOST":    "consumed if set", // provided by the docker skill: no row
+		"GIT_EDITOR":     "consumed if set", // provided by the default layer: no row
+	}}
+	m.skills = append(m.skills, "gemini")
+
+	rows := m.envRows()
+	sug := rowByText(t, rows, "GEMINI_API_KEY")
+	if sug.kind != rowEnvDoc || sug.source != "skill:gemini" || sug.ident != "GEMINI_API_KEY" {
+		t.Fatalf("suggestion row: %+v", sug)
+	}
+	for _, r := range rows {
+		if r.kind == rowEnvDoc && r.text != "GEMINI_API_KEY" {
+			t.Fatalf("provided vars must not render suggestions: %+v", r)
+		}
+	}
+	if ann := rowAnnotation(sug); !strings.Contains(ann, "aistudio.google.com") || !strings.Contains(ann, "suggested by skill:gemini") {
+		t.Fatalf("suggestion annotation = %q", ann)
+	}
+	// Not effective state: the summary counts and exposure ignore it.
+	base := effectiveModel()
+	if eff, _, _, _ := rowCounts(rows); eff != func() int { e, _, _, _ := rowCounts(base.envRows()); return e }() {
+		t.Fatalf("suggestion counted as effective: %+v", rows)
+	}
+	if m.exposureNow().Env != base.exposureNow().Env {
+		t.Fatalf("suggestion counted in exposure")
+	}
+
+	// Enter prefills the add editor with the key, cursor on the value.
+	m.listField = fEnv
+	for i, r := range m.fieldRows(fEnv) {
+		if r.kind == rowEnvDoc {
+			m.listCur = i
+		}
+	}
+	mm, _ := m.updateList(key("enter"))
+	got := mm.(model)
+	if got.mode != modeItem || got.inputs[0].Value() != "GEMINI_API_KEY" || got.itemFocus != 1 {
+		t.Fatalf("enter on a suggestion: mode=%v key=%q focus=%d", got.mode, got.inputs[0].Value(), got.itemFocus)
+	}
+
+	// Setting the var locally satisfies the suggestion — the row disappears.
+	m.env = []kvItem{{Key: "GEMINI_API_KEY", Value: "secret"}}
+	for _, r := range m.envRows() {
+		if r.kind == rowEnvDoc {
+			t.Fatalf("satisfied suggestion must disappear: %+v", r)
+		}
+	}
+}
+
 // The template picker is live: switching it away from "go" must drop the
 // template's inherited rows on the spot.
 func TestRowsFollowTemplatePicker(t *testing.T) {

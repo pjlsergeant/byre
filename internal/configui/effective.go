@@ -26,6 +26,7 @@ const (
 	rowSkill                      // skill-contributed; read-only here
 	rowOffered                    // a declared-but-closed egress door (ADR 0020)
 	rowHostEnv                    // env_from_host passthrough (ADR 0026); read-only here
+	rowEnvDoc                     // a skill-documented consumed var nothing provides; suggestion only
 )
 
 // listRow is one row of a list screen's effective view. idx points into the
@@ -358,6 +359,30 @@ func (m model) envRows() []listRow {
 	for _, k := range sortedKeys(hostEnv) {
 		rows = append(rows, listRow{kind: rowHostEnv, text: k + " <- host " + hostEnv[k], source: "env_from_host"})
 	}
+	// Skill-documented consumed vars (env_docs): a dim suggestion row per
+	// declared var NOTHING above provides — once any layer, skill, or the
+	// passthrough supplies the key, the suggestion's job is done and it
+	// disappears. Pure documentation: never counted, never warned about.
+	provided := map[string]bool{}
+	for _, r := range rows {
+		switch r.kind {
+		case rowLocal, rowOverride, rowInherited, rowSkill:
+			if k, _, ok := strings.Cut(r.text, "="); ok {
+				provided[k] = true
+			}
+		}
+	}
+	for k := range hostEnv {
+		provided[k] = true
+	}
+	for _, sk := range m.effectiveSkills() {
+		docs := m.inh.Skills[sk].EnvDocs
+		for _, k := range sortedKeys(docs) {
+			if !provided[k] {
+				rows = append(rows, listRow{kind: rowEnvDoc, text: k, ident: k, source: "skill:" + sk, vals: []string{docs[k]}})
+			}
+		}
+	}
 	return rows
 }
 
@@ -497,7 +522,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0) {
 			out = append(out, e.name)
 		}
 	}

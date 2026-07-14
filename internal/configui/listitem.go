@@ -48,6 +48,14 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = hostEnvRowNote()
 			return m, nil
 		}
+		if r.kind == rowEnvDoc {
+			// The obvious move on reading a suggestion is "set it": open the
+			// add editor with the key prefilled, cursor on the value.
+			next := m.startItem(-1)
+			next.inputs[0].SetValue(r.ident)
+			next.focusItem(1)
+			return next, nil
+		}
 		m.menuRow = r
 		m.menuCur = 0
 		m.mode = modeMenu
@@ -262,6 +270,9 @@ func deadEndNote(f fieldID, r listRow) string {
 	}
 	if r.kind == rowHostEnv {
 		return hostEnvRowNote()
+	}
+	if r.kind == rowEnvDoc {
+		return "a suggestion from " + r.source + " — press enter to set it here"
 	}
 	return ""
 }
@@ -714,7 +725,7 @@ func (m model) viewList() string {
 	}
 	for i, r := range rows {
 		line := r.text
-		if r.kind == rowRemoved || r.kind == rowStaleMarker || r.kind == rowOffered {
+		if r.kind == rowRemoved || r.kind == rowStaleMarker || r.kind == rowOffered || r.kind == rowEnvDoc {
 			line = dimStyle.Render(line)
 		}
 		if ann := rowAnnotation(r); ann != "" {
@@ -762,6 +773,12 @@ func rowAnnotation(r listRow) string {
 			return "  (offered here — closed)"
 		}
 		return "  (offered by " + r.source + " — closed)"
+	case rowEnvDoc:
+		guidance := ""
+		if len(r.vals) > 0 {
+			guidance = r.vals[0]
+		}
+		return " — " + guidance + "  (suggested by " + r.source + ")"
 	}
 	return ""
 }
