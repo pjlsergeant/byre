@@ -259,6 +259,11 @@ volumes     = [ ... ]                         # ad-hoc named volumes; skills usu
 dockerfile_pre  = ["RUN ..."]                 # raw BUILD block, before the core block
 dockerfile_post = ["RUN ..."]                 # raw BUILD block, project tail
 run_args        = ["--cap-add=SYS_PTRACE"]    # raw RUNTIME block: docker-run passthrough
+
+[[mcp]]                                       # MCP servers: wiring, not grants (ADR 0033)
+name = "github"                               # `!name` in a later layer closes one, even
+command = ["github-mcp-server", "stdio"]      #   a skill-declared one
+env = ["GITHUB_TOKEN"]                        # var NAMES the server consumes, never values
 ```
 
 Escape hatches are symmetric across both layers byre controls
@@ -346,6 +351,27 @@ Enabling a skill is trusting it (PRINCIPLES.md #2): skill content is
 validated for legibility, not as a trust boundary. A skill's grants (a
 mounted host socket, a network posture) are named by `byre status`, never
 hidden -- and never blocked.
+
+### MCP provisioning
+
+`[[mcp]]` blocks (config layers and skill.toml alike) declare MCP servers
+for the box -- **wiring, not grants** (ADR 0033, GLOSSARY): the
+declarations list as configuration, while the egress a remote `url`
+implies (plus declared extras) and the env NAMES a server consumes render
+as attributed grants (`mcp:<name>`). The effective set -- config cascade
+(later layer replaces by name) ∪ skill contributions, minus `!name`
+closures (ADR 0030 semantics: a closure reaches a skill-declared server)
+-- bakes deterministically to **`/etc/byre/mcp.json` in every image**,
+empty set included; the path and format are a stable contract for
+anything that wants the set. Delivery is per-agent: the claude skill's
+command injects the file (`--mcp-config`), vouched by `[agent]
+mcp = "inject"`; an agent skill without an adapter degrades honestly --
+`byre status` shows declared-but-NOT-delivered plus the baked path.
+Tokens never enter byre files: `env = ["GITHUB_TOKEN"]` names what the
+server consumes, values arrive via `env_from_host`/`[env]`, and a box's
+stdio servers inherit the box env. Remote OAuth is agent-owned on the
+project state volume (`claude mcp login --no-browser` works headless via
+URL paste-back).
 
 ## Mounts & volumes
 

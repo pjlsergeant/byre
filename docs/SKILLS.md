@@ -77,6 +77,20 @@ the config editor's env screen shows each unprovided var as a dim
 suggestion row attributed to your skill, and enter prefills the add
 editor with the name.
 
+A skill can wire MCP servers into the box with `[[mcp]]` blocks (ADR
+0033) -- `name` plus a local `command` argv or a remote `url`; ship a
+local server's binary through the normal `[build]` machinery. List the
+env var NAMES the server consumes (`env = ["GITHUB_TOKEN"]`) -- never
+values; the user supplies those via `env_from_host`/`[env]`, and status
+marks each name provided or not. A remote url's host becomes attributed
+egress (`mcp:<name>`) automatically; declare extra hosts (an OAuth
+authorize endpoint) in the block's own `egress`. Users can drop one of
+your servers without disabling the whole skill via `!name` in their
+config's mcp list. The declared set bakes to `/etc/byre/mcp.json`;
+delivery into the agent session is the agent skill's job (claude
+injects it), so a toolkit skill declares servers and stays
+agent-agnostic.
+
 To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
 

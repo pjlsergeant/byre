@@ -328,6 +328,29 @@ UI env screen shows each unprovided var as a dim *suggestion row*
 attributed to the skill, and enter prefills the add editor. Cf.
 `runtime.env`, the vars a skill SETS.
 
+**MCP declaration (`[[mcp]]`)**:
+Wiring, not a grant (ADR 0033): a declared MCP server -- local
+(`command`, an argv) or remote (`url`), self-discriminating. A stdio
+server is a process (nothing bash lacks); a remote one reaches nothing
+the firewall doesn't allow. What's real are the grants a declaration
+*carries* -- the url's implied egress plus declared extras, and the env
+NAMES it consumes -- which render where grants always render, attributed
+`mcp:<name>`. Declarations list as configuration and add zero to the
+exposure line. Two homes (config layers, skill.toml), one merge: layers
+replace by name, skills union after, `!name` closures subtract last
+(ADR 0030 semantics). The effective set bakes to `/etc/byre/mcp.json`
+in every image, empty set included.
+_Avoid_: calling an MCP a grant, or its status rows "grant honesty
+machinery" -- they are config-application reporting.
+
+**MCP adapter**:
+How a selected agent's session receives the declared set. `[agent]
+mcp = "inject"` is the skill author's vouch that the agent command
+consumes the baked file (claude: `--mcp-config`). An adapter-less agent
+degrades honestly: status says declared-but-NOT-delivered and points at
+the baked path. The reserved `byre__` registrar namespace for
+state-writing CLIs is designed, not built (ADR 0033).
+
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The
 project itself is the implicit one: mounted read-write at `/workspace`.

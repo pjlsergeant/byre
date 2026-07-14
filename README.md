@@ -133,8 +133,11 @@ later layer can remove an inherited entry: `!name` for named lists,
 ~/.byre/projects/<id>/byre.config   this project's overrides (host-side)
 ```
 
-The vocabulary covers packages, env, mounts, volumes, and skills; raw
-Dockerfile lines and `docker run` args cover the rest. Full reference:
+The vocabulary covers packages, env, mounts, volumes, skills, and MCP
+servers (`[[mcp]]` blocks -- declared once, injected into the agent
+session, their network reach and consumed tokens attributed in `byre
+status`); raw Dockerfile lines and `docker run` args cover the rest.
+Full reference:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). One sharp edge to know:
 `env` values are baked into the image (`docker history` shows them, and
 they outlive `byre reset`), so don't put secrets there -- agent logins

@@ -28,12 +28,17 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `dockerfile_pre  = ["RUN ..."]` — raw Dockerfile lines BEFORE byre's core block
 - `dockerfile_post = ["RUN ..."]` — raw Dockerfile lines at the project tail
 - `run_args = ["--cap-add=SYS_PTRACE"]` — raw `docker run` flags
+- `[[mcp]]` blocks — MCP servers for the agent session: `name = "github"` plus
+  a local `command = ["srv", "arg"]` or remote `url = "https://..."`;
+  `env = ["TOKEN_NAME"]` names consumed vars (values via `env_from_host`/`[env]`)
 
 So: need a **package** → add it to `apt`. Need a **custom build step** → add a
 `RUN ...` line to `dockerfile_pre` or `dockerfile_post`.
 
 Cascade rules: this file layers over `~/.byre/default.config` and any template.
 Scalars override; `env`/`files` merge per key; list keys union. `!name` removes
-an inherited entry — but only for `skills` and for `mounts`/`volumes` (by their
-target/name). `apt`/`npm_global` just union (a literal `!x` is kept), and raw
-`dockerfile_pre`/`dockerfile_post`/`run_args` blocks always append.
+an inherited entry — but only for `skills`, for `mounts`/`volumes` (by their
+target/name), and for `[[mcp]]` (a `name = "!server"` block, which also drops a
+skill-declared server of that name). `apt`/`npm_global` just union (a literal
+`!x` is kept), and raw `dockerfile_pre`/`dockerfile_post`/`run_args` blocks
+always append.
