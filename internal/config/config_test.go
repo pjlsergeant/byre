@@ -616,6 +616,7 @@ func sampleConfig() Config {
 		SharedAuthDeclined: []string{"claude"},
 		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
 		Egress:             []string{"grafana.com"},
+		EgressClosed:       []string{"statsig.anthropic.com"},
 		EgressOffered:      []string{"registry.npmjs.org"},
 		Mounts:             []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
 		Volumes:            []Volume{{Name: "v", Role: "cache", Target: "/c"}},
@@ -817,9 +818,87 @@ func TestValidateLayerPortRemoveNoCollision(t *testing.T) {
 
 func TestMergeEgressUnionAndRemoval(t *testing.T) {
 	got := Merge(Config{Egress: []string{"grafana.com", "internal:8443"}},
-		Config{Egress: []string{"!internal:8443", "api.stripe.com"}}).Egress
-	if want := []string{"grafana.com", "api.stripe.com"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("egress merge: got %v want %v", got, want)
+		Config{Egress: []string{"!internal:8443", "api.stripe.com"}})
+	if want := []string{"grafana.com", "api.stripe.com"}; !reflect.DeepEqual(got.Egress, want) {
+		t.Errorf("egress merge: got %v want %v", got.Egress, want)
+	}
+	// Unlike every other `!name` list, the closure is kept, not consumed: it
+	// must go on to subtract the endpoint from the derived allowlist (where
+	// skill egress unions in) after the cascade is done.
+	if want := []string{"internal:8443"}; !reflect.DeepEqual(got.EgressClosed, want) {
+		t.Errorf("egress closures: got %v want %v", got.EgressClosed, want)
+	}
+}
+
+func TestMergeEgressClosureSemantics(t *testing.T) {
+	t.Run("portless closure removes every port", func(t *testing.T) {
+		got := Merge(Config{Egress: []string{"internal:8443", "internal:9000", "grafana.com"}},
+			Config{Egress: []string{"!internal"}})
+		if want := []string{"grafana.com"}; !reflect.DeepEqual(got.Egress, want) {
+			t.Errorf("open: got %v want %v", got.Egress, want)
+		}
+		if want := []string{"internal"}; !reflect.DeepEqual(got.EgressClosed, want) {
+			t.Errorf("closed: got %v want %v", got.EgressClosed, want)
+		}
+	})
+	t.Run("ported closure matches the portless open spelling", func(t *testing.T) {
+		// Open grammar reads portless as :443, and matching honors that.
+		got := Merge(Config{Egress: []string{"statsig.anthropic.com"}},
+			Config{Egress: []string{"!statsig.anthropic.com:443"}})
+		if len(got.Egress) != 0 {
+			t.Errorf("open: got %v want none", got.Egress)
+		}
+	})
+	t.Run("later plain entry re-opens, deleting the closure whole", func(t *testing.T) {
+		got := Merge(Config{Egress: []string{"!statsig.anthropic.com"}},
+			Config{Egress: []string{"statsig.anthropic.com:443"}})
+		if want := []string{"statsig.anthropic.com:443"}; !reflect.DeepEqual(got.Egress, want) {
+			t.Errorf("open: got %v want %v", got.Egress, want)
+		}
+		// No partial narrowing: the portless closure does not survive as
+		// "every port except 443".
+		if len(got.EgressClosed) != 0 {
+			t.Errorf("closed: got %v want none", got.EgressClosed)
+		}
+	})
+	t.Run("within one layer the closure wins", func(t *testing.T) {
+		got := Merge(Config{}, Config{Egress: []string{"x.example.com", "!x.example.com"}})
+		if len(got.Egress) != 0 {
+			t.Errorf("open: got %v want none", got.Egress)
+		}
+	})
+	t.Run("closures survive re-merging and dedup by identity", func(t *testing.T) {
+		// The resolved cascade is Merge(Merge(def, tmpl), proj): a closure
+		// from the first step must ride EgressClosed through the second, and
+		// the same host closed portless and at :443 are distinct closures.
+		step1 := Merge(Config{Egress: []string{"!statsig.anthropic.com"}},
+			Config{Egress: []string{"!statsig.anthropic.com:443"}})
+		got := Merge(step1, Config{Egress: []string{"!statsig.anthropic.com"}})
+		if want := []string{"statsig.anthropic.com", "statsig.anthropic.com:443"}; !reflect.DeepEqual(got.EgressClosed, want) {
+			t.Errorf("closed: got %v want %v", got.EgressClosed, want)
+		}
+	})
+}
+
+func TestEgressClosureMatches(t *testing.T) {
+	cases := []struct {
+		closure, entry string
+		want           bool
+	}{
+		{"statsig.anthropic.com", "statsig.anthropic.com:443", true},
+		{"statsig.anthropic.com", "statsig.anthropic.com:8443", true}, // portless = every port
+		{"statsig.anthropic.com", "statsig.anthropic.com", true},
+		{"statsig.anthropic.com:443", "statsig.anthropic.com", true}, // open portless reads :443
+		{"statsig.anthropic.com:8443", "statsig.anthropic.com", false},
+		{"statsig.anthropic.com:443", "statsig.anthropic.com:8443", false},
+		{"statsig.anthropic.com", "api.anthropic.com:443", false},
+		{"bad host", "bad host", true}, // unparseable: raw equality, never greedy
+		{"bad host", "other.example.com", false},
+	}
+	for _, c := range cases {
+		if got := EgressClosureMatches(c.closure, c.entry); got != c.want {
+			t.Errorf("EgressClosureMatches(%q, %q) = %v, want %v", c.closure, c.entry, got, c.want)
+		}
 	}
 }
 
@@ -840,6 +919,15 @@ func TestValidateEgressEntries(t *testing.T) {
 	}
 	if err := marker.Validate(); err == nil {
 		t.Error("egress marker surviving to a resolved config should fail")
+	}
+	// A closure's stripped name is NOT exempt from the entry grammar (unlike
+	// package markers): it survives the cascade and travels to the netns
+	// helper's env, so it is held to the same injection-safe parser.
+	if err := (Config{Egress: []string{"!bad host"}}).ValidateLayer(); err == nil {
+		t.Error("closure marker with a malformed name should fail layer validation")
+	}
+	if err := (Config{EgressClosed: []string{"bad host"}}).Validate(); err == nil {
+		t.Error("malformed EgressClosed entry should fail resolved validation")
 	}
 }
 

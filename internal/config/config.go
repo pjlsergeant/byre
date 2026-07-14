@@ -140,25 +140,49 @@ var egressHostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:_-]*[A-Za-z0-9])
 // literal ("[::1]:443") is out of scope — egress entries are hostnames or
 // IPv4; a bare IPv6 with colons is ambiguous with host:port, so reject it.
 func ParseEgress(entry string) (host string, port int, err error) {
+	host, port, _, err = splitEgressEntry(entry)
+	return host, port, err
+}
+
+// splitEgressEntry is ParseEgress plus whether the entry actually wrote a
+// port. An OPEN entry never needs the distinction (portless means :443); a
+// CLOSURE does — portless `!host` closes EVERY port of the host, `!host:port`
+// closes just that one. Addition is never greedy, subtraction may be.
+func splitEgressEntry(entry string) (host string, port int, portless bool, err error) {
 	e := strings.TrimSpace(entry)
 	if e == "" {
-		return "", 0, fmt.Errorf("empty egress entry")
+		return "", 0, false, fmt.Errorf("empty egress entry")
 	}
-	host, port = e, 443
+	host, port, portless = e, 443, true
 	// Split a trailing :port only when the tail is all digits, so a hostname
 	// stays intact and an accidental IPv6 (multiple colons) is caught below.
 	if i := strings.LastIndexByte(e, ':'); i >= 0 {
 		if p, perr := strconv.Atoi(e[i+1:]); perr == nil {
-			host, port = e[:i], p
+			host, port, portless = e[:i], p, false
 		}
 	}
 	if port < 1 || port > 65535 {
-		return "", 0, fmt.Errorf("egress %q: port out of range", entry)
+		return "", 0, false, fmt.Errorf("egress %q: port out of range", entry)
 	}
 	if strings.ContainsRune(host, ':') || !egressHostRe.MatchString(host) {
-		return "", 0, fmt.Errorf("egress %q: not a valid host[:port]", entry)
+		return "", 0, false, fmt.Errorf("egress %q: not a valid host[:port]", entry)
 	}
-	return host, port, nil
+	return host, port, portless, nil
+}
+
+// EgressClosureMatches reports whether a closure (a stripped `!` marker name,
+// "host" or "host:port") closes the given open egress entry. A portless
+// closure matches the host on any port; a ported one matches exactly. The
+// open entry reads per the open grammar (portless = :443). Unparseable
+// values (validation reports those; matching stays total) fall back to raw
+// string equality — inert, never accidentally greedy.
+func EgressClosureMatches(closure, entry string) bool {
+	ch, cport, call, cerr := splitEgressEntry(closure)
+	eh, eport, _, eerr := splitEgressEntry(entry)
+	if cerr != nil || eerr != nil {
+		return closure == entry
+	}
+	return ch == eh && (call || cport == eport)
 }
 
 // Mount is a host-bind mount. Identity for `!name` removal is Target.
@@ -304,6 +328,17 @@ type Config struct {
 	// declarative and inert without one (nothing enforces it, same as skill
 	// egress). String list, so the cascade unions it with `!entry` removal.
 	Egress []string `toml:"egress,omitempty"`
+	// EgressClosed is the set of `!host[:port]` closures that survived the
+	// cascade -- never a TOML key of its own (the marker grammar lives inside
+	// `egress`); Merge extracts markers here instead of consuming them. A
+	// closure subtracts its endpoint from the DERIVED allowlist, after skill
+	// egress unions in, which is what puts skill-declared entries in its
+	// reach (plain mergeStrings removal never could -- skills aren't a
+	// cascade layer). Stored as stripped names ("host[:port]", no '!').
+	// PORTLESS closes every port of the host; ported closes just that one —
+	// the deliberate asymmetry with the open grammar (where portless means
+	// :443): addition is never greedy, subtraction may be.
+	EgressClosed []string `toml:"-"`
 	// EgressOffered is a declared-but-CLOSED door (ADR 0020): same grammar,
 	// ALWAYS inert at enforcement time. Templates ship their registries here;
 	// the config UI offers each as a switch whose open writes the plain entry
@@ -630,7 +665,10 @@ func Merge(base, over Config) Config {
 		out.SharedAuth = over.SharedAuth.Clone()
 	}
 	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
-	out.Egress = mergeStrings(base.Egress, over.Egress)
+	out.Egress, out.EgressClosed = mergeEgress(base, over)
+	// Offered egress keeps the plain-list idiom: it is never enforced, so a
+	// closure has nothing to subtract from and the marker just removes the
+	// inherited entry (ADR 0018).
 	out.EgressOffered = mergeStrings(base.EgressOffered, over.EgressOffered)
 
 	// Maps: union, over wins per key.
@@ -752,16 +790,33 @@ func (c Config) validateScalars(layer bool) error {
 		}
 	}
 
-	// Egress entries (open and offered) share the skills' grammar (ADR 0019);
-	// markers are exempt in layer mode like the package lists above.
-	for _, list := range [][]string{c.Egress, c.EgressOffered} {
-		if layer {
-			list = filter(list, func(s string) bool { return !isRemoval(s) })
+	// Egress entries (open and offered) share the skills' grammar (ADR 0019).
+	// Unlike the package lists above, an egress closure marker is NOT exempt
+	// in layer mode: Merge keeps it (as EgressClosed) instead of consuming
+	// it, and the stripped name travels to the netns helper's env beside the
+	// open entries -- so it is held to the same injection-safe parser. In
+	// resolved mode a marker still left in Egress fails loudly (the parser
+	// rejects '!'), same stance as every other resolved-config marker.
+	for _, e := range c.Egress {
+		if layer && isRemoval(e) {
+			e = e[1:]
 		}
-		for _, e := range list {
-			if _, _, err := ParseEgress(e); err != nil {
-				return err
-			}
+		if _, _, err := ParseEgress(e); err != nil {
+			return err
+		}
+	}
+	for _, e := range c.EgressClosed {
+		if _, _, err := ParseEgress(e); err != nil {
+			return err
+		}
+	}
+	offered := c.EgressOffered
+	if layer {
+		offered = filter(offered, func(s string) bool { return !isRemoval(s) })
+	}
+	for _, e := range offered {
+		if _, _, err := ParseEgress(e); err != nil {
+			return err
 		}
 	}
 
@@ -1078,6 +1133,100 @@ func override(base, over string) string {
 		return over
 	}
 	return base
+}
+
+// mergeEgress folds one cascade step of the `egress` list into (open, closed).
+// Unlike the plain-list idiom (mergeStrings, ADR 0018), a `!host[:port]`
+// closure is NOT consumed when it removes an entry: it survives the cascade
+// (in EgressClosed) so it can subtract the same endpoint from the DERIVED
+// allowlist after skill egress unions in. Precedence stays cascade-ordered
+// like every other list -- a later layer's plain entry re-opens an earlier
+// layer's closure, deleting every closure it matches WHOLE (a portless
+// closure narrowed by one port would be unrepresentable, and nobody wants
+// it); within one layer a closure beats a plain entry (adds fold first,
+// closures after, mirroring mergeStrings). Matching is EgressClosureMatches,
+// so `!statsig.example.com` closes an inherited `statsig.example.com:443`
+// (raw-string matching would miss it) — and every other port besides.
+func mergeEgress(base, over Config) (open, closed []string) {
+	open, closed = splitEgress(base.Egress, base.EgressClosed)
+	overOpen, overClosed := splitEgress(over.Egress, over.EgressClosed)
+	for _, e := range overOpen {
+		closed = filter(closed, func(c string) bool { return !EgressClosureMatches(c, e) })
+		if !containsEgress(open, e) {
+			open = append(open, e)
+		}
+	}
+	for _, c := range overClosed {
+		open = filter(open, func(e string) bool { return !EgressClosureMatches(c, e) })
+		if !containsClosure(closed, c) {
+			closed = append(closed, c)
+		}
+	}
+	return open, closed
+}
+
+// splitEgress separates an egress list into plain entries and the stripped
+// names of its `!` closure markers, folding an already-populated EgressClosed
+// (a previously merged config re-entering Merge) into the latter.
+func splitEgress(egress, egressClosed []string) (open, closed []string) {
+	for _, e := range egress {
+		if isRemoval(e) {
+			closed = append(closed, e[1:])
+			continue
+		}
+		open = append(open, e)
+	}
+	for _, c := range egressClosed {
+		if !containsClosure(closed, c) {
+			closed = append(closed, c)
+		}
+	}
+	return open, closed
+}
+
+// egressKey is the identity OPEN entries dedup on: the parsed host:port with
+// the port defaulted, falling back to the raw string for an entry the parser
+// rejects (validation reports those; merge stays total).
+func egressKey(e string) string {
+	host, port, err := ParseEgress(e)
+	if err != nil {
+		return e
+	}
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
+// closureKey is the identity CLOSURES dedup on — like egressKey but a
+// portless closure is its own identity ("every port"), distinct from the
+// same host closed at :443.
+func closureKey(c string) string {
+	host, port, portless, err := splitEgressEntry(c)
+	if err != nil {
+		return c
+	}
+	if portless {
+		return host + ":*"
+	}
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
+func containsEgress(list []string, e string) bool {
+	k := egressKey(e)
+	for _, it := range list {
+		if egressKey(it) == k {
+			return true
+		}
+	}
+	return false
+}
+
+func containsClosure(list []string, c string) bool {
+	k := closureKey(c)
+	for _, it := range list {
+		if closureKey(it) == k {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeStrings unions base with over (dedup, preserving first occurrence), then
