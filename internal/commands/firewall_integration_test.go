@@ -109,7 +109,15 @@ func TestIntegrationFirewallEgress(t *testing.T) {
 	// allow probe needs github.com reachable — which actions/checkout already
 	// hard-requires on CI — and the deny probe fails SAFE (an unreachable
 	// example.com still reads DENY_OK).
+	// The DBG lines are diagnosis, not assertion: ALLOW_FAIL + DENY_OK is
+	// also what a box with broken DNS prints (both probes need resolution),
+	// so on failure these split "allow rule didn't match" from "DNS dead in
+	// the box". Kept permanently — this test has failed for
+	// environment-specific reasons (CI runners) that a bare FAIL can't
+	// distinguish.
 	probe := `
+echo "DBG nameservers:" $(awk '/^nameserver/{print $2}' /etc/resolv.conf)
+echo "DBG github.com ->" $(getent ahosts github.com | awk '{print $1}' | sort -u)
 if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo ALLOW_OK; else echo ALLOW_FAIL; fi
 if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
 
@@ -122,9 +130,32 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo D
 
 	// Apply the rules from outside, in the box's netns — this also opens the
 	// gate (firewall.sh listens on the gate port once rules verify), letting
-	// the launcher proceed to the probes.
-	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall", env); err != nil {
-		t.Fatalf("netns init failed: %v", err)
+	// the launcher proceed to the probes. Run with the same argv NetnsInit
+	// assembles, but CAPTURE the helper's output: firewall.sh's warnings
+	// (per-host resolution, the allow self-probe result) are the difference
+	// between "rule didn't match" and "DNS dead in the netns" when this fails
+	// on an environment we can't shell into. NetnsInit itself stays covered
+	// by the argv unit pins and the restart test.
+	helperArgs := []string{"run", "--rm", "-u", "0:0",
+		"--net", "container:" + name, "--cap-add", "NET_ADMIN",
+		"--entrypoint", "/usr/local/bin/byre-firewall"}
+	for k, v := range env {
+		helperArgs = append(helperArgs, "-e", k+"="+v)
+	}
+	helperArgs = append(helperArgs, image)
+	helperOut, herr := exec.Command(string(r.Engine()), helperArgs...).CombinedOutput()
+	t.Logf("netns helper output:\n%s", helperOut)
+	if herr != nil {
+		t.Fatalf("netns init failed: %v", herr)
+	}
+	// Snapshot the rules the helper actually installed, while the box (and
+	// so its netns) is still alive — same diagnosis-on-failure rationale.
+	if rules, derr := exec.Command(string(r.Engine()), "run", "--rm", "-u", "0:0",
+		"--net", "container:"+name, "--cap-add", "NET_ADMIN",
+		"--entrypoint", "iptables", image, "-S", "OUTPUT").CombinedOutput(); derr == nil {
+		t.Logf("netns OUTPUT rules:\n%s", rules)
+	} else {
+		t.Logf("netns rules dump failed: %v\n%s", derr, rules)
 	}
 
 	dockerWait(t, r, name)
