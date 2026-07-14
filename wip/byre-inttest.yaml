@@ -1,0 +1,54 @@
+# byre-inttest.yaml -- the sacrificial integration-test VM (TODO item
+# "Agent-runnable integration tests"). The whole VM is this file:
+#
+#   create:  limactl start --name=byre-inttest wip/byre-inttest.yaml
+#   reset:   limactl delete byre-inttest   (then create again)
+#   pause:   limactl stop byre-inttest
+#
+# It deliberately mounts NOTHING from the host: the box's ssh key reaches a
+# machine whose entire contents are a repo rsync and a Docker image cache.
+# The in-box agent syncs the working tree over ssh and runs the gated
+# BYRE_DOCKER_TESTS=1 suite ON the VM (a remote DOCKER_HOST can't work --
+# bind mounts resolve engine-side, so the tests must run where the engine is).
+
+minimumLimaVersion: "1.0.0"
+
+images:
+  - location: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2"
+    arch: "aarch64"
+  - location: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+    arch: "x86_64"
+
+cpus: 4
+memory: "4GiB"
+disk: "60GiB"
+
+# No host filesystem in the VM, read-only or otherwise.
+mounts: []
+
+ssh:
+  # Fixed port so the box-side config never churns. From inside a Docker
+  # Desktop container this is reachable as host.docker.internal:60022.
+  localPort: 60022
+  # Authorize the host's ~/.ssh/*.pub keys -- including the dedicated
+  # byre-inttest key. Generate that key BEFORE limactl start.
+  loadDotSSHPubKeys: true
+
+containerd:
+  system: false
+  user: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go
+      command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      sudo usermod -aG docker "$USER"
