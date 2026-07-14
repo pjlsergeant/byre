@@ -26,6 +26,7 @@ func effectiveReview(paths project.Paths, proposal config.Config) (config.Config
 	effective, err := config.ResolveProposed(proposal)
 	if err != nil {
 		grants := append(grantSummary(proposal), egressGrantLine(proposal.Egress, "", "", false)...)
+		grants = append(grants, mcpGrantLines(configMCPDecls(proposal.MCPs), nil)...)
 		return proposal, append(grants,
 			grantLine{Text: "could not expand the cascade (" + err.Error() + ") — grants shown are from the raw file only"})
 	}
@@ -33,12 +34,18 @@ func effectiveReview(paths project.Paths, proposal config.Config) (config.Config
 	res, rerr := skills.Resolve(effective, cat)
 	if rerr != nil {
 		grants = append(grants, egressGrantLine(effective.Egress, "", "", false)...)
+		grants = append(grants, mcpGrantLines(configMCPDecls(effective.MCPs), nil)...)
 		return effective, append(grants,
 			grantLine{Text: "could not expand skills (" + rerr.Error() + ") — their grants are NOT shown"})
 	}
 	posture, postureSkill := res.NetworkPosture()
 	grants = append(grants, egressGrantLine(effective.Egress, posture, postureSkill, true)...)
 	grants = append(grants, skillGrantSummary(res)...)
+	// The EFFECTIVE MCP set — skill contributions included, attributed —
+	// so a preset can't enable a skill whose wiring (and carried reach)
+	// goes undisclosed at confirm time (codex review round 2).
+	mcps, merr := skills.MCPSet(effective, res)
+	grants = append(grants, mcpGrantLines(mcps, merr)...)
 	return effective, sortGrantLines(grants)
 }
 
@@ -175,38 +182,58 @@ func grantSummary(c config.Config) []grantLine {
 	if len(c.Skills) > 0 {
 		s = append(s, grantLine{Text: "enables skills (each can add mounts/caps/run_args/volumes): " + strings.Join(c.Skills, ", ")})
 	}
-	// MCP declarations are wiring, not grants (ADR 0033) — but a remote url
-	// implies egress and an env list names host values the box will want, so
-	// the reviewer sees what the wiring carries. `!name` closure markers
-	// remove wiring and grant nothing; skipped like port removal markers.
-	if lines := mcpWiringList(c.MCPs); len(lines) > 0 {
-		s = append(s, grantLine{Text: "wires MCP servers into the agent session: " + strings.Join(lines, ", ")})
-	}
 	return s
 }
 
-// mcpWiringList renders proposed [[mcp]] declarations compactly for the
-// adoption/preset review, carried reach spelled out per entry.
-func mcpWiringList(mcps []config.MCP) []string {
-	var out []string
+// configMCPDecls wraps a config-layer [[mcp]] list as config-attributed
+// declarations for the fallback review paths (cascade or skills failed to
+// expand — the resolved path forms the real set via skills.MCPSet). `!name`
+// closure markers remove wiring and grant nothing; skipped like port
+// removal markers.
+func configMCPDecls(mcps []config.MCP) []skills.MCPDecl {
+	var out []skills.MCPDecl
 	for _, m := range mcps {
 		if strings.HasPrefix(m.Name, "!") {
 			continue
 		}
-		switch {
-		case m.Remote():
-			host, port, ok := m.Endpoint()
-			if ok {
-				out = append(out, fmt.Sprintf("%s (remote — implies egress to %s:%d)", m.Name, host, port))
-			} else {
-				out = append(out, m.Name+" (remote)")
+		out = append(out, skills.MCPDecl{Skill: skills.MCPFromConfig, MCP: m})
+	}
+	return out
+}
+
+// mcpGrantLines renders MCP declarations for the adoption/preset review.
+// Wiring, not grants (ADR 0033) — but the carried reach must be spelled out
+// per entry before confirm: the endpoint a remote url implies, declared
+// extra egress, and the env names the server consumes. setErr is MCPSet's
+// cross-source duplicate reject: apply would write a config develop then
+// refuses, so the review says so instead of hiding the conflict.
+func mcpGrantLines(decls []skills.MCPDecl, setErr error) []grantLine {
+	var out []grantLine
+	for _, d := range decls {
+		m := d.MCP
+		src := "config"
+		if d.Skill != skills.MCPFromConfig {
+			src = fmt.Sprintf("skill %q", d.Skill)
+		}
+		var desc string
+		if m.Remote() {
+			desc = "remote " + m.URL
+			if host, port, ok := m.Endpoint(); ok {
+				desc += fmt.Sprintf(" (implies egress to %s:%d)", host, port)
 			}
-		default:
-			out = append(out, m.Name+" (local process)")
+		} else {
+			desc = "local process " + strings.Join(m.Command, " ")
+		}
+		if len(m.Egress) > 0 {
+			desc += "; declared egress " + strings.Join(m.Egress, ", ")
 		}
 		if len(m.Env) > 0 {
-			out[len(out)-1] += " consuming env " + strings.Join(m.Env, "/")
+			desc += "; consumes env " + strings.Join(m.Env, ", ")
 		}
+		out = append(out, grantLine{Text: fmt.Sprintf("wires MCP server %s (%s): %s", m.Name, src, desc)})
+	}
+	if setErr != nil {
+		out = append(out, grantLine{Text: "mcp declarations conflict (develop will refuse): " + setErr.Error()})
 	}
 	return out
 }

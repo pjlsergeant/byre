@@ -112,3 +112,37 @@ func TestSkillGrantSummaryContainmentTopSorted(t *testing.T) {
 		t.Fatalf("cross-project second: %+v", sorted)
 	}
 }
+
+// MCP wiring is disclosed at adoption/preset review with its carried reach
+// spelled out per entry — skill contributions included and attributed, so a
+// preset can't enable a skill whose wiring goes unseen at confirm time.
+func TestMCPGrantLinesCarriedReach(t *testing.T) {
+	decls := []skills.MCPDecl{
+		{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "linear", URL: "https://mcp.linear.app/mcp", Egress: []string{"auth.linear.app"}, Env: []string{"LINEAR_API_KEY"}}},
+		{Skill: "pete/tools", MCP: config.MCP{Name: "github", Command: []string{"gh-mcp", "stdio"}, Egress: []string{"api.github.com"}}},
+	}
+	got := grantTexts(mcpGrantLines(decls, nil))
+	if !strings.Contains(got, "wires MCP server linear (config): remote https://mcp.linear.app/mcp (implies egress to mcp.linear.app:443); declared egress auth.linear.app; consumes env LINEAR_API_KEY") {
+		t.Errorf("remote line wrong: %q", got)
+	}
+	if !strings.Contains(got, `wires MCP server github (skill "pete/tools"): local process gh-mcp stdio; declared egress api.github.com`) {
+		t.Errorf("skill-attributed local line wrong: %q", got)
+	}
+	// A cross-source conflict is disclosed, not hidden (develop refuses it).
+	if got := grantTexts(mcpGrantLines(nil, errAlwaysMCP{})); !strings.Contains(got, "mcp declarations conflict (develop will refuse)") {
+		t.Errorf("conflict disclosure missing: %q", got)
+	}
+	// Fallback paths review the config layer only; closure markers grant
+	// nothing and are skipped.
+	fallback := configMCPDecls([]config.MCP{
+		{Name: "!closed"},
+		{Name: "kept", Command: []string{"srv"}},
+	})
+	if len(fallback) != 1 || fallback[0].MCP.Name != "kept" || fallback[0].Skill != skills.MCPFromConfig {
+		t.Errorf("configMCPDecls = %+v", fallback)
+	}
+}
+
+type errAlwaysMCP struct{}
+
+func (errAlwaysMCP) Error() string { return "mcp github: declared by both the config and skill \"x\"" }
