@@ -30,7 +30,9 @@ the rationale lives.
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
   state-dir env, headless login + rotation, autonomy flag, context file,
   egress, headless permission mode -- grok's silent-death lesson); record in
-  docs/AGENT-CREDENTIAL-MECHANICS.md. Maybe a third reviewer.
+  docs/AGENT-CREDENTIAL-MECHANICS.md. Maybe a third reviewer. Probe an MCP
+  injection seam while at it (gemini too) -- injection is byre's only
+  adapter mechanism (ADR 0033); no seam = the honest degradation stays.
 - [ ] (M) **Claude Skills delivery** (the untouched half of the old
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
@@ -38,11 +40,6 @@ the rationale lives.
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
   interaction with the origin-pinning rules before building.
-- [ ] (L) **MCP provisioning.** Designed 2026-07-14/15 across 4 review
-  rounds; the plan is `wip/mcp-provisioning-design.md` (dispatched
-  2026-07-15). `[[mcp]]` vocabulary + ADR-0030-style closures, claude via
-  --mcp-config inject, byre__ namespace protocol for state-writing adapters,
-  always-baked /etc/byre/mcp.json. Sequence: 6 spikes -> ADR -> build.
 - [ ] (L) **Composable box configurations** (Pete, 2026-07-14): stacked config
   layers, not just the global-baseline + per-project pair -- compose a box
   from multiple named layers. Needs a design pass against the existing
