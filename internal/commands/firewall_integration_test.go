@@ -42,7 +42,10 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Skills: []string{"firewall"}}
+	// github.com rides the config `egress` key: the firewall's own doors are
+	// OFFERED, not open (ADR 0020), so a bare firewall config has an empty
+	// allowlist and the allow probe below would test a deliberate lockdown.
+	cfg := config.Config{Skills: []string{"firewall"}, Egress: []string{"github.com"}}
 	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		t.Fatalf("resolve firewall skill: %v", err)
@@ -52,14 +55,15 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	if err := buildImage(r, p, cfg, res, image, false); err != nil {
 		t.Fatalf("firewall image failed to build: %v", err)
 	}
-	// Mirror develop's netns env: the helper builds its allowlist from
-	// BYRE_EGRESS (the skill union) — without it the box comes up fully
+	// Mirror develop's netns env exactly: BYRE_EGRESS is the full allowlist
+	// union — skill-declared egress plus the config `egress` key — via the
+	// same resolvedEgress develop uses. Without it the box comes up fully
 	// locked and the allow probe below would wrongly fail.
 	env := res.Env()
 	if env == nil {
 		env = map[string]string{}
 	}
-	env["BYRE_EGRESS"] = strings.Join(res.Egress(), " ")
+	env["BYRE_EGRESS"] = strings.Join(resolvedEgress(combine(cfg, res)), " ")
 	return image, env
 }
 
@@ -91,8 +95,9 @@ func TestIntegrationFirewallEgress(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// The box runs these probes AFTER the launcher's gate opens (the launcher
-	// execs "$@" only past the gate). github.com is on the default allowlist;
-	// example.com is not. bash /dev/tcp needs no curl in the image.
+	// execs "$@" only past the gate). github.com is granted via the config
+	// egress key above; example.com is not. bash /dev/tcp needs no curl in
+	// the image.
 	probe := `
 if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo ALLOW_OK; else echo ALLOW_FAIL; fi
 if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
