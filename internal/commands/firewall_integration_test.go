@@ -281,7 +281,12 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Merge(config.Config{}, config.Config{Skills: []string{"firewall-open"}, Egress: []string{"!example.com"}})
+	// Two closures: !9.9.9.9 is the IP-pinned drop the egress test asserts
+	// (rotation-immune — the same lesson as the firewall test's 1.1.1.1
+	// allow, but inverted: a hostname closure that re-resolves differently
+	// at probe time MISSES, reading as a leak); !example.com keeps the
+	// helper's hostname-resolution path exercised, reachability unasserted.
+	cfg := config.Merge(config.Config{}, config.Config{Skills: []string{"firewall-open"}, Egress: []string{"!9.9.9.9", "!example.com"}})
 	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		t.Fatalf("resolve firewall-open skill: %v", err)
@@ -311,11 +316,14 @@ func TestIntegrationFirewallOpenEgress(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// github.com has NO egress grant in this config — reachable means open.
-	// example.com is closed portless, so 443 must drop. Same live-internet
-	// stance as the firewall test: the deny probe fails safe.
+	// The hostname is safe HERE (unlike the firewall test's allow probe):
+	// under an ACCEPT policy any IP it resolves to connects, so rotation
+	// can't race the assertion. The asserted drop is 9.9.9.9 by IP — a
+	// hostname deny probe would leak (not just flake) when the box resolves
+	// past the snapshot, per CI run 29323436590's lesson.
 	probe := `
 if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo OPEN_OK; else echo OPEN_FAIL; fi
-if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
+if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
 
 	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name, image, "bash", "-c", probe)
 	if out, err := start.CombinedOutput(); err != nil {
@@ -332,7 +340,7 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo D
 		t.Errorf("ungranted github.com should be reachable on an open network; logs:\n%s", logs)
 	}
 	if !strings.Contains(logs, "DENY_OK") || strings.Contains(logs, "DENY_LEAK") {
-		t.Errorf("closed host example.com should be DROPPED; logs:\n%s", logs)
+		t.Errorf("closed 9.9.9.9:443 should be DROPPED; logs:\n%s", logs)
 	}
 }
 
