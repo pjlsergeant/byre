@@ -167,6 +167,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		worktreeCmd(a, dir, s),
 		skillCmd(a, s),
 		templateCmd(s),
+		mcpCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
@@ -388,6 +389,64 @@ neither set, byre refuses rather than guessing.`,
 	c.Flags().StringVar(&path, "path", "", "create the worktree at an explicit path")
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "forward 'develop --self-edit' for the new session")
 	return c
+}
+
+func mcpCmd(dir string, s commands.Streams) *cobra.Command {
+	mcp := &cobra.Command{
+		Use:   "mcp",
+		Short: "Manage this project's MCP server declarations ([[mcp]] config blocks).",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre mcp add|remove|list")
+		},
+	}
+	var addGlobal, rmGlobal bool
+	var env, egress []string
+	add := &cobra.Command{
+		Use:   "add <name> (<url> | -- <command>...)",
+		Short: "Declare an MCP server in the project config (or --global defaults).",
+		Long: `Write an [[mcp]] declaration into this project's host-side config
+(add-or-update by name; a matching "!name" closure is re-opened). One arg
+that starts http(s):// is a remote server; anything else is a local stdio
+command — put it after -- so its own flags aren't parsed as byre's.
+Applies on the next develop.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return usageError("usage: byre mcp add <name> (<url> | -- <command>...)")
+			}
+			return commands.MCPAdd(s, dir, addGlobal, args[0], args[1:], env, egress)
+		},
+	}
+	add.Flags().BoolVar(&addGlobal, "global", false, "write your global defaults (~/.byre/default.config) instead")
+	add.Flags().StringArrayVar(&env, "env", nil, "env var NAME the server consumes (repeatable; values ride env_from_host/[env], never this declaration)")
+	add.Flags().StringArrayVar(&egress, "egress", nil, "extra host[:port] the server needs (repeatable; a remote url's own host is implied)")
+	remove := &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove a declared MCP server (closure-smart).",
+		Long: `Remove a server from this project's effective set: deletes the layer's own
+[[mcp]] block, and/or writes the "!name" closure when a lower layer or an
+enabled skill still declares the name. Applies on the next develop.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return usageError("usage: byre mcp remove <name>")
+			}
+			return commands.MCPRemove(s, dir, rmGlobal, args[0])
+		},
+	}
+	remove.Flags().BoolVar(&rmGlobal, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	mcp.AddCommand(
+		add,
+		remove,
+		&cobra.Command{
+			Use:   "list",
+			Short: "Show the effective MCP set (config + skills, attributed) and its delivery.",
+			Args:  noArgsU,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.MCPList(s, dir)
+			},
+		},
+	)
+	return mcp
 }
 
 func skillCmd(a app, s commands.Streams) *cobra.Command {

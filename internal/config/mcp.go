@@ -83,6 +83,11 @@ func (m MCP) Endpoint() (host string, port int, ok bool) {
 // future byre walked back (ADR 0033, "The registrar that wasn't").
 var mcpNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
+// ValidMCPName reports whether s satisfies the MCP name grammar — for
+// callers (the mcp verbs) that validate a bare name with no declaration
+// around it. Single owner: the grammar lives in mcpNameRe alone.
+func ValidMCPName(s string) bool { return mcpNameRe.MatchString(s) }
+
 // ValidateMCP checks one declaration's own shape. Shared by the config
 // validators and skills.Resolve — config-declared and skill-declared
 // servers are held to the same bar.
