@@ -239,7 +239,7 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	if out, err := exec.Command(string(r.Engine()), runner.RunArgs(paramsA)...).CombinedOutput(); err != nil {
 		t.Fatalf("project A box failed to write the credential: %v\n%s", err, out)
 	}
-	paramsB.Command = []string{"bash", "-c", "cat /home/dev/.authvol/cred && stat -c %u /home/dev/.authvol/cred"}
+	paramsB.Command = []string{"bash", "-c", `cat /home/dev/.authvol/cred && echo "CRED_OWNER=$(stat -c %u /home/dev/.authvol/cred)"`}
 	out, err := exec.Command(string(r.Engine()), runner.RunArgs(paramsB)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("project B box failed to read the credential: %v\n%s", err, out)
@@ -247,7 +247,8 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	if !strings.Contains(string(out), token) {
 		t.Errorf("project B box did not see project A's credential; got:\n%s", out)
 	}
-	if !strings.Contains(string(out), strconv.Itoa(uid)) {
+	// Labeled, newline-terminated: bare digits could hide inside the token.
+	if !strings.Contains(string(out), fmt.Sprintf("CRED_OWNER=%d\n", uid)) {
 		t.Errorf("credential not owned by the dev uid %d in project B's box; got:\n%s", uid, out)
 	}
 }
@@ -350,9 +351,19 @@ func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 		"echo %s > /home/dev/pvol/wt-token && test ! -e /workspace/wt-only.txt && echo MAIN_OK; sleep 60", token)}
 	// Box B (worktree): wait for A's token through the shared volume, assert
 	// its own checkout, park. Both boxes RUNNING at once is the claim.
-	paramsWt.Command = []string{"bash", "-c",
+	//
+	// The last two tests are ADR 0009's same-path binds, checked through
+	// git's own metadata (no git binary in the default image needed): the
+	// worktree's /workspace/.git is a pointer full of absolute HOST paths —
+	// it only resolves in-box because runParams bind-mounts the common git
+	// dir and the worktree at those exact host paths. If either bind is
+	// dropped, the pointer target (or the same-path view of the checkout)
+	// vanishes and the probe fails.
+	paramsWt.Command = []string{"bash", "-c", fmt.Sprintf(
 		`for i in $(seq 50); do [ -f /home/dev/pvol/wt-token ] && break; sleep 0.2; done
-cat /home/dev/pvol/wt-token && test -e /workspace/wt-only.txt && test -e /workspace/shared.txt && echo WT_OK; sleep 60`}
+cat /home/dev/pvol/wt-token && test -e /workspace/wt-only.txt && test -e /workspace/shared.txt &&
+gd=$(cut -d' ' -f2 /workspace/.git) && test -d "$gd" &&
+test -f %q/wt-only.txt && echo WT_OK; sleep 60`, wtDir)}
 
 	detach := func(p runner.RunParams) {
 		t.Helper()

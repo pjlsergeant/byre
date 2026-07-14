@@ -17,6 +17,7 @@ package commands
 // a live engine is the iptables/gate behavior inside a real netns.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -67,6 +68,13 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	return image, env
 }
 
+// uniqueName returns a recognizable, collision-free container name, so
+// concurrent or aborted suite runs sharing a daemon can't delete each other's
+// live containers (the runner package's smokeName precedent).
+func uniqueName(kind string) string {
+	return fmt.Sprintf("byre-inttest-%s-%d-%d", kind, os.Getpid(), time.Now().UnixNano()%1_000_000)
+}
+
 // dockerWait blocks until the named container exits and returns its exit code.
 func dockerWait(t *testing.T, r *runner.Runner, name string) int {
 	t.Helper()
@@ -90,14 +98,17 @@ func dockerWait(t *testing.T, r *runner.Runner, name string) int {
 func TestIntegrationFirewallEgress(t *testing.T) {
 	r := requireEngineRunner(t)
 	image, env := buildFirewallImage(t, r)
-	name := "byre-inttest-fw-egress"
-	_ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() // clear any leftover
+	name := uniqueName("fw-egress")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// The box runs these probes AFTER the launcher's gate opens (the launcher
 	// execs "$@" only past the gate). github.com is granted via the config
 	// egress key above; example.com is not. bash /dev/tcp needs no curl in
-	// the image.
+	// the image. Live-internet dependence is deliberate (resolve-then-connect
+	// through the wall IS the contract; a local fixture would test less): the
+	// allow probe needs github.com reachable — which actions/checkout already
+	// hard-requires on CI — and the deny probe fails SAFE (an unreachable
+	// example.com still reads DENY_OK).
 	probe := `
 if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo ALLOW_OK; else echo ALLOW_FAIL; fi
 if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
@@ -132,8 +143,7 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo D
 func TestIntegrationFirewallFailsClosed(t *testing.T) {
 	r := requireEngineRunner(t)
 	image, _ := buildFirewallImage(t, r)
-	name := "byre-inttest-fw-closed"
-	_ = exec.Command(string(r.Engine()), "rm", "-f", name).Run()
+	name := uniqueName("fw-closed")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// If the gate ever opened, this marker would appear. It must not.
@@ -168,8 +178,7 @@ func TestIntegrationFirewallFailsClosed(t *testing.T) {
 func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 	r := requireEngineRunner(t)
 	image, env := buildFirewallImage(t, r)
-	name := "byre-inttest-fw-restart"
-	_ = exec.Command(string(r.Engine()), "rm", "-f", name).Run()
+	name := uniqueName("fw-restart")
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// The marker prints on every successful pass through the gate; the sleep
