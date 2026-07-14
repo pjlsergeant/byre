@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.4.0 -- 2026-07-14
 
 - **Rootless Podman is supported (ADR 0032).** `byre develop` now
   mode-selects per engine: under rootless Podman (4.3+) it builds a
