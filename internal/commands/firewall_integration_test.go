@@ -43,10 +43,13 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	// github.com rides the config `egress` key: the firewall's own doors are
-	// OFFERED, not open (ADR 0020), so a bare firewall config has an empty
-	// allowlist and the allow probe below would test a deliberate lockdown.
-	cfg := config.Config{Skills: []string{"firewall"}, Egress: []string{"github.com"}}
+	// The config `egress` key carries the grants: the firewall's own doors
+	// are OFFERED, not open (ADR 0020), so a bare firewall config has an
+	// empty allowlist and the allow probe would test a deliberate lockdown.
+	// 1.1.1.1 is the IP-pinned allow the egress test asserts; github.com
+	// exercises the helper's hostname-resolution path (reachability
+	// deliberately unasserted — see the probe comment there).
+	cfg := config.Config{Skills: []string{"firewall"}, Egress: []string{"1.1.1.1", "github.com"}}
 	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
 		t.Fatalf("resolve firewall skill: %v", err)
@@ -102,24 +105,29 @@ func TestIntegrationFirewallEgress(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
 
 	// The box runs these probes AFTER the launcher's gate opens (the launcher
-	// execs "$@" only past the gate). github.com is granted via the config
-	// egress key above; example.com is not. bash /dev/tcp needs no curl in
-	// the image. Live-internet dependence is deliberate (resolve-then-connect
-	// through the wall IS the contract; a local fixture would test less): the
-	// allow probe needs github.com reachable — which actions/checkout already
-	// hard-requires on CI — and the deny probe fails SAFE (an unreachable
-	// example.com still reads DENY_OK).
-	// The DBG lines are diagnosis, not assertion: ALLOW_FAIL + DENY_OK is
-	// also what a box with broken DNS prints (both probes need resolution),
-	// so on failure these split "allow rule didn't match" from "DNS dead in
-	// the box". Kept permanently — this test has failed for
-	// environment-specific reasons (CI runners) that a bare FAIL can't
-	// distinguish.
+	// execs "$@" only past the gate). Assertions are pinned to what is
+	// DETERMINISTIC under the snapshot model:
+	//   ALLOW — 1.1.1.1:443 is granted and dialed BY IP (anycast, fixed):
+	//     immune to the failure CI run 29323436590 exposed, where Azure's
+	//     forwarding DNS gave the helper 140.82.116.3 for github.com and the
+	//     box .4 seconds later, so the (correct) snapshot rule dropped the
+	//     probe. Hostname reachability under rotating DNS is the firewall's
+	//     documented restart-to-re-resolve limitation, not a test target.
+	//   DENY — 9.9.9.9:443 has no grant and must drop; by IP, so no DNS
+	//     ambiguity (firewall.sh's own deny self-probe skips granted IPs).
+	//   DNS — github.com must RESOLVE in-box: pins the scoped :53 allows.
+	//     github.com also rides the egress list (buildFirewallImage), so the
+	//     helper's hostname-resolution path stays exercised; only the
+	//     rotation-racy connect is not asserted.
+	// The DBG lines are diagnosis, not assertion — kept because this test's
+	// failures tend to be environment-shaped and a bare FAIL can't be split
+	// into "rule didn't match" vs "DNS dead in the box".
 	probe := `
 echo "DBG nameservers:" $(awk '/^nameserver/{print $2}' /etc/resolv.conf)
 echo "DBG github.com ->" $(getent ahosts github.com | awk '{print $1}' | sort -u)
-if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo ALLOW_OK; else echo ALLOW_FAIL; fi
-if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
+if [ -n "$(getent ahosts github.com)" ]; then echo DNS_OK; else echo DNS_FAIL; fi
+if timeout 6 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then echo ALLOW_OK; else echo ALLOW_FAIL; fi
+if timeout 6 bash -c 'exec 3<>/dev/tcp/9.9.9.9/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
 
 	// Start the box detached: the launcher comes up and parks at the gate.
 	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name, image, "bash", "-c", probe)
@@ -161,10 +169,13 @@ if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo D
 	dockerWait(t, r, name)
 	logs := containerLogs(t, r, name)
 	if !strings.Contains(logs, "ALLOW_OK") {
-		t.Errorf("allowlisted host github.com should be reachable; logs:\n%s", logs)
+		t.Errorf("allowlisted 1.1.1.1:443 should be reachable; logs:\n%s", logs)
 	}
 	if !strings.Contains(logs, "DENY_OK") || strings.Contains(logs, "DENY_LEAK") {
-		t.Errorf("non-allowlisted host example.com should be DROPPED; logs:\n%s", logs)
+		t.Errorf("non-allowlisted 9.9.9.9:443 should be DROPPED; logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "DNS_OK") {
+		t.Errorf("in-box DNS should work through the scoped :53 allows; logs:\n%s", logs)
 	}
 }
 
