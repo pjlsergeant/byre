@@ -199,6 +199,12 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		if r.also {
 			m.status = r.text + " is still inherited — remove again to turn it off here"
 		}
+		// Deleting an OVERRIDE re-inherits the lower layer's entry — that's
+		// the cascade working, but "delete" must not read as "gone" (grok
+		// review 2026-07-15; mounts/env/mcp share the shape).
+		if r.kind == rowOverride && r.source != "" {
+			m.status = "override removed — the " + r.source + " entry is back in effect; use its Remove action to turn it off here"
+		}
 	case actRemoveHere:
 		m.removeHere(r)
 	case actRestore:

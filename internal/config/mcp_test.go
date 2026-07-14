@@ -210,3 +210,17 @@ func TestMCPConfigJSONDeterministicAndShaped(t *testing.T) {
 		t.Fatalf("argless command must render empty args: %s", one)
 	}
 }
+
+// A url host must be expressible in the egress grammar: the host becomes an
+// implied allowlist entry, and IPv6 (colon hosts) is outside that grammar —
+// accepting it would bake wiring the closure/allowlist machinery can
+// neither enforce nor honestly report (grok review).
+func TestMCPRejectsIPv6URLHosts(t *testing.T) {
+	err := ValidateMCP(MCP{Name: "v6", URL: "https://[2001:db8::1]:8443/mcp"})
+	if err == nil || !strings.Contains(err.Error(), "egress grammar") {
+		t.Fatalf("IPv6 url host must be rejected: %v", err)
+	}
+	if err := ValidateMCP(MCP{Name: "v4", URL: "https://192.0.2.7:8443/mcp"}); err != nil {
+		t.Fatalf("IPv4 literal host must stay valid: %v", err)
+	}
+}

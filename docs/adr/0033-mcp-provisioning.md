@@ -77,9 +77,11 @@ from the render — inheritance delivers values, and a rendered `${VAR}` for
 an UNSET var passes the literal through as a garbage credential
 (spike-verified). Guarding the secret-free claim: a url carrying
 credentials (`user@host`) is refused at validation — same stance as
-`env_from_host` refusing literals — while a query string stays allowed
-(legitimate endpoint shapes exist) and bakes into the image exactly like
-an `[env]` literal; don't put secrets in either.
+`env_from_host` refusing literals — while a query string and the local
+command's argv stay allowed (legitimate shapes exist; a token-sniffing
+heuristic would be nannying) and bake into the image exactly like an
+`[env]` literal: `docker history` shows them, `byre mcp add` says so.
+Don't put secrets in any of them — tokens ride env names.
 
 ## Adapters: injection-only
 

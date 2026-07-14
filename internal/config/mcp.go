@@ -123,6 +123,14 @@ func ValidateMCP(m MCP) error {
 		if u.Hostname() == "" {
 			return fmt.Errorf("mcp %s: url %q: missing a host", m.Name, m.URL)
 		}
+		// The url host becomes an implied egress entry, so it must satisfy
+		// the egress grammar — which excludes IPv6 (colons are ambiguous
+		// with host:port there). Accepting a bracketed-IPv6 url here would
+		// bake wiring whose allowlist/closure entries downstream machinery
+		// can neither enforce nor honestly report (grok review, 2026-07-15).
+		if _, _, err := ParseEgress(u.Hostname()); err != nil {
+			return fmt.Errorf("mcp %s: url host %q: not expressible in byre's egress grammar (hostname or IPv4; IPv6 endpoints are unsupported)", m.Name, u.Hostname())
+		}
 		// user:pass@ is credential syntax with no legitimate MCP-endpoint use,
 		// and the URL bakes into a secret-free file in the image (ADR 0033) —
 		// same stance as env_from_host refusing literals: a secret in wiring

@@ -101,6 +101,11 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 	if host, port, ok := m.Endpoint(); ok {
 		fmt.Fprintf(s.Err, "byre: remote url implies egress to %s:%d (attributed mcp:%s; closable with \"!%s:%d\" in egress)\n", host, port, name, host, port)
 	}
+	// The declaration bakes into the image (docker history shows it), like
+	// [env] values — the disclosure keeps argv/query secrets a known edge,
+	// never a surprise. Tokens ride env NAMES + env_from_host instead.
+	fmt.Fprintf(s.Err, "byre: the declaration bakes into the image — keep secrets out of the %s; tokens ride --env names + env_from_host\n",
+		map[bool]string{true: "url", false: "command"}[m.Remote()])
 	fmt.Fprintln(s.Err, "byre: `byre status` shows the effective set and delivery; applies on the next develop.")
 	return nil
 }

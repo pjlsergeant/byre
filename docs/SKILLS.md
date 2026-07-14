@@ -83,8 +83,9 @@ local server's binary through the normal `[build]` machinery. List the
 env var NAMES the server consumes (`env = ["GITHUB_TOKEN"]`) -- never
 values; the user supplies those via `env_from_host`/`[env]`, and status
 marks each name provided or not. A url with credentials (`user@host`)
-is refused, and the whole url (query string included) bakes into the
-image like an `[env]` literal -- keep secrets out of it. A remote url's host becomes attributed
+is refused; the whole url (query string included) and a local command's
+argv bake into the image like an `[env]` literal -- keep secrets out of
+both (tokens ride env names). A remote url's host becomes attributed
 egress (`mcp:<name>`) automatically; declare extra hosts (an OAuth
 authorize endpoint) in the block's own `egress`. Users can drop one of
 your servers without disabling the whole skill via `!name` in their

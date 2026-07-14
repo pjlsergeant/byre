@@ -475,3 +475,24 @@ func TestRenderStatusMCPClosedRows(t *testing.T) {
 		t.Errorf("MCP closed row missing:\n%s", out)
 	}
 }
+
+// Declared extra egress renders ON the MCP row, whatever the posture — on
+// an open network the Egress section suppresses mcp:-attributed entries as
+// noise, and without the row rendering the extras would be invisible teeth
+// a later posture toggle arms (grok review).
+func TestRenderStatusMCPExtrasAlwaysOnRow(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent: "byre/claude", AgentMCP: "inject",
+		MCPs: []skills.MCPDecl{{Skill: skills.MCPFromConfig, MCP: config.MCP{
+			Name: "linear", URL: "https://mcp.linear.app/mcp", Egress: []string{"auth.linear.app"},
+		}}},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "+egress auth.linear.app") {
+		t.Errorf("declared extras must render on the MCP row under an open network:\n%s", out)
+	}
+	if strings.Contains(out, "Egress:") {
+		t.Errorf("the Egress section itself stays suppressed on an open network:\n%s", out)
+	}
+}

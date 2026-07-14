@@ -520,6 +520,14 @@ func mcpStatusLine(d skills.MCPDecl, s statusInfo) string {
 		src = "skill " + d.Skill
 	}
 	notes := []string{src}
+	// Declared extra egress renders ON the row, whatever the posture: the
+	// extras join the allowlist the moment a restrictive posture arms, and
+	// the Egress section suppresses non-config attribution on an open
+	// network — without this they'd be the ADR 0019 invisible-teeth pattern
+	// (grok review, 2026-07-15).
+	if len(m.Egress) > 0 {
+		notes = append(notes, "+egress "+strings.Join(m.Egress, ", "))
+	}
 	if len(m.Env) > 0 {
 		marks := make([]string, len(m.Env))
 		for i, k := range m.Env {
