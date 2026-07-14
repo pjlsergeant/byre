@@ -100,9 +100,11 @@ func (m model) egressRows() []listRow {
 			lowerClosures = append(lowerClosures, c)
 		}
 	}
+	lowerClosureUsed := map[string]bool{}
 	lowerClosureFor := func(entry string) (name string, ok bool) {
 		for _, c := range lowerClosures {
 			if config.EgressClosureMatches(c, entry) {
+				lowerClosureUsed[c] = true
 				return c, true
 			}
 		}
@@ -164,10 +166,33 @@ func (m model) egressRows() []listRow {
 			rows = append(rows, listRow{kind: rowSkill, text: hp, source: "skill:" + sk})
 		}
 	}
+	// A marker that matched nothing: under an allowlist posture (or none) it
+	// truly is stale — it subtracts nothing. Under open-denylist EVERY
+	// closure is load-bearing (the host gets blocked whether or not anything
+	// declared it), so an unmatched one is this file's own live entry, never
+	// "removes nothing".
+	openDenylist := m.postureNow() == config.PostureOpenDenylist
 	for i, e := range m.egress {
-		if n, ok := strings.CutPrefix(e, "!"); ok && !markerMatched[i] {
-			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
+		n, ok := strings.CutPrefix(e, "!")
+		if !ok || markerMatched[i] {
+			continue
 		}
+		if openDenylist {
+			rows = append(rows, listRow{kind: rowLocal, text: e, idx: i})
+			continue
+		}
+		rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
+	}
+	// Lower-layer closures that closed nothing shown above: still config, and
+	// under open-denylist still enforced — never invisible. Menu-less (they
+	// live in a lower file; this editor has nothing to act on).
+	for _, c := range lowerClosures {
+		if lowerClosureUsed[c] {
+			continue
+		}
+		c := c
+		src := m.lowerSource(func(cf config.Config) bool { return slices.Contains(cf.Egress, "!"+c) })
+		rows = append(rows, listRow{kind: rowSkill, text: "!" + c, source: src})
 	}
 
 	// Offered doors (ADR 0020): declared-but-closed entries from lower layers,
@@ -519,12 +544,13 @@ func (m model) exposureNow() config.Exposure {
 	}
 	e.Env = len(envKeys)
 	e.Posture = m.postureNow()
-	// The allowlist size only means something under a posture; without one the
-	// line just says "network open" (the per-field summary carries the
-	// unenforced caveat). Deduped on the NORMALIZED host:port — "github.com"
+	// The allowlist size only means something under a posture that arms it
+	// (open-denylist's network is open — counting doors in a wall that isn't
+	// there would be noise); otherwise the per-field summary carries the
+	// unenforced caveat. Deduped on the NORMALIZED host:port — "github.com"
 	// and "github.com:443" are one enforced door, and the launch tally
 	// (resolvedEgress) dedupes the same way.
-	if e.Posture != "" {
+	if config.PostureEnforcesAllowlist(e.Posture) {
 		seen := map[string]bool{}
 		for _, r := range m.fieldRows(fEgress) {
 			switch r.kind {
@@ -535,6 +561,29 @@ func (m model) exposureNow() config.Exposure {
 			}
 		}
 		e.Egress = len(seen)
+	}
+	// Closures in effect at this editor — the count NetworkLine renders under
+	// open-denylist: this file's own markers plus lower-layer closures no
+	// local plain entry re-opened (mirroring egressRows' matching).
+	var localPlain []string
+	for _, en := range m.egress {
+		if isRemovalName(en) {
+			e.Closed++
+		} else {
+			localPlain = append(localPlain, en)
+		}
+	}
+	for _, c := range m.lowerNow().EgressClosed {
+		reopened := false
+		for _, p := range localPlain {
+			if config.EgressClosureMatches(c, p) {
+				reopened = true
+				break
+			}
+		}
+		if !reopened {
+			e.Closed++
+		}
 	}
 	lower := m.lowerNow()
 	e.RawRunArgs = len(splitLines(m.textValue(fRunArgs)))+len(lower.RunArgs) > 0

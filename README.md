@@ -309,6 +309,11 @@ one-shot helper joins its network namespace, installs the allowlist rules, and
 verifies them. Only then does the agent launch behind the wall -- and if any of
 that fails, the box dies closed rather than running open.
 
+Just want to block telemetry, not the internet? The _firewall-open_ skill
+keeps the network open and drops only the hosts you block:
+`egress = ["!statsig.anthropic.com"]`. The same `!host` entries subtract from
+the full firewall's allowlist too, skill-declared endpoints included.
+
 ### Mount other folders from the host?
 
 tldr: `byre config` -> Mounts

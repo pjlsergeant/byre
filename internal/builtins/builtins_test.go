@@ -416,7 +416,7 @@ func TestFirewallOpenSkillResolves(t *testing.T) {
 		t.Fatalf("firewall-open + claude must resolve together: %v", err)
 	}
 	posture, by := res.NetworkPosture()
-	if posture != skills.PostureOpenDenylist || by != "byre/firewall-open" {
+	if posture != config.PostureOpenDenylist || by != "byre/firewall-open" {
 		t.Errorf("posture = %q by %q", posture, by)
 	}
 	hooks := res.NetnsInits()

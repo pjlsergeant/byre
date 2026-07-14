@@ -352,16 +352,28 @@ performed in the box instead; see ADR 0007.
 ### Network
 
 **Posture**:
-The box's network stance: `open` (default) or `deny-by-default` (the
-firewall skill). Declared by a skill via `network_posture`; printed by
-status under the honesty rules.
+The box's network stance: `open` (default), `deny-by-default` (the
+firewall skill), or `open-denylist` (the firewall-open skill: open
+network, the config's closures dropped). Declared by a skill via
+`network_posture`; printed by status under the honesty rules.
 
 **Egress**:
 The derived allowlist: every enabled skill declares the `host[:port]`
 endpoints it NEEDS to function, byre unions them (plus the user's
-`egress` config key, ADR 0019) and enforces them as port-scoped per-IP
-rules. Empty is legal -- a maximally-locked box. An egress entry under a
-restrictive posture is a grant; without one it is declared and inert.
+`egress` config key, ADR 0019), subtracts the closures, and enforces
+the rest as port-scoped per-IP rules. Empty is legal -- a maximally-
+locked box. An egress entry under a restrictive posture is a grant;
+without one it is declared and inert.
+
+**Closure**:
+A `!host[:port]` entry in the `egress` config key (ADR 0030). Unlike
+the plain-list `!name` idiom it is not consumed by the merge: it
+survives the cascade and subtracts its endpoint from the DERIVED
+allowlist, skill-declared entries included ("claude minus statsig").
+Portless closes EVERY port (addition is never greedy, subtraction may
+be); a later layer's plain entry re-opens. Under open-denylist the
+closures are themselves the enforced list. Never invisible: status
+prints them as `Closed:` rows whatever the posture.
 
 **Offered egress**:
 A declared-but-CLOSED door (`egress_offered`, ADR 0020): same grammar,

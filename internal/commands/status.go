@@ -261,7 +261,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// user's own `egress` config entries still print, marked unenforced:
 	// config must not carry invisible teeth that a later skill toggle arms
 	// (ADR 0019).
-	enforcesAllowlist := s.NetPosture != "" && s.NetPosture != skills.PostureOpenDenylist
+	enforcesAllowlist := config.PostureEnforcesAllowlist(s.NetPosture)
 	egress := s.Egress
 	unenforced := ""
 	if !enforcesAllowlist {
@@ -452,7 +452,7 @@ func closureLine(c string, s statusInfo) string {
 	switch {
 	case s.SkillErr != "":
 		return disp + "  (config — posture unknown, skills unresolved)"
-	case s.NetPosture == skills.PostureOpenDenylist:
+	case s.NetPosture == config.PostureOpenDenylist:
 		return disp + "  (config — blocked; skill: " + s.NetPostureSkill + ")"
 	case s.NetPosture == "":
 		return disp + "  (config — unenforced, network open)"
@@ -493,7 +493,7 @@ func networkLine(s statusInfo) string {
 		return "open"
 	}
 	claim := s.NetPosture
-	if claim == skills.PostureOpenDenylist {
+	if claim == config.PostureOpenDenylist {
 		// The claim carries the count (grilled 2026-07-14): the closures are
 		// the whole enforcement under this posture, so the top line says how
 		// many. "Best-effort" honesty (IP-snapshot blocking, aimed at

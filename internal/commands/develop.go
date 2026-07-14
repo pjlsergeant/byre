@@ -401,6 +401,7 @@ func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 		Ports:      len(rv.cfg.Ports),
 		Env:        len(envKeys),
 		Egress:     len(resolvedEgress(rv)),
+		Closed:     len(rv.cfg.EgressClosed),
 		RawRunArgs: len(rv.cfg.RunArgs) > 0,
 		RawBuild:   len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
 	}

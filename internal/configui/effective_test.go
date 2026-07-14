@@ -802,6 +802,38 @@ func TestExposureNowDisabledMountsAndPosture(t *testing.T) {
 	}
 }
 
+// Under open-denylist the network is open: the summary must count the
+// closures (the enforced list), never the allowlist (unenforced there) —
+// and an unmatched closure is a live entry, not a stale marker (it blocks a
+// real host whether or not anything declared it).
+func TestExposureNowOpenDenylist(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Skills["firewall-open"] = SkillRuntime{Posture: "open-denylist"}
+	m.skills = append(m.skills, "firewall-open")
+	sk := m.inh.Skills["docker"]
+	sk.Egress = []string{"registry.example.com:5000"}
+	m.inh.Skills["docker"] = sk
+	m.egress = []string{"!statsig.example.com", "!telemetry.example.com:443"}
+	e := m.exposureNow()
+	if e.Egress != 0 {
+		t.Errorf("allowlist count must not render under open-denylist: %d", e.Egress)
+	}
+	if e.Closed != 2 {
+		t.Errorf("closed = %d, want 2", e.Closed)
+	}
+	if !strings.Contains(e.NetworkLine(), "network open-denylist · 2 hosts blocked") {
+		t.Errorf("summary must carry the blocked count: %q", e.NetworkLine())
+	}
+	for _, r := range m.fieldRows(fEgress) {
+		if r.kind == rowStaleMarker {
+			t.Errorf("no closure is stale under open-denylist: %+v", r)
+		}
+	}
+	if r := rowByText(t, m.fieldRows(fEgress), "!statsig.example.com"); r.kind != rowLocal {
+		t.Errorf("unmatched closure should render as this file's live entry: %+v", r)
+	}
+}
+
 // Raw escape hatches — this layer's or an inherited layer's — degrade the
 // posture claim in the summary, mirroring status's networkLine honesty rule.
 func TestExposureNowRawConfigDegradesPosture(t *testing.T) {
