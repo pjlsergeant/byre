@@ -75,6 +75,8 @@ func TestMCPValidationRejects(t *testing.T) {
 		{"control char in command", MCP{Name: "x", Command: []string{"s\x1b[31m"}}, "control characters"},
 		{"bad scheme", MCP{Name: "x", URL: "ftp://h/m"}, "scheme must be"},
 		{"no host", MCP{Name: "x", URL: "https:///mcp"}, "missing a host"},
+		{"credentials in url", MCP{Name: "x", URL: "https://token@h.example/mcp"}, "must not carry credentials"},
+		{"userinfo pair in url", MCP{Name: "x", URL: "https://user:pass@h.example/mcp"}, "must not carry credentials"},
 		{"env value smuggled", MCP{Name: "x", Command: []string{"s"}, Env: []string{"TOKEN=abc"}}, "not a valid environment variable name"},
 		{"bad egress", MCP{Name: "x", Command: []string{"s"}, Egress: []string{"bad host"}}, "not a valid host"},
 	}

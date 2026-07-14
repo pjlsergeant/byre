@@ -118,6 +118,15 @@ func ValidateMCP(m MCP) error {
 		if u.Hostname() == "" {
 			return fmt.Errorf("mcp %s: url %q: missing a host", m.Name, m.URL)
 		}
+		// user:pass@ is credential syntax with no legitimate MCP-endpoint use,
+		// and the URL bakes into a secret-free file in the image (ADR 0033) —
+		// same stance as env_from_host refusing literals: a secret in wiring
+		// costume is refused at the shape level, not policed. (A query string
+		// stays allowed — legitimate endpoint shapes exist — and bakes into
+		// the image like an [env] literal; the docs say so.)
+		if u.User != nil {
+			return fmt.Errorf("mcp %s: url must not carry credentials (user@host) — tokens ride env names + env_from_host, never the baked url", m.Name)
+		}
 	}
 	for _, k := range m.Env {
 		if !envKeyRe.MatchString(k) {

@@ -72,17 +72,26 @@ func TestMCPSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 		t.Fatalf("inert closure: set=%+v err=%v", set2, err)
 	}
 
-	// The closure ALSO dissolves a would-be duplicate: with the name closed,
-	// neither claimant survives to conflict... but the reject happens on the
-	// union, before subtraction — pin that a closed name still hard-rejects
-	// when two ACTIVE sources claim it, so the error isn't maskable.
+	// A CLOSED name is not ACTIVE: it neither delivers nor collides. That
+	// makes `!name` the duplicate error's own working remedy — including for
+	// a skill+skill collision, which no cascade merge could otherwise fix
+	// short of disabling a whole skill (codex review 2026-07-15).
 	cfg3 := config.Config{
 		MCPs:      []config.MCP{{Name: "github", Command: []string{"a"}}},
 		MCPClosed: []string{"github"},
 	}
 	r3 := Resolved{Skills: []Skill{mkSkill("pete/tools", config.MCP{Name: "github", Command: []string{"b"}})}}
-	if _, err := MCPSet(cfg3, r3); err == nil {
-		t.Fatalf("duplicate must reject even when closed (the conflict is real; closing hides delivery, not the collision)")
+	set3, err := MCPSet(cfg3, r3)
+	if err != nil || len(set3) != 0 {
+		t.Fatalf("closing a colliding name must dissolve the collision: set=%+v err=%v", set3, err)
+	}
+	r4 := Resolved{Skills: []Skill{
+		mkSkill("a/x", config.MCP{Name: "github", Command: []string{"a"}}),
+		mkSkill("b/y", config.MCP{Name: "github", Command: []string{"b"}}, config.MCP{Name: "other", Command: []string{"o"}}),
+	}}
+	set4, err := MCPSet(config.Config{MCPClosed: []string{"github"}}, r4)
+	if err != nil || len(set4) != 1 || set4[0].MCP.Name != "other" {
+		t.Fatalf("skill+skill collision must dissolve under the closure: set=%+v err=%v", set4, err)
 	}
 }
 

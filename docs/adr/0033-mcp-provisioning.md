@@ -74,7 +74,11 @@ and format are a quasi-public contract: golden-tested like the Dockerfile,
 format changes are versioned decisions. Env stanzas are deliberately absent
 from the render — inheritance delivers values, and a rendered `${VAR}` for
 an UNSET var passes the literal through as a garbage credential
-(spike-verified).
+(spike-verified). Guarding the secret-free claim: a url carrying
+credentials (`user@host`) is refused at validation — same stance as
+`env_from_host` refusing literals — while a query string stays allowed
+(legitimate endpoint shapes exist) and bakes into the image exactly like
+an `[env]` literal; don't put secrets in either.
 
 ## Adapters: evidence-forced special-casing
 

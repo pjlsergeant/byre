@@ -30,11 +30,18 @@ type MCPDecl struct {
 // sources (config+skill, skill+skill) are a hard reject — replace-by-name is
 // cascade vocabulary, and a skill silently shadowing another's server (or
 // the config's) would be surprising; the remedy names both claimants. A
-// closure matching nothing is inert (config hygiene, not an error).
+// CLOSED name is not active: it neither delivers nor collides, which is
+// what makes `!name` the remedy the duplicate error suggests — the only
+// per-server fix for a skill+skill collision short of disabling a whole
+// skill (codex review, 2026-07-15). A closure matching nothing is inert
+// (config hygiene, not an error).
 func MCPSet(cfg config.Config, r Resolved) ([]MCPDecl, error) {
 	var out []MCPDecl
 	claimedBy := map[string]string{}
 	add := func(src string, m config.MCP) error {
+		if slices.Contains(cfg.MCPClosed, m.Name) {
+			return nil // closed: subtracted from every source, so never active
+		}
 		if prev, ok := claimedBy[m.Name]; ok {
 			return fmt.Errorf("mcp %s: declared by both %s and %s — remove one, or close the name with \"!%s\" in the config mcp list",
 				m.Name, mcpSourceLabel(prev), mcpSourceLabel(src), m.Name)
@@ -54,16 +61,6 @@ func MCPSet(cfg config.Config, r Resolved) ([]MCPDecl, error) {
 				return nil, err
 			}
 		}
-	}
-	// Closures subtract last, after the union — exact-name matches.
-	if len(cfg.MCPClosed) > 0 {
-		kept := out[:0:0]
-		for _, d := range out {
-			if !slices.Contains(cfg.MCPClosed, d.MCP.Name) {
-				kept = append(kept, d)
-			}
-		}
-		out = kept
 	}
 	return out, nil
 }
