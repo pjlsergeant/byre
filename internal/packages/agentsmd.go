@@ -52,7 +52,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 			bak, berr := reserveBakName(path)
 			if berr == nil {
 				if berr = os.Rename(path, bak); berr != nil {
-					// Don't leave the empty reserved placeholder behind.
+					// Don't leave an empty .bak-* placeholder behind.
 					_ = os.Remove(bak)
 				}
 			}
@@ -88,22 +88,16 @@ func ensureAgentsMD(home string, out io.Writer) error {
 	return nil
 }
 
-// reserveBakName reserves a destination for preserving a foreign AGENTS.md:
-// plain .bak when free, otherwise a unique .bak-* file. Both branches
-// exclusively CREATE the destination (the caller's rename replaces only the
-// placeholder we own), so an existing backup -- byre's own earlier takeover
-// or the user's, even one landing concurrently -- is never clobbered.
+// reserveBakName picks a destination for preserving a foreign AGENTS.md:
+// plain .bak when free, otherwise a unique .bak-* file, so an existing
+// backup -- byre's own earlier takeover or the user's -- is never
+// clobbered.
 func reserveBakName(path string) (string, error) {
 	bak := path + ".bak"
-	f, err := os.OpenFile(bak, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err == nil {
-		f.Close()
+	if _, err := os.Lstat(bak); os.IsNotExist(err) {
 		return bak, nil
 	}
-	if !os.IsExist(err) {
-		return "", err
-	}
-	f, err = os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".bak-*")
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".bak-*")
 	if err != nil {
 		return "", err
 	}
