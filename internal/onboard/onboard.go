@@ -49,7 +49,7 @@ type Favourite struct {
 }
 
 // SharedAuthOffer is what the caller passes for one agent's shared-auth
-// decision (ADR 0025): zero or more provenance-labeled claimants, a
+// decision: zero or more provenance-labeled claimants, a
 // yes-inclination prefill (legacy array), an optional saved companion pick,
 // and a notice when the saved pick is no longer available.
 type SharedAuthOffer struct {

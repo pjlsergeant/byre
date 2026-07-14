@@ -27,7 +27,7 @@ dockerfile_pre = [
   "RUN GOBIN=/usr/local/bin GOPATH=/tmp/gr GOMODCACHE=/tmp/gr/mod GOCACHE=/tmp/gr/cache GOTOOLCHAIN=auto go install github.com/goreleaser/goreleaser/v2@latest && rm -rf /tmp/gr",
 ]
 
-# Acquisition hints (D16b): where the installed skills above come from. Never
+# Acquisition hints (ADR 0029): where the installed skills above come from. Never
 # auto-fetched — a missing package prints the exact install command from here.
 [sources]
 "pjlsergeant/codereview" = { uri = "https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml", digest = "sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f" }
