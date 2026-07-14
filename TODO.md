@@ -45,16 +45,15 @@ the rationale lives.
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
   interaction with the origin-pinning rules before building.
-- [ ] (M) **Egress closures + open-denylist mode + `byre denials`** (Pete,
-  2026-07-13/14; in flight, branch `default-open-firewall`): `!host` in
-  `egress` subtracts from the derived allowlist INCLUDING skill-declared
-  entries (status: removed-by-config, not vanished); a second builtin skill
-  enforces the open-denylist posture (default ACCEPT, DROP the `!host`s,
-  claim like "open (N hosts blocked)", best-effort IP-snapshot, worded so);
-  `byre denials` shows an iptables-counter snapshot -- named per-host table
-  under open-denylist, aggregate-only under deny-by-default, with the command
-  itself explaining why names aren't available there (see resolver sidecar,
-  Maybe someday).
+- [ ] (M) **Egress closures + open-denylist mode** (Pete, 2026-07-13/14;
+  in flight, branch `default-open-firewall`; design grilled 2026-07-14):
+  `!host[:port]` in `egress` subtracts from the derived allowlist INCLUDING
+  skill-declared entries (status: removed-by-config, not vanished; portless
+  closes EVERY port; later plain entry re-opens); the `firewall-open` builtin
+  enforces the open-denylist posture (default ACCEPT, DROP the closures,
+  fail closed incl. unresolvable hosts, claim "open (N hosts blocked)",
+  best-effort IP-snapshot worded as evadable/stale -- never as byre
+  shrugging). `byre denials` was cut from this unit -- see resolver sidecar.
 - [ ] (M) **Host-side test session.** The end-to-end cases that stay manual
   until agent-runnable tests exist: fresh-develop file ownership + launch
   path, builtins fresh-volume UID, concurrent worktree sessions, shared-auth
@@ -106,9 +105,14 @@ plan to get to any time soon:
 
 - [ ] (L) **Filtering DNS resolver sidecar** (Pete, 2026-07-14): a resolver
   byre runs in the box's DNS path, so denials are seen as NAMES, not IPs --
-  the only route to hostname-level denial logging under deny-by-default, and
-  it closes the documented DNS-tunneling hole (firewall.sh v1 note). Not
-  urgent; fine if it waits months for someone who wants it.
+  it closes the documented DNS-tunneling hole (firewall.sh v1 note) and is
+  where denial VISIBILITY (a `byre denials` view, counts in status) lands.
+  An interim counter-reading tier (iptables -vnxL via a post-hoc root helper)
+  was considered and REJECTED 2026-07-14: most of the machinery (recorded-ID
+  targeting, a privileged read on byre's passive commands) for packet counts
+  with no names/timestamps -- and interim scaffolding toward the companion
+  service byre deliberately doesn't run yet. Don't re-propose the counter
+  tier; build this instead. Not urgent; fine if it waits months.
 
 
 ## Parked / consciously not doing
