@@ -344,12 +344,14 @@ _Avoid_: calling an MCP a grant, or its status rows "grant honesty
 machinery" -- they are config-application reporting.
 
 **MCP adapter**:
-How a selected agent's session receives the declared set. `[agent]
+How a selected agent's session receives the declared set — always by
+INJECTION: byre never writes an agent's MCP state (ADR 0033). `[agent]
 mcp = "inject"` is the skill author's vouch that the agent command
-consumes the baked file (claude: `--mcp-config`). An adapter-less agent
-degrades honestly: status says declared-but-NOT-delivered and points at
-the baked path. The reserved `byre__` registrar namespace for
-state-writing CLIs is designed, not built (ADR 0033).
+consumes the baked file (claude: `--mcp-config`; codex: a skill-owned
+wrapper deriving `-c` overrides). An adapter-less agent degrades
+honestly: status says declared-but-NOT-delivered and points at the baked
+path. A state-writing registrar under a reserved `byre__` namespace was
+designed and walked back; the name grammar keeps the prefix unreachable.
 
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The

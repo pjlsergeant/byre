@@ -77,10 +77,10 @@ func (m MCP) Endpoint() (host string, port int, ok bool) {
 }
 
 // mcpNameRe is the MCP name grammar. Deliberately tighter than most: the
-// name becomes a JSON key in the baked mcp.json, an attribution label
-// (mcp:<name>) on status rows, and — for state-writing adapters — part of a
-// registered server id. No underscores, so a declared name can never carry
-// the reserved `byre__` registrar prefix.
+// name becomes a JSON key in the baked mcp.json and an attribution label
+// (mcp:<name>) on status rows. No underscores, so a declared name can never
+// carry the `byre__` prefix — reserved for free against a state-writing
+// future byre walked back (ADR 0033, "The registrar that wasn't").
 var mcpNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // ValidateMCP checks one declaration's own shape. Shared by the config

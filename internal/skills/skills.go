@@ -62,8 +62,9 @@ type AgentContrib struct {
 	// baked /etc/byre/mcp.json (e.g. claude's --mcp-config flag) — the skill
 	// author VOUCHES the command does so. Absent means the agent has no MCP
 	// adapter: declared servers still bake into the file, and status reports
-	// them declared-but-not-delivered with the file path. Closed set; other
-	// values are reserved for future adapters (registrars) and rejected.
+	// them declared-but-not-delivered with the file path. Closed set —
+	// injection is byre's only adapter mechanism (ADR 0033); an unknown
+	// value is rejected, not treated as a vouch.
 	MCP string `toml:"mcp"`
 }
 

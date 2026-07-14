@@ -1,13 +1,14 @@
-# MCP servers are wiring: [[mcp]] declarations, an always-baked file, agents adapt per CLI
+# MCP servers are wiring: [[mcp]] declarations, an always-baked file, injection-only adapters
 
 Decided 2026-07-14/15 (a four-round design marathon with Pete: three
 anchored reviews plus a greenfield round, then six spikes — spike results in
-`wip/` history, absorbed here). byre gains an `[[mcp]]` vocabulary for
+`wip/` history, absorbed here; amended same-day after a scope grilling, see
+"The registrar that wasn't" below). byre gains an `[[mcp]]` vocabulary for
 wiring Model Context Protocol servers into a box. Declarations are
 **configuration, not grants**; the canonical declared set bakes to
-`/etc/byre/mcp.json` in **every** image; **claude injects** it with
-`--mcp-config` (no state writes at all); state-writing CLIs get a designed
-but not-yet-built registrar protocol under a reserved `byre__` namespace.
+`/etc/byre/mcp.json` in **every** image; adapters are **injection-only** —
+claude via `--mcp-config`, codex via a skill-owned wrapper deriving `-c`
+overrides — and byre never writes an agent's MCP state, ever.
 
 Principles: legibility (P4) drives the attribution and status surfaces;
 opinion-free core (P2) keeps per-CLI mechanics in agent skills; box-scoped
@@ -80,50 +81,85 @@ credentials (`user@host`) is refused at validation — same stance as
 (legitimate endpoint shapes exist) and bakes into the image exactly like
 an `[env]` literal; don't put secrets in either.
 
-## Adapters: evidence-forced special-casing
+## Adapters: injection-only
 
 Uniform mechanism died to probe evidence; the uniform thing is the
-*contract* (declared set available; removal converges; provenance
-structural), not the mechanism.
+*contract* (the baked file; declared set available; removal converges;
+provenance structural), not the mechanism. `[agent] mcp = "inject"` is a
+skill author's vouch that the agent command consumes the baked file
+(closed set; typos refuse at resolve).
 
-**claude (v1, shipped): injection.** The claude skill's agent command
-carries `--mcp-config /etc/byre/mcp.json`, and `[agent] mcp = "inject"` is
-the author's vouch that it does (closed set; typos refuse at resolve).
-That's the whole adapter: no list, no writes, no scopes, no lock, no
-receipt. Probe-backed reasons state-reconcile was hostile on claude: no
-update verb, no JSON list, a health-checking `list`, a multi-scope model
-where `-s project` writes the repo tree. Spike-verified semantics: an
-injected server SHADOWS a same-name user-state twin (which never spawns);
-other user-state servers union in; convergence is exact per session by
-construction. Costs on the record: attach-shell `claude` sessions don't see
-byre's servers (the shell is not the agent session); a stale-image sibling
-box injects its own old set into its own session only.
+**claude (shipped): file injection.** The claude skill's agent command
+carries `--mcp-config /etc/byre/mcp.json`. That's the whole adapter: no
+list, no writes, no scopes, no lock, no receipt. Probe-backed reasons
+state-reconcile was hostile on claude: no update verb, no JSON list, a
+health-checking `list`, a multi-scope model where `-s project` writes the
+repo tree. Spike-verified semantics: an injected server SHADOWS a
+same-name user-state twin (which never spawns); other user-state servers
+union in; convergence is exact per session by construction.
 
-**State-writing adapters (gemini; grok if ever revived): the `byre__`
-namespace protocol — DESIGNED, NOT BUILT.** First implementation ships with
-whichever state-writing agent arrives first (likely the OpenCode/gemini
-pass). The protocol, pinned so it isn't re-litigated: inside `byre__*` in
-the adapter's pinned volume-resident scope, config wins like apt (hand
-edits trampled; removal path is config); outside it byre issues no
-mutations, ever. Reconcile order: authoritative JSON read → plan → adds →
-diff-before-mutate updates → stale removals LAST and only after a clean
-enumeration; a partial read suppresses ALL deletion. A volume-resident lock
-with a declared-set generation stamp stops a stale-image sibling reverting
-a newer generation; without the lock, adds-only and report degraded. A
-receipt (`last_reconcile.json`) renders in status as HISTORICAL data, never
-present-tense. Spiked contract facts: codex has `mcp list --json`,
-overwrite-in-place add, exit-0 missing remove, and per-invocation `-c`
-injection that writes nothing — **if codex becomes a selectable agent, its
-adapter is injection, not the registrar**; grok has `--json` with scope
-attribution, add-or-update, exit-1 missing remove, `-s user` volume scope.
+**codex (shipped): flag injection via a skill-owned wrapper.** Codex has
+no config-file flag but honors per-invocation `-c mcp_servers.*` overrides
+— live-verified state-free on 0.144.3, full tool-call round trip. The
+flags vary with the declared set, so a static skill.toml command can't
+carry them; instead the codex skill ships `byre-codex-mcp-launch`, which
+reads the baked file at launch, derives the `-c` overrides, and execs
+codex. Core stays opinion-free (P2): the CLI-specific syntax and quoting
+live in the CLI's own skill, and the baked file is the adapter contract.
+One probe-forced wrinkle: codex passes MCP servers a SCRUBBED env (unlike
+claude's full inheritance), so declared env NAMES ride the file's
+`x_byre_env` extension key (claude ignores it — probe-verified) and the
+wrapper forwards them via codex's `env_vars` by-name passthrough.
 
-**Registrar-less agents degrade** (P1: report, never block): status shows
+**Adapter-less agents degrade** (P1: report, never block): status shows
 declared-but-NOT-delivered plus the baked path as the manual wiring point.
-No fabricated per-CLI commands for unprobed CLIs.
+No fabricated per-CLI commands for unprobed CLIs. grok has no injection
+seam on its current launch surface (probed 0.2.101; `grok setup` and
+config layering unprobed); gemini's CLI is unprobed entirely and may
+inject for free — both degrade until evidence arrives, likely with the
+OpenCode/gemini agent-mechanics pass.
 
-**Selection seam:** delivery keys off the SELECTED agent (the dogfood box
-enables codex as a non-agent reviewer skill; nothing may run registrations
-for skills that aren't the actor). The bake is unconditional regardless.
+**Costs on the record for both adapters:** attach-shell agent sessions
+don't see byre's servers (the shell is not the agent session); a
+stale-image sibling box injects its own old set into its own session only.
+
+## The registrar that wasn't (byre__ namespacing, walked back)
+
+The design rounds produced a full state-writing reconcile protocol under a
+reserved `byre__` namespace: pinned volume-resident scopes, authoritative
+JSON reads, diff-before-mutate, stale deletions last and only after clean
+enumeration, a volume lock carrying a declared-set generation stamp, a
+historical receipt rendered by status. It was review-hardened by three
+independent reviewers and pinned "so it isn't re-litigated."
+
+**Why we had it:** the design night's probes made claude look like the
+injection *exception* — the one CLI whose state verbs were too hostile to
+reconcile — so state-writing looked like the GENERAL case, and safe
+convergence in a file the user also hand-edits needs structural provenance:
+the namespace was load-bearing (the alternatives — a provenance ledger,
+never-deleting, owning the whole table — were each killed on their own
+demerits).
+
+**Why we could discard it (ruled 2026-07-15):** same-day spikes flipped
+the picture. Codex — the protocol's friendliest customer — turned out to
+inject state-free via `-c`, proven with a live tool call. Claude alone was
+weak coverage; claude + codex is dominant, and gemini may inject for free
+once probed. That left the protocol one confirmed customer (grok) and a
+known-unsound piece (the generation stamp has no monotonic source). A
+review-hardened protocol with at most one consumer and a hole is exactly
+the machinery proportionality says not to pin. So: **byre's MCP
+architecture is injection-only.** Outside its own baked file, byre never
+mutates agent MCP state. If a demanded agent someday truly cannot inject,
+the state-writing design gets re-derived from that CLI's live facts — this
+section is the map of what was learned, not a spec to build. The `[[mcp]]`
+name grammar (no underscores) keeps `byre__` structurally unreachable, so
+the namespace stays reserved for free.
+
+**Selection seam (unchanged):** delivery keys off the SELECTED agent (the
+dogfood box enables codex as a non-agent reviewer skill beside claude —
+and both claude and codex are selectable agents; nothing runs adapter
+work for skills that aren't the actor). The bake is unconditional
+regardless.
 
 ## Egress, OAuth, connectors
 
@@ -152,31 +188,35 @@ for skills that aren't the actor). The bake is unconditional regardless.
   (P5). No re-enable knob in v1 — it's a consent question for when a real
   user asks; the parked runtime-env work is the likely vehicle.
 
-## v1 scope (builder's calls, Pete may override)
+## v1 scope (grilled and ruled, 2026-07-15)
 
-claude-inject only; gemini takes the degradation path until its agent-
-mechanics pass; the namespace protocol stays design. No `byre mcp add`
-sugar (the declaration is three TOML lines). No config-UI editor screen —
-`[[mcp]]` round-trips VERBATIM through the UI (untouched-field
-preservation), hand-edit rides the UI's $EDITOR round-trip, and status is
-the detailed view.
+Adapters: claude + codex (injection); grok and gemini degrade honestly
+until injection evidence arrives. Account connectors: filtered, silently,
+no re-enable knob (a consent question for when a real user asks).
+`byre mcp add/remove/list` ships (`--global` targets default.config;
+`remove` is closure-smart). The config UI gets a full `[[mcp]]` editor
+screen — the earlier no-screen call was schedule dressed as scope, and the
+cockpit doesn't get to omit a config class every sibling class has.
 
 ## Dead (do not re-propose; reasons in the design history)
 
 Legibility/"read before you run" as the pitch; a from-mcp converter;
 firewall-as-egress-discovery (the firewall DROPs silently BY DESIGN);
 `--strict-mcp-config`; an explicit seed flag; provenance ledgers and
-hash-marker offer-once (the namespace/injection make memory jobless);
-purging outside the namespace; uniform-mechanism-for-uniformity's-sake;
-success-tense status captions for state-writing delivery; names-only drift
-detection.
+hash-marker offer-once (injection makes memory jobless); purging outside a
+namespace; uniform-mechanism-for-uniformity's-sake; success-tense status
+captions; names-only drift detection; and the `byre__` state-writing
+registrar itself (walked back above — re-derive from live CLI facts if a
+demanded agent ever truly cannot inject; do not build the recorded sketch).
 
 ## Consequences
 
-Two mechanism stories to maintain (evidence-forced, not preference).
+One mechanism story (injection), two deliveries (a flag, a wrapper).
 `byre.config` grows a structured list whose entries carry attributed
 grants; every image grows one COPY layer (placed after skills/agent so an
-mcp change never busts their layers). The claude skill's command string now
-encodes the adapter — a future claude CLI breaking `--mcp-config` semantics
-is a skill fix, not a core one. Per-server disable of a skill's MCP is
+mcp change never busts their layers). The agent skills' command strings now
+encode their adapters — a future CLI breaking `--mcp-config` or `-c`
+semantics is a skill fix, not a core one. The baked file's format is a
+two-consumer contract (claude parses it, the codex wrapper derives from
+it), pinned by tests on both sides. Per-server disable of a skill's MCP is
 `!name`; disabling the whole skill remains the blunt instrument.

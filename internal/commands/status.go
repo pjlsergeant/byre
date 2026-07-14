@@ -545,7 +545,7 @@ func mcpStatusLine(d skills.MCPDecl, s statusInfo) string {
 
 // mcpDeliveryLine says how (whether) the declared set reaches the agent
 // session. Injection is static truth — deterministic from the image — so it
-// speaks plainly; a registrar-less agent gets the honest degradation: the
+// speaks plainly; an adapter-less agent gets the honest degradation: the
 // set is baked at a stable path, the wiring into that agent is the user's.
 func mcpDeliveryLine(s statusInfo) string {
 	names := make([]string, len(s.MCPs))
