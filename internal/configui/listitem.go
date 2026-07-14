@@ -201,9 +201,15 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		}
 		// Deleting an OVERRIDE re-inherits the lower layer's entry — that's
 		// the cascade working, but "delete" must not read as "gone" (grok
-		// review 2026-07-15; mounts/env/mcp share the shape).
+		// review 2026-07-15; mounts/env/mcp share the shape). Env has no
+		// Remove action (inherited vars can't be unset from this layer), so
+		// its note must not advertise one (grok verify round).
 		if r.kind == rowOverride && r.source != "" {
-			m.status = "override removed — the " + r.source + " entry is back in effect; use its Remove action to turn it off here"
+			if m.listField == fEnv {
+				m.status = "override removed — the " + r.source + " value is back in effect (an inherited var can't be unset from this layer)"
+			} else {
+				m.status = "override removed — the " + r.source + " entry is back in effect; use its Remove action to turn it off here"
+			}
 		}
 	case actRemoveHere:
 		m.removeHere(r)
