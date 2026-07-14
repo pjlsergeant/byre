@@ -158,7 +158,7 @@ generated deliver app instead.
 - `byre deliver --install-app` (follow-on tranche) generates the
   "deliver app" — a readable generated artifact, display name "Byre
   Deliver" — because macOS Dock drop targets must be `.app` bundles.
-- The user guide `docs/deliver.md` owns user-facing behavior including
+- The user guide `docs/DELIVER.md` owns user-facing behavior including
   the degradation matrix; ARCHITECTURE owns internals; this ADR owns
   the decisions; GLOSSARY owns the words (deliver, inbox, deliver app).
 - Consciously accepted: an agent racing symlinks into a freshly created

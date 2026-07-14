@@ -10,7 +10,7 @@
 # endorse moving auth.json between machines; the first `codex login` in any
 # box writes straight through the dangling link into the shared volume, so
 # there is no bootstrap prompt at all. Evidence:
-# docs/agent-credential-mechanics.md. (Claude gets a token-env mechanism
+# docs/AGENT-CREDENTIAL-MECHANICS.md. (Claude gets a token-env mechanism
 # instead — its refresh rotation makes file sharing unsafe; see
 # claude-shared-auth.)
 #

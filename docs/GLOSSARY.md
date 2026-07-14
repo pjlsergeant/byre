@@ -233,7 +233,7 @@ compose + buildx; mounts the socket; runner injects numeric
 `--group-add` from an engine-side gid probe (`sock_groups`); declares a
 `containment` hole so status/launch/adoption/config UI disclaim the
 warranty for anything done through the socket. User-facing discussion:
-`docs/docker-host.md`.
+`docs/DOCKER-HOST.md`.
 
 **Shared-auth offer**:
 The first-run picker's per-box question -- "Opt this box into <agent>

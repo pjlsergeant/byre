@@ -680,7 +680,7 @@ func TestResolveSockGroupsAndContainment(t *testing.T) {
 [runtime]
 mounts = [{ host = "/var/run/docker.sock", target = "/var/run/docker.sock", mode = "rw" }]
 sock_groups = ["/var/run/docker.sock"]
-containment = "docker-host opens a containment hole -- skim docs/docker-host.md"
+containment = "docker-host opens a containment hole -- skim docs/DOCKER-HOST.md"
 egress = []
 `, nil)
 	res, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir))

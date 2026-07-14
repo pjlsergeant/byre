@@ -47,7 +47,7 @@ shared machines, treat daemon access as root. byre's uid-qualified
 naming (`byre-<id>-u<uid>-...` images, `byre-machine-u<uid>-...`
 volumes) prevents users *accidentally* sharing state; it cannot stop a
 daemon user doing it deliberately. The optional `docker-host` skill is
-exactly this grant, made legible: see `docs/docker-host.md` before
+exactly this grant, made legible: see `docs/DOCKER-HOST.md` before
 enabling it.
 
 **A skill is trusted code -- enabling one hands it the box.** Skills

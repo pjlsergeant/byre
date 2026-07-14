@@ -478,7 +478,7 @@ Resolution: the skill is retired to a resolvable no-op stub; the grok
 skill's login hook removes ANY symlinked `auth.json` (healing damaged
 boxes at next launch); per-box logins are the supported shape. Two rebuild
 designs (auth broker; fork-shipping watcher + refresh jitter) are PARKED
-with their own gates in `docs/grok-shared-auth-v2-designs.md`. The
+with their own gates in `wip/grok-shared-auth-v2-designs.md`. The
 `XAI_API_KEY` path is ruled out on cost (see §4).
 
 ## Implications for the shared-auth split

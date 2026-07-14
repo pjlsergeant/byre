@@ -100,7 +100,7 @@ context_target = "/home/dev/.grok-home/AGENTS.md"
 # host). Log in per-box via the device-auth hook above; the .grok state volume
 # persists the login across rebuilds. There is NO working shared-auth for
 # grok: single-use token rotation killed the file-sharing design (ADR 0023;
-# rebuild designs parked in docs/grok-shared-auth-v2-designs.md).
+# rebuild designs parked in wip/grok-shared-auth-v2-designs.md).
 
 [[volumes]]
 name = ".grok"

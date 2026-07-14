@@ -8,7 +8,7 @@
 # never reaches the shared volume, the shared copy's chain dies within hours
 # ("ServerRejected", unrecoverable), and v1's every-launch symlink heal then
 # clobbered working per-box logins with the corpse. Full mechanics:
-# docs/agent-credential-mechanics.md; decision record: docs/adr/0023.
+# docs/AGENT-CREDENTIAL-MECHANICS.md; decision record: docs/adr/0023.
 #
 # This stub stays so a config naming "grok-shared-auth" still resolves — it
 # contributes NOTHING (no hooks, no volumes; boxes fall back to per-box
@@ -19,12 +19,12 @@
 #
 # Two rebuild designs are PARKED, not dead — an auth broker riding grok's
 # GROK_AUTH_PROVIDER_COMMAND seam, and a fork-shipping watcher + refresh
-# jitter: docs/grok-shared-auth-v2-designs.md. (The env API-key path is
+# jitter: wip/grok-shared-auth-v2-designs.md. (The env API-key path is
 # ruled out: xAI API billing is separate from the subscription and ~50x the
 # cost at agent volumes.)
 
 # Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): a retired
 # skill is never put in front of users. A rebuild declares it only after
-# passing its gates (docs/grok-shared-auth-v2-designs.md).
+# passing its gates (wip/grok-shared-auth-v2-designs.md).
 
-description = "RETIRED — grok's single-use token rotation can't be file-shared (2026-07-10 field failure; ADR 0023). Boxes log in per project; rebuild designs are parked in docs/grok-shared-auth-v2-designs.md."
+description = "RETIRED — grok's single-use token rotation can't be file-shared (2026-07-10 field failure; ADR 0023). Boxes log in per project; rebuild designs are parked in wip/grok-shared-auth-v2-designs.md."

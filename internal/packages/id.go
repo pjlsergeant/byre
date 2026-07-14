@@ -1,6 +1,7 @@
 // Package packages is the skill/template package model: identity, manifests,
 // the multi-provider catalog, and the store-ensure path (bundled mirror +
-// legacy migration). See docs/WIP/skill-packages-design.md.
+// legacy migration). Decision record: docs/adr/0029-skills-are-packages.md;
+// user guide: docs/SKILLS.md.
 package packages
 
 import (

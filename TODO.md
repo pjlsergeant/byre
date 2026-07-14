@@ -33,7 +33,7 @@ the rationale lives.
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
   state-dir env, headless login + rotation, autonomy flag, context file,
   egress, headless permission mode -- grok's silent-death lesson); record in
-  docs/agent-credential-mechanics.md. Maybe a third reviewer.
+  docs/AGENT-CREDENTIAL-MECHANICS.md. Maybe a third reviewer.
 - [ ] (M) **Skill env guidance strings** (Pete, 2026-07-08): skills declare
   env vars they CONSUME with a one-line guidance string (sketch:
   `[[runtime.env_docs]]`); config UI env screen shows a dim suggestion row
@@ -64,7 +64,7 @@ the rationale lives.
   ergonomics. Needs a design pass: path translation, outside paths as a
   grant question, per-terminal drop behavior.
 - [ ] (L) **`byre deliver`: ssh:// remote delivery.** The remaining tranche
-  of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/deliver.md); the
+  of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/DELIVER.md); the
   mini-protocol is frozen there (--proto / --porcelain / --consume). Gated
   deliver test cases ride the agent-runnable-tests item.
 - [ ] (L) **Agent-runnable integration tests.** The gated
@@ -103,7 +103,7 @@ Decided negatives, recorded so they don't get re-raised. Rationale lives in
 the docs cited and in git history.
 
 - **grok-shared-auth rebuild** -- PARKED 2026-07-12 (ADR 0023); two gated
-  designs in docs/grok-shared-auth-v2-designs.md, run the gates BEFORE
+  designs in wip/grok-shared-auth-v2-designs.md, run the gates BEFORE
   building. `XAI_API_KEY` stays ruled out on cost.
 - **Secret-manager seed backend** -- host-path + config-literal covers the
   single-user case. If revived: the seed-source model reserves a

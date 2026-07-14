@@ -14,7 +14,7 @@
 # inference-only token that never rotates; the firstrun hook asks the user to
 # paste one (minted wherever a browser is handy — byre never reads anything
 # from the host), and the env hook exports it as CLAUDE_CODE_OAUTH_TOKEN.
-# Evidence: docs/agent-credential-mechanics.md.
+# Evidence: docs/AGENT-CREDENTIAL-MECHANICS.md.
 #
 # No token = clean degrade: the env hook exports nothing and Claude falls back
 # to this project's own in-box login, exactly as without this skill.

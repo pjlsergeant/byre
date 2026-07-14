@@ -685,7 +685,7 @@ func TestGrokBundledHookBehavior(t *testing.T) {
 // must still RESOLVE (configs naming it must not break a launch) while
 // contributing nothing — no hooks, no volumes, no identity mount. The
 // description carries the retirement notice into the picker. If a rebuild
-// lands (docs/grok-shared-auth-v2-designs.md), this test is the one to
+// lands (wip/grok-shared-auth-v2-designs.md), this test is the one to
 // replace.
 func TestGrokSharedAuthRetiredStub(t *testing.T) {
 	_, cat := testCat(t)

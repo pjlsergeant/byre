@@ -138,5 +138,5 @@ sticky-decline records are deleted; `adopted` records migrate to
   (replaced by ruling with the `byre skill archive-legacy` command plus
   loud store-ensure notices).
 
-User guide: `docs/skills.md`. Vocabulary: `GLOSSARY.md` (Packages
+User guide: `docs/SKILLS.md`. Vocabulary: `GLOSSARY.md` (Packages
 section).

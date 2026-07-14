@@ -7,8 +7,8 @@ symlinked into a machine-scoped identity volume) -- is **retired**
 (the Grok CLI is closed source, so the two claims file-sharing rests on
 could not be source-verified); the field ran them within a day and both
 failed. Decided by the maintainer; two rebuild designs are parked in
-`docs/grok-shared-auth-v2-designs.md`, mechanics recorded in
-`docs/agent-credential-mechanics.md`.
+`wip/grok-shared-auth-v2-designs.md`, mechanics recorded in
+`docs/AGENT-CREDENTIAL-MECHANICS.md`.
 
 ## Why it failed (field evidence, 2026-07-10, twice in one day)
 

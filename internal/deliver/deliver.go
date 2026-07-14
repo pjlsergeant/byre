@@ -7,7 +7,7 @@
 // package: engines arrive through the small Engine interface, and host-side
 // identity (label keys, workdir ids, the caller uid) arrives via Config, so
 // the whole flow is unit-testable with a fake engine. ADR 0021 carries the
-// rationale; docs/deliver.md is the user-facing behavior.
+// rationale; docs/DELIVER.md is the user-facing behavior.
 package deliver
 
 import (

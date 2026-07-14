@@ -1,7 +1,7 @@
 # Built-in skill: docker-host -- grant the box the host's Docker daemon.
 #
 # Design record: docs/adr/0027-docker-host-daemon-access.md. User-facing
-# security discussion: docs/docker-host.md. This is the ergonomic form of a grant already
+# security discussion: docs/DOCKER-HOST.md. This is the ergonomic form of a grant already
 # expressible by hand (socket mount + CLI + group); its value is bundling that
 # with honest, loud legibility.
 #
@@ -47,7 +47,7 @@ mounts = [{ host = "/var/run/docker.sock", target = "/var/run/docker.sock", mode
 sock_groups = ["/var/run/docker.sock"]
 # Warranty disclaimer (skills-only, multi-declarer renders all). Status and
 # launch frame this with 🛑; adoption/config UI print it as a top warning.
-containment = "docker-host opens a containment hole -- it can drive the host's Docker daemon. The guarantees below still describe the box; byre makes no warranty for what's done through this hole. At least skim docs/docker-host.md before enabling."
+containment = "docker-host opens a containment hole -- it can drive the host's Docker daemon. The guarantees below still describe the box; byre makes no warranty for what's done through this hole. At least skim docs/DOCKER-HOST.md before enabling."
 # CLI speaks a unix socket; open zero network doors.
 egress = []
 

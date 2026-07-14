@@ -9,7 +9,7 @@ contributes a **machine-scoped volume** -- new general config grammar,
 the small wiring that connects it (a firstrun hook; for Claude a launch
 env hook from the new `/etc/byre/env.d/` chassis mechanism). Decided
 2026-07-07; built and live-verified the same day (verification record at
-the end). Evidence in `docs/agent-credential-mechanics.md`; the build-plan
+the end). Evidence in `docs/AGENT-CREDENTIAL-MECHANICS.md`; the build-plan
 doc (`shared-auth-design.md`) served its purpose and was absorbed and
 deleted per its lifecycle, like `firewall-design.md` before it.
 
@@ -90,4 +90,4 @@ gemini-cli 0.49 stores its credential ENCRYPTED
 (`gemini-credentials.json`, key derived from hostname+username), so the
 gemini skill pins `--hostname byre` -- without which the login died on
 EVERY rebuild, shared or not. All live findings are version-stamped in
-`docs/agent-credential-mechanics.md`.
+`docs/AGENT-CREDENTIAL-MECHANICS.md`.

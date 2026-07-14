@@ -89,7 +89,7 @@ apply`. Both migrations are automatic or one command -- details below.
   Desktop host-stat false-negatives suppressed). Core plumbing:
   `BYRE_PROJECT` + `BYRE_WORKTREE` in every box; compose project name
   defaults to `byre-$BYRE_WORKTREE` so sibling worktrees do not collide.
-  User-facing discussion: `docs/docker-host.md`; design record: ADR 0027.
+  User-facing discussion: `docs/DOCKER-HOST.md`; design record: ADR 0027.
 - **`env.d` hooks are pure env-setters, and `byre shell` now shares the
   agent's environment.** `env.d` hooks (which set launch-time environment)
   are contractually export-only -- any command, prompt, or file mutation
@@ -258,8 +258,8 @@ apply`. Both migrations are automatic or one command -- details below.
   launch. Grok logs in per project -- that path is unaffected and correct.
   Rebuild designs (auth broker on `GROK_AUTH_PROVIDER_COMMAND`; watcher +
   refresh jitter) are parked with their gates in
-  `docs/grok-shared-auth-v2-designs.md`; mechanics and field evidence in
-  `docs/agent-credential-mechanics.md` §6. Ride-along corrections: the
+  `wip/grok-shared-auth-v2-designs.md`; mechanics and field evidence in
+  `docs/AGENT-CREDENTIAL-MECHANICS.md` §6. Ride-along corrections: the
   "~7 days" grok token lifetime in hooks/messages was wrong (~6h access
   tokens, silent refresh), and `XAI_API_KEY` is a fallback the stored login
   SHADOWS, not an override (vendor auth guide).
@@ -337,7 +337,7 @@ apply`. Both migrations are automatic or one command -- details below.
   clipboard as best-effort garnish (pbcopy/wl-copy/xclip, OSC 52 over SSH,
   `--no-clip` to skip). The inbox dies with the box -- re-deliver, it's one
   command. Boxes built before this release need one rebuild to gain
-  `/inbox`. User guide: docs/deliver.md.
+  `/inbox`. User guide: docs/DELIVER.md.
 - **New `byre deliver --install-app`**: generates the deliver app -- a
   "Byre Deliver" Dock/Finder drag target and a right-click "Deliver to
   Byre" Quick Action on macOS (assembled locally by `osacompile` from a

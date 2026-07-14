@@ -240,7 +240,7 @@ func TestRenderStatusContainmentAndSockGroups(t *testing.T) {
 		Skills:    []string{"docker-host"},
 		Containments: []skills.ContainmentDecl{{
 			Skill: "docker-host",
-			Text:  "docker-host opens a containment hole -- skim docs/docker-host.md",
+			Text:  "docker-host opens a containment hole -- skim docs/DOCKER-HOST.md",
 		}},
 		Grants: []skills.Grant{{
 			Skill:      "docker-host",

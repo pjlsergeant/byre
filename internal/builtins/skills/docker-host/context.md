@@ -25,7 +25,7 @@ and cleanable.
 
 The box's network rules (firewall, if any) do **not** apply to containers
 you launch. Daemon-side pulls and `--network host` ride the host's network.
-Security discussion: `docs/docker-host.md`.
+Security discussion: `docs/DOCKER-HOST.md`.
 
 If you need to run containers on a *different* host, point your own docker
 context / `DOCKER_HOST` at it (subject to opening egress to that host under a

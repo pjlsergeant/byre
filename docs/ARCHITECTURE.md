@@ -318,7 +318,7 @@ directories under `~/.byre/skills|templates/`; **installed** are
 content-addressed, hash-verified snapshots acquired with
 `byre skill install <manifest-url>` and inert until a config enables
 them. To edit an immutable package, `byre skill fork` it into a local
-one. `docs/skills.md` is the user guide. The store carries its own guide
+one. `docs/SKILLS.md` is the user guide. The store carries its own guide
 for host-side coding agents at `~/.byre/AGENTS.md` -- byre-owned,
 regenerated whenever it differs from the running binary's copy: the map,
 per-entry write rules (the consent-document rule for
@@ -507,12 +507,12 @@ byre forget       Remove all of byre's host-side state for this directory --
 
 byre skill ...    list / inspect <id|url> / install / uninstall / fork /
                   init / validate / pack -- the package verbs (same set on
-                  `byre template ...`). See docs/skills.md.
+                  `byre template ...`). See docs/SKILLS.md.
 byre preset ...   apply / inspect -- review and apply a config preset
                   (byre.preset, a path, or an https URI).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
-                  a running box's /inbox. User docs: docs/deliver.md.
+                  a running box's /inbox. User docs: docs/DELIVER.md.
 ```
 
 ### Deliver
@@ -551,7 +551,7 @@ paths are a drag onto the window (delivered as files), anything else
 is literal pasted text; graphical launches (no TTY, GUI present)
 also report via OS notification. Every degraded nicety states itself
 on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021;
-user behavior (and the what-works-where matrix) in `docs/deliver.md`.
+user behavior (and the what-works-where matrix) in `docs/DELIVER.md`.
 
 `byre deliver --install-app` materializes the deliver app — generated,
 readable host artifacts whose only job is invoking `byre deliver`: an

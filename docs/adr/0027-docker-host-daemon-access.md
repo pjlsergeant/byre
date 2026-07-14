@@ -94,7 +94,7 @@ warning summary (a new top-sorted class, above machine volumes: a standing
 host-wide hole must not hide below them), and the config UI. Skill-owned
 text, validated single-line / no-control-char / bounded so a declaration
 cannot forge adjacent rows. Multi-declarer renders all, attributed (unlike
-the single-declarer `network_posture`). `docs/docker-host.md` carries the
+the single-declarer `network_posture`). `docs/DOCKER-HOST.md` carries the
 full reasoning chain (root-equivalence, the Docker Desktop VM nuance,
 shared-auth volume exfiltration, when to prefer service sidecars).
 

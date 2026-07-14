@@ -274,7 +274,7 @@ Anything you deliver lands in the box's `/inbox` and the in-box path comes
 back on your clipboard, ready to Cmd-V into the agent prompt. With no
 arguments byre reads your *clipboard* — so screenshot, `byre deliver`,
 paste, done. Works from any directory (it finds your running box), over
-SSH, and with whole directories. See [docs/deliver.md](docs/deliver.md).
+SSH, and with whole directories. See [docs/DELIVER.md](docs/DELIVER.md).
 
 ### Get tab completion for byre commands?
 
