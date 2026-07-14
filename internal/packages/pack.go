@@ -194,21 +194,25 @@ func enumeratePayloads(root fs.FS, primary string) ([]FileEntry, error) {
 		if err != nil {
 			return err
 		}
-		if d.Type()&fs.ModeSymlink != 0 {
+		// d.Type() can be unknown (zero) on some filesystems; only the full
+		// lstat mode classifies reliably, and misreading a FIFO as regular
+		// would block the read below.
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		mode := info.Mode()
+		if mode&fs.ModeSymlink != 0 {
 			return fmt.Errorf("%s is a symlink; packages carry files, not links", p)
 		}
-		if d.IsDir() {
+		if mode.IsDir() {
 			return nil
 		}
-		if !d.Type().IsRegular() {
+		if !mode.IsRegular() {
 			return fmt.Errorf("%s is not a regular file", p)
 		}
 		if p == primary {
 			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
 		}
 		b, err := fs.ReadFile(root, p)
 		if err != nil {
