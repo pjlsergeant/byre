@@ -129,11 +129,22 @@ func pkgInspect(s Streams, kind packages.Kind, id string) error {
 	}
 	fmt.Fprintf(s.Out, "Kind:        %s\n", ent.Kind)
 	fmt.Fprintf(s.Out, "Version:     %s\n", packages.EscapeTerminal(ent.Version))
-	if ent.Provenance == packages.ProvInstalled {
+	switch ent.Provenance {
+	case packages.ProvInstalled:
 		fmt.Fprintf(s.Out, "Digest:      sha256:%s\n", packages.EscapeTerminal(ent.Digest))
 		if ent.SourceURI != "" {
 			// Provenance of acquisition, never an instruction byre follows.
 			fmt.Fprintf(s.Out, "Acquired:    %s\n", packages.EscapeTerminal(ent.SourceURI))
+		}
+	case packages.ProvBundled:
+		// Display digest computed from the embedded bytes (ADR 0029): inspect
+		// parity with installed rows, never an integrity claim.
+		if d, err := packages.DisplayDigest(ent); err == nil {
+			fmt.Fprintf(s.Out, "Digest:      sha256:%s\n", d)
+		} else {
+			// Our own embedded bytes failing to digest is a byre bug; degrade
+			// the claim loudly rather than blocking inspect.
+			fmt.Fprintf(s.Err, "byre: display digest unavailable for %s: %v\n", packages.EscapeTerminal(ent.ID), err)
 		}
 	}
 	fmt.Fprintf(s.Out, "Provenance:  %s\n", packages.EscapeTerminal(ent.ProvenanceLabel()))

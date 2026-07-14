@@ -134,7 +134,8 @@ sticky-decline records are deleted; `adopted` records migrate to
 - `byre skill update` is a transitional stub (bundled packages update
   with byre itself); the materialize/update/backup machinery and
   `skills.bak/` are gone.
-- Consciously deferred: bundled display digests in inspect, authenticated
+- Consciously deferred: bundled display digests in inspect (since shipped,
+  2026-07-14: computed from `embed.FS`), authenticated
   (private-repo) https fetch, and the interactive one-confirm legacy
   archive the design draft wanted (replaced by ruling with the
   `byre skill archive-legacy` command plus loud store-ensure notices).

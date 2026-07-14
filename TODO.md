@@ -25,9 +25,6 @@ the rationale lives.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
-- [ ] (S) **Bundled display digests in inspect** (deferral recorded in ADR 0029):
-  inspect on a bundled package shows no digest today; compute and show the
-  display digest so bundled/installed inspect output ranks equally.
 - [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
   `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
   2cfd8fb). Establish the per-agent facts empirically first (install shape,

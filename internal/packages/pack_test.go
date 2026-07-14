@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func writeLocalSkill(t *testing.T, home, id string, files map[string]string) string {
@@ -123,6 +124,63 @@ requires_byre = ">=0.1.0"
 	}
 	if _, _, err := Pack(ent); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("want symlink refusal, got %v", err)
+	}
+}
+
+// The bundled display digest is deterministic and moves with anything that
+// would move a pack of the same bytes: payload content and the synthesized
+// [package] core (whose version is the byre release).
+func TestDisplayDigestBundled(t *testing.T) {
+	digestFor := func(payload, displayVer string) string {
+		t.Helper()
+		fsys := fstest.MapFS{
+			"skills/tool/skill.toml": &fstest.MapFile{Data: []byte("description = \"a tool\"\n")},
+			"skills/tool/CONTEXT.md": &fstest.MapFile{Data: []byte(payload)},
+		}
+		cat, err := LoadCatalog(t.TempDir(), fsys, displayVer, strings.TrimPrefix(displayVer, "v"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ent, err := cat.ResolveName("tool")
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := DisplayDigest(ent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	base := digestFor("notes\n", "v0.2.0")
+	if len(base) != 64 {
+		t.Fatalf("digest = %q", base)
+	}
+	if digestFor("notes\n", "v0.2.0") != base {
+		t.Error("same bytes, same version must reproduce the digest")
+	}
+	if digestFor("other\n", "v0.2.0") == base {
+		t.Error("a payload change must move the digest")
+	}
+	if digestFor("notes\n", "v0.3.0") == base {
+		t.Error("a byre version change must move the digest (it is in the manifest core)")
+	}
+}
+
+func TestDisplayDigestRefusesNonBundled(t *testing.T) {
+	home := t.TempDir()
+	writeLocalSkill(t, home, "pete/tool", map[string]string{
+		"skill.toml": "description = \"local\"\n",
+	})
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DisplayDigest(ent); err == nil || !strings.Contains(err.Error(), "bundled") {
+		t.Fatalf("want bundled-only refusal, got %v", err)
 	}
 }
 
