@@ -78,16 +78,32 @@ func engineIdentity(r sessionRunner, uid, gid int) runner.Identity {
 }
 
 // imageTagCandidates lists every image tag this project may have built on
-// engine r, the engine's current identity first: the keep-id generic tag is
-// included only when the engine is rootless Podman — gated on the engine, so
-// a forget/rehome on a SHARED rootful daemon can never capture a uid-1000
-// user's image — and the legacy unqualified byre-<id> (pre-UID-bake builds)
-// comes last. uid/gid are the host user's ids (threaded for tests).
+// engine r, the engine's current identity first: the keep-id generic tag
+// when the engine is rootless Podman, the host-identity tag, and the legacy
+// unqualified byre-<id> (pre-UID-bake builds) last. uid/gid are the host
+// user's ids (threaded for tests).
+//
+// The generic tag rides confirmed ROOTLESSNESS alone, not the keep-id
+// version gate: a box built while keep-id was supported must stay
+// discoverable by forget/rehome after a Podman downgrade or a flaky version
+// probe. It stays engine-gated, though — on a SHARED rootful daemon the
+// u1000-g1000 tag may be a real uid-1000 user's image, which lifecycle
+// commands must never capture; rootless storage is per-user, so there the
+// capture is impossible.
 func imageTagCandidates(r sessionRunner, projectID string, uid, gid int) []string {
 	ident := engineIdentity(r, uid, gid)
 	tags := []string{imageTag(projectID, ident.UID, ident.GID)}
-	if host := imageTag(projectID, uid, gid); host != tags[0] {
-		tags = append(tags, host)
+	add := func(tag string) {
+		for _, t := range tags {
+			if t == tag {
+				return
+			}
+		}
+		tags = append(tags, tag)
 	}
+	if rootless, err := r.IsRootlessPodman(); err == nil && rootless {
+		add(imageTag(projectID, genericUID, genericGID))
+	}
+	add(imageTag(projectID, uid, gid))
 	return append(tags, "byre-"+projectID)
 }

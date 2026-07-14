@@ -140,6 +140,14 @@ func TestImageTagCandidates(t *testing.T) {
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("keep-id candidates = %v, want %v", got, want)
 	}
+	// The generic tag rides ROOTLESSNESS, not the version gate: a downgraded
+	// (or version-unprobeable) rootless podman must still surface a keep-id
+	// image for forget/rehome, or it stays orphaned.
+	got = imageTagCandidates(&fakeRunner{rootless: true}, "proj", 501, 501)
+	want = []string{"byre-proj-u501-g501", "byre-proj-u1000-g1000", "byre-proj"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("downgraded-rootless candidates = %v, want %v", got, want)
+	}
 	// A host uid that IS the generic id must not duplicate the tag.
 	got = imageTagCandidates(&fakeRunner{rootless: true, keepID: true}, "proj", 1000, 1000)
 	want = []string{"byre-proj-u1000-g1000", "byre-proj"}
