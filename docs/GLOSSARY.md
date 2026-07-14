@@ -265,8 +265,8 @@ skill by name.
 
 **Chassis**:
 Core's constant provision to every box -- the core block at build time
-plus the runtime constants (git identity passthrough, launcher behavior,
-the launch gate). What a box has regardless of config; "core chassis"
+plus the runtime constants (the core `env_from_host` layer: git
+identity, TERM, TZ; launcher behavior; the launch gate). What a box has regardless of config; "core chassis"
 when ownership needs saying. Cf. the microservice-chassis pattern.
 _Avoid_: plumbing (the old spec's word), fittings, infra
 
@@ -304,11 +304,29 @@ which confused more than it distinguished.
 **Grant**:
 Anything that widens what the box can reach beyond a bare box: the project
 mount (the implicit grant every box carries), host mounts, ports, skill
-runtime holes, env *passed through from the host* (git identity is the one
-today; a config-literal env var is config, not a grant), and egress
-entries under a restrictive posture (an open network is the default world,
-not a grant). byre makes grants legible; it never gates them.
+runtime holes, env *passed through from the host* (`env_from_host` --
+byre ships git identity, TERM, and TZ; a config-literal env var is
+config, not a grant), and egress entries under a restrictive posture (an
+open network is the default world, not a grant). byre makes grants
+legible; it never gates them.
 _Avoid_: permission (implies a policy engine deciding; byre only reports)
+
+**Host env passthrough (`env_from_host`)**:
+The one deliberate host→box data channel: a config map `KEY = "source"`,
+each live entry a grant. Sources are a closed scheme set --
+`git:<config-key>`, `env:<HOST_VAR>` (absent host var sets nothing),
+`tz:` (the host timezone: TZ var if set, else the `/etc/localtime`
+symlink's IANA name), and `""` to disable a lower layer's key. byre's
+core layer ships git identity, TERM, and TZ (ADR 0026/0031). A literal
+value belongs in `[env]`; it is config, not a grant.
+
+**Env docs (`env_docs`)**:
+A skill's declared consumed-env guidance (`[runtime.env_docs]`,
+`NAME = "one-line guidance"`): vars the skill READS but does not set.
+Pure documentation -- no validation, no warning when unset; the config
+UI env screen shows each unprovided var as a dim *suggestion row*
+attributed to the skill, and enter prefills the add editor. Cf.
+`runtime.env`, the vars a skill SETS.
 
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The

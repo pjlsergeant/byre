@@ -31,15 +31,6 @@ the rationale lives.
   state-dir env, headless login + rotation, autonomy flag, context file,
   egress, headless permission mode -- grok's silent-death lesson); record in
   docs/AGENT-CREDENTIAL-MECHANICS.md. Maybe a third reviewer.
-- [ ] (M) **Skill env guidance strings** (Pete, 2026-07-08): skills declare
-  env vars they CONSUME with a one-line guidance string (sketch:
-  `[[runtime.env_docs]]`); config UI env screen shows a dim suggestion row
-  per declared var. Pure documentation, no validation. Example:
-  `GEMINI_API_KEY`.
-- [ ] (M) **TERM + timezone + host-env passthrough.** Pass host TERM and TZ
-  via the chassis, plus a config key for named host env vars, perhaps CWD on
-  host. Per docs/GLOSSARY.md a passed-through var IS a grant: surface it in
-  `byre status` and the config UI GRANTS section.
 - [ ] (M) **claude-skills.d / claude-mcp.d convention**: byre/claude owns one
   sync hook; a skill drops Claude Skills / MCP definitions into convention
   dirs and they land in the box -- MCPs as byre skills with legible grants.

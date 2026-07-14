@@ -432,10 +432,15 @@ Build-time (the **core block**, identical everywhere, always cached):
 
 Runtime constants:
 
-- Pass host git identity through -- **narrowly**: only `user.name` /
-  `user.email`, injected as `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env. Not
-  your `.gitconfig`, not git credentials. The one named exception to
-  "host env is isolated", and today's only host-env passthrough grant.
+- Pass named host values through via `env_from_host` -- **narrowly**,
+  per key: the shipped core layer is git identity (`user.name` /
+  `user.email` injected as `GIT_AUTHOR_*` / `GIT_COMMITTER_*` -- not
+  your `.gitconfig`, not git credentials), `TERM` (the launching
+  terminal's), and `TZ` (the host timezone: the TZ var if set, else
+  the `/etc/localtime` symlink's IANA name). Sources are a closed
+  scheme set (`git:<key>`, `env:<HOST_VAR>`, `tz:`); each entry is a
+  grant -- attributed in status, counted in exposure, disable-able per
+  layer (`KEY = ""`). Host env is otherwise isolated (ADR 0026).
 - The launcher: wait at the launch gate if a network-posture skill is
   enabled (ADR 0011), place agent context, run first-run hooks as the
   user (agent login flows live here), then exec the selected agent's

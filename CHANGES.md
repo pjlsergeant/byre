@@ -1,5 +1,26 @@
 # Changes
 
+## Unreleased
+
+- **Boxes now inherit the host's TERM and timezone.** `TERM` and `TZ`
+  join byre's shipped `env_from_host` layer alongside git identity (`TZ`
+  from the host's TZ var, else the `/etc/localtime` symlink's IANA
+  name), so the box renders and timestamps like the terminal it was
+  launched from. Same rails as before: visible in `byre status`, counted
+  in exposure, disable-able per layer (`TERM = ""`).
+- **`env_from_host` accepts `env:` and `tz:` sources (ADR 0031).**
+  `KEY = "env:HOST_VAR"` passes a named host env var into the box (the
+  reservation from ADR 0026, now deliberately designed); an absent host
+  var sets nothing. Sources stay a closed scheme set -- a literal value
+  belongs in `[env]`, and the validation error says so.
+- **Skills can document the env vars they consume.**
+  `[runtime.env_docs]` (`NAME = "one-line guidance"`) declares vars a
+  skill reads but does not set -- an API key, a feature toggle. Pure
+  documentation: nothing validates or warns, but the config editor's env
+  screen shows each unprovided var as a dim suggestion row attributed to
+  the skill, and enter prefills the add editor. `skill inspect` lists
+  them as `env consumed`.
+
 ## v0.3.0 -- 2026-07-14
 
 - **Egress closures and the `firewall-open` skill (ADR 0030).** `!host[:port]`

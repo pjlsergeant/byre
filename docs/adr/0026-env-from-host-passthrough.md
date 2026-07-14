@@ -1,5 +1,9 @@
 # env_from_host: named host-value passthrough, shipped visible
 
+> **Amended by ADR 0031** (2026-07-14): the `env:` reservation below is
+> lifted — `env:<HOST_VAR>` and `tz:` are now legal sources, and TERM/TZ
+> joined the shipped core layer. The grant/legibility model is unchanged.
+
 byre passes the host git identity (user.name/user.email as the four
 `GIT_AUTHOR_*`/`GIT_COMMITTER_*` vars) into every box so commits are
 attributed to the developer. That used to be hardcoded plumbing —

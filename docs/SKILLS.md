@@ -70,6 +70,13 @@ bundled/installed content). `byre skill validate` runs the full strict
 parse; broken local packages also show as INVALID rows in `list` with
 the reason.
 
+A skill that reads env vars it doesn't set (an API key, a feature
+toggle) can document them in `[runtime.env_docs]` -- `NAME = "one-line
+guidance"` per var. Pure documentation: nothing validates or warns, but
+the config editor's env screen shows each unprovided var as a dim
+suggestion row attributed to your skill, and enter prefills the add
+editor with the name.
+
 To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
 

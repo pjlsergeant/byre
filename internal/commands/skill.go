@@ -606,6 +606,7 @@ description = "TODO: one-line summary"
 
 # [runtime]
 # env = {}
+# env_docs = {}   # vars the skill CONSUMES: NAME = "one-line guidance"
 
 # [context]
 # text = """
