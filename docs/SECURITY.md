@@ -83,6 +83,17 @@ working on, or any credential you passed in. The firewall skill
 box, fail-closed launch gate) is the mitigation; enable it if this is in
 your threat model.
 
+**The firewall's allowlist is an IP snapshot.** A hostname grant is
+resolved once, at session launch, and the rules pin those IPs; the name
+is never re-resolved while the box runs. If the host's DNS answer moves
+after that -- CDNs rotating a pool, and some resolvers rotating the
+answer on *every query* (Azure's forwarding DNS does) -- connections to
+that host start failing even though it is granted. On a per-query
+resolver this can bite seconds after launch, not just mid-session. The
+failure direction is always closed: rotation can cost you reachability,
+never containment. A session restart re-resolves; for an endpoint with
+a stable address, granting the IP directly sidesteps the race.
+
 **`--self-edit` is transitive trust of the agent with your host.** A
 self-edit agent authors the next develop's config -- mounts, run args,
 build context -- through the front door. There is no meaningful

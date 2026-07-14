@@ -17,9 +17,13 @@ the wall, not a network outage.
   defaulting to 443), then have them restart the session. Allowed hosts are reachable ONLY on their listed
   port — `https://host` working while `ssh host` hangs is the port scoping,
   not a bug.
-- DNS resolution works for all names (only connecting is restricted). A host
-  whose IPs rotated mid-session (CDNs) may start failing; a session restart
-  re-resolves the allowlist.
+- DNS resolution works for all names (only connecting is restricted). But
+  connecting is allowed per-IP, snapshotted at launch: a host whose DNS
+  answer has rotated since (CDNs; some cloud resolvers rotate on every
+  query) starts failing even though it is allowlisted — closed, never open,
+  and on a per-query resolver possibly seconds after launch. A session
+  restart re-resolves. If an allowlisted host flaps or times out, report
+  THIS as the likely cause rather than a network outage.
 - To diagnose the wall, this box has `ping`, `traceroute`, `dig`/`nslookup`,
   `curl`, `telnet`, and `nc`: an allowlisted host answers, a blocked one
   hangs/times out. Use them to tell "the wall is blocking this" apart from

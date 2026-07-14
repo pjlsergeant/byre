@@ -309,6 +309,11 @@ one-shot helper joins its network namespace, installs the allowlist rules, and
 verifies them. Only then does the agent launch behind the wall -- and if any of
 that fails, the box dies closed rather than running open.
 
+One honest limit worth knowing: hostname grants are pinned to the IPs they
+resolved to at launch, so on DNS that rotates (CDNs, some cloud resolvers) a
+granted host can start failing -- closed, never open -- until a relaunch
+re-resolves it. Details in [docs/SECURITY.md](docs/SECURITY.md).
+
 ### Mount other folders from the host?
 
 tldr: `byre config` -> Mounts

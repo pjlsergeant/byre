@@ -25,8 +25,10 @@
 # addresses front many tenants). Extend per project via the `egress` config
 # key (egress = ["host1", "host2:8443"], ADR 0019), same grammar.
 # IPs are resolved at apply time — a snapshot; a CDN rotating a domain's IPs
-# mid-session makes that host start failing (closed, not open). Restart the
-# session to re-resolve.
+# mid-session makes that host start failing (closed, not open). Some resolvers
+# rotate the answer on EVERY query (Azure's forwarding DNS), where a hostname
+# grant can fail seconds after launch. Restart the session to re-resolve, or
+# grant a stable IP directly. Full story: docs/SECURITY.md.
 #
 # Known holes, deliberate (documented in the design doc): DNS is allowed
 # through (port 53 + Docker's embedded resolver), so DNS tunneling is not
