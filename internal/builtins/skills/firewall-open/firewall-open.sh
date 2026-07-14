@@ -74,10 +74,22 @@ ipt6() { ip6tables -w "$@"; }
 ip6_ok=
 if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
   ip6_ok=1
-elif [ "${#v6rules[@]}" -gt 0 ] && grep -qsv ' lo$' /proc/net/if_inet6; then
-  die "closures resolved to IPv6 addresses but ip6tables is unavailable while this netns has IPv6 interfaces — they would stay reachable"
-else
+elif [ "${#v6rules[@]}" -eq 0 ] || [ ! -e /proc/net/if_inet6 ]; then
+  # Nothing resolved to v6, or the kernel has no v6 stack at all (file
+  # absent) — nothing to block there.
   log "IPv6 unavailable in this netns; skipping ip6tables (nothing to block there)"
+else
+  # v6-resolved closures exist: skip ONLY on proof of safety (grep exit 1:
+  # file readable, lo-only or empty). A non-lo interface (0) or an
+  # unreadable file (2) both mean those addresses may stay reachable under
+  # an "N hosts blocked" claim — die either way.
+  rc=0
+  grep -qv ' lo$' /proc/net/if_inet6 || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    log "IPv6 unavailable in this netns; skipping ip6tables (nothing to block there)"
+  else
+    die "closures resolved to IPv6 addresses but ip6tables is unavailable while this netns has IPv6 interfaces (or /proc/net/if_inet6 is unreadable) — they would stay reachable"
+  fi
 fi
 
 # The drops. Policy stays ACCEPT — this is a denylist on an open network, and

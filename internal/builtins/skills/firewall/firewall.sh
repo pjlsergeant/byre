@@ -87,10 +87,20 @@ ipt6() { ip6tables -w "$@"; }
 ip6_ok=
 if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
   ip6_ok=1
-elif grep -qsv ' lo$' /proc/net/if_inet6; then
-  die "this netns has IPv6 interfaces but ip6tables is unavailable — the IPv6 side would stay OPEN under a deny-by-default claim"
-else
+elif [ ! -e /proc/net/if_inet6 ]; then
+  # File absent = the kernel has no v6 stack at all.
   log "IPv6 unavailable in this netns; skipping ip6tables (nothing to leak through)"
+else
+  # Skip ONLY on proof of safety (grep exit 1: file readable, lo-only or
+  # empty). A non-lo interface (0) or an unreadable file (2) both mean we
+  # cannot vouch for the v6 side — die either way.
+  rc=0
+  grep -qv ' lo$' /proc/net/if_inet6 || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    log "IPv6 unavailable in this netns; skipping ip6tables (nothing to leak through)"
+  else
+    die "this netns has IPv6 interfaces (or /proc/net/if_inet6 is unreadable) but ip6tables is unavailable — the IPv6 side would stay OPEN under a deny-by-default claim"
+  fi
 fi
 
 # Baseline, both families: loopback (covers Docker's embedded resolver at
