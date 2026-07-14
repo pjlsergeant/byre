@@ -17,9 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (XS) **Config UI: nest shared-auth companions under their agent**
-  (Pete, 2026-07-12): render a `shared_auth_for` skill as an indented child
-  of its agent's row, so the pairing is visible where you enable it.
 - [ ] (S) **byre-codereview: pre-flight grok auth probe.** Expired grok auth
   = headless HANG on a device prompt, silent in background runs. Cheap fix: a
   bounded `timeout ... grok -p PONG` probe first; bail with the re-auth hint.
