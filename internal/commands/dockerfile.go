@@ -141,6 +141,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 			engine, "run", "--rm", "-u", "0:0", "--cap-add", "NET_ADMIN",
 			"--entrypoint", h.Path,
 			"-e", "BYRE_EGRESS=" + strings.Join(resolvedEgress(rv), " "),
+			"-e", "BYRE_EGRESS_DENY=" + strings.Join(rv.cfg.EgressClosed, " "),
 		}))
 		b.WriteString(` --net "container:$BOX" ` + shellArg(image) + "\n")
 	}

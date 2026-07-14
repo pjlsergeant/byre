@@ -488,6 +488,95 @@ func TestEgressRowsAndRemoveHere(t *testing.T) {
 	}
 }
 
+// Egress `!` markers are closures: they reach skill-declared endpoints (which
+// no cascade merge could touch) and match on the parsed grammar — a portless
+// closure closes every port. The rows must tell that story.
+func TestEgressClosureRows(t *testing.T) {
+	base := func() model {
+		m := effectiveModel()
+		sk := m.inh.Skills["docker"]
+		sk.Egress = []string{"statsig.example.com", "api.example.com"}
+		m.inh.Skills["docker"] = sk
+		m.listField = fEgress
+		return m
+	}
+
+	t.Run("local marker closes a skill endpoint, Restore clears it", func(t *testing.T) {
+		m := base()
+		m.egress = []string{"!statsig.example.com"}
+		rows := m.fieldRows(fEgress)
+		r := rowByText(t, rows, "statsig.example.com:443")
+		if r.kind != rowRemoved || r.source != "skill:docker" || r.idx != 0 {
+			t.Errorf("closed skill row wrong (want removed, marker idx 0): %+v", r)
+		}
+		if r := rowByText(t, rows, "api.example.com:443"); r.kind != rowSkill {
+			t.Errorf("unclosed skill row should stay plain: %+v", r)
+		}
+		for _, rr := range rows {
+			if rr.kind == rowStaleMarker {
+				t.Errorf("a closure reaching a skill endpoint is not stale: %+v", rr)
+			}
+		}
+	})
+	t.Run("portless marker closes an inherited entry on any port", func(t *testing.T) {
+		m := base()
+		m.inh.Default.Egress = []string{"internal:8443"}
+		m.egress = []string{"!internal"}
+		rows := m.fieldRows(fEgress)
+		if r := rowByText(t, rows, "internal:8443"); r.kind != rowRemoved {
+			t.Errorf("portless closure should reach internal:8443: %+v", r)
+		}
+		for _, rr := range rows {
+			if rr.kind == rowStaleMarker {
+				t.Errorf("marker did real work, not stale: %+v", rr)
+			}
+		}
+	})
+	t.Run("lower-layer closure closes a skill endpoint read-only", func(t *testing.T) {
+		m := base()
+		m.inh.Default.Egress = []string{"!statsig.example.com"}
+		rows := m.fieldRows(fEgress)
+		r := rowByText(t, rows, "statsig.example.com:443")
+		if r.kind != rowSkill || !strings.Contains(r.source, "closed by '!statsig.example.com'") {
+			t.Errorf("skill row closed by a lower closure should say so, menu-less: %+v", r)
+		}
+	})
+	t.Run("local plain entry re-opens a lower closure", func(t *testing.T) {
+		m := base()
+		m.inh.Default.Egress = []string{"!statsig.example.com"}
+		m.egress = []string{"statsig.example.com"}
+		rows := m.fieldRows(fEgress)
+		if r := rowByText(t, rows, "statsig.example.com:443"); r.kind != rowSkill || strings.Contains(r.source, "closed") {
+			t.Errorf("re-opened skill row should be plain: %+v", r)
+		}
+		if r := rowByText(t, rows, "statsig.example.com"); r.kind != rowLocal {
+			t.Errorf("the re-opening entry is this file's own row: %+v", r)
+		}
+	})
+	t.Run("marker matching nothing anywhere is stale", func(t *testing.T) {
+		m := base()
+		m.egress = []string{"!nothing.example.com"}
+		if r := rowByText(t, m.fieldRows(fEgress), "nothing.example.com"); r.kind != rowStaleMarker {
+			t.Errorf("unmatched closure should be stale: %+v", r)
+		}
+	})
+	t.Run("closed endpoint's offered door prints closed, not suppressed", func(t *testing.T) {
+		m := base()
+		m.inh.Default.EgressOffered = []string{"statsig.example.com"}
+		m.egress = []string{"!statsig.example.com"}
+		rows := m.fieldRows(fEgress)
+		found := false
+		for _, r := range rows {
+			if r.kind == rowOffered && r.ident == "statsig.example.com" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("offered door for a closed endpoint is truthfully closed — show it: %+v", rows)
+		}
+	})
+}
+
 func TestEgressSummaryUnenforcedNote(t *testing.T) {
 	m := effectiveModel()
 	m.egress = []string{"grafana.com"}
@@ -710,6 +799,38 @@ func TestExposureNowDisabledMountsAndPosture(t *testing.T) {
 	}
 	if !strings.Contains(m.viewForm(), "network deny-by-default · egress 2 hosts") {
 		t.Errorf("form missing the posture segment:\n%s", m.viewForm())
+	}
+}
+
+// Under open-denylist the network is open: the summary must count the
+// closures (the enforced list), never the allowlist (unenforced there) —
+// and an unmatched closure is a live entry, not a stale marker (it blocks a
+// real host whether or not anything declared it).
+func TestExposureNowOpenDenylist(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Skills["firewall-open"] = SkillRuntime{Posture: "open-denylist"}
+	m.skills = append(m.skills, "firewall-open")
+	sk := m.inh.Skills["docker"]
+	sk.Egress = []string{"registry.example.com:5000"}
+	m.inh.Skills["docker"] = sk
+	m.egress = []string{"!statsig.example.com", "!telemetry.example.com:443"}
+	e := m.exposureNow()
+	if e.Egress != 0 {
+		t.Errorf("allowlist count must not render under open-denylist: %d", e.Egress)
+	}
+	if e.Closed != 2 {
+		t.Errorf("closed = %d, want 2", e.Closed)
+	}
+	if !strings.Contains(e.NetworkLine(), "network open-denylist · 2 hosts blocked") {
+		t.Errorf("summary must carry the blocked count: %q", e.NetworkLine())
+	}
+	for _, r := range m.fieldRows(fEgress) {
+		if r.kind == rowStaleMarker {
+			t.Errorf("no closure is stale under open-denylist: %+v", r)
+		}
+	}
+	if r := rowByText(t, m.fieldRows(fEgress), "!statsig.example.com"); r.kind != rowLocal {
+		t.Errorf("unmatched closure should render as this file's live entry: %+v", r)
 	}
 }
 

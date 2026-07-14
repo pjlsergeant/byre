@@ -403,6 +403,55 @@ func TestFirewallSkillResolves(t *testing.T) {
 	}
 }
 
+// TestFirewallOpenSkillResolves pins the firewall-open contract, mirroring
+// the firewall's: the open-denylist posture and the netns hook (both consumed
+// by core), composable with an agent skill, granting NOTHING to the box
+// itself, and offering NO doors (there is no wall to open holes in). And the
+// two enforcement siblings are mutually exclusive: both declare a posture,
+// which resolution rejects loudly.
+func TestFirewallOpenSkillResolves(t *testing.T) {
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall-open"}}, cat)
+	if err != nil {
+		t.Fatalf("firewall-open + claude must resolve together: %v", err)
+	}
+	posture, by := res.NetworkPosture()
+	if posture != config.PostureOpenDenylist || by != "byre/firewall-open" {
+		t.Errorf("posture = %q by %q", posture, by)
+	}
+	hooks := res.NetnsInits()
+	if len(hooks) != 1 || hooks[0].Path != "/usr/local/bin/byre-firewall-open" {
+		t.Errorf("netns hooks = %+v", hooks)
+	}
+	for _, sk := range res.Skills {
+		if sk.Name != "byre/firewall-open" {
+			continue
+		}
+		rt := sk.File.Runtime
+		if len(rt.Caps) != 0 || len(rt.RunArgs) != 0 || len(rt.Mounts) != 0 {
+			t.Errorf("the firewall-open skill must grant the BOX nothing: %+v", rt)
+		}
+		if len(rt.Egress) != 0 || len(rt.EgressOffered) != 0 {
+			t.Errorf("no wall means nothing to open or offer: %+v", rt)
+		}
+		if sk.Context == "" {
+			t.Error("firewall-open skill should ship agent context explaining the denylist")
+		}
+		dests := map[string]bool{}
+		for _, f := range sk.Files {
+			dests[f.Dest] = true
+		}
+		for _, want := range []string{"/etc/byre/launch-gate", "/usr/local/bin/byre-firewall-open"} {
+			if !dests[want] {
+				t.Errorf("firewall-open skill must ship %s; files: %+v", want, sk.Files)
+			}
+		}
+	}
+	if _, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall", "firewall-open"}}, cat); err == nil {
+		t.Error("firewall + firewall-open must be rejected (two posture declarers)")
+	}
+}
+
 // TestFirewallComposesAgentEgress pins the derived-allowlist contract
 // (ADR 0020): enabling firewall + an agent opens ONLY the agent's own
 // endpoints -- the skill's functional requirement. Everything else the

@@ -87,15 +87,28 @@ The allowlist is **derived, and minimal by ruling** (ADR 0020): every
 enabled skill declares the `[runtime] egress = ["host[:port]"]` it NEEDS
 to function (agents carry their API endpoints -- enabling the agent is
 the intent), unioned with the user's `egress` config key (ADR 0012, key
-per ADR 0019 -- it cascades like every other list, `!entry` removes).
-Nothing else opens: convenience endpoints (git hosting, apt, language
-registries) ship as `egress_offered` -- declared-but-closed doors the
-config UI opens with one press, writing the entry into the user's own
-config. Empty is legal -- a maximally-locked box. `byre status` prints
-the posture under honesty rules (skill contributions are trusted and
-attributed; project-level raw blocks degrade the claim -- ADR 0010) and
-shows the resolved allowlist as an Egress section attributed per source
-(each skill, and `config` for the key's entries).
+per ADR 0019 -- it cascades like every other list), minus the config's
+**closures** -- `!host[:port]` entries, which survive the cascade and
+subtract from the derived union LAST, skill-declared entries included
+(ADR 0030; portless closes every port). Nothing else opens: convenience
+endpoints (git hosting, apt, language registries) ship as
+`egress_offered` -- declared-but-closed doors the config UI opens with
+one press, writing the entry into the user's own config. Empty is legal
+-- a maximally-locked box. `byre status` prints the posture under
+honesty rules (skill contributions are trusted and attributed;
+project-level raw blocks degrade the claim -- ADR 0010) and shows the
+resolved allowlist as an Egress section attributed per source (each
+skill, and `config` for the key's entries), closures as `Closed:` rows.
+
+The **firewall-open skill** (ADR 0030) is the same mechanism with the
+opposite default -- the `open-denylist` posture: the netns helper leaves
+the OUTPUT policy at ACCEPT and drops only the closures' resolved IPs.
+Best-effort by design (an IP snapshot aimed at well-behaved telemetry
+clients; the deny-by-default wall is the containment posture), but
+fail-closed all the same: any helper failure -- including a closure
+whose host doesn't resolve, which would otherwise stay silently
+reachable -- kills the launch. The two enforcement siblings are mutually
+exclusive (both declare a `network_posture`; resolution rejects two).
 
 ## Image generation
 

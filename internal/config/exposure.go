@@ -12,6 +12,24 @@ import (
 	"strings"
 )
 
+// PostureOpenDenylist is the posture VOCABULARY (not behavior) for an
+// otherwise-open network with the config's `!host` closures dropped — the
+// third posture value beside the default open ("") and the firewall's
+// deny-by-default (ADR 0030). Core recognizing the label is what lets the
+// legibility surfaces render honest claims for it; enforcement lives
+// entirely in the declaring skill's netns hook. It lives in config (not
+// skills) because the lowest legibility surface, Exposure below, needs it.
+const PostureOpenDenylist = "open-denylist"
+
+// PostureEnforcesAllowlist reports whether a posture label arms the derived
+// egress allowlist. False for the open default ("") AND for open-denylist:
+// there the network is open and only the closures are enforced, so any
+// surface implying the allowlist has teeth would be lying. Single owner —
+// status and the config UI must not restate this comparison.
+func PostureEnforcesAllowlist(p string) bool {
+	return p != "" && p != PostureOpenDenylist
+}
+
 // Exposure is the tally behind the summary line. Vocabulary (GLOSSARY.md
 // "Grant"): a config-literal env var reaches the box but is not a grant, so
 // the rendered line is labeled "exposure", never "grants".
@@ -23,7 +41,8 @@ type Exposure struct {
 	Ports          int    // published ports
 	Env            int    // env vars the box gets (config-literal + skill runtime)
 	Posture        string // declared network posture; "" = open (the default world, not a grant)
-	Egress         int    // resolved allowlist size; meaningful only under a posture
+	Egress         int    // resolved allowlist size; meaningful only under an allowlist-enforcing posture
+	Closed         int    // closures in effect; the enforced list under open-denylist
 	// The project's own raw escape hatches degrade the posture claim — the
 	// same honesty rule as status's networkLine: byre can't audit arbitrary
 	// argv or Dockerfile text, so a declared posture is not guaranteed.
@@ -60,13 +79,17 @@ func (e Exposure) GrantsLine() string {
 
 // NetworkLine renders the network stance: "network open", or the declared
 // posture with its allowlist size — qualified, not asserted, when raw config
-// is present (the same degrade rule status applies).
+// is present (the same degrade rule status applies). Under open-denylist the
+// count that means anything is the closures': the network is open and the
+// allowlist unenforced, so its size would be noise dressed as a wall.
 func (e Exposure) NetworkLine() string {
 	if e.Posture == "" {
 		return "network open"
 	}
 	s := "network " + e.Posture
-	if e.Egress == 0 {
+	if !PostureEnforcesAllowlist(e.Posture) {
+		s += fmt.Sprintf(" · %d %s blocked", e.Closed, plural("host", e.Closed))
+	} else if e.Egress == 0 {
 		s += " · egress none"
 	} else {
 		s += fmt.Sprintf(" · egress %d %s", e.Egress, plural("host", e.Egress))

@@ -314,6 +314,11 @@ resolved to at launch, so on DNS that rotates (CDNs, some cloud resolvers) a
 granted host can start failing -- closed, never open -- until a relaunch
 re-resolves it. Details in [docs/SECURITY.md](docs/SECURITY.md).
 
+Just want to block telemetry, not the internet? The _firewall-open_ skill
+keeps the network open and drops only the hosts you block:
+`egress = ["!statsig.anthropic.com"]`. The same `!host` entries subtract from
+the full firewall's allowlist too, skill-declared endpoints included.
+
 ### Mount other folders from the host?
 
 tldr: `byre config` -> Mounts

@@ -843,10 +843,16 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		if offered > 0 {
 			s += dimStyle.Render(fmt.Sprintf("  — %d offered", offered))
 		}
-		// Egress is declarative: with no posture skill enabled, nothing
+		// Egress is declarative: unless a posture arms the allowlist, nothing
 		// enforces it — config must not look armed when it isn't (ADR 0019).
-		if f == fEgress && eff > 0 && m.postureNow() == "" {
-			s += dimStyle.Render("  — unenforced (no firewall skill)")
+		// open-denylist counts as unarmed here: its network is open and only
+		// the closures bite (ADR 0030).
+		if f == fEgress && eff > 0 && !config.PostureEnforcesAllowlist(m.postureNow()) {
+			if m.postureNow() == "" {
+				s += dimStyle.Render("  — unenforced (no firewall skill)")
+			} else {
+				s += dimStyle.Render("  — unenforced (network open; !closures still bite)")
+			}
 		}
 		if focused {
 			s += dimStyle.Render("  (enter to edit)")

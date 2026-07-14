@@ -266,6 +266,106 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 	}
 }
 
+// buildFirewallOpenImage mirrors buildFirewallImage for the open-denylist
+// sibling: a firewall-open project whose config closes example.com. The
+// closure rides the `egress` key as a `!` marker and must survive to
+// EgressClosed via the real merge (Merge extracts markers), the same road
+// develop's cascade takes.
+func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]string) {
+	t.Helper()
+	p, _ := testPaths(t)
+	if err := builtins.EnsureStore(p.Home); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Merge(config.Config{}, config.Config{Skills: []string{"firewall-open"}, Egress: []string{"!example.com"}})
+	res, err := skills.Resolve(cfg, cat)
+	if err != nil {
+		t.Fatalf("resolve firewall-open skill: %v", err)
+	}
+	image := imageTag(p.ID, os.Getuid(), os.Getgid())
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, p, cfg, res, image, false); err != nil {
+		t.Fatalf("firewall-open image failed to build: %v", err)
+	}
+	env := res.Env()
+	if env == nil {
+		env = map[string]string{}
+	}
+	// Mirror develop's netns env: the helper enforces exactly the closures.
+	env["BYRE_EGRESS_DENY"] = strings.Join(cfg.EgressClosed, " ")
+	return image, env
+}
+
+// TestIntegrationFirewallOpenEgress: the open-denylist inverse of the core
+// firewall check — an arbitrary host is reachable WITHOUT any grant (the
+// network is open), while the closed host is dropped. The probes only run
+// because the gate opened, so gating rides along.
+func TestIntegrationFirewallOpenEgress(t *testing.T) {
+	r := requireEngineRunner(t)
+	image, env := buildFirewallOpenImage(t, r)
+	name := uniqueName("fwo-egress")
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
+
+	// github.com has NO egress grant in this config — reachable means open.
+	// example.com is closed portless, so 443 must drop. Same live-internet
+	// stance as the firewall test: the deny probe fails safe.
+	probe := `
+if timeout 6 bash -c 'exec 3<>/dev/tcp/github.com/443' 2>/dev/null; then echo OPEN_OK; else echo OPEN_FAIL; fi
+if timeout 6 bash -c 'exec 3<>/dev/tcp/example.com/443' 2>/dev/null; then echo DENY_LEAK; else echo DENY_OK; fi`
+
+	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name, image, "bash", "-c", probe)
+	if out, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start box: %v\n%s", err, out)
+	}
+	waitRunning(t, r, name)
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env); err != nil {
+		t.Fatalf("netns init failed: %v", err)
+	}
+
+	dockerWait(t, r, name)
+	logs := containerLogs(t, r, name)
+	if !strings.Contains(logs, "OPEN_OK") {
+		t.Errorf("ungranted github.com should be reachable on an open network; logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "DENY_OK") || strings.Contains(logs, "DENY_LEAK") {
+		t.Errorf("closed host example.com should be DROPPED; logs:\n%s", logs)
+	}
+}
+
+// TestIntegrationFirewallOpenUnresolvableFailsClosed: an unresolvable closure
+// is FATAL for the open sibling (grilled 2026-07-14) — under deny-by-default
+// an unresolved host stays safely blocked, but here it would stay silently
+// reachable while status claims it blocked. The helper must die and the box
+// must never run its command.
+func TestIntegrationFirewallOpenUnresolvableFailsClosed(t *testing.T) {
+	r := requireEngineRunner(t)
+	image, env := buildFirewallOpenImage(t, r)
+	env["BYRE_EGRESS_DENY"] = "definitely-not-a-real-host.invalid"
+	name := uniqueName("fwo-badhost")
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
+
+	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
+		image, "bash", "-c", "echo GATE_OPENED_LEAK")
+	if out, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start box: %v\n%s", err, out)
+	}
+	waitRunning(t, r, name)
+	if err := r.NetnsInit(image, name, "/usr/local/bin/byre-firewall-open", env); err == nil {
+		t.Errorf("helper must fail on an unresolvable closure")
+	}
+	if code := dockerWait(t, r, name); code == 0 {
+		t.Errorf("box must exit non-zero when the helper dies (fail closed)")
+	}
+	if logs := containerLogs(t, r, name); strings.Contains(logs, "GATE_OPENED_LEAK") {
+		t.Errorf("the command ran despite the dead helper:\n%s", logs)
+	}
+}
+
 // waitForLog polls the container's logs until the marker appears, or fails
 // after a short deadline.
 func waitForLog(t *testing.T, r *runner.Runner, name, marker string) {

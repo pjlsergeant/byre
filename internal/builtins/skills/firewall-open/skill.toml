@@ -1,0 +1,46 @@
+# Built-in skill: firewall-open — open network, denylist enforced.
+#
+# The firewall's sibling (same netns_init vehicle, opposite default): the
+# box's outbound network stays OPEN, and the config's `!host[:port]` egress
+# closures are enforced as DROPs — default ACCEPT, drop the named hosts.
+# Use case: an unfirewalled dev box that still refuses to talk to telemetry
+# ("claude minus statsig") without opting into the full allowlist posture.
+#
+# Denylist: DERIVED — the closures that survived the config cascade
+# (`egress = ["!host", "!host:port"]`, ADR 0030), passed to the helper as
+# BYRE_EGRESS_DENY. A PORTLESS closure drops every port and protocol to the
+# host's IPs; a ported one drops that TCP/UDP port. No host is hardcoded
+# here; an empty denylist is legal (an open box that says so).
+#
+# Best-effort, worded so: blocking is an IP SNAPSHOT resolved at apply time,
+# aimed at well-behaved clients (telemetry SDKs). A host that rotates IPs
+# mid-session, or a determined process resolving elsewhere, can slip it —
+# this posture is hygiene, not containment. What byre DOES warrant is its
+# own construction (fail closed): if the drops can't be applied — including
+# a closure whose host doesn't resolve, since an unresolved host would stay
+# silently reachable — the launch gate never opens and the box exits rather
+# than launch under a posture claim it can't make.
+#
+# Mutually exclusive with the firewall skill: both declare a network_posture
+# (and a netns_init), and skill resolution rejects two declarers loudly.
+
+# apt: iptables (the drops) + netcat-openbsd (the launch-gate listener), plus
+# the same network diagnostics the firewall ships — a box with a denylist is
+# a box where you want to SEE what's blocked vs down. Plain clients, subject
+# to the netns rules; they inspect the boundary, they don't widen it.
+description = "Open egress with the config's !host closures dropped (open-denylist posture)."
+
+[build]
+apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "telnet"]
+files = { "firewall-open.sh" = "/usr/local/bin/byre-firewall-open", "launch-gate" = "/etc/byre/launch-gate" }
+dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall-open"]
+
+[runtime]
+network_posture = "open-denylist"
+netns_init = "/usr/local/bin/byre-firewall-open"
+# No egress_offered here: offered doors exist to open holes in a wall
+# (ADR 0020), and this posture has no wall — a switch that opens nothing
+# would be a lie in the config UI.
+
+[context]
+file = "context.md"

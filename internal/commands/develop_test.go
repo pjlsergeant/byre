@@ -457,3 +457,34 @@ func TestResolvedEgressUnionsConfigKey(t *testing.T) {
 		t.Errorf("resolvedEgress = %v, want %v", got, want)
 	}
 }
+
+// Closures subtract from the DERIVED allowlist — after the skill union — so
+// a `!host` reaches skill-declared entries no cascade merge could touch
+// ("claude minus statsig"). A portless closure takes every port of the host.
+func TestResolvedEgressClosuresSubtractSkillEntries(t *testing.T) {
+	rv := resolved{
+		cfg: config.Config{
+			Egress:       []string{"grafana.com"},
+			EgressClosed: []string{"statsig.anthropic.com", "internal:8443"},
+		},
+		skills: skills.Resolved{Skills: []skills.Skill{
+			func() skills.Skill {
+				var sk skills.Skill
+				sk.Name = "claude"
+				sk.File.Runtime.Egress = []string{
+					"api.anthropic.com",
+					"statsig.anthropic.com",      // closed portless
+					"statsig.anthropic.com:8443", // portless closure takes this too
+					"internal:8443",              // closed at the exact port
+					"internal:9000",              // ported closure leaves this alone
+				}
+				return sk
+			}(),
+		}},
+	}
+	got := resolvedEgress(rv)
+	want := []string{"api.anthropic.com:443", "internal:9000", "grafana.com:443"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("resolvedEgress = %v, want %v", got, want)
+	}
+}

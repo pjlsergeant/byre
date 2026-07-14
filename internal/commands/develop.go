@@ -165,6 +165,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 				netnsEnv[k] = v
 			}
 			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
+			// The config's `!host[:port]` closures, as written (portless =
+			// every port). The deny-by-default helper never reads this (its
+			// allowlist above is already subtracted); the open-denylist
+			// helper drops exactly these.
+			netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
 		} else {
 			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
 		}
@@ -396,6 +401,7 @@ func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 		Ports:      len(rv.cfg.Ports),
 		Env:        len(envKeys),
 		Egress:     len(resolvedEgress(rv)),
+		Closed:     len(rv.cfg.EgressClosed),
 		RawRunArgs: len(rv.cfg.RunArgs) > 0,
 		RawBuild:   len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
 	}
@@ -430,6 +436,19 @@ func resolvedEgress(rv resolved) []string {
 			seen[hp] = true
 			out = append(out, hp)
 		}
+	}
+	// Closures subtract LAST — after the skill union — which is what puts
+	// skill-declared entries in their reach (`claude` minus its statsig; the
+	// cascade merge already consumed any config entry a closure matched).
+	if len(rv.cfg.EgressClosed) > 0 {
+		kept := out[:0]
+		for _, hp := range out {
+			host, port, _ := config.ParseEgress(hp)
+			if _, closed := closedBy(rv.cfg.EgressClosed, host, port); !closed {
+				kept = append(kept, hp)
+			}
+		}
+		out = kept
 	}
 	return out
 }

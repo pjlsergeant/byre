@@ -81,7 +81,11 @@ posture, an agent can send anywhere -- including the project it is
 working on, or any credential you passed in. The firewall skill
 (deny-by-default, per-skill derived allowlist, applied from outside the
 box, fail-closed launch gate) is the mitigation; enable it if this is in
-your threat model.
+your threat model. The firewall-open skill is NOT: its open-denylist
+posture blocks a snapshot of named hosts' IPs -- hygiene against
+well-behaved telemetry clients, trivially routed around by an agent that
+wants to. The network under it is still open, and this document treats
+it as such.
 
 **The firewall's allowlist is an IP snapshot.** A hostname grant is
 resolved once, at session launch, and the rules pin those IPs; the name

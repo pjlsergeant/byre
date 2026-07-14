@@ -383,6 +383,10 @@ type EgressAllow struct {
 // marked unenforced, when no posture is active — ADR 0019).
 const EgressFromConfig = "config"
 
+// The open-denylist posture vocabulary lives in config (PostureOpenDenylist,
+// PostureEnforcesAllowlist) — the lowest legibility surface (config.Exposure)
+// needs it, and this package already builds on config.
+
 // EgressAllows lists every enabled skill's egress entries, parsed and
 // attributed, in enable order. Resolve validated them, so parsing can't fail.
 func (r Resolved) EgressAllows() []EgressAllow {
