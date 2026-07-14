@@ -59,8 +59,121 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.portRows()
 	case fEgress:
 		return m.egressRows()
+	case fMCP:
+		return m.mcpRows()
 	}
 	return nil
+}
+
+// mcpRows builds the MCP screen's effective view (ADR 0033). Identity is the
+// exact name: config layers replace by name, skill declarations union after,
+// and a `!name` marker is a CLOSURE — it survives the cascade and subtracts
+// a same-named server from ANY source, skills included, which is why a skill
+// row here is closable (unlike every other field's read-only skill rows). A
+// marker is only stale when it matches nothing anywhere.
+func (m model) mcpRows() []listRow {
+	localIdx := map[string]int{}  // name -> index of a real local entry
+	markerIdx := map[string]int{} // name -> index of a !name marker
+	for i, mc := range m.mcps {
+		if n, ok := strings.CutPrefix(mc.Name, "!"); ok {
+			markerIdx[n] = i
+		} else {
+			localIdx[mc.Name] = i
+		}
+	}
+	// Lower-layer closures still active here: a local plain declaration of
+	// the name re-opens (deletes) the closure, same as the merge.
+	var lowerClosures []string
+	for _, c := range m.lowerNow().MCPClosed {
+		if !hasKey(localIdx, c) {
+			lowerClosures = append(lowerClosures, c)
+		}
+	}
+	lowerClosureUsed := map[string]bool{}
+	lowerClosed := func(name string) bool {
+		if slices.Contains(lowerClosures, name) {
+			lowerClosureUsed[name] = true
+			return true
+		}
+		return false
+	}
+	markerMatched := map[int]bool{}
+
+	lower := map[string]bool{}
+	var rows []listRow
+	for _, mc := range m.lowerNow().MCPs {
+		mc := mc
+		lower[mc.Name] = true
+		src := m.lowerSource(func(c config.Config) bool { return hasMCPName(c.MCPs, mc.Name) })
+		switch {
+		case hasKey(markerIdx, mc.Name):
+			markerMatched[markerIdx[mc.Name]] = true
+			rows = append(rows, listRow{kind: rowRemoved, text: mcpLine(mc), source: src, idx: markerIdx[mc.Name]})
+		case hasKey(localIdx, mc.Name):
+			// Replace-by-name: this layer's declaration shadows the inherited one.
+			rows = append(rows, listRow{kind: rowOverride, text: mcpLine(m.mcps[localIdx[mc.Name]]), source: src, idx: localIdx[mc.Name]})
+		default:
+			rows = append(rows, listRow{kind: rowInherited, text: mcpLine(mc), ident: mc.Name, source: src, vals: mcpVals(mc)})
+		}
+	}
+	for i, mc := range m.mcps {
+		if isRemovalName(mc.Name) || lower[mc.Name] {
+			continue
+		}
+		// Same-layer marker beats the same-layer declaration (closures fold last).
+		if hasKey(markerIdx, mc.Name) {
+			markerMatched[markerIdx[mc.Name]] = true
+			rows = append(rows, listRow{kind: rowRemoved, text: mcpLine(mc), idx: markerIdx[mc.Name]})
+			continue
+		}
+		rows = append(rows, listRow{kind: rowLocal, text: mcpLine(mc), idx: i})
+	}
+	for _, sk := range m.effectiveSkills() {
+		for _, mc := range m.inh.Skills[sk].MCPs {
+			if i, ok := markerIdx[mc.Name]; ok {
+				// Closed by this file's own marker: Restore works.
+				markerMatched[i] = true
+				rows = append(rows, listRow{kind: rowRemoved, text: mcpLine(mc), source: "skill:" + sk, idx: i})
+				continue
+			}
+			if lowerClosed(mc.Name) {
+				rows = append(rows, listRow{kind: rowSkill, text: mcpLine(mc), source: "skill:" + sk + " — closed by '!" + mc.Name + "'"})
+				continue
+			}
+			// Closable (ident set): "Remove in this project" writes the closure.
+			rows = append(rows, listRow{kind: rowSkill, text: mcpLine(mc), ident: mc.Name, source: "skill:" + sk})
+		}
+	}
+	for i, mc := range m.mcps {
+		if n, ok := strings.CutPrefix(mc.Name, "!"); ok && !markerMatched[i] {
+			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
+		}
+	}
+	// Lower-layer closures that closed nothing shown above: still config,
+	// never invisible; menu-less (they live in a lower file).
+	for _, c := range lowerClosures {
+		if !lowerClosureUsed[c] {
+			c := c
+			src := m.lowerSource(func(cf config.Config) bool { return hasMCPName(cf.MCPs, "!"+c) })
+			rows = append(rows, listRow{kind: rowSkill, text: "!" + c, source: src})
+		}
+	}
+	return rows
+}
+
+func hasMCPName(ms []config.MCP, name string) bool {
+	for _, mc := range ms {
+		if mc.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// mcpVals flattens a declaration for the override editor's prefill, in the
+// item editor's input order (name, url, command, env, egress).
+func mcpVals(mc config.MCP) []string {
+	return []string{mc.Name, mc.URL, strings.Join(mc.Command, " "), strings.Join(mc.Env, " "), strings.Join(mc.Egress, " ")}
 }
 
 // egressRows mirrors aptRows in shape, but egress `!entry` markers are
@@ -522,7 +635,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0) {
 			out = append(out, e.name)
 		}
 	}

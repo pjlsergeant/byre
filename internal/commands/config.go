@@ -84,6 +84,7 @@ func Config(s Streams, projectDir string, global bool) error {
 				EnvDocs:       sk.File.Runtime.EnvDocs,
 				Egress:        sk.File.Runtime.Egress,
 				Offered:       sk.File.Runtime.EgressOffered,
+				MCPs:          sk.File.MCPs,
 				Posture:       sk.File.Runtime.NetworkPosture,
 				Containment:   sk.File.Runtime.Containment,
 				SharedAuthFor: sk.File.SharedAuthFor,

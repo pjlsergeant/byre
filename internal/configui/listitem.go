@@ -40,7 +40,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		r := rows[m.listCur]
 		m.status = ""
-		if r.kind == rowSkill {
+		// A skill row usually has no actions (the pointer note explains) — but
+		// an MCP skill row is closable (rowChoices offers Remove), so the menu
+		// must open for it like any actionable row.
+		if r.kind == rowSkill && len(m.rowChoices(m.listField, r)) == 0 {
 			m.status = skillRowNote(r)
 			return m, nil
 		}
@@ -125,7 +128,7 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		switch f {
 		case fEnv:
 			return []menuChoice{{"Override here", "e", actOverride}}
-		case fMounts:
+		case fMounts, fMCP:
 			return []menuChoice{
 				{"Override here", "e", actOverride},
 				{"Remove in this project", "d", actRemoveHere},
@@ -142,8 +145,16 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 			return []menuChoice{{warnStyle.Render("⚠ Open for every project on this machine"), "o", actOpen}}
 		}
 		return []menuChoice{{"Open in this project", "o", actOpen}}
+	case rowSkill:
+		// MCP skill rows are the one closable skill contribution: a `!name`
+		// closure reaches a skill-declared server (ADR 0033 — "this skill,
+		// minus one of its servers"). Rows without an ident (already closed
+		// by a lower layer, or a lower closure display row) stay menu-less.
+		if f == fMCP && r.ident != "" {
+			return []menuChoice{{"Remove in this project", "d", actRemoveHere}}
+		}
 	}
-	return nil // rowSkill: no menu; the list screen shows a pointer instead
+	return nil // other rowSkill rows: no menu; the list screen shows a pointer
 }
 
 func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -219,6 +230,8 @@ func (m *model) removeHere(r listRow) {
 		m.egress = append(m.egress, "!"+r.ident)
 	case fMounts:
 		m.mounts = append(m.mounts, config.Mount{Target: "!" + r.ident})
+	case fMCP:
+		m.mcps = append(m.mcps, config.MCP{Name: "!" + r.ident})
 	case fPorts:
 		if c, err := strconv.Atoi(r.ident); err == nil {
 			m.ports = append(m.ports, config.Port{Container: c, Remove: true})
@@ -243,6 +256,10 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 1
 		case "disabled":
 			next.itemMode = 2
+		}
+	case fMCP:
+		for i := range next.inputs {
+			next.inputs[i].SetValue(r.vals[i])
 		}
 	}
 	return next
@@ -289,6 +306,8 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.ports = append(m.ports[:i], m.ports[i+1:]...)
 	case fEgress:
 		m.egress = append(m.egress[:i], m.egress[i+1:]...)
+	case fMCP:
+		m.mcps = append(m.mcps[:i], m.mcps[i+1:]...)
 	}
 }
 
@@ -317,6 +336,25 @@ func (m model) startItem(idx int) model {
 			v = m.egress[idx]
 		}
 		m.inputs = []textinput.Model{newInput(v)}
+	case fMCP:
+		// url XOR command discriminates remote vs local (no transport field —
+		// ADR 0033). Space-separated argv: an arg with embedded spaces is a
+		// hand edit (^e), same escape hatch as everything the UI can't spell.
+		m.inputLabels = []string{
+			"Name",
+			"URL (remote server; blank = local)",
+			"Command (local argv, space-separated)",
+			"Env names it consumes (space-separated)",
+			"Extra egress host[:port] (space-separated)",
+		}
+		vals := []string{"", "", "", "", ""}
+		if idx >= 0 {
+			vals = mcpVals(m.mcps[idx])
+		}
+		m.inputs = make([]textinput.Model, len(vals))
+		for i, v := range vals {
+			m.inputs[i] = newInput(v)
+		}
 	case fEnv:
 		m.inputLabels = []string{"Key", "Value"}
 		k, val := "", ""
@@ -598,6 +636,21 @@ func (m model) commitItem() model {
 			return m
 		}
 		m.egress = putAt(m.egress, m.editIndex, entry)
+	case fMCP:
+		// Shape rules are config's (ValidateMCP — the same check the layer
+		// gate runs); the editor only parses its string inputs apart.
+		mc := config.MCP{
+			Name:    strings.TrimSpace(m.inputs[0].Value()),
+			URL:     strings.TrimSpace(m.inputs[1].Value()),
+			Command: strings.Fields(m.inputs[2].Value()),
+			Env:     strings.Fields(m.inputs[3].Value()),
+			Egress:  strings.Fields(m.inputs[4].Value()),
+		}
+		if err := config.ValidateMCP(mc); err != nil {
+			m.itemErr = err.Error()
+			return m
+		}
+		m.mcps = putAt(m.mcps, m.editIndex, mc)
 	case fEnv:
 		k := strings.TrimSpace(m.inputs[0].Value())
 		// Key shape is the layer check's job. Duplicates are the editor's: env is
@@ -692,6 +745,8 @@ func itemTitle(f fieldID) string {
 		return "Port"
 	case fEgress:
 		return "Egress host"
+	case fMCP:
+		return "MCP server"
 	}
 	return strings.TrimSuffix(fieldLabel[f], "s")
 }
@@ -712,6 +767,24 @@ func mountLine(mt config.Mount) string {
 func portLine(p config.Port) string {
 	iface, host := config.PortEffective(p)
 	return fmt.Sprintf("%s:%d -> %d", iface, host, p.Container)
+}
+
+// mcpLine renders one [[mcp]] declaration for rows and the dirty signature:
+// the same local/remote vocabulary status prints, plus the carried env names.
+func mcpLine(mc config.MCP) string {
+	var b strings.Builder
+	if mc.Remote() {
+		fmt.Fprintf(&b, "%s — remote: %s", mc.Name, mc.URL)
+	} else {
+		fmt.Fprintf(&b, "%s — local: %s", mc.Name, strings.Join(mc.Command, " "))
+	}
+	if len(mc.Env) > 0 {
+		fmt.Fprintf(&b, " (env: %s)", strings.Join(mc.Env, ", "))
+	}
+	if len(mc.Egress) > 0 {
+		fmt.Fprintf(&b, " (+egress: %s)", strings.Join(mc.Egress, ", "))
+	}
+	return b.String()
 }
 
 // ---- rendering ---------------------------------------------------------------

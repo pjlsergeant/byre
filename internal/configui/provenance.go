@@ -24,6 +24,10 @@ type SkillRuntime struct {
 	// Offered is the skill's declared-but-CLOSED doors (ADR 0020): shown as
 	// switches; opening one writes the entry into the user's own egress.
 	Offered []string
+	// MCPs are the skill's [[mcp]] declarations (ADR 0033). Shown on the MCP
+	// screen attributed skill:<name> — and closable from there: a `!name`
+	// closure in this file reaches a skill-declared server.
+	MCPs []config.MCP
 	// Posture is the skill's declared network_posture ("" = none). The Egress
 	// screen uses it to say whether anything enforces the allowlist.
 	Posture string
