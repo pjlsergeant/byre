@@ -125,15 +125,10 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// mount covers it at run time.
 	" && mkdir -p /home/dev /workspace /inbox && chown \"${BYRE_UID}:${BYRE_GID}\" /home/dev /inbox\n" +
 	"ENV PATH=/home/dev/.local/bin:$PATH\n" +
-	// Strip any inherited HEALTHCHECK: the engine runs healthcheck commands in
-	// the container's netns independently of our ENTRYPOINT, so a base image's
-	// probe could do network I/O before a network-posture skill's launch gate
-	// lands (fail-open window). byre boxes are interactive sessions, not
-	// health-monitored services, so we never want one regardless. Last
-	// HEALTHCHECK wins, so Dockerfile() re-asserts NONE at the tail — this one
-	// only neutralizes the base image for the (root-run) build steps between
-	// here and there.
-	"HEALTHCHECK NONE\n" +
+	// The HEALTHCHECK strip lives at the Dockerfile TAIL (see Dockerfile()),
+	// not here: healthchecks never execute during build steps, so an early
+	// copy defends nothing — and a second instruction only buys a buildkit
+	// MultipleInstructionsDisallowed warning on every build.
 	"COPY " + LauncherName + " " + launcherPath + "\n" +
 	"RUN chmod +x " + launcherPath + "\n" +
 	// Login shells (e.g. `byre shell`) source /etc/profile.d/*.sh; this shim
@@ -221,12 +216,19 @@ func Dockerfile(in Input) string {
 	writeNpm(&b, in.NpmGlobal)
 	writeRaw(&b, in.DockerfilePost)
 
-	// Re-assert HEALTHCHECK NONE after every raw block (skill Dockerfile lines,
-	// the project's dockerfile_post): the last HEALTHCHECK in a Dockerfile wins,
-	// so a raw line reintroducing one — a pasted service fragment is enough —
-	// would silently undo the core block's strip and reopen the pre-gate window
-	// documented there. Same tail posture as USER/ENTRYPOINT below: chassis-owned
-	// instructions come last so no raw block can override them.
+	// Strip any HEALTHCHECK — inherited from the base image or introduced by a
+	// raw block (skill Dockerfile lines, dockerfile_post; a pasted service
+	// fragment is enough). The engine runs healthcheck commands in the
+	// container's netns independently of our ENTRYPOINT, so a probe could do
+	// network I/O before a network-posture skill's launch gate lands
+	// (fail-open window); byre boxes are interactive sessions, not
+	// health-monitored services, so we never want one regardless. The tail is
+	// the ONE place this works (last HEALTHCHECK wins) and the one place it's
+	// needed — healthchecks never execute during build steps, so no earlier
+	// copy is required (a second instruction would only draw buildkit's
+	// MultipleInstructionsDisallowed warning). Same tail posture as
+	// USER/ENTRYPOINT below: chassis-owned instructions come last so no raw
+	// block can override them.
 	b.WriteString("\nHEALTHCHECK NONE\n")
 
 	// Drop to the baked dev user for the runtime container. This comes after every

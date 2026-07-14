@@ -32,7 +32,6 @@ RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi
  && echo "dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash" >> /etc/passwd \
  && mkdir -p /home/dev /workspace /inbox && chown "${BYRE_UID}:${BYRE_GID}" /home/dev /inbox
 ENV PATH=/home/dev/.local/bin:$PATH
-HEALTHCHECK NONE
 COPY byre-launch /usr/local/bin/byre-launch
 RUN chmod +x /usr/local/bin/byre-launch
 COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
