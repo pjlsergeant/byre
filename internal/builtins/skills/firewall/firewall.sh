@@ -78,10 +78,17 @@ ipt() { iptables -w "$@"; }
 ipt6() { ip6tables -w "$@"; }
 
 # Is there a v6 stack in this netns at all? A host without one has nothing to
-# leak through v6 — skip rather than dying on missing modules.
+# leak through v6 — skip rather than dying on missing modules. But when the
+# namespace HAS non-loopback IPv6 interfaces (read straight from /proc — no
+# iproute2 in the image) and ip6tables is broken, skipping would leave the
+# ENTIRE v6 side policy-ACCEPT under a deny-by-default claim: die instead,
+# the gate stays shut. (Ported from firewall-open.sh's guard, review
+# 2026-07-14; link-local-only counts — fe80 reaches the local segment.)
 ip6_ok=
 if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
   ip6_ok=1
+elif grep -qsv ' lo$' /proc/net/if_inet6; then
+  die "this netns has IPv6 interfaces but ip6tables is unavailable — the IPv6 side would stay OPEN under a deny-by-default claim"
 else
   log "IPv6 unavailable in this netns; skipping ip6tables (nothing to leak through)"
 fi

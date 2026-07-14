@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Egress closures and the `firewall-open` skill (ADR 0030).** `!host[:port]`
+  entries in the `egress` key are now closures that survive the config
+  cascade and subtract from the *derived* allowlist -- after skill egress
+  unions in, so a config can finally say "claude minus statsig". Portless
+  `!host` closes every port; `!host:port` just that one. The new
+  `firewall-open` builtin enforces closures on an otherwise-open network
+  (posture `open-denylist`: best-effort per-IP drops aimed at well-behaved
+  telemetry clients -- the deny-by-default firewall remains the containment
+  posture). Closures are never invisible: `byre status` prints them under
+  every posture, and a subtracted allowlist entry shows as closed-by, not
+  vanished. An unresolvable closure fails the launch (under an open network
+  it would stay silently reachable beneath an "N hosts blocked" claim).
+- **The firewall now fails closed on a broken IPv6 stack.** A netns with
+  real (non-loopback) IPv6 interfaces whose `ip6tables` is unavailable used
+  to skip the v6 rules -- leaving that entire side policy-ACCEPT under a
+  deny-by-default claim. The launch gate now stays shut instead; the skip
+  remains only for a truly v6-less netns, where there is nothing to leak.
+- **The gated integration suite is agent-runnable and gates CI.** New
+  coverage: the real launch path (ownership round-trip, fresh-volume uid),
+  machine-volume sharing across projects (ADR 0017), concurrent worktree
+  sessions (ADR 0009), fail-closed across `docker restart`, and the
+  firewall-open pair. The suite runs in CI (and so in the release gate) on
+  every push.
+- **The firewall's IP-snapshot limitation is documented honestly**
+  (SECURITY.md, README pointer, the skill's own docs): hostname grants pin
+  the IPs resolved at launch, and on per-query-rotating resolvers a granted
+  host can start failing -- closed, never open -- seconds after launch.
+
 - **`~/.byre/AGENTS.md`: a byre-owned guide for host-side coding agents.**
   Every store-mutating command now lands (and keeps current) an agent
   guide at the store root: the directory map with per-entry write rules,

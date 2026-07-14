@@ -412,3 +412,57 @@ func containerLogs(t *testing.T, r *runner.Runner, name string) string {
 	}
 	return string(out)
 }
+
+// TestIntegrationFirewallV6GuardFailsClosed: a netns with real (non-loopback)
+// IPv6 interfaces whose ip6tables is broken must NOT launch — skipping would
+// leave the entire v6 side policy-ACCEPT under a deny-by-default claim
+// (firewall-open's review guard, ported to firewall.sh 2026-07-14). The box
+// rides an IPv6-enabled network so its netns has v6 interfaces; the helper
+// has its ip6tables removed before exec'ing the real script.
+func TestIntegrationFirewallV6GuardFailsClosed(t *testing.T) {
+	r := requireEngineRunner(t)
+	image, env := buildFirewallImage(t, r)
+
+	netName := uniqueName("fw-v6net")
+	if out, err := exec.Command(string(r.Engine()), "network", "create",
+		"--ipv6", "--subnet", "fd07:b14e::/64", netName).CombinedOutput(); err != nil {
+		t.Skipf("engine cannot create an IPv6 network here: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "network", "rm", netName).Run() })
+
+	name := uniqueName("fw-v6guard")
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
+	start := exec.Command(string(r.Engine()), "run", "-d", "--name", name,
+		"--network", netName,
+		"-e", "BYRE_LAUNCH_GATE_TIMEOUT=4",
+		image, "bash", "-c", "echo GATE_OPENED_LEAK")
+	if out, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start box: %v\n%s", err, out)
+	}
+	waitRunning(t, r, name)
+
+	// The helper, with ip6tables removed from its own filesystem (CoW —
+	// the shared image is untouched) before the real script runs.
+	helperArgs := []string{"run", "--rm", "-u", "0:0",
+		"--net", "container:" + name, "--cap-add", "NET_ADMIN",
+		"--entrypoint", "bash"}
+	for k, v := range env {
+		helperArgs = append(helperArgs, "-e", k+"="+v)
+	}
+	helperArgs = append(helperArgs, image,
+		"-c", "rm -f /usr/sbin/ip6tables && exec /usr/local/bin/byre-firewall")
+	out, err := exec.Command(string(r.Engine()), helperArgs...).CombinedOutput()
+	t.Logf("helper output:\n%s", out)
+	if err == nil {
+		t.Errorf("helper must die when ip6tables is unavailable in a v6-capable netns")
+	}
+	if !strings.Contains(string(out), "IPv6 side would stay OPEN") {
+		t.Errorf("expected the v6 guard's fatal message; got:\n%s", out)
+	}
+	if code := dockerWait(t, r, name); code == 0 {
+		t.Errorf("box must exit non-zero when the helper dies (fail closed)")
+	}
+	if logs := containerLogs(t, r, name); strings.Contains(logs, "GATE_OPENED_LEAK") {
+		t.Errorf("the command ran despite the dead helper:\n%s", logs)
+	}
+}

@@ -33,6 +33,9 @@
 # Known holes, deliberate (documented in the design doc): DNS is allowed
 # through (port 53 + Docker's embedded resolver), so DNS tunneling is not
 # closed in v1. Disabling the firewall = removing it from `skills` in config.
+# NOT a hole: ip6tables missing in a netns that nonetheless has IPv6
+# interfaces is FATAL (gate stays shut), not skipped — the skip only covers
+# a truly v6-less netns, where there is nothing to leak through.
 
 # apt: iptables (the rules) + netcat-openbsd (the launch-gate listener). The
 # rest are network DIAGNOSTICS — a firewalled box is exactly where you want to
