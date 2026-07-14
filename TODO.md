@@ -17,9 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **byre-codereview: pre-flight grok auth probe.** Expired grok auth
-  = headless HANG on a device prompt, silent in background runs. Cheap fix: a
-  bounded `timeout ... grok -p PONG` probe first; bail with the re-auth hint.
 - [ ] (S) **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents
   in the store: version-controlling `~/.byre`, composing skills, layering
   over provided skills instead of editing in place. Start minimal; grows
@@ -34,11 +31,6 @@ the rationale lives.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
-- [ ] (S) **Pocock 1.0.1: fold grilling in** (Pete, 2026-07-13): move the
-  drawer copy of grilling into the published claude-skills-pocock package
-  (re-pack, new digest, Pete re-tags), then trim it from the local
-  claude-skills drawer. Order rule: grilling exists exactly once at every
-  step. Doubles as the first live replacement-flow test.
 - [ ] (S) **Bundled display digests in inspect** (D5b deferral, ADR 0029):
   inspect on a bundled package shows no digest today; compute and show the
   display digest so bundled/installed inspect output ranks equally.
