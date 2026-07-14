@@ -20,6 +20,11 @@ the rationale lives.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
+- [ ] (S) **inttest skill.** Skill-ify the sacrificial-VM test loop (built
+  2026-07-14, hand grants + `.byre-devlog/inttest.sh`): egress + key on a
+  machine volume + a `byre-inttest` wrapper on PATH; the Lima template
+  (`wip/byre-inttest.yaml`) rides the skill's docs. Do it when the
+  hand-rolled loop's friction shows.
 - [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
   `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
   2cfd8fb). Establish the per-agent facts empirically first (install shape,
@@ -42,27 +47,11 @@ the rationale lives.
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
   interaction with the origin-pinning rules before building.
-- [ ] (M) **Egress closures + open-denylist mode** (Pete, 2026-07-13/14;
-  in flight, branch `default-open-firewall`; design grilled 2026-07-14):
-  `!host[:port]` in `egress` subtracts from the derived allowlist INCLUDING
-  skill-declared entries (status: removed-by-config, not vanished; portless
-  closes EVERY port; later plain entry re-opens); the `firewall-open` builtin
-  enforces the open-denylist posture (default ACCEPT, DROP the closures,
-  fail closed incl. unresolvable hosts, claim "open (N hosts blocked)",
-  best-effort IP-snapshot worded as evadable/stale -- never as byre
-  shrugging). `byre denials` was cut from this unit -- see resolver sidecar.
-- [ ] (M) **Host-side test session.** The end-to-end cases that stay manual
-  until agent-runnable tests exist: fresh-develop file ownership + launch
-  path, builtins fresh-volume UID, concurrent worktree sessions, shared-auth
-  coverage (ADR 0017), firewall fail-closed after `docker restart`.
 - [ ] (L) **`byre deliver`: ssh:// remote delivery.** The remaining tranche
   of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/DELIVER.md); the
   mini-protocol is frozen there (--proto / --porcelain / --consume). Gated
-  deliver test cases ride the agent-runnable-tests item.
-- [ ] (L) **Agent-runnable integration tests.** The gated
-  `BYRE_DOCKER_TESTS=1` suite needs a Docker host the agent can reach.
-  Design pass across nested rootless podman, a CI job, and a docker-capable
-  host VM (not mutually exclusive). Unlocks most of the manual test debt.
+  deliver test cases can now land in the gated suite (agent-runnable since
+  2026-07-14).
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
 - [ ] (L) **Rootless Podman keep-id path.** Design settled: generic-UID
@@ -110,7 +99,6 @@ plan to get to any time soon:
   with no names/timestamps -- and interim scaffolding toward the companion
   service byre deliberately doesn't run yet. Don't re-propose the counter
   tier; build this instead. Not urgent; fine if it waits months.
-
 
 ## Parked / consciously not doing
 
