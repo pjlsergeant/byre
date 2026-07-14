@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v0.3.0 -- 2026-07-14
 
 - **Egress closures and the `firewall-open` skill (ADR 0030).** `!host[:port]`
   entries in the `egress` key are now closures that survive the config
