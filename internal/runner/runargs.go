@@ -112,8 +112,8 @@ func RunArgs(p RunParams) []string {
 		args = append(args, "--group-add", strconv.Itoa(g))
 	}
 	// The userns mapping (rootless Podman keep-id) sits with byre's own flags:
-	// raw run_args after it can still override (author-owned footgun, same as
-	// --user — see docs/SECURITY.md).
+	// raw run_args after it can still override (last-wins, ADR 0006 — an
+	// identity-changing run_arg is an author-owned footgun, same as --user).
 	args = appendUserns(args, p.Userns)
 
 	// Raw passthrough — last-wins over byre's flags.

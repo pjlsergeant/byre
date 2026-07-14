@@ -341,8 +341,9 @@ Changes to the configuration will be shown on exit.
 
 ## Platform
 
-Linux and macOS, over Docker or Podman (rootful; rootless Podman coming soon). byre bakes your UID/GID into the image so the agent
-runs unprivileged as you and files land correctly owned. Debian-derived base
-images only.
+Linux and macOS, over Docker or Podman -- rootful or rootless (rootless
+Podman 4.3+ runs under `--userns=keep-id`). byre bakes a dev identity into
+the image so the agent runs unprivileged as you and files land correctly
+owned. Debian-derived base images only.
 
 Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

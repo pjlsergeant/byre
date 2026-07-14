@@ -434,6 +434,14 @@ label, and host-side store. A naming device only; caching is Docker's job.
 Re-pointing a moved or renamed directory's identity (image, volumes,
 config) onto its new path-derived id.
 
+**Keep-id mode**:
+The rootless-Podman path (ADR 0032): a generic-uid image (dev at 1000)
+run under `--userns=keep-id`, mapping the invoking user onto the baked
+id. Rootful engines instead bake the host uid directly (ADR 0008); both
+end at the same place -- box-written files land owned by the invoker.
+_Avoid_: "rootless mode" (rootless names the ENGINE's state; keep-id
+names byre's path on it)
+
 ### Doctrine
 
 **Footgun doctrine**:

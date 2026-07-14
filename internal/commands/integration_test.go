@@ -10,6 +10,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -389,5 +390,125 @@ test -f %q/wt-only.txt && echo WT_OK; sleep 60`, wtDir)}
 	}
 	if logs := containerLogs(t, r, paramsWt.Name); !strings.Contains(logs, token) {
 		t.Errorf("worktree box never saw main box's token through the shared volume:\n%s", logs)
+	}
+}
+
+// TestIntegrationRootlessPodmanKeepID: the rootless-Podman keep-id path (ADR
+// 0032) against a live rootless engine — the exact promises the unit fakes
+// can't vouch for:
+//   - resolveIdentity selects the generic keep-id identity;
+//   - the generic-uid image builds and the box (real entrypoint, develop's own
+//     argv) runs as dev at uid 1000 under --userns=keep-id;
+//   - box-written workspace files land host-side owned by the INVOKING user
+//     (the whole point of the mapping);
+//   - a seeded state volume is written under the box's mapping: the box sees
+//     the seeded file owned by dev (1000) and can write next to it.
+//
+// Skips when podman is absent, rootful, or too old for the mapping — it needs
+// a rootless-podman host (the inttest VM qualifies), not the docker CI engine.
+func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
+	if os.Getenv("BYRE_DOCKER_TESTS") != "1" {
+		t.Skip("set BYRE_DOCKER_TESTS=1 to run byre integration tests")
+	}
+	eng, err := runner.Detect("podman", nil)
+	if err != nil {
+		t.Skip("podman not installed")
+	}
+	r := runner.New(eng)
+	if rootless, rerr := r.IsRootlessPodman(); rerr != nil || !rootless {
+		t.Skipf("podman is not rootless here (rootless=%v err=%v)", rootless, rerr)
+	}
+
+	p, proj := testPaths(t)
+	if err := builtins.EnsureStore(p.Home); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedSrc := t.TempDir()
+	if err := os.WriteFile(filepath.Join(seedSrc, "seeded-cred"), []byte("seeded\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Volumes: []config.Volume{
+		{Name: "statevol", Target: "/home/dev/statevol", Role: "state", Seed: &config.Seed{Host: seedSrc}},
+	}}
+	res, err := skills.Resolve(cfg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rv := combine(cfg, res)
+
+	var identOut strings.Builder
+	ident, err := resolveIdentity(&identOut, r)
+	if err != nil {
+		// Not a skip: a rootless engine that fails the mode-select on a
+		// keep-id-capable host is the bug this test exists to catch. But a
+		// genuinely old podman can't run the path at all.
+		if ok, _ := r.SupportsKeepIDMapping(); !ok {
+			t.Skipf("podman too old for keep-id mapping: %v", err)
+		}
+		t.Fatalf("resolveIdentity refused on a keep-id-capable rootless engine: %v", err)
+	}
+	if !ident.KeepID || ident.UID != genericUID {
+		t.Fatalf("mode-select picked %+v, want the generic keep-id identity", ident)
+	}
+
+	image := imageTag(p.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
+		t.Fatalf("generic-uid image failed to build: %v", err)
+	}
+
+	params, err := runParams(p, rv, image, false, false, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = exec.Command(string(r.Engine()), "rm", "-f", params.Name).Run()
+		for _, v := range params.Volumes {
+			_ = r.VolumeRemove(v.Name)
+		}
+	})
+
+	// Seed exactly like develop does — under the box's identity/mapping.
+	if err := seedVolumes(r, io.Discard, p, image, rv.volumes, ident); err != nil {
+		t.Fatalf("seeding under keep-id failed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(proj, "host-sentinel"), []byte("from-host\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	params.Command = []string{"bash", "-c", strings.Join([]string{
+		`echo "ID=$(id -u):$(id -g):$(id -un)"`,
+		`cat /workspace/host-sentinel`,
+		`echo from-box > /workspace/box-written`,
+		`echo "SEED=$(cat /home/dev/statevol/seeded-cred) SEED_OWNER=$(stat -c %u:%g /home/dev/statevol/seeded-cred)"`,
+		`touch /home/dev/statevol/.vol-writable`,
+	}, " && ")}
+	out, err := exec.Command(string(r.Engine()), runner.RunArgs(params)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("keep-id launch through the real entrypoint failed: %v\n%s", err, out)
+	}
+	logs := string(out)
+	for _, want := range []string{
+		fmt.Sprintf("ID=%d:%d:dev", genericUID, genericGID),
+		"from-host",
+		fmt.Sprintf("SEED=seeded SEED_OWNER=%d:%d", genericUID, genericGID),
+	} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("keep-id launch output missing %q:\n%s", want, logs)
+		}
+	}
+
+	// The ownership half of the contract: the box's write lands host-side
+	// owned by the INVOKING user, not a subuid.
+	fi, err := os.Stat(filepath.Join(proj, "box-written"))
+	if err != nil {
+		t.Fatalf("box-written file never landed host-side: %v", err)
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+		t.Errorf("box-written file owned by uid %d, want invoking uid %d", st.Uid, os.Getuid())
 	}
 }

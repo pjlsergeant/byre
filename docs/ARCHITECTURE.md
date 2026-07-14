@@ -165,11 +165,15 @@ the operations it needs -- build, run, volume/image/container ops --
 shelling out to the engine CLI, never the SDK (ADR 0002). `engine =
 "auto"` (default) picks `docker` if present, else `podman`.
 
-Caveat -- **rootless Podman is not a free win.** The chassis bakes the
-host UID/GID assuming a rootful daemon; rootless remaps user namespaces,
-so the ownership math differs. The rootless keep-id path is designed but
-sequenced later (ADR 0008); until then `byre develop` detects rootless
-Podman and refuses (the launch is known to create wrong-owned files);
+**Rootless Podman** is a first-class path with its own ownership math
+(ADR 0032): the chassis bakes a GENERIC dev uid (1000) instead of the
+host's, and the box -- plus every helper container that fills its volumes
+-- runs under `--userns=keep-id:uid=1000,gid=1000`, mapping the invoking
+user onto the baked id, so files land correctly owned just like the
+rootful bake (ADR 0008). The netns-init helper joins the box's own userns
+(`--userns=container:<box>`) instead, since NET_ADMIN over a netns exists
+only inside the userns that owns it. Rootless Podman OLDER than 4.3
+(no explicit keep-id mapping form) keeps the old detect-and-refuse;
 `BYRE_ALLOW_ROOTLESS_PODMAN=1` overrides with the warning retained, the
 same shape as the root-host refusal (`BYRE_ALLOW_ROOT=1`).
 

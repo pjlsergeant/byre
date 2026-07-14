@@ -45,11 +45,6 @@ the rationale lives.
   2026-07-14).
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
-- [ ] (L) **Rootless Podman keep-id path.** Design settled: generic-UID
-  image on the rootless path, `--userns=keep-id`, mode-select on
-  `runner.IsRootlessPodman` (background: ADR 0008). Today's
-  detect-and-refuse stays until this lands; add integration coverage with
-  it.
 
 ## Standing
 

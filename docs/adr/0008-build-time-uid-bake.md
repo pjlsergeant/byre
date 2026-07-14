@@ -33,8 +33,7 @@ Consequences:
   with `--userns=keep-id:uid=<image-uid>,gid=<image-gid>` -- the explicit
   `uid=`/`gid=` form, because plain `keep-id` only aligns when the host
   UID already equals the image UID -- falling back to detect-and-warn
-  where keep-id is unavailable. Until built, rootless is detect-and-warn
-  only.
+  where keep-id is unavailable. (Since shipped, 2026-07-14: ADR 0032.)
 - Out of scope, documented unsupported: `sudo byre`, CI-prebuild-then-run
   (build-as-one-user-run-as-another), identity-changing `run_args`
   (`--user`/`--userns` -- author-owned footgun per PRINCIPLES.md #1).
