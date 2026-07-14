@@ -165,6 +165,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 				netnsEnv[k] = v
 			}
 			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
+			// The config's `!host[:port]` closures, as written (portless =
+			// every port). The deny-by-default helper never reads this (its
+			// allowlist above is already subtracted); the open-denylist
+			// helper drops exactly these.
+			netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
 		} else {
 			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
 		}
