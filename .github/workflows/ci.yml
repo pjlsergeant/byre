@@ -29,3 +29,18 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test ./...
+
+  # The gated engine suite (BYRE_DOCKER_TESTS=1) against the runner's real
+  # Docker. A separate job so the fast unit signal stays fast; release.yml's
+  # workflow_call pulls this in too, so a release can't ship without it.
+  # Interactive iteration on these tests happens on the sacrificial inttest
+  # VM (wip/byre-inttest.yaml); CI is the authoritative gate.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gated integration tests
+        run: BYRE_DOCKER_TESTS=1 go test ./... -run Integration -v -timeout 20m
