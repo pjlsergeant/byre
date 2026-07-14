@@ -621,6 +621,8 @@ func sampleConfig() Config {
 		Mounts:             []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
 		Volumes:            []Volume{{Name: "v", Role: "cache", Target: "/c"}},
 		Ports:              []Port{{Container: 8080}},
+		MCPs:               []MCP{{Name: "github", Command: []string{"github-mcp-server"}}},
+		MCPClosed:          []string{"linear"},
 		DockerfilePre:      []string{"RUN true"},
 		DockerfilePost:     []string{"RUN false"},
 		RunArgs:            []string{"--cap-add=X"},

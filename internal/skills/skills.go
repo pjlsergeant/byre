@@ -57,6 +57,14 @@ type AgentContrib struct {
 	// user may opt to seed from the host into a fresh state volume (config
 	// seed_prefs = true). Optional; requires a state volume to land in.
 	Prefs *PrefsSpec `toml:"prefs"`
+	// MCP is how THIS agent's session receives byre's declared MCP servers
+	// (the [[mcp]] set): "inject" means the agent command itself consumes the
+	// baked /etc/byre/mcp.json (e.g. claude's --mcp-config flag) — the skill
+	// author VOUCHES the command does so. Absent means the agent has no MCP
+	// adapter: declared servers still bake into the file, and status reports
+	// them declared-but-not-delivered with the file path. Closed set; other
+	// values are reserved for future adapters (registrars) and rejected.
+	MCP string `toml:"mcp"`
 }
 
 // PrefsSpec is one agent's curated, non-secret host preferences, eligible for a
@@ -147,7 +155,12 @@ type File struct {
 		// / no control chars / bounded length so it stays legible DATA.
 		Containment string `toml:"containment"`
 	} `toml:"runtime"`
-	Agent   *AgentContrib   `toml:"agent"`
+	Agent *AgentContrib `toml:"agent"`
+	// MCPs are MCP servers this skill declares ([[mcp]] blocks, same grammar
+	// as the config key). They union into the effective set AFTER the config
+	// cascade merges (MCPSet); a config `!name` closure can subtract one.
+	// Wiring, not grants: the carried egress/env render attributed mcp:<name>.
+	MCPs    []config.MCP    `toml:"mcp"`
 	Volumes []config.Volume `toml:"volumes"`
 	Context struct {
 		Text string `toml:"text"` // inline snippet
@@ -171,6 +184,7 @@ func IsStub(f File) bool {
 		len(rt.Mounts) == 0 && rt.NetworkPosture == "" && rt.NetnsInit == "" &&
 		len(rt.Egress) == 0 && len(rt.EgressOffered) == 0 &&
 		len(rt.SockGroups) == 0 && rt.Containment == "" &&
+		len(f.MCPs) == 0 &&
 		len(f.Volumes) == 0 &&
 		f.Context.Text == "" && f.Context.File == ""
 }
@@ -860,6 +874,22 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 			}
 		}
 
+		// MCP declarations: same shape bar as the config key (one validator,
+		// config.ValidateMCP). Markers are config vocabulary — a skill
+		// DECLARES servers, it doesn't subtract them — and the name grammar
+		// rejects '!' anyway. Intra-skill duplicates refuse here; duplicates
+		// across sources (config+skill, skill+skill) are MCPSet's hard reject.
+		mcpNames := map[string]bool{}
+		for _, m := range f.MCPs {
+			if err := config.ValidateMCP(m); err != nil {
+				return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
+			}
+			if mcpNames[m.Name] {
+				return Resolved{}, fmt.Errorf("skill %q: mcp %s declared twice", name, m.Name)
+			}
+			mcpNames[m.Name] = true
+		}
+
 		// sock_groups: absolute paths that must also be active bind targets on
 		// this skill (the runner probes the bind and --group-adds the gid). A
 		// path with no matching mount would be a silent no-op — refuse.
@@ -918,6 +948,18 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		}
 
 		res.Skills = append(res.Skills, sk)
+
+		// [agent].mcp is a closed set — a typo'd adapter value would silently
+		// degrade every box's MCP delivery to "no adapter". Checked for every
+		// agent-capable skill, not just the selected one, so `skill validate`
+		// paths that load through Resolve fail loudly.
+		if f.Agent != nil {
+			switch f.Agent.MCP {
+			case "", "inject":
+			default:
+				return Resolved{}, fmt.Errorf("skill %q: [agent] mcp %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.MCP)
+			}
+		}
 
 		if name == cfg.Agent {
 			if f.Agent == nil || f.Agent.Command == "" {
