@@ -318,7 +318,12 @@ directories under `~/.byre/skills|templates/`; **installed** are
 content-addressed, hash-verified snapshots acquired with
 `byre skill install <manifest-url>` and inert until a config enables
 them. To edit an immutable package, `byre skill fork` it into a local
-one. `docs/skills.md` is the user guide.
+one. `docs/skills.md` is the user guide. The store carries its own guide
+for host-side coding agents at `~/.byre/AGENTS.md` -- byre-owned,
+regenerated whenever it differs from the running binary's copy: the map,
+per-entry write rules (the consent-document rule for
+`projects/<id>/byre.config` above all), and the version-control and
+sharing conventions.
 
 Enabling a skill is trusting it (PRINCIPLES.md #2): skill content is
 validated for legibility, not as a trust boundary. A skill's grants (a

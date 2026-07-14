@@ -17,9 +17,11 @@ const stampName = "bundled/.byre-version"
 // EnsureStore prepares ~/.byre for use under the package model (D7b, D10):
 //
 //  1. Ensure skills/ and templates/ dirs exist.
-//  2. On byre-version stamp mismatch: rewrite ~/.byre/bundled/ mirror from
+//  2. Land the byre-owned AGENTS.md guide at the store root (rewritten
+//     whenever it differs from the binary's copy).
+//  3. On byre-version stamp mismatch: rewrite ~/.byre/bundled/ mirror from
 //     embed.FS and update the stamp.
-//  3. Surface LEGACY dirs (names matching bundled/retired) via the returned
+//  4. Surface LEGACY dirs (names matching bundled/retired) via the returned
 //     notice; optional archive is a separate call (ArchiveLegacy).
 //
 // Unlike the deleted Materialize path, this NEVER copies bundled packages
@@ -33,6 +35,9 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		if err := os.MkdirAll(filepath.Join(home, sub), 0o755); err != nil {
 			return err
 		}
+	}
+	if err := ensureAgentsMD(home, out); err != nil {
+		return err
 	}
 	stampPath := filepath.Join(home, stampName)
 	cur, _ := os.ReadFile(stampPath)

@@ -17,10 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **AGENTS.md in `~/.byre`.** Minimal best-practices guide for agents
-  in the store: version-controlling `~/.byre`, composing skills, layering
-  over provided skills instead of editing in place. Start minimal; grows
-  alongside bundle sharing.
 - [ ] (S) **Config UI: env secret-masking.** env values render in plaintext
   in the form; mask them (reveal on demand).
 - [ ] (S) **`!host` egress closures** (Pete, 2026-07-13): `!host` in the config

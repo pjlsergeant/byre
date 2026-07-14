@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`~/.byre/AGENTS.md`: a byre-owned guide for host-side coding agents.**
+  Every store-mutating command now lands (and keeps current) an agent
+  guide at the store root: the directory map with per-entry write rules,
+  the consent-document rule for `projects/<id>/byre.config`, the byre
+  verbs to prefer over `mv`/`cp`, layering over provided packages instead
+  of editing in place, and the version-control conventions (git at the
+  `skills/<owner>/` level, never the whole store). byre owns the file --
+  edits are overwritten whenever it differs from the running binary's
+  copy.
 - **`skill|template pack` output is now a fixed point of pack.** Re-packing
   a previously packed manifest (the documented publishing flow writes pack
   output over the primary in place) used to accrete a duplicate generated
