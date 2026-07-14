@@ -248,17 +248,28 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 // The whole keep-id path through develop (ADR 0032): under rootless Podman
 // with mapping support, the image tag and build args carry the GENERIC
 // identity, the create argv carries --userns=keep-id, BYRE_UID/GID are the
-// in-container ids, and volume seeding runs under the same identity.
+// in-container ids, volume seeding runs under the same identity, and the
+// netns hook JOINS the box's userns (docker's no-join twin is
+// TestDevelopRunsNetnsInitsOnceUp). CI runs docker only, so without this pin
+// a broken joinUserns wire would stay green everywhere automated and surface
+// as rootless boxes dying at their launch gates.
 func TestDevelopKeepIDPath(t *testing.T) {
 	p, _ := testPaths(t)
+	pinNonce(t, "feedface")
 	seedSrc := t.TempDir()
 	cfg := config.Config{Volumes: []config.Volume{
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Seed: &config.Seed{Host: seedSrc}},
 	}}
-	f := &fakeRunner{engine: "podman", rootless: true, keepID: true}
+	res := netnsSkill("/usr/local/bin/byre-firewall")
+	boxID := "cafef00d1234"
+	f := &fakeRunner{engine: "podman", rootless: true, keepID: true,
+		liveSecond: map[string][]string{"byre.run=feedface": {boxID}}}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(cfg, res), false); err != nil {
 		t.Fatal(err)
+	}
+	if len(f.netnsInits) != 1 || f.netnsInits[0] != boxID+" /usr/local/bin/byre-firewall userns" {
+		t.Fatalf("keep-id netns hook must join the box's userns, got %v", f.netnsInits)
 	}
 	image := imageTag(p.ID, genericUID, genericGID)
 	if len(f.builds) != 1 || f.builds[0] != image {

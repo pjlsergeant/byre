@@ -84,15 +84,13 @@ func New(e Engine) *Runner {
 func (r *Runner) Engine() Engine { return r.engine }
 
 // IsRootlessPodman reports whether this runner drives Podman in ROOTLESS mode.
-// It matters because byre bakes the host UID/GID into the image at build time so
-// the in-container uid equals the uid on disk — which assumes a ROOTFUL daemon.
-// Rootless Podman runs in a user namespace where host↔container uids are
-// remapped, so the baked uid no longer matches what lands on disk and files end
-// up owned by the wrong id. v0 supports rootful Docker/Podman only; callers use
-// this to WARN (not block). The rootless fix (a generic-uid image + keep-id) is a
-// sequenced follow-up. Docker — including rootless Docker — is out of scope here
-// and reports false. A query error is returned so the caller can stay quiet
-// rather than warn on a guess.
+// It is the identity mode-select's pivot (ADR 0032): rootful engines bake the
+// host UID/GID into the image (in-container uid == uid on disk), while
+// rootless Podman remaps user namespaces, so byre switches to the generic-uid
+// image + keep-id mapping there (SupportsKeepIDMapping gates the fallback
+// refusal for pre-4.3 Podman). Docker — including rootless Docker — is out of
+// scope here and reports false. A query error is returned so the caller can
+// stay quiet rather than act on a guess.
 func (r *Runner) IsRootlessPodman() (bool, error) {
 	if r.engine != Podman {
 		return false, nil

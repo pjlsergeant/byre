@@ -104,7 +104,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 			}
 		}
 		for i := range plans {
-			if err := copyRehomeVolumes(s, &plans[i], uid, gid, multi); err != nil {
+			if err := copyRehomeVolumes(s, &plans[i], multi); err != nil {
 				for _, done := range plans[:i+1] {
 					rollback(done.r, done.created)
 				}
@@ -283,8 +283,8 @@ func planRehomeVolumes(paths project.Paths, oldID string, r engineRunner, uid, g
 // copyRehomeVolumes executes one engine's copies, recording every created
 // destination into the plan so the caller can roll back ACROSS engines on
 // failure. It never removes a source — retirement happens only after every
-// engine's copies landed.
-func copyRehomeVolumes(s Streams, pl *enginePlan, uid, gid int, multi bool) error {
+// engine's copies landed. The chown identity rides the plan (pl.ident).
+func copyRehomeVolumes(s Streams, pl *enginePlan, multi bool) error {
 	for _, p := range pl.pairs {
 		if err := pl.r.VolumeCreate(p.dst); err != nil {
 			return fmt.Errorf("creating %s: %w", p.dst, err)
