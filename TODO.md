@@ -17,11 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **`!host` egress closures** (Pete, 2026-07-13): `!host` in the config
-  `egress` key closes that endpoint under deny-by-default -- subtracting from
-  the derived allowlist INCLUDING skill-declared entries (today skill egress
-  unions in after the cascade, out of `!name`'s reach); status shows the entry
-  as removed-by-config, not vanished. Use case: claude minus statsig.
 - [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
   OAuth credential, run past the ~1h token expiry; neither dying = OAuth
   sharing is safe. API-key path already verified (ADR 0017).
@@ -50,11 +45,16 @@ the rationale lives.
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
   interaction with the origin-pinning rules before building.
-- [ ] (M) **Open-denylist firewall mode** (Pete, 2026-07-13): otherwise-open
-  network with the config's `!host` closures enforced (default ACCEPT, DROP
-  the named hosts) via the same netns_init vehicle; posture claim like
-  "open (N hosts blocked)". Best-effort IP-snapshot blocking -- aimed at
-  well-behaved clients (telemetry), worded so.
+- [ ] (M) **Egress closures + open-denylist mode + `byre denials`** (Pete,
+  2026-07-13/14; in flight, branch `default-open-firewall`): `!host` in
+  `egress` subtracts from the derived allowlist INCLUDING skill-declared
+  entries (status: removed-by-config, not vanished); a second builtin skill
+  enforces the open-denylist posture (default ACCEPT, DROP the `!host`s,
+  claim like "open (N hosts blocked)", best-effort IP-snapshot, worded so);
+  `byre denials` shows an iptables-counter snapshot -- named per-host table
+  under open-denylist, aggregate-only under deny-by-default, with the command
+  itself explaining why names aren't available there (see resolver sidecar,
+  Maybe someday).
 - [ ] (M) **Host-side test session.** The end-to-end cases that stay manual
   until agent-runnable tests exist: fresh-develop file ownership + launch
   path, builtins fresh-volume UID, concurrent worktree sessions, shared-auth
@@ -103,6 +103,12 @@ plan to get to any time soon:
   byre runs beside the box (postgres, redis, ...) and networks in -- the
   agent gets endpoints, never the daemon. Covers the compose-deps case
   without the docker-host grant.
+
+- [ ] (L) **Filtering DNS resolver sidecar** (Pete, 2026-07-14): a resolver
+  byre runs in the box's DNS path, so denials are seen as NAMES, not IPs --
+  the only route to hostname-level denial logging under deny-by-default, and
+  it closes the documented DNS-tunneling hole (firewall.sh v1 note). Not
+  urgent; fine if it waits months for someone who wants it.
 
 
 ## Parked / consciously not doing
