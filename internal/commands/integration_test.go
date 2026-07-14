@@ -18,8 +18,11 @@ import (
 	"syscall"
 	"testing"
 
+	"time"
+
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -159,5 +162,92 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != uid {
 		t.Errorf("box-written file owned by uid %d, want invoking uid %d", st.Uid, uid)
+	}
+}
+
+// TestIntegrationMachineVolumeSharedAcrossProjects: ADR 0017's shared-auth
+// mechanism against a live engine — a machine-scoped state volume must
+// resolve to the SAME engine volume from two different projects under one
+// store, so a credential one project's box writes is live in the next
+// project's box (both writing and reading as the unprivileged dev user).
+func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
+	r := requireEngineRunner(t)
+	pA, _ := testPaths(t) // pins BYRE_HOME for the whole test
+	projB := t.TempDir()
+	pB, err := project.Resolve(projB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pB.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if pA.ID == pB.ID {
+		t.Fatalf("test projects collided on ID %q", pA.ID)
+	}
+	if err := builtins.EnsureStore(pA.Home); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := builtins.LoadCatalogRaw(pA.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Volumes: []config.Volume{
+		{Name: "authvol", Target: "/home/dev/.authvol", Role: "state", Scope: "machine"},
+	}}
+	res, err := skills.Resolve(cfg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rv := combine(cfg, res)
+
+	uid, gid := os.Getuid(), os.Getgid()
+	imageA, imageB := imageTag(pA.ID, uid, gid), imageTag(pB.ID, uid, gid)
+	t.Cleanup(func() { _ = r.ImageRemove(imageA); _ = r.ImageRemove(imageB) })
+	if err := buildImage(r, pA, cfg, res, imageA, false); err != nil {
+		t.Fatalf("project A image failed to build: %v", err)
+	}
+	if err := buildImage(r, pB, cfg, res, imageB, false); err != nil {
+		t.Fatalf("project B image failed to build: %v", err)
+	}
+
+	paramsA, err := runParams(pA, rv, imageA, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paramsB, err := runParams(pB, rv, imageB, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The heart of the claim: same engine volume from both projects.
+	if len(paramsA.Volumes) != 1 || len(paramsB.Volumes) != 1 {
+		t.Fatalf("expected exactly one volume per box, got %v / %v", paramsA.Volumes, paramsB.Volumes)
+	}
+	volName := paramsA.Volumes[0].Name
+	if got := paramsB.Volumes[0].Name; got != volName {
+		t.Fatalf("machine-scoped volume resolved per-project: %q vs %q", volName, got)
+	}
+	_ = r.VolumeRemove(volName) // shed any leftover from an aborted prior run
+	t.Cleanup(func() {
+		_ = exec.Command(string(r.Engine()), "rm", "-f", paramsA.Name).Run()
+		_ = exec.Command(string(r.Engine()), "rm", "-f", paramsB.Name).Run()
+		_ = r.VolumeRemove(volName)
+	})
+
+	// Unique token so a stale volume can't satisfy the read.
+	token := fmt.Sprintf("token-%d-%d", os.Getpid(), time.Now().UnixNano())
+	paramsA.Command = []string{"bash", "-c", fmt.Sprintf("echo %s > /home/dev/.authvol/cred", token)}
+	if out, err := exec.Command(string(r.Engine()), runner.RunArgs(paramsA)...).CombinedOutput(); err != nil {
+		t.Fatalf("project A box failed to write the credential: %v\n%s", err, out)
+	}
+	paramsB.Command = []string{"bash", "-c", "cat /home/dev/.authvol/cred && stat -c %u /home/dev/.authvol/cred"}
+	out, err := exec.Command(string(r.Engine()), runner.RunArgs(paramsB)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("project B box failed to read the credential: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), token) {
+		t.Errorf("project B box did not see project A's credential; got:\n%s", out)
+	}
+	if !strings.Contains(string(out), strconv.Itoa(uid)) {
+		t.Errorf("credential not owned by the dev uid %d in project B's box; got:\n%s", uid, out)
 	}
 }
