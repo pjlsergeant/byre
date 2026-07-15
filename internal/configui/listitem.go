@@ -270,9 +270,16 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 2
 		}
 	case fMCP:
-		for i := range next.inputs {
-			next.inputs[i].SetValue(r.vals[i])
+		// vals: name, url, command(argv form), env, egress (mcpVals order).
+		next.inputs[0].SetValue(r.vals[0])
+		if r.vals[1] != "" {
+			next.itemMode = 1
+			next.inputs[1].SetValue(r.vals[1])
+		} else {
+			next.inputs[1].SetValue(r.vals[2])
 		}
+		next.inputs[2].SetValue(r.vals[3])
+		next.inputs[3].SetValue(r.vals[4])
 	}
 	return next
 }
@@ -333,6 +340,9 @@ func (m model) startItem(idx int) model {
 	m.itemFocus = 0
 	m.itemHasMode = false
 	m.itemMode = 0
+	m.itemModeOpts = nil
+	m.itemModeLabel = ""
+	m.itemModeFirst = false
 	switch m.listField {
 	case fApt:
 		m.inputLabels = []string{"Package"}
@@ -349,24 +359,35 @@ func (m model) startItem(idx int) model {
 		}
 		m.inputs = []textinput.Model{newInput(v)}
 	case fMCP:
-		// url XOR command discriminates remote vs local (no transport field —
-		// ADR 0033). The command field is the reversible argv form: space-
-		// separated, "double quotes" grouping an arg with spaces.
+		// Kind picker FIRST — it drives the form: one Endpoint input whose
+		// meaning (local argv / remote url) follows the picker, so the
+		// url-XOR-command rule is structural instead of a validation error
+		// (Pete's review of the first form: five undifferentiated inputs,
+		// unclear requiredness, unstated lowercase rule, implied egress
+		// invisible). The endpoint's live label + the derived-egress footer
+		// render in viewItem; the name lowercases itself on commit.
+		m.itemHasMode = true
+		m.itemModeOpts = []string{"local", "remote"}
+		m.itemModeLabel = "Kind"
+		m.itemModeFirst = true
 		m.inputLabels = []string{
-			"Name",
-			"URL (remote server; blank = local)",
-			`Command (argv; "quote args with spaces")`,
-			"Env names it consumes (space-separated)",
-			"Extra egress host[:port] (space-separated)",
+			"Name (required)", // viewItem appends the lowercase hint
+			"Endpoint",        // viewItem swaps in the kind-specific label
+			"Env var names (optional)",
+			"Extra egress (optional)",
 		}
-		vals := []string{"", "", "", "", ""}
+		name, endpoint, env, egress := "", "", "", ""
 		if idx >= 0 {
-			vals = mcpVals(m.mcps[idx])
+			mc := m.mcps[idx]
+			name, env, egress = mc.Name, strings.Join(mc.Env, " "), strings.Join(mc.Egress, " ")
+			if mc.Remote() {
+				m.itemMode = 1
+				endpoint = mc.URL
+			} else {
+				endpoint = joinArgv(mc.Command)
+			}
 		}
-		m.inputs = make([]textinput.Model, len(vals))
-		for i, v := range vals {
-			m.inputs[i] = newInput(v)
-		}
+		m.inputs = []textinput.Model{newInput(name), newInput(endpoint), newInput(env), newInput(egress)}
 	case fEnv:
 		m.inputLabels = []string{"Key", "Value"}
 		k, val := "", ""
@@ -390,6 +411,8 @@ func (m model) startItem(idx int) model {
 		}
 		m.inputs = []textinput.Model{newInput(host), newInput(target)}
 		m.itemHasMode = true
+		m.itemModeOpts = []string{"ro", "rw", "disabled"}
+		m.itemModeLabel = "Mode"
 	case fPorts:
 		m.inputLabels = []string{"Container port", "Host port (blank = same)", "Interface (blank = " + config.DefaultPortInterface + ")"}
 		container, host, iface := "", "", ""
@@ -415,8 +438,8 @@ func newInput(v string) textinput.Model {
 	return ti
 }
 
-// itemFocusables is the number of focusable controls in the item editor (inputs,
-// plus the ro/rw picker for mounts).
+// itemFocusables is the number of focusable controls in the item editor (the
+// inputs, plus the segmented picker when the field has one).
 func (m model) itemFocusables() int {
 	n := len(m.inputs)
 	if m.itemHasMode {
@@ -425,10 +448,24 @@ func (m model) itemFocusables() int {
 	return n
 }
 
+// focusedInput maps the control index to an input index, or -1 when the
+// picker holds focus. With itemModeFirst the picker is control 0 and the
+// inputs shift up one.
+func (m model) itemInputIndex() int {
+	if m.itemHasMode && m.itemModeFirst {
+		return m.itemFocus - 1 // control 0 = picker; -1 flags it
+	}
+	if m.itemHasMode && m.itemFocus == len(m.inputs) {
+		return -1
+	}
+	return m.itemFocus
+}
+
 func (m *model) focusItem(i int) {
 	m.itemFocus = wrap(i, m.itemFocusables())
+	fi := m.itemInputIndex()
 	for j := range m.inputs {
-		if j == m.itemFocus {
+		if j == fi {
 			m.inputs[j].Focus()
 		} else {
 			m.inputs[j].Blur()
@@ -436,7 +473,7 @@ func (m *model) focusItem(i int) {
 	}
 }
 
-func (m *model) onModePicker() bool { return m.itemHasMode && m.itemFocus == len(m.inputs) }
+func (m *model) onModePicker() bool { return m.itemHasMode && m.itemInputIndex() == -1 }
 
 func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -462,25 +499,25 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "left":
 		if m.onModePicker() {
-			m.itemMode = wrap(m.itemMode-1, 3)
+			m.itemMode = wrap(m.itemMode-1, len(m.itemModeOpts))
 			return m, nil
 		}
 	case "right":
 		if m.onModePicker() {
-			m.itemMode = wrap(m.itemMode+1, 3)
+			m.itemMode = wrap(m.itemMode+1, len(m.itemModeOpts))
 			return m, nil
 		}
 		// At the end of an input with a live suggestion, → accepts it (host-path
 		// completion or the derived target); otherwise it's a normal cursor move.
 		if full := m.suggestion(); full != "" && m.atInputEnd() {
-			m.inputs[m.itemFocus].SetValue(full)
-			m.inputs[m.itemFocus].CursorEnd()
+			m.inputs[m.itemInputIndex()].SetValue(full)
+			m.inputs[m.itemInputIndex()].CursorEnd()
 			return m, nil
 		}
 	}
-	if !m.onModePicker() && m.itemFocus < len(m.inputs) {
+	if fi := m.itemInputIndex(); fi >= 0 && fi < len(m.inputs) {
 		var cmd tea.Cmd
-		m.inputs[m.itemFocus], cmd = m.inputs[m.itemFocus].Update(msg)
+		m.inputs[fi], cmd = m.inputs[fi].Update(msg)
 		return m, cmd
 	}
 	return m, nil
@@ -489,10 +526,11 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // atInputEnd reports whether the focused input's cursor is at the end, so → can
 // mean "accept suggestion" rather than "move cursor right".
 func (m model) atInputEnd() bool {
-	if m.itemFocus >= len(m.inputs) {
+	fi := m.itemInputIndex()
+	if fi < 0 || fi >= len(m.inputs) {
 		return false
 	}
-	in := m.inputs[m.itemFocus]
+	in := m.inputs[fi]
 	return in.Position() >= len([]rune(in.Value()))
 }
 
@@ -500,10 +538,10 @@ func (m model) atInputEnd() bool {
 // the part beyond what's typed). Mounts only: the host input gets filesystem
 // completion; the target input, while empty, gets a path derived from the host.
 func (m model) suggestion() string {
-	if m.listField != fMounts || m.onModePicker() || m.itemFocus >= len(m.inputs) {
+	if m.listField != fMounts || m.onModePicker() {
 		return ""
 	}
-	switch m.itemFocus {
+	switch m.itemInputIndex() {
 	case 0:
 		return completeHostPath(m.inputs[0].Value())
 	case 1:
@@ -519,7 +557,11 @@ func (m model) suggestion() string {
 // after the focused input.
 func (m model) ghostSuffix() string {
 	full := m.suggestion()
-	cur := m.inputs[m.itemFocus].Value()
+	fi := m.itemInputIndex()
+	if fi < 0 || fi >= len(m.inputs) {
+		return ""
+	}
+	cur := m.inputs[fi].Value()
 	if full != "" && strings.HasPrefix(full, cur) {
 		return full[len(cur):]
 	}
@@ -649,22 +691,26 @@ func (m model) commitItem() model {
 		}
 		m.egress = putAt(m.egress, m.editIndex, entry)
 	case fMCP:
-		// Shape rules are config's (ValidateMCP — the same check the layer
-		// gate runs); the editor only parses its string inputs apart. The
-		// command field round-trips through the quote-aware argv form
-		// (splitArgv/joinArgv), so an arg with embedded spaces survives an
-		// open-and-commit unchanged.
-		cmd, err := splitArgv(m.inputs[2].Value())
-		if err != nil {
-			m.itemErr = "command: " + err.Error()
-			return m
-		}
+		// The Kind picker decides what the Endpoint input means; shape rules
+		// stay config's (ValidateMCP — the same check the layer gate runs).
+		// The name lowercases itself (the grammar is lowercase-only, and
+		// "GitHub" means github); a local endpoint round-trips through the
+		// quote-aware argv form so spaced args survive an open-and-commit.
 		mc := config.MCP{
-			Name:    strings.TrimSpace(m.inputs[0].Value()),
-			URL:     strings.TrimSpace(m.inputs[1].Value()),
-			Command: cmd,
-			Env:     strings.Fields(m.inputs[3].Value()),
-			Egress:  strings.Fields(m.inputs[4].Value()),
+			Name:   strings.ToLower(strings.TrimSpace(m.inputs[0].Value())),
+			Env:    strings.Fields(m.inputs[2].Value()),
+			Egress: strings.Fields(m.inputs[3].Value()),
+		}
+		endpoint := strings.TrimSpace(m.inputs[1].Value())
+		if m.itemMode == 1 {
+			mc.URL = endpoint
+		} else {
+			cmd, err := splitArgv(endpoint)
+			if err != nil {
+				m.itemErr = "command: " + err.Error()
+				return m
+			}
+			mc.Command = cmd
 		}
 		if err := config.ValidateMCP(mc); err != nil {
 			m.itemErr = err.Error()
@@ -989,32 +1035,93 @@ func (m model) viewItem() string {
 	}
 	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(verb+" "+itemTitle(m.listField)))
 
-	for i, in := range m.inputs {
-		cursor := "  "
-		val := in.View()
-		if i == m.itemFocus {
-			cursor = focusStyle.Render("▸ ")
-			val += dimStyle.Render(m.ghostSuffix()) // autocomplete/suggestion ghost
-		}
-		label := fmt.Sprintf("%-*s", 16, m.inputLabels[i])
-		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, val)
+	// Label column sized to the widest label this form shows, so optional/
+	// required annotations don't push the colons out of line.
+	pad := 16
+	if m.itemHasMode && len(m.itemModeLabel) > pad {
+		pad = len(m.itemModeLabel)
 	}
-	if m.itemHasMode {
+	for i := range m.inputs {
+		if l := len([]rune(m.itemLabel(i))); l > pad {
+			pad = l
+		}
+	}
+	picker := func() {
 		cursor := "  "
 		if m.onModePicker() {
 			cursor = focusStyle.Render("▸ ")
 		}
-		label := fmt.Sprintf("%-*s", 16, "Mode")
-		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, renderSeg([]string{"ro", "rw", "disabled"}, m.itemMode, m.onModePicker()))
+		label := fmt.Sprintf("%-*s", pad, m.itemModeLabel)
+		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, renderSeg(m.itemModeOpts, m.itemMode, m.onModePicker()))
+	}
+	if m.itemHasMode && m.itemModeFirst {
+		picker()
+	}
+	for i, in := range m.inputs {
+		cursor := "  "
+		val := in.View()
+		if i == m.itemInputIndex() {
+			cursor = focusStyle.Render("▸ ")
+			val += dimStyle.Render(m.ghostSuffix()) // autocomplete/suggestion ghost
+		}
+		fmt.Fprintf(&b, "%s%-*s: %s\n", cursor, pad, m.itemLabel(i), val)
+	}
+	if m.itemHasMode && !m.itemModeFirst {
+		picker()
+	}
+	for _, note := range m.itemNotes() {
+		b.WriteString(dimStyle.Render("  "+note) + "\n")
 	}
 
 	if m.itemErr != "" {
 		b.WriteString("\n" + errStyle.Render("✗ "+m.itemErr))
 	}
 	hint := "tab next · enter accept · ^s save · esc cancel"
-	if m.listField == fMounts {
+	switch {
+	case m.listField == fMounts:
 		hint = "tab next · → accept suggestion · ←/→ mode · enter accept · ^s save · esc cancel"
+	case m.itemHasMode:
+		hint = "tab next · ←/→ " + strings.ToLower(m.itemModeLabel) + " · enter accept · ^s save · esc cancel"
 	}
 	b.WriteString("\n\n" + dimStyle.Render(hint))
 	return b.String()
+}
+
+// itemLabel is the display label for input i — MCP's endpoint label follows
+// the Kind picker live, so requiredness and meaning are never ambiguous.
+func (m model) itemLabel(i int) string {
+	if m.listField == fMCP {
+		switch i {
+		case 0:
+			return "Name (required)"
+		case 1:
+			if m.itemMode == 1 {
+				return "URL (required)"
+			}
+			return "Command (required)"
+		}
+	}
+	return m.inputLabels[i]
+}
+
+// itemNotes are the dim guidance lines under the editor — the form explains
+// itself instead of failing at commit (Pete's review of the first form).
+func (m model) itemNotes() []string {
+	if m.listField != fMCP {
+		return nil
+	}
+	notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+	if m.itemMode == 1 {
+		probe := config.MCP{Name: "x", URL: strings.TrimSpace(m.inputs[1].Value())}
+		if host, port, ok := probe.Endpoint(); ok {
+			notes = append(notes, fmt.Sprintf("url host implies egress to %s:%d — opened automatically under a firewall;", host, port))
+			notes = append(notes, "extra egress is only for side-hosts (e.g. an OAuth endpoint)")
+		} else {
+			notes = append(notes, "remote server: byre opens the url's host automatically under a firewall")
+		}
+	} else {
+		notes = append(notes, `command is an argv — "quote args with spaces"; ship the binary via a skill/apt`,
+			"local servers reach nothing a firewall doesn't allow: declare their hosts in extra egress")
+	}
+	return notes
 }

@@ -208,13 +208,16 @@ type model struct {
 	textField fieldID
 
 	// modeItem
-	inputs      []textinput.Model
-	inputLabels []string
-	itemFocus   int  // 0..len(inputs)-1, then the mode picker if itemHasMode
-	itemHasMode bool // mounts: a ro/rw picker after the inputs
-	itemMode    int  // 0 = ro, 1 = rw
-	editIndex   int  // -1 = adding a new item
-	itemErr     string
+	inputs        []textinput.Model
+	inputLabels   []string
+	itemFocus     int      // control index; inputMap below says what it means
+	itemHasMode   bool     // the editor carries a segmented picker
+	itemMode      int      // selected picker option
+	itemModeOpts  []string // picker options (mounts: ro/rw/disabled; mcp: local/remote)
+	itemModeLabel string   // picker row label ("Mode", "Kind")
+	itemModeFirst bool     // picker renders/focuses BEFORE the inputs (mcp: Kind drives the form)
+	editIndex     int      // -1 = adding a new item
+	itemErr       string
 
 	width       int
 	height      int

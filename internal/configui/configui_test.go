@@ -1172,47 +1172,62 @@ func TestMCPItemAddEditValidation(t *testing.T) {
 	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, false)
 	m.listField = fMCP
 
-	// Reject: no url AND no command.
+	// The editor is Kind-first: the picker is control 0 (focus starts there)
+	// and the single Endpoint input's meaning follows it — the url-XOR-command
+	// rule is structural, no both-set state exists to reject.
 	m = m.startItem(-1)
+	if !m.itemHasMode || !m.itemModeFirst || m.itemModeLabel != "Kind" || !m.onModePicker() {
+		t.Fatalf("Kind picker must lead the MCP editor: hasMode=%v first=%v label=%q onPicker=%v",
+			m.itemHasMode, m.itemModeFirst, m.itemModeLabel, m.onModePicker())
+	}
+	if len(m.inputs) != 4 {
+		t.Fatalf("form should be 4 inputs + picker, got %d", len(m.inputs))
+	}
+
+	// Reject: no endpoint at all (local kind, empty command).
 	m.inputs[0].SetValue("github")
 	if m2 := m.commitItem(); m2.itemErr == "" || len(m2.mcps) != 0 {
-		t.Fatalf("empty declaration should be rejected: err=%q mcps=%v", m2.itemErr, m2.mcps)
+		t.Fatalf("empty endpoint should be rejected: err=%q mcps=%v", m2.itemErr, m2.mcps)
 	}
-	// Reject: both url and command.
-	m.inputs[1].SetValue("https://mcp.example.com/mcp")
-	m.inputs[2].SetValue("gh-mcp stdio")
-	if m2 := m.commitItem(); m2.itemErr == "" {
-		t.Fatalf("both url+command should be rejected: %q", m2.itemErr)
-	}
-	// Accept a local declaration with env + egress.
-	m.inputs[1].SetValue("")
-	m.inputs[3].SetValue("GITHUB_TOKEN GH_HOST")
-	m.inputs[4].SetValue("api.github.com")
+	// Accept a local declaration with env + egress; the name auto-lowercases.
+	m.inputs[0].SetValue("GitHub")
+	m.inputs[1].SetValue("gh-mcp stdio")
+	m.inputs[2].SetValue("GITHUB_TOKEN GH_HOST")
+	m.inputs[3].SetValue("api.github.com")
 	m = m.commitItem()
 	if m.itemErr != "" || len(m.mcps) != 1 {
 		t.Fatalf("local add failed: err=%q mcps=%v", m.itemErr, m.mcps)
 	}
 	got := m.mcps[0]
 	if got.Name != "github" || got.Command[0] != "gh-mcp" || len(got.Env) != 2 || got.Egress[0] != "api.github.com" {
-		t.Fatalf("declaration shape wrong: %+v", got)
+		t.Fatalf("declaration shape wrong (name must auto-lowercase): %+v", got)
 	}
 
 	// Duplicate name in this layer: caught by the assembled ValidateLayer.
 	m = m.startItem(-1)
 	m.inputs[0].SetValue("github")
-	m.inputs[2].SetValue("other")
+	m.inputs[1].SetValue("other")
 	if m2 := m.commitItem(); m2.itemErr == "" || len(m2.mcps) != 1 {
 		t.Fatalf("in-layer duplicate should be rejected: err=%q", m2.itemErr)
 	}
 
-	// Edit in place: switch it to remote.
+	// Edit in place: flip the Kind to remote; the endpoint becomes a url.
 	m = m.startItem(0)
+	if m.itemMode != 0 {
+		t.Fatalf("editing a local declaration must open with Kind=local")
+	}
+	m.itemMode = 1
 	m.inputs[1].SetValue("https://mcp.github.example/mcp")
-	m.inputs[2].SetValue("")
 	m = m.commitItem()
 	if m.itemErr != "" || !m.mcps[0].Remote() {
 		t.Fatalf("edit to remote failed: err=%q %+v", m.itemErr, m.mcps)
 	}
+	// Re-opening a remote declaration restores Kind + url in the endpoint.
+	m = m.startItem(0)
+	if m.itemMode != 1 || m.inputs[1].Value() != "https://mcp.github.example/mcp" {
+		t.Fatalf("remote edit must reopen as Kind=remote with the url: mode=%d val=%q", m.itemMode, m.inputs[1].Value())
+	}
+	m = m.commitItem()
 
 	// Assemble round-trips the working state into the config.
 	if out := m.assemble(); len(out.MCPs) != 1 || out.MCPs[0].URL == "" {
