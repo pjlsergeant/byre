@@ -39,7 +39,19 @@ requested=${#entries[@]}
 v4rules=() v6rules=()   # elements: "ip port"
 probe_host="" probe_port=""
 for e in "${entries[@]+"${entries[@]}"}"; do
-  if [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=443; fi
+  # Bracketed IPv6 first — "[addr]" or "[addr]:port" (RFC 3986; byre's
+  # ParseEgress emits this form). A literal needs NO resolution — and must
+  # not go through getent: AI_ADDRCONFIG filters v6 answers in a v6-less
+  # netns, which would misread a literal as unresolvable (probed 2026-07-15).
+  v6lit=
+  if [[ "$e" == \[*\]* ]]; then
+    host="${e#[}"; host="${host%%]*}"
+    rest="${e#*]}"
+    if [[ "$rest" == :* ]]; then port="${rest#:}"; elif [ -z "$rest" ]; then port=443; else
+      log "warning: bad egress entry '$e' — skipping"; continue
+    fi
+    v6lit=1
+  elif [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=443; fi
   # Match byre's Go validation (config.ParseEgress): numeric, 1..65535. byre
   # validates everything it puts in BYRE_EGRESS, but this script also runs
   # ejected (byre ejectfirewall) where the value is hand-editable — so reject
@@ -47,6 +59,10 @@ for e in "${entries[@]+"${entries[@]}"}"; do
   case "$port" in ''|*[!0-9]*) log "warning: bad egress entry '$e' — skipping"; continue ;; esac
   if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
     log "warning: egress '$e' port out of range — skipping"; continue
+  fi
+  if [ -n "$v6lit" ]; then
+    v6rules+=("$host $port")
+    continue
   fi
   ips="$(getent ahosts "$host" 2>/dev/null | awk '{print $1}' | sort -u)" || true
   if [ -z "$ips" ]; then

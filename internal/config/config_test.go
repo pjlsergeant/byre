@@ -1028,3 +1028,41 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 		t.Fatal("invalid env key must be rejected")
 	}
 }
+
+// Bracketed IPv6 egress entries (RFC 3986 form, parsed to RFC 5952 canonical
+// text): the grammar the rest of the planet uses, adopted so IPv6 endpoints
+// stop being unsayable (grilling ruling 2026-07-15). The host round-trips
+// WITH brackets so every "%s:%d" composition re-parses.
+func TestParseEgressBracketedIPv6(t *testing.T) {
+	h, p, err := ParseEgress("[2001:DB8::1]:8443")
+	if err != nil || h != "[2001:db8::1]" || p != 8443 {
+		t.Fatalf("got %s:%d %v", h, p, err)
+	}
+	// Portless defaults to 443 for OPEN entries; a portless CLOSURE still
+	// means every port (ClosurePortless reads the distinction).
+	h, p, err = ParseEgress("[::1]")
+	if err != nil || h != "[::1]" || p != 443 {
+		t.Fatalf("portless: %s:%d %v", h, p, err)
+	}
+	if !ClosurePortless("[::1]") || ClosurePortless("[::1]:443") {
+		t.Fatal("portless distinction must survive brackets")
+	}
+	// A portless closure reaches every port of the canonical host.
+	if !EgressClosureMatches("[2001:DB8::1]", "[2001:db8::1]:8443") {
+		t.Fatal("portless v6 closure must match any port, canonicalized")
+	}
+
+	for entry, want := range map[string]string{
+		"[2001:db8::1":       "unterminated",
+		"[not-an-ip]:443":    "must hold an IPv6 literal",
+		"[192.0.2.7]:443":    "must hold an IPv6 literal",
+		"[::1]junk":          "not a valid [addr]:port",
+		"[::1]:notaport":     "not a valid [addr]:port",
+		"2001:db8::1":        "write it bracketed",
+		"2001:db8::1:8443":   "write it bracketed",
+	} {
+		if _, _, err := ParseEgress(entry); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want contains %q", entry, err, want)
+		}
+	}
+}

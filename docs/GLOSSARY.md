@@ -403,10 +403,14 @@ network, the config's closures dropped). Declared by a skill via
 **Egress**:
 The derived allowlist: every enabled skill declares the `host[:port]`
 endpoints it NEEDS to function, byre unions them (plus the user's
-`egress` config key, ADR 0019), subtracts the closures, and enforces
-the rest as port-scoped per-IP rules. Empty is legal -- a maximally-
-locked box. An egress entry under a restrictive posture is a grant;
-without one it is declared and inert.
+`egress` config key, ADR 0019, and the declared MCP set's carried
+endpoints), subtracts the closures, and enforces the rest as
+port-scoped per-IP rules. A host is a hostname, an IPv4 literal, or a
+bracketed IPv6 literal (`[2001:db8::1]:8443` -- the RFC 3986
+convention; bare IPv6 is ambiguous with host:port and rejected with a
+pointer at the brackets). Empty is legal -- a maximally-locked box. An
+egress entry under a restrictive posture is a grant; without one it is
+declared and inert.
 
 **Closure**:
 A `!host[:port]` entry in the `egress` config key (ADR 0030). Unlike

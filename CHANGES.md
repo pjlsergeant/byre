@@ -29,6 +29,16 @@
   delivered plus the baked path. Remote OAuth stays agent-owned on the
   project volume (`claude mcp login --no-browser` works headless via URL
   paste-back).
+- **IPv6 egress entries (bracketed).** The egress grammar accepts
+  `[2001:db8::1]` / `[addr]:port` -- the RFC 3986 convention, parsed with
+  the stdlib and canonicalized -- everywhere egress is spoken: the `egress`
+  config key, `!` closures (portless still closes every port), skill
+  declarations, and MCP remote urls (whose IPv6 endpoints previously drew
+  a validation refusal). Both firewall helpers program the literals
+  directly via ip6tables -- no resolution step, so a v6-less network can't
+  misread a literal as unresolvable. Bare (bracketless) IPv6 is rejected
+  with a pointer at the brackets. Hostname AAAA resolution already worked
+  (getent ahosts); this closes the literal-endpoint gap.
 - **`byre mcp add|remove|list`.** CLI sugar over the `[[mcp]]` vocabulary:
   `add` is add-or-update into the project's host-side config (`--global`
   for default.config), `remove` is closure-smart (deletes the layer's own

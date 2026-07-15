@@ -20,6 +20,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"slices"
@@ -56,8 +57,10 @@ func (m MCP) Remote() bool { return m.URL != "" }
 
 // Endpoint is the remote server's implied egress endpoint (host, port),
 // derived from URL: an explicit URL port wins, else 443 for https and 80
-// for http. ok is false for a local declaration or an unparseable URL
-// (validation reports those; derivation stays total).
+// for http. The host is returned in egress-grammar form — an IPv6 literal
+// comes back BRACKETED and canonicalized, so "%s:%d" compositions
+// downstream stay parseable. ok is false for a local declaration or an
+// unparseable URL (validation reports those; derivation stays total).
 func (m MCP) Endpoint() (host string, port int, ok bool) {
 	if m.URL == "" {
 		return "", 0, false
@@ -73,7 +76,16 @@ func (m MCP) Endpoint() (host string, port int, ok bool) {
 	if p := u.Port(); p != "" {
 		fmt.Sscanf(p, "%d", &port)
 	}
-	return u.Hostname(), port, true
+	return egressHostForm(u.Hostname()), port, true
+}
+
+// egressHostForm renders a URL hostname in the egress grammar: IPv6
+// literals bracketed and canonicalized (RFC 5952), everything else as-is.
+func egressHostForm(hostname string) string {
+	if ip := net.ParseIP(hostname); ip != nil && ip.To4() == nil {
+		return "[" + ip.String() + "]"
+	}
+	return hostname
 }
 
 // mcpNameRe is the MCP name grammar. Deliberately tighter than most: the
@@ -123,13 +135,13 @@ func ValidateMCP(m MCP) error {
 		if u.Hostname() == "" {
 			return fmt.Errorf("mcp %s: url %q: missing a host", m.Name, m.URL)
 		}
-		// The url host becomes an implied egress entry, so it must satisfy
-		// the egress grammar — which excludes IPv6 (colons are ambiguous
-		// with host:port there). Accepting a bracketed-IPv6 url here would
-		// bake wiring whose allowlist/closure entries downstream machinery
-		// can neither enforce nor honestly report (grok review, 2026-07-15).
-		if _, _, err := ParseEgress(u.Hostname()); err != nil {
-			return fmt.Errorf("mcp %s: url host %q: not expressible in byre's egress grammar (hostname or IPv4; IPv6 endpoints are unsupported)", m.Name, u.Hostname())
+		// The url host becomes an implied egress entry, so it must be
+		// expressible in the egress grammar (hostname, IPv4, or bracketed
+		// IPv6 — egressHostForm brackets a v6 literal the way Endpoint
+		// derives it). One owner: whatever ParseEgress accepts here is
+		// exactly what the derived entry will re-parse as downstream.
+		if _, _, err := ParseEgress(egressHostForm(u.Hostname())); err != nil {
+			return fmt.Errorf("mcp %s: url host %q: not expressible in byre's egress grammar: %v", m.Name, u.Hostname(), err)
 		}
 		// Userinfo (user:pass@), query strings, and command argv are all
 		// ALLOWED to carry whatever the user puts there — including secrets,

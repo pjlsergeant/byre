@@ -43,7 +43,21 @@ done
 # blocked, so resolution failure is fatal (grilled 2026-07-14).
 v4rules=() v6rules=()   # elements: "ip port" (port "" = every port/protocol)
 for e in "${entries[@]+"${entries[@]}"}"; do
-  if [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=""; fi
+  # Bracketed IPv6 first — "[addr]" or "[addr]:port" (RFC 3986; byre's
+  # ParseEgress emits this form). A portless bracket closure keeps the
+  # every-port semantics (port stays empty). A literal needs NO resolution
+  # — and must not go through getent: AI_ADDRCONFIG filters v6 answers in a
+  # v6-less netns, which would misread the literal as unresolvable and kill
+  # the launch (probed 2026-07-15).
+  v6lit=
+  if [[ "$e" == \[*\]* ]]; then
+    host="${e#[}"; host="${host%%]*}"
+    rest="${e#*]}"
+    if [[ "$rest" == :* ]]; then port="${rest#:}"; elif [ -z "$rest" ]; then port=""; else
+      die "bad denylist entry '$e'"
+    fi
+    v6lit=1
+  elif [[ "$e" == *:* ]]; then host="${e%:*}"; port="${e##*:}"; else host="$e"; port=""; fi
   # Mirror byre's Go validation (config.ParseEgress) for the ejected /
   # hand-edited case; byre itself never emits a bad entry.
   if [ -n "$port" ]; then
@@ -51,6 +65,10 @@ for e in "${entries[@]+"${entries[@]}"}"; do
     if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
       die "denylist entry '$e': port out of range"
     fi
+  fi
+  if [ -n "$v6lit" ]; then
+    v6rules+=("$host $port")
+    continue
   fi
   ips="$(getent ahosts "$host" 2>/dev/null | awk '{print $1}' | sort -u)" || true
   [ -n "$ips" ] || die "cannot resolve $host — it would stay reachable under an 'N hosts blocked' claim"

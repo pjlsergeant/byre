@@ -136,9 +136,12 @@ var (
 var egressHostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:_-]*[A-Za-z0-9])?$`)
 
 // ParseEgress splits a `host` or `host:port` entry, defaulting the port to
-// 443. It rejects a malformed host or an out-of-range port. A bracketed IPv6
-// literal ("[::1]:443") is out of scope — egress entries are hostnames or
-// IPv4; a bare IPv6 with colons is ambiguous with host:port, so reject it.
+// 443. It rejects a malformed host or an out-of-range port. Hosts are
+// hostnames, IPv4 literals, or BRACKETED IPv6 literals ("[2001:db8::1]",
+// "[::1]:443" — RFC 3986's convention, since a bare IPv6's colons are
+// ambiguous with host:port). A bracketed host is canonicalized (RFC 5952
+// via net.ParseIP) and returned WITH its brackets, so every downstream
+// "%s:%d" composition and re-parse round-trips.
 func ParseEgress(entry string) (host string, port int, err error) {
 	host, port, _, err = splitEgressEntry(entry)
 	return host, port, err
@@ -153,9 +156,36 @@ func splitEgressEntry(entry string) (host string, port int, portless bool, err e
 	if e == "" {
 		return "", 0, false, fmt.Errorf("empty egress entry")
 	}
+	// Bracketed IPv6: "[addr]" or "[addr]:port".
+	if strings.HasPrefix(e, "[") {
+		end := strings.IndexByte(e, ']')
+		if end < 0 {
+			return "", 0, false, fmt.Errorf("egress %q: unterminated '[' (IPv6 literals are written [addr] or [addr]:port)", entry)
+		}
+		ip := net.ParseIP(e[1:end])
+		if ip == nil || ip.To4() != nil {
+			return "", 0, false, fmt.Errorf("egress %q: brackets must hold an IPv6 literal", entry)
+		}
+		host, port, portless = "["+ip.String()+"]", 443, true
+		switch rest := e[end+1:]; {
+		case rest == "":
+		case strings.HasPrefix(rest, ":"):
+			p, perr := strconv.Atoi(rest[1:])
+			if perr != nil {
+				return "", 0, false, fmt.Errorf("egress %q: not a valid [addr]:port", entry)
+			}
+			port, portless = p, false
+		default:
+			return "", 0, false, fmt.Errorf("egress %q: not a valid [addr]:port", entry)
+		}
+		if port < 1 || port > 65535 {
+			return "", 0, false, fmt.Errorf("egress %q: port out of range", entry)
+		}
+		return host, port, portless, nil
+	}
 	host, port, portless = e, 443, true
 	// Split a trailing :port only when the tail is all digits, so a hostname
-	// stays intact and an accidental IPv6 (multiple colons) is caught below.
+	// stays intact and a bare IPv6 (multiple colons) is caught below.
 	if i := strings.LastIndexByte(e, ':'); i >= 0 {
 		if p, perr := strconv.Atoi(e[i+1:]); perr == nil {
 			host, port, portless = e[:i], p, false
@@ -165,6 +195,9 @@ func splitEgressEntry(entry string) (host string, port int, portless bool, err e
 		return "", 0, false, fmt.Errorf("egress %q: port out of range", entry)
 	}
 	if strings.ContainsRune(host, ':') || !egressHostRe.MatchString(host) {
+		if strings.Count(e, ":") >= 2 {
+			return "", 0, false, fmt.Errorf("egress %q: a bare IPv6 literal is ambiguous with host:port — write it bracketed: [%s] or [%s]:port", entry, e, e)
+		}
 		return "", 0, false, fmt.Errorf("egress %q: not a valid host[:port]", entry)
 	}
 	return host, port, portless, nil

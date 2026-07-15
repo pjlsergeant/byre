@@ -226,14 +226,22 @@ func TestMCPAcceptsBasicAuthURL(t *testing.T) {
 	}
 }
 
-// A url host must be expressible in the egress grammar: the host becomes an
-// implied allowlist entry, and IPv6 (colon hosts) is outside that grammar —
-// accepting it would bake wiring the closure/allowlist machinery can
-// neither enforce nor honestly report (grok review).
-func TestMCPRejectsIPv6URLHosts(t *testing.T) {
-	err := ValidateMCP(MCP{Name: "v6", URL: "https://[2001:db8::1]:8443/mcp"})
-	if err == nil || !strings.Contains(err.Error(), "egress grammar") {
-		t.Fatalf("IPv6 url host must be rejected: %v", err)
+// IPv6 url hosts are supported end-to-end via the bracket grammar (grok
+// found the original refusal; Pete pulled the real fix into the arc): the
+// implied endpoint comes back bracketed + canonicalized, so downstream
+// "%s:%d" compositions re-parse and the firewall's v6 rules apply.
+func TestMCPAcceptsIPv6URLHosts(t *testing.T) {
+	m := MCP{Name: "v6", URL: "https://[2001:DB8::1]:8443/mcp"}
+	if err := ValidateMCP(m); err != nil {
+		t.Fatalf("IPv6 url host must validate: %v", err)
+	}
+	host, port, ok := m.Endpoint()
+	if !ok || host != "[2001:db8::1]" || port != 8443 {
+		t.Fatalf("endpoint must bracket + canonicalize: %s:%d ok=%v", host, port, ok)
+	}
+	// The composed entry round-trips through the egress grammar.
+	if h, p, err := ParseEgress(host + ":8443"); err != nil || h != "[2001:db8::1]" || p != 8443 {
+		t.Fatalf("derived entry must re-parse: %s:%d %v", h, p, err)
 	}
 	if err := ValidateMCP(MCP{Name: "v4", URL: "https://192.0.2.7:8443/mcp"}); err != nil {
 		t.Fatalf("IPv4 literal host must stay valid: %v", err)
