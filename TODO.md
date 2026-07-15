@@ -52,10 +52,20 @@ the rationale lives.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
-  via Pages, docs seeded from the README): remaining -- DNS + Pages
-  settings (Pete, host-side), trim the README against the site pages,
-  the landing comparison table / "Why not…?" material (still README-only),
-  screencast hero, `/devlog/`.
+  via Pages, docs seeded from the README); logo/favicon and the
+  ask-your-agent conceit landed on both surfaces same day. Remaining:
+  - DNS + Pages settings (Pete, host-side) -- believed done 2026-07-15,
+    the deployed header was verified in-browser; strike on confirm.
+  - Trim the README against the site pages: Quickstart, What's boxed,
+    Configuration, Commands, Worktrees, Volumes & state, and "How do
+    I...?" each have a real page under `/docs/` now; per the site plan
+    the README keeps a simplified version + link, not the full text.
+  - Landing comparison table: the "Why not…?" material is still
+    README-only; the site plan puts the table on the landing page.
+  - Screencast hero on the landing (the day-03-style clip -- the media
+    the README shouldn't carry).
+  - `/devlog/` -- devlog published under the site, linked as "see what's
+    being built", never the front door.
 
 ## Standing
 
