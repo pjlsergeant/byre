@@ -11,5 +11,5 @@ different byre boxes. byre never reads or copies host credentials; nothing
 crosses unless you enable it, and what you enable, `byre status` shows.
 
 By default agents log in once per project, inside the box, and maintain
-their own context. See [How do I…?](../how-do-i/) for enabling shared LLM
+their own context. See [How do I…?](/docs/how-do-i/) for enabling shared LLM
 credentials.

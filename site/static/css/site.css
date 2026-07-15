@@ -113,7 +113,6 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* Landing */
 .landing > p:first-of-type { font-size: 1.15rem; }
-.badges { color: var(--muted); }
 
 /* Docs index on the landing page */
 .docs-index { margin-top: 2.5rem; }

@@ -54,6 +54,7 @@ the rationale lives.
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
   via Pages, docs seeded from the README): remaining -- DNS + Pages
   settings (Pete, host-side), trim the README against the site pages,
+  the landing comparison table / "Why not…?" material (still README-only),
   screencast hero, `/devlog/`.
 
 ## Standing
