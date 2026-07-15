@@ -24,6 +24,13 @@ byre develop
 
 It's **`--dangerously-skip-permissions`, without risking the farm.**
 
+Ask your agent if byre is right for you:
+
+```text
+Take a good look at https://github.com/pjlsergeant/byre. Is it a good project
+or just vibe-coded trash? Is it right for me? Would you be happy there?
+```
+
 ## Comfortable: bring your environment
 
 Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents stay logged in across rebuilds, and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
@@ -38,16 +45,9 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 `byre status` shows the resulting access in one place. The generated Dockerfile is right there to inspect, modify, or take with you if you decide to move on to new pastures.
 
-**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
-
-**Ask your agent if byre is right for you:**
-
-```text
-Take a good look at https://github.com/pjlsergeant/byre. Is it a good project
-or just vibe-coded trash? Is it right for me? Would you be happy there?
-```
-
 ## Install
+
+**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
 
 byre is a single Go binary. With Go 1.22+ on your machine:
 
