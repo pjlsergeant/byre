@@ -4,6 +4,15 @@
 // shared substrate: resolve.go (config+skills view), runparams.go (run argv
 // assembly), naming.go (ids, labels, volume/image names), engine.go (engine
 // selection), runnerif.go (the engine interfaces), lock.go, env.go, ui.go.
+//
+// The flat layout is a decision, not an accident. External reviews flag the
+// file count and the absence of internal boundaries; the ruling (2026-07,
+// recorded in TODO.md "Standing") is that a big-bang split would guess all
+// the package boundaries at once from a heavily entangled whole and force
+// the unexported substrate above into exported form, for no behavioral
+// payoff. Instead: carve-as-you-touch — the next substantial piece of work
+// in an area moves the files it touches into their own package, so
+// boundaries are discovered from real changes rather than invented.
 package commands
 
 import (
