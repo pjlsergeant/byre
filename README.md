@@ -1,5 +1,7 @@
 # byre
 
+<img src="site/static/logo.png" align="right" width="160" alt="The byre logo: a highland cow peeking out of a boxed terminal">
+
 **A comfortable, constrained agent environment around any folder**
 
 Run `byre develop` in a project, worktree, or scratch directory, and byre creates a local container -- the box -- around it. Your favourite tools and creature comforts come with you, but the rest of the host stays out of reach.

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ if .IsHome }}byre -- a comfortable, constrained agent environment{{ else }}{{ .Title }} · byre{{ end }}</title>
   <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}byre runs your AI coding agent in a throwaway, project-scoped container. Open source, MIT licensed, local-first.{{ end }}">
+  <link rel="icon" type="image/png" href="{{ "favicon.png" | relURL }}">
+  <link rel="apple-touch-icon" href="{{ "logo.png" | relURL }}">
   <link rel="stylesheet" href="{{ "css/site.css" | relURL }}">
 </head>
 <body>

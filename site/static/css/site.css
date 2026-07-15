@@ -48,11 +48,15 @@ main {
   border-bottom: 1px solid var(--border);
 }
 .site-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 700;
   font-size: 1.15rem;
   color: var(--fg);
   text-decoration: none;
 }
+.site-logo { display: block; }
 .site-header nav { display: flex; gap: 1.25rem; align-items: center; }
 .site-header nav a { color: var(--fg); text-decoration: none; }
 .site-header nav a:hover { text-decoration: underline; }
@@ -113,6 +117,15 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* Landing */
 .landing > p:first-of-type { font-size: 1.15rem; }
+.landing-logo {
+  float: right;
+  width: 180px;
+  height: auto;
+  margin: 0.4rem 0 1rem 1.5rem;
+}
+@media (max-width: 540px) {
+  .landing-logo { width: 104px; margin: 0.2rem 0 0.75rem 1rem; }
+}
 
 /* Docs index on the landing page */
 .docs-index { margin-top: 2.5rem; }
