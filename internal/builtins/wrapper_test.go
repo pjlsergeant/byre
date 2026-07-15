@@ -35,7 +35,7 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 		{Name: "github", Command: []string{"gh-mcp", "stdio"}, Env: []string{"GITHUB_TOKEN"}},
 		{Name: "linear", URL: "https://mcp.linear.app/mcp"},
 		{Name: "proxied", URL: "https://mcp.internal.example/mcp", Headers: map[string]string{
-			"Authorization": "Bearer ${PROXY_TOKEN}", // bearer tier: by-name, off argv
+			"authorization": "Bearer ${PROXY_TOKEN}", // bearer tier (lowercase spelling: HTTP names are case-insensitive)
 			"X-Api-Key":     "${API_KEY}",            // pure-ref tier: env_http_headers
 			"X-Tenant":      "acme-${TENANT}",        // mixed: expanded at launch
 			"X-Unset":       "keep-${NEVER_SET_VAR}", // unset ref stays literal (claude parity)

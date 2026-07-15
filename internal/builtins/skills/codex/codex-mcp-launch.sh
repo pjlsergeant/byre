@@ -44,8 +44,8 @@ if [ -r "$MCP" ]; then
     if .value.url then
       .key as $k |
       ((.value.headers // {}) | to_entries | sort_by(.key)) as $hs |
-      (($hs | map(select(.key == "Authorization" and (.value | test("^Bearer \\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$")))))[0]) as $bearer |
-      ($hs | map(select(($bearer != null and .key == "Authorization") | not))) as $rest |
+      (($hs | map(select((.key | ascii_downcase) == "authorization" and (.value | test("^Bearer \\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$")))))[0]) as $bearer |
+      ($hs | map(select(($bearer != null and .key == $bearer.key) | not))) as $rest |
       ($rest | map(select(.value | test("^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$")))) as $byname |
       ($rest | map(select((.value | test("^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$")) | not))) as $lit |
       ( "mcp_servers.\($k).url=\(.value.url | tojson)",

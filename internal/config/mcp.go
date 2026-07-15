@@ -179,20 +179,30 @@ func ValidateMCP(m MCP) error {
 	if len(m.Headers) > 0 && m.URL == "" {
 		return fmt.Errorf("mcp %s: headers are for remote (url) servers — a local stdio server has no HTTP request to carry them", m.Name)
 	}
-	for k, v := range m.Headers {
+	lowerSeen := map[string]string{}
+	for _, k := range sortedHeaderKeys(m.Headers) {
 		if !headerNameRe.MatchString(k) {
 			return fmt.Errorf("mcp %s: header name %q: not a valid HTTP header name", m.Name, k)
 		}
-		if err := mcpPrintable(v); err != nil {
+		// HTTP field names are case-insensitive: two case-variant keys are
+		// one header wearing two spellings — which one wins would be
+		// map-order luck. Refuse the ambiguity.
+		if prev, dup := lowerSeen[strings.ToLower(k)]; dup {
+			return fmt.Errorf("mcp %s: headers %q and %q are the same HTTP header (field names are case-insensitive) — keep one", m.Name, prev, k)
+		}
+		lowerSeen[strings.ToLower(k)] = k
+		if err := mcpPrintable(m.Headers[k]); err != nil {
 			return fmt.Errorf("mcp %s: header %s value: %w", m.Name, k, err)
 		}
 	}
 	return nil
 }
 
-// headerNameRe is the HTTP field-name grammar (token charset, pragmatically
-// narrowed): the name lands in JSON keys, codex -c TOML keys, and status rows.
-var headerNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,127}$`)
+// headerNameRe is RFC 9110's field-name token grammar (tchar), length-capped:
+// the name lands in JSON keys, codex -c TOML keys (both quoted), and status
+// rows (no control chars in tchar). Real-world names like X_API_KEY and
+// 2FA-Token are valid tokens (codex review round 10).
+var headerNameRe = regexp.MustCompile("^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$")
 
 // headerEnvRefRe finds ${NAME} template references in header values.
 var headerEnvRefRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
@@ -216,19 +226,23 @@ func (m MCP) HeaderEnvRefs() []string {
 }
 
 // ConsumedEnv is the declaration's full consumed-env name set: the explicit
-// Env list plus header template references, deduped, Env order first — the
-// one list status/list/review verdicts render.
+// Env list plus header template references, deduped (a repeated Env entry
+// included — validation permits it, one verdict is enough), Env order first
+// — the one list status/list/review verdicts render.
 func (m MCP) ConsumedEnv() []string {
-	out := append([]string{}, m.Env...)
 	seen := map[string]bool{}
-	for _, k := range out {
-		seen[k] = true
-	}
-	for _, k := range m.HeaderEnvRefs() {
+	var out []string
+	add := func(k string) {
 		if !seen[k] {
 			seen[k] = true
 			out = append(out, k)
 		}
+	}
+	for _, k := range m.Env {
+		add(k)
+	}
+	for _, k := range m.HeaderEnvRefs() {
+		add(k)
 	}
 	return out
 }

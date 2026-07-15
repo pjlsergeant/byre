@@ -288,3 +288,24 @@ func TestMCPHeaders(t *testing.T) {
 		t.Fatalf("headers must render verbatim: %s", got)
 	}
 }
+
+// Round-10 fixes pinned: tchar field names accepted, case-variant duplicate
+// header names refused, ConsumedEnv dedupes repeated explicit entries.
+func TestMCPHeaderNameGrammarAndCaseDup(t *testing.T) {
+	for _, name := range []string{"X_API_KEY", "2FA-Token", "X.Feature", "x-lower"} {
+		m := MCP{Name: "r", URL: "https://h/m", Headers: map[string]string{name: "v"}}
+		if err := ValidateMCP(m); err != nil {
+			t.Errorf("tchar name %q must validate: %v", name, err)
+		}
+	}
+	if err := ValidateMCP(MCP{Name: "r", URL: "https://h/m", Headers: map[string]string{"X Y": "v"}}); err == nil {
+		t.Error("space in header name must refuse")
+	}
+	dup := MCP{Name: "r", URL: "https://h/m", Headers: map[string]string{"Authorization": "a", "authorization": "b"}}
+	if err := ValidateMCP(dup); err == nil || !strings.Contains(err.Error(), "case-insensitive") {
+		t.Errorf("case-variant duplicate must refuse: %v", err)
+	}
+	if got := (MCP{Name: "x", Env: []string{"A", "A", "B"}}).ConsumedEnv(); strings.Join(got, ",") != "A,B" {
+		t.Errorf("ConsumedEnv must dedupe explicit entries: %v", got)
+	}
+}
