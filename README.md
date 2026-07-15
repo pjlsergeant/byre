@@ -8,13 +8,11 @@ Run `byre develop` in a project, worktree, or scratch directory, and byre create
 
 MIT licensed | local | single binary | no lock-in | for Linux and macOS
 
-```sh
-brew install --cask pjlsergeant/tap/byre # (see below for Linux)
-cd ~/my-project
-byre develop
-```
+```console
+$ brew install --cask pjlsergeant/tap/byre   # (see below for Linux)
+$ cd ~/my-project
+$ byre develop
 
-```text
   byre: ~/my-project -> /workspace (rw) · extra host mounts: none · network: open
   ╭──────────────────────────────────╮
   │ ✻ Claude Code                    │
