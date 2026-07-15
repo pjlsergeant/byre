@@ -61,10 +61,11 @@ environment are correctly out of scope.
   competes on isolation strength. The words are *boxed*, *scoped*,
   *legible* — not *secure*, *safe*, *hardened*.
 - **The name is just a name.** No etymology on the page -- it's easily
-  googled. The farm in the H1 is cute, and that's where it stops; any cow
-  is site-side visual flavor, never README prose. (Amended 2026-07-06,
-  replacing the etymology-blockquote-as-payoff rule -- the blockquote is
-  off the page.)
+  googled. The farm in the H1 is cute; an occasional light touch in body
+  prose is fine ("new pastures"), but no cows and no etymology -- those
+  stay site-side visual flavor. (Amended 2026-07-15: the H1-only rule
+  overstated the case. Previously amended 2026-07-06, replacing the
+  etymology-blockquote-as-payoff rule -- the blockquote is off the page.)
 - **Break the aphorism cadence.** (Rewrite-pass note, 2026-07-04 -- a craft
   instruction, not doctrine.) Reader feedback flagged three body sentences
   as AI-sounding; what they shared wasn't length but rhythm -- every

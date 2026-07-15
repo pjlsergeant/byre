@@ -1,13 +1,18 @@
 # byre
 
-**`--dangerously-skip-permissions`, without risking the farm.**
+**A comfortable, constrained agent environment around any folder**
 
-byre runs your coding agent in a local container. It gets the current folder, the tools you choose, and nothing else. Zero setup out of the box. Over time, you and your agent build up rich, reusable environments. Bring your toolkit and your favourite skills through the airlock.
+Run `byre develop` in a project, worktree, or scratch directory, and byre creates a local container -- the box -- around it. Your favourite tools and creature comforts come with you, but the rest of the host stays out of reach.
+
+MIT licensed | local | single binary | no lock-in | for Linux and macOS
+
+```sh
+brew install --cask pjlsergeant/tap/byre # (see below for Linux)
+cd ~/my-project
+byre develop
+```
 
 ```text
-$ brew install --cask pjlsergeant/tap/byre
-$ cd ~/my-project && byre develop
-
   byre: ~/my-project -> /workspace (rw) · extra host mounts: none · network: open
   ╭──────────────────────────────────╮
   │ ✻ Claude Code                    │
@@ -15,15 +20,23 @@ $ cd ~/my-project && byre develop
   ╰──────────────────────────────────╯
 ```
 
-**Good to know**:
+It's **`--dangerously-skip-permissions`, without risking the farm.**
 
-* Single, self-contained, MIT-licensed binary
-* Ships with agent skills for Claude Code, Codex, Gemini, and Grok, or bring your own
-* Low magic: the Dockerfiles it generates are right there to read
-* Grant more access from the TUI in seconds, relaunch and /resume
+## Comfortable: bring your environment
 
-**⚠️ byre is a young project. I spend all day, every day inside it, for literally
-all of my work, but features are liable to change quickly.**
+Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents stay logged in across rebuilds, and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
+
+byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, and Grok. Fork the bundled ones or bring your own.
+
+## Constrained: keep the host out of reach
+
+The current folder is mounted into the box. Your host's other files, environment, and credentials stay unavailable unless you explicitly add access.
+
+When you need more, the `byre config` TUI can mount additional host folders, install extra packages, or adjust network access. Relaunch and `/resume` the session where you left off.
+
+`byre status` shows the resulting access in one place. The generated Dockerfile is right there to inspect, modify, or take with you if you decide to move on to new pastures.
+
+**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
 
 ## Install
 
@@ -84,12 +97,8 @@ Container:    running (0d95f3a2c1b4)
 
 ## Your toolkit, every folder
 
-byre ships templates for go, node, and python, and agent skills for
-Claude, Codex, Gemini, and Grok; the first `byre develop` asks which you want,
-and that's the setup.
-
-But you and your agent can build powerful templates and skills, and add
-them in seconds to any of your projects, or stick them in the defaults
+You and your agent can build powerful templates and skills, and add
+them in seconds to any of your projects -- or stick them in the defaults
 to always have them available: mounts, volumes, packages, agent contexts.
 
 The first time you want a postgres client,

@@ -1,0 +1,50 @@
+name: Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Don't abort an in-flight production deploy; newer pushes queue instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Explicit Go version: hugo v0.164.0 needs go >= 1.26, which is
+      # newer than byre's own go.mod -- this job builds the site, not byre.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+      # go install verifies the module against the public checksum
+      # database -- no third-party action, no hand-pinned tarball hash.
+      - name: install hugo
+        run: go install github.com/gohugoio/hugo@v0.164.0
+      - name: build site
+        run: hugo --minify -s site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
