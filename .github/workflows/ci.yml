@@ -31,9 +31,20 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test -race ./...
+
+  # Known-vulnerability scan. The tool version is pinned; the vulnerability
+  # database it consults is fetched live. Its own job on the stable
+  # toolchain: govulncheck's go floor moves faster than byre's go.mod
+  # (v1.6.0 wants go >= 1.25), and it analyzes source, so it doesn't need
+  # to run on the toolchain that builds byre.
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
       - name: govulncheck
-        # Known-vulnerability scan. The tool version is pinned; the
-        # vulnerability database it consults is fetched live.
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   # The gated engine suite (BYRE_DOCKER_TESTS=1) against the runner's real
