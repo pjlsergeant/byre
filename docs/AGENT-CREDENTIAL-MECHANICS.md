@@ -137,14 +137,22 @@ Multiple open issues describe exactly the shared-credential scenario:
   `ANTHROPIC_API_KEY` -> `apiKeyHelper` -> `CLAUDE_CODE_OAUTH_TOKEN` ->
   `/login` OAuth credentials (https://code.claude.com/docs/en/authentication).
   **Host-falsified for interactive use (2026-07-07, three boxes):** when
-  `~/.claude/.credentials.json` exists, interactive Claude Code (2.1.202)
-  rides the STORED access token for its requests -- `/status` still claims
-  env-token auth -- and the env token's presence suppresses the refresh
-  cycle, so the box 401s ~8h after the last `/login`. The documented
-  precedence holds headless (and when no credentials file exists). Fix per
-  box: `mv ~/.claude/.credentials.json{,.bak}` + relaunch; the
-  claude-shared-auth env hook warns at launch on this combination and, on
-  an interactive launch, offers to make that move itself.
+  `~/.claude/.credentials.json` holds a **`claudeAiOauth` block** (a stored
+  inference login), interactive Claude Code (2.1.202) rides the STORED
+  access token for its requests -- `/status` still claims env-token auth --
+  and the env token's presence suppresses the refresh cycle, so the box
+  401s ~8h after the last `/login`. The documented precedence holds
+  headless (and without a stored login). CAUTION (box-verified
+  2026-07-15): `.credentials.json` is NOT only the inference login -- MCP
+  server OAuth tokens live in the same file under a top-level `mcpOAuth`
+  key, and in a shared-token box the file is typically mcpOAuth-ONLY
+  (healthy, load-bearing state; the hijack above does not apply to it).
+  Check for `"claudeAiOauth"` before treating the file as a stale login.
+  Fix per box when it IS one: `mv ~/.claude/.credentials.json{,.bak}` +
+  relaunch -- knowing the move also signs the box out of any MCP servers
+  riding `mcpOAuth` (re-auth in-session via `/mcp`); the claude-shared-auth
+  firstrun hook detects the `claudeAiOauth` case at launch, warns, and on
+  an interactive launch offers that move itself (never for mcpOAuth-only).
   `apiKeyHelper` (a settings key, not env) shells out for a credential,
   re-called after 5 min or on 401 (`CLAUDE_CODE_API_KEY_HELPER_TTL_MS`) --
   a viable "fetch token from host/volume" hook.
