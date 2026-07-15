@@ -29,6 +29,18 @@
   delivered plus the baked path. Remote OAuth stays agent-owned on the
   project volume (`claude mcp login --no-browser` works headless via URL
   paste-back).
+- **claude-shared-auth no longer offers to sign you out of MCP servers.**
+  The firstrun hook's stale-login remediation keyed off `.credentials.json`
+  EXISTING; MCP server OAuth tokens live in the same file (`mcpOAuth`,
+  verified live against a real OAuth MCP), and in a shared-token box the
+  file is typically MCP-only -- so one MCP login made every launch falsely
+  warn and offer (default Y) a move-aside that nuked the MCP tokens. The
+  hook now detects the actual hijacker (a `claudeAiOauth` block); an
+  mcpOAuth-only file triggers nothing, and a both-keys move discloses the
+  MCP sign-out collateral. Same verification confirmed the good news: MCP
+  OAuth persists per-project on the `.claude` volume, injected servers
+  pick tokens up by URL, and creds are keyed by name+URL-hash (no stale
+  inheritance behind a reused name).
 - **IPv6 egress entries (bracketed).** The egress grammar accepts
   `[2001:db8::1]` / `[addr]:port` -- the RFC 3986 convention, parsed with
   the stdlib and canonicalized -- everywhere egress is spoken: the `egress`

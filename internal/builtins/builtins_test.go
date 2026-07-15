@@ -1093,6 +1093,40 @@ func TestClaudeSharedAuthFirstrunRemediatesStaleLogin(t *testing.T) {
 	if out := run(base2, cfg2, nil); strings.Contains(out, "401") {
 		t.Fatalf("clean box must not warn: %q", out)
 	}
+
+	// An MCP-only credentials file (mcpOAuth, no claudeAiOauth) is HEALTHY
+	// state — MCP server logins on the project volume — not a stale inference
+	// login: the hook must neither warn nor offer, and above all never move
+	// it (that silently signs the box out of its MCP servers; found live
+	// 2026-07-15 the first time MCP OAuth met shared auth).
+	base3, cfg3 := seed()
+	mcpOnly := filepath.Join(cfg3, ".credentials.json")
+	if err := os.WriteFile(mcpOnly, []byte(`{"mcpOAuth":{"agentblocks|abc123":{"accessToken":"x"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	answer = "\n" // even an interactive default-Y run has nothing to offer
+	if out := run(base3, cfg3, &answer); strings.Contains(out, "401") || strings.Contains(out, "move it aside") {
+		t.Fatalf("MCP-only credentials must not trigger the offer: %q", out)
+	}
+	if _, err := os.Stat(mcpOnly); err != nil {
+		t.Fatalf("MCP-only credentials must never be moved: %v", err)
+	}
+
+	// Both keys present: the offer runs (the stale login is real) but the
+	// collateral — MCP logins ride the same file — is disclosed first.
+	base4, cfg4 := seed()
+	both := filepath.Join(cfg4, ".credentials.json")
+	if err := os.WriteFile(both, []byte(`{"claudeAiOauth":{},"mcpOAuth":{"x|y":{}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	answer = "\n"
+	out = run(base4, cfg4, &answer)
+	if !strings.Contains(out, "MCP server logins") || !strings.Contains(out, "/mcp") {
+		t.Fatalf("both-keys move must disclose the MCP collateral: %q", out)
+	}
+	if _, err := os.Stat(both + ".bak"); err != nil {
+		t.Fatalf("accepted both-keys offer must still move the file: %v", err)
+	}
 }
 
 // gemini-shared-auth: composition + the symlink-assert hook's behaviors for

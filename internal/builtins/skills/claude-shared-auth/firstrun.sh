@@ -40,11 +40,26 @@ seed_onboarding() {
 remediate_stale_login() {
   creds="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}/.credentials.json"
   [ -s "$creds" ] || return 0
+  # The hijacker is a stored INFERENCE login — the claudeAiOauth block.
+  # .credentials.json also holds MCP server OAuth tokens (mcpOAuth), and in a
+  # shared-token box the file is typically mcpOAuth-ONLY (MCP auth creates it;
+  # inference never wrote a login). That file is healthy, load-bearing state:
+  # moving it aside would silently log the box out of its MCP servers every
+  # launch (verified 2026-07-15: env-token box + MCP OAuth = top-level
+  # mcpOAuth key only). Detect the actual hijacker, not file presence.
+  grep -q '"claudeAiOauth"' "$creds" 2>/dev/null || return 0
   {
     echo "byre: warning — this box has a per-project Claude login alongside the shared token."
     echo "      Claude prefers the stored login and stops refreshing it, so this box will 401"
     echo "      roughly 8h after that login."
   } >&2
+  # Collateral disclosure: moving the whole file aside also takes any MCP
+  # server logins with it (they re-auth in-session via /mcp). Surgical JSON
+  # editing needs tooling the claude image doesn't carry; disclose instead.
+  if grep -q '"mcpOAuth"' "$creds" 2>/dev/null; then
+    echo "      (This file also holds MCP server logins — moving it aside signs those out too;" >&2
+    echo "      re-auth them in-session via /mcp.)" >&2
+  fi
   if [ -t 0 ] || [ -n "${BYRE_ASSUME_TTY:-}" ]; then
     printf "byre: move it aside now (to .credentials.json.bak) so the shared token wins? [Y/n] " >&2
     IFS= read -r -t 60 ans || ans="n"

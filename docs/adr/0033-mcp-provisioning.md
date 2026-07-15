@@ -180,11 +180,19 @@ regardless.
   project volume. Headless OAuth is GO (spike): `claude mcp login
   --no-browser` prints the authorization URL and accepts the pasted
   redirect URL — the localhost callback never needs host reachability;
-  works in the box's interactive terminal. Unprobed hazard, documented:
-  name-reuse credential re-inheritance (a new server behind an old name
-  inheriting stale creds) — under injection byre never mutates the
-  credential store, so the hazard is user-edit-driven; verify at first live
-  remote use.
+  works in the box's interactive terminal. LIVE-VERIFIED against a real
+  OAuth MCP (api.agentblocks.ai, 2026-07-15): claude stores MCP tokens in
+  `.credentials.json` under a top-level `mcpOAuth` key — SEPARATE from
+  the `claudeAiOauth` inference login, and in a shared-token box the file
+  is born mcpOAuth-only; tokens carry a refreshToken and persist on the
+  `.claude` volume; an INJECTED declaration picks them up by server URL
+  in a fresh config dir (auth-once-per-project holds for byre's
+  delivery); entries are keyed `name|<hash>` with the serverUrl stored,
+  which closes the name-reuse re-inheritance hazard by construction.
+  Interplay fix the verification forced: the claude-shared-auth firstrun
+  hook's stale-login remediation now detects the actual hijacker
+  (`claudeAiOauth`) instead of file presence — an mcpOAuth-only file is
+  healthy MCP state the offer must never move aside.
 - **claude.ai account connectors are filtered**:
   `ENABLE_CLAUDEAI_MCP_SERVERS=false` in the claude skill (verified to
   filter). Connectors are ambient host-account authority, and deny-by-
