@@ -117,6 +117,12 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 //     the inherited one.
 //   - not in the layer but effective → write the closure.
 //   - nowhere → error.
+//   - the still-effective check UNRESOLVABLE (a broken skill, a bad
+//     template) → write the closure regardless and say why: the closure
+//     guarantees the verb's promise (gone from the effective set) whatever
+//     byre couldn't check, at the cost of a possibly-inert marker the user
+//     can see and delete. Never a refusal, never a silent resurrection
+//     (maintainer ruling 2026-07-15, revising the round-4 refusal).
 //
 // The still-effective check only runs for the project layer (the cascade
 // below it is knowable); a global remove that deletes an entry can't see
@@ -153,20 +159,21 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 	cur.MCPs = kept
 
 	// Would the name still be effective without a closure? (project only.)
-	// A failure here must REFUSE, not proceed: swallowing it would delete an
-	// own-layer override without the closure, silently resurrecting the
-	// inherited server once resolution recovers (codex review round 4).
+	// An UNRESOLVABLE check (broken skill, bad template) neither refuses nor
+	// silently proceeds: the closure is written regardless — it guarantees
+	// the verb's promise against whatever couldn't be checked, and an inert
+	// marker is visible and cheap to delete. (Codex round 4 found the
+	// silent-proceed path; the refusal that replaced it was revised to this
+	// by maintainer ruling 2026-07-15 — the user asked for a removal, not a
+	// lecture.)
 	stillEffective := false
+	var checkErr error
 	if !global {
-		var err error
-		stillEffective, err = mcpStillEffective(cur, name)
-		if err != nil {
-			return fmt.Errorf("mcp remove %s: can't determine whether the name stays effective from lower layers or skills (%w) — fix that first, or hand-edit %s", name, err, path)
-		}
+		stillEffective, checkErr = mcpStillEffective(cur, name)
 	}
 
 	wroteClosure := false
-	if stillEffective && !hadClosure {
+	if (stillEffective || checkErr != nil) && !hadClosure {
 		cur.MCPs = append(cur.MCPs, config.MCP{Name: "!" + name})
 		wroteClosure = true
 	}
@@ -182,20 +189,28 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 	}
 
 	switch {
-	case hadEntry && wroteClosure:
+	case hadEntry && wroteClosure && checkErr == nil:
 		fmt.Fprintf(s.Err, "byre: removed mcp %s from the %s AND closed the name (\"!%s\") — a lower layer or skill still declares it\n", name, label, name)
+	case hadEntry && wroteClosure:
+		fmt.Fprintf(s.Err, "byre: removed mcp %s from the %s AND closed the name (\"!%s\")\n", name, label, name)
 	case hadEntry:
 		fmt.Fprintf(s.Err, "byre: removed mcp %s from the %s (%s)\n", name, label, path)
+	case checkErr != nil:
+		fmt.Fprintf(s.Err, "byre: closed mcp %s in the %s (\"!%s\")\n", name, label, name)
 	default:
 		fmt.Fprintf(s.Err, "byre: closed mcp %s in the %s (\"!%s\") — it was declared by a lower layer or skill\n", name, label, name)
+	}
+	if checkErr != nil {
+		fmt.Fprintf(s.Err, "byre: couldn't verify lower layers/skills (%v) — the closure guarantees the removal either way; it's inert if nothing else declares %s (delete it in `byre config` if so)\n", checkErr, name)
 	}
 	fmt.Fprintln(s.Err, "byre: applies on the next develop.")
 	return nil
 }
 
 // mcpStillEffective reports whether name survives in the effective MCP set
-// with `cur` as the project layer (post tentative edit). Any resolution
-// failure is the CALLER's refusal, never a silent false.
+// with `cur` as the project layer (post tentative edit). An unresolvable
+// check returns its error; the caller writes the guaranteeing closure and
+// disclosure, never a refusal or a silent false.
 func mcpStillEffective(cur config.Config, name string) (bool, error) {
 	home, err := project.Home()
 	if err != nil {

@@ -221,11 +221,13 @@ name = "!closed-one"
 }
 
 // When the still-effective check CANNOT run (broken skill, unresolvable
-// cascade), remove must refuse rather than delete without a closure — a
-// swallowed failure would silently resurrect an inherited server once
-// resolution recovers (codex review round 4).
-func TestMCPRemoveRefusesWhenResolutionBroken(t *testing.T) {
-	dir, projPath, _, s, _ := mcpTestProject(t)
+// cascade), remove neither refuses nor proceeds silently: it deletes the
+// block AND writes the closure — the closure guarantees the verb's promise
+// against whatever couldn't be checked — with the disclosure line saying
+// why (maintainer ruling 2026-07-15, revising the round-4 refusal; the
+// original codex finding was the silent path that resurrected servers).
+func TestMCPRemoveGuaranteesWithClosureWhenResolutionBroken(t *testing.T) {
+	dir, projPath, _, s, errw := mcpTestProject(t)
 	if err := os.WriteFile(projPath, []byte(`
 skills = ["no/such-skill"]
 
@@ -235,13 +237,15 @@ command = ["srv"]
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := MCPRemove(s, dir, false, "own")
-	if err == nil || !strings.Contains(err.Error(), "can't determine whether the name stays effective") {
-		t.Fatalf("broken resolution must refuse the remove: %v", err)
+	if err := MCPRemove(s, dir, false, "own"); err != nil {
+		t.Fatalf("broken resolution must not refuse: %v", err)
 	}
-	// Nothing was written.
 	cfg, _ := config.ParseFile(projPath)
-	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "own" {
-		t.Fatalf("refusal must leave the layer untouched: %+v", cfg.MCPs)
+	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "!own" {
+		t.Fatalf("entry must be deleted AND the guaranteeing closure written: %+v", cfg.MCPs)
+	}
+	if out := errw.String(); !strings.Contains(out, "couldn't verify lower layers/skills") ||
+		!strings.Contains(out, "inert if nothing else declares own") {
+		t.Errorf("uncertainty disclosure missing: %s", out)
 	}
 }
