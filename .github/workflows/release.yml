@@ -18,7 +18,7 @@ jobs:
     steps:
       # SHA-pinned (version noted alongside) — this workflow holds a
       # contents: write token, so mutable @vN tags are the wrong reference.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # goreleaser derives the changelog from git history
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
