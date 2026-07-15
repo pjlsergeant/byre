@@ -1053,13 +1053,13 @@ func TestParseEgressBracketedIPv6(t *testing.T) {
 	}
 
 	for entry, want := range map[string]string{
-		"[2001:db8::1":       "unterminated",
-		"[not-an-ip]:443":    "must hold an IPv6 literal",
-		"[192.0.2.7]:443":    "must hold an IPv6 literal",
-		"[::1]junk":          "not a valid [addr]:port",
-		"[::1]:notaport":     "not a valid [addr]:port",
-		"2001:db8::1":        "write it bracketed",
-		"2001:db8::1:8443":   "write it bracketed",
+		"[2001:db8::1":     "unterminated",
+		"[not-an-ip]:443":  "must hold an IPv6 literal",
+		"[192.0.2.7]:443":  "must hold an IPv6 literal",
+		"[::1]junk":        "not a valid [addr]:port",
+		"[::1]:notaport":   "not a valid [addr]:port",
+		"2001:db8::1":      "write it bracketed",
+		"2001:db8::1:8443": "write it bracketed",
 	} {
 		if _, _, err := ParseEgress(entry); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: err = %v, want contains %q", entry, err, want)
