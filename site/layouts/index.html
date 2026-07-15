@@ -1,0 +1,13 @@
+{{ define "main" }}
+<article class="landing">
+{{ .Content }}
+</article>
+<section class="docs-index">
+  <h2>Documentation</h2>
+  <ul>
+    {{ range (site.GetPage "/docs").Pages.ByWeight }}
+    <li><a href="{{ .RelPermalink }}">{{ .Title }}</a>{{ with .Description }} -- {{ . }}{{ end }}</li>
+    {{ end }}
+  </ul>
+</section>
+{{ end }}

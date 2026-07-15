@@ -1,0 +1,143 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #6a6a6a;
+  --link: #0550ae;
+  --border: #e0e0e0;
+  --code-bg: #f4f4f2;
+  --accent: #2d5a27;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --fg: #e4e4e4;
+    --muted: #9a9a9a;
+    --link: #6cb2ff;
+    --border: #333333;
+    --code-bg: #1e1e1e;
+    --accent: #8fce85;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+a { color: var(--link); }
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+}
+
+/* Header */
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.site-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+.site-header nav { display: flex; gap: 1.25rem; align-items: center; }
+.site-header nav a { color: var(--fg); text-decoration: none; }
+.site-header nav a:hover { text-decoration: underline; }
+.github-link { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+/* Footer */
+.site-footer {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Content */
+h1 { font-size: 1.8rem; line-height: 1.25; }
+h2 { font-size: 1.3rem; margin-top: 2.2rem; }
+h3 { font-size: 1.05rem; margin-top: 1.8rem; }
+
+pre, code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+code { padding: 0.1em 0.35em; }
+pre {
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  line-height: 1.45;
+}
+pre code { padding: 0; background: none; }
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.1rem 1rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+  font-size: 0.92rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  vertical-align: top;
+}
+
+hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+/* Landing */
+.landing > p:first-of-type { font-size: 1.15rem; }
+.badges { color: var(--muted); }
+
+/* Docs index on the landing page */
+.docs-index { margin-top: 2.5rem; }
+.docs-index ul { padding-left: 1.2rem; }
+.docs-index li { margin: 0.35rem 0; }
+
+/* Docs pages: nav above content on narrow screens, beside it on wide */
+.docs-nav {
+  font-size: 0.92rem;
+  margin-bottom: 1.5rem;
+}
+.docs-nav p { margin: 0 0 0.3rem; font-weight: 600; }
+.docs-nav ul { list-style: none; margin: 0; padding: 0; }
+.docs-nav li { margin: 0.15rem 0; }
+.docs-nav a { text-decoration: none; }
+.docs-nav a:hover { text-decoration: underline; }
+.docs-nav a[aria-current="page"] { font-weight: 600; color: var(--fg); }
+
+@media (min-width: 72rem) {
+  .docs-wrap { position: relative; }
+  .docs-nav {
+    position: absolute;
+    left: -13rem;
+    width: 11.5rem;
+    top: 0.5rem;
+  }
+}

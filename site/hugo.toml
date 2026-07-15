@@ -1,0 +1,14 @@
+baseURL = "https://getbyre.com/"
+locale = "en"
+title = "byre"
+
+# Taxonomies and RSS are noise for a small docs site.
+disableKinds = ["taxonomy", "term", "rss"]
+
+[params]
+github = "https://github.com/pjlsergeant/byre"
+
+[markup.highlight]
+# Plain <pre><code> blocks, styled by site.css -- no generated inline
+# styles to fight in dark mode.
+codeFences = false

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ if .IsHome }}byre -- a comfortable, constrained agent environment{{ else }}{{ .Title }} · byre{{ end }}</title>
+  <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}byre runs your AI coding agent in a throwaway, project-scoped container. Open source, MIT licensed, local-first.{{ end }}">
+  <link rel="stylesheet" href="{{ "css/site.css" | relURL }}">
+</head>
+<body>
+  {{ partial "header.html" . }}
+  <main>
+    {{ block "main" . }}{{ end }}
+  </main>
+  {{ partial "footer.html" . }}
+</body>
+</html>
