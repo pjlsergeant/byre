@@ -2,9 +2,9 @@
 
 **A comfortable, constrained agent environment around any folder**
 
-Run `byre develop` in a project, worktree, or scratch directory, and byre creates a local container around it. Your favourite tools and creature comforts come with you, but the rest of the host stays out of reach.
+Run `byre develop` in a project, worktree, or scratch directory, and byre creates a local container -- the box -- around it. Your favourite tools and creature comforts come with you, but the rest of the host stays out of reach.
 
-MIT licensed | local | single binary | no lock-in | for Linux and Mac
+MIT licensed | local | single binary | no lock-in | for Linux and macOS
 
 ```sh
 brew install --cask pjlsergeant/tap/byre # (see below for Linux)
@@ -30,7 +30,7 @@ byre ships templates for Go, Node, and Python, and agent skills for Claude Code,
 
 ## Constrained: keep the host out of reach
 
-The current folder is mounted into the box. Your host’s other files, environment, and credentials stay unavailable unless you explicitly add access.
+The current folder is mounted into the box. Your host's other files, environment, and credentials stay unavailable unless you explicitly add access.
 
 When you need more, the `byre config` TUI can mount additional host folders, install extra packages, or adjust network access. Relaunch and `/resume` the session where you left off.
 
@@ -97,12 +97,8 @@ Container:    running (0d95f3a2c1b4)
 
 ## Your toolkit, every folder
 
-byre ships templates for go, node, and python, and agent skills for
-Claude, Codex, Gemini, and Grok; the first `byre develop` asks which you want,
-and that's the setup.
-
-But you and your agent can build powerful templates and skills, and add
-them in seconds to any of your projects, or stick them in the defaults
+You and your agent can build powerful templates and skills, and add
+them in seconds to any of your projects -- or stick them in the defaults
 to always have them available: mounts, volumes, packages, agent contexts.
 
 The first time you want a postgres client,
