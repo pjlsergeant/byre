@@ -23,6 +23,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -538,5 +539,84 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
 		t.Errorf("box-written file owned by uid %d, want invoking uid %d", st.Uid, os.Getuid())
+	}
+}
+
+// TestIntegrationMCPConfigBaked proves the [[mcp]] contract end to end in a
+// REAL image (ADR 0033): the canonical /etc/byre/mcp.json is COPY'd into
+// every build — the declared set (headers templates verbatim, x_byre_env
+// names, closures already subtracted) byte-identical to the renderer's
+// output, and the empty set as a real file — so the injection adapters'
+// static flags can rely on the path unconditionally.
+func TestIntegrationMCPConfigBaked(t *testing.T) {
+	r := requireEngineRunner(t)
+	p, proj := testPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte(`
+[[mcp]]
+name = "github"
+command = ["github-mcp-server", "stdio"]
+env = ["GITHUB_TOKEN"]
+
+[[mcp]]
+name = "proxied"
+url = "https://mcp.internal.example/mcp"
+
+[mcp.headers]
+Authorization = "Bearer ${PROXY_TOKEN}"
+
+[[mcp]]
+name = "!dropped"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	out, err := exec.Command(string(r.Engine()), "run", "--rm",
+		"--entrypoint", "cat", image, gen.MCPConfigPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("reading %s from the image: %v\n%s", gen.MCPConfigPath, err, out)
+	}
+	want := config.MCPConfigJSON(skills.MCPList(rv.mcps))
+	if string(out) != string(want) {
+		t.Fatalf("baked mcp.json != renderer output:\n--- image ---\n%s--- want ---\n%s", out, want)
+	}
+	for _, must := range []string{`"github"`, `"Bearer ${PROXY_TOKEN}"`, `"x_byre_env"`} {
+		if !strings.Contains(string(out), must) {
+			t.Fatalf("baked file missing %s:\n%s", must, out)
+		}
+	}
+	if strings.Contains(string(out), "dropped") {
+		t.Fatalf("closure marker leaked into the bake:\n%s", out)
+	}
+
+	// The EMPTY set is a real file too — the always-baked half of the
+	// contract that lets agent commands carry their flags unconditionally.
+	p2, proj2 := testPaths(t)
+	rv2, err := resolve(p2, proj2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image2 := imageTag(p2.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image2) })
+	if err := buildImage(r, p2, rv2.cfg, rv2.skills, image2, false, ident); err != nil {
+		t.Fatalf("empty-set build: %v", err)
+	}
+	out2, err := exec.Command(string(r.Engine()), "run", "--rm",
+		"--entrypoint", "cat", image2, gen.MCPConfigPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("empty-set image must still carry the file: %v\n%s", err, out2)
+	}
+	if string(out2) != "{\n  \"mcpServers\": {}\n}\n" {
+		t.Fatalf("empty-set bake = %q", out2)
 	}
 }
