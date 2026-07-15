@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -50,6 +51,18 @@ type MCP struct {
 	// Egress is extra hosts this server needs beyond the URL's own (e.g.
 	// an OAuth authorize host), same grammar as the egress config key.
 	Egress []string `toml:"egress,omitempty"`
+	// Headers are HTTP headers a REMOTE server needs (static-token auth:
+	// `Authorization = "Bearer ${TOKEN}"`, an X-Api-Key). Values are
+	// TEMPLATES: a `${NAME}` reference is expanded at LAUNCH by the
+	// delivering adapter (claude expands natively inside --mcp-config;
+	// the codex wrapper maps pure-bearer to bearer_token_env_var, pure
+	// `${VAR}` to env_http_headers, and expands anything else itself), so
+	// the baked file carries only the template text — token values stay
+	// launch-time env lookups, never config or image content. A literal
+	// fragment is allowed and bakes like an [env] literal (documented,
+	// never refused — the userinfo/argv stance). `${NAME}` refs get the
+	// same provided/NOT-provided status verdicts as the Env list.
+	Headers map[string]string `toml:"headers,omitempty"`
 }
 
 // Remote reports whether the declaration is a remote (url) server.
@@ -163,7 +176,74 @@ func ValidateMCP(m MCP) error {
 			return fmt.Errorf("mcp %s: %w", m.Name, err)
 		}
 	}
+	if len(m.Headers) > 0 && m.URL == "" {
+		return fmt.Errorf("mcp %s: headers are for remote (url) servers — a local stdio server has no HTTP request to carry them", m.Name)
+	}
+	for k, v := range m.Headers {
+		if !headerNameRe.MatchString(k) {
+			return fmt.Errorf("mcp %s: header name %q: not a valid HTTP header name", m.Name, k)
+		}
+		if err := mcpPrintable(v); err != nil {
+			return fmt.Errorf("mcp %s: header %s value: %w", m.Name, k, err)
+		}
+	}
 	return nil
+}
+
+// headerNameRe is the HTTP field-name grammar (token charset, pragmatically
+// narrowed): the name lands in JSON keys, codex -c TOML keys, and status rows.
+var headerNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,127}$`)
+
+// headerEnvRefRe finds ${NAME} template references in header values.
+var headerEnvRefRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// HeaderEnvRefs lists the env var NAMES the declaration's header templates
+// reference, sorted and deduped — they join the Env list on every surface
+// that renders provided/NOT-provided verdicts.
+func (m MCP) HeaderEnvRefs() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range sortedHeaderKeys(m.Headers) {
+		for _, match := range headerEnvRefRe.FindAllStringSubmatch(m.Headers[k], -1) {
+			if !seen[match[1]] {
+				seen[match[1]] = true
+				out = append(out, match[1])
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ConsumedEnv is the declaration's full consumed-env name set: the explicit
+// Env list plus header template references, deduped, Env order first — the
+// one list status/list/review verdicts render.
+func (m MCP) ConsumedEnv() []string {
+	out := append([]string{}, m.Env...)
+	seen := map[string]bool{}
+	for _, k := range out {
+		seen[k] = true
+	}
+	for _, k := range m.HeaderEnvRefs() {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// HeaderNames lists the declared header names, sorted — display surfaces
+// print names, not values (a value may carry a user's literal secret).
+func (m MCP) HeaderNames() []string { return sortedHeaderKeys(m.Headers) }
+
+func sortedHeaderKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // mcpPrintable rejects control characters and (for a one-token field)
@@ -296,6 +376,12 @@ func MCPConfigJSON(mcps []MCP) []byte {
 		if m.Remote() {
 			entry["type"] = "http"
 			entry["url"] = m.URL
+			if len(m.Headers) > 0 {
+				// Templates VERBATIM — ${NAME} refs expand at launch (claude
+				// natively; the codex wrapper maps/expands), so the baked
+				// file stays free of byre-placed secrets.
+				entry["headers"] = m.Headers
+			}
 		} else {
 			args := m.Command[1:]
 			if args == nil {

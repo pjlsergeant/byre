@@ -34,6 +34,12 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 	mcpJSON := config.MCPConfigJSON([]config.MCP{
 		{Name: "github", Command: []string{"gh-mcp", "stdio"}, Env: []string{"GITHUB_TOKEN"}},
 		{Name: "linear", URL: "https://mcp.linear.app/mcp"},
+		{Name: "proxied", URL: "https://mcp.internal.example/mcp", Headers: map[string]string{
+			"Authorization": "Bearer ${PROXY_TOKEN}", // bearer tier: by-name, off argv
+			"X-Api-Key":     "${API_KEY}",            // pure-ref tier: env_http_headers
+			"X-Tenant":      "acme-${TENANT}",        // mixed: expanded at launch
+			"X-Unset":       "keep-${NEVER_SET_VAR}", // unset ref stays literal (claude parity)
+		}},
 	})
 	mcpPath := filepath.Join(dir, "mcp.json")
 	if err := os.WriteFile(mcpPath, mcpJSON, 0o644); err != nil {
@@ -45,6 +51,7 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath,
 		"PATH="+dir+":"+os.Getenv("PATH"),
+		"PROXY_TOKEN=sekrit", "API_KEY=alsosekrit", "TENANT=corp",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed: %v\n%s", err, out)
@@ -59,10 +66,19 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 		"-c", `mcp_servers.github.args=["stdio"]`,
 		"-c", `mcp_servers.github.env_vars=["GITHUB_TOKEN"]`,
 		"-c", `mcp_servers.linear.url="https://mcp.linear.app/mcp"`,
+		"-c", `mcp_servers.proxied.url="https://mcp.internal.example/mcp"`,
+		"-c", `mcp_servers.proxied.bearer_token_env_var="PROXY_TOKEN"`,
+		"-c", `mcp_servers.proxied.env_http_headers={"X-Api-Key" = "API_KEY"}`,
+		"-c", `mcp_servers.proxied.http_headers={"X-Tenant" = "acme-corp", "X-Unset" = "keep-${NEVER_SET_VAR}"}`,
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("argv mismatch:\n got %q\nwant %q", got, want)
+	}
+	// The secret values must appear ONLY where the tier says: never for the
+	// bearer/by-name tiers.
+	if strings.Contains(string(argv), "sekrit") {
+		t.Fatalf("by-name tiers must keep token values off the argv:\n%s", argv)
 	}
 }
 

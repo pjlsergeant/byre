@@ -528,9 +528,14 @@ func mcpStatusLine(d skills.MCPDecl, s statusInfo) string {
 	if len(m.Egress) > 0 {
 		notes = append(notes, "+egress "+strings.Join(m.Egress, ", "))
 	}
-	if len(m.Env) > 0 {
-		marks := make([]string, len(m.Env))
-		for i, k := range m.Env {
+	// Header NAMES only (a value may carry a user's own literal secret);
+	// their ${NAME} template refs join the consumed-env verdicts below.
+	if names := m.HeaderNames(); len(names) > 0 {
+		notes = append(notes, "headers "+strings.Join(names, ", "))
+	}
+	if consumed := m.ConsumedEnv(); len(consumed) > 0 {
+		marks := make([]string, len(consumed))
+		for i, k := range consumed {
 			if s.EnvProvided[k] {
 				marks[i] = k + " (provided)"
 			} else {

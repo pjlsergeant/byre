@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -270,7 +271,7 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 2
 		}
 	case fMCP:
-		// vals: name, url, command(argv form), env, egress (mcpVals order).
+		// vals: name, url, command(argv form), env, egress, headers (mcpVals).
 		next.inputs[0].SetValue(r.vals[0])
 		if r.vals[1] != "" {
 			next.itemMode = 1
@@ -280,6 +281,7 @@ func (m model) startOverride(r listRow) model {
 		}
 		next.inputs[2].SetValue(r.vals[3])
 		next.inputs[3].SetValue(r.vals[4])
+		next.inputs[4].SetValue(r.vals[5])
 	}
 	return next
 }
@@ -375,11 +377,13 @@ func (m model) startItem(idx int) model {
 			"Endpoint",        // viewItem swaps in the kind-specific label
 			"Env var names (optional)",
 			"Extra egress (optional)",
+			"Headers (optional)", // remote only; validated by ValidateMCP
 		}
-		name, endpoint, env, egress := "", "", "", ""
+		name, endpoint, env, egress, headers := "", "", "", "", ""
 		if idx >= 0 {
 			mc := m.mcps[idx]
 			name, env, egress = mc.Name, strings.Join(mc.Env, " "), strings.Join(mc.Egress, " ")
+			headers = joinHeaders(mc.Headers)
 			if mc.Remote() {
 				m.itemMode = 1
 				endpoint = mc.URL
@@ -387,7 +391,7 @@ func (m model) startItem(idx int) model {
 				endpoint = joinArgv(mc.Command)
 			}
 		}
-		m.inputs = []textinput.Model{newInput(name), newInput(endpoint), newInput(env), newInput(egress)}
+		m.inputs = []textinput.Model{newInput(name), newInput(endpoint), newInput(env), newInput(egress), newInput(headers)}
 	case fEnv:
 		m.inputLabels = []string{"Key", "Value"}
 		k, val := "", ""
@@ -701,6 +705,12 @@ func (m model) commitItem() model {
 			Env:    strings.Fields(m.inputs[2].Value()),
 			Egress: strings.Fields(m.inputs[3].Value()),
 		}
+		hdrs, herr := splitHeaders(m.inputs[4].Value())
+		if herr != nil {
+			m.itemErr = "headers: " + herr.Error()
+			return m
+		}
+		mc.Headers = hdrs
 		endpoint := strings.TrimSpace(m.inputs[1].Value())
 		if m.itemMode == 1 {
 			mc.URL = endpoint
@@ -852,6 +862,12 @@ func mcpLine(mc config.MCP) string {
 	if len(mc.Egress) > 0 {
 		fmt.Fprintf(&b, " (+egress: %s)", strings.Join(mc.Egress, ", "))
 	}
+	// Headers WITH values: the row is also the dirty signature (sig), so a
+	// header edit must change this string — and the env screen shows values
+	// too, so no new exposure class.
+	if len(mc.Headers) > 0 {
+		fmt.Fprintf(&b, " (headers: %s)", joinHeaders(mc.Headers))
+	}
 	return b.String()
 }
 
@@ -876,6 +892,49 @@ func joinArgv(args []string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// joinHeaders/splitHeaders are the headers input's text form, riding the
+// reversible argv codec: each header is ONE quoted `"Name: value"` token, so
+// values with spaces/quotes survive an open-and-commit unchanged and multiple
+// headers stay representable.
+func joinHeaders(h map[string]string) string {
+	if len(h) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, len(keys))
+	for i, k := range keys {
+		pairs[i] = k + ": " + h[k]
+	}
+	return joinArgv(pairs)
+}
+
+func splitHeaders(s string) (map[string]string, error) {
+	tokens, err := splitArgv(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for _, tok := range tokens {
+		k, v, ok := strings.Cut(tok, ":")
+		if !ok {
+			return nil, fmt.Errorf("%q: want \"Name: value\"", tok)
+		}
+		k = strings.TrimSpace(k)
+		if _, dup := out[k]; dup {
+			return nil, fmt.Errorf("header %s given twice", k)
+		}
+		out[k] = strings.TrimSpace(v)
+	}
+	return out, nil
 }
 
 func splitArgv(s string) ([]string, error) {
@@ -1119,6 +1178,7 @@ func (m model) itemNotes() []string {
 		} else {
 			notes = append(notes, "remote server: byre opens the url's host automatically under a firewall")
 		}
+		notes = append(notes, `headers: quoted "Name: value" each — tokens by name: "Authorization: Bearer ${TOKEN}"`)
 	} else {
 		notes = append(notes, `command is an argv — "quote args with spaces"; ship the binary via a skill/apt`,
 			"local servers reach nothing a firewall doesn't allow: declare their hosts in extra egress")

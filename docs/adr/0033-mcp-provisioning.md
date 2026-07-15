@@ -54,6 +54,20 @@ egress = ["auth.linear.app"]               # extra hosts (e.g. OAuth side-host)
 - **Self-discriminating.** `command` = local stdio, `url` = remote
   streamable HTTP; no transport field. Pure wiring: binaries arrive via the
   existing build machinery; byre installs nothing from an `[[mcp]]`.
+- **Header auth (static-token remote servers; ruled 2026-07-15).** A remote
+  declaration takes `headers = { Authorization = "Bearer ${TOKEN}" }` —
+  values are TEMPLATES whose `${NAME}` refs expand at LAUNCH by the
+  delivering adapter, so the baked file carries only template text
+  (spike-verified: claude expands `${VAR}` inside `--mcp-config` header
+  values; codex delivers via three tiers in the wrapper — pure bearer →
+  native `bearer_token_env_var`, pure `${VAR}` → `env_http_headers`,
+  anything else expanded into `http_headers` at launch, unset refs kept
+  literal for claude parity). A literal fragment is allowed and bakes like
+  an `[env]` literal (the userinfo/argv stance). `${NAME}` refs join the
+  env list's provided/NOT-provided status verdicts; header NAMES print on
+  status rows, full templates on the inspect trust surface. The general
+  table was chosen over a bearer-only field (one mechanism; bearer is one
+  spelling), with `byre mcp add --bearer TOKEN_NAME` as the CLI sugar.
 - **Tokens are names.** `env` lists what the server consumes; values arrive
   via `env_from_host`/`[env]` (attributed grants). Spike-verified: claude's
   stdio servers inherit the full agent process env, so a provided name

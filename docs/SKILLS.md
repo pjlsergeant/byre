@@ -82,10 +82,14 @@ A skill can wire MCP servers into the box with `[[mcp]]` blocks (ADR
 local server's binary through the normal `[build]` machinery. List the
 env var NAMES the server consumes (`env = ["GITHUB_TOKEN"]`) -- never
 values; the user supplies those via `env_from_host`/`[env]`, and status
-marks each name provided or not. The whole url (userinfo and query
-string included) and a local command's argv bake into the image like an
-`[env]` literal -- byre never refuses what you put there, so keep
-secrets out yourself (tokens ride env names). A remote url's host becomes attributed
+marks each name provided or not. A remote server that wants static-token
+auth takes `headers = { Authorization = "Bearer ${TOKEN}" }` -- the
+`${NAME}` refs expand from the box env at launch (claude natively, codex
+via its wrapper), so the token itself never enters the declaration. The
+whole url (userinfo and query string included), a local command's argv,
+and any literal header fragment bake into the image like an `[env]`
+literal -- byre never refuses what you put there, so keep secrets out
+yourself (tokens ride env names / `${NAME}` refs). A remote url's host becomes attributed
 egress (`mcp:<name>`) automatically; declare extra hosts (an OAuth
 authorize endpoint) in the block's own `egress`. Users can drop one of
 your servers without disabling the whole skill via `!name` in their

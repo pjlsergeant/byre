@@ -247,3 +247,44 @@ func TestMCPAcceptsIPv6URLHosts(t *testing.T) {
 		t.Fatalf("IPv4 literal host must stay valid: %v", err)
 	}
 }
+
+// Headers: remote-only templates whose ${NAME} refs join the consumed-env
+// set; the baked file carries them VERBATIM (expansion is launch-time, so
+// the file stays free of byre-placed secrets).
+func TestMCPHeaders(t *testing.T) {
+	m := MCP{Name: "proxied", URL: "https://mcp.internal.example/mcp", Env: []string{"EXTRA"},
+		Headers: map[string]string{"Authorization": "Bearer ${PROXY_TOKEN}", "X-Api-Key": "${API_KEY}", "X-Static": "plain"}}
+	if err := ValidateMCP(m); err != nil {
+		t.Fatalf("headers must validate: %v", err)
+	}
+	if got := m.HeaderEnvRefs(); strings.Join(got, ",") != "API_KEY,PROXY_TOKEN" {
+		t.Fatalf("HeaderEnvRefs = %v", got)
+	}
+	if got := m.ConsumedEnv(); strings.Join(got, ",") != "EXTRA,API_KEY,PROXY_TOKEN" {
+		t.Fatalf("ConsumedEnv = %v", got)
+	}
+	if got := m.HeaderNames(); strings.Join(got, ",") != "Authorization,X-Api-Key,X-Static" {
+		t.Fatalf("HeaderNames = %v", got)
+	}
+
+	// Rejections: headers on a local server; a bad header name; control chars.
+	if err := ValidateMCP(MCP{Name: "l", Command: []string{"srv"}, Headers: map[string]string{"X": "y"}}); err == nil ||
+		!strings.Contains(err.Error(), "remote (url) servers") {
+		t.Fatalf("local headers: %v", err)
+	}
+	if err := ValidateMCP(MCP{Name: "r", URL: "https://h/m", Headers: map[string]string{"bad name": "y"}}); err == nil ||
+		!strings.Contains(err.Error(), "header name") {
+		t.Fatalf("bad header name: %v", err)
+	}
+	if err := ValidateMCP(MCP{Name: "r", URL: "https://h/m", Headers: map[string]string{"X": "a\x1bb"}}); err == nil ||
+		!strings.Contains(err.Error(), "control characters") {
+		t.Fatalf("control chars in value: %v", err)
+	}
+
+	// The render carries the template text verbatim, deterministically.
+	got := string(MCPConfigJSON([]MCP{{Name: "p", URL: "https://h.example/mcp",
+		Headers: map[string]string{"Authorization": "Bearer ${TOK}"}}}))
+	if !strings.Contains(got, `"headers": {`) || !strings.Contains(got, `"Authorization": "Bearer ${TOK}"`) {
+		t.Fatalf("headers must render verbatim: %s", got)
+	}
+}

@@ -29,6 +29,23 @@
   delivered plus the baked path. Remote OAuth stays agent-owned on the
   project volume (`claude mcp login --no-browser` works headless via URL
   paste-back).
+- **MCP header auth (`headers` on remote declarations).** Static-token
+  remote servers -- `Authorization: Bearer`, API keys behind a reverse
+  proxy -- are now declarable: `headers = { Authorization = "Bearer
+  ${TOKEN}" }`, where `${NAME}` refs expand from the box env AT LAUNCH
+  (claude expands natively inside --mcp-config; the codex wrapper maps a
+  pure bearer to codex's native bearer_token_env_var, pure `${VAR}` values
+  to env_http_headers, and expands the rest itself), so the baked
+  mcp.json carries only template text -- token values never enter config
+  or image. `byre mcp add` grows `--header "Name: value"` and `--bearer
+  TOKEN_ENV_NAME`; the config UI's MCP editor gains a Headers input
+  (quoted "Name: value" tokens); header env refs join the status rows'
+  provided/NOT-provided verdicts. Literal header fragments are allowed
+  and documented as baking into the image, like [env] values.
+- **The config UI's MCP editor got rebuilt** around a Kind (local|remote)
+  picker driving a single Endpoint input -- requiredness on the labels,
+  the name auto-lowercased, and the url's implied egress shown live
+  ("opened automatically under a firewall") instead of left to guesswork.
 - **claude-shared-auth no longer offers to sign you out of MCP servers.**
   The firstrun hook's stale-login remediation keyed off `.credentials.json`
   EXISTING; MCP server OAuth tokens live in the same file (`mcpOAuth`,

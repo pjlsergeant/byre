@@ -33,13 +33,13 @@ func mcpTestProject(t *testing.T) (string, string, string, Streams, *bytes.Buffe
 func TestMCPAddRemoteAndLocal(t *testing.T) {
 	dir, projPath, _, s, errw := mcpTestProject(t)
 
-	if err := MCPAdd(s, dir, false, "linear", []string{"https://mcp.linear.app/mcp"}, nil, []string{"auth.linear.app"}); err != nil {
+	if err := MCPAdd(s, dir, false, "linear", []string{"https://mcp.linear.app/mcp"}, nil, []string{"auth.linear.app"}, nil, ""); err != nil {
 		t.Fatalf("add remote: %v", err)
 	}
 	if !strings.Contains(errw.String(), "implies egress to mcp.linear.app:443") {
 		t.Errorf("remote add must disclose implied egress: %s", errw)
 	}
-	if err := MCPAdd(s, dir, false, "github", []string{"github-mcp-server", "stdio"}, []string{"GITHUB_TOKEN"}, nil); err != nil {
+	if err := MCPAdd(s, dir, false, "github", []string{"github-mcp-server", "stdio"}, []string{"GITHUB_TOKEN"}, nil, nil, ""); err != nil {
 		t.Fatalf("add local: %v", err)
 	}
 
@@ -58,7 +58,7 @@ func TestMCPAddRemoteAndLocal(t *testing.T) {
 	}
 
 	// add-or-update: same name replaces in place, no duplicate.
-	if err := MCPAdd(s, dir, false, "github", []string{"gh2"}, nil, nil); err != nil {
+	if err := MCPAdd(s, dir, false, "github", []string{"gh2"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	cfg, _ = config.ParseFile(projPath)
@@ -70,13 +70,13 @@ func TestMCPAddRemoteAndLocal(t *testing.T) {
 	}
 
 	// A bad declaration is refused before any write.
-	if err := MCPAdd(s, dir, false, "Bad_Name", []string{"x"}, nil, nil); err == nil {
+	if err := MCPAdd(s, dir, false, "Bad_Name", []string{"x"}, nil, nil, nil, ""); err == nil {
 		t.Fatal("bad name must refuse")
 	}
 	// A basic-auth url is the user's own choice (footgun doctrine): accepted,
 	// with the bakes-into-the-image disclosure printed.
 	errw.Reset()
-	if err := MCPAdd(s, dir, false, "proxied", []string{"https://tok@h.example/mcp"}, nil, nil); err != nil {
+	if err := MCPAdd(s, dir, false, "proxied", []string{"https://tok@h.example/mcp"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("basic-auth url must be accepted: %v", err)
 	}
 	if !strings.Contains(errw.String(), "keep secrets out of the url") {
@@ -89,7 +89,7 @@ func TestMCPAddReopensClosure(t *testing.T) {
 	if err := os.WriteFile(projPath, []byte("[[mcp]]\nname = \"!github\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := MCPAdd(s, dir, false, "github", []string{"gh-mcp"}, nil, nil); err != nil {
+	if err := MCPAdd(s, dir, false, "github", []string{"gh-mcp"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("add over closure: %v", err)
 	}
 	cfg, _ := config.ParseFile(projPath)
@@ -103,7 +103,7 @@ func TestMCPAddReopensClosure(t *testing.T) {
 
 func TestMCPAddGlobalTargetsDefaultConfig(t *testing.T) {
 	dir, projPath, globalPath, s, _ := mcpTestProject(t)
-	if err := MCPAdd(s, dir, true, "github", []string{"gh-mcp"}, nil, nil); err != nil {
+	if err := MCPAdd(s, dir, true, "github", []string{"gh-mcp"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("global add: %v", err)
 	}
 	g, err := config.ParseFile(globalPath)
@@ -119,7 +119,7 @@ func TestMCPRemoveClosureSmart(t *testing.T) {
 	dir, projPath, globalPath, s, errw := mcpTestProject(t)
 
 	// Case 1: declared in the project layer only → delete, no closure.
-	if err := MCPAdd(s, dir, false, "own", []string{"srv"}, nil, nil); err != nil {
+	if err := MCPAdd(s, dir, false, "own", []string{"srv"}, nil, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := MCPRemove(s, dir, false, "own"); err != nil {
@@ -247,5 +247,38 @@ command = ["srv"]
 	if out := errw.String(); !strings.Contains(out, "couldn't verify lower layers/skills") ||
 		!strings.Contains(out, "inert if nothing else declares own") {
 		t.Errorf("uncertainty disclosure missing: %s", out)
+	}
+}
+
+// --header and --bearer write header templates; the disclosure names the
+// ${NAME} refs the box env must provide.
+func TestMCPAddHeadersAndBearer(t *testing.T) {
+	dir, projPath, _, s, errw := mcpTestProject(t)
+	err := MCPAdd(s, dir, false, "proxied", []string{"https://mcp.internal.example/mcp"},
+		nil, nil, []string{"X-Api-Key: ${API_KEY}"}, "PROXY_TOKEN")
+	if err != nil {
+		t.Fatalf("add with headers: %v", err)
+	}
+	cfg, _ := config.ParseFile(projPath)
+	if len(cfg.MCPs) != 1 {
+		t.Fatalf("declarations = %+v", cfg.MCPs)
+	}
+	h := cfg.MCPs[0].Headers
+	if h["Authorization"] != "Bearer ${PROXY_TOKEN}" || h["X-Api-Key"] != "${API_KEY}" {
+		t.Fatalf("headers wrong: %+v", h)
+	}
+	if out := errw.String(); !strings.Contains(out, "provide API_KEY, PROXY_TOKEN") {
+		t.Errorf("env-refs disclosure missing: %s", out)
+	}
+
+	// Shape errors refuse before any write.
+	if err := MCPAdd(s, dir, false, "x", []string{"https://h/m"}, nil, nil, []string{"no-colon-here"}, ""); err == nil {
+		t.Fatal("malformed --header must refuse")
+	}
+	if err := MCPAdd(s, dir, false, "x", []string{"https://h/m"}, nil, nil, nil, "not a name"); err == nil {
+		t.Fatal("malformed --bearer must refuse")
+	}
+	if err := MCPAdd(s, dir, false, "x", []string{"srv"}, nil, nil, nil, "TOK"); err == nil {
+		t.Fatal("bearer on a local server must refuse (headers are remote-only)")
 	}
 }

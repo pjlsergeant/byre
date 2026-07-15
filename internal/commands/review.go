@@ -227,8 +227,11 @@ func mcpGrantLines(decls []skills.MCPDecl, setErr error) []grantLine {
 		if len(m.Egress) > 0 {
 			desc += "; declared egress " + strings.Join(m.Egress, ", ")
 		}
-		if len(m.Env) > 0 {
-			desc += "; consumes env " + strings.Join(m.Env, ", ")
+		if names := m.HeaderNames(); len(names) > 0 {
+			desc += "; sends headers " + strings.Join(names, ", ")
+		}
+		if consumed := m.ConsumedEnv(); len(consumed) > 0 {
+			desc += "; consumes env " + strings.Join(consumed, ", ")
 		}
 		out = append(out, grantLine{Text: fmt.Sprintf("wires MCP server %s (%s): %s", m.Name, src, desc)})
 	}

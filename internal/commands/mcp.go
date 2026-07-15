@@ -10,6 +10,7 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -39,12 +40,36 @@ func mcpLayerPath(projectDir string, global bool) (path, label string, err error
 	return filepath.Join(paths.Dir, config.ProjectConfigName), "project config", nil
 }
 
+// mcpBearerNameRe validates a --bearer env-var name at the CLI edge (a bad
+// name would otherwise become a never-expanding literal template).
+var mcpBearerNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 // MCPAdd implements `byre mcp add <name> (<url> | -- <command...>)`:
 // add-or-update the declaration in the target layer (the agent CLIs' own
 // add verbs update in place; users expect the same), re-opening a matching
-// `!name` closure if one was present.
-func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, egress []string) error {
+// `!name` closure if one was present. headers are "Name: value" pairs;
+// bearer is sugar for the dominant one (Authorization = "Bearer ${NAME}").
+func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, egress, headers []string, bearer string) error {
 	m := config.MCP{Name: name, Env: env, Egress: egress}
+	for _, h := range headers {
+		k, v, ok := strings.Cut(h, ":")
+		if !ok {
+			return fmt.Errorf("mcp add: --header wants \"Name: value\", got %q", h)
+		}
+		if m.Headers == nil {
+			m.Headers = map[string]string{}
+		}
+		m.Headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	if bearer != "" {
+		if !mcpBearerNameRe.MatchString(bearer) {
+			return fmt.Errorf("mcp add: --bearer wants an env var NAME (the token rides the box env), got %q", bearer)
+		}
+		if m.Headers == nil {
+			m.Headers = map[string]string{}
+		}
+		m.Headers["Authorization"] = "Bearer ${" + bearer + "}"
+	}
 	switch {
 	case len(rest) == 0:
 		// The cobra layer enforces arity; kept for direct callers.
@@ -100,6 +125,9 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 	}
 	if host, port, ok := m.Endpoint(); ok {
 		fmt.Fprintf(s.Err, "byre: remote url implies egress to %s:%d (attributed mcp:%s; closable with \"!%s:%d\" in egress)\n", host, port, name, host, port)
+	}
+	if refs := m.HeaderEnvRefs(); len(refs) > 0 {
+		fmt.Fprintf(s.Err, "byre: header ${...} refs expand at launch from the box env — provide %s via env_from_host or [env]\n", strings.Join(refs, ", "))
 	}
 	// The declaration bakes into the image (docker history shows it), like
 	// [env] values — the disclosure keeps argv/query secrets a known edge,

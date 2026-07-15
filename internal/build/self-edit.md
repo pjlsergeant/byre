@@ -30,7 +30,9 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `run_args = ["--cap-add=SYS_PTRACE"]` — raw `docker run` flags
 - `[[mcp]]` blocks — MCP servers for the agent session: `name = "github"` plus
   a local `command = ["srv", "arg"]` or remote `url = "https://..."`;
-  `env = ["TOKEN_NAME"]` names consumed vars (values via `env_from_host`/`[env]`)
+  `env = ["TOKEN_NAME"]` names consumed vars (values via `env_from_host`/`[env]`);
+  remote static-token auth via `headers = { Authorization = "Bearer ${TOKEN}" }`
+  (`${NAME}` expands from the box env at launch — never write the token itself)
 
 So: need a **package** → add it to `apt`. Need a **custom build step** → add a
 `RUN ...` line to `dockerfile_pre` or `dockerfile_post`.

@@ -255,6 +255,12 @@ func printSkillContributions(w io.Writer, f skills.File) {
 		for _, e := range m.Egress {
 			fmt.Fprintf(w, "    egress: %s\n", packages.EscapeTerminal(e))
 		}
+		// Headers with VALUES: inspect is the pre-enable trust surface, and a
+		// template (or a literal a manifest smuggles) is exactly what the
+		// reviewer must see.
+		for _, k := range m.HeaderNames() {
+			fmt.Fprintf(w, "    header: %s: %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(m.Headers[k]))
+		}
 	}
 	for _, k := range sortedMapKeys(rt.Env) {
 		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.Env[k]))

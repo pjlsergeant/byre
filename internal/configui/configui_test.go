@@ -1180,8 +1180,8 @@ func TestMCPItemAddEditValidation(t *testing.T) {
 		t.Fatalf("Kind picker must lead the MCP editor: hasMode=%v first=%v label=%q onPicker=%v",
 			m.itemHasMode, m.itemModeFirst, m.itemModeLabel, m.onModePicker())
 	}
-	if len(m.inputs) != 4 {
-		t.Fatalf("form should be 4 inputs + picker, got %d", len(m.inputs))
+	if len(m.inputs) != 5 {
+		t.Fatalf("form should be 5 inputs + picker, got %d", len(m.inputs))
 	}
 
 	// Reject: no endpoint at all (local kind, empty command).
@@ -1360,5 +1360,46 @@ func TestMCPArgvRoundTrip(t *testing.T) {
 	}
 	if got := m.mcps[0].Command; len(got) != 3 || got[2] != "hello world" {
 		t.Fatalf("no-op open-and-commit corrupted argv: %v", got)
+	}
+}
+
+// Headers ride the argv codec (one quoted "Name: value" token each): the
+// form accepts them for remote kind, validation refuses them on local, and
+// a no-op open-and-commit round-trips multiple headers unchanged.
+func TestMCPHeadersInForm(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{MCPs: []config.MCP{{
+		Name: "proxied", URL: "https://mcp.internal.example/mcp",
+		Headers: map[string]string{"Authorization": "Bearer ${TOK}", "X-Api-Key": "${KEY}"},
+	}}}, nil, nil, nil, nil, Inherited{}, nil, false)
+	m.listField = fMCP
+
+	// No-op open-and-commit keeps both headers.
+	m = m.startItem(0)
+	m = m.commitItem()
+	if m.itemErr != "" || len(m.mcps[0].Headers) != 2 || m.mcps[0].Headers["Authorization"] != "Bearer ${TOK}" {
+		t.Fatalf("headers round trip: err=%q %+v", m.itemErr, m.mcps[0].Headers)
+	}
+	// Edit a header value through the input.
+	m = m.startItem(0)
+	m.inputs[4].SetValue(`"Authorization: Bearer ${OTHER}"`)
+	m = m.commitItem()
+	if m.itemErr != "" || m.mcps[0].Headers["Authorization"] != "Bearer ${OTHER}" || len(m.mcps[0].Headers) != 1 {
+		t.Fatalf("header edit: err=%q %+v", m.itemErr, m.mcps[0].Headers)
+	}
+	// Headers on a local declaration refuse (config owns the rule).
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("loc")
+	m.inputs[1].SetValue("srv")
+	m.inputs[4].SetValue(`"X: y"`)
+	if m2 := m.commitItem(); m2.itemErr == "" || !strings.Contains(m2.itemErr, "remote (url) servers") {
+		t.Fatalf("local headers must refuse: %q", m2.itemErr)
+	}
+	// A malformed header token errors cleanly.
+	m.inputs[1].SetValue("")
+	m.itemMode = 1
+	m.inputs[1].SetValue("https://h.example/mcp")
+	m.inputs[4].SetValue(`"no-colon"`)
+	if m2 := m.commitItem(); m2.itemErr == "" || !strings.Contains(m2.itemErr, "Name: value") {
+		t.Fatalf("malformed header: %q", m2.itemErr)
 	}
 }

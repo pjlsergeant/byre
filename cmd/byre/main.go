@@ -401,7 +401,8 @@ func mcpCmd(dir string, s commands.Streams) *cobra.Command {
 		},
 	}
 	var addGlobal, rmGlobal bool
-	var env, egress []string
+	var env, egress, headers []string
+	var bearer string
 	add := &cobra.Command{
 		Use:   "add <name> (<url> | -- <command>...)",
 		Short: "Declare an MCP server in the project config (or --global defaults).",
@@ -414,12 +415,14 @@ Applies on the next develop.`,
 			if len(args) < 2 {
 				return usageError("usage: byre mcp add <name> (<url> | -- <command>...)")
 			}
-			return commands.MCPAdd(s, dir, addGlobal, args[0], args[1:], env, egress)
+			return commands.MCPAdd(s, dir, addGlobal, args[0], args[1:], env, egress, headers, bearer)
 		},
 	}
 	add.Flags().BoolVar(&addGlobal, "global", false, "write your global defaults (~/.byre/default.config) instead")
 	add.Flags().StringArrayVar(&env, "env", nil, "env var NAME the server consumes (repeatable; values ride env_from_host/[env], never this declaration)")
 	add.Flags().StringArrayVar(&egress, "egress", nil, "extra host[:port] the server needs (repeatable; a remote url's own host is implied)")
+	add.Flags().StringArrayVar(&headers, "header", nil, `HTTP header for a remote server, "Name: value" (repeatable; ${VAR} in the value expands from the box env at launch)`)
+	add.Flags().StringVar(&bearer, "bearer", "", `env var NAME holding a bearer token — sugar for --header "Authorization: Bearer ${NAME}"`)
 	remove := &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Remove a declared MCP server (closure-smart).",
