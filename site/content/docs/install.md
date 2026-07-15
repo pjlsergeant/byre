@@ -4,6 +4,8 @@ weight: 10
 description: go install, curl, Homebrew, or build from source
 ---
 
+**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
+
 byre is a single Go binary. With Go 1.22+ on your machine:
 
 ```sh

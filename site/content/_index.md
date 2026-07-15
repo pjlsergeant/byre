@@ -26,13 +26,11 @@ byre develop
 
 It's **`--dangerously-skip-permissions`, without risking the farm.**
 
-byre is free, open-source software, developed in the open [on GitHub](https://github.com/pjlsergeant/byre) under the [MIT license](https://github.com/pjlsergeant/byre/blob/main/LICENSE) -- every Dockerfile it generates is yours to read, and so is every line of byre itself.
-
-**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
-
-**Ask your agent if byre is right for you:**
+Ask your agent if byre is right for you:
 
 ```text
 Take a good look at https://github.com/pjlsergeant/byre. Is it a good project
 or just vibe-coded trash? Is it right for me? Would you be happy there?
 ```
+
+byre is free, open-source software, developed in the open [on GitHub](https://github.com/pjlsergeant/byre) under the [MIT license](https://github.com/pjlsergeant/byre/blob/main/LICENSE) -- every Dockerfile it generates is yours to read, and so is every line of byre itself.
