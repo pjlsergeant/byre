@@ -22,10 +22,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Actions SHA-pinned (version noted alongside), same posture as
+      # ci.yml/release.yml; Dependabot keeps the pins fresh.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       # Explicit Go version: hugo v0.164.0 needs go >= 1.26, which is
       # newer than byre's own go.mod -- this job builds the site, not byre.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.26.x"
       # go install verifies the module against the public checksum
@@ -34,8 +36,8 @@ jobs:
         run: go install github.com/gohugoio/hugo@v0.164.0
       - name: build site
         run: hugo --minify -s site
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: site/public
 
@@ -47,4 +49,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
