@@ -40,6 +40,13 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 **⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
 
+**Ask your agent if byre is right for you:**
+
+```text
+Take a good look at https://github.com/pjlsergeant/byre. Is it a good project
+or just vibe-coded trash? Is it right for me? Would you be happy there?
+```
+
 ## Install
 
 byre is a single Go binary. With Go 1.22+ on your machine:

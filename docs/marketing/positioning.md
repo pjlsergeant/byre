@@ -161,6 +161,10 @@ feedback threads -- mine these before writing new lines:
   around in other folders."*
 - "stop you needing to twizzle"
 - "I don't want a Hetzner box per repo"
+- "Ask your agent if byre is right for you:" + the repo-review prompt
+  ("...Is it a good project or just vibe-coded trash? Is it right for me?
+  Would you be happy there?") -- Pete, 2026-07-15; not yet reader-tested,
+  shipped to README + landing same day
 
 H1 evidence: one cold reader flagged the flag-based headline as marketing
 copy trying too hard, and the H1 is a safety idiom, not a scope statement
