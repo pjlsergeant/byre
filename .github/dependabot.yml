@@ -1,0 +1,10 @@
+# Keeps the SHA-pinned actions in ci.yml/release.yml fresh: Dependabot
+# understands SHA pins natively, bumps the hash, and keeps the version
+# comment alongside in sync. Actions only, deliberately — Go module bumps
+# are done by hand, and govulncheck (CI) covers the known-vuln case.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
