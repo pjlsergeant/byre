@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Shared-auth hardening for Gemini, OpenCode, and Codex** (source pass
+  over all three trees; no `shared_auth_for` vouches flipped — the live
+  two-box checks are still pending, see each skill.toml).
+  `gemini-shared-auth` now seeds `security.auth.selectedType =
+  "oauth-personal"` so Gemini's auth-method dialog — which deletes the
+  symlinked credential and silently forks the login off the shared
+  volume — never opens; Google OAuth rotation was confirmed safe from
+  primary docs (non-rotating refresh tokens, no cross-box cascade).
+  `opencode-shared-auth` is scoped to API-key logins: OAuth entries
+  (e.g. Claude Pro/Max) race across boxes and now draw a launch warning
+  (the credential itself is never touched). The codex and opencode
+  login hooks trust only a symlink to the exact shared credential path,
+  not anything under the identity volume. `codex logout` is documented
+  as a shared-auth hazard (it revokes the refresh token server-side for
+  every box). Gemini boxes also install ripgrep (its native search
+  tool; it warned and fell back to a slower one every session).
+
 - **macOS binaries run again on current macOS; Go floor is now 1.25.**
   The v0.1.1 darwin release binaries were linked without an `LC_UUID`
   load command (Go 1.22's linker omits it under `CGO_ENABLED=0`), which
