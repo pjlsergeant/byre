@@ -66,6 +66,12 @@ without the installs fails loudly at develop with those exact commands.
   `byre-codereview --continue "..."`. Stop when clean. (In the legacy moarcode
   box the equivalent is `moarcode/codereview.sh`.)
 - **Green before commit:** `gofmt` + `go vet` + `go test ./...` clean.
+- **Docs sweep (part of shipping, not a follow-up).** When a change alters
+  behavior a settled doc describes, update the doc in the same unit of
+  work: does README / ARCHITECTURE / GLOSSARY still state the pre-change
+  behavior in the present tense ("today this is manual", "planned")?
+  Stale shipped-over prose is the docs' main rot vector; RELEASING.md's
+  release-time sweep is the backstop, not the mechanism.
 
 ## Tech Stack
 
