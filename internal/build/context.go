@@ -39,6 +39,13 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 	if err != nil {
 		return gen.Input{}, nil, err
 	}
+	// The declared Claude Skill set: validate each source dir as a Claude
+	// Skill and stage it under the canonical context tree (the COPY itself is
+	// unconditional — gen always emits it, Assemble always creates the tree).
+	claudeSkillJobs, err := planClaudeSkills(paths, cfg, res)
+	if err != nil {
+		return gen.Input{}, nil, err
+	}
 	in := gen.Input{
 		Base:         cfg.Base,
 		Env:          cfg.Env,
@@ -56,7 +63,7 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 		DockerfilePre:      cfg.DockerfilePre,
 		DockerfilePost:     cfg.DockerfilePost,
 	}
-	return in, append(fileJobs, skillJobs...), nil
+	return in, append(append(fileJobs, skillJobs...), claudeSkillJobs...), nil
 }
 
 // Render returns the generated Dockerfile text WITHOUT touching the build
@@ -77,7 +84,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// Re-stage from scratch: clear the staging subtrees so a file removed from
 	// `files`/skills since the last build can't linger in the context and make the
 	// build nondeterministic (or get swept into the image).
-	for _, d := range []string{"files", "skills"} {
+	for _, d := range []string{"files", "skills", gen.ClaudeSkillsDirName} {
 		if err := os.RemoveAll(filepath.Join(paths.ContextDir, d)); err != nil {
 			return "", err
 		}
@@ -120,6 +127,13 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		if err := os.WriteFile(ctxPath(paths, gen.AgentCmdName), agentScript(cmd), 0o755); err != nil {
 			return "", err
 		}
+	}
+	// The canonical Claude Skill tree root — created on every assemble even
+	// when the declared set is empty (the COPY is unconditional, and claude's
+	// --add-dir tolerates an empty skills dir; spike-verified), so the baked
+	// path exists in every box. The skill dirs themselves were staged as jobs.
+	if err := os.MkdirAll(filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills"), 0o755); err != nil {
+		return "", err
 	}
 	// The canonical declared MCP set — written on every assemble (the COPY is
 	// unconditional), empty set included, so /etc/byre/mcp.json exists in
@@ -258,6 +272,52 @@ func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.Ski
 		out = append(out, gb)
 	}
 	return out, jobs, nil
+}
+
+// planClaudeSkills stages the effective Claude Skill set under the canonical
+// context tree ("claude-skills/.claude/skills/<name>"), validating each source
+// dir as a Claude Skill first (skills.ValidateClaudeSkillDir — SKILL.md,
+// frontmatter, bounds; one owner for both homes). A skill contribution's
+// source dir was already resolved and containment-checked by Resolve; a
+// config declaration's `path` expands here (`~`-anchored or absolute — config
+// vocabulary is deliberately wider than the project-relative `files` key, see
+// config/claudeskills.go). Staging itself rejects symlinks (copyPath).
+func planClaudeSkills(paths project.Paths, cfg config.Config, res skills.Resolved) ([]fileCopy, error) {
+	set, err := skills.ClaudeSkillSet(cfg, res)
+	if err != nil {
+		return nil, err
+	}
+	var jobs []fileCopy
+	for _, d := range set {
+		src := d.SrcDir
+		if src == "" { // a config declaration: expand its host path
+			if src, err = expandHome(d.CS.Path); err != nil {
+				return nil, fmt.Errorf("claude skill %s: %w", d.CS.Name, err)
+			}
+		}
+		if err := skills.ValidateClaudeSkillDir(src, d.CS.Name); err != nil {
+			return nil, err
+		}
+		staged := filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills", d.CS.Name)
+		jobs = append(jobs, fileCopy{src: src, staged: staged, what: fmt.Sprintf("claude skill %s: copying %s", d.CS.Name, src)})
+	}
+	return jobs, nil
+}
+
+// expandHome expands a leading ~ against the current user's home and requires
+// the result to be absolute (the shape config validation promised).
+func expandHome(p string) (string, error) {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		p = home + strings.TrimPrefix(p, "~")
+	}
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("path must be absolute or ~/…: %q", p)
+	}
+	return p, nil
 }
 
 // safeProjectPath resolves src (relative to projectDir) and confirms — after

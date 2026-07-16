@@ -63,10 +63,22 @@ egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.an
 # twin (which never spawns); other user-added servers still union in. Attach
 # shells (`byre shell` -> claude) don't carry the flag — the shell is not the
 # agent session.
-command = "claude --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json"
+# --add-dir points the session at byre's declared [[claude_skills]] set (baked
+# at /etc/byre/claude-skills, present in every image — empty tree included, so
+# the flag is safe unconditionally). The tree carries claude's native discovery
+# layout (.claude/skills/<name>/), so delivered skills load BARE (as /name),
+# auto-trigger from their descriptions, and work headless — all spike-verified
+# on 2.1.211 (2026-07-16), including read-only trees and non-fatal malformed
+# siblings. Same injection posture as MCP: no state writes, exact per-session
+# convergence. Known boundaries: a same-name skill the in-box agent authored
+# into ~/.claude/skills (personal scope) shadows the delivered one — box state
+# wins, byre doesn't clobber it; attach shells don't carry the flag.
+command = "claude --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json --add-dir /etc/byre/claude-skills"
 # mcp = "inject" is the author's vouch that the command above consumes the
 # baked file; status keys delivery reporting off it.
 mcp = "inject"
+# claude_skills = "inject" is the same vouch for the baked Claude Skill tree.
+claude_skills = "inject"
 state = ".claude"
 # Where Claude reads user memory: $CLAUDE_CONFIG_DIR/CLAUDE.md. byre places the
 # concatenated skill [context] here at runtime (the .claude volume is only mounted

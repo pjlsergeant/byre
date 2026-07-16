@@ -91,6 +91,18 @@ const (
 	MCPConfigPath = "/etc/byre/" + MCPConfigName
 )
 
+// ClaudeSkillsDirName is the build-context directory of the canonical declared
+// Claude Skill set; the section below COPYs it to ClaudeSkillsPath. Like
+// mcp.json, the path is a quasi-public contract baked into EVERY image, empty
+// set included, so an agent command can reference it unconditionally (claude:
+// --add-dir) and any consumer can point at a stable path. The layout inside is
+// claude's native discovery shape — <path>/.claude/skills/<name>/SKILL.md —
+// so the delivered skills load BARE (as /name), not plugin-namespaced.
+const (
+	ClaudeSkillsDirName = "claude-skills"
+	ClaudeSkillsPath    = "/etc/byre/" + ClaudeSkillsDirName
+)
+
 // DefaultBase is used when no base is configured (and no template supplies one).
 const DefaultBase = "debian:bookworm"
 
@@ -209,6 +221,12 @@ func Dockerfile(in Input) string {
 	// after skills/agent so an mcp-set change never busts their layers.
 	b.WriteString("\n# --- mcp (canonical declared set; stable path) ---\n")
 	fmt.Fprintf(&b, "COPY %s %s\n", MCPConfigName, MCPConfigPath)
+
+	// The canonical declared Claude Skill set — same posture: always baked
+	// (empty tree included) at a stable path, after skills/agent so a skill
+	// edit never busts their layers.
+	b.WriteString("\n# --- claude skills (canonical declared set; stable path) ---\n")
+	fmt.Fprintf(&b, "COPY %s %s\n", ClaudeSkillsDirName, ClaudeSkillsPath)
 
 	// Pre-create named-volume mount points owned by the baked UID: Docker seeds a
 	// fresh named volume from the image dir at its mount point (content AND

@@ -624,6 +624,8 @@ func sampleConfig() Config {
 		Ports:              []Port{{Container: 8080}},
 		MCPs:               []MCP{{Name: "github", Command: []string{"github-mcp-server"}}},
 		MCPClosed:          []string{"linear"},
+		ClaudeSkills:       []ClaudeSkill{{Name: "tdd-loop", Path: "~/claude-skills/tdd-loop"}},
+		ClaudeSkillsClosed: []string{"review"},
 		DockerfilePre:      []string{"RUN true"},
 		DockerfilePost:     []string{"RUN false"},
 		RunArgs:            []string{"--cap-add=X"},

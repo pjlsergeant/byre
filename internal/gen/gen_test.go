@@ -41,6 +41,9 @@ COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
 # --- mcp (canonical declared set; stable path) ---
 COPY mcp.json /etc/byre/mcp.json
 
+# --- claude skills (canonical declared set; stable path) ---
+COPY claude-skills /etc/byre/claude-skills
+
 # --- project block ---
 WORKDIR /workspace
 

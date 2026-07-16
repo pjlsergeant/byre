@@ -25,6 +25,10 @@ type resolved struct {
 	// carried so validate() can surface it (combine stays error-free).
 	mcps   []skills.MCPDecl
 	mcpErr error
+	// claudeSkills / claudeSkillsErr: the same pair for the effective Claude
+	// Skill set (skills.ClaudeSkillSet).
+	claudeSkills    []skills.ClaudeSkillDecl
+	claudeSkillsErr error
 }
 
 // combine forms the resolved view from a loaded config and its skills — the
@@ -32,13 +36,16 @@ type resolved struct {
 // are built.
 func combine(cfg config.Config, res skills.Resolved) resolved {
 	mcps, mcpErr := skills.MCPSet(cfg, res)
+	claudeSkills, claudeSkillsErr := skills.ClaudeSkillSet(cfg, res)
 	return resolved{
-		cfg:     cfg,
-		skills:  res,
-		mounts:  append(append([]config.Mount{}, cfg.Mounts...), res.Mounts()...),
-		volumes: append(append([]config.Volume{}, cfg.Volumes...), res.Volumes()...),
-		mcps:    mcps,
-		mcpErr:  mcpErr,
+		cfg:             cfg,
+		skills:          res,
+		mounts:          append(append([]config.Mount{}, cfg.Mounts...), res.Mounts()...),
+		volumes:         append(append([]config.Volume{}, cfg.Volumes...), res.Volumes()...),
+		mcps:            mcps,
+		mcpErr:          mcpErr,
+		claudeSkills:    claudeSkills,
+		claudeSkillsErr: claudeSkillsErr,
 	}
 }
 
@@ -51,6 +58,9 @@ func (rv resolved) validate() error {
 	}
 	if rv.mcpErr != nil {
 		return fmt.Errorf("config + skills: %w", rv.mcpErr)
+	}
+	if rv.claudeSkillsErr != nil {
+		return fmt.Errorf("config + skills: %w", rv.claudeSkillsErr)
 	}
 	return nil
 }

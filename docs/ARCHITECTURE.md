@@ -283,6 +283,10 @@ run_args        = ["--cap-add=SYS_PTRACE"]    # raw RUNTIME block: docker-run pa
 name = "github"                               # `!name` in a later layer closes one, even
 command = ["github-mcp-server", "stdio"]      #   a skill-declared one
 env = ["GITHUB_TOKEN"]                        # var NAMES the server consumes, never values
+
+[[claude_skills]]                             # Claude Skills: wiring, not grants (ADR 0038)
+name = "tdd-loop"                             # same `!name` closure semantics as [[mcp]]
+path = "~/claude-skills/tdd-loop"             # host dir whose root holds SKILL.md
 ```
 
 Escape hatches are symmetric across both layers byre controls
@@ -396,6 +400,28 @@ server consumes, values arrive via `env_from_host`/`[env]`, and a box's
 stdio servers inherit the box env. Remote OAuth is agent-owned on the
 project state volume (`claude mcp login --no-browser` works headless via
 URL paste-back).
+
+### Claude Skills delivery
+
+`[[claude_skills]]` blocks declare **Claude Skills** (Anthropic's
+agent-skill format: a directory whose root holds a `SKILL.md`) for the box
+-- the same wiring-not-grants model and merge taxonomy as `[[mcp]]` (ADR
+0038): config layers replace by name, skill.toml contributions union
+after, `!name` closures reach skill-declared entries, duplicates
+hard-reject. Config declares a host `path` (`~/…` or absolute); a
+skill.toml contributes a package-relative `from` (containment-checked
+like `[build].files`). Each declaration is validated as a Claude Skill at
+bake (root SKILL.md, YAML frontmatter `name`/`description`, name match,
+64-file/8 MiB bounds, no symlinks) and the merged set bakes to
+**`/etc/byre/claude-skills/.claude/skills/<name>/` in every image**,
+empty set included -- claude's native discovery layout, so skills load
+BARE (`/name`). Delivery is injection, vouched by `[agent]
+claude_skills = "inject"`: the claude skill's command carries `--add-dir
+/etc/byre/claude-skills`, and that flag is the whole adapter (no state
+writes; a same-name skill the in-box agent authored into its own
+`~/.claude/skills` shadows the delivered one -- box state wins).
+Adapter-less agents degrade honestly in status. `byre claude-skill
+add|remove|list` is the CLI sugar; the config UI has the editor screen.
 
 ## Mounts & volumes
 
@@ -604,6 +630,8 @@ byre preset ...   apply / inspect -- review and apply a config preset
                   (byre.preset, a path, or an https URI).
 byre mcp ...      add / remove / list -- declare MCP servers in the project
                   config (wiring, not a grant; ADR 0033).
+byre claude-skill ...  add / remove / list -- declare Claude Skills in the
+                  project config (wiring, not a grant; ADR 0038).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox — locally, or through another machine

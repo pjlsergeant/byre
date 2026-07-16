@@ -402,3 +402,103 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 		t.Errorf("agent-context.md should persist with the chassis paragraph: %q %v", ctx, err)
 	}
 }
+
+// writeClaudeSkillDir lays down a minimal well-formed Claude Skill.
+func writeClaudeSkillDir(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fm := "---\nname: " + name + "\ndescription: Use when testing byre.\n---\nBody.\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(fm), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAssembleStagesClaudeSkills(t *testing.T) {
+	paths := bootstrapped(t)
+
+	// Empty set: the canonical tree root still exists (the COPY is
+	// unconditional) and the Dockerfile carries the COPY.
+	df, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(df, "COPY claude-skills /etc/byre/claude-skills") {
+		t.Errorf("Dockerfile missing the unconditional claude-skills COPY:\n%s", df)
+	}
+	root := filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills")
+	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+		t.Fatalf("empty-set tree root not created: %v", err)
+	}
+
+	// A config-declared skill (absolute path) and a skill contribution both
+	// stage under the canonical tree.
+	src := filepath.Join(t.TempDir(), "tdd-loop")
+	writeClaudeSkillDir(t, src, "tdd-loop")
+	if err := os.WriteFile(filepath.Join(src, "support.txt"), []byte("quokka"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	contribSrc := filepath.Join(t.TempDir(), "review-loop")
+	writeClaudeSkillDir(t, contribSrc, "review-loop")
+
+	cfg := config.Config{Base: "node:22", ClaudeSkills: []config.ClaudeSkill{{Name: "tdd-loop", Path: src}}}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "pete/tools", ClaudeSkills: []skills.ClaudeSkillDecl{
+		{Skill: "pete/tools", CS: config.ClaudeSkill{Name: "review-loop", From: "cs/review-loop"}, SrcDir: contribSrc},
+	}}}}
+	if _, err := Assemble(paths, cfg, res); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"tdd-loop", "review-loop"} {
+		if _, err := os.Stat(filepath.Join(root, name, "SKILL.md")); err != nil {
+			t.Errorf("staged skill %s missing: %v", name, err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "tdd-loop", "support.txt")); string(b) != "quokka" {
+		t.Errorf("support file not staged: %q", b)
+	}
+
+	// A closure removes the staged dir on the next assemble (re-staged from
+	// scratch, no residue).
+	cfg.ClaudeSkillsClosed = []string{"tdd-loop"}
+	cfg.ClaudeSkills = nil
+	if _, err := Assemble(paths, cfg, res); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "tdd-loop")); !os.IsNotExist(err) {
+		t.Errorf("removed declaration left residue in the context")
+	}
+	if _, err := os.Stat(filepath.Join(root, "review-loop", "SKILL.md")); err != nil {
+		t.Errorf("surviving skill lost: %v", err)
+	}
+}
+
+func TestAssembleRejectsBadClaudeSkill(t *testing.T) {
+	paths := bootstrapped(t)
+
+	// Not a skill: no SKILL.md.
+	bad := t.TempDir()
+	cfg := config.Config{Base: "node:22", ClaudeSkills: []config.ClaudeSkill{{Name: "nope", Path: bad}}}
+	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "no SKILL.md") {
+		t.Fatalf("bad dir: %v", err)
+	}
+
+	// Frontmatter name mismatch is attributed.
+	mm := filepath.Join(t.TempDir(), "mm")
+	writeClaudeSkillDir(t, mm, "other-name")
+	cfg.ClaudeSkills = []config.ClaudeSkill{{Name: "mm", Path: mm}}
+	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "must match") {
+		t.Fatalf("mismatch: %v", err)
+	}
+
+	// Cross-source duplicates hard-reject at assemble too (ClaudeSkillSet).
+	ok := filepath.Join(t.TempDir(), "dup")
+	writeClaudeSkillDir(t, ok, "dup")
+	cfg.ClaudeSkills = []config.ClaudeSkill{{Name: "dup", Path: ok}}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "pete/tools", ClaudeSkills: []skills.ClaudeSkillDecl{
+		{Skill: "pete/tools", CS: config.ClaudeSkill{Name: "dup", From: "x"}, SrcDir: ok},
+	}}}}
+	if _, err := Assemble(paths, cfg, res); err == nil || !strings.Contains(err.Error(), "declared by both") {
+		t.Fatalf("duplicate: %v", err)
+	}
+}

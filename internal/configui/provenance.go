@@ -28,6 +28,10 @@ type SkillRuntime struct {
 	// screen attributed skill:<name> — and closable from there: a `!name`
 	// closure in this file reaches a skill-declared server.
 	MCPs []config.MCP
+	// ClaudeSkills are the skill's [[claude_skills]] contributions. Shown on
+	// the Claude Skills screen attributed skill:<name>, closable there the
+	// same way (the closure semantics are shared with MCP).
+	ClaudeSkills []config.ClaudeSkill
 	// Posture is the skill's declared network_posture ("" = none). The Egress
 	// screen uses it to say whether anything enforces the allowlist.
 	Posture string

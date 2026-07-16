@@ -496,3 +496,56 @@ func TestRenderStatusMCPExtrasAlwaysOnRow(t *testing.T) {
 		t.Errorf("the Egress section itself stays suppressed on an open network:\n%s", out)
 	}
 }
+
+// Claude Skill rows are configuration reporting, the MCP posture: name,
+// source spelling, attribution, one delivery verdict — never grant rows.
+func TestRenderStatusClaudeSkillRows(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent:             "byre/claude",
+		AgentClaudeSkills: "inject",
+		ClaudeSkills: []skills.ClaudeSkillDecl{
+			{Skill: skills.ClaudeSkillsFromConfig, CS: config.ClaudeSkill{Name: "tdd-loop", Path: "~/cs/tdd-loop"}},
+			{Skill: "pete/tools", CS: config.ClaudeSkill{Name: "review-loop", From: "cs/review-loop"}, SrcDir: "/resolved"},
+		},
+		ClaudeSkillsClosed: []string{"legacy-thing"},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "Claude Skills:") {
+		t.Fatalf("Claude Skills section missing:\n%s", out)
+	}
+	if !strings.Contains(out, "tdd-loop — ~/cs/tdd-loop  (config)") {
+		t.Errorf("config row wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "review-loop — cs/review-loop  (skill pete/tools)") {
+		t.Errorf("skill row wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "the agent session receives: /tdd-loop, /review-loop  (via /etc/byre/claude-skills") {
+		t.Errorf("inject delivery line wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "!legacy-thing  (config — removed from the declared set)") {
+		t.Errorf("closure row missing:\n%s", out)
+	}
+}
+
+// An adapter-less agent degrades honestly, with the baked path as the manual
+// wiring point; no agent at all names the path too.
+func TestRenderStatusClaudeSkillDeliveryDegrades(t *testing.T) {
+	decl := []skills.ClaudeSkillDecl{{Skill: skills.ClaudeSkillsFromConfig, CS: config.ClaudeSkill{Name: "tdd-loop", Path: "/x"}}}
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{Agent: "byre/gemini", ClaudeSkills: decl})
+	if out := buf.String(); !strings.Contains(out, "NOT delivered: agent skill byre/gemini has no claude-skills adapter") ||
+		!strings.Contains(out, "/etc/byre/claude-skills") {
+		t.Errorf("adapter-less degradation missing:\n%s", out)
+	}
+	buf.Reset()
+	renderStatus(&buf, statusInfo{ClaudeSkills: decl})
+	if out := buf.String(); !strings.Contains(out, "no agent selected") {
+		t.Errorf("agentless line missing:\n%s", out)
+	}
+	buf.Reset()
+	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentClaudeSkills: "inject", ClaudeSkills: decl, SkillErr: "boom"})
+	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
+		t.Errorf("unresolved must not assert delivery:\n%s", out)
+	}
+}

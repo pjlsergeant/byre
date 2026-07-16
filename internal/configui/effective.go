@@ -61,6 +61,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.egressRows()
 	case fMCP:
 		return m.mcpRows()
+	case fClaudeSkills:
+		return m.claudeSkillRows()
 	}
 	return nil
 }
@@ -159,6 +161,107 @@ func (m model) mcpRows() []listRow {
 		}
 	}
 	return rows
+}
+
+// claudeSkillRows builds the Claude Skills screen's effective view — the
+// mcpRows shape verbatim: identity is the exact name, config layers replace
+// by name, skill contributions union after, and a `!name` marker is a
+// CLOSURE reaching skill rows too (which is why they're closable here).
+func (m model) claudeSkillRows() []listRow {
+	localIdx := map[string]int{}
+	markerIdx := map[string]int{}
+	for i, cs := range m.claudeSkills {
+		if n, ok := strings.CutPrefix(cs.Name, "!"); ok {
+			markerIdx[n] = i
+		} else {
+			localIdx[cs.Name] = i
+		}
+	}
+	var lowerClosures []string
+	for _, c := range m.lowerNow().ClaudeSkillsClosed {
+		if !hasKey(localIdx, c) {
+			lowerClosures = append(lowerClosures, c)
+		}
+	}
+	lowerClosureUsed := map[string]bool{}
+	lowerClosed := func(name string) bool {
+		if slices.Contains(lowerClosures, name) {
+			lowerClosureUsed[name] = true
+			return true
+		}
+		return false
+	}
+	markerMatched := map[int]bool{}
+
+	lower := map[string]bool{}
+	var rows []listRow
+	for _, cs := range m.lowerNow().ClaudeSkills {
+		cs := cs
+		lower[cs.Name] = true
+		src := m.lowerSource(func(c config.Config) bool { return hasClaudeSkillName(c.ClaudeSkills, cs.Name) })
+		switch {
+		case hasKey(markerIdx, cs.Name):
+			markerMatched[markerIdx[cs.Name]] = true
+			rows = append(rows, listRow{kind: rowRemoved, text: claudeSkillLine(cs), source: src, idx: markerIdx[cs.Name]})
+		case hasKey(localIdx, cs.Name):
+			rows = append(rows, listRow{kind: rowOverride, text: claudeSkillLine(m.claudeSkills[localIdx[cs.Name]]), source: src, idx: localIdx[cs.Name]})
+		default:
+			rows = append(rows, listRow{kind: rowInherited, text: claudeSkillLine(cs), ident: cs.Name, source: src, vals: claudeSkillVals(cs)})
+		}
+	}
+	for i, cs := range m.claudeSkills {
+		if isRemovalName(cs.Name) || lower[cs.Name] {
+			continue
+		}
+		if hasKey(markerIdx, cs.Name) {
+			markerMatched[markerIdx[cs.Name]] = true
+			rows = append(rows, listRow{kind: rowRemoved, text: claudeSkillLine(cs), idx: markerIdx[cs.Name]})
+			continue
+		}
+		rows = append(rows, listRow{kind: rowLocal, text: claudeSkillLine(cs), idx: i})
+	}
+	for _, sk := range m.effectiveSkills() {
+		for _, cs := range m.inh.Skills[sk].ClaudeSkills {
+			if i, ok := markerIdx[cs.Name]; ok {
+				markerMatched[i] = true
+				rows = append(rows, listRow{kind: rowRemoved, text: claudeSkillLine(cs), source: "skill:" + sk, idx: i})
+				continue
+			}
+			if lowerClosed(cs.Name) {
+				rows = append(rows, listRow{kind: rowSkill, text: claudeSkillLine(cs), source: "skill:" + sk + " — closed by '!" + cs.Name + "'"})
+				continue
+			}
+			rows = append(rows, listRow{kind: rowSkill, text: claudeSkillLine(cs), ident: cs.Name, source: "skill:" + sk})
+		}
+	}
+	for i, cs := range m.claudeSkills {
+		if n, ok := strings.CutPrefix(cs.Name, "!"); ok && !markerMatched[i] {
+			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
+		}
+	}
+	for _, c := range lowerClosures {
+		if !lowerClosureUsed[c] {
+			c := c
+			src := m.lowerSource(func(cf config.Config) bool { return hasClaudeSkillName(cf.ClaudeSkills, "!"+c) })
+			rows = append(rows, listRow{kind: rowSkill, text: "!" + c, source: src})
+		}
+	}
+	return rows
+}
+
+func hasClaudeSkillName(cs []config.ClaudeSkill, name string) bool {
+	for _, c := range cs {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// claudeSkillVals flattens a declaration for the override editor's prefill,
+// in the item editor's input order (name, source path).
+func claudeSkillVals(cs config.ClaudeSkill) []string {
+	return []string{cs.Name, cs.Path}
 }
 
 func hasMCPName(ms []config.MCP, name string) bool {
@@ -637,7 +740,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0 || len(rt.ClaudeSkills) > 0) {
 			out = append(out, e.name)
 		}
 	}
