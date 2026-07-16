@@ -79,9 +79,18 @@ assertions against exact product strings instead).
   on a controlled PATH (test-environment faking only; the product
   binary stays untouched).
 
-## Open (recorded, not decided)
+## Open question, resolved same day
 
-The beat requires stdin to BE the terminal (beat.go). Whether prompts
-should survive a redirected stdin by falling back to /dev/tty, the way
-ssh itself does, is a product question -- a change there is a product
-change first, a test second.
+The beat requires stdin to BE the terminal (beat.go); the question was
+whether prompts should survive an occupied stdin via /dev/tty, the way
+ssh's own prompts do. **Decided 2026-07-16 (Pete): adopt ssh's
+contract.** Scope turned out to be the picker only -- the beat never
+collides with a busy stdin (piped stdin means the pipe IS the payload
+and the beat correctly doesn't run). hostPicker now tries, in order:
+stdin-as-terminal, /dev/tty (rendering to the terminal device when
+stderr is redirected too), a graphical dialog, then the
+candidates-listing degradation. So `cmd | byre deliver` with several
+boxes running picks interactively instead of erroring. Pinned by a
+gated TUI test (a pipe on stdin, the picker steered over /dev/tty) --
+the product change came first, the test second, as this section
+originally required.

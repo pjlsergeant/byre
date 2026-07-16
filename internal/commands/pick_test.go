@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -38,6 +39,38 @@ func drive(m pickModel, keys ...string) pickModel {
 		tm, _ = tm.Update(key(k))
 	}
 	return tm.(pickModel)
+}
+
+func TestHostPickerRidesControllingTTYWhenStdinBusy(t *testing.T) {
+	// stdin occupied (TTY false) but a controlling terminal exists: the
+	// interactive picker wins over graphical and over the nil degradation
+	// (ssh's contract, adopted — the /dev/tty read itself is pinned by the
+	// gated TUI test).
+	orig := openControllingTTY
+	t.Cleanup(func() { openControllingTTY = orig })
+	f, err := os.CreateTemp(t.TempDir(), "faketty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	openControllingTTY = func() *os.File { return f }
+	if hostPicker(Streams{TTY: false}) == nil {
+		t.Fatal("no picker despite a controlling terminal")
+	}
+}
+
+func TestHostPickerNilWithoutAnyTerminal(t *testing.T) {
+	// No stdin TTY, no controlling terminal, no GUI session: the adapter is
+	// nil and the cascade degrades to the candidates-listing error.
+	orig := openControllingTTY
+	t.Cleanup(func() { openControllingTTY = orig })
+	openControllingTTY = func() *os.File { return nil }
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("SSH_CONNECTION", "r") // darwin: a remote shell has no WindowServer
+	if hostPicker(Streams{TTY: false}) != nil {
+		t.Fatal("picker conjured from nothing")
+	}
 }
 
 func TestPickModelSelects(t *testing.T) {

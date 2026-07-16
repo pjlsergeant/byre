@@ -623,8 +623,9 @@ affinity for the later exec) and resolves a target through a cascade —
 the `byre.workdir` label, sole owned session (an unreachable engine
 quietly counts as zero; any other failed query disables this step -- a
 partial pool can't prove "exactly one"), interactive
-picker (Bubble Tea on a TTY, osascript/zenity/kdialog on a graphical
-launch), else an error listing the candidates. Discovery filters to
+picker (Bubble Tea on the terminal — /dev/tty when stdin is busy
+carrying a piped payload, ssh's own contract; osascript/zenity/kdialog
+on a graphical launch), else an error listing the candidates. Discovery filters to
 boxes whose `BYRE_UID` matches the caller — an accident filter, not
 confinement (`--skip-uid-check` reveals and permits the rest).
 

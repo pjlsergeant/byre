@@ -83,8 +83,10 @@ rather than requiring you to stand in the project directory.
    subdirectory), that box wins.
 3. Otherwise, if exactly one of your boxes is running on the machine,
    it wins.
-4. Otherwise a picker opens -- in the terminal, an interactive list; in
-   a graphical launch, a system dialog.
+4. Otherwise a picker opens -- in the terminal, an interactive list
+   (even when stdin is busy carrying a piped payload: the picker rides
+   the controlling terminal, the way ssh's own prompts do); in a
+   graphical launch, a system dialog.
 
 Only boxes started by your user are considered; `--skip-uid-check`
 includes everyone's (the error tells you when sessions were hidden).
@@ -96,7 +98,8 @@ includes everyone's (the error tells you when sessions were hidden).
 | terminal on your machine | interactive list | yes | paste beat, full clipboard |
 | Dock / Finder (no terminal) | system dialog | yes | reads clipboard, OS notification |
 | SSH'd into the machine | interactive list | best-effort (OSC 52) + always printed | paste beat, text only |
-| script / pipe (no TTY, no GUI) | none -- `--box` or error | printed only | stdin only |
+| pipe at your terminal (`cmd \| byre deliver`) | interactive list (via the terminal) | yes | stdin is the payload |
+| script / detached (no terminal, no GUI) | none -- `--box` or error | printed only | stdin only |
 | delivering *to* an `ssh://` remote | interactive list (local) | yes (local) | paste beat, full clipboard |
 
 Whenever a nicety is unavailable, byre says so and the path still

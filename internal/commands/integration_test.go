@@ -914,34 +914,7 @@ func TestIntegrationTUIPickerDeliver(t *testing.T) {
 
 	s := tuitest.Start(t, tuitest.Opts{}, tuitest.Binary(t), "deliver", src)
 	s.WaitFor("deliver to which box?")
-	// Steer the highlighted row onto p2's box (row order isn't promised, and
-	// a leftover box on the machine must not break the pick). After each
-	// Down, wait for the highlight to actually MOVE before reading it again
-	// — sampling a stale frame would double-step past the target.
-	highlighted := func() string {
-		for _, l := range strings.Split(s.CaptureNow(), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(l), "> ") {
-				return l
-			}
-		}
-		return ""
-	}
-	row := highlighted()
-	for i := 0; i < 10 && !strings.Contains(row, p2.ID); i++ {
-		s.Keys("Down")
-		moved := row
-		for j := 0; j < 40 && moved == row; j++ {
-			time.Sleep(50 * time.Millisecond)
-			moved = highlighted()
-		}
-		if moved == row {
-			break // bottom of the list: the cursor stops moving
-		}
-		row = moved
-	}
-	if !strings.Contains(row, p2.ID) {
-		t.Fatalf("never reached %s's row:\n%s", p2.ID, s.CaptureNow())
-	}
+	steerPickTo(t, s, p2.ID)
 	s.Keys("Enter")
 	s.WaitFor("/inbox/picked.txt")
 	if st := s.WaitForExit(); st != 0 {
@@ -953,6 +926,78 @@ func TestIntegrationTUIPickerDeliver(t *testing.T) {
 		t.Fatalf("picked box content = (%q, %v)", got, err)
 	}
 	if out, err := r.ExecInput(id1, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "picked.txt") {
+		t.Fatalf("the delivery ALSO landed in the unpicked box: %q", out)
+	}
+}
+
+// steerPickTo moves the picker's highlight onto the row containing target.
+// After each Down it waits for the highlight to actually MOVE before reading
+// it again — sampling a stale frame would double-step past the target. Row
+// order isn't promised, and a leftover box on the machine must not break
+// the pick.
+func steerPickTo(t *testing.T, s *tuitest.Session, target string) {
+	t.Helper()
+	highlighted := func() string {
+		for _, l := range strings.Split(s.CaptureNow(), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(l), "> ") {
+				return l
+			}
+		}
+		return ""
+	}
+	row := highlighted()
+	for i := 0; i < 10 && !strings.Contains(row, target); i++ {
+		s.Keys("Down")
+		moved := row
+		for j := 0; j < 40 && moved == row; j++ {
+			time.Sleep(50 * time.Millisecond)
+			moved = highlighted()
+		}
+		if moved == row {
+			break // bottom of the list: the cursor stops moving
+		}
+		row = moved
+	}
+	if !strings.Contains(row, target) {
+		t.Fatalf("never reached %s's row:\n%s", target, s.CaptureNow())
+	}
+}
+
+// TestIntegrationTUIPickerOnDevTTY pins ssh's contract, adopted for byre's
+// prompts (ADR 0038's resolved question): stdin carries the payload (a
+// pipe), and the picker still appears — read from /dev/tty, rendered to
+// stderr — while the piped bytes become the delivery.
+func TestIntegrationTUIPickerOnDevTTY(t *testing.T) {
+	r := requireEngineRunner(t)
+	tuitest.Require(t)
+	ident := testIdentity(t, r)
+	p1, proj1 := testPaths(t)
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	id1 := startTestBox(t, r, p1, proj1, ident)
+	id2 := startTestBox(t, r, p2, proj2, ident)
+
+	bin := tuitest.Binary(t)
+	s := tuitest.Start(t, tuitest.Opts{}, "sh", "-c",
+		fmt.Sprintf("printf 'hello from a pipe' | '%s' deliver - --name piped.txt", bin))
+	s.WaitFor("deliver to which box?")
+	steerPickTo(t, s, p2.ID)
+	s.Keys("Enter")
+	s.WaitFor("/inbox/piped.txt")
+	if st := s.WaitForExit(); st != 0 {
+		t.Fatalf("exit = %d\n%s", st, s.CaptureNow())
+	}
+	got, err := r.ExecInput(id2, ident.UID, ident.GID, nil, "cat", "/inbox/piped.txt")
+	if err != nil || got != "hello from a pipe" {
+		t.Fatalf("picked box content = (%q, %v)", got, err)
+	}
+	if out, err := r.ExecInput(id1, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "piped.txt") {
 		t.Fatalf("the delivery ALSO landed in the unpicked box: %q", out)
 	}
 }

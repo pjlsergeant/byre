@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -14,11 +15,15 @@ import (
 
 // The picker platform adapter (ADR 0021): when deliver's cascade lands on
 // "several boxes, no explicit pick", the interactive picker is chosen by
-// capability, each axis on its own — a TTY gets a Bubble Tea list; a
-// graphical launch (no TTY, but a GUI session) gets a system dialog
-// (osascript / zenity / kdialog, shelled out per ADR 0002); neither yields
-// nil, and deliver degrades to the candidates-listing error. byre stays one
-// Go binary — no GUI toolkit dependency.
+// capability, each axis on its own — a TTY on stdin gets a Bubble Tea
+// list; an OCCUPIED stdin (a pipe, a tar stream) with a controlling
+// terminal gets the same list through /dev/tty (ssh's own contract:
+// prompts survive a busy stdin — adopted 2026-07-16, closing ADR 0038's
+// open question); a graphical launch (no terminal, but a GUI session)
+// gets a system dialog (osascript / zenity / kdialog, shelled out per
+// ADR 0002); none of these yields nil, and deliver degrades to the
+// candidates-listing error. byre stays one Go binary — no GUI toolkit
+// dependency.
 
 // hostPicker picks the adapter for this invocation.
 func hostPicker(s Streams) func([]deliver.Session) (deliver.Session, bool, error) {
@@ -27,10 +32,34 @@ func hostPicker(s Streams) func([]deliver.Session) (deliver.Session, bool, error
 			return ttyPick(s, sessions)
 		}
 	}
+	if tty := openControllingTTY(); tty != nil {
+		return func(sessions []deliver.Session) (deliver.Session, bool, error) {
+			defer tty.Close()
+			// Render where the human is: stderr normally; when stderr is
+			// redirected too, the terminal device itself (beat.go's rule —
+			// bubbletea's arm/cleanup sequences must reach the terminal).
+			out := io.Writer(s.Err)
+			if ef, ok := s.Err.(*os.File); !ok || !isTTY(ef) {
+				out = tty
+			}
+			return runPick(tty, out, sessions)
+		}
+	}
 	if tool := graphicalPickTool(runtime.GOOS, os.Getenv); tool != nil {
 		return tool
 	}
 	return nil
+}
+
+// openControllingTTY reaches the controlling terminal for interaction while
+// stdin carries data. Nil when the process has none (cron, a detached
+// launch) — the capability probe the adapter order needs. Seam for tests.
+var openControllingTTY = func() *os.File {
+	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil
+	}
+	return f
 }
 
 // --- TTY picker (Bubble Tea, rendered to stderr — stdout is the contract) ---
@@ -109,12 +138,21 @@ func pickLabel(s deliver.Session) string {
 }
 
 func ttyPick(s Streams, sessions []deliver.Session) (deliver.Session, bool, error) {
-	m := pickModel{sessions: sessions, choice: -1}
+	var in *os.File
+	if f, ok := s.In.(*os.File); ok {
+		in = f
+	}
 	// Render to stderr: stdout is the delivered-paths contract and must stay
 	// clean even through an interactive pick.
-	opts := []tea.ProgramOption{tea.WithOutput(s.Err)}
-	if f, ok := s.In.(*os.File); ok {
-		opts = append(opts, tea.WithInput(f))
+	return runPick(in, s.Err, sessions)
+}
+
+// runPick runs the Bubble Tea list on the given terminal input and output.
+func runPick(in *os.File, out io.Writer, sessions []deliver.Session) (deliver.Session, bool, error) {
+	m := pickModel{sessions: sessions, choice: -1}
+	opts := []tea.ProgramOption{tea.WithOutput(out)}
+	if in != nil {
+		opts = append(opts, tea.WithInput(in))
 	}
 	res, err := tea.NewProgram(m, opts...).Run()
 	if err != nil {

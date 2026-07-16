@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The deliver picker survives a busy stdin.** `cmd | byre deliver`
+  with several boxes running now opens the interactive picker on your
+  controlling terminal (`/dev/tty` -- the same contract ssh's own
+  prompts use) instead of erroring with a candidates list; the piped
+  bytes stay the payload. Scripts and truly detached runs (no terminal
+  at all) keep the legible `--box`-or-error degradation.
+
 - **Remote delivery over ssh (ADR 0037).** `byre deliver
   ssh://[user@]host[:port] ...` delivers through another machine running
   byre: two headless ssh invocations — enumerate the remote's boxes
