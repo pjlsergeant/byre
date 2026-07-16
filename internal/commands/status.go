@@ -47,6 +47,12 @@ type statusInfo struct {
 	MCPClosed   []string
 	AgentMCP    string
 	EnvProvided map[string]bool
+	// ClaudeSkills is the effective declared Claude Skill set — wiring, not
+	// grants, zero exposure contribution (claudeskills.go); the closed/vouch
+	// fields mirror the MCP trio.
+	ClaudeSkills       []skills.ClaudeSkillDecl
+	ClaudeSkillsClosed []string
+	AgentClaudeSkills  string
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments    []skills.ContainmentDecl
@@ -91,23 +97,24 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	}
 
 	info := statusInfo{
-		Agent:          cfg.Agent,
-		Template:       cfg.Template,
-		Chain:          chain,
-		Engine:         cfg.Engine,
-		ID:             paths.ID,
-		Canonical:      paths.WorkDir, // what actually mounts at /workspace
-		Skills:         cfg.Skills,
-		Binds:          cfg.Mounts,
-		Ports:          cfg.Ports,
-		Volumes:        cfg.Volumes,
-		RunArgs:        cfg.RunArgs,
-		EgressClosed:   cfg.EgressClosed,
-		MCPClosed:      cfg.MCPClosed,
-		BuildRaw:       append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
-		ProjectRunArgs: len(cfg.RunArgs) > 0,
-		EnvFromHost:    cfg.EnvFromHost,
-		Cat:            cat,
+		Agent:              cfg.Agent,
+		Template:           cfg.Template,
+		Chain:              chain,
+		Engine:             cfg.Engine,
+		ID:                 paths.ID,
+		Canonical:          paths.WorkDir, // what actually mounts at /workspace
+		Skills:             cfg.Skills,
+		Binds:              cfg.Mounts,
+		Ports:              cfg.Ports,
+		Volumes:            cfg.Volumes,
+		RunArgs:            cfg.RunArgs,
+		EgressClosed:       cfg.EgressClosed,
+		MCPClosed:          cfg.MCPClosed,
+		ClaudeSkillsClosed: cfg.ClaudeSkillsClosed,
+		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
+		ProjectRunArgs:     len(cfg.RunArgs) > 0,
+		EnvFromHost:        cfg.EnvFromHost,
+		Cat:                cat,
 	}
 	// Config-declared MCPs stay visible even when skills fail to resolve (the
 	// same config-only degradation as every other row); the resolved set below
@@ -116,6 +123,8 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// names — the one conflict cfg alone could carry — were refused upstream
 	// by config.Load's per-layer validation (the merge replaces by name).
 	info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
+	// Same config-only degradation for the declared Claude Skill set.
+	info.ClaudeSkills, _ = skills.ClaudeSkillSet(cfg, skills.Resolved{})
 	info.EnvProvided = map[string]bool{}
 	for k := range cfg.Env {
 		info.EnvProvided[k] = true
@@ -169,8 +178,10 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.Egress = append(info.Egress, skills.MCPEgress(rv.mcps)...)
 			info.Containments = res.Containments()
 			info.MCPs = rv.mcps
+			info.ClaudeSkills = rv.claudeSkills
 			if res.Agent != nil {
 				info.AgentMCP = res.Agent.MCP
+				info.AgentClaudeSkills = res.Agent.ClaudeSkills
 			}
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
@@ -457,6 +468,28 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row(label, "!"+c+"  (config — removed from the declared set)")
 	}
 
+	// Claude Skills: the same wiring-not-a-grant posture as MCP — attributed
+	// configuration rows, zero exposure contribution. A skill is instructions
+	// plus support files; anything its scripts need at runtime is the
+	// contributing byre skill's ordinary attributed business.
+	for i, d := range s.ClaudeSkills {
+		label := "Claude Skills"
+		if i > 0 {
+			label = ""
+		}
+		row(label, claudeSkillStatusLine(d))
+	}
+	if len(s.ClaudeSkills) > 0 {
+		row("", claudeSkillsDeliveryLine(s))
+	}
+	for i, c := range s.ClaudeSkillsClosed {
+		label := "CS closed"
+		if i > 0 {
+			label = ""
+		}
+		row(label, "!"+c+"  (config — removed from the declared set)")
+	}
+
 	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate
 	// host->box data channel, attributed source by source — the shipped git
 	// identity included (byre's own defaults get no invisibility pass).
@@ -594,6 +627,43 @@ func mcpDeliveryLine(s statusInfo) string {
 		return fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath)
 	default:
 		return fmt.Sprintf("-> NOT delivered: agent skill %s has no MCP adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.MCPConfigPath)
+	}
+}
+
+// claudeSkillStatusLine renders one declared Claude Skill: its name, source
+// spelling, and who declared it. Content verdicts (SKILL.md present, bounds)
+// are the bake's job — a status row reports the declaration, and a broken
+// source fails the next develop with the same attribution.
+func claudeSkillStatusLine(d skills.ClaudeSkillDecl) string {
+	src := "config"
+	from := d.CS.Path
+	if d.Skill != skills.ClaudeSkillsFromConfig {
+		src = "skill " + d.Skill
+		from = d.CS.From
+	}
+	return fmt.Sprintf("%s — %s  (%s)", d.CS.Name, from, src)
+}
+
+// claudeSkillsDeliveryLine is the one delivery verdict row under the declared
+// set, keyed off the selected agent's claude_skills vouch (the mcpDeliveryLine
+// shape). The shadowing boundary rides the delivered line: byre never touches
+// the agent's own ~/.claude/skills, so a same-name skill the in-box agent
+// authored there wins over the delivered one.
+func claudeSkillsDeliveryLine(s statusInfo) string {
+	names := make([]string, len(s.ClaudeSkills))
+	for i, d := range s.ClaudeSkills {
+		names[i] = "/" + d.CS.Name
+	}
+	list := strings.Join(names, ", ")
+	switch {
+	case s.SkillErr != "":
+		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.ClaudeSkillsPath
+	case s.Agent == "":
+		return "-> no agent selected; declared set bakes to " + gen.ClaudeSkillsPath + " for anything that wants it"
+	case s.AgentClaudeSkills == "inject":
+		return fmt.Sprintf("-> the agent session receives: %s  (via %s; a same-name skill in the agent's own state shadows byre's)", list, gen.ClaudeSkillsPath)
+	default:
+		return fmt.Sprintf("-> NOT delivered: agent skill %s has no claude-skills adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.ClaudeSkillsPath)
 	}
 }
 
