@@ -1640,6 +1640,42 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(home, "oauth_creds.json")); string(b) != `{"adopted":true}` {
 		t.Fatalf("fork not healed to the shared credential: %q", b)
 	}
+
+	// selectedType seed: on a box with no prior choice, the hook seeds
+	// oauth-personal so gemini's dialog (which rm's oauth_creds.json and forks
+	// the login) never opens. Requires jq (skip cleanly without it).
+	if _, err := exec.LookPath("jq"); err == nil {
+		settings := filepath.Join(home, "settings.json")
+		_ = os.Remove(settings)
+		run()
+		if b, err := os.ReadFile(settings); err != nil ||
+			!strings.Contains(string(b), `"selectedType"`) ||
+			!strings.Contains(string(b), "oauth-personal") {
+			t.Fatalf("fresh box: selectedType not seeded to oauth-personal: %v %q", err, b)
+		}
+
+		// No-clobber: a deliberate api-key choice is preserved, never overwritten.
+		if err := os.WriteFile(settings, []byte(`{"security":{"auth":{"selectedType":"gemini-api-key"}}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run()
+		if b, _ := os.ReadFile(settings); !strings.Contains(string(b), "gemini-api-key") ||
+			strings.Contains(string(b), "oauth-personal") {
+			t.Fatalf("deliberate api-key choice must not be clobbered: %q", b)
+		}
+
+		// Merge-preserve: an existing settings.json with UNSET selectedType keeps
+		// its other keys and gains the seed.
+		if err := os.WriteFile(settings, []byte(`{"theme":"Default","ui":{"x":1}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run()
+		b, _ := os.ReadFile(settings)
+		if !strings.Contains(string(b), "oauth-personal") || !strings.Contains(string(b), `"theme"`) ||
+			!strings.Contains(string(b), `"ui"`) {
+			t.Fatalf("merge must add the seed and keep existing keys: %q", b)
+		}
+	}
 }
 
 // TestDockerHostSkillResolves pins the shipped docker-host skill: parse,

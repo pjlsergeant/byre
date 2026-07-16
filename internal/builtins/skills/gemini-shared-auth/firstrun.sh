@@ -33,4 +33,35 @@ for f in gemini-credentials.json oauth_creds.json google_accounts.json installat
   fi
   [ -f "$shared" ] && chmod 600 "$shared" 2>/dev/null || true
 done
+
+# Seed the auth-method choice so gemini's auth-method DIALOG never opens. That
+# dialog's clearCachedCredentialFile() rm's oauth_creds.json BEFORE writing the
+# new login, and on our symlink the rm deletes the LINK -- so the first login
+# writes a local regular file, silently forking off the shared volume (the
+# 2026-07-16 field failure). Source-verified (gemini 0.51, npm bundle):
+# clearCachedCredentialFile is called ONLY from the dialog's method-selection
+# handler, never from the login path (initOauthClient/authWithUserCode) -- so a
+# pre-set selectedType skips the dialog and the login writes THROUGH the intact
+# link into the shared volume. oauth-personal is the shared-auth default (the
+# subscription login this skill exists to share); it also removes the silent
+# API-key-billing footgun (a saved key the picker would otherwise default onto).
+# Seed only when UNSET -- never clobber a user's deliberate api-key choice.
+settings="$GEMINI_DIR/settings.json"
+if command -v jq >/dev/null 2>&1; then
+  cur=""
+  [ -f "$settings" ] && cur=$(jq -r '.security.auth.selectedType // empty' "$settings" 2>/dev/null)
+  if [ -z "$cur" ]; then
+    if [ -f "$settings" ]; then
+      tmp="$settings.byre.tmp"
+      if jq '.security = ((.security // {}) + {auth: ((.security.auth // {}) + {selectedType: "oauth-personal"})})' \
+        "$settings" > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$settings"
+      else
+        rm -f "$tmp"
+      fi
+    else
+      printf '%s\n' '{"security":{"auth":{"selectedType":"oauth-personal"}}}' > "$settings" 2>/dev/null || true
+    fi
+  fi
+fi
 exit 0
