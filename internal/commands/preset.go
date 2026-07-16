@@ -349,14 +349,14 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 			fmt.Fprintln(s.Err, "------")
 		}
 	} else {
-		fmt.Fprintf(s.Err, "--- preset ---\n%s\n------\n", escapeMultiline(string(content)))
+		fmt.Fprintf(s.Err, "--- preset ---\n%s\n------\n", EscapeMultiline(string(content)))
 	}
 }
 
-// escapeMultiline terminal-escapes hostile text LINE BY LINE -- EscapeTerminal
+// EscapeMultiline terminal-escapes hostile text LINE BY LINE -- EscapeTerminal
 // strips every control character including newlines, which would collapse a
 // rendered file body into one unreadable run.
-func escapeMultiline(text string) string {
+func EscapeMultiline(text string) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	for i, l := range lines {
 		lines[i] = packages.EscapeTerminal(l)

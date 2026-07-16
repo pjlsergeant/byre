@@ -137,7 +137,7 @@ func LayerValidate(s Streams, name string) error {
 	// name), so escape them at this print boundary like list does its rows.
 	chain, err := config.LoadExtendsChain(home, cat, name)
 	if err != nil {
-		return fmt.Errorf("%s", escapeMultiline(err.Error()))
+		return fmt.Errorf("%s", EscapeMultiline(err.Error()))
 	}
 	if names := config.ChainNames(chain); len(names) > 1 {
 		fmt.Fprintf(s.Err, "byre: layer %s ok (chain: %s)\n", name, strings.Join(names, " -> "))

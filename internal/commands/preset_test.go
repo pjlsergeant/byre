@@ -388,8 +388,8 @@ func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
 	if !strings.Contains(errBuf.String(), "agent = \"none\"\napt = [\"jq\"]") {
 		t.Fatalf("preset body must render with newlines intact:\n%s", errBuf.String())
 	}
-	if got := escapeMultiline("a\x1b[31mred\nb"); got != "ared\nb" {
-		t.Fatalf("escapeMultiline = %q", got)
+	if got := EscapeMultiline("a\x1b[31mred\nb"); got != "ared\nb" {
+		t.Fatalf("EscapeMultiline = %q", got)
 	}
 }
 

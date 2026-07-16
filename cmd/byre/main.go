@@ -863,6 +863,11 @@ func fatal(err error) {
 	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.Code)
 	}
-	fmt.Fprintf(os.Stderr, "byre: %v\n", err)
+	// Error text can quote hostile file bytes — a layer someone sent you, a
+	// cloned repo's preset, an unknown TOML key with a control character in
+	// its name — so this one boundary escapes everything printed here. byre's
+	// own messages carry no control characters (newlines survive: the escape
+	// is per-line), so for them this is a no-op.
+	fmt.Fprintf(os.Stderr, "byre: %s\n", commands.EscapeMultiline(err.Error()))
 	os.Exit(1)
 }
