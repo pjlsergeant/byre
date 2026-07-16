@@ -619,6 +619,30 @@ also in-place `writeFileSync` + chmod.) Repo-recheck caveat: a
 bytecode-compiled provider flow could in principle write differently;
 re-verify against sst/opencode source when reachable.
 
+**SOURCE-CONFIRMED 2026-07-16 (repo, opencode 1.18.3) -- and a NEW
+torn-read hazard the strings pass missed.** `Auth.set`/`Auth.remove`
+(`packages/opencode/src/auth/index.ts`) are an **unlocked** read-modify-write
+via `FileSystem.writeJson` (`packages/core/src/fs-util.ts`) -- in-place, no
+temp+rename, no `flock`. Worse: `Auth.all` reads with
+`readJson(file).pipe(Effect.orElseSucceed(() => ({})))`, i.e. it **swallows
+ANY read error to an empty store**. So a read landing on a half-written file
+(reachable precisely because the write is in-place, non-atomic, and can be
+shared across boxes on one inode) returns `{}`; a subsequent `Auth.set` then
+writes `{}` plus the one entry -- **destroying every OTHER provider's
+credentials in the shared file**, not just racing the one. This is a whole-
+store-loss shape, not per-entry. Notably upstream ships the CORRECT pattern
+one module over -- `packages/opencode/src/mcp/auth.ts` guards `mcp-auth.json`
+with `flock.withLock` around its read-modify-write -- and simply never applied
+it to `auth.json`. byre's `opencode-shared-auth` DEFERS this (2026-07-16) as
+an accepted upstream residual rather than wrapping opencode's writes: the
+skill supports API-key logins only (written once at login, not on a refresh
+cycle), so the only collision window is two boxes running `opencode auth
+login` in the same instant; and the fix is upstream's to make (see that
+skill.toml). PID note for completeness: opencode's locks record `pid` +
+`hostname` but stale-probe on heartbeat/mtime, NOT `kill(pid,0)` -- so unlike
+grok's lock they are cross-container-safe on a shared volume; byre just
+doesn't share opencode's lock dir (per-box `$XDG_STATE_HOME`).
+
 ### 3. Refresh-token rotation semantics
 
 **Per provider -- auth.json is a store of many credentials, each with its

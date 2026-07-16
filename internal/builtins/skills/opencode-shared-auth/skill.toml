@@ -35,6 +35,18 @@
 # Accepted residual (until the gate says otherwise): sharing auth.json
 # shares ALL provider credentials in it, not just the one you meant — the
 # file is one store, and byre does not split it.
+#
+# Accepted residual — UPSTREAM torn-read hazard (source-confirmed 2026-07-16,
+# opencode 1.18.3): Auth.set/remove are an UNLOCKED read-modify-write, and
+# Auth.all swallows any read error to {} (auth/index.ts) — so a read landing
+# on a half-written file, then a write, silently destroys EVERY provider's
+# entry, not just the one being touched. DEFERRED (Pete, 2026-07-16), not
+# worked around: (1) API-key logins (the only shape this skill supports, see
+# above) write auth.json ONCE at login, never on a refresh cycle, so the only
+# collision window is two boxes running `opencode auth login` in the same
+# instant; (2) it's upstream's bug to fix — opencode already ships a correctly
+# flock'd read-modify-write for mcp-auth.json (mcp/auth.ts) and just never
+# applied it here. Full note: docs/AGENT-CREDENTIAL-MECHANICS.md (OpenCode §2).
 
 description = "Share one OpenCode login across all your projects (write-through-symlink mechanics verified live; multi-box OAuth rotation gate pending, see skill.toml)."
 
