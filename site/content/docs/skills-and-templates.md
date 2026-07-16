@@ -5,8 +5,8 @@ description: your toolkit, in every folder
 ---
 
 byre ships templates for go, node, and python, and agent skills for
-Claude Code, Codex, Gemini, and Grok; the first `byre develop` asks which
-you want, and that's the setup.
+Claude Code, Codex, Gemini, Grok, and OpenCode; the first `byre develop`
+asks which you want, and that's the setup.
 
 But you and your agent can build powerful templates and skills, and add
 them in seconds to any of your projects -- or stick them in the defaults

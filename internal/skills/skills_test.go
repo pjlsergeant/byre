@@ -737,10 +737,11 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for agent, want := range map[string]string{
-		"claude": "claude-shared-auth",
-		"codex":  "codex-shared-auth",
-		"gemini": "", // OAuth gate-pending (no shared_auth_for)
-		"grok":   "", // retired (see grok-shared-auth/skill.toml)
+		"claude":   "claude-shared-auth",
+		"codex":    "codex-shared-auth",
+		"gemini":   "", // OAuth gate-pending (no shared_auth_for)
+		"grok":     "", // retired (see grok-shared-auth/skill.toml)
+		"opencode": "", // OAuth rotation gate-pending (see opencode-shared-auth/skill.toml)
 	} {
 		if got := SharedAuthCompanion(cat, agent); got != want {
 			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)

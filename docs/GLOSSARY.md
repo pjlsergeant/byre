@@ -25,8 +25,8 @@ One foreground run of a project's box (one `byre develop`, one container).
 Single-session per project directory; parallelism comes from worktrees.
 
 **Agent**:
-The AI coding CLI (Claude, Codex, Gemini, Grok) that runs inside the box. byre is
-not an agent; it runs one.
+The AI coding CLI (Claude, Codex, Gemini, Grok, OpenCode) that runs inside the
+box. byre is not an agent; it runs one.
 
 **Engine**:
 The container tool byre shells out to: Docker or Podman.
@@ -213,7 +213,7 @@ the launcher execs, and implicitly enables it.
 **Companion skill**:
 A skill that augments the selected agent skill rather than being one --
 enabled alongside it, carrying only the delta (a volume, a hook, some
-wiring), leaving the agent skill untouched. The shared-auth trio
+wiring), leaving the agent skill untouched. The shared-auth skills
 (`claude-shared-auth` etc., ADR 0017) are the canonical examples.
 
 **docker-host**:

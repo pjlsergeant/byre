@@ -1,8 +1,8 @@
 # Agent-CLI credential and state-dir mechanics
 
 Research notes for the shared-auth skill design: how Claude Code, OpenAI Codex
-CLI, Google Gemini CLI, and xAI Grok CLI store identity vs per-project state,
-how they write
+CLI, Google Gemini CLI, xAI Grok CLI, and OpenCode store identity vs
+per-project state, how they write
 credential files, and what breaks when one credential is shared across
 containers. Gathered 2026-07-06. Empirical facts come from this box (Claude
 Code 2.1.201 live session; Codex CLI 0.142.5 logged in via ChatGPT; Gemini CLI
@@ -14,21 +14,28 @@ The Grok section was added 2026-07-09 (Grok CLI 0.2.93 live in this box,
 authenticated with a seeded consumer credential; grok is closed source, so its
 section is empirical + vendor docs, with the write/rotation claims explicitly
 unverifiable from source).
+The OpenCode section was added 2026-07-16 (opencode 1.18.2, the linux-x64
+binary from npm, run live in a PROXIED container -- not a byre box; opencode.ai
+and models.dev egress were denied there, which itself produced findings.
+opencode is open source, but the sst/opencode repo was out of reach in that
+session, so "source-verified" in that section means read from the JS embedded
+in the shipped binary, plus the vendor's own published auth-plugin package --
+weaker than repo source, stronger than docs).
 
 ## Summary table
 
-| | Claude Code | Codex CLI | Gemini CLI | Grok CLI |
-|---|---|---|---|---|
-| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `gemini-credentials.json` (0.49+ FileKeychain, hostname-bound; `oauth_creds.json` is legacy -- see the CORRECTION in the Gemini section), `google_accounts.json` | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` |
-| Per-project state in a ROOT-LEVEL FILE | **YES** -- `.claude.json` `projects` key (trust, allowed tools, MCP local scope) | **YES** -- `config.toml` `[projects."<path>"] trust_level` | **YES** -- `trustedFolders.json` (per-folder trust) | none observed (closed source; `worktrees.db`/`active_sessions.json` are root-level but not trust-shaped) |
-| Per-project state in subdirectories | `projects/<encoded-cwd>/` (transcripts, auto memory) | none keyed by project (`sessions/` is date-keyed) | `history/<projectId>/`, `tmp/<project_hash>/` | `memory/<project-slug>-<hash8>/`; `sessions/` is date-keyed |
-| Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` | `config.toml`, `skills/`, `AGENTS.md` (global rules) |
-| Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees | `models_cache.json`, `logs/`, `upload_queue/`, `marketplace-cache/`, `downloads/` (binary!) |
-| Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | **none** (open feature requests) | `GROK_HOME` (**verified**: moves auth + sessions + config) |
-| Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; temp+rename **inferred from the 2026-07-10 field failure** (symlink replaced -- gate 1 FAILED; see §6) |
-| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) | ~6h access tokens, silent OIDC refresh; **single-use with chain revocation inferred** (gate 2 FAILED in the field -- see §6) |
-| Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) | **none** -- `XAI_API_KEY` only (different billing); native `grok login --device-auth` |
-| Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" | silent; its own installer reads `auth.json` tokens for authenticated downloads (empirically: a copied credential works) |
+| | Claude Code | Codex CLI | Gemini CLI | Grok CLI | OpenCode |
+|---|---|---|---|---|---|
+| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `gemini-credentials.json` (0.49+ FileKeychain, hostname-bound; `oauth_creds.json` is legacy -- see the CORRECTION in the Gemini section), `google_accounts.json` | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` | `auth.json` (provider-keyed multi-credential store), 0600 |
+| Per-project state in a ROOT-LEVEL FILE | **YES** -- `.claude.json` `projects` key (trust, allowed tools, MCP local scope) | **YES** -- `config.toml` `[projects."<path>"] trust_level` | **YES** -- `trustedFolders.json` (per-folder trust) | none observed (closed source; `worktrees.db`/`active_sessions.json` are root-level but not trust-shaped) | none observed (no trust dialog; `opencode.db` is root-level but session storage, not trust) |
+| Per-project state in subdirectories | `projects/<encoded-cwd>/` (transcripts, auto memory) | none keyed by project (`sessions/` is date-keyed) | `history/<projectId>/`, `tmp/<project_hash>/` | `memory/<project-slug>-<hash8>/`; `sessions/` is date-keyed | none at the file level -- sessions live INSIDE `opencode.db` (sqlite), project identity in-row |
+| Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` | `config.toml`, `skills/`, `AGENTS.md` (global rules) | `~/.config/opencode/` (opencode.json config, `AGENTS.md` global rules) -- a SEPARATE XDG dir from the credential |
+| Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees | `models_cache.json`, `logs/`, `upload_queue/`, `marketplace-cache/`, `downloads/` (binary!) | `~/.cache/opencode/` (incl. `bin/` downloads), `log/`, `snapshot/`, `~/.local/state/opencode/locks` |
+| Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | **none** (open feature requests) | `GROK_HOME` (**verified**: moves auth + sessions + config) | XDG vars, per dir (**verified**: `XDG_DATA_HOME` moves auth+db, `XDG_CONFIG_HOME` moves config); no single all-state env |
+| Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; temp+rename **inferred from the 2026-07-10 field failure** (symlink replaced -- gate 1 FAILED; see §6) | **in-place** write + chmod 0600, no rename (**live-verified through a symlink**) |
+| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) | ~6h access tokens, silent OIDC refresh; **single-use with chain revocation inferred** (gate 2 FAILED in the field -- see §6) | per PROVIDER: API keys static; Anthropic OAuth rides the same single-use server rotation as Claude Code |
+| Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) | **none** -- `XAI_API_KEY` only (different billing); native `grok login --device-auth` | **none** long-lived; `OPENCODE_AUTH_CONTENT` injects the whole store via env (static -- refresh can't write back) |
+| Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" | silent; its own installer reads `auth.json` tokens for authenticated downloads (empirically: a copied credential works) | silent |
 
 ## Claude Code (2.1.201, empirical + docs)
 
@@ -489,6 +496,126 @@ designs (auth broker; fork-shipping watcher + refresh jitter) are PARKED
 with their own gates in `wip/grok-shared-auth-v2-designs.md`. The
 `XAI_API_KEY` path is ruled out on cost (see §4).
 
+## OpenCode (1.18.2, empirical + binary-embedded source)
+
+Added 2026-07-16, from a live install in a proxied container (see the intro
+note: opencode.ai and models.dev were DENIED there, npm was open). opencode is
+open source (sst/opencode) but the repo itself was out of reach in that
+session; "source" below means the JS embedded in the shipped Bun binary
+(readable with `strings`, minified) and the vendor's published
+`opencode-anthropic-auth` npm package -- the binary may hold additional
+bytecode-compiled chunks the strings pass cannot see, which is why some
+claims below carry a repo-recheck caveat.
+
+### 1. State-dir inventory
+
+Textbook XDG split (**verified live**, `opencode debug paths` -- the CLI
+ships its own path introspection, use it):
+
+- `~/.local/share/opencode/` -- **data: the credential AND the sessions**.
+  `auth.json` (0600) -- a **provider-keyed multi-credential store**:
+  `{"<providerID>": {"type":"api","key":...} | {"type":"oauth","access":...,
+  "refresh":..., "expires":...,"accountId"?} | {"type":"wellknown",...}}`
+  (shape from the binary's Auth schema classes and a live API-key login).
+  Alongside it: `opencode.db` (+ `-shm`/`-wal`) -- ALL session/message state
+  in one machine-global sqlite db (nothing project-keyed at the file level;
+  project identity lives in-row), `log/`, `repos/`, `snapshot/`.
+- `~/.config/opencode/` -- **machine-wide prefs**: `opencode.json`
+  (auto-created with a `$schema` line on first run), global `AGENTS.md`
+  (agent rules -- see §4), `plugin/`, `themes/`.
+- `~/.cache/opencode/` -- cache, including `bin/` (runtime binary downloads:
+  LSP servers, self-update artifacts).
+- `~/.local/state/opencode/locks/` -- lock files.
+- No trust dialog / per-project trust file was observed (no `projects` key,
+  no `trustedFolders.json` equivalent) -- the root-level-mixed-scope-file
+  problem the other three agents share does not appear. Per-project config
+  is the in-repo `opencode.json` (+ `OPENCODE_DISABLE_PROJECT_CONFIG` to
+  refuse it).
+
+### 2. Credential write patterns
+
+**In-place write, NOT rename -- symlink-safe, and live-verified.** The
+binary's `Auth.set`/`Auth.remove` route through `FileSystem.writeJson` =
+`writeFileString` + `chmod 0600` -- no temp file, no rename (binary source).
+Empirical confirmation (2026-07-16): with `auth.json` pre-created as a
+symlink to a file in another directory, a real `opencode auth login`
+(API-key path) wrote **through the link** -- link intact, target same inode,
+target chmod 600. This is the codex shape; grok's rename-fork failure mode
+(ADR 0023) does not apply. (The GitLab-specific writer in the same binary is
+also in-place `writeFileSync` + chmod.) Repo-recheck caveat: a
+bytecode-compiled provider flow could in principle write differently;
+re-verify against sst/opencode source when reachable.
+
+### 3. Refresh-token rotation semantics
+
+**Per provider -- auth.json is a store of many credentials, each with its
+own rotation policy.**
+
+- API-key entries (`type:"api"`, most providers): static, no rotation --
+  sharing-safe by construction.
+- Anthropic Claude Pro/Max OAuth (`type:"oauth"`): the token endpoint is
+  `console.anthropic.com/v1/oauth/token` and refresh triggers at request
+  time when `expires` has passed (vendor auth-plugin source; the flow is
+  compiled into 1.18.2, the plugin package is its published ancestor).
+  Rotation policy is Anthropic's server side -- the SAME single-use refresh
+  tokens documented in the Claude Code section (#24317 etc.), so concurrent
+  refresh from two boxes is the same cascade risk. opencode re-reads
+  `auth.json` lazily (`Auth.all` reads the file per access, no cache --
+  binary source), so a shared single inode gets the codex-style tolerance:
+  a race loser picks up the winner's pair on its next read. UNVERIFIED
+  live: an actual multi-box refresh race (byre's opencode-shared-auth gate).
+- `OPENCODE_AUTH_CONTENT` (env) overrides the file entirely when set --
+  static injection; a refresh cannot write back to env, so it only suits
+  non-rotating credentials.
+
+### 4. Env overrides
+
+- Relocation is per-XDG-dir, **no single all-state env** (the one agent of
+  the five with no `*_HOME`): `XDG_DATA_HOME` moves data incl. `auth.json`
+  and `opencode.db` (**verified live**, `debug paths` + the auth path shown
+  by `opencode auth list`); `XDG_CONFIG_HOME` moves config (**verified
+  live**); `XDG_CACHE_HOME`/`XDG_STATE_HOME` read in source. WRINKLE:
+  `OPENCODE_CONFIG_DIR` exists but `debug paths` does NOT reflect it
+  (1.18.2) -- one code path substitutes it for the config dir, another
+  ignores it; treat the XDG vars as the reliable seam and re-check upstream
+  before relying on `OPENCODE_CONFIG_DIR`.
+- Global agent rules: `<config-dir>/AGENTS.md` plus project `AGENTS.md`
+  files walked up from cwd (binary source: the rules resolver deduplicates
+  `[config/AGENTS.md, ...upward hits]`). No size cap observed in the
+  resolver (grok's 10k cap has no analogue found -- absence unproven).
+- Headless/permissions (byre-relevant, all binary-source-verified):
+  `opencode run` is the headless mode; on a permission "ask" it prints
+  "permission requested: ...; auto-rejecting" and REPLIES REJECT -- **it
+  never hangs** (grok's silent-death lesson answered by design). `--auto`
+  (hidden aliases `--yolo`, `--dangerously-skip-permissions`) flips asks to
+  approve-once. The default `build` agent's ruleset opens with
+  `{permission:"*", action:"allow"}` (bash/edit included; live via
+  `opencode debug agent build`) with ask/deny carve-outs (`doom_loop`,
+  `external_directory` ask; `question`, `plan_enter` deny), and
+  `OPENCODE_PERMISSION` (JSON) merges into the permission config.
+- Egress fact (**verified live** against a deny-by-default proxy): opencode
+  fetches its provider/model catalog from **models.dev** at startup and
+  retries hard. With it blocked, the auth-login picker silently degrades to
+  API-key-only (the Claude Pro/Max option never appears) and default-model
+  selection falls back to an embedded snapshot. models.dev is FUNCTIONAL
+  egress for opencode, not telemetry. Related knobs seen in source:
+  `OPENCODE_DISABLE_MODELS_FETCH`, `OPENCODE_MODELS_URL`/`_PATH`,
+  `OPENCODE_DISABLE_AUTOUPDATE`, `OPENCODE_DISABLE_DEFAULT_PLUGINS`.
+- Other credential-relevant env: `OPENCODE_API_KEY` (OpenCode Zen, the
+  vendor gateway at opencode.ai/zen), provider-native keys
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, AWS pair, ...)
+  are honored directly (`opencode auth list` shows an "Environment"
+  section).
+
+### 5. Vendor stance on sharing
+
+Silent -- no endorsement or prohibition of copying `auth.json` found in the
+reachable material. The mechanics (in-place writes, lazy re-reads) are the
+codex shape, the friendliest to a shared single inode;
+the rotation risk is inherited per provider (Anthropic OAuth = Claude-class
+single-use refresh). byre's `opencode-shared-auth` ships gate-pending on
+exactly that question (its skill.toml is the status record).
+
 ## Implications for the shared-auth split
 
 Per agent, what goes in the shared identity volume vs per-project volume:
@@ -547,6 +674,22 @@ Per agent, what goes in the shared identity volume vs per-project volume:
   it fatal (§3, §6).
 - `GROK_HOME` moves the tree (verified) but cannot split it -- same as
   `CODEX_HOME`.
+
+**OpenCode**
+- Shared identity: `auth.json` via a file-level symlink into the identity
+  volume (byre's opencode-shared-auth) -- mechanically sound (in-place
+  writes, live-verified write-through), but note it shares the WHOLE
+  multi-provider store, and the Anthropic-OAuth rotation gate is pending
+  (see §3/§5 above). API-key entries are rotation-immune.
+- Per-project: everything else in the data dir -- `opencode.db` (all
+  sessions), `log/`, `repos/`, `snapshot/`. Nothing project-keyed at the
+  file level, so per-project state volumes give per-project sessions (the
+  codex situation).
+- Unsplittable-by-mount: nothing observed -- the credential is a standalone
+  root-level file in a dir that is otherwise sessions/cache, and trust
+  state doesn't exist. The cleanest split of the five agents.
+- Relocation: per-XDG-dir envs move data and config independently
+  (verified); no single all-state env var.
 
 ### Hard blockers and hazards
 
@@ -622,3 +765,20 @@ Per agent, what goes in the shared identity volume vs per-project volume:
 - Grok CLI vendor README (shipped in `~/.grok/README.md`, 0.2.93):
   Authentication, Automatic Credential Refresh, Environment Variables,
   AGENTS.md sections
+- Empirical, proxied container (2026-07-16): opencode 1.18.2
+  (`opencode-linux-x64` from registry.npmjs.org) -- `debug paths` under
+  default/`XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`OPENCODE_CONFIG_DIR`;
+  `auth list` (credential path + env section); `debug agent build`
+  (default permission ruleset); a real API-key `auth login` through a
+  symlinked `auth.json` (inode-preserving in-place write); headless
+  `opencode run` error path (exit 1, no hang); models.dev/models.github.ai
+  connect attempts observed at the deny-by-default proxy
+- opencode binary-embedded JS (1.18.2, via `strings`): `Auth.set`/`Auth.all`
+  + `FileSystem.writeJson` (in-place write), the run-command
+  permission.asked handler (auto-reject vs `--auto`), the rules resolver
+  (`<config>/AGENTS.md` + upward project files), `OPENCODE_*` runtime-flag
+  surface, XDG path resolution
+- `opencode-anthropic-auth` 0.0.13 (npm; the vendor's published auth
+  plugin, ancestor of the compiled-in flow): claude.ai /
+  console.anthropic.com OAuth authorize + token/refresh endpoints,
+  `api.anthropic.com/api/oauth/claude_cli/create_api_key`

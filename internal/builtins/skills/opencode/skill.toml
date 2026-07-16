@@ -1,0 +1,136 @@
+# Built-in agent skill: OpenCode (sst's opencode CLI).
+#
+# Evidence status: the BINARY's behavior was verified live 2026-07-16
+# (opencode 1.18.2, the linux-x64 artifact from npm, run in a proxied
+# container -- not yet a byre box): the XDG state split and its relocation
+# envs (`opencode debug paths`), the headless permission behavior, the
+# in-place auth.json write (through a symlink, inode preserved), and the
+# models.dev catalog fetch (observed live against a deny-by-default proxy).
+# The INSTALLER script and the Claude Pro/Max login flow could not be
+# exercised there (opencode.ai egress was denied); those are HOST-VERIFY
+# below. Full notes: docs/AGENT-CREDENTIAL-MECHANICS.md (OpenCode section).
+#
+# Base-agnostic: the official installer ships a single static binary (no
+# node), installed as the dev user like claude/codex/grok. HOST-VERIFY: the
+# install location ~/.opencode/bin is the documented default but the
+# installer wasn't runnable in the probe box -- if upstream moved it, the
+# `test -x` below fails the BUILD loudly (fix the path, don't guess).
+# `unzip` rides along defensively: the installer unpacks a zip artifact.
+#
+# State layout is the XDG split (VERIFIED live via `opencode debug paths`):
+# data (auth.json + opencode.db sessions + logs) at ~/.local/share/opencode,
+# config at ~/.config/opencode, cache at ~/.cache/opencode. The binary dir
+# ~/.opencode is the installer's alone -- no grok-style state/binary mixing.
+# The state volume mounts at the DATA dir only; config/cache stay in the
+# image layer (config is regenerated, cache is a rebuild cost).
+#
+# First-run auth is handled by the opencode-login firstrun hook below.
+# `opencode auth login` is a multi-provider picker: API keys for most
+# providers, and OAuth for Anthropic ("Login with Claude Pro/Max" -- a
+# paste-code flow, no in-box browser needed; endpoints per the vendor's own
+# auth plugin source). HOST-VERIFY: the full Pro/Max login from a live box.
+# NOTE: the provider catalog comes from models.dev at runtime -- with that
+# host unreachable the login picker silently degrades to API-key-only
+# (observed live 2026-07-16), so models.dev is functional egress, not
+# telemetry.
+
+description = "The OpenCode agent (multi-provider); login persists per project. EXPERIMENTAL: installer path and Claude Pro/Max login flow not yet verified from a live box."
+
+[build]
+apt = ["curl", "ca-certificates", "unzip"]
+# First-run auth: run `opencode auth login` on a fresh box (guarded by
+# auth.json), so the agent works without hunting for a shell to log in from.
+# Runs before the agent launches; skippable with Ctrl-C.
+files = { "opencode-login.sh" = "/etc/byre/firstrun.d/opencode-login" }
+dockerfile = [
+  # Pre-create ~/.local's XDG tree AS THE DEV USER. The state volume targets
+  # /home/dev/.local/share/opencode, and gen's volume-mount-point layer
+  # (`mkdir -p` as root + chown of the LEAF only) would otherwise bake
+  # /home/dev/.local and .local/share root-owned — every other agent's
+  # state target sits directly under the dev-owned /home/dev, so opencode
+  # is the first to nest. Root-owned intermediates would break opencode's
+  # runtime lock dir (~/.local/state/opencode) and ~/.local/bin (on PATH).
+  "RUN gosu dev mkdir -p /home/dev/.local/share /home/dev/.local/state /home/dev/.local/bin",
+  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://opencode.ai/install | bash'",
+  # opencode installs its BINARY into ~/.opencode/bin. ~/.opencode is NOT a
+  # volume -- the state volume mounts at the XDG data dir instead -- so the
+  # binary stays in this image dir, always present, never masked or wiped.
+  "RUN test -x /home/dev/.opencode/bin/opencode && ln -sf /home/dev/.opencode/bin/opencode /usr/local/bin/opencode",
+  # Clear any install residue from the data dir (the .opencode state-volume
+  # mount point) so a fresh volume starts clean; opencode recreates it at
+  # runtime. The binary dir ~/.opencode is untouched.
+  "RUN rm -rf /home/dev/.local/share/opencode",
+]
+
+[runtime]
+# OPENCODE_DISABLE_AUTOUPDATE: the image pins the version (ADR 0020's
+# posture); self-update would also need opencode.ai egress, which ships
+# closed below. The flag exists in 1.18.2's runtime-flag surface
+# (binary-verified); its exact semantics ride the name -- HOST-VERIFY that
+# the TUI stops checking for updates.
+env = { OPENCODE_DISABLE_AUTOUPDATE = "true" }
+# Egress opencode needs if a firewall skill is enabled (host[:port], default
+# 443). models.dev = the provider/model catalog, fetched at startup
+# (VERIFIED live 2026-07-16: blocked-catalog fallout degrades the auth
+# picker and default-model choice -- functional, not telemetry).
+# api.anthropic.com = inference; console.anthropic.com + claude.ai = the
+# Claude Pro/Max OAuth authorize/token/refresh endpoints (vendor auth-plugin
+# source; same trust-domain ruling as the claude skill). OpenCode is
+# multi-provider: these cover the Anthropic pairing byre expects -- a box
+# using another provider adds that provider's hosts via its own config
+# egress.
+egress = ["models.dev", "api.anthropic.com", "console.anthropic.com", "claude.ai"]
+# opencode.ai = the OpenCode Zen gateway (opencode.ai/zen/v1), session
+# sharing, and self-update. All opt-in features; ships closed (ADR 0020)
+# and the config UI offers it as a switch.
+egress_offered = ["opencode.ai"]
+
+[agent]
+# --auto auto-approves permission asks not explicitly denied (the CLI's own
+# autonomy flag; --always-approve/--yolo idiom). Default permissions already
+# allow bash/edit (`opencode debug agent build`, 1.18.2); --auto covers the
+# residual ask-class permissions (external_directory etc.). Headless
+# behavior without it is auto-REJECT with a printed warning, never a hang
+# (binary-source-verified -- grok's silent-death failure mode does not
+# apply).
+command = "opencode --auto"
+state = ".opencode"
+# OpenCode reads global agent rules from <config-dir>/AGENTS.md, i.e.
+# ~/.config/opencode/AGENTS.md (binary-source-verified; project AGENTS.md
+# files from repo root down are read on top). byre places the concatenated
+# skill [context] here at runtime. The config dir is image-side (not a
+# volume) -- fine, the launcher rewrites the file every launch.
+context_target = "/home/dev/.config/opencode/AGENTS.md"
+
+# No prefs seeding: opencode's config (opencode.json) mixes prefs with
+# credential-capable provider blocks (apiKey fields), so it fails the
+# PrefsSpec vouch (structurally secret-incapable files only) -- the grok
+# precedent.
+
+# opencode auth is NOT seeded from the host (ADR 0007). Log in per-box via
+# the firstrun hook; the .opencode state volume persists the login across
+# rebuilds. auth.json is a MULTI-PROVIDER store: API-key entries are static
+# (rotation-proof); OAuth entries (Claude Pro/Max, GitHub Copilot, ...)
+# rotate per provider policy -- see docs/AGENT-CREDENTIAL-MECHANICS.md and
+# opencode-shared-auth's gates before sharing it across boxes.
+
+# MCP seam note (ADR 0033 probe, 2026-07-16): opencode HAS per-invocation
+# config injection surfaces -- OPENCODE_CONFIG (extra config file path) and
+# OPENCODE_CONFIG_CONTENT (config JSON via env), both binary-verified to
+# exist, and its config carries an `mcp` block. Whether injected config
+# MERGES with or REPLACES user config -- the same-name shadowing question
+# the claude adapter settled by spike -- is NOT yet pinned; no `mcp =
+# "inject"` vouch until an adapter is spiked and verified. Until then MCP
+# delivery to opencode is the honest degradation (ADR 0033).
+
+[[volumes]]
+name = ".opencode"
+role = "state"
+# Mounts at the XDG data dir (auth.json, opencode.db sessions, logs), NOT
+# ~/.opencode -- the binary lives there (image) and must not be masked.
+# (The name follows the .codex precedent: state volume named for the agent,
+# mounted where the agent keeps STATE, which is not its dotdir.) Do NOT
+# relocate XDG_DATA_HOME via config [env]: opencode and the hooks would
+# follow it, but this mount would not -- the login would land in the
+# container's writable layer and stop surviving rebuilds.
+target = "/home/dev/.local/share/opencode"

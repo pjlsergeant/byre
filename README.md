@@ -33,7 +33,7 @@ or just vibe-coded trash? Is it right for me? Would you be happy there?
 
 Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents stay logged in across rebuilds, and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
 
-byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, and Grok. Fork the bundled ones or bring your own.
+byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, Grok, and OpenCode. Fork the bundled ones or bring your own.
 
 ## Constrained: keep the host out of reach
 
@@ -271,7 +271,7 @@ tldr: say **y** when the first-run picker offers shared auth for your
 agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
 by hand.
 
-By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth) move that to once per
+By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth, opencode-shared-auth) move that to once per
 machine. For claude and codex every project's first run asks: "Opt this
 box into <agent> shared credentials?" -- yes enables the skill for that
 project (its `byre.config`), and only for it. Saying yes to "Save these
