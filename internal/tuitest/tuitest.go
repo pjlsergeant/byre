@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -105,8 +106,9 @@ type Opts struct {
 // process (remain-on-exit), so the final screen and the exit status stay
 // observable however the process ends.
 type Session struct {
-	t      *testing.T
-	socket string
+	t          *testing.T
+	socket     string
+	statusFile string
 }
 
 // Epoch is the pre-action screen, captured by Keys/Type/Paste. WaitForAfter
@@ -119,6 +121,8 @@ const (
 	waitDefault = 15 * time.Second
 )
 
+var sessionSeq atomic.Int64
+
 // Start launches argv in a fresh private tmux server and returns the session.
 // Cleanup kills the server. The server reads no user config (-f /dev/null),
 // the status bar is off, and the pane remains after exit.
@@ -130,8 +134,10 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 	if o.Rows == 0 {
 		o.Rows = 30
 	}
+	// The sequence number keeps repeated Starts within one test (a second
+	// byre run against the same boxes) on distinct servers.
 	sum := sha256.Sum256([]byte(t.Name()))
-	s := &Session{t: t, socket: fmt.Sprintf("byre-tui-%x", sum[:6])}
+	s := &Session{t: t, socket: fmt.Sprintf("byre-tui-%x-%d", sum[:5], sessionSeq.Add(1))}
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", s.socket, "kill-server").Run() })
 
 	// A placeholder session first, so remain-on-exit is set before the real
@@ -154,7 +160,13 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 		cmd = append(cmd, k+"="+v)
 	}
 	cmd = append(cmd, argv...)
-	s.tmux("respawn-pane", "-k", "-t", "main", quoteJoin(cmd))
+	// The wrapper records the exact exit status itself: tmux's
+	// #{pane_dead_status} proved version-sensitive (ubuntu's 3.4 reported 0
+	// where the VM's 3.5a reported the real status — caught by CI on the
+	// first push), and the harness gates tests on this value.
+	s.statusFile = filepath.Join(t.TempDir(), "exit-status")
+	s.tmux("respawn-pane", "-k", "-t", "main",
+		quoteJoin(cmd)+"; echo $? > '"+s.statusFile+"'")
 	return s
 }
 
@@ -214,17 +226,20 @@ func (s *Session) CaptureNow() string {
 	return s.tmux("capture-pane", "-p", "-t", "main")
 }
 
-// dead reports whether the pane's process has exited, and its status.
+// dead reports whether the pane's process has exited, and its status (from
+// the wrapper's status file — see Start).
 func (s *Session) dead() (bool, int) {
 	s.t.Helper()
-	out := strings.TrimSpace(s.tmux("display-message", "-p", "-t", "main", "#{pane_dead} #{pane_dead_status}"))
-	f := strings.Fields(out)
-	if len(f) == 0 || f[0] != "1" {
+	b, err := os.ReadFile(s.statusFile)
+	trimmed := strings.TrimSpace(string(b))
+	if err != nil || trimmed == "" {
+		// Absent, or caught between the shell's truncate and its write:
+		// still running as far as the harness is concerned.
 		return false, 0
 	}
 	status := 0
-	if len(f) > 1 {
-		fmt.Sscanf(f[1], "%d", &status)
+	if _, err := fmt.Sscanf(trimmed, "%d", &status); err != nil {
+		s.t.Fatalf("unparseable exit status %q in %s", b, s.statusFile)
 	}
 	return true, status
 }

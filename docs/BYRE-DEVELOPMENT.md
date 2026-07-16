@@ -153,8 +153,13 @@ tmux -L <sock> send-keys -t main Down Enter C-s  # keys
 tmux -L <sock> send-keys -t main -l 'literal'    # text
 tmux -L <sock> set-buffer -- 'x'; tmux -L <sock> paste-buffer -p -t main
 tmux -L <sock> capture-pane -p -t main           # the screen, plain text
-tmux -L <sock> display -p -t main '#{pane_dead} #{pane_dead_status}'
 ```
+
+Exit status: run the command through a wrapper that records it —
+`'<cmd>; echo $? > /tmp/status'` — and treat a non-empty status file as
+"exited". Do NOT read tmux's `#{pane_dead_status}`: it proved
+version-sensitive (ubuntu's tmux 3.4 reported 0 where 3.5a reported the
+real status; caught by CI on this harness's first push).
 
 `WaitFor` is a poll loop over `capture-pane` that also fails fast when
 the process dies; `WaitForAfter` additionally rejects a match that was

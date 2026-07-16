@@ -36,9 +36,12 @@ assertions against exact product strings instead).
 ## The rules that survived review
 
 - **Lifecycle first.** Panes run `remain-on-exit`; exit status comes
-  from `pane_dead_status`; every wait races wanted-output against
-  process death, so a crash fails with the final screen and status,
-  never a blind timeout.
+  from a shell wrapper recording `$?` to a file (NOT tmux's
+  `pane_dead_status`, which proved version-sensitive — ubuntu's 3.4
+  reported 0 where 3.5a reported the real status; CI caught it on the
+  harness's first push); every wait races wanted-output against process
+  death, so a crash fails with the final screen and status, never a
+  blind timeout.
 - **Transition epochs.** `Keys`/`Type`/`Paste` capture the pre-action
   screen; `WaitForAfter` fails immediately if the wanted string predates
   the action -- a persistent footer can't fake a result.
