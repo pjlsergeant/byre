@@ -130,6 +130,34 @@ If 1 or 2 fails: back to the table -- the `--plugin-dir` fallback cannot
 do bare names (Pete's must-have), so that's a re-decision, not a
 silent fallback.
 
+### Spike results (2026-07-16, claude 2.1.211 in the dogfood box, ALL GREEN)
+
+Method: isolated `CLAUDE_CONFIG_DIR=$(mktemp -d)` per probe, shared token
+exported, launch flags mirroring the real box command
+(`--dangerously-skip-permissions`); headless `-p` throughout.
+
+1. PASS -- `--add-dir <root>` with `<root>/.claude/skills/<name>/SKILL.md`:
+   auto-invocation from description works headless; support-file reads
+   relative to the skill dir work; exec-bit `scripts/*.sh` run; and the
+   skill invokes BARE as `/byre-spike-foo` (P1c) -- the must-have.
+2. PASS -- whole tree with write bits stripped loads and invokes fine
+   (root-owned untestable without sudo in this box; readability is the
+   operative property; the real root-owned bake gets exercised at
+   inttest).
+3. PASS/confirmed -- a same-name twin under `$CLAUDE_CONFIG_DIR/skills/`
+   SHADOWS the delivered skill (personal beats delivered -- the docs
+   line), and CLAUDE_CONFIG_DIR does relocate personal skill scope.
+4. PASS -- empty `.claude/skills/` under --add-dir: silent, no error.
+5. PASS -- the add-dir root presents as exactly one additional
+   working-directory line; no other behavior change observed.
+6. PASS -- a malformed SKILL.md (unclosed frontmatter) beside good skills
+   is NON-FATAL: siblings load and invoke normally; claude even tolerates
+   the broken one leniently. byre's resolve-time validation is hygiene,
+   not session-survival.
+7. None found -- no dedicated skills-dir flag/env in 2.1.211 beyond
+   --add-dir/--plugin-dir (also present: --plugin-url, --bare,
+   --disable-slash-commands). --add-dir stands as the rail.
+
 ## Dead (do not re-propose)
 
 Full plugins as a declarable unit; per-source plugin namespacing
