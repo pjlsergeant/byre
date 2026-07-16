@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Remote delivery over ssh (ADR 0037).** `byre deliver
+  ssh://[user@]host[:port] ...` delivers through another machine running
+  byre: two headless ssh invocations — enumerate the remote's boxes
+  (`--boxes`, a frozen tab-separated line grammar; skipped when `--box`
+  is given), pick locally, then stream every source as ONE tar archive
+  into a single targeted remote deliver (`--tar -`). No staging, no
+  remote temp files — the archive feeds the existing per-file transport
+  entry by entry, claims uniquify exactly as local delivery does, and
+  the landed paths come back to YOUR stdout and clipboard. Every local
+  input mode works unchanged (paths, `-`, the paste beat, clipboard).
+  `--proto` pins the whole ssh-facing surface and fails legibly on
+  version skew; `--remote-byre` names the remote binary when sshd's
+  sparse non-interactive PATH hides it; a partial remote pool (exit 4)
+  is never auto-picked. Authentication is your own ssh — keys, agents,
+  and prompts behave exactly as `ssh host` would. Supersedes ADR 0021's
+  unbuilt scp/`--porcelain`/`--consume` shape.
+
 - **grok-shared-auth v2: the auth broker (ADR 0036).** One Grok
   subscription login shared across boxes again — rebuilt on
   `GROK_AUTH_PROVIDER_COMMAND`, grok's own (now publicly documented)

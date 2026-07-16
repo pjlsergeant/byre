@@ -133,22 +133,13 @@ all Pete-ratified on a real Mac:
 
 ## The ssh remote shape (follow-on tranche)
 
-`byre deliver ssh://[user@]host` keeps layering honest: local byre owns
-local capabilities (clipboard read, staging, GUI), remote byre owns what
-it already owns (discovery, picker, exec-stream). Payloads stage via
-`scp` to a remote `mktemp -d`, then `ssh -t` runs the remote deliver —
-the payload never rides ssh stdin, which must stay free for the remote
-picker, and a pty would mangle binary anyway. The ssh-facing surface is
-a frozen mini-protocol: `--proto` (handshake before any payload; the
-version number pins the WHOLE surface, so capability skew fails at the
-handshake), `--porcelain` (`::deliver <path>` sentinel lines, because
-`ssh -t` merges stdout/stderr into one pty stream), and `--consume`
-(delete-after-deliver, refused outside the `/tmp/byre-deliver-*`
-staging pattern — an accident guard, not an authorization boundary; the
-agent cannot invoke deliver, so there is no adversary to confine).
-There is no remote pre-pick protocol: a non-TTY remote delivery that
-finds several owned sessions is a hard error — bake `--box` into a
-generated deliver app instead.
+**Superseded by ADR 0037** (2026-07-16, before any of it was built).
+This section froze an scp-staging / `--porcelain` / `--consume`
+mini-protocol built around a remote interactive picker over `ssh -t`;
+ADR 0037 reverses that shape in full — the pick moved local, the
+payload rides plain ssh stdin as one tar stream, and only `--proto`
+survives as the version pin. The layering sentence stands: local byre
+owns local capabilities, remote byre owns what it already owns.
 
 ## Consequences
 

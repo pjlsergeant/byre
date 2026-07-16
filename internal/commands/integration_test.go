@@ -697,3 +697,118 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 		t.Fatalf("second landed path = %q, want /inbox/hello-2.txt", got)
 	}
 }
+
+// TestIntegrationDeliverRemoteLoop runs remote delivery end to end with the
+// ssh binary as the ONLY fake: deliver.RunRemote packs real files through
+// the production planner, the "ssh" hop hands the stream straight to
+// commands.Deliver in tar mode (dispatch, --proto handshake, deliverConfig
+// wiring), and the archive unpacks through the REAL transport scripts into
+// a live box — claims, interior mkdirs, uniquify and all (ADR 0037).
+func TestIntegrationDeliverRemoteLoop(t *testing.T) {
+	r := requireEngineRunner(t)
+	p, proj := testPaths(t)
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+		t.Fatalf("image failed to build: %v", err)
+	}
+	params, err := runParams(p, rv, image, false, false, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params.Command = []string{"sleep", "120"}
+	t.Cleanup(func() {
+		_ = exec.Command(string(r.Engine()), "rm", "-f", params.Name).Run()
+		for _, v := range params.Volumes {
+			_ = r.VolumeRemove(v.Name)
+		}
+	})
+	args := runner.RunArgs(params)
+	args = append([]string{args[0], "-d"}, args[1:]...)
+	if out, err := exec.Command(string(r.Engine()), args...).CombinedOutput(); err != nil {
+		t.Fatalf("box failed to start: %v\n%s", err, out)
+	}
+
+	// The enumeration leg against the live engine: one row, protocol-shaped,
+	// naming this box.
+	var listOut, listErr strings.Builder
+	ls := Streams{Out: &listOut, Err: &listErr, In: strings.NewReader("")}
+	lcfg, err := deliverConfig(ls, proj, []sessionRunner{r}, os.Getuid(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := deliver.Boxes(lcfg, deliver.Options{})
+	if err != nil || partial {
+		t.Fatalf("Boxes = partial %v, err %v\nstderr: %s", partial, err, listErr.String())
+	}
+	rows, err := deliver.ParseBoxes(listOut.String())
+	if err != nil {
+		t.Fatalf("the live listing broke its own grammar: %v\n%s", err, listOut.String())
+	}
+	if len(rows) != 1 || rows[0].Project != p.ID {
+		t.Fatalf("rows = %+v, want exactly this box (project %s)", rows, p.ID)
+	}
+
+	// Sources: a tree and a top-level file.
+	srcDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir, "bug", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(srcDir, "bug", "notes.txt"), []byte("notes\n"), 0o644)
+	os.WriteFile(filepath.Join(srcDir, "bug", "sub", "deep.txt"), []byte("deep\n"), 0o644)
+	top := filepath.Join(srcDir, "top.txt")
+	os.WriteFile(top, []byte("top\n"), 0o644)
+
+	// The ssh hop: assert the frozen argv shape, then run the remote side
+	// for real — commands.Deliver dispatching tar mode into the live box.
+	sshLoop := func(tgt deliver.SSHTarget, argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
+		want := []string{"byre", "deliver", "--proto", "1", "--box", rows[0].ID, "--no-clip", "--tar", "-"}
+		if strings.Join(argv, " ") != strings.Join(want, " ") {
+			t.Fatalf("remote argv = %v, want %v", argv, want)
+		}
+		s2 := Streams{Out: stdout, Err: stderr, In: stdin}
+		return Deliver(s2, proj, deliver.Options{Tar: true, Proto: 1, Box: rows[0].ID, NoClip: true}, []string{"-"})
+	}
+	deliverRemoteOnce := func() []string {
+		var out, errw strings.Builder
+		cfg := deliver.Config{Out: &out, Err: &errw}
+		landed, err := deliver.RunRemote(cfg, deliver.Options{Box: rows[0].ID, NoClip: true},
+			deliver.SSHTarget{Host: "loop"}, deliver.PathSources([]string{filepath.Join(srcDir, "bug"), top}), sshLoop, false)
+		if err != nil {
+			t.Fatalf("remote delivery failed: %v\nstderr: %s", err, errw.String())
+		}
+		return landed
+	}
+
+	landed := deliverRemoteOnce()
+	if strings.Join(landed, " ") != "/inbox/bug /inbox/top.txt" {
+		t.Fatalf("landed = %v", landed)
+	}
+	ids, err := r.RunningContainersByLabel(labelKey + "=" + p.ID)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("session discovery = (%v, %v)", ids, err)
+	}
+	for path, want := range map[string]string{
+		"/inbox/bug/notes.txt":    "notes\n",
+		"/inbox/bug/sub/deep.txt": "deep\n",
+		"/inbox/top.txt":          "top\n",
+	} {
+		got, err := r.ExecInput(ids[0], ident.UID, ident.GID, nil, "cat", path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if got != want {
+			t.Fatalf("%s = %q, want %q", path, got, want)
+		}
+	}
+
+	// Again: every top-level name claims -2, nothing clobbers.
+	if again := deliverRemoteOnce(); strings.Join(again, " ") != "/inbox/bug-2 /inbox/top-2.txt" {
+		t.Fatalf("second landed = %v", again)
+	}
+}

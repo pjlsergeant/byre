@@ -55,6 +55,15 @@ type Options struct {
 	SkipUIDCheck bool   // include (and permit) boxes owned by other uids
 	NoClip       bool   // skip the clipboard round-trip's return leg
 	Name         string // landing basename for stdin captures (--name)
+
+	// The remote-delivery surface (ADR 0037). Boxes/Tar/Proto are what a
+	// LOCAL byre invokes on the remote over ssh; RemoteByre is local-side
+	// (the remote binary's path when "byre" isn't on the ssh non-interactive
+	// PATH).
+	Boxes      bool   // --boxes: list deliverable boxes headlessly and exit
+	Tar        bool   // --tar: stdin is a tar archive to unpack into /inbox
+	Proto      int    // --proto: protocol handshake (0 = flag not given)
+	RemoteByre string // --remote-byre: byre binary path on the ssh remote
 }
 
 // Config is the host-side wiring deliver needs but must not derive itself.

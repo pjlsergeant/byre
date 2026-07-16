@@ -322,6 +322,13 @@ prefix); otherwise a box whose workdir contains the current directory wins;
 otherwise the only running box owned by you; otherwise the candidates are
 listed. Boxes started by other users are hidden unless --skip-uid-check.
 
+An ssh:// FIRST argument ('byre deliver ssh://host shot.png') delivers
+through another machine running byre: its boxes are listed remotely, picked
+locally, and the sources stream over one ssh exec into that box's /inbox —
+every local input mode works unchanged, and the landed paths come back to
+YOUR stdout and clipboard. --remote-byre names the remote binary when sshd's
+non-interactive PATH hides it. Authentication is your own ssh.
+
 After a delivery the landed paths also go to your clipboard (pbcopy /
 wl-copy / xclip, or OSC 52 through SSH), ready to paste; --no-clip skips
 that, and when no clipboard path exists byre says so — the printed path is
@@ -337,7 +344,7 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 			if installApp {
 				// Changed(), not the parsed values: --no-clip=false is still
 				// a supplied flag the exclusivity promise rejects.
-				for _, f := range []string{"name", "skip-uid-check", "no-clip"} {
+				for _, f := range []string{"name", "skip-uid-check", "no-clip", "boxes", "tar", "proto", "remote-byre"} {
 					if cmd.Flags().Changed(f) {
 						return usageError("byre deliver --install-app: takes only an optional --box")
 					}
@@ -347,8 +354,36 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 				}
 				return a.installApp(s, opts.Box)
 			}
-			if len(args) > 1 {
-				for _, p := range args {
+			// The remote-facing modes (ADR 0037) keep their surfaces frozen
+			// and small: --boxes answers exactly one question, --tar takes
+			// exactly one stream.
+			if opts.Boxes {
+				for _, f := range []string{"tar", "name", "box", "no-clip", "remote-byre"} {
+					if cmd.Flags().Changed(f) {
+						return usageError("byre deliver --boxes: takes only --proto and --skip-uid-check")
+					}
+				}
+				if len(args) > 0 {
+					return usageError("byre deliver --boxes: takes no paths")
+				}
+			}
+			if opts.Tar {
+				if len(args) != 1 || args[0] != "-" {
+					return usageError("byre deliver --tar: takes exactly '-' (the archive arrives on stdin)")
+				}
+				if cmd.Flags().Changed("name") {
+					return usageError("byre deliver --tar: --name does not apply (names ride the archive)")
+				}
+			}
+			// The '-'-mixing rule applies to SOURCES: an ssh:// target in
+			// first position is the destination, not a source, so
+			// `byre deliver ssh://host -` stays legal.
+			srcs := args
+			if len(srcs) > 0 && strings.HasPrefix(srcs[0], "ssh://") {
+				srcs = srcs[1:]
+			}
+			if len(srcs) > 1 {
+				for _, p := range srcs {
 					if p == "-" {
 						return usageError("byre deliver: '-' (stdin) cannot be mixed with path arguments")
 					}
@@ -362,6 +397,10 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 	c.Flags().BoolVar(&opts.SkipUIDCheck, "skip-uid-check", false, "include (and permit) boxes owned by other users")
 	c.Flags().BoolVar(&opts.NoClip, "no-clip", false, "don't copy the landed paths to the clipboard")
 	c.Flags().BoolVar(&installApp, "install-app", false, "install the deliver app instead of delivering")
+	c.Flags().BoolVar(&opts.Boxes, "boxes", false, "list deliverable boxes headlessly, one line each (remote delivery's enumeration)")
+	c.Flags().BoolVar(&opts.Tar, "tar", false, "unpack a tar archive from stdin into /inbox (remote delivery's transport)")
+	c.Flags().IntVar(&opts.Proto, "proto", 0, "remote-delivery protocol handshake (fails on version skew)")
+	c.Flags().StringVar(&opts.RemoteByre, "remote-byre", "", "byre binary path on the ssh:// remote (when it isn't on the ssh PATH)")
 	return c
 }
 
