@@ -53,8 +53,10 @@ provision:
       # AND the netns-init helper races v6 address setup, so the firewall v6
       # guard test fails (found live on this template's first re-create,
       # 2026-07-16).
+      # tmux: the TUI test tier (BYRE_TUI_TESTS=1) drives byre inside a
+      # private tmux server.
       apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go \
-        podman crun uidmap passt slirp4netns aardvark-dns
+        podman crun uidmap passt slirp4netns aardvark-dns tmux
       command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh
   - mode: user
     script: |
