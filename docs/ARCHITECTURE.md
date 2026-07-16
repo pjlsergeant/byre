@@ -514,11 +514,12 @@ Commands fall into *lifecycle* (`develop`, `worktree`, `reset`,
 and wiring management* (`skill`, `template`, `preset`, `mcp`), one
 *transfer* verb, `deliver` (below), and the self-describers (`version`,
 `completion`).
-**No command mutates config behind your back** -- config is written
-only where you asked for the write: files you edit, the `byre config`
-editor, `byre mcp add`/`remove`, `byre preset apply` (after its review),
-and onboarding's initial write. Everything else -- `develop` and friends
-included -- only reads it and acts.
+**No command mutates config behind your back** -- config *content*
+changes only where you asked for the write: files you edit, the `byre
+config` editor, `byre mcp add`/`remove`, `byre preset apply` (after its
+review), and onboarding's initial write. `rehome` and `forget` move or
+delete the store wholesale, never editing what's inside; everything
+else -- `develop` and friends included -- only reads it and acts.
 
 ```
 byre develop      Set up if needed (generate, build-on-cache-miss) and run the
