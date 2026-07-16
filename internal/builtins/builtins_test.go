@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -279,15 +280,20 @@ func TestBinaryDirAgentsDoNotWipeIt(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
+		var found bool
 		for _, b := range res.BuildBlocks() {
 			if b.Name != "byre/"+c.agent && b.Name != c.agent {
 				continue
 			}
+			found = true
 			for _, line := range b.Dockerfile {
 				if strings.Contains(line, "rm -rf "+c.binDir) {
 					t.Errorf("%s must NOT wipe %s (its binary lives there): %q", c.agent, c.binDir, line)
 				}
 			}
+		}
+		if !found {
+			t.Fatalf("%s: no build block named byre/%s or %s — the negative assertion above checked nothing", c.agent, c.agent, c.agent)
 		}
 	}
 }
@@ -548,19 +554,31 @@ func TestCodexSharedAuthCompositionResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("codex + codex-shared-auth failed to resolve: %v", err)
 	}
-	var hook bool
+	var companion string
+	var codexHooks []string
 	for _, b := range res.BuildBlocks() {
 		for _, sf := range b.Files {
-			if b.Name == "byre/codex-shared-auth" && sf.Dest == "/etc/byre/firstrun.d/00-codex-shared-auth" {
-				hook = true
+			if !strings.HasPrefix(sf.Dest, "/etc/byre/firstrun.d/") {
+				continue
+			}
+			switch b.Name {
+			case "byre/codex-shared-auth", "codex-shared-auth":
+				companion = path.Base(sf.Dest)
+			case "byre/codex", "codex":
+				codexHooks = append(codexHooks, path.Base(sf.Dest))
 			}
 		}
 	}
-	if !hook {
-		t.Error("symlink-assert hook not shipped")
+	if companion == "" {
+		t.Fatal("symlink-assert hook not shipped")
 	}
-	if !("00-codex-shared-auth" < "codex-login") {
-		t.Error("hook ordering invariant broken: companion must sort before codex-login")
+	if len(codexHooks) == 0 {
+		t.Fatal("codex ships no firstrun hooks; the ordering invariant has nothing to order against")
+	}
+	for _, h := range codexHooks {
+		if !(companion < h) {
+			t.Errorf("hook ordering invariant broken: companion %q must sort before codex's %q", companion, h)
+		}
 	}
 	var identity bool
 	for _, v := range res.Volumes() {
@@ -1271,11 +1289,11 @@ RUN . /etc/os-release \
 	}
 	// Agent context against the accident class.
 	ctx := res.Context()
-	for _, want := range []string{"HOST's Docker", "COMPOSE_PROJECT_NAME", "foreign", "prune", "docker system prune"} {
-		// soft match - case may vary
-		if !strings.Contains(strings.ToLower(ctx), strings.ToLower(want)) && !strings.Contains(ctx, want) {
-			// try partials
-		}
+	if !strings.Contains(ctx, "host state that outlives this box") {
+		t.Errorf("context missing the host-daemon warning:\n%s", ctx)
+	}
+	if !strings.Contains(ctx, "docker system prune") {
+		t.Errorf("context missing the prune prohibition:\n%s", ctx)
 	}
 	if !strings.Contains(ctx, "COMPOSE_PROJECT_NAME") {
 		t.Errorf("context missing COMPOSE_PROJECT_NAME:\n%s", ctx)

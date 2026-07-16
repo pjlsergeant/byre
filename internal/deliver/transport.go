@@ -38,9 +38,13 @@ fi
 
 // fileScript delivers one file: $1 dest dir, $2 stem, $3 ext, $4 "mk" to
 // mkdir -p the dest dir first (interior of a claimed directory tree only).
+// The claim loop lives in fileClaim so tests can run it under a real sh
+// against a temp dir (inboxCheck hardcodes /inbox).
 const fileScript = `
 set -eu
-` + inboxCheck + `
+` + inboxCheck + fileClaim
+
+const fileClaim = `
 d=$1 stem=$2 ext=$3
 if [ "${4:-}" = mk ]; then mkdir -p "$d"; fi
 if [ ! -d "$d" ]; then echo "$d is not a directory" >&2; exit 1; fi

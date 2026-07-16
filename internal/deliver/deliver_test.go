@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -138,7 +139,10 @@ func TestSoleSessionAutoPick(t *testing.T) {
 	}
 }
 
-func TestUniquifyOnCollision(t *testing.T) {
+// TestRunSurfacesUniquifiedName pins that Run reports the box-claimed name
+// verbatim (the -2 here comes from the fake's claim loop; the REAL loop is
+// pinned by TestFileClaimLoop below).
+func TestRunSurfacesUniquifiedName(t *testing.T) {
 	eng := box("docker", "aaa")
 	eng.inbox = map[string]bool{"report.pdf": true}
 	cfg, out, _ := testConfig(eng)
@@ -148,6 +152,43 @@ func TestUniquifyOnCollision(t *testing.T) {
 	}
 	if got := out.String(); got != "/inbox/report-2.pdf\n" {
 		t.Fatalf("stdout = %q", got)
+	}
+}
+
+// TestFileClaimLoop runs the PRODUCTION claim script under a real sh: the
+// ln-EEXIST uniquify picks the next free -k name, the content lands there,
+// and the noclobber temp is cleaned up.
+func TestFileClaimLoop(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH")
+	}
+	d := t.TempDir()
+	for _, existing := range []string{"report.pdf", "report-2.pdf"} {
+		if err := os.WriteFile(filepath.Join(d, existing), []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("sh", "-c", "set -eu\n"+fileClaim, "sh", d, "report", ".pdf")
+	cmd.Stdin = strings.NewReader("new content")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("claim script failed: %v", err)
+	}
+	want := filepath.Join(d, "report-3.pdf") + "\n"
+	if string(out) != want {
+		t.Fatalf("claimed name = %q, want %q", out, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(d, "report-3.pdf")); err != nil || string(b) != "new content" {
+		t.Fatalf("landed content = %q, %v", b, err)
+	}
+	entries, err := os.ReadDir(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".byre-tmp-") {
+			t.Errorf("temp file not cleaned up: %s", e.Name())
+		}
 	}
 }
 
@@ -469,11 +510,16 @@ func TestSplitNameDotfileAndMultiExt(t *testing.T) {
 func TestInboxMissingErrorSurfaces(t *testing.T) {
 	eng := box("docker", "aaa")
 	eng.execErr = fmt.Errorf("exit status 3: this box has no /inbox (image predates it); rebuild with 'byre develop'")
-	cfg, _, _ := testConfig(eng)
+	cfg, _, errw := testConfig(eng)
 	src := writeFile(t, "f", "x")
 	_, err := Run(cfg, Options{}, []string{src})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+	// The box's guidance must SURFACE — Run prints per-file errors to stderr
+	// and returns only the failure tally, so stderr is where it must land.
+	if !strings.Contains(errw.String(), "no /inbox") {
+		t.Fatalf("engine guidance not on stderr: %q", errw.String())
 	}
 }
 

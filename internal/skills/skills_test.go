@@ -403,8 +403,17 @@ func TestResolveSkillFilesRejectsRelativeDest(t *testing.T) {
 func TestResolveSkillFilesRejectsEscape(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "bad", "[build]\nfiles = { \"../escape.sh\" = \"/x.sh\" }\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, catFor(t, dir)); err == nil {
+	// The escaping target EXISTS: the rejection must be the containment
+	// guard, not a file-not-found error standing in for it.
+	if err := os.WriteFile(filepath.Join(dir, "skills", "escape.sh"), []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Resolve(config.Config{Skills: []string{"bad"}}, catFor(t, dir))
+	if err == nil {
 		t.Fatal("expected rejection of source escaping the skill dir")
+	}
+	if !strings.Contains(err.Error(), "escapes the skill dir") {
+		t.Fatalf("expected the escape rejection, got: %v", err)
 	}
 }
 
@@ -455,8 +464,14 @@ target = "/home/dev/.fake"
 
 func TestResolveRejectsUnsafeSkillName(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Resolve(config.Config{Skills: []string{"../evil"}}, catFor(t, dir)); err == nil {
+	_, err := Resolve(config.Config{Skills: []string{"../evil"}}, catFor(t, dir))
+	if err == nil {
 		t.Fatal("expected rejection of skill name with path separator")
+	}
+	// The name GRAMMAR must reject it — a missing-skill error would mean the
+	// load-bearing ValidateID check is gone and the lookup happened to fail.
+	if !strings.Contains(err.Error(), "invalid skill name") {
+		t.Fatalf("expected the name-grammar rejection, got: %v", err)
 	}
 }
 
