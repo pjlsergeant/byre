@@ -94,7 +94,9 @@ type File struct {
 	// offer. Gate-pending companions (gemini-shared-auth's OAuth path,
 	// opencode-shared-auth) declare this and NOT shared_auth_for.
 	// Redundant next to shared_auth_for, which implies the same pairing;
-	// declaring both with different agents is a load error.
+	// declaring both with different agents is a parse error (compared
+	// verbatim, not alias-expanded — write both in the same form or drop
+	// one).
 	CompanionFor string `toml:"companion_for"`
 	// SharedAuthFor declares this skill as the shared-auth companion (ADR
 	// 0017) for the named agent skill, making it OFFERABLE: when that agent
@@ -692,7 +694,23 @@ func ParsePrimaryBytes(raw []byte) (File, error) {
 	if und := md.Undecoded(); len(und) > 0 {
 		return File{}, fmt.Errorf("unknown key(s) in skill.toml: %v", und)
 	}
+	if err := validatePairing(f); err != nil {
+		return File{}, err
+	}
 	return f, nil
+}
+
+// validatePairing refuses a manifest whose two pairing keys contradict each
+// other (shared_auth_for implies the companion_for pairing, ADR 0034). Runs
+// in both primary-file parse paths so install preflight and load agree on
+// what is a valid skill. Values are compared VERBATIM, not alias-expanded —
+// parse-time has no catalog; an author declaring both (already redundant)
+// must write them in the same form or drop one, which is what the error says.
+func validatePairing(f File) error {
+	if f.CompanionFor != "" && f.SharedAuthFor != "" && f.CompanionFor != f.SharedAuthFor {
+		return fmt.Errorf("companion_for (%q) and shared_auth_for (%q) disagree; shared_auth_for already implies the pairing — drop companion_for or make them match", f.CompanionFor, f.SharedAuthFor)
+	}
+	return nil
 }
 
 // loadEntry strict-parses a skill entry's primary file (stage 2 after the
@@ -733,8 +751,8 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	}
 	// shared_auth_for implies the companion_for pairing; both keys naming
 	// different agents is an authoring contradiction, not a resolvable state.
-	if f.CompanionFor != "" && f.SharedAuthFor != "" && f.CompanionFor != f.SharedAuthFor {
-		return Skill{}, fmt.Errorf("skill %q: companion_for (%q) and shared_auth_for (%q) disagree; shared_auth_for already implies the pairing — drop companion_for or make them match", ent.ID, f.CompanionFor, f.SharedAuthFor)
+	if perr := validatePairing(f); perr != nil {
+		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
 	}
 
 	dir, err := ent.HostDir()

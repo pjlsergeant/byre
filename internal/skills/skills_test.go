@@ -791,6 +791,11 @@ func TestCompanionForSharedAuthForMismatchRefused(t *testing.T) {
 	if _, err := Load(catFor(t, dir), "redundant-auth"); err != nil {
 		t.Fatalf("matching pairing keys must load: %v", err)
 	}
+	// Install preflight (ParsePrimaryBytes) refuses the same contradiction —
+	// a package must not pass ingest checks only to be unloadable after.
+	if _, err := ParsePrimaryBytes([]byte("companion_for = \"gemini\"\nshared_auth_for = \"claude\"\n")); err == nil || !strings.Contains(err.Error(), "disagree") {
+		t.Fatalf("ParsePrimaryBytes must refuse mismatched pairing keys, got err=%v", err)
+	}
 }
 
 // Two skills claiming the same agent is refused (no offer), not resolved by
