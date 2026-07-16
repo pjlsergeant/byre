@@ -50,16 +50,35 @@ fi
 # a real `grok login` happened here (typically the re-seed after a dead shared
 # chain — the broker's error text points people at exactly that). Promote it:
 # the pair becomes THE machine credential, and the local file is dropped so no
-# second copy of the chain exists anywhere (a copy left rotating elsewhere
-# would revoke the family). Announced, not silent.
+# second copy of the chain exists anywhere. The store mutation runs under the
+# BROKER'S flock (same lock file), so it can never interleave with a broker
+# read/refresh or another box's promotion, and it is re-checked + published by
+# atomic temp+rename so a concurrent reader only ever sees a complete file.
 local_cred="$GROK_HOME/auth.json"
 if has_pair "$local_cred"; then
-  echo "byre grok-shared-auth: promoting this box's Grok login to the machine-wide shared credential" >&2
-  if cp "$local_cred" "$STORE" 2>/dev/null && chmod 600 "$STORE" 2>/dev/null; then
-    rm -f "$local_cred"
-  else
-    echo "byre grok-shared-auth: WARNING — promotion failed; grok keeps its per-box login for now" >&2
-  fi
+  (
+    exec 9>>"$BASE/broker.lock" || exit 3
+    flock -w 10 9 || exit 3
+    # Re-check under the lock: another box may have seeded while we waited.
+    # Keep the store's chain (it is live machine-wide); the local pair stays
+    # in place, unused past its access token's life — with the broker env set
+    # no box ever spends a local refresh token, so it is inert, not a rival.
+    has_pair "$STORE" && exit 2
+    cp "$local_cred" "$STORE.tmp" && mv "$STORE.tmp" "$STORE" || exit 3
+    exit 0
+  )
+  case $? in
+  0)
+    echo "byre grok-shared-auth: promoted this box's Grok login to the machine-wide shared credential" >&2
+    # Publish first, then drop the local copy; a failed removal is loud (the
+    # duplicate is inert under the broker, but nobody should trust that
+    # silently).
+    rm -f "$local_cred" 2>/dev/null \
+      || echo "byre grok-shared-auth: WARNING — could not remove $local_cred after promotion; remove it by hand" >&2
+    ;;
+  2) echo "byre grok-shared-auth: shared credential already seeded elsewhere; leaving this box's login in place (it goes inert)" >&2 ;;
+  *) echo "byre grok-shared-auth: WARNING — promotion failed; grok keeps its per-box login for now" >&2 ;;
+  esac
   seed_endpoint_cache
   exit 0
 fi
@@ -67,6 +86,12 @@ fi
 # 3. Nothing anywhere → seed interactively, once per MACHINE. Skippable with
 # Ctrl-C; the box still launches (the broker then reports the missing store
 # with the same re-seed instructions). XAI_API_KEY users skip file auth.
+# Accepted residual (not worth machinery): two boxes launched for the very
+# first time in the same minute both prompt; each login writes the store via
+# grok's own atomic temp+rename, so the last one wins whole — the loser's
+# chain simply goes unused (a fresh, independent family; nothing revokes).
+# The lock is deliberately NOT held here: an interactive login can take
+# minutes, and a held broker lock would stall every other box's refresh.
 [ -n "$XAI_API_KEY" ] && exit 0
 trap 'echo; echo "byre: grok login skipped. To seed shared auth later, relaunch, or run '\''grok login --device-auth'\'' in any box and relaunch."; exit 0' INT
 

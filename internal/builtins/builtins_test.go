@@ -1017,7 +1017,7 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 // per-box login (refresh_token present) is promoted to the machine store
 // and dropped locally so exactly one copy of the chain exists.
 func TestGrokSharedAuthSeedHookBehavior(t *testing.T) {
-	for _, dep := range []string{"jq", "date"} {
+	for _, dep := range []string{"jq", "date", "flock"} {
 		if _, err := exec.LookPath(dep); err != nil {
 			t.Skipf("%s not on PATH", dep)
 		}
@@ -1074,7 +1074,7 @@ func TestGrokSharedAuthSeedHookBehavior(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := run(t, idbase, home)
-		if !strings.Contains(out, "promoting") {
+		if !strings.Contains(out, "promoted") {
 			t.Errorf("promotion must be announced, got %q", out)
 		}
 		if b, err := os.ReadFile(filepath.Join(idbase, "grok", "auth.json")); err != nil || string(b) != pair {
@@ -1082,6 +1082,29 @@ func TestGrokSharedAuthSeedHookBehavior(t *testing.T) {
 		}
 		if _, err := os.Stat(local); !os.IsNotExist(err) {
 			t.Error("local copy must be dropped after promotion (one chain, one home)")
+		}
+	})
+
+	t.Run("seeded store wins over a local login", func(t *testing.T) {
+		idbase, home := t.TempDir(), t.TempDir()
+		other := `{"https://auth.x.ai::c":{"key":"k2","refresh_token":"rt-other","oidc_issuer":"https://auth.x.ai","oidc_client_id":"c"}}`
+		store := filepath.Join(idbase, "grok", "auth.json")
+		if err := os.MkdirAll(filepath.Dir(store), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(store, []byte(other), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		local := filepath.Join(home, "auth.json")
+		if err := os.WriteFile(local, []byte(pair), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run(t, idbase, home)
+		if b, _ := os.ReadFile(store); string(b) != other {
+			t.Error("an already-seeded store must never be overwritten by a local login")
+		}
+		if _, err := os.Stat(local); err != nil {
+			t.Error("the local login must be left in place when the store is already seeded (it goes inert)")
 		}
 	})
 }
