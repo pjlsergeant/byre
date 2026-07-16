@@ -23,6 +23,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -618,5 +619,98 @@ name = "!dropped"
 	}
 	if string(out2) != "{\n  \"mcpServers\": {}\n}\n" {
 		t.Fatalf("empty-set bake = %q", out2)
+	}
+}
+
+// TestIntegrationDeliverTransport lands real files in a LIVE box's /inbox —
+// the transport scripts (inboxCheck, fileClaim) executing through a real
+// engine exec, the seam no unit fake can vouch for (deliver_test's fake
+// reimplements the claim loop). Pins ADR 0021's promises end to end: the
+// box is discovered by label from cwd, the landed path comes back on
+// stdout, the bytes arrive exactly, and re-delivering the same name claims
+// -2 instead of clobbering.
+func TestIntegrationDeliverTransport(t *testing.T) {
+	r := requireEngineRunner(t)
+	p, proj := testPaths(t)
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+		t.Fatalf("image failed to build: %v", err)
+	}
+
+	params, err := runParams(p, rv, image, false, false, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params.Command = []string{"sleep", "120"}
+	t.Cleanup(func() {
+		_ = exec.Command(string(r.Engine()), "rm", "-f", params.Name).Run()
+		for _, v := range params.Volumes {
+			_ = r.VolumeRemove(v.Name)
+		}
+	})
+	args := runner.RunArgs(params)
+	args = append([]string{args[0], "-d"}, args[1:]...)
+	if out, err := exec.Command(string(r.Engine()), args...).CombinedOutput(); err != nil {
+		t.Fatalf("box failed to start: %v\n%s", err, out)
+	}
+
+	src := filepath.Join(t.TempDir(), "hello.txt")
+	if err := os.WriteFile(src, []byte("hello from the host\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Production wiring, minus clipboard and picker (single owned session).
+	callerScoped := false
+	if rootless, rerr := r.IsRootlessPodman(); rerr == nil && rootless {
+		callerScoped = true
+	}
+	deliverOnce := func() string {
+		var out, errw strings.Builder
+		cfg := deliver.Config{
+			Engines:      []deliver.Engine{engineAdapter{r: r, callerScoped: callerScoped}},
+			ProjectLabel: labelKey,
+			WorkdirLabel: workdirKey,
+			CallerUID:    os.Getuid(),
+			Cwd:          proj,
+			WorkdirIDOf: func(d string) (string, error) {
+				pp, err := project.Resolve(d)
+				if err != nil {
+					return "", err
+				}
+				return pp.WorktreeID, nil
+			},
+			Out: &out,
+			Err: &errw,
+		}
+		if _, err := deliver.Run(cfg, deliver.Options{}, []string{src}); err != nil {
+			t.Fatalf("deliver failed: %v\nstderr: %s", err, errw.String())
+		}
+		return out.String()
+	}
+
+	if got := deliverOnce(); got != "/inbox/hello.txt\n" {
+		t.Fatalf("landed path = %q, want /inbox/hello.txt", got)
+	}
+	ids, err := r.RunningContainersByLabel(labelKey + "=" + p.ID)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("session discovery = (%v, %v), want exactly one box", ids, err)
+	}
+	content, err := r.ExecInput(ids[0], ident.UID, ident.GID, nil, "cat", "/inbox/hello.txt")
+	if err != nil {
+		t.Fatalf("reading the landed file: %v", err)
+	}
+	if content != "hello from the host\n" {
+		t.Fatalf("landed content = %q", content)
+	}
+
+	// Same name again: the ln-EEXIST claim loop must uniquify, not clobber.
+	if got := deliverOnce(); got != "/inbox/hello-2.txt\n" {
+		t.Fatalf("second landed path = %q, want /inbox/hello-2.txt", got)
 	}
 }
