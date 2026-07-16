@@ -32,8 +32,17 @@ func hostPicker(s Streams) func([]deliver.Session) (deliver.Session, bool, error
 			return ttyPick(s, sessions)
 		}
 	}
-	if tty := openControllingTTY(); tty != nil {
+	if probe := openControllingTTY(); probe != nil {
+		// Probe-and-close: the cascade usually resolves WITHOUT the picker
+		// (explicit --box, cwd affinity, a sole box), and holding the device
+		// open from wiring to process exit would leak it on every piped
+		// delivery. The real open happens at pick time.
+		probe.Close()
 		return func(sessions []deliver.Session) (deliver.Session, bool, error) {
+			tty := openControllingTTY()
+			if tty == nil {
+				return deliver.Session{}, false, fmt.Errorf("the controlling terminal went away between discovery and the pick — pass --box")
+			}
 			defer tty.Close()
 			// Render where the human is: stderr normally; when stderr is
 			// redirected too, the terminal device itself (beat.go's rule —
