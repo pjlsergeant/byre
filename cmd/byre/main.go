@@ -366,8 +366,15 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 					return usageError("byre deliver --tar: --name does not apply (names ride the archive)")
 				}
 			}
-			if len(args) > 1 {
-				for _, p := range args {
+			// The '-'-mixing rule applies to SOURCES: an ssh:// target in
+			// first position is the destination, not a source, so
+			// `byre deliver ssh://host -` stays legal.
+			srcs := args
+			if len(srcs) > 0 && strings.HasPrefix(srcs[0], "ssh://") {
+				srcs = srcs[1:]
+			}
+			if len(srcs) > 1 {
+				for _, p := range srcs {
 					if p == "-" {
 						return usageError("byre deliver: '-' (stdin) cannot be mixed with path arguments")
 					}

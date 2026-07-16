@@ -31,16 +31,58 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 	if opts.Tar {
 		return deliverTar(s, dir, opts)
 	}
+	// An ssh:// first argument routes the delivery through another machine
+	// running byre (ADR 0035); the remaining arguments are the sources, and
+	// every local input mode (paths, stdin, the paste beat) works unchanged.
+	var target deliver.SSHTarget
+	remote := false
+	if len(paths) > 0 {
+		t, isSSH, terr := deliver.ParseSSHTarget(paths[0])
+		if terr != nil {
+			return fmt.Errorf("ssh target: %w", terr)
+		}
+		if isSSH {
+			target, remote = t, true
+			paths = paths[1:]
+		}
+	}
+	if !remote && opts.RemoteByre != "" {
+		return fmt.Errorf("--remote-byre only applies to an ssh:// delivery")
+	}
 	sources, err := deliverSources(s, opts, paths, hostClipboardReader())
 	if err != nil || sources == nil { // nil sources = beat cancelled, cleanly
 		deliverNotify(s, nil, err)
 		return err
 	}
-	landed, err := deliverWith(s, dir, opts, sources, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s))
+	var landed []string
+	if remote {
+		landed, err = deliverRemote(s, opts, target, sources)
+	} else {
+		landed, err = deliverWith(s, dir, opts, sources, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s))
+	}
 	// Graphical launches (the deliver app, a .desktop entry) have no terminal
 	// to read: the outcome ALSO goes to the notification center.
 	deliverNotify(s, landed, err)
 	return err
+}
+
+// deliverRemote wires the local half of an ssh delivery: the local picker
+// and clipboard (selection and the round-trip are local capabilities), the
+// real ssh, and the terminal's TTY-ness for the sending meter. No engines —
+// the boxes are on the far machine.
+func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, sources []deliver.Source) ([]string, error) {
+	cfg := deliver.Config{
+		Out:  s.Out,
+		Err:  s.Err,
+		Clip: hostClipboardWriter(),
+		Pick: hostPicker(s),
+	}
+	landed, err := deliver.RunRemote(cfg, opts, target, sources, sshExec, s.TTY)
+	if deliver.IsCancelled(err) {
+		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+		return landed, nil
+	}
+	return landed, err
 }
 
 // deliverSources resolves the input mode (ADR 0021): path args →
