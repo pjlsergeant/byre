@@ -114,14 +114,20 @@ context_target = "/home/dev/.config/opencode/AGENTS.md"
 # rotate per provider policy -- see docs/AGENT-CREDENTIAL-MECHANICS.md and
 # opencode-shared-auth's gates before sharing it across boxes.
 
-# MCP seam note (ADR 0033 probe, 2026-07-16): opencode HAS per-invocation
-# config injection surfaces -- OPENCODE_CONFIG (extra config file path) and
-# OPENCODE_CONFIG_CONTENT (config JSON via env), both binary-verified to
-# exist, and its config carries an `mcp` block. Whether injected config
-# MERGES with or REPLACES user config -- the same-name shadowing question
-# the claude adapter settled by spike -- is NOT yet pinned; no `mcp =
-# "inject"` vouch until an adapter is spiked and verified. Until then MCP
-# delivery to opencode is the honest degradation (ADR 0033).
+# MCP seam note (ADR 0033, 2026-07-16): opencode injects config via
+# OPENCODE_CONFIG_CONTENT (config JSON via env), and its config carries a
+# top-level `mcp` map. The merge-vs-replace question is ANSWERED from repo
+# source (opencode 1.18.3, config.ts load order): OPENCODE_CONFIG_CONTENT
+# DEEP-MERGES over global + project config, scope "local" (last of the
+# user-level layers) -- it does NOT replace, so injected servers compose with
+# the user's own config and byre keys win per-name. The adapter is BUILT and
+# unit-tested (opencode-mcp-launch.sh -> byre-opencode-mcp-launch, mirrors the
+# codex wrapper; wrapper_test.go). It is NOT yet wired as the [agent] command
+# and `mcp` stays UNSET (no "inject" vouch) pending the one thing source can't
+# prove: a live box loading byre's injected servers end-to-end (`opencode mcp`
+# lists them). On that verify, flip command -> `byre-opencode-mcp-launch
+# --auto` and set `mcp = "inject"` together (the vouch-follows-verification
+# discipline). Until then MCP delivery to opencode is the honest degradation.
 
 [[volumes]]
 name = ".opencode"
