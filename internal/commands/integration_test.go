@@ -1002,6 +1002,43 @@ func TestIntegrationTUIPickerOnDevTTY(t *testing.T) {
 	}
 }
 
+// TestIntegrationTUIPickerCancel pins the picker's other exit: q abandons
+// the delivery cleanly — the cancel notice, exit 0, and nothing lands
+// anywhere.
+func TestIntegrationTUIPickerCancel(t *testing.T) {
+	r := requireEngineRunner(t)
+	tuitest.Require(t)
+	ident := testIdentity(t, r)
+	p1, proj1 := testPaths(t)
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	id1 := startTestBox(t, r, p1, proj1, ident)
+	id2 := startTestBox(t, r, p2, proj2, ident)
+
+	src := filepath.Join(t.TempDir(), "unwanted.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := tuitest.Start(t, tuitest.Opts{}, tuitest.Binary(t), "deliver", src)
+	s.WaitFor("deliver to which box?")
+	s.Keys("q")
+	s.WaitFor("cancelled — nothing delivered")
+	if st := s.WaitForExit(); st != 0 {
+		t.Fatalf("cancel should exit 0, got %d\n%s", st, s.CaptureNow())
+	}
+	for _, id := range []string{id1, id2} {
+		if out, err := r.ExecInput(id, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "unwanted.txt") {
+			t.Fatalf("cancelled delivery still landed in %s: %q", id, out)
+		}
+	}
+}
+
 // TestIntegrationTUIMeterFinalState delivers a >256 KiB payload over real
 // loopback ssh with a TTY, and asserts the FINAL terminal state only: the
 // meter resolved to a sent-total, the remote's notes sit on their own
