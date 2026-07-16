@@ -26,7 +26,7 @@ func storeEnv(t *testing.T) (string, map[string]string) {
 // Egress, Env, Template, Agent, Base.
 const downsToBase = 6
 
-func TestConfigGlobalSaveThenQuit(t *testing.T) {
+func TestIntegrationTUIConfigSaveThenQuit(t *testing.T) {
 	Require(t)
 	store, env := storeEnv(t)
 	s := Start(t, Opts{Env: env}, Binary(t), "config", "--global")
@@ -57,7 +57,7 @@ func TestConfigGlobalSaveThenQuit(t *testing.T) {
 	}
 }
 
-func TestConfigGlobalCancelDiscards(t *testing.T) {
+func TestIntegrationTUIConfigCancelDiscards(t *testing.T) {
 	Require(t)
 	store, env := storeEnv(t)
 	s := Start(t, Opts{Env: env}, Binary(t), "config", "--global")
@@ -92,7 +92,7 @@ func beatEnv(t *testing.T) Opts {
 	return Opts{Env: env, Unset: []string{"DISPLAY", "WAYLAND_DISPLAY"}}
 }
 
-func TestBeatCancelDegraded(t *testing.T) {
+func TestIntegrationTUIBeatCancelDegraded(t *testing.T) {
 	Require(t)
 	s := Start(t, beatEnv(t), Binary(t), "deliver")
 
@@ -107,7 +107,7 @@ func TestBeatCancelDegraded(t *testing.T) {
 	}
 }
 
-func TestBeatPasteDegradedDeliversText(t *testing.T) {
+func TestIntegrationTUIBeatPasteDeliversText(t *testing.T) {
 	Require(t)
 	s := Start(t, beatEnv(t), Binary(t), "deliver")
 
