@@ -78,7 +78,7 @@ without the installs fails loudly at develop with those exact commands.
 - TOML config via `github.com/BurntSushi/toml` (byre's own merge/`!name` layer).
 - Container engine: shells out to the `docker`/`podman` **CLI** (no SDK).
 - Layout: `cmd/byre`, `internal/{project,config,gen,build,runner,skills,
-  builtins,onboard,commands,lock,configui}`.
+  packages,builtins,onboard,commands,deliver,lock,configui,version}`.
 
 ## Coding Conventions
 

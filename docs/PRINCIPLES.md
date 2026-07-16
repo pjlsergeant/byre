@@ -71,8 +71,8 @@ Implications:
   flagged as not-introspected, and degrades any posture claim they could
   undermine (per the footgun doctrine).
 - `run_args` is last-wins over byre's own flags; the sole exception is the
-  `byre.project` identity label, re-asserted so lifecycle and status always
-  work.
+  `byre.project`/`byre.workdir` identity label pair, re-asserted so
+  lifecycle and status always work.
 - byre stays small *because* the raw tier exists; a primitive has to earn
   its place by covering a common case well.
 

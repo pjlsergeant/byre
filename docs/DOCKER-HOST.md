@@ -86,4 +86,5 @@ attacks not yet enumerated.
 
 See also: `docs/SECURITY.md` (daemon access is root-equivalent),
 `docs/adr/0027-docker-host-daemon-access.md` (the design record), the
-skill's agent context under `~/.byre/skills/docker-host/context.md`.
+skill's agent context (`byre skill inspect docker-host`, or the display
+mirror at `~/.byre/bundled/skills/docker-host/context.md`).
