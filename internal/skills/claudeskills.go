@@ -171,11 +171,21 @@ func ClaudeSkillDirName(dir string) (string, error) {
 // Unknown frontmatter keys are ignored — the format is Anthropic's and grows
 // fields; byre reads only the two it depends on.
 func claudeSkillFrontmatter(path string) (name, desc string, err error) {
-	raw, err := os.ReadFile(path)
+	// Lstat before reading: a FIFO named SKILL.md would block os.ReadFile
+	// indefinitely, and a symlinked SKILL.md must be rejected before being
+	// followed, not after (the walk's checks run later than this read).
+	fi, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", fmt.Errorf("no SKILL.md at the directory root — a claude skill is a directory whose root holds one")
 		}
+		return "", "", err
+	}
+	if !fi.Mode().IsRegular() {
+		return "", "", fmt.Errorf("SKILL.md is not a regular file — a claude skill dir holds plain files only")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
 		return "", "", err
 	}
 	body, ok := bytes.CutPrefix(raw, []byte("---\n"))

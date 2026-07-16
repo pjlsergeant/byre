@@ -173,6 +173,32 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 		t.Fatalf("fifo: %v", err)
 	}
 
+	// A FIFO named SKILL.md itself must refuse via Lstat, not block the read.
+	fifoSkill := filepath.Join(base, "fifoskill")
+	if err := os.MkdirAll(fifoSkill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(fifoSkill, "SKILL.md"), 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	if err := ValidateClaudeSkillDir(fifoSkill, "fifoskill"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("fifo SKILL.md: %v", err)
+	}
+
+	// A symlinked SKILL.md is rejected before being followed.
+	linkSkill := filepath.Join(base, "linkskill")
+	real := filepath.Join(base, "realskill")
+	writeClaudeSkill(t, real, "linkskill", "")
+	if err := os.MkdirAll(linkSkill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(real, "SKILL.md"), filepath.Join(linkSkill, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateClaudeSkillDir(linkSkill, "linkskill"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("symlink SKILL.md: %v", err)
+	}
+
 	crowded := filepath.Join(base, "crowded")
 	writeClaudeSkill(t, crowded, "crowded", "")
 	for i := 0; i <= MaxClaudeSkillFiles; i++ {
