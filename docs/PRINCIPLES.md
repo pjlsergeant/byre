@@ -98,7 +98,7 @@ Implications:
 **No box gains a capability without its own question.** A grant's consent
 lives at the scope of its effect: a per-project capability is answered per
 project (a config entry in that project's byre.config, a question at that
-box's onboarding or adoption); machine-wide grants are hand-made only
+box's onboarding or preset apply); machine-wide grants are hand-made only
 (default.config, `byre config --global`) and never manufactured from one
 project's answer. The 2026-07-12 shared-auth episode (ADR 0024 -> 0025)
 is the type specimen: one box's "y" became every future box's silent

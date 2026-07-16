@@ -96,17 +96,13 @@ The `FROM` image the generated Dockerfile builds on. Debian-derived in v0.
 deliberately outside the rw-mounted project tree so the boxed agent can't
 rewrite its own sandbox.
 
-**Proposal**:
-A `byre.config` committed in the project tree. Inert until adopted; the
-agent may edit it freely and nothing changes.
-
-**Adoption**:
-The explicit, host-side, human act of reviewing a proposal's grants and
-copying it into the host-side store. Both answers stick: yes and no are
-each remembered for that version of the proposal, and any change to it
-re-prompts. Adopting replaces the store config wholesale (the prompt
-shows the diff).
-_Avoid_: import, sync
+**Proposal / Adoption** (historical):
+Pre-preset (ADR 0029) vocabulary: a `byre.config` committed in the
+project tree was a "proposal", inert until "adopted" -- a develop-time
+prompt that reviewed its grants and copied it into the host-side store,
+with sticky per-version yes/no answers. The flow is deleted: presets
+replace it (`byre preset apply`), and old adoption records migrate to
+the Applied marker. Use the words only to describe what was removed.
 
 **Raw block**:
 A verbatim passthrough byre never parses inside: `dockerfile_pre`,
@@ -192,7 +188,7 @@ package it prints the exact, kind-correct install command from the map,
 attributed to the layer that supplied it.
 
 **Preset**:
-A saved answer to onboarding's questions: a complete config proposal in
+A saved answer to onboarding's questions: a complete proposed config in
 byre.config format, from anywhere -- conventionally `byre.preset` in a
 repo. Not a package (no identity, no version, no install). Applied only
 via `byre preset apply` (review + chauffeur + confirm + write);
@@ -231,7 +227,7 @@ daemon** via its socket (`/var/run/docker.sock`). Not docker-in-docker
 (no nested daemon); not a Podman host skill. Installs client CLI +
 compose + buildx; mounts the socket; runner injects numeric
 `--group-add` from an engine-side gid probe (`sock_groups`); declares a
-`containment` hole so status/launch/adoption/config UI disclaim the
+`containment` hole so status/launch/preset-apply/config UI disclaim the
 warranty for anything done through the socket. User-facing discussion:
 `docs/DOCKER-HOST.md`.
 

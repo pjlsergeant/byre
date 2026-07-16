@@ -3,8 +3,8 @@
 The `docker-host` skill grants the box access to the **host's Docker
 daemon** via `/var/run/docker.sock`. It is the ergonomic form of a grant
 already expressible by hand (mount + CLI + group); the skill bundles that
-with honest, loud legibility in `byre status`, the launch line, adoption,
-and the config UI.
+with honest, loud legibility in `byre status`, the launch line, preset
+apply's grant review, and the config UI.
 
 This is **not** docker-in-docker (no nested daemon), and not a Podman host
 skill (a Podman host would need a sibling skill with its own verified
