@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -145,6 +146,17 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	argv := strings.Join(runner.RunArgs(p), " ")
 	if !strings.Contains(argv, "target="+selfEditTarget) || strings.Contains(argv, "target="+selfEditTarget+",readonly") {
 		t.Fatalf("self-edit bind should be rw in argv: %s", argv)
+	}
+	// Named layers are OUTSIDE the self-edit writable set: a layer propagates
+	// into every extending project's sandbox, so a boxed agent must never be
+	// able to edit one. The writable grant is this project's store dir alone;
+	// the layers dir must not appear in any bind (the escape hatch is an
+	// explicit rw mount of ~/.byre, a visible grant that documents itself).
+	layers := config.LayersDir(paths.Home)
+	for _, b := range p.Binds {
+		if b.Host == layers || strings.HasPrefix(b.Host, layers+string(filepath.Separator)) {
+			t.Fatalf("--self-edit must not bind the layers dir: %+v", b)
+		}
 	}
 }
 

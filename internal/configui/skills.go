@@ -72,7 +72,7 @@ func (m model) skillEntries() []skillEntry {
 	// a "[x] (primary agent)" row would claim a machine-wide enable that
 	// isn't happening, and the lock would silently prevent enabling that
 	// agent's skill machine-wide via this screen (audit finding).
-	if m.global {
+	if m.target == TargetGlobal {
 		primary = ""
 	}
 	enabledHere, removedHere := splitSkillLayer(m.skills)

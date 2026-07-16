@@ -28,7 +28,7 @@ type app struct {
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
 	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error
-	config        func(s commands.Streams, dir string, global bool) error
+	config        func(s commands.Streams, dir string, global bool, layer string) error
 	status        func(s commands.Streams, dir string, selfEdit bool) error
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
@@ -167,6 +167,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		worktreeCmd(a, dir, s),
 		skillCmd(a, s),
 		templateCmd(s),
+		layerCmd(s),
 		mcpCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
@@ -211,6 +212,7 @@ foreground. First run onboards the project (creates its host-side config).`,
 
 func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var global bool
+	var layer string
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Edit this project's config interactively.",
@@ -218,10 +220,11 @@ func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
 (~/.byre/projects/<id>/byre.config). Raw fields are shown, not edited.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.config(s, dir, global)
+			return a.config(s, dir, global, layer)
 		},
 	}
 	c.Flags().BoolVar(&global, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	c.Flags().StringVar(&layer, "layer", "", "edit a named layer (~/.byre/layers/<name>/layer.config) instead")
 	return c
 }
 
@@ -652,6 +655,49 @@ func templateCmd(s commands.Streams) *cobra.Command {
 	return tmpl
 }
 
+func layerCmd(s commands.Streams) *cobra.Command {
+	layer := &cobra.Command{
+		Use:   "layer",
+		Short: "Manage named config layers (new, list, validate).",
+		Long: `Named layers are user-authored config files at ~/.byre/layers/<name>/
+layer.config, chained into a project's cascade via 'extends' in its
+byre.config (or in another layer). They carry the full config vocabulary
+except 'template', and are resolved live at every develop. Plain files,
+not packages: distribution is sending someone the file.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre layer new|list|validate")
+		},
+	}
+	layer.AddCommand(
+		&cobra.Command{
+			Use:   "new <name>",
+			Short: "Scaffold a named layer.",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.LayerNew(s, args[0]) },
+		},
+		&cobra.Command{
+			Use:   "list",
+			Short: "List named layers, flagging broken ones.",
+			Args:  noArgsU,
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.LayerList(s) },
+		},
+		&cobra.Command{
+			Use:   "validate [name]",
+			Short: "Parse a layer and walk its extends chain (or all).",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				name := ""
+				if len(args) == 1 {
+					name = args[0]
+				}
+				return commands.LayerValidate(s, name)
+			},
+		},
+	)
+	return layer
+}
+
 func resetCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var force bool
 	c := &cobra.Command{
@@ -817,6 +863,11 @@ func fatal(err error) {
 	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.Code)
 	}
-	fmt.Fprintf(os.Stderr, "byre: %v\n", err)
+	// Error text can quote hostile file bytes — a layer someone sent you, a
+	// cloned repo's preset, an unknown TOML key with a control character in
+	// its name — so this one boundary escapes everything printed here. byre's
+	// own messages carry no control characters (newlines survive: the escape
+	// is per-line), so for them this is a no-op.
+	fmt.Fprintf(os.Stderr, "byre: %s\n", commands.EscapeMultiline(err.Error()))
 	os.Exit(1)
 }

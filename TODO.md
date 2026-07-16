@@ -39,10 +39,6 @@ the rationale lives.
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
   design pass; deliberately split from the MCP design 2026-07-14.
-- [ ] (L) **Composable box configurations** (Pete, 2026-07-14): stacked config
-  layers, not just the global-baseline + per-project pair -- compose a box
-  from multiple named layers. Needs a design pass against the existing
-  cascade/merge model (docs/ARCHITECTURE.md "config cascade").
 - [ ] (L) **`byre deliver`: ssh:// remote delivery.** The remaining tranche
   of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/DELIVER.md); the
   mini-protocol is frozen there (--proto / --porcelain / --consume). Gated
@@ -76,9 +72,12 @@ Disciplines and tripwires, not tasks.
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
   (docs/marketing/positioning.md "Copy bank").
-- **`internal/commands` split tripwire:** ~25 files, no internal boundaries
-  (2026-07-09 external review). Don't split as a project; next substantial
-  work there carves the touched area into its own package.
+- **`internal/commands` is never carved (2026-07-16, supersedes the
+  carve-as-you-touch tripwire):** commands is the thin adapter layer —
+  domain logic lives in domain packages, commands files hold Streams-glue
+  only. The reviewable invariant: when a commands file accumulates real
+  logic, the LOGIC moves to a domain package; the package itself is never
+  split. Full rationale in the package comment (commands.go).
 
 ## Maybe someday
 

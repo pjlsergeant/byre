@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -387,8 +388,8 @@ func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
 	if !strings.Contains(errBuf.String(), "agent = \"none\"\napt = [\"jq\"]") {
 		t.Fatalf("preset body must render with newlines intact:\n%s", errBuf.String())
 	}
-	if got := escapeMultiline("a\x1b[31mred\nb"); got != "ared\nb" {
-		t.Fatalf("escapeMultiline = %q", got)
+	if got := EscapeMultiline("a\x1b[31mred\nb"); got != "ared\nb" {
+		t.Fatalf("EscapeMultiline = %q", got)
 	}
 }
 
@@ -612,5 +613,45 @@ func TestPresetStateOversizedWithMarkerIsDiverged(t *testing.T) {
 	state, _ := presetState(proj, p)
 	if state != "diverged" {
 		t.Fatalf("state = %q, want diverged (marker proves an application happened)", state)
+	}
+}
+
+// A preset's extends chain feeds the grant review, so a layer this machine
+// doesn't have is a hard failure naming the exact path to create — never a
+// warn-and-continue (layers aren't packages; there is no chauffeur for them).
+func TestPresetApplyFailsOnMissingLayer(t *testing.T) {
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "extends = \"torn\"\n")
+
+	s, _, _ := testStreams("y\n", true)
+	err := PresetApply(s, proj, "")
+	if err == nil {
+		t.Fatal("apply with a missing layer must fail loudly")
+	}
+	if !strings.Contains(err.Error(), config.LayerPath(p.Home, "torn")) {
+		t.Errorf("error should name the exact path to create, got: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
+		t.Error("nothing may be written when the chain is broken")
+	}
+}
+
+// With the layer present, the review resolves the chain: the layer's grants
+// show, attributed, and the chain itself is printed root-first.
+func TestPresetApplyResolvesLayerChainInReview(t *testing.T) {
+	p, proj := onboardPaths(t)
+	writeLayerFile(t, p.Home, "torn", "run_args = [\"--cap-add=SYS_PTRACE\"]\n")
+	shipPreset(t, proj, PresetName, "extends = \"torn\"\n")
+
+	s, _, out := testStreams("y\n", true)
+	if err := PresetApply(s, proj, ""); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "--cap-add=SYS_PTRACE") {
+		t.Errorf("review must surface grants the chain contributes:\n%s", text)
+	}
+	if !strings.Contains(text, "extends: torn -> project") {
+		t.Errorf("review should print the resolved chain:\n%s", text)
 	}
 }

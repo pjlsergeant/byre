@@ -69,7 +69,9 @@ built-in skill copies), shim
 ### Config
 
 **Cascade**:
-The three-layer config resolution `default ⊕ template ⊕ project`. Scalars
+The config resolution `default ⊕ template ⊕ chain(root … parent) ⊕
+project` -- the chain being the project's named layers, walked via
+`extends`, and empty for a project that extends nothing. Scalars
 override (last wins), lists union, a removal marker removes.
 
 **Removal marker**:
@@ -81,8 +83,19 @@ additions; the removed entry is gone from the resolved set -- contrast a
 mount's `disabled`, which keeps the entry visible (ADR 0015). (ADR 0018)
 
 **Layer**:
-One file in the cascade: the global default, a template, or the project
-config.
+One file in the cascade: the global default, a template, a named layer,
+or the project config.
+
+**Named layer**:
+A user-authored cascade layer at `~/.byre/layers/<name>/layer.config`,
+pulled into a project's cascade by `extends = "<name>"` in its config
+(or in another layer -- chains are linear, walked to the root). A plain
+file, not a package: no version, no install verbs; distribution is
+sending someone the file. Carries the full config vocabulary except
+`template`. Resolved live at every develop -- editing a layer changes
+every extending project's next box. (ADR 0035)
+_Avoid_: preset (apply-time snapshot with a consent ceremony; a layer
+is live), template (shape-only package; a layer is local composition)
 
 **Template**:
 A named, reusable config layer under `~/.byre/templates/<name>` (e.g. go,
