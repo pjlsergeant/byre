@@ -120,6 +120,9 @@ the skill; native-Linux docker provides neither name, so set
 box).
 
 **Lifecycle** (host-side): `limactl stop byre-inttest` pauses;
-`limactl delete byre-inttest` + a fresh start resets -- nothing on it is
-precious. A re-created VM has a new hostkey: in the box,
-`ssh-keygen -R '[<address>]:<port>'` clears the stale entry.
+`limactl stop byre-inttest && limactl delete byre-inttest` + a fresh start
+resets (delete refuses a running VM) -- nothing on it is precious. A
+re-created VM has a new hostkey: in the box,
+`ssh-keygen -R '[<address>]:<port>'` clears the stale entry. Provisioning
+finishes after ssh comes up -- wait for limactl's `READY` line before
+judging the VM broken.
