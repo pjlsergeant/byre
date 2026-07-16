@@ -171,9 +171,13 @@ if [ "$ERR" = "invalid_grant" ] || [ "$ERR" = "invalid_client" ]; then
   # Permanent (source-verified: the only two terminal codes). The chain is
   # dead — move the corpse aside so the next launch's firstrun hook re-seeds
   # instead of retrying it forever. This is also the self-heal for the v1
-  # identity volume's dead credential (ADR 0023).
-  mv "$STORE" "$STORE.dead-$(date -u +%s)" 2>/dev/null || true
-  fail "the shared credential was rejected ($ERR) and has been moved aside — $reseed_help"
+  # identity volume's dead credential (ADR 0023). A failed move must say so:
+  # a corpse left in place looks like a valid seed to the firstrun hook, and
+  # the claim "moved aside" would send the user in the wrong direction.
+  if mv "$STORE" "$STORE.dead-$(date -u +%s)" 2>/dev/null; then
+    fail "the shared credential was rejected ($ERR) and has been moved aside — $reseed_help"
+  fi
+  fail "the shared credential was rejected ($ERR) and could NOT be moved aside — remove $STORE by hand, then re-seed: $reseed_help"
 fi
 
 # Transient (network down, 5xx, timeout): keep the session alive on the
