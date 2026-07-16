@@ -416,6 +416,18 @@ type Config struct {
 	// after the union (ADR 0030 semantics, wholesale). Stored stripped.
 	MCPClosed []string `toml:"-"`
 
+	// ClaudeSkills are declared Claude Skills ([[claude_skills]] blocks):
+	// wiring, not grants — see claudeskills.go for the model. Two homes
+	// (config layers and skill.toml); within the cascade a later layer
+	// replaces by name.
+	ClaudeSkills []ClaudeSkill `toml:"claude_skills,omitempty"`
+	// ClaudeSkillsClosed is the set of `!name` claude-skill closures that
+	// survived the cascade — never a TOML key of its own; Merge extracts
+	// markers here instead of consuming them, so a closure can subtract a
+	// SKILL-declared Claude Skill after the union (the MCPClosed semantics,
+	// wholesale). Stored stripped.
+	ClaudeSkillsClosed []string `toml:"-"`
+
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
 	RunArgs        []string `toml:"run_args,omitempty"`
@@ -786,6 +798,8 @@ func Merge(base, over Config) Config {
 	// MCP declarations replace by name; `!name` closures survive the merge
 	// (MCPClosed) so they can subtract skill-declared servers post-union.
 	out.MCPs, out.MCPClosed = mergeMCPs(base, over)
+	// Claude Skill declarations: same taxonomy.
+	out.ClaudeSkills, out.ClaudeSkillsClosed = mergeClaudeSkills(base, over)
 
 	// Raw blocks: append-only/union, no per-line removal in v0.
 	out.DockerfilePre = appendAll(base.DockerfilePre, over.DockerfilePre)
@@ -1152,6 +1166,9 @@ func (c Config) Validate() error {
 	if err := c.validateMCPs(false); err != nil {
 		return err
 	}
+	if err := c.validateClaudeSkills(false); err != nil {
+		return err
+	}
 	return c.validatePorts(false)
 }
 
@@ -1233,6 +1250,9 @@ func (c Config) ValidateLayer() error {
 		seenTargets[v.Target] = "volume " + v.Name
 	}
 	if err := c.validateMCPs(true); err != nil {
+		return err
+	}
+	if err := c.validateClaudeSkills(true); err != nil {
 		return err
 	}
 	return c.validatePorts(true)
