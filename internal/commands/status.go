@@ -98,8 +98,10 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	}
 	// Config-declared MCPs stay visible even when skills fail to resolve (the
 	// same config-only degradation as every other row); the resolved set below
-	// replaces this with the skill union. MCPSet on an empty Resolved cannot
-	// conflict, so the error is structurally nil.
+	// replaces this with the skill union. The error is structurally nil: an
+	// empty Resolved contributes no claims, and config-internal duplicate MCP
+	// names — the one conflict cfg alone could carry — were refused upstream
+	// by config.Load's per-layer validation (the merge replaces by name).
 	info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
 	info.EnvProvided = map[string]bool{}
 	for k := range cfg.Env {

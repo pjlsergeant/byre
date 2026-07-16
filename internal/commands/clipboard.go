@@ -32,7 +32,7 @@ var (
 		cmd.Stdin = strings.NewReader(stdin)
 		out, err := cmd.CombinedOutput()
 		if err != nil && len(out) > 0 {
-			return fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 		}
 		return err
 	}

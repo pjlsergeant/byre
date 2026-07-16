@@ -213,8 +213,12 @@ func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 		dst := filepath.Join(dstDir, parts[1])
 		// If destination exists, unique-ify.
 		if _, err := os.Stat(dst); err == nil {
-			dst, _ = os.MkdirTemp(dstDir, parts[1]+".")
-			os.Remove(dst) // MkdirTemp created a dir; we want the name for Rename
+			tmp, terr := os.MkdirTemp(dstDir, parts[1]+".")
+			if terr != nil {
+				return moved, fmt.Errorf("archive %s: %w", rel, terr)
+			}
+			os.Remove(tmp) // MkdirTemp created a dir; we want the name for Rename
+			dst = tmp
 		}
 		if err := os.Rename(src, dst); err != nil {
 			return moved, fmt.Errorf("archive %s: %w", rel, err)

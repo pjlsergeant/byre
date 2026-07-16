@@ -289,6 +289,8 @@ func MCPList(s Streams, projectDir string) error {
 		MCPClosed:    cfg.MCPClosed,
 		EnvProvided:  map[string]bool{},
 	}
+	// Error structurally nil: empty Resolved + config.Load already refused
+	// config-internal duplicate names (see the same call in status.go).
 	info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
 	for k := range cfg.Env {
 		info.EnvProvided[k] = true
