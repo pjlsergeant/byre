@@ -43,11 +43,6 @@ the rationale lives.
   layers, not just the global-baseline + per-project pair -- compose a box
   from multiple named layers. Needs a design pass against the existing
   cascade/merge model (docs/ARCHITECTURE.md "config cascade").
-- [ ] (L) **`byre deliver`: ssh:// remote delivery.** The remaining tranche
-  of ADR 0021 (v1 shipped 2026-07-10/11, user guide docs/DELIVER.md); the
-  mini-protocol is frozen there (--proto / --porcelain / --consume). Gated
-  deliver test cases can now land in the gated suite (agent-runnable since
-  2026-07-14).
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
