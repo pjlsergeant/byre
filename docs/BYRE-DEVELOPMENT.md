@@ -144,8 +144,11 @@ equivalents are the vocabulary for replaying a test's keystrokes by hand
 (or, later, for the field-QA agent):
 
 ```sh
-tmux -L <sock> -f /dev/null new-session -d -s main -x 100 -y 30 <cmd>
-tmux -L <sock> set-option -g remain-on-exit on   # BEFORE the real process
+# A placeholder first, so remain-on-exit is set before the REAL process
+# can possibly exit (a fast command would otherwise take the pane with it):
+tmux -L <sock> -f /dev/null new-session -d -s main -x 100 -y 30 'sleep 600'
+tmux -L <sock> set-option -g remain-on-exit on
+tmux -L <sock> respawn-pane -k -t main '<cmd>'   # now the real process
 tmux -L <sock> send-keys -t main Down Enter C-s  # keys
 tmux -L <sock> send-keys -t main -l 'literal'    # text
 tmux -L <sock> set-buffer -- 'x'; tmux -L <sock> paste-buffer -p -t main

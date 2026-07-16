@@ -926,13 +926,8 @@ func TestIntegrationTUIPickerDeliver(t *testing.T) {
 		}
 		return ""
 	}
-	steered := false
 	row := highlighted()
-	for i := 0; i < 10; i++ {
-		if strings.Contains(row, p2.ID) {
-			steered = true
-			break
-		}
+	for i := 0; i < 10 && !strings.Contains(row, p2.ID); i++ {
 		s.Keys("Down")
 		moved := row
 		for j := 0; j < 40 && moved == row; j++ {
@@ -944,7 +939,7 @@ func TestIntegrationTUIPickerDeliver(t *testing.T) {
 		}
 		row = moved
 	}
-	if !steered {
+	if !strings.Contains(row, p2.ID) {
 		t.Fatalf("never reached %s's row:\n%s", p2.ID, s.CaptureNow())
 	}
 	s.Keys("Enter")
@@ -1013,14 +1008,25 @@ func appendRestoring(t *testing.T, path, text string) {
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, append(append([]byte{}, orig...), []byte(text)...), 0o600); err != nil {
+	next := append([]byte{}, orig...)
+	// A last line without its newline (legal in authorized_keys) must not
+	// concatenate with the appended text into one invalid entry.
+	if len(next) > 0 && next[len(next)-1] != '\n' {
+		next = append(next, '\n')
+	}
+	next = append(next, []byte(text)...)
+	if err := os.WriteFile(path, next, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		// This restores SHARED credential state (~/.ssh): a failed restore
+		// is a loud test failure, never a silent leftover authorization.
 		if existed {
-			os.WriteFile(path, orig, 0o600)
-		} else {
-			os.Remove(path)
+			if err := os.WriteFile(path, orig, 0o600); err != nil {
+				t.Errorf("restoring %s: %v", path, err)
+			}
+		} else if err := os.Remove(path); err != nil {
+			t.Errorf("removing %s: %v", path, err)
 		}
 	})
 }
