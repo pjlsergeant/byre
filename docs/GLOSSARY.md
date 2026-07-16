@@ -151,24 +151,21 @@ comment, never read for resolution or trust.
 
 **Manifest**:
 A package's `[package]` block in its primary file (`skill.toml` /
-`template.config`): id, version, kind, `package_api`, `requires_byre`.
-Parsed in two stages -- the frozen core leniently (compatibility errors
-stay legible), then the full file strictly. For installed packages the
-manifest also carries the exhaustive `[[package.files]]` payload list
-with per-file sha256.
+`template.config`): id, version, kind, `package_api`, `requires_byre`;
+for installed packages, also the exhaustive per-file payload list.
+Parsing stages and integrity mechanics: ADR 0029.
 
 **Package digest**:
-The sha256 over a package's manifest bytes plus its sorted payload
-records -- the identity of *what was acquired*. Keys the snapshot dir,
-the same-id no-op rule, and `--digest` pins in printed install commands.
-Never a runtime attestation (snapshots live on user-writable disk).
+The sha256 identity of *what was acquired* -- proof of acquisition,
+never a runtime attestation. Keys the snapshot dir, the same-id no-op
+rule, and `--digest` pins in printed install commands. Computation and
+integrity model: ADR 0029.
 
 **Catalog**:
 The per-store index of every package byre can see -- bundled, installed,
 local -- plus per-identity problem rows (INVALID / conflict / LEGACY)
-that list and pickers show disabled-with-reason and resolution rejects
-only when referenced. One resolution function serves every name surface;
-config canonicalizes references through it before cascade merge.
+shown disabled-with-reason. One resolution function serves every name
+surface. Resolution mechanics: ADR 0029.
 
 **Retired name**:
 A bare name a past byre release bundled and a later release does not.
@@ -197,11 +194,9 @@ via `byre preset apply` (review + chauffeur + confirm + write);
 **Chauffeur**:
 The inside-apply walk-through of a preset's missing packages: each gets
 its normal, kind-specific install flow with its own grant summary and
-confirm. Not the banned transitive install (which is silent fetching) --
-N explicit consents the user solicited by invoking apply. The
-solicitation rule: byre initiates acquisition walk-throughs only inside
-flows the user invoked to compose a box; a third party's document gets
-reports and exact commands, never prompts.
+confirm -- N explicit consents the user solicited by invoking apply,
+never the banned transitive install (silent fetching). The solicitation
+rule's full statement: ADR 0029.
 
 **Applied marker**:
 The per-project record `preset apply` writes (sha256 of the applied
