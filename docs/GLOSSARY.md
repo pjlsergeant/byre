@@ -223,29 +223,21 @@ wiring), leaving the agent skill untouched. The shared-auth trio
 
 **docker-host**:
 The builtin skill that grants the box access to the **host's Docker
-daemon** via its socket (`/var/run/docker.sock`). Not docker-in-docker
-(no nested daemon); not a Podman host skill. Installs client CLI +
-compose + buildx; mounts the socket; runner injects numeric
-`--group-add` from an engine-side gid probe (`sock_groups`); declares a
-`containment` hole so status/launch/preset-apply/config UI disclaim the
-warranty for anything done through the socket. User-facing discussion:
-`docs/DOCKER-HOST.md`.
+daemon** via its socket -- root-equivalent on the host, declared as a
+`containment` hole so every grant surface disclaims the warranty for
+anything done through the socket. Not docker-in-docker (no nested
+daemon); not a Podman host skill. Mechanics: ADR 0027; user-facing
+discussion: `docs/DOCKER-HOST.md`.
 
 **Shared-auth offer**:
 The first-run picker's per-box question -- "Opt this box into <agent>
 shared credentials?" -- asked at every onboarding whose chosen agent
-has a companion skill declaring `shared_auth_for` (the author's vouch
-that the mechanism is ready to offer; a broken or gate-pending
-companion omits it). Yes puts the companion in the project's
-`byre.config` `skills` -- the only grant the answer ever makes; no
-writes nothing. "Save these as your default?" saves the answer as a
-favourite (the picker-owned, cascade-inert `shared_auth` list), which
-only prefills the next box's offer ([Y/n, i for info] vs [y/N, i for info]). Answering `i`
-prints exactly what each answer writes (naming the companion skill),
-then re-asks. The one suppression: the companion already granted
-machine-wide by hand in `default.config` `skills` -- the picker itself
-never writes that key.
-ADR 0025 (superseding ADR 0024's machine-wide recording).
+has a companion skill declaring `shared_auth_for`. Yes puts the
+companion in the project's `byre.config` `skills` -- the only grant the
+answer ever makes; the saved favourite (`shared_auth`, picker-owned,
+cascade-inert) only prefills the next box's offer. Prompt wording,
+suppression rule, and history: ADR 0025 (superseding ADR 0024's
+machine-wide recording).
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
@@ -326,28 +318,21 @@ attributed to the skill, and enter prefills the add editor. Cf.
 
 **MCP declaration (`[[mcp]]`)**:
 Wiring, not a grant (ADR 0033): a declared MCP server -- local
-(`command`, an argv) or remote (`url`), self-discriminating. A stdio
-server is a process (nothing bash lacks); a remote one reaches nothing
-the firewall doesn't allow. What's real are the grants a declaration
-*carries* -- the url's implied egress plus declared extras, and the env
-NAMES it consumes -- which render where grants always render, attributed
-`mcp:<name>`. Declarations list as configuration and add zero to the
-exposure line. Two homes (config layers, skill.toml), one merge: layers
-replace by name, skills union after, `!name` closures subtract last
-(ADR 0030 semantics). The effective set bakes to `/etc/byre/mcp.json`
-in every image, empty set included.
+(`command`, an argv) or remote (`url`), self-discriminating. What's
+real are the grants a declaration *carries* (the url's implied egress
+plus declared extras, and the env NAMES it consumes), which render
+where grants always render, attributed `mcp:<name>`. Merge and bake
+mechanics: ADR 0033.
 _Avoid_: calling an MCP a grant, or its status rows "grant honesty
 machinery" -- they are config-application reporting.
 
 **MCP adapter**:
 How a selected agent's session receives the declared set — always by
-INJECTION: byre never writes an agent's MCP state (ADR 0033). `[agent]
+INJECTION: byre never writes an agent's MCP state. `[agent]
 mcp = "inject"` is the skill author's vouch that the agent command
-consumes the baked file (claude: `--mcp-config`; codex: a skill-owned
-wrapper deriving `-c` overrides). An adapter-less agent degrades
-honestly: status says declared-but-NOT-delivered and points at the baked
-path. A state-writing registrar under a reserved `byre__` namespace was
-designed and walked back; the name grammar keeps the prefix unreachable.
+consumes the baked file; an adapter-less agent degrades honestly
+(declared-but-NOT-delivered). Per-agent mechanics and the walked-back
+registrar design: ADR 0033.
 
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The
