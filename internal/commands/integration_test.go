@@ -9,6 +9,7 @@ package commands
 // image runs. Expect several minutes on a cold cache (debian pull + apt).
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/tuitest"
 )
 
 func requireEngineRunner(t *testing.T) *runner.Runner {
@@ -711,19 +713,21 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 // cleanup), so it gates on BYRE_SSH_LOOP_TESTS=1 on top of the docker gate —
 // set by byre-inttest for the sacrificial VM, never by a developer's default
 // run on a real machine.
-func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
-	r := requireEngineRunner(t)
+// provisionLoopbackSSH makes `ssh byre-test-loopback` reach this machine's
+// own sshd with an ephemeral key: skips without BYRE_SSH_LOOP_TESTS=1 (it
+// edits ~/.ssh — sacrificial machines only; every mutation restores the
+// exact prior bytes on cleanup), then probes. A second alias,
+// byre-test-loopback-down, points at a refused port for 255-path tests.
+func provisionLoopbackSSH(t *testing.T) {
+	t.Helper()
 	if os.Getenv("BYRE_SSH_LOOP_TESTS") != "1" {
-		t.Skip("set BYRE_SSH_LOOP_TESTS=1 to run the loopback-ssh test (it edits ~/.ssh — sacrificial machines only)")
+		t.Skip("set BYRE_SSH_LOOP_TESTS=1 to run loopback-ssh tests (they edit ~/.ssh — sacrificial machines only)")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmp := t.TempDir()
-
-	// An ephemeral keypair, authorized for loopback; every ~/.ssh mutation
-	// restores the exact prior bytes on cleanup.
 	key := filepath.Join(tmp, "loop-key")
 	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
 		t.Fatalf("ssh-keygen: %v\n%s", err, out)
@@ -752,28 +756,16 @@ Host byre-test-loopback-down
 	if out, err := exec.Command("ssh", "byre-test-loopback", "true").CombinedOutput(); err != nil {
 		t.Fatalf("loopback ssh probe failed (is sshd running here?): %v\n%s", err, out)
 	}
+}
 
-	// The remote byre is BUILT from this tree — both ends of the wire run
-	// the code under test — and lands in a directory with a space, so the
-	// argv the remote shell evaluates actually exercises the quoting.
-	binDir := filepath.Join(tmp, "remote bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	bin := filepath.Join(binDir, "byre")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/byre")
-	build.Dir = filepath.Join("..", "..")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building byre: %v\n%s", err, out)
-	}
-
-	// A live box, exactly as the fake-ssh loop test runs one.
-	p, proj := testPaths(t)
+// startTestBox builds the project's image and starts a sleep box, with all
+// cleanups registered; it returns the running container id.
+func startTestBox(t *testing.T, r *runner.Runner, p project.Paths, proj string, ident runner.Identity) string {
+	t.Helper()
 	rv, err := resolve(p, proj, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
 	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
@@ -797,8 +789,34 @@ Host byre-test-loopback-down
 	}
 	ids, err := r.RunningContainersByLabel(labelKey + "=" + p.ID)
 	if err != nil || len(ids) != 1 {
-		t.Fatalf("session discovery = (%v, %v)", ids, err)
+		t.Fatalf("session discovery for %s = (%v, %v)", p.ID, ids, err)
 	}
+	return ids[0]
+}
+
+func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
+	r := requireEngineRunner(t)
+	provisionLoopbackSSH(t)
+	tmp := t.TempDir()
+
+	// The remote byre is BUILT from this tree — both ends of the wire run
+	// the code under test — and lands in a directory with a space, so the
+	// argv the remote shell evaluates actually exercises the quoting.
+	binDir := filepath.Join(tmp, "remote bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(binDir, "byre")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/byre")
+	build.Dir = filepath.Join("..", "..")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building byre: %v\n%s", err, out)
+	}
+
+	// A live box, exactly as the fake-ssh loop test runs one.
+	p, proj := testPaths(t)
+	ident := testIdentity(t, r)
+	ids := []string{startTestBox(t, r, p, proj, ident)}
 
 	srcDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(srcDir, "bug", "sub"), 0o755); err != nil {
@@ -863,6 +881,126 @@ Host byre-test-loopback-down
 	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, down, sources, sshExec, false)
 	if err == nil || !strings.Contains(err.Error(), "ssh to") {
 		t.Fatalf("255 translation: err = %v", err)
+	}
+}
+
+// TestIntegrationTUIPickerDeliver drives the real binary's TTY picker in a
+// tmux pane against two live boxes: `byre deliver <file>` from a neutral
+// cwd finds both, the picker renders, the test steers the cursor to the
+// second project's row, and the delivery lands where the pick said. (TUI
+// tier of the harness design; lives HERE because everything sharing docker
+// or loopback-ssh state stays in this one serial test binary — the
+// serialization rule the design records.)
+func TestIntegrationTUIPickerDeliver(t *testing.T) {
+	r := requireEngineRunner(t)
+	tuitest.Require(t)
+	ident := testIdentity(t, r)
+	p1, proj1 := testPaths(t)
+	proj2 := t.TempDir()
+	p2, err := project.Resolve(proj2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	id1 := startTestBox(t, r, p1, proj1, ident)
+	id2 := startTestBox(t, r, p2, proj2, ident)
+
+	src := filepath.Join(t.TempDir(), "picked.txt")
+	if err := os.WriteFile(src, []byte("picked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := tuitest.Start(t, tuitest.Opts{}, tuitest.Binary(t), "deliver", src)
+	s.WaitFor("deliver to which box?")
+	// Steer the highlighted row onto p2's box (row order isn't promised, and
+	// a leftover box on the machine must not break the pick). After each
+	// Down, wait for the highlight to actually MOVE before reading it again
+	// — sampling a stale frame would double-step past the target.
+	highlighted := func() string {
+		for _, l := range strings.Split(s.CaptureNow(), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(l), "> ") {
+				return l
+			}
+		}
+		return ""
+	}
+	steered := false
+	row := highlighted()
+	for i := 0; i < 10; i++ {
+		if strings.Contains(row, p2.ID) {
+			steered = true
+			break
+		}
+		s.Keys("Down")
+		moved := row
+		for j := 0; j < 40 && moved == row; j++ {
+			time.Sleep(50 * time.Millisecond)
+			moved = highlighted()
+		}
+		if moved == row {
+			break // bottom of the list: the cursor stops moving
+		}
+		row = moved
+	}
+	if !steered {
+		t.Fatalf("never reached %s's row:\n%s", p2.ID, s.CaptureNow())
+	}
+	s.Keys("Enter")
+	s.WaitFor("/inbox/picked.txt")
+	if st := s.WaitForExit(); st != 0 {
+		t.Fatalf("exit = %d\n%s", st, s.CaptureNow())
+	}
+
+	got, err := r.ExecInput(id2, ident.UID, ident.GID, nil, "cat", "/inbox/picked.txt")
+	if err != nil || got != "picked\n" {
+		t.Fatalf("picked box content = (%q, %v)", got, err)
+	}
+	if out, err := r.ExecInput(id1, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "picked.txt") {
+		t.Fatalf("the delivery ALSO landed in the unpicked box: %q", out)
+	}
+}
+
+// TestIntegrationTUIMeterFinalState delivers a >256 KiB payload over real
+// loopback ssh with a TTY, and asserts the FINAL terminal state only: the
+// meter resolved to a sent-total, the remote's notes sit on their own
+// lines, the landed path printed, exit 0. Mid-transfer meter observation is
+// deliberately not claimed (design: it races an unthrottled loopback
+// transfer; the guard's byte ordering stays pinned by the unit tests).
+func TestIntegrationTUIMeterFinalState(t *testing.T) {
+	r := requireEngineRunner(t)
+	tuitest.Require(t)
+	provisionLoopbackSSH(t)
+	ident := testIdentity(t, r)
+	p, proj := testPaths(t)
+	id := startTestBox(t, r, p, proj, ident)
+
+	big := filepath.Join(t.TempDir(), "big.bin")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("a"), 1<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	bin := tuitest.Binary(t)
+	// --box pins the target (enumeration is tier 1's claim; a leftover box
+	// must not turn the sole-box auto-pick into a picker here).
+	s := tuitest.Start(t, tuitest.Opts{}, bin,
+		"deliver", "ssh://byre-test-loopback", big, "--remote-byre", bin, "--box", id)
+	s.WaitFor("/inbox/big.bin")
+	if st := s.WaitForExit(); st != 0 {
+		t.Fatalf("exit = %d\n%s", st, s.CaptureNow())
+	}
+	final := s.CaptureNow()
+	if !strings.Contains(final, "byre: sent ") {
+		t.Fatalf("meter never resolved to a sent-total:\n%s", final)
+	}
+	if !strings.Contains(final, "byre: delivered 1 file") {
+		t.Fatalf("remote note missing from the final terminal:\n%s", final)
+	}
+
+	got, err := r.ExecInput(id, ident.UID, ident.GID, nil, "sh", "-c", "wc -c < /inbox/big.bin")
+	if err != nil || strings.TrimSpace(got) != "1048576" {
+		t.Fatalf("delivered size = (%q, %v)", got, err)
 	}
 }
 

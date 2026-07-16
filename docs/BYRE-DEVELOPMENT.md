@@ -128,3 +128,38 @@ re-created VM has a new hostkey: in the box,
 `ssh-keygen -R '[<address>]:<port>'` clears the stale entry. Provisioning
 finishes after ssh comes up -- wait for limactl's `READY` line before
 judging the VM broken.
+
+## The TUI test tier (tmux)
+
+`internal/tuitest` drives the BUILT byre binary inside a **private tmux
+server per test** and asserts on captured pane text (decision record:
+ADR 0038). Gates: `BYRE_TUI_TESTS=1` runs the tier (CI sets it and
+installs tmux; the gate set without tmux FAILS rather than skips);
+tests that also need an engine or loopback ssh live in
+`internal/commands` behind the docker/ssh gates and ride the VM.
+
+The harness deliberately does nothing an agent or a human can't do with
+plain tmux -- these are the shared conventions, and their shell
+equivalents are the vocabulary for replaying a test's keystrokes by hand
+(or, later, for the field-QA agent):
+
+```sh
+tmux -L <sock> -f /dev/null new-session -d -s main -x 100 -y 30 <cmd>
+tmux -L <sock> set-option -g remain-on-exit on   # BEFORE the real process
+tmux -L <sock> send-keys -t main Down Enter C-s  # keys
+tmux -L <sock> send-keys -t main -l 'literal'    # text
+tmux -L <sock> set-buffer -- 'x'; tmux -L <sock> paste-buffer -p -t main
+tmux -L <sock> capture-pane -p -t main           # the screen, plain text
+tmux -L <sock> display -p -t main '#{pane_dead} #{pane_dead_status}'
+```
+
+`WaitFor` is a poll loop over `capture-pane` that also fails fast when
+the process dies; `WaitForAfter` additionally rejects a match that was
+already on screen before the action (transition semantics -- a
+persistent footer can't fake a result). House rules: wait for meaning,
+never for quiet (blink timers mean screens don't settle); assert exact
+product strings (`Saved ✓`, `byre: cancelled — nothing delivered`),
+never broad fragments; ENFORCE headlessness where the test needs it
+(unset `DISPLAY`/`WAYLAND_DISPLAY`, controlled `PATH`); isolate the
+store with `BYRE_HOME`, never a `HOME` swap; a test that flakes twice
+gets rewritten or deleted.

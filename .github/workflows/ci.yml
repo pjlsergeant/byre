@@ -29,8 +29,14 @@ jobs:
           fi
       - name: go vet
         run: go vet ./...
+      # tmux: the TUI test tier (internal/tuitest) drives the built byre
+      # binary in a private tmux server. The gate set without tmux FAILS
+      # (tuitest.Require) — an install regression must not silently skip
+      # the tier.
+      - name: install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
       - name: go test
-        run: go test -race ./...
+        run: BYRE_TUI_TESTS=1 go test -race ./...
 
   # Known-vulnerability scan. The tool version is pinned; the vulnerability
   # database it consults is fetched live. Its own job on the stable
@@ -59,5 +65,9 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
+      - name: install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      # BYRE_SSH_LOOP_TESTS stays unset here: the runner has no sshd, and
+      # those tests edit ~/.ssh — they ride the sacrificial inttest VM.
       - name: gated integration tests
-        run: BYRE_DOCKER_TESTS=1 go test ./... -run Integration -v -timeout 20m
+        run: BYRE_DOCKER_TESTS=1 BYRE_TUI_TESTS=1 go test ./... -run Integration -v -timeout 20m

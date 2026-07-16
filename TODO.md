@@ -47,9 +47,10 @@ the rationale lives.
   drives byre's TUI and deliver flows over tmux against the sacrificial
   inttest VM (egress closed except that one ssh endpoint) and reports
   findings with repro keystrokes; NEVER a gate -- findings harden into
-  deterministic tuitest regression tests. Builds on the tmux harness
-  (wip/tui-test-harness.md, its ADR once shipped), which is deliberately
-  designed as the agent's rails -- same verbs, no in-process magic.
+  deterministic tuitest regression tests. Builds on the shipped tmux
+  harness (internal/tuitest, ADR 0038), which is deliberately designed
+  as the agent's rails -- same verbs, no in-process magic; the shell
+  vocabulary the agent gets pointed at is in BYRE-DEVELOPMENT.md.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
