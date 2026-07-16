@@ -57,7 +57,7 @@ func TestBundledClaudeInEmbed(t *testing.T) {
 // codex/gemini are still drafts pending host verification of install/auth).
 func TestBuiltinAgentSkillsResolve(t *testing.T) {
 	_, cat := testCat(t)
-	for _, agent := range []string{"claude", "codex", "gemini", "grok"} {
+	for _, agent := range []string{"claude", "codex", "gemini", "grok", "opencode"} {
 		res, err := skills.Resolve(config.Config{Agent: agent}, cat)
 		if err != nil {
 			t.Errorf("agent %q: resolve failed: %v", agent, err)
@@ -80,8 +80,8 @@ func TestCatalogTemplatesAndListAgents(t *testing.T) {
 		}
 	}
 	agents := skills.ListAgentSkills(cat)
-	if len(agents) != 4 {
-		t.Errorf("expected 4 agent skills (claude/codex/gemini/grok), got %v", agents)
+	if len(agents) != 5 {
+		t.Errorf("expected 5 agent skills (claude/codex/gemini/grok/opencode), got %v", agents)
 	}
 }
 
@@ -242,6 +242,7 @@ func TestAgentSkillsCleanStateDir(t *testing.T) {
 	for _, c := range []struct{ agent, install, clean string }{
 		{"claude", "install.sh", "rm -rf /home/dev/.claude"},
 		{"gemini", "npm install -g", "rm -rf /home/dev/.gemini"},
+		{"opencode", "opencode.ai/install", "rm -rf /home/dev/.local/share/opencode"},
 	} {
 		res, err := skills.Resolve(config.Config{Agent: c.agent}, cat)
 		if err != nil {
@@ -267,14 +268,15 @@ func TestAgentSkillsCleanStateDir(t *testing.T) {
 	}
 }
 
-// codex and grok install their BINARIES into their dotdir (~/.codex, ~/.grok),
-// so they must NOT wipe it (doing so deletes the binary and leaves dangling
-// symlinks).
+// codex, grok, and opencode install their BINARIES into their dotdir
+// (~/.codex, ~/.grok, ~/.opencode), so they must NOT wipe it (doing so
+// deletes the binary and leaves dangling symlinks).
 func TestBinaryDirAgentsDoNotWipeIt(t *testing.T) {
 	_, cat := testCat(t)
 	for _, c := range []struct{ agent, binDir string }{
 		{"codex", "/home/dev/.codex"},
 		{"grok", "/home/dev/.grok"},
+		{"opencode", "/home/dev/.opencode"},
 	} {
 		res, err := skills.Resolve(config.Config{Agent: c.agent}, cat)
 		if err != nil {
@@ -1363,5 +1365,323 @@ func TestBundledStubClassification(t *testing.T) {
 		if got := skills.IsStub(sk.File); got != stubs[name] {
 			t.Errorf("IsStub(%s) = %v, want %v", name, got, stubs[name])
 		}
+	}
+}
+
+// TestOpencodeSkillPinsLoadBearingFacts pins the opencode facts unit tests
+// can hold still and that are uniquely tempting to "fix" wrong: the --auto
+// autonomy flag (headless asks auto-REJECT without it — never hang, but
+// never proceed either), the AGENTS.md context target in the XDG config dir
+// (NOT the data-dir state volume — opencode splits them), the egress set
+// (models.dev is FUNCTIONAL: with it blocked the login picker silently
+// degrades to API-key-only, observed live 2026-07-16), and the login hook.
+func TestOpencodeSkillPinsLoadBearingFacts(t *testing.T) {
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "opencode"}, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.AgentCommand(), "--auto") {
+		t.Errorf("opencode autonomy flag missing from launch command %q", res.AgentCommand())
+	}
+	if got := res.AgentContextTarget(); got != "/home/dev/.config/opencode/AGENTS.md" {
+		t.Errorf("context target must be AGENTS.md in the XDG config dir, got %q", got)
+	}
+	egress := strings.Join(res.Egress(), " ")
+	for _, h := range []string{"models.dev", "api.anthropic.com", "console.anthropic.com", "claude.ai"} {
+		if !strings.Contains(egress, h) {
+			t.Errorf("egress missing %s (got %q)", h, egress)
+		}
+	}
+	// The state volume mounts at the XDG DATA dir — not ~/.opencode (the
+	// binary dir) and not the config dir (the context target's home).
+	var vol bool
+	for _, v := range res.Volumes() {
+		if v.Name == ".opencode" {
+			vol = true
+			if v.Target != "/home/dev/.local/share/opencode" {
+				t.Errorf("state volume must mount at the XDG data dir, got %q", v.Target)
+			}
+		}
+	}
+	if !vol {
+		t.Fatal("opencode skill should contribute a .opencode state volume")
+	}
+	var login bool
+	for _, b := range res.BuildBlocks() {
+		if b.Name != "opencode" && b.Name != "byre/opencode" {
+			continue
+		}
+		for _, sf := range b.Files {
+			if sf.Dest == "/etc/byre/firstrun.d/opencode-login" {
+				login = true
+			}
+		}
+	}
+	if !login {
+		t.Error("opencode login firstrun hook not shipped")
+	}
+	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "opencode"), "opencode-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "opencode auth login") {
+		t.Error("login hook lost the auth-login flow")
+	}
+}
+
+// The opencode login hook, driven for real with a stub `opencode` binary:
+// a foreign symlinked credential is removed (anti-planting) and a fresh
+// login runs; a link into the identity volume — shared-auth's, possibly
+// dangling — is kept and the login writes through it; a credentialed
+// regular file short-circuits; an empty-store file ({}) does NOT count as
+// logged in; a static provider key skips the login without touching a
+// kept link.
+func TestOpencodeLoginHookBehavior(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "opencode"), "opencode-login.sh")
+
+	bin := t.TempDir()
+	stamp := filepath.Join(bin, "login-attempted")
+	stub := "#!/bin/sh\ntouch " + stamp + "\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(dataHome, identityBase, apiKey string) {
+		t.Helper()
+		cmd := exec.Command("sh", hook)
+		cmd.Env = append(os.Environ(),
+			"PATH="+bin+":/usr/bin:/bin",
+			"XDG_DATA_HOME="+dataHome,
+			"BYRE_IDENTITY_BASE="+identityBase,
+			"ANTHROPIC_API_KEY="+apiKey,
+			"OPENCODE_API_KEY=",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+	loginAttempted := func() bool {
+		_, err := os.Stat(stamp)
+		return err == nil
+	}
+	reset := func() {
+		_ = os.Remove(stamp)
+	}
+	credPath := func(dataHome string) string {
+		dir := filepath.Join(dataHome, "opencode")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return filepath.Join(dir, "auth.json")
+	}
+
+	// A FOREIGN symlinked credential is removed; a fresh login runs.
+	data1, base1 := t.TempDir(), t.TempDir()
+	cred1 := credPath(data1)
+	planted := filepath.Join(data1, "elsewhere.json")
+	if err := os.WriteFile(planted, []byte(`{"anthropic":{"type":"api","key":"planted"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(planted, cred1); err != nil {
+		t.Fatal(err)
+	}
+	run(data1, base1, "")
+	if _, err := os.Lstat(cred1); !os.IsNotExist(err) {
+		t.Fatalf("foreign symlinked credential must be removed, still present (%v)", err)
+	}
+	if !loginAttempted() {
+		t.Fatal("removal must fall through to a fresh login; none was attempted")
+	}
+
+	// A DANGLING link into the identity volume (shared-auth's first-login
+	// state) is kept, and the login proceeds (it writes through the link).
+	reset()
+	data2, base2 := t.TempDir(), t.TempDir()
+	cred2 := credPath(data2)
+	if err := os.MkdirAll(filepath.Join(base2, "opencode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base2, "opencode", "auth.json"), cred2); err != nil {
+		t.Fatal(err)
+	}
+	run(data2, base2, "")
+	if got, err := os.Readlink(cred2); err != nil || got != filepath.Join(base2, "opencode", "auth.json") {
+		t.Fatalf("identity-volume link must be kept, got %q (%v)", got, err)
+	}
+	if !loginAttempted() {
+		t.Fatal("a dangling shared link means not-logged-in; the login must run")
+	}
+
+	// A credentialed regular file short-circuits (no login attempted)...
+	reset()
+	data3 := t.TempDir()
+	cred3 := credPath(data3)
+	if err := os.WriteFile(cred3, []byte(`{"anthropic":{"type":"api","key":"live"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(data3, t.TempDir(), "")
+	if loginAttempted() {
+		t.Fatal("valid credential must short-circuit the login; one was attempted")
+	}
+
+	// ...but an EMPTY store ({} — no "type" member) does not count.
+	reset()
+	data4 := t.TempDir()
+	cred4 := credPath(data4)
+	if err := os.WriteFile(cred4, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(data4, t.TempDir(), "")
+	if !loginAttempted() {
+		t.Fatal("an empty credential store must not count as logged in")
+	}
+
+	// A static provider key skips the login and leaves a kept link alone.
+	// (The identity dir exists in real boxes — the 00- shared-auth hook
+	// creates it before this hook runs; without it the parent-dir
+	// canonicalization correctly classifies the link as foreign.)
+	reset()
+	data5, base5 := t.TempDir(), t.TempDir()
+	cred5 := credPath(data5)
+	if err := os.MkdirAll(filepath.Join(base5, "opencode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base5, "opencode", "auth.json"), cred5); err != nil {
+		t.Fatal(err)
+	}
+	run(data5, base5, "sk-ant-static")
+	if loginAttempted() {
+		t.Fatal("a static provider key must skip the login")
+	}
+	if _, err := os.Readlink(cred5); err != nil {
+		t.Fatalf("the env-key path must not disturb a kept shared link: %v", err)
+	}
+}
+
+// TestOpencodeSharedAuthCompositionAndHook: the companion resolves alongside
+// the agent, ships the 00- ordered hook (must sort before opencode's own
+// login hook), mounts the machine-scoped identity volume, and deliberately
+// does NOT declare shared_auth_for (the OAuth rotation gate is pending —
+// gemini precedent; the skill.toml carries the status). The hook itself is
+// codex-shaped and covered behaviorally below.
+func TestOpencodeSharedAuthCompositionAndHook(t *testing.T) {
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "opencode", Skills: []string{"opencode-shared-auth"}}, cat)
+	if err != nil {
+		t.Fatalf("opencode + opencode-shared-auth failed to resolve: %v", err)
+	}
+	var companion string
+	var agentHooks []string
+	for _, b := range res.BuildBlocks() {
+		for _, sf := range b.Files {
+			if !strings.HasPrefix(sf.Dest, "/etc/byre/firstrun.d/") {
+				continue
+			}
+			switch b.Name {
+			case "byre/opencode-shared-auth", "opencode-shared-auth":
+				companion = path.Base(sf.Dest)
+			case "byre/opencode", "opencode":
+				agentHooks = append(agentHooks, path.Base(sf.Dest))
+			}
+		}
+	}
+	if companion == "" {
+		t.Fatal("symlink-assert hook not shipped")
+	}
+	if len(agentHooks) == 0 {
+		t.Fatal("opencode ships no firstrun hooks; the ordering invariant has nothing to order against")
+	}
+	for _, h := range agentHooks {
+		if !(companion < h) {
+			t.Errorf("hook ordering invariant broken: companion %q must sort before opencode's %q", companion, h)
+		}
+	}
+	var identity bool
+	for _, v := range res.Volumes() {
+		if v.Name == "opencode-identity" && v.MachineScoped() && v.Target == "/home/dev/.byre-identity/opencode" {
+			identity = true
+		}
+	}
+	if !identity {
+		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
+	}
+	if got := skills.SharedAuthCompanion(cat, "opencode"); got != "" {
+		t.Errorf("gate-pending companion must not be offered at onboarding, got %q", got)
+	}
+	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "PENDING") {
+		t.Error("gate-pending status missing from the skill.toml record")
+	}
+}
+
+// runOpencodeSharedAuthHook executes the real symlink-assert hook against a
+// temp identity base + XDG data home (both the hook's test seams).
+func runOpencodeSharedAuthHook(t *testing.T, identityBase, dataHome string) {
+	t.Helper()
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "firstrun.sh")
+	cmd := exec.Command("bash", hook)
+	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "XDG_DATA_HOME="+dataHome)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+}
+
+// The opencode symlink-assert hook's four behaviors, driven for real (the
+// codex-shared-auth suite, retargeted): fresh box gets a dangling link; an
+// existing per-project login is ADOPTED; a local fork is healed in favor of
+// the shared credential; and the whole thing is idempotent.
+func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
+	base, dataHome := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "opencode", "auth.json")
+	cred := filepath.Join(dataHome, "opencode", "auth.json")
+
+	// 1. Fresh: dangling symlink pointing at the (absent) shared credential.
+	runOpencodeSharedAuthHook(t, base, dataHome)
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("fresh run should leave a dangling link to %q, got %q (%v)", shared, got, err)
+	}
+	if _, err := os.Stat(shared); !os.IsNotExist(err) {
+		t.Fatalf("fresh run must not fabricate a shared credential")
+	}
+
+	// 2. Adopt: a real local login and no shared copy — the file MOVES in.
+	if err := os.Remove(cred); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"adopted":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOpencodeSharedAuthHook(t, base, dataHome)
+	if b, err := os.ReadFile(shared); err != nil || string(b) != `{"adopted":true}` {
+		t.Fatalf("existing login not adopted into the shared volume: %v %q", err, b)
+	}
+	if got, _ := os.Readlink(cred); got != shared {
+		t.Fatalf("adopted cred not re-linked: %q", got)
+	}
+
+	// 3. Heal a fork: local plain file AND shared credential — shared wins.
+	if err := os.Remove(cred); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"fork":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOpencodeSharedAuthHook(t, base, dataHome)
+	if b, _ := os.ReadFile(shared); string(b) != `{"adopted":true}` {
+		t.Fatalf("shared credential clobbered by a fork: %q", b)
+	}
+	if got, _ := os.Readlink(cred); got != shared {
+		t.Fatalf("fork not healed to the link: %q", got)
+	}
+
+	// 4. Idempotent: run again, nothing changes.
+	runOpencodeSharedAuthHook(t, base, dataHome)
+	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
+		t.Fatalf("idempotent re-run changed the credential: %q", b)
 	}
 }
