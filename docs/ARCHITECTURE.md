@@ -27,8 +27,8 @@ writing Docker (PRINCIPLES.md #3). The split that defines the project
   launcher, credential persistence). Core ships **no opinions**.
 - **Skills** own the opinions. The workflow is a skill; the firewall is a
   skill; **the agent itself is a skill** (ADR 0005) -- byre ships agent
-  skills for Claude, Codex, and Gemini, and `agent` selects which one
-  launches. You compose your baseline from skills.
+  skills for Claude, Codex, Gemini, and Grok, and `agent` selects which
+  one launches. You compose your baseline from skills.
 
 Image-building is solved -- Docker does it well and everyone knows the
 syntax. byre owns the frame around your Docker, not the Docker.
@@ -41,9 +41,10 @@ more:
 - **Isolated:** the host filesystem, environment, and credentials. The
   agent sees *only* what you explicitly mount or pass -- not your home
   dir, SSH/cloud keys, env, or the rest of the machine. This is byre's
-  core promise. (One narrow, named exception: git `user.name`/`user.email`
-  are passed through for commit attribution -- see *The chassis*. Nothing
-  else from your env or `.gitconfig`.)
+  core promise. (Narrow, named exceptions: the core `env_from_host` layer
+  passes through git `user.name`/`user.email` for commit attribution,
+  plus `TERM` and `TZ` -- see *The chassis*. Anything more crosses only
+  as an explicit `env_from_host` grant, ADR 0026/0031.)
 - **Not isolated -- by design:** the **network** (open by default, see
   below) and the **mounted project itself** (`/workspace` is read-write so
   the agent can edit and commit your code). An agent with both can
@@ -507,9 +508,12 @@ which re-resolves automatically once git's own pointers are repaired).
 
 ## Commands
 
-Every command is either *lifecycle* (`develop`, `worktree`, `reset`,
-`rebuild`, `rehome`, `forget`) or *inspection* (`status`, `dockerfile`,
-`shell`, `config`) -- plus one *transfer* verb, `deliver` (below).
+Commands fall into *lifecycle* (`develop`, `worktree`, `reset`,
+`rebuild`, `rehome`, `forget`), *inspection and ejection* (`status`,
+`dockerfile`, `dockerrun`, `ejectfirewall`, `shell`, `config`), *package
+and wiring management* (`skill`, `template`, `preset`, `mcp`), one
+*transfer* verb, `deliver` (below), and the self-describers (`version`,
+`completion`).
 **No command mutates config behind your back** -- config is edited by
 you (in files, or explicitly in the `byre config` editor); `develop`
 and friends only read it and act.
@@ -550,6 +554,12 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
 
 byre dockerfile   Print the generated Dockerfile for this directory.
 
+byre dockerrun    Print the exact `docker run` command for this directory --
+                  with `dockerfile`, the whole exit (docs/EJECTING.md).
+
+byre ejectfirewall  Print the firewall's outside-the-box step as a standalone
+                  script -- the one thing dockerfile+dockerrun don't carry.
+
 byre config       Interactive editor for this project's host-side config
                   (--global for the baseline).
 
@@ -566,9 +576,14 @@ byre skill ...    list / inspect <id|url> / install / uninstall / fork /
                   `byre template ...`). See docs/SKILLS.md.
 byre preset ...   apply / inspect -- review and apply a config preset
                   (byre.preset, a path, or an https URI).
+byre mcp ...      add / remove / list -- declare MCP servers in the project
+                  config (wiring, not a grant; ADR 0033).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox. User docs: docs/DELIVER.md.
+
+byre version      Print the version (also --version).
+byre completion   Per-shell completion scripts (bash/zsh/fish/powershell).
 ```
 
 ### Deliver
@@ -609,9 +624,9 @@ also report via OS notification. Every degraded nicety states itself
 on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021;
 user behavior (and the what-works-where matrix) in `docs/DELIVER.md`.
 
-`byre deliver --install-app` materializes the deliver app — generated,
+`byre deliver --install-app` writes the deliver app — generated,
 readable host artifacts whose only job is invoking `byre deliver`: an
-AppleScript droplet assembled by the OS's own `osacompile` (source
+AppleScript app assembled by the OS's own `osacompile` (source
 shipped inside the bundle; nothing prebuilt crosses a machine boundary,
 so no signing certificate is involved — ad-hoc codesign runs as Apple
 Silicon belt-and-braces), a Finder Quick Action, and a Linux `.desktop`
