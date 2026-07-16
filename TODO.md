@@ -38,10 +38,12 @@ the rationale lives.
   (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT exist) but merge-vs-replace
   needs a spike before any `mcp = "inject"` vouch (ADR 0033); gemini's
   seam still unprobed.
-- [ ] (M) **Claude Skills delivery** (the untouched half of the old
-  claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
-  likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
-  design pass; deliberately split from the MCP design 2026-07-14.
+- [ ] (M) **Claude Skills delivery**: BUILT 2026-07-16 (ADR 0038 —
+  [[claude_skills]] vocabulary, bake to /etc/byre/claude-skills, claude
+  --add-dir adapter with bare /name loading spike-verified on 2.1.211,
+  CLI verbs + config-UI screen; design grilled same day). Remaining:
+  the engine-side gated run — byre-inttest is NOT on the dogfood box's
+  PATH (tooling gap, flagged), so run it host-side, then strike this.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
