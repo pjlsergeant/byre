@@ -43,4 +43,6 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
 VM lifecycle is host-side: `limactl stop byre-inttest` pauses it,
 `limactl delete byre-inttest` + a fresh `limactl start` resets it -- nothing
 on it is precious. After a re-create the VM's hostkey changes; clear the
-stale entry in the box with `ssh-keygen -R '[host.docker.internal]:60022'`.
+stale entry in the box with `ssh-keygen -R '[<address>]:<port>'` -- with the
+defaults, `ssh-keygen -R '[host.docker.internal]:60022'` (substitute your
+`BYRE_INTTEST_VM`/`BYRE_INTTEST_PORT` overrides if you set them).
