@@ -76,6 +76,8 @@ func TestParseSSHTarget(t *testing.T) {
 		{"ssh://dev@far", SSHTarget{User: "dev", Host: "far"}, true, false},
 		{"ssh://dev@far:2222", SSHTarget{User: "dev", Host: "far", Port: "2222"}, true, false},
 		{"ssh://far/", SSHTarget{Host: "far"}, true, false},
+		{"ssh://[2001:db8::1]", SSHTarget{Host: "2001:db8::1"}, true, false},
+		{"ssh://dev@[2001:db8::1]:2222", SSHTarget{User: "dev", Host: "2001:db8::1", Port: "2222"}, true, false},
 		{"shot.png", SSHTarget{}, false, false},
 		{"./ssh://odd", SSHTarget{}, false, false},
 		{"ssh://", SSHTarget{}, true, true},
@@ -91,6 +93,23 @@ func TestParseSSHTarget(t *testing.T) {
 		}
 		if !tc.bad && got != tc.want {
 			t.Errorf("%q = %+v, want %+v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSSHTargetStringRebracketsIPv6(t *testing.T) {
+	cases := []struct {
+		t    SSHTarget
+		want string
+	}{
+		{SSHTarget{Host: "far"}, "far"},
+		{SSHTarget{User: "dev", Host: "far"}, "dev@far"},
+		{SSHTarget{Host: "2001:db8::1"}, "[2001:db8::1]"},
+		{SSHTarget{User: "dev", Host: "2001:db8::1"}, "dev@[2001:db8::1]"},
+	}
+	for _, tc := range cases {
+		if got := tc.t.String(); got != tc.want {
+			t.Errorf("%+v.String() = %q, want %q", tc.t, got, tc.want)
 		}
 	}
 }

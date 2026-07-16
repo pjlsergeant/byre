@@ -29,12 +29,19 @@ type SSHTarget struct {
 	Port string
 }
 
-// String renders the target the way a user would name it to ssh.
+// String renders the target the way a user would name it to ssh — and it IS
+// what the ssh CLI receives as the destination, so an IPv6 literal gets its
+// brackets back (url.Hostname strips them; ssh needs them to keep the colons
+// from reading as a port or a scp path).
 func (t SSHTarget) String() string {
-	if t.User != "" {
-		return t.User + "@" + t.Host
+	host := t.Host
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
 	}
-	return t.Host
+	if t.User != "" {
+		return t.User + "@" + host
+	}
+	return host
 }
 
 // ParseSSHTarget recognizes an ssh:// delivery target. isSSH reports whether
