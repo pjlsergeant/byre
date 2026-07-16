@@ -66,6 +66,14 @@ type AgentContrib struct {
 	// injection is byre's only adapter mechanism (ADR 0033); an unknown
 	// value is rejected, not treated as a vouch.
 	MCP string `toml:"mcp"`
+	// ClaudeSkills is the same vouch for byre's declared Claude Skill set:
+	// "inject" means the agent command consumes the baked
+	// /etc/byre/claude-skills tree (claude: --add-dir — the skills load bare,
+	// as /name). The vouch is THAT the agent consumes the contract, not how;
+	// the mechanism lives in the command string. Absent means no adapter:
+	// the set still bakes, and status reports declared-but-not-delivered
+	// with the path. Closed set, typos rejected.
+	ClaudeSkills string `toml:"claude_skills"`
 }
 
 // PrefsSpec is one agent's curated, non-secret host preferences, eligible for a
@@ -173,9 +181,15 @@ type File struct {
 	// as the config key). They union into the effective set AFTER the config
 	// cascade merges (MCPSet); a config `!name` closure can subtract one.
 	// Wiring, not grants: the carried egress/env render attributed mcp:<name>.
-	MCPs    []config.MCP    `toml:"mcp"`
-	Volumes []config.Volume `toml:"volumes"`
-	Context struct {
+	MCPs []config.MCP `toml:"mcp"`
+	// ClaudeSkills are Claude Skills this skill ships ([[claude_skills]]
+	// blocks with `from` — a directory relative to the skill dir). They union
+	// into the effective set AFTER the config cascade merges
+	// (ClaudeSkillSet); a config `!name` closure can subtract one. Wiring,
+	// not grants (claudeskills.go).
+	ClaudeSkills []config.ClaudeSkill `toml:"claude_skills"`
+	Volumes      []config.Volume      `toml:"volumes"`
+	Context      struct {
 		Text string `toml:"text"` // inline snippet
 		File string `toml:"file"` // path (relative to the skill dir) to a snippet
 	} `toml:"context"`
@@ -210,6 +224,7 @@ func IsStub(f File) bool {
 		len(rt.Egress) == 0 && len(rt.EgressOffered) == 0 &&
 		len(rt.SockGroups) == 0 && rt.Containment == "" &&
 		len(f.MCPs) == 0 &&
+		len(f.ClaudeSkills) == 0 &&
 		len(f.Volumes) == 0 &&
 		f.Context.Text == "" && f.Context.File == ""
 }
@@ -222,7 +237,11 @@ type Skill struct {
 	File    File
 	Context string      // resolved context snippet
 	Files   []SkillFile // resolved [build].files, sorted by source
-	dir     string      // host directory for payload resolution (set by loadEntry)
+	// ClaudeSkills are the skill's [[claude_skills]] contributions with their
+	// `from` dirs resolved against the skill dir (containment-checked), in
+	// declaration order — filled by Resolve, consumed via ClaudeSkillSet.
+	ClaudeSkills []ClaudeSkillDecl
+	dir          string // host directory for payload resolution (set by loadEntry)
 }
 
 // Grant records a single skill's runtime grants, for legible attribution in
@@ -937,6 +956,28 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 			mcpNames[m.Name] = true
 		}
 
+		// Claude Skill contributions: shape-check the declaration (skill home
+		// spells its source `from`) and resolve the source dir within the
+		// skill dir, rejecting escapes — the same containment [build].files
+		// gets. Content validation (SKILL.md, frontmatter, bounds) is the
+		// bake's job, one owner for both homes. Intra-skill duplicates refuse
+		// here; duplicates across sources are ClaudeSkillSet's hard reject.
+		csNames := map[string]bool{}
+		for _, cs := range f.ClaudeSkills {
+			if err := config.ValidateClaudeSkill(cs, true); err != nil {
+				return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
+			}
+			if csNames[cs.Name] {
+				return Resolved{}, fmt.Errorf("skill %q: claude skill %s declared twice", name, cs.Name)
+			}
+			csNames[cs.Name] = true
+			src, perr := skillRelPath(dir, cs.From)
+			if perr != nil {
+				return Resolved{}, fmt.Errorf("skill %q: claude skill %s: %w", name, cs.Name, perr)
+			}
+			sk.ClaudeSkills = append(sk.ClaudeSkills, ClaudeSkillDecl{Skill: name, CS: cs, SrcDir: src})
+		}
+
 		// sock_groups: absolute paths that must also be active bind targets on
 		// this skill (the runner probes the bind and --group-adds the gid). A
 		// path with no matching mount would be a silent no-op — refuse.
@@ -1005,6 +1046,11 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 			case "", "inject":
 			default:
 				return Resolved{}, fmt.Errorf("skill %q: [agent] mcp %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.MCP)
+			}
+			switch f.Agent.ClaudeSkills {
+			case "", "inject":
+			default:
+				return Resolved{}, fmt.Errorf("skill %q: [agent] claude_skills %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.ClaudeSkills)
 			}
 		}
 
