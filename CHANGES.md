@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Claude Skills delivery (ADR 0039).** `[[claude_skills]]` blocks
+  declare Claude Skills (Anthropic's agent-skill format: a directory
+  whose root holds a `SKILL.md`) for the box — wiring, not a grant,
+  with the same merge taxonomy as `[[mcp]]`: config layers replace by
+  name, skill.toml contributions union after, `!name` closes even a
+  skill-declared entry. Config declares a host `path`; a byre skill
+  contributes a package-relative `from`. The merged set is validated
+  and baked to `/etc/byre/claude-skills` in every image, and the claude
+  skill injects it via `--add-dir` (`claude_skills = "inject"`, the
+  author's vouch); an agent without the vouch shows
+  declared-but-NOT-delivered in the new status section. Manage from the
+  CLI (`byre claude-skill add/remove/list`) or the config UI's new
+  editor screen.
+
 - **The deliver picker survives a busy stdin.** `cmd | byre deliver`
   with several boxes running now opens the interactive picker on your
   controlling terminal (`/dev/tty` -- the same contract ssh's own

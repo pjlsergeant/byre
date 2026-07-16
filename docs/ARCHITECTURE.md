@@ -284,7 +284,7 @@ name = "github"                               # `!name` in a later layer closes 
 command = ["github-mcp-server", "stdio"]      #   a skill-declared one
 env = ["GITHUB_TOKEN"]                        # var NAMES the server consumes, never values
 
-[[claude_skills]]                             # Claude Skills: wiring, not grants (ADR 0038)
+[[claude_skills]]                             # Claude Skills: wiring, not grants (ADR 0039)
 name = "tdd-loop"                             # same `!name` closure semantics as [[mcp]]
 path = "~/claude-skills/tdd-loop"             # host dir whose root holds SKILL.md
 ```
@@ -406,7 +406,7 @@ URL paste-back).
 `[[claude_skills]]` blocks declare **Claude Skills** (Anthropic's
 agent-skill format: a directory whose root holds a `SKILL.md`) for the box
 -- the same wiring-not-grants model and merge taxonomy as `[[mcp]]` (ADR
-0038): config layers replace by name, skill.toml contributions union
+0039): config layers replace by name, skill.toml contributions union
 after, `!name` closures reach skill-declared entries, duplicates
 hard-reject. Config declares a host `path` (`~/…` or absolute); a
 skill.toml contributes a package-relative `from` (containment-checked
@@ -631,7 +631,7 @@ byre preset ...   apply / inspect -- review and apply a config preset
 byre mcp ...      add / remove / list -- declare MCP servers in the project
                   config (wiring, not a grant; ADR 0033).
 byre claude-skill ...  add / remove / list -- declare Claude Skills in the
-                  project config (wiring, not a grant; ADR 0038).
+                  project config (wiring, not a grant; ADR 0039).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox — locally, or through another machine

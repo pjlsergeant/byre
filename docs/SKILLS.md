@@ -100,7 +100,7 @@ agent-agnostic.
 
 A skill can also ship **Claude Skills** (Anthropic's agent-skill format:
 a directory whose root holds a `SKILL.md`) with `[[claude_skills]]`
-blocks (ADR 0038) -- `name` plus `from`, a directory relative to the
+blocks (ADR 0039) -- `name` plus `from`, a directory relative to the
 skill dir:
 
 ```toml
