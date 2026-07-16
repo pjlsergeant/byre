@@ -882,9 +882,10 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 		ExpiresIn   int    `json:"expires_in"`
 		Issuer      string `json:"issuer"`
 	}
-	// run executes the broker with BYRE_IDENTITY_BASE=base and the given fake
-	// curl body (empty = no curl override), returning stdout, stderr, exit err.
-	run := func(t *testing.T, base, fakeCurl string) (string, string, error) {
+	// run executes the broker with BYRE_IDENTITY_BASE=base, the given fake
+	// curl body (empty = no curl override) and any extra env, returning
+	// stdout, stderr, exit err.
+	run := func(t *testing.T, base, fakeCurl string, extraEnv ...string) (string, string, error) {
 		t.Helper()
 		bin := t.TempDir()
 		if fakeCurl != "" {
@@ -893,22 +894,24 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 			}
 		}
 		cmd := exec.Command("bash", broker)
-		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "PATH="+bin+":"+os.Getenv("PATH"))
+		cmd.Env = append(append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "PATH="+bin+":"+os.Getenv("PATH")), extraEnv...)
 		var so, se strings.Builder
 		cmd.Stdout, cmd.Stderr = &so, &se
 		err := cmd.Run()
 		return so.String(), se.String(), err
 	}
-	// seedStore builds an identity base (what BYRE_IDENTITY_BASE points at);
-	// the broker's files live under its grok/ subdir.
-	seedStore := func(t *testing.T, ttl time.Duration) (idbase, dir string) {
+	// seedStoreAt builds an identity base (what BYRE_IDENTITY_BASE points at)
+	// whose store entry was minted `minted` ago and expires in `ttl`; the
+	// broker's files live under its grok/ subdir.
+	seedStoreAt := func(t *testing.T, ttl, minted time.Duration) (idbase, dir string) {
 		t.Helper()
 		idbase = t.TempDir()
 		base := filepath.Join(idbase, "grok")
 		if err := os.MkdirAll(base, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		store := fmt.Sprintf(`{"https://auth.x.ai::client-123":{"key":"old-access","auth_mode":"Oidc","create_time":"2026-01-01T00:00:00Z","user_id":"u1","refresh_token":"rt-1","expires_at":%q,"oidc_issuer":"https://auth.x.ai","oidc_client_id":"client-123"}}`,
+		store := fmt.Sprintf(`{"https://auth.x.ai::client-123":{"key":"old-access","auth_mode":"Oidc","create_time":%q,"user_id":"u1","refresh_token":"rt-1","expires_at":%q,"oidc_issuer":"https://auth.x.ai","oidc_client_id":"client-123"}}`,
+			time.Now().UTC().Add(-minted).Format(time.RFC3339),
 			time.Now().UTC().Add(ttl).Format(time.RFC3339))
 		if err := os.WriteFile(filepath.Join(base, "auth.json"), []byte(store), 0o600); err != nil {
 			t.Fatal(err)
@@ -919,6 +922,10 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 			t.Fatal(err)
 		}
 		return idbase, base
+	}
+	seedStore := func(t *testing.T, ttl time.Duration) (idbase, dir string) {
+		t.Helper()
+		return seedStoreAt(t, ttl, 12*time.Hour)
 	}
 
 	t.Run("no store fails with re-seed guidance", func(t *testing.T) {
@@ -997,7 +1004,9 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 	})
 
 	t.Run("transient failure degrades to the cached token", func(t *testing.T) {
-		idbase, _ := seedStore(t, 200*time.Second) // stale enough to try, alive enough to emit
+		// 400s: stale enough to try a refresh (< the 420s margin), alive
+		// enough to emit (> grok's 300s early-invalidation + jitter floor).
+		idbase, _ := seedStoreAt(t, 400*time.Second, 12*time.Hour)
 		so, se, err := run(t, idbase, "#!/bin/sh\nexit 6\n")
 		if err != nil {
 			t.Fatalf("broker failed: %v (stderr %q)", err, se)
@@ -1006,8 +1015,69 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 		if err := json.Unmarshal([]byte(so), &o); err != nil {
 			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
 		}
-		if o.AccessToken != "old-access" || o.ExpiresIn <= 30 || o.ExpiresIn > 200 {
+		if o.AccessToken != "old-access" || o.ExpiresIn <= 360 || o.ExpiresIn > 400 {
 			t.Errorf("degrade should emit the cached token with its true remaining life: %+v", o)
+		}
+	})
+
+	t.Run("degrade never emits a token grok would instantly re-expire", func(t *testing.T) {
+		// 200s remaining is under grok's 300s early-invalidation buffer:
+		// emitting it would thrash the refresh loop. Fail closed instead.
+		idbase, _ := seedStoreAt(t, 200*time.Second, 12*time.Hour)
+		_, _, err := run(t, idbase, "#!/bin/sh\nexit 6\n")
+		if err == nil {
+			t.Fatal("want non-zero exit when the cached token is under grok's expiry buffer")
+		}
+	})
+
+	t.Run("GROK_AUTH_EXPIRED forces a refresh past a fresh-looking store", func(t *testing.T) {
+		// grok flags its token dead (covers 401 rejection) while the store
+		// still looks wall-clock fresh: the broker must refresh, not re-emit
+		// the possibly-rejected pair.
+		idbase, base := seedStoreAt(t, 2*time.Hour, 12*time.Hour)
+		fake := "#!/bin/sh\n" +
+			`printf '%s\n%s' '{"access_token":"new-access","refresh_token":"rt-2","expires_in":21600}' 200` + "\n"
+		so, se, err := run(t, idbase, fake, "GROK_AUTH_EXPIRED=1")
+		if err != nil {
+			t.Fatalf("broker failed: %v (stderr %q)", err, se)
+		}
+		var o out
+		if err := json.Unmarshal([]byte(so), &o); err != nil {
+			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
+		}
+		if o.AccessToken != "new-access" {
+			t.Errorf("flagged call must return a refreshed token, got %+v", o)
+		}
+		if b, _ := os.ReadFile(filepath.Join(base, "auth.json")); !strings.Contains(string(b), "rt-2") {
+			t.Error("store not rotated by the forced refresh")
+		}
+	})
+
+	t.Run("GROK_AUTH_EXPIRED trusts only a sibling's just-rotated pair", func(t *testing.T) {
+		// A pair minted seconds ago is necessarily different from the token
+		// the caller holds — emit it without spending the refresh token. The
+		// exploding curl proves no network call happens.
+		idbase, _ := seedStoreAt(t, 2*time.Hour, 5*time.Second)
+		so, se, err := run(t, idbase, "#!/bin/sh\nexit 97\n", "GROK_AUTH_EXPIRED=1")
+		if err != nil {
+			t.Fatalf("broker failed: %v (stderr %q)", err, se)
+		}
+		var o out
+		if err := json.Unmarshal([]byte(so), &o); err != nil {
+			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
+		}
+		if o.AccessToken != "old-access" {
+			t.Errorf("just-rotated pair should be emitted as-is, got %+v", o)
+		}
+	})
+
+	t.Run("GROK_AUTH_EXPIRED never degrades to the cached token", func(t *testing.T) {
+		// Refresh fails transiently on a flagged call: re-emitting the pair
+		// grok flagged dead would 401-loop; fail closed so grok backs off.
+		idbase, _ := seedStoreAt(t, 2*time.Hour, 12*time.Hour)
+		_, se, err := run(t, idbase, "#!/bin/sh\nexit 6\n", "GROK_AUTH_EXPIRED=1")
+		if err == nil {
+			t.Fatalf("want non-zero exit on a flagged call with a failed refresh (stderr %q)", se)
 		}
 	})
 }

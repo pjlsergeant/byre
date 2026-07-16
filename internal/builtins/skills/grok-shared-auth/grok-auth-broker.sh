@@ -27,8 +27,13 @@
 #   client_id (+ principal_type/principal_id when the pair carries them).
 # - invalid_grant/invalid_client is PERMANENT: the store is moved aside
 #   (self-healing v1's dead credential too) and the user is told to re-seed.
-#   A transient failure degrades to emitting the cached access token while
-#   it plausibly lives, so one flaky refresh never breaks a running session.
+#   A transient failure degrades to emitting the cached access token ONLY
+#   when grok didn't flag its own copy dead (GROK_AUTH_EXPIRED covers both
+#   expiry and 401 rejection — re-emitting a rejected token would 401-loop)
+#   and the cache clears grok's 300s early-invalidation buffer (a smaller
+#   token is instantly re-expired and thrashes). Otherwise fail closed:
+#   grok's in-memory token carries the session, its 300s failure TTL paces
+#   the retry.
 set -u
 umask 077
 
@@ -41,9 +46,17 @@ EPCACHE="$BASE/token_endpoint"
 # Refresh when less than MARGIN seconds remain: grok treats a token as expired
 # 300s early (GROK_AUTH_EARLY_INVALIDATION_SECS default) and its proactive
 # loop adds up to 60s jitter, so anything above 360 keeps us ahead of every
-# grok-initiated call. Never emit a token with less than MIN_EMIT left.
+# grok-initiated call. Never emit a token with less than MIN_EMIT left: a
+# token under grok's 300s buffer is already "expired" the moment grok stores
+# it, and emitting one just thrashes the refresh loop (review finding,
+# 2026-07-16) — failing instead lets grok's own 300s failure TTL pace the
+# retries while its in-memory token keeps the session alive.
 MARGIN=420
-MIN_EMIT=30
+MIN_EMIT=360
+# A store pair rotated within this many seconds was refreshed by a sibling
+# box moments ago — necessarily a DIFFERENT token from whatever the caller
+# holds, so emitting it is correct even for 401 recovery.
+SIBLING_FRESH=60
 
 # GROK_AUTH_EXPIRED=1 accompanies every 5s-budget refresh invocation (grok
 # sets it whenever it considers the stored token expired — occasionally that
@@ -66,12 +79,24 @@ fail() { note "FAIL: $*"; echo "grok-auth-broker: $*" >&2; exit 1; }
 entry_key() { jq -r 'to_entries | map(select((.value.refresh_token // "") != "")) | first | .key // empty' "$STORE" 2>/dev/null; }
 field() { jq -r --arg k "$1" ".[\$k].$2 // empty" "$STORE" 2>/dev/null; }
 
+tosecs() { # RFC3339 (fractional seconds tolerated) -> epoch; empty on failure
+  local ts
+  ts=$(sed 's/\.[0-9]*Z$/Z/; s/\.[0-9]*+/+/' <<<"$1")
+  [ -n "$ts" ] && date -u -d "$ts" +%s 2>/dev/null
+}
+
 remaining() { # seconds of access-token life left for entry $1 (0 if unknown)
-  local exp epoch
-  exp=$(field "$1" expires_at | sed 's/\.[0-9]*Z$/Z/; s/\.[0-9]*+/+/')
-  [ -n "$exp" ] || { echo 0; return; }
-  epoch=$(date -u -d "$exp" +%s 2>/dev/null) || { echo 0; return; }
+  local epoch
+  epoch=$(tosecs "$(field "$1" expires_at)")
+  [ -n "$epoch" ] || { echo 0; return; }
   echo $((epoch - $(date -u +%s)))
+}
+
+entry_age() { # seconds since entry $1 was minted (-1 if unknown)
+  local epoch
+  epoch=$(tosecs "$(field "$1" create_time)")
+  [ -n "$epoch" ] || { echo -1; return; }
+  echo $(($(date -u +%s) - epoch))
 }
 
 emit() { # print the provider JSON for entry $1 with $2 seconds remaining
@@ -92,15 +117,20 @@ mkdir -p "$BASE" 2>/dev/null || fail "cannot create identity dir $BASE (is the g
 # the reason to stderr.)
 exec 9>>"$LOCK"
 if ! flock -w "$LOCK_WAIT" 9; then
-  # Couldn't serialize in budget (a slow holder). Degrade: the cached access
-  # token keeps this session alive; grok re-asks as its expiry nears.
+  # Couldn't serialize in budget (a slow holder). When grok did not flag its
+  # token dead and the cache clears grok's early-invalidation buffer, the
+  # cached token keeps the session alive; otherwise fail closed — emitting a
+  # token grok already rejected (or one it would instantly re-expire) only
+  # loops, while a failure lets grok's own 300s failure TTL pace the retry.
   k=$(entry_key)
   [ -n "$k" ] || fail "$reseed_help"
   r=$(remaining "$k")
-  [ "$r" -gt "$MIN_EMIT" ] || fail "lock busy and the cached token is dead — $reseed_help"
-  note "lock busy; emitted cached token (${r}s left)"
-  emit "$k" "$r"
-  exit 0
+  if [ "${GROK_AUTH_EXPIRED:-}" != "1" ] && [ "$r" -gt "$MIN_EMIT" ]; then
+    note "lock busy; emitted cached token (${r}s left)"
+    emit "$k" "$r"
+    exit 0
+  fi
+  fail "lock busy and the cached token is not emittable — a sibling's refresh may still be in flight; grok retries shortly"
 fi
 
 [ -s "$STORE" ] || fail "no shared Grok credential yet — $reseed_help"
@@ -108,10 +138,30 @@ KEY=$(entry_key)
 [ -n "$KEY" ] || fail "shared store has no refresh-token entry — $reseed_help"
 
 REMAIN=$(remaining "$KEY")
-if [ "$REMAIN" -gt "$MARGIN" ]; then
+if [ "${GROK_AUTH_EXPIRED:-}" = "1" ]; then
+  # grok says the token it holds is dead — from expiry OR a 401 rejection;
+  # the flag doesn't distinguish. The STORE's wall-clock freshness must not
+  # short-circuit here: on a server-side revocation the stored pair still
+  # looks fresh, and re-emitting it would 401-loop (review finding,
+  # 2026-07-16). The one token safe to emit without refreshing is a pair a
+  # sibling box rotated moments ago — necessarily different from whatever
+  # the caller holds.
+  age=$(entry_age "$KEY")
+  if [ "$age" -ge 0 ] && [ "$age" -lt "$SIBLING_FRESH" ] && [ "$REMAIN" -gt "$MIN_EMIT" ]; then
+    emit "$KEY" "$REMAIN"
+    exit 0
+  fi
+elif [ "$REMAIN" -gt "$MARGIN" ]; then
   emit "$KEY" "$REMAIN"
   exit 0
 fi
+
+# May a failure below degrade to emitting the cached token? Only when grok
+# did NOT flag its own copy dead (see above) and the cached token clears
+# grok's early-invalidation buffer. Otherwise failing closed is strictly
+# better: grok keeps using its in-memory token to the real expiry, and its
+# 300s failure TTL paces the retry.
+may_degrade() { [ "${GROK_AUTH_EXPIRED:-}" != "1" ] && [ "$REMAIN" -gt "$MIN_EMIT" ]; }
 
 # --- refresh (under the lock) ------------------------------------------------
 ISSUER=$(field "$KEY" oidc_issuer)
@@ -129,8 +179,8 @@ if [ -z "$ENDPOINT" ]; then
     fi
   fi
   if [ -z "$ENDPOINT" ]; then
-    [ "$REMAIN" -gt "$MIN_EMIT" ] && { note "no token endpoint cached; emitted cached token (${REMAIN}s left)"; emit "$KEY" "$REMAIN"; exit 0; }
-    fail "cannot discover the token endpoint and the cached token is dead — check egress to auth.x.ai, then: $reseed_help"
+    may_degrade && { note "no token endpoint cached; emitted cached token (${REMAIN}s left)"; emit "$KEY" "$REMAIN"; exit 0; }
+    fail "cannot discover the token endpoint and the cached token is not emittable — check egress to auth.x.ai; if this persists: $reseed_help"
   fi
 fi
 
@@ -181,10 +231,11 @@ if [ "$ERR" = "invalid_grant" ] || [ "$ERR" = "invalid_client" ]; then
 fi
 
 # Transient (network down, 5xx, timeout): keep the session alive on the
-# cached token if it plausibly lives; grok retries the refresh in ~300s.
-if [ "$REMAIN" -gt "$MIN_EMIT" ]; then
+# cached token where that helps (see may_degrade); grok retries in ~300s
+# either way, and its in-memory token carries the session to real expiry.
+if may_degrade; then
   note "transient refresh failure (http=${HTTP:-none} err=${ERR:-none}); emitted cached token (${REMAIN}s left)"
   emit "$KEY" "$REMAIN"
   exit 0
 fi
-fail "refresh failed (http=${HTTP:-none} err=${ERR:-none}) and the cached token is dead — check egress to auth.x.ai; if this persists: $reseed_help"
+fail "refresh failed (http=${HTTP:-none} err=${ERR:-none}) and the cached token is not emittable — check egress to auth.x.ai; if this persists: $reseed_help"

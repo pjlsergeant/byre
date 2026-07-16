@@ -536,11 +536,13 @@ Findings from the retirement investigation (2026-07-11, this box):
   serialization needs a lock grok doesn't interpret -- the v2 broker's.
 - `GROK_AUTH_PROVIDER_COMMAND` (then shipped-user-guide only; publicly
   documented by 0.2.101): grok delegates credential acquisition to an
-  external command -- stderr surfaces to the user, **stdout is stored as
-  the access token**, non-zero exit falls back to interactive login (on
-  the login path only; full contract in §4). This inverts the
-  acts-first/observed-after problem and became the seam under the v2
-  rebuild.
+  external command -- **stdout is stored as the access token**; stderr
+  surfaces to the user on the LOGIN path only (the refresh executor pipes
+  and discards it -- provider failures mid-session are visible as grok's
+  own auth error plus the broker's `broker.log`, never as broker stderr);
+  non-zero exit falls back to interactive login on the login path only
+  (full contract in §4). This inverts the acts-first/observed-after
+  problem and became the seam under the v2 rebuild.
 - The "headless runs HANG on a device prompt" failure shape is
   **vendor-fixed** by 0.2.101: `grok -p`'s auth path bails with re-auth
   instructions instead of falling through to interactive login (source:

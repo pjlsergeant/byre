@@ -73,7 +73,12 @@ and the in-box binary is 0.2.101.
    path bails with re-auth instructions (source), verified live against
    0.2.101 with an empty `GROK_HOME` (exit 1, no hang). The broker
    additionally degrades a transient refresh failure to emitting the
-   cached access token while it plausibly lives.
+   cached access token — but only when grok did not flag its own copy
+   dead (`GROK_AUTH_EXPIRED` covers 401 rejections, where re-emitting
+   the same token would loop) and the cache clears grok's 300s
+   early-invalidation buffer (a smaller token is instantly re-expired
+   and thrashes); otherwise it fails closed and grok's own 300s failure
+   TTL paces the retry while its in-memory token carries the session.
 5. **Reuse consequence — CONFIRMED, no experiment needed.** Vendor
    source states it outright: a reused refresh token triggers
    `invalid_grant` **and token-family revocation**, and grok's own lock
@@ -117,6 +122,9 @@ follows the field gate, never precedes it. Flip the key when the gate
 passes.
 
 Failure modes and recovery are unchanged from the design doc's broker
-table: everything is loud, and the worst case of any failure is one
-`grok login --device-auth` re-seed, with per-box plain logins always
+table, with one legibility caveat: on the mid-session refresh path grok
+swallows the provider's stderr, so what the user sees there is grok's own
+auth error — the broker's full diagnosis (including re-seed instructions)
+lives in `broker.log` beside the store. The worst case of any failure is
+one `grok login --device-auth` re-seed, with per-box plain logins always
 available as the fallback shape.
