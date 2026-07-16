@@ -42,6 +42,14 @@ the rationale lives.
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
   design pass; deliberately split from the MCP design 2026-07-14.
+- [ ] (M) **Agent field-QA pass, release-time, report-only** (Pete,
+  2026-07-16 -- a "soon", decided-in-principle): an agent in a byre box
+  drives byre's TUI and deliver flows over tmux against the sacrificial
+  inttest VM (egress closed except that one ssh endpoint) and reports
+  findings with repro keystrokes; NEVER a gate -- findings harden into
+  deterministic tuitest regression tests. Builds on the tmux harness
+  (wip/tui-test-harness.md, its ADR once shipped), which is deliberately
+  designed as the agent's rails -- same verbs, no in-process magic.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
