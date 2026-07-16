@@ -4,7 +4,9 @@ How byre's own development environment hangs together: the self-hosted box,
 the dev-harness skills that live in this repo, and the sacrificial VM the
 gated integration suite runs on. Workflow *rules* (autonomy, commit
 discipline, review loop, docs sweep) live in `CLAUDE.md`; this is the
-mechanics reference behind them.
+mechanics reference behind them. For the recurring "source-harden an agent
+CLI's credential skills" exercise, the playbook is
+`docs/ADDING-NEW-LLMS.md`.
 
 ## The self-hosted box
 
