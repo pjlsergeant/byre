@@ -52,12 +52,24 @@ func TestFetchPayloadRejectsEscapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	budget := int64(MaxPayloadTotal)
-	for _, rel := range []string{
-		"https://evil.example/x", "//evil.example/x", "/abs/path",
-		"../outside", "a/../../b", "", "a\\b",
+	// Each case pins ITS rejection message: a 404 from the stub server (or
+	// any other stand-in error) must not pass for the path guard.
+	for _, c := range []struct{ rel, want string }{
+		{"https://evil.example/x", "absolute sources are rejected"},
+		{"//evil.example/x", "absolute sources are rejected"},
+		{"/abs/path", "must be relative"},
+		{"../outside", "escapes the package"},
+		{"a/../../b", "not clean"},
+		{"", "empty path"},
+		{"a\\b", "use '/' separators"},
 	} {
-		if _, err := f.FetchPayload(src, rel, &budget); err == nil {
-			t.Errorf("payload src %q must be rejected", rel)
+		_, err := f.FetchPayload(src, c.rel, &budget)
+		if err == nil {
+			t.Errorf("payload src %q must be rejected", c.rel)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.want) {
+			t.Errorf("payload src %q: rejected for the wrong reason: %v (want %q)", c.rel, err, c.want)
 		}
 	}
 }

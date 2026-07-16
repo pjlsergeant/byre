@@ -255,8 +255,20 @@ target = "/home/dev/.y"
 func TestResolveContextFileTraversalRejected(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "evil", "[context]\nfile = \"../../etc/passwd\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"evil"}}, catFor(t, dir)); err == nil {
+	// The traversal target EXISTS (skills/evil/../../etc/passwd = dir/etc/
+	// passwd), so an ENOENT can't stand in for the containment rejection.
+	if err := os.MkdirAll(filepath.Join(dir, "etc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "etc", "passwd"), []byte("root:x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Resolve(config.Config{Skills: []string{"evil"}}, catFor(t, dir))
+	if err == nil {
 		t.Fatal("expected rejection of path-traversal context file")
+	}
+	if !strings.Contains(err.Error(), "escapes the skill dir") {
+		t.Fatalf("expected the escape rejection, got: %v", err)
 	}
 }
 

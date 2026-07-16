@@ -363,8 +363,6 @@ func TestNodeTemplateContainerNodeModules(t *testing.T) {
 	}
 }
 
-// TestUpdateTemplatesOverwritesAndBacksUp mirrors the skills update test:
-// shipped template changes need the same pickup path (`byre skill update`).
 // TestFirewallSkillResolves pins the firewall skill's contract: it declares
 // the posture and the netns hook (both consumed by core), stays composable
 // with an agent skill, and grants NOTHING to the box itself — no caps, no

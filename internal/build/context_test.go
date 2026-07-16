@@ -214,8 +214,17 @@ func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 
 func TestAssembleFilesRejectsEscapeAndRelativeDest(t *testing.T) {
 	paths := bootstrapped(t)
-	if _, err := Assemble(paths, config.Config{Files: map[string]string{"../etc/passwd": "/x"}}, skills.Resolved{}); err == nil {
+	// The escaping source EXISTS (a sibling of the project dir), so the
+	// rejection must be the containment guard, not a file-not-found error.
+	escaped := filepath.Join(filepath.Dir(paths.Canonical), "escape.txt")
+	if err := os.WriteFile(escaped, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Assemble(paths, config.Config{Files: map[string]string{"../escape.txt": "/x"}}, skills.Resolved{})
+	if err == nil {
 		t.Error("expected rejection of '..' escaping source")
+	} else if !strings.Contains(err.Error(), "escapes the project dir") {
+		t.Errorf("expected the escape rejection, got: %v", err)
 	}
 	os.WriteFile(filepath.Join(paths.Canonical, "f"), []byte("x"), 0o644)
 	if _, err := Assemble(paths, config.Config{Files: map[string]string{"f": "relative/dest"}}, skills.Resolved{}); err == nil {
