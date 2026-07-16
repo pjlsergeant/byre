@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Named layers and the extends chain (ADR 0035).** Shared,
+  user-authored config baselines at `~/.byre/layers/<name>/layer.config`:
+  a project's `byre.config` (or another layer) names at most one parent
+  via `extends = "<name>"`, and the cascade becomes
+  `default ⊕ template ⊕ chain(root … parent) ⊕ project`. Chains are
+  linear and walked to the root; cycles and dangling parents fail loudly
+  (the dangling error names the exact path to create). Layers carry the
+  full config vocabulary except `template`, are plain files rather than
+  packages (send the file to share it), and resolve LIVE at every
+  develop -- edit the employer layer once, every extending project's
+  next box picks it up. New verbs: `byre layer new|list|validate`;
+  `byre config` gains an EXTENDS section and attributes inherited rows
+  `layer:<name>`; `byre config --layer <name>` edits a layer with the
+  same effective-state editor (ancestor attribution, no template picker,
+  cycle-safe extends options). `byre status` prints the chain; a preset
+  may carry `extends`, its review resolves the chain and shows
+  layer-contributed grants, and apply hard-fails on a layer the machine
+  doesn't have. Layer files sit outside the `--self-edit` writable set.
+
 - **MCP provisioning (ADR 0033).** `[[mcp]]` blocks in config layers and
   skill.toml declare MCP servers for the box -- local (`command` argv) or
   remote (`url`), with env var NAMES (never values) and optional extra

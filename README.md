@@ -284,6 +284,22 @@ touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
 (Grok has no shared-auth: its token rotation can't be file-shared, so it logs
 in per project -- [ADR 0023](docs/adr/0023-grok-shared-auth-retired.md).)
 
+### Share one config baseline across many projects?
+
+tldr: `byre layer new torn`, put the shared config in it
+(`byre config --layer torn`), then `extends = "torn"` in each project
+(`byre config`, EXTENDS section).
+
+A **named layer** is a config file at `~/.byre/layers/<name>/layer.config`
+that any project (or another layer -- chains work) pulls in with
+`extends`. It slots between the template and the project in the cascade
+and carries everything a config can except `template` -- skills, egress,
+env, mounts, the lot. It's live: edit the layer once and every extending
+project picks it up on its next develop. Layers aren't packages -- no
+versions, no installing; to share one, send the file. `byre status` shows
+the chain, and every inherited setting is attributed to its layer in
+`byre config`. See [ADR 0035](docs/adr/0035-named-layers-and-extends.md).
+
 ### Paste images and files into the box?
 
 tldr: `byre deliver <file>` — or just `byre deliver` and paste.
