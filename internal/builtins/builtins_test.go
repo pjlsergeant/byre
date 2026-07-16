@@ -80,8 +80,18 @@ func TestCatalogTemplatesAndListAgents(t *testing.T) {
 		}
 	}
 	agents := skills.ListAgentSkills(cat)
-	if len(agents) != 5 {
-		t.Errorf("expected 5 agent skills (claude/codex/gemini/grok/opencode), got %v", agents)
+	want := []string{"claude", "codex", "gemini", "grok", "opencode"}
+	got := map[string]bool{}
+	for _, a := range agents {
+		got[a] = true
+	}
+	if len(agents) != len(want) {
+		t.Errorf("expected %d agent skills %v, got %v", len(want), want, agents)
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("agent skill %q missing from ListAgentSkills: %v", w, agents)
+		}
 	}
 }
 
@@ -1432,11 +1442,14 @@ func TestOpencodeSkillPinsLoadBearingFacts(t *testing.T) {
 
 // The opencode login hook, driven for real with a stub `opencode` binary:
 // a foreign symlinked credential is removed (anti-planting) and a fresh
-// login runs; a link into the identity volume — shared-auth's, possibly
-// dangling — is kept and the login writes through it; a credentialed
-// regular file short-circuits; an empty-store file ({}) does NOT count as
-// logged in; a static provider key skips the login without touching a
-// kept link.
+// login runs; a credentialed regular file short-circuits; an empty store
+// ({}) and a TRUNCATED store (an interrupted in-place write) do NOT count
+// as logged in; a static provider key skips the login. The identity-link
+// carve-out itself is NOT unit-testable: the trusted dir is deliberately
+// the hardcoded absolute /home/dev/.byre-identity/opencode (an env seam
+// there would let config [env] redefine the trusted namespace — the codex
+// precedent), which only exists in a real box. Any temp-dir link is
+// therefore correctly classified foreign below.
 func TestOpencodeLoginHookBehavior(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "opencode"), "opencode-login.sh")
@@ -1447,13 +1460,12 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	run := func(dataHome, identityBase, apiKey string) {
+	run := func(dataHome, apiKey string) {
 		t.Helper()
 		cmd := exec.Command("sh", hook)
 		cmd.Env = append(os.Environ(),
 			"PATH="+bin+":/usr/bin:/bin",
 			"XDG_DATA_HOME="+dataHome,
-			"BYRE_IDENTITY_BASE="+identityBase,
 			"ANTHROPIC_API_KEY="+apiKey,
 			"OPENCODE_API_KEY=",
 		)
@@ -1477,7 +1489,7 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	}
 
 	// A FOREIGN symlinked credential is removed; a fresh login runs.
-	data1, base1 := t.TempDir(), t.TempDir()
+	data1 := t.TempDir()
 	cred1 := credPath(data1)
 	planted := filepath.Join(data1, "elsewhere.json")
 	if err := os.WriteFile(planted, []byte(`{"anthropic":{"type":"api","key":"planted"}}`), 0o600); err != nil {
@@ -1486,7 +1498,7 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	if err := os.Symlink(planted, cred1); err != nil {
 		t.Fatal(err)
 	}
-	run(data1, base1, "")
+	run(data1, "")
 	if _, err := os.Lstat(cred1); !os.IsNotExist(err) {
 		t.Fatalf("foreign symlinked credential must be removed, still present (%v)", err)
 	}
@@ -1494,78 +1506,59 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 		t.Fatal("removal must fall through to a fresh login; none was attempted")
 	}
 
-	// A DANGLING link into the identity volume (shared-auth's first-login
-	// state) is kept, and the login proceeds (it writes through the link).
-	reset()
-	data2, base2 := t.TempDir(), t.TempDir()
-	cred2 := credPath(data2)
-	if err := os.MkdirAll(filepath.Join(base2, "opencode"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(base2, "opencode", "auth.json"), cred2); err != nil {
-		t.Fatal(err)
-	}
-	run(data2, base2, "")
-	if got, err := os.Readlink(cred2); err != nil || got != filepath.Join(base2, "opencode", "auth.json") {
-		t.Fatalf("identity-volume link must be kept, got %q (%v)", got, err)
-	}
-	if !loginAttempted() {
-		t.Fatal("a dangling shared link means not-logged-in; the login must run")
-	}
-
 	// A credentialed regular file short-circuits (no login attempted)...
 	reset()
-	data3 := t.TempDir()
-	cred3 := credPath(data3)
-	if err := os.WriteFile(cred3, []byte(`{"anthropic":{"type":"api","key":"live"}}`), 0o600); err != nil {
+	data2 := t.TempDir()
+	if err := os.WriteFile(credPath(data2), []byte(`{"anthropic":{"type":"api","key":"live"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	run(data3, t.TempDir(), "")
+	run(data2, "")
 	if loginAttempted() {
 		t.Fatal("valid credential must short-circuit the login; one was attempted")
 	}
 
-	// ...but an EMPTY store ({} — no "type" member) does not count.
+	// ...but an EMPTY store ({} — no "type" member) does not count...
 	reset()
-	data4 := t.TempDir()
-	cred4 := credPath(data4)
-	if err := os.WriteFile(cred4, []byte("{}"), 0o600); err != nil {
+	data3 := t.TempDir()
+	if err := os.WriteFile(credPath(data3), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	run(data4, t.TempDir(), "")
+	run(data3, "")
 	if !loginAttempted() {
 		t.Fatal("an empty credential store must not count as logged in")
 	}
 
-	// A static provider key skips the login and leaves a kept link alone.
-	// (The identity dir exists in real boxes — the 00- shared-auth hook
-	// creates it before this hook runs; without it the parent-dir
-	// canonicalization correctly classifies the link as foreign.)
+	// ...and neither does a TRUNCATED store — an interrupted in-place write
+	// can leave a partial file that already contains a "type" token; the
+	// trailing-brace check must reject it.
 	reset()
-	data5, base5 := t.TempDir(), t.TempDir()
-	cred5 := credPath(data5)
-	if err := os.MkdirAll(filepath.Join(base5, "opencode"), 0o755); err != nil {
+	data4 := t.TempDir()
+	if err := os.WriteFile(credPath(data4), []byte(`{"anthropic":{"type":"oauth","access":"eyJtrunc`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(base5, "opencode", "auth.json"), cred5); err != nil {
-		t.Fatal(err)
+	run(data4, "")
+	if !loginAttempted() {
+		t.Fatal("a truncated credential store must not count as logged in")
 	}
-	run(data5, base5, "sk-ant-static")
+
+	// A static provider key skips the login entirely.
+	reset()
+	data5 := t.TempDir()
+	credPath(data5) // dir exists, no credential
+	run(data5, "sk-ant-static")
 	if loginAttempted() {
 		t.Fatal("a static provider key must skip the login")
 	}
-	if _, err := os.Readlink(cred5); err != nil {
-		t.Fatalf("the env-key path must not disturb a kept shared link: %v", err)
-	}
 }
 
-// TestOpencodeSharedAuthCompositionAndHook: the companion resolves alongside
-// the agent, ships the 00- ordered hook (must sort before opencode's own
-// login hook), mounts the machine-scoped identity volume, and deliberately
-// does NOT declare shared_auth_for (the OAuth rotation gate is pending —
-// gemini precedent; the skill.toml carries the status). The hook itself is
-// codex-shaped and covered behaviorally below.
-func TestOpencodeSharedAuthCompositionAndHook(t *testing.T) {
+// TestOpencodeSharedAuthCompositionResolves: the companion resolves
+// alongside the agent, ships the 00- ordered hook (must sort before
+// opencode's own login hook), and mounts the machine-scoped identity
+// volume. It deliberately does NOT declare shared_auth_for (the OAuth
+// rotation gate is pending — gemini precedent); that fact's canonical pin
+// is the TestBuiltinSharedAuthDeclarations table in the skills package.
+// The hook itself is codex-shaped and covered behaviorally below.
+func TestOpencodeSharedAuthCompositionResolves(t *testing.T) {
 	_, cat := testCat(t)
 	res, err := skills.Resolve(config.Config{Agent: "opencode", Skills: []string{"opencode-shared-auth"}}, cat)
 	if err != nil {
@@ -1606,9 +1599,6 @@ func TestOpencodeSharedAuthCompositionAndHook(t *testing.T) {
 	if !identity {
 		t.Errorf("identity volume missing or mis-declared: %+v", res.Volumes())
 	}
-	if got := skills.SharedAuthCompanion(cat, "opencode"); got != "" {
-		t.Errorf("gate-pending companion must not be offered at onboarding, got %q", got)
-	}
 	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "skill.toml"))
 	if err != nil {
 		t.Fatal(err)
@@ -1618,13 +1608,13 @@ func TestOpencodeSharedAuthCompositionAndHook(t *testing.T) {
 	}
 }
 
-// runOpencodeSharedAuthHook executes the real symlink-assert hook against a
-// temp identity base + XDG data home (both the hook's test seams).
-func runOpencodeSharedAuthHook(t *testing.T, identityBase, dataHome string) {
+// runOpencodeSharedAuthHook executes the symlink-assert hook at hookPath
+// against a temp identity base + XDG data home (both the hook's test
+// seams). The hook path is resolved once by the caller — rebuilding the
+// catalog per invocation would repeat a full LoadCatalog for nothing.
+func runOpencodeSharedAuthHook(t *testing.T, hookPath, identityBase, dataHome string) {
 	t.Helper()
-	_, cat := testCat(t)
-	hook := filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "firstrun.sh")
-	cmd := exec.Command("bash", hook)
+	cmd := exec.Command("bash", hookPath)
 	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "XDG_DATA_HOME="+dataHome)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
@@ -1636,12 +1626,14 @@ func runOpencodeSharedAuthHook(t *testing.T, identityBase, dataHome string) {
 // existing per-project login is ADOPTED; a local fork is healed in favor of
 // the shared credential; and the whole thing is idempotent.
 func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "firstrun.sh")
 	base, dataHome := t.TempDir(), t.TempDir()
 	shared := filepath.Join(base, "opencode", "auth.json")
 	cred := filepath.Join(dataHome, "opencode", "auth.json")
 
 	// 1. Fresh: dangling symlink pointing at the (absent) shared credential.
-	runOpencodeSharedAuthHook(t, base, dataHome)
+	runOpencodeSharedAuthHook(t, hook, base, dataHome)
 	if got, err := os.Readlink(cred); err != nil || got != shared {
 		t.Fatalf("fresh run should leave a dangling link to %q, got %q (%v)", shared, got, err)
 	}
@@ -1656,7 +1648,7 @@ func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
 	if err := os.WriteFile(cred, []byte(`{"adopted":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runOpencodeSharedAuthHook(t, base, dataHome)
+	runOpencodeSharedAuthHook(t, hook, base, dataHome)
 	if b, err := os.ReadFile(shared); err != nil || string(b) != `{"adopted":true}` {
 		t.Fatalf("existing login not adopted into the shared volume: %v %q", err, b)
 	}
@@ -1671,7 +1663,7 @@ func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
 	if err := os.WriteFile(cred, []byte(`{"fork":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runOpencodeSharedAuthHook(t, base, dataHome)
+	runOpencodeSharedAuthHook(t, hook, base, dataHome)
 	if b, _ := os.ReadFile(shared); string(b) != `{"adopted":true}` {
 		t.Fatalf("shared credential clobbered by a fork: %q", b)
 	}
@@ -1680,7 +1672,7 @@ func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
 	}
 
 	// 4. Idempotent: run again, nothing changes.
-	runOpencodeSharedAuthHook(t, base, dataHome)
+	runOpencodeSharedAuthHook(t, hook, base, dataHome)
 	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
 		t.Fatalf("idempotent re-run changed the credential: %q", b)
 	}

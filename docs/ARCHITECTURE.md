@@ -27,8 +27,8 @@ writing Docker (PRINCIPLES.md #3). The split that defines the project
   launcher, credential persistence). Core ships **no opinions**.
 - **Skills** own the opinions. The workflow is a skill; the firewall is a
   skill; **the agent itself is a skill** (ADR 0005) -- byre ships agent
-  skills for Claude, Codex, Gemini, and Grok, and `agent` selects which
-  one launches. You compose your baseline from skills.
+  skills for Claude, Codex, Gemini, Grok, and OpenCode, and `agent`
+  selects which one launches. You compose your baseline from skills.
 
 Image-building is solved -- Docker does it well and everyone knows the
 syntax. byre owns the frame around your Docker, not the Docker.
@@ -417,14 +417,15 @@ copy-semantics breaks rotating OAuth tokens): agents log in once in the
 box and the state volume persists the login per-project. `seed_prefs`
 (ADR 0013) is the curated, non-secret exception for agent prefs. The
 **shared-auth companion skills** (`claude-shared-auth`,
-`codex-shared-auth`, `gemini-shared-auth`; ADR 0017)
-make one login
+`codex-shared-auth`, `gemini-shared-auth`, `opencode-shared-auth`;
+ADR 0017) make one login
 serve every project WITHOUT host copying: the credential lives in a
 machine-scoped identity volume and byre reads nothing from the host --
-Codex and Gemini log in once in any box (the credential lands in
-the shared volume through symlinks; Gemini's API-key path is verified,
-Gemini-OAuth gate-pending -- see the skills and ADR
-0017's verification record); Grok has NO shared-auth (its single-use
+Codex, Gemini, and OpenCode log in once in any box (the credential
+lands in the shared volume through symlinks; Gemini's API-key path is
+verified, Gemini-OAuth and OpenCode's rotation gate are gate-pending --
+see the skills and ADR 0017's verification record); Grok has NO
+shared-auth (its single-use
 rotation failed the file-sharing gates in the field; retired, ADR 0023);
 Claude uses a user-minted `claude
 setup-token` pasted at a
@@ -441,7 +442,8 @@ answer as a favourite (the picker-owned `shared_auth` list) that
 prefills the next box's offer; the offer is skipped only when the
 companion is already hand-granted machine-wide in `default.config`
 `skills`, a key the picker never writes (ADR 0025). Gemini-OAuth and
-opencode (gate-pending) and grok (retired) deliberately don't declare it.
+opencode (both gate-pending) and grok (retired) deliberately don't
+declare it.
 
 ## The chassis
 

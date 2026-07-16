@@ -33,7 +33,7 @@ or just vibe-coded trash? Is it right for me? Would you be happy there?
 
 Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents stay logged in across rebuilds, and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
 
-byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, and Grok. Fork the bundled ones or bring your own.
+byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, Grok, and OpenCode. Fork the bundled ones or bring your own.
 
 ## Constrained: keep the host out of reach
 

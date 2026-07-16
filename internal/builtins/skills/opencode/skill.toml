@@ -43,6 +43,14 @@ apt = ["curl", "ca-certificates", "unzip"]
 # Runs before the agent launches; skippable with Ctrl-C.
 files = { "opencode-login.sh" = "/etc/byre/firstrun.d/opencode-login" }
 dockerfile = [
+  # Pre-create ~/.local's XDG tree AS THE DEV USER. The state volume targets
+  # /home/dev/.local/share/opencode, and gen's volume-mount-point layer
+  # (`mkdir -p` as root + chown of the LEAF only) would otherwise bake
+  # /home/dev/.local and .local/share root-owned — every other agent's
+  # state target sits directly under the dev-owned /home/dev, so opencode
+  # is the first to nest. Root-owned intermediates would break opencode's
+  # runtime lock dir (~/.local/state/opencode) and ~/.local/bin (on PATH).
+  "RUN gosu dev mkdir -p /home/dev/.local/share /home/dev/.local/state /home/dev/.local/bin",
   "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://opencode.ai/install | bash'",
   # opencode installs its BINARY into ~/.opencode/bin. ~/.opencode is NOT a
   # volume -- the state volume mounts at the XDG data dir instead -- so the
@@ -120,4 +128,9 @@ name = ".opencode"
 role = "state"
 # Mounts at the XDG data dir (auth.json, opencode.db sessions, logs), NOT
 # ~/.opencode -- the binary lives there (image) and must not be masked.
+# (The name follows the .codex precedent: state volume named for the agent,
+# mounted where the agent keeps STATE, which is not its dotdir.) Do NOT
+# relocate XDG_DATA_HOME via config [env]: opencode and the hooks would
+# follow it, but this mount would not -- the login would land in the
+# container's writable layer and stop surviving rebuilds.
 target = "/home/dev/.local/share/opencode"
