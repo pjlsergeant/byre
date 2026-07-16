@@ -389,8 +389,11 @@ empty set included; the path and format are a stable contract for
 anything that wants the set. Delivery is injection, per-agent, vouched
 by `[agent] mcp = "inject"`: claude's command carries `--mcp-config`;
 codex's is a skill-owned wrapper deriving per-invocation `-c` overrides
-from the same file (byre never writes an agent's MCP state -- ADR 0033
-walked the state-writing registrar back). An agent skill without an
+from the same file; opencode's is the same wrapper shape building an
+`OPENCODE_CONFIG_CONTENT` env layer (deep-merged by opencode, so byre's
+servers compose with user config; live-verified 2026-07-17). byre never
+writes an agent's MCP state -- ADR 0033
+walked the state-writing registrar back. An agent skill without an
 adapter degrades honestly -- `byre status` shows
 declared-but-NOT-delivered plus the baked path. `byre mcp
 add|remove|list` is the CLI sugar (remove is closure-smart; --global
@@ -467,10 +470,12 @@ serve every project WITHOUT host copying: the credential lives in a
 machine-scoped identity volume and byre reads nothing from the host --
 Codex, Gemini, and OpenCode log in once in any box (the credential
 lands in the shared volume through symlinks; Gemini's API-key path is
-verified, Gemini-OAuth and OpenCode's rotation gate are gate-pending --
-see the skills and ADR 0017's verification record); Grok has NO
-shared-auth (its single-use
-rotation failed the file-sharing gates in the field; retired, ADR 0023);
+verified and its two-box OAuth check is gate-pending; OpenCode is
+vouched for API-key logins -- two-box gate passed 2026-07-17, OAuth
+entries unsupported and warned -- see the skills and ADR 0017's
+verification record); Grok's v1 file-sharing was retired in the field
+(ADR 0023) and its v2 auth broker awaits its rollover field gate
+(ADR 0036);
 Claude uses a user-minted `claude
 setup-token` pasted at a
 first-run prompt and exported to the agent process by a **launch env
@@ -485,10 +490,11 @@ that box in -- yes puts the companion in the project's `byre.config`
 answer as a favourite (the picker-owned `shared_auth` list) that
 prefills the next box's offer; the offer is skipped only when the
 companion is already hand-granted machine-wide in `default.config`
-`skills`, a key the picker never writes (ADR 0025). Gemini-OAuth and
-opencode (both gate-pending) and grok (retired) deliberately don't
-declare it. The gate-pending pair still declare `companion_for` — the
-pairing fact, which nests a companion under its agent's row in the
+`skills`, a key the picker never writes (ADR 0025). Gemini (two-box
+OAuth check pending) and grok (broker rollover gate pending, ADR 0036)
+deliberately don't declare it yet; opencode's gate passed 2026-07-17
+and it now does. The gate-pending pair still declare `companion_for` —
+the pairing fact, which nests a companion under its agent's row in the
 config UI without putting anything in front of onboarding; readiness
 gates the offer, never the display (ADR 0034).
 

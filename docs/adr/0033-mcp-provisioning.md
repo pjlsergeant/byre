@@ -135,7 +135,8 @@ No fabricated per-CLI commands for unprobed CLIs. grok has no injection
 seam on its current launch surface (probed 0.2.101; `grok setup` and
 config layering unprobed); gemini's CLI is unprobed entirely and may
 inject for free — both degrade until evidence arrives, likely with the
-OpenCode/gemini agent-mechanics pass.
+OpenCode/gemini agent-mechanics pass. (The OpenCode half of that pass
+landed — see the 2026-07-17 amendment under "v1 scope" below.)
 
 **Costs on the record for both adapters:** attach-shell agent sessions
 don't see byre's servers (the shell is not the agent session); a
@@ -215,6 +216,11 @@ regardless.
   user asks; the parked runtime-env work is the likely vehicle.
 
 ## v1 scope (grilled and ruled, 2026-07-15)
+
+> **Amended 2026-07-17:** opencode joined the adapter set — its
+> OPENCODE_CONFIG_CONTENT deep-merge was source-answered 2026-07-16 and
+> live-verified 2026-07-17 (agent-contract tier), so `mcp = "inject"`
+> ships via `byre-opencode-mcp-launch`. grok and gemini still degrade.
 
 Adapters: claude + codex (injection); grok and gemini degrade honestly
 until injection evidence arrives. Account connectors: filtered, silently,

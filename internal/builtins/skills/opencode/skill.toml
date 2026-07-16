@@ -34,14 +34,18 @@
 # (observed live 2026-07-16), so models.dev is functional egress, not
 # telemetry.
 
-description = "The OpenCode agent (multi-provider); login persists per project. EXPERIMENTAL: installer path and Claude Pro/Max login flow not yet verified from a live box."
+description = "The OpenCode agent (multi-provider); login persists per project. EXPERIMENTAL: Claude Pro/Max login flow not yet verified from a live box (the installer path is exercised by the agent-contract tier, 2026-07-17)."
 
 [build]
-apt = ["curl", "ca-certificates", "unzip"]
+# jq: the MCP launch wrapper builds OPENCODE_CONFIG_CONTENT from the baked
+# /etc/byre/mcp.json with it.
+apt = ["curl", "ca-certificates", "unzip", "jq"]
 # First-run auth: run `opencode auth login` on a fresh box (guarded by
 # auth.json), so the agent works without hunting for a shell to log in from.
 # Runs before the agent launches; skippable with Ctrl-C.
-files = { "opencode-login.sh" = "/etc/byre/firstrun.d/opencode-login" }
+# opencode-mcp-launch.sh: the MCP adapter — builds OPENCODE_CONFIG_CONTENT
+# from the canonical /etc/byre/mcp.json, execs opencode (ADR 0033).
+files = { "opencode-login.sh" = "/etc/byre/firstrun.d/opencode-login", "opencode-mcp-launch.sh" = "/usr/local/bin/byre-opencode-mcp-launch" }
 dockerfile = [
   # Pre-create ~/.local's XDG tree AS THE DEV USER. The state volume targets
   # /home/dev/.local/share/opencode, and gen's volume-mount-point layer
@@ -56,6 +60,7 @@ dockerfile = [
   # volume -- the state volume mounts at the XDG data dir instead -- so the
   # binary stays in this image dir, always present, never masked or wiped.
   "RUN test -x /home/dev/.opencode/bin/opencode && ln -sf /home/dev/.opencode/bin/opencode /usr/local/bin/opencode",
+  "RUN chmod +x /usr/local/bin/byre-opencode-mcp-launch",
   # Clear any install residue from the data dir (the .opencode state-volume
   # mount point) so a fresh volume starts clean; opencode recreates it at
   # runtime. The binary dir ~/.opencode is untouched.
@@ -93,7 +98,11 @@ egress_offered = ["opencode.ai"]
 # behavior without it is auto-REJECT with a printed warning, never a hang
 # (binary-source-verified -- grok's silent-death failure mode does not
 # apply).
-command = "opencode --auto"
+command = "byre-opencode-mcp-launch --auto"
+# The wrapper is byre's opencode MCP adapter: it builds OPENCODE_CONFIG_CONTENT
+# from /etc/byre/mcp.json (baked in every image) and execs opencode with the
+# passthrough args — pure injection, no state writes (ADR 0033).
+mcp = "inject"
 state = ".opencode"
 # OpenCode reads global agent rules from <config-dir>/AGENTS.md, i.e.
 # ~/.config/opencode/AGENTS.md (binary-source-verified; project AGENTS.md
@@ -114,20 +123,19 @@ context_target = "/home/dev/.config/opencode/AGENTS.md"
 # rotate per provider policy -- see docs/AGENT-CREDENTIAL-MECHANICS.md and
 # opencode-shared-auth's gates before sharing it across boxes.
 
-# MCP seam note (ADR 0033, 2026-07-16): opencode injects config via
-# OPENCODE_CONFIG_CONTENT (config JSON via env), and its config carries a
-# top-level `mcp` map. The merge-vs-replace question is ANSWERED from repo
-# source (opencode 1.18.3, config.ts load order): OPENCODE_CONFIG_CONTENT
+# MCP seam note (ADR 0033; VERIFIED LIVE 2026-07-17): opencode injects config
+# via OPENCODE_CONFIG_CONTENT (config JSON via env), and its config carries a
+# top-level `mcp` map. Merge-vs-replace was answered from repo source
+# (opencode 1.18.3, config.ts load order): OPENCODE_CONFIG_CONTENT
 # DEEP-MERGES over global + project config, scope "local" (last of the
 # user-level layers) -- it does NOT replace, so injected servers compose with
-# the user's own config and byre keys win per-name. The adapter is BUILT and
-# unit-tested (opencode-mcp-launch.sh -> byre-opencode-mcp-launch, mirrors the
-# codex wrapper; wrapper_test.go). It is NOT yet wired as the [agent] command
-# and `mcp` stays UNSET (no "inject" vouch) pending the one thing source can't
-# prove: a live box loading byre's injected servers end-to-end (`opencode mcp`
-# lists them). On that verify, flip command -> `byre-opencode-mcp-launch
-# --auto` and set `mcp = "inject"` together (the vouch-follows-verification
-# discipline). Until then MCP delivery to opencode is the honest degradation.
+# the user's own config and byre keys win per-name. The live half of the
+# vouch -- a real box resolving byre's injected servers (`opencode mcp list`)
+# -- passed 2026-07-17 on opencode 1.18.3, and stays continuously pinned by
+# the agent-contract tier (TestAgentContractOpencode, agents.yml). Hence the
+# wrapper above is the [agent] command and `mcp = "inject"` is set. The
+# adapter (opencode-mcp-launch.sh -> byre-opencode-mcp-launch) mirrors the
+# codex wrapper; unit-tested in wrapper_test.go.
 
 [[volumes]]
 name = ".opencode"

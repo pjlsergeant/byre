@@ -800,7 +800,9 @@ the rotation risk is inherited per provider (Anthropic OAuth = Claude-class
 single-use refresh). byre's `opencode-shared-auth` supports API-key logins
 only -- an OAuth entry still rides the whole-file share mechanically but is
 unsupported and draws the firstrun warning (its skill.toml is the status
-record); the remaining field gate is the two-box API-key check.
+record). VOUCHED 2026-07-17: the two-box API-key field gate passed live
+(TestOpencodeSharedAuthLiveGate -- a real login in box A stored through the
+symlink, box B's opencode listed it), so the skill declares shared_auth_for.
 
 ## Implications for the shared-auth split
 

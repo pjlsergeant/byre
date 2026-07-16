@@ -1862,6 +1862,15 @@ func TestOpencodeSkillPinsLoadBearingFacts(t *testing.T) {
 	if !strings.Contains(res.AgentCommand(), "--auto") {
 		t.Errorf("opencode autonomy flag missing from launch command %q", res.AgentCommand())
 	}
+	// The MCP adapter wiring (ADR 0033; live-verified 2026-07-17): the wrapper
+	// is the launch command and the inject vouch rides with it — they flip
+	// TOGETHER or not at all.
+	if !strings.Contains(res.AgentCommand(), "byre-opencode-mcp-launch") {
+		t.Errorf("MCP launch wrapper missing from launch command %q", res.AgentCommand())
+	}
+	if res.Agent.MCP != "inject" {
+		t.Errorf("opencode mcp vouch = %q, want inject (live-verified 2026-07-17)", res.Agent.MCP)
+	}
 	if got := res.AgentContextTarget(); got != "/home/dev/.config/opencode/AGENTS.md" {
 		t.Errorf("context target must be AGENTS.md in the XDG config dir, got %q", got)
 	}
@@ -2122,10 +2131,11 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 // TestOpencodeSharedAuthCompositionResolves: the companion resolves
 // alongside the agent, ships the 00- ordered hook (must sort before
 // opencode's own login hook), and mounts the machine-scoped identity
-// volume. It deliberately does NOT declare shared_auth_for (the OAuth
-// rotation gate is pending — gemini precedent); that fact's canonical pin
-// is the TestBuiltinSharedAuthDeclarations table in the skills package.
-// The hook itself is codex-shaped and covered behaviorally below.
+// volume. It declares shared_auth_for (vouched 2026-07-17 — the two-box
+// API-key field gate passed live, TestOpencodeSharedAuthLiveGate); that
+// fact's canonical pin is the TestBuiltinSharedAuthDeclarations table in
+// the skills package. The hook itself is codex-shaped and covered
+// behaviorally below.
 func TestOpencodeSharedAuthCompositionResolves(t *testing.T) {
 	_, cat := testCat(t)
 	res, err := skills.Resolve(config.Config{Agent: "opencode", Skills: []string{"opencode-shared-auth"}}, cat)
@@ -2171,10 +2181,11 @@ func TestOpencodeSharedAuthCompositionResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Still companion_for, not shared_auth_for: the vouch follows the live
-	// two-box field check, never source/scope alone (the v1 lesson).
-	if !strings.Contains(string(b), `companion_for = "opencode"`) || strings.Contains(string(b), "\nshared_auth_for") {
-		t.Error("vouch shape wrong: want companion_for (field check pending), not shared_auth_for")
+	// shared_auth_for, no longer companion_for: the two-box field gate passed
+	// 2026-07-17 (the vouch follows its field gate — and the keys are
+	// mutually exclusive, so companion_for must be GONE).
+	if !strings.Contains(string(b), `shared_auth_for = "opencode"`) || strings.Contains(string(b), `companion_for = "opencode"`) {
+		t.Error("vouch shape wrong: want shared_auth_for (field gate passed 2026-07-17), without companion_for")
 	}
 	// The API-key-only scope must be on the record (OAuth entries are
 	// unsupported and warned; they still ride the whole-file share).

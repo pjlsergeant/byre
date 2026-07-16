@@ -182,11 +182,14 @@ the source pass should target:
   CONFIRMATION, not design: cite the in-place write and the
   benign-concurrent-refresh claims to file:line, and note anything a
   newer version changed under us.
-- **Gemini**: the OAuth path is gate-pending (~1h expiry behavior).
-  Source-answer the `oauth_creds.json` write/refresh/lock questions
-  before any sharing design; the API-key path is already verified
-  (ADR 0017).
-- **OpenCode**: rotation gate pending; check what the source says about
-  auth-store writes, the `OPENCODE_AUTH_CONTENT` env seam's exact
-  semantics (static -- refresh write-back?), and the MCP config
-  merge-vs-replace question parked under ADR 0033.
+- **Gemini**: rotation answered 2026-07-16 from Google's primary docs
+  (installed-app refresh tokens are NON-rotating -- sharing is safe);
+  the `oauth_creds.json` write path and the dialog-fork hazard are
+  source-answered in the mechanics doc. Remaining: the live two-box
+  OAuth field check.
+- **OpenCode**: answered 2026-07-16/17 -- in-place auth-store writes
+  (plus an upstream torn-read hazard, deferred), `OPENCODE_AUTH_CONTENT`
+  is static injection (no refresh write-back), MCP config deep-MERGES
+  (ADR 0033; `mcp = "inject"` vouched + live-verified 2026-07-17), and
+  shared auth is vouched for API-key logins (two-box gate passed
+  2026-07-17). See docs/AGENT-CREDENTIAL-MECHANICS.md.

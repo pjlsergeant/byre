@@ -83,4 +83,7 @@ tar -C /workspace -czf - --exclude .git --exclude .byre-devlog --exclude moarcod
 # ~/.ssh (restored on cleanup) — safe on the sacrificial VM by definition,
 # which is why the wrapper sets it and a bare host-side run does not.
 # BYRE_TUI_TESTS=1: the tmux TUI tier; the VM template installs tmux.
-"${SSH[@]}" "$VM" "cd $DEST && BYRE_DOCKER_TESTS=1 BYRE_SSH_LOOP_TESTS=1 BYRE_TUI_TESTS=1 BYRE_TEST_ENGINE=$(printf '%q' "${BYRE_TEST_ENGINE:-}") go test$(printf ' %q' "$@")"
+# BYRE_AGENT_TESTS forwards (not set): the agent-contract tier runs live
+# agent installers — opt in per run (BYRE_AGENT_TESTS=1 byre-inttest ...);
+# its scheduled home is .github/workflows/agents.yml.
+"${SSH[@]}" "$VM" "cd $DEST && BYRE_DOCKER_TESTS=1 BYRE_SSH_LOOP_TESTS=1 BYRE_TUI_TESTS=1 BYRE_AGENT_TESTS=$(printf '%q' "${BYRE_AGENT_TESTS:-}") BYRE_TEST_ENGINE=$(printf '%q' "${BYRE_TEST_ENGINE:-}") go test$(printf ' %q' "$@")"

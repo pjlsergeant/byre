@@ -121,6 +121,21 @@ the skill; native-Linux docker provides neither name, so set
 `BYRE_INTTEST_VM` there (and grant that egress yourself on a firewalled
 box).
 
+**The agent-contract tier** (`BYRE_AGENT_TESTS=1`, its own gate on top of
+the engine): `internal/commands/agent_contract_test.go` builds each agent's
+REAL box -- live installers, unpinned versions, exactly what a user's
+rebuild pulls -- and probes the agent-side assumptions byre's skills stake
+on the binaries (the other half of the contract the unit suite pins with
+stub binaries). Loginless probes only; credential mechanics stay field
+gates. Its scheduled home is `.github/workflows/agents.yml` (every two
+days + push to main -- agent drift runs on the AGENTS' release cadence,
+and a red leg usually means "the agent moved", which is why it is not part
+of ci.yml or the release gate). Run it ad hoc with
+`BYRE_AGENT_TESTS=1 byre-inttest ./internal/commands/ -run AgentContract -v`
+-- noting an ad-hoc run rides the VM's warm layer cache (it re-checks the
+agent version already built there; only cold builds, like the ephemeral CI
+runners', pull today's release).
+
 **Lifecycle** (host-side): `limactl stop byre-inttest` pauses;
 `limactl stop byre-inttest && limactl delete byre-inttest` + a fresh start
 resets (delete refuses a running VM) -- nothing on it is precious. A

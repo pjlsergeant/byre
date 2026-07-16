@@ -1,9 +1,12 @@
 # Shared-auth fix-up -- live-verification handoff
 
 **Status: IN PROGRESS -- all buildable work committed (branch
-`fix-up-other-agents`, commits `31f5305`..`219dd6a`); four LIVE-BOX checks
-remain, each of which flips a vouch. Delete this file once all four vouches
-are flipped and the results are folded into `docs/AGENT-CREDENTIAL-MECHANICS.md`
+`fix-up-other-agents`, commits `31f5305`..`219dd6a`, merged to main
+2026-07-17); checks 1 and 2 (opencode) PASSED + FLIPPED 2026-07-17 via the
+new agent-contract tier on the sacrificial VM. TWO checks remain (gemini
+two-box OAuth, grok rollover), each flipping a vouch — both need a real
+login with Pete driving the host. Delete this file once those two are
+flipped and the results are folded into `docs/AGENT-CREDENTIAL-MECHANICS.md`
 + the relevant ADR.**
 
 Written 2026-07-16 handing off from the session that did the source pass +
@@ -25,7 +28,17 @@ alone (the grok-v1 lesson). Do NOT flip any `companion_for` -> `shared_auth_for`
 
 ## The four remaining checks
 
-### 1. opencode MCP live-load  (fastest; no rebuild, no login)
+### 1. opencode MCP live-load — ✅ PASSED + FLIPPED 2026-07-17
+
+Gate ran as `TestAgentContractOpencode` (the new agent-contract tier,
+`BYRE_AGENT_TESTS=1`) on the sacrificial VM against a real opencode 1.18.3
+box: `opencode mcp list` resolves servers from `OPENCODE_CONFIG_CONTENT`,
+and the shipped wrapper delivers the baked `/etc/byre/mcp.json` end to end.
+All five on-pass steps below applied (wrapper wired as the [agent] command,
+`mcp = "inject"` set); the tier re-runs the gate every two days
+(.github/workflows/agents.yml). Original check text kept for the record:
+
+### ~~1. opencode MCP live-load~~  (fastest; no rebuild, no login)
 - **Goal:** confirm opencode loads MCP servers from `OPENCODE_CONFIG_CONTENT`
   (the adapter's whole mechanism). Source says `opencode mcp list` reads the
   merged config (`packages/opencode/src/cli/cmd/mcp.ts`, `McpListCommand` ->
@@ -46,7 +59,17 @@ alone (the grok-v1 lesson). Do NOT flip any `companion_for` -> `shared_auth_for`
   (`opencode-mcp-launch.sh`) and its 3 unit tests (`wrapper_test.go`) are
   already committed (`82ec10c`).
 
-### 2. opencode two-box API-key sharing
+### 2. opencode two-box API-key sharing — ✅ PASSED + FLIPPED 2026-07-17
+
+Gate ran as `TestOpencodeSharedAuthLiveGate` (agent_contract_test.go;
+BYRE_AGENT_TESTS=1, deliberately NOT scheduled — it drives a real login) on
+the sacrificial VM, opencode 1.18.3, boxes built from this tree: box A's
+real `opencode auth login` (api-key path, dummy key, pty-driven) stored
+THROUGH the shared-auth symlink (link intact, key present in the shared
+inode), box B's own opencode listed the credential. `companion_for` swapped
+to `shared_auth_for`; both pin tests updated. Original check text kept:
+
+### ~~2. opencode two-box API-key sharing~~
 - **Goal:** the field gate for `opencode-shared-auth` (scoped to API-key logins
   only, `13c206f`). Confirm a key stored in box A is used by box B via the
   shared inode.

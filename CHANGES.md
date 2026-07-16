@@ -2,9 +2,37 @@
 
 ## Unreleased
 
+- **MCP servers now reach OpenCode boxes (`mcp = "inject"`).** The
+  opencode skill launches through `byre-opencode-mcp-launch`, which
+  builds an `OPENCODE_CONFIG_CONTENT` from the baked `/etc/byre/mcp.json`
+  (deep-merged by opencode over the user's own config — byre's servers
+  compose, never replace) and execs opencode. Live-verified 2026-07-17
+  on opencode 1.18.3; previously declared servers showed
+  declared-but-not-delivered.
+
+- **OpenCode shared auth is now vouched (`shared_auth_for`).** The
+  two-box field gate passed live: a real `opencode auth login` in one
+  box stores its API key through the shared-auth symlink into the
+  machine-wide identity volume, and a second project's box reads it —
+  so onboarding now offers the share to opencode users. API-key logins
+  only; OAuth entries (Claude Pro/Max etc.) race across boxes and draw
+  a launch warning instead.
+
+- **Agent-contract canary tier.** `BYRE_AGENT_TESTS=1` gates new
+  integration tests (`internal/commands/agent_contract_test.go`) that
+  build each agent's real box — live installers, the same unpinned
+  versions a user's rebuild pulls — and probe the agent-side assumptions
+  byre's skills depend on (opencode's config-injection seam and
+  credential path, codex's `-c mcp_servers` overrides, gemini's
+  settings/store tokens, grok's broker env seams). They run every two
+  days and on push via `.github/workflows/agents.yml`, so an agent
+  release that breaks a contract surfaces within days instead of at a
+  user's next rebuild.
+
 - **Shared-auth hardening for Gemini, OpenCode, and Codex** (source pass
-  over all three trees; no `shared_auth_for` vouches flipped — the live
-  two-box checks are still pending, see each skill.toml).
+  over all three trees; at landing time no `shared_auth_for` vouches were
+  flipped — opencode's gate later passed and flipped, see the entry above;
+  gemini's and grok's live checks are still pending, see each skill.toml).
   `gemini-shared-auth` now seeds `security.auth.selectedType =
   "oauth-personal"` so Gemini's auth-method dialog — which deletes the
   symlinked credential and silently forks the login off the shared

@@ -1,0 +1,77 @@
+# Agent-contract canary (internal/commands/agent_contract_test.go): builds
+# each agent's real box — live installers, unpinned versions, exactly what a
+# user's rebuild pulls — and probes the agent-side assumptions byre's skills
+# stake on the binaries. A red leg here usually means "the agent moved", not
+# "the last commit is wrong", which is why this is its OWN workflow:
+#   - NOT part of ci.yml, so PR/release signals stay attributable to byre's
+#     own code (release discipline: a red canary means fix-or-de-vouch before
+#     tagging — a convention, deliberately not a hard gate).
+#   - The cron is the headline trigger: agent drift happens on the AGENTS'
+#     release cadence, not byre's push cadence. Every two days caps detection
+#     latency at roughly one upstream release cycle.
+#   - One job per agent, so one flaky installer can't paint the other agents'
+#     results red.
+# Each test logs the installed agent version (-v below surfaces it) — green
+# runs leave the version trail drift gets correlated against.
+name: Agents
+
+on:
+  schedule:
+    - cron: "17 5 */2 * *" # every other day, 05:17 UTC (odd minute per GH load guidance)
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each value is the -run pattern suffix. The tier is loginless by
+        # construction — the interactive two-box credential gate is named
+        # OUTSIDE the TestAgentContract prefix (TestOpencodeSharedAuthLiveGate)
+        # precisely so no pattern here can pick it up.
+        agent: [Opencode, Codex, Gemini, Grok]
+    runs-on: ubuntu-latest
+    # Roomy enough for two full attempts (below) plus setup.
+    timeout-minutes: 35
+    steps:
+      # Actions pinned by commit SHA (version noted alongside) — same policy
+      # as ci.yml.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: agent contract tests (${{ matrix.agent }})
+        # One retry: an installer/network flake and real contract drift look
+        # different on a second attempt minutes later. Occasional false reds
+        # are accepted (ruling 2026-07-17); the retry just keeps them rare.
+        # The PASS-line check keeps the canary honest: `go test -run` exits 0
+        # on ZERO matching tests, so a rename or matrix typo would otherwise
+        # turn this leg permanently, silently green.
+        run: |
+          attempt() {
+            # No pipe on the go test line: GH's default bash has no pipefail,
+            # and `go test | tee` would report tee's exit code.
+            BYRE_AGENT_TESTS=1 go test ./internal/commands/ \
+              -run 'TestAgentContract${{ matrix.agent }}' -v -timeout 15m \
+              > out.log 2>&1
+            rc=$?
+            cat out.log
+            [ "$rc" -eq 0 ] || return "$rc"
+            grep -q -- '--- PASS: TestAgentContract${{ matrix.agent }}' out.log || {
+              echo '::error::no TestAgentContract${{ matrix.agent }} test ran — the canary matched nothing'
+              return 1
+            }
+          }
+          attempt || {
+            echo "::warning::first attempt failed — retrying once (installer flake vs real drift)"
+            attempt
+          }

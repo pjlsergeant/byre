@@ -48,14 +48,16 @@
 
 description = "Share one OpenCode API-key login across all your projects (OAuth logins unsupported — they race across boxes; see skill.toml)."
 
-# companion_for is the pairing FACT (ADR 0034): the config UI nests this
-# skill under opencode's row so the relationship is visible where it's
-# enabled. Deliberately NO `shared_auth_for` (the ADR 0025 onboarding
-# offer) YET: the mechanism is sound for API keys, but the vouch follows a
-# LIVE field check (the v1 lesson) — a real two-box run confirming a key
-# stored in one box is used by another. Once that passes, SWAP this key for
-# shared_auth_for (they are mutually exclusive) — the gemini precedent.
-companion_for = "opencode"
+# shared_auth_for is the vouch (ADR 0025: the onboarding offer) AND implies
+# the pairing fact (ADR 0034: config-UI nesting). VOUCHED 2026-07-17 — the
+# two-box field gate passed live (TestOpencodeSharedAuthLiveGate on the
+# sacrificial VM, opencode 1.18.3): a real `opencode auth login` in box A
+# stored an API key THROUGH the shared-auth symlink into the machine-scoped
+# identity volume (link intact — no fork), and box B's own opencode listed
+# the credential from the shared inode. Scope stays API-key logins only (the
+# ruling above); the gate is re-runnable ad hoc, deliberately NOT scheduled
+# (it drives a real login — see agent_contract_test.go).
+shared_auth_for = "opencode"
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-opencode-shared-auth" }

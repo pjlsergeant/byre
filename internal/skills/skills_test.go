@@ -728,8 +728,10 @@ func TestSharedAuthCompanion(t *testing.T) {
 	}
 }
 
-// The builtin declarations are load-bearing: claude/codex offer at onboarding;
-// gemini (OAuth gate-pending) and grok (retired) deliberately must NOT.
+// The builtin declarations are load-bearing: claude/codex/opencode offer at
+// onboarding (opencode vouched 2026-07-17); gemini (two-box OAuth gate
+// pending) and grok (broker rollover gate pending, ADR 0036) deliberately
+// must NOT.
 func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 	home := t.TempDir()
 	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
@@ -739,9 +741,9 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 	for agent, want := range map[string]string{
 		"claude":   "claude-shared-auth",
 		"codex":    "codex-shared-auth",
-		"gemini":   "", // OAuth gate-pending (companion_for only, no shared_auth_for vouch)
-		"grok":     "", // retired (see grok-shared-auth/skill.toml)
-		"opencode": "", // OAuth rotation gate-pending (companion_for only, no shared_auth_for vouch)
+		"gemini":   "",                     // two-box OAuth field gate pending (companion_for only, no shared_auth_for vouch)
+		"grok":     "",                     // ~6h broker-rollover field gate pending (companion_for only; ADR 0036)
+		"opencode": "opencode-shared-auth", // vouched 2026-07-17: two-box API-key gate passed live (TestOpencodeSharedAuthLiveGate)
 	} {
 		if got := SharedAuthCompanion(cat, agent); got != want {
 			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)
@@ -752,8 +754,9 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 // The companion PAIRING (ADR 0034) is a fact every live companion declares —
 // via companion_for when gate-pending, or implied by shared_auth_for once
 // vouched — and is what the config UI's nesting rides. Distinct from the
-// vouch table above: gemini, grok and opencode pair here while offering
-// nothing there (each's shared_auth_for vouch waits on its field gate).
+// vouch table above: gemini and grok pair here while offering nothing there
+// (each's shared_auth_for vouch waits on its field gate); claude, codex and
+// opencode pair through their vouch.
 func TestBuiltinCompanionDeclarations(t *testing.T) {
 	home := t.TempDir()
 	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
