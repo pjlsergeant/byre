@@ -70,4 +70,6 @@ if [ -r "$MCP" ]; then
   ' "$MCP")
 fi
 
-exec codex "${flags[@]}" "$@"
+# ${flags[@]+...}: bash < 4.4 (macOS's 3.2 included, where the unit test
+# runs this under the host bash) trips `set -u` expanding an EMPTY array.
+exec codex ${flags[@]+"${flags[@]}"} "$@"
