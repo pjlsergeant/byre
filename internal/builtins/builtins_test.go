@@ -815,7 +815,7 @@ func TestDevloopRenamedStub(t *testing.T) {
 }
 
 // Devloop rename upgrade-path dance deleted with materialization (ADR 0029);
-// the stub remains bundled and is covered by TestDevloopIsRenameStub.
+// the stub remains bundled and is covered by TestDevloopRenamedStub.
 
 // TestGrokLoginHookHealsRetiredSymlink drives the real grok-login hook with a
 // stub `grok` binary. The retirement (ADR 0023) made the anti-planting rule

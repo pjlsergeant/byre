@@ -283,8 +283,12 @@ func TestResolveContextSymlinkEscapeRejected(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dir, "skills", "evil", "link")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Resolve(config.Config{Skills: []string{"evil"}}, catFor(t, dir)); err == nil {
+	_, err := Resolve(config.Config{Skills: []string{"evil"}}, catFor(t, dir))
+	if err == nil {
 		t.Fatal("expected rejection of symlink escaping the skill dir")
+	}
+	if !strings.Contains(err.Error(), "escapes the skill dir") {
+		t.Fatalf("expected the escape rejection, got: %v", err)
 	}
 }
 
