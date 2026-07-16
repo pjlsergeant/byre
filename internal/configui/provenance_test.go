@@ -43,7 +43,7 @@ func TestLegacyRowDoesNotDisableBundledAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{Catalog: cat}, nil, false)
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{Catalog: cat}, nil, TargetProject)
 	if d := m.optDisabled("claude"); d != "" {
 		t.Fatalf("bundled alias claude must stay selectable, got disabled: %q", d)
 	}

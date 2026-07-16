@@ -201,6 +201,30 @@ func ListLayers(home string, cat *packages.Catalog) ([]LayerInfo, error) {
 	return out, nil
 }
 
+// LoadableLayers returns every loadable named layer's raw config keyed by
+// name (parent pointers included) — the config editor's provenance input.
+// Broken layers are simply absent; `byre layer list` names them and why.
+func LoadableLayers(home string, cat *packages.Catalog) (map[string]Config, error) {
+	infos, err := ListLayers(home, cat)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]Config{}
+	for _, li := range infos {
+		if li.Reason != "" {
+			continue
+		}
+		raw, err := os.ReadFile(LayerPath(home, li.Name))
+		if err != nil {
+			continue
+		}
+		if c, err := ParseLayerBody(raw); err == nil {
+			out[li.Name] = c
+		}
+	}
+	return out, nil
+}
+
 // layerProblem returns why a layer dir can't be loaded ("" = loadable):
 // bad or reserved name, missing/broken layer.config, or a broken chain
 // above it (cycle, dangling or invalid parent).

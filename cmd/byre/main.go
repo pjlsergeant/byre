@@ -28,7 +28,7 @@ type app struct {
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
 	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error
-	config        func(s commands.Streams, dir string, global bool) error
+	config        func(s commands.Streams, dir string, global bool, layer string) error
 	status        func(s commands.Streams, dir string, selfEdit bool) error
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
@@ -212,6 +212,7 @@ foreground. First run onboards the project (creates its host-side config).`,
 
 func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var global bool
+	var layer string
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Edit this project's config interactively.",
@@ -219,10 +220,11 @@ func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
 (~/.byre/projects/<id>/byre.config). Raw fields are shown, not edited.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.config(s, dir, global)
+			return a.config(s, dir, global, layer)
 		},
 	}
 	c.Flags().BoolVar(&global, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	c.Flags().StringVar(&layer, "layer", "", "edit a named layer (~/.byre/layers/<name>/layer.config) instead")
 	return c
 }
 

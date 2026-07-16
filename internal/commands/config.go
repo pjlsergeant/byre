@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -14,6 +15,22 @@ import (
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
+
+// chainContains reports whether needle appears in from's extends chain
+// (from itself included), walked over the raw layers map with a seen-guard
+// (the on-disk state may carry a cycle mid-edit). The EXTENDS picker uses it
+// to exclude parents that would loop back through the layer being edited.
+func chainContains(layers map[string]config.Config, from, needle string) bool {
+	seen := map[string]bool{}
+	for name := from; name != "" && !seen[name]; {
+		if name == needle {
+			return true
+		}
+		seen[name] = true
+		name = layers[name].Extends
+	}
+	return false
+}
 
 // skillOpts is ListSkills minus unofferable stubs (see the call site).
 func skillOpts(cat *packages.Catalog) []string {
@@ -28,10 +45,14 @@ func skillOpts(cat *packages.Catalog) []string {
 }
 
 // Config implements `byre config` — the interactive editor for this project's
-// host-side store config (~/.byre/projects/<id>/byre.config), and, with global,
-// the global ~/.byre/default.config. Both are byre-owned/host-side, so editing
+// host-side store config (~/.byre/projects/<id>/byre.config); with global,
+// the global ~/.byre/default.config; with layer, a named layer's
+// ~/.byre/layers/<name>/layer.config. All byre-owned/host-side, so editing
 // them never touches the project tree.
-func Config(s Streams, projectDir string, global bool) error {
+func Config(s Streams, projectDir string, global bool, layer string) error {
+	if global && layer != "" {
+		return fmt.Errorf("--global and --layer are different files; pick one")
+	}
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -48,14 +69,29 @@ func Config(s Streams, projectDir string, global bool) error {
 	// unions the config-side names back in, so it stays un-referenceable.
 	skillOpts := skillOpts(cat)
 	skillDescs := skills.DescribeSkills(cat)
+	target := configui.TargetProject
+	if global {
+		target = configui.TargetGlobal
+	}
+	if layer != "" {
+		if err := config.ValidateLayerName(layer); err != nil {
+			return err
+		}
+		if _, err := os.Stat(config.LayerPath(home, layer)); err != nil {
+			return fmt.Errorf("layer %q not found — create it first: byre layer new %s", layer, layer)
+		}
+		target = configui.TargetLayer
+	}
 	// Provenance inputs (ADR 0018): the resolved lower cascade per template,
 	// so the project editor can mark inherited entries instead of showing the
 	// layer's raw delta, plus each skill's runtime contribution for the
 	// read-only (skill:name) rows. Degrade on error (a broken template or
 	// skill just loses its marks); the --global editor gets no Lower -- it IS
-	// the base layer.
+	// the base layer. A layer editor's lower is default ⊕ its ancestors —
+	// deliberately NOT any template (layers can't select shapes) and NOT the
+	// projects extending it (descendants are out of view by design).
 	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}, Catalog: cat}
-	if !global {
+	if target != configui.TargetGlobal {
 		inh.HasLower = true
 		if def, derr := config.ParseFile(filepath.Join(home, "default.config")); derr == nil {
 			inh.Default = def
@@ -74,6 +110,18 @@ func Config(s Streams, projectDir string, global bool) error {
 				}
 			}
 		}
+		// Named layers feed the EXTENDS picker and the live chain walk. The
+		// picker offers loadable layers only — minus, in a layer editor, the
+		// layer itself and anything whose chain runs through it (choosing
+		// either would create the cycle the resolver hard-errors on).
+		inh.Layers, _ = config.LoadableLayers(home, cat)
+		for name := range inh.Layers {
+			if layer != "" && (name == layer || chainContains(inh.Layers, name, layer)) {
+				continue
+			}
+			inh.LayerNames = append(inh.LayerNames, name)
+		}
+		sort.Strings(inh.LayerNames)
 	}
 	for _, n := range skillOpts {
 		if sk, serr := skills.Load(cat, n); serr == nil {
@@ -105,11 +153,15 @@ func Config(s Streams, projectDir string, global bool) error {
 	}
 
 	var path, title string
-	var vols configui.VolumeAdmin // nil for --global (no project volumes)
-	if global {
+	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
+	switch target {
+	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
 		title = "byre global config  (~/.byre/default.config)"
-	} else {
+	case configui.TargetLayer:
+		path = config.LayerPath(home, layer)
+		title = "byre layer config  (" + layer + ")"
+	default:
 		paths, perr := project.Resolve(projectDir)
 		if perr != nil {
 			return perr
@@ -131,7 +183,7 @@ func Config(s Streams, projectDir string, global bool) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, global)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target)
 	if err != nil {
 		return err
 	}

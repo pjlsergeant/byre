@@ -84,12 +84,18 @@ func (m model) assemble() config.Config {
 	out.Base = strings.TrimSpace(m.ti.Value())
 	// worktree_base is only editable in the global editor; elsewhere it round-trips
 	// via m.base untouched. Sibling checkbox wins; else the base path; else unset.
-	if m.global {
+	if m.target == TargetGlobal {
 		if m.wtSibling {
 			out.WorktreeBase = "sibling"
 		} else {
 			out.WorktreeBase = strings.TrimSpace(m.wtBase.Value())
 		}
+	}
+	// extends is only editable where the EXTENDS section shows (project and
+	// layer editors); the global editor round-trips it via m.base untouched
+	// (the resolver refuses it there — never silently drop what a hand wrote).
+	if m.target != TargetGlobal {
+		out.Extends = fromNone(m.extOpts[m.extSel])
 	}
 	out.Template = fromNone(m.tmplOpts[m.tmplSel])
 	out.Agent = fromNone(m.agentOpts[m.agentSel])
@@ -125,7 +131,7 @@ func (m model) assemble() config.Config {
 	// (and only) way to enable that skill machine-wide — stripping it made
 	// the choice silently impossible (audit finding).
 	primaryAgent := fromNone(m.agentOpts[m.agentSel])
-	if m.global {
+	if m.target == TargetGlobal {
 		primaryAgent = ""
 	}
 	out.Skills = nil
@@ -164,6 +170,7 @@ func (m model) sig() string {
 	parts := []string{
 		m.ti.Value(),
 		m.tmplOpts[m.tmplSel], m.agentOpts[m.agentSel], m.engineOpts[m.engineSel],
+		"ext:" + m.extOpts[m.extSel],
 		"apt:" + strings.Join(m.apt, ","),
 	}
 	for _, kv := range m.env {

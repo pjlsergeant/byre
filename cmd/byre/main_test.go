@@ -26,8 +26,8 @@ func recorderApp(calls map[string]string) app {
 			}
 			return note("develop", strings.Join([]string{dir, tmpl, agent, sa, boolStr(selfEdit)}, " "))
 		},
-		config: func(_ commands.Streams, dir string, global bool) error {
-			return note("config", dir+" "+boolStr(global))
+		config: func(_ commands.Streams, dir string, global bool, layer string) error {
+			return note("config", dir+" "+boolStr(global)+" "+layer)
 		},
 		status: func(_ commands.Streams, dir string, selfEdit bool) error {
 			return note("status", dir+" "+boolStr(selfEdit))
@@ -89,8 +89,9 @@ func TestRunDispatch(t *testing.T) {
 		// docker/kubectl behavior; ADR 0022, Pete-ratified) — this DISPATCHES,
 		// it does not print help. Do not restore a pre-parse help scan.
 		{[]string{"develop", "--template", "--help"}, "develop", "/proj --help  unset false"},
-		{[]string{"config"}, "config", "/proj false"},
-		{[]string{"config", "--global"}, "config", "/proj true"},
+		{[]string{"config"}, "config", "/proj false "},
+		{[]string{"config", "--global"}, "config", "/proj true "},
+		{[]string{"config", "--layer", "torn"}, "config", "/proj false torn"},
 		{[]string{"status"}, "status", "/proj false"},
 		{[]string{"status", "--self-edit"}, "status", "/proj true"},
 		{[]string{"reset"}, "reset", "/proj false"},

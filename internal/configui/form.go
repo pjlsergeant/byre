@@ -25,8 +25,8 @@ import (
 // file is untouched). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
 // quitting never writes.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, global bool) (bool, error) {
-	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, global)
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) (bool, error) {
+	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -55,6 +55,19 @@ const (
 	fMCP             // [[mcp]] declarations (wiring, not grants — ADR 0033)
 	fWorktreeSibling // checkbox: worktrees beside the repo
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
+	fExtends         // parent named layer (the extends chain pointer)
+)
+
+// Target says which kind of file this editor session edits: a project's
+// byre.config, the global default.config, or a named layer's layer.config.
+// The layer target is the project form minus the template picker (shape
+// selection has one owner, the project config) and minus project volumes.
+type Target int
+
+const (
+	TargetProject Target = iota
+	TargetGlobal
+	TargetLayer
 )
 
 // section groups fields under a header in the form (grants foregrounded).
@@ -92,6 +105,7 @@ var fieldLabel = map[fieldID]string{
 	fSkills:          "Skills",
 	fWorktreeSibling: "Worktree loc",
 	fWorktreeBase:    "Base path",
+	fExtends:         "Extends",
 }
 
 // rawFieldKey is the TOML key behind a raw text field, shown as a hint in its
@@ -161,10 +175,12 @@ type model struct {
 	ti        textinput.Model // base image editor
 	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
 	wtSibling bool            // fWorktreeSibling checkbox: worktrees beside the repo
-	global    bool            // editing ~/.byre/default.config: show + edit worktree_base
+	target    Target          // which kind of file this session edits
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
+	extOpts                         []string // EXTENDS picker (named layers + none)
+	extSel                          int
 
 	// Structured working state for the list fields.
 	apt    []string
@@ -226,7 +242,7 @@ type model struct {
 	confirmQuit bool
 }
 
-func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, global bool) model {
+func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
 	// Q7: saving re-marshals the whole file, so a hand-commented config would
 	// lose its comments — say so on LOAD, while the user can still bail to ^e.
 	commentWarn := false
@@ -255,23 +271,34 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP}},
 	}
-	// In default.config, template/agent are the first-run picker's
-	// PRE-SELECTIONS — the resolver strips them from every resolved config,
-	// so filing them under BUILD would claim they shape boxes. Their own
-	// section says what they actually do (audit finding: the global editor
-	// presented inert favourites as live machine-wide config).
-	if global {
+	switch target {
+	case TargetGlobal:
+		// In default.config, template/agent are the first-run picker's
+		// PRE-SELECTIONS — the resolver strips them from every resolved config,
+		// so filing them under BUILD would claim they shape boxes. Their own
+		// section says what they actually do (audit finding: the global editor
+		// presented inert favourites as live machine-wide config).
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
 			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP}},
+			// worktree_base is a global/host preference; only the --global editor
+			// shows it (in a project editor it would falsely read "unset — will
+			// refuse" whenever a global default is actually inherited).
+			{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}},
+		}
+	case TargetLayer:
+		// A layer carries the full vocabulary EXCEPT template (shape selection
+		// has one owner, the project config) — same form, no template picker.
+		sections = []section{
+			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP}},
 		}
 	}
-	// worktree_base is a global/host preference; only the --global editor shows it
-	// (in a project editor it would falsely read "unset — will refuse" whenever a
-	// global default is actually inherited).
-	if global {
-		sections = append(sections, section{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}})
+	// The chain pointer: project configs and layers may name a parent layer;
+	// default.config has no chain slot (the resolver refuses one).
+	if target != TargetGlobal {
+		sections = append(sections, section{"EXTENDS — a named layer this config builds on", []fieldID{fExtends}})
 	}
 	sections = append(sections, section{"ADVANCED", advanced})
 	var order []fieldID
@@ -292,7 +319,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		order:        order,
 		ti:           ti,
 		wtBase:       wtBase,
-		global:       global,
+		target:       target,
 		ta:           ta,
 		width:        80,
 		volPendClear: -1,
@@ -330,6 +357,11 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.tmplSel = indexOf(m.tmplOpts, orNone(cfg.Template))
 	m.agentSel = indexOf(m.agentOpts, orNone(cfg.Agent))
 	m.engineSel = indexOf(m.engineOpts, orDefault(cfg.Engine, "auto"))
+	// The EXTENDS picker: loadable layers plus, like every picker, the stored
+	// value even when it isn't offerable (a dangling extends must survive an
+	// unrelated open-and-save, and fail loudly at develop instead).
+	m.extOpts = pickerOpts(m.inh.LayerNames, cfg.Extends)
+	m.extSel = indexOf(m.extOpts, orNone(cfg.Extends))
 	m.apt = append([]string{}, cfg.Apt...)
 	m.env = envItems(cfg.Env)
 	m.mounts = append([]config.Mount{}, cfg.Mounts...)
@@ -521,6 +553,8 @@ func (m *model) cycle(dir int) {
 		m.wtSibling = !m.wtSibling
 	case fTemplate:
 		m.tmplSel = m.skipDisabled(m.tmplOpts, wrap(m.tmplSel+dir, len(m.tmplOpts)), dir)
+	case fExtends:
+		m.extSel = wrap(m.extSel+dir, len(m.extOpts))
 	case fAgent:
 		m.agentSel = m.skipDisabled(m.agentOpts, wrap(m.agentSel+dir, len(m.agentOpts)), dir)
 	case fEngine:
@@ -789,6 +823,20 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		return dimStyle.Render("(unset — byre worktree will refuse)")
 	case fTemplate:
 		return m.renderPick(m.tmplOpts, m.tmplSel, focused)
+	case fExtends:
+		s := m.renderPick(m.extOpts, m.extSel, focused)
+		// The full resolved chain, root-first, whenever picking a parent pulls
+		// in ancestors — the pointer names one layer; the merge takes them all.
+		if chain := m.chainNow(); len(chain) > 1 {
+			names := make([]string, len(chain))
+			for i, nl := range chain {
+				names[i] = nl.Name
+			}
+			s += dimStyle.Render("  (chain: " + strings.Join(names, " -> ") + ")")
+		} else if len(m.inh.LayerNames) == 0 && m.extendsNow() == "" {
+			s += dimStyle.Render("  (no layers on this machine — byre layer new <name>)")
+		}
+		return s
 	case fAgent:
 		return m.renderPick(m.agentOpts, m.agentSel, focused)
 	case fEngine:
