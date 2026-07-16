@@ -18,6 +18,19 @@ import (
 // side in: installed engines, the label vocabulary, workdir ids for the
 // cascade's ancestor walk, the caller's identity, and the input-source modes.
 func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error {
+	// The protocol handshake runs before ANYTHING else — a skewed remote
+	// invocation must fail before discovery, listings, or payload (ADR 0035).
+	if opts.Proto != 0 {
+		if err := deliver.CheckProto(opts.Proto); err != nil {
+			return err
+		}
+	}
+	if opts.Boxes {
+		return deliverBoxes(s, dir, opts)
+	}
+	if opts.Tar {
+		return deliverTar(s, dir, opts)
+	}
 	sources, err := deliverSources(s, opts, paths, hostClipboardReader())
 	if err != nil || sources == nil { // nil sources = beat cancelled, cleanly
 		deliverNotify(s, nil, err)
@@ -187,12 +200,66 @@ var stdinIsPiped = func() bool {
 	return st.Mode()&os.ModeCharDevice == 0
 }
 
+// deliverBoxes is `byre deliver --boxes`: the headless enumeration leg of
+// remote delivery (ADR 0035). Stdout carries the line grammar, stderr the
+// notes, and a partial pool exits ExitPartialPool so the caller knows not to
+// auto-pick — the list itself still printed and stays usable.
+func deliverBoxes(s Streams, dir string, opts deliver.Options) error {
+	cfg, err := deliverConfig(s, dir, installedEngines(), os.Getuid(), nil, nil)
+	if err != nil {
+		return err
+	}
+	partial, err := deliver.Boxes(cfg, opts)
+	if err != nil {
+		return err
+	}
+	if partial {
+		return ExitError{Code: deliver.ExitPartialPool}
+	}
+	return nil
+}
+
+// deliverTar is `byre deliver --tar -`: the delivery leg — unpack the archive
+// on stdin into the selected box. Normally invoked over ssh by a local byre
+// (which passes --box and --no-clip), but a hand-run works identically:
+// picker, clipboard garnish, and cancel behave as in a plain delivery.
+func deliverTar(s Streams, dir string, opts deliver.Options) error {
+	cfg, err := deliverConfig(s, dir, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s))
+	if err != nil {
+		return err
+	}
+	if _, err := deliver.RunTar(cfg, opts, s.In); err != nil {
+		if deliver.IsCancelled(err) {
+			fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.Source, engines []sessionRunner, uid int, clip *deliver.Clipboard, pick func([]deliver.Session) (deliver.Session, bool, error)) ([]string, error) {
+	cfg, err := deliverConfig(s, dir, engines, uid, clip, pick)
+	if err != nil {
+		return nil, err
+	}
+	landed, err := deliver.RunSources(cfg, opts, sources)
+	if deliver.IsCancelled(err) {
+		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+		return landed, nil
+	}
+	return landed, err
+}
+
+// deliverConfig wires the host side into a deliver.Config: installed engines
+// (adapted, with the rootless-podman warn and caller-scoping probe), the
+// label vocabulary, workdir ids for the cascade, and the caller's identity.
+func deliverConfig(s Streams, dir string, engines []sessionRunner, uid int, clip *deliver.Clipboard, pick func([]deliver.Session) (deliver.Session, bool, error)) (deliver.Config, error) {
 	if len(engines) == 0 {
 		// Zero ENGINES must not masquerade as zero boxes (field-found
 		// 2026-07-10: a Finder-launched byre couldn't see Docker Desktop on
 		// its sparse PATH and claimed "no running byre boxes").
-		return nil, fmt.Errorf("no container engine (docker or podman) found on PATH — if this ran from the Dock or Finder, the environment's PATH may be too sparse to see it")
+		return deliver.Config{}, fmt.Errorf("no container engine (docker or podman) found on PATH — if this ran from the Dock or Finder, the environment's PATH may be too sparse to see it")
 	}
 	cfg := deliver.Config{
 		ProjectLabel: labelKey,
@@ -226,12 +293,7 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 		}
 		cfg.Engines = append(cfg.Engines, engineAdapter{r: r, callerScoped: callerScoped})
 	}
-	landed, err := deliver.RunSources(cfg, opts, sources)
-	if deliver.IsCancelled(err) {
-		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
-		return landed, nil
-	}
-	return landed, err
+	return cfg, nil
 }
 
 // engineAdapter narrows a sessionRunner to deliver's Engine interface.

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"runtime/debug"
 	"strings"
@@ -42,7 +43,9 @@ func recorderApp(calls map[string]string) app {
 		ejectfirewall: func(_ commands.Streams, dir string) error { return note("ejectfirewall", dir) },
 		deliver: func(_ commands.Streams, dir string, opts deliver.Options, paths []string) error {
 			return note("deliver", strings.Join([]string{dir, opts.Box, opts.Name,
-				boolStr(opts.SkipUIDCheck), boolStr(opts.NoClip), strings.Join(paths, ",")}, " "))
+				boolStr(opts.SkipUIDCheck), boolStr(opts.NoClip),
+				boolStr(opts.Boxes), boolStr(opts.Tar), fmt.Sprintf("p%d", opts.Proto), opts.RemoteByre,
+				strings.Join(paths, ",")}, " "))
 		},
 		installApp: func(_ commands.Streams, box string) error { return note("install-app", box) },
 		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
@@ -99,9 +102,16 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"forget", "--force"}, "forget", "/proj true"},
 		{[]string{"shell"}, "shell", "/proj"},
 		{[]string{"ejectfirewall"}, "ejectfirewall", "/proj"},
-		{[]string{"deliver", "a.txt", "b.txt"}, "deliver", "/proj   false false a.txt,b.txt"},
-		{[]string{"deliver", "--box", "x", "--no-clip", "f"}, "deliver", "/proj x  false true f"},
-		{[]string{"deliver", "--box=x", "--name=n.txt", "--skip-uid-check", "-"}, "deliver", "/proj x n.txt true false -"},
+		{[]string{"deliver", "a.txt", "b.txt"}, "deliver", "/proj   false false false false p0  a.txt,b.txt"},
+		{[]string{"deliver", "--box", "x", "--no-clip", "f"}, "deliver", "/proj x  false true false false p0  f"},
+		{[]string{"deliver", "--box=x", "--name=n.txt", "--skip-uid-check", "-"}, "deliver", "/proj x n.txt true false false false p0  -"},
+		// The remote-facing surface (ADR 0035): enumeration, tar transport,
+		// and the protocol handshake reach Deliver as options.
+		{[]string{"deliver", "--boxes", "--proto", "1"}, "deliver", "/proj   false false true false p1  "},
+		{[]string{"deliver", "--boxes", "--skip-uid-check"}, "deliver", "/proj   true false true false p0  "},
+		{[]string{"deliver", "--tar", "--proto=1", "--box", "abc", "--no-clip", "-"}, "deliver", "/proj abc  false true false true p1  -"},
+		{[]string{"deliver", "ssh://dev@far", "shot.png"}, "deliver", "/proj   false false false false p0  ssh://dev@far,shot.png"},
+		{[]string{"deliver", "--remote-byre", "/opt/byre", "ssh://far", "f"}, "deliver", "/proj   false false false false p0 /opt/byre ssh://far,f"},
 		{[]string{"deliver", "--install-app"}, "install-app", ""},
 		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", "abc"},
 		{[]string{"worktree", "feat"}, "worktree", "/proj feat  false"},
@@ -149,11 +159,18 @@ func TestRunUsageErrors(t *testing.T) {
 		{"deliver", "-", "x.txt"},             // stdin mixed with paths
 		{"deliver", "--install-app", "x.txt"}, // install-app takes no paths
 		{"deliver", "--install-app", "--no-clip=false"}, // supplied flag, even =false
-		{"skill"},                  // missing subcommand
-		{"skill", "bogus"},         // unknown subcommand
-		{"rehome", "old", "extra"}, // extra operand (bare rehome is valid: it lists candidates)
-		{"version", "extra"},       // operands after a no-arg command
-		{"--version", "extra"},     // the alias gets the same operand check
+		{"deliver", "--install-app", "--proto", "1"},    // remote flags never mix with install-app
+		{"deliver", "--boxes", "x.txt"},                 // boxes takes no paths
+		{"deliver", "--boxes", "--tar", "-"},            // one remote mode at a time
+		{"deliver", "--boxes", "--box", "x"},            // boxes answers, never selects
+		{"deliver", "--tar"},                            // tar requires '-'
+		{"deliver", "--tar", "x.txt"},                   // the archive arrives on stdin only
+		{"deliver", "--tar", "--name", "n", "-"},        // names ride the archive
+		{"skill"},                                       // missing subcommand
+		{"skill", "bogus"},                              // unknown subcommand
+		{"rehome", "old", "extra"},                      // extra operand (bare rehome is valid: it lists candidates)
+		{"version", "extra"},                            // operands after a no-arg command
+		{"--version", "extra"},                          // the alias gets the same operand check
 	}
 	for _, argv := range cases {
 		calls := map[string]string{}

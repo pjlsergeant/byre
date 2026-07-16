@@ -335,7 +335,7 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 			if installApp {
 				// Changed(), not the parsed values: --no-clip=false is still
 				// a supplied flag the exclusivity promise rejects.
-				for _, f := range []string{"name", "skip-uid-check", "no-clip"} {
+				for _, f := range []string{"name", "skip-uid-check", "no-clip", "boxes", "tar", "proto", "remote-byre"} {
 					if cmd.Flags().Changed(f) {
 						return usageError("byre deliver --install-app: takes only an optional --box")
 					}
@@ -344,6 +344,27 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 					return usageError("byre deliver --install-app: takes only an optional --box")
 				}
 				return a.installApp(s, opts.Box)
+			}
+			// The remote-facing modes (ADR 0035) keep their surfaces frozen
+			// and small: --boxes answers exactly one question, --tar takes
+			// exactly one stream.
+			if opts.Boxes {
+				for _, f := range []string{"tar", "name", "box", "no-clip", "remote-byre"} {
+					if cmd.Flags().Changed(f) {
+						return usageError("byre deliver --boxes: takes only --proto and --skip-uid-check")
+					}
+				}
+				if len(args) > 0 {
+					return usageError("byre deliver --boxes: takes no paths")
+				}
+			}
+			if opts.Tar {
+				if len(args) != 1 || args[0] != "-" {
+					return usageError("byre deliver --tar: takes exactly '-' (the archive arrives on stdin)")
+				}
+				if cmd.Flags().Changed("name") {
+					return usageError("byre deliver --tar: --name does not apply (names ride the archive)")
+				}
 			}
 			if len(args) > 1 {
 				for _, p := range args {
@@ -360,6 +381,10 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 	c.Flags().BoolVar(&opts.SkipUIDCheck, "skip-uid-check", false, "include (and permit) boxes owned by other users")
 	c.Flags().BoolVar(&opts.NoClip, "no-clip", false, "don't copy the landed paths to the clipboard")
 	c.Flags().BoolVar(&installApp, "install-app", false, "install the deliver app instead of delivering")
+	c.Flags().BoolVar(&opts.Boxes, "boxes", false, "list deliverable boxes headlessly, one line each (remote delivery's enumeration)")
+	c.Flags().BoolVar(&opts.Tar, "tar", false, "unpack a tar archive from stdin into /inbox (remote delivery's transport)")
+	c.Flags().IntVar(&opts.Proto, "proto", 0, "remote-delivery protocol handshake (fails on version skew)")
+	c.Flags().StringVar(&opts.RemoteByre, "remote-byre", "", "byre binary path on the ssh:// remote (when it isn't on the ssh PATH)")
 	return c
 }
 
