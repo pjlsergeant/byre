@@ -42,15 +42,6 @@ the rationale lives.
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
   design pass; deliberately split from the MCP design 2026-07-14.
-- [ ] (M) **Agent field-QA pass, release-time, report-only** (Pete,
-  2026-07-16 -- a "soon", decided-in-principle): an agent in a byre box
-  drives byre's TUI and deliver flows over tmux against the sacrificial
-  inttest VM (egress closed except that one ssh endpoint) and reports
-  findings with repro keystrokes; NEVER a gate -- findings harden into
-  deterministic tuitest regression tests. Builds on the shipped tmux
-  harness (internal/tuitest, ADR 0038), which is deliberately designed
-  as the agent's rails -- same verbs, no in-process magic; the shell
-  vocabulary the agent gets pointed at is in BYRE-DEVELOPMENT.md.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
@@ -90,6 +81,14 @@ Disciplines and tripwires, not tasks.
 
 Stuff Pete has nixed from the todo list. Not quite WONTFIX, but not something I
 plan to get to any time soon:
+
+- [ ] (M) **Agent field-QA pass, release-time, report-only** (Pete,
+  2026-07-16; parked to here 2026-07-17): an agent in a byre box drives
+  byre's TUI and deliver flows over tmux against the sacrificial inttest
+  VM (egress closed except that one ssh endpoint) and reports findings
+  with repro keystrokes; NEVER a gate -- findings harden into
+  deterministic tuitest regression tests. The rails are already shipped
+  (internal/tuitest, ADR 0038; shell vocabulary in BYRE-DEVELOPMENT.md).
 
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
