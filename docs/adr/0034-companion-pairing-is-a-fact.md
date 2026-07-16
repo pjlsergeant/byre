@@ -6,9 +6,10 @@ agent skill" -- is declared as its own skill.toml key, `companion_for =
 the agent) rides that key. `shared_auth_for` keeps exactly its ADR
 0024/0025 meaning -- the author's vouch that the shared-auth mechanism
 is ready, the sole trigger for the onboarding offer -- and continues to
-imply the pairing, so a vouched companion declares nothing extra.
-Declaring both keys with different agents is a load error. Decided
-2026-07-16.
+imply the pairing, so a vouched companion declares nothing extra. The
+two keys are mutually exclusive: the pairing is declared exactly once,
+and a manifest setting both is refused at parse (preflight and load
+alike). Decided 2026-07-16.
 
 Before this, one key carried two meanings. `shared_auth_for` was born
 as the vouch (ADR 0024); when the config UI later needed to know which
@@ -31,9 +32,15 @@ nests the row, shows in `skill show`, and triggers nothing. The vouch
 is earned by gates (ADR 0017's verification record; grok failed them
 and was retired, ADR 0023), so `shared_auth_for` alone feeds
 `SharedAuthClaimants` and the per-box offer. When a pending gate
-passes, the author swaps `companion_for` for `shared_auth_for` (or
-adds the latter; the former becomes redundant) and the offer switches
-on -- the display never changes, because the fact never did.
+passes, the author swaps `companion_for` for `shared_auth_for` -- one
+atomic edit -- and the offer switches on; the display never changes,
+because the fact never did. Exactly-once is what makes that edit safe:
+allowing both keys to coexist would mean comparing their values for
+contradiction, and identity comparison at parse time is a trap -- the
+same agent spells as an alias or a canonical ID (`claude` vs
+`byre/claude`), and no catalog exists there to expand either (external
+review finding, 2026-07-16). Refusing coexistence dissolves the
+comparison instead of getting it subtly wrong.
 
 Rejected: redefining `shared_auth_for` as the pairing plus a separate
 readiness flag. That silently changes a shipped key's teeth under

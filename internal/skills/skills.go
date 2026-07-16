@@ -93,10 +93,9 @@ type File struct {
 	// point of enablement. It makes no readiness claim and triggers no
 	// offer. Gate-pending companions (gemini-shared-auth's OAuth path,
 	// opencode-shared-auth) declare this and NOT shared_auth_for.
-	// Redundant next to shared_auth_for, which implies the same pairing;
-	// declaring both with different agents is a parse error (compared
-	// verbatim, not alias-expanded — write both in the same form or drop
-	// one).
+	// Mutually exclusive with shared_auth_for, which implies the same
+	// pairing — the pairing is declared exactly once, so declaring both is
+	// a parse error (when a gate passes, swap this key for the vouch).
 	CompanionFor string `toml:"companion_for"`
 	// SharedAuthFor declares this skill as the shared-auth companion (ADR
 	// 0017) for the named agent skill, making it OFFERABLE: when that agent
@@ -105,7 +104,8 @@ type File struct {
 	// author VOUCHING the companion is ready to enable — a broken or
 	// gate-pending companion (grok-shared-auth, gemini's OAuth path) omits
 	// it and stays a hand-enabled expert option. Implies the companion_for
-	// pairing (ADR 0034); no need to declare both.
+	// pairing (ADR 0034); mutually exclusive with it — declaring both is a
+	// parse error.
 	SharedAuthFor string `toml:"shared_auth_for"`
 	Build         struct {
 		Apt        []string          `toml:"apt"`
@@ -700,15 +700,16 @@ func ParsePrimaryBytes(raw []byte) (File, error) {
 	return f, nil
 }
 
-// validatePairing refuses a manifest whose two pairing keys contradict each
-// other (shared_auth_for implies the companion_for pairing, ADR 0034). Runs
-// in both primary-file parse paths so install preflight and load agree on
-// what is a valid skill. Values are compared VERBATIM, not alias-expanded —
-// parse-time has no catalog; an author declaring both (already redundant)
-// must write them in the same form or drop one, which is what the error says.
+// validatePairing refuses a manifest declaring both pairing keys: the
+// pairing is stated exactly once — companion_for (the bare fact) or
+// shared_auth_for (the vouch, which subsumes it) — so two spellings of one
+// fact can never drift apart, and no value comparison (with its alias-vs-
+// canonical-ID ambiguity — parse-time has no catalog to expand either) is
+// ever needed (ADR 0034). Runs in both primary-file parse paths so install
+// preflight and load agree on what is a valid skill.
 func validatePairing(f File) error {
-	if f.CompanionFor != "" && f.SharedAuthFor != "" && f.CompanionFor != f.SharedAuthFor {
-		return fmt.Errorf("companion_for (%q) and shared_auth_for (%q) disagree; shared_auth_for already implies the pairing — drop companion_for or make them match", f.CompanionFor, f.SharedAuthFor)
+	if f.CompanionFor != "" && f.SharedAuthFor != "" {
+		return fmt.Errorf("companion_for (%q) and shared_auth_for (%q) are both set; shared_auth_for already implies the pairing — drop companion_for", f.CompanionFor, f.SharedAuthFor)
 	}
 	return nil
 }
@@ -749,8 +750,8 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	if err := (config.Config{Mounts: f.Runtime.Mounts, Volumes: f.Volumes}).Validate(); err != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
 	}
-	// shared_auth_for implies the companion_for pairing; both keys naming
-	// different agents is an authoring contradiction, not a resolvable state.
+	// shared_auth_for implies the companion_for pairing; declaring both is
+	// a redundancy that could drift, refused rather than resolved.
 	if perr := validatePairing(f); perr != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
 	}

@@ -43,8 +43,8 @@ description = "Share one OpenCode login across all your projects (write-through-
 # enabled. Deliberately NO `shared_auth_for` (the ADR 0025 onboarding
 # offer): the OAuth rotation gate is still pending above, and the offer
 # would put a gate-pending mechanism in front of every opencode user at
-# onboarding, not just the gate-runners. Declare it once the gate passes
-# (companion_for then becomes redundant and can drop) — the gemini
+# onboarding, not just the gate-runners. Once the gate passes, SWAP this
+# key for shared_auth_for (they are mutually exclusive) — the gemini
 # precedent.
 companion_for = "opencode"
 

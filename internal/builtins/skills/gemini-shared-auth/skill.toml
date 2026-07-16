@@ -35,8 +35,8 @@ description = "Share one Gemini login across all your projects (API-key path ver
 # Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): the OAuth
 # path is still gate-pending above, and the offer would put a gate-pending
 # mechanism in front of every gemini user at onboarding, not just the
-# gate-runners. Declare it once the gate passes (companion_for then becomes
-# redundant and can drop).
+# gate-runners. Once the gate passes, SWAP this key for shared_auth_for
+# (they are mutually exclusive).
 companion_for = "gemini"
 
 [build]

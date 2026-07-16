@@ -778,23 +778,28 @@ func TestBuiltinCompanionDeclarations(t *testing.T) {
 	}
 }
 
-// companion_for and shared_auth_for naming different agents is an authoring
-// contradiction — refused at load, not resolved by precedence.
-func TestCompanionForSharedAuthForMismatchRefused(t *testing.T) {
+// The pairing is declared exactly once — companion_for or shared_auth_for
+// (which subsumes it), never both. Refusing coexistence outright (rather
+// than comparing values) means two spellings of one fact can't drift, and
+// sidesteps the alias-vs-canonical-ID comparison a value check would need
+// (parse-time has no catalog — external review finding, 2026-07-16).
+func TestCompanionForSharedAuthForBothSetRefused(t *testing.T) {
 	dir := testHome(t)
-	writeSkill(t, dir, "confused-auth", "companion_for = \"gemini\"\nshared_auth_for = \"claude\"\n", nil)
-	if _, err := Load(catFor(t, dir), "confused-auth"); err == nil || !strings.Contains(err.Error(), "disagree") {
-		t.Fatalf("mismatched pairing keys must refuse to load, got err=%v", err)
+	// Matching values are just as refused as mismatched ones: the redundancy
+	// itself is the error, so alias-vs-canonical spelling never matters.
+	for name, toml := range map[string]string{
+		"confused-auth":  "companion_for = \"gemini\"\nshared_auth_for = \"claude\"\n",
+		"redundant-auth": "companion_for = \"claude\"\nshared_auth_for = \"claude\"\n",
+	} {
+		writeSkill(t, dir, name, toml, nil)
+		if _, err := Load(catFor(t, dir), name); err == nil || !strings.Contains(err.Error(), "both set") {
+			t.Errorf("%s: both pairing keys must refuse to load, got err=%v", name, err)
+		}
 	}
-	// Matching keys are merely redundant, not an error.
-	writeSkill(t, dir, "redundant-auth", "companion_for = \"claude\"\nshared_auth_for = \"claude\"\n", nil)
-	if _, err := Load(catFor(t, dir), "redundant-auth"); err != nil {
-		t.Fatalf("matching pairing keys must load: %v", err)
-	}
-	// Install preflight (ParsePrimaryBytes) refuses the same contradiction —
-	// a package must not pass ingest checks only to be unloadable after.
-	if _, err := ParsePrimaryBytes([]byte("companion_for = \"gemini\"\nshared_auth_for = \"claude\"\n")); err == nil || !strings.Contains(err.Error(), "disagree") {
-		t.Fatalf("ParsePrimaryBytes must refuse mismatched pairing keys, got err=%v", err)
+	// Install preflight (ParsePrimaryBytes) refuses the same shape — a
+	// package must not pass ingest checks only to be unloadable after.
+	if _, err := ParsePrimaryBytes([]byte("companion_for = \"claude\"\nshared_auth_for = \"claude\"\n")); err == nil || !strings.Contains(err.Error(), "both set") {
+		t.Fatalf("ParsePrimaryBytes must refuse both pairing keys, got err=%v", err)
 	}
 }
 

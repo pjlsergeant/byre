@@ -39,9 +39,6 @@ the rationale lives.
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
   design pass; deliberately split from the MCP design 2026-07-14.
-- [ ] (M) **Private-https package fetch.** `skill install` has no auth story
-  for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
-  interaction with the origin-pinning rules before building.
 - [ ] (L) **Composable box configurations** (Pete, 2026-07-14): stacked config
   layers, not just the global-baseline + per-project pair -- compose a box
   from multiple named layers. Needs a design pass against the existing
@@ -87,6 +84,10 @@ Disciplines and tripwires, not tasks.
 
 Stuff Pete has nixed from the todo list. Not quite WONTFIX, but not something I
 plan to get to any time soon:
+
+- [ ] (M) **Private-https package fetch.** `skill install` has no auth story
+  for private hosts (deferred from ADR 0029); design tokens/netrc/redirect
+  interaction with the origin-pinning rules before building.
 
 - [ ] (M) **Drag-and-drop into the boxed terminal.** Mostly superseded by
   `byre deliver`; what remains is drop-directly-onto-the-running-terminal
