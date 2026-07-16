@@ -17,24 +17,29 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **gemini OAuth gate.** Two concurrent gemini boxes sharing one
-  OAuth credential, run past the ~1h token expiry; neither dying = OAuth
-  sharing is safe. API-key path already verified (ADR 0017).
 - [ ] (S) **inttest skill.** Skill-ify the sacrificial-VM test loop (built
   2026-07-14, hand grants + `.byre-devlog/inttest.sh`): egress + key on a
   machine volume + a `byre-inttest` wrapper on PATH; the Lima template
   (`wip/byre-inttest.yaml`) rides the skill's docs. Do it when the
   hand-rolled loop's friction shows.
-- [ ] (S) **opencode host gates** (built 2026-07-16; skills shipped
-  EXPERIMENTAL): host-verify from a live box the installer path
-  (~/.opencode/bin), the Claude Pro/Max login, `--auto`, and the firewalled
-  egress set; then run opencode-shared-auth's OAuth rotation gate (two boxes
-  past a token expiry) and declare `shared_auth_for` if it passes. Facts +
-  gate records: docs/AGENT-CREDENTIAL-MECHANICS.md (OpenCode section),
-  opencode-shared-auth/skill.toml. Maybe a third reviewer. MCP seam is
-  probed (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT exist) but
-  merge-vs-replace semantics need a spike before any `mcp = "inject"`
-  vouch (ADR 0033); gemini's seam still unprobed.
+- [ ] (M) **fix shared-auth: gemini, grok, opencode** (rolled up
+  2026-07-16 from three items, un-parking grok). gemini: run the OAuth
+  gate — two boxes past the ~1h expiry, neither dying (API-key path
+  already verified, ADR 0017). opencode: host-verify the EXPERIMENTAL
+  skill from a live box (installer path ~/.opencode/bin, Pro/Max login,
+  `--auto`, firewalled egress), then run its rotation gate; Pete reports
+  the shared login already misbehaving (2026-07-16) — possibly gate 2
+  failing in the field, diagnose as part of the gate; on pass, swap
+  `companion_for` for `shared_auth_for`. grok: rebuild per the two gated
+  designs in wip/grok-shared-auth-v2-designs.md — run those gates BEFORE
+  building (ADR 0023); `XAI_API_KEY` stays ruled out on cost. Facts +
+  gate records: docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
+  Adjacent, ruling pending: $SHARED symlink-target check in the
+  shared-auth hooks + codex-login's wildcard carve-out (2026-07-16
+  review findings). Carried from the old opencode item: MCP seam probed
+  (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT exist) but merge-vs-replace
+  needs a spike before any `mcp = "inject"` vouch (ADR 0033); gemini's
+  seam still unprobed.
 - [ ] (M) **Claude Skills delivery** (the untouched half of the old
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
@@ -115,9 +120,6 @@ plan to get to any time soon:
 Decided negatives, recorded so they don't get re-raised. Rationale lives in
 the docs cited and in git history.
 
-- **grok-shared-auth rebuild** -- PARKED 2026-07-12 (ADR 0023); two gated
-  designs in wip/grok-shared-auth-v2-designs.md, run the gates BEFORE
-  building. `XAI_API_KEY` stays ruled out on cost.
 - **Secret-manager seed backend** -- host-path + config-literal covers the
   single-user case. If revived: the seed-source model reserves a
   resolved-reference kind; don't hardcode new paths to "path".
