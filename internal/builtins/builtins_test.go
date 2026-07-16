@@ -2117,8 +2117,14 @@ func TestOpencodeSharedAuthCompositionResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "PENDING") {
-		t.Error("gate-pending status missing from the skill.toml record")
+	// Still companion_for, not shared_auth_for: the vouch follows the live
+	// two-box field check, never source/scope alone (the v1 lesson).
+	if !strings.Contains(string(b), `companion_for = "opencode"`) || strings.Contains(string(b), "\nshared_auth_for") {
+		t.Error("vouch shape wrong: want companion_for (field check pending), not shared_auth_for")
+	}
+	// The API-key-only scope must be on the record (OAuth is warned, not shared).
+	if !strings.Contains(string(b), "API-KEY LOGINS ONLY") {
+		t.Error("API-key-only scope missing from the skill.toml record")
 	}
 }
 
@@ -2189,5 +2195,46 @@ func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
 	runOpencodeSharedAuthHook(t, hook, base, dataHome)
 	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
 		t.Fatalf("idempotent re-run changed the credential: %q", b)
+	}
+}
+
+// The API-key-only scope (Pete's ruling): an OAuth entry in the shared store
+// draws a friendly warning and is NEVER touched; an API-key-only store is
+// silent.
+func TestOpencodeSharedAuthWarnsOnOAuthEntry(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "firstrun.sh")
+
+	warns := func(authJSON string) (string, bool) {
+		t.Helper()
+		base, dataHome := t.TempDir(), t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "opencode"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		shared := filepath.Join(base, "opencode", "auth.json")
+		if err := os.WriteFile(shared, []byte(authJSON), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "XDG_DATA_HOME="+dataHome)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+		s := string(out)
+		before, contentSurvives := os.ReadFile(shared)
+		if contentSurvives != nil || string(before) != authJSON {
+			t.Fatalf("the credential must never be touched, got %q (%v)", before, contentSurvives)
+		}
+		return s, strings.Contains(s, "API-key logins only")
+	}
+
+	// OAuth entry (tolerate the JSON.stringify(...,2) spacing) -> warns.
+	if _, w := warns(`{"anthropic": {"type": "oauth", "access": "x", "refresh": "y"}}`); !w {
+		t.Fatal("an OAuth entry in the shared store must draw the API-key-only warning")
+	}
+	// API-key-only store -> silent.
+	if _, w := warns(`{"anthropic": {"type": "api", "key": "sk-ant-live"}}`); w {
+		t.Fatal("an API-key-only store must NOT warn")
 	}
 }

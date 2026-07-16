@@ -46,4 +46,15 @@ if [ ! -L "$cred" ] || [ "$(readlink "$cred")" != "$SHARED" ]; then
   ln -s "$SHARED" "$cred" 2>/dev/null || true
 fi
 [ -f "$SHARED" ] && chmod 600 "$SHARED" 2>/dev/null || true
+
+# API-key logins only. This skill shares ONE auth.json across boxes; OAuth
+# entries (Claude Pro/Max, Copilot, ...) rotate a single-use refresh token that
+# concurrent boxes cannot safely share (they race and cascade-logout). API keys
+# are static and share cleanly. If the shared store holds an OAuth entry, say so
+# -- friendly, and NEVER touch it: it's a live working credential, and quarantining
+# it would be the grok-v1 heal-that-clobbers mistake. auth.json is written with
+# JSON.stringify(...,2), so entries read `"type": "oauth"`; tolerate spacing.
+if [ -f "$SHARED" ] && grep -Eq '"type"[[:space:]]*:[[:space:]]*"oauth"' "$SHARED" 2>/dev/null; then
+  echo "byre opencode-shared-auth: this skill shares API-key logins only. The shared store has an OAuth login (e.g. Claude Pro/Max), which misbehaves when multiple boxes refresh it — log in with an API key for that provider instead." >&2
+fi
 exit 0

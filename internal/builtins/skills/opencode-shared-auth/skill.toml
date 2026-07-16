@@ -4,37 +4,35 @@
 # the data-dir auth.json becomes a symlink into the machine-scoped identity
 # volume.
 #
-# STATUS 2026-07-16 — MECHANISM VERIFIED, ROTATION GATE PENDING:
-#   * Gate 1 (write pattern) PASSED live: opencode 1.18.2 writes auth.json
-#     IN PLACE (FileSystem.writeJson = writeFileString + chmod, no
-#     temp+rename — binary-source-verified) and a real `opencode auth login`
-#     driven through a symlinked auth.json wrote THROUGH the link — target
-#     inode preserved, link intact, target chmod 600. The grok failure mode
-#     (rename forks the credential off the link, ADR 0023) does not apply.
-#   * Gate 2 (multi-box rotation) PENDING: auth.json is a MULTI-PROVIDER
-#     store. API-key entries are static — rotation-immune by construction.
-#     OAuth entries rotate per provider policy: Anthropic (Claude Pro/Max)
-#     refresh tokens are SINGLE-USE server-side (the documented Claude Code
-#     failure mode — docs/AGENT-CREDENTIAL-MECHANICS.md), so two boxes
-#     refreshing the same stored pair in one window can cascade-logout.
-#     opencode re-reads auth.json at request time (lazy, like codex), which
-#     gives the shared-single-inode tolerance — the loser of a race picks up
-#     the winner's pair on its next read — but that tolerance is exactly
-#     what the gate must confirm: log in once (Pro/Max), run two boxes
-#     concurrently past a token expiry, confirm neither dies. Record the
-#     result here and in docs/AGENT-CREDENTIAL-MECHANICS.md.
+# STATUS 2026-07-16 — SCOPED TO API-KEY LOGINS ONLY (Pete's ruling):
+#   * Write pattern VERIFIED: opencode 1.18.3 writes auth.json IN PLACE
+#     (FileSystem.writeJson = writeFileString + chmod, no temp+rename —
+#     repo-source-verified; live-verified through a symlink). The grok
+#     failure mode (rename forks the credential off the link, ADR 0023)
+#     does not apply, so a file-level symlink is mechanically sound.
+#   * OAuth entries are OUT OF SCOPE, not gated. auth.json is a
+#     MULTI-PROVIDER store; OAuth entries (Anthropic Claude Pro/Max,
+#     Copilot, ...) rotate a SINGLE-USE refresh token that concurrent
+#     boxes cannot safely share (they race and cascade-logout — the
+#     documented Claude-class failure). You're not meant to drive an
+#     Anthropic subscription through opencode (use the claude skill); the
+#     shared-auth broker rebuild that would make OAuth safe (the grok
+#     ADR 0036 shape, on opencode's AuthHook.loader seam) is deliberately
+#     NOT built. The firstrun hook WARNS (friendly, never touches the
+#     credential) if the shared store holds an OAuth entry.
+#   * API-key entries are static — rotation-immune, share cleanly. This is
+#     the supported shape.
 #
-# It ships now for two purposes: API-key sharing (safe by construction) and
-# running that OAuth gate. Mechanism mirrors codex-shared-auth: the firstrun
-# hook asserts the symlink EVERY launch (healing the logout-fork), adopts an
-# existing per-project login into the shared volume, and prefers the shared
-# credential over a local fork. The opencode skill's own login hook keeps
-# its anti-planting symlink removal for any OTHER symlink; links into
-# /home/dev/.byre-identity/ are recognized as ours.
+# Mechanism mirrors codex-shared-auth: the firstrun hook asserts the symlink
+# EVERY launch (healing the logout-fork), adopts an existing per-project login
+# into the shared volume, and prefers the shared credential over a local fork.
+# The opencode skill's own login hook keeps its anti-planting symlink removal
+# for any OTHER symlink; links into /home/dev/.byre-identity/opencode are
+# recognized as ours.
 #
-# Accepted residual (until the gate says otherwise): sharing auth.json
-# shares ALL provider credentials in it, not just the one you meant — the
-# file is one store, and byre does not split it.
+# Accepted residual: sharing auth.json shares ALL provider credentials in it,
+# not just the one you meant — the file is one store, and byre does not split
+# it. (For API keys this is benign; OAuth entries are warned about above.)
 #
 # Accepted residual — UPSTREAM torn-read hazard (source-confirmed 2026-07-16,
 # opencode 1.18.3): Auth.set/remove are an UNLOCKED read-modify-write, and
@@ -48,16 +46,15 @@
 # flock'd read-modify-write for mcp-auth.json (mcp/auth.ts) and just never
 # applied it here. Full note: docs/AGENT-CREDENTIAL-MECHANICS.md (OpenCode §2).
 
-description = "Share one OpenCode login across all your projects (write-through-symlink mechanics verified live; multi-box OAuth rotation gate pending, see skill.toml)."
+description = "Share one OpenCode API-key login across all your projects (OAuth logins unsupported — they race across boxes; see skill.toml)."
 
 # companion_for is the pairing FACT (ADR 0034): the config UI nests this
 # skill under opencode's row so the relationship is visible where it's
 # enabled. Deliberately NO `shared_auth_for` (the ADR 0025 onboarding
-# offer): the OAuth rotation gate is still pending above, and the offer
-# would put a gate-pending mechanism in front of every opencode user at
-# onboarding, not just the gate-runners. Once the gate passes, SWAP this
-# key for shared_auth_for (they are mutually exclusive) — the gemini
-# precedent.
+# offer) YET: the mechanism is sound for API keys, but the vouch follows a
+# LIVE field check (the v1 lesson) — a real two-box run confirming a key
+# stored in one box is used by another. Once that passes, SWAP this key for
+# shared_auth_for (they are mutually exclusive) — the gemini precedent.
 companion_for = "opencode"
 
 [build]
