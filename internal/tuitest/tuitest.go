@@ -100,7 +100,7 @@ type Opts struct {
 	Cols, Rows int               // pane geometry; 0 → 100x30
 	Env        map[string]string // set in the child (e.g. BYRE_HOME, PATH)
 	Unset      []string          // removed from the child (e.g. DISPLAY)
-	Dir        string            // child working directory (GNU env -C; Linux-only, like the tier)
+	Dir        string            // child working directory (a cd in the pane's shell — BSD env has no -C)
 }
 
 // Session is one live pane in a private tmux server. The pane outlives its
@@ -151,9 +151,6 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 	// /usr/bin/env carries the overrides and unsets; tmux hands the command
 	// to a shell, so every word is single-quoted.
 	cmd := []string{"/usr/bin/env"}
-	if o.Dir != "" {
-		cmd = append(cmd, "-C", o.Dir)
-	}
 	for _, k := range o.Unset {
 		cmd = append(cmd, "-u", k)
 	}
@@ -169,8 +166,15 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 	// where the VM's 3.5a reported the real status — caught by CI on the
 	// first push), and the harness gates tests on this value.
 	s.statusFile = filepath.Join(t.TempDir(), "exit-status")
+	run := quoteJoin(cmd)
+	if o.Dir != "" {
+		// The cd stays INSIDE the status-recording wrapper: a failed cd
+		// writes its own exit status instead of leaving WaitForExit to a
+		// timeout with an empty file.
+		run = "cd " + quoteJoin([]string{o.Dir}) + " && " + run
+	}
 	s.tmux("respawn-pane", "-k", "-t", "main",
-		quoteJoin(cmd)+"; echo $? > "+quoteJoin([]string{s.statusFile}))
+		run+"; echo $? > "+quoteJoin([]string{s.statusFile}))
 	return s
 }
 

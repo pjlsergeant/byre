@@ -11,6 +11,19 @@ permissions:
 
 jobs:
   test:
+    # Two toolchains: go.mod is the declared minimum; stable is the
+    # forward-compat leg — `go install .../byre@latest` builds with the
+    # user's CURRENT toolchain, so a break under new Go must not wait for
+    # a user to report it. gofmt and vet run on the go.mod leg only: their
+    # findings drift across Go releases, so on the stable leg they could
+    # turn CI red on a Go release day with no commit at fault — and users
+    # never run either, so they prove nothing about forward compatibility.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - go-version-file: go.mod
+          - go-version: stable
     runs-on: ubuntu-latest
     steps:
       # Actions are pinned by commit SHA (version noted alongside): tags like
@@ -18,8 +31,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
+          # Exactly one of these is set per matrix leg; setup-go ignores
+          # the empty one.
+          go-version: ${{ matrix.go-version }}
+          go-version-file: ${{ matrix.go-version-file }}
       - name: gofmt
+        if: ${{ matrix.go-version-file }}
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
@@ -28,6 +45,7 @@ jobs:
             exit 1
           fi
       - name: go vet
+        if: ${{ matrix.go-version-file }}
         run: go vet ./...
       # tmux: the TUI test tier (internal/tuitest) drives the built byre
       # binary in a private tmux server. The gate set without tmux FAILS
@@ -35,6 +53,25 @@ jobs:
       # the tier.
       - name: install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: go test
+        run: BYRE_TUI_TESTS=1 go test -race ./...
+
+  # The engine-free tiers (unit suite + tmux TUI tier) on macOS — the OS
+  # most byre hosts actually run, previously covered only by daily use.
+  # GitHub's macOS runners can't run Docker, so the engine suite stays on
+  # the ubuntu integration job; the clipboard-shim TUI tests fake the
+  # LINUX read backend (wl-paste) and skip on darwin, keeping DELIVER.md's
+  # macOS-verified pasteboard posture. gofmt/vet are platform-independent
+  # and already run above.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: install tmux
+        run: brew install tmux
       - name: go test
         run: BYRE_TUI_TESTS=1 go test -race ./...
 

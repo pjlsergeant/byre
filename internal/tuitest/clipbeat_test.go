@@ -16,6 +16,7 @@ package tuitest
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -24,8 +25,17 @@ import (
 // the test controls, and returns Opts wiring it in: WAYLAND_DISPLAY set,
 // PATH = the shim dir alone (no engines, no real clipboard tools), DISPLAY
 // unset. The shim needs nothing from PATH itself (/bin/cat is absolute).
+//
+// Linux only: the shim plays the LINUX read backend — on darwin,
+// hostClipboardReader rides osascript and never consults wl-paste, so
+// these tests skip there (the macOS pasteboard keeps DELIVER.md's
+// macOS-verified posture; a fake-osascript sibling is possible if that
+// posture ever needs CI teeth).
 func fakeWaylandClipboard(t *testing.T, pasteboardText string) Opts {
 	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the wl-paste shim fakes the Linux clipboard backend; darwin reads via osascript")
+	}
 	clipDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(clipDir, "types"), []byte("text/plain\n"), 0o644); err != nil {
 		t.Fatal(err)

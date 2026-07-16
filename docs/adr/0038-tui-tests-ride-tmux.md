@@ -82,6 +82,16 @@ assertions against exact product strings instead).
   on a controlled PATH (test-environment faking only; the product
   binary stays untouched).
 
+  **Amended 2026-07-17**: the engine-free tiers (unit suite + this tmux
+  tier) now also run on macOS CI — the harness dropped its one GNU-ism
+  (`Opts.Dir` rode `env -C`; now a `cd` inside the pane's shell wrapper)
+  and the `wl-paste` shim tests skip on darwin, since
+  `hostClipboardReader` rides osascript there and never consults the
+  shim. So the pasteboard sentence above still stands: macOS clipboard
+  integration keeps the macOS-verified posture (a fake-osascript
+  sibling is the route if it ever needs CI teeth). The engine and
+  loopback-ssh tiers stay Linux-hosted.
+
 ## Open question, resolved same day
 
 The beat requires stdin to BE the terminal (beat.go); the question was
