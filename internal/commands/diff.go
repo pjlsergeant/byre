@@ -2,8 +2,8 @@ package commands
 
 import "github.com/akedrou/textdiff"
 
-// unifiedDiff is THE human diff for byre-owned config files (the adopt prompt
-// and the self-edit exit report), as lines ready for the caller's own
+// unifiedDiff is THE human diff for byre-owned config files (the preset-apply
+// review and the self-edit exit report), as lines ready for the caller's own
 // prefixing. Unified-with-context (the gopls differ, vendored upstream copy):
 // TOML array-of-tables lines don't identify their block on their own — a bare
 // `- mode = "rw"` can't say WHICH [[mounts]] it belongs to — so the context

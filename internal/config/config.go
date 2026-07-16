@@ -2,8 +2,9 @@
 //
 //	~/.byre/default.config  ⊕  ~/.byre/templates/<name>/template.config  ⊕  ~/.byre/projects/<id>/byre.config
 //
-// The third layer is the HOST-SIDE store copy — a byre.config committed in the
-// project tree is only a proposal until adopted into the store.
+// The third layer is the HOST-SIDE store copy — nothing is read from the
+// project tree; a repo-shipped preset reaches the store only via the explicit
+// `byre preset apply` flow.
 //
 // Files are TOML; byre layers its own merge semantics on top (scalars override,
 // lists union, maps merge, `!name` removes a named entry an earlier layer added).
@@ -347,8 +348,9 @@ type Config struct {
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
 	// EnvFromHost passes named HOST values into the box's runtime env — the
-	// one deliberate host→box data channel, and a Grant (adoption flags
-	// additions beyond the shipped defaults; status attributes it). Value
+	// one deliberate host→box data channel, and a Grant (preset apply's grant
+	// review flags additions beyond the shipped defaults; status attributes
+	// it). Value
 	// grammar is a CLOSED scheme set: "git:<config-key>" (read via
 	// `git config --get` on the host at launch), "env:<HOST_VAR>" (the host
 	// env var, absent = sets nothing), "tz:" (the host timezone — TZ env var
@@ -416,9 +418,9 @@ func Load(projectDir string) (Config, error) {
 	}
 	// The project config is read from the host-side store
 	// (~/.byre/projects/<id>/byre.config), NOT from the project tree. byre never
-	// trusts a config that the (rw-mounted) project could contain — a committed
-	// <project>/byre.config is adopted into the store by an explicit, host-side
-	// human action (see commands adopt), never read directly here.
+	// trusts a config that the (rw-mounted) project could contain — a repo-shipped
+	// preset reaches the store only through an explicit, host-side human action
+	// (`byre preset apply`), never read directly here.
 	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName))
 	if err != nil {
 		return Config{}, err
@@ -444,9 +446,10 @@ func loadLayer(path string) (Config, error) {
 }
 
 // ResolveProposed resolves the cascade as if proj were the project layer
-// (default ⊕ template ⊕ proj), so a PROPOSED <project>/byre.config can be shown
-// with its EFFECTIVE settings (incl. the grants a selected template adds) before
-// a human adopts it — without ever making it live.
+// (default ⊕ template ⊕ proj), so a candidate config (a preset under review,
+// a file not yet in the store) can be shown with its EFFECTIVE settings (incl.
+// the grants a selected template adds) before a human applies it — without
+// ever making it live.
 func ResolveProposed(proj Config) (Config, error) {
 	home, err := project.Home()
 	if err != nil {
@@ -643,7 +646,7 @@ func rejectTemplateComposition(body []byte) error {
 // loadFile decodes one TOML layer. A missing file is an empty layer; an unknown
 // key is an error (catches typos in a config that would otherwise be ignored).
 // ParseFile parses a single byre.config file (no cascade), for inspecting a
-// proposed config before adopting it. A missing file yields a zero Config.
+// candidate config before it is applied. A missing file yields a zero Config.
 func ParseFile(path string) (Config, error) {
 	return loadFile(path)
 }
@@ -1574,8 +1577,8 @@ func validateHostSource(src string) error {
 }
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and
-// adoption text) display an empty template/agent choice. OrNone/FromNone are
-// the one place the sentinel maps to and from "".
+// grant-review text) display an empty template/agent choice. OrNone/FromNone
+// are the one place the sentinel maps to and from "".
 const NoneLabel = "none"
 
 // OrNone renders a value for display: "" becomes the "none" sentinel.

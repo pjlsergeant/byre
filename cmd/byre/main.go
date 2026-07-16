@@ -712,7 +712,7 @@ func forgetCmd(a app, dir string, s commands.Streams) *cobra.Command {
 		Use:   "forget",
 		Short: "Remove all byre host-side state for this directory.",
 		Long: `Completely remove byre's host-side state for this directory: named volumes,
-the image, and ~/.byre/projects/<id>/ (config, adoption record, build
+the image, and ~/.byre/projects/<id>/ (config, applied marker, build
 context). Your project tree is left alone. Prompts first.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {

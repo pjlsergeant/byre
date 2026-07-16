@@ -67,7 +67,7 @@ func sortGrantLines(in []grantLine) []grantLine {
 }
 
 // skillGrantSummary lists the runtime grants the enabled skills contribute, so
-// they're shown at adoption time alongside the config-level grants. Skill
+// they're shown at grant-review time alongside the config-level grants. Skill
 // volumes appear exactly when they reach beyond this box: machine scope
 // (cross-project — the shared-credential shape) or a host seed. Per-project
 // volumes are the sandbox model itself, not a grant. Containment declarations
@@ -114,7 +114,7 @@ func skillGrantSummary(res skills.Resolved) []grantLine {
 	return append(append(contain, cross...), rest...)
 }
 
-// grantLine is one ⚠ row of the adoption review. Containment marks the
+// grantLine is one ⚠ row of the grant review. Containment marks the
 // loudest class (host-wide hole); CrossProject marks reach beyond this box
 // (machine-scoped volumes). Both render emphasized; containment sorts above
 // cross-project so a docker-host-class grant can't hide below shared volumes.
@@ -133,7 +133,7 @@ func plainGrants(texts ...string) []grantLine {
 }
 
 // grantSummary lists the parts of a proposed config that grant power — the
-// things a reviewer must see before adopting, since they can widen the
+// things a reviewer must see before applying, since they can widen the
 // sandbox. It must cover every category the glossary calls a Grant; egress is
 // the one exception handled by the caller (its live/inert status needs the
 // resolved posture, which needs the skills expanded).
@@ -143,7 +143,7 @@ func grantSummary(c config.Config) []grantLine {
 		var m []string
 		for _, x := range c.Mounts {
 			mode := orDefault(x.Mode, "ro")
-			// A disabled mount grants nothing today, but adopting it plants an
+			// A disabled mount grants nothing today, but applying it plants an
 			// entry one flip away from a grant — show it, marked, not hidden.
 			if x.Disabled {
 				mode += ", disabled"
@@ -201,7 +201,7 @@ func configMCPDecls(mcps []config.MCP) []skills.MCPDecl {
 	return out
 }
 
-// mcpGrantLines renders MCP declarations for the adoption/preset review.
+// mcpGrantLines renders MCP declarations for the preset-apply review.
 // Wiring, not grants (ADR 0033) — but the carried reach must be spelled out
 // per entry before confirm: the endpoint a remote url implies, declared
 // extra egress, and the env names the server consumes. setErr is MCPSet's

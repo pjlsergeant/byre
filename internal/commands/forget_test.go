@@ -26,7 +26,7 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 	if len(f.removed) != 2 || len(f.rmImages) != 1 {
 		t.Fatalf("expected 2 volumes + 1 image removed, got vols=%v images=%v", f.removed, f.rmImages)
 	}
-	// host-side store (incl its byre.config + adoption record) is gone
+	// host-side store (incl its byre.config + applied marker) is gone
 	if _, err := os.Stat(p.Dir); !os.IsNotExist(err) {
 		t.Errorf("host-side project dir should be removed: %v", err)
 	}

@@ -61,9 +61,9 @@ func TestHostTimezone(t *testing.T) {
 	}
 }
 
-// The adoption summary flags only the host-env additions a proposal actually
+// The grant review flags only the host-env additions a preset actually
 // asks for — byre's own shipped defaults are every box's baseline, not the
-// proposal's ask.
+// preset's ask.
 func TestExtraHostEnvSkipsCoreDefaults(t *testing.T) {
 	m := config.CoreEnvFromHost()
 	m["EDITOR_NAME"] = "git:user.name" // an addition

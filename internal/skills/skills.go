@@ -29,8 +29,8 @@ import (
 var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // oneLinerMaxLen bounds a skill's declared one-liners (containment,
-// env_docs guidance). Status, launch, adoption, and the config UI print them
-// as data on their own rows; a long blob would crowd the surfaces without
+// env_docs guidance). Status, launch, preset apply, and the config UI print
+// them as data on their own rows; a long blob would crowd the surfaces without
 // adding honesty.
 const oneLinerMaxLen = 300
 
@@ -150,7 +150,7 @@ type File struct {
 		SockGroups []string `toml:"sock_groups"`
 		// Containment is a skill-owned one-liner declaring a containment hole
 		// (e.g. host Docker socket access). Purely declarative: byre prints it
-		// attributed on status/launch/adoption/config UI and never inspects or
+		// attributed on status/launch/preset-apply/config UI and never inspects or
 		// enforces it. Unlike network_posture (single declarer), several skills
 		// may declare containment — all are rendered. Validated for single-line
 		// / no control chars / bounded length so it stays legible DATA.
@@ -202,7 +202,7 @@ type Skill struct {
 }
 
 // Grant records a single skill's runtime grants, for legible attribution in
-// `byre status` and the adoption review (e.g. which skill mounts a host
+// `byre status` and the grant review (e.g. which skill mounts a host
 // socket, or passes raw docker run args).
 type Grant struct {
 	Skill     string
@@ -319,7 +319,7 @@ func (r Resolved) Volumes() []config.Volume {
 }
 
 // Grants projects each skill's runtime grants (mounts, caps, raw run args,
-// netns hooks, sock_groups) for attribution in status and the adoption review.
+// netns hooks, sock_groups) for attribution in status and the grant review.
 func (r Resolved) Grants() []Grant {
 	var out []Grant
 	for _, sk := range r.Skills {
@@ -357,7 +357,7 @@ func (r Resolved) SockGroups() []SockGroup {
 }
 
 // ContainmentDecl is one skill's declared containment hole one-liner, for
-// rendering on status/launch/adoption/config UI (see Runtime.Containment).
+// rendering on status/launch/preset-apply/config UI (see Runtime.Containment).
 type ContainmentDecl struct {
 	Skill string
 	Text  string
@@ -1039,7 +1039,7 @@ func validatePrefs(p *PrefsSpec, state string) error {
 }
 
 // validateOneLiner holds a skill's declared one-liner (containment, env_docs
-// guidance) to the shape status/launch/adoption/config UI can print as DATA:
+// guidance) to the shape status/launch/preset-apply/config UI can print as DATA:
 // one line, no control characters, bounded length. Empty is handled by the
 // caller (no declaration / refused, per field).
 func validateOneLiner(s string) error {

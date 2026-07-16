@@ -11,7 +11,7 @@ import (
 
 // Forget implements `byre forget`: completely remove byre's host-side state for
 // the current directory — its named volumes, its image, and its
-// ~/.byre/projects/<id>/ dir (which holds the config, the adoption record, and
+// ~/.byre/projects/<id>/ dir (which holds the config, the applied marker, and
 // the build context). "Completely" means every INSTALLED engine is inspected
 // and cleaned: state can live in an engine the config no longer names, and
 // deleting the store while the other engine still held credentials would be a
@@ -86,7 +86,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 			fmt.Fprintf(s.Err, "  - image %s%s\n", img, engineSuffix(multi, st.r))
 		}
 	}
-	fmt.Fprintf(s.Err, "  - %s/  (config, adoption record, build context)\n", paths.Dir)
+	fmt.Fprintf(s.Err, "  - %s/  (config, applied marker, build context)\n", paths.Dir)
 
 	if !force {
 		fmt.Fprint(s.Err, "Proceed? [y/N] ")

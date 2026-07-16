@@ -185,8 +185,8 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 	return nil
 }
 
-// migrateStore copies the old store's config and adoption records
-// (byre.config, adopted, declined) into the new id's store when the new store
+// migrateStore copies the old store's config and applied marker
+// (byre.config, applied) into the new id's store when the new store
 // doesn't already hold them. found reports whether the old store held any
 // identity worth migrating (those files, or a path record — the thing that
 // makes it a rehome-candidate zombie); safe reports whether the old store may

@@ -312,7 +312,8 @@ func (m model) viewSkills() string {
 			line += dimStyle.Render("  — " + d)
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.skillCur, line))
-		// Containment hole: same skill-owned one-liner as status/adoption, so
+		// Containment hole: same skill-owned one-liner as status and preset
+		// apply's grant review, so
 		// enabling the skill in the GRANTS-adjacent skills view never hides
 		// the warranty disclaimer.
 		if e.on() && e.disabled == "" {

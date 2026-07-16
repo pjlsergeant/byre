@@ -24,7 +24,7 @@ func TestGrantSummaryMarksDisabledMounts(t *testing.T) {
 	if !strings.Contains(got, "/a->/a(rw)") {
 		t.Errorf("active mount missing: %q", got)
 	}
-	// Adopting a disabled mount plants an entry one flip away from a grant:
+	// Applying a disabled mount plants an entry one flip away from a grant:
 	// the reviewer must see it, marked, not have it hidden.
 	if !strings.Contains(got, "/b->/b(rw, disabled)") {
 		t.Errorf("disabled mount should be shown marked: %q", got)
@@ -113,7 +113,7 @@ func TestSkillGrantSummaryContainmentTopSorted(t *testing.T) {
 	}
 }
 
-// MCP wiring is disclosed at adoption/preset review with its carried reach
+// MCP wiring is disclosed at preset-apply review with its carried reach
 // spelled out per entry — skill contributions included and attributed, so a
 // preset can't enable a skill whose wiring goes unseen at confirm time.
 func TestMCPGrantLinesCarriedReach(t *testing.T) {
