@@ -1961,6 +1961,74 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	}
 }
 
+// TestCodexLoginHookRejectsForeignSymlink mirrors the opencode login-hook
+// coverage for codex's carve-out: the trusted target is the HARDCODED
+// absolute /home/dev/.byre-identity/codex (equality, not a
+// /home/dev/.byre-identity/* wildcard — a wildcard would trust a link into a
+// SIBLING agent's identity dir, through which a `codex login` would overwrite
+// that agent's machine-wide credential). That path only exists in a real box,
+// so any temp-dir link is correctly classified foreign and removed here.
+func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+
+	bin := t.TempDir()
+	stamp := filepath.Join(bin, "login-attempted")
+	// Stub codex: `login status` reports NOT logged in (exit 1); `login
+	// --device-auth` records the attempt. Anything else is a no-op success.
+	stub := "#!/bin/sh\n" +
+		"case \"$1 $2\" in\n" +
+		"'login status') exit 1 ;;\n" +
+		"'login --device-auth') touch " + stamp + "; exit 0 ;;\n" +
+		"esac\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loginAttempted := func() bool { _, err := os.Stat(stamp); return err == nil }
+	run := func(codexHome string) {
+		t.Helper()
+		cmd := exec.Command("sh", hook)
+		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+
+	// A FOREIGN symlinked credential (temp-dir target, incl. any that would
+	// have matched the old wildcard) is removed; a fresh login runs.
+	home := t.TempDir()
+	cred := filepath.Join(home, "auth.json")
+	planted := filepath.Join(home, "elsewhere.json")
+	if err := os.WriteFile(planted, []byte(`{"tokens":{"access_token":"planted"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(planted, cred); err != nil {
+		t.Fatal(err)
+	}
+	run(home)
+	if _, err := os.Lstat(cred); !os.IsNotExist(err) {
+		t.Fatalf("foreign symlinked credential must be removed, still present (%v)", err)
+	}
+	if !loginAttempted() {
+		t.Fatal("removal must fall through to a fresh login; none was attempted")
+	}
+
+	// A logged-in codex (login status = 0) short-circuits: no login attempted.
+	_ = os.Remove(stamp)
+	if err := os.WriteFile(filepath.Join(bin, "codex"),
+		[]byte("#!/bin/sh\ntest \"$1 $2\" = 'login status' && exit 0\ntouch "+stamp+"\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home2 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home2, "auth.json"), []byte(`{"tokens":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(home2)
+	if loginAttempted() {
+		t.Fatal("a logged-in codex must short-circuit the login; one was attempted")
+	}
+}
+
 // TestOpencodeSharedAuthCompositionResolves: the companion resolves
 // alongside the agent, ships the 00- ordered hook (must sort before
 // opencode's own login hook), and mounts the machine-scoped identity

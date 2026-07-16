@@ -35,10 +35,15 @@ if [ -L "$cred" ]; then
   # Relative targets resolve from the link's own directory.
   target="$(readlink "$cred")"
   tdir="$(cd "$CODEX_HOME" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || tdir=""
-  case "$tdir/" in
-  /home/dev/.byre-identity/*) shared_auth=1 ;;
-  *) rm -f "$cred" ;;
-  esac
+  # EQUALITY against codex's OWN identity dir, not a /home/dev/.byre-identity/*
+  # wildcard: a broader match would trust a link into a SIBLING agent's identity
+  # dir, through which a `codex login` would overwrite that agent's machine-wide
+  # credential with codex's incompatible store. Mirrors the opencode-login hook.
+  if [ "$tdir" = "/home/dev/.byre-identity/codex" ]; then
+    shared_auth=1
+  else
+    rm -f "$cred"
+  fi
 fi
 codex login status >/dev/null 2>&1 && exit 0
 
