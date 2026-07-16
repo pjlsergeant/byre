@@ -116,10 +116,14 @@ Mechanics, revised where the reviews hit:
   the clipboard every 1.2s (beat.go:211) -- screens with timers either
   never settle or settle deceptively between animations. Replacements:
   - `WaitFor(substr)` / `WaitUntil(pred)`, one overall deadline;
-  - `WaitForAfter(epoch, substr)`: `Keys` returns a capture epoch, and
-    matches that predate the action are rejected -- the stale-success
-    hazard codex named (the string was already on screen before the
-    keystroke);
+  - `WaitForAfter(epoch, substr)`: `Keys` captures the pre-action
+    screen as the epoch, and `WaitForAfter` **fails immediately if the
+    substring was already on screen before the action** -- transition
+    semantics, not a timestamp (round-2 review: a generation counter
+    alone can't reject a string that existed before and persists
+    after). A test that trips this must wait for the string's absence
+    first or assert a more specific string; the failure message says
+    so;
   - `CaptureNow()` for diagnostics -- explicitly a debug dump, never a
     layout oracle;
   - `WaitStable(window)` ONLY where a layout assertion truly needs it,
@@ -171,11 +175,18 @@ collapsed the third into the second (review catch):
   byre child is built separately (plain `go build`, once per test
   binary via a shared helper, the pattern the loopback test already
   uses). No interaction.
-- **VM-tier serialization** (review): gated tests within a package
-  already run serially under `go test`; the picker test creates and
-  removes its own two boxes (the tier-1 test's create/cleanup
-  boilerplate, twice); nothing VM-tier runs in parallel with anything
-  that shares docker or the loopback ssh provisioning.
+- **VM-tier serialization, named mechanism** (round-2 review: "within
+  a package" doesn't cover `go test ./...` running package binaries
+  concurrently): every test that touches the loopback-ssh provisioning
+  or drives a TUI against live boxes **lives in `internal/commands`**
+  -- one test binary, serial absent `t.Parallel` (which these tests
+  never take). That placement IS the mechanism, stated here so it's a
+  rule and not an accident; the day such a test wants to live
+  elsewhere, `byre-inttest` grows `-p 1` in the same change.
+  (`internal/runner`'s existing gated tests share only the docker
+  daemon, with per-test names/labels -- pre-existing, unchanged.) The
+  picker test creates and removes its own two boxes with the tier-1
+  boilerplate.
 - **Platform honesty** (review): all of this runs on Linux. It covers
   the degraded beat and (with shims, below) the live-beat code path --
   it does NOT validate macOS pasteboard integration (osascript et al),
@@ -202,12 +213,14 @@ collapsed the third into the second (review catch):
    the second quits. Assert the file did NOT change and the exit is
    clean. (The first draft's single-cancel sketch would hang --
    review.)
-3. **Paste-beat cancel** (degraded path -- headless CI has no
-   clipboard backend, so this is the path that actually runs there;
-   the draft didn't say which -- review): `byre deliver` on the pane
-   tty, assert the degraded prompt (`byre: no clipboard access
-   here…`), `C-c`, assert exactly one `byre: cancelled — nothing
-   delivered` and exit 0, before any engine/discovery output.
+3. **Paste-beat cancel** (degraded path, **enforced, not assumed** --
+   round-2 review: an inherited DISPLAY plus an installed xclip would
+   silently flip this to the live beat): the harness unsets `DISPLAY`
+   and `WAYLAND_DISPLAY` and gives the child a controlled `PATH` with
+   no clipboard readers. Then: `byre deliver` on the pane tty, assert
+   the degraded prompt (`byre: no clipboard access here…`), `C-c`,
+   assert exactly one `byre: cancelled — nothing delivered` and exit
+   0, before any engine/discovery output.
 4. **Degraded paste delivers text**: tmux `set-buffer` +
    `paste-buffer -p` (a real bracketed paste through tmux's own paste
    machinery, which is the negotiation a terminal actually performs --
@@ -218,17 +231,18 @@ collapsed the third into the second (review catch):
 5. **VM tier -- picker**: two live boxes (tier-1 boilerplate twice),
    `byre deliver <file>` on a pane tty, assert both rows render, pick
    the second, assert the landed path.
-6. **VM tier -- sending meter, weak-form** (both reviewers killed the
-   strong form): >256 KiB payload (the meter is silent below
-   meterStep) over loopback ssh with progress enabled. Asserts: a
-   `sending` line appeared; the final pane shows `sent` and any remote
-   notes on their own lines. Explicitly NOT claimed: the guard's
-   mid-transfer byte ordering -- a final pane capture can't see it and
-   tmux's emulator would normalize it anyway; that property stays
-   pinned by the buffer-level unit tests
-   (TestSendMeterHonestUnderInterruption). A deterministic
-   mid-transfer assertion needs a backpressure protocol (remote stalls
-   on a signal after the first meter step) -- consciously out of v1.
+6. **VM tier -- sending meter, final-state only** (round-2 review
+   demoted this further, correctly: even "a `sending` line appeared"
+   races an unthrottled loopback transfer -- the whole thing can cross
+   the 256 KiB threshold and finish between two captures, and
+   completion overwrites the meter row). v1 asserts the **final
+   terminal state only**: >256 KiB payload with progress enabled, the
+   pane ends with `sent`, remote notes on their own lines, landed
+   paths printed. Mid-transfer observation (meter drew, guard cleared
+   it for a note) is deferred behind the backpressure protocol (remote
+   stalls on a test-controlled signal after the first meter step) --
+   consciously out of v1, and the guard's byte ordering stays pinned
+   by the buffer-level unit tests either way.
 
 **Demoted from the first draft** (its test #3): the bracketed-paste
 *disambiguation* (drag vs clipboard-mirror vs prose). Both reviewers
