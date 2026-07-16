@@ -1,6 +1,11 @@
 module github.com/pjlsergeant/byre
 
-go 1.22
+// 1.25 floor: Go <= 1.23 links darwin binaries without LC_UUID
+// (CGO_ENABLED=0, internal linking) and modern macOS dyld aborts them
+// ("missing LC_UUID load command") — the shipped v0.1.1 darwin assets
+// have exactly this defect. Go 1.24 (EOL) added the UUID by default;
+// 1.25 is the oldest supported release carrying it.
+go 1.25
 
 require (
 	github.com/BurntSushi/toml v1.4.0
@@ -12,6 +17,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -30,5 +36,4 @@ require (
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

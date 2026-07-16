@@ -83,7 +83,7 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 
 ## Tech Stack
 
-- **Go 1.22+**, single static binary. Module `github.com/pjlsergeant/byre`
+- **Go 1.25+**, single static binary. Module `github.com/pjlsergeant/byre`
   (full path so `go install .../cmd/byre@latest` resolves).
 - CLI: `spf13/cobra` command tree in `cmd/byre` (ADR 0022). The `app` struct
   seam keeps flag->function wiring test-pinned; the exit-code contract

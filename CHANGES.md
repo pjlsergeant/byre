@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **macOS binaries run again on current macOS; Go floor is now 1.25.**
+  The v0.1.1 darwin release binaries were linked without an `LC_UUID`
+  load command (Go 1.22's linker omits it under `CGO_ENABLED=0`), which
+  modern macOS dyld aborts on sight ("missing LC_UUID load command")
+  and macOS 15's local-network permission system can't attribute. Found
+  by the new macOS CI leg on its first run. Go 1.24+ emits the UUID by
+  default; the module now requires Go 1.25 (the oldest supported
+  release), so `go install` and release builds both link runnable
+  darwin binaries.
+
 - **Claude Skills delivery (ADR 0039).** `[[claude_skills]]` blocks
   declare Claude Skills (Anthropic's agent-skill format: a directory
   whose root holds a `SKILL.md`) for the box — wiring, not a grant,

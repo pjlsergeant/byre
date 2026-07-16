@@ -47,7 +47,7 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 **⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
 
-byre is a single Go binary. With Go 1.22+ on your machine:
+byre is a single Go binary. With Go 1.25+ on your machine:
 
 ```sh
 go install github.com/pjlsergeant/byre/cmd/byre@latest
