@@ -350,9 +350,11 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 			name := root + "/" + filepath.ToSlash(rel)
 			switch {
 			case d.Type()&os.ModeSymlink != 0:
+				// Regular targets only: a symlink to a FIFO would pass a
+				// not-a-directory check and then block forever at open time.
 				st, serr := os.Stat(p)
-				if serr != nil || st.IsDir() {
-					fmt.Fprintf(warn, "byre: skipping %s (symlink to a directory, or broken)\n", p)
+				if serr != nil || !st.Mode().IsRegular() {
+					fmt.Fprintf(warn, "byre: skipping %s (symlink to something other than a file, or broken)\n", p)
 					return nil
 				}
 				plan.entries = append(plan.entries, packEntry{name: name, path: p, size: st.Size()})
@@ -407,14 +409,21 @@ func (p *packPlan) writeTo(w io.Writer, m *sendMeter) error {
 			content = f
 		}
 		n, err := io.Copy(tw, io.TeeReader(io.LimitReader(content, e.size), m))
+		var extra int
+		if err == nil && n == e.size {
+			// The limit makes a shrink visible (n falls short) but hides
+			// growth — one read past the promise tells them apart.
+			var b [1]byte
+			extra, _ = content.Read(b[:])
+		}
 		if c, ok := content.(io.Closer); ok {
 			c.Close()
 		}
 		if err != nil {
 			return err
 		}
-		if n != e.size {
-			return fmt.Errorf("%s changed while being sent (%d of %d bytes)", e.name, n, e.size)
+		if n != e.size || extra > 0 {
+			return fmt.Errorf("%s changed while being sent (promised %d bytes)", e.name, e.size)
 		}
 	}
 	return tw.Close()

@@ -468,6 +468,37 @@ func TestSymlinkFileFollowedDirSkipped(t *testing.T) {
 	}
 }
 
+func TestSymlinkToFifoInTreeSkipped(t *testing.T) {
+	// Inside a delivered tree, a symlink to a FIFO skips with a note —
+	// following it would block forever at open time. The rest delivers.
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	dir := t.TempDir()
+	root := filepath.Join(dir, "bug")
+	mustMkdir(t, root)
+	mustWrite(t, filepath.Join(root, "real.txt"), "R")
+	fifo := filepath.Join(dir, "pipe")
+	if err := mkfifo(fifo); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	if err := os.Symlink(fifo, filepath.Join(root, "pipelink")); err != nil {
+		t.Fatal(err)
+	}
+	landed, err := Run(cfg, Options{}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 {
+		t.Fatalf("landed = %v", landed)
+	}
+	if !strings.Contains(errw.String(), "skipping") || !strings.Contains(errw.String(), "pipelink") {
+		t.Fatalf("no skip note: %q", errw.String())
+	}
+	if got := strings.Join(eng.streams, "|"); !strings.Contains(got, "real.txt") {
+		t.Fatalf("the regular file should still deliver: %v", eng.streams)
+	}
+}
+
 func TestFifoSkippedWithNote(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng)

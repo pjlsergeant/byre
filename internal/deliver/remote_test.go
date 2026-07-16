@@ -419,6 +419,56 @@ func TestPackNothingDeliverable(t *testing.T) {
 	}
 }
 
+func TestPackSkipsSymlinkToFifoInTree(t *testing.T) {
+	// A symlink to a FIFO inside a delivered tree plans as a skip —
+	// following it would block forever at open time.
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "bug")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(sub, "notes.txt"), []byte("n"), 0o644)
+	fifo := filepath.Join(dir, "pipe")
+	if err := syscallMkfifo(fifo); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	if err := os.Symlink(fifo, filepath.Join(sub, "pipelink")); err != nil {
+		t.Fatal(err)
+	}
+	var errw bytes.Buffer
+	plan, cleanup, err := planPack(&errw, PathSources([]string{sub}))
+	defer cleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.entries) != 2 { // bug/ and bug/notes.txt; never the pipe
+		t.Fatalf("entries = %+v", plan.entries)
+	}
+	if !strings.Contains(errw.String(), "skipping") || !strings.Contains(errw.String(), "pipelink") {
+		t.Fatalf("no skip note: %q", errw.String())
+	}
+}
+
+func TestPackGrownFileAborts(t *testing.T) {
+	// A file that gained bytes between planning and sending aborts the pack
+	// — the header promised a length, and a silent clip would deliver a
+	// prefix as if it were the file.
+	f := writeTestFile(t, "log.txt", "before")
+	var errw bytes.Buffer
+	plan, cleanup, err := planPack(&errw, PathSources([]string{f}))
+	defer cleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f, []byte("before, then more"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = plan.writeTo(io.Discard, &sendMeter{})
+	if err == nil || !strings.Contains(err.Error(), "changed while being sent") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestPackTopLevelNameCollisionUniquifiesLocally(t *testing.T) {
 	// Two sources landing as the same top-level name: the pack renames the
 	// second before it ships, so the remote never silently merges them.

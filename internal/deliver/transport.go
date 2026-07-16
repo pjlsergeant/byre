@@ -213,9 +213,11 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		}
 		switch {
 		case d.Type()&os.ModeSymlink != 0:
+			// Regular targets only: a symlink to a FIFO would pass a
+			// not-a-directory check and then block forever at open time.
 			st, serr := os.Stat(p)
-			if serr != nil || st.IsDir() {
-				fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to a directory, or broken)\n", p)
+			if serr != nil || !st.Mode().IsRegular() {
+				fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to something other than a file, or broken)\n", p)
 				return nil
 			}
 			deliverOne(st.Size())
