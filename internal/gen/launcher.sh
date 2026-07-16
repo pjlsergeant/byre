@@ -94,9 +94,14 @@ fi 2>/dev/null || true
 # (the launcher is unprivileged), so a hook does its own user-level setup directly
 # (codex device-auth login → the .codex volume; devlog → /workspace). A hook that
 # needs root is not supported: skills declaring privileged setup would need an
-# explicit, status-visible grant, not a blanket-root entrypoint.
-if [ -d /etc/byre/firstrun.d ]; then
-  for hook in /etc/byre/firstrun.d/*; do
+# explicit, status-visible grant, not a blanket-root entrypoint. The dir
+# override is a test seam (the gate-file/env.d precedent) — without it, the
+# launcher tests execute the REAL hooks of whatever box runs the suite, and a
+# hook that legitimately prompts (a login on a box whose credential died)
+# hangs them.
+FIRSTRUN_DIR="${BYRE_FIRSTRUN_DIR:-/etc/byre/firstrun.d}"
+if [ -d "$FIRSTRUN_DIR" ]; then
+  for hook in "$FIRSTRUN_DIR"/*; do
     [ -r "$hook" ] && bash "$hook" || true
   done
 fi
