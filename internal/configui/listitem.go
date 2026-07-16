@@ -142,8 +142,13 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 	case rowStaleMarker:
 		return []menuChoice{{"Clear marker", "d", actRestore}}
 	case rowOffered:
-		if m.global {
+		// Opening a door writes into THIS file's egress — say the real blast
+		// radius when this file reaches beyond one project.
+		switch m.target {
+		case TargetGlobal:
 			return []menuChoice{{warnStyle.Render("⚠ Open for every project on this machine"), "o", actOpen}}
+		case TargetLayer:
+			return []menuChoice{{warnStyle.Render("⚠ Open for every project extending this layer"), "o", actOpen}}
 		}
 		return []menuChoice{{"Open in this project", "o", actOpen}}
 	case rowSkill:
@@ -220,11 +225,13 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		// The opened door becomes THIS layer's own egress entry: user-authored,
 		// user-attributed, closable like any other (ADR 0020).
 		m.egress = append(m.egress, r.ident)
-		// In the --global editor that layer is default.config: say the scope
-		// of what just happened, where to undo it (delete the entry here),
-		// and how a single project opts back out.
-		if m.global {
+		// Beyond one project, say the scope of what just happened, where to
+		// undo it (delete the entry here), and how one project opts back out.
+		switch m.target {
+		case TargetGlobal:
 			m.status = r.ident + " opened for every project on this machine (entry in default.config; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
+		case TargetLayer:
+			m.status = r.ident + " opened for every project extending this layer (entry in this layer file; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
 		}
 	}
 	if n := len(m.fieldRows(m.listField)); m.listCur > n {

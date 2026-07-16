@@ -56,7 +56,7 @@ type Options struct {
 	NoClip       bool   // skip the clipboard round-trip's return leg
 	Name         string // landing basename for stdin captures (--name)
 
-	// The remote-delivery surface (ADR 0035). Boxes/Tar/Proto are what a
+	// The remote-delivery surface (ADR 0037). Boxes/Tar/Proto are what a
 	// LOCAL byre invokes on the remote over ssh; RemoteByre is local-side
 	// (the remote binary's path when "byre" isn't on the ssh non-interactive
 	// PATH).

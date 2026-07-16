@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// This file is the ssh-facing protocol surface of remote delivery (ADR 0035):
+// This file is the ssh-facing protocol surface of remote delivery (ADR 0037):
 // the version pin, the --boxes line grammar (emit and parse), and the exit
 // code that carries pool trustworthiness across the wire. Everything here is
 // FROZEN once shipped — a change means a new ProtoVersion, and the handshake
@@ -44,7 +44,7 @@ type RemoteBox struct {
 }
 
 // Boxes runs discovery headlessly and emits the line grammar on cfg.Out —
-// the enumerate leg of ADR 0035. Stdout is the contract (the list), stderr
+// the enumerate leg of ADR 0037. Stdout is the contract (the list), stderr
 // is byre's voice (notes ride it through ssh untouched), and the returned
 // partial flag is the caller's cue to exit ExitPartialPool. No picking, no
 // cascade: the remote never selects anything.

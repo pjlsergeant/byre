@@ -207,10 +207,28 @@ twice):
 ```
 ~/.byre/default.config               your personal baseline
 ~/.byre/templates/<name>/            template.config (+ optional files)
+~/.byre/layers/<name>/               layer.config (named layers, chained)
 ~/.byre/projects/<id>/byre.config    project config (the HOST-SIDE store)
 ```
 
-Resolution: `default ⊕ template ⊕ project`.
+Resolution: `default ⊕ template ⊕ chain(root … parent) ⊕ project`.
+
+**Named layers** (ADR 0035) are user-authored shared baselines (an
+employer config, a personal toolkit) slotted between the template and
+the project. The project config -- or any layer -- names at most ONE
+parent via `extends = "<name>"`; byre walks the pointers to the root
+and merges root-first. Chains are linear (no lists, no diamonds);
+cycles and dangling parents are hard errors naming the loop / the exact
+path to create. Layers are plain files, not packages (no version, no
+install verbs -- ADR 0029's boundary), carry the full config vocabulary
+except `template`, and resolve LIVE at every develop: editing a layer
+changes every extending project's next box, with no ceremony -- the
+same trust position as editing default.config. Attribution names the
+layer everywhere (status's `Extends:` chain, the config UI's
+`layer:<name>` tags, preset-review grant rows); layer files sit outside
+the `--self-edit` writable set, so a boxed agent can never edit a file
+that propagates into other projects' sandboxes. Manage with `byre layer
+new|list|validate` and edit with `byre config --layer <name>`.
 
 **The project layer lives host-side, NOT in the project tree** (ADR
 0003): a config inside the rw-mounted project would let the boxed agent
@@ -621,7 +639,7 @@ per-file. `/inbox` itself is baked by the chassis: dev-owned under
 root-owned `/`, so the boxed agent can't replace it with a symlink.
 
 An `ssh://[user@]host[:port]` first argument routes the same verb
-through another machine running byre (ADR 0035): the local byre asks
+through another machine running byre (ADR 0037): the local byre asks
 the remote for its box list (`byre deliver --boxes --proto N` — a
 frozen tab-separated line grammar on stdout; a distinct exit code
 marks a partial pool, which forbids auto-picking), picks locally with
@@ -647,7 +665,7 @@ paths are a drag onto the window (delivered as files), anything else
 is literal pasted text; graphical launches (no TTY, GUI present)
 also report via OS notification. Every degraded nicety states itself
 on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021 and
-(remote) ADR 0035; user behavior (and the what-works-where matrix) in
+(remote) ADR 0037; user behavior (and the what-works-where matrix) in
 `docs/DELIVER.md`.
 
 `byre deliver --install-app` writes the deliver app — generated,

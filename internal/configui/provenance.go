@@ -69,22 +69,63 @@ type Inherited struct {
 	// consulted for whatever skill set is currently effective in the form --
 	// toggling a skill adds/removes its rows live.
 	Skills map[string]SkillRuntime
+	// Layers maps every LOADABLE named layer to its raw config (parent
+	// pointer included), so the editor can walk the extends chain for the
+	// CURRENTLY selected extends value -- the EXTENDS picker is a live form
+	// field that flips the lower layers, like the template picker.
+	Layers map[string]config.Config
+	// LayerNames is the EXTENDS picker's option list (loadable layers; for a
+	// --layer editor, minus itself and anything whose chain runs through it).
+	LayerNames []string
 	// Catalog is optional; when set, skill/template rows can show provenance
 	// and disable INVALID/conflict/LEGACY entries.
 	Catalog *packages.Catalog
 }
 
-// lowerNow is the lower-layer resolved config (default ⊕ template) under the
-// CURRENTLY selected template; zero Config when this editor has no lower.
+// lowerNow is the lower-layer resolved config
+// (default ⊕ template ⊕ chain(root … parent)) under the CURRENTLY selected
+// template and extends values; zero Config when this editor has no lower.
 func (m model) lowerNow() config.Config {
 	if !m.inh.HasLower {
 		return config.Config{}
 	}
-	t := fromNone(m.tmplOpts[m.tmplSel])
-	if t == "" {
-		return m.inh.Default
+	lower := m.inh.Default
+	if t := fromNone(m.tmplOpts[m.tmplSel]); t != "" {
+		lower = config.Merge(lower, m.inh.Templates[t])
 	}
-	return config.Merge(m.inh.Default, m.inh.Templates[t])
+	for _, nl := range m.chainNow() {
+		lower = config.Merge(lower, nl.Config)
+	}
+	return lower
+}
+
+// extendsNow is the currently selected parent layer ("" = none). The picker
+// list is always non-empty (pickerOpts appends the none row).
+func (m model) extendsNow() string {
+	if len(m.extOpts) == 0 {
+		return ""
+	}
+	return fromNone(m.extOpts[m.extSel])
+}
+
+// chainNow is the named-layer chain under the CURRENTLY selected extends
+// value, root-first -- walked over the raw Layers map, never disk (the
+// picker is a live field). A pointer that leaves the map (layer deleted or
+// broken mid-session) or loops just ends the walk: the editor degrades to
+// shorter attribution; develop still fails loudly.
+func (m model) chainNow() []config.NamedLayer {
+	var chain []config.NamedLayer
+	seen := map[string]bool{}
+	for name := m.extendsNow(); name != "" && !seen[name]; {
+		c, ok := m.inh.Layers[name]
+		if !ok {
+			break
+		}
+		seen[name] = true
+		chain = append([]config.NamedLayer{{Name: name, Config: c}}, chain...)
+		name = c.Extends
+	}
+	return chain
 }
 
 // hostEnvNow is the effective env_from_host view at this editor: byre's core
@@ -103,10 +144,17 @@ func (m model) hostEnvNow() map[string]string {
 	return out
 }
 
-// lowerSource names the sublayer an inherited entry comes from -- the current
-// template's raw layer wins over the default (it's the later layer), matching
-// merge order. has reports whether a raw layer carries the entry.
+// lowerSource names the sublayer an inherited entry comes from -- the LATEST
+// contributing layer wins, matching merge order: the extends chain (leafmost
+// first) over the current template's raw layer over the default. has reports
+// whether a raw layer carries the entry.
 func (m model) lowerSource(has func(config.Config) bool) string {
+	chain := m.chainNow()
+	for i := len(chain) - 1; i >= 0; i-- {
+		if has(chain[i].Config) {
+			return "layer:" + chain[i].Name
+		}
+	}
 	if t := fromNone(m.tmplOpts[m.tmplSel]); t != "" && has(m.inh.Templates[t]) {
 		return "template:" + t
 	}

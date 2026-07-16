@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 func writeLayerFile(t *testing.T, home, name, content string) {
@@ -47,10 +48,18 @@ func TestLayerNewScaffoldsAndGates(t *testing.T) {
 		t.Errorf("re-creating an existing layer must refuse, got: %v", err)
 	}
 
-	// Reserved names (bundled/retired bare names) are gated at creation.
+	// Bundled bare names are gated at creation (the commands package wires
+	// the real bundled catalog, so "go" is a live alias here).
 	s3, _, _ := testStreams("", false)
-	if err := LayerNew(s3, "codereview"); err == nil || !strings.Contains(err.Error(), "reserved") {
-		t.Errorf("reserved name must be refused with a reason, got: %v", err)
+	if err := LayerNew(s3, "go"); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("bundled name must be refused with a reason, got: %v", err)
+	}
+
+	// Retired names are deliberately NOT reserved (layers are a new
+	// namespace; ruled 2026-07-16): "codereview" is a legal layer.
+	s5, _, _ := testStreams("", false)
+	if err := LayerNew(s5, "codereview"); err != nil {
+		t.Errorf("retired name must be a legal layer name, got: %v", err)
 	}
 
 	// Name grammar is enforced before any path is built.
@@ -128,5 +137,63 @@ func TestLayerValidate(t *testing.T) {
 	}
 	if !strings.Contains(err3.String(), "template is not allowed in a layer file") {
 		t.Errorf("broken reason missing, got: %s", err3.String())
+	}
+}
+
+func TestStatusRendersExtendsChain(t *testing.T) {
+	var plain, chained strings.Builder
+	renderStatus(&plain, statusInfo{ID: "x", Agent: "claude"})
+	if strings.Contains(plain.String(), "Extends") {
+		t.Errorf("no chain: no Extends row expected:\n%s", plain.String())
+	}
+	renderStatus(&chained, statusInfo{ID: "x", Agent: "claude", Chain: []string{"torn", "torn-frontend"}})
+	if !strings.Contains(chained.String(), "torn -> torn-frontend -> project") {
+		t.Errorf("Extends row should print the chain root-first:\n%s", chained.String())
+	}
+}
+
+// End-to-end: Status reads the pointer back off the raw project layer (the
+// resolved config no longer carries it) and renders the chain.
+func TestStatusPopulatesExtendsChain(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+
+	writeLayerFile(t, home, "torn", "")
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte("extends = \"torn\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, out, _ := testStreams("", false)
+	if err := Status(s, proj, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "torn -> project") {
+		t.Errorf("status should render the extends chain:\n%s", out.String())
+	}
+}
+
+// Validation errors quote layer-file bytes (a file someone sent you); the
+// print boundary must escape control characters so a hostile key can't
+// forge output or drive the terminal.
+func TestLayerValidateEscapesHostileBytes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	writeLayerFile(t, home, "evil", "\"\x1b[2Jkey\" = \"x\"\n")
+
+	s, _, _ := testStreams("", false)
+	err := LayerValidate(s, "evil")
+	if err == nil {
+		t.Fatal("unknown key must fail validate")
+	}
+	if strings.Contains(err.Error(), "\x1b") {
+		t.Errorf("error text must not carry raw control bytes: %q", err.Error())
 	}
 }

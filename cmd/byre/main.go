@@ -28,7 +28,7 @@ type app struct {
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
 	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error
-	config        func(s commands.Streams, dir string, global bool) error
+	config        func(s commands.Streams, dir string, global bool, layer string) error
 	status        func(s commands.Streams, dir string, selfEdit bool) error
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
@@ -212,6 +212,7 @@ foreground. First run onboards the project (creates its host-side config).`,
 
 func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var global bool
+	var layer string
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Edit this project's config interactively.",
@@ -219,10 +220,11 @@ func configCmd(a app, dir string, s commands.Streams) *cobra.Command {
 (~/.byre/projects/<id>/byre.config). Raw fields are shown, not edited.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.config(s, dir, global)
+			return a.config(s, dir, global, layer)
 		},
 	}
 	c.Flags().BoolVar(&global, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	c.Flags().StringVar(&layer, "layer", "", "edit a named layer (~/.byre/layers/<name>/layer.config) instead")
 	return c
 }
 
@@ -352,7 +354,7 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 				}
 				return a.installApp(s, opts.Box)
 			}
-			// The remote-facing modes (ADR 0035) keep their surfaces frozen
+			// The remote-facing modes (ADR 0037) keep their surfaces frozen
 			// and small: --boxes answers exactly one question, --tar takes
 			// exactly one stream.
 			if opts.Boxes {
@@ -900,6 +902,11 @@ func fatal(err error) {
 	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.Code)
 	}
-	fmt.Fprintf(os.Stderr, "byre: %v\n", err)
+	// Error text can quote hostile file bytes — a layer someone sent you, a
+	// cloned repo's preset, an unknown TOML key with a control character in
+	// its name — so this one boundary escapes everything printed here. byre's
+	// own messages carry no control characters (newlines survive: the escape
+	// is per-line), so for them this is a no-op.
+	fmt.Fprintf(os.Stderr, "byre: %s\n", commands.EscapeMultiline(err.Error()))
 	os.Exit(1)
 }

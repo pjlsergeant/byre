@@ -133,10 +133,10 @@ all Pete-ratified on a real Mac:
 
 ## The ssh remote shape (follow-on tranche)
 
-**Superseded by ADR 0035** (2026-07-16, before any of it was built).
+**Superseded by ADR 0037** (2026-07-16, before any of it was built).
 This section froze an scp-staging / `--porcelain` / `--consume`
 mini-protocol built around a remote interactive picker over `ssh -t`;
-ADR 0035 reverses that shape in full — the pick moved local, the
+ADR 0037 reverses that shape in full — the pick moved local, the
 payload rides plain ssh stdin as one tar stream, and only `--proto`
 survives as the version pin. The layering sentence stands: local byre
 owns local capabilities, remote byre owns what it already owns.

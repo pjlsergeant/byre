@@ -703,7 +703,7 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 // the production planner, the "ssh" hop hands the stream straight to
 // commands.Deliver in tar mode (dispatch, --proto handshake, deliverConfig
 // wiring), and the archive unpacks through the REAL transport scripts into
-// a live box — claims, interior mkdirs, uniquify and all (ADR 0035).
+// a live box — claims, interior mkdirs, uniquify and all (ADR 0037).
 func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 	r := requireEngineRunner(t)
 	p, proj := testPaths(t)

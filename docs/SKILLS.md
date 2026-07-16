@@ -116,7 +116,10 @@ review of exactly what changed.
 
 Templates get the identical verb set (`byre template ...`). Templates
 are *shape* (base image, packages, egress offers); they never reference
-other packages -- composition belongs in a preset.
+other packages -- composition belongs in a preset. Named layers
+(`~/.byre/layers/`, ADR 0035) are the other thing entirely: user-authored
+LOCAL files, never distributed packages, and they may compose freely
+(skills, agent, `[sources]`, everything but `template`).
 
 ## Presets
 

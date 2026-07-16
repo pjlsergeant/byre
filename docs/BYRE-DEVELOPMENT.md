@@ -4,7 +4,9 @@ How byre's own development environment hangs together: the self-hosted box,
 the dev-harness skills that live in this repo, and the sacrificial VM the
 gated integration suite runs on. Workflow *rules* (autonomy, commit
 discipline, review loop, docs sweep) live in `CLAUDE.md`; this is the
-mechanics reference behind them.
+mechanics reference behind them. For the recurring "source-harden an agent
+CLI's credential skills" exercise, the playbook is
+`docs/ADDING-NEW-LLMS.md`.
 
 ## The self-hosted box
 
@@ -120,6 +122,9 @@ the skill; native-Linux docker provides neither name, so set
 box).
 
 **Lifecycle** (host-side): `limactl stop byre-inttest` pauses;
-`limactl delete byre-inttest` + a fresh start resets -- nothing on it is
-precious. A re-created VM has a new hostkey: in the box,
-`ssh-keygen -R '[<address>]:<port>'` clears the stale entry.
+`limactl stop byre-inttest && limactl delete byre-inttest` + a fresh start
+resets (delete refuses a running VM) -- nothing on it is precious. A
+re-created VM has a new hostkey: in the box,
+`ssh-keygen -R '[<address>]:<port>'` clears the stale entry. Provisioning
+finishes after ssh comes up -- wait for limactl's `READY` line before
+judging the VM broken.

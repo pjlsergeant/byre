@@ -32,6 +32,12 @@ if [ -L "$cred" ]; then
     echo "byre: WARNING — could not remove symlinked grok credential $cred; it shadows any XAI_API_KEY and grok auth will misbehave until it's removed by hand." >&2
   fi
 fi
+# Shared auth owns login UX when it's enabled: with GROK_AUTH_PROVIDER_COMMAND
+# set (the grok-shared-auth broker, ADR 0036), grok gets its credential from
+# the broker and a per-box login would just create an orphaned chain — the
+# companion's own firstrun hook seeds the SHARED store instead. The symlink
+# heal above still runs first: a planted link misbehaves either way.
+[ -n "$GROK_AUTH_PROVIDER_COMMAND" ] && exit 0
 # A static XAI_API_KEY makes the file login unnecessary (grok uses the key as
 # a fallback when no session credential exists — so don't create one).
 [ -n "$XAI_API_KEY" ] && exit 0

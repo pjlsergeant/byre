@@ -23,9 +23,10 @@ stops.) On an install that predates the offer, run `byre skill update`
 once so the companion skills carry the offer metadata. The login lives in
 a shared volume that reset/forget deliberately never touch. See
 [docs/SECURITY.md](https://github.com/pjlsergeant/byre/blob/main/docs/SECURITY.md)
-for the implications of this. (Grok has no shared-auth: its token rotation
-can't be file-shared, so it logs in per project --
-[ADR 0023](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0023-grok-shared-auth-retired.md).)
+for the implications of this. (Grok's shared auth works differently -- its token
+rotation can't be file-shared, so a broker mediates instead, and until its
+field gate passes the skill is hand-enabled rather than offered --
+[ADR 0036](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0036-grok-shared-auth-v2-broker.md).)
 
 ## Paste images and files into the box?
 

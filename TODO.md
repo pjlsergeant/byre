@@ -25,10 +25,13 @@ the rationale lives.
   `--auto`, firewalled egress), then run its rotation gate; Pete reports
   the shared login already misbehaving (2026-07-16) — possibly gate 2
   failing in the field, diagnose as part of the gate; on pass, swap
-  `companion_for` for `shared_auth_for`. grok: rebuild per the two gated
-  designs in wip/grok-shared-auth-v2-designs.md — run those gates BEFORE
-  building (ADR 0023); `XAI_API_KEY` stays ruled out on cost. Facts +
-  gate records: docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
+  `companion_for` for `shared_auth_for`. grok: BUILT 2026-07-16 (v2
+  auth broker, ADR 0036 — pre-build gates all answered from the
+  published grok source); remaining is the FIELD gate: seed a live box,
+  watch a ~6h rollover refresh through the broker, then swap
+  `companion_for` for `shared_auth_for` (same shape as opencode's).
+  `XAI_API_KEY` stays ruled out on cost. Facts + gate records:
+  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
   Adjacent, ruling pending: $SHARED symlink-target check in the
   shared-auth hooks + codex-login's wildcard carve-out (2026-07-16
   review findings). Carried from the old opencode item: MCP seam probed
@@ -39,10 +42,6 @@ the rationale lives.
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
   design pass; deliberately split from the MCP design 2026-07-14.
-- [ ] (L) **Composable box configurations** (Pete, 2026-07-14): stacked config
-  layers, not just the global-baseline + per-project pair -- compose a box
-  from multiple named layers. Needs a design pass against the existing
-  cascade/merge model (docs/ARCHITECTURE.md "config cascade").
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
@@ -71,9 +70,12 @@ Disciplines and tripwires, not tasks.
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
   (docs/marketing/positioning.md "Copy bank").
-- **`internal/commands` split tripwire:** ~25 files, no internal boundaries
-  (2026-07-09 external review). Don't split as a project; next substantial
-  work there carves the touched area into its own package.
+- **`internal/commands` is never carved (2026-07-16, supersedes the
+  carve-as-you-touch tripwire):** commands is the thin adapter layer —
+  domain logic lives in domain packages, commands files hold Streams-glue
+  only. The reviewable invariant: when a commands file accumulates real
+  logic, the LOGIC moves to a domain package; the package itself is never
+  split. Full rationale in the package comment (commands.go).
 
 ## Maybe someday
 

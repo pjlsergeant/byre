@@ -61,14 +61,21 @@ func ValidateLayerName(name string) error {
 }
 
 // ReservedLayerName reports why a layer may not take this name ("" = free):
-// bundled and retired package bare names are off-limits so a layer can never
-// look like the template or skill of the same name. Checked at `byre layer
-// new` AND on every chain walk — a hand-dropped squatter dir is never loaded.
+// BUNDLED package bare names are off-limits so a layer can never look like
+// the template or skill of the same name (`extends = "go"` must not read as
+// pulling in the go template). Retired names are deliberately NOT reserved:
+// that table protects package-namespace continuity, and layers are a new
+// namespace nothing predates (ruled 2026-07-16). Checked at `byre layer new`
+// AND on every chain walk — a hand-dropped squatter dir is never loaded.
 func ReservedLayerName(cat *packages.Catalog, name string) string {
 	if cat == nil {
 		return ""
 	}
-	return cat.ProtectedReason(name)
+	// The alias map holds exactly the bundled bare names.
+	if id := cat.ExpandAlias(name); id != name {
+		return "bundled as " + id
+	}
+	return ""
 }
 
 // NamedLayer is one loaded chain layer.
@@ -197,6 +204,30 @@ func ListLayers(home string, cat *packages.Catalog) ([]LayerInfo, error) {
 			}
 		}
 		out = append(out, li)
+	}
+	return out, nil
+}
+
+// LoadableLayers returns every loadable named layer's raw config keyed by
+// name (parent pointers included) — the config editor's provenance input.
+// Broken layers are simply absent; `byre layer list` names them and why.
+func LoadableLayers(home string, cat *packages.Catalog) (map[string]Config, error) {
+	infos, err := ListLayers(home, cat)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]Config{}
+	for _, li := range infos {
+		if li.Reason != "" {
+			continue
+		}
+		raw, err := os.ReadFile(LayerPath(home, li.Name))
+		if err != nil {
+			continue
+		}
+		if c, err := ParseLayerBody(raw); err == nil {
+			out[li.Name] = c
+		}
 	}
 	return out, nil
 }

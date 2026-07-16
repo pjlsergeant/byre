@@ -33,7 +33,7 @@ func effectiveModel() model {
 		Apt:      []string{"build-essential", "!htop"},
 		Skills:   []string{"docker"},
 	}
-	return newModel("t", "/tmp/x", cfg, []string{"go"}, nil, []string{"docker"}, nil, inh, nil, false)
+	return newModel("t", "/tmp/x", cfg, []string{"go"}, nil, []string{"docker"}, nil, inh, nil, TargetProject)
 }
 
 func rowByText(t *testing.T, rows []listRow, text string) listRow {
@@ -292,7 +292,7 @@ func TestMenuChoicesPerKind(t *testing.T) {
 		t.Errorf("project-mode offered menu: %q", got)
 	}
 	var g []string
-	for _, c := range (model{global: true}).rowChoices(fEgress, listRow{kind: rowOffered}) {
+	for _, c := range (model{target: TargetGlobal}).rowChoices(fEgress, listRow{kind: rowOffered}) {
 		g = append(g, c.label)
 	}
 	if len(g) != 1 || !strings.Contains(g[0], "every project on this machine") {

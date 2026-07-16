@@ -27,8 +27,8 @@ func recorderApp(calls map[string]string) app {
 			}
 			return note("develop", strings.Join([]string{dir, tmpl, agent, sa, boolStr(selfEdit)}, " "))
 		},
-		config: func(_ commands.Streams, dir string, global bool) error {
-			return note("config", dir+" "+boolStr(global))
+		config: func(_ commands.Streams, dir string, global bool, layer string) error {
+			return note("config", dir+" "+boolStr(global)+" "+layer)
 		},
 		status: func(_ commands.Streams, dir string, selfEdit bool) error {
 			return note("status", dir+" "+boolStr(selfEdit))
@@ -92,8 +92,9 @@ func TestRunDispatch(t *testing.T) {
 		// docker/kubectl behavior; ADR 0022, Pete-ratified) — this DISPATCHES,
 		// it does not print help. Do not restore a pre-parse help scan.
 		{[]string{"develop", "--template", "--help"}, "develop", "/proj --help  unset false"},
-		{[]string{"config"}, "config", "/proj false"},
-		{[]string{"config", "--global"}, "config", "/proj true"},
+		{[]string{"config"}, "config", "/proj false "},
+		{[]string{"config", "--global"}, "config", "/proj true "},
+		{[]string{"config", "--layer", "torn"}, "config", "/proj false torn"},
 		{[]string{"status"}, "status", "/proj false"},
 		{[]string{"status", "--self-edit"}, "status", "/proj true"},
 		{[]string{"reset"}, "reset", "/proj false"},
@@ -105,7 +106,7 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"deliver", "a.txt", "b.txt"}, "deliver", "/proj   false false false false p0  a.txt,b.txt"},
 		{[]string{"deliver", "--box", "x", "--no-clip", "f"}, "deliver", "/proj x  false true false false p0  f"},
 		{[]string{"deliver", "--box=x", "--name=n.txt", "--skip-uid-check", "-"}, "deliver", "/proj x n.txt true false false false p0  -"},
-		// The remote-facing surface (ADR 0035): enumeration, tar transport,
+		// The remote-facing surface (ADR 0037): enumeration, tar transport,
 		// and the protocol handshake reach Deliver as options.
 		{[]string{"deliver", "--boxes", "--proto", "1"}, "deliver", "/proj   false false true false p1  "},
 		{[]string{"deliver", "--boxes", "--skip-uid-check"}, "deliver", "/proj   true false true false p0  "},

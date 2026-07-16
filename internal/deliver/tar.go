@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Tar mode (ADR 0035): the remote half of ssh delivery. The archive arrives
+// Tar mode (ADR 0037): the remote half of ssh delivery. The archive arrives
 // on stdin and its entries feed straight into the existing per-file
 // exec-stream transport — no temp files, no staging, nothing on this host's
 // disk. Top-level names claim atomically exactly as local delivery claims

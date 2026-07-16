@@ -1,30 +1,61 @@
-# Built-in companion skill: grok-shared-auth — RETIRED (ADR 0023).
+# Built-in companion skill: grok-shared-auth v2 — the auth broker (ADR 0036).
 #
-# v1 shared one Grok login across boxes the codex way: $GROK_HOME/auth.json
-# symlinked into a machine-scoped identity volume. It FAILED ITS FIELD GATE
-# (2026-07-10, twice in one day): grok refreshes its OAuth pair every ~6h by
-# spending a SINGLE-USE refresh token and writing the result via temp+rename
-# — which replaces the symlink with a private local file. The rotated pair
-# never reaches the shared volume, the shared copy's chain dies within hours
-# ("ServerRejected", unrecoverable), and v1's every-launch symlink heal then
-# clobbered working per-box logins with the corpse. Full mechanics:
-# docs/AGENT-CREDENTIAL-MECHANICS.md; decision record: docs/adr/0023.
+# One Grok subscription login shared by every byre box that opts in. v1 (the
+# codex-shaped auth.json symlink) was retired after a field failure — grok
+# rotates a SINGLE-USE refresh token every ~6h and writes via temp+rename,
+# which forks the symlink (ADR 0023). v2 inverts the relationship instead of
+# fighting the file handling: GROK_AUTH_PROVIDER_COMMAND (grok's documented
+# external-auth seam, publicly in the 0.2.101 user guide) makes byre's broker
+# the credential source — grok asks and waits, and with the command set,
+# grok's own OIDC refresher is never constructed (source-verified:
+# build_refresher branches on the command), so ONLY the broker ever spends
+# the refresh token, under a real flock in the machine identity volume.
+# Kernel flocks work across boxes on a shared volume; grok's own lock cannot
+# (PID-liveness staleness is meaningless across container PID namespaces —
+# near-instant cross-namespace lock steal, source-verified). Every design
+# gate from the parked designs doc was run against the published grok source
+# (2026-07-16, grok-build tree) before this build; the gate record is in
+# ADR 0036, the mechanics in docs/AGENT-CREDENTIAL-MECHANICS.md §6.
 #
-# This stub stays so a config naming "grok-shared-auth" still resolves — it
-# contributes NOTHING (no hooks, no volumes; boxes fall back to per-box
-# logins, which rotate correctly). The grok skill's own login hook now
-# removes any symlinked auth.json, healing boxes v1 damaged. The old
-# machine volume (byre-machine-u<uid>-grok-identity) is no longer mounted;
-# it holds only the dead credential and can be removed by hand.
+# Seeding: the firstrun hook logs in THROUGH grok itself with GROK_AUTH_PATH
+# pointed at the shared store (the override relocates grok's whole credential
+# subsystem, login writes included), so the store is always a grok-native
+# auth.json and no copying hygiene exists to get wrong. A dead chain
+# (invalid_grant — including v1's orphaned credential in the same volume) is
+# moved aside by the broker and re-seeded at next launch.
 #
-# Two rebuild designs are PARKED, not dead — an auth broker riding grok's
-# GROK_AUTH_PROVIDER_COMMAND seam, and a fork-shipping watcher + refresh
-# jitter: wip/grok-shared-auth-v2-designs.md. (The env API-key path is
-# ruled out: xAI API billing is separate from the subscription and ~50x the
-# cost at agent volumes.)
+# The grok skill's own login hook stands down when GROK_AUTH_PROVIDER_COMMAND
+# is set — this skill owns login UX for shared-auth boxes.
 
-# Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): a retired
-# skill is never put in front of users. A rebuild declares it only after
-# passing its gates (wip/grok-shared-auth-v2-designs.md).
+description = "Share one Grok login across all your projects (auth broker on grok's external-auth seam; ADR 0036)."
 
-description = "RETIRED — grok's single-use token rotation can't be file-shared (2026-07-10 field failure; ADR 0023). Boxes log in per project; rebuild designs are parked in wip/grok-shared-auth-v2-designs.md."
+# NOT yet shared_auth_for = "grok" (the ADR 0025 onboarding offer): declaring
+# that key vouches the mechanism is field-verified, and the one gate that
+# cannot be run from source or unit tests — a live broker refresh accepted by
+# the backend end-to-end — hasn't run yet. Flip companion_for to
+# shared_auth_for once a real box has been observed through a ~6h token
+# rollover (the v1 lesson: the vouch follows the field gate, never precedes
+# it). companion_for still pairs the skill with grok in the picker (ADR 0034).
+companion_for = "grok"
+
+[build]
+# jq + curl: the broker's store surgery and refresh POST; util-linux: flock;
+# ca-certificates: TLS to auth.x.ai. Mostly present in any base image already.
+apt = ["curl", "ca-certificates", "jq", "util-linux"]
+files = { "00-grok-shared-auth.sh" = "/etc/byre/firstrun.d/00-grok-shared-auth", "grok-auth-broker.sh" = "/etc/byre/grok-auth-broker" }
+
+[runtime]
+# The seam itself. Invoked with `sh -c` by grok, so the explicit `bash` keeps
+# the broker independent of exec bits and of /bin/sh's dialect. The label
+# names the credential source on grok's TUI login screen.
+env = { GROK_AUTH_PROVIDER_COMMAND = "bash /etc/byre/grok-auth-broker", GROK_AUTH_PROVIDER_LABEL = "byre shared auth" }
+# The broker's own functional endpoint: OIDC discovery + the refresh grant
+# (the grok skill already opens it for grok's device-auth flow; declared here
+# too so this skill is self-sufficient if that ever changes).
+egress = ["auth.x.ai"]
+
+[[volumes]]
+name = "grok-identity"
+role = "state"
+target = "/home/dev/.byre-identity/grok"
+scope = "machine"

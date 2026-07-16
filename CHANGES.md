@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+- **Remote delivery over ssh (ADR 0037).** `byre deliver
+  ssh://[user@]host[:port] ...` delivers through another machine running
+  byre: two headless ssh invocations — enumerate the remote's boxes
+  (`--boxes`, a frozen tab-separated line grammar; skipped when `--box`
+  is given), pick locally, then stream every source as ONE tar archive
+  into a single targeted remote deliver (`--tar -`). No staging, no
+  remote temp files — the archive feeds the existing per-file transport
+  entry by entry, claims uniquify exactly as local delivery does, and
+  the landed paths come back to YOUR stdout and clipboard. Every local
+  input mode works unchanged (paths, `-`, the paste beat, clipboard).
+  `--proto` pins the whole ssh-facing surface and fails legibly on
+  version skew; `--remote-byre` names the remote binary when sshd's
+  sparse non-interactive PATH hides it; a partial remote pool (exit 4)
+  is never auto-picked. Authentication is your own ssh — keys, agents,
+  and prompts behave exactly as `ssh host` would. Supersedes ADR 0021's
+  unbuilt scp/`--porcelain`/`--consume` shape.
+
+- **grok-shared-auth v2: the auth broker (ADR 0036).** One Grok
+  subscription login shared across boxes again — rebuilt on
+  `GROK_AUTH_PROVIDER_COMMAND`, grok's own (now publicly documented)
+  external-auth seam, replacing the retired v1 symlink (ADR 0023). A
+  small broker script answers grok's credential requests under one
+  machine-wide flock, so exactly one process ever spends the single-use
+  refresh token; seeding logs in through grok itself
+  (`GROK_AUTH_PATH` → the shared store), dead chains self-heal by
+  move-aside + re-seed (v1's orphaned credential included), and a
+  transient refresh failure degrades to the cached token instead of
+  breaking the session. Every pre-build gate from the parked designs
+  was answered against the published Grok Build source (the tree also
+  upgraded/corrected the AGENT-CREDENTIAL-MECHANICS Grok record:
+  temp+rename and reuse-revocation confirmed; the headless auth hang is
+  vendor-fixed by 0.2.101; grok's own lock is a real flock that still
+  cannot serialize across containers). Hand-enable alongside grok
+  (`skills = ["grok-shared-auth"]`); the onboarding offer
+  (`shared_auth_for`) waits for the live field gate.
+
+- **Named layers and the extends chain (ADR 0035).** Shared,
+  user-authored config baselines at `~/.byre/layers/<name>/layer.config`:
+  a project's `byre.config` (or another layer) names at most one parent
+  via `extends = "<name>"`, and the cascade becomes
+  `default ⊕ template ⊕ chain(root … parent) ⊕ project`. Chains are
+  linear and walked to the root; cycles and dangling parents fail loudly
+  (the dangling error names the exact path to create). Layers carry the
+  full config vocabulary except `template`, are plain files rather than
+  packages (send the file to share it), and resolve LIVE at every
+  develop -- edit the employer layer once, every extending project's
+  next box picks it up. New verbs: `byre layer new|list|validate`;
+  `byre config` gains an EXTENDS section and attributes inherited rows
+  `layer:<name>`; `byre config --layer <name>` edits a layer with the
+  same effective-state editor (ancestor attribution, no template picker,
+  cycle-safe extends options). `byre status` prints the chain; a preset
+  may carry `extends`, its review resolves the chain and shows
+  layer-contributed grants, and apply hard-fails on a layer the machine
+  doesn't have. Layer files sit outside the `--self-edit` writable set.
+
 - **MCP provisioning (ADR 0033).** `[[mcp]]` blocks in config layers and
   skill.toml declare MCP servers for the box -- local (`command` argv) or
   remote (`url`), with env var NAMES (never values) and optional extra

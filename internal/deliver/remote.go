@@ -15,7 +15,7 @@ import (
 	"sync"
 )
 
-// Remote delivery, local half (ADR 0035): `byre deliver ssh://host ...` is
+// Remote delivery, local half (ADR 0037): `byre deliver ssh://host ...` is
 // two headless ssh invocations — enumerate the remote's boxes (skipped when
 // --box is already known), pick locally, then stream every source as ONE tar
 // archive into a single targeted remote deliver. The remote runs its

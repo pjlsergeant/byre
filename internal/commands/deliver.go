@@ -19,7 +19,7 @@ import (
 // cascade's ancestor walk, the caller's identity, and the input-source modes.
 func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error {
 	// The protocol handshake runs before ANYTHING else — a skewed remote
-	// invocation must fail before discovery, listings, or payload (ADR 0035).
+	// invocation must fail before discovery, listings, or payload (ADR 0037).
 	if opts.Proto != 0 {
 		if err := deliver.CheckProto(opts.Proto); err != nil {
 			return err
@@ -32,7 +32,7 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 		return deliverTar(s, dir, opts)
 	}
 	// An ssh:// first argument routes the delivery through another machine
-	// running byre (ADR 0035); the remaining arguments are the sources, and
+	// running byre (ADR 0037); the remaining arguments are the sources, and
 	// every local input mode (paths, stdin, the paste beat) works unchanged.
 	var target deliver.SSHTarget
 	remote := false
@@ -243,7 +243,7 @@ var stdinIsPiped = func() bool {
 }
 
 // deliverBoxes is `byre deliver --boxes`: the headless enumeration leg of
-// remote delivery (ADR 0035). Stdout carries the line grammar, stderr the
+// remote delivery (ADR 0037). Stdout carries the line grammar, stderr the
 // notes, and a partial pool exits ExitPartialPool so the caller knows not to
 // auto-pick — the list itself still printed and stays usable.
 func deliverBoxes(s Streams, dir string, opts deliver.Options) error {

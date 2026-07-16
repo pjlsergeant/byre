@@ -1,11 +1,11 @@
 # Diary — ssh-deliver worktree
 
-## 2026-07-16 — ssh:// remote delivery (ADR 0035)
+## 2026-07-16 — ssh:// remote delivery (ADR 0037)
 
 Pete redesigned the ssh tranche in conversation before dispatch: the
 frozen ADR 0021 mini-protocol (scp staging / --porcelain / --consume /
 remote picker over `ssh -t`) is DEAD, superseded by **list-then-deliver**
-(ADR 0035, committed first): headless `--boxes` enumeration (tab-separated
+(ADR 0037, committed first): headless `--boxes` enumeration (tab-separated
 line grammar on stdout, notes on stderr, exit 4 = partial pool = never
 auto-pick), local pick, one plain-ssh exec streaming ONE tar into
 `--tar -`. Accepted costs on record in the ADR: two auth prompts
@@ -13,7 +13,7 @@ interactively (one with --box), progress is ours (sendMeter), snapshot
 staleness, sparse sshd PATH (--remote-byre).
 
 Shipped, in commit order:
-- ADR 0035 + pointer edit in 0021.
+- ADR 0037 + pointer edit in 0021.
 - Remote side: proto.go (ProtoVersion=1, ExitPartialPool=4, Boxes emit +
   ParseBoxes), tar.go (RunTar/tarUnpack — entries feed the EXISTING
   per-file transport; .. refuses, absolute confines, control chars rename
