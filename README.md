@@ -278,9 +278,7 @@ project (its `byre.config`), and only for it. Saying yes to "Save these
 as your default?" remembers your answer like the template/agent
 favourites: the next box's question just defaults to it, one Enter to
 accept. (Enabling the skill by hand in `~/.byre/default.config` is the
-machine-wide route -- then the question stops.) On
-an install that predates the offer, run `byre skill update` once so the
-companion skills carry the offer metadata. The
+machine-wide route -- then the question stops.) The
 login lives in a shared volume that reset/forget deliberately never
 touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
 (Grok has no shared-auth: its token rotation can't be file-shared, so it logs
@@ -345,11 +343,16 @@ tldr: `byre config` -> Mounts
 
 ### Run other Docker containers from inside the byre environment?
 
-Today this is possible rather than ergonomic. You can mount the host's Docker
-daemon socket using `byre config` -> Mounts. It's worth remembering that
-anything that can run Docker on the host also has effective root on the host.
-I plan to make this even easier and also support nested Podman in the very near
-future.
+tldr: `byre config` and enable the _docker-host_ skill.
+
+The skill installs the Docker CLI (plus compose and buildx) in the box and
+mounts the host daemon's socket. It's worth being clear-eyed about what
+you're granting: anything that can run Docker on the host also has
+effective root on the host, and `byre status` disclaims that hole for as
+long as the skill is enabled. [docs/DOCKER-HOST.md](docs/DOCKER-HOST.md)
+covers what the grant really means and when to prefer something narrower.
+Nested Podman (a daemon inside the box, granting nothing on the host) is
+possible future work; there's no support for it today.
 
 ### Get the coding agent to edit its own byre config?
 
