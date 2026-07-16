@@ -19,7 +19,7 @@ unverifiable from source).
 
 | | Claude Code | Codex CLI | Gemini CLI | Grok CLI |
 |---|---|---|---|---|
-| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `oauth_creds.json`, `google_accounts.json` | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` |
+| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `gemini-credentials.json` (0.49+ FileKeychain, hostname-bound; `oauth_creds.json` is legacy -- see the CORRECTION in the Gemini section), `google_accounts.json` | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` |
 | Per-project state in a ROOT-LEVEL FILE | **YES** -- `.claude.json` `projects` key (trust, allowed tools, MCP local scope) | **YES** -- `config.toml` `[projects."<path>"] trust_level` | **YES** -- `trustedFolders.json` (per-folder trust) | none observed (closed source; `worktrees.db`/`active_sessions.json` are root-level but not trust-shaped) |
 | Per-project state in subdirectories | `projects/<encoded-cwd>/` (transcripts, auto memory) | none keyed by project (`sessions/` is date-keyed) | `history/<projectId>/`, `tmp/<project_hash>/` | `memory/<project-slug>-<hash8>/`; `sessions/` is date-keyed |
 | Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` | `config.toml`, `skills/`, `AGENTS.md` (global rules) |
@@ -519,8 +519,12 @@ Per agent, what goes in the shared identity volume vs per-project volume:
   one root-level file). `CODEX_HOME` moves the tree but cannot split it.
 
 **Gemini CLI**
-- Shared identity: `oauth_creds.json`, `google_accounts.json`,
-  `installation_id` (+ `mcp-oauth-tokens.json` if MCP auth should be shared).
+- Shared identity: `gemini-credentials.json` (the 0.49+ FileKeychain
+  credential -- hostname-bound, so sharing also requires pinning the box
+  hostname; byre's gemini skill pins `--hostname byre`), legacy
+  `oauth_creds.json` (pre-0.49; link both, per the CORRECTION above),
+  `google_accounts.json`, `installation_id` (+ `mcp-oauth-tokens.json`
+  if MCP auth should be shared).
 - Per-project: `history/<projectId>/`, `tmp/<project_hash>/`.
 - Unsplittable-by-mount: `trustedFolders.json` (root-level per-folder trust)
   -- though `GEMINI_CLI_TRUSTED_FOLDERS_PATH` can relocate it, which makes it
@@ -577,10 +581,12 @@ Per agent, what goes in the shared identity volume vs per-project volume:
    8-day interval), reload-before-write. Shared volume + `CODEX_HOME` works;
    residual risk is the unlocked cross-process refresh race.
 5. **Gemini has no env relocation and no plan-scoped env token** -- shared
-   subscription auth REQUIRES the `oauth_creds.json` file at literally
-   `~/.gemini/oauth_creds.json`, so the design must mount/symlink within the
-   real home dir; and per-project trust needs `GEMINI_CLI_TRUSTED_FOLDERS_PATH`
-   pointed at the per-project volume.
+   subscription auth REQUIRES the cached credential file at literally
+   `~/.gemini/` (0.49+: `gemini-credentials.json`, hostname-bound, so the
+   box hostname must be pinned too; pre-0.49: `oauth_creds.json` -- link
+   both), so the design must mount/symlink within the real home dir; and
+   per-project trust needs `GEMINI_CLI_TRUSTED_FOLDERS_PATH` pointed at
+   the per-project volume.
 
 ## Source list
 
