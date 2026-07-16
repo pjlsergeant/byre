@@ -698,6 +698,195 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 	}
 }
 
+// TestIntegrationDeliverLoopbackSSH is the no-fakes version of the remote
+// loop: REAL ssh to this machine's own sshd, the REAL sshExec seam, and a
+// byre binary built from this tree answering on the far side — quoting
+// through an actual remote shell (the binary's path carries a space on
+// purpose), exit codes propagating through an actual sshd, the tar riding an
+// actual no-pty channel. What stays untestable here is only the
+// other-machine-ness (macOS sshd's sparse PATH, network latency).
+//
+// It provisions loopback ssh by MUTATING ~/.ssh (an ephemeral key appended
+// to authorized_keys, a Host alias appended to config; both restored on
+// cleanup), so it gates on BYRE_SSH_LOOP_TESTS=1 on top of the docker gate —
+// set by byre-inttest for the sacrificial VM, never by a developer's default
+// run on a real machine.
+func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
+	r := requireEngineRunner(t)
+	if os.Getenv("BYRE_SSH_LOOP_TESTS") != "1" {
+		t.Skip("set BYRE_SSH_LOOP_TESTS=1 to run the loopback-ssh test (it edits ~/.ssh — sacrificial machines only)")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+
+	// An ephemeral keypair, authorized for loopback; every ~/.ssh mutation
+	// restores the exact prior bytes on cleanup.
+	key := filepath.Join(tmp, "loop-key")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v\n%s", err, out)
+	}
+	pub, err := os.ReadFile(key + ".pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	appendRestoring(t, filepath.Join(sshDir, "authorized_keys"), string(pub))
+	appendRestoring(t, filepath.Join(sshDir, "config"), fmt.Sprintf(`
+Host byre-test-loopback byre-test-loopback-down
+  HostName 127.0.0.1
+  IdentityFile %s
+  IdentitiesOnly yes
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  BatchMode yes
+  ConnectTimeout 5
+Host byre-test-loopback-down
+  Port 9
+`, key))
+	if out, err := exec.Command("ssh", "byre-test-loopback", "true").CombinedOutput(); err != nil {
+		t.Fatalf("loopback ssh probe failed (is sshd running here?): %v\n%s", err, out)
+	}
+
+	// The remote byre is BUILT from this tree — both ends of the wire run
+	// the code under test — and lands in a directory with a space, so the
+	// argv the remote shell evaluates actually exercises the quoting.
+	binDir := filepath.Join(tmp, "remote bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(binDir, "byre")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/byre")
+	build.Dir = filepath.Join("..", "..")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building byre: %v\n%s", err, out)
+	}
+
+	// A live box, exactly as the fake-ssh loop test runs one.
+	p, proj := testPaths(t)
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+		t.Fatalf("image failed to build: %v", err)
+	}
+	params, err := runParams(p, rv, image, false, false, ident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params.Command = []string{"sleep", "120"}
+	t.Cleanup(func() {
+		_ = exec.Command(string(r.Engine()), "rm", "-f", params.Name).Run()
+		for _, v := range params.Volumes {
+			_ = r.VolumeRemove(v.Name)
+		}
+	})
+	args := runner.RunArgs(params)
+	args = append([]string{args[0], "-d"}, args[1:]...)
+	if out, err := exec.Command(string(r.Engine()), args...).CombinedOutput(); err != nil {
+		t.Fatalf("box failed to start: %v\n%s", err, out)
+	}
+	ids, err := r.RunningContainersByLabel(labelKey + "=" + p.ID)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("session discovery = (%v, %v)", ids, err)
+	}
+
+	srcDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir, "bug", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(srcDir, "bug", "notes.txt"), []byte("notes\n"), 0o644)
+	os.WriteFile(filepath.Join(srcDir, "bug", "sub", "deep.txt"), []byte("deep\n"), 0o644)
+	top := filepath.Join(srcDir, "top.txt")
+	os.WriteFile(top, []byte("top\n"), 0o644)
+	sources := deliver.PathSources([]string{filepath.Join(srcDir, "bug"), top})
+
+	target, isSSH, err := deliver.ParseSSHTarget("ssh://byre-test-loopback")
+	if err != nil || !isSSH {
+		t.Fatalf("target = (%v, %v)", isSSH, err)
+	}
+
+	// The full two-leg flow over real ssh: enumeration first (the picker
+	// pins OUR box, so a leftover box on the machine can't misroute the
+	// test), then the tar leg into it.
+	var out, errw strings.Builder
+	cfg := deliver.Config{Out: &out, Err: &errw, Pick: func(ss []deliver.Session) (deliver.Session, bool, error) {
+		for _, s := range ss {
+			if s.ID == ids[0] {
+				return s, true, nil
+			}
+		}
+		return deliver.Session{}, false, fmt.Errorf("our box %s missing from the remote list: %+v", ids[0], ss)
+	}}
+	landed, err := deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, target, sources, sshExec, false)
+	if err != nil {
+		t.Fatalf("loopback delivery failed: %v\nstderr: %s", err, errw.String())
+	}
+	if strings.Join(landed, " ") != "/inbox/bug /inbox/top.txt" {
+		t.Fatalf("landed = %v\nstderr: %s", landed, errw.String())
+	}
+	for path, want := range map[string]string{
+		"/inbox/bug/notes.txt":    "notes\n",
+		"/inbox/bug/sub/deep.txt": "deep\n",
+		"/inbox/top.txt":          "top\n",
+	} {
+		got, err := r.ExecInput(ids[0], ident.UID, ident.GID, nil, "cat", path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if got != want {
+			t.Fatalf("%s = %q, want %q", path, got, want)
+		}
+	}
+
+	// Exit-code translation through a REAL sshd: a missing remote binary is
+	// the shell's 127, and byre must say "PATH", not "exit status".
+	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: "/nonexistent/byre", NoClip: true}, target, sources, sshExec, false)
+	if err == nil || !strings.Contains(err.Error(), "ssh PATH") {
+		t.Fatalf("127 translation: err = %v", err)
+	}
+
+	// And ssh's own 255 (a refused port) must blame the transport.
+	down, _, err := deliver.ParseSSHTarget("ssh://byre-test-loopback-down")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, down, sources, sshExec, false)
+	if err == nil || !strings.Contains(err.Error(), "ssh to") {
+		t.Fatalf("255 translation: err = %v", err)
+	}
+}
+
+// appendRestoring appends text to path (creating it 0600 if absent) and
+// restores the exact prior state — original bytes, or absence — on cleanup.
+func appendRestoring(t *testing.T, path, text string) {
+	t.Helper()
+	orig, err := os.ReadFile(path)
+	existed := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(append([]byte{}, orig...), []byte(text)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if existed {
+			os.WriteFile(path, orig, 0o600)
+		} else {
+			os.Remove(path)
+		}
+	})
+}
+
 // TestIntegrationDeliverRemoteLoop runs remote delivery end to end with the
 // ssh binary as the ONLY fake: deliver.RunRemote packs real files through
 // the production planner, the "ssh" hop hands the stream straight to
