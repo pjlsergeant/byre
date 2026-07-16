@@ -98,6 +98,26 @@ delivery into the agent session is the agent skill's job (claude and
 codex inject it), so a toolkit skill declares servers and stays
 agent-agnostic.
 
+A skill can also ship **Claude Skills** (Anthropic's agent-skill format:
+a directory whose root holds a `SKILL.md`) with `[[claude_skills]]`
+blocks (ADR 0038) -- `name` plus `from`, a directory relative to the
+skill dir:
+
+```toml
+[[claude_skills]]
+name = "review-loop"                # must equal the SKILL.md frontmatter name
+from = "claude-skills/review-loop"
+```
+
+The dir is validated at bake (frontmatter `name`/`description`, 64-file /
+8 MiB bounds, no symlinks) and delivered to the agent session bare (the
+agent sees `/review-loop`). Users can drop one of your Claude Skills
+without disabling the whole skill via `!name` in their config's
+claude_skills list, and standalone skills need no package at all: `byre
+claude-skill add <dir>` declares a host directory straight from config.
+A skill that ships ONLY Claude Skills is a fine package -- enabling it
+stays the grant, like any other.
+
 To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
 

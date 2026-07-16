@@ -348,6 +348,25 @@ consumes the baked file; an adapter-less agent degrades honestly
 (declared-but-NOT-delivered). Per-agent mechanics and the walked-back
 registrar design: ADR 0033.
 
+**Claude Skill (`[[claude_skills]]`)**:
+Wiring, not a grant (ADR 0038): a declared Claude Skill — Anthropic's
+agent-skill format, a directory whose root holds a `SKILL.md` — shipped
+into the box for the agent. Config declares a host `path`; a skill.toml
+contributes a package-relative `from`; the merged set bakes to
+`/etc/byre/claude-skills` and the agent receives each skill BARE (as
+`/name`). NOT a byre skill (the box-composition package) — the two words
+never appear unqualified where they could be confused.
+_Avoid_: bare "skill" for either concept in user-facing prose; calling a
+Claude Skill a grant; `[[agent_skills]]` (collides with "agent skill"
+below).
+
+**Claude Skills adapter**:
+How a selected agent's session receives the baked Claude Skill tree —
+injection only, `[agent] claude_skills = "inject"` as the author's vouch
+(for claude: `--add-dir /etc/byre/claude-skills` in the command). byre
+never writes an agent's skill state; an agent-authored same-name skill on
+the state volume shadows byre's delivery (box state wins). ADR 0038.
+
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The
 project itself is the implicit one: mounted read-write at `/workspace`.
