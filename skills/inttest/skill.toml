@@ -11,10 +11,11 @@ apt = ["openssh-client"]
 files = { "byre-inttest" = "/usr/local/bin/byre-inttest", "byre-inttest.yaml" = "/etc/byre/inttest/byre-inttest.yaml" }
 
 [runtime]
-# The VM's fixed ssh endpoint (the Lima template pins localPort 60022; from a
-# Docker Desktop box the host is host.docker.internal). Overriding
-# BYRE_INTTEST_VM to some other address needs its own egress grant.
-egress = ["host.docker.internal:60022"]
+# The VM's fixed ssh endpoint (the Lima template pins localPort 60022), under
+# both engines' spellings of "the host": Docker Desktop's and podman's. Same
+# functional endpoint, so both are granted; the wrapper tries them in order.
+# Overriding BYRE_INTTEST_VM to some other address needs its own egress grant.
+egress = ["host.docker.internal:60022", "host.containers.internal:60022"]
 env_docs = { BYRE_INTTEST_USER = "ssh user on the inttest VM; Lima names it after the HOST user -- pass it through with env_from_host = { BYRE_INTTEST_USER = \"env:USER\" }" }
 
 [[volumes]]
@@ -30,7 +31,7 @@ file = "context.md"
 [[package.files]]
 src = "byre-inttest"
 dest = "byre-inttest"
-sha256 = "fbea6fa0d5650e1ba2e2a8236965c9f7fdd26d4f55033118f7996aa788cd3ca8"
+sha256 = "9f8c757816a5c07e753327d6636d5cd92d7dfd03fc4dc77eea728dca67be7195"
 executable = true
 
 [[package.files]]
@@ -41,5 +42,5 @@ sha256 = "53edac1babb07466e05e76f203bfd28e363090b8fcfe31caa4121fc0e343e019"
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "15501bdbeb5241b8fa5fd2a8253d26d696f7a341db5601050f48aad9cd12747e"
+sha256 = "676ae4e1668c89dcc97b865c3a1e594e5134950a40a3a83d8694a29af34a9e34"
 

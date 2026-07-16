@@ -15,18 +15,34 @@
 #   BYRE_INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
 #                      user after the HOST user, so pass it through:
 #                      env_from_host = { BYRE_INTTEST_USER = "env:USER" }
-#   BYRE_INTTEST_VM    VM address. The default, host.docker.internal, is
-#                      Docker Desktop's; a native-Linux engine doesn't provide
-#                      it -- set this to the host's address there. A different
-#                      address needs its own egress grant on a firewalled box.
+#   BYRE_INTTEST_VM    VM address. Unset, the wrapper tries the engines'
+#                      host names in order: host.docker.internal (Docker
+#                      Desktop), host.containers.internal (podman) -- both
+#                      carry egress grants. Native-Linux docker provides
+#                      neither: set this to the host's address there (and
+#                      grant that egress yourself on a firewalled box).
 #   BYRE_INTTEST_PORT  ssh port (default 60022, fixed by the Lima template)
 #   BYRE_INTTEST_KEY   private key (default: the machine-volume path below)
 set -eu
 
 KEY="${BYRE_INTTEST_KEY:-/home/dev/.byre-identity/inttest/byre-inttest}"
 VM_USER="${BYRE_INTTEST_USER:-}"
-VM_HOST="${BYRE_INTTEST_VM:-host.docker.internal}"
 VM_PORT="${BYRE_INTTEST_PORT:-60022}"
+
+# An explicit BYRE_INTTEST_VM is used verbatim; otherwise take the first of
+# the engines' host names that resolves here.
+VM_HOST="${BYRE_INTTEST_VM:-}"
+if [ -z "$VM_HOST" ]; then
+  for cand in host.docker.internal host.containers.internal; do
+    if getent hosts "$cand" >/dev/null 2>&1; then VM_HOST="$cand"; break; fi
+  done
+  if [ -z "$VM_HOST" ]; then
+    echo "byre-inttest: neither host.docker.internal nor host.containers.internal resolves in this box." >&2
+    echo "Native-Linux docker provides neither name: set BYRE_INTTEST_VM to the host's address" >&2
+    echo "(and grant that endpoint's egress yourself on a firewalled box)." >&2
+    exit 1
+  fi
+fi
 
 if [ -z "$VM_USER" ]; then
   echo "byre-inttest: BYRE_INTTEST_USER is not set (the VM's ssh user)." >&2
