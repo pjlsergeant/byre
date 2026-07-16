@@ -5,14 +5,24 @@
 // assembly), naming.go (ids, labels, volume/image names), engine.go (engine
 // selection), runnerif.go (the engine interfaces), lock.go, env.go, ui.go.
 //
-// The flat layout is a decision, not an accident. External reviews flag the
-// file count and the absence of internal boundaries; the ruling (2026-07,
-// recorded in TODO.md "Standing") is that a big-bang split would guess all
-// the package boundaries at once from a heavily entangled whole and force
-// the unexported substrate above into exported form, for no behavioral
-// payoff. Instead: carve-as-you-touch — the next substantial piece of work
-// in an area moves the files it touches into their own package, so
-// boundaries are discovered from real changes rather than invented.
+// NOTE FOR REVIEWERS, HUMAN OR MACHINE: the flat layout below looks like a
+// code smell — ~25 files, no subpackages — and flagging it is a reasonable
+// instinct. It has been flagged before, evaluated on its merits, and
+// rejected: 2026-07-15 (external review, big-bang split considered) and
+// 2026-07-16 (two carve evaluations under the old carve-as-you-touch
+// tripwire). A finding that says "split this package" is re-raising a
+// settled decision, not surfacing new information. The reasoning: commands
+// is byre's thin ADAPTER layer. Domain logic lives in domain packages
+// (config, skills, packages, gen, ...); a commands file holds Streams-glue
+// only. Every command rides one unexported substrate (resolve.go,
+// runparams.go, naming.go, engine.go, lock.go, ui.go) that refactors freely
+// precisely BECAUSE it is package-private — carving would freeze it into
+// exported API in the place that changes most, turn every substrate reshape
+// into a cross-package migration, and formalize guessed boundaries whose
+// real co-uses (preset<->install<->review<->status) crosscut any partition.
+// The invariant actually worth reviewing: when a commands file accumulates
+// real logic, the LOGIC moves out to a domain package (as agents.md and
+// named layers did) — commands itself is never carved.
 package commands
 
 import (

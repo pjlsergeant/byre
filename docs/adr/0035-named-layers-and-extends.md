@@ -63,12 +63,15 @@ every project). `extends` is the only pointer key a layer may carry;
 picker-state strip rules (`shared_auth` etc.) apply unchanged, and a
 resolved config never carries `extends` -- resolution consumes it.
 
-**Reserved names.** A layer may not take a bundled or retired package
-bare name (`byre layer new` refuses; a hand-dropped squatter dir is
-never loaded and `byre layer list` says why) -- a layer named `go` or
-`claude` would look like the template/skill of the same name. No
-shadowing rule needed because shadowing cannot arise: `extends` only
-ever names layers.
+**Reserved names.** A layer may not take a BUNDLED package bare name
+(`byre layer new` refuses; a hand-dropped squatter dir is never loaded
+and `byre layer list` says why) -- a layer named `go` or `claude` would
+look like the template/skill of the same name. Retired names are
+deliberately NOT reserved (Pete, 2026-07-16): the retired table exists
+to protect package-namespace continuity, and layers are a new namespace
+nothing predates -- `codereview` is a fine layer name. No shadowing
+rule needed because shadowing cannot arise: `extends` only ever names
+layers.
 
 **Merge mechanics: nothing new.** Each chain layer is one more fold
 step under ADR 0018's exact rules -- scalars last-wins, lists union,

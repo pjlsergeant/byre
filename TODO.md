@@ -72,9 +72,12 @@ Disciplines and tripwires, not tasks.
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
   (docs/marketing/positioning.md "Copy bank").
-- **`internal/commands` split tripwire:** ~25 files, no internal boundaries
-  (2026-07-09 external review). Don't split as a project; next substantial
-  work there carves the touched area into its own package.
+- **`internal/commands` is never carved (2026-07-16, supersedes the
+  carve-as-you-touch tripwire):** commands is the thin adapter layer —
+  domain logic lives in domain packages, commands files hold Streams-glue
+  only. The reviewable invariant: when a commands file accumulates real
+  logic, the LOGIC moves to a domain package; the package itself is never
+  split. Full rationale in the package comment (commands.go).
 
 ## Maybe someday
 

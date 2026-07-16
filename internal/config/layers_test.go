@@ -1,11 +1,14 @@
 package config
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // writeLayer writes ~/.byre/layers/<name>/layer.config.
@@ -145,21 +148,45 @@ func TestDefaultConfigBansExtends(t *testing.T) {
 	}
 }
 
-// A layer may not take a bundled or retired package name; a squatter dir on
-// such a name is never loaded.
+// withBundledFixture points config's catalog hook at a minimal bundled FS
+// (one template, "go") so reserved-name checks have a bundled alias to hit.
+func withBundledFixture(t *testing.T) {
+	t.Helper()
+	prev := BundledFS
+	BundledFS = func() fs.FS {
+		return fstest.MapFS{
+			"templates/go/template.config": &fstest.MapFile{Data: []byte("# description: fixture\n")},
+		}
+	}
+	t.Cleanup(func() { BundledFS = prev })
+}
+
+// A layer may not take a BUNDLED package bare name; a squatter dir on such a
+// name is never loaded. Retired names are deliberately legal (layers are a
+// new namespace — nothing predates it to protect; ruled 2026-07-16).
 func TestExtendsReservedNameRefused(t *testing.T) {
+	withBundledFixture(t)
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir()
 
-	// "codereview" is permanently retired (packages.RetiredNames) — present
-	// in every catalog without needing a bundled fixture.
-	writeLayer(t, home, "codereview", "apt = [\"jq\"]\n")
-	writeProjectCfg(t, proj, "extends = \"codereview\"\n")
+	writeLayer(t, home, "go", "apt = [\"jq\"]\n")
+	writeProjectCfg(t, proj, "extends = \"go\"\n")
 
-	_, err := Load(proj)
-	if err == nil || !strings.Contains(err.Error(), "reserved") {
-		t.Fatalf("reserved layer name must refuse to load, got: %v", err)
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("bundled layer name must refuse to load, got: %v", err)
+	}
+
+	// "codereview" is retired (packages.RetiredNames) — legal as a layer.
+	proj2 := t.TempDir()
+	writeLayer(t, home, "codereview", "apt = [\"jq\"]\n")
+	writeProjectCfg(t, proj2, "extends = \"codereview\"\n")
+	cfg, err := Load(proj2)
+	if err != nil {
+		t.Fatalf("retired names must be legal layer names: %v", err)
+	}
+	if !slices.Contains(cfg.Apt, "jq") {
+		t.Errorf("retired-named layer should contribute: %v", cfg.Apt)
 	}
 }
 
@@ -216,6 +243,7 @@ func TestChainLayerSourcesAttribution(t *testing.T) {
 }
 
 func TestListLayers(t *testing.T) {
+	withBundledFixture(t)
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 
@@ -223,7 +251,7 @@ func TestListLayers(t *testing.T) {
 	writeLayer(t, home, "torn-frontend", "extends = \"torn\"\n")
 	writeLayer(t, home, "broken", "not toml [\n")
 	writeLayer(t, home, "orphan", "extends = \"missing\"\n")
-	writeLayer(t, home, "codereview", "") // reserved-name squatter
+	writeLayer(t, home, "go", "") // bundled-name squatter
 	// A stray file in layers/ is ignored (layers are directories).
 	writeFile(t, filepath.Join(LayersDir(home), "README.txt"), "hi")
 
@@ -258,8 +286,8 @@ func TestListLayers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, li := range infos {
-		if li.Name == "codereview" && !strings.Contains(li.Reason, "reserved") {
-			t.Errorf("reserved squatter should be flagged, got %q", li.Reason)
+		if li.Name == "go" && !strings.Contains(li.Reason, "reserved") {
+			t.Errorf("bundled-name squatter should be flagged, got %q", li.Reason)
 		}
 	}
 }

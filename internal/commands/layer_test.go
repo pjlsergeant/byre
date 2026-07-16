@@ -48,10 +48,18 @@ func TestLayerNewScaffoldsAndGates(t *testing.T) {
 		t.Errorf("re-creating an existing layer must refuse, got: %v", err)
 	}
 
-	// Reserved names (bundled/retired bare names) are gated at creation.
+	// Bundled bare names are gated at creation (the commands package wires
+	// the real bundled catalog, so "go" is a live alias here).
 	s3, _, _ := testStreams("", false)
-	if err := LayerNew(s3, "codereview"); err == nil || !strings.Contains(err.Error(), "reserved") {
-		t.Errorf("reserved name must be refused with a reason, got: %v", err)
+	if err := LayerNew(s3, "go"); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("bundled name must be refused with a reason, got: %v", err)
+	}
+
+	// Retired names are deliberately NOT reserved (layers are a new
+	// namespace; ruled 2026-07-16): "codereview" is a legal layer.
+	s5, _, _ := testStreams("", false)
+	if err := LayerNew(s5, "codereview"); err != nil {
+		t.Errorf("retired name must be a legal layer name, got: %v", err)
 	}
 
 	// Name grammar is enforced before any path is built.

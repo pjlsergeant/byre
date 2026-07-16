@@ -570,13 +570,6 @@ func (c *Catalog) IsProtected(bare string) bool {
 	return ok
 }
 
-// ProtectedReason returns why a bare name is reserved ("bundled as byre/go",
-// "retired: …"), or "" when it is free. For remedy text; IsProtected is the
-// boolean form.
-func (c *Catalog) ProtectedReason(bare string) string {
-	return c.protected[bare]
-}
-
 // ExpandAlias returns the canonical ID for a name: if it is a bundled bare
 // alias, the byre/<name> id; otherwise the name unchanged. Does not
 // check existence.
