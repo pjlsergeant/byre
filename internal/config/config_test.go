@@ -601,6 +601,7 @@ func TestListTemplates(t *testing.T) {
 func sampleConfig() Config {
 	return Config{
 		Engine:             "podman",
+		Extends:            "torn",
 		Template:           "go",
 		Agent:              "claude",
 		Base:               "debian:bookworm",

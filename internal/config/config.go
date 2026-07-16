@@ -312,6 +312,15 @@ type Config struct {
 	Agent    string `toml:"agent,omitempty"`    // skill that launches (any skill with an [agent] command); enables it implicitly
 	Base     string `toml:"base,omitempty"`     // base image
 
+	// Extends names this file's parent layer (~/.byre/layers/<name>/) —
+	// at most one; chains are linear and walked to the root (layers.go).
+	// Legal in a layer file and the project config (the chain's leaf);
+	// banned in template.config (a distributable package must not pull in
+	// machine-local composition) and in default.config (the chain slot is
+	// the project's — see resolveWithCatalog). Consumed by resolution:
+	// never part of a resolved config.
+	Extends string `toml:"extends,omitempty"`
+
 	// SeedPrefs opts into a one-time copy of the selected agent's curated, non-secret
 	// pref files (theme, keybindings — see the skill's [agent.prefs]) from the host
 	// into a FRESH agent state volume. Off by default; only acts on a fresh volume.
@@ -499,6 +508,13 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// it per key, and the legibility surfaces count it like the grant it is.
 	def = Merge(Config{EnvFromHost: CoreEnvFromHost()}, def)
 
+	// The extends chain hangs off the PROJECT config (the chain's leaf).
+	// default.config carrying one would be a second, silent chain slot —
+	// refuse loudly rather than ignore a key with teeth.
+	if def.Extends != "" {
+		return Config{}, fmt.Errorf("default.config: extends belongs in a layer file or the project config, not the global default")
+	}
+
 	// Canonicalize package references on every layer before merge.
 	canonicalizeLayer(cat, &def)
 	canonicalizeLayer(cat, &proj)
@@ -532,11 +548,28 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 		canonicalizeLayer(cat, &tmpl)
 	}
 
-	resolved := Merge(Merge(def, tmpl), proj)
+	// The extends chain sits between the template and the project:
+	// default ⊕ template ⊕ chain(root … parent) ⊕ project. Layers are
+	// live — resolved on every load, like the template slot.
+	chain, err := LoadExtendsChain(home, cat, proj.Extends)
+	if err != nil {
+		return Config{}, err
+	}
+	lower := Merge(def, tmpl)
+	for _, nl := range chain {
+		canonicalizeLayer(cat, &nl.Config)
+		stampSources(&nl.Config, "layer "+nl.Name)
+		lower = Merge(lower, nl.Config)
+	}
+
+	resolved := Merge(lower, proj)
 	// Resolve the "none" sentinel out: it exists to beat lower layers in the
 	// merge, and means empty everywhere downstream.
 	resolved.Template = FromNone(resolved.Template)
 	resolved.Agent = FromNone(resolved.Agent)
+	// Extends is a pointer the chain walk above consumed; a resolved config
+	// never carries it (same stance as the picker-state strips below).
+	resolved.Extends = ""
 	// shared_auth (and the vestigial shared_auth_declined) is picker-owned
 	// state (ADR 0025), not container config: whatever layer carries it, it
 	// never reaches a resolved config — onboarding reads it straight from
@@ -621,14 +654,15 @@ func ParseTemplateBody(raw []byte) (Config, error) {
 	return c, nil
 }
 
-// rejectTemplateComposition bans the composition KEYS skills, agent, and
-// [sources] when present at all — even when empty (a skills or agent
-// key in template.config is a validation error).
+// rejectTemplateComposition bans the composition KEYS skills, agent,
+// [sources], and extends when present at all — even when empty (a skills or
+// agent key in template.config is a validation error).
 func rejectTemplateComposition(body []byte) error {
 	var probe struct {
 		Skills  []string       `toml:"skills"`
 		Agent   string         `toml:"agent"`
 		Sources map[string]any `toml:"sources"`
+		Extends string         `toml:"extends"`
 	}
 	md, err := toml.Decode(string(body), &probe)
 	if err != nil {
@@ -643,6 +677,9 @@ func rejectTemplateComposition(body []byte) error {
 	}
 	if md.IsDefined("sources") {
 		return fmt.Errorf("composition belongs in a preset ([sources] is not allowed in template.config)")
+	}
+	if md.IsDefined("extends") {
+		return fmt.Errorf("a distributable template cannot pull in machine-local layers (extends is not allowed in template.config)")
 	}
 	return nil
 }
@@ -704,8 +741,11 @@ func Parse(content []byte) (Config, error) {
 func Merge(base, over Config) Config {
 	out := base
 
-	// Scalars: a non-empty over value wins.
+	// Scalars: a non-empty over value wins. Extends included only for
+	// well-definedness on hand-merged layers — resolution consumes each
+	// file's extends during the chain walk and strips it from the result.
 	out.Engine = override(base.Engine, over.Engine)
+	out.Extends = override(base.Extends, over.Extends)
 	out.Template = override(base.Template, over.Template)
 	out.Agent = override(base.Agent, over.Agent)
 	out.Base = override(base.Base, over.Base)
@@ -827,6 +867,18 @@ func (c Config) validateScalars(layer bool) error {
 	case "", "auto", "docker", "podman":
 	default:
 		return fmt.Errorf("engine: %q invalid (want auto|docker|podman)", c.Engine)
+	}
+
+	// extends is a chain pointer, consumed by resolution: legal (and
+	// name-checked) in a layer, a bug if it survives to a resolved config —
+	// same stance as every other resolved-config marker.
+	if c.Extends != "" {
+		if !layer {
+			return fmt.Errorf("extends: only meaningful in a cascade layer")
+		}
+		if err := ValidateLayerName(c.Extends); err != nil {
+			return fmt.Errorf("extends: %w", err)
+		}
 	}
 
 	// Anti-injection allowlists for the typed fields byre interpolates into
