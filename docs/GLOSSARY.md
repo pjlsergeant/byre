@@ -214,7 +214,11 @@ the launcher execs, and implicitly enables it.
 A skill that augments the selected agent skill rather than being one --
 enabled alongside it, carrying only the delta (a volume, a hook, some
 wiring), leaving the agent skill untouched. The shared-auth skills
-(`claude-shared-auth` etc., ADR 0017) are the canonical examples.
+(`claude-shared-auth` etc., ADR 0017) are the canonical examples. The
+pairing is declared with `companion_for` in the skill.toml, or implied
+by `shared_auth_for` (the shared-auth offer's vouch); it is a fact, not
+a readiness claim, and is what nests the companion under its agent's
+row in the config UI (ADR 0034).
 
 **docker-host**:
 The builtin skill that grants the box access to the **host's Docker

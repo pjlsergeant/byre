@@ -739,13 +739,57 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 	for agent, want := range map[string]string{
 		"claude":   "claude-shared-auth",
 		"codex":    "codex-shared-auth",
-		"gemini":   "", // OAuth gate-pending (no shared_auth_for)
+		"gemini":   "", // OAuth gate-pending (companion_for only, no shared_auth_for vouch)
 		"grok":     "", // retired (see grok-shared-auth/skill.toml)
-		"opencode": "", // OAuth rotation gate-pending (see opencode-shared-auth/skill.toml)
+		"opencode": "", // OAuth rotation gate-pending (companion_for only, no shared_auth_for vouch)
 	} {
 		if got := SharedAuthCompanion(cat, agent); got != want {
 			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)
 		}
+	}
+}
+
+// The companion PAIRING (ADR 0034) is a fact every live companion declares —
+// via companion_for when gate-pending, or implied by shared_auth_for once
+// vouched — and is what the config UI's nesting rides. Distinct from the
+// vouch table above: gemini and opencode pair here while offering nothing
+// there. grok-shared-auth is a retired stub and claims no companionship.
+func TestBuiltinCompanionDeclarations(t *testing.T) {
+	home := t.TempDir()
+	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for skill, want := range map[string]string{
+		"claude-shared-auth":   "claude",
+		"codex-shared-auth":    "codex",
+		"gemini-shared-auth":   "gemini",
+		"opencode-shared-auth": "opencode",
+		"grok-shared-auth":     "",
+	} {
+		sk, err := Load(cat, skill)
+		if err != nil {
+			t.Errorf("Load(%s): %v", skill, err)
+			continue
+		}
+		if got := sk.File.CompanionAgent(); got != want {
+			t.Errorf("%s CompanionAgent() = %q, want %q", skill, got, want)
+		}
+	}
+}
+
+// companion_for and shared_auth_for naming different agents is an authoring
+// contradiction — refused at load, not resolved by precedence.
+func TestCompanionForSharedAuthForMismatchRefused(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "confused-auth", "companion_for = \"gemini\"\nshared_auth_for = \"claude\"\n", nil)
+	if _, err := Load(catFor(t, dir), "confused-auth"); err == nil || !strings.Contains(err.Error(), "disagree") {
+		t.Fatalf("mismatched pairing keys must refuse to load, got err=%v", err)
+	}
+	// Matching keys are merely redundant, not an error.
+	writeSkill(t, dir, "redundant-auth", "companion_for = \"claude\"\nshared_auth_for = \"claude\"\n", nil)
+	if _, err := Load(catFor(t, dir), "redundant-auth"); err != nil {
+		t.Fatalf("matching pairing keys must load: %v", err)
 	}
 }
 

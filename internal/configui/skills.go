@@ -151,20 +151,23 @@ func (m model) skillEntries() []skillEntry {
 			nonAgent = append(nonAgent, e)
 		}
 	}
-	nonAgent, agent = m.nestSharedAuth(nonAgent, agent)
+	nonAgent, agent = m.nestCompanions(nonAgent, agent)
 	return append(nonAgent, agent...)
 }
 
-// nestSharedAuth moves each shared-auth companion (a skill declaring
-// shared_auth_for, ADR 0017/0025) out of the flat skills list and inserts it
-// as an indented child directly under its agent's row, so the pairing is
-// visible at the point of enablement. Pairing is by canonical ID (alias
-// expansion when a catalog is present). A companion whose agent has no row
-// stays a plain skill. Only non-agent rows nest: a skill that is itself
-// agent-capable keeps its top-level agent row (nesting one agent — possibly
-// the locked primary — under another would misstate what it is), a shape no
-// real companion has anyway.
-func (m model) nestSharedAuth(nonAgent, agent []skillEntry) ([]skillEntry, []skillEntry) {
+// nestCompanions moves each companion skill (one paired to an agent via
+// companion_for, or via the pairing shared_auth_for implies — ADR 0034) out
+// of the flat skills list and inserts it as an indented child directly under
+// its agent's row, so the pairing is visible at the point of enablement.
+// Nesting rides the pairing FACT alone — a gate-pending companion nests the
+// same as a vouched one; readiness gates the onboarding offer, never the
+// display. Pairing is by canonical ID (alias expansion when a catalog is
+// present). A companion whose agent has no row stays a plain skill. Only
+// non-agent rows nest: a skill that is itself agent-capable keeps its
+// top-level agent row (nesting one agent — possibly the locked primary —
+// under another would misstate what it is), a shape no real companion has
+// anyway.
+func (m model) nestCompanions(nonAgent, agent []skillEntry) ([]skillEntry, []skillEntry) {
 	canon := func(n string) string {
 		if m.inh.Catalog != nil {
 			return m.inh.Catalog.ExpandAlias(n)
@@ -178,7 +181,7 @@ func (m model) nestSharedAuth(nonAgent, agent []skillEntry) ([]skillEntry, []ski
 	children := map[int][]skillEntry{}
 	var rest []skillEntry
 	for _, e := range nonAgent {
-		if claim := m.inh.Skills[e.name].SharedAuthFor; claim != "" {
+		if claim := m.inh.Skills[e.name].CompanionFor; claim != "" {
 			if i, ok := agentIdx[canon(claim)]; ok {
 				e.agent = true // renders inside the agent section, under its agent
 				e.child = true

@@ -443,7 +443,10 @@ prefills the next box's offer; the offer is skipped only when the
 companion is already hand-granted machine-wide in `default.config`
 `skills`, a key the picker never writes (ADR 0025). Gemini-OAuth and
 opencode (both gate-pending) and grok (retired) deliberately don't
-declare it.
+declare it. The gate-pending pair still declare `companion_for` — the
+pairing fact, which nests a companion under its agent's row in the
+config UI without putting anything in front of onboarding; readiness
+gates the offer, never the display (ADR 0034).
 
 ## The chassis
 

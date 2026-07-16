@@ -87,13 +87,23 @@ type File struct {
 	// the point of choice. Optional for hand-dropped skills; every builtin
 	// carries one.
 	Description string `toml:"description"`
+	// CompanionFor names the agent skill this skill is a companion to (ADR
+	// 0034) — a pairing FACT with display teeth only: the config UI nests
+	// the skill under its agent's row so the relationship is visible at the
+	// point of enablement. It makes no readiness claim and triggers no
+	// offer. Gate-pending companions (gemini-shared-auth's OAuth path,
+	// opencode-shared-auth) declare this and NOT shared_auth_for.
+	// Redundant next to shared_auth_for, which implies the same pairing;
+	// declaring both with different agents is a load error.
+	CompanionFor string `toml:"companion_for"`
 	// SharedAuthFor declares this skill as the shared-auth companion (ADR
 	// 0017) for the named agent skill, making it OFFERABLE: when that agent
 	// is selected, the onboarding picker asks whether to opt that box into
 	// the agent's shared credentials (ADR 0025). Declaring the key is the
 	// author VOUCHING the companion is ready to enable — a broken or
 	// gate-pending companion (grok-shared-auth, gemini's OAuth path) omits
-	// it and stays a hand-enabled expert option.
+	// it and stays a hand-enabled expert option. Implies the companion_for
+	// pairing (ADR 0034); no need to declare both.
 	SharedAuthFor string `toml:"shared_auth_for"`
 	Build         struct {
 		Apt        []string          `toml:"apt"`
@@ -169,6 +179,18 @@ type File struct {
 	} `toml:"context"`
 }
 
+// CompanionAgent resolves the skill's companion pairing (ADR 0034): the
+// agent skill this skill augments, or "" for a non-companion. shared_auth_for
+// implies the pairing, so a vouched companion needs no companion_for of its
+// own. This is the FACT consumers (config-UI nesting, `skill show`) read;
+// the onboarding offer reads SharedAuthFor directly — the vouch, never this.
+func (f File) CompanionAgent() string {
+	if f.CompanionFor != "" {
+		return f.CompanionFor
+	}
+	return f.SharedAuthFor
+}
+
 // IsStub reports whether a skill contributes NOTHING to a box -- no build
 // content, no runtime grants, no volumes, no agent, no context, no
 // companionship claim: a description-only compatibility shell (devloop,
@@ -178,7 +200,7 @@ type File struct {
 func IsStub(f File) bool {
 	rt := f.Runtime
 	return f.Agent == nil &&
-		f.SharedAuthFor == "" &&
+		f.CompanionFor == "" && f.SharedAuthFor == "" &&
 		len(f.Build.Apt) == 0 && len(f.Build.NpmGlobal) == 0 &&
 		len(f.Build.Dockerfile) == 0 && len(f.Build.Files) == 0 &&
 		len(rt.Env) == 0 && len(rt.EnvDocs) == 0 && len(rt.RunArgs) == 0 && len(rt.Caps) == 0 &&
@@ -708,6 +730,11 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	// (commands.resolve).
 	if err := (config.Config{Mounts: f.Runtime.Mounts, Volumes: f.Volumes}).Validate(); err != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
+	}
+	// shared_auth_for implies the companion_for pairing; both keys naming
+	// different agents is an authoring contradiction, not a resolvable state.
+	if f.CompanionFor != "" && f.SharedAuthFor != "" && f.CompanionFor != f.SharedAuthFor {
+		return Skill{}, fmt.Errorf("skill %q: companion_for (%q) and shared_auth_for (%q) disagree; shared_auth_for already implies the pairing — drop companion_for or make them match", ent.ID, f.CompanionFor, f.SharedAuthFor)
 	}
 
 	dir, err := ent.HostDir()

@@ -38,11 +38,15 @@
 
 description = "Share one OpenCode login across all your projects (write-through-symlink mechanics verified live; multi-box OAuth rotation gate pending, see skill.toml)."
 
-# Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): the
-# OAuth rotation gate is still pending above, and the offer would put a
-# gate-pending mechanism in front of every opencode user at onboarding, not
-# just the gate-runners. Declare it once the gate passes — the gemini
+# companion_for is the pairing FACT (ADR 0034): the config UI nests this
+# skill under opencode's row so the relationship is visible where it's
+# enabled. Deliberately NO `shared_auth_for` (the ADR 0025 onboarding
+# offer): the OAuth rotation gate is still pending above, and the offer
+# would put a gate-pending mechanism in front of every opencode user at
+# onboarding, not just the gate-runners. Declare it once the gate passes
+# (companion_for then becomes redundant and can drop) — the gemini
 # precedent.
+companion_for = "opencode"
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-opencode-shared-auth" }

@@ -30,10 +30,14 @@
 
 description = "Share one Gemini login across all your projects (API-key path verified; OAuth path gate-pending, see skill.toml)."
 
+# companion_for is the pairing FACT (ADR 0034): the config UI nests this
+# skill under gemini's row so the relationship is visible where it's enabled.
 # Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): the OAuth
 # path is still gate-pending above, and the offer would put a gate-pending
 # mechanism in front of every gemini user at onboarding, not just the
-# gate-runners. Declare it once the gate passes.
+# gate-runners. Declare it once the gate passes (companion_for then becomes
+# redundant and can drop).
+companion_for = "gemini"
 
 [build]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-gemini-shared-auth" }

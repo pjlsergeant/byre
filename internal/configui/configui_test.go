@@ -484,17 +484,20 @@ func TestSkillsScreenShowsDescriptions(t *testing.T) {
 	}
 }
 
-// A shared-auth companion (a skill declaring shared_auth_for) nests as an
-// indented child directly under its agent's row in the agent-skills section,
-// so the pairing is visible where you enable it. A companion whose agent has
-// no row stays a plain skill.
-func TestSkillsSharedAuthNestedUnderAgent(t *testing.T) {
+// A companion skill (one paired to an agent via companion_for, or via the
+// pairing shared_auth_for implies — CompanionFor carries the resolved fact
+// either way, ADR 0034) nests as an indented child directly under its
+// agent's row in the agent-skills section, so the pairing is visible where
+// you enable it. Nesting rides the pairing alone — a gate-pending companion
+// (no vouch, no offer) nests exactly like a vouched one. A companion whose
+// agent has no row stays a plain skill.
+func TestSkillsCompanionNestedUnderAgent(t *testing.T) {
 	cfg := config.Config{Agent: "claude"}
 	agents := []string{"claude", "codex"}
 	all := []string{"claude", "claude-shared-auth", "codex", "moarcode", "orphan-shared-auth"}
 	inh := Inherited{Skills: map[string]SkillRuntime{
-		"claude-shared-auth": {SharedAuthFor: "claude"},
-		"orphan-shared-auth": {SharedAuthFor: "gemini"}, // no gemini row anywhere
+		"claude-shared-auth": {CompanionFor: "claude"},
+		"orphan-shared-auth": {CompanionFor: "gemini"}, // no gemini row anywhere
 	}}
 	m := newModel("t", "/tmp/x", cfg, nil, agents, all, nil, inh, nil, false)
 

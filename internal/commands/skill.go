@@ -268,6 +268,9 @@ func printSkillContributions(w io.Writer, f skills.File) {
 	for _, k := range sortedMapKeys(rt.EnvDocs) {
 		fmt.Fprintf(w, "  env consumed: %s -- %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.EnvDocs[k]))
 	}
+	if f.CompanionFor != "" {
+		fmt.Fprintf(w, "  companion_for: %s\n", packages.EscapeTerminal(f.CompanionFor))
+	}
 	if f.SharedAuthFor != "" {
 		fmt.Fprintf(w, "  shared_auth_for: %s\n", packages.EscapeTerminal(f.SharedAuthFor))
 	}

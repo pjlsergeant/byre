@@ -79,16 +79,16 @@ func Config(s Streams, projectDir string, global bool) error {
 		if sk, serr := skills.Load(cat, n); serr == nil {
 			// Key by display name (what the picker lists) and canonical ID.
 			rt := configui.SkillRuntime{
-				Mounts:        sk.File.Runtime.Mounts,
-				Env:           sk.File.Runtime.Env,
-				EnvDocs:       sk.File.Runtime.EnvDocs,
-				Egress:        sk.File.Runtime.Egress,
-				Offered:       sk.File.Runtime.EgressOffered,
-				MCPs:          sk.File.MCPs,
-				Posture:       sk.File.Runtime.NetworkPosture,
-				Containment:   sk.File.Runtime.Containment,
-				SharedAuthFor: sk.File.SharedAuthFor,
-				Provenance:    "",
+				Mounts:       sk.File.Runtime.Mounts,
+				Env:          sk.File.Runtime.Env,
+				EnvDocs:      sk.File.Runtime.EnvDocs,
+				Egress:       sk.File.Runtime.Egress,
+				Offered:      sk.File.Runtime.EgressOffered,
+				MCPs:         sk.File.MCPs,
+				Posture:      sk.File.Runtime.NetworkPosture,
+				Containment:  sk.File.Runtime.Containment,
+				CompanionFor: sk.File.CompanionAgent(),
+				Provenance:   "",
 			}
 			if cat != nil {
 				if ent, ok := cat.Lookup(n); ok {
