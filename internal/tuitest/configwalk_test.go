@@ -56,9 +56,9 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// modeText: Skills → Run args is three more (MCP servers, Extends,
-	// Run args).
-	e = s.Keys("Down", "Down", "Down", "Enter")
+	// modeText: Skills → Run args is four more (MCP servers, Claude
+	// Skills, Extends, Run args).
+	e = s.Keys("Down", "Down", "Down", "Down", "Enter")
 	s.WaitForAfter(e, "accept + save")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
