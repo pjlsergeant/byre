@@ -18,20 +18,29 @@ the rationale lives.
 ## Open
 
 - [ ] (M) **fix shared-auth: gemini, grok, opencode** (rolled up
-  2026-07-16 from three items, un-parking grok). gemini: run the OAuth
-  gate — two boxes past the ~1h expiry, neither dying (API-key path
-  already verified, ADR 0017). opencode: host-verify the EXPERIMENTAL
-  skill from a live box (installer path ~/.opencode/bin, Pro/Max login,
-  `--auto`, firewalled egress), then run its rotation gate; Pete reports
-  the shared login already misbehaving (2026-07-16) — possibly gate 2
-  failing in the field, diagnose as part of the gate; on pass, swap
-  `companion_for` for `shared_auth_for`. grok: BUILT 2026-07-16 (v2
-  auth broker, ADR 0036 — pre-build gates all answered from the
-  published grok source); remaining is the FIELD gate: seed a live box,
-  watch a ~6h rollover refresh through the broker, then swap
-  `companion_for` for `shared_auth_for` (same shape as opencode's).
+  2026-07-16 from three items, un-parking grok). BIG PASS 2026-07-16
+  (source-pass over codex/gemini/opencode trees + grilling with Pete):
+  all buildable work DONE; what remains is three LIVE two-box VM checks
+  that flip vouches. gemini: rotation is SAFE (Google installed-app
+  tokens are NON-rotating -- primary docs; the old ~1h-expiry gate is
+  moot), and the field failure was diagnosed as the auth-DIALOG's
+  rm-on-symlink forking the login -- FIXED by seeding
+  selectedType=oauth-personal (74e2e49); mechanism stays per-file
+  symlinks (whole-tree GEMINI_CLI_HOME would break per-box context
+  isolation). Remaining: two-box OAuth check, then swap
+  `companion_for`->`shared_auth_for`. opencode: SCOPED to API-key logins
+  only (Pete's ruling -- you use the claude skill for Anthropic, not
+  opencode); OAuth entries race and are WARNED not shared (13c206f); the
+  broker rebuild that would make OAuth safe is deliberately not built.
+  Remaining: two-box API-key check, then swap the vouch. Also opencode
+  MCP inject adapter BUILT + unit-tested (82ec10c, ADR 0033 merge
+  question answered from source); remaining: a live box confirms
+  `opencode mcp` lists byre's injected servers, then wire the command +
+  set `mcp = "inject"`. grok: unchanged -- FIELD gate still pending (~6h
+  rollover through the broker), then swap the vouch.
   `XAI_API_KEY` stays ruled out on cost. Facts + gate records:
-  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
+  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml. All three VM
+  checks can ride ONE sacrificial-VM run.
   Adjacent rulings (2026-07-16 review findings): codex-login's wildcard
   carve-out RESOLVED 2026-07-16 (narrowed to codex-own-dir equality,
   mirroring opencode; commit 026944c). $SHARED symlink-target check:
