@@ -17,41 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (M) **fix shared-auth: gemini, grok** (was gemini/grok/opencode;
-  rolled up 2026-07-16, un-parking grok). BIG PASS 2026-07-16 (source-pass
-  + grilling with Pete) built everything; 2026-07-17 the two opencode
-  gates RAN and PASSED on the sacrificial VM (via the new agent-contract
-  tier), so **opencode is CLOSED**: MCP inject vouched + wired
-  (byre-opencode-mcp-launch, `mcp = "inject"`; TestAgentContractOpencode
-  re-pins it every 2 days via agents.yml) and shared_auth_for vouched
-  (TestOpencodeSharedAuthLiveGate -- real api-key login through the
-  symlink in box A, listed by box B; API-key-only scope stands, OAuth
-  entries still ride the whole-file share mechanically and draw the
-  firstrun WARN, 13c206f). What remains needs a REAL login with Pete
-  driving the host (no test can close them):
-  gemini: two-box OAuth check (rotation already proven SAFE from primary
-  docs -- Google installed-app tokens are NON-rotating; the dialog-fork
-  field failure FIXED by seeding selectedType=oauth-personal, 74e2e49;
-  mechanism stays per-file symlinks). On pass, swap
-  `companion_for`->`shared_auth_for`.
-  grok: FIELD gate still pending (~6h rollover through the ADR 0036
-  broker), then swap the vouch.
-  `XAI_API_KEY` stays ruled out on cost. Facts + gate records:
-  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml + the wip handoff
-  (delete it once gemini+grok flip).
-  Adjacent rulings (2026-07-16 review findings): codex-login's wildcard
-  carve-out RESOLVED 2026-07-16 (narrowed to codex-own-dir equality,
-  mirroring opencode; commit 026944c). $SHARED symlink-target check:
-  DEFERRED 2026-07-16 (Pete) -- the assert hooks' raw `readlink != $SHARED`
-  is sound because they OVERWRITE on any mismatch (fail-closed, never trust
-  a bad link); the deeper "is $SHARED itself a link escaping the identity
-  volume" check is accepted-residual (only an agent sabotaging its own
-  writable machine store can set it up; reachable damage is self/sibling
-  credential clobber, not a containment escape). Carried from the old
-  opencode item: MCP seam merge-vs-replace ANSWERED from source 2026-07-16
-  (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT deep-MERGE, don't replace --
-  config.ts load order), so the `mcp = "inject"` vouch is unblocked
-  (ADR 0033); gemini's seam still unprobed.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
@@ -91,6 +56,12 @@ Disciplines and tripwires, not tasks.
 
 Stuff Pete has nixed from the todo list. Not quite WONTFIX, but not something I
 plan to get to any time soon:
+
+- [ ] (S) **shared-auth field gates: gemini + grok** (parked 2026-07-17;
+  opencode closed same day). Two live checks, each needing Pete + a real
+  login host-side: gemini two-box OAuth, grok ~6h broker rollover; each
+  flips `companion_for`->`shared_auth_for` on pass. Runbook:
+  wip/shared-auth-live-verification-handoff.md (delete when both flip).
 
 - [ ] (M) **Agent field-QA pass, release-time, report-only** (Pete,
   2026-07-16; parked to here 2026-07-17): an agent in a byre box drives
