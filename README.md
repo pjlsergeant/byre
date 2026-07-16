@@ -281,8 +281,10 @@ accept. (Enabling the skill by hand in `~/.byre/default.config` is the
 machine-wide route -- then the question stops.) The
 login lives in a shared volume that reset/forget deliberately never
 touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
-(Grok has no shared-auth: its token rotation can't be file-shared, so it logs
-in per project -- [ADR 0023](docs/adr/0023-grok-shared-auth-retired.md).)
+(Grok's shared auth works differently -- its token rotation can't be
+file-shared, so a broker mediates instead, and until its field gate passes
+the skill is hand-enabled rather than offered:
+[ADR 0036](docs/adr/0036-grok-shared-auth-v2-broker.md).)
 
 ### Share one config baseline across many projects?
 

@@ -25,6 +25,11 @@ func runLauncher(t *testing.T, gateFile, timeout string) (int, string) {
 	cmd.Env = append(os.Environ(),
 		"BYRE_LAUNCH_GATE_FILE="+gateFile,
 		"BYRE_LAUNCH_GATE_TIMEOUT="+timeout,
+		// Isolate from the box running the suite: without these the launcher
+		// executes the REAL /etc/byre hook dirs, and a hook that prompts
+		// (e.g. a login hook on a box whose credential died) hangs the test.
+		"BYRE_FIRSTRUN_DIR="+filepath.Join(dir, "no-firstrun"),
+		"BYRE_ENVD_DIR="+filepath.Join(dir, "no-envd"),
 	)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -120,6 +125,8 @@ func runLauncherEnvd(t *testing.T, envdDir string, cmd ...string) (int, string) 
 	c.Env = append(os.Environ(),
 		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
 		"BYRE_ENVD_DIR="+envdDir,
+		// Isolate from the box running the suite (see runLauncher).
+		"BYRE_FIRSTRUN_DIR="+filepath.Join(dir, "no-firstrun"),
 	)
 	out, err := c.CombinedOutput()
 	if err == nil {
