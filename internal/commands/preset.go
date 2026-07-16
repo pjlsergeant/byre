@@ -66,6 +66,21 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return err
 	}
 
+	// A preset's extends chain must resolve BEFORE anything else: the layers
+	// feed the grant review, so a missing one can't be a warn-and-continue —
+	// the review would vouch for a box it hasn't seen. Layers aren't
+	// packages: no chauffeured install, just the exact path to create (the
+	// chain walk's own error).
+	if preset.Extends != "" {
+		cat, cerr := builtins.LoadCatalogRaw(paths.Home)
+		if cerr != nil {
+			return cerr
+		}
+		if _, cerr := config.LoadExtendsChain(paths.Home, cat, preset.Extends); cerr != nil {
+			return fmt.Errorf("this preset extends a layer this machine doesn't have: %w", cerr)
+		}
+	}
+
 	// Step 2: every missing package reference of any kind, with hints.
 	missing, err := missingRefs(paths.Home, preset)
 	if err != nil {
@@ -302,6 +317,16 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 		packages.EscapeTerminal(config.OrNone(cfg.Base)),
 		packages.EscapeTerminal(config.OrNone(cfg.Agent)),
 		packages.EscapeTerminal(config.OrNone(preset.Template)))
+	if preset.Extends != "" {
+		// The resolved chain, root-first, the project last (merge order).
+		// Best-effort here: apply hard-failed on a broken chain already, and
+		// inspect's review carries the walk error in its cascade fallback.
+		cat, _ := builtins.LoadCatalogRaw(paths.Home)
+		if chain, cerr := config.LoadExtendsChain(paths.Home, cat, preset.Extends); cerr == nil {
+			fmt.Fprintf(s.Err, "  extends: %s -> project\n",
+				packages.EscapeTerminal(strings.Join(config.ChainNames(chain), " -> ")))
+		}
+	}
 	for _, g := range grants {
 		line := packages.EscapeTerminal(g.Text)
 		if (g.Containment || g.CrossProject) && s.TTY {

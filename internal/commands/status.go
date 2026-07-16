@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -19,6 +20,7 @@ import (
 type statusInfo struct {
 	Agent           string
 	Template        string
+	Chain           []string // named-layer extends chain, root-first ("" = none)
 	Engine          string
 	ID              string
 	Canonical       string // the dir bound at /workspace (the worktree, for a worktree)
@@ -78,9 +80,20 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		return err
 	}
 
+	// The extends chain is consumed by resolution, so read the pointer back
+	// off the raw project layer for attribution. Load succeeded above, so
+	// the chain walks; a race that breaks it mid-status just drops the row.
+	var chain []string
+	if raw, rerr := config.ParseFile(filepath.Join(paths.Dir, config.ProjectConfigName)); rerr == nil && raw.Extends != "" {
+		if c, cerr := config.LoadExtendsChain(paths.Home, cat, raw.Extends); cerr == nil {
+			chain = config.ChainNames(c)
+		}
+	}
+
 	info := statusInfo{
 		Agent:          cfg.Agent,
 		Template:       cfg.Template,
+		Chain:          chain,
 		Engine:         cfg.Engine,
 		ID:             paths.ID,
 		Canonical:      paths.WorkDir, // what actually mounts at /workspace
@@ -263,6 +276,10 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Template", pkgLine(s.Cat, s.Template))
 	} else {
 		row("Template", "(none)")
+	}
+	if len(s.Chain) > 0 {
+		// Root-first, the project config last: the merge order.
+		row("Extends", strings.Join(s.Chain, " -> ")+" -> project")
 	}
 	if s.Proposal != "" {
 		row("Preset", s.Proposal)

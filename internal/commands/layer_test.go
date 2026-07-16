@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 func writeLayerFile(t *testing.T, home, name, content string) {
@@ -128,5 +129,45 @@ func TestLayerValidate(t *testing.T) {
 	}
 	if !strings.Contains(err3.String(), "template is not allowed in a layer file") {
 		t.Errorf("broken reason missing, got: %s", err3.String())
+	}
+}
+
+func TestStatusRendersExtendsChain(t *testing.T) {
+	var plain, chained strings.Builder
+	renderStatus(&plain, statusInfo{ID: "x", Agent: "claude"})
+	if strings.Contains(plain.String(), "Extends") {
+		t.Errorf("no chain: no Extends row expected:\n%s", plain.String())
+	}
+	renderStatus(&chained, statusInfo{ID: "x", Agent: "claude", Chain: []string{"torn", "torn-frontend"}})
+	if !strings.Contains(chained.String(), "torn -> torn-frontend -> project") {
+		t.Errorf("Extends row should print the chain root-first:\n%s", chained.String())
+	}
+}
+
+// End-to-end: Status reads the pointer back off the raw project layer (the
+// resolved config no longer carries it) and renders the chain.
+func TestStatusPopulatesExtendsChain(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+
+	writeLayerFile(t, home, "torn", "")
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte("extends = \"torn\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, out, _ := testStreams("", false)
+	if err := Status(s, proj, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "torn -> project") {
+		t.Errorf("status should render the extends chain:\n%s", out.String())
 	}
 }
