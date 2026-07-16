@@ -245,7 +245,7 @@ Vocabulary is deliberately minimal -- the convenient 90%:
 ```toml
 engine      = "auto"                         # auto | docker | podman
 template    = "node"                          # which ~/.byre/templates/<name> to layer on (optional)
-agent       = "claude"                        # which agent skill launches: claude | codex | gemini | grok
+agent       = "claude"                        # which agent skill launches: claude | codex | gemini | grok | opencode
 seed_prefs  = true                            # one-time curated prefs seed (ADR 0013); off by default
 base        = "node:22"
 apt         = ["build-essential"]
@@ -298,7 +298,7 @@ controls**:
 
 **Agents are skills** (ADR 0005). An agent skill contributes its CLI
 (build), its launch command + autonomy flag, and its auth state volume
-(`.claude` / `.codex` / `.gemini` / `.grok`). The chassis ENTRYPOINT is a
+(`.claude` / `.codex` / `.gemini` / `.grok` / `.opencode`). The chassis ENTRYPOINT is a
 constant
 launcher that execs the *selected* agent skill's recorded command; the
 `agent` scalar picks which, and **implicitly enables** that skill. More
@@ -440,8 +440,8 @@ that box in -- yes puts the companion in the project's `byre.config`
 answer as a favourite (the picker-owned `shared_auth` list) that
 prefills the next box's offer; the offer is skipped only when the
 companion is already hand-granted machine-wide in `default.config`
-`skills`, a key the picker never writes (ADR 0025). Gemini-OAuth
-(gate-pending) and grok (retired) deliberately don't declare it.
+`skills`, a key the picker never writes (ADR 0025). Gemini-OAuth and
+opencode (gate-pending) and grok (retired) deliberately don't declare it.
 
 ## The chassis
 

@@ -25,14 +25,16 @@ the rationale lives.
   machine volume + a `byre-inttest` wrapper on PATH; the Lima template
   (`wip/byre-inttest.yaml`) rides the skill's docs. Do it when the
   hand-rolled loop's friction shows.
-- [ ] (M) **OpenCode agent skill** (Pete, 2026-07-10): `opencode` +
-  `opencode-shared-auth` builtin pair per the grok playbook (0d9f59f..
-  2cfd8fb). Establish the per-agent facts empirically first (install shape,
-  state-dir env, headless login + rotation, autonomy flag, context file,
-  egress, headless permission mode -- grok's silent-death lesson); record in
-  docs/AGENT-CREDENTIAL-MECHANICS.md. Maybe a third reviewer. Probe an MCP
-  injection seam while at it (gemini too) -- injection is byre's only
-  adapter mechanism (ADR 0033); no seam = the honest degradation stays.
+- [ ] (S) **opencode host gates** (built 2026-07-16; skills shipped
+  EXPERIMENTAL): host-verify from a live box the installer path
+  (~/.opencode/bin), the Claude Pro/Max login, `--auto`, and the firewalled
+  egress set; then run opencode-shared-auth's OAuth rotation gate (two boxes
+  past a token expiry) and declare `shared_auth_for` if it passes. Facts +
+  gate records: docs/AGENT-CREDENTIAL-MECHANICS.md (OpenCode section),
+  opencode-shared-auth/skill.toml. Maybe a third reviewer. MCP seam is
+  probed (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT exist) but
+  merge-vs-replace semantics need a spike before any `mcp = "inject"`
+  vouch (ADR 0033); gemini's seam still unprobed.
 - [ ] (M) **Claude Skills delivery** (the untouched half of the old
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
