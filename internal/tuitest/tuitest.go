@@ -166,7 +166,7 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 	// first push), and the harness gates tests on this value.
 	s.statusFile = filepath.Join(t.TempDir(), "exit-status")
 	s.tmux("respawn-pane", "-k", "-t", "main",
-		quoteJoin(cmd)+"; echo $? > '"+s.statusFile+"'")
+		quoteJoin(cmd)+"; echo $? > "+quoteJoin([]string{s.statusFile}))
 	return s
 }
 

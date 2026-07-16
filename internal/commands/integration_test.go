@@ -925,8 +925,15 @@ func TestIntegrationTUIPickerDeliver(t *testing.T) {
 	if err != nil || got != "picked\n" {
 		t.Fatalf("picked box content = (%q, %v)", got, err)
 	}
-	if out, err := r.ExecInput(id1, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "picked.txt") {
-		t.Fatalf("the delivery ALSO landed in the unpicked box: %q", out)
+	assertAbsentInBox(t, r, ident, id1, "/inbox/picked.txt")
+}
+
+// assertAbsentInBox proves a path is NOT in a box — and that the inspection
+// itself succeeded: an engine error must never masquerade as absence.
+func assertAbsentInBox(t *testing.T, r *runner.Runner, ident runner.Identity, id, path string) {
+	t.Helper()
+	if _, err := r.ExecInput(id, ident.UID, ident.GID, nil, "test", "!", "-e", path); err != nil {
+		t.Fatalf("%s should not exist in %s (or the inspection failed): %v", path, id, err)
 	}
 }
 
@@ -997,9 +1004,7 @@ func TestIntegrationTUIPickerOnDevTTY(t *testing.T) {
 	if err != nil || got != "hello from a pipe" {
 		t.Fatalf("picked box content = (%q, %v)", got, err)
 	}
-	if out, err := r.ExecInput(id1, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "piped.txt") {
-		t.Fatalf("the delivery ALSO landed in the unpicked box: %q", out)
-	}
+	assertAbsentInBox(t, r, ident, id1, "/inbox/piped.txt")
 }
 
 // TestIntegrationTUIPickerCancel pins the picker's other exit: q abandons
@@ -1033,9 +1038,7 @@ func TestIntegrationTUIPickerCancel(t *testing.T) {
 		t.Fatalf("cancel should exit 0, got %d\n%s", st, s.CaptureNow())
 	}
 	for _, id := range []string{id1, id2} {
-		if out, err := r.ExecInput(id, ident.UID, ident.GID, nil, "sh", "-c", "ls /inbox"); err == nil && strings.Contains(out, "unwanted.txt") {
-			t.Fatalf("cancelled delivery still landed in %s: %q", id, out)
-		}
+		assertAbsentInBox(t, r, ident, id, "/inbox/unwanted.txt")
 	}
 }
 
