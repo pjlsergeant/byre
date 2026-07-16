@@ -1054,9 +1054,11 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 	})
 
 	t.Run("GROK_AUTH_EXPIRED trusts only a sibling's just-rotated pair", func(t *testing.T) {
-		// A pair minted seconds ago is necessarily different from the token
-		// the caller holds — emit it without spending the refresh token. The
-		// exploding curl proves no network call happens.
+		// A pair minted seconds ago is almost always a sibling's rotation —
+		// a different token from the caller's — so it is emitted without
+		// spending the refresh token (the caller-rotated-it residual is
+		// bounded by the 60s window). The exploding curl proves no network
+		// call happens.
 		idbase, _ := seedStoreAt(t, 2*time.Hour, 5*time.Second)
 		so, se, err := run(t, idbase, "#!/bin/sh\nexit 97\n", "GROK_AUTH_EXPIRED=1")
 		if err != nil {
@@ -1068,6 +1070,31 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 		}
 		if o.AccessToken != "old-access" {
 			t.Errorf("just-rotated pair should be emitted as-is, got %+v", o)
+		}
+	})
+
+	t.Run("lock loser adopts a winner's just-rotated pair", func(t *testing.T) {
+		// The lock is held past the flagged call's wait budget, but the
+		// store already carries a just-rotated pair (as after a winner's
+		// refresh) — the loser must emit it rather than fail into grok's
+		// ~300s backoff.
+		idbase, base := seedStoreAt(t, 2*time.Hour, 5*time.Second)
+		holder := exec.Command("flock", filepath.Join(base, "broker.lock"), "sleep", "15")
+		if err := holder.Start(); err != nil {
+			t.Fatalf("lock holder: %v", err)
+		}
+		defer func() { _ = holder.Process.Kill(); _ = holder.Wait() }()
+		time.Sleep(200 * time.Millisecond) // let the holder take the flock
+		so, se, err := run(t, idbase, "#!/bin/sh\nexit 97\n", "GROK_AUTH_EXPIRED=1")
+		if err != nil {
+			t.Fatalf("broker failed: %v (stderr %q)", err, se)
+		}
+		var o out
+		if err := json.Unmarshal([]byte(so), &o); err != nil {
+			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
+		}
+		if o.AccessToken != "old-access" {
+			t.Errorf("loser should emit the winner's pair, got %+v", o)
 		}
 	})
 

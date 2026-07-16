@@ -53,9 +53,11 @@ EPCACHE="$BASE/token_endpoint"
 # retries while its in-memory token keeps the session alive.
 MARGIN=420
 MIN_EMIT=360
-# A store pair rotated within this many seconds was refreshed by a sibling
-# box moments ago — necessarily a DIFFERENT token from whatever the caller
-# holds, so emitting it is correct even for 401 recovery.
+# A store pair rotated within this many seconds is almost always a sibling
+# box's refresh — a different token from the caller's, safe to emit even for
+# 401 recovery. The residual (the CALLER rotated it and that very token got
+# rejected inside the window) re-emits a dead token for at most this long,
+# then the window self-expires and the next call force-refreshes.
 SIBLING_FRESH=60
 
 # GROK_AUTH_EXPIRED=1 accompanies every 5s-budget refresh invocation (grok
@@ -64,7 +66,11 @@ SIBLING_FRESH=60
 # conservative); scale every wait to the least-patient caller that can carry
 # the flag. Unflagged calls are initial/login ones (60-300s budgets).
 if [ "${GROK_AUTH_EXPIRED:-}" = "1" ]; then
-  LOCK_WAIT=1.5; DISC_TIME=0; POST_TIME=2.5
+  # A lock loser must outwait a winner's whole hold (≈ its POST budget plus
+  # store write) or it fails closed into grok's ~300s failure TTL while the
+  # store is already healthy — so LOCK_WAIT > POST_TIME, and the sum stays
+  # under grok's 5s kill.
+  LOCK_WAIT=2.6; DISC_TIME=0; POST_TIME=2.2
 else
   LOCK_WAIT=20; DISC_TIME=5; POST_TIME=10
 fi
@@ -130,7 +136,15 @@ if ! flock -w "$LOCK_WAIT" 9; then
     emit "$k" "$r"
     exit 0
   fi
-  fail "lock busy and the cached token is not emittable — a sibling's refresh may still be in flight; grok retries shortly"
+  # The winner may have finished while we waited: a just-rotated pair is
+  # safe to emit even on a flagged call (it is the winner's NEW token).
+  age=$(entry_age "$k")
+  if [ "$age" -ge 0 ] && [ "$age" -lt "$SIBLING_FRESH" ] && [ "$r" -gt "$MIN_EMIT" ]; then
+    note "lock busy but a sibling just rotated; emitted its token (${r}s left)"
+    emit "$k" "$r"
+    exit 0
+  fi
+  fail "lock busy and the cached token is not emittable — a sibling's refresh may still be in flight; grok backs off ~5 minutes before retrying (details: $LOG)"
 fi
 
 [ -s "$STORE" ] || fail "no shared Grok credential yet — $reseed_help"
@@ -143,9 +157,9 @@ if [ "${GROK_AUTH_EXPIRED:-}" = "1" ]; then
   # the flag doesn't distinguish. The STORE's wall-clock freshness must not
   # short-circuit here: on a server-side revocation the stored pair still
   # looks fresh, and re-emitting it would 401-loop (review finding,
-  # 2026-07-16). The one token safe to emit without refreshing is a pair a
-  # sibling box rotated moments ago — necessarily different from whatever
-  # the caller holds.
+  # 2026-07-16). The one token emittable without refreshing is a pair
+  # rotated moments ago — almost always a sibling box's refresh, i.e. a
+  # different token (see SIBLING_FRESH for the bounded residual).
   age=$(entry_age "$KEY")
   if [ "$age" -ge 0 ] && [ "$age" -lt "$SIBLING_FRESH" ] && [ "$REMAIN" -gt "$MIN_EMIT" ]; then
     emit "$KEY" "$REMAIN"
