@@ -167,6 +167,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		worktreeCmd(a, dir, s),
 		skillCmd(a, s),
 		templateCmd(s),
+		layerCmd(s),
 		mcpCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
@@ -650,6 +651,49 @@ func templateCmd(s commands.Streams) *cobra.Command {
 		},
 	)
 	return tmpl
+}
+
+func layerCmd(s commands.Streams) *cobra.Command {
+	layer := &cobra.Command{
+		Use:   "layer",
+		Short: "Manage named config layers (new, list, validate).",
+		Long: `Named layers are user-authored config files at ~/.byre/layers/<name>/
+layer.config, chained into a project's cascade via 'extends' in its
+byre.config (or in another layer). They carry the full config vocabulary
+except 'template', and are resolved live at every develop. Plain files,
+not packages: distribution is sending someone the file.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre layer new|list|validate")
+		},
+	}
+	layer.AddCommand(
+		&cobra.Command{
+			Use:   "new <name>",
+			Short: "Scaffold a named layer.",
+			Args:  cobra.ExactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.LayerNew(s, args[0]) },
+		},
+		&cobra.Command{
+			Use:   "list",
+			Short: "List named layers, flagging broken ones.",
+			Args:  noArgsU,
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.LayerList(s) },
+		},
+		&cobra.Command{
+			Use:   "validate [name]",
+			Short: "Parse a layer and walk its extends chain (or all).",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				name := ""
+				if len(args) == 1 {
+					name = args[0]
+				}
+				return commands.LayerValidate(s, name)
+			},
+		},
+	)
+	return layer
 }
 
 func resetCmd(a app, dir string, s commands.Streams) *cobra.Command {

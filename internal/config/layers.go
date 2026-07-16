@@ -162,16 +162,18 @@ func ChainNames(chain []NamedLayer) []string {
 	return names
 }
 
-// ListLayers enumerates ~/.byre/layers: loadable layers and broken ones
-// (parse errors, reserved-name squatters, dangling extends), sorted by name.
-// Mirrors the package catalog's list-with-reason shape without being one —
-// layers are plain files.
+// LayerInfo is one row of ListLayers: loadable layers and broken ones
+// (parse errors, reserved-name squatters, dangling extends). Mirrors the
+// package catalog's list-with-reason shape without being one — layers are
+// plain files.
 type LayerInfo struct {
-	Name   string
-	Reason string // "" = loadable; otherwise why the layer is never loaded
+	Name    string
+	Extends string // the layer's own parent pointer ("" = chain root)
+	Reason  string // "" = loadable; otherwise why the layer is never loaded
 }
 
-// ListLayers scans home's layers dir. A missing dir is an empty list.
+// ListLayers scans home's layers dir, sorted by name (ReadDir order). A
+// missing dir is an empty list.
 func ListLayers(home string, cat *packages.Catalog) ([]LayerInfo, error) {
 	entries, err := os.ReadDir(LayersDir(home))
 	if errors.Is(err, os.ErrNotExist) {
@@ -186,7 +188,15 @@ func ListLayers(home string, cat *packages.Catalog) ([]LayerInfo, error) {
 			continue
 		}
 		name := e.Name()
-		out = append(out, LayerInfo{Name: name, Reason: layerProblem(home, cat, name)})
+		li := LayerInfo{Name: name, Reason: layerProblem(home, cat, name)}
+		// The parent pointer, for display: best-effort even when the chain
+		// above is broken (the reason already says why).
+		if raw, err := os.ReadFile(LayerPath(home, name)); err == nil {
+			if c, err := ParseLayerBody(raw); err == nil {
+				li.Extends = c.Extends
+			}
+		}
+		out = append(out, li)
 	}
 	return out, nil
 }
