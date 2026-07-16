@@ -34,6 +34,11 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
 - **The ssh user:** `BYRE_INTTEST_USER` must be set (Lima names the VM user
   after the host user). byre's own preset passes it through with
   `env_from_host = { BYRE_INTTEST_USER = "env:USER" }`.
+- **Native-Linux engines:** the default VM address, `host.docker.internal`,
+  is Docker Desktop's magic name; native Linux docker/podman don't provide
+  it. Set `BYRE_INTTEST_VM` to the host's address there (and grant that
+  endpoint's egress yourself on a firewalled box -- the skill's grant names
+  only the default).
 
 VM lifecycle is host-side: `limactl stop byre-inttest` pauses it,
 `limactl delete byre-inttest` + a fresh `limactl start` resets it -- nothing

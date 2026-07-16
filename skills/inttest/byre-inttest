@@ -15,7 +15,9 @@
 #   BYRE_INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
 #                      user after the HOST user, so pass it through:
 #                      env_from_host = { BYRE_INTTEST_USER = "env:USER" }
-#   BYRE_INTTEST_VM    VM address (default host.docker.internal). A different
+#   BYRE_INTTEST_VM    VM address. The default, host.docker.internal, is
+#                      Docker Desktop's; a native-Linux engine doesn't provide
+#                      it -- set this to the host's address there. A different
 #                      address needs its own egress grant on a firewalled box.
 #   BYRE_INTTEST_PORT  ssh port (default 60022, fixed by the Lima template)
 #   BYRE_INTTEST_KEY   private key (default: the machine-volume path below)
@@ -45,7 +47,7 @@ fi
 # refuses; the key is ours, so keep it usable.
 chmod 600 "$KEY"
 
-SSH="ssh -i $KEY -p $VM_PORT -o StrictHostKeyChecking=accept-new"
+SSH=(ssh -i "$KEY" -p "$VM_PORT" -o StrictHostKeyChecking=accept-new)
 VM="$VM_USER@$VM_HOST"
 # Per-worktree destination so concurrent sessions don't trample each other's
 # synced tree (BYRE_WORKTREE is per-worktree, = BYRE_PROJECT on a plain checkout).
@@ -54,10 +56,11 @@ DEST="byre-${BYRE_WORKTREE:-default}"
 # tar-over-ssh (boxes don't carry rsync); full re-extract per run -- the tree
 # is small and Go's build/module caches live on the VM outside it.
 tar -C /workspace -czf - --exclude .git --exclude .byre-devlog --exclude moarcode . \
-  | $SSH "$VM" "rm -rf $DEST && mkdir -p $DEST && tar -xzf - -C $DEST"
+  | "${SSH[@]}" "$VM" "rm -rf $DEST && mkdir -p $DEST && tar -xzf - -C $DEST"
 
 [ $# -gt 0 ] || set -- ./... -run Integration
-# shell-quote each go test arg for the remote shell (a -run pattern may carry
-# |, quotes, spaces). BYRE_TEST_ENGINE forwards so the suite can be pinned to
-# an engine (auto prefers docker; the VM has both).
-$SSH "$VM" "cd $DEST && BYRE_DOCKER_TESTS=1 BYRE_TEST_ENGINE=${BYRE_TEST_ENGINE:-} go test$(printf ' %q' "$@")"
+# shell-quote everything interpolated into the remote shell: the go test args
+# (a -run pattern may carry |, quotes, spaces) and BYRE_TEST_ENGINE, which
+# forwards so the suite can be pinned to an engine (auto prefers docker; the
+# VM has both).
+"${SSH[@]}" "$VM" "cd $DEST && BYRE_DOCKER_TESTS=1 BYRE_TEST_ENGINE=$(printf '%q' "${BYRE_TEST_ENGINE:-}") go test$(printf ' %q' "$@")"
