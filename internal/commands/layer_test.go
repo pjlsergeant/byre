@@ -171,3 +171,21 @@ func TestStatusPopulatesExtendsChain(t *testing.T) {
 		t.Errorf("status should render the extends chain:\n%s", out.String())
 	}
 }
+
+// Validation errors quote layer-file bytes (a file someone sent you); the
+// print boundary must escape control characters so a hostile key can't
+// forge output or drive the terminal.
+func TestLayerValidateEscapesHostileBytes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	writeLayerFile(t, home, "evil", "\"\x1b[2Jkey\" = \"x\"\n")
+
+	s, _, _ := testStreams("", false)
+	err := LayerValidate(s, "evil")
+	if err == nil {
+		t.Fatal("unknown key must fail validate")
+	}
+	if strings.Contains(err.Error(), "\x1b") {
+		t.Errorf("error text must not carry raw control bytes: %q", err.Error())
+	}
+}

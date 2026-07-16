@@ -61,6 +61,15 @@ func (m model) onEditorClosed(err error) model {
 
 func (m model) save() model {
 	cfg := m.assemble()
+	// A layer file may not select a shape (`template` is parse-banned at
+	// load): refuse at save, with the file open, rather than write a file
+	// the resolver will refuse. The layer editor has no template picker, so
+	// a hand-written key can only be repaired via ^e — say so.
+	if m.target == TargetLayer && cfg.Template != "" {
+		m.errMsg = "template is not allowed in a layer file (shape selection belongs to the project config) — remove it via ctrl+e"
+		m.status = ""
+		return m
+	}
 	if err := Save(m.filePath, cfg); err != nil {
 		m.errMsg = err.Error()
 		m.status = ""

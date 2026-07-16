@@ -182,3 +182,25 @@ func TestExtendsRowShowsChain(t *testing.T) {
 		t.Errorf("extends row should show the resolved chain, got %q", v)
 	}
 }
+
+// A hand-written template key in a layer file can't be repaired in the UI
+// (no picker there) and must not be written back: save refuses with the
+// remedy, and the file stays untouched.
+func TestLayerEditorRefusesToSaveTemplate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "layer.config")
+	if err := os.WriteFile(path, []byte("template = \"go\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{Template: "go"}, nil, nil, nil, nil, Inherited{HasLower: true}, nil, TargetLayer)
+	m = m.save()
+	if m.errMsg == "" || !strings.Contains(m.errMsg, "template is not allowed in a layer file") {
+		t.Fatalf("save must refuse a template key in a layer, got errMsg=%q", m.errMsg)
+	}
+	if m.savedOnce {
+		t.Error("nothing may have been written")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(b), "template = \"go\"") {
+		t.Errorf("file must be untouched, got: %s (%v)", b, err)
+	}
+}

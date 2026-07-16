@@ -132,10 +132,12 @@ func LayerValidate(s Streams, name string) error {
 	}
 	// LoadExtendsChain on the layer's own name parses it (ban list included),
 	// checks the reserved-name gate, and walks the chain above it — cycles
-	// and dangling parents fail here with their own messages.
+	// and dangling parents fail here with their own messages. Those messages
+	// can quote hostile file bytes (a layer someone sent you, an unknown-key
+	// name), so escape them at this print boundary like list does its rows.
 	chain, err := config.LoadExtendsChain(home, cat, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s", escapeMultiline(err.Error()))
 	}
 	if names := config.ChainNames(chain); len(names) > 1 {
 		fmt.Fprintf(s.Err, "byre: layer %s ok (chain: %s)\n", name, strings.Join(names, " -> "))
