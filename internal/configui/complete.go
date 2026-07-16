@@ -206,6 +206,9 @@ func (m model) sig() string {
 	for _, mc := range m.mcps {
 		parts = append(parts, "mcp:"+mcpLine(mc))
 	}
+	for _, cs := range m.claudeSkills {
+		parts = append(parts, "cskill:"+claudeSkillLine(cs))
+	}
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost)
 	parts = append(parts, fmt.Sprintf("wt:%v/%s", m.wtSibling, m.wtBase.Value()))

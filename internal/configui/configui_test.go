@@ -1496,3 +1496,24 @@ func TestClaudeSkillItemEditorCommit(t *testing.T) {
 		t.Fatalf("relative path must refuse: %q", m.itemErr)
 	}
 }
+
+// A Claude Skill edit must flip dirty — sig() has to sign m.claudeSkills or
+// quitting after an add/close loses the edit without the unsaved-changes
+// confirm (review finding).
+func TestClaudeSkillEditsFlipDirty(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	if m.dirty() {
+		t.Fatal("a freshly-opened config must not be dirty")
+	}
+	m.listField = fClaudeSkills
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("tdd-loop")
+	m.inputs[1].SetValue("~/cs/tdd-loop")
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("commit: %s", m.itemErr)
+	}
+	if !m.dirty() {
+		t.Fatal("adding a Claude Skill must mark the form dirty")
+	}
+}
