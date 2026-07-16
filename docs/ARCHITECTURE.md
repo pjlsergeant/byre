@@ -588,7 +588,8 @@ byre mcp ...      add / remove / list -- declare MCP servers in the project
                   config (wiring, not a grant; ADR 0033).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
-                  a running box's /inbox. User docs: docs/DELIVER.md.
+                  a running box's /inbox — locally, or through another machine
+                  via ssh://. User docs: docs/DELIVER.md.
 
 byre version      Print the version (also --version).
 byre completion   Per-shell completion scripts (bash/zsh/fish/powershell).
@@ -619,6 +620,22 @@ their top-level name with an atomic `mkdir` and stream the tree
 per-file. `/inbox` itself is baked by the chassis: dev-owned under
 root-owned `/`, so the boxed agent can't replace it with a symlink.
 
+An `ssh://[user@]host[:port]` first argument routes the same verb
+through another machine running byre (ADR 0035): the local byre asks
+the remote for its box list (`byre deliver --boxes --proto N` — a
+frozen tab-separated line grammar on stdout; a distinct exit code
+marks a partial pool, which forbids auto-picking), picks locally with
+the ordinary picker, then streams every source as ONE tar archive up a
+single plain-ssh exec into the remote's `byre deliver --tar -`. The
+archive's entries feed the ordinary per-file transport, so claiming,
+uniquify, and /inbox confinement are identical to a local delivery and
+nothing touches the remote host's disk. `--box` skips enumeration (one
+connection — the deliver-app/script path); `--remote-byre` names the
+remote binary when sshd's sparse non-interactive PATH hides it. Local
+capabilities stay local: the paste beat, stdin spooling, the sending
+meter, and the clipboard round-trip run on the near side (the remote's
+clipboard leg is suppressed with `--no-clip`).
+
 Host capabilities are probed per axis and degrade independently: the
 landed paths always print to stdout (the machine contract, one per
 line) and best-effort ride the host clipboard back (pbcopy / wl-copy /
@@ -629,8 +646,9 @@ out-of-band: file references → image → text), existing absolute host
 paths are a drag onto the window (delivered as files), anything else
 is literal pasted text; graphical launches (no TTY, GUI present)
 also report via OS notification. Every degraded nicety states itself
-on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021;
-user behavior (and the what-works-where matrix) in `docs/DELIVER.md`.
+on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021 and
+(remote) ADR 0035; user behavior (and the what-works-where matrix) in
+`docs/DELIVER.md`.
 
 `byre deliver --install-app` writes the deliver app — generated,
 readable host artifacts whose only job is invoking `byre deliver`: an

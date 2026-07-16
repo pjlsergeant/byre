@@ -47,7 +47,9 @@ Getting a file from the host into a running box, human-initiated: `byre
 deliver` streams path arguments, the host clipboard, or stdin into the
 box's inbox and hands the in-box path back (stdout + host clipboard).
 Machine-scoped -- the one verb that picks a box by discovery, not cwd.
-(ADR 0021)
+An `ssh://` target makes it a **remote delivery**: the same verb routed
+through another machine's byre, same inbox, same path back. (ADR 0021;
+remote: ADR 0035)
 _Avoid_: drop, ingest, airlock (all lost the naming)
 
 **Inbox**:

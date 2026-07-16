@@ -320,6 +320,13 @@ prefix); otherwise a box whose workdir contains the current directory wins;
 otherwise the only running box owned by you; otherwise the candidates are
 listed. Boxes started by other users are hidden unless --skip-uid-check.
 
+An ssh:// FIRST argument ('byre deliver ssh://host shot.png') delivers
+through another machine running byre: its boxes are listed remotely, picked
+locally, and the sources stream over one ssh exec into that box's /inbox —
+every local input mode works unchanged, and the landed paths come back to
+YOUR stdout and clipboard. --remote-byre names the remote binary when sshd's
+non-interactive PATH hides it. Authentication is your own ssh.
+
 After a delivery the landed paths also go to your clipboard (pbcopy /
 wl-copy / xclip, or OSC 52 through SSH), ready to paste; --no-clip skips
 that, and when no clipboard path exists byre says so — the printed path is

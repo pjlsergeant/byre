@@ -97,11 +97,13 @@ includes everyone's (the error tells you when sessions were hidden).
 | Dock / Finder (no terminal) | system dialog | yes | reads clipboard, OS notification |
 | SSH'd into the machine | interactive list | best-effort (OSC 52) + always printed | paste beat, text only |
 | script / pipe (no TTY, no GUI) | none -- `--box` or error | printed only | stdin only |
+| delivering *to* an `ssh://` remote | interactive list (local) | yes (local) | paste beat, full clipboard |
 
 Whenever a nicety is unavailable, byre says so and the path still
 prints -- stdout is the contract, the clipboard is garnish. Images over
 SSH genuinely can't ride a terminal paste; deliver them from the laptop
-side with `pngpaste - | ssh host byre deliver - --name shot.png`.
+side instead -- that's what remote delivery is for
+(`byre deliver ssh://host`, below).
 
 **Platform note.** The terminal flows above are fully supported on macOS
 and Linux alike. macOS is the tested platform for the *graphical* extras
@@ -157,8 +159,37 @@ the same as everywhere; the graphical extras (the launcher, the
 `zenity`/`kdialog` picker, `notify-send` feedback) are best-effort until
 a Linux user confirms them. Reports welcome.
 
-## Not here yet
+## Remote delivery
 
-- **Remote delivery** (`byre deliver ssh://host file`) -- routing a
-  delivery through another machine running byre. Designed (ADR 0021),
-  lands as a follow-on tranche.
+Your box runs on another machine? Put the machine in front of the
+sources as an `ssh://` target:
+
+```
+byre deliver ssh://dev@studio shot.png notes.md
+pngpaste - | byre deliver ssh://studio - --name shot.png
+byre deliver ssh://studio        # the paste beat, then ship
+```
+
+Everything else works exactly as above -- paths, directories, stdin,
+the clipboard beat -- and the landed in-box paths print locally and
+land on *your* clipboard. byre asks the remote byre which boxes are
+running; when yours is the only one it just delivers, when several run
+you pick from the usual list (`--box <id-or-prefix>` picks up front and
+saves a connection). The files ride a single ssh exec as one stream.
+Authentication is your own ssh -- keys, agents, `~/.ssh/config` all
+apply -- so expect one auth prompt per connection: two interactively
+(list, then deliver), one with `--box` baked.
+
+Wrinkles:
+
+- byre must be installed on the remote and findable by sshd's
+  **non-interactive** shell. Stock macOS omits `/usr/local/bin` from
+  that PATH -- if delivery says it found no `byre` there, point
+  `--remote-byre` at the binary
+  (`--remote-byre /usr/local/bin/byre`).
+- Both ends speak a versioned protocol; a byre too old on either side
+  fails loudly at the first connection, before anything moves. Update
+  the older one.
+- Large deliveries draw a sending meter locally ("sending", honestly:
+  bytes handed to ssh); the box's own confirmation follows when it
+  lands.
