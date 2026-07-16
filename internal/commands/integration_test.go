@@ -665,30 +665,13 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Production wiring, minus clipboard and picker (single owned session).
-	callerScoped := false
-	if rootless, rerr := r.IsRootlessPodman(); rerr == nil && rootless {
-		callerScoped = true
-	}
+	// Through deliverWith itself — the production wiring (engine adapters,
+	// callerScoped probe, uid guard) is part of what this test vouches for.
+	// No clipboard, no picker: a single owned session resolves without both.
 	deliverOnce := func() string {
 		var out, errw strings.Builder
-		cfg := deliver.Config{
-			Engines:      []deliver.Engine{engineAdapter{r: r, callerScoped: callerScoped}},
-			ProjectLabel: labelKey,
-			WorkdirLabel: workdirKey,
-			CallerUID:    os.Getuid(),
-			Cwd:          proj,
-			WorkdirIDOf: func(d string) (string, error) {
-				pp, err := project.Resolve(d)
-				if err != nil {
-					return "", err
-				}
-				return pp.WorktreeID, nil
-			},
-			Out: &out,
-			Err: &errw,
-		}
-		if _, err := deliver.Run(cfg, deliver.Options{}, []string{src}); err != nil {
+		s := Streams{Out: &out, Err: &errw, In: strings.NewReader("")}
+		if _, err := deliverWith(s, proj, deliver.Options{}, deliver.PathSources([]string{src}), []sessionRunner{r}, os.Getuid(), nil, nil); err != nil {
 			t.Fatalf("deliver failed: %v\nstderr: %s", err, errw.String())
 		}
 		return out.String()
