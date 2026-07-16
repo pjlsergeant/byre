@@ -1675,6 +1675,28 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 			!strings.Contains(string(b), `"ui"`) {
 			t.Fatalf("merge must add the seed and keep existing keys: %q", b)
 		}
+
+		// Odd shape (string-valued security): the seed must NOT error out and
+		// must NOT mangle the user's file — left byte-for-byte untouched
+		// (codereview 2026-07-16, finding 2). Partial-object shapes still seed.
+		for _, odd := range []string{`{"security":"strict"}`, `{"security":{"auth":"external"}}`} {
+			if err := os.WriteFile(settings, []byte(odd), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			run()
+			if b, _ := os.ReadFile(settings); string(b) != odd {
+				t.Fatalf("odd settings shape must be left untouched, got %q from %q", b, odd)
+			}
+		}
+		// A partial object (security present, auth absent) still seeds cleanly.
+		if err := os.WriteFile(settings, []byte(`{"security":{"other":true}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run()
+		if b, _ := os.ReadFile(settings); !strings.Contains(string(b), "oauth-personal") ||
+			!strings.Contains(string(b), `"other"`) {
+			t.Fatalf("partial-object security must seed and keep its keys: %q", b)
+		}
 	}
 }
 
