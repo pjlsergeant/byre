@@ -133,6 +133,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 				Egress:       sk.File.Runtime.Egress,
 				Offered:      sk.File.Runtime.EgressOffered,
 				MCPs:         sk.File.MCPs,
+				ClaudeSkills: sk.File.ClaudeSkills,
 				Posture:      sk.File.Runtime.NetworkPosture,
 				Containment:  sk.File.Runtime.Containment,
 				CompanionFor: sk.File.CompanionAgent(),

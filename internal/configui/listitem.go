@@ -129,7 +129,7 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		switch f {
 		case fEnv:
 			return []menuChoice{{"Override here", "e", actOverride}}
-		case fMounts, fMCP:
+		case fMounts, fMCP, fClaudeSkills:
 			return []menuChoice{
 				{"Override here", "e", actOverride},
 				{"Remove in this project", "d", actRemoveHere},
@@ -152,11 +152,12 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		}
 		return []menuChoice{{"Open in this project", "o", actOpen}}
 	case rowSkill:
-		// MCP skill rows are the one closable skill contribution: a `!name`
-		// closure reaches a skill-declared server (ADR 0033 — "this skill,
-		// minus one of its servers"). Rows without an ident (already closed
-		// by a lower layer, or a lower closure display row) stay menu-less.
-		if f == fMCP && r.ident != "" {
+		// MCP and Claude Skill rows are the closable skill contributions: a
+		// `!name` closure reaches a skill-declared entry (ADR 0033 — "this
+		// skill, minus one of its servers"; claude_skills adopts the same
+		// semantics). Rows without an ident (already closed by a lower layer,
+		// or a lower closure display row) stay menu-less.
+		if (f == fMCP || f == fClaudeSkills) && r.ident != "" {
 			return []menuChoice{{"Remove in this project", "d", actRemoveHere}}
 		}
 	}
@@ -252,6 +253,8 @@ func (m *model) removeHere(r listRow) {
 		m.mounts = append(m.mounts, config.Mount{Target: "!" + r.ident})
 	case fMCP:
 		m.mcps = append(m.mcps, config.MCP{Name: "!" + r.ident})
+	case fClaudeSkills:
+		m.claudeSkills = append(m.claudeSkills, config.ClaudeSkill{Name: "!" + r.ident})
 	case fPorts:
 		if c, err := strconv.Atoi(r.ident); err == nil {
 			m.ports = append(m.ports, config.Port{Container: c, Remove: true})
@@ -289,6 +292,12 @@ func (m model) startOverride(r listRow) model {
 		next.inputs[2].SetValue(r.vals[3])
 		next.inputs[3].SetValue(r.vals[4])
 		next.inputs[4].SetValue(r.vals[5])
+	case fClaudeSkills:
+		// vals: name, path (claudeSkillVals). An inherited skill contribution
+		// has no config path; the override starts with the name prefilled and
+		// the path to be supplied (a config override must point at a host dir).
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(r.vals[1])
 	}
 	return next
 }
@@ -336,6 +345,8 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.egress = append(m.egress[:i], m.egress[i+1:]...)
 	case fMCP:
 		m.mcps = append(m.mcps[:i], m.mcps[i+1:]...)
+	case fClaudeSkills:
+		m.claudeSkills = append(m.claudeSkills[:i], m.claudeSkills[i+1:]...)
 	}
 }
 
@@ -399,6 +410,19 @@ func (m model) startItem(idx int) model {
 			}
 		}
 		m.inputs = []textinput.Model{newInput(name), newInput(endpoint), newInput(env), newInput(egress), newInput(headers)}
+	case fClaudeSkills:
+		// Two inputs: the name (frontmatter identity) and the host source dir.
+		// Content checks (SKILL.md, frontmatter, bounds) are the bake's; the
+		// editor holds the declaration to config's shape rules only.
+		m.inputLabels = []string{
+			"Name (required)", // viewItem appends the lowercase hint
+			"Directory (host path, ~/… or absolute)",
+		}
+		name, path := "", ""
+		if idx >= 0 {
+			name, path = m.claudeSkills[idx].Name, m.claudeSkills[idx].Path
+		}
+		m.inputs = []textinput.Model{newInput(name), newInput(path)}
 	case fEnv:
 		m.inputLabels = []string{"Key", "Value"}
 		k, val := "", ""
@@ -734,6 +758,18 @@ func (m model) commitItem() model {
 			return m
 		}
 		m.mcps = putAt(m.mcps, m.editIndex, mc)
+	case fClaudeSkills:
+		// Shape rules stay config's (ValidateClaudeSkill — the same check the
+		// layer gate runs); the name lowercases itself like MCP names.
+		cs := config.ClaudeSkill{
+			Name: strings.ToLower(strings.TrimSpace(m.inputs[0].Value())),
+			Path: strings.TrimSpace(m.inputs[1].Value()),
+		}
+		if err := config.ValidateClaudeSkill(cs, false); err != nil {
+			m.itemErr = err.Error()
+			return m
+		}
+		m.claudeSkills = putAt(m.claudeSkills, m.editIndex, cs)
 	case fEnv:
 		k := strings.TrimSpace(m.inputs[0].Value())
 		// Key shape is the layer check's job. Duplicates are the editor's: env is
@@ -830,6 +866,8 @@ func itemTitle(f fieldID) string {
 		return "Egress host"
 	case fMCP:
 		return "MCP server"
+	case fClaudeSkills:
+		return "Claude Skill"
 	}
 	return strings.TrimSuffix(fieldLabel[f], "s")
 }
@@ -856,6 +894,19 @@ func portLine(p config.Port) string {
 // the same local/remote vocabulary status prints, plus the carried env names.
 // The command renders in the argv form the editor parses (joinArgv), so a
 // spaced arg reads as it round-trips.
+// claudeSkillLine renders one Claude Skill declaration: name plus whichever
+// source spelling its home carries (a config path or a skill-relative from).
+func claudeSkillLine(cs config.ClaudeSkill) string {
+	src := cs.Path
+	if src == "" {
+		src = cs.From
+	}
+	if src == "" {
+		return cs.Name
+	}
+	return cs.Name + " — " + src
+}
+
 func mcpLine(mc config.MCP) string {
 	var b strings.Builder
 	if mc.Remote() {

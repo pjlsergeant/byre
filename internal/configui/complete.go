@@ -132,6 +132,10 @@ func (m model) assemble() config.Config {
 	if len(out.MCPs) == 0 {
 		out.MCPs = nil
 	}
+	out.ClaudeSkills = append([]config.ClaudeSkill{}, m.claudeSkills...)
+	if len(out.ClaudeSkills) == 0 {
+		out.ClaudeSkills = nil
+	}
 	// The primary agent is implied by `agent`, so never write it into `skills`
 	// (even if it lingers in m.skills from a config that listed it before it became
 	// primary) — the locked row shows it on via the agent, not via this list.

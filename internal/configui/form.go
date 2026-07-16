@@ -53,6 +53,7 @@ const (
 	fPorts
 	fSkills
 	fMCP             // [[mcp]] declarations (wiring, not grants — ADR 0033)
+	fClaudeSkills    // [[claude_skills]] declarations (wiring, the MCP genus)
 	fWorktreeSibling // checkbox: worktrees beside the repo
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
@@ -82,7 +83,7 @@ func isTextField(f fieldID) bool {
 }
 
 func isListField(f fieldID) bool {
-	return f == fApt || f == fEnv || f == fMounts || f == fPorts || f == fEgress || f == fMCP
+	return f == fApt || f == fEnv || f == fMounts || f == fPorts || f == fEgress || f == fMCP || f == fClaudeSkills
 }
 
 // Labels are human/display names (not the raw TOML keys); the underlying key is
@@ -98,6 +99,7 @@ var fieldLabel = map[fieldID]string{
 	fMounts:          "Extra mounts",
 	fPorts:           "Ports",
 	fMCP:             "MCP servers",
+	fClaudeSkills:    "Claude Skills",
 	fVolumes:         "Volumes",
 	fRunArgs:         "Run args",
 	fDockerfilePre:   "Dockerfile before",
@@ -183,13 +185,14 @@ type model struct {
 	extSel                          int
 
 	// Structured working state for the list fields.
-	apt    []string
-	env    []kvItem
-	mounts []config.Mount
-	ports  []config.Port
-	egress []string     // firewall-allowlist extensions, host[:port] (ADR 0019)
-	mcps   []config.MCP // [[mcp]] declarations incl. `!name` closure markers
-	skills []string     // enabled skill names (multi-select)
+	apt          []string
+	env          []kvItem
+	mounts       []config.Mount
+	ports        []config.Port
+	egress       []string             // firewall-allowlist extensions, host[:port] (ADR 0019)
+	mcps         []config.MCP         // [[mcp]] declarations incl. `!name` closure markers
+	claudeSkills []config.ClaudeSkill // [[claude_skills]] declarations incl. `!name` closure markers
+	skills       []string             // enabled skill names (multi-select)
 
 	// Freeform raw-tier working state (edited as text blocks).
 	runArgs string // one arg per line
@@ -269,7 +272,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP}},
+		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills}},
 	}
 	switch target {
 	case TargetGlobal:
@@ -281,7 +284,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
-			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP, fClaudeSkills}},
 			// worktree_base is a global/host preference; only the --global editor
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
@@ -292,7 +295,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
 			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills}},
 		}
 	}
 	// The chain pointer: project configs and layers may name a parent layer;
@@ -368,6 +371,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.ports = append([]config.Port{}, cfg.Ports...)
 	m.egress = append([]string{}, cfg.Egress...)
 	m.mcps = append([]config.MCP{}, cfg.MCPs...)
+	m.claudeSkills = append([]config.ClaudeSkill{}, cfg.ClaudeSkills...)
 	m.skills = append([]string{}, cfg.Skills...)
 	m.runArgs = strings.Join(cfg.RunArgs, "\n")
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
@@ -920,7 +924,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 
 // fieldNoun is the summary noun for a list field, pluralized.
 func fieldNoun(f fieldID, n int) string {
-	noun := map[fieldID]string{fApt: "package", fEnv: "var", fMounts: "mount", fPorts: "port", fEgress: "host", fMCP: "server"}[f]
+	noun := map[fieldID]string{fApt: "package", fEnv: "var", fMounts: "mount", fPorts: "port", fEgress: "host", fMCP: "server", fClaudeSkills: "skill"}[f]
 	if noun == "" {
 		noun = "item"
 	}

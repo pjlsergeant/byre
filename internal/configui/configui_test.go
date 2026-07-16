@@ -1406,3 +1406,93 @@ func TestMCPHeadersInForm(t *testing.T) {
 		t.Fatalf("malformed header: %q", m2.itemErr)
 	}
 }
+
+func TestClaudeSkillRowsEffectiveView(t *testing.T) {
+	inh := Inherited{
+		HasLower: true,
+		Default: config.Config{ClaudeSkills: []config.ClaudeSkill{
+			{Name: "inherited", Path: "/cs/inherited"},
+			{Name: "shadowed", Path: "/cs/old"},
+		}},
+		Skills: map[string]SkillRuntime{
+			"pete/tools": {ClaudeSkills: []config.ClaudeSkill{
+				{Name: "from-skill", From: "cs/from-skill"},
+				{Name: "closed-skill", From: "cs/closed-skill"},
+			}},
+		},
+	}
+	cfg := config.Config{
+		Skills: []string{"pete/tools"},
+		ClaudeSkills: []config.ClaudeSkill{
+			{Name: "own", Path: "/cs/own"},
+			{Name: "shadowed", Path: "/cs/new"},
+			{Name: "!closed-skill"},
+			{Name: "!ghost"},
+		},
+	}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"pete/tools"}, nil, inh, nil, TargetProject)
+	m.listField = fClaudeSkills
+	rows := m.fieldRows(fClaudeSkills)
+
+	find := func(kind rowKind, substr string) *listRow {
+		for i := range rows {
+			if rows[i].kind == kind && strings.Contains(rows[i].text, substr) {
+				return &rows[i]
+			}
+		}
+		return nil
+	}
+	if r := find(rowInherited, "inherited"); r == nil || r.source != "default" || r.ident != "inherited" {
+		t.Fatalf("inherited row wrong: %+v (rows: %+v)", r, rows)
+	}
+	if r := find(rowOverride, "shadowed — /cs/new"); r == nil {
+		t.Fatalf("replace-by-name must render as override: %+v", rows)
+	}
+	if r := find(rowLocal, "own"); r == nil {
+		t.Fatalf("local row missing: %+v", rows)
+	}
+	if r := find(rowSkill, "from-skill"); r == nil || r.ident != "from-skill" {
+		t.Fatalf("skill row must be closable (ident set): %+v", rows)
+	}
+	if r := find(rowRemoved, "closed-skill"); r == nil || r.idx < 0 {
+		t.Fatalf("skill contribution closed by this file must show removed with Restore: %+v", rows)
+	}
+	if r := find(rowStaleMarker, "ghost"); r == nil {
+		t.Fatalf("marker matching nothing must read stale: %+v", rows)
+	}
+
+	sk := find(rowSkill, "from-skill")
+	choices := m.rowChoices(fClaudeSkills, *sk)
+	if len(choices) != 1 || choices[0].act != actRemoveHere {
+		t.Fatalf("skill claude-skill row choices: %+v", choices)
+	}
+	m.removeHere(*sk)
+	if out := m.assemble(); !hasClaudeSkillName(out.ClaudeSkills, "!from-skill") {
+		t.Fatalf("removeHere must write the closure: %+v", out.ClaudeSkills)
+	}
+}
+
+func TestClaudeSkillItemEditorCommit(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fClaudeSkills
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("TDD-Loop") // lowercases on commit
+	m.inputs[1].SetValue("~/cs/tdd-loop")
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("commit: %s", m.itemErr)
+	}
+	out := m.assemble()
+	if len(out.ClaudeSkills) != 1 || out.ClaudeSkills[0].Name != "tdd-loop" || out.ClaudeSkills[0].Path != "~/cs/tdd-loop" {
+		t.Fatalf("assembled = %+v", out.ClaudeSkills)
+	}
+
+	// A relative path is refused with config's own message.
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("x")
+	m.inputs[1].SetValue("relative/dir")
+	m = m.commitItem()
+	if m.itemErr == "" || !strings.Contains(m.itemErr, "absolute or ~/") {
+		t.Fatalf("relative path must refuse: %q", m.itemErr)
+	}
+}
