@@ -36,7 +36,10 @@ shared_auth=""
 if [ -L "$cred" ]; then
   target="$(readlink "$cred")"
   tdir="$(cd "$data_root/opencode" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || tdir=""
-  if [ "$tdir" = "/home/dev/.byre-identity/opencode" ]; then
+  # Full-path equality: the OWN identity dir AND the auth.json basename
+  # (opencode-shared-auth links exactly that file) — a dir-only match would
+  # trust a link to any OTHER name inside the dir.
+  if [ "$tdir" = "/home/dev/.byre-identity/opencode" ] && [ "$(basename "$target")" = "auth.json" ]; then
     shared_auth=1
   else
     rm -f "$cred"

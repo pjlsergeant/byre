@@ -30,7 +30,8 @@ the rationale lives.
   isolation). Remaining: two-box OAuth check, then swap
   `companion_for`->`shared_auth_for`. opencode: SCOPED to API-key logins
   only (Pete's ruling -- you use the claude skill for Anthropic, not
-  opencode); OAuth entries race and are WARNED not shared (13c206f); the
+  opencode); OAuth entries race and are UNSUPPORTED -- they still ride the
+  whole-file share mechanically, the hook WARNS (13c206f); the
   broker rebuild that would make OAuth safe is deliberately not built.
   Remaining: two-box API-key check, then swap the vouch. Also opencode
   MCP inject adapter BUILT + unit-tested (82ec10c, ADR 0033 merge

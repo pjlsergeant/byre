@@ -743,8 +743,11 @@ own rotation policy.**
   refresh from two boxes is the same cascade risk. opencode re-reads
   `auth.json` lazily (`Auth.all` reads the file per access, no cache --
   binary source), so a shared single inode gets the codex-style tolerance:
-  a race loser picks up the winner's pair on its next read. UNVERIFIED
-  live: an actual multi-box refresh race (byre's opencode-shared-auth gate).
+  a race loser picks up the winner's pair on its next read. That tolerance
+  was never gated live: byre's opencode-shared-auth is SCOPED to API-key
+  logins (2026-07-16, Pete's ruling). OAuth entries still ride the share
+  mechanically (the symlink carries the WHOLE file; byre never splits or
+  touches entries) but are UNSUPPORTED -- the firstrun hook warns.
 - `OPENCODE_AUTH_CONTENT` (env) overrides the file entirely when set --
   static injection; a refresh cannot write back to env, so it only suits
   non-rotating credentials.
@@ -794,8 +797,10 @@ Silent -- no endorsement or prohibition of copying `auth.json` found in the
 reachable material. The mechanics (in-place writes, lazy re-reads) are the
 codex shape, the friendliest to a shared single inode;
 the rotation risk is inherited per provider (Anthropic OAuth = Claude-class
-single-use refresh). byre's `opencode-shared-auth` ships gate-pending on
-exactly that question (its skill.toml is the status record).
+single-use refresh). byre's `opencode-shared-auth` supports API-key logins
+only -- an OAuth entry still rides the whole-file share mechanically but is
+unsupported and draws the firstrun warning (its skill.toml is the status
+record); the remaining field gate is the two-box API-key check.
 
 ## Implications for the shared-auth split
 
@@ -863,8 +868,8 @@ section; rotation is SAFE and the default store is plaintext)
 - Shared identity: `auth.json` via a file-level symlink into the identity
   volume (byre's opencode-shared-auth) -- mechanically sound (in-place
   writes, live-verified write-through), but note it shares the WHOLE
-  multi-provider store, and the Anthropic-OAuth rotation gate is pending
-  (see §3/§5 above). API-key entries are rotation-immune.
+  multi-provider store. byre supports API-key entries only (rotation-immune);
+  OAuth entries race across boxes and draw the firstrun warning (see §3/§5).
 - Per-project: everything else in the data dir -- `opencode.db` (all
   sessions), `log/`, `repos/`, `snapshot/`. Nothing project-keyed at the
   file level, so per-project state volumes give per-project sessions (the

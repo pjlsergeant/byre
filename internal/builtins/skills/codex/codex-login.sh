@@ -35,11 +35,14 @@ if [ -L "$cred" ]; then
   # Relative targets resolve from the link's own directory.
   target="$(readlink "$cred")"
   tdir="$(cd "$CODEX_HOME" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || tdir=""
-  # EQUALITY against codex's OWN identity dir, not a /home/dev/.byre-identity/*
-  # wildcard: a broader match would trust a link into a SIBLING agent's identity
-  # dir, through which a `codex login` would overwrite that agent's machine-wide
-  # credential with codex's incompatible store. Mirrors the opencode-login hook.
-  if [ "$tdir" = "/home/dev/.byre-identity/codex" ]; then
+  # EQUALITY against the FULL canonical target — codex's OWN identity dir AND
+  # the auth.json basename (codex-shared-auth links exactly that file) — not a
+  # /home/dev/.byre-identity/* wildcard: a broader match would trust a link
+  # into a SIBLING agent's identity dir, through which a `codex login` would
+  # overwrite that agent's machine-wide credential with codex's incompatible
+  # store; and a dir-only match would trust a link to any OTHER name inside
+  # codex's dir. Mirrors the opencode-login hook.
+  if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename "$target")" = "auth.json" ]; then
     shared_auth=1
   else
     rm -f "$cred"

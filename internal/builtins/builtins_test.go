@@ -1922,6 +1922,18 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "opencode"), "opencode-login.sh")
 
+	// Pin the WHOLE trusted-target predicate line in the hook source (full
+	// conjunction, not its halves) — same rationale as the codex login-hook
+	// test: the hardcoded base leaves no fixture seam, so pin the source.
+	src, err := os.ReadFile(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src),
+		`if [ "$tdir" = "/home/dev/.byre-identity/opencode" ] && [ "$(basename "$target")" = "auth.json" ]; then`) {
+		t.Error("hook must trust ONLY the full canonical path /home/dev/.byre-identity/opencode/auth.json (single && predicate)")
+	}
+
 	bin := t.TempDir()
 	stamp := filepath.Join(bin, "login-attempted")
 	stub := "#!/bin/sh\ntouch " + stamp + "\nexit 0\n"
@@ -2020,15 +2032,35 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 }
 
 // TestCodexLoginHookRejectsForeignSymlink mirrors the opencode login-hook
-// coverage for codex's carve-out: the trusted target is the HARDCODED
-// absolute /home/dev/.byre-identity/codex (equality, not a
-// /home/dev/.byre-identity/* wildcard — a wildcard would trust a link into a
-// SIBLING agent's identity dir, through which a `codex login` would overwrite
-// that agent's machine-wide credential). That path only exists in a real box,
-// so any temp-dir link is correctly classified foreign and removed here.
+// coverage for codex's carve-out: the trusted target is the HARDCODED full
+// path /home/dev/.byre-identity/codex/auth.json (own-dir + basename equality,
+// not a /home/dev/.byre-identity/* wildcard — a wildcard would trust a link
+// into a SIBLING agent's identity dir, through which a `codex login` would
+// overwrite that agent's machine-wide credential; a dir-only match would
+// trust any other name inside codex's dir).
+//
+// LIMIT of the behavioral half: the trusted base is deliberately hardcoded
+// (an env seam would let a config-supplied [env] var redefine the trusted
+// namespace — see the opencode hook's comment), so a unit test can't build a
+// sibling-identity fixture; a temp-dir target is foreign under BOTH the old
+// wildcard and the new equality. The narrowing itself is pinned by the source
+// assertions below (codereview 2026-07-17); the behavioral cases cover
+// foreign-link removal and the logged-in short-circuit.
 func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+
+	// Pin the WHOLE predicate line in the hook source — the full conjunction,
+	// not its halves independently — so weakening either side (or the &&)
+	// fails here.
+	src, err := os.ReadFile(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src),
+		`if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename "$target")" = "auth.json" ]; then`) {
+		t.Error("hook must trust ONLY the full canonical path /home/dev/.byre-identity/codex/auth.json (single && predicate)")
+	}
 
 	bin := t.TempDir()
 	stamp := filepath.Join(bin, "login-attempted")
@@ -2052,8 +2084,8 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 		}
 	}
 
-	// A FOREIGN symlinked credential (temp-dir target, incl. any that would
-	// have matched the old wildcard) is removed; a fresh login runs.
+	// A FOREIGN symlinked credential (temp-dir target) is removed; a fresh
+	// login runs.
 	home := t.TempDir()
 	cred := filepath.Join(home, "auth.json")
 	planted := filepath.Join(home, "elsewhere.json")
@@ -2144,7 +2176,8 @@ func TestOpencodeSharedAuthCompositionResolves(t *testing.T) {
 	if !strings.Contains(string(b), `companion_for = "opencode"`) || strings.Contains(string(b), "\nshared_auth_for") {
 		t.Error("vouch shape wrong: want companion_for (field check pending), not shared_auth_for")
 	}
-	// The API-key-only scope must be on the record (OAuth is warned, not shared).
+	// The API-key-only scope must be on the record (OAuth entries are
+	// unsupported and warned; they still ride the whole-file share).
 	if !strings.Contains(string(b), "API-KEY LOGINS ONLY") {
 		t.Error("API-key-only scope missing from the skill.toml record")
 	}

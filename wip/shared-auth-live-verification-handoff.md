@@ -107,7 +107,8 @@ rebuilds their images with the new hooks). Check 1 does NOT need this; checks
 ## Non-obvious context the next agent needs
 
 - **opencode is API-key ONLY, by ruling.** OAuth entries race (single-use
-  Anthropic refresh) and are WARNED, not shared/blocked -- Pete's footgun-
+  Anthropic refresh) and are UNSUPPORTED -- still riding the whole-file share
+  mechanically, WARNED, never blocked -- Pete's footgun-
   doctrine call (warn, never quarantine; moving a live credential aside is the
   grok-v1 clobber mistake). codex review pushed back on "warn not enforce"; it
   was consciously deferred as doctrine, do not re-open without Pete.
