@@ -133,6 +133,11 @@ func ValidateClaudeSkillDir(dir, name string) error {
 		if fi.IsDir() {
 			return nil
 		}
+		// Only regular files stage: a FIFO would block the staging copy's
+		// os.Open indefinitely, and a device could dodge the size bound.
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("%s: not a regular file — a claude skill dir holds plain files only", p)
+		}
 		files++
 		bytes += fi.Size()
 		if files > MaxClaudeSkillFiles {
@@ -147,6 +152,18 @@ func ValidateClaudeSkillDir(dir, name string) error {
 		return fmt.Errorf("claude skill %s: %s: %w", name, dir, err)
 	}
 	return nil
+}
+
+// ClaudeSkillDirName reads the SKILL.md frontmatter name from dir — the
+// identity `byre claude-skill add` derives when no --name is passed (the
+// declared name must equal it anyway; ValidateClaudeSkillDir enforces the
+// pair).
+func ClaudeSkillDirName(dir string) (string, error) {
+	name, _, err := claudeSkillFrontmatter(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return "", fmt.Errorf("claude skill dir %s: %w", dir, err)
+	}
+	return name, nil
 }
 
 // claudeSkillFrontmatter extracts the name and description from a SKILL.md's

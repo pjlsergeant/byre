@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -161,6 +162,15 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 	}
 	if err := ValidateClaudeSkillDir(linked, "linked"); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("symlink: %v", err)
+	}
+
+	fifo := filepath.Join(base, "fifo")
+	writeClaudeSkill(t, fifo, "fifo", "")
+	if err := syscall.Mkfifo(filepath.Join(fifo, "pipe"), 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	if err := ValidateClaudeSkillDir(fifo, "fifo"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("fifo: %v", err)
 	}
 
 	crowded := filepath.Join(base, "crowded")
