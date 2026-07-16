@@ -1640,6 +1640,64 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(home, "oauth_creds.json")); string(b) != `{"adopted":true}` {
 		t.Fatalf("fork not healed to the shared credential: %q", b)
 	}
+
+	// selectedType seed: on a box with no prior choice, the hook seeds
+	// oauth-personal so gemini's dialog (which rm's oauth_creds.json and forks
+	// the login) never opens. Requires jq (skip cleanly without it).
+	if _, err := exec.LookPath("jq"); err == nil {
+		settings := filepath.Join(home, "settings.json")
+		_ = os.Remove(settings)
+		run()
+		if b, err := os.ReadFile(settings); err != nil ||
+			!strings.Contains(string(b), `"selectedType"`) ||
+			!strings.Contains(string(b), "oauth-personal") {
+			t.Fatalf("fresh box: selectedType not seeded to oauth-personal: %v %q", err, b)
+		}
+
+		// No-clobber: a deliberate api-key choice is preserved, never overwritten.
+		if err := os.WriteFile(settings, []byte(`{"security":{"auth":{"selectedType":"gemini-api-key"}}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run()
+		if b, _ := os.ReadFile(settings); !strings.Contains(string(b), "gemini-api-key") ||
+			strings.Contains(string(b), "oauth-personal") {
+			t.Fatalf("deliberate api-key choice must not be clobbered: %q", b)
+		}
+
+		// Merge-preserve: an existing settings.json with UNSET selectedType keeps
+		// its other keys and gains the seed.
+		if err := os.WriteFile(settings, []byte(`{"theme":"Default","ui":{"x":1}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run()
+		b, _ := os.ReadFile(settings)
+		if !strings.Contains(string(b), "oauth-personal") || !strings.Contains(string(b), `"theme"`) ||
+			!strings.Contains(string(b), `"ui"`) {
+			t.Fatalf("merge must add the seed and keep existing keys: %q", b)
+		}
+
+		// Odd shape (string-valued security): the seed must NOT error out and
+		// must NOT mangle the user's file — left byte-for-byte untouched
+		// (codereview 2026-07-16, finding 2). Partial-object shapes still seed.
+		for _, odd := range []string{`{"security":"strict"}`, `{"security":{"auth":"external"}}`} {
+			if err := os.WriteFile(settings, []byte(odd), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			run()
+			if b, _ := os.ReadFile(settings); string(b) != odd {
+				t.Fatalf("odd settings shape must be left untouched, got %q from %q", b, odd)
+			}
+		}
+		// A partial object (security present, auth absent) still seeds cleanly.
+		if err := os.WriteFile(settings, []byte(`{"security":{"other":true}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run()
+		if b, _ := os.ReadFile(settings); !strings.Contains(string(b), "oauth-personal") ||
+			!strings.Contains(string(b), `"other"`) {
+			t.Fatalf("partial-object security must seed and keep its keys: %q", b)
+		}
+	}
 }
 
 // TestDockerHostSkillResolves pins the shipped docker-host skill: parse,
@@ -1864,6 +1922,18 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "opencode"), "opencode-login.sh")
 
+	// Pin the WHOLE trusted-target predicate line in the hook source (full
+	// conjunction, not its halves) — same rationale as the codex login-hook
+	// test: the hardcoded base leaves no fixture seam, so pin the source.
+	src, err := os.ReadFile(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src),
+		`if [ "$tdir" = "/home/dev/.byre-identity/opencode" ] && [ "$(basename "$target")" = "auth.json" ]; then`) {
+		t.Error("hook must trust ONLY the full canonical path /home/dev/.byre-identity/opencode/auth.json (single && predicate)")
+	}
+
 	bin := t.TempDir()
 	stamp := filepath.Join(bin, "login-attempted")
 	stub := "#!/bin/sh\ntouch " + stamp + "\nexit 0\n"
@@ -1961,6 +2031,94 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	}
 }
 
+// TestCodexLoginHookRejectsForeignSymlink mirrors the opencode login-hook
+// coverage for codex's carve-out: the trusted target is the HARDCODED full
+// path /home/dev/.byre-identity/codex/auth.json (own-dir + basename equality,
+// not a /home/dev/.byre-identity/* wildcard — a wildcard would trust a link
+// into a SIBLING agent's identity dir, through which a `codex login` would
+// overwrite that agent's machine-wide credential; a dir-only match would
+// trust any other name inside codex's dir).
+//
+// LIMIT of the behavioral half: the trusted base is deliberately hardcoded
+// (an env seam would let a config-supplied [env] var redefine the trusted
+// namespace — see the opencode hook's comment), so a unit test can't build a
+// sibling-identity fixture; a temp-dir target is foreign under BOTH the old
+// wildcard and the new equality. The narrowing itself is pinned by the source
+// assertions below (codereview 2026-07-17); the behavioral cases cover
+// foreign-link removal and the logged-in short-circuit.
+func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+
+	// Pin the WHOLE predicate line in the hook source — the full conjunction,
+	// not its halves independently — so weakening either side (or the &&)
+	// fails here.
+	src, err := os.ReadFile(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src),
+		`if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename "$target")" = "auth.json" ]; then`) {
+		t.Error("hook must trust ONLY the full canonical path /home/dev/.byre-identity/codex/auth.json (single && predicate)")
+	}
+
+	bin := t.TempDir()
+	stamp := filepath.Join(bin, "login-attempted")
+	// Stub codex: `login status` reports NOT logged in (exit 1); `login
+	// --device-auth` records the attempt. Anything else is a no-op success.
+	stub := "#!/bin/sh\n" +
+		"case \"$1 $2\" in\n" +
+		"'login status') exit 1 ;;\n" +
+		"'login --device-auth') touch " + stamp + "; exit 0 ;;\n" +
+		"esac\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loginAttempted := func() bool { _, err := os.Stat(stamp); return err == nil }
+	run := func(codexHome string) {
+		t.Helper()
+		cmd := exec.Command("sh", hook)
+		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+
+	// A FOREIGN symlinked credential (temp-dir target) is removed; a fresh
+	// login runs.
+	home := t.TempDir()
+	cred := filepath.Join(home, "auth.json")
+	planted := filepath.Join(home, "elsewhere.json")
+	if err := os.WriteFile(planted, []byte(`{"tokens":{"access_token":"planted"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(planted, cred); err != nil {
+		t.Fatal(err)
+	}
+	run(home)
+	if _, err := os.Lstat(cred); !os.IsNotExist(err) {
+		t.Fatalf("foreign symlinked credential must be removed, still present (%v)", err)
+	}
+	if !loginAttempted() {
+		t.Fatal("removal must fall through to a fresh login; none was attempted")
+	}
+
+	// A logged-in codex (login status = 0) short-circuits: no login attempted.
+	_ = os.Remove(stamp)
+	if err := os.WriteFile(filepath.Join(bin, "codex"),
+		[]byte("#!/bin/sh\ntest \"$1 $2\" = 'login status' && exit 0\ntouch "+stamp+"\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home2 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home2, "auth.json"), []byte(`{"tokens":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(home2)
+	if loginAttempted() {
+		t.Fatal("a logged-in codex must short-circuit the login; one was attempted")
+	}
+}
+
 // TestOpencodeSharedAuthCompositionResolves: the companion resolves
 // alongside the agent, ships the 00- ordered hook (must sort before
 // opencode's own login hook), and mounts the machine-scoped identity
@@ -2013,8 +2171,15 @@ func TestOpencodeSharedAuthCompositionResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "PENDING") {
-		t.Error("gate-pending status missing from the skill.toml record")
+	// Still companion_for, not shared_auth_for: the vouch follows the live
+	// two-box field check, never source/scope alone (the v1 lesson).
+	if !strings.Contains(string(b), `companion_for = "opencode"`) || strings.Contains(string(b), "\nshared_auth_for") {
+		t.Error("vouch shape wrong: want companion_for (field check pending), not shared_auth_for")
+	}
+	// The API-key-only scope must be on the record (OAuth entries are
+	// unsupported and warned; they still ride the whole-file share).
+	if !strings.Contains(string(b), "API-KEY LOGINS ONLY") {
+		t.Error("API-key-only scope missing from the skill.toml record")
 	}
 }
 
@@ -2085,5 +2250,46 @@ func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
 	runOpencodeSharedAuthHook(t, hook, base, dataHome)
 	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
 		t.Fatalf("idempotent re-run changed the credential: %q", b)
+	}
+}
+
+// The API-key-only scope (Pete's ruling): an OAuth entry in the shared store
+// draws a friendly warning and is NEVER touched; an API-key-only store is
+// silent.
+func TestOpencodeSharedAuthWarnsOnOAuthEntry(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "opencode-shared-auth"), "firstrun.sh")
+
+	warns := func(authJSON string) (string, bool) {
+		t.Helper()
+		base, dataHome := t.TempDir(), t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "opencode"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		shared := filepath.Join(base, "opencode", "auth.json")
+		if err := os.WriteFile(shared, []byte(authJSON), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "XDG_DATA_HOME="+dataHome)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+		s := string(out)
+		before, contentSurvives := os.ReadFile(shared)
+		if contentSurvives != nil || string(before) != authJSON {
+			t.Fatalf("the credential must never be touched, got %q (%v)", before, contentSurvives)
+		}
+		return s, strings.Contains(s, "API-key logins only")
+	}
+
+	// OAuth entry (tolerate the JSON.stringify(...,2) spacing) -> warns.
+	if _, w := warns(`{"anthropic": {"type": "oauth", "access": "x", "refresh": "y"}}`); !w {
+		t.Fatal("an OAuth entry in the shared store must draw the API-key-only warning")
+	}
+	// API-key-only store -> silent.
+	if _, w := warns(`{"anthropic": {"type": "api", "key": "sk-ant-live"}}`); w {
+		t.Fatal("an API-key-only store must NOT warn")
 	}
 }

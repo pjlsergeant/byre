@@ -23,6 +23,14 @@
 # Accepted residual (recorded in the design, do not re-raise): Codex's
 # cross-process refresh has no lock — two boxes refreshing in the same window
 # race benignly (last-writer-wins on a still-valid token).
+#
+# HAZARD — never run `codex logout` in a shared-auth box (source-confirmed
+# 2026-07-16, codex-rs/login/src/auth/revoke.rs): logout REVOKES the refresh
+# token SERVER-SIDE (POST auth.openai.com/oauth/revoke) before unlinking, so
+# ONE box's logout kills the shared login for EVERY box — and the symlink heal
+# can't recover it (the chain is dead server-side, not just locally forked).
+# byre can't intercept it (codex makes the call itself); this is documented,
+# not gated. Re-auth is a fresh `codex login --device-auth` in any box.
 
 description = "Share one Codex login across all your projects."
 

@@ -18,26 +18,43 @@ the rationale lives.
 ## Open
 
 - [ ] (M) **fix shared-auth: gemini, grok, opencode** (rolled up
-  2026-07-16 from three items, un-parking grok). gemini: run the OAuth
-  gate — two boxes past the ~1h expiry, neither dying (API-key path
-  already verified, ADR 0017). opencode: host-verify the EXPERIMENTAL
-  skill from a live box (installer path ~/.opencode/bin, Pro/Max login,
-  `--auto`, firewalled egress), then run its rotation gate; Pete reports
-  the shared login already misbehaving (2026-07-16) — possibly gate 2
-  failing in the field, diagnose as part of the gate; on pass, swap
-  `companion_for` for `shared_auth_for`. grok: BUILT 2026-07-16 (v2
-  auth broker, ADR 0036 — pre-build gates all answered from the
-  published grok source); remaining is the FIELD gate: seed a live box,
-  watch a ~6h rollover refresh through the broker, then swap
-  `companion_for` for `shared_auth_for` (same shape as opencode's).
+  2026-07-16 from three items, un-parking grok). BIG PASS 2026-07-16
+  (source-pass over codex/gemini/opencode trees + grilling with Pete):
+  all buildable work DONE; what remains is three LIVE two-box VM checks
+  that flip vouches. gemini: rotation is SAFE (Google installed-app
+  tokens are NON-rotating -- primary docs; the old ~1h-expiry gate is
+  moot), and the field failure was diagnosed as the auth-DIALOG's
+  rm-on-symlink forking the login -- FIXED by seeding
+  selectedType=oauth-personal (74e2e49); mechanism stays per-file
+  symlinks (whole-tree GEMINI_CLI_HOME would break per-box context
+  isolation). Remaining: two-box OAuth check, then swap
+  `companion_for`->`shared_auth_for`. opencode: SCOPED to API-key logins
+  only (Pete's ruling -- you use the claude skill for Anthropic, not
+  opencode); OAuth entries race and are UNSUPPORTED -- they still ride the
+  whole-file share mechanically, the hook WARNS (13c206f); the
+  broker rebuild that would make OAuth safe is deliberately not built.
+  Remaining: two-box API-key check, then swap the vouch. Also opencode
+  MCP inject adapter BUILT + unit-tested (82ec10c, ADR 0033 merge
+  question answered from source); remaining: a live box confirms
+  `opencode mcp` lists byre's injected servers, then wire the command +
+  set `mcp = "inject"`. grok: unchanged -- FIELD gate still pending (~6h
+  rollover through the broker), then swap the vouch.
   `XAI_API_KEY` stays ruled out on cost. Facts + gate records:
-  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
-  Adjacent, ruling pending: $SHARED symlink-target check in the
-  shared-auth hooks + codex-login's wildcard carve-out (2026-07-16
-  review findings). Carried from the old opencode item: MCP seam probed
-  (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT exist) but merge-vs-replace
-  needs a spike before any `mcp = "inject"` vouch (ADR 0033); gemini's
-  seam still unprobed.
+  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml. All three VM
+  checks can ride ONE sacrificial-VM run.
+  Adjacent rulings (2026-07-16 review findings): codex-login's wildcard
+  carve-out RESOLVED 2026-07-16 (narrowed to codex-own-dir equality,
+  mirroring opencode; commit 026944c). $SHARED symlink-target check:
+  DEFERRED 2026-07-16 (Pete) -- the assert hooks' raw `readlink != $SHARED`
+  is sound because they OVERWRITE on any mismatch (fail-closed, never trust
+  a bad link); the deeper "is $SHARED itself a link escaping the identity
+  volume" check is accepted-residual (only an agent sabotaging its own
+  writable machine store can set it up; reachable damage is self/sibling
+  credential clobber, not a containment escape). Carried from the old
+  opencode item: MCP seam merge-vs-replace ANSWERED from source 2026-07-16
+  (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT deep-MERGE, don't replace --
+  config.ts load order), so the `mcp = "inject"` vouch is unblocked
+  (ADR 0033); gemini's seam still unprobed.
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com

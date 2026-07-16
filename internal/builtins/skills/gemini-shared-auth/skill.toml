@@ -1,45 +1,55 @@
 # Built-in companion skill: gemini-shared-auth (ADR 0017).
 #
-# STATUS 2026-07-07: API-KEY sharing VERIFIED live (stored in one box via
-# the symlinked keychain, decrypted in another under the stable hostname)
-# and rotation-immune -- a static key has no refresh tokens. The OAuth
-# path below remains gate-pending. Accepted residual: fresh projects show
-# the auth-method picker once, credential prefilled (selectedAuthType is
-# per-project settings.json; seeding it is consciously deferred).
+# STATUS 2026-07-16: OAuth rotation SAFE (was the one gate blocker). Google's
+# installed-app refresh tokens do NOT rotate -- they are reusable until revoked
+# or expired (6-month inactivity; 100-authorizations-per-account cap, which
+# concurrent refresh never trips), the opposite of Anthropic's single-use
+# rotating token. So two boxes refreshing one shared Gemini OAuth credential
+# will NOT cascade-logout each other (primary-source-verified against Google
+# identity docs; recorded in docs/AGENT-CREDENTIAL-MECHANICS.md, Gemini §3).
+# API-KEY sharing was already VERIFIED live 2026-07-07 (rotation-immune).
 #
-# ⚠ GATE PENDING for OAuth (ADR 0017 / TODO §6): Google's refresh-token rotation
-# behavior is the one UNVERIFIED claim in docs/AGENT-CREDENTIAL-MECHANICS.md.
-# If Google rotates refresh tokens on use (Claude-shaped), two concurrent
-# boxes sharing this credential will cascade-logout each other and this skill
-# must NOT be relied on. It ships for exactly one purpose right now: running
-# that empirical gate — login once, run two boxes concurrently, force a
-# refresh, confirm neither session dies. Record the result in ADR 0017.
+# What remains before the vouch: the LIVE two-box field check (log in once,
+# run two boxes, confirm the shared login works end-to-end) -- source safety is
+# necessary, not sufficient (the v1 lesson). Until it runs, companion_for, not
+# shared_auth_for.
 #
-# Mechanism (mirrors codex-shared-auth): Gemini writes its credentials IN
-# PLACE (source-verified: FileKeychain saveData fs.writeFile, 0.49), so the
-# identity files in
-# ~/.gemini become symlinks into the machine-scoped identity volume. Gemini
-# has no home-relocation env var, so the seam lives inside the real ~/.gemini.
-# DEPENDS on the gemini skill's stable --hostname: 0.49 encrypts the
-# credential with a hostname+username-derived key, so an unstable hostname
-# makes the shared file undecryptable in every other box.
-# trustedFolders.json is deliberately NOT touched — per-project trust already
-# lives in the per-project state volume, which is where it belongs. The first
-# in-box OAuth login (no-browser paste flow) writes through the dangling
-# links straight into the shared volume.
+# Mechanism: PER-FILE symlinks (NOT a whole-tree GEMINI_CLI_HOME relocation --
+# that would sweep per-project history/ into the shared volume and break byre's
+# per-box context isolation). Gemini writes credentials IN PLACE (source-
+# verified: cacheCredentials fs.writeFile for the default PLAINTEXT
+# oauth_creds.json; FileKeychain saveData for the encrypted path), so the
+# identity files in ~/.gemini become symlinks into the machine-scoped identity
+# volume; per-project history/tmp/trustedFolders.json stay per-box, untouched.
+# CORRECTION vs the old note: the default OAuth store is PLAINTEXT
+# oauth_creds.json; gemini-credentials.json (encrypted, hostname-bound) is
+# opt-in (GEMINI_FORCE_ENCRYPTED_FILE_STORAGE) and is what the API-key store
+# always uses -- so the gemini skill's stable --hostname matters for the
+# encrypted/API-key path, NOT for the default OAuth login. Both names are
+# linked regardless.
+#
+# The firstrun hook also SEEDS security.auth.selectedType = "oauth-personal"
+# (when unset): gemini's auth-method dialog rm's oauth_creds.json before a
+# login (deleting our symlink and forking the login off the shared volume --
+# the 2026-07-16 field failure), and a pre-set method skips that dialog so the
+# first login writes THROUGH the intact link. Seeding it also kills the silent
+# API-key-billing footgun (the picker defaulting onto a saved key).
 
-description = "Share one Gemini login across all your projects (API-key path verified; OAuth path gate-pending, see skill.toml)."
+description = "Share one Gemini login across all your projects (OAuth rotation proven safe; live two-box vouch pending, see skill.toml)."
 
 # companion_for is the pairing FACT (ADR 0034): the config UI nests this
 # skill under gemini's row so the relationship is visible where it's enabled.
-# Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): the OAuth
-# path is still gate-pending above, and the offer would put a gate-pending
-# mechanism in front of every gemini user at onboarding, not just the
-# gate-runners. Once the gate passes, SWAP this key for shared_auth_for
-# (they are mutually exclusive).
+# Deliberately NO `shared_auth_for` (the ADR 0025 onboarding offer): rotation
+# is now proven safe (above), but the LIVE two-box field check hasn't run, and
+# the vouch follows the field gate, never source alone (the v1 lesson). Once a
+# real box confirms the shared login works end-to-end, SWAP this key for
+# shared_auth_for (they are mutually exclusive).
 companion_for = "gemini"
 
 [build]
+# jq: the firstrun hook seeds security.auth.selectedType into settings.json
+# (idempotent merge, never clobbering a user's choice).
+apt = ["jq"]
 files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-gemini-shared-auth" }
 
 [[volumes]]

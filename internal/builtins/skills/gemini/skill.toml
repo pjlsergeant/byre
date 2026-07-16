@@ -15,7 +15,9 @@
 description = "The Gemini CLI agent; login persists per project. EXPERIMENTAL: autonomy flag and auth flow not yet live-verified."
 
 [build]
-apt = ["curl", "ca-certificates"]
+# ripgrep: gemini's native search tool; without it every session warns
+# "Ripgrep is not available. Falling back to GrepTool." (field, 0.51.0).
+apt = ["curl", "ca-certificates", "ripgrep"]
 dockerfile = [
   "RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*",
   "RUN npm install -g @google/gemini-cli",
