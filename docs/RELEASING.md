@@ -21,6 +21,13 @@ Release changelog is commit-derived and noisier. Before tagging, turn
 the top `unreleased` heading into the tag's version + date (and start
 the next `unreleased` section when work resumes).
 
+While editing `CHANGES.md`, sweep the settled docs for claims this
+release obsoletes: for each entry, does README / ARCHITECTURE / GLOSSARY
+still describe the pre-change behavior in the present tense? Shipped
+features leave stale "today this is manual" / "planned" prose behind
+them -- that drift is the docs' main rot vector (the 2026-07-16 audit
+found seven such claims, all left by ship waves days earlier).
+
 That's it. The workflow runs the tests, then goreleaser cross-compiles
 linux/darwin × amd64/arm64, writes checksummed `tar.gz` archives, and
 publishes a GitHub Release with a changelog from the commit messages.
