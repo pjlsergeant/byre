@@ -87,9 +87,11 @@ and the in-box binary is 0.2.101.
 
 Constraint discovered at the seam: refresh-path invocations are killed at
 **5 seconds** and their stderr is swallowed. The broker budgets every
-wait to that (lock wait 1.5s, POST 2.5s, no discovery on that path — the
-endpoint cache is pre-warmed at seeding) so a kill can never land mid-POST
-and strand a spent refresh token; it also logs to `broker.log` beside the
+wait to that (lock wait 2.6s — deliberately longer than a winner's whole
+2.2s POST budget, so a lock loser outwaits the winner instead of failing
+into grok's ~300s retry TTL; no discovery on that path — the endpoint
+cache is pre-warmed at seeding) so a kill can never land mid-POST and
+strand a spent refresh token; it also logs to `broker.log` beside the
 store because stderr is invisible there.
 
 ## Alternatives closed by the same source pass
