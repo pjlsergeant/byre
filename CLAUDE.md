@@ -41,14 +41,21 @@ byre develops itself. `byre develop` in this repo (config applied from `byre.pre
 - **pjlsergeant/devlog** — the dev-workflow conventions (diary, commit
   discipline, the scratch volume). Both skills' conventions are placed in the
   box as agent memory, so the workflow rules below are reinforced automatically.
+- **pjlsergeant/inttest** — ships **`byre-inttest`** (on `PATH`): sync the tree
+  to the sacrificial Lima VM and run the gated `BYRE_DOCKER_TESTS=1` suite
+  there. Lives IN this repo (`skills/inttest/`, install + edit loop in
+  `skills/README.md`); the VM template rides the package.
 
 **One-shot bootstrap (fresh machine):** `codereview` and `devlog` moved out of
 the byre binary (2026-07-13) into
 [pjlsergeant-byre-skills](https://github.com/pjlsergeant/pjlsergeant-byre-skills).
 On a fresh clone, `byre preset apply` here reviews this repo's `byre.preset`
-and chauffeurs the two installs (once per machine); the preset's `[sources]`
+and chauffeurs the installs (once per machine); the preset's `[sources]`
 block pins their URIs and digests. A config that references the qualified ids
 without the installs fails loudly at develop with those exact commands.
+(`pjlsergeant/inttest` rides the same flow but installs from a path source —
+this repo's own `skills/inttest/skill.toml` — so run the apply from the repo
+root.)
 
 > The `moarcode/` dir is the **legacy bootstrap harness** (gitignored, not part
 > of byre) used to develop byre before it could host itself. If you are running

@@ -17,11 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **inttest skill.** Skill-ify the sacrificial-VM test loop (built
-  2026-07-14, hand grants + `.byre-devlog/inttest.sh`): egress + key on a
-  machine volume + a `byre-inttest` wrapper on PATH; the Lima template
-  (`wip/byre-inttest.yaml`) rides the skill's docs. Do it when the
-  hand-rolled loop's friction shows.
 - [ ] (M) **fix shared-auth: gemini, grok, opencode** (rolled up
   2026-07-16 from three items, un-parking grok). gemini: run the OAuth
   gate — two boxes past the ~1h expiry, neither dying (API-key path

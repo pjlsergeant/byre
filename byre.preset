@@ -5,7 +5,7 @@
 
 base   = "golang:1.26-bookworm"        # the natural base for a Go project (Go, git, curl all included)
 agent  = "claude"                      # Claude develops byre
-skills = ["codex", "pjlsergeant/codereview", "pjlsergeant/devlog", "grok"]
+skills = ["codex", "pjlsergeant/codereview", "pjlsergeant/devlog", "grok", "pjlsergeant/inttest"]
                                        # codex = the review binary (ride-along, not launched as the agent);
                                        # pjlsergeant/codereview = byre-codereview + the review-loop context;
                                        # pjlsergeant/devlog = the dev-workflow context (diary, scratch volume);
@@ -13,7 +13,13 @@ skills = ["codex", "pjlsergeant/codereview", "pjlsergeant/devlog", "grok"]
                                        #   a fresh clone fails loudly until the one-shot bootstrap in
                                        #   CLAUDE.md runs; [sources] below carries the exact commands;
                                        # grok = ride-along Grok Build CLI (logs in per project;
-                                       #        grok-shared-auth is retired — ADR 0023)
+                                       #        grok-shared-auth is retired — ADR 0023);
+                                       # pjlsergeant/inttest = byre-inttest, the gated suite on the
+                                       #        sacrificial VM — installs from THIS repo (skills/README.md)
+
+# The inttest VM's ssh user: Lima names it after the HOST user, so pass it
+# through (the pjlsergeant/inttest skill's wrapper consumes it).
+env_from_host = { BYRE_INTTEST_USER = "env:USER" }
 
 # The golang images pin GOTOOLCHAIN=local; auto lets `go install` fetch a newer
 # toolchain instead of hard-failing when a tool needs one.
@@ -32,3 +38,7 @@ dockerfile_pre = [
 [sources]
 "pjlsergeant/codereview" = { uri = "https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml", digest = "sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f" }
 "pjlsergeant/devlog" = { uri = "https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml", digest = "sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12" }
+# Path source: inttest lives IN this repo and installs from the working tree
+# (run the install from the repo root). No digest pin — the trust boundary is
+# the checkout itself, and the skill's committed payload hashes still verify.
+"pjlsergeant/inttest" = { uri = "skills/inttest/skill.toml" }

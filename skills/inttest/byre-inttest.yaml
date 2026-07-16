@@ -1,12 +1,13 @@
-# byre-inttest.yaml -- the sacrificial integration-test VM (TODO item
-# "Agent-runnable integration tests"). The whole VM is this file:
+# byre-inttest.yaml -- the sacrificial integration-test VM, part of the
+# pjlsergeant/inttest skill (the `byre-inttest` wrapper is the consumer).
+# The whole VM is this file:
 #
-#   create:  limactl start --name=byre-inttest wip/byre-inttest.yaml
+#   create:  limactl start --name=byre-inttest skills/inttest/byre-inttest.yaml
 #   reset:   limactl delete byre-inttest   (then create again)
 #   pause:   limactl stop byre-inttest
 #
 # It deliberately mounts NOTHING from the host: the box's ssh key reaches a
-# machine whose entire contents are a repo rsync and a Docker image cache.
+# machine whose entire contents are a repo sync and a Docker image cache.
 # The in-box agent syncs the working tree over ssh and runs the gated
 # BYRE_DOCKER_TESTS=1 suite ON the VM (a remote DOCKER_HOST can't work --
 # bind mounts resolve engine-side, so the tests must run where the engine is).
@@ -45,10 +46,21 @@ provision:
       set -eux -o pipefail
       export DEBIAN_FRONTEND=noninteractive
       apt-get update
-      apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go
+      # podman + crun + uidmap/passt/slirp4netns: the ROOTLESS podman path
+      # (keep-id, ADR 0032) is part of the gated suite; BYRE_TEST_ENGINE=podman
+      # pins a run to it.
+      apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go \
+        podman crun uidmap passt slirp4netns
       command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh
   - mode: user
     script: |
       #!/bin/bash
       set -eux -o pipefail
       sudo usermod -aG docker "$USER"
+      # Rootless podman over bare ssh: no user dbus, so buildah RUN steps die
+      # on "sd-bus: Interactive authentication required" unless the runtime is
+      # crun with cgroupfs (runc insists on a systemd slice rootlessly).
+      # Linger keeps the user runtime dir alive between sessions.
+      mkdir -p ~/.config/containers
+      printf '[engine]\nruntime = "crun"\ncgroup_manager = "cgroupfs"\n' > ~/.config/containers/containers.conf
+      sudo loginctl enable-linger "$USER"

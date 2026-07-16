@@ -1,0 +1,63 @@
+#!/bin/bash
+# byre-inttest -- run byre's gated integration suite on the sacrificial
+# inttest VM (skill: pjlsergeant/inttest; Lima template baked at
+# /etc/byre/inttest/byre-inttest.yaml).
+#
+# The suite must run ON the VM, not against a remote DOCKER_HOST: bind mounts
+# resolve engine-side, so the tests have to execute where the engine is. This
+# wrapper tars the working tree over ssh and runs `go test` there.
+#
+#   byre-inttest                                    # ./... -run Integration
+#   byre-inttest ./internal/runner/ -run Integration -v
+#   BYRE_TEST_ENGINE=podman byre-inttest            # pin the engine (VM has both)
+#
+# Config (env):
+#   BYRE_INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
+#                      user after the HOST user, so pass it through:
+#                      env_from_host = { BYRE_INTTEST_USER = "env:USER" }
+#   BYRE_INTTEST_VM    VM address (default host.docker.internal). A different
+#                      address needs its own egress grant on a firewalled box.
+#   BYRE_INTTEST_PORT  ssh port (default 60022, fixed by the Lima template)
+#   BYRE_INTTEST_KEY   private key (default: the machine-volume path below)
+set -eu
+
+KEY="${BYRE_INTTEST_KEY:-/home/dev/.byre-identity/inttest/byre-inttest}"
+VM_USER="${BYRE_INTTEST_USER:-}"
+VM_HOST="${BYRE_INTTEST_VM:-host.docker.internal}"
+VM_PORT="${BYRE_INTTEST_PORT:-60022}"
+
+if [ -z "$VM_USER" ]; then
+  echo "byre-inttest: BYRE_INTTEST_USER is not set (the VM's ssh user)." >&2
+  echo "Lima names the VM user after the HOST user; pass it through in byre.config:" >&2
+  echo '  env_from_host = { BYRE_INTTEST_USER = "env:USER" }' >&2
+  exit 1
+fi
+if [ ! -f "$KEY" ]; then
+  echo "byre-inttest: no ssh key at $KEY." >&2
+  echo "Once per machine -- create the VM and place the key on the shared volume:" >&2
+  echo "  host:  ssh-keygen -t ed25519 -N '' -f ~/.ssh/byre-inttest       # BEFORE limactl start" >&2
+  echo "  host:  limactl start --name=byre-inttest skills/inttest/byre-inttest.yaml" >&2
+  echo "  host:  byre deliver ~/.ssh/byre-inttest                          # from this project" >&2
+  echo "  box:   mv /inbox/byre-inttest $KEY && chmod 600 $KEY" >&2
+  exit 1
+fi
+# The volume is dev-owned but a fresh copy may land group-readable, which ssh
+# refuses; the key is ours, so keep it usable.
+chmod 600 "$KEY"
+
+SSH="ssh -i $KEY -p $VM_PORT -o StrictHostKeyChecking=accept-new"
+VM="$VM_USER@$VM_HOST"
+# Per-worktree destination so concurrent sessions don't trample each other's
+# synced tree (BYRE_WORKTREE is per-worktree, = BYRE_PROJECT on a plain checkout).
+DEST="byre-${BYRE_WORKTREE:-default}"
+
+# tar-over-ssh (boxes don't carry rsync); full re-extract per run -- the tree
+# is small and Go's build/module caches live on the VM outside it.
+tar -C /workspace -czf - --exclude .git --exclude .byre-devlog --exclude moarcode . \
+  | $SSH "$VM" "rm -rf $DEST && mkdir -p $DEST && tar -xzf - -C $DEST"
+
+[ $# -gt 0 ] || set -- ./... -run Integration
+# shell-quote each go test arg for the remote shell (a -run pattern may carry
+# |, quotes, spaces). BYRE_TEST_ENGINE forwards so the suite can be pinned to
+# an engine (auto prefers docker; the VM has both).
+$SSH "$VM" "cd $DEST && BYRE_DOCKER_TESTS=1 BYRE_TEST_ENGINE=${BYRE_TEST_ENGINE:-} go test$(printf ' %q' "$@")"
