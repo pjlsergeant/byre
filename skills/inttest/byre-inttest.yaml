@@ -3,7 +3,7 @@
 # The whole VM is this file:
 #
 #   create:  limactl start --name=byre-inttest skills/inttest/byre-inttest.yaml
-#   reset:   limactl delete byre-inttest   (then create again)
+#   reset:   limactl stop byre-inttest && limactl delete byre-inttest   (then create again)
 #   pause:   limactl stop byre-inttest
 #
 # It deliberately mounts NOTHING from the host: the box's ssh key reaches a
@@ -48,9 +48,13 @@ provision:
       apt-get update
       # podman + crun + uidmap/passt/slirp4netns: the ROOTLESS podman path
       # (keep-id, ADR 0032) is part of the gated suite; BYRE_TEST_ENGINE=podman
-      # pins a run to it.
+      # pins a run to it. aardvark-dns is a netavark Recommends that
+      # --no-install-recommends would drop -- without it container DNS is off
+      # AND the netns-init helper races v6 address setup, so the firewall v6
+      # guard test fails (found live on this template's first re-create,
+      # 2026-07-16).
       apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go \
-        podman crun uidmap passt slirp4netns
+        podman crun uidmap passt slirp4netns aardvark-dns
       command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh
   - mode: user
     script: |
