@@ -25,10 +25,13 @@ the rationale lives.
   `--auto`, firewalled egress), then run its rotation gate; Pete reports
   the shared login already misbehaving (2026-07-16) — possibly gate 2
   failing in the field, diagnose as part of the gate; on pass, swap
-  `companion_for` for `shared_auth_for`. grok: rebuild per the two gated
-  designs in wip/grok-shared-auth-v2-designs.md — run those gates BEFORE
-  building (ADR 0023); `XAI_API_KEY` stays ruled out on cost. Facts +
-  gate records: docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
+  `companion_for` for `shared_auth_for`. grok: BUILT 2026-07-16 (v2
+  auth broker, ADR 0036 — pre-build gates all answered from the
+  published grok source); remaining is the FIELD gate: seed a live box,
+  watch a ~6h rollover refresh through the broker, then swap
+  `companion_for` for `shared_auth_for` (same shape as opencode's).
+  `XAI_API_KEY` stays ruled out on cost. Facts + gate records:
+  docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
   Adjacent, ruling pending: $SHARED symlink-target check in the
   shared-auth hooks + codex-login's wildcard carve-out (2026-07-16
   review findings). Carried from the old opencode item: MCP seam probed

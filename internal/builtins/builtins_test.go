@@ -1,6 +1,8 @@
 package builtins
 
 import (
+	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -8,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/build"
 	"github.com/pjlsergeant/byre/internal/config"
@@ -760,38 +763,327 @@ func TestGrokBundledHookBehavior(t *testing.T) {
 	}
 }
 
-// TestGrokSharedAuthRetiredStub pins the RETIRED shape (ADR 0023): the skill
-// must still RESOLVE (configs naming it must not break a launch) while
-// contributing nothing — no hooks, no volumes, no identity mount. The
-// description carries the retirement notice into the picker. If a rebuild
-// lands (wip/grok-shared-auth-v2-designs.md), this test is the one to
-// replace.
-func TestGrokSharedAuthRetiredStub(t *testing.T) {
+// TestGrokSharedAuthBrokerShape pins the v2 rebuild (ADR 0036, replacing the
+// ADR 0023 retired stub this test used to pin): the companion contributes the
+// broker env (grok's external-auth seam), the machine-scoped identity volume,
+// the seeding hook + broker script, and its own auth.x.ai egress. The vouch
+// key stays companion_for until the live field gate runs — shared_auth_for
+// would put the skill in the onboarding offer (ADR 0025), and the v1 lesson
+// is that the vouch follows the field gate.
+func TestGrokSharedAuthBrokerShape(t *testing.T) {
 	_, cat := testCat(t)
 	res, err := skills.Resolve(config.Config{Agent: "grok", Skills: []string{"grok-shared-auth"}}, cat)
 	if err != nil {
-		t.Fatalf("a config naming the retired skill must still resolve: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
-	for _, b := range res.BuildBlocks() {
-		if b.Name != "grok-shared-auth" {
-			continue
-		}
-		if len(b.Files) != 0 {
-			t.Errorf("retired stub must ship no files, got %+v", b.Files)
-		}
+	if got := res.Env()["GROK_AUTH_PROVIDER_COMMAND"]; got != "bash /etc/byre/grok-auth-broker" {
+		t.Errorf("broker env not contributed, got %q", got)
 	}
+	var vol *config.Volume
 	for _, v := range res.Volumes() {
 		if v.Name == "grok-identity" {
-			t.Errorf("retired stub must not mount the identity volume: %+v", v)
+			v := v
+			vol = &v
+			break
 		}
+	}
+	if vol == nil {
+		t.Fatal("grok-identity volume missing")
+	}
+	if vol.Scope != "machine" || vol.Target != "/home/dev/.byre-identity/grok" {
+		t.Errorf("identity volume must be machine-scoped at the identity path, got %+v", vol)
+	}
+	staged := map[string]bool{}
+	for _, b := range res.BuildBlocks() {
+		if b.Name == "grok-shared-auth" || b.Name == "byre/grok-shared-auth" {
+			for _, f := range b.Files {
+				staged[f.Dest] = true
+			}
+		}
+	}
+	for _, dst := range []string{"/etc/byre/firstrun.d/00-grok-shared-auth", "/etc/byre/grok-auth-broker"} {
+		if !staged[dst] {
+			t.Errorf("file %s not staged (got %v)", dst, staged)
+		}
+	}
+	egress := false
+	for _, h := range res.Egress() {
+		if h == "auth.x.ai:443" {
+			egress = true
+		}
+	}
+	if !egress {
+		t.Error("auth.x.ai egress missing")
 	}
 	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "grok-shared-auth"), "skill.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "RETIRED") {
-		t.Error("retirement notice missing from the skill description")
+	if !strings.Contains(string(b), `companion_for = "grok"`) || strings.Contains(string(b), "\nshared_auth_for") {
+		t.Error("vouch shape wrong: want companion_for (field gate pending), not shared_auth_for")
 	}
+}
+
+// TestGrokLoginHookStandsDownForSharedAuth pins the handoff between the grok
+// skill's login hook and the shared-auth companion: with the broker env set,
+// the hook must not start a per-box login (an orphaned chain) — but the
+// symlink heal still runs first, since a planted link misbehaves either way.
+func TestGrokLoginHookStandsDownForSharedAuth(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "grok"), "grok-login.sh")
+	home := t.TempDir()
+
+	// A fake grok on PATH records any invocation; the hook must never reach it.
+	bin := t.TempDir()
+	marker := filepath.Join(home, "grok-was-called")
+	fake := "#!/bin/sh\ntouch " + marker + "\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "grok"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "auth.json")
+	if err := os.Symlink("/nonexistent-target", link); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", hook)
+	cmd.Env = append(os.Environ(),
+		"GROK_HOME="+home,
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"GROK_AUTH_PROVIDER_COMMAND=bash /etc/byre/grok-auth-broker",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Error("symlinked credential must still be healed before standing down")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Error("hook must not invoke grok when the shared-auth broker is configured")
+	}
+}
+
+// TestGrokAuthBrokerBehavior exercises the broker script against a fake curl:
+// the fresh fast path, a rotating refresh, the invalid_grant move-aside (the
+// self-heal for a dead chain, v1's corpse included), and the transient-failure
+// degrade to the cached token. The store fixtures are grok-native auth.json
+// shapes (scope-keyed map, refresh_token-bearing OIDC entry) — the same file
+// `GROK_AUTH_PATH` seeding writes.
+func TestGrokAuthBrokerBehavior(t *testing.T) {
+	for _, dep := range []string{"bash", "jq", "flock", "date"} {
+		if _, err := exec.LookPath(dep); err != nil {
+			t.Skipf("%s not on PATH", dep)
+		}
+	}
+	_, cat := testCat(t)
+	broker := filepath.Join(skillDir(t, cat, "grok-shared-auth"), "grok-auth-broker.sh")
+
+	type out struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+		Issuer      string `json:"issuer"`
+	}
+	// run executes the broker with BYRE_IDENTITY_BASE=base and the given fake
+	// curl body (empty = no curl override), returning stdout, stderr, exit err.
+	run := func(t *testing.T, base, fakeCurl string) (string, string, error) {
+		t.Helper()
+		bin := t.TempDir()
+		if fakeCurl != "" {
+			if err := os.WriteFile(filepath.Join(bin, "curl"), []byte(fakeCurl), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("bash", broker)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "PATH="+bin+":"+os.Getenv("PATH"))
+		var so, se strings.Builder
+		cmd.Stdout, cmd.Stderr = &so, &se
+		err := cmd.Run()
+		return so.String(), se.String(), err
+	}
+	// seedStore builds an identity base (what BYRE_IDENTITY_BASE points at);
+	// the broker's files live under its grok/ subdir.
+	seedStore := func(t *testing.T, ttl time.Duration) (idbase, dir string) {
+		t.Helper()
+		idbase = t.TempDir()
+		base := filepath.Join(idbase, "grok")
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		store := fmt.Sprintf(`{"https://auth.x.ai::client-123":{"key":"old-access","auth_mode":"Oidc","create_time":"2026-01-01T00:00:00Z","user_id":"u1","refresh_token":"rt-1","expires_at":%q,"oidc_issuer":"https://auth.x.ai","oidc_client_id":"client-123"}}`,
+			time.Now().UTC().Add(ttl).Format(time.RFC3339))
+		if err := os.WriteFile(filepath.Join(base, "auth.json"), []byte(store), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// Pre-warm the endpoint cache: the refresh path must never need
+		// discovery inside its 5s budget.
+		if err := os.WriteFile(filepath.Join(base, "token_endpoint"), []byte("https://auth.x.ai/token"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return idbase, base
+	}
+
+	t.Run("no store fails with re-seed guidance", func(t *testing.T) {
+		_, se, err := run(t, t.TempDir(), "")
+		if err == nil {
+			t.Fatal("want non-zero exit with no store")
+		}
+		if !strings.Contains(se, "relaunch") {
+			t.Errorf("stderr should tell the user how to re-seed, got %q", se)
+		}
+	})
+
+	t.Run("fresh token emitted without refresh", func(t *testing.T) {
+		idbase, _ := seedStore(t, 2*time.Hour)
+		// A curl that explodes proves the fast path makes no network call.
+		so, se, err := run(t, idbase, "#!/bin/sh\necho fake-curl-invoked >&2\nexit 97\n")
+		if err != nil {
+			t.Fatalf("broker failed: %v (stderr %q)", err, se)
+		}
+		var o out
+		if err := json.Unmarshal([]byte(so), &o); err != nil {
+			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
+		}
+		if o.AccessToken != "old-access" || o.ExpiresIn < 3600 || o.Issuer != "https://auth.x.ai" {
+			t.Errorf("bad emit: %+v", o)
+		}
+	})
+
+	t.Run("stale token refreshes and rotates the store", func(t *testing.T) {
+		idbase, base := seedStore(t, 100*time.Second) // below the 420s margin
+		fake := "#!/bin/sh\n" +
+			`printf '%s\n%s' '{"access_token":"new-access","refresh_token":"rt-2","expires_in":21600}' 200` + "\n"
+		so, se, err := run(t, idbase, fake)
+		if err != nil {
+			t.Fatalf("broker failed: %v (stderr %q)", err, se)
+		}
+		var o out
+		if err := json.Unmarshal([]byte(so), &o); err != nil {
+			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
+		}
+		if o.AccessToken != "new-access" || o.ExpiresIn != 21600 {
+			t.Errorf("bad emit after refresh: %+v", o)
+		}
+		b, err := os.ReadFile(filepath.Join(base, "auth.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{`"new-access"`, `"rt-2"`} {
+			if !strings.Contains(string(b), want) {
+				t.Errorf("store not rotated, missing %s: %s", want, b)
+			}
+		}
+		if strings.Contains(string(b), "rt-1") {
+			t.Error("spent refresh token still in the store")
+		}
+	})
+
+	t.Run("invalid_grant moves the dead store aside", func(t *testing.T) {
+		idbase, base := seedStore(t, 100*time.Second)
+		fake := "#!/bin/sh\n" +
+			`printf '%s\n%s' '{"error":"invalid_grant"}' 400` + "\n"
+		_, se, err := run(t, idbase, fake)
+		if err == nil {
+			t.Fatal("want non-zero exit on a dead chain")
+		}
+		if _, err := os.Stat(filepath.Join(base, "auth.json")); !os.IsNotExist(err) {
+			t.Error("dead store must be moved aside")
+		}
+		dead, _ := filepath.Glob(filepath.Join(base, "auth.json.dead-*"))
+		if len(dead) != 1 {
+			t.Errorf("want one dead-store file, got %v", dead)
+		}
+		if !strings.Contains(se, "grok login --device-auth") {
+			t.Errorf("stderr should carry the re-seed command, got %q", se)
+		}
+	})
+
+	t.Run("transient failure degrades to the cached token", func(t *testing.T) {
+		idbase, _ := seedStore(t, 200*time.Second) // stale enough to try, alive enough to emit
+		so, se, err := run(t, idbase, "#!/bin/sh\nexit 6\n")
+		if err != nil {
+			t.Fatalf("broker failed: %v (stderr %q)", err, se)
+		}
+		var o out
+		if err := json.Unmarshal([]byte(so), &o); err != nil {
+			t.Fatalf("stdout not the provider JSON: %v (%q)", err, so)
+		}
+		if o.AccessToken != "old-access" || o.ExpiresIn <= 30 || o.ExpiresIn > 200 {
+			t.Errorf("degrade should emit the cached token with its true remaining life: %+v", o)
+		}
+	})
+}
+
+// TestGrokSharedAuthSeedHookBehavior exercises the firstrun hook's non-
+// interactive paths: an already-seeded store is left alone, and a real
+// per-box login (refresh_token present) is promoted to the machine store
+// and dropped locally so exactly one copy of the chain exists.
+func TestGrokSharedAuthSeedHookBehavior(t *testing.T) {
+	for _, dep := range []string{"jq", "date"} {
+		if _, err := exec.LookPath(dep); err != nil {
+			t.Skipf("%s not on PATH", dep)
+		}
+	}
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "grok-shared-auth"), "00-grok-shared-auth.sh")
+
+	run := func(t *testing.T, idbase, home string) string {
+		t.Helper()
+		bin := t.TempDir()
+		// fake grok: the hook needs one on PATH; seeding must not be reached
+		// in these subtests, so reaching it is a loud failure.
+		if err := os.WriteFile(filepath.Join(bin, "grok"), []byte("#!/bin/sh\necho SEED-LOGIN-REACHED\nexit 1\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// fake curl keeps the endpoint-cache warmer off the network.
+		if err := os.WriteFile(filepath.Join(bin, "curl"), []byte("#!/bin/sh\nexit 6\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", hook)
+		cmd.Env = append(os.Environ(),
+			"BYRE_IDENTITY_BASE="+idbase, "GROK_HOME="+home,
+			"PATH="+bin+":"+os.Getenv("PATH"))
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+		return string(out)
+	}
+	pair := `{"https://auth.x.ai::c":{"key":"k","refresh_token":"rt","oidc_issuer":"https://auth.x.ai","oidc_client_id":"c"}}`
+
+	t.Run("seeded store is left alone", func(t *testing.T) {
+		idbase, home := t.TempDir(), t.TempDir()
+		store := filepath.Join(idbase, "grok", "auth.json")
+		if err := os.MkdirAll(filepath.Dir(store), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(store, []byte(pair), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out := run(t, idbase, home)
+		if strings.Contains(out, "SEED-LOGIN-REACHED") {
+			t.Error("hook must not log in when the store is seeded")
+		}
+		if b, _ := os.ReadFile(store); string(b) != pair {
+			t.Error("seeded store was modified")
+		}
+	})
+
+	t.Run("local login is promoted and dropped", func(t *testing.T) {
+		idbase, home := t.TempDir(), t.TempDir()
+		local := filepath.Join(home, "auth.json")
+		if err := os.WriteFile(local, []byte(pair), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out := run(t, idbase, home)
+		if !strings.Contains(out, "promoting") {
+			t.Errorf("promotion must be announced, got %q", out)
+		}
+		if b, err := os.ReadFile(filepath.Join(idbase, "grok", "auth.json")); err != nil || string(b) != pair {
+			t.Errorf("pair not promoted to the store: %v %q", err, b)
+		}
+		if _, err := os.Stat(local); !os.IsNotExist(err) {
+			t.Error("local copy must be dropped after promotion (one chain, one home)")
+		}
+	})
 }
 
 // TestDevloopRenamedStub pins the devloop -> devlog rename's compat stub: a
@@ -1364,7 +1656,7 @@ func TestDockerHostComposeEnvHook(t *testing.T) {
 // must NOT (a real skill misclassified as a stub would vanish from pickers).
 func TestBundledStubClassification(t *testing.T) {
 	_, cat := testCat(t)
-	stubs := map[string]bool{"devloop": true, "grok-shared-auth": true}
+	stubs := map[string]bool{"devloop": true}
 	for _, name := range skills.ListSkills(cat) {
 		sk, err := skills.Load(cat, name)
 		if err != nil {

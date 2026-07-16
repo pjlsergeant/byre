@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **grok-shared-auth v2: the auth broker (ADR 0036).** One Grok
+  subscription login shared across boxes again — rebuilt on
+  `GROK_AUTH_PROVIDER_COMMAND`, grok's own (now publicly documented)
+  external-auth seam, replacing the retired v1 symlink (ADR 0023). A
+  small broker script answers grok's credential requests under one
+  machine-wide flock, so exactly one process ever spends the single-use
+  refresh token; seeding logs in through grok itself
+  (`GROK_AUTH_PATH` → the shared store), dead chains self-heal by
+  move-aside + re-seed (v1's orphaned credential included), and a
+  transient refresh failure degrades to the cached token instead of
+  breaking the session. Every pre-build gate from the parked designs
+  was answered against the published Grok Build source (the tree also
+  upgraded/corrected the AGENT-CREDENTIAL-MECHANICS Grok record:
+  temp+rename and reuse-revocation confirmed; the headless auth hang is
+  vendor-fixed by 0.2.101; grok's own lock is a real flock that still
+  cannot serialize across containers). Hand-enable alongside grok
+  (`skills = ["grok-shared-auth"]`); the onboarding offer
+  (`shared_auth_for`) waits for the live field gate.
+
 - **Named layers and the extends chain (ADR 0035).** Shared,
   user-authored config baselines at `~/.byre/layers/<name>/layer.config`:
   a project's `byre.config` (or another layer) names at most one parent

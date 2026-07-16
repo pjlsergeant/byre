@@ -752,8 +752,8 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 // The companion PAIRING (ADR 0034) is a fact every live companion declares —
 // via companion_for when gate-pending, or implied by shared_auth_for once
 // vouched — and is what the config UI's nesting rides. Distinct from the
-// vouch table above: gemini and opencode pair here while offering nothing
-// there. grok-shared-auth is a retired stub and claims no companionship.
+// vouch table above: gemini, grok and opencode pair here while offering
+// nothing there (each's shared_auth_for vouch waits on its field gate).
 func TestBuiltinCompanionDeclarations(t *testing.T) {
 	home := t.TempDir()
 	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
@@ -765,7 +765,7 @@ func TestBuiltinCompanionDeclarations(t *testing.T) {
 		"codex-shared-auth":    "codex",
 		"gemini-shared-auth":   "gemini",
 		"opencode-shared-auth": "opencode",
-		"grok-shared-auth":     "",
+		"grok-shared-auth":     "grok",
 	} {
 		sk, err := Load(cat, skill)
 		if err != nil {

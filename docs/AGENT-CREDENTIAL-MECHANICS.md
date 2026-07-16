@@ -11,9 +11,9 @@ open enough for all needed fetches; the only web failures were moved URLs
 (404s), each re-located -- no findings below are firewall-degraded. `gh` is not
 installed in this box (used the GitHub REST API over WebFetch instead).
 The Grok section was added 2026-07-09 (Grok CLI 0.2.93 live in this box,
-authenticated with a seeded consumer credential; grok is closed source, so its
-section is empirical + vendor docs, with the write/rotation claims explicitly
-unverifiable from source).
+authenticated with a seeded consumer credential; grok was closed source then,
+so the section began as empirical + vendor docs) and upgraded 2026-07-16 from
+the published Grok Build source (see the section header).
 The OpenCode section was added 2026-07-16 (opencode 1.18.2, the linux-x64
 binary from npm, run live in a PROXIED container -- not a byre box; opencode.ai
 and models.dev egress were denied there, which itself produced findings.
@@ -360,13 +360,17 @@ existing authentication credential is cached", else use env vars (same URL as
 above) -- no endorsement or prohibition of copying `oauth_creds.json`, but
 the cached-credential path is the only subscription option headless.
 
-## xAI Grok CLI (0.2.93, empirical + vendor docs -- closed source)
+## xAI Grok CLI (0.2.93-0.2.101, empirical + vendor docs + SOURCE)
 
 Added 2026-07-09, from a live authenticated install in this box (the host's
-consumer credential, seeded read-only for inspection). Grok CLI ships as a
-closed-source static binary, so unlike Codex/Gemini nothing here is
-source-verified; claims are either observed live or quoted from the vendor
-README.
+consumer credential, seeded read-only for inspection); at the time the CLI
+was closed source and nothing here could be source-verified. **UPGRADED
+2026-07-16: xAI published the Grok Build source**, and a full pass over the
+auth subsystem (local tree `~/dev/grok-build`; the tree carries all three
+log strings the 0.2.93 field failure produced, and the in-box binary is
+0.2.101) confirmed, corrected, and extended the record below. Source-derived
+claims are marked; the empirical history is kept verbatim — it is what the
+gates were run against.
 
 ### 1. State-dir inventory
 
@@ -393,9 +397,16 @@ scopes -- `https://auth.x.ai::<client-id>` (OIDC) and
 field answered it: refreshed pairs never reached the shared file through
 the symlink (its mtime froze at login time while boxes kept refreshing),
 which is the temp+rename signature -- the rename replaces the symlink with
-a private local file and the credential silently forks. Direct strace
-confirmation is still worthwhile before any rebuild (the parked designs'
-gate), but file-sharing through a symlink is dead as a mechanism.
+a private local file and the credential silently forks.
+
+**SOURCE-CONFIRMED 2026-07-16** (no strace needed): `write_auth_json`
+writes a sibling `auth.json.<pid>.tmp` (0600, fsync'd) and `rename(2)`s it
+over the path -- which replaces a symlink with a regular file, exactly the
+field signature. One nuance: on `ENOSPC` only, it falls back to a
+non-atomic in-place truncate+rewrite (with restore-on-failure), and THAT
+path follows symlinks -- irrelevant to any design, but it explains why a
+fork needs a healthy disk. File-sharing through a symlink stays dead as a
+mechanism.
 
 ### 3. Refresh-token rotation semantics
 
@@ -408,13 +419,24 @@ days" -- the shared copy expired the same night it was minted. Second,
 rotation is effectively **single-use with permanent chain failure**: the
 stale shared pair went "ServerRejected" with `refresh_chain short-circuit
 on permanent failure` in the event log, unrecoverable short of a fresh
-login. (Strictly, the field evidence cannot distinguish "reuse revoked the
-chain" from "the pair aged out unrefreshed"; byre's working assumption is
-revoke-on-reuse, the standard OAuth breach response. The replay experiment
-that would isolate it is recorded in the parked designs doc.) Sessions
-re-read `auth.json` lazily on expiry ("auth recovery: disk token expired"),
-not via a file watch -- rotation does not kill in-flight access tokens,
-which is why concurrent sessions on ONE real file coexist.
+login. (Strictly, the field evidence could not distinguish "reuse revoked
+the chain" from "the pair aged out unrefreshed"; byre's working assumption
+was revoke-on-reuse. **SOURCE-CONFIRMED 2026-07-16, replay experiment not
+needed**: vendor comments state a doubly-spent refresh token "triggers
+invalid_grant + token-family revocation", and grok holds its file lock
+across the IdP call specifically so "only one participant ever spends a
+given refresh token". `invalid_grant`/`invalid_client` are the ONLY
+terminal error codes; `invalid_grant` verdicts are sticky until the
+credential itself changes.) Sessions re-read `auth.json` lazily on expiry
+("auth recovery: disk token expired") -- and, source-addendum: a config
+file-watcher DOES hot-swap a changed `auth.json` into running sessions
+(watching `$GROK_HOME` only -- it ignores `GROK_AUTH_PATH`, see §6), plus
+a proactive background refresh fires ~300s+jitter before expiry. Either
+way rotation does not kill in-flight access tokens, which is why
+concurrent sessions on ONE real file coexist. Cross-PROCESS refresh on one
+file is properly serialized (flock held across the IdP call + adopt-from-
+disk-before-spending); cross-CONTAINER it can never be -- see §6's lock
+finding.
 
 ### 4. Env overrides
 
@@ -438,8 +460,26 @@ which is why concurrent sessions on ONE real file coexist.
   ruled out as the shared-auth path on cost: xAI API billing is a separate
   pay-per-token track (no subscription credits), ~50x the flat subscription
   at coding-agent volumes.
-- `GROK_AUTH_PROVIDER_COMMAND` -- delegate auth to an external binary whose
-  stdout becomes the stored token; the enterprise/SSO escape hatch.
+- `GROK_AUTH_PROVIDER_COMMAND` -- delegate auth to an external command;
+  the seam under grok-shared-auth v2 (ADR 0036). PUBLICLY documented as of
+  the 0.2.101 user guide (no longer gray). Full contract (source +  guide,
+  2026-07-16): run via `sh -c`, stdin null; stdout is either a bare token
+  (assumed 30-day lifetime, or `GROK_AUTH_TOKEN_TTL`) or JSON
+  `{access_token, refresh_token?, expires_in?, issuer?}`; exit non-zero =
+  failure; `GROK_AUTH_EXPIRED=1` is set on refresh re-runs. TWO executors:
+  the login/mint path (300s timeout, stderr surfaced) and the refresh path
+  (**5s timeout, stderr swallowed, killed on overrun**). With the command
+  set, `build_refresher` NEVER constructs the OIDC refresher -- the command
+  is the refresh authority for every token type, on expiry and on 401;
+  401 recovery never falls back to interactive login.
+- `GROK_AUTH_PATH` -- relocates the credential FILE (default
+  `$GROK_HOME/auth.json`) for the whole auth-manager: reads, writes, login
+  persistence, and the lock (a sibling `auth.json.lock`). Source-verified
+  2026-07-16; NOT in the user guide. Two bypasses: the config watcher and
+  hot-reloader stay pinned to `$GROK_HOME/auth.json`. byre uses it for
+  exactly one thing -- seeding the shared store through grok's own login
+  (ADR 0036) -- and never for cross-box file sharing (the lock cannot
+  serialize across containers; §6).
 - No plan-scoped long-lived token equivalent to `claude setup-token`.
 
 ### 5. Vendor guidance on sharing
@@ -451,7 +491,9 @@ credential), and a host-minted credential seeded into a fresh `GROK_HOME`
 worked for inference in this box; but the ~6h access-token lifetime means
 any shared copy goes stale within hours without a shared refresh path --
 and the symlink mechanism that was meant to provide one failed its field
-gate (§6). Native headless login exists:
+gate (§6); the working shared refresh path is the v2 broker (ADR 0036),
+which sidesteps sharing grok-written files entirely. Native headless login
+exists:
 `grok login --device-auth` (aliased `--device-code`) -- documented by
 `grok login --help` on 0.2.93 and by the shipped user guide
 (`~/.grok/docs/user-guide/02-authentication.md`); the TOP-LEVEL vendor README
@@ -482,19 +524,48 @@ Findings from the retirement investigation (2026-07-11, this box):
   how the files are shared -- this forecloses "share the whole GROK_HOME"
   as a fix, and any lock-symlink scheme besides (`O_EXCL` creation does
   not follow symlinks).
-- `GROK_AUTH_PROVIDER_COMMAND` (shipped user guide only; no public
-  footprint): grok delegates credential acquisition to an external command
-  -- stderr surfaces to the user, **stdout is stored as the access token**,
-  non-zero exit falls back to interactive login. This inverts the
-  acts-first/observed-after problem and is the seam under the parked
-  "auth broker" rebuild design.
+  **SOURCE-CORRECTED 2026-07-16 -- conclusion unchanged, mechanism
+  sharper**: the lock is better than the file content suggested (a REAL
+  `flock`, held across the whole IdP refresh; `PID:timestamp` is only a
+  staleness sentinel; within one PID namespace it is sound) and worse
+  across boxes than assumed: the staleness probe is `kill(pid, 0)`, so a
+  holder in another PID namespace reads as ESRCH = dead and a contender
+  **unlinks a LIVE lock near-instantly** (first non-blocking attempt, the
+  60s threshold never consulted), leaving both processes flocked on
+  different inodes and both spending the refresh token. Cross-container
+  serialization needs a lock grok doesn't interpret -- the v2 broker's.
+- `GROK_AUTH_PROVIDER_COMMAND` (then shipped-user-guide only; publicly
+  documented by 0.2.101): grok delegates credential acquisition to an
+  external command -- stderr surfaces to the user, **stdout is stored as
+  the access token**, non-zero exit falls back to interactive login (on
+  the login path only; full contract in §4). This inverts the
+  acts-first/observed-after problem and became the seam under the v2
+  rebuild.
+- The "headless runs HANG on a device prompt" failure shape is
+  **vendor-fixed** by 0.2.101: `grok -p`'s auth path bails with re-auth
+  instructions instead of falling through to interactive login (source:
+  the print-mode client rejects interactive-only auth methods; verified
+  live in this box against an empty `GROK_HOME` -- exit 1, no hang).
+  Boxes pinning older binaries can still hang; `grok update` or a rebuild
+  moves them past it.
 
-Resolution: the skill is retired to a resolvable no-op stub; the grok
-skill's login hook removes ANY symlinked `auth.json` (healing damaged
-boxes at next launch); per-box logins are the supported shape. Two rebuild
-designs (auth broker; fork-shipping watcher + refresh jitter) are PARKED
-with their own gates in `wip/grok-shared-auth-v2-designs.md`. The
-`XAI_API_KEY` path is ruled out on cost (see §4).
+Resolution history: 2026-07-12, the skill was retired to a resolvable
+no-op stub; the grok skill's login hook removes ANY symlinked `auth.json`
+(healing damaged boxes at next launch); per-box logins became the
+supported shape; two rebuild designs were parked with pre-build gates.
+**2026-07-16: rebuilt as the v2 auth broker (ADR 0036)** -- every parked
+gate was answered from the published source (this section carries the
+upgrades) and the broker design won: no resident process, one flock in
+the machine identity volume serializing all refreshes, the shared store
+seeded through grok's own login via `GROK_AUTH_PATH`, dead chains moved
+aside self-healingly (v1's orphaned volume credential included). The
+watcher+jitter design is obsolete (its race now has a confirmed maximal
+price -- family revocation) and the no-broker `GROK_AUTH_PATH` file-share
+variant is foreclosed by the ESRCH lock-steal above. The skill ships
+`companion_for = "grok"`; the `shared_auth_for` vouch waits for the one
+gate source cannot answer -- a live ~6h rollover through the broker in a
+real box (the v1 lesson: vouch AFTER the field gate). The `XAI_API_KEY`
+path stays ruled out on cost (see §4).
 
 ## OpenCode (1.18.2, empirical + binary-embedded source)
 

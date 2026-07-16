@@ -1,5 +1,10 @@
 # Retire grok-shared-auth; park the rebuild designs
 
+> Superseded in part by [ADR 0036](0036-grok-shared-auth-v2-broker.md)
+> (2026-07-16): the parked broker design was gated against the published
+> Grok source and built. The retirement analysis below stands as the
+> record of why v1's file-sharing shape can never work.
+
 grok-shared-auth -- the companion skill sharing one Grok login across all
 of a user's boxes (the ADR 0017 pattern, codex-shaped: `auth.json`
 symlinked into a machine-scoped identity volume) -- is **retired**
