@@ -100,6 +100,7 @@ type Opts struct {
 	Cols, Rows int               // pane geometry; 0 → 100x30
 	Env        map[string]string // set in the child (e.g. BYRE_HOME, PATH)
 	Unset      []string          // removed from the child (e.g. DISPLAY)
+	Dir        string            // child working directory (GNU env -C; Linux-only, like the tier)
 }
 
 // Session is one live pane in a private tmux server. The pane outlives its
@@ -150,6 +151,9 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 	// /usr/bin/env carries the overrides and unsets; tmux hands the command
 	// to a shell, so every word is single-quoted.
 	cmd := []string{"/usr/bin/env"}
+	if o.Dir != "" {
+		cmd = append(cmd, "-C", o.Dir)
+	}
 	for _, k := range o.Unset {
 		cmd = append(cmd, "-u", k)
 	}

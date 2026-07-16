@@ -161,6 +161,11 @@ Exit status: run the command through a wrapper that records it —
 version-sensitive (ubuntu's tmux 3.4 reported 0 where 3.5a reported the
 real status; caught by CI on this harness's first push).
 
+Never send two `Escape`s in one `send-keys` — they arrive as `\x1b\x1b`
+and bubbletea reads that as a single alt-modified key, so both vanish
+(found live by the screen-walker test). One Escape per send, waiting
+for each screen in between.
+
 `WaitFor` is a poll loop over `capture-pane` that also fails fast when
 the process dies; `WaitForAfter` additionally rejects a match that was
 already on screen before the action (transition semantics -- a
