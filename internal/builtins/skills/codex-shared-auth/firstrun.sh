@@ -27,6 +27,11 @@ fi
 # local file, silently forking off the shared credential. When both a local
 # file AND a shared credential exist, the shared one wins (the local copy is
 # a fork; discarding it is the healing).
+# Raw `readlink != $SHARED` (lexical) is sound here BECAUSE this hook
+# OVERWRITES on any mismatch -- it never trusts a link, so no canonicalization
+# is needed (unlike the login hook, which trusts-and-keeps). Whether $SHARED
+# itself could be a link escaping the identity volume is a deferred residual
+# (only an agent sabotaging its own writable store sets that up; see TODO.md).
 if [ ! -L "$cred" ] || [ "$(readlink "$cred")" != "$SHARED" ]; then
   if [ -f "$cred" ] && [ ! -L "$cred" ] && [ -e "$SHARED" ]; then
     # Say it out loud: a local fork is being discarded for the shared login.

@@ -32,12 +32,19 @@ the rationale lives.
   `companion_for` for `shared_auth_for` (same shape as opencode's).
   `XAI_API_KEY` stays ruled out on cost. Facts + gate records:
   docs/AGENT-CREDENTIAL-MECHANICS.md + each skill.toml.
-  Adjacent, ruling pending: $SHARED symlink-target check in the
-  shared-auth hooks + codex-login's wildcard carve-out (2026-07-16
-  review findings). Carried from the old opencode item: MCP seam probed
-  (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT exist) but merge-vs-replace
-  needs a spike before any `mcp = "inject"` vouch (ADR 0033); gemini's
-  seam still unprobed.
+  Adjacent rulings (2026-07-16 review findings): codex-login's wildcard
+  carve-out RESOLVED 2026-07-16 (narrowed to codex-own-dir equality,
+  mirroring opencode; commit 026944c). $SHARED symlink-target check:
+  DEFERRED 2026-07-16 (Pete) -- the assert hooks' raw `readlink != $SHARED`
+  is sound because they OVERWRITE on any mismatch (fail-closed, never trust
+  a bad link); the deeper "is $SHARED itself a link escaping the identity
+  volume" check is accepted-residual (only an agent sabotaging its own
+  writable machine store can set it up; reachable damage is self/sibling
+  credential clobber, not a containment escape). Carried from the old
+  opencode item: MCP seam merge-vs-replace ANSWERED from source 2026-07-16
+  (OPENCODE_CONFIG / OPENCODE_CONFIG_CONTENT deep-MERGE, don't replace --
+  config.ts load order), so the `mcp = "inject"` vouch is unblocked
+  (ADR 0033); gemini's seam still unprobed.
 - [ ] (M) **Claude Skills delivery** (the untouched half of the old
   claude-skills.d item): skills/config ship Claude Skills (.md) into the box,
   likely via `--plugin-dir` payloads owned by the claude skill. Needs its own
