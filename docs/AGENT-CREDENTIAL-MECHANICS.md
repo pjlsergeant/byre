@@ -26,14 +26,14 @@ weaker than repo source, stronger than docs).
 
 | | Claude Code | Codex CLI | Gemini CLI | Grok CLI | OpenCode |
 |---|---|---|---|---|---|
-| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `gemini-credentials.json` (0.49+ FileKeychain, hostname-bound; `oauth_creds.json` is legacy -- see the CORRECTION in the Gemini section), `google_accounts.json` | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` | `auth.json` (provider-keyed multi-credential store), 0600 |
+| Identity/credential | `.credentials.json` (Linux; macOS uses Keychain) | `auth.json` | `oauth_creds.json` (default OAuth store, PLAINTEXT -- see the 2026-07-16 CORRECTION), `google_accounts.json`; `gemini-credentials.json` is the FileKeychain (encrypted, hostname-bound) used only under `GEMINI_FORCE_ENCRYPTED_FILE_STORAGE` + always for stored API keys | `auth.json` (keyed by auth-scope URL), 0600, sibling `auth.json.lock` | `auth.json` (provider-keyed multi-credential store), 0600 |
 | Per-project state in a ROOT-LEVEL FILE | **YES** -- `.claude.json` `projects` key (trust, allowed tools, MCP local scope) | **YES** -- `config.toml` `[projects."<path>"] trust_level` | **YES** -- `trustedFolders.json` (per-folder trust) | none observed (closed source; `worktrees.db`/`active_sessions.json` are root-level but not trust-shaped) | none observed (no trust dialog; `opencode.db` is root-level but session storage, not trust) |
 | Per-project state in subdirectories | `projects/<encoded-cwd>/` (transcripts, auto memory) | none keyed by project (`sessions/` is date-keyed) | `history/<projectId>/`, `tmp/<project_hash>/` | `memory/<project-slug>-<hash8>/`; `sessions/` is date-keyed | none at the file level -- sessions live INSIDE `opencode.db` (sqlite), project identity in-row |
 | Machine-wide prefs | `settings.json`, `CLAUDE.md`, `skills/`, `keybindings.json` | `config.toml` (same file as trust), `skills/`, `plugins/` | `settings.json`, `commands/`, `skills/`, `policies/`, `keybindings.json` | `config.toml`, `skills/`, `AGENTS.md` (global rules) | `~/.config/opencode/` (opencode.json config, `AGENTS.md` global rules) -- a SEPARATE XDG dir from the credential |
 | Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees | `models_cache.json`, `logs/`, `upload_queue/`, `marketplace-cache/`, `downloads/` (binary!) | `~/.cache/opencode/` (incl. `bin/` downloads), `log/`, `snapshot/`, `~/.local/state/opencode/locks` |
-| Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | **none** (open feature requests) | `GROK_HOME` (**verified**: moves auth + sessions + config) | XDG vars, per dir (**verified**: `XDG_DATA_HOME` moves auth+db, `XDG_CONFIG_HOME` moves config); no single all-state env |
+| Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | `GEMINI_CLI_HOME` (moves the whole `~/.gemini` tree -- CORRECTED 2026-07-16; byre still uses per-file symlinks to keep history per-box) | `GROK_HOME` (**verified**: moves auth + sessions + config) | XDG vars, per dir (**verified**: `XDG_DATA_HOME` moves auth+db, `XDG_CONFIG_HOME` moves config); no single all-state env |
 | Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; temp+rename **inferred from the 2026-07-10 field failure** (symlink replaced -- gate 1 FAILED; see §6) | **in-place** write + chmod 0600, no rename (**live-verified through a symlink**) |
-| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | Google installed-app flow; rotation not typical (unverified) | ~6h access tokens, silent OIDC refresh; **single-use with chain revocation inferred** (gate 2 FAILED in the field -- see §6) | per PROVIDER: API keys static; Anthropic OAuth rides the same single-use server rotation as Claude Code |
+| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | **NON-rotating -- reusable until revoked** (CONFIRMED 2026-07-16 from Google docs; concurrent refresh is SAFE, no cascade); client never re-reads disk mid-session | ~6h access tokens, silent OIDC refresh; **single-use with chain revocation inferred** (gate 2 FAILED in the field -- see §6) | per PROVIDER: API keys static; Anthropic OAuth rides the same single-use server rotation as Claude Code |
 | Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) | **none** -- `XAI_API_KEY` only (different billing); native `grok login --device-auth` | **none** long-lived; `OPENCODE_AUTH_CONTENT` injects the whole store via env (static -- refresh can't write back) |
 | Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" | silent; its own installer reads `auth.json` tokens for authenticated downloads (empirically: a copied credential works) | silent |
 
@@ -189,6 +189,46 @@ the Claude Code credentials stored in ~/.claude"
 
 ## OpenAI Codex CLI (0.142.5, empirical + source)
 
+> **SOURCE-CONFIRMED / EXTENDED 2026-07-16** (repo at codex-rs, main
+> @ f64233d142; in-box binary 0.144.5; tree carries no release-version
+> literal -- workspace version is `0.0.0`, stamped at build -- so it pins by
+> commit). The 2026-07-06 record below stands; deltas that matter for
+> sharing one auth.json across boxes:
+> - **`codex logout` REVOKES the refresh token server-side** before deleting
+>   the file: `logout_with_revoke` -> `revoke_auth_tokens` POSTs to
+>   `auth.openai.com/oauth/revoke` (revoke.rs), best-effort, then
+>   `remove_file`. In a shared-auth box this kills the login for EVERY box on
+>   the machine, unrecoverably (the local delete only unlinks a symlink; the
+>   server-side revocation is what bites). Documented in codex-shared-auth's
+>   skill.toml as a do-not-run hazard.
+> - **`CODEX_ACCESS_TOKEN` semantics CHANGED**: it is no longer a generic
+>   ChatGPT access-token override. `classify_codex_access_token` (access_token.rs)
+>   routes an `at-` prefix to a Personal Access Token, else an Agent-Identity
+>   JWT. Precedence in `load_auth` (manager.rs): `CODEX_API_KEY` env >
+>   in-memory ephemeral > `CODEX_ACCESS_TOKEN` env > persisted store. Env-derived
+>   auth never triggers a file-writing refresh.
+> - **Guarded reload IMPROVED (good for sharing)**: before a network refresh,
+>   `refresh_token()` reloads auth.json and, if it changed under an
+>   account-id match, ADOPTS the other writer's pair and SKIPS the refresh
+>   ("Skipping token refresh because auth changed after guarded reload").
+>   Codex's own version of grok's "outwait the winner, adopt its pair". Still
+>   NO cross-process/file lock, so the same-window read-modify-write race is
+>   still open; still no PID-staleness logic.
+> - **Permanent refresh failures are memoized in memory only** (keyed on the
+>   server error code `refresh_token_expired`/`_reused`/`_invalidated` or a
+>   401) -- they do NOT delete auth.json. The only file-deleting paths are
+>   `codex logout` and a KEYRING-mode save success (`cli_auth_credentials_store
+>   = keyring|auto`, non-default): a keyring write deletes auth.json, which on
+>   a symlink unlinks the LINK. Default store mode is File -- symlink-safe.
+> - **Serde note**: the auth.json struct grew fields (`auth_mode`,
+>   `agent_identity`, `personal_access_token`, `bedrock_api_key`) and does NOT
+>   preserve unknown ones -- an OLDER binary rewriting the shared file drops
+>   fields a newer one wrote. Version-skew hazard for a shared store.
+> - **No first-party command/credential-helper seam**: codex has an external
+>   auth-command (`model_providers.<id>.auth.command`, external_bearer.rs) but
+>   only for THIRD-PARTY model providers, not the ChatGPT login -- so there is
+>   no GROK_AUTH_PROVIDER_COMMAND analogue to hang a broker off for codex.
+
 ### 1. State-dir inventory
 
 Empirical, this box. `CODEX_HOME=/home/dev/.codex-home` is set; `~/.codex`
@@ -276,6 +316,50 @@ including a Docker-container variant -- with the caveat "Treat
 (https://developers.openai.com/codex/auth).
 
 ## Google Gemini CLI (NOT installed in this box -- docs + source only)
+
+> **CORRECTED / CONFIRMED 2026-07-16** (repo at 0.52.0-nightly + npm bundle
+> 0.51.0 read directly + live boxes on 0.51.0; supersedes key parts of the
+> 0.49 correction just below):
+> - **DEFAULT OAuth store is PLAINTEXT `~/.gemini/oauth_creds.json`**, NOT the
+>   encrypted FileKeychain. `getUseEncryptedStorageFlag()` returns true only
+>   when `GEMINI_FORCE_ENCRYPTED_FILE_STORAGE=true` (oauth2.ts; verbatim in the
+>   0.51 bundle), and encrypted was already flag-gated at 0.49 (commit
+>   c999b7e35, 2025-09). The `gemini-credentials.json` FileKeychain
+>   (hostname-bound) is used for: the OAuth login ONLY under that flag, MCP
+>   tokens under that flag, and **stored API keys ALWAYS**. So a live box's
+>   `gemini-credentials.json` most likely holds an API key -- and the 0.49
+>   "credential is hostname-bound" correction applies to the ENCRYPTED/API-key
+>   path, not the default OAuth login. Consequence: hostname pinning
+>   (`--hostname byre`) matters for the API-key/encrypted path, NOT for the
+>   default OAuth credential (plaintext, no hostname binding). Both filenames
+>   are still linked by the shared-auth hook regardless.
+> - **Refresh is NON-ROTATING = sharing is SAFE** (the old "unverified" gate,
+>   now settled from Google's primary docs): Google installed-app refresh
+>   tokens are reusable until revoked/expired -- NOT single-use. Invalidation
+>   only on: user revoke; 6-month inactivity; Gmail-scope password change;
+>   >100 granted tokens per account/client (concurrent REFRESH never mints
+>   new tokens, so it can't trip this); or a "Testing"-status client (7-day).
+>   A refresh response carries a new ACCESS token and no refresh_token; the
+>   client force-preserves the stored one. So two boxes refreshing one shared
+>   credential do NOT cascade-logout -- the opposite of Anthropic/grok. (Also:
+>   gemini memoizes its OAuth client and NEVER re-reads the credential from
+>   disk mid-session, so a box holding a stale token needs a restart -- but
+>   with non-rotating tokens there is nothing to go stale.)
+> - **`GEMINI_CLI_HOME` NOW EXISTS** (paths.ts `homedir()`): relocates the
+>   whole `~/.gemini` tree. "No home-relocation env var" below is STALE. byre
+>   still uses PER-FILE symlinks, NOT this env -- a whole-tree relocation would
+>   sweep per-project `history/` into the shared volume and break per-box
+>   context isolation.
+> - **No external credential-helper/command seam** (grep of GEMINI_CLI_*): no
+>   GROK_AUTH_PROVIDER_COMMAND analogue. `security.auth.useExternal` only skips
+>   validation for embedders; it does not shell out. So if the OAuth path ever
+>   needed a broker there is none -- but non-rotation means it doesn't.
+> - **`selectedType` seeding** (the "consciously deferred" residual below is
+>   now DONE): it lives at `security.auth.selectedType` in settings.json;
+>   seeding `oauth-personal` skips the auth-method dialog, whose
+>   `clearCachedCredentialFile()` (dialog-only -- verified: not called from the
+>   login path) rm's oauth_creds.json and forks a symlinked login. byre's
+>   gemini-shared-auth hook seeds it.
 
 > **CORRECTION, live-verified 2026-07-07 (gemini-cli 0.49.0, host test +
 > npm tarball read):** the credential no longer lives in
@@ -742,20 +826,23 @@ Per agent, what goes in the shared identity volume vs per-project volume:
 - Unsplittable-by-mount: `config.toml` (machine prefs + per-project trust in
   one root-level file). `CODEX_HOME` moves the tree but cannot split it.
 
-**Gemini CLI**
-- Shared identity: `gemini-credentials.json` (the 0.49+ FileKeychain
-  credential -- hostname-bound, so sharing also requires pinning the box
-  hostname; byre's gemini skill pins `--hostname byre`), legacy
-  `oauth_creds.json` (pre-0.49; link both, per the CORRECTION above),
-  `google_accounts.json`, `installation_id` (+ `mcp-oauth-tokens.json`
-  if MCP auth should be shared).
-- Per-project: `history/<projectId>/`, `tmp/<project_hash>/`.
+**Gemini CLI** (UPDATED 2026-07-16 -- see the correction block in the Gemini
+section; rotation is SAFE and the default store is plaintext)
+- Shared identity: `oauth_creds.json` (the DEFAULT OAuth store, plaintext, no
+  hostname binding), `google_accounts.json`, `installation_id`, and
+  `gemini-credentials.json` (the encrypted FileKeychain -- hostname-bound, so
+  the API-key/encrypted path still needs byre's `--hostname byre` pin; link it
+  too) (+ `mcp-oauth-tokens.json` if MCP auth should be shared). byre links
+  all these PER FILE and seeds `selectedType=oauth-personal`.
+- Per-project: `history/<projectId>/`, `tmp/<project_hash>/` -- kept per-box
+  precisely why byre does NOT use the whole-tree `GEMINI_CLI_HOME` relocation.
 - Unsplittable-by-mount: `trustedFolders.json` (root-level per-folder trust)
   -- though `GEMINI_CLI_TRUSTED_FOLDERS_PATH` can relocate it, which makes it
   the ONE root-level file among all three agents with an official escape
   hatch.
-- No home-relocation env var: the shared/per-project seam must be built by
-  mounting into `~/.gemini` itself.
+- Home-relocation env var: `GEMINI_CLI_HOME` DOES exist (moves the whole tree)
+  -- byre deliberately does NOT use it (it would share history across boxes);
+  the seam is per-file symlinks inside `~/.gemini`.
 
 **Grok CLI**
 - Shared identity: **none, currently** -- the symlinked `auth.json` failed
@@ -820,12 +907,16 @@ Per agent, what goes in the shared identity volume vs per-project volume:
    writes, `CODEX_HOME` relocation, infrequent refresh (5-min-to-expiry or
    8-day interval), reload-before-write. Shared volume + `CODEX_HOME` works;
    residual risk is the unlocked cross-process refresh race.
-5. **Gemini has no env relocation and no plan-scoped env token** -- shared
-   subscription auth REQUIRES the cached credential file at literally
-   `~/.gemini/` (0.49+: `gemini-credentials.json`, hostname-bound, so the
-   box hostname must be pinned too; pre-0.49: `oauth_creds.json` -- link
-   both), so the design must mount/symlink within the real home dir; and
-   per-project trust needs `GEMINI_CLI_TRUSTED_FOLDERS_PATH` pointed at
+5. **Gemini has no plan-scoped env token** (CORRECTED 2026-07-16: it DOES have
+   `GEMINI_CLI_HOME` env relocation, and its OAuth refresh is NON-rotating so
+   sharing is SAFE). Shared subscription auth uses the cached credential file --
+   the DEFAULT is plaintext `oauth_creds.json` (no hostname binding); the
+   encrypted `gemini-credentials.json` (hostname-bound, needs the `--hostname`
+   pin) is opt-in and always used for stored API keys. byre links per-file
+   inside `~/.gemini` (NOT the whole-tree `GEMINI_CLI_HOME`, to keep history
+   per-box) and seeds `selectedType=oauth-personal` so the auth-method dialog
+   -- whose `clearCachedCredentialFile()` rm's the symlinked login -- never
+   opens. Per-project trust needs `GEMINI_CLI_TRUSTED_FOLDERS_PATH` pointed at
    the per-project volume.
 
 ## Source list
@@ -856,6 +947,17 @@ Per agent, what goes in the shared identity volume vs per-project volume:
   inventory), packages/core/src/code_assist/oauth2.ts (in-place write,
   tokens-event rewrite); issues #2815, #8440
 - https://google-gemini.github.io/gemini-cli/docs/get-started/authentication.html
+- Google OAuth refresh-token policy (2026-07-16, rotation-safe verdict):
+  https://developers.google.com/identity/protocols/oauth2 (invalidation
+  conditions, 100-token/account/client limit, "Testing" 7-day expiry);
+  https://developers.google.com/identity/protocols/oauth2/web-server
+  ("valid until the user revokes access or the refresh token expires");
+  https://developers.google.com/identity/protocols/oauth2/native-app
+  (installed-app flow: refresh returns a new access token, no refresh_token)
+- gemini-cli 0.51.0 npm bundle + 0.52-nightly repo (2026-07-16): oauth2.ts
+  `getUseEncryptedStorageFlag` (plaintext default), paths.ts `homedir()`
+  (`GEMINI_CLI_HOME`), fileKeychain.ts scrypt salt, the dialog-only
+  `clearCachedCredentialFile` call sites, `security.auth.selectedType`
 - https://x.ai/cli (Grok CLI product page); https://x.ai/cli/install.sh (the
   installer is also the best public spec of `auth.json`: its `read_grok_token`
   parses the scope-keyed shape, and it falls back to unauthenticated download)
