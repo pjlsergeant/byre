@@ -37,29 +37,20 @@ Dry-run the whole pipeline locally with:
 goreleaser release --snapshot --clean   # artifacts land in dist/, nothing published
 ```
 
-## Install paths (state per path)
+## Install paths
 
-- **`go install github.com/pjlsergeant/byre/cmd/byre@latest`** — works
-  today, no release needed. What the README leads with.
+All three are live and in the README's Install section:
+
+- **`go install github.com/pjlsergeant/byre/cmd/byre@latest`** — builds
+  from the module proxy, no release involved. What the README leads with.
 - **`install.sh`** (`curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | sh`)
-  — checksum-verified download of the latest release binary. Works as soon
-  as the **first tag** is pushed; 404s before that, so don't put it in the
-  README until then.
-- **Homebrew** — goreleaser publishes a cask (`brew install --cask
-  pjlsergeant/tap/byre`; cask, not formula — goreleaser deprecated `brews`
-  for pre-built binaries, and the cask strips the quarantine bit for the
-  unsigned binary). Gated: the publish step is skipped while
-  `HOMEBREW_TAP_GITHUB_TOKEN` is unset, so releases never block on it.
-  To switch it on:
-  1. Create the repo `pjlsergeant/homebrew-tap` (public, can be empty).
-  2. Create a fine-grained PAT with **Contents: read/write** on that repo.
-  3. Add it as the `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret on
-     `pjlsergeant/byre`.
-  The next release publishes the cask automatically.
-
-## After the first release
-
-Done (2026-07-06/07): the README Install section carries the
-`install.sh` one-liner and the brew line. The tap repo and
-`HOMEBREW_TAP_GITHUB_TOKEN` secret exist (2026-07-08), so goreleaser
-publishes the cask on every release; nothing is gated anymore.
+  — checksum-verified download of the latest release binary; no Go
+  toolchain needed.
+- **Homebrew** — goreleaser publishes a cask on every release
+  (`brew install --cask pjlsergeant/tap/byre`; cask, not formula —
+  goreleaser deprecated `brews` for pre-built binaries, and the cask
+  strips the quarantine bit for the unsigned binary). Publishing rides
+  the `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret on `pjlsergeant/byre`
+  (a fine-grained PAT, **Contents: read/write** on
+  `pjlsergeant/homebrew-tap`); if the secret is ever absent the publish
+  step is skipped rather than failing the release.
