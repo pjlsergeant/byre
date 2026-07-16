@@ -514,9 +514,11 @@ Commands fall into *lifecycle* (`develop`, `worktree`, `reset`,
 and wiring management* (`skill`, `template`, `preset`, `mcp`), one
 *transfer* verb, `deliver` (below), and the self-describers (`version`,
 `completion`).
-**No command mutates config behind your back** -- config is edited by
-you (in files, or explicitly in the `byre config` editor); `develop`
-and friends only read it and act.
+**No command mutates config behind your back** -- config is written
+only where you asked for the write: files you edit, the `byre config`
+editor, `byre mcp add`/`remove`, `byre preset apply` (after its review),
+and onboarding's initial write. Everything else -- `develop` and friends
+included -- only reads it and acts.
 
 ```
 byre develop      Set up if needed (generate, build-on-cache-miss) and run the
