@@ -169,6 +169,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		templateCmd(s),
 		layerCmd(s),
 		mcpCmd(dir, s),
+		claudeSkillCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
@@ -492,6 +493,65 @@ enabled skill still declares the name. Applies on the next develop.`,
 		},
 	)
 	return mcp
+}
+
+func claudeSkillCmd(dir string, s commands.Streams) *cobra.Command {
+	cs := &cobra.Command{
+		Use:   "claude-skill",
+		Short: "Manage this project's Claude Skill declarations ([[claude_skills]] config blocks).",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre claude-skill add|remove|list")
+		},
+	}
+	var addGlobal, rmGlobal bool
+	var name string
+	add := &cobra.Command{
+		Use:   "add <dir>",
+		Short: "Declare a Claude Skill (a directory with a SKILL.md) in the project config (or --global defaults).",
+		Long: `Validate <dir> as a Claude Skill and write a [[claude_skills]] declaration
+into this project's host-side config (add-or-update by name; a matching
+"!name" closure is re-opened). The name comes from the SKILL.md frontmatter
+unless --name overrides it. The directory bakes into the image and the
+claude session receives the skill bare (as /name). Applies on the next
+develop.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return usageError("usage: byre claude-skill add <dir>")
+			}
+			return commands.ClaudeSkillAdd(s, dir, addGlobal, name, args[0])
+		},
+	}
+	add.Flags().BoolVar(&addGlobal, "global", false, "write your global defaults (~/.byre/default.config) instead")
+	add.Flags().StringVar(&name, "name", "", "declared name (default: the SKILL.md frontmatter name; the two must match)")
+	remove := &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove a declared Claude Skill (closure-smart).",
+		Long: `Remove a Claude Skill from this project's effective set: deletes the
+layer's own [[claude_skills]] block, and/or writes the "!name" closure when
+a lower layer or an enabled skill still declares the name. Applies on the
+next develop.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return usageError("usage: byre claude-skill remove <name>")
+			}
+			return commands.ClaudeSkillRemove(s, dir, rmGlobal, args[0])
+		},
+	}
+	remove.Flags().BoolVar(&rmGlobal, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	cs.AddCommand(
+		add,
+		remove,
+		&cobra.Command{
+			Use:   "list",
+			Short: "Show the effective Claude Skill set (config + skills, attributed) and its delivery.",
+			Args:  noArgsU,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.ClaudeSkillList(s, dir)
+			},
+		},
+	)
+	return cs
 }
 
 func skillCmd(a app, s commands.Streams) *cobra.Command {
