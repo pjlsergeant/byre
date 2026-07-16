@@ -152,27 +152,31 @@ func packMarker(kind Kind) string {
 // (blank lines and stacked markers in between allowed) -- a matching line
 // elsewhere, say inside a multiline string, is data, not a stale marker.
 //
-// The scan is line-based, like StripPackageTable: a multiline string that
-// embeds BOTH a marker and a bare [[package.files]] header line loses its
-// tail to the table strip regardless (pre-existing), so at worst this drops
-// one more line from a body that was already corrupted. Full TOML awareness
-// is that function's rewrite, not this one's job.
+// The scan is line-based and multiline-string-aware (tomlStringState, same
+// as StripPackageTable): a marker line inside a """/”' value is data and
+// is never dropped.
 func stripPackMarkers(content string) string {
 	isMarker := func(l string) bool {
 		t := strings.TrimSpace(l)
 		return t == packMarker(KindSkill) || t == packMarker(KindTemplate)
 	}
 	lines := strings.Split(content, "\n")
+	inString := make([]bool, len(lines))
+	state := tomlOutside
+	for i, l := range lines {
+		inString[i] = state != tomlOutside
+		state = state.advance(l)
+	}
 	drop := make([]bool, len(lines))
 	for i := range lines {
-		if !isMarker(lines[i]) {
+		if inString[i] || !isMarker(lines[i]) {
 			continue
 		}
 		j := i + 1
-		for j < len(lines) && (isMarker(lines[j]) || strings.TrimSpace(lines[j]) == "") {
+		for j < len(lines) && !inString[j] && (isMarker(lines[j]) || strings.TrimSpace(lines[j]) == "") {
 			j++
 		}
-		if j < len(lines) && strings.TrimSpace(lines[j]) == "[[package.files]]" {
+		if j < len(lines) && !inString[j] && strings.TrimSpace(lines[j]) == "[[package.files]]" {
 			drop[i] = true
 		}
 	}

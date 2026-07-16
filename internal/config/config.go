@@ -142,7 +142,9 @@ var egressHostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.:_-]*[A-Za-z0-9])
 // "[::1]:443" — RFC 3986's convention, since a bare IPv6's colons are
 // ambiguous with host:port). A bracketed host is canonicalized (RFC 5952
 // via net.ParseIP) and returned WITH its brackets, so every downstream
-// "%s:%d" composition and re-parse round-trips.
+// "%s:%d" composition and re-parse round-trips. Hostnames are LOWERCASED:
+// DNS is case-insensitive, so a case-variant spelling is the same endpoint
+// and must dedup with it — and must not slip past a closure.
 func ParseEgress(entry string) (host string, port int, err error) {
 	host, port, _, err = splitEgressEntry(entry)
 	return host, port, err
@@ -201,7 +203,9 @@ func splitEgressEntry(entry string) (host string, port int, portless bool, err e
 		}
 		return "", 0, false, fmt.Errorf("egress %q: not a valid host[:port]", entry)
 	}
-	return host, port, portless, nil
+	// DNS is case-insensitive: lowercase so API.EXAMPLE.COM and
+	// api.example.com are ONE identity for dedup and closure matching.
+	return strings.ToLower(host), port, portless, nil
 }
 
 // ClosurePortless reports whether a closure entry closes every port (it

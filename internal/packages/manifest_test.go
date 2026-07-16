@@ -102,3 +102,60 @@ env = { K = "v" }
 		t.Fatalf("body damaged: %s", out)
 	}
 }
+
+// A `[package]`-shaped line inside a multiline string is DATA (a Dockerfile
+// heredoc is the canonical case): the strip must neither truncate the string
+// nor mistake it for the real table — and must still strip the real one.
+func TestStripPackageTableIgnoresMultilineStrings(t *testing.T) {
+	for _, c := range []struct{ name, quote string }{
+		{"literal", "'''"},
+		{"basic", `"""`},
+	} {
+		raw := []byte(`[build]
+dockerfile = [` + c.quote + `
+RUN cat <<'EOF'
+[package]
+payload text
+[other]
+EOF
+` + c.quote + `]
+
+[package]
+id = "owner/example"
+version = "1"
+
+[runtime]
+env = { K = "v" }
+`)
+		out := string(StripPackageTable(raw))
+		for _, want := range []string{"payload text", "EOF", c.quote + "]", "[runtime]"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: string content lost (%q missing):\n%s", c.name, want, out)
+			}
+		}
+		if strings.Contains(out, `id = "owner/example"`) {
+			t.Errorf("%s: real [package] table survived:\n%s", c.name, out)
+		}
+	}
+}
+
+// A multiline string VALUE inside the real [package] table is stripped with
+// its table, including its continuation lines.
+func TestStripPackageTableStripsMultilineValueInPackage(t *testing.T) {
+	raw := []byte(`[package]
+id = "x"
+description = """
+multi [build]
+line"""
+
+[build]
+apt = ["a"]
+`)
+	out := string(StripPackageTable(raw))
+	if strings.Contains(out, "multi") || strings.Contains(out, `id = "x"`) {
+		t.Fatalf("package table's multiline value survived:\n%s", out)
+	}
+	if !strings.Contains(out, `apt = ["a"]`) {
+		t.Fatalf("body damaged:\n%s", out)
+	}
+}

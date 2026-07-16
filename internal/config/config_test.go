@@ -947,6 +947,27 @@ func TestParseEgress(t *testing.T) {
 	}
 }
 
+// DNS is case-insensitive, so a case-variant spelling is the SAME endpoint:
+// it must parse to one lowercase identity, dedup with its lowercase twin,
+// and never slip past a closure written in the other case.
+func TestEgressHostCaseInsensitive(t *testing.T) {
+	if h, p, err := ParseEgress("API.Example.COM:8443"); err != nil || h != "api.example.com" || p != 8443 {
+		t.Fatalf("ParseEgress mixed-case = (%q,%d,%v), want lowercased host", h, p, err)
+	}
+	if !EgressClosureMatches("api.example.com", "API.EXAMPLE.COM") {
+		t.Error("lowercase closure must close an uppercase-spelled entry")
+	}
+	if !EgressClosureMatches("API.EXAMPLE.COM:443", "api.example.com") {
+		t.Error("uppercase closure must close a lowercase-spelled entry")
+	}
+	if egressKey("API.EXAMPLE.COM") != egressKey("api.example.com") {
+		t.Error("case-variant spellings must dedup as one open entry")
+	}
+	if closureKey("API.EXAMPLE.COM") != closureKey("api.example.com") {
+		t.Error("case-variant spellings must dedup as one closure")
+	}
+}
+
 // shared_auth (and the vestigial shared_auth_declined) is stripped from
 // EVERY resolved config, whatever layer carried it — picker-owned state must
 // not ride the cascade (ADR 0025).

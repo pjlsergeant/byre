@@ -119,6 +119,12 @@ func RequiredManifestFields(m Manifest, require bool) error {
 // section including nested [[package.files]] etc. -- anything under the
 // package key prefix until the next top-level non-package header.
 //
+// Header detection is multiline-string-aware (tomlStringState): a line that
+// merely LOOKS like a header inside a """/”' value — a `[package]` in a
+// Dockerfile heredoc, say — is data, neither starting nor ending a section.
+// Lines inside a multiline string that belongs to the package table are
+// stripped with it.
+//
 // For phase 1 there are no [[package.files]] in bundled/local manifests;
 // the strip still removes contiguous package.* headers so stage-2 parsers
 // that reject unknown keys do not see them.
@@ -126,9 +132,12 @@ func StripPackageTable(content []byte) []byte {
 	lines := strings.Split(string(content), "\n")
 	var out []string
 	inPackage := false
+	state := tomlOutside
 	for _, line := range lines {
+		atLineStart := state
+		state = state.advance(line)
 		trim := strings.TrimSpace(line)
-		if strings.HasPrefix(trim, "[") {
+		if atLineStart == tomlOutside && strings.HasPrefix(trim, "[") {
 			// Top-level table header?
 			name := strings.TrimSuffix(strings.TrimPrefix(trim, "["), "]")
 			name = strings.TrimSpace(name)
