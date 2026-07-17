@@ -135,6 +135,19 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 				"which is not the parent of the worktree git dir %q — refusing to mount it. "+
 				"If the main repository moved, run `git worktree repair` in it", dir, common, gitDir)
 	}
+	// From here on use structCommon, NOT common, as the common git dir. Both
+	// name the same directory (SameFile just proved it), but `common` is the
+	// raw commondir-file content — attacker-authored — while structCommon is
+	// byre's own lexical derivation from gitDir. The SameFile check only proves
+	// they resolve equal AT THIS INSTANT; `common` is then handed to the RW
+	// bind mount, and if it is a symlink an agent could retarget it between
+	// this check and the container engine resolving the mount source (a
+	// check-to-mount race). structCommon closes that: it is dir(dir(gitDir)),
+	// exactly the git-recorded common path the same-path mount must use for
+	// git to resolve inside the box, and it never passes attacker-controlled
+	// commondir bytes through to the mount. (It cannot be Canonicalize'd for
+	// the same reason — the mount target must match the un-resolved path git
+	// wrote into the worktree's .git pointer.)
 	backData, _, err := readMetaFile(filepath.Join(gitDir, "gitdir"))
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
@@ -154,15 +167,15 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// The identity dir is the main worktree: the parent of a ".git"
 	// common dir, or the common dir itself for a bare repo. Canonicalize
 	// it so the id matches running byre in the main worktree directly.
-	mainDir := common
-	if filepath.Base(common) == ".git" {
-		mainDir = filepath.Dir(common)
+	mainDir := structCommon
+	if filepath.Base(structCommon) == ".git" {
+		mainDir = filepath.Dir(structCommon)
 	}
 	canonMain, err := Canonicalize(mainDir)
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
-	return worktreeInfo{mainDir: canonMain, commonGitDir: common}, true, nil
+	return worktreeInfo{mainDir: canonMain, commonGitDir: structCommon}, true, nil
 }
 
 // parseGitdirPointer extracts the path from a `.git` file's `gitdir: <path>`

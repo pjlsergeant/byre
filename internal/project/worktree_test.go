@@ -187,6 +187,37 @@ func TestDetectWorktreeRejectsForgedCommondir(t *testing.T) {
 	}
 }
 
+// The mounted common git dir must be byre's own structural path, never the
+// raw commondir-file content — even when that content is a symlink that
+// resolves correctly at check time. Returning the symlink would hand an
+// agent-retargetable path to the RW bind mount (a check-to-mount race). The
+// structural check passes here (the symlink resolves to the true common dir),
+// so this pins the RETURNED path, not rejection.
+func TestDetectWorktreeMountsStructuralPathNotSymlinkedCommondir(t *testing.T) {
+	main, wt := makeWorktree(t, "wt")
+	realCommon := filepath.Join(main, ".git")
+	// A symlink that currently resolves to the true common dir; its PATH is
+	// what we plant as commondir content.
+	link := filepath.Join(t.TempDir(), "commonlink")
+	if err := os.Symlink(realCommon, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	gd := filepath.Join(realCommon, "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte(link+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, ok, err := detectWorktree(wt)
+	if err != nil || !ok {
+		t.Fatalf("a symlinked-but-consistent commondir should still detect: ok=%v err=%v", ok, err)
+	}
+	if info.commonGitDir == link {
+		t.Fatalf("commonGitDir is the attacker-controlled symlink path %q — retargetable before the mount resolves", link)
+	}
+	if info.commonGitDir != realCommon {
+		t.Fatalf("commonGitDir = %q, want the structural path %q", info.commonGitDir, realCommon)
+	}
+}
+
 // A project .git that is itself a SYMLINK is never treated as a worktree
 // pointer: following it (ReadFile + the reciprocal Stat) would let an agent
 // point .git at genuine external worktree metadata and pass every check,
