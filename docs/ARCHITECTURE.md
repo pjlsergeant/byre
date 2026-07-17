@@ -201,6 +201,11 @@ image (ADR 0009).
 
 ## Config
 
+(The user-facing reference -- every key, with usage guidance -- is the
+site's configuration page, `site/content/docs/configuration.md`. This
+section is the design view: the same facts with their rationale and
+ADRs.)
+
 Cascade, config-only (image steps are compiled output, never hand-written
 twice):
 
