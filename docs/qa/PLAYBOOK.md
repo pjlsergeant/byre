@@ -270,33 +270,9 @@ case (language templates ship CA certs transitively and would mask it).
 
 ## Open findings
 
-From dogfooding the gussy-up-gui session (2026-07-17, Pete; absorbed
-from wip/gussy-up-gui-handoff.md, deleted):
-
-1. (product, worktree lifecycle) Removing/pruning a worktree host-side
-   while its box is live breaks every git command in the box ("not a
-   git repository: …/worktrees/<name>"): the box mounts the main
-   `.git`, whose `worktrees/<name>` metadata just vanished. Verified
-   in-box repair (additive, reversible): recreate
-   `.git/worktrees/<name>/{HEAD,commondir,gitdir}` using HOST paths
-   (both mounts sit at host-true paths in the box, so they resolve),
-   then `git read-tree HEAD` to rebuild the index; host-side
-   `git worktree repair` also works. Open question pending dispatch:
-   should byre detect/handle this, or document the repair?
-
-2. (product, live-report 2026-07-17, Pete) Config UI Volumes section
-   dies wholesale when ANY installed engine is unreachable:
-   volumeAdmin.List returns on the first per-engine error, so podman
-   installed with its machine stopped (macOS: exit 125, "Cannot
-   connect to Podman … podman.sock: no such file or directory") kills
-   the whole section including docker's listable rows. Repro: box with
-   docker running + podman installed, podman machine stopped, byre
-   config → Volumes. Proposed fix pending dispatch: per-engine degrade
-   — unreachable engine contributes no rows plus a loud section note
-   ("podman unreachable — its copies aren't shown and can't be cleared
-   this session"), reachable engines list normally; deliver's
-   partial-pool posture applied to the volumes view (needs a small
-   configui.VolumeAdmin interface change for section notes).
+None open from QA passes. (This section is for report-only pass
+findings awaiting dispatch — live bug reports and design questions are
+handled in-session and tracked in TODO.md when parked, not here.)
 
 Previously closed: the codex lifecycle/config pass's finding (2026-07-17: client
 hangup orphans a running box — kill the tmux pane/server and the
