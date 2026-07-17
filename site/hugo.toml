@@ -18,3 +18,15 @@ codeFences = false
 # h3s (e.g. every cookbook question) would drown the rail.
 startLevel = 2
 endLevel = 2
+
+# Client-side search: the index is BUILT AT DEPLOY TIME as
+# /searchindex.json (layouts/index.searchindex.json); js/search.js
+# fetches it lazily from the header box. No service, no uploads.
+[outputs]
+home = ["HTML", "SearchIndex"]
+
+[outputFormats.SearchIndex]
+mediaType = "application/json"
+baseName = "searchindex"
+isPlainText = true
+notAlternative = true

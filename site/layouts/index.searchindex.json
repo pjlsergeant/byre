@@ -1,0 +1,9 @@
+{{- $pages := where site.Pages "Kind" "in" (slice "page" "section") -}}
+[
+{{- $first := true -}}
+{{- range $pages -}}
+{{- if not $first }},{{ end -}}
+{{- $first = false -}}
+{"title": {{ .Title | jsonify }}, "url": {{ .RelPermalink | jsonify }}, "desc": {{ .Description | jsonify }}, "ref": {{ if .Params.reference }}true{{ else }}false{{ end }}, "body": {{ .Plain | jsonify }}}
+{{- end -}}
+]
