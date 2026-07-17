@@ -1543,3 +1543,80 @@ func TestErrorLinesWrapNotTruncate(t *testing.T) {
 		t.Fatalf("zero-width render lost the message: %q", got)
 	}
 }
+
+// The Claude Skill editor warns — never gates — on a host dir the bake would
+// reject (field-QA 2026-07-17, finding 4). The validator that decides is the
+// bake's own (skills.ValidateClaudeSkillDir), so editor and develop cannot
+// disagree; the note classifies briefly.
+func TestClaudeSkillDirNoteClasses(t *testing.T) {
+	if n := claudeSkillDirNote("x", ""); n != "" {
+		t.Errorf("empty path is the required-check's job, got note %q", n)
+	}
+	if n := claudeSkillDirNote("x", "/definitely/not/a/dir"); !strings.Contains(n, "path missing") {
+		t.Errorf("missing dir: got %q", n)
+	}
+	f := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := claudeSkillDirNote("x", f); !strings.Contains(n, "not a directory") {
+		t.Errorf("regular file: got %q", n)
+	}
+	empty := t.TempDir()
+	if n := claudeSkillDirNote("x", empty); !strings.Contains(n, "no SKILL.md") {
+		t.Errorf("dir without SKILL.md: got %q", n)
+	}
+	good := t.TempDir()
+	if err := os.WriteFile(filepath.Join(good, "SKILL.md"),
+		[]byte("---\nname: good-skill\ndescription: d\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := claudeSkillDirNote("good-skill", good); n != "" {
+		t.Errorf("valid dir must carry no note, got %q", n)
+	}
+	if n := claudeSkillDirNote("other-name", good); !strings.Contains(n, "build will fail") {
+		t.Errorf("frontmatter name mismatch must warn, got %q", n)
+	}
+}
+
+// Accepting a bad path stays NON-blocking (warn-only): the entry commits, the
+// editor note and the list row both carry the warning, and the dirty
+// SIGNATURE ignores it — a dir appearing later must not flip dirty.
+func TestClaudeSkillBadPathWarnsWithoutBlocking(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fClaudeSkills
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("qa-skill")
+	m.inputs[1].SetValue("/definitely/not/a/dir")
+	notes := strings.Join(m.itemNotes(), "\n")
+	if !strings.Contains(notes, "path missing") || !strings.Contains(notes, "accepted anyway") {
+		t.Fatalf("editor note missing the live warning: %q", notes)
+	}
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("bad path must not block the commit (warn-only), got error %q", m.itemErr)
+	}
+	if len(m.claudeSkills) != 1 || m.claudeSkills[0].Name != "qa-skill" {
+		t.Fatalf("entry not committed: %+v", m.claudeSkills)
+	}
+	if got := claudeSkillRowText(m.claudeSkills[0]); !strings.Contains(got, "path missing — build will fail") {
+		t.Fatalf("list row must carry the warning: %q", got)
+	}
+	// Signature stability: the same entry with an existing vs missing dir
+	// signs identically (the note is display-only).
+	sigBad := m.sig()
+	good := t.TempDir()
+	if err := os.WriteFile(filepath.Join(good, "SKILL.md"),
+		[]byte("---\nname: qa-skill\ndescription: d\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m2 := m
+	m2.claudeSkills = []config.ClaudeSkill{{Name: "qa-skill", Path: good}}
+	if claudeSkillRowText(m2.claudeSkills[0]) != claudeSkillLine(m2.claudeSkills[0]) {
+		t.Fatal("valid entry must carry no row warning")
+	}
+	_ = sigBad // both models sign via claudeSkillLine — pinned by the substring below
+	if strings.Contains(m.sig(), "build will fail") {
+		t.Fatal("the warning leaked into the dirty signature")
+	}
+}

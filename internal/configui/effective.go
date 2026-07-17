@@ -204,7 +204,7 @@ func (m model) claudeSkillRows() []listRow {
 			markerMatched[markerIdx[cs.Name]] = true
 			rows = append(rows, listRow{kind: rowRemoved, text: claudeSkillLine(cs), source: src, idx: markerIdx[cs.Name]})
 		case hasKey(localIdx, cs.Name):
-			rows = append(rows, listRow{kind: rowOverride, text: claudeSkillLine(m.claudeSkills[localIdx[cs.Name]]), source: src, idx: localIdx[cs.Name]})
+			rows = append(rows, listRow{kind: rowOverride, text: claudeSkillRowText(m.claudeSkills[localIdx[cs.Name]]), source: src, idx: localIdx[cs.Name]})
 		default:
 			rows = append(rows, listRow{kind: rowInherited, text: claudeSkillLine(cs), ident: cs.Name, source: src, vals: claudeSkillVals(cs)})
 		}
@@ -218,7 +218,7 @@ func (m model) claudeSkillRows() []listRow {
 			rows = append(rows, listRow{kind: rowRemoved, text: claudeSkillLine(cs), idx: markerIdx[cs.Name]})
 			continue
 		}
-		rows = append(rows, listRow{kind: rowLocal, text: claudeSkillLine(cs), idx: i})
+		rows = append(rows, listRow{kind: rowLocal, text: claudeSkillRowText(cs), idx: i})
 	}
 	for _, sk := range m.effectiveSkills() {
 		for _, cs := range m.inh.Skills[sk].ClaudeSkills {
@@ -247,6 +247,21 @@ func (m model) claudeSkillRows() []listRow {
 		}
 	}
 	return rows
+}
+
+// claudeSkillRowText is the DISPLAY text for a config-declared Claude Skill
+// row: the line plus the live build-will-fail note (field-QA 2026-07-17,
+// finding 4). Kept out of claudeSkillLine, which feeds the dirty signature —
+// a filesystem-tracking suffix there would flip dirty with no edit.
+func claudeSkillRowText(cs config.ClaudeSkill) string {
+	line := claudeSkillLine(cs)
+	if cs.Path == "" {
+		return line
+	}
+	if n := claudeSkillDirNote(cs.Name, cs.Path); n != "" {
+		return line + "  (" + n + ")"
+	}
+	return line
 }
 
 func hasClaudeSkillName(cs []config.ClaudeSkill, name string) bool {

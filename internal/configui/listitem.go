@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // ---- list screen (browse a field's EFFECTIVE rows, ADR 0018) ---------------
@@ -412,8 +413,10 @@ func (m model) startItem(idx int) model {
 		m.inputs = []textinput.Model{newInput(name), newInput(endpoint), newInput(env), newInput(egress), newInput(headers)}
 	case fClaudeSkills:
 		// Two inputs: the name (frontmatter identity) and the host source dir.
-		// Content checks (SKILL.md, frontmatter, bounds) are the bake's; the
-		// editor holds the declaration to config's shape rules only.
+		// Content checks (SKILL.md, frontmatter, bounds) remain the bake's to
+		// ENFORCE; the editor holds the declaration to config's shape rules
+		// only, plus a warn-only build-will-fail note (claudeSkillDirNote) so
+		// a typo'd path is visible now instead of at the next develop.
 		m.inputLabels = []string{
 			"Name (required)", // viewItem appends the lowercase hint
 			"Directory (host path, ~/… or absolute)",
@@ -896,6 +899,35 @@ func portLine(p config.Port) string {
 // spaced arg reads as it round-trips.
 // claudeSkillLine renders one Claude Skill declaration: name plus whichever
 // source spelling its home carries (a config path or a skill-relative from).
+// claudeSkillDirNote is the live legibility check on a declared host dir
+// (field-QA 2026-07-17, finding 4): the editor accepted a nonexistent path
+// silently, deferring the failure to the next develop. skills.
+// ValidateClaudeSkillDir — the exact check the bake runs — decides WHETHER
+// the build would fail (so editor and develop can never disagree); the label
+// here only classifies it briefly. Warn-only, never a gate: the path may be
+// created later, and byre doesn't nanny. Empty paths return "" (the
+// required-field check owns those; skill-contributed `from` entries resolve
+// inside their package and aren't host paths at all).
+func claudeSkillDirNote(name, path string) string {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return ""
+	}
+	dir := expandTilde(p)
+	if skills.ValidateClaudeSkillDir(dir, strings.ToLower(strings.TrimSpace(name))) == nil {
+		return ""
+	}
+	if fi, err := os.Stat(dir); err != nil {
+		return "path missing — build will fail"
+	} else if !fi.IsDir() {
+		return "not a directory — build will fail"
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+		return "no SKILL.md — build will fail"
+	}
+	return "SKILL.md invalid or name mismatch — build will fail"
+}
+
 func claudeSkillLine(cs config.ClaudeSkill) string {
 	src := cs.Path
 	if src == "" {
@@ -1224,6 +1256,13 @@ func (m model) itemLabel(i int) string {
 // itemNotes are the dim guidance lines under the editor — the form explains
 // itself instead of failing at commit (Pete's review of the first form).
 func (m model) itemNotes() []string {
+	if m.listField == fClaudeSkills {
+		notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+		if n := claudeSkillDirNote(m.inputs[0].Value(), m.inputs[1].Value()); n != "" {
+			notes = append(notes, "⚠ "+n+" (accepted anyway — the dir can be created later)")
+		}
+		return notes
+	}
 	if m.listField != fMCP {
 		return nil
 	}
