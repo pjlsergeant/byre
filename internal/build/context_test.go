@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
@@ -209,6 +211,118 @@ func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 	}
 	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"assets": "/opt/assets"}}, skills.Resolved{}); err == nil {
 		t.Fatal("expected rejection of a symlink nested in a staged directory")
+	}
+}
+
+// Ordinary files and nested directories stage unchanged, preserving modes.
+func TestCopyPathStagesRegularTree(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "sub", "deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "top.txt"), []byte("top"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "exec.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "deep", "leaf"), []byte("leaf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "staged")
+	if err := copyPath(src, dst); err != nil {
+		t.Fatalf("copyPath of a plain tree failed: %v", err)
+	}
+	for rel, wantMode := range map[string]os.FileMode{
+		"top.txt":       0o644,
+		"sub/exec.sh":   0o755,
+		"sub/deep/leaf": 0o600,
+	} {
+		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("%s not staged: %v", rel, err)
+		}
+		if fi.Mode().Perm() != wantMode {
+			t.Errorf("%s mode = %v, want %v", rel, fi.Mode().Perm(), wantMode)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(dst, "sub", "deep", "leaf")); string(b) != "leaf" {
+		t.Errorf("leaf content = %q, want %q", b, "leaf")
+	}
+}
+
+// copyWithin runs copyPath under a timeout: a FIFO/special that slips past the
+// type checks would block the open forever, so a regression must fail, not hang.
+func copyWithin(t *testing.T, src, dst string) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- copyPath(src, dst) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(15 * time.Second):
+		t.Fatal("copyPath blocked — O_NONBLOCK / fstat-type-gate regression")
+		return nil // unreachable
+	}
+}
+
+// A FIFO planted in a staged directory (an agent has /workspace rw) must be a
+// loud rejection, never an indefinite blocking open of the rebuild.
+func TestCopyPathRejectsInteriorFIFO(t *testing.T) {
+	src := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(src, "pipe"), 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	if err := copyWithin(t, src, filepath.Join(t.TempDir(), "staged")); err == nil {
+		t.Fatal("a FIFO nested in a staged directory must be rejected")
+	}
+}
+
+// The same for a top-level `files` source that is a FIFO.
+func TestCopyPathRejectsTopLevelFIFO(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "pipe")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	if err := copyWithin(t, fifo, filepath.Join(t.TempDir(), "staged")); err == nil {
+		t.Fatal("a top-level FIFO source must be rejected")
+	}
+}
+
+// A non-escaping in-root symlink is rejected too, not silently dereferenced:
+// os.Root would follow it, so copyPath's Lstat-through-root must catch it. (The
+// escaping variant is covered by TestAssembleFilesRejectsNestedSymlink.)
+func TestCopyPathRejectsInteriorSymlink(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "real"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(src, "link")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+		t.Fatal("an in-root symlink must be rejected, not dereferenced into the image")
+	}
+}
+
+// A symlink DEEP in the tree that escapes the project is refused by os.Root's
+// per-component openat, proving a swapped directory component can't pull an
+// external file in during recursion.
+func TestCopyPathRejectsDeepEscapingSymlink(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(src, "a", "b", "leak")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+		t.Fatal("a deep escaping symlink must be rejected")
 	}
 }
 

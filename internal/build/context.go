@@ -8,9 +8,11 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
@@ -346,9 +348,21 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 	return real, clean, nil
 }
 
-// copyPath copies a file or directory tree, preserving file modes. Symlinks are
-// rejected (Lstat) so a symlink nested in a staged directory can't pull a file
-// from outside the project into the image.
+// copyPath copies a file or directory tree, preserving file modes. Only plain
+// files and directories are staged; symlinks and other non-regular files (FIFOs,
+// devices, sockets) are rejected, so nothing can pull content from outside the
+// project into the image or stall the rebuild.
+//
+// The project stays writable while a session runs, and `byre rebuild` can stage
+// a context concurrently, so an agent can swap an entry between classification
+// and copy (the check/open race). copyPath is race-hardened accordingly:
+// interior entries of a directory are opened THROUGH an os.Root anchored at the
+// directory (openat per component, never a re-walked pathname), which refuses
+// any component that resolves outside the root — so a regular file swapped for
+// an escaping symlink after classification cannot pull an external file in.
+// Opens are O_NONBLOCK and the type is trusted only from the fd's fstat, so a
+// swap to a FIFO returns instead of hanging and is rejected rather than staged.
+// This mirrors internal/deliver/transport.go.
 func copyPath(src, dst string) error {
 	info, err := os.Lstat(src)
 	if err != nil {
@@ -358,26 +372,87 @@ func copyPath(src, dst string) error {
 		return fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", src)
 	}
 	if info.IsDir() {
-		entries, err := os.ReadDir(src)
+		// Anchor a root at the directory and copy its interior through it. A
+		// concurrent swap of a deeper directory component to an escaping symlink
+		// is refused by os.Root's per-component openat, not re-resolved by name.
+		root, err := os.OpenRoot(src)
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(dst, 0o755); err != nil {
-			return err
-		}
-		for _, e := range entries {
-			if err := copyPath(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
-				return err
-			}
-		}
-		return nil
+		defer root.Close()
+		return copyTreeContained(root, ".", dst)
 	}
-	in, err := os.Open(src)
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", src)
+	}
+	// Reopen the top-level file with O_NOFOLLOW|O_NONBLOCK and trust the fd's
+	// stat, so a swap to a symlink or FIFO between the Lstat above and here is
+	// rejected rather than followed or blocked on.
+	in, err := os.OpenFile(src, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	o, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	return stageRegularFromFD(in, dst)
+}
+
+// copyTreeContained copies the entry at rel (relative to root) into dst, opening
+// every interior object THROUGH root so no pathname is re-resolved between
+// classification and use. rel is the caller-walked name; the fd's fstat is the
+// only thing trusted for the entry's type.
+func copyTreeContained(root *os.Root, rel, dst string) error {
+	// Lstat through the root to reject symlinks WITHOUT following them: os.Root
+	// silently follows an in-root symlink on Open, and copyPath's contract is to
+	// stage no symlinks at all (an escaping one is refused by the root regardless;
+	// this also rejects an in-root one rather than dereferencing it into the image).
+	li, err := root.Lstat(rel)
+	if err != nil {
+		return err
+	}
+	if li.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", filepath.Join(root.Name(), rel))
+	}
+
+	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	switch {
+	case fi.IsDir():
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return err
+		}
+		entries, err := f.ReadDir(-1)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if err := copyTreeContained(root, filepath.Join(rel, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	case fi.Mode().IsRegular():
+		return stageRegularFromFD(f, dst)
+	default:
+		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", filepath.Join(root.Name(), rel))
+	}
+}
+
+// stageRegularFromFD copies an already-open source file into dst, preserving its
+// permission bits. The source type was validated on the same fd, so no pathname
+// is re-resolved here.
+func stageRegularFromFD(in *os.File, dst string) error {
+	fi, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	o, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fi.Mode().Perm()&fs.ModePerm)
 	if err != nil {
 		return err
 	}
