@@ -65,9 +65,12 @@ completeness.
 **P5. Duplicate only the stable.** A fact may appear on two surfaces only
 when it changes rarely: the boxed/not-boxed contract, the H1 pitch, one
 install command, the develop one-liner. Volatile content -- the commands
-table, the config vocabulary, the "How do I…?" recipes, skill lists --
-lives only in its canonical home. This is the rot-control rule: every
-duplicated sentence is a future docs-sweep miss.
+table, the config vocabulary, the *bodies* of the "How do I…?" recipes,
+skill lists -- lives only in its canonical home. (The recipes' question
++ tldr index is conversion content and stays in the README, tldrs
+duplicated verbatim -- P6 governs that split.) This is the rot-control
+rule, and P6's verbatim-or-absent is its enforcement arm: a verbatim
+line is grep-sweepable; a paraphrase is a future docs-sweep miss.
 
 **P6. A README summary is a different genre, not an excerpt -- and shared
 text is verbatim or absent.** The "simplified versions" the README keeps
