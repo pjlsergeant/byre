@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestCommandsPagePinsSiteFile is P10's tripwire: the checked-in site page
@@ -36,12 +38,20 @@ func TestCommandsPageCoversTree(t *testing.T) {
 		t.Fatalf("commands-page: %v", err)
 	}
 	page := out.String()
-	for _, c := range root.Commands() {
-		if c.Hidden || c.Name() == "help" {
-			continue
-		}
-		if !strings.Contains(page, "| `byre "+c.Name()) {
-			t.Errorf("command %q missing from rendered page", c.Name())
+	var walk func(cmds []*cobra.Command)
+	walk = func(cmds []*cobra.Command) {
+		for _, c := range cmds {
+			if c.Hidden || c.Name() == "help" {
+				continue
+			}
+			if !strings.Contains(page, "| `"+strings.ReplaceAll(c.CommandPath(), "|", `\|`)) {
+				t.Errorf("command %q missing from rendered page", c.CommandPath())
+			}
+			if c.Name() == "completion" { // per-shell children fold into the parent row
+				continue
+			}
+			walk(c.Commands())
 		}
 	}
+	walk(root.Commands())
 }
