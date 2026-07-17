@@ -58,6 +58,7 @@ type statusInfo struct {
 	Containments    []skills.ContainmentDecl
 	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
 	Container       string   // this dir's running container id, or "" if none
+	Orphaned        bool     // Container is running but its byre client is gone (terminal died; box survives)
 	SiblingSessions []string // OTHER live sessions in this project, "workdir-id (short-id)" (worktrees sharing these volumes)
 	Rootless        bool     // true if the engine is rootless Podman
 	KeepID          bool     // rootless Podman with keep-id mapping support (the supported rootless path)
@@ -211,6 +212,13 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		mine, _ := r.RunningContainersByLabel(workdirLabel(paths))
 		if len(mine) > 0 {
 			info.Container = mine[0]
+			// A box outliving its byre (terminal killed, ssh dropped) keeps
+			// running by design — but status must SAY so, or "running" reads
+			// as a reachable session and the reset/forget refusal as a
+			// contradiction. Best-effort: label errors leave plain "running".
+			if labels, lerr := r.ContainerLabels(mine[0]); lerr == nil {
+				info.Orphaned = clientGone(labels)
+			}
 		}
 		// Other live sessions in the same project (worktrees sharing these
 		// volumes). Surfaced so status doesn't imply "nothing running" while
@@ -564,6 +572,8 @@ func renderStatus(w io.Writer, s statusInfo) {
 
 	if s.EngineErr != "" {
 		row("Container", "unknown (no engine)")
+	} else if s.Container != "" && s.Orphaned {
+		row("Container", "running ("+shortID(s.Container)+") — orphaned: the byre that started it is gone; the box runs on. Reach it with 'byre shell', or stop it: "+s.Engine+" stop "+shortID(s.Container))
 	} else if s.Container != "" {
 		row("Container", "running ("+shortID(s.Container)+")")
 	} else {

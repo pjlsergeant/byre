@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -87,7 +88,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	return runner.RunParams{
 		Image:           image,
 		Name:            containerName(paths),
-		Labels:          []string{projectLabel(paths), workdirLabel(paths)},
+		Labels:          []string{projectLabel(paths), workdirLabel(paths), clientKey + "=" + strconv.Itoa(os.Getpid())},
 		WorkspaceHost:   paths.WorkDir,
 		WorkspaceTarget: "/workspace",
 		Env:             env,

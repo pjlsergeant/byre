@@ -60,7 +60,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 		if live, err := liveSession(r, paths.ID); err != nil {
 			return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
 		} else if len(live) > 0 {
-			return fmt.Errorf("a session is running for this project (%s%s); exit it before forget", shortID(live[0]), engineSuffix(multi, r))
+			return fmt.Errorf("a session is running for this project (%s%s); exit it before forget — no terminal attached to it? the box outlived its byre; stop it with: %s stop %s", shortID(live[0]), engineSuffix(multi, r), r.Engine(), shortID(live[0]))
 		}
 		st := engineState{r: r}
 		var err error

@@ -3,6 +3,7 @@ package commands
 import (
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -186,6 +187,11 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 	}
 	if got := strings.Join(p.Labels, " "); !strings.Contains(got, "byre.project=byre-main-000000") || !strings.Contains(got, "byre.workdir=byre-wt-111111") {
 		t.Errorf("labels missing project/workdir: %v", p.Labels)
+	}
+	// The client pid label is how status tells an orphaned box (terminal
+	// gone, box surviving) from a reachable session.
+	if got := strings.Join(p.Labels, " "); !strings.Contains(got, "byre.client="+strconv.Itoa(os.Getpid())) {
+		t.Errorf("labels missing the byre.client pid: %v", p.Labels)
 	}
 	// Workspace bind is the worktree, not the main tree.
 	if p.WorkspaceHost != "/home/me/wt" {

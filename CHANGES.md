@@ -22,6 +22,15 @@
   through to the sole-session fallback and still select) another
   project's box, silently delivering files into a stranger's /inbox.
 
+- **Orphaned boxes are labeled, not hidden.** A box deliberately
+  survives its byre client dying (terminal killed, ssh dropped) — but
+  nothing said so: `status` reported a plain "running" and the
+  reset/forget refusal pointed at a session no terminal could reach.
+  Sessions now carry a `byre.client=<pid>` label; `status` reports
+  "running — orphaned" with the ways out (`byre shell`, or
+  `<engine> stop <id>`), and the reset/forget refusals name the stop
+  command for the unreachable case.
+
 - **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
   the firewall and firewall-open skills' apt lists gain
   `ca-certificates` — Debian's curl doesn't pull the trust store, so the

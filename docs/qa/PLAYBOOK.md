@@ -167,6 +167,14 @@ The 2026-07-16 field-failure regression check.
    deliberate-delete path. rc=0.
 4. forget: kill-list = image + store dir (config, marker, context); y →
    both gone; next develop re-onboards from the wizard. rc=0.
+5. Orphaned box (codex pass finding, fixed 2026-07-17): develop in a
+   private tmux server, wait for the in-box prompt, kill the whole tmux
+   server. The container SURVIVES (deliberate — a crashed terminal must
+   not kill the agent). Expect: `byre status` shows "running (…) —
+   orphaned: the byre that started it is gone" naming `byre shell` and
+   `<engine> stop <id>`; `byre reset` refuses with the same stop
+   command appended. `docker stop <id>` then reset → normal kill-list.
+   (Older boxes without the byre.client label just say "running".)
 
 ## Journey: worktrees (pass #2 — PASSED)
 
@@ -255,18 +263,18 @@ case (language templates ship CA certs transitively and would mask it).
 
 ## Open findings
 
-From the codex lifecycle/config explore pass (2026-07-17, report-only):
-
-1. (product, low-medium, lifecycle recovery) Losing the controlling terminal
-   leaves an agent-less session running but detached from `byre`. Reproduced
-   twice: launch `develop` under a private tmux server, wait for the in-box
-   prompt, then kill the pane or the whole tmux server. The host-side `byre`
-   and docker client are gone, but the container remains running after 3s and
-   is still executable; `status` calls it running and `reset --force` refuses
-   it. Normal `exit` removes the same container. Recovery is `docker stop
-   <id>`; consider arranging cleanup on client hangup, or explicitly
-   documenting intentional detach and giving the recovery command at the
-   refusal.
+None. The codex lifecycle/config pass's finding (2026-07-17: client
+hangup orphans a running box — kill the tmux pane/server and the
+container survives, executable; `status` said only "running" and
+`reset --force` refused with no way out but raw `docker stop`) was
+dispatched the same day as legibility, deliberately NOT kill-on-hangup:
+a box surviving a crashed terminal keeps the agent alive, which is a
+feature once labeled. Boxes now carry a `byre.client=<pid>` label;
+`status` probes it and renders "running (…) — orphaned: the byre that
+started it is gone…" with both routes out (`byre shell`, `<engine>
+stop <id>`), and the reset/forget session-running refusals carry the
+same stop command for the unreachable case. See the orphaned-box step
+in the reset/forget journey.
 
 The grok explore pass's three (2026-07-17, report-only; the
 report was absorbed here and deleted) were dispatched the same day:

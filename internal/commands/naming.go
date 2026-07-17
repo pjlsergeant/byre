@@ -1,11 +1,14 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -25,10 +28,17 @@ import (
 // this invocation's run argv (asserted last, so run_args can't override it)
 // and cannot be known in advance. (Reading it back post-start requires
 // docker-socket access, which is host-root-equivalent already.)
+// clientKey records the host byre process that started the session:
+// byre.client=<pid>. Status uses it to tell a session whose terminal is gone
+// (client hangup orphans the box — the container survives, deliberately)
+// from one with a live byre attached. Liveness-by-pid is a heuristic: a
+// recycled pid can mask an orphan, which degrades the label back to plain
+// "running", never the other way around.
 const (
 	labelKey   = "byre.project"
 	workdirKey = "byre.workdir"
 	runKey     = "byre.run"
+	clientKey  = "byre.client"
 )
 
 // containerName is the engine container name — keyed on the worktree id so two
@@ -36,6 +46,28 @@ const (
 // locks). For a plain project WorktreeID == ID, so this is the historical
 // byre-<id>.
 func containerName(p project.Paths) string { return "byre-" + p.WorktreeID }
+
+// clientGone reports whether a session's recorded byre client (the
+// byre.client pid label) is dead — the box survived a client hangup and no
+// terminal can reach it. Unknown states (no label: a box from an older byre;
+// unparseable pid; liveness unprobeable) report false: the heuristic only
+// ever upgrades "running" to "running, orphaned", never invents liveness.
+func clientGone(labels map[string]string) bool {
+	v, ok := labels[clientKey]
+	if !ok {
+		return false
+	}
+	pid, err := strconv.Atoi(v)
+	if err != nil || pid <= 0 {
+		return false
+	}
+	// Raw kill(2) with signal 0 probes existence: ESRCH = gone; EPERM =
+	// alive as another user (not ours, but somebody's) — treat alive.
+	// Deliberately not os.FindProcess/Signal: its pidfd fast path reports
+	// a vanished pid as os.ErrProcessDone, an extra encoding of the same
+	// fact this raw probe answers directly.
+	return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
+}
 
 // projectLabel selects every container of the project (all its worktrees).
 func projectLabel(p project.Paths) string { return labelKey + "=" + p.ID }

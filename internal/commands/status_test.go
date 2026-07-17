@@ -108,6 +108,30 @@ func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 	}
 }
 
+// An orphaned box (running, byre client dead) must say so and give both
+// routes out — reach it (byre shell) or stop it (the engine command). A
+// plain running session keeps the plain line.
+func TestRenderStatusOrphanedContainer(t *testing.T) {
+	var b bytes.Buffer
+	renderStatus(&b, statusInfo{
+		Engine:    "docker",
+		Canonical: "/p",
+		Container: "deadbeefcafe4567",
+		Orphaned:  true,
+	})
+	out := b.String()
+	for _, want := range []string{"orphaned", "byre shell", "docker stop deadbeefcafe"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("orphaned container line missing %q: %s", want, out)
+		}
+	}
+	b.Reset()
+	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p", Container: "deadbeefcafe4567"})
+	if strings.Contains(b.String(), "orphaned") {
+		t.Errorf("plain running session must not read as orphaned: %s", b.String())
+	}
+}
+
 func TestRenderStatusRootlessPodman(t *testing.T) {
 	var b bytes.Buffer
 	renderStatus(&b, statusInfo{Engine: "podman", Canonical: "/p", Rootless: true})
