@@ -260,6 +260,13 @@ case (language templates ship CA certs transitively and would mask it).
 - Don't match a banner alone to conclude "box up" — early "firewall
   hung" reports were wait-loop races matching banner text before the
   `dev@` prompt; wait for the prompt (grok explore pass, 2026-07-17).
+- ONE driver per VM at a time. The gated suite assumes an exclusive
+  engine: a concurrent QA pass's boxes walk into the deliver pool-scan
+  tests ("want exactly this box") and fail them — diagnosed 2026-07-17
+  when a pass's deliberately-orphaned box photobombed two suite runs.
+  Before starting a suite run or a pass, check for a live driver:
+  `tmux ls` on every socket you know (`tmux -L <sock> ls`), and
+  `docker ps --filter label=byre.project` for boxes you don't own.
 
 ## Open findings
 
