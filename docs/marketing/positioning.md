@@ -269,22 +269,26 @@ one demo per page/section, doing that page's job; every embed's poster
 frame is the final screen; where the cast shows the interaction, the
 prose states outcomes instead of narrating keystrokes.
 
-### Publish-time asciinema demos (prototyped 2026-07-17; harness not yet built)
+### Publish-time asciinema demos (shipped 2026-07-17)
 
 The tuitest substrate records site demos: an asciinema spectator
 (`asciinema rec --headless --window-size` pinned to the pane) attached
 to the private tmux server while the scenario sends keys and WaitFors
 -- one substrate, fourth consumer. Each demo is a gated test
-(`BYRE_DEMO_REC=1`) that asserts its waits AND emits a `.cast` into
-`site/static/`: a layout change fails the demo, which fails the publish
-(this, not taste, is the case against vhs -- a `.tape` has no
-assertions). Player: self-hosted asciinema-player + a Hugo shortcode;
-no service, no uploads. In-box prototype proved the pipeline end to end
-(static asciinema 3.2.1 + static tmux 3.6b release binaries, no root,
-CI-viable; artifacts in the dev box's `~/scratch/demo-prototype/`);
-one discipline it surfaced: the harness must trim the cast's tail
-events so the poster frame is the final TUI screen, not tmux's
-server-exited notice.
+(`BYRE_DEMO_REC=1`, `internal/tuitest/demos_test.go`) that asserts its
+waits AND emits a `.cast` into `site/static/casts/`: a layout change
+fails the demo, which fails the publish (this, not taste, is the case
+against vhs -- a `.tape` has no assertions). Player: self-hosted
+asciinema-player + the `demo` Hugo shortcode; no service, no uploads.
+Disciplines the build settled: the harness trims the cast's tail back
+to a sentinel on the intended final screen, so the poster frame (P11)
+is never tmux's server-exited notice; multi-scene demos record each
+scene as its own cast and concatenate with a clear-screen break, so a
+scene may END at an off-camera boundary (the quickstart's develop
+stopping at the engine boundary) without the boundary frame shipping;
+scenarios run on a curated PATH with stub host capabilities (engine,
+clipboard) so CI's real docker records the same frames as any dev box.
+Recording mechanics for developers: `docs/BYRE-DEVELOPMENT.md`.
 
 Limits: publish-time demos cover engine-free surfaces only (`byre
 config`, the picker to the engine boundary, `status` against a seeded
@@ -305,10 +309,15 @@ flakes-twice rule applies. Placement (P11 applied):
 Engine-bound casts sit in pages identically to generated ones; which is
 which lives in the scenario inventory (P9), not on the page.
 
-Until a cast exists, its slot carries a visible placeholder in the page
-(blockquote marker + `<!-- demo-placeholder: <slug> -->` comment), so
-the layout is judged with the demo's space reserved and the placeholder
-inventory is grep-able. Static screenshots use the same convention
+A generated demo's slot is its `{{</* demo cast="<slug>" */>}}` shortcode
+(grep `{{</* demo` for the inventory); the shortcode itself renders a
+visible placeholder when the cast is absent (a local build without a
+recording pass) and hard-fails under `HUGO_REQUIRE_CASTS=1` (the deploy
+workflow). A slot whose cast does not exist AT ALL yet (the VM-recorded
+scenarios) carries a visible placeholder in the page (blockquote marker
++ `<!-- demo-placeholder: <slug> -->` comment), so the layout is judged
+with the demo's space reserved and the placeholder inventory is
+grep-able. Static screenshots use the same convention
 (`<!-- image-placeholder: <slug> -->`).
 
 ### User documentation vs Reference (decided 2026-07-17)

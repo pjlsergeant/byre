@@ -191,3 +191,45 @@ never broad fragments; ENFORCE headlessness where the test needs it
 (unset `DISPLAY`/`WAYLAND_DISPLAY`, controlled `PATH`); isolate the
 store with `BYRE_HOME`, never a `HOME` swap; a test that flakes twice
 gets rewritten or deleted.
+
+## The demo-recording tier (site casts)
+
+The site's terminal demos are recorded BY TESTS
+(`internal/tuitest/demos_test.go`, gate `BYRE_DEMO_REC=1`): each
+scenario drives the built binary under the TUI harness with an
+asciinema spectator attached (`Opts.RecordTo`), asserts its WaitFors,
+and installs `site/static/casts/<slug>.cast` + `<slug>.json`
+(duration/geometry for the player shortcode). A layout change fails the
+recording test, which fails the site deploy — the assertions are why
+this exists instead of a `.tape` file. Design and placement:
+`docs/marketing/positioning.md` "Publish-time asciinema demos".
+
+Running it needs tmux, bash-completion (the completion scenario), and
+**asciinema v3** — the rust CLI, NOT distro asciinema (python v2, wrong
+cast format); CI installs a pinned release binary (see site.yml). Then:
+
+```sh
+BYRE_DEMO_REC=1 go test ./internal/tuitest -run TestDemo -v
+```
+
+House rules where they DIVERGE from the assertion tier above:
+
+- Demos swap `$HOME` (the one place that's allowed): recorded frames
+  paint real paths, so the scenario owns a fake home entirely —
+  `BYRE_DEMO_HOME=/home/pete` in the deploy workflow keeps runner paths
+  out of published frames; locally a tempdir shows and that's fine
+  (local runs are for iterating, CI records what ships).
+- Scenarios run on a curated PATH (a symlink farm + per-scenario stubs
+  for host capabilities: engine, clipboard), so CI's real docker records
+  the same frames as a dev box. The deliver demo's `docker` is a stub
+  answering deliver's discovery/exec argv exactly — a transport change
+  breaks it loudly.
+- `EndCast(sentinel)` trims the cast's tail back to the last output
+  event containing the sentinel: pick a string the final screen paints
+  in ONE write (styling splits text across events), or the trim fails
+  loudly. Never ship a cast ending on tmux's server-exited frame (the
+  poster IS the final frame — P11).
+- A scene that must end at an off-camera boundary (develop stopping at
+  the engine boundary) records as its own cast; `WriteDemo` concatenates
+  scenes with a clear-screen break. The cut is a visible scene change,
+  never an edited-out mid-cast frame.

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The site's demos record themselves at publish time.** Four terminal
+  demos (the config-editor walk, the quickstart picker ending on
+  `byre status`, the deliver paste flow, tab completion) are recorded by
+  gated tests riding the tmux TUI harness with an asciinema spectator
+  attached — the scenario's assertions run first, so a layout change
+  fails the recording and the recording gates the deploy: a published
+  demo can't show yesterday's screens. Playback is a self-hosted
+  asciinema-player (no service, no uploads); every embed's poster is the
+  recording's final frame. The site deploy now also re-records on Go
+  changes, keeping casts in lockstep with the binary.
+
 - **The site's docs became the real documentation.** getbyre.com/docs
   now carries the canonical operational reference -- the full
   configuration vocabulary and merge rules, the volumes model with a

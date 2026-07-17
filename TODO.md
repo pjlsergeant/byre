@@ -41,10 +41,10 @@ the rationale lives.
   - Landing comparison table: the "Why not…?" material is still
     README-only; the site plan puts the table on the landing page.
   - Screencast hero on the landing (the day-03-style clip -- the media
-    the README shouldn't carry).
-  - (M) Publish-time demo harness: gated BYRE_DEMO_REC=1 tests emitting
-    .casts into site/static/ + self-hosted player + Hugo shortcode --
-    prototyped feasible 2026-07-17, shape in the site plan's demo section.
+    the README shouldn't carry). The demo harness shipped 2026-07-17
+    (BYRE_DEMO_REC=1 tests record 4 casts at publish; player + shortcode
+    live); what remains here is the VM-recorded tier: hero clip, firewall,
+    worktrees -- recorded with the same verbs, committed as .casts.
 
 ## Standing
 
@@ -62,6 +62,12 @@ Disciplines and tripwires, not tasks.
     per entry (P6); grep "tldr:" in both when a recipe changes.
   - commands table: generated -- TestCommandsPagePinsSiteFile enforces,
     regenerate with `go run ./cmd/byre commands-page`.
+  - demo casts: generated at publish (BYRE_DEMO_REC=1, self-verifying --
+    a layout change fails the recording test). Scenario inventory:
+    config-tui-walk, quickstart-picker-status, deliver-paste-flow,
+    completion-tab-walk (internal/tuitest/demos_test.go); VM-recorded
+    (committed .casts, refresh around releases): none yet -- hero,
+    firewall, worktrees pending.
 - **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
