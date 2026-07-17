@@ -56,11 +56,7 @@ func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {
 		if c.Hidden || c.Name() == "help" {
 			continue
 		}
-		use := strings.TrimSuffix(c.UseLine(), " [flags]")
-		// Table cells: a raw | splits the cell, even inside a code span.
-		use = strings.ReplaceAll(use, "|", `\|`)
-		short := strings.ReplaceAll(c.Short, "|", `\|`)
-		fmt.Fprintf(b, "| `%s` | %s |\n", use, short)
+		b.WriteString(commandRow(c))
 		// The per-shell completion children are four copies of the same
 		// sentence; the parent row covers them.
 		if c.Name() == "completion" {
@@ -68,4 +64,14 @@ func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {
 		}
 		writeCommandRows(b, c.Commands())
 	}
+}
+
+// commandRow renders one command's table line (also the unit the coverage
+// test asserts on, so the two can't diverge).
+func commandRow(c *cobra.Command) string {
+	use := strings.TrimSuffix(c.UseLine(), " [flags]")
+	// Table cells: a raw | splits the cell, even inside a code span.
+	use = strings.ReplaceAll(use, "|", `\|`)
+	short := strings.ReplaceAll(c.Short, "|", `\|`)
+	return fmt.Sprintf("| `%s` | %s |\n", use, short)
 }

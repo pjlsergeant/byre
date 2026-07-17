@@ -60,7 +60,9 @@ func readmeIndexPairs(readme string) [][2]string {
 	var pairs [][2]string
 	q := regexp.MustCompile(`(?m)^\*\*(.+\?)\*\*\n((?:.+\n)+?)\(\[recipe\]`)
 	for _, m := range q.FindAllStringSubmatch(section, -1) {
-		pairs = append(pairs, [2]string{m[1], strings.TrimSpace(m[2])})
+		// Only the paragraph-final newline comes off: interior trailing
+		// spaces (markdown hard breaks) must count as drift.
+		pairs = append(pairs, [2]string{m[1], strings.TrimSuffix(m[2], "\n")})
 	}
 	return pairs
 }
@@ -79,9 +81,9 @@ func cookbookPairs(cookbook string) [][2]string {
 		if end := strings.Index(para, "\n\n"); end >= 0 {
 			para = para[:end]
 		}
-		// The site renders <agent> as &lt;agent&gt; where needed; tldrs
-		// must not need that, so compare raw.
-		pairs = append(pairs, [2]string{strings.TrimSpace(heading), strings.TrimSpace(para)})
+		// Compare raw -- trailing spaces (markdown hard breaks) and any
+		// HTML-escaping a tldr would need are drift, not noise.
+		pairs = append(pairs, [2]string{heading, para})
 	}
 	return pairs
 }

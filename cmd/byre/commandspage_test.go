@@ -44,7 +44,7 @@ func TestCommandsPageCoversTree(t *testing.T) {
 			if c.Hidden || c.Name() == "help" {
 				continue
 			}
-			if !strings.Contains(page, "| `"+strings.ReplaceAll(c.CommandPath(), "|", `\|`)) {
+			if !strings.Contains(page, commandRow(c)) {
 				t.Errorf("command %q missing from rendered page", c.CommandPath())
 			}
 			if c.Name() == "completion" { // per-shell children fold into the parent row
