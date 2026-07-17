@@ -328,9 +328,42 @@ func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 	if err != nil || yes {
 		t.Fatalf("explicit n must override the preference: yes = %v, err = %v", yes, err)
 	}
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", "claude-shared-auth", true)
+	// Garbage REPROMPTS (QA pass-2: it used to read as a silent decline —
+	// an `i` typo threw the offer away); the explicit answer after it lands.
+	out.Reset()
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\nn\n")), "claude", "claude-shared-auth", true)
 	if err != nil || yes {
-		t.Fatalf("garbage must never grant, even under a yes default: yes = %v, err = %v", yes, err)
+		t.Fatalf("garbage then n must decline: yes = %v, err = %v", yes, err)
+	}
+	if !strings.Contains(out.String(), "unrecognized") || strings.Count(out.String(), "[Y/n, i for info]") != 2 {
+		t.Fatalf("garbage must reprompt with a hint:\n%s", out.String())
+	}
+	// Garbage with input exhausted surfaces the read error — terminates, and
+	// still never lands on the granting side, whatever the default.
+	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", "claude-shared-auth", true)
+	if err == nil || yes {
+		t.Fatalf("garbage + EOF must error without granting: yes = %v, err = %v", yes, err)
+	}
+}
+
+// Every y/N prompt shares one behavior: y/n answers, Enter takes the default,
+// anything else reprompts (QA pass-2: garbage used to read as the default).
+func TestAskYesNoDefaultReprompts(t *testing.T) {
+	var out bytes.Buffer
+	yes, err := askYesNoDefault(&out, bufio.NewReader(strings.NewReader("banana\ny\n")), "Proceed?", false)
+	if err != nil || !yes {
+		t.Fatalf("garbage then y must land yes: yes = %v, err = %v", yes, err)
+	}
+	if !strings.Contains(out.String(), "unrecognized") || strings.Count(out.String(), "Proceed? [y/N]:") != 2 {
+		t.Fatalf("garbage must reprompt with a hint:\n%s", out.String())
+	}
+	// Explicit n is recognized (it used to be lumped with garbage).
+	if yes, err = askYesNoDefault(&out, bufio.NewReader(strings.NewReader("N\n")), "Proceed?", true); err != nil || yes {
+		t.Fatalf("explicit n must override a yes default: yes = %v, err = %v", yes, err)
+	}
+	// Garbage with input exhausted errors out — never grants, never spins.
+	if yes, err = askYesNoDefault(&out, bufio.NewReader(strings.NewReader("banana\n")), "Proceed?", true); err == nil || yes {
+		t.Fatalf("garbage + EOF must error without granting: yes = %v, err = %v", yes, err)
 	}
 }
 

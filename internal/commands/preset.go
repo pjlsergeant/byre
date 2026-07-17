@@ -130,8 +130,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	// Step 6: confirm; write the reviewed bytes as the project's byre.config
 	// and record the applied marker. Same discipline as every store write:
 	// under the setup lock, re-read, and only land the bytes just reviewed.
-	fmt.Fprint(s.Err, "Apply this preset? byre.config will be replaced. [y/N] ")
-	if !confirmed(s.In) {
+	if !confirmed(s.Err, s.In, "Apply this preset? byre.config will be replaced. [y/N] ") {
 		fmt.Fprintln(s.Err, "byre: not applied; nothing written.")
 		return nil
 	}

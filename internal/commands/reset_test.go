@@ -208,6 +208,27 @@ func TestResetPromptProceedsOnYes(t *testing.T) {
 	}
 }
 
+// Garbage at the confirm reprompts instead of silently taking the default
+// (QA pass-2); the explicit answer after it lands.
+func TestResetPromptRepromptsOnGarbage(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
+	s, _, errw := testStreams("banana\nn\n", false)
+	if err := reset(s, p, engines(f), false); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.removed) != 0 {
+		t.Fatalf("'banana' then 'n' must abort, removed=%v", f.removed)
+	}
+	out := errw.String()
+	if !strings.Contains(out, "unrecognized") || strings.Count(out, "Proceed? [y/N]") != 2 {
+		t.Errorf("garbage must reprompt with a hint:\n%s", out)
+	}
+	if !strings.Contains(out, "aborted.") {
+		t.Errorf("the n must abort:\n%s", out)
+	}
+}
+
 // A project whose ONLY volumes are machine-scoped still hears what reset
 // spared — the note must precede the no-volumes early return.
 func TestResetNotesMachineVolumesEvenWithNoProjectVolumes(t *testing.T) {

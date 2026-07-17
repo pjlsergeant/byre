@@ -220,6 +220,8 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 			switch strings.ToLower(strings.TrimSpace(line)) {
 			case "y", "yes":
 				return c, true, nil
+			case "n", "no":
+				return "", false, nil
 			case "":
 				if prefYes {
 					return c, true, nil
@@ -248,7 +250,10 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 
 `, c, prov, agent, vol, agent, c, agent)
 			default:
-				return "", false, nil
+				// Unrecognized input reprompts — an `i` typo used to read as
+				// a silent decline (QA pass-2). EOF terminates via the empty
+				// read at the top of the next pass.
+				fmt.Fprintln(out, "unrecognized — y, n, i, or Enter for the default.")
 			}
 		}
 	}
@@ -323,26 +328,58 @@ func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
 	return askYesNoDefault(out, r, label, false)
 }
 
+// AnswerClass is the one shared reading of a line typed at a yes/no prompt.
+// Every interactive y/N prompt in byre classifies the same way: an explicit
+// yes or no, an empty accept-the-default, and everything else REPROMPTS —
+// unrecognized input never silently lands on either side (QA pass-2: "banana"
+// at the shared-auth offer used to read as a decline).
+type AnswerClass int
+
+const (
+	AnswerYes AnswerClass = iota
+	AnswerNo
+	AnswerDefault
+	AnswerRetry
+)
+
+// ClassifyAnswer maps one prompt line to its AnswerClass (case-insensitive,
+// whitespace-trimmed; y/yes, n/no, empty, or retry).
+func ClassifyAnswer(line string) AnswerClass {
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return AnswerYes
+	case "n", "no":
+		return AnswerNo
+	case "":
+		return AnswerDefault
+	}
+	return AnswerRetry
+}
+
 // askYesNoDefault prompts [Y/n] or [y/N] per def; an empty answer accepts the
-// default. Everything else only counts as yes when it is an explicit y/yes —
-// unrecognized input never lands on the granting side, whatever the default.
+// default, an explicit y/n answers, and anything else reprompts. Exhausted
+// input (EOF) surfaces as the read error on the next pass, so a garbage-only
+// pipe terminates instead of granting or spinning.
 func askYesNoDefault(out io.Writer, r *bufio.Reader, label string, def bool) (bool, error) {
 	marker := "y/N"
 	if def {
 		marker = "Y/n"
 	}
-	fmt.Fprintf(out, "%s [%s]: ", label, marker)
-	line, err := r.ReadString('\n')
-	if err != nil && line == "" {
-		return false, err
-	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true, nil
-	case "":
-		return def, nil
-	default:
-		return false, nil
+	for {
+		fmt.Fprintf(out, "%s [%s]: ", label, marker)
+		line, err := r.ReadString('\n')
+		if err != nil && line == "" {
+			return false, err
+		}
+		switch ClassifyAnswer(line) {
+		case AnswerYes:
+			return true, nil
+		case AnswerNo:
+			return false, nil
+		case AnswerDefault:
+			return def, nil
+		}
+		fmt.Fprintln(out, "unrecognized — y, n, or Enter for the default.")
 	}
 }
 

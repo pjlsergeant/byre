@@ -89,8 +89,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 	fmt.Fprintf(s.Err, "  - %s/  (config, applied marker, build context)\n", paths.Dir)
 
 	if !force {
-		fmt.Fprint(s.Err, "Proceed? [y/N] ")
-		if !confirmed(s.In) {
+		if !confirmed(s.Err, s.In, "Proceed? [y/N] ") {
 			fmt.Fprintln(s.Err, "aborted.")
 			return nil
 		}

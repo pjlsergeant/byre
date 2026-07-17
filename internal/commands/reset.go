@@ -102,8 +102,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 	fmt.Fprintln(s.Err, "State volumes (e.g. agent credentials) will need to be re-created/re-authed on next develop.")
 
 	if !force {
-		fmt.Fprint(s.Err, "Proceed? [y/N] ")
-		if !confirmed(s.In) {
+		if !confirmed(s.Err, s.In, "Proceed? [y/N] ") {
 			fmt.Fprintln(s.Err, "aborted.")
 			return nil
 		}

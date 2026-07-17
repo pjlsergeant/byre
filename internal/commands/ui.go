@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/onboard"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -46,31 +47,44 @@ func warnRootlessPodman(w io.Writer, r sessionRunner) {
 	}
 }
 
-// confirmed reads a line and returns true only for an affirmative answer.
+// confirmed prints prompt and reads an answer, returning true only for an
+// explicit yes. Every y/N confirm shares one behavior (onboard.ClassifyAnswer):
+// y/n answer, Enter takes the default (always No here), anything else
+// REPROMPTS — unrecognized input never silently lands on either side (QA
+// pass-2). Exhausted input (EOF) declines instead of spinning.
 // It reads BYTE-AT-A-TIME, never buffering ahead: flows that chain several
 // confirms over one stdin (preset apply's chauffeur, then its own confirm)
 // would otherwise lose every answer after the first inside a discarded
 // bufio buffer — the same trap onboarding's shared-reader rule guards.
-func confirmed(stdin io.Reader) bool {
-	var line []byte
-	buf := make([]byte, 1)
+func confirmed(w io.Writer, stdin io.Reader, prompt string) bool {
 	for {
-		n, err := stdin.Read(buf)
-		if n > 0 {
-			if buf[0] == '\n' {
+		fmt.Fprint(w, prompt)
+		var line []byte
+		buf := make([]byte, 1)
+		eof := false
+		for {
+			n, err := stdin.Read(buf)
+			if n > 0 {
+				if buf[0] == '\n' {
+					break
+				}
+				line = append(line, buf[0])
+			}
+			if err != nil {
+				eof = true
 				break
 			}
-			line = append(line, buf[0])
 		}
-		if err != nil {
-			break
+		switch onboard.ClassifyAnswer(string(line)) {
+		case onboard.AnswerYes:
+			return true
+		case onboard.AnswerNo, onboard.AnswerDefault:
+			return false
 		}
-	}
-	switch strings.ToLower(strings.TrimSpace(string(line))) {
-	case "y", "yes":
-		return true
-	default:
-		return false
+		if eof {
+			return false
+		}
+		fmt.Fprintln(w, "unrecognized — y, n, or Enter for No.")
 	}
 }
 

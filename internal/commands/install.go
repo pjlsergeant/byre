@@ -138,8 +138,7 @@ func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes boo
 		// TTY sees the summary and confirms; non-TTY proceeds.
 		printAcquiredSummary(s.Err, acq)
 		if s.TTY && !yes {
-			fmt.Fprint(s.Err, "Install? [y/N]: ")
-			if !confirmed(s.In) {
+			if !confirmed(s.Err, s.In, "Install? [y/N]: ") {
 				return fmt.Errorf("install declined")
 			}
 		}
@@ -188,8 +187,7 @@ func requireConsent(s Streams, yes bool, prompt string) error {
 	if !s.TTY {
 		return fmt.Errorf("state-changing confirmation never defaults: re-run with --yes, or on a TTY")
 	}
-	fmt.Fprint(s.Err, prompt)
-	if !confirmed(s.In) {
+	if !confirmed(s.Err, s.In, prompt) {
 		return fmt.Errorf("declined")
 	}
 	return nil
