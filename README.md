@@ -144,15 +144,6 @@ longer tail: worktrees, resets, skill/template/MCP management, the exit
 hatches. The full table is at
 [getbyre.com/docs/commands/](https://getbyre.com/docs/commands/).
 
-## Worktrees: parallel agents, the git way
-
-`byre worktree fix-flaky-tests` creates a linked git worktree on that
-branch and starts a second boxed session in it: same config, image, and
-volumes -- the agent is already logged in -- but its own container
-against its own checkout, so sessions run side by side. Mechanics (where
-worktrees live, what `reset`/`forget` touch) on the
-[worktrees page](https://getbyre.com/docs/worktrees/).
-
 ## Why not…?
 
 byre is a thin layer over the Docker or Podman you already run. The
@@ -210,24 +201,37 @@ agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
 by hand.
 ([recipe](https://getbyre.com/docs/how-do-i/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box))
 
+**Run parallel agents on the same repo?**
+tldr: `byre worktree <branch>` -- a linked git worktree plus a second
+boxed session in it, one command.
+([recipe](https://getbyre.com/docs/how-do-i/#run-parallel-agents-on-the-same-repo))
+
+**Set up two agents in a review loop?**
+tldr: keep one agent as `agent`, enable a second agent's skill as a
+ride-along -- byre's own box runs Claude with codex beside it as the
+independent reviewer.
+([recipe](https://getbyre.com/docs/how-do-i/#set-up-two-agents-in-a-review-loop))
+
+**Bring my dotfiles and shell setup into every box?**
+tldr: mount them read-only -- `byre config --global` -> Mounts -- and
+the box's target mirrors your home path, so they land where the agent
+looks.
+([recipe](https://getbyre.com/docs/how-do-i/#bring-my-dotfiles-and-shell-setup-into-every-box))
+
 **Share one config baseline across many projects?**
 tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
 (`byre config`, EXTENDS section).
 ([recipe](https://getbyre.com/docs/how-do-i/#share-one-config-baseline-across-many-projects))
 
-**Paste images and files into the box?**
-tldr: `byre deliver <file>` -- or just `byre deliver` and paste.
-([recipe](https://getbyre.com/docs/how-do-i/#paste-images-and-files-into-the-box))
+**Paste or drag-and-drop images and files into my agent?**
+tldr: `byre deliver <file>` -- or just `byre deliver` and paste (or
+drop a file on the window).
+([recipe](https://getbyre.com/docs/how-do-i/#paste-or-drag-and-drop-images-and-files-into-my-agent))
 
 **Get tab completion for byre commands?**
 tldr: `eval "$(byre completion bash)"` in your shell's startup file.
 ([recipe](https://getbyre.com/docs/how-do-i/#get-tab-completion-for-byre-commands))
-
-**Stop using byre?**
-tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
-`byre ejectfirewall` prints the firewall's step.
-([recipe](https://getbyre.com/docs/how-do-i/#stop-using-byre))
 
 **Restrict network access?**
 tldr: `byre config` and enable the _firewall_ skill, then pick what to
@@ -246,6 +250,17 @@ tldr: `byre config` and enable the _docker-host_ skill.
 tldr: `byre develop --self-edit` -- the box gets its own config mounted,
 and changes are shown on exit.
 ([recipe](https://getbyre.com/docs/how-do-i/#get-the-coding-agent-to-edit-its-own-byre-config))
+
+**Stop using byre?**
+tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
+`byre ejectfirewall` prints the firewall's step.
+([recipe](https://getbyre.com/docs/how-do-i/#stop-using-byre))
+
+**…do something not listed here?**
+tldr: point your agent at
+[github.com/pjlsergeant/byre](https://github.com/pjlsergeant/byre) and
+ask.
+([recipe](https://getbyre.com/docs/how-do-i/#do-something-not-listed-here))
 
 ## Platform
 
