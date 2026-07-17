@@ -29,29 +29,17 @@ the rationale lives.
   what's left is presentation — grouping/spacing (project vs shared),
   the annotation clutter on orphan rows. View-layer only.
 
-- [ ] (L) **Site.** Landing page + real docs; the decided shape -- surfaces,
-  placement principles P1-P11, the demo pipeline -- lives in
-  docs/marketing/positioning.md "Site plan" (absorbed from wip 2026-07-17;
-  README trim + canonical site docs shipped same day).
-  v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
-  via Pages, docs seeded from the README); logo/favicon and the
-  ask-your-agent conceit landed on both surfaces same day. Remaining:
-  - DNS + Pages settings (Pete, host-side) -- believed done 2026-07-15,
-    the deployed header was verified in-browser; strike on confirm.
-  - Landing comparison table: the "Why not…?" material is still
-    README-only; the site plan puts the table on the landing page.
-  - Screencast hero on the landing (the day-03-style clip -- the media
-    the README shouldn't carry).
-  - (M) **Demo casts: make them look right, then wire them back in**
-    (parked 2026-07-18, Pete: "quite far from how I want them to look").
-    The pipeline is BUILT and in-tree -- BYRE_DEMO_REC=1 scenarios
-    (internal/tuitest/demos_test.go), player + shortcode + fonts
-    (site/static/vendor) -- but casts are not recorded, all slots render
-    invisibly, and CI's recording steps are removed (git history of
-    site.yml/ci.yml has the working wiring). The gap is presentation:
-    scene pacing, framing, what each demo shows. Revive = polish the
-    scenarios, restore the two workflow blocks, re-place the {{</* demo */>}}
-    shortcodes. VM-recorded tier (hero, firewall, worktrees) rides after.
+- [ ] (M) **Site demos: make them look right, then wire them back in**
+  (parked 2026-07-18, Pete: "quite far from how I want them to look";
+  the rest of the site is done). The pipeline is BUILT and in-tree --
+  BYRE_DEMO_REC=1 scenarios (internal/tuitest/demos_test.go), player +
+  shortcode + fonts (site/static/vendor) -- but casts are not recorded,
+  all slots render invisibly, and CI's recording steps are removed (git
+  history of site.yml/ci.yml has the working wiring). The gap is
+  presentation: scene pacing, framing, what each demo shows. Revive =
+  polish the scenarios, restore the two workflow blocks, re-place the
+  {{</* demo */>}} shortcodes. Media tier after: the VM-recorded casts
+  (hero clip on the landing, firewall, worktrees).
 
 ## Standing
 
