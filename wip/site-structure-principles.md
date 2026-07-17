@@ -102,6 +102,19 @@ byre output (the status block, the develop banner) is a lockstep liability.
 The status/marketing tripwire in TODO.md should enumerate the surfaces
 carrying each artifact, so a sweep checks a list, not memory.
 
+**P10. The build generates from the binary, never from `docs/`.** No bulk
+`docs/` → `site/` pipeline: repo docs are the wrong genre for web pages
+(reference structure, repo-relative links), and P8's audience flip is a
+deliberate per-doc call, not a bulk default -- the user-facing candidates
+(DELIVER, EJECTING, DOCKER-HOST) flip *editorially*, absorbed into
+cookbook recipes. The generation that does pay is from the cobra command
+tree: the site's commands page is byre's most volatile enumeration and
+its true source is code -- every command's one-liner lives in its cobra
+Short string, and a generator (spf13/cobra/doc, or a hidden command)
+emits the page, so a new command cannot ship without its line and the
+table cannot rot. Same move as shell completions: derive from the binary,
+never hand-sync.
+
 ## Disposition map (the principles, applied)
 
 What each current README section becomes. "Summary + link" means a P6
@@ -117,7 +130,7 @@ rewrite, not a truncation.
 | Your toolkit, every folder | **Keep** -- pitch | P1 |
 | What's boxed, what isn't | **Keep in full** -- the contract is short, stable, and load-bearing for trust; also on site | P5 |
 | Configuration | **Summary + link** -- cascade-exists + TUI-exists + files-are-yours; vocabulary, `!name` semantics, env sharp edge → `/docs/configuration/` | P5, P6 |
-| Commands table | **Move** -- volatile, grows with every release; README links `/docs/commands/`. The handful of verbs already shown in prose suffice | P5 |
+| Commands table | **Move** (decided 2026-07-17) -- volatile, grows with every release; README links `/docs/commands/`, which becomes generated from the cobra tree. The handful of verbs already shown in prose suffice | P5, P10 |
 | Worktrees | **Summary + link** -- 2-3 sentences of pitch (it's a differentiator), mechanics → `/docs/worktrees/` | P6 |
 | Volumes & state | **Move** -- the one-liner in "Comfortable" already covers the pitch; link | P5 |
 | Why not…? | **Keep** (conversion, README-canonical); landing gets the comparison-table rendering per the site plan | P1 |
@@ -135,8 +148,5 @@ the detail the README sheds.
 1. **Canonicality flip** (P2): happy to amend positioning.md's "README
    wins" header to "README wins for conversion copy; site page wins for
    operational docs"?
-2. **Commands in the README**: drop the table entirely (proposed), or keep
-   a 5-row "core verbs" mini-table? The mini-table is friendlier but is
-   exactly the volatile-duplicate P5 warns about.
-3. **SECURITY.md** (P8): leave as a GitHub link for now, or is it close
+2. **SECURITY.md** (P8): leave as a GitHub link for now, or is it close
    enough to user-facing to plan a site page?
