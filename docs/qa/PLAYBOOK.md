@@ -284,6 +284,20 @@ from wip/gussy-up-gui-handoff.md, deleted):
    `git worktree repair` also works. Open question pending dispatch:
    should byre detect/handle this, or document the repair?
 
+2. (product, live-report 2026-07-17, Pete) Config UI Volumes section
+   dies wholesale when ANY installed engine is unreachable:
+   volumeAdmin.List returns on the first per-engine error, so podman
+   installed with its machine stopped (macOS: exit 125, "Cannot
+   connect to Podman … podman.sock: no such file or directory") kills
+   the whole section including docker's listable rows. Repro: box with
+   docker running + podman installed, podman machine stopped, byre
+   config → Volumes. Proposed fix pending dispatch: per-engine degrade
+   — unreachable engine contributes no rows plus a loud section note
+   ("podman unreachable — its copies aren't shown and can't be cleared
+   this session"), reachable engines list normally; deliver's
+   partial-pool posture applied to the volumes view (needs a small
+   configui.VolumeAdmin interface change for section notes).
+
 Previously closed: the codex lifecycle/config pass's finding (2026-07-17: client
 hangup orphans a running box — kill the tmux pane/server and the
 container survives, executable; `status` said only "running" and
