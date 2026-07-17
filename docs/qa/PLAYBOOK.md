@@ -270,7 +270,21 @@ case (language templates ship CA certs transitively and would mask it).
 
 ## Open findings
 
-None. The codex lifecycle/config pass's finding (2026-07-17: client
+From dogfooding the gussy-up-gui session (2026-07-17, Pete; absorbed
+from wip/gussy-up-gui-handoff.md, deleted):
+
+1. (product, worktree lifecycle) Removing/pruning a worktree host-side
+   while its box is live breaks every git command in the box ("not a
+   git repository: …/worktrees/<name>"): the box mounts the main
+   `.git`, whose `worktrees/<name>` metadata just vanished. Verified
+   in-box repair (additive, reversible): recreate
+   `.git/worktrees/<name>/{HEAD,commondir,gitdir}` using HOST paths
+   (both mounts sit at host-true paths in the box, so they resolve),
+   then `git read-tree HEAD` to rebuild the index; host-side
+   `git worktree repair` also works. Open question pending dispatch:
+   should byre detect/handle this, or document the repair?
+
+Previously closed: the codex lifecycle/config pass's finding (2026-07-17: client
 hangup orphans a running box — kill the tmux pane/server and the
 container survives, executable; `status` said only "running" and
 `reset --force` refused with no way out but raw `docker stop`) was
