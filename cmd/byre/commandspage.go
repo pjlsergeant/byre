@@ -21,13 +21,42 @@ func commandsPageCmd(s commands.Streams) *cobra.Command {
 		Hidden: true,
 		Args:   noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprint(s.Out, renderCommandsPage(cmd.Root()))
+			page, err := renderCommandsPage(cmd.Root())
+			if err != nil {
+				return err
+			}
+			fmt.Fprint(s.Out, page)
 			return nil
 		},
 	}
 }
 
-func renderCommandsPage(root *cobra.Command) string {
+// commandsPageAreas assigns every visible top-level command to a page
+// section. The curation is deliberate (the tree itself carries no
+// grouping); renderCommandsPage errors on a visible command missing from
+// the map — and on a mapped name that no longer exists — so a new or
+// renamed command still cannot ship without a home on the page.
+var commandsPageAreas = []struct {
+	title string
+	names []string
+}{
+	{"Daily driving", []string{"develop", "shell", "worktree", "deliver"}},
+	{"Inspection", []string{"status", "dockerfile", "dockerrun", "ejectfirewall", "version"}},
+	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill"}},
+	{"Skills & templates", []string{"skill", "template"}},
+	{"Lifecycle & recovery", []string{"reset", "rebuild", "rehome", "forget"}},
+	{"Shell integration", []string{"completion"}},
+}
+
+func renderCommandsPage(root *cobra.Command) (string, error) {
+	byName := map[string]*cobra.Command{}
+	for _, c := range root.Commands() {
+		if c.Hidden || c.Name() == "help" {
+			continue
+		}
+		byName[c.Name()] = c
+	}
+
 	var b strings.Builder
 	b.WriteString(`---
 title: Commands
@@ -43,12 +72,31 @@ Every command, one line each, straight from the binary. Flags and detail:
 ` + "`byre <command> --help`" + ` -- and
 [completions](/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands) cover
 every command and flag.
-
-| Command | What it does |
-|---|---|
 `)
-	writeCommandRows(&b, root.Commands())
-	return b.String()
+
+	seen := map[string]bool{}
+	for _, area := range commandsPageAreas {
+		b.WriteString("\n## " + area.title + "\n\n| Command | What it does |\n|---|---|\n")
+		for _, n := range area.names {
+			c, ok := byName[n]
+			if !ok {
+				return "", fmt.Errorf("commands-page area %q lists unknown command %q — fix commandsPageAreas (cmd/byre/commandspage.go)", area.title, n)
+			}
+			seen[n] = true
+			b.WriteString(commandRow(c))
+			// The per-shell completion children are four copies of the
+			// same sentence; the parent row covers them.
+			if c.Name() != "completion" {
+				writeCommandRows(&b, c.Commands())
+			}
+		}
+	}
+	for n := range byName {
+		if !seen[n] {
+			return "", fmt.Errorf("command %q has no commands-page area — add it to commandsPageAreas (cmd/byre/commandspage.go)", n)
+		}
+	}
+	return b.String(), nil
 }
 
 func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {
@@ -57,8 +105,6 @@ func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {
 			continue
 		}
 		b.WriteString(commandRow(c))
-		// The per-shell completion children are four copies of the same
-		// sentence; the parent row covers them.
 		if c.Name() == "completion" {
 			continue
 		}
