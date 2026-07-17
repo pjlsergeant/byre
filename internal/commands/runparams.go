@@ -107,7 +107,9 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 
 // checkMountPaths rejects any byre-owned bind source that a docker --mount value
 // (comma-separated key=value pairs) cannot express. Covers the workspace bind
-// and, for a worktree, the same-path git binds — all set by byre, not the user.
+// and, for a worktree, the git binds (the worktree's same-path bind plus the
+// common git dir's source AND target, which differ when the recorded path
+// contains symlinks) — all set by byre, not the user.
 func checkMountPaths(paths project.Paths) error {
 	for _, p := range []string{paths.WorkDir, paths.CommonGitDir, paths.CommonGitDirHost} {
 		if strings.Contains(p, ",") {

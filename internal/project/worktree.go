@@ -26,8 +26,9 @@ type worktreeInfo struct {
 	// docs/adr/0009-worktrees-inherit-project-identity.md). The per-worktree git dir lives under it, so
 	// mounting this one path makes both present.
 	commonGitDir string
-	// commonGitDirHost is the same directory fully symlink-resolved
-	// (Canonicalize), used as the bind mount SOURCE. The target above is
+	// commonGitDirHost is the same directory fully symlink-resolved (fail-closed
+	// EvalSymlinks, NOT Canonicalize — see the resolve site), used as the bind
+	// mount SOURCE. The target above is
 	// derived from attacker-controlled .git contents and may contain symlink
 	// components an agent could retarget between validation and the engine
 	// resolving the source (a check-to-mount race → arbitrary rw host mount).
@@ -155,9 +156,10 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// structCommon is still NOT safe to use as the mount SOURCE: it is derived
 	// from gitDir (the .git pointer, attacker-controlled) and may contain
 	// symlink components an agent could retarget between the SameFile check and
-	// the engine resolving the source. So the source is canonicalized below
-	// (commonGitDirHost) — symlink-free, nothing left to flip — while the
-	// target stays structCommon.
+	// the engine resolving the source. So the source is resolved fail-closed
+	// below and rebound to the validated inode (commonGitDirHost) — symlink-free
+	// and proven to be the checked directory — while the target stays
+	// structCommon.
 	backData, _, err := readMetaFile(filepath.Join(gitDir, "gitdir"))
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
@@ -203,6 +205,19 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
 			"%s: cannot resolve the common git dir %q for mounting: %w", dir, structCommon, err)
+	}
+	// Rebind the resolved result to the inode the structural check validated
+	// (grok review). EvalSymlinks re-walked structCommon, whose components an
+	// agent can still flip, so its result is not automatically the directory
+	// SameFile approved above — without this, a symlink component retargeted
+	// between the check and the resolve would swap the mount source INSIDE this
+	// function. hostCommon is symlink-free, so this Stat re-walks no mutable
+	// component; what remains after it is only the byre-wide post-return
+	// pathname residual documented above.
+	hc, hcErr := os.Stat(hostCommon)
+	if hcErr != nil || !os.SameFile(sc, hc) {
+		return worktreeInfo{}, false, fmt.Errorf(
+			"%s: common git dir %q changed while resolving it for mounting — refusing to mount", dir, structCommon)
 	}
 	return worktreeInfo{
 		mainDir:          canonMain,

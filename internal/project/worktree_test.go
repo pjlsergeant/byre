@@ -78,6 +78,11 @@ func TestResolveWorktreeInheritsMainIdentity(t *testing.T) {
 	if gotCommon, _ := Canonicalize(wtPaths.CommonGitDir); gotCommon != wantCommon {
 		t.Fatalf("CommonGitDir = %q, want %q", wtPaths.CommonGitDir, wantCommon)
 	}
+	// The mount SOURCE must be populated (an empty Host would be a broken bind)
+	// and symlink-resolved — for this symlink-free layout, the canonical dir.
+	if wtPaths.CommonGitDirHost != wantCommon {
+		t.Fatalf("CommonGitDirHost = %q, want %q", wtPaths.CommonGitDirHost, wantCommon)
+	}
 
 	// The main worktree itself is not flagged as one, and its local fields mirror
 	// identity.
@@ -216,14 +221,21 @@ func TestDetectWorktreeMountsStructuralPathNotSymlinkedCommondir(t *testing.T) {
 	if info.commonGitDir != realCommon {
 		t.Fatalf("commonGitDir = %q, want the structural path %q", info.commonGitDir, realCommon)
 	}
+	// The mount source must also be pinned — resolved, never the symlink path.
+	wantHost, _ := Canonicalize(realCommon)
+	if info.commonGitDirHost != wantHost {
+		t.Fatalf("commonGitDirHost = %q, want %q", info.commonGitDirHost, wantHost)
+	}
 }
 
 // The mount SOURCE (commonGitDirHost) must be symlink-free even when the
 // git-recorded path itself routes through a symlink — the .git pointer is
 // attacker-controlled, so a symlink COMPONENT of gitDir (not just a symlinked
 // commondir value) is equally retargetable between validation and mount.
-// commonGitDirHost is Canonicalize'd, so it must resolve every component; the
-// target stays the git-recorded path so in-box pointers still resolve.
+// commonGitDirHost is EvalSymlinks'd fail-closed (NOT Canonicalize, whose
+// silent fallback would reinstate the race), so it must resolve every
+// component; the target stays the git-recorded path so in-box pointers still
+// resolve.
 func TestDetectWorktreeHostPathResolvesSymlinkedGitDir(t *testing.T) {
 	root := t.TempDir()
 	realBase := filepath.Join(root, "realbase")
