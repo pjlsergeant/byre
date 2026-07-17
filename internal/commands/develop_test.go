@@ -209,8 +209,8 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 	if !strings.Contains(err.Error(), "possibly SIGINT") || strings.Contains(err.Error(), "killed out from under") {
 		t.Errorf("non-KILL codes must decode tentatively: %s", err)
 	}
-	// Beyond the classic signal range (128+31) it isn't a signal at all —
-	// no decode ("signal 72" for exit 200 would be nonsense).
+	// Beyond the signal range (128+64, Linux realtime max) it isn't a
+	// signal at all — no decode ("signal 72" for exit 200 would be nonsense).
 	err = develop(&fakeRunner{runErr: exitError(t, 200)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	if err == nil || errors.As(err, &exitErr) {
 		t.Fatalf("exit 200 must stay an ordinary error, got %v", err)
