@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/configui"
@@ -83,7 +85,7 @@ func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
 	f := &fakeRunner{vols: map[string]bool{orphan: true}}
 	a := &volumeAdmin{rs: []engineRunner{f}, paths: p, projectDir: dir}
 
-	list, err := a.List()
+	list, _, err := a.List()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +118,7 @@ func TestVolumeAdminListsAndClearsPerEngine(t *testing.T) {
 	podman := &fakeRunner{engine: "podman", vols: map[string]bool{orphan: true}}
 	a := &volumeAdmin{rs: []engineRunner{docker, podman}, paths: p, projectDir: dir}
 
-	list, err := a.List()
+	list, _, err := a.List()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,5 +140,39 @@ func TestVolumeAdminListsAndClearsPerEngine(t *testing.T) {
 	}
 	if len(docker.removed) != 0 {
 		t.Fatalf("clearing one engine's row must not touch the other: %v", docker.removed)
+	}
+}
+
+// An installed-but-unreachable engine (podman machine stopped: every CLI call
+// exits 125) must narrow the volumes view, not kill it: the reachable
+// engine's rows list normally and the dead engine becomes a loud note —
+// first line of the engine error only, podman's remediation prose is four
+// lines (live field report, 2026-07-17).
+func TestVolumeAdminDegradesUnreachableEngine(t *testing.T) {
+	p, dir := testPaths(t)
+	orphan := machineVolumeName(os.Getuid(), "claude-identity")
+	docker := &fakeRunner{engine: "docker", vols: map[string]bool{orphan: true}}
+	podman := &fakeRunner{engine: "podman", volQueryErr: fmt.Errorf("exit status 125: Cannot connect to Podman.\nError: unable to connect to Podman socket")}
+	a := &volumeAdmin{rs: []engineRunner{docker, podman}, paths: p, projectDir: dir}
+
+	list, notes, err := a.List()
+	if err != nil {
+		t.Fatalf("an unreachable engine must degrade, not fail the view: %v", err)
+	}
+	var dockerRows int
+	for _, v := range list {
+		if v.Engine == "podman" {
+			t.Fatalf("unreachable engine contributed a row: %+v", v)
+		}
+		dockerRows++
+	}
+	if dockerRows == 0 {
+		t.Fatal("reachable engine's rows were lost")
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "podman unreachable") {
+		t.Fatalf("notes = %v, want one podman-unreachable note", notes)
+	}
+	if strings.Contains(notes[0], "socket") {
+		t.Fatalf("note should carry only the FIRST line of the engine error: %q", notes[0])
 	}
 }

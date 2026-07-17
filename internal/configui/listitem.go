@@ -1068,7 +1068,10 @@ func (m model) viewList() string {
 	fmt.Fprintf(&b, "%s\n\n", m.crumb(fieldLabel[m.listField]))
 	rows := m.fieldRows(m.listField)
 	if len(rows) == 0 {
-		b.WriteString(dimStyle.Render("  (no items yet)\n"))
+		// Newline OUTSIDE the Render: lipgloss pads multi-line renders to
+		// equal width, so an embedded \n minted a phantom line of spaces
+		// that indented whatever printed next (field-report 2026-07-17).
+		b.WriteString(dimStyle.Render("  (none yet)") + "\n")
 	}
 	for i, r := range rows {
 		line := r.text

@@ -276,13 +276,14 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 // unless clearErr is set (simulating a live-session refusal).
 type fakeVols struct {
 	vols       []VolumeStatus
+	notes      []string
 	clearErr   error
 	cleared    []string
 	sharedNote string
 }
 
-func (f *fakeVols) List() ([]VolumeStatus, error) { return f.vols, nil }
-func (f *fakeVols) SharedNote() string            { return f.sharedNote }
+func (f *fakeVols) List() ([]VolumeStatus, []string, error) { return f.vols, f.notes, nil }
+func (f *fakeVols) SharedNote() string                      { return f.sharedNote }
 func (f *fakeVols) Clear(v VolumeStatus) error {
 	name := v.Name
 	if f.clearErr != nil {
@@ -306,6 +307,24 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// An engine degrade note (unreachable engine — its copies invisible) must
+// survive into the rendered screen, loudly, alongside the reachable rows.
+func TestVolumesScreenRendersDegradeNotes(t *testing.T) {
+	fv := &fakeVols{
+		vols:  []VolumeStatus{{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Exists: true, Engine: "docker"}},
+		notes: []string{"podman unreachable — its volume copies aren't shown and can't be cleared here (exit status 125 …)"},
+	}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv, TargetProject)
+	m = m.openVolumes()
+	out := m.viewVolumes()
+	if !strings.Contains(out, "podman unreachable") || !strings.Contains(out, "⚠") {
+		t.Fatalf("degrade note missing from the volumes screen:\n%s", out)
+	}
+	if !strings.Contains(out, ".claude") {
+		t.Fatalf("reachable engine's row missing:\n%s", out)
+	}
 }
 
 func TestVolumesClearFlow(t *testing.T) {

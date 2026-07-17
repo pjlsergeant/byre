@@ -45,7 +45,7 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 ## Install
 
-**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work, but features are liable to change quickly.**
+**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work. All the major planned features have been added, so the interface should be pretty stable at this point.**
 
 byre is a single Go binary. With Go 1.25+ on your machine:
 

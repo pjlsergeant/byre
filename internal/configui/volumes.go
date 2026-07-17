@@ -13,7 +13,13 @@ import (
 // It's engine-backed, so the commands layer supplies it; a nil VolumeAdmin hides
 // the Volumes section (e.g. the global config, which has no project volumes).
 type VolumeAdmin interface {
-	List() ([]VolumeStatus, error)
+	// List returns one row per volume per engine, plus loud degrade notes
+	// for engines that could not be queried (installed but unreachable —
+	// e.g. a stopped podman machine). An unreachable engine must narrow the
+	// view, not kill it: its copies aren't shown (the note says so) while
+	// reachable engines list normally. The error return is for failures
+	// that leave nothing to show (config resolution), not engine trouble.
+	List() ([]VolumeStatus, []string, error)
 	// Clear removes the volume from the engine (refuses if a session is
 	// live). It takes the full row, not just the name: scope decides which
 	// Docker volume the logical name maps to, and an orphaned machine volume
@@ -41,12 +47,13 @@ type VolumeStatus struct {
 // openVolumes loads the project's volumes and enters the volumes screen. A list
 // error is surfaced on the form rather than opening an empty screen.
 func (m model) openVolumes() model {
-	list, err := m.vols.List()
+	list, notes, err := m.vols.List()
 	if err != nil {
 		m.errMsg = "listing volumes: " + err.Error()
 		return m
 	}
 	m.volList = list
+	m.volNotes = notes
 	m.volCur = 0
 	m.volPendClear = -1
 	m.volErr = ""
@@ -74,8 +81,9 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.volErr = err.Error()
 			} else {
 				m.volErr = ""
-				if list, lerr := m.vols.List(); lerr == nil {
+				if list, notes, lerr := m.vols.List(); lerr == nil {
 					m.volList = list
+					m.volNotes = notes
 					if m.volCur >= len(list) && m.volCur > 0 {
 						m.volCur = len(list) - 1
 					}
@@ -117,7 +125,14 @@ func (m model) viewVolumes() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", m.crumb("Volumes"))
 	if len(m.volList) == 0 {
-		b.WriteString(dimStyle.Render("  (no volumes declared for this project)\n"))
+		// \n outside the Render — see viewList's empty line for why.
+		b.WriteString(dimStyle.Render("  (no volumes declared for this project)") + "\n")
+	}
+	// Engine degrade notes: loud (bold, not dim) — an unreachable engine
+	// means this view's claims are narrowed, and that must not blend into
+	// the furniture. Not yellow: warnStyle stays cross-project reach's.
+	for _, n := range m.volNotes {
+		b.WriteString(errStyle.Render("  ⚠ "+n) + "\n")
 	}
 	multiEngine := volEngines(m.volList) > 1
 	for i, v := range m.volList {

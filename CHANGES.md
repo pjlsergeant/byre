@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **The Volumes screen survives an unreachable engine.** With podman
+  installed but its machine stopped (macOS's usual state), the config
+  editor's Volumes section died wholesale on the first failed engine
+  query — including Docker's perfectly listable rows. An unreachable
+  engine now narrows the view instead: its copies become a loud
+  "podman unreachable — its copies aren't shown and can't be cleared
+  here" note (first line of the engine error only) while reachable
+  engines list normally — deliver's partial-pool posture, applied.
+
+- **Config editor polish** (live field reports): section-rule headers
+  align with the field labels below (one-dash prefix); the bundled
+  provenance suffix ("bundled (devel)") is gone from the picker lines —
+  bundled is the unmarked default, only exceptional provenance (fork,
+  local, installed) earns a label; and empty list screens no longer
+  float their "+ add" row on a phantom indent (a newline inside a
+  styled render — lipgloss pads multi-line renders — also fixed in the
+  volumes and skills empty states).
+
 - **Config editor design accents.** Section headers render as dim rules
   with the name in a single accent color (4-bit cyan — the terminal
   theme picks the shade), shared by the cursor and focused picker

@@ -268,7 +268,8 @@ func (m model) viewSkills() string {
 	fmt.Fprintf(&b, "%s\n\n", m.crumb("Skills"))
 	entries := m.skillEntries()
 	if len(entries) == 0 {
-		b.WriteString(dimStyle.Render("  (no skills discovered)\n"))
+		// \n outside the Render — see viewList's empty line for why.
+		b.WriteString(dimStyle.Render("  (no skills discovered)") + "\n")
 	}
 	prevAgent := false
 	for i, e := range entries {

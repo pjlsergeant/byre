@@ -267,46 +267,77 @@ func (a *volumeAdmin) SharedNote() string {
 
 // List re-resolves the config from disk so the volume set reflects the current
 // state (e.g. after a $EDITOR edit to [[volumes]] or the agent), not a snapshot.
-func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
+func (a *volumeAdmin) List() ([]configui.VolumeStatus, []string, error) {
 	rv, err := resolve(a.paths, a.projectDir, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defs := dedupeVolumes(rv.volumes)
 	var out []configui.VolumeStatus
+	var notes []string
 	// One pass per installed engine: a volume (declared or orphaned) can
 	// exist on both docker and podman, and each copy is its own row — the
 	// delete route must show and clear every copy, or "removed" is false.
+	//
+	// Per-engine degrade (live field report 2026-07-17): an engine that
+	// can't be queried — the canonical case is podman installed with its
+	// machine stopped — must not kill the whole view. Its copies become a
+	// loud note (the claim narrows honestly: not shown, not clearable this
+	// session) while the other engine's rows list normally. Partial rows
+	// from a mid-sweep failure are discarded with the note — half an
+	// engine's truth is worse than a disclosed absence.
 	for _, r := range a.rs {
 		eng := string(r.Engine())
+		var engRows []configui.VolumeStatus
+		engFail := func(err error) {
+			notes = append(notes, fmt.Sprintf("%s unreachable — its volume copies aren't shown and can't be cleared here (%s)", eng, firstLine(err.Error())))
+		}
 		declared := map[string]bool{}
+		ok := true
 		for _, v := range defs {
-			exists, err := r.VolumeExists(scopedVolumeName(a.paths.ID, os.Getuid(), v))
-			if err != nil {
-				return nil, err
+			exists, verr := r.VolumeExists(scopedVolumeName(a.paths.ID, os.Getuid(), v))
+			if verr != nil {
+				engFail(verr)
+				ok = false
+				break
 			}
 			if v.MachineScoped() {
 				declared[v.Name] = true
 			}
-			out = append(out, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists, Machine: v.MachineScoped(), Engine: eng})
+			engRows = append(engRows, configui.VolumeStatus{Name: v.Name, Role: v.Role, Target: v.Target, Exists: exists, Machine: v.MachineScoped(), Engine: eng})
+		}
+		if !ok {
+			continue
 		}
 		// Orphaned machine-scoped volumes: present on the engine but no longer
 		// declared by any enabled skill/config (e.g. shared-auth disabled after a
 		// login). Listed so the deliberate-delete route reset/forget advertises
 		// keeps working for them (review finding on ADR 0017's logout story).
 		prefix := fmt.Sprintf("byre-machine-u%d-", os.Getuid())
-		engineVols, err := r.VolumesByPrefix(prefix)
-		if err != nil {
-			return nil, err
+		engineVols, verr := r.VolumesByPrefix(prefix)
+		if verr != nil {
+			engFail(verr)
+			continue
 		}
 		for _, ev := range engineVols {
 			name := strings.TrimPrefix(ev, prefix)
 			if !declared[name] {
-				out = append(out, configui.VolumeStatus{Name: name, Exists: true, Machine: true, Orphan: true, Engine: eng})
+				engRows = append(engRows, configui.VolumeStatus{Name: name, Exists: true, Machine: true, Orphan: true, Engine: eng})
 			}
 		}
+		out = append(out, engRows...)
 	}
-	return out, nil
+	return out, notes, nil
+}
+
+// firstLine trims a multi-line engine error to its first line — podman's
+// cannot-connect message is four lines of remediation prose that would
+// swallow the volumes screen.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i]) + " …"
+	}
+	return s
 }
 
 // Clear removes a volume under the project setup lock, re-checking for a live

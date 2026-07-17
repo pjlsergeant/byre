@@ -35,6 +35,7 @@ type fakeRunner struct {
 	live          map[string][]string // label -> running container ids
 	liveSecond    map[string][]string // consulted from the 2nd query on (lock re-check races)
 	liveErr       error
+	volQueryErr   error // injected engine-unreachable failure for volume queries
 	liveCalls     int
 	allContainers map[string][]string // label -> ANY-state ids (ContainersByLabel; pre-start markers)
 	allErr        error
@@ -240,6 +241,9 @@ func (f *fakeRunner) Exec(id string, uid, gid int, workdir string, env map[strin
 }
 
 func (f *fakeRunner) VolumesByPrefix(prefix string) ([]string, error) {
+	if f.volQueryErr != nil {
+		return nil, f.volQueryErr
+	}
 	var out []string
 	for v := range f.vols {
 		if strings.HasPrefix(v, prefix) {
@@ -250,7 +254,7 @@ func (f *fakeRunner) VolumesByPrefix(prefix string) ([]string, error) {
 	return out, nil
 }
 
-func (f *fakeRunner) VolumeExists(name string) (bool, error) { return f.vols[name], nil }
+func (f *fakeRunner) VolumeExists(name string) (bool, error) { return f.vols[name], f.volQueryErr }
 
 func (f *fakeRunner) VolumeCreate(name string) error {
 	f.created = append(f.created, name)

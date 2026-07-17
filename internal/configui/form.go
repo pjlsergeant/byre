@@ -245,6 +245,7 @@ type model struct {
 
 	// modeVolumes
 	volList      []VolumeStatus
+	volNotes     []string // engine degrade notes (unreachable engine → copies not shown)
 	volCur       int
 	volPendClear int // index awaiting a clear-confirm, or -1
 	volErr       string
@@ -643,6 +644,14 @@ func (m model) optProv(name string) string {
 		return ""
 	}
 	if ent, ok := m.inh.Catalog.Lookup(name); ok {
+		// Bundled is the unmarked default — suffixing every stock option
+		// "bundled (devel)" adds words, not information. Only exceptional
+		// provenance (a fork, a local path, an installed package) changes
+		// the trust posture enough to earn a label on the picker line; the
+		// skills screen and `byre skill inspect` keep full provenance.
+		if ent.Provenance == packages.ProvBundled {
+			return ""
+		}
 		return ent.ProvenanceLabel()
 	}
 	return ""
@@ -861,12 +870,15 @@ func (m model) sectionRule(title string) string {
 	if cut {
 		t += dimStyle.Render(" — " + desc)
 	}
-	line := dimStyle.Render("── ") + t
+	// "─ " (one dash) puts the section name at column 2, flush with the
+	// field labels below — a two-dash prefix left the name one column off
+	// the keys, which read as misalignment (field-report 2026-07-17).
+	line := dimStyle.Render("─ ") + t
 	w := m.width
 	if w > 76 {
 		w = 76 // a full-width rule on an ultrawide terminal is a smear, not structure
 	}
-	if fill := w - ansi.StringWidth("── "+title+" "); fill > 0 {
+	if fill := w - ansi.StringWidth("─ "+title+" "); fill > 0 {
 		line += " " + dimStyle.Render(strings.Repeat("─", fill))
 	}
 	return line

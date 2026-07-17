@@ -47,8 +47,11 @@ func TestLegacyRowDoesNotDisableBundledAlias(t *testing.T) {
 	if d := m.optDisabled("claude"); d != "" {
 		t.Fatalf("bundled alias claude must stay selectable, got disabled: %q", d)
 	}
-	if p := m.optProv("claude"); p == "" || p == "LEGACY" {
-		t.Fatalf("claude should show its bundled label, got %q", p)
+	// Bundled provenance is deliberately UNLABELED on the picker line (the
+	// unmarked default; field-report 2026-07-17) — the pin here is that the
+	// legacy problem row didn't leak its LEGACY label onto the valid alias.
+	if p := m.optProv("claude"); p != "" {
+		t.Fatalf("bundled claude should carry no picker label, got %q", p)
 	}
 	if d := m.optDisabled("typo"); d == "" {
 		t.Fatal("broken local skill should be disabled-with-reason")
