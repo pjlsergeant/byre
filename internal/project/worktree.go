@@ -185,13 +185,24 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
-	// Symlink-resolved source for the RW bind (see commonGitDirHost). For the
-	// common case (a symlink-free path) this equals structCommon, so nothing
-	// changes; when it differs, docker binds the real directory and no symlink
-	// component survives for an agent to retarget mid-mount.
-	hostCommon, err := Canonicalize(structCommon)
+	// Symlink-resolved source for the RW bind (see commonGitDirHost). Use
+	// EvalSymlinks directly, NOT Canonicalize: Canonicalize silently falls back
+	// to the un-resolved path when EvalSymlinks fails, which for a
+	// security-sensitive resolve would quietly reinstate the symlink-retarget
+	// race. Fail closed instead — an unresolvable common dir is a loud error,
+	// never a lenient mount. For a symlink-free path this returns structCommon
+	// unchanged.
+	//
+	// Residual (shared with EVERY byre path-based bind, WorkDir included): the
+	// RESULT is a pathname, not an inode-pinned handle, so an agent that can
+	// rename an ancestor of it between here and the engine resolving the source
+	// could still redirect the mount. Fully closing that means fd/inode-pinned
+	// mounting across all binds — an architecture change, not a per-mount fix;
+	// out of scope here.
+	hostCommon, err := filepath.EvalSymlinks(structCommon)
 	if err != nil {
-		return worktreeInfo{}, false, err
+		return worktreeInfo{}, false, fmt.Errorf(
+			"%s: cannot resolve the common git dir %q for mounting: %w", dir, structCommon, err)
 	}
 	return worktreeInfo{
 		mainDir:          canonMain,
