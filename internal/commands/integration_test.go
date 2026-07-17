@@ -103,6 +103,21 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	if got, want := string(out), strconv.Itoa(ident.UID)+"\n"; got != want {
 		t.Fatalf("container runs as uid %q, want %q (the identity baked at build)", got, want)
 	}
+
+	// Login shells keep the image's ENV PATH (QA pass-2: a go-template box had
+	// no `go` in `byre shell` — /etc/profile resets PATH; byre-env.sh restores
+	// it from the baked /etc/byre/image-path). The core block's own
+	// /home/dev/.local/bin entry is the sentinel: /etc/profile drops it, so
+	// its survival in `bash -l` proves capture + restore end to end.
+	out, err = exec.Command(string(r.Engine()), "run", "--rm",
+		"--entrypoint", "bash", image, "-lc",
+		`test -f /etc/byre/image-path && printf '%s' "$PATH"`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("login-shell PATH probe failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "/home/dev/.local/bin") {
+		t.Fatalf("login shell lost the image ENV PATH (no /home/dev/.local/bin): %s", out)
+	}
 }
 
 // TestIntegrationLaunchPathAndOwnership drives a built box through the REAL

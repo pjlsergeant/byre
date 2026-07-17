@@ -47,6 +47,9 @@ COPY claude-skills /etc/byre/claude-skills
 # --- project block ---
 WORKDIR /workspace
 
+# --- image PATH capture (login shells restore from this; see byre-env.sh) ---
+RUN mkdir -p /etc/byre && printf '%s\n' "$PATH" > /etc/byre/image-path
+
 HEALTHCHECK NONE
 USER dev
 ENTRYPOINT ["/usr/local/bin/byre-launch"]

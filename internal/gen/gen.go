@@ -252,6 +252,15 @@ func Dockerfile(in Input) string {
 	writeNpm(&b, in.NpmGlobal)
 	writeRaw(&b, in.DockerfilePost)
 
+	// Capture the image's effective PATH for login shells. Debian's
+	// /etc/profile unconditionally resets PATH, dropping base-image ENV
+	// entries (golang's /usr/local/go/bin — a go-template box had no `go` in
+	// `byre shell`, QA pass-2); the profile.d shim restores what this
+	// records. Captured in the tail so every PATH-touching layer above (base
+	// image, template, skills, project block) is already in effect.
+	b.WriteString("\n# --- image PATH capture (login shells restore from this; see byre-env.sh) ---\n")
+	b.WriteString("RUN mkdir -p /etc/byre && printf '%s\\n' \"$PATH\" > /etc/byre/image-path\n")
+
 	// Strip any HEALTHCHECK — inherited from the base image or introduced by a
 	// raw block (skill Dockerfile lines, dockerfile_post; a pasted service
 	// fragment is enough). The engine runs healthcheck commands in the

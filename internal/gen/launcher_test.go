@@ -203,3 +203,58 @@ func TestProfileEnvShimSourcesEnvd(t *testing.T) {
 		t.Fatalf("profile.d shim must be a no-op with no env.d dir: %v (%s)", err, out)
 	}
 }
+
+// The shim restores the image's ENV PATH after Debian's /etc/profile resets
+// it (QA pass-2: a go-template box had no `go` in `byre shell` or the
+// agent=none foreground shell). Additive merge: missing entries only, image
+// order preserved, prepended; already-present entries are not duplicated.
+func TestProfileEnvShimRestoresImagePath(t *testing.T) {
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "byre-env.sh")
+	if err := os.WriteFile(shim, ProfileEnvScript(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	imgPath := filepath.Join(dir, "image-path")
+	// Trailing newline as gen's `printf '%s\n' "$PATH"` writes it.
+	if err := os.WriteFile(imgPath, []byte("/usr/local/go/bin:/go/bin:/usr/bin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reset := "/usr/local/bin:/usr/bin:/bin" // Debian /etc/profile's user PATH
+	run := func(script string) (string, error) {
+		c := exec.Command("bash", "-c", script, "bash", shim)
+		c.Env = []string{
+			"PATH=" + reset,
+			"BYRE_IMAGE_PATH_FILE=" + imgPath,
+			"BYRE_ENVD_DIR=" + filepath.Join(dir, "nope"),
+		}
+		out, err := c.CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	}
+	got, err := run(`. "$1"; printf '%s' "$PATH"`)
+	if err != nil {
+		t.Fatalf("shim failed: %v (%s)", err, got)
+	}
+	if want := "/usr/local/go/bin:/go/bin:" + reset; got != want {
+		t.Fatalf("PATH after shim = %q, want %q", got, want)
+	}
+	// Idempotent: a nested login shell sourcing it again adds nothing.
+	got, err = run(`. "$1"; . "$1"; printf '%s' "$PATH"`)
+	if err != nil {
+		t.Fatalf("second source failed: %v (%s)", err, got)
+	}
+	if want := "/usr/local/go/bin:/go/bin:" + reset; got != want {
+		t.Fatalf("PATH after double source = %q, want %q", got, want)
+	}
+	// Missing capture file (image built by an older byre): PATH untouched,
+	// shell starts cleanly.
+	c := exec.Command("bash", "-c", `. "$1"; printf '%s' "$PATH"`, "bash", shim)
+	c.Env = []string{
+		"PATH=" + reset,
+		"BYRE_IMAGE_PATH_FILE=" + filepath.Join(dir, "nope-file"),
+		"BYRE_ENVD_DIR=" + filepath.Join(dir, "nope"),
+	}
+	out, err := c.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != reset {
+		t.Fatalf("missing capture file must leave PATH alone: %v (%s)", err, out)
+	}
+}
