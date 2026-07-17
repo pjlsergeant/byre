@@ -403,6 +403,11 @@ func copyPath(src, dst string) error {
 // OUTSIDE the project. Anchor at the parent and descend the final component via
 // openat (proot.OpenRoot), which refuses a component resolving outside its root.
 func openDirRootNoFollow(dir string) (*os.Root, error) {
+	// Clean first: a trailing slash (Claude skill `path` values are not
+	// Clean'd upstream) makes filepath.Dir(dir) return dir itself and Base the
+	// leaf, so the split below would look for <dir>/<leaf> and ENOENT. os.OpenRoot
+	// tolerated a trailing slash; this must too.
+	dir = filepath.Clean(dir)
 	parent, base := filepath.Dir(dir), filepath.Base(dir)
 	proot, err := os.OpenRoot(parent)
 	if err != nil {

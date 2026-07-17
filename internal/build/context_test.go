@@ -250,6 +250,16 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dst, "sub", "deep", "leaf")); string(b) != "leaf" {
 		t.Errorf("leaf content = %q, want %q", b, "leaf")
 	}
+
+	// A trailing slash (Claude skill `path` values are not Clean'd upstream)
+	// must still stage — openDirRootNoFollow Cleans before splitting parent/base.
+	dst2 := filepath.Join(t.TempDir(), "staged2")
+	if err := copyPath(src+string(filepath.Separator), dst2); err != nil {
+		t.Fatalf("copyPath of a trailing-slash dir failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst2, "top.txt")); err != nil {
+		t.Errorf("trailing-slash source did not stage: %v", err)
+	}
 }
 
 // copyWithin runs copyPath under a timeout: a FIFO/special that slips past the
@@ -282,9 +292,10 @@ func TestCopyPathRejectsInteriorFIFO(t *testing.T) {
 	}
 }
 
-// The same for a top-level `files` source that is a FIFO: the top-level open
-// succeeds (O_NONBLOCK), so only the fd-fstat gate in stageRegularFromFD keeps
-// it out of the image.
+// The same for a top-level `files` source that is a FIFO. Statically this is
+// caught by copyPath's initial pathname Lstat (non-regular); the fd-fstat gate
+// in stageRegularFromFD is the backstop for a regular→FIFO swap after that
+// Lstat. Either way the message is "not a regular file".
 func TestCopyPathRejectsTopLevelFIFO(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
