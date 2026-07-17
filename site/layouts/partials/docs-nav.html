@@ -4,10 +4,11 @@
     <p><a href="{{ "docs/" | relURL }}">User documentation</a></p>
     <ul>
       {{ range where $docs "Params.reference" "!=" true }}
+      {{ $inSection := and .IsSection (or (eq .Permalink $.Permalink) (.IsAncestor $)) }}
       <li>
-        <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
+        <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}{{ if $inSection }} class="active-trail"{{ end }}>{{ .Title }}</a>
         {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
-        {{ if .IsSection }}
+        {{ if $inSection }}
         <ul class="docs-nav-children">
           {{ range .Pages.ByWeight }}
           <li>

@@ -134,44 +134,46 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* Docs pages: nav above content on narrow screens, beside it on wide */
 .docs-nav {
-  font-size: 0.92rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
   margin-bottom: 1.5rem;
 }
-.docs-nav p { margin: 0 0 0.3rem; font-weight: 600; }
-.docs-nav .docs-nav-group { margin-top: 1.1rem; color: var(--muted); font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; }
+.docs-nav p { margin: 0 0 0.35rem; font-weight: 600; }
+.docs-nav .docs-nav-group { margin-top: 1.2rem; color: var(--muted); font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.05em; }
 .docs-nav ul { list-style: none; margin: 0; padding: 0; }
-.docs-nav li { margin: 0.15rem 0; }
-.docs-nav a { text-decoration: none; }
+.docs-nav li { margin: 0; }
+.docs-nav li a {
+  display: block;
+  padding: 0.14rem 0;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .docs-nav a:hover { text-decoration: underline; }
-.docs-nav a[aria-current="page"] { font-weight: 600; color: var(--fg); }
+.docs-nav a[aria-current="page"],
+.docs-nav a.active-trail { font-weight: 600; color: var(--fg); }
 
 /* The current page's major headers, nested under its entry */
-.docs-nav #TableOfContents ul {
-  padding-left: 0.85rem;
-  margin: 0.15rem 0 0.4rem;
+.docs-nav #TableOfContents ul,
+.docs-nav .docs-nav-children {
+  padding-left: 0.75rem;
+  margin: 0.1rem 0 0.45rem;
   border-left: 1px solid var(--border);
-  font-size: 0.94em;
 }
-.docs-nav #TableOfContents li { margin: 0.12rem 0; }
+.docs-nav #TableOfContents { font-size: 0.93em; }
 .docs-nav #TableOfContents a { color: var(--muted); }
 .docs-nav #TableOfContents a:hover { color: var(--link); }
 .docs-nav #TableOfContents:empty { display: none; }
 
-/* A section's child pages (the cookbook's groups), nested as real links */
-.docs-nav .docs-nav-children {
-  padding-left: 0.85rem;
-  margin: 0.15rem 0 0.4rem;
-  border-left: 1px solid var(--border);
-}
-
-@media (min-width: 72rem) {
+@media (min-width: 76rem) {
   .docs-wrap { position: relative; }
   .docs-nav {
     position: absolute;
-    left: -13rem;
+    left: -14.5rem;
     top: 0.5rem;
     bottom: 0;
-    width: 11.5rem;
+    width: 13rem;
     margin-bottom: 0;
   }
   /* Sticky rail inside the full-height column: follows the scroll,
