@@ -216,18 +216,41 @@ func (p Paths) Bootstrap() error {
 	if err := os.MkdirAll(p.ContextDir, 0o755); err != nil {
 		return err
 	}
+	recorded, err := p.checkRecord()
+	if err != nil {
+		return err
+	}
+	if !recorded {
+		return os.WriteFile(p.PathRecord, []byte(p.Canonical+"\n"), 0o644)
+	}
+	return nil
+}
+
+// ValidateExisting is Bootstrap's read-only half: the same collision check
+// against an existing path record, creating nothing — no directory, no
+// record. Inspection commands (dockerfile, dockerrun, ejectfirewall) use it
+// so "show me what you would do" never enrolls a project in ~/.byre/projects.
+func (p Paths) ValidateExisting() error {
+	_, err := p.checkRecord()
+	return err
+}
+
+// checkRecord reads the path record if present and errors on an id collision
+// (a record naming a different canonical path). recorded reports whether a
+// valid record already exists; a missing record is not an error.
+func (p Paths) checkRecord() (recorded bool, err error) {
 	existing, err := os.ReadFile(p.PathRecord)
 	switch {
 	case err == nil:
 		// Trim only the record's trailing newline — Unix paths may legitimately
 		// end in spaces, so TrimSpace would cause false collisions.
 		if rec := strings.TrimSuffix(string(existing), "\n"); rec != p.Canonical {
-			return fmt.Errorf("project id %s collision: recorded path %q != current %q", p.ID, rec, p.Canonical)
+			return true, fmt.Errorf("project id %s collision: recorded path %q != current %q", p.ID, rec, p.Canonical)
 		}
-		return nil
+		return true, nil
 	case errors.Is(err, os.ErrNotExist):
-		return os.WriteFile(p.PathRecord, []byte(p.Canonical+"\n"), 0o644)
+		return false, nil
 	default:
-		return err
+		return false, err
 	}
 }

@@ -70,6 +70,15 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
+	// Deferred store setup (e.g. enrolling the project dir) happens only now,
+	// when a write is actually about to land — never at editor open.
+	if m.prepare != nil {
+		if err := m.prepare(); err != nil {
+			m.errMsg = err.Error()
+			m.status = ""
+			return m
+		}
+	}
 	if err := Save(m.filePath, cfg); err != nil {
 		m.errMsg = err.Error()
 		m.status = ""

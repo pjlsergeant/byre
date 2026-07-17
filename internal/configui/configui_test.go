@@ -1620,3 +1620,55 @@ func TestClaudeSkillBadPathWarnsWithoutBlocking(t *testing.T) {
 		t.Fatal("the warning leaked into the dirty signature")
 	}
 }
+
+// The prepare hook (deferred store setup, e.g. enrolling a project dir) must
+// run before the first write lands — and only then: its whole point is that
+// opening the editor and quitting creates nothing.
+func TestPrepareRunsBeforeSaveWrites(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(store, "byre.config")
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	calls := 0
+	m.prepare = func() error {
+		calls++
+		return os.MkdirAll(store, 0o755) // what commands.Config's Bootstrap does
+	}
+	m = m.save()
+	if calls != 1 {
+		t.Fatalf("prepare ran %d times, want 1", calls)
+	}
+	if !m.savedOnce {
+		t.Fatalf("save failed: %q", m.errMsg)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("saved file missing: %v", err)
+	}
+}
+
+func TestPrepareErrorBlocksSaveAndEditor(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(store, "byre.config")
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.prepare = func() error { return fmt.Errorf("cannot enroll") }
+
+	m = m.save()
+	if m.savedOnce {
+		t.Fatal("a failed prepare must block the save")
+	}
+	if !strings.Contains(m.errMsg, "cannot enroll") {
+		t.Fatalf("prepare error not surfaced: %q", m.errMsg)
+	}
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Fatalf("failed save left state behind: %v", err)
+	}
+
+	// ctrl+e hands the file to $EDITOR, which writes it directly — the same
+	// gate applies before the editor may open.
+	mm, cmd := m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlE})
+	if cmd != nil {
+		t.Fatal("ctrl+e must not open $EDITOR when prepare fails")
+	}
+	if got := mm.(model).errMsg; !strings.Contains(got, "cannot enroll") {
+		t.Fatalf("ctrl+e prepare error not surfaced: %q", got)
+	}
+}

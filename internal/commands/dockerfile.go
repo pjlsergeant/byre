@@ -12,13 +12,16 @@ import (
 )
 
 // Dockerfile implements `byre dockerfile`: resolve identity, resolve the config
-// cascade + skills, generate the Dockerfile into the build context, and print it.
+// cascade + skills, render the Dockerfile in memory, and print it. Side-effect-
+// free for the project: ValidateExisting (not Bootstrap) keeps the collision
+// check without enrolling an uninitialized project in ~/.byre/projects, just as
+// build.Render keeps the build context untouched.
 func Dockerfile(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
 	}
-	if err := paths.Bootstrap(); err != nil {
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	rv, err := resolve(paths, projectDir, s.Err)
@@ -65,7 +68,7 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := paths.Bootstrap(); err != nil {
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	// Same guard develop applies: a comma in a bind source can't be expressed in
@@ -114,7 +117,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := paths.Bootstrap(); err != nil {
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	rv, err := resolve(paths, projectDir, s.Err)

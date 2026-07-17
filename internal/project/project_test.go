@@ -141,6 +141,37 @@ func TestBootstrapDetectsCollision(t *testing.T) {
 	}
 }
 
+func TestValidateExistingIsReadOnly(t *testing.T) {
+	t.Setenv("BYRE_HOME", filepath.Join(t.TempDir(), "home"))
+	proj := t.TempDir()
+
+	paths, err := Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No record yet: passes, and creates nothing — not even the home.
+	if err := paths.ValidateExisting(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(paths.Home); !os.IsNotExist(err) {
+		t.Fatalf("ValidateExisting created state under %s: %v", paths.Home, err)
+	}
+	// An existing matching record still passes.
+	if err := paths.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if err := paths.ValidateExisting(); err != nil {
+		t.Fatalf("matching record must validate: %v", err)
+	}
+	// A record claiming another path is the same collision Bootstrap fails on.
+	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/path\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := paths.ValidateExisting(); err == nil {
+		t.Fatal("expected collision error, got nil")
+	}
+}
+
 func TestHomeRespectsEnv(t *testing.T) {
 	want := filepath.Join(t.TempDir(), "byrehome")
 	t.Setenv("BYRE_HOME", want)

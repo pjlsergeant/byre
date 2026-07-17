@@ -24,9 +24,13 @@ import (
 // saved to filePath at least once (false = the user quit without saving, so the
 // file is untouched). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
-// quitting never writes.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) (bool, error) {
+// quitting never writes. prepare (nil = no-op) runs before the first write can
+// happen — an explicit save or the $EDITOR round-trip — so the caller can defer
+// creating the target's directory until the user actually commits: opening the
+// editor and quitting must leave no trace.
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error) (bool, error) {
 	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
+	m.prepare = prepare
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -201,6 +205,11 @@ type model struct {
 
 	savedSig  string
 	savedOnce bool
+
+	// prepare runs before anything can write filePath (ctrl+s save, $EDITOR);
+	// nil = no-op. The project editor passes Bootstrap here so an uninitialized
+	// project is enrolled in ~/.byre/projects only when a write actually lands.
+	prepare func() error
 
 	mode  uiMode
 	focus int // form row (modeForm)
@@ -484,6 +493,14 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.dirty() {
 			m.errMsg = "save (ctrl+s) or discard changes before editing the file in $EDITOR"
 			return m, nil
+		}
+		// $EDITOR writes the file directly, so the deferred store setup must
+		// land first — same as save.
+		if m.prepare != nil {
+			if err := m.prepare(); err != nil {
+				m.errMsg = err.Error()
+				return m, nil
+			}
 		}
 		m.errMsg = ""
 		return m, openEditor(m.filePath)

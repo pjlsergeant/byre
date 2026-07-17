@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Inspection commands no longer enroll the project.** `byre dockerfile`,
+  `byre dockerrun`, and `byre ejectfirewall` are documented side-effect-free,
+  but bootstrapped `~/.byre/projects/<id>/` (directory + path record) before
+  rendering — so pointing them at a directory byre had never seen left a
+  durable identity record behind. They now run a read-only validation
+  (`ValidateExisting`) that keeps the loud id-collision check without
+  creating anything. `byre config` follows the same principle: opening the
+  project editor and quitting without saving no longer creates the project
+  dir — enrollment is deferred to the first actual write (ctrl+s, the
+  $EDITOR round-trip, or a volume clear).
+
 - **Field-QA fixes across onboarding, deliver, and the config UI** (from
   byre's first agent-driven exploratory QA pass). The shared-auth offer
   is one plain question — "Use machine-wide credentials to log in to

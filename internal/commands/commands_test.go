@@ -207,6 +207,41 @@ func TestDockerfileHonorsByreHomeAndCollision(t *testing.T) {
 	}
 }
 
+// The inspection commands are documented side-effect-free: run against a
+// project byre has never seen, they must not enroll it — no
+// ~/.byre/projects/<id>/ directory, no path record. (The store mirror under
+// the byre home is machine-level and byre-owned; project enrollment is the
+// contract under test.)
+func TestInspectionCommandsDoNotEnrollProject(t *testing.T) {
+	cases := []struct {
+		name    string
+		run     func(Streams, string) error
+		wantErr bool // ejectfirewall errors ("nothing to eject") — the contract holds anyway
+	}{
+		{"dockerfile", Dockerfile, false},
+		{"dockerrun", DockerRun, false},
+		{"ejectfirewall", EjectFirewall, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BYRE_HOME", t.TempDir())
+			proj := t.TempDir()
+			s, _, _ := testStreams("", false)
+			err := tc.run(s, proj)
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			paths, perr := project.Resolve(proj)
+			if perr != nil {
+				t.Fatal(perr)
+			}
+			if _, serr := os.Stat(paths.Dir); !os.IsNotExist(serr) {
+				t.Fatalf("byre %s enrolled the project (created %s): %v", tc.name, paths.Dir, serr)
+			}
+		})
+	}
+}
+
 func TestShellArgQuoting(t *testing.T) {
 	cases := map[string]string{
 		"plain":                         "plain",

@@ -155,6 +155,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 
 	var path, title string
 	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
+	var prepare func() error      // deferred store setup, run by the UI before its first write
 	switch target {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
@@ -167,9 +168,14 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		if perr != nil {
 			return perr
 		}
-		if berr := paths.Bootstrap(); berr != nil {
-			return berr
+		// Fail the id-collision check loudly before the editor opens, but defer
+		// the enrolling Bootstrap to save time: opening the editor on a project
+		// byre has never seen and quitting without saving must leave no
+		// ~/.byre/projects/<id> behind.
+		if verr := paths.ValidateExisting(); verr != nil {
+			return verr
 		}
+		prepare = paths.Bootstrap
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
 		vols = newVolumeAdmin(paths, projectDir) // nil if the engine/config won't resolve
@@ -184,7 +190,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare)
 	if err != nil {
 		return err
 	}
@@ -298,6 +304,13 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 // logical name with a declared project one, so name alone is ambiguous.
 func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
 	r := a.runnerFor(v.Engine)
+	// The lock file lives in the project dir, which the deferred-Bootstrap
+	// editor may not have created yet (e.g. clearing an orphaned machine
+	// volume from a never-developed project). Clearing mutates state, so
+	// enrolling here is fair.
+	if err := a.paths.Bootstrap(); err != nil {
+		return err
+	}
 	// io.Discard: this runs inside the TUI; a waiting note would corrupt the screen.
 	return withSetupLock(io.Discard, a.paths.LockFile, func() error {
 		if live, err := liveSession(r, a.paths.ID); err != nil {
