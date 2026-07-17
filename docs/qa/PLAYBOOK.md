@@ -239,10 +239,42 @@ Needs a git repo with a commit; main project already developed.
   calls with a beat between, or expect TUIs (claude) to swallow them.
 - Wizard answers race the prompts at fixed sleeps; capture the pane after
   each answer when a journey depends on WHICH question consumed a key.
+- A cold Claude install is too slow for short automated passes; use an
+  agent-less or pre-warmed box when the journey isn't about install.
+- Non-TTY `develop` hangs at attach (expected) — always drive it under
+  tmux/a real pty.
+- Don't match a banner alone to conclude "box up" — early "firewall
+  hung" reports were wait-loop races matching banner text before the
+  `dev@` prompt; wait for the prompt (grok explore pass, 2026-07-17).
 
 ## Open findings
 
-None. Pass-2's six findings were dispatched 2026-07-17 (the PATH
+From the grok explore pass (2026-07-17, report-only; the report was
+absorbed here and deleted). Pending dispatch:
+
+1. (product, medium on skinny bases) The firewall skill omits
+   `ca-certificates`: `template = "none"` + firewall + allowlisted host
+   → TCP connects but `curl https://…` fails 77 (no trust store), so
+   HTTPS on an ALLOWLISTED host looks like a firewall failure
+   (`curl -k` → 200, `dpkg -l ca-certificates` → absent). Language
+   templates dodge it (they ship CAs). Suggested: add
+   `ca-certificates` to the firewall skill's apt list, or document the
+   requirement for minimal bases.
+2. (optional UX) `develop --self-edit --agent …` on an already-
+   configured project refuses ("only apply when creating a config",
+   rc=1) — retyping day-one flags with `--self-edit` aborts the launch;
+   consider ignoring/stripping onboarding flags when the config exists.
+3. (optional docs) `byre mcp add qa -- command echo hi` yields
+   `command = ["command", …]` — TOML's key name tempts prefixing the
+   word `command`; show argv examples side-by-side with the TOML.
+
+The same pass confirmed green (no recipes yet — graduate on a future
+pass): host mounts + store-edit apt, deliver of a directory, self-edit
+round-trip + exit report, skill fork, rehome after `mv`, rebuild,
+docker-host containment-hole loudness, forget --force, firewall on the
+none template (TCP allow/deny both correct — only TLS trust missing).
+
+Previously: none open. Pass-2's six findings were dispatched 2026-07-17 (the PATH
 restore, the everywhere-reprompt, the double-[none] guard, the decoded
 killed-box exit, and the two worktree labels), each with a regression
 test; the recipes above assert the fixed behavior. Future passes append
