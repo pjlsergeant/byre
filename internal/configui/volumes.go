@@ -124,8 +124,12 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) viewVolumes() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", m.crumb("Volumes"))
-	if len(m.volList) == 0 {
-		// \n outside the Render — see viewList's empty line for why.
+	if len(m.volList) == 0 && len(m.volNotes) == 0 {
+		// \n outside the Render — see viewList's empty line for why. Gated
+		// on no degrade notes: with every engine unreachable an empty list
+		// proves nothing about declarations, and "(no volumes declared)"
+		// beside "copies aren't shown" would be a contradiction — the notes
+		// alone tell the true story there (codereview finding).
 		b.WriteString(dimStyle.Render("  (no volumes declared for this project)") + "\n")
 	}
 	// Engine degrade notes: loud (bold, not dim) — an unreachable engine
@@ -135,12 +139,22 @@ func (m model) viewVolumes() string {
 		b.WriteString(errStyle.Render("  ⚠ "+n) + "\n")
 	}
 	multiEngine := volEngines(m.volList) > 1
+	// Column widths from the content: fixed widths (14/6/24) shattered on
+	// real rows — "opencode-identity" is 17, an identity target is 30+, and
+	// orphan rows have no role/target at all, so "present" floated to a
+	// different column per row (live field report, 2026-07-17).
+	nameW, roleW, targetW := 0, 0, 0
+	for _, v := range m.volList {
+		nameW = max(nameW, len(v.Name))
+		roleW = max(roleW, len(v.Role))
+		targetW = max(targetW, len(v.Target))
+	}
 	for i, v := range m.volList {
 		state := dimStyle.Render("empty")
 		if v.Exists {
 			state = "present"
 		}
-		line := fmt.Sprintf("%-14s %-6s %-24s %s", v.Name, v.Role, v.Target, state)
+		line := fmt.Sprintf("%-*s  %-*s  %-*s  %s", nameW, v.Name, roleW, v.Role, targetW, v.Target, state)
 		if multiEngine {
 			line += " [" + v.Engine + "]"
 		}

@@ -446,7 +446,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m, nil
+		// Full clear on resize: the inline renderer repaints only the lines
+		// it knows it drew, but a SHRINK makes previously-drawn (old-width)
+		// lines wrap in the terminal, occupying more physical rows than the
+		// renderer's count — the overflow lingers as stale fragments above
+		// the frame (live field report, 2026-07-17: duplicated rows after
+		// resizing a few times).
+		return m, tea.ClearScreen
 	case editorClosedMsg:
 		return m.onEditorClosed(msg.err), nil
 	case tea.KeyMsg:

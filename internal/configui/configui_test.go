@@ -325,6 +325,61 @@ func TestVolumesScreenRendersDegradeNotes(t *testing.T) {
 	if !strings.Contains(out, ".claude") {
 		t.Fatalf("reachable engine's row missing:\n%s", out)
 	}
+
+	// Every engine down: an empty list proves nothing about declarations,
+	// so the "(no volumes declared)" empty-state must NOT contradict the
+	// unreachable notes — the notes alone tell the story.
+	fv2 := &fakeVols{notes: []string{"docker unreachable — its volume copies aren't shown and can't be cleared here (…)"}}
+	m2 := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv2, TargetProject)
+	m2 = m2.openVolumes()
+	out2 := m2.viewVolumes()
+	if strings.Contains(out2, "no volumes declared") {
+		t.Fatalf("all-engines-down screen claims 'no volumes declared':\n%s", out2)
+	}
+	if !strings.Contains(out2, "docker unreachable") {
+		t.Fatalf("all-engines-down screen lost its note:\n%s", out2)
+	}
+}
+
+// Column widths derive from content, so the state column aligns even when
+// names/targets vary wildly (identity volumes, target-less orphan rows).
+func TestVolumesTableAligns(t *testing.T) {
+	fv := &fakeVols{vols: []VolumeStatus{
+		{Name: ".codex", Role: "state", Target: "/home/dev/.codex-home", Exists: true},
+		{Name: "opencode-identity", Exists: true, Machine: true, Orphan: true},
+		{Name: "claude-identity", Role: "state", Target: "/home/dev/.byre-identity/claude", Exists: true, Machine: true},
+	}}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv, TargetProject)
+	m = m.openVolumes()
+	m.width = 200 // no clipping — alignment is what's under test
+	col := -1
+	for _, line := range strings.Split(m.viewVolumes(), "\n") {
+		// Byte offsets lie about columns: the ▸ cursor is 3 bytes for 1 cell.
+		line = strings.ReplaceAll(line, "▸ ", "  ")
+		i := strings.Index(line, "present")
+		if i < 0 {
+			continue
+		}
+		if col == -1 {
+			col = i
+		} else if i != col {
+			t.Fatalf("'present' drifts between columns %d and %d:\n%s", col, i, m.viewVolumes())
+		}
+	}
+	if col == -1 {
+		t.Fatal("no rows rendered")
+	}
+}
+
+// A resize triggers a full repaint: the inline renderer can't clear
+// previously-drawn lines that wrapped when the terminal SHRANK, so stale
+// fragments linger above the frame without it.
+func TestResizeClearsScreen(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	_, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if cmd == nil {
+		t.Fatal("WindowSizeMsg must return a clear-screen cmd, got nil")
+	}
 }
 
 func TestVolumesClearFlow(t *testing.T) {

@@ -11,6 +11,14 @@
   here" note (first line of the engine error only) while reachable
   engines list normally — deliver's partial-pool posture, applied.
 
+- **Config editor: resizing no longer litters the screen, and the
+  Volumes table aligns.** Shrinking the terminal left stale fragments
+  of the previous frame above the editor (the inline renderer can't
+  clear old lines that wrapped at the new width) — a resize now forces
+  a full repaint. The Volumes screen sizes its columns from the actual
+  rows instead of fixed widths, so long identity names and target-less
+  orphan rows no longer shatter the table.
+
 - **Config editor polish** (live field reports): section-rule headers
   align with the field labels below (one-dash prefix); the bundled
   provenance suffix ("bundled (devel)") is gone from the picker lines —
