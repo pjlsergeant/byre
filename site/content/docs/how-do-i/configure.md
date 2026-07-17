@@ -48,7 +48,8 @@ attributed to the layer or skill that declared it; `byre mcp remove` is
 closure-smart, so removing a skill-declared server writes a `!name`
 entry instead of failing. Declarations bake into the image and inject
 into the agent session; a remote server's host is attributed egress in
-`byre status`.
+`byre status`. The full story:
+[MCP & Claude Skills](/docs/mcp-and-claude-skills/).
 
 ## Add a package to this box -- and promote it to my template?
 

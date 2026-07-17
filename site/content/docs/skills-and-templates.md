@@ -59,11 +59,6 @@ byte-for-byte and grants nothing until a box enables the result;
 Provenance, digest pinning, uninstall semantics, and the full authoring
 contract: the [packaging reference](/docs/packaging-reference/).
 
-## MCP servers and Claude Skills
-
-Declared once (`byre mcp add`, `byre claude-skill add` -- or shipped by
-a skill), injected into the agent session, attributed in
-`byre mcp list` / `byre claude-skill list`. The
-[cookbook has the recipe](/docs/how-do-i/configure/#add-an-mcp-server-to-my-agents-session);
-the wiring contract is in the
-[packaging reference](/docs/packaging-reference/#mcp-and-claude-skills-wiring).
+Skills can also ship
+[MCP servers and Claude Skills](/docs/mcp-and-claude-skills/) --
+declared once, attributed, and individually switch-off-able.
