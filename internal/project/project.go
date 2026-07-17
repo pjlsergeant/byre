@@ -16,7 +16,15 @@ import (
 )
 
 // hashLen is how many hex chars of the sha256 disambiguate a project. The hash
-// is only a uniqueness suffix on a human-readable slug, so 6 (24 bits) is ample.
+// is only a uniqueness suffix on a human-readable slug, so 6 (24 bits) is ample:
+// a collision needs the same sanitized last-two path components AND the same 24
+// bits, and even then it fails LOUDLY — Bootstrap checks the path record and
+// errors before any state (image, volumes, config) is shared (see
+// TestBootstrapDetectsCollision). Considered and declined bumping this
+// (2026-07-17): the id keys the on-disk store and scoped volume names, so any
+// length change silently orphans every existing project's state — a certain
+// migration break traded against an already-fenced ~2^-24 corner. Do not
+// change without an id-migration story.
 const hashLen = 6
 
 // maxSlug caps the readable slug length so Docker object names stay reasonable.
