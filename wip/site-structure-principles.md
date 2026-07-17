@@ -123,11 +123,13 @@ thing taught is decoration -- cut it); every embed's poster frame is the
 final screen, so a non-playing reader still gets the static artifact;
 and where the cast shows the interaction, the prose stops narrating
 keystrokes and states outcomes (P6's genre split -- the demo owns "how
-it feels", prose owns "what it means"). The README stays text (P7), but
-its pinned console blocks become *derived* from the same scenarios'
-final-screen captures -- the demo test emits the cast for the site and
-the text block the README embeds, turning the status/marketing lockstep
-tripwire from a checklist into a build product.
+it feels", prose owns "what it means"). The README stays text (P7), and
+its console blocks stay *hand-curated* (decided 2026-07-17): they are P6
+summaries of output -- deliberately simplified for the evaluator's skim,
+not transcripts -- so deriving them from captures would put them in the
+wrong genre. Derived final-screen captures are a site-side option only
+(poster frames, docs-page text blocks); for the README's curated blocks
+the lockstep tripwire stays a swept checklist (P9).
 
 ### Publish-time asciinema demos (assumed feasible 2026-07-17; prototype still owed)
 
