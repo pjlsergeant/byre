@@ -173,9 +173,8 @@ directory.
 
 Templates ship the obvious ones (`node_modules` for node); add your own
 for anything regenerable that's slow to fetch. Cache volumes survive
-rebuilds and relaunches; `byre reset` wipes them without ceremony --
-they regenerate. [Volumes & state](/docs/volumes-and-state/) has the
-model.
+rebuilds and relaunches, and losing one only costs a re-download.
+[Volumes & state](/docs/volumes-and-state/) has the model.
 
 ### Run project setup automatically?
 

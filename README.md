@@ -125,10 +125,10 @@ the threat model, the contract, and the sharp facts.
 choices, in the same vocabulary `byre status` prints. Adding a package or
 mounting another repo read-only takes a couple of seconds.
 
-Underneath, it's a cascade of three TOML files -- your personal baseline,
-the template, this project's overrides -- that are always yours to edit
-by hand, and that byre reads only from its host-side store, never from
-inside the project. The vocabulary covers packages, env, mounts, volumes,
+Underneath, it's a cascade of TOML files -- your personal baseline, the
+template, optional shared layers, this project's overrides -- always
+yours to edit by hand, and read only from byre's host-side store, never
+from inside the project. The vocabulary covers packages, env, mounts, volumes,
 skills, and MCP servers; raw Dockerfile lines and `docker run` args cover
 the rest.
 

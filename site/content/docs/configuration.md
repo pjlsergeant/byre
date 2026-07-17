@@ -71,8 +71,9 @@ exceptions noted inline.
 - `skills` -- enabled skills, by name (bundled bare: `"firewall"`;
   installed qualified: `"owner/name"`).
 - `sources` -- `id -> { uri, digest }` acquisition hints for packages a
-  preset references. Never auto-fetched; only ever printed as install
-  commands.
+  preset references. Never fetched silently: `preset apply` uses them to
+  chauffeur consented installs; everywhere else they're only printed as
+  install commands.
 
 **Grants** (each live entry shows in `byre status`)
 
