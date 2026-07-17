@@ -23,9 +23,10 @@ the rationale lives.
   what's left is presentation — grouping/spacing (project vs shared),
   the annotation clutter on orphan rows. View-layer only.
 
-- [ ] (L) **Site.** Landing page + real docs; the decided shape lives in
-  docs/marketing/positioning.md "Site plan", with the placement principles
-  drafted in wip/site-structure-principles.md (2026-07-17).
+- [ ] (L) **Site.** Landing page + real docs; the decided shape -- surfaces,
+  placement principles P1-P11, the demo pipeline -- lives in
+  docs/marketing/positioning.md "Site plan" (absorbed from wip 2026-07-17;
+  README trim + canonical site docs shipped same day).
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
   via Pages, docs seeded from the README); logo/favicon and the
   ask-your-agent conceit landed on both surfaces same day. Remaining:
@@ -35,6 +36,9 @@ the rationale lives.
     README-only; the site plan puts the table on the landing page.
   - Screencast hero on the landing (the day-03-style clip -- the media
     the README shouldn't carry).
+  - (M) Publish-time demo harness: gated BYRE_DEMO_REC=1 tests emitting
+    .casts into site/static/ + self-hosted player + Hugo shortcode --
+    prototyped feasible 2026-07-17, shape in the site plan's demo section.
 
 ## Standing
 
