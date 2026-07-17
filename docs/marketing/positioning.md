@@ -347,11 +347,12 @@ shape, not shipped, moot).
 
 A repo `CONTRIBUTING.md`, canonical repo-side per P8 -- contributors
 are the repo-docs reader, and GitHub surfaces the file natively on
-issues and PRs. The site links it, never mirrors. Content: this repo's
-unusual conventions (TODO.md authoritative, the `wip/` lifecycle, ADRs,
-the binding glossary), the dev environment pointer, and
-young-single-maintainer expectations; written knowing agents read it
-too (P4).
+issues and PRs. The site links it, never mirrors. Content: the
+contribution philosophy (agent-confirmed bug reports, use-case-rich
+feature requests, descriptions preferred over code -- Pete, 2026-07-17),
+then this repo's unusual conventions (TODO.md authoritative, the `wip/`
+lifecycle, ADRs, the binding glossary) and young-single-maintainer
+expectations; written knowing agents read it too (P4).
 
 ## Sources (verified 2026-07-03)
 

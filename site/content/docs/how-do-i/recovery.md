@@ -73,7 +73,11 @@ generated Dockerfile (`byre dockerfile`).
 
 Those three artifacts exist for this moment -- they say exactly which
 byre, what the box could touch, and what was built, with nothing secret
-in any of them. Security-sensitive reports go via GitHub security
+in any of them. Better still, ask an agent or two to confirm the bug
+against the source first -- the repo is built to be read, and an
+agent-verified report usually gets fixed fast
+([CONTRIBUTING.md](https://github.com/pjlsergeant/byre/blob/main/CONTRIBUTING.md)
+has the shape). Security-sensitive reports go via GitHub security
 advisories instead
 ([docs/SECURITY.md](https://github.com/pjlsergeant/byre/blob/main/docs/SECURITY.md)).
 

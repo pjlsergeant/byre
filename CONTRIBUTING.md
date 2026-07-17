@@ -1,59 +1,65 @@
 # Contributing to byre
 
 byre is a young, single-maintainer project that I use all day, every
-day. Issues and PRs are welcome; response times are honest rather than
-instant. This file is the map of how the repo actually works -- written
-for humans and for their coding agents alike, because agents read this
-repo as a first-class audience.
+day. Issues and ideas are welcome; response times are honest rather
+than instant. Two things make this repo unusual, and both shape how to
+contribute well: it is documented deeply enough that an agent can
+answer most questions about it, and its changes move through written
+design (the ADRs) rather than drive-by patches.
 
-## Where truth lives
+## Think you've found a bug?
 
-The repo has an unusual documentation discipline, and it is load-bearing:
+**Please ask several agents to confirm it against the source before
+filing.** The repo is built to be legible to coding agents -- point
+yours at it, describe what you saw, and have it verify the behavior
+against the actual code paths; a second agent's independent read is
+cheap and catches most misdiagnoses. A report that arrives with "two
+agents traced this to X" plus the legible artifacts --
+`byre version`, `byre status`, the generated Dockerfile
+(`byre dockerfile`) -- usually gets fixed fast. Security-sensitive
+reports go via GitHub security advisories instead (`docs/SECURITY.md`).
 
-- **`TODO.md` is authoritative.** It is the single source of truth for
-  what is open and what was consciously dropped. When another document
-  disagrees with it about status or scope, `TODO.md` wins. Finished and
-  dropped items are removed, not struck through -- git history is the
-  archive. Please don't send PRs that restructure it.
-- **`docs/GLOSSARY.md` is binding vocabulary.** Prose, docs, and
-  user-facing strings use its terms; when two docs disagree on naming,
-  one of them is wrong. It governs vocabulary only, never behavior.
-- **`docs/PRINCIPLES.md` holds standing commitments;
-  `docs/adr/` holds point-in-time decisions** that cite them. The
-  litmus: could it be "superseded by ADR-NNNN"? It's an ADR. Would
-  changing it re-litigate the project? It's a principle.
-- **`docs/` is for settled references only** (the ALL-CAPS files).
-  Anything with a lifecycle -- designs in flight, research drafts --
-  lives in `wip/` at the repo root and is deleted when the work ships;
-  its durable content is absorbed into an ADR or a settled doc first.
-- **The site is a doc surface too.** `site/content/docs/` (published at
-  getbyre.com) is the canonical home of operational documentation; the
-  README carries conversion summaries. If your change alters behavior a
-  settled doc or site page describes, update it in the same PR -- stale
-  present-tense prose is the docs' main rot vector.
+## Want a feature?
 
-## The bar for changes
+**Pass in as much information about your use-case as humanly
+possible.** What you were doing, what you expected, what surrounds the
+gap -- the real workflow, not the abstracted request. byre's design
+decisions are made against concrete use-cases (and recorded in
+`docs/adr/`), so a rich description of your situation is worth far more
+than a proposed API.
 
-- **Green before commit:** `gofmt`, `go vet`, and `go test ./...` clean.
-- Some enforcement is mechanical: the generated Dockerfile output is
-  golden-tested, the site's commands page is pinned to the cobra tree
-  (regenerate with `go run ./cmd/byre commands-page >
-  site/content/docs/commands.md`), and the README's "How do I...?"
-  tldrs are pinned verbatim against the site cookbook.
-- Docker-touching logic is tested through injected runner fakes; the
-  gated integration suite (`BYRE_DOCKER_TESTS=1`) runs where an engine
-  is. `docs/BYRE-DEVELOPMENT.md` describes the dev environment,
-  including how byre develops itself in its own box.
-- Dependencies are added on demonstrated merit, not collected.
-- Keep the core opinion-free: opinions live in skills. If your feature
-  is an opinion about how a box should behave, it is probably a skill.
+## Prefer descriptions over code
 
-## Security
+**In general, detailed descriptions of the changes you want are
+preferred over actual code.** This repo has strong conventions --
+binding vocabulary, settled principles, golden-pinned artifacts, docs
+that must move in lockstep with behavior -- and a PR that doesn't ride
+them costs more to absorb than a precise description of the intended
+change. Small obvious fixes are the exception; for anything larger,
+write the change down first and let's agree on the shape.
 
-The threat model and the sharp facts live at
-<https://getbyre.com/docs/security-model/>. Report security issues via
-GitHub security advisories on `pjlsergeant/byre` (see
-`docs/SECURITY.md`). Two classes of report to save you time: byre
-deliberately does not protect the user from themselves (the box is
-locked against the *agent*), and `--self-edit` deliberately hands the
-agent the keys -- both are documented decisions, not bugs.
+## How the repo works
+
+The conventions, for humans and their agents alike:
+
+- **`TODO.md` is authoritative** for what's open and what was
+  consciously dropped; git history is the archive. Don't restructure it.
+- **`docs/GLOSSARY.md` is binding vocabulary**; `docs/PRINCIPLES.md`
+  holds standing commitments; `docs/adr/` holds the point-in-time
+  decisions that cite them.
+- **`docs/` is settled reference only**; work-in-flight lives in `wip/`
+  and is deleted when absorbed.
+- **The site is a doc surface**: `site/content/docs/` (getbyre.com) is
+  the canonical operational documentation; the README carries
+  conversion summaries. Behavior changes update the describing doc in
+  the same unit of work.
+- **Green before commit**: `gofmt`, `go vet`, `go test ./...`. Some
+  enforcement is mechanical -- the generated Dockerfile is
+  golden-tested, the site's commands page is pinned to the cobra tree,
+  the README's tldrs are pinned verbatim against the cookbook.
+- **Keep the core opinion-free**: opinions live in skills. If your
+  feature is an opinion about how a box should behave, it is probably
+  a skill. Dependencies are added on demonstrated merit.
+
+`docs/BYRE-DEVELOPMENT.md` describes the dev environment, including how
+byre develops itself in its own box.
