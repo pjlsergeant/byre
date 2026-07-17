@@ -310,24 +310,11 @@ func deliverConfig(s Streams, dir string, engines []sessionRunner, uid int, clip
 		WorkdirLabel: workdirKey,
 		CallerUID:    uid,
 		Cwd:          dir,
-		WorkdirIDOf: func(d string) (string, error) {
-			p, err := project.Resolve(d)
-			if err != nil {
-				// Unresolvable ancestor = no id here, keep walking.
-				return "", fmt.Errorf("%w: %v", deliver.ErrNoWorkdirID, err)
-			}
-			// Same loud id-collision stance as shell/status: a collided
-			// level ABORTS selection (non-sentinel error) — skipping it
-			// would let the sole-session fallback pick the collided box.
-			if verr := p.ValidateExisting(); verr != nil {
-				return "", verr
-			}
-			return p.WorktreeID, nil
-		},
-		Out:  s.Out,
-		Err:  s.Err,
-		Clip: clip,
-		Pick: pick,
+		WorkdirIDOf:  workdirIDOf,
+		Out:          s.Out,
+		Err:          s.Err,
+		Clip:         clip,
+		Pick:         pick,
 	}
 	for _, r := range engines {
 		// Rootless Podman WITHOUT keep-id support inherits develop's
@@ -345,6 +332,26 @@ func deliverConfig(s Streams, dir string, engines []sessionRunner, uid int, clip
 		cfg.Engines = append(cfg.Engines, engineAdapter{r: r, callerScoped: callerScoped})
 	}
 	return cfg, nil
+}
+
+// workdirIDOf is the cascade's per-level identity callback. Resolve computes
+// an identity for ANY directory, so a Resolve error is never "no project at
+// this level" — it's an operational or integrity failure (unreadable worktree
+// metadata, permissions, home resolution), and it aborts selection rather
+// than wrap deliver.ErrNoWorkdirID: a skipped level falls through to the
+// sole-session/picker fallbacks, which could hand the delivery to an
+// unrelated box (codereview finding — the same unsafe fallback the collision
+// abort exists to prevent). The collision case rides the same non-sentinel
+// path via ValidateExisting, matching shell/status.
+func workdirIDOf(d string) (string, error) {
+	p, err := project.Resolve(d)
+	if err != nil {
+		return "", fmt.Errorf("resolving %s: %w", d, err)
+	}
+	if verr := p.ValidateExisting(); verr != nil {
+		return "", verr
+	}
+	return p.WorktreeID, nil
 }
 
 // engineAdapter narrows a sessionRunner to deliver's Engine interface.

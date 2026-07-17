@@ -2,12 +2,14 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // TestDeliverWiring drives the real cascade + transport through the commands
@@ -67,5 +69,48 @@ func TestDeliverZeroEnginesIsHonest(t *testing.T) {
 	_, err := deliverWith(s, t.TempDir(), deliver.Options{}, deliver.PathSources([]string{"x"}), nil, 501, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no container engine") || strings.Contains(err.Error(), "no running byre boxes") {
 		t.Fatalf("err = %v (zero engines must not claim zero boxes)", err)
+	}
+}
+
+// workdirIDOf's error taxonomy: an operational Resolve failure (here, a
+// worktree pointer whose target is gone) must ABORT selection — never wrap
+// deliver.ErrNoWorkdirID, whose "skip this level" meaning would let the
+// sole-session/picker fallbacks hand the delivery to an unrelated box. Same
+// for a collision. A plain directory resolves normally.
+func TestWorkdirIDOfErrorTaxonomy(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+
+	plain := t.TempDir()
+	if id, err := workdirIDOf(plain); err != nil || id == "" {
+		t.Fatalf("plain dir: (%q, %v), want an id", id, err)
+	}
+
+	broken := t.TempDir()
+	if err := os.WriteFile(filepath.Join(broken, ".git"),
+		[]byte("gitdir: /nonexistent/worktrees/wt1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := workdirIDOf(broken)
+	if err == nil {
+		t.Fatal("broken worktree metadata: want an error")
+	}
+	if errors.Is(err, deliver.ErrNoWorkdirID) {
+		t.Fatalf("operational failure wrapped as the skip sentinel: %v", err)
+	}
+
+	collided := t.TempDir()
+	paths, err := project.Resolve(collided)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = workdirIDOf(collided)
+	if err == nil || !strings.Contains(err.Error(), "collision") || errors.Is(err, deliver.ErrNoWorkdirID) {
+		t.Fatalf("collision must be a non-sentinel refusal, got: %v", err)
 	}
 }
