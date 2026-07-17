@@ -1,10 +1,9 @@
-Byre Term Symbols is a modified build of JuliaMono v0.63.1
-(https://github.com/cormullion/juliamono): subset to terminal symbol
-ranges (U+00A0-00FF, U+2000-206F, U+2190-22FF, U+2300-23FF,
+Byre Term is a modified build of JuliaMono v0.63.1
+(https://github.com/cormullion/juliamono): subset to ASCII plus terminal symbol
+ranges (U+0020-007E, U+00A0-00FF, U+2000-206F, U+2190-22FF, U+2300-23FF,
 U+2500-27BF, U+2B00-2BFF, U+E0A0-E0B3) and renamed, as the SIL OFL
 requires for modified versions of a font with a Reserved Font Name.
-Used as the unicode fallback behind Comic Shanns Mono in the demo
-player. Original license follows.
+The demo player's terminal face.
 
 Copyright (c) 2020 - 2023, cormullion
 with Reserved Font Name JuliaMono.

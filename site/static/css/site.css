@@ -265,17 +265,11 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 }
 .demo-cast .ap-player { border-radius: 0; }
 
-/* Demo player fonts: Comic Shanns Mono carries the type, Byre Term Symbols
-   (a renamed JuliaMono subset -- vendor/fonts/LICENSE-byre-term-symbols)
-   fills the box-drawing/arrows/dingbats it lacks. Fetched lazily: only a
-   page whose player uses the stack downloads them. */
+/* Demo player font: Byre Term, a JuliaMono subset (ASCII + terminal
+   symbols; provenance and OFL in vendor/fonts/LICENSE-byre-term).
+   Fetched lazily: only a page whose player uses it downloads it. */
 @font-face {
-  font-family: "Comic Shanns Mono";
-  src: url("/vendor/fonts/comic-shanns-mono-regular.woff2") format("woff2");
-  font-display: swap;
-}
-@font-face {
-  font-family: "Byre Term Symbols";
-  src: url("/vendor/fonts/byre-term-symbols.woff2") format("woff2");
+  font-family: "Byre Term";
+  src: url("/vendor/fonts/byre-term.woff2") format("woff2");
   font-display: swap;
 }
