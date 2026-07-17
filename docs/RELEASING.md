@@ -23,7 +23,8 @@ the next `unreleased` section when work resumes).
 
 While editing `CHANGES.md`, sweep the settled docs for claims this
 release obsoletes: for each entry, does README / ARCHITECTURE / GLOSSARY
-still describe the pre-change behavior in the present tense? Shipped
+/ the site (`site/content/` -- the canonical operational docs) still
+describe the pre-change behavior in the present tense? Shipped
 features leave stale "today this is manual" / "planned" prose behind
 them -- that drift is the docs' main rot vector (the 2026-07-16 audit
 found seven such claims, all left by ship waves days earlier).
@@ -52,10 +53,12 @@ goreleaser release --snapshot --clean   # artifacts land in dist/, nothing publi
 
 ## Install paths
 
-All three are live and in the README's Install section:
+All three are live; the README's Install section blesses `install.sh`
+and links the full set on the site's install page
+(`site/content/docs/install.md`):
 
 - **`go install github.com/pjlsergeant/byre/cmd/byre@latest`** — builds
-  from the module proxy, no release involved. What the README leads with.
+  from the module proxy, no release involved.
 - **`install.sh`** (`curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | sh`)
   — checksum-verified download of the latest release binary; no Go
   toolchain needed.
