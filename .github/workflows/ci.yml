@@ -50,11 +50,21 @@ jobs:
       # tmux: the TUI test tier (internal/tuitest) drives the built byre
       # binary in a private tmux server. The gate set without tmux FAILS
       # (tuitest.Require) — an install regression must not silently skip
-      # the tier.
-      - name: install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
+      # the tier. bash-completion feeds the completion demo scenario.
+      - name: install tmux + bash-completion
+        run: sudo apt-get update && sudo apt-get install -y tmux bash-completion
+      # asciinema v3 (the rust CLI; distro packages are the v2 python one)
+      # records the site demo casts. Pinned by version AND digest — a release
+      # binary fetched over the network is run-in-CI code.
+      - name: install asciinema (pinned)
+        run: |
+          curl -fsSL -o /tmp/asciinema https://github.com/asciinema/asciinema/releases/download/v3.2.1/asciinema-x86_64-unknown-linux-gnu
+          echo "1b405bbda565b33c3c4718de67fedc3535580603c0694b1ff3fb04f363430a20  /tmp/asciinema" | sha256sum -c
+          sudo install -m 0755 /tmp/asciinema /usr/local/bin/asciinema
+      # BYRE_DEMO_REC here is the demo tier's push-time signal: a TUI change
+      # that breaks a demo scenario fails THIS run, not the next site deploy.
       - name: go test
-        run: BYRE_TUI_TESTS=1 go test -race ./...
+        run: BYRE_TUI_TESTS=1 BYRE_DEMO_REC=1 go test -race ./...
 
   # The engine-free tiers (unit suite + tmux TUI tier) on macOS — the OS
   # most byre hosts actually run, previously covered only by daily use.
