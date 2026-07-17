@@ -75,8 +75,8 @@ package digest. `install` fetches, verifies file by file, and snapshots
 renders the full trust surface (contributions, grants, hashes) without
 installing; `--digest` pins the install to the bytes you reviewed.
 Uninstalling warns about configs still referencing the package -- and a
-box that slips through fails loudly at its next develop, naming the
-exact reinstall command.
+box that slips through fails loudly at its next develop (naming the
+exact reinstall command when a `[sources]` hint carries it).
 
 ## MCP servers and Claude Skills
 
