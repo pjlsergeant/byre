@@ -139,7 +139,10 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return nil
 	}
 	// The write was just confirmed — enroll (dir + path record) before taking
-	// the setup lock, which lives in the store.
+	// the setup lock, which lives in the store. Accepted cost: if the locked
+	// re-checks below abort (source or store changed mid-review), the project
+	// stays enrolled despite no write landing — consent to the write was
+	// given, and the lock cannot exist without the store.
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}

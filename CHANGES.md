@@ -10,7 +10,9 @@
   read-only check (`ValidateExisting`) that keeps the loud id-collision
   error without creating anything. The same deferral applies wherever a
   flow can end without a write: `byre config` opened-and-quit-unsaved (a
-  save the validator refuses also enrolls nothing), `byre mcp remove` with
+  save the validator refuses also enrolls nothing; the one exception is
+  the ctrl+e $EDITOR hand-off, which must create the store up front so
+  the editor has a directory to write into), `byre mcp remove` with
   nothing to remove, and a declined `byre preset apply` no longer create
   the store — enrollment now rides the first landed write. Read-only views
   (`status`, `mcp list`, `claude-skill list`, `preset inspect`) gained the
