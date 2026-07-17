@@ -115,7 +115,7 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) viewVolumes() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render("Volumes"))
+	fmt.Fprintf(&b, "%s\n\n", m.crumb("Volumes"))
 	if len(m.volList) == 0 {
 		b.WriteString(dimStyle.Render("  (no volumes declared for this project)\n"))
 	}
@@ -170,7 +170,7 @@ func (m model) viewVolumes() string {
 		b.WriteString(m.subFooterNote())
 	}
 
-	b.WriteString("\n\n" + dimStyle.Render("↑/↓ move · c clear · ^s save · esc back"))
+	b.WriteString("\n\n" + helpLine("↑/↓", "move", "c", "clear", "^s", "save", "esc", "back"))
 	return b.String()
 }
 

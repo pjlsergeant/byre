@@ -78,6 +78,9 @@ func (m model) onEditorClosed(err error) model {
 
 // ---- save / assemble / dirty -----------------------------------------------
 
+// savedStatus is the post-save status note; statusNote singles it out (green).
+const savedStatus = "Saved ✓"
+
 // runPrepare runs the deferred store setup, shared by every path that is about
 // to write filePath (ctrl+s save, the $EDITOR shell-out). A failure lands in
 // errMsg and reports false. Deliberately re-run on every write, not once: the
@@ -127,7 +130,7 @@ func (m model) save() model {
 	m.errMsg = ""
 	m.savedSig = m.sig()
 	m.savedOnce = true
-	m.status = "Saved ✓"
+	m.status = savedStatus
 	m.confirmQuit = false
 	// The save re-marshaled the file: any hand-written comments are gone now,
 	// so the destroys-comments warning has nothing left to protect.
