@@ -22,9 +22,9 @@ terminal). Model tests stay; this tier covers what they can't.
 
 One substrate shared by three consumers: deterministic tests (this ADR),
 humans replaying a repro (every test doubles as a keystroke script), and
-the planned report-only agent QA pass (TODO: "Agent field-QA pass"),
-which will drive the same verbs -- `send-keys`, `capture-pane`,
-`paste-buffer`. That sharing is a **product preference, not an
+the release-time report-only field-QA pass (the QA playbook; see
+RELEASING.md), which drives the same verbs -- `send-keys`,
+`capture-pane`, `paste-buffer`. That sharing is a **product preference, not an
 inevitability** (review point): tmux is itself the VT emulator we're
 electing to trust, and the harness API deliberately admits a hermetic
 in-process pty backend later if one is ever needed. Consciously

@@ -1,18 +1,21 @@
 # byre QA playbook
 
-The standing journey suite for the agent field-QA pass (TODO "Agent
-field-QA pass, release-time, report-only"): per journey, the keystroke
-recipe, the screens to expect, and what pass means. Each QA pass EXECUTES
-this playbook and EXTENDS it; exploratory probing happens at the edges and
-graduates in here once repeatable. Findings go to the pass report (the
-charter file), never fixed mid-pass.
+The standing journey suite for the release-time field-QA pass (see
+RELEASING.md): per journey, the keystroke recipe, the screens to expect,
+and what pass means. Each QA pass EXECUTES this playbook and EXTENDS it;
+exploratory probing happens at the edges and graduates in here once
+repeatable. Findings go to the "Open findings" section at the bottom of
+this file, never fixed mid-pass; they leave it by being dispatched into
+fixes + regression tests. (This file absorbed the pass #1/#2 charter,
+2026-07-17 — pass-1's five findings all shipped as the Unit-1 fixes;
+git history keeps the full reports.)
 
-Starts in wip/ while it takes shape (2026-07-17, pass #2); promote to a
-settled home once stable — candidate: `qa/PLAYBOOK.md` or the inttest
-skill. Recipes assume the sacrificial inttest VM, a fresh
-`BYRE_HOME=$HOME/<qa>/home`, and the tmux vocabulary from
-BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with `grep -a` — TUI box
-glyphs otherwise trip grep's binary heuristic).
+In wip/ while findings from the latest pass are pending; promotes to a
+settled home once clear — candidate: `qa/PLAYBOOK.md` or the inttest
+skill (RELEASING.md points here and moves with it). Recipes assume the
+sacrificial inttest VM, a fresh `BYRE_HOME=$HOME/<qa>/home`, and the
+tmux vocabulary from BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with
+`grep -a` — TUI box glyphs otherwise trip grep's binary heuristic).
 
 ## Conventions
 
@@ -232,3 +235,41 @@ Needs a git repo with a commit; main project already developed.
   calls with a beat between, or expect TUIs (claude) to swallow them.
 - Wizard answers race the prompts at fixed sleeps; capture the pane after
   each answer when a journey depends on WHICH question consumed a key.
+
+## Open findings — pass #2, 2026-07-17 (pending dispatch; report-only)
+
+Driven on the VM at byre @ c88d121. Repro detail lives with each journey
+above; this is the dispatch list. Delete entries as they ship.
+
+1. **Bug — image ENV PATH lost in box login shells.** template=go box:
+   `go` not found in the agent=none foreground shell AND `byre shell`;
+   Debian /etc/profile overwrites PATH in login shells and
+   /etc/profile.d/byre-env.sh doesn't restore the image ENV
+   (/usr/local/go/bin, /go/bin, ~/.local/bin). The agent is unaffected
+   (byre-launch execs with the container env — why the self-hosted box
+   never noticed). node/python dodge it (/usr/local/bin). Fix direction
+   open (restore in byre-env.sh from a baked value? launcher persists
+   runtime env for profile.d? drop `-l`?); hardening: an in-box test
+   asserting `command -v go` through the login-shell path.
+2. **Bug, cosmetic — config UI renders `[none]` twice** in Pri. Agent
+   for agent="none" configs; pickerOpts (internal/configui/skills.go:343)
+   appends the current value without guarding current == noneOption.
+   Template row has the same latent case. One condition + unit test.
+3. **Low — nonsense at the sharing question silently declines.**
+   "banana" at `[y/N, i for info]` → No, no reprompt; an `i` typo
+   silently declines the offer. Ruling: reprompt worth a line?
+4. **Low — box killed under a live session reports `byre: exit status
+   137`, rc 1.** Deliberate (≥125 = docker's engine range stays a byre
+   error, develop.go), but the message gives no hint the container was
+   removed externally. Legibility only.
+5. **Low — deliver into a worktree box is labeled with the main
+   project's slug** ("delivering to got-qa2-3c1130 (docker, <id>)");
+   the worktree box's own slug (got-wt1-…) would distinguish it.
+6. **Low — status names sibling worktree sessions by container id only**
+   ("Worktrees: 1 other session(s) live: 90bef5d3ecdd"); path/branch not
+   recoverable from the output.
+
+Closed, no finding: reset/forget decline-while-running exits 1 (pass-1's
+"rc=0" was a pipe-measurement artifact); the 3-vs-1 asymmetry against
+develop's ExitRefused is deliberate (3 exists only because develop's
+exit code otherwise carries the agent's own status).

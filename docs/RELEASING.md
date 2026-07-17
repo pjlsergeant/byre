@@ -28,6 +28,13 @@ features leave stale "today this is manual" / "planned" prose behind
 them -- that drift is the docs' main rot vector (the 2026-07-16 audit
 found seven such claims, all left by ship waves days earlier).
 
+Also before tagging: run the field-QA playbook against the release
+candidate -- the journey recipes in `wip/qa-playbook.md` (its home until
+the current pass's findings are dispatched; it promotes to a settled
+location after), driven on the sacrificial inttest VM. Report-only,
+NEVER a gate: findings go to the playbook's findings section and harden
+into deterministic tuitest regression tests afterwards.
+
 That's it. The workflow runs the tests, then goreleaser cross-compiles
 linux/darwin × amd64/arm64, writes checksummed `tar.gz` archives, and
 publishes a GitHub Release with a changelog from the commit messages.
