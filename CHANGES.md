@@ -15,7 +15,12 @@
   reset` and `byre forget` join the contract from the teardown side: on
   a never-enrolled project they say so and touch nothing, instead of
   enrolling a store just to have something to tear down (or leaving one
-  behind after a declined confirm).
+  behind after a declined confirm). And `byre deliver` closes the last
+  id-keyed surface without the loud collision check: a directory whose
+  recorded canonical path names a DIFFERENT project now aborts box
+  selection outright — previously the collided id could match (or fall
+  through to the sole-session fallback and still select) another
+  project's box, silently delivering files into a stranger's /inbox.
 
 - **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
   the firewall and firewall-open skills' apt lists gain

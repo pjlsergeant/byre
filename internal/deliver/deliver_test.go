@@ -369,6 +369,48 @@ func TestCwdAncestorWalkMatches(t *testing.T) {
 	}
 }
 
+// A collided project id must ABORT selection, not skip the level: with the
+// collided box as the machine's sole session, a skipped level falls through
+// to the sole-session fallback and delivers into the OTHER project — the
+// confused-deputy write the recorded-path check exists to prevent.
+func TestCollisionAbortsSelectionBeforeFallbacks(t *testing.T) {
+	eng := box("docker", "aaa") // the colliding project's box: the sole session
+	cfg, _, _ := testConfig(eng)
+	cfg.Cwd = "/project/b/sub"
+	cfg.WorkdirIDOf = func(dir string) (string, error) {
+		if dir == "/project/b" {
+			return "", fmt.Errorf("project id proj-aaa collision: recorded path %q != current %q", "/project/a", "/project/b")
+		}
+		return "", fmt.Errorf("%w: not a project", ErrNoWorkdirID)
+	}
+	src := writeFile(t, "f", "x")
+	_, err := Run(cfg, Options{}, []string{src})
+	if err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("err = %v, want the collision refusal", err)
+	}
+	if len(eng.streams) != 0 {
+		t.Fatalf("ExecInput ran despite the collision: %v", eng.streams)
+	}
+}
+
+// The sentinel keeps its meaning: ErrNoWorkdirID levels are skipped and the
+// sole-session fallback still applies from a neutral directory.
+func TestNoWorkdirIDKeepsWalkingToFallback(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, _ := testConfig(eng)
+	cfg.Cwd = "/somewhere/neutral"
+	cfg.WorkdirIDOf = func(dir string) (string, error) {
+		return "", fmt.Errorf("%w: not a project", ErrNoWorkdirID)
+	}
+	src := writeFile(t, "f", "x")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.streams) != 1 {
+		t.Fatalf("sole-session fallback should have delivered: %v", eng.streams)
+	}
+}
+
 func TestZeroSessions(t *testing.T) {
 	eng := box("docker")
 	cfg, _, _ := testConfig(eng)

@@ -74,8 +74,12 @@ type Config struct {
 	CallerUID    int
 	Cwd          string
 	// WorkdirIDOf computes the workdir id a session started in dir would
-	// carry — used by the cascade's ancestor walk. Errors mean "no id for
-	// this level", not failure.
+	// carry — used by the cascade's ancestor walk. Return an error wrapping
+	// ErrNoWorkdirID to mean "no id for this level, keep walking"; ANY other
+	// error aborts selection loudly. The distinction has teeth: an id
+	// collision (the recorded canonical path names a different project) must
+	// refuse, not skip — a skipped level falls through to the sole-session
+	// and picker fallbacks, which would happily select the collided box.
 	WorkdirIDOf func(dir string) (string, error)
 	Out         io.Writer  // the contract: delivered in-box paths, one per line
 	Err         io.Writer  // byre's voice: target line, notes, degrade claims
@@ -86,6 +90,11 @@ type Config struct {
 	// ok=false is a clean user cancel.
 	Pick func(sessions []Session) (s Session, ok bool, err error)
 }
+
+// ErrNoWorkdirID is the WorkdirIDOf sentinel for "this directory level has no
+// workdir id" — the ancestor walk keeps climbing. Any WorkdirIDOf error NOT
+// wrapping it aborts selection (see the Config field's doc).
+var ErrNoWorkdirID = fmt.Errorf("no workdir id for this level")
 
 // errCancelled marks a clean user cancel at the picker: not a failure, and
 // callers exit quietly (IsCancelled).

@@ -313,7 +313,14 @@ func deliverConfig(s Streams, dir string, engines []sessionRunner, uid int, clip
 		WorkdirIDOf: func(d string) (string, error) {
 			p, err := project.Resolve(d)
 			if err != nil {
-				return "", err
+				// Unresolvable ancestor = no id here, keep walking.
+				return "", fmt.Errorf("%w: %v", deliver.ErrNoWorkdirID, err)
+			}
+			// Same loud id-collision stance as shell/status: a collided
+			// level ABORTS selection (non-sentinel error) — skipping it
+			// would let the sole-session fallback pick the collided box.
+			if verr := p.ValidateExisting(); verr != nil {
+				return "", verr
 			}
 			return p.WorktreeID, nil
 		},

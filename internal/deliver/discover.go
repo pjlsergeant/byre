@@ -1,6 +1,7 @@
 package deliver
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -167,12 +168,21 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 	// workdir id is derived from the literal directory, so each level gets
 	// its own id computed and compared.
 	for dir := cfg.Cwd; cfg.WorkdirIDOf != nil && dir != ""; {
-		if id, err := cfg.WorkdirIDOf(dir); err == nil {
+		switch id, err := cfg.WorkdirIDOf(dir); {
+		case err == nil:
 			for _, s := range p.sessions {
 				if s.WorkdirID != "" && s.WorkdirID == id {
 					return s, nil
 				}
 			}
+		case errors.Is(err, ErrNoWorkdirID):
+			// No id at this level — keep climbing.
+		default:
+			// An id this cwd cannot vouch for (the canonical case: an id
+			// collision against the recorded path). Refuse BEFORE the
+			// sole-session and picker fallbacks below — either could still
+			// select the collided box, delivering into another project.
+			return Session{}, fmt.Errorf("refusing to pick a box from %s: %w", dir, err)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
