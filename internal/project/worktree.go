@@ -156,9 +156,10 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// structCommon is still NOT safe to use as the mount SOURCE: it is derived
 	// from gitDir (the .git pointer, attacker-controlled) and may contain
 	// symlink components an agent could retarget between the SameFile check and
-	// the engine resolving the source. So the source is canonicalized below
-	// (commonGitDirHost) — symlink-free, nothing left to flip — while the
-	// target stays structCommon.
+	// the engine resolving the source. So the source is resolved fail-closed
+	// below and rebound to the validated inode (commonGitDirHost) — symlink-free
+	// and proven to be the checked directory — while the target stays
+	// structCommon.
 	backData, _, err := readMetaFile(filepath.Join(gitDir, "gitdir"))
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
