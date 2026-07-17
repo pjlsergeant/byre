@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Box login shells keep the image's PATH.** Debian's `/etc/profile`
+  resets PATH in login shells, so a `template = "go"` box had no `go` on
+  PATH in `byre shell` or the agent-less foreground shell (the agent
+  itself was unaffected — the launcher execs with the container env).
+  The image's effective PATH is now baked at build time
+  (`/etc/byre/image-path`) and byre's profile shim restores whatever a
+  login shell is missing — additive, image order first.
+
+- **Prompts never take garbage silently.** Every interactive y/N
+  question (the wizard, the shared-credentials offer, `reset`/`forget`
+  confirms, preset/install consents) accepts y/Y/n/N (and i/I where
+  offered), Enter keeps the default, and anything else reprompts — a
+  typo'd `i` at the shared-auth offer used to read as a silent decline.
+
+- **Field-QA legibility fixes** (from the pass-2 report,
+  `docs/qa/PLAYBOOK.md`): a box killed out from under a session says so
+  (`exit status 137 (SIGKILL — the box was killed …)`) instead of the
+  bare number; `byre deliver` names a worktree box by its own workdir id
+  instead of the shared project id; `byre status` lists sibling worktree
+  sessions as `workdir-id (container-id)` instead of a bare container
+  id; and the config UI no longer renders `[none]` twice for
+  agent-less projects.
+
 - **Field-QA fixes across onboarding, deliver, and the config UI** (from
   byre's first agent-driven exploratory QA pass). The shared-auth offer
   is one plain question — "Use machine-wide credentials to log in to

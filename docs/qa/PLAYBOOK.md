@@ -7,15 +7,13 @@ exploratory probing happens at the edges and graduates in here once
 repeatable. Findings go to the "Open findings" section at the bottom of
 this file, never fixed mid-pass; they leave it by being dispatched into
 fixes + regression tests. (This file absorbed the pass #1/#2 charter,
-2026-07-17 — pass-1's five findings all shipped as the Unit-1 fixes;
-git history keeps the full reports.)
+2026-07-17 — pass-1's five findings shipped as the Unit-1 fixes,
+pass-2's six on the same day; git history keeps the full reports.)
 
-In wip/ while findings from the latest pass are pending; promotes to a
-settled home once clear — candidate: `qa/PLAYBOOK.md` or the inttest
-skill (RELEASING.md points here and moves with it). Recipes assume the
-sacrificial inttest VM, a fresh `BYRE_HOME=$HOME/<qa>/home`, and the
-tmux vocabulary from BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with
-`grep -a` — TUI box glyphs otherwise trip grep's binary heuristic).
+Recipes assume the sacrificial inttest VM, a fresh
+`BYRE_HOME=$HOME/<qa>/home`, and the tmux vocabulary from
+BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with `grep -a` — TUI box
+glyphs otherwise trip grep's binary heuristic).
 
 ## Conventions
 
@@ -116,8 +114,9 @@ save-default).
    a box, not a ready agent (informational, all agents).
 5. Exits: gemini Ctrl-C at its login → exits 0, develop propagates; grok
    ctrl+q; claude's tmux-driven theme picker can wedge — if keys stop
-   landing, `docker rm -f` the box (develop then reports
-   `byre: exit status 137`, rc 1 — deliberate, ≥125 = engine range).
+   landing, `docker rm -f` the box (develop then reports the decoded
+   `byre: exit status 137 (SIGKILL — the box was killed out from under
+   the session: …)`, rc 1 — deliberate, ≥125 = engine range).
 6. TEARDOWN: rm boxes + per-project volumes.
 
 ## Journey: seeded gemini — chooser must not appear (pass #2 — PASSED)
@@ -138,15 +137,17 @@ The 2026-07-16 field-failure regression check.
    handling); Ctrl-C → gemini exits 0.
 6. TEARDOWN: rm box; keep or rm the machine identity volume deliberately.
 
-## Journey: rude inputs (pass #2 — PASSED, one finding)
+## Journey: rude inputs (pass #2 — PASSED; garbage-decline finding fixed)
 
 - Ctrl-C at the wizard: process dies on SIGINT, store gains NO config.
 - Ctrl-C mid-build: buildx prints CANCELED/context canceled; develop
   exits 130; no stray containers; next develop skips onboarding and
   rebuilds clean. (Window is short on cached bases — use a fresh
   python/node project for an uncached pull.)
-- Garbage at the sharing question: silently taken as No (finding: no
-  reprompt, an `i` typo declines the offer).
+- Garbage at any y/N prompt (sharing question, save-default, reset/
+  forget Proceed): reprompts with "unrecognized — y, n, …"; y/Y/n/N and
+  i/I answer, Enter takes the default. (Pass-2 found the silent-decline;
+  fixed same day.)
 - Resize mid-wizard: line prompts rewrap, keep answering. Resize
   mid-config-UI: re-clips live, "··· (more below)" + footer intact.
 
@@ -181,8 +182,10 @@ Needs a git repo with a commit; main project already developed.
    <id> (share these volumes)".
 5. deliver from the main tree: resolves to the cwd's OWN box, no picker
    (picker is for ambiguity); `deliver --box <wt-id>` lands in the
-   worktree box's /inbox (verify bytes). Finding: the wt delivery is
-   labeled with the MAIN project slug, id is the only tell.
+   worktree box's /inbox (verify bytes), labeled by the box's own
+   workdir id ("delivering to <proj>-wt1-…"). status shows siblings the
+   same way: "workdir-id (short-id)". (Both were bare/project-labeled —
+   pass-2 findings, fixed same day.)
 6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
 
 ## Journey: config UI ^e round-trip (pass #2 — PASSED)
@@ -194,8 +197,8 @@ Needs a git repo with a commit; main project already developed.
    unknown key(s): [packages]"; the file on disk DOES carry the bad edit.
 3. `^e` again, remove the line, :wq → banner clears, "Reloaded from
    file". `^q` → "byre: config unchanged."
-4. Known cosmetic: agent="none" projects render `[none]` twice in the
-   Pri. Agent row (pickerOpts, configui/skills.go) until fixed.
+4. Pickers render `none` exactly once, whatever the config says
+   (pass-2's double-[none] on agent="none", fixed same day).
 
 ## Journey: firewall egress (pass #2 — PASSED)
 
@@ -208,13 +211,14 @@ Needs a git repo with a commit; main project already developed.
 
 ## Journey: templates + named layers (pass #2 — PASSED, one bug)
 
-1. go/node/python templates: wizard-onboard each, box up. node/python:
-   toolchain on PATH in the box shell (node --version, python3 --version).
-   go: KNOWN BUG — `go` NOT on PATH in login shells (agent=none
-   foreground shell, byre shell); image ENV PATH is clobbered by
-   /etc/profile. `docker exec <box> go version` works (ENV intact) — use
-   that to distinguish this bug from a broken image. Re-check per pass
-   until fixed.
+1. go/node/python templates: wizard-onboard each, box up. Toolchain on
+   PATH in the box's LOGIN shell — `go version`, `node --version`,
+   `python3 --version` in the agent=none foreground shell and via
+   `byre shell`. (go was pass-2's headline bug: /etc/profile clobbered
+   the image ENV PATH; byre-env.sh now restores it from the baked
+   /etc/byre/image-path. If go vanishes again, compare with
+   `docker exec <box> go version` — ENV intact there — to distinguish
+   shim regression from a broken image.)
 2. Layers: `byre layer new qa2base` → scaffold under $BYRE_HOME/layers
    (self-documenting comments; vocabulary = full config minus template).
    Add `apt = ["ripgrep"]` + `egress = ["example.com"]`; `byre layer
@@ -236,40 +240,16 @@ Needs a git repo with a commit; main project already developed.
 - Wizard answers race the prompts at fixed sleeps; capture the pane after
   each answer when a journey depends on WHICH question consumed a key.
 
-## Open findings — pass #2, 2026-07-17 (pending dispatch; report-only)
+## Open findings
 
-Driven on the VM at byre @ c88d121. Repro detail lives with each journey
-above; this is the dispatch list. Delete entries as they ship.
+None. Pass-2's six findings were dispatched 2026-07-17 (the PATH
+restore, the everywhere-reprompt, the double-[none] guard, the decoded
+killed-box exit, and the two worktree labels), each with a regression
+test; the recipes above assert the fixed behavior. Future passes append
+findings here, never fix mid-pass.
 
-1. **Bug — image ENV PATH lost in box login shells.** template=go box:
-   `go` not found in the agent=none foreground shell AND `byre shell`;
-   Debian /etc/profile overwrites PATH in login shells and
-   /etc/profile.d/byre-env.sh doesn't restore the image ENV
-   (/usr/local/go/bin, /go/bin, ~/.local/bin). The agent is unaffected
-   (byre-launch execs with the container env — why the self-hosted box
-   never noticed). node/python dodge it (/usr/local/bin). Fix direction
-   open (restore in byre-env.sh from a baked value? launcher persists
-   runtime env for profile.d? drop `-l`?); hardening: an in-box test
-   asserting `command -v go` through the login-shell path.
-2. **Bug, cosmetic — config UI renders `[none]` twice** in Pri. Agent
-   for agent="none" configs; pickerOpts (internal/configui/skills.go:343)
-   appends the current value without guarding current == noneOption.
-   Template row has the same latent case. One condition + unit test.
-3. **Low — nonsense at the sharing question silently declines.**
-   "banana" at `[y/N, i for info]` → No, no reprompt; an `i` typo
-   silently declines the offer. Ruling: reprompt worth a line?
-4. **Low — box killed under a live session reports `byre: exit status
-   137`, rc 1.** Deliberate (≥125 = docker's engine range stays a byre
-   error, develop.go), but the message gives no hint the container was
-   removed externally. Legibility only.
-5. **Low — deliver into a worktree box is labeled with the main
-   project's slug** ("delivering to got-qa2-3c1130 (docker, <id>)");
-   the worktree box's own slug (got-wt1-…) would distinguish it.
-6. **Low — status names sibling worktree sessions by container id only**
-   ("Worktrees: 1 other session(s) live: 90bef5d3ecdd"); path/branch not
-   recoverable from the output.
-
-Closed, no finding: reset/forget decline-while-running exits 1 (pass-1's
-"rc=0" was a pipe-measurement artifact); the 3-vs-1 asymmetry against
+Worth keeping from pass 2's closed threads: reset/forget's
+decline-while-running exits 1 (an earlier "rc=0" was a pipe-measurement
+artifact — see harness lessons), and the 3-vs-1 asymmetry against
 develop's ExitRefused is deliberate (3 exists only because develop's
 exit code otherwise carries the agent's own status).
