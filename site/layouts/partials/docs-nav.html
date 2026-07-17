@@ -1,8 +1,13 @@
 <nav class="docs-nav">
-  <p><a href="{{ "docs/" | relURL }}">Docs</a></p>
-  <ul>
-    {{ range (site.GetPage "/docs").Pages.ByWeight }}
-    <li><a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a></li>
-    {{ end }}
-  </ul>
+  <div class="docs-nav-inner">
+    <p><a href="{{ "docs/" | relURL }}">Docs</a></p>
+    <ul>
+      {{ range (site.GetPage "/docs").Pages.ByWeight }}
+      <li>
+        <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
+        {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+      </li>
+      {{ end }}
+    </ul>
+  </div>
 </nav>

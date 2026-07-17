@@ -12,3 +12,9 @@ github = "https://github.com/pjlsergeant/byre"
 # Plain <pre><code> blocks, styled by site.css -- no generated inline
 # styles to fight in dark mode.
 codeFences = false
+
+[markup.tableOfContents]
+# The side-nav expands the current page's MAJOR headers only (h2) --
+# h3s (e.g. every cookbook question) would drown the rail.
+startLevel = 2
+endLevel = 2

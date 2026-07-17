@@ -144,12 +144,34 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 .docs-nav a:hover { text-decoration: underline; }
 .docs-nav a[aria-current="page"] { font-weight: 600; color: var(--fg); }
 
+/* The current page's major headers, nested under its entry */
+.docs-nav #TableOfContents ul {
+  padding-left: 0.85rem;
+  margin: 0.15rem 0 0.4rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.94em;
+}
+.docs-nav #TableOfContents li { margin: 0.12rem 0; }
+.docs-nav #TableOfContents a { color: var(--muted); }
+.docs-nav #TableOfContents a:hover { color: var(--link); }
+.docs-nav #TableOfContents:empty { display: none; }
+
 @media (min-width: 72rem) {
   .docs-wrap { position: relative; }
   .docs-nav {
     position: absolute;
     left: -13rem;
-    width: 11.5rem;
     top: 0.5rem;
+    bottom: 0;
+    width: 11.5rem;
+    margin-bottom: 0;
+  }
+  /* Sticky rail inside the full-height column: follows the scroll,
+     scrolls internally if taller than the viewport. */
+  .docs-nav-inner {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
   }
 }
