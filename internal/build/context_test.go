@@ -470,6 +470,33 @@ func TestWithinRoot(t *testing.T) {
 	}
 }
 
+// A source spelled through a SYMLINK ALIAS of the project root (expandHome does
+// not canonicalize, WorkDir is canonical) must still be recognized as in-tree
+// and anchored — a purely lexical compare would false-negative it onto the
+// unsafe by-pathname route.
+func TestAgentWritableRelResolvesAlias(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(real, "a", "myskill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "linkproj")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	aliased := filepath.Join(alias, "a", "myskill")
+	// Lexical-only would miss it.
+	if _, ok := withinRoot(real, aliased); ok {
+		t.Fatal("precondition: the aliased spelling should not be lexically within root")
+	}
+	rel, ok := agentWritableRel(real, aliased)
+	if !ok || rel != filepath.Join("a", "myskill") {
+		t.Fatalf("agentWritableRel(%q,%q) = (%q,%v), want (%q,true)", real, aliased, rel, ok, filepath.Join("a", "myskill"))
+	}
+}
+
 // A `[[claude_skills]].path` INSIDE the writable project must stage through the
 // project-root anchor, not the by-pathname copyPath route (whose O_NOFOLLOW
 // guards only the leaf) — else an agent could swap a project-local ancestor.

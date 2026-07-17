@@ -120,7 +120,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		if err := os.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
 			return "", err
 		}
-		if err := stageCopy(paths.Canonical, j); err != nil {
+		if err := stageCopy(paths.WorkDir, j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
 	}
@@ -364,19 +364,21 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 	return real, clean, nil
 }
 
-// stageCopy realizes one copy job, anchoring the source at the project root
-// whenever it lives inside it so no agent-swappable ancestor is followed by
-// pathname. A job may declare srcRoot itself (planFiles, always project-root
-// relative); otherwise an ABSOLUTE src is routed here: if it resolves inside
-// projectRoot (e.g. a project-local `[[claude_skills]].path`), it is anchored
-// there too; only a source genuinely outside the agent-writable project falls
-// through to the absolute-path copyPath. This ENFORCES — rather than assumes —
-// that no by-pathname reopen happens for an agent-writable source.
-func stageCopy(projectRoot string, j fileCopy) error {
+// stageCopy realizes one copy job, anchoring the source at the agent-writable
+// tree (agentRoot = WorkDir) whenever it lives inside it, so no agent-swappable
+// ancestor is followed by pathname. A job may declare srcRoot itself (planFiles,
+// always project-root relative); otherwise an ABSOLUTE src is routed here: if it
+// resolves inside agentRoot (e.g. a project-local `[[claude_skills]].path`), it
+// is anchored there too; only a source genuinely OUTSIDE the agent-writable tree
+// (skills shipped from elsewhere on the host — the main worktree of a linked
+// worktree is not agent-writable) falls through to the by-pathname copyPath.
+// This ENFORCES — rather than assumes — that no by-pathname reopen happens for
+// an agent-writable source.
+func stageCopy(agentRoot string, j fileCopy) error {
 	root, src := j.srcRoot, j.src
 	if root == "" {
-		if rel, ok := withinRoot(projectRoot, j.src); ok {
-			root, src = projectRoot, rel
+		if rel, ok := agentWritableRel(agentRoot, j.src); ok {
+			root, src = agentRoot, rel
 		}
 	}
 	if root == "" {
@@ -392,6 +394,22 @@ func stageCopy(projectRoot string, j fileCopy) error {
 	// os.Root follows it while refusing escapes. Its interior is agent territory:
 	// symlinks there are rejected (copyRootedEntry with topLevel=false).
 	return copyRootedEntry(r, src, j.staged, true)
+}
+
+// agentWritableRel reports whether path resolves inside root, returning the
+// resolved relative path. It EvalSymlinks the source first because a config
+// path may spell root through a symlink alias that expandHome does not
+// canonicalize (root — WorkDir — is already Canonicalize'd); a purely lexical
+// compare would then miss a real in-tree source and drop it onto the unsafe
+// by-pathname route. The resolve only ROUTES; os.Root re-resolves at open time,
+// so it need not be race-tight. On resolve failure, fall back to the lexical
+// spelling (os.Root still guards the eventual open).
+func agentWritableRel(root, path string) (string, bool) {
+	resolved := path
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		resolved = r
+	}
+	return withinRoot(root, resolved)
 }
 
 // withinRoot reports whether path (absolute) lies inside root (absolute,
