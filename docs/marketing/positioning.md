@@ -1,9 +1,13 @@
 # byre -- positioning: evidence & authoring rules
 
-> **Live copy is `README.md`** (repo root); when this file and the README
-> disagree, the README wins. This file holds what steers *future* copy:
-> the audience definition, voice rules, reusable one-liners, the
-> competitive evidence base, and the site plan.
+> **Live conversion copy is `README.md`** (repo root); when this file and
+> the README disagree on conversion copy, the README wins. For
+> *operational* content the canonical home is the site's docs pages
+> (`site/content/docs/`, in this repo) -- there, the site page wins
+> (amended 2026-07-17; the split is P1/P2 of
+> `wip/site-structure-principles.md`). This file holds what steers
+> *future* copy: the audience definition, voice rules, reusable
+> one-liners, the competitive evidence base, and the site plan.
 >
 > Decided 2026-07-03, amended 2026-07-04 (both grilling sessions);
 > slimmed 2026-07-06 -- rationale for decisions the shipped README now

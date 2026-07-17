@@ -31,10 +31,6 @@ the rationale lives.
   ask-your-agent conceit landed on both surfaces same day. Remaining:
   - DNS + Pages settings (Pete, host-side) -- believed done 2026-07-15,
     the deployed header was verified in-browser; strike on confirm.
-  - Trim the README against the site pages: Quickstart, What's boxed,
-    Configuration, Commands, Worktrees, Volumes & state, and "How do
-    I...?" each have a real page under `/docs/` now; per the site plan
-    the README keeps a simplified version + link, not the full text.
   - Landing comparison table: the "Why not…?" material is still
     README-only; the site plan puts the table on the landing page.
   - Screencast hero on the landing (the day-03-style clip -- the media
@@ -44,8 +40,18 @@ the rationale lives.
 
 Disciplines and tripwires, not tasks.
 
-- **Status/marketing lockstep:** README/site show `byre status` output as
-  proof; re-verify against status.go after any status change.
+- **Status/marketing lockstep (P9 -- sweep this list, not memory):** the
+  surfaces carrying real byre output, re-verified when that output changes:
+  - `byre status` block (status.go): README "Quickstart",
+    site/content/docs/quickstart.md -- identical blocks.
+  - develop launch banner: README hero console block, site landing
+    (site/content/_index.md) hero block.
+  - install commands: README hero + "Install" (curl, blessed), site
+    landing hero (brew), site/content/docs/install.md (all routes).
+  - How-do-I tldrs: README index and site cookbook are verbatim-identical
+    per entry (P6); grep "tldr:" in both when a recipe changes.
+  - commands table: generated -- TestCommandsPagePinsSiteFile enforces,
+    regenerate with `go run ./cmd/byre commands-page`.
 - **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
