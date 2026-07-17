@@ -69,12 +69,23 @@ table, the config vocabulary, the "How do I…?" recipes, skill lists --
 lives only in its canonical home. This is the rot-control rule: every
 duplicated sentence is a future docs-sweep miss.
 
-**P6. A README summary is a different genre, not an excerpt.** The
-"simplified versions" the README keeps are written for the evaluator --
-*that* the capability exists and *why* it matters -- not shortened copies
-of the site page. Shared sentences invite drift and turn every behavior
-change into a three-file edit. If a README paragraph and a site page can
-be diffed line-against-line, one of them is written wrong.
+**P6. A README summary is a different genre, not an excerpt -- and shared
+text is verbatim or absent.** The "simplified versions" the README keeps
+are written for the evaluator -- *that* the capability exists and *why*
+it matters -- not shortened copies of the site page. Where a line
+genuinely belongs on both surfaces (a tldr, an install command), it is
+duplicated *character for character*, so a sweep can grep for drift. The
+rot vector is the middle ground: the paraphrase -- same content, slightly
+different words -- that drifts silently and turns every behavior change
+into a three-file edit.
+
+The worked example is "How do I…?": the *question list plus tldrs* is
+conversion content -- the evaluator scans it and learns byre has answers
+for exactly the things they'd worry about, in falsifiable specifics --
+so the README keeps the index (question + verbatim tldr + link per
+entry). The explanatory recipes underneath are operational and volatile;
+they move to the site's cookbook page. Anything that can't tldr in a
+line or two isn't README material.
 
 **P7. Media lives site-side.** The README carries the logo and text
 artifacts (console blocks, `byre status` output) only. Screencasts, the
@@ -110,7 +121,7 @@ rewrite, not a truncation.
 | Worktrees | **Summary + link** -- 2-3 sentences of pitch (it's a differentiator), mechanics → `/docs/worktrees/` | P6 |
 | Volumes & state | **Move** -- the one-liner in "Comfortable" already covers the pitch; link | P5 |
 | Why not…? | **Keep** (conversion, README-canonical); landing gets the comparison-table rendering per the site plan | P1 |
-| How do I…? | **Move** -- the biggest trim; volatile and growing; README links `/docs/how-do-i/` | P5 |
+| How do I…? | **Keep the index, move the recipes** -- questions + verbatim tldrs stay (the question list is a capability showcase; each new recipe earns a three-line conversion slot); explanatory paragraphs → the site's cookbook page, one link per entry | P1, P6 |
 | Platform | **Keep** -- short, stable, evaluators need it; also belongs on `/docs/install/` | P3, P5 |
 
 And the site's side of the ledger (all already TODO'd, listed for
