@@ -1191,7 +1191,7 @@ func (m model) viewItem() string {
 	}
 
 	if m.itemErr != "" {
-		b.WriteString("\n" + errStyle.Render("✗ "+m.itemErr))
+		b.WriteString("\n" + m.errLine(m.itemErr))
 	}
 	hint := "tab next · enter accept · ^s save · esc cancel"
 	switch {

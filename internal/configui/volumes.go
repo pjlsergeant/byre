@@ -165,7 +165,7 @@ func (m model) viewVolumes() string {
 		}
 		b.WriteString(errStyle.Render(msg + " [y/n]"))
 	case m.volErr != "":
-		b.WriteString(errStyle.Render("✗ " + m.volErr))
+		b.WriteString(m.errLine(m.volErr))
 	default:
 		b.WriteString(m.subFooterNote())
 	}

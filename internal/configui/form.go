@@ -735,6 +735,18 @@ func footerStart(lines []string) int {
 // line that WRAPS breaks that accounting and strands stale rows from the
 // previous frame on screen (found live 2026-07-08: a long Egress summary row
 // left the form row above it behind on the item-editor screen).
+// errLine renders an error/validation message wrapped to the terminal width
+// as REAL newline-separated lines. clipLines truncates any longer line
+// (deliberately: soft-wrapped lines break the row accounting), which cut
+// long messages off mid-word at the pane edge — and error messages echo
+// user input, so their length is unbounded (field-QA 2026-07-17, finding 5).
+func (m model) errLine(msg string) string {
+	if m.width > 0 {
+		return errStyle.Render(ansi.Wrap("✗ "+msg, m.width, ""))
+	}
+	return errStyle.Render("✗ " + msg)
+}
+
 func clipLines(s string, width int) string {
 	if width <= 0 {
 		return s
@@ -776,7 +788,7 @@ func (m model) viewForm() string {
 	case m.confirmQuit:
 		b.WriteString(errStyle.Render("● Unsaved changes — press esc/^q/^c again to discard, or ctrl+s to save"))
 	case m.errMsg != "":
-		b.WriteString(errStyle.Render("✗ " + m.errMsg))
+		b.WriteString(m.errLine(m.errMsg))
 	case m.dirty():
 		b.WriteString(errStyle.Render("● Unsaved changes") + dimStyle.Render("  (ctrl+s to save)"))
 	case m.status != "":
@@ -1054,7 +1066,7 @@ func cursorLine(selected bool, line string) string {
 // where it was pressed, not wait for the user to happen back to the form.
 func (m model) subFooterNote() string {
 	if m.errMsg != "" {
-		return errStyle.Render("✗ " + m.errMsg)
+		return m.errLine(m.errMsg)
 	}
 	if m.status != "" {
 		return dimStyle.Render(m.status)

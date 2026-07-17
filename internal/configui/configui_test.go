@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/pjlsergeant/byre/internal/config"
 )
@@ -1515,5 +1516,30 @@ func TestClaudeSkillEditsFlipDirty(t *testing.T) {
 	}
 	if !m.dirty() {
 		t.Fatal("adding a Claude Skill must mark the form dirty")
+	}
+}
+
+// Error lines WRAP to the terminal width instead of truncating at the pane
+// edge (field-QA 2026-07-17, finding 5): clipLines cuts any longer line, so
+// an unwrapped long message — they echo user input, unbounded — silently
+// lost its tail. Every wrapped line must fit, and the message's TAIL must
+// survive to the screen.
+func TestErrorLinesWrapNotTruncate(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.width = 40
+	long := "claude skill name \"/definitely/not/a/skill/with/a/long/path\": must be lowercase TAILMARKER"
+	got := m.errLine(long)
+	for i, line := range strings.Split(got, "\n") {
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("wrapped line %d is %d cols, exceeds width 40: %q", i, w, line)
+		}
+	}
+	if !strings.Contains(got, "TAILMARKER") {
+		t.Fatalf("message tail lost — still truncating, not wrapping:\n%s", got)
+	}
+	// Zero width (no WindowSizeMsg yet) must not panic or wrap to nothing.
+	m.width = 0
+	if got := m.errLine(long); !strings.Contains(got, "TAILMARKER") {
+		t.Fatalf("zero-width render lost the message: %q", got)
 	}
 }

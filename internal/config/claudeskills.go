@@ -66,7 +66,14 @@ func ValidClaudeSkillName(s string) bool { return claudeSkillNameRe.MatchString(
 // misplaced declaration fails at the file that holds it.
 func ValidateClaudeSkill(cs ClaudeSkill, fromSkill bool) error {
 	if !claudeSkillNameRe.MatchString(cs.Name) {
-		return fmt.Errorf("claude skill name %q: must be lowercase [a-z0-9-], starting with a letter or digit (max 64 chars)", cs.Name)
+		// Echo at most 64 runes of the rejected input: the message renders in
+		// the config UI's error line, and an unbounded echo (a stray paste)
+		// turns it into a wall.
+		name := []rune(cs.Name)
+		if len(name) > 64 {
+			name = append(name[:64], '…')
+		}
+		return fmt.Errorf("claude skill name %q: must be lowercase [a-z0-9-], starting with a letter or digit (max 64 chars)", string(name))
 	}
 	if fromSkill {
 		if cs.From == "" {
