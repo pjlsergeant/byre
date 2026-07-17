@@ -58,8 +58,7 @@ conversation.
 tldr: `byre deliver <file>` -- or just `byre deliver` and paste (or
 drop a file on the window).
 
-<!-- demo-placeholder: deliver-paste-flow -->
-> 🎬 *[demo slot: screenshot, `byre deliver`, Ctrl-V, path lands on the clipboard -- generated cast]*
+{{< demo cast="deliver-paste-flow" title="screenshot, byre deliver, ctrl-v — the in-box path lands on your clipboard" >}}
 
 Anything you deliver lands in the box's `/inbox` and the in-box path
 comes back on your clipboard, ready to Cmd-V into the agent prompt.
@@ -93,8 +92,7 @@ can't find).
 
 tldr: `eval "$(byre completion bash)"` in your shell's startup file.
 
-<!-- demo-placeholder: completion-tab-walk -->
-> 🎬 *[demo slot: tab-completing byre commands and flags -- generated cast, short]*
+{{< demo cast="completion-tab-walk" title="tab-completing byre commands and flags" >}}
 
 Completions cover every command and flag -- bash, zsh, fish, and
 powershell. One line in your rc file regenerates the script at shell

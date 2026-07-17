@@ -4,8 +4,7 @@ weight: 20
 description: first run, the picker, and byre status
 ---
 
-<!-- demo-placeholder: quickstart-picker-status -->
-> 🎬 *[demo slot: the first-run picker, ending on `byre status` -- generated cast]*
+{{< demo cast="quickstart-picker-status" title="the first-run picker, then byre status" >}}
 
 ```sh
 cd ~/my-project

@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" href="{{ "favicon.png" | relURL }}">
   <link rel="apple-touch-icon" href="{{ "logo.png" | relURL }}">
   <link rel="stylesheet" href="{{ "css/site.css" | relURL }}">
+  {{ if .HasShortcode "demo" }}<link rel="stylesheet" href="{{ "vendor/asciinema-player-3.17.0/asciinema-player.css" | relURL }}">{{ end }}
 </head>
 <body>
   {{ partial "header.html" . }}
@@ -17,5 +18,7 @@
   {{ partial "footer.html" . }}
   <script src="{{ "js/wordmark.js" | relURL }}" defer></script>
   <script src="{{ "js/search.js" | relURL }}" defer></script>
+  {{ if .HasShortcode "demo" }}<script src="{{ "vendor/asciinema-player-3.17.0/asciinema-player.min.js" | relURL }}" defer></script>
+  <script src="{{ "js/demo.js" | relURL }}" defer></script>{{ end }}
 </body>
 </html>

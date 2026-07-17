@@ -1,0 +1,21 @@
+{{- /*
+  A publish-time demo cast (docs/marketing/positioning.md, P11): the casts
+  are recorded by the BYRE_DEMO_REC=1 tests into static/casts/ during the
+  site build. When the cast is absent (a local build without a recording
+  pass) the slot renders its visible placeholder; HUGO_REQUIRE_CASTS=1 (set
+  in the deploy workflow) turns that absence into a build failure instead.
+*/ -}}
+{{- $slug := .Get "cast" -}}
+{{- $title := or (.Get "title") $slug -}}
+{{- $cast := printf "static/casts/%s.cast" $slug -}}
+{{- $meta := printf "static/casts/%s.json" $slug -}}
+{{- if and (fileExists $cast) (fileExists $meta) -}}
+{{- $m := unmarshal (readFile $meta) -}}
+<div class="demo-cast" data-cast="{{ printf "casts/%s.cast" $slug | relURL }}"
+     data-duration="{{ $m.duration }}" data-cols="{{ $m.cols }}" data-rows="{{ $m.rows }}"
+     aria-label="demo: {{ $title }}"></div>
+{{- else if getenv "HUGO_REQUIRE_CASTS" -}}
+{{- errorf "demo cast %q is missing (%s) — the BYRE_DEMO_REC=1 tests record it before the site build" $slug $cast -}}
+{{- else -}}
+<blockquote class="demo-missing">🎬 <em>demo slot: {{ $title }} — recorded at publish time (BYRE_DEMO_REC=1)</em></blockquote>
+{{- end -}}

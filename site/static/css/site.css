@@ -253,3 +253,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
     overflow-y: auto;
   }
 }
+
+/* Demo casts (layouts/shortcodes/demo.html): the player renders its own
+   terminal chrome; the wrapper just spaces the block and keeps the missing-
+   cast placeholder in the ordinary blockquote voice. */
+.demo-cast {
+  margin: 1.25rem 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.demo-cast .ap-player { border-radius: 0; }

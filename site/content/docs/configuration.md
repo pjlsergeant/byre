@@ -4,8 +4,7 @@ weight: 30
 description: the byre config editor -- widen or narrow the box in seconds
 ---
 
-<!-- demo-placeholder: config-tui-walk -->
-> 🎬 *[demo slot: the `byre config` TUI walk -- the flagship generated cast]*
+{{< demo cast="config-tui-walk" title="the byre config editor: browse the grants, add a mount and a package, save" >}}
 
 **`byre config`** opens an interactive editor in your terminal. It's
 keyboard-driven (arrows to move, Enter to edit, Esc to back out, `q` to
