@@ -192,7 +192,12 @@ never broad fragments; ENFORCE headlessness where the test needs it
 store with `BYRE_HOME`, never a `HOME` swap; a test that flakes twice
 gets rewritten or deleted.
 
-## The demo-recording tier (site casts)
+## The demo-recording tier (site casts) — PARKED
+
+**Status (2026-07-18): built, not publishing.** The tier below works end
+to end, but the site ships no casts and CI runs no recording until the
+demos are presentation-quality (TODO.md's Site item is the revival
+checklist; site.yml/ci.yml history has the working wiring).
 
 The site's terminal demos are recorded BY TESTS
 (`internal/tuitest/demos_test.go`, gate `BYRE_DEMO_REC=1`): each

@@ -269,7 +269,14 @@ one demo per page/section, doing that page's job; every embed's poster
 frame is the final screen; where the cast shows the interaction, the
 prose states outcomes instead of narrating keystrokes.
 
-### Publish-time asciinema demos (shipped 2026-07-17)
+### Publish-time asciinema demos (built 2026-07-17; PARKED 2026-07-18)
+
+**Parked pre-release:** the pipeline below is built and in-tree, but no
+casts are recorded or embedded — the recorded demos weren't yet good
+enough to represent the product (pacing, framing), and shipping the
+release won out. Every slot renders invisibly (HTML comment only; the
+visible-placeholder convention is suspended with it). The revival
+checklist lives in TODO.md's Site item.
 
 The tuitest substrate records site demos: an asciinema spectator
 (`asciinema rec --headless --window-size` pinned to the pane) attached

@@ -199,7 +199,6 @@ tldr: enable the _firewall_ skill in `byre config`, then pick what to
 open under **Egress**.
 
 <!-- demo-placeholder: firewall-enable -->
-> 🎬 *[demo slot: enabling the firewall, opening a door under Egress -- VM-recorded cast]*
 
 By default, we don't restrict network access. The _firewall_ skill flips
 that to deny-by-default: your container starts but runs nothing while a

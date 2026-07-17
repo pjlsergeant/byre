@@ -3,15 +3,8 @@ name: Site
 on:
   push:
     branches: [main]
-    # The Go paths are deliberate: demo casts are recorded from the binary at
-    # publish time, so a TUI/CLI change must re-record and re-deploy — a site
-    # showing yesterday's screens is the P9 lockstep rot this pipeline kills.
     paths:
       - "site/**"
-      - "internal/**"
-      - "cmd/**"
-      - "go.mod"
-      - "go.sum"
       - ".github/workflows/site.yml"
   workflow_dispatch:
 
@@ -41,25 +34,14 @@ jobs:
       # database -- no third-party action, no hand-pinned tarball hash.
       - name: install hugo
         run: go install github.com/gohugoio/hugo@v0.164.0
-      # The demo-recording toolchain: tmux + bash-completion from apt,
-      # asciinema v3 pinned by version and digest (same pin as ci.yml).
-      - name: install demo tools
-        run: |
-          sudo apt-get update && sudo apt-get install -y tmux bash-completion
-          curl -fsSL -o /tmp/asciinema https://github.com/asciinema/asciinema/releases/download/v3.2.1/asciinema-x86_64-unknown-linux-gnu
-          echo "1b405bbda565b33c3c4718de67fedc3535580603c0694b1ff3fb04f363430a20  /tmp/asciinema" | sha256sum -c
-          sudo install -m 0755 /tmp/asciinema /usr/local/bin/asciinema
-      # Casts paint real paths; a plausible $HOME keeps the runner's own
-      # paths out of the published frames.
-      - name: record demo casts
-        run: |
-          sudo mkdir -p /home/pete && sudo chown "$(id -u):$(id -g)" /home/pete
-          BYRE_DEMO_REC=1 BYRE_DEMO_HOME=/home/pete go test ./internal/tuitest -run TestDemo -v -timeout 15m
-      # HUGO_REQUIRE_CASTS: a demo slot without its cast fails the build --
-      # belt to the recording step's braces (a skipped or renamed test can't
-      # silently publish a placeholder).
+      # Demo-cast recording is PARKED (2026-07-18): the BYRE_DEMO_REC harness
+      # and the demo shortcode stay in-tree, but no casts are recorded or
+      # embedded until the demos look the part -- see TODO.md's Site item.
+      # Reviving means restoring the recording toolchain + record step here
+      # (git history of this file has the working version) and re-placing the
+      # {{< demo >}} shortcodes in site/content.
       - name: build site
-        run: HUGO_REQUIRE_CASTS=1 hugo --minify -s site
+        run: hugo --minify -s site
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:

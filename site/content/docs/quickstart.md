@@ -4,7 +4,7 @@ weight: 20
 description: first run, the picker, and byre status
 ---
 
-{{< demo cast="quickstart-picker-status" title="the first-run picker, then byre status" >}}
+<!-- demo-placeholder: quickstart-picker-status -->
 
 ```sh
 cd ~/my-project

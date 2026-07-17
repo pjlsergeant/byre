@@ -4,7 +4,7 @@ weight: 30
 description: the byre config editor -- widen or narrow the box in seconds
 ---
 
-{{< demo cast="config-tui-walk" title="the byre config editor: browse the grants, add a mount and a package, save" >}}
+<!-- demo-placeholder: config-tui-walk -->
 
 **`byre config`** opens an interactive editor in your terminal. It's
 keyboard-driven (arrows to move, Enter to edit, Esc to back out, `q` to
@@ -22,7 +22,6 @@ The editor shows one screen, organized the way `byre status` reports:
   network open`.
 
 <!-- image-placeholder: config-grants-section -->
-> 🖼 *[image slot: the GRANTS section, a mount being added]*
 
 - **Build -- how the box is made.** Base image, engine (docker/podman),
   packages, enabled skills, MCP servers, Claude Skills. Adding a

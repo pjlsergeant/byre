@@ -17,5 +17,7 @@
 {{- else if getenv "HUGO_REQUIRE_CASTS" -}}
 {{- errorf "demo cast %q is missing (%s) — the BYRE_DEMO_REC=1 tests record it before the site build" $slug $cast -}}
 {{- else -}}
-<blockquote class="demo-missing">🎬 <em>demo slot: {{ $title }} — recorded at publish time (BYRE_DEMO_REC=1)</em></blockquote>
+{{- /* Parked (2026-07-18): a slot without its cast renders NOTHING visible —
+   the page ships clean until the demos earn their place. */ -}}
+<!-- demo slot (cast not recorded): {{ $slug }} -->
 {{- end -}}

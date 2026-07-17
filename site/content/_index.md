@@ -23,7 +23,6 @@ $ byre develop
 ([Linux and every other install option](/docs/install/))
 
 <!-- demo-placeholder: hero-develop-into-claude -->
-> 🎬 *[demo slot: the hero clip -- `byre develop` dropping into Claude Code; VM-recorded cast]*
 
 It's **`--dangerously-skip-permissions`, without risking the farm.**
 

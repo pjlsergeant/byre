@@ -10,7 +10,6 @@ tldr: `byre worktree <branch>` -- a linked git worktree plus a second
 boxed session in it, one command.
 
 <!-- demo-placeholder: worktree-parallel-session -->
-> 🎬 *[demo slot: `byre worktree`, a second session opening beside the first -- VM-recorded cast]*
 
 The worktree inherits the repo's config, image, and volumes -- the agent
 is already logged in -- but runs in its own container against its own
@@ -58,7 +57,7 @@ conversation.
 tldr: `byre deliver <file>` -- or just `byre deliver` and paste (or
 drop a file on the window).
 
-{{< demo cast="deliver-paste-flow" title="screenshot, byre deliver, ctrl-v — the in-box path lands on your clipboard" >}}
+<!-- demo-placeholder: deliver-paste-flow -->
 
 Anything you deliver lands in the box's `/inbox` and the in-box path
 comes back on your clipboard, ready to Cmd-V into the agent prompt.
@@ -92,7 +91,7 @@ can't find).
 
 tldr: `eval "$(byre completion bash)"` in your shell's startup file.
 
-{{< demo cast="completion-tab-walk" title="tab-completing byre commands and flags" >}}
+<!-- demo-placeholder: completion-tab-walk -->
 
 Completions cover every command and flag -- bash, zsh, fish, and
 powershell. One line in your rc file regenerates the script at shell

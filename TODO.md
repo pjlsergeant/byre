@@ -41,10 +41,17 @@ the rationale lives.
   - Landing comparison table: the "Why not…?" material is still
     README-only; the site plan puts the table on the landing page.
   - Screencast hero on the landing (the day-03-style clip -- the media
-    the README shouldn't carry). The demo harness shipped 2026-07-17
-    (BYRE_DEMO_REC=1 tests record 4 casts at publish; player + shortcode
-    live); what remains here is the VM-recorded tier: hero clip, firewall,
-    worktrees -- recorded with the same verbs, committed as .casts.
+    the README shouldn't carry).
+  - (M) **Demo casts: make them look right, then wire them back in**
+    (parked 2026-07-18, Pete: "quite far from how I want them to look").
+    The pipeline is BUILT and in-tree -- BYRE_DEMO_REC=1 scenarios
+    (internal/tuitest/demos_test.go), player + shortcode + fonts
+    (site/static/vendor) -- but casts are not recorded, all slots render
+    invisibly, and CI's recording steps are removed (git history of
+    site.yml/ci.yml has the working wiring). The gap is presentation:
+    scene pacing, framing, what each demo shows. Revive = polish the
+    scenarios, restore the two workflow blocks, re-place the {{</* demo */>}}
+    shortcodes. VM-recorded tier (hero, firewall, worktrees) rides after.
 
 ## Standing
 
@@ -62,12 +69,10 @@ Disciplines and tripwires, not tasks.
     per entry (P6); grep "tldr:" in both when a recipe changes.
   - commands table: generated -- TestCommandsPagePinsSiteFile enforces,
     regenerate with `go run ./cmd/byre commands-page`.
-  - demo casts: generated at publish (BYRE_DEMO_REC=1, self-verifying --
-    a layout change fails the recording test). Scenario inventory:
-    config-tui-walk, quickstart-picker-status, deliver-paste-flow,
-    completion-tab-walk (internal/tuitest/demos_test.go); VM-recorded
-    (committed .casts, refresh around releases): none yet -- hero,
-    firewall, worktrees pending.
+  - demo casts: PARKED, none published (see the Site item). Scenario
+    inventory when they revive: config-tui-walk, quickstart-picker-status,
+    deliver-paste-flow, completion-tab-walk (internal/tuitest/
+    demos_test.go); VM-recorded tier (hero, firewall, worktrees) after.
 - **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
