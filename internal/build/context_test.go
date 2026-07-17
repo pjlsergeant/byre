@@ -386,6 +386,68 @@ func TestCopyPathRejectsTopLevelDirSymlink(t *testing.T) {
 	}
 }
 
+// copyRootedEntry refuses an entry whose ANCESTOR component escapes the anchored
+// root — the mechanism that closes the ancestor-swap race for `files` sources
+// (safeProjectPath rejects a static escape at plan time; this pins that the
+// openat anchoring is the backstop when an ancestor is swapped after validation).
+func TestCopyRootedEntryRefusesEscapingAncestor(t *testing.T) {
+	projRoot := t.TempDir()
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "secret"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// `sub` inside the root is a symlink to an external directory.
+	if err := os.Symlink(external, filepath.Join(projRoot, "sub")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	root, err := os.OpenRoot(projRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), filepath.Join(t.TempDir(), "out"), false); err == nil {
+		t.Fatal("an entry reached through an escaping ancestor symlink must be refused by the root")
+	}
+}
+
+// A `files` source that is itself a symlink to an in-project target IS followed
+// and staged — that is the user's explicit naming, resolved by safeProjectPath,
+// and must not be rejected the way an agent-planted INTERIOR symlink is. Pins
+// the user-vs-agent boundary through the project-root-anchored path.
+func TestAssembleFilesFollowsUserNamedTopLevelSymlink(t *testing.T) {
+	paths := bootstrapped(t)
+	if err := os.WriteFile(filepath.Join(paths.Canonical, "real.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.txt", filepath.Join(paths.Canonical, "link.txt")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"link.txt": "/opt/x"}}, skills.Resolved{}); err != nil {
+		t.Fatalf("a user-named top-level symlink source must be followed, got: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(paths.ContextDir, "files", "link.txt")); err != nil || string(b) != "hi" {
+		t.Errorf("followed symlink content not staged: %q %v", b, err)
+	}
+}
+
+// A nested `files` directory source stages its whole tree through the
+// project-root anchor (exercises copyRootedEntry recursion via Assemble).
+func TestAssembleStagesNestedFilesDir(t *testing.T) {
+	paths := bootstrapped(t)
+	if err := os.MkdirAll(filepath.Join(paths.Canonical, "assets", "img"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Canonical, "assets", "img", "logo"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"assets": "/opt/assets"}}, skills.Resolved{}); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(paths.ContextDir, "files", "assets", "img", "logo")); err != nil || string(b) != "png" {
+		t.Errorf("nested files dir not staged: %q %v", b, err)
+	}
+}
+
 func TestAssembleFilesRejectsEscapeAndRelativeDest(t *testing.T) {
 	paths := bootstrapped(t)
 	// The escaping source EXISTS (a sibling of the project dir), so the

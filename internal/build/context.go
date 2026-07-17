@@ -22,7 +22,18 @@ import (
 
 // fileCopy is one staged copy job: a real source path, its destination inside
 // the build context, and a description for error messages.
-type fileCopy struct{ src, staged, what string }
+type fileCopy struct {
+	// srcRoot, when non-empty, is a TRUSTED root directory that src is resolved
+	// relative to via openat (os.Root), so an intermediate component an agent
+	// swaps for an escaping symlink after validation cannot redirect the open.
+	// Used for `files` sources, whose ancestors are inside the agent-writable
+	// project. When empty, src is an absolute pathname (skill sources, whose
+	// ancestors live outside the project and are not agent-writable).
+	srcRoot string
+	src     string
+	staged  string
+	what    string
+}
 
 // buildInput computes the generator input for a project WITHOUT writing anything
 // (it reads and validates sources, but stages no bytes) and returns the copy
@@ -108,7 +119,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		if err := os.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
 			return "", err
 		}
-		if err := copyPath(j.src, j.staged); err != nil {
+		if err := stageCopy(j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
 	}
@@ -233,12 +244,16 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 		if !filepath.IsAbs(dest) {
 			return nil, nil, fmt.Errorf("files: destination %q must be an absolute path in the image", dest)
 		}
-		realSrc, rel, err := safeProjectPath(paths.Canonical, src)
+		_, rel, err := safeProjectPath(paths.Canonical, src)
 		if err != nil {
 			return nil, nil, fmt.Errorf("files: %w", err)
 		}
 		staged := filepath.Join(paths.ContextDir, "files", rel)
-		jobs = append(jobs, fileCopy{src: realSrc, staged: staged, what: "files: copying " + src})
+		// Anchor at the project root and stage rel through it (openat), rather
+		// than by the resolved absolute path: the ancestors of a `files` source
+		// are agent-writable, so a by-pathname reopen could be redirected by an
+		// ancestor swapped to a symlink after safeProjectPath validated it.
+		jobs = append(jobs, fileCopy{srcRoot: paths.Canonical, src: rel, staged: staged, what: "files: copying " + src})
 		out[filepath.ToSlash(filepath.Join("files", rel))] = dest
 	}
 	return out, jobs, nil
@@ -348,10 +363,94 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 	return real, clean, nil
 }
 
-// copyPath copies a file or directory tree, preserving file modes. Only plain
-// files and directories are staged; symlinks and other non-regular files (FIFOs,
-// devices, sockets) are rejected, so nothing can pull content from outside the
-// project into the image or stall the rebuild.
+// stageCopy realizes one copy job. A job with srcRoot set stages src (a relative
+// path) through an os.Root anchored at that trusted root, so every component —
+// not just the leaf — is resolved via openat and an agent-swapped ancestor
+// cannot escape it. A job without srcRoot has an absolute src whose ancestors
+// are outside the agent-writable project; it uses copyPath.
+func stageCopy(j fileCopy) error {
+	if j.srcRoot == "" {
+		return copyPath(j.src, j.staged)
+	}
+	root, err := os.OpenRoot(j.srcRoot)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	// The configured source itself (top level) may be a symlink the USER named;
+	// safeProjectPath already resolved it within the project, and os.Root follows
+	// it while refusing escapes. Its interior is agent territory: symlinks there
+	// are rejected (copyRootedEntry with topLevel=false).
+	return copyRootedEntry(root, j.src, j.staged, true)
+}
+
+// copyRootedEntry copies the entry at rel (relative to root) into dst, opening
+// every object THROUGH root (openat per component) so no pathname is re-resolved
+// between classification and use and no component can escape the root. topLevel
+// is the configured source itself — a user-named symlink there is followed;
+// interior entries reject symlinks (agent-planted). The fd's fstat is the only
+// thing trusted for the entry's type, and opens are O_NONBLOCK so a FIFO returns
+// instead of blocking. Mirrors internal/deliver/transport.go.
+func copyRootedEntry(root *os.Root, rel, dst string, topLevel bool) error {
+	if !topLevel {
+		// Lstat through the root to reject an interior symlink WITHOUT following
+		// it: os.Root silently follows an in-root symlink on Open, and copyPath's
+		// contract stages no symlinks (an escaping one is refused by the root
+		// regardless; this also rejects an in-root one rather than dereferencing
+		// it into the image).
+		//
+		// Residual (accepted): between this Lstat and the open below, an agent
+		// could swap the entry to an in-root symlink, which os.Root would then
+		// follow. That stages a DIFFERENT in-project file — content the agent
+		// already controls, going into its own image — never a host-file escape
+		// (an escaping swap is still refused by os.Root's openat). No gain to the
+		// agent, so it is not worth openat+O_NOFOLLOW-per-component machinery
+		// that os.Root does not expose.
+		li, err := root.Lstat(rel)
+		if err != nil {
+			return err
+		}
+		if li.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", filepath.Join(root.Name(), rel))
+		}
+	}
+	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	switch {
+	case fi.IsDir():
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return err
+		}
+		entries, err := f.ReadDir(-1)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if err := copyRootedEntry(root, filepath.Join(rel, e.Name()), filepath.Join(dst, e.Name()), false); err != nil {
+				return err
+			}
+		}
+		return nil
+	case fi.Mode().IsRegular():
+		return stageRegularFromFD(f, dst)
+	default:
+		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", filepath.Join(root.Name(), rel))
+	}
+}
+
+// copyPath copies a file or directory tree named by an ABSOLUTE pathname
+// (skill sources, whose ancestors are outside the agent-writable project;
+// `files` sources go through stageCopy/copyRootedEntry instead, anchored at the
+// project root). Only plain files and directories are staged; symlinks and other
+// non-regular files (FIFOs, devices, sockets) are rejected, so nothing can pull
+// content from outside into the image or stall the rebuild.
 //
 // The project stays writable while a session runs, and `byre rebuild` can stage
 // a context concurrently, so an agent can swap an entry between classification
@@ -380,7 +479,7 @@ func copyPath(src, dst string) error {
 			return err
 		}
 		defer root.Close()
-		return copyTreeContained(root, ".", dst)
+		return copyRootedEntry(root, ".", dst, false)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", src)
@@ -423,54 +522,6 @@ func openDirRootNoFollow(dir string) (*os.Root, error) {
 		return nil, fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", dir)
 	}
 	return proot.OpenRoot(base)
-}
-
-// copyTreeContained copies the entry at rel (relative to root) into dst, opening
-// every interior object THROUGH root so no pathname is re-resolved between
-// classification and use. rel is the caller-walked name; the fd's fstat is the
-// only thing trusted for the entry's type.
-func copyTreeContained(root *os.Root, rel, dst string) error {
-	// Lstat through the root to reject symlinks WITHOUT following them: os.Root
-	// silently follows an in-root symlink on Open, and copyPath's contract is to
-	// stage no symlinks at all (an escaping one is refused by the root regardless;
-	// this also rejects an in-root one rather than dereferencing it into the image).
-	li, err := root.Lstat(rel)
-	if err != nil {
-		return err
-	}
-	if li.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", filepath.Join(root.Name(), rel))
-	}
-
-	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	switch {
-	case fi.IsDir():
-		if err := os.MkdirAll(dst, 0o755); err != nil {
-			return err
-		}
-		entries, err := f.ReadDir(-1)
-		if err != nil {
-			return err
-		}
-		for _, e := range entries {
-			if err := copyTreeContained(root, filepath.Join(rel, e.Name()), filepath.Join(dst, e.Name())); err != nil {
-				return err
-			}
-		}
-		return nil
-	case fi.Mode().IsRegular():
-		return stageRegularFromFD(f, dst)
-	default:
-		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", filepath.Join(root.Name(), rel))
-	}
 }
 
 // stageRegularFromFD copies an already-open source file into dst, preserving its
