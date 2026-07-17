@@ -268,25 +268,31 @@ func copyWithin(t *testing.T, src, dst string) error {
 }
 
 // A FIFO planted in a staged directory (an agent has /workspace rw) must be a
-// loud rejection, never an indefinite blocking open of the rebuild.
+// loud rejection AS A NON-REGULAR FILE — never a blocking open, and never
+// staged. The fd-fstat type gate is what enforces this; asserting the message
+// pins that it is the gate firing, not an incidental read error.
 func TestCopyPathRejectsInteriorFIFO(t *testing.T) {
 	src := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(src, "pipe"), 0o644); err != nil {
 		t.Skipf("mkfifo unavailable: %v", err)
 	}
-	if err := copyWithin(t, src, filepath.Join(t.TempDir(), "staged")); err == nil {
-		t.Fatal("a FIFO nested in a staged directory must be rejected")
+	err := copyWithin(t, src, filepath.Join(t.TempDir(), "staged"))
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("interior FIFO should be rejected as non-regular, got: %v", err)
 	}
 }
 
-// The same for a top-level `files` source that is a FIFO.
+// The same for a top-level `files` source that is a FIFO: the top-level open
+// succeeds (O_NONBLOCK), so only the fd-fstat gate in stageRegularFromFD keeps
+// it out of the image.
 func TestCopyPathRejectsTopLevelFIFO(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Skipf("mkfifo unavailable: %v", err)
 	}
-	if err := copyWithin(t, fifo, filepath.Join(t.TempDir(), "staged")); err == nil {
-		t.Fatal("a top-level FIFO source must be rejected")
+	err := copyWithin(t, fifo, filepath.Join(t.TempDir(), "staged"))
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("top-level FIFO should be rejected as non-regular, got: %v", err)
 	}
 }
 
@@ -306,23 +312,66 @@ func TestCopyPathRejectsInteriorSymlink(t *testing.T) {
 	}
 }
 
-// A symlink DEEP in the tree that escapes the project is refused by os.Root's
-// per-component openat, proving a swapped directory component can't pull an
-// external file in during recursion.
-func TestCopyPathRejectsDeepEscapingSymlink(t *testing.T) {
-	src := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(src, "a", "b"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+// A symlink escaping the project, whether it is a leaf or an intermediate
+// directory component, is rejected during recursion — the walk Lstats each
+// component through the root before descending, so the escape never reaches an
+// open. (The openat escape refusal is the backstop for the swap-after-Lstat
+// race, which a single-threaded test cannot stage.)
+func TestCopyPathRejectsEscapingSymlinkComponents(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "secret")
 	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(src, "a", "b", "leak")); err != nil {
+	for _, tc := range []struct {
+		name  string
+		plant func(t *testing.T, src string)
+	}{
+		{"leaf", func(t *testing.T, src string) {
+			if err := os.MkdirAll(filepath.Join(src, "a"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(src, "a", "leak")); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}},
+		{"intermediate-component", func(t *testing.T, src string) {
+			// `a` is itself a symlink to an external directory; the walk must
+			// reject it before descending, not follow it to enumerate outside.
+			if err := os.Symlink(t.TempDir(), filepath.Join(src, "a")); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := t.TempDir()
+			tc.plant(t, src)
+			if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+				t.Fatalf("escaping %s symlink must be rejected", tc.name)
+			}
+		})
+	}
+}
+
+// A top-level `files` source that is itself a symlink to an external directory
+// must be rejected, never followed to stage the external tree. This exercises
+// the STATIC guard (copyPath's initial Lstat); the swap-after-Lstat race that
+// openDirRootNoFollow additionally closes needs a concurrent mutator a
+// single-threaded test cannot stage, so it is design-verified, not pinned here.
+func TestCopyPathRejectsTopLevelDirSymlink(t *testing.T) {
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "host-secret"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "assets")
+	if err := os.Symlink(external, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
-		t.Fatal("a deep escaping symlink must be rejected")
+	dst := filepath.Join(t.TempDir(), "staged")
+	if err := copyPath(link, dst); err == nil {
+		t.Fatal("a top-level directory symlink must be rejected, not followed")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "host-secret")); err == nil {
+		t.Fatal("external file was staged through a top-level directory symlink")
 	}
 }
 

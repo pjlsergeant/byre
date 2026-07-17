@@ -375,7 +375,7 @@ func copyPath(src, dst string) error {
 		// Anchor a root at the directory and copy its interior through it. A
 		// concurrent swap of a deeper directory component to an escaping symlink
 		// is refused by os.Root's per-component openat, not re-resolved by name.
-		root, err := os.OpenRoot(src)
+		root, err := openDirRootNoFollow(src)
 		if err != nil {
 			return err
 		}
@@ -394,6 +394,30 @@ func copyPath(src, dst string) error {
 	}
 	defer in.Close()
 	return stageRegularFromFD(in, dst)
+}
+
+// openDirRootNoFollow anchors an os.Root at dir WITHOUT following a symlink that
+// an agent may have swapped in for dir's final component after it was classified
+// as a directory. os.OpenRoot(dir) alone follows the final component, so a
+// top-level dir swapped to a symlink → external tree would anchor the whole walk
+// OUTSIDE the project. Anchor at the parent and descend the final component via
+// openat (proot.OpenRoot), which refuses a component resolving outside its root.
+func openDirRootNoFollow(dir string) (*os.Root, error) {
+	parent, base := filepath.Dir(dir), filepath.Base(dir)
+	proot, err := os.OpenRoot(parent)
+	if err != nil {
+		return nil, err
+	}
+	defer proot.Close() // the child root below holds its own descriptor
+	// Reject a symlinked final component outright: an escaping one is refused by
+	// OpenRoot anyway, but an in-root one would be silently followed, and
+	// copyPath's contract stages no symlinks.
+	if li, err := proot.Lstat(base); err != nil {
+		return nil, err
+	} else if li.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", dir)
+	}
+	return proot.OpenRoot(base)
 }
 
 // copyTreeContained copies the entry at rel (relative to root) into dst, opening
@@ -445,12 +469,17 @@ func copyTreeContained(root *os.Root, rel, dst string) error {
 }
 
 // stageRegularFromFD copies an already-open source file into dst, preserving its
-// permission bits. The source type was validated on the same fd, so no pathname
-// is re-resolved here.
+// permission bits. It re-checks the fd's type so no pathname is re-resolved: the
+// top-level caller opens by name (a swap to a FIFO with O_NONBLOCK, or to a
+// directory, opens successfully), so trusting the fd's fstat here — not a prior
+// pathname Lstat — is what actually keeps a non-regular file out of the image.
 func stageRegularFromFD(in *os.File, dst string) error {
 	fi, err := in.Stat()
 	if err != nil {
 		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", in.Name())
 	}
 	o, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fi.Mode().Perm()&fs.ModePerm)
 	if err != nil {
