@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // VolumeAdmin lets the editor show a project's volumes and clear them ad hoc.
@@ -143,18 +144,27 @@ func (m model) viewVolumes() string {
 	// real rows — "opencode-identity" is 17, an identity target is 30+, and
 	// orphan rows have no role/target at all, so "present" floated to a
 	// different column per row (live field report, 2026-07-17).
+	// Display cells, not bytes/runes: a target path with accented or wide
+	// characters would mis-size byte- or rune-counted columns (codereview);
+	// ansi.StringWidth + manual padding is the cell-true pair.
 	nameW, roleW, targetW := 0, 0, 0
 	for _, v := range m.volList {
-		nameW = max(nameW, len(v.Name))
-		roleW = max(roleW, len(v.Role))
-		targetW = max(targetW, len(v.Target))
+		nameW = max(nameW, ansi.StringWidth(v.Name))
+		roleW = max(roleW, ansi.StringWidth(v.Role))
+		targetW = max(targetW, ansi.StringWidth(v.Target))
+	}
+	pad := func(s string, w int) string {
+		if d := w - ansi.StringWidth(s); d > 0 {
+			return s + strings.Repeat(" ", d)
+		}
+		return s
 	}
 	for i, v := range m.volList {
 		state := dimStyle.Render("empty")
 		if v.Exists {
 			state = "present"
 		}
-		line := fmt.Sprintf("%-*s  %-*s  %-*s  %s", nameW, v.Name, roleW, v.Role, targetW, v.Target, state)
+		line := pad(v.Name, nameW) + "  " + pad(v.Role, roleW) + "  " + pad(v.Target, targetW) + "  " + state
 		if multiEngine {
 			line += " [" + v.Engine + "]"
 		}

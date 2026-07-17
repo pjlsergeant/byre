@@ -17,6 +17,12 @@ the rationale lives.
 
 ## Open
 
+- [ ] (S) **Volumes page polish** (Pete, 2026-07-17): make the config
+  editor's Volumes screen nicer. The 07-17 pass fixed the mechanics
+  (content-sized columns, engine-degrade notes, honest empty states);
+  what's left is presentation — grouping/spacing (project vs shared),
+  the annotation clutter on orphan rows. View-layer only.
+
 - [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
   the decided shape lives in docs/marketing/positioning.md "Site plan".
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
