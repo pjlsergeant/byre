@@ -31,7 +31,7 @@ or just vibe-coded trash? Is it right for me? Would you be happy there?
 
 ## Comfortable: bring your environment
 
-Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents stay logged in across rebuilds, and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
+Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents [stay logged in across rebuilds](https://getbyre.com/docs/volumes-and-state/), and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
 
 byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, Grok, and OpenCode. Fork the bundled ones or bring your own.
 
@@ -47,38 +47,25 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 **⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work. All the major planned features have been added, so the interface should be pretty stable at this point.**
 
-byre is a single Go binary. With Go 1.25+ on your machine:
-
-```sh
-go install github.com/pjlsergeant/byre/cmd/byre@latest
-```
-
-(that puts `byre` in `$(go env GOPATH)/bin` -- make sure it's on your PATH).
-Or, no Go toolchain needed, a checksum-verified download of the latest
-release binary:
+byre is a single Go binary; a checksum-verified download of the latest
+release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | sh
 ```
 
-Or on macOS, via Homebrew:
-
-```sh
-brew install --cask pjlsergeant/tap/byre
-```
-
-Or build from a checkout:
-
-```sh
-go build -o ~/bin/byre ./cmd/byre
-```
-
-You need Docker (or Podman) running on the host.
+You need Docker (or Podman) running on the host. Homebrew, `go install`,
+and build-from-source are on the
+[install page](https://getbyre.com/docs/install/).
 
 ## Quickstart
 
-The first `byre develop` in a project asks a few quick questions (template, agent, and -- for agents that support it -- whether this box shares a machine-wide login) and remembers your answers: your favourites become the pre-selected defaults. Log the agent in once; the login persists, per project, across
-rebuilds. To skip the questions:
+The first `byre develop` in a project asks a few quick questions --
+template, agent, whether to share a machine-wide login -- and remembers
+your answers as the next project's defaults; the
+[quickstart](https://getbyre.com/docs/quickstart/) walks through them.
+Log the agent in once; the login persists, per project, across rebuilds.
+To skip the questions:
 
 ```sh
 byre develop --template go --agent claude
@@ -129,93 +116,43 @@ tools installed, your agent launching, nothing to set up.
   and that's intentional. byre's promise is that `byre status` always
   tells you where the rope is.
 
+The full [security model](https://getbyre.com/docs/security-model/):
+the threat model, the contract, and the sharp facts.
+
 ## Configuration
 
 **`byre config`** opens an interactive editor in your terminal
 (keyboard-driven, works over SSH): grants first (mounts, env), then build
 choices, in the same vocabulary `byre status` prints. Adding a package or
-mounting another repo read-only takes a couple of seconds. `--self-edit`
-(a per-session `develop` flag, announced at launch) lets the agent edit
-its own box config; edits apply on the next develop.
+mounting another repo read-only takes a couple of seconds.
 
-Underneath, it's a cascade of three TOML files that are always yours to
-edit by hand -- last layer wins (scalars override, lists union, and a
-later layer can remove an inherited entry: `!name` for named lists,
-`remove = true` for ports):
+Underneath, it's a cascade of three TOML files -- your personal baseline,
+the template, this project's overrides -- that are always yours to edit
+by hand, and that byre reads only from its host-side store, never from
+inside the project. The vocabulary covers packages, env, mounts, volumes,
+skills, and MCP servers; raw Dockerfile lines and `docker run` args cover
+the rest.
 
-```text
-~/.byre/default.config              your personal baseline
-~/.byre/templates/<name>/           template config (+ optional files)
-~/.byre/projects/<id>/byre.config   this project's overrides (host-side)
-```
-
-The vocabulary covers packages, env, mounts, volumes, skills, and MCP
-servers (`[[mcp]]` blocks -- declared once, injected into the agent
-session, their network reach and consumed tokens attributed in `byre
-status`); raw Dockerfile lines and `docker run` args cover the rest.
-Full reference:
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). One sharp edge to know:
-`env` values are baked into the image (`docker history` shows them, and
-they outlive `byre reset`), so don't put secrets there -- agent logins
-belong to the agents' own auth flows.
-
-byre reads config only from its host-side store, never from inside the
-project -- the project mount is read-write, so the agent could edit a
-config that lived there. A repo can ship a `byre.preset` -- a saved
-answer to setup's questions -- but cloning gives you a file, not a
-prompt: nothing takes effect until you run `byre preset apply`, which
-walks you through any missing package installs, shows the composed
-box's grants, and writes the project's config on your confirm.
+The merge rules, the `!name` removal syntax, the `env` sharp edge, and
+`byre.preset` (a repo's saved setup answers -- inert until you review and
+apply it) live on the
+[configuration page](https://getbyre.com/docs/configuration/).
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `byre develop` | Generate, build on cache-miss, and run in the foreground. The main entry point. |
-| `byre shell` | A second shell in the running session -- for logins, tests, poking around. |
-| `byre worktree <name>` | New linked worktree on branch `<name>` + a session in it -- a parallel agent in one step. |
-| `byre status` | What can this thing touch? Resolved config, mounts, skills, volumes, session. |
-| `byre config [--global]` | Interactive config editor -- packages, mounts, agents, in seconds. |
-| `byre dockerfile` | Print the generated Dockerfile. Your exit, whenever you want it. |
-| `byre ejectfirewall` | Print the firewall sidecar as a standalone script -- the exit's last piece. |
-| `byre reset [--force]` | Wipe this project's volumes. Names what dies first. |
-| `byre forget [--force]` | Remove all of byre's host-side state for this directory. Never touches your project tree. |
-| `byre rebuild` | Rebuild with `--no-cache` to pull fresh upstream versions. |
-| `byre rehome <old-id>` | Re-point a moved/renamed directory's identity onto its new path. |
-| `byre mcp add` / `remove` / `list` | Declare MCP servers for the box's agent session (`--global` for every project); remove understands the cascade. |
-| `byre skill list` / `inspect` / `fork` | Discover, inspect, and fork skill packages. |
-| `byre preset apply` / `inspect` | Review and apply a repo's `byre.preset` (or any path/URI) as this project's config. |
-| `byre skill install <uri>` / `uninstall` | Fetch, hash-verify, and snapshot a skill package — grants nothing until enabled in a box. |
-| `byre skill pack <name>` | Emit a local skill's distribution manifest (payload hashes + digest). |
-| `byre skill update` | Transitional: bundled packages update with byre itself. |
-| `byre template list` / `inspect` / `fork` / `install` / `pack` | Same verbs for template packages. |
-| `byre version` | Which byre is this? Release tag, module version, or build info. |
+`byre develop`, `byre status`, `byre config`, `byre deliver`, and a
+longer tail: worktrees, resets, skill/template/MCP management, the exit
+hatches. The full table is at
+[getbyre.com/docs/commands/](https://getbyre.com/docs/commands/).
 
 ## Worktrees: parallel agents, the git way
 
-```sh
-byre worktree fix-flaky-tests
-```
-
-creates a linked git worktree on branch `fix-flaky-tests` (existing or
-new) and starts a session in it. The worktree inherits the repo's config,
-image, and volumes -- the agent is already logged in -- but runs in its own
-container against its own checkout, so sessions run side by side.
-Worktrees you made yourself with `git worktree add` inherit the same way:
-just `byre develop` in them. You pick once where new worktrees live
-(`byre config --global`). Commits land in the shared object store,
-`byre status` shows every worktree session in the project, and `reset`/`forget` name their
-blast radius before touching anything shared.
-
-## Volumes & state
-
-**Cache** volumes (`node_modules`, …) are disposable. **State** volumes
-(`.claude`, …) hold the agent's login and history, per project, and survive rebuilds. **Machine** volumes let you share volumes between different byre boxes. byre never reads or
-copies host credentials; nothing crosses unless you enable it, and what you
-enable, `byre status` shows.
-
-By default agents log in once per project, inside the box, and maintain their
-own context. See "How do I?" for enabling shared LLM credentials.
+`byre worktree fix-flaky-tests` creates a linked git worktree on that
+branch and starts a second boxed session in it: same config, image, and
+volumes -- the agent is already logged in -- but its own container
+against its own checkout, so sessions run side by side. Mechanics (where
+worktrees live, what `reset`/`forget` touch) on the
+[worktrees page](https://getbyre.com/docs/worktrees/).
 
 ## Why not…?
 
@@ -265,120 +202,51 @@ machine, rent one.)*
 
 ## How do I...?
 
-### Save my LLM credentials so I don't need to re-auth for each box?
+Every answer's full recipe lives in the
+[cookbook](https://getbyre.com/docs/how-do-i/); the tldrs:
 
+**Save my LLM credentials so I don't need to re-auth for each box?**
 tldr: say **y** when the first-run picker offers shared auth for your
 agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
 by hand.
+([recipe](https://getbyre.com/docs/how-do-i/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box))
 
-By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth, opencode-shared-auth) move that to once per
-machine. For claude, codex, and opencode every project's first run asks:
-"Use machine-wide credentials to log in to <agent>?" -- yes enables the
-skill for that project (its `byre.config`), and only for it. Saying yes to "Save these
-as your default?" remembers your answer like the template/agent
-favourites: the next box's question just defaults to it, one Enter to
-accept. (Enabling the skill by hand in `~/.byre/default.config` is the
-machine-wide route -- then the question stops.) The
-login lives in a shared volume that reset/forget deliberately never
-touch. See [docs/SECURITY.md](docs/SECURITY.md) for the implications of this.
-(Grok's shared auth works differently -- its token rotation can't be
-file-shared, so a broker mediates instead, and until its field gate passes
-the skill is hand-enabled rather than offered:
-[ADR 0036](docs/adr/0036-grok-shared-auth-v2-broker.md).)
-
-### Share one config baseline across many projects?
-
+**Share one config baseline across many projects?**
 tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
 (`byre config`, EXTENDS section).
+([recipe](https://getbyre.com/docs/how-do-i/#share-one-config-baseline-across-many-projects))
 
-A **named layer** is a config file at `~/.byre/layers/<name>/layer.config`
-that any project (or another layer -- chains work) pulls in with
-`extends`. It slots between the template and the project in the cascade
-and carries everything a config can except `template` -- skills, egress,
-env, mounts, the lot. It's live: edit the layer once and every extending
-project picks it up on its next develop. Layers aren't packages -- no
-versions, no installing; to share one, send the file. `byre status` shows
-the chain, and every inherited setting is attributed to its layer in
-`byre config`. See [ADR 0035](docs/adr/0035-named-layers-and-extends.md).
+**Paste images and files into the box?**
+tldr: `byre deliver <file>` -- or just `byre deliver` and paste.
+([recipe](https://getbyre.com/docs/how-do-i/#paste-images-and-files-into-the-box))
 
-### Paste images and files into the box?
-
-tldr: `byre deliver <file>` — or just `byre deliver` and paste.
-
-Anything you deliver lands in the box's `/inbox` and the in-box path comes
-back on your clipboard, ready to Cmd-V into the agent prompt. With no
-arguments byre reads your *clipboard* — so screenshot, `byre deliver`,
-paste, done. Works from any directory (it finds your running box), over
-SSH, and with whole directories. See [docs/DELIVER.md](docs/DELIVER.md).
-
-### Get tab completion for byre commands?
-
+**Get tab completion for byre commands?**
 tldr: `eval "$(byre completion bash)"` in your shell's startup file.
+([recipe](https://getbyre.com/docs/how-do-i/#get-tab-completion-for-byre-commands))
 
-Completions cover every command and flag — bash, zsh, fish, and powershell.
-One line in your rc file regenerates the script at shell startup (~3ms), so
-it never goes stale across byre upgrades and needs no extra packages:
+**Stop using byre?**
+tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
+`byre ejectfirewall` prints the firewall's step.
+([recipe](https://getbyre.com/docs/how-do-i/#stop-using-byre))
 
-```sh
-eval "$(byre completion bash)"        # ~/.bashrc
-source <(byre completion zsh)         # ~/.zshrc, after compinit
-byre completion fish | source         # ~/.config/fish/config.fish
-```
+**Restrict network access?**
+tldr: `byre config` and enable the _firewall_ skill, then pick what to
+open under Egress.
+([recipe](https://getbyre.com/docs/how-do-i/#restrict-network-access))
 
-`byre completion --help` has the powershell line and the details.
+**Mount other folders from the host?**
+tldr: `byre config` -> Mounts.
+([recipe](https://getbyre.com/docs/how-do-i/#mount-other-folders-from-the-host))
 
-### Stop using byre?
-
-`byre dockerfile` prints the image, `byre dockerrun` prints the exact run command -- that's the whole exit. The firewall is the one thing that doesn't travel automatically (its rules are applied from outside the box, by byre); `byre ejectfirewall` prints that step as a standalone script. See [docs/EJECTING.md](docs/EJECTING.md).
-
-### Restrict network access?
-
-tldr: `byre config` and enable the _firewall_ skill. Under "Egress" choose what
-to open. We automatically open the ports your selected agent needs, and there
-may be more suggestions based on your selected skills (eg Github) but those
-you'll need to manually open and then relaunch.
-
-By default, we don't restrict network access. The _firewall_ skill flips that
-to deny-by-default: your container starts but runs nothing while a privileged
-one-shot helper joins its network namespace, installs the allowlist rules, and
-verifies them. Only then does the agent launch behind the wall -- and if any of
-that fails, the box dies closed rather than running open.
-
-One honest limit worth knowing: hostname grants are pinned to the IPs they
-resolved to at launch, so on DNS that rotates (CDNs, some cloud resolvers) a
-granted host can start failing -- closed, never open -- until a relaunch
-re-resolves it. Details in [docs/SECURITY.md](docs/SECURITY.md).
-
-Just want to block telemetry, not the internet? The _firewall-open_ skill
-keeps the network open and drops only the hosts you block:
-`egress = ["!statsig.anthropic.com"]`. The same `!host` entries subtract from
-the full firewall's allowlist too, skill-declared endpoints included.
-
-### Mount other folders from the host?
-
-tldr: `byre config` -> Mounts
-
-### Run other Docker containers from inside the byre environment?
-
+**Run other Docker containers from inside the byre environment?**
 tldr: `byre config` and enable the _docker-host_ skill.
+([recipe](https://getbyre.com/docs/how-do-i/#run-other-docker-containers-from-inside-the-byre-environment))
 
-The skill installs the Docker CLI (plus compose and buildx) in the box and
-mounts the host daemon's socket. It's worth being clear-eyed about what
-you're granting: anything that can run Docker on the host also has
-effective root on the host, and `byre status` disclaims that hole for as
-long as the skill is enabled. [docs/DOCKER-HOST.md](docs/DOCKER-HOST.md)
-covers what the grant really means and when to prefer something narrower.
-Nested Podman (a daemon inside the box, granting nothing on the host) is
-possible future work; there's no support for it today.
-
-### Get the coding agent to edit its own byre config?
-
-`byre develop --self-edit` will mount the box's configuration directory on
-`/home/dev/.byre-self` and will also ship contextual documentation to your box
-telling your agent how to make edits. There are (of course!) some security
-implications to this, so it's probably best not to always run in this mode.
-Changes to the configuration will be shown on exit.
+**Get the coding agent to edit its own byre config?**
+tldr: `byre develop --self-edit` -- the box gets its own config mounted,
+and changes are shown on exit.
+([recipe](https://getbyre.com/docs/how-do-i/#get-the-coding-agent-to-edit-its-own-byre-config))
 
 ## Platform
 
