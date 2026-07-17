@@ -115,6 +115,30 @@ emits the page, so a new command cannot ship without its line and the
 table cannot rot. Same move as shell completions: derive from the binary,
 never hand-sync.
 
+### Sketch: publish-time asciinema demos (P9+P10 extended; not yet decided)
+
+The tuitest substrate (ADR 0038) can record site demos: an `asciinema rec
+-c "tmux -L <socket> attach"` spectator alongside the existing driver
+captures the real escape-sequence stream while the scenario sends keys
+and `WaitFor`s as tests do today -- one substrate, fourth consumer. Each
+demo is a *gated test* (`BYRE_DEMO_REC=1`) that asserts its waits AND
+emits a `.cast` into `site/static/`: a layout change fails the demo,
+which fails the publish -- P9's tripwire mechanized, P10 extended to
+moving pictures. (This, not taste, is the case against vhs: a `.tape`
+has no assertions, so it can silently record broken output.) Player is
+self-hosted asciinema-player + a Hugo shortcode; no service, no uploads.
+
+Limits: publish-time demos cover engine-free surfaces only (`byre
+config`, the picker to the engine boundary, `status` against a seeded
+`BYRE_HOME`, the deliver picker) -- CI will never hold agent
+credentials, so the develop-into-Claude hero clip stays a
+deliberately-recorded artifact (made on the VM with the same verbs,
+committed as a `.cast`, refreshed around releases; RELEASING.md's sweep
+is the backstop). Flake discipline gains teeth: a flaky demo breaks
+publishes, and the flakes-twice rule carries over. To prototype first:
+asciinema under headless CI with geometry pinned to the pane, and a
+seeded store whose `status` output presents well. Rough size: (M).
+
 ## Disposition map (the principles, applied)
 
 What each current README section becomes. "Summary + link" means a P6
