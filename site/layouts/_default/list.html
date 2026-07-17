@@ -4,8 +4,16 @@
   <article class="doc">
     <h1>{{ .Title }}</h1>
     {{ .Content }}
+    {{ $docs := .Pages.ByWeight }}
+    <h2>User documentation</h2>
     <ul>
-      {{ range .Pages.ByWeight }}
+      {{ range where $docs "Params.reference" "!=" true }}
+      <li><a href="{{ .RelPermalink }}">{{ .Title }}</a>{{ with .Description }} -- {{ . }}{{ end }}</li>
+      {{ end }}
+    </ul>
+    <h2>Reference</h2>
+    <ul>
+      {{ range where $docs "Params.reference" true }}
       <li><a href="{{ .RelPermalink }}">{{ .Title }}</a>{{ with .Description }} -- {{ . }}{{ end }}</li>
       {{ end }}
     </ul>

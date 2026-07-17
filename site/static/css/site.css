@@ -31,6 +31,12 @@ body {
 
 a { color: var(--link); }
 
+/* In-prose mentions of the name (wrapped by js/wordmark.js) */
+.byre-mark {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 main {
   max-width: 46rem;
   margin: 0 auto;
@@ -61,6 +67,68 @@ main {
 .site-header nav a { color: var(--fg); text-decoration: none; }
 .site-header nav a:hover { text-decoration: underline; }
 .github-link { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+/* Header search (index built at deploy time; js/search.js) */
+.site-search { position: relative; }
+#site-search-input {
+  width: 9rem;
+  padding: 0.25rem 0.55rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--fg);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: width 0.15s ease;
+}
+#site-search-input:focus { width: 14rem; outline: none; border-color: var(--link); }
+#site-search-results {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  width: 24rem;
+  max-width: 90vw;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  z-index: 10;
+}
+#site-search-results li a {
+  display: block;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--fg);
+}
+#site-search-results li a:hover,
+#site-search-results li.active a { background: var(--code-bg); }
+#site-search-results strong { display: inline; font-size: 0.95rem; }
+.search-crumb {
+  margin-left: 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.search-snippet {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+@media (max-width: 540px) {
+  #site-search-input { width: 6.5rem; }
+  #site-search-input:focus { width: 10rem; }
+}
 
 /* Footer */
 .site-footer {
@@ -134,22 +202,54 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* Docs pages: nav above content on narrow screens, beside it on wide */
 .docs-nav {
-  font-size: 0.92rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
   margin-bottom: 1.5rem;
 }
-.docs-nav p { margin: 0 0 0.3rem; font-weight: 600; }
+.docs-nav p { margin: 0 0 0.35rem; font-weight: 600; }
+.docs-nav .docs-nav-group { margin-top: 1.2rem; color: var(--muted); font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.05em; }
 .docs-nav ul { list-style: none; margin: 0; padding: 0; }
-.docs-nav li { margin: 0.15rem 0; }
-.docs-nav a { text-decoration: none; }
+.docs-nav li { margin: 0; }
+.docs-nav li a {
+  display: block;
+  padding: 0.14rem 0;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .docs-nav a:hover { text-decoration: underline; }
-.docs-nav a[aria-current="page"] { font-weight: 600; color: var(--fg); }
+.docs-nav a[aria-current="page"],
+.docs-nav a.active-trail { font-weight: 600; color: var(--fg); }
 
-@media (min-width: 72rem) {
+/* The current page's major headers, nested under its entry */
+.docs-nav #TableOfContents ul,
+.docs-nav .docs-nav-children {
+  padding-left: 0.75rem;
+  margin: 0.1rem 0 0.45rem;
+  border-left: 1px solid var(--border);
+}
+.docs-nav #TableOfContents { font-size: 0.93em; }
+.docs-nav #TableOfContents a { color: var(--muted); }
+.docs-nav #TableOfContents a:hover { color: var(--link); }
+.docs-nav #TableOfContents:empty { display: none; }
+
+@media (min-width: 76rem) {
   .docs-wrap { position: relative; }
   .docs-nav {
     position: absolute;
-    left: -13rem;
-    width: 11.5rem;
+    left: -14.5rem;
     top: 0.5rem;
+    bottom: 0;
+    width: 13rem;
+    margin-bottom: 0;
+  }
+  /* Sticky rail inside the full-height column: follows the scroll,
+     scrolls internally if taller than the viewport. */
+  .docs-nav-inner {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
   }
 }

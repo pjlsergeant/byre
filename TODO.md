@@ -23,30 +23,39 @@ the rationale lives.
   what's left is presentation — grouping/spacing (project vs shared),
   the annotation clutter on orphan rows. View-layer only.
 
-- [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
-  the decided shape lives in docs/marketing/positioning.md "Site plan".
+- [ ] (L) **Site.** Landing page + real docs; the decided shape -- surfaces,
+  placement principles P1-P11, the demo pipeline -- lives in
+  docs/marketing/positioning.md "Site plan" (absorbed from wip 2026-07-17;
+  README trim + canonical site docs shipped same day).
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
   via Pages, docs seeded from the README); logo/favicon and the
   ask-your-agent conceit landed on both surfaces same day. Remaining:
   - DNS + Pages settings (Pete, host-side) -- believed done 2026-07-15,
     the deployed header was verified in-browser; strike on confirm.
-  - Trim the README against the site pages: Quickstart, What's boxed,
-    Configuration, Commands, Worktrees, Volumes & state, and "How do
-    I...?" each have a real page under `/docs/` now; per the site plan
-    the README keeps a simplified version + link, not the full text.
   - Landing comparison table: the "Why not…?" material is still
     README-only; the site plan puts the table on the landing page.
   - Screencast hero on the landing (the day-03-style clip -- the media
     the README shouldn't carry).
-  - `/devlog/` -- devlog published under the site, linked as "see what's
-    being built", never the front door.
+  - (M) Publish-time demo harness: gated BYRE_DEMO_REC=1 tests emitting
+    .casts into site/static/ + self-hosted player + Hugo shortcode --
+    prototyped feasible 2026-07-17, shape in the site plan's demo section.
 
 ## Standing
 
 Disciplines and tripwires, not tasks.
 
-- **Status/marketing lockstep:** README/site show `byre status` output as
-  proof; re-verify against status.go after any status change.
+- **Status/marketing lockstep (P9 -- sweep this list, not memory):** the
+  surfaces carrying real byre output, re-verified when that output changes:
+  - `byre status` block (status.go): README "Quickstart",
+    site/content/docs/quickstart.md -- identical blocks.
+  - develop launch banner: README hero console block, site landing
+    (site/content/_index.md) hero block.
+  - install commands: README hero + "Install" (brew, blessed), site
+    landing hero (brew), site/content/docs/install.md (all routes).
+  - How-do-I tldrs: README index and site cookbook are verbatim-identical
+    per entry (P6); grep "tldr:" in both when a recipe changes.
+  - commands table: generated -- TestCommandsPagePinsSiteFile enforces,
+    regenerate with `go run ./cmd/byre commands-page`.
 - **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
@@ -132,9 +141,10 @@ the docs cited and in git history.
   stop. Reviewers WILL re-find this class -- don't re-fix.
 - **Runtime-only env** -- no security value under the threat model (images
   never leave the machine; daemon access is root-equivalent; documented in
-  SECURITY.md). If revived it's build-cache QoL and needs a build_env story.
+  the security model, site/content/docs/security-model.md). If revived it's
+  build-cache QoL and needs a build_env story.
 - **Agent `command` argv validation** -- documented as a deliberate shell
-  fragment instead (SECURITY.md "A skill is trusted code"); typed-field
+  fragment instead (security model, "A skill is trusted code"); typed-field
   allowlists are legibility, not containment. Don't re-fix.
 - **Structured (field-addressable) config validation errors** -- shared
   predicates + `ValidateLayer` is the completeness gate; prose errors

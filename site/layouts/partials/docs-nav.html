@@ -1,8 +1,34 @@
 <nav class="docs-nav">
-  <p><a href="{{ "docs/" | relURL }}">Docs</a></p>
-  <ul>
-    {{ range (site.GetPage "/docs").Pages.ByWeight }}
-    <li><a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a></li>
-    {{ end }}
-  </ul>
+  <div class="docs-nav-inner">
+    {{ $docs := (site.GetPage "/docs").Pages.ByWeight }}
+    <p><a href="{{ "docs/" | relURL }}">User documentation</a></p>
+    <ul>
+      {{ range where $docs "Params.reference" "!=" true }}
+      {{ $inSection := and .IsSection (or (eq .Permalink $.Permalink) (.IsAncestor $)) }}
+      <li>
+        <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}{{ if $inSection }} class="active-trail"{{ end }}>{{ .Title }}</a>
+        {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+        {{ if $inSection }}
+        <ul class="docs-nav-children">
+          {{ range .Pages.ByWeight }}
+          <li>
+            <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
+            {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+          </li>
+          {{ end }}
+        </ul>
+        {{ end }}
+      </li>
+      {{ end }}
+    </ul>
+    <p class="docs-nav-group">Reference</p>
+    <ul>
+      {{ range where $docs "Params.reference" true }}
+      <li>
+        <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
+        {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+      </li>
+      {{ end }}
+    </ul>
+  </div>
 </nav>

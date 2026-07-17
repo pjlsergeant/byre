@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The site's docs became the real documentation.** getbyre.com/docs
+  now carries the canonical operational reference -- the full
+  configuration vocabulary and merge rules, the volumes model with a
+  reset/forget/rebuild comparison, the skills packaging system, a "How
+  it works" pipeline walk, the security model (moved from repo
+  docs/SECURITY.md), and a thirty-recipe cookbook grouped by situation
+  (dotfiles, review loops, API keys, remote SSH, full uninstall...).
+  The README trimmed to the conversion story plus a verbatim tldr
+  index; the commands page is now generated from the binary's own
+  command tree (a hidden `byre commands-page`), pinned by test so it
+  can't go stale. CONTRIBUTING.md ships. Demo-cast slots are marked
+  across the site, pipeline prototyped.
+
 - **The Volumes screen survives an unreachable engine.** With podman
   installed but its machine stopped (macOS's usual state), the config
   editor's Volumes section died wholesale on the first failed engine

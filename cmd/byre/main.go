@@ -177,6 +177,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		forgetCmd(a, dir, s),
 		versionCmd(a, s),
 		completionCmd(s),
+		commandsPageCmd(s),
 	)
 	// byre ships its own completion command (above) so its help carries the
 	// per-shell setup lines and bare/unknown invocations stay usage errors;
