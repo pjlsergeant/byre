@@ -1,0 +1,234 @@
+# byre QA playbook
+
+The standing journey suite for the agent field-QA pass (TODO "Agent
+field-QA pass, release-time, report-only"): per journey, the keystroke
+recipe, the screens to expect, and what pass means. Each QA pass EXECUTES
+this playbook and EXTENDS it; exploratory probing happens at the edges and
+graduates in here once repeatable. Findings go to the pass report (the
+charter file), never fixed mid-pass.
+
+Starts in wip/ while it takes shape (2026-07-17, pass #2); promote to a
+settled home once stable — candidate: `qa/PLAYBOOK.md` or the inttest
+skill. Recipes assume the sacrificial inttest VM, a fresh
+`BYRE_HOME=$HOME/<qa>/home`, and the tmux vocabulary from
+BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with `grep -a` — TUI box
+glyphs otherwise trip grep's binary heuristic).
+
+## Conventions
+
+- One tmux window per journey; kill boxes/volumes between journeys unless
+  the journey needs residue.
+- Dummy credentials only, except where a journey explicitly says a capped
+  live key adds a liveness leg.
+- Every recipe ends with TEARDOWN so residue never contaminates the next
+  journey.
+
+## Journey: opencode cold user (pass #1, 2026-07-17 — PASSED end to end)
+
+The full first-contact flow, wizard to working agent.
+
+1. Fresh project dir + `BYRE_HOME=<qa>/home byre develop`.
+   Expect: store notices naming the REAL home (never `~/.byre` under an
+   override), then the wizard: `Template — go node python none [none]:`.
+2. Enter (none) → `Agent — claude codex gemini grok opencode none [none]:`
+   → type `opencode`, Enter.
+   Expect: `Use machine-wide credentials to log in to opencode?
+   [y/N, i for info]:` — bare line, NO provenance parenthetical (bundled
+   claimant), no note line above.
+3. `i`, Enter. Expect: the skill named with "(bundled with byre)", the
+   machine-wide volume named, y/n write scopes, save-as-default's
+   prefill-only effect. Question re-asked after.
+4. `y` → `Save these as your default for new projects? [y/N]:` → `y`.
+   Expect after build: exactly `skills = ["opencode-shared-auth"]` added
+   to this project's byre.config; default.config gains `agent` +
+   `shared_auth` favourites only.
+5. Box launches into the firstrun login: "Pick a provider below; stored
+   machine-wide (shared-auth: all your byre projects)."
+   [liveness leg, capped key] provider → API key → paste → opencode TUI
+   up, model line populated; a trivial prompt answers.
+6. In-box: `auth.json` at the XDG data path is a SYMLINK into
+   `/home/dev/.byre-identity/opencode/`; the shared store holds the entry.
+7. SECOND fresh project: wizard prefills `[opencode]` and the offer
+   `[Y/n]`; accept both → box comes up LOGGED IN, no prompt, no re-ask of
+   save-default.
+8. TEARDOWN: rm boxes, project state volumes, the identity volume; revoke
+   any live key.
+
+## Journey: MCP delivery to opencode (pass #1 — PASSED)
+
+1. In a project with the opencode agent: append to its byre.config:
+   `[[mcp]]` `name = "qa-probe"` `command = ["echo", "hi"]`.
+2. `byre develop` (rebuild picks up the config).
+   Expect in-box: `/etc/byre/mcp.json` carries qa-probe; the agent's
+   PID 1 env carries `OPENCODE_CONFIG_CONTENT={"mcp":{"qa-probe":…}}`.
+   (opencode's status line says "0 MCP" — that counts CONNECTED servers;
+   an echo stub can't handshake. Not a failure.)
+3. `byre status` from the project dir.
+   Expect: `qa-probe — local: echo hi  (config)` and
+   `-> the agent session receives: qa-probe  (injected via /etc/byre/mcp.json)`.
+4. TEARDOWN: rm box.
+
+## Journey: deliver flows (pass #1 — PASSED; exit codes per DELIVER.md)
+
+Two boxes running (A: cwd-owned, B: other project).
+1. `byre deliver <file>` from inside A's workdir → lands in A's /inbox,
+   bytes exact; repeat same name → `-2` suffix, never clobbered.
+2. `echo x | byre deliver` from a NEUTRAL dir, no tty →
+   "2 boxes are running — pick one with --box" + candidates; exit 1.
+3. Same, with a tty → picker opens; `q` → "cancelled — nothing
+   delivered"; exit 1.
+4. Same, pick a box with Enter → stdin lands as `stdin-<stamp>`; OSC 52
+   clipboard note.
+5. TEARDOWN: rm boxes.
+
+## Journey: config UI, Claude Skills + dirty flag (pass #1 — PASSED)
+
+1. `byre config` in a project → main form renders; `▸` cursor moves.
+2. Down to `Claude Skills`, Enter → "(no items yet)"; `a` → two-field
+   form. Junk NAME → immediate ✗ validation (message wraps at narrow
+   widths). Valid name + nonexistent dir → live note
+   "⚠ path missing — build will fail (accepted anyway…)"; accepting
+   lists the row with the same warning suffix.
+3. Esc → main shows `● Unsaved changes`; `^q` → discard needs a SECOND
+   confirm; after discard the file on disk is byte-identical.
+4. TEARDOWN: none (nothing saved).
+
+## Journey: agent cold flows — claude / codex / grok (pass #2 — PASSED)
+
+Per agent, fresh dir + wizard (`template` Enter, agent name, decline
+save-default).
+1. Vouched agents (claude, codex, opencode): expect the sharing question
+   `Use machine-wide credentials to log in to <agent>? [y/N, i for info]:`
+   — bare line. `i` → info text names the skill "(bundled with byre)",
+   the volume, y/n write scopes, save-default's prefill-only effect.
+   `y` → exactly `skills = ["<agent>-shared-auth"]` in the project config.
+2. Unvouched companions (gemini, grok): expect NO sharing question —
+   straight from Agent to save-default. (Flips when their skill gains
+   `shared_auth_for`; update this recipe then.)
+3. In-box firstrun: claude prompts for a setup-token paste, Enter skips
+   ("byre: skipped — using this project's own login"); codex/grok run a
+   device login, Ctrl-C skips (trap prints the byre-shell-later line —
+   grok's own alt-screen may repaint over it immediately).
+4. After any skip the agent shows its OWN onboarding/login — a skip gets
+   a box, not a ready agent (informational, all agents).
+5. Exits: gemini Ctrl-C at its login → exits 0, develop propagates; grok
+   ctrl+q; claude's tmux-driven theme picker can wedge — if keys stop
+   landing, `docker rm -f` the box (develop then reports
+   `byre: exit status 137`, rc 1 — deliberate, ≥125 = engine range).
+6. TEARDOWN: rm boxes + per-project volumes.
+
+## Journey: seeded gemini — chooser must not appear (pass #2 — PASSED)
+
+The 2026-07-16 field-failure regression check.
+1. gemini-shared-auth is companion_for → not offered; hand-enable:
+   `skills = ["gemini-shared-auth"]` in the STORE config
+   (`$BYRE_HOME/projects/<slug>/byre.config`) — NOT a file at the project
+   root (that's a preset and prints "not applied").
+2. `byre develop`. Expect: jq + firstrun layers in the build; box up.
+3. PASS = gemini goes STRAIGHT to the oauth-personal URL/code prompt — no
+   auth-method chooser anywhere in `capture-pane -S` scrollback (contrast:
+   a plain gemini box shows the chooser).
+4. In-box: all four identity files in ~/.gemini are symlinks into
+   /home/dev/.byre-identity/gemini (the machine volume, mounted);
+   settings.json == {"security":{"auth":{"selectedType":"oauth-personal"}}}.
+5. Garbage at the code prompt → invalid_grant + re-prompt (gemini's own
+   handling); Ctrl-C → gemini exits 0.
+6. TEARDOWN: rm box; keep or rm the machine identity volume deliberately.
+
+## Journey: rude inputs (pass #2 — PASSED, one finding)
+
+- Ctrl-C at the wizard: process dies on SIGINT, store gains NO config.
+- Ctrl-C mid-build: buildx prints CANCELED/context canceled; develop
+  exits 130; no stray containers; next develop skips onboarding and
+  rebuilds clean. (Window is short on cached bases — use a fresh
+  python/node project for an uncached pull.)
+- Garbage at the sharing question: silently taken as No (finding: no
+  reprompt, an `i` typo declines the offer).
+- Resize mid-wizard: line prompts rewrap, keep answering. Resize
+  mid-config-UI: re-clips live, "··· (more below)" + footer intact.
+
+## Journey: reset / forget / develop-while-running (pass #2 — PASSED)
+
+1. Second `byre develop` while one runs: decline + how-to-reach text,
+   rc=3 (ExitRefused — develop only; its exit code otherwise carries the
+   agent's own status).
+2. `byre reset` while a session runs: "a session is running … exit it
+   before reset", rc=1. NEVER measure through a pipe — `cmd | tail`
+   makes $? tail's; echo rc in a separate send (Ctrl-C also aborts the
+   whole `cmd; echo rc=$?` line, so a compound never prints after an
+   interrupt).
+3. reset with the session down: kill-list enumerated with engine suffix
+   `[docker]`, re-auth warning, default No; y → per-project volumes
+   removed, machine-wide identity volumes NAMED as not-touched with the
+   deliberate-delete path. rc=0.
+4. forget: kill-list = image + store dir (config, marker, context); y →
+   both gone; next develop re-onboards from the wizard. rc=0.
+
+## Journey: worktrees (pass #2 — PASSED)
+
+Needs a git repo with a commit; main project already developed.
+1. `byre worktree wt1 --path ../got-wt1` from the main tree.
+   Expect: worktree + branch wt1 created; develop starts IN it; image is
+   the MAIN project's (no rebuild beyond cache); container slug
+   `<proj>-wt1-…`.
+2. In-box: /workspace is the worktree, `git branch --show-current` works
+   (worktree-metadata mount path).
+3. Concurrent main-tree develop in another window: both boxes up.
+4. `byre status` in the project: "Worktrees: 1 other session(s) live:
+   <id> (share these volumes)".
+5. deliver from the main tree: resolves to the cwd's OWN box, no picker
+   (picker is for ambiguity); `deliver --box <wt-id>` lands in the
+   worktree box's /inbox (verify bytes). Finding: the wt delivery is
+   labeled with the MAIN project slug, id is the only tell.
+6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
+
+## Journey: config UI ^e round-trip (pass #2 — PASSED)
+
+1. `byre config` → `^e` → $EDITOR (vi) on the REAL store config.
+2. Write an INVALID key (`packages = […]` — the Packages row's key is
+   `apt`), :wq. Expect: UI keeps last-good values + red banner
+   "✗ file has an error after editing (fix it and ctrl+e again): …
+   unknown key(s): [packages]"; the file on disk DOES carry the bad edit.
+3. `^e` again, remove the line, :wq → banner clears, "Reloaded from
+   file". `^q` → "byre: config unchanged."
+4. Known cosmetic: agent="none" projects render `[none]` twice in the
+   Pri. Agent row (pickerOpts, configui/skills.go) until fixed.
+
+## Journey: firewall egress (pass #2 — PASSED)
+
+1. `skills = ["firewall"]`, no egress key → banner flips to
+   "byre: network deny-by-default · egress none"; box still launches
+   (gate opened = rules verified). curl anything → timeout, 000.
+2. Add `egress = ["example.com"]` → banner "egress 1 host";
+   example.com=200, everything else still times out.
+3. TEARDOWN: rm box.
+
+## Journey: templates + named layers (pass #2 — PASSED, one bug)
+
+1. go/node/python templates: wizard-onboard each, box up. node/python:
+   toolchain on PATH in the box shell (node --version, python3 --version).
+   go: KNOWN BUG — `go` NOT on PATH in login shells (agent=none
+   foreground shell, byre shell); image ENV PATH is clobbered by
+   /etc/profile. `docker exec <box> go version` works (ENV intact) — use
+   that to distinguish this bug from a broken image. Re-check per pass
+   until fixed.
+2. Layers: `byre layer new qa2base` → scaffold under $BYRE_HOME/layers
+   (self-documenting comments; vocabulary = full config minus template).
+   Add `apt = ["ripgrep"]` + `egress = ["example.com"]`; `byre layer
+   validate qa2base` → ok. Project config gains `extends = "qa2base"` →
+   next develop REBUILDS with rg baked in (`command -v rg`) and the
+   layer's egress in the banner/probe. Edit the layer → next develop
+   picks it up (live resolution).
+
+## Harness lessons (carry between passes)
+
+- Never pipe the measured command when capturing an exit code, and never
+  chain `; echo rc=$?` on a line you might Ctrl-C — send the echo as its
+  own keystroke afterwards ($? survives until the next command).
+- tmux `respawn-pane -k` RERUNS the window's original command — a window
+  created with an inline `develop` relaunches the session. Create QA
+  windows as bare shells and send commands with send-keys.
+- Two Ctrl-Cs in ONE send-keys can arrive as one; send them as separate
+  calls with a beat between, or expect TUIs (claude) to swallow them.
+- Wizard answers race the prompts at fixed sleeps; capture the pane after
+  each answer when a journey depends on WHICH question consumed a key.

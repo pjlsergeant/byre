@@ -159,3 +159,144 @@ exactly what each answer writes.
   fixes; finding 2 is a copy decision (Pete); finding 3 is a ruling.
 - The un-driven residue: Ctrl-C login-skip trap path, worktree flows,
   `byre reset` + re-develop idempotence — candidates for pass #2.
+
+# REPORT — pass #2 ran 2026-07-17 (VM, byre-qa @ c88d121 merged main incl. worktree-metadata)
+
+All queued journeys driven; nothing skipped. No live keys used — every leg
+ran on dummy/no credentials (the plumbing proves out without them). Two
+sessions (pass paused and resumed via wip/qa-pass2-resume.md, now deleted).
+
+## What just works (worth saying out loud)
+
+- **Seeded gemini (the 2026-07-16 field-failure fix, live):** hand-enabled
+  gemini-shared-auth (companion_for, so not offered) via the store
+  byre.config. Box up: all four identity files are symlinks into the
+  mounted machine volume (byre-machine-u501-gemini-identity),
+  settings.json seeded {"security":{"auth":{"selectedType":"oauth-personal"}}},
+  and gemini went STRAIGHT to the oauth-personal login — no auth-method
+  chooser anywhere in scrollback. Contrast: the plain-gemini box (driven
+  pre-pause) shows the chooser. The seed does its one job.
+- **claude first-run:** sharing question renders bare (vouched
+  shared_auth_for); `i` prints the full info text (what y writes — one
+  skills line, where to undo — and that saving a default never opts a box
+  in); `y` writes exactly `skills = ["claude-shared-auth"]`. In-box
+  firstrun prompts for a setup-token paste with a clean Enter-skip:
+  "byre: skipped — using this project's own login", then claude's own
+  onboarding. Same shape as codex: a skip gets you a box, not a ready agent.
+- **grok first-run:** NO sharing question — correct, grok-shared-auth is
+  still companion_for (field gate pending). Device-auth firstrun hook is
+  Ctrl-C-skippable (trap verified in source; alt-screen repaints over the
+  message); after the skip grok shows its own sign-in, ctrl+q exits, box
+  winds down clean.
+- **Interrupts leave nothing behind.** Ctrl-C at the wizard: process dies
+  on SIGINT, no config written (verified twice). Ctrl-C mid-image-build:
+  buildx cancels ("context canceled"), develop exits 130, no stray
+  containers; the next develop skips onboarding (config already written)
+  and just rebuilds to a working box.
+- **reset/forget are exemplary.** reset enumerates exactly what dies with
+  the engine suffix ([docker]), warns about re-auth, defaults to No,
+  names the machine-wide volumes it deliberately will NOT touch and the
+  deliberate-delete path (config → Volumes → clear). Post-wipe: per-project
+  volume gone, machine identities intact, rc=0. forget removes image +
+  store dir (config, marker, context), rc=0. Declining reset because a
+  session is running: message + rc=1 (measured unpiped this time).
+- **Worktrees (the freshly merged metadata work, live):** `byre worktree
+  wt1 --path ../got-wt1` created branch+worktree and a session in it; the
+  box runs the MAIN project's image (shared, no rebuild); in-box
+  /workspace is the worktree on branch wt1 and git works (the rebind path
+  holding up). Concurrent main-tree session fine; status shows the
+  sibling ("Worktrees: 1 other session(s) live"); deliver resolves to the
+  cwd's own box (no picker when unambiguous), --box <id> lands in the
+  worktree box (payload verified in both inboxes).
+- **Config UI ^e round-trip:** vi opens the real file; a bad key
+  (`packages` — the row's key is `apt`) is caught on write-back with a
+  recovery banner ("fix it and ctrl+e again: … unknown key(s)") while the
+  UI keeps last-good values; fixing clears it; ^q prints "config
+  unchanged." Resize mid-UI re-clips with the more-below indicator and
+  footer intact; resize mid-wizard just rewraps (line-oriented prompts).
+- **Templates:** go, node, python all build and launch. node v22.23.1,
+  python 3.12.13 on PATH in the box shell. (go: see finding 1.)
+- **Firewall:** banner flips open → "network deny-by-default · egress
+  none"; enforcement real (npmjs times out, 000); grant one host →
+  "egress 1 host", example.com=200, npmjs still closed. Deny-by-default
+  means closed, observed.
+- **Named layers:** `layer new` scaffolds a self-documenting file under
+  $BYRE_HOME/layers; `layer validate` ok; `extends = "qa2base"` in the
+  project cascade applied the layer's apt (rg baked into the image) and
+  egress (banner + probe) on the next develop. Live resolution as
+  documented.
+
+## Findings (report-only; none fixed)
+
+1. **Bug, the real catch of the pass — image ENV PATH is lost in the
+   box's login shells.**
+   Repro: template=go project, agent=none → in the foreground box shell
+   `go version` → "command not found". Same via `byre shell` into any go
+   box. PATH there is Debian's stock /etc/profile value
+   (/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games); the image
+   ENV (/usr/local/go/bin, /go/bin, ~/.local/bin) is gone — /etc/profile
+   unconditionally overwrites PATH in login shells and
+   /etc/profile.d/byre-env.sh doesn't restore it. The AGENT is unaffected
+   (byre-launch execs with the container env — which is why the
+   self-hosted dev box never noticed: claude runs go fine, humans weren't
+   shelling in). Blast radius: any base image whose toolchain rides ENV
+   PATH — the go template's golang image is the shipped victim;
+   node/python live in /usr/local/bin and dodge it. So the go template's
+   "run tests, poke around" story via byre shell is broken today.
+   Fix direction is Pete's call (restore PATH in byre-env.sh from a
+   baked-at-generate value? have byre-launch write the runtime env
+   somewhere profile.d can source? drop the login-shell -l?); hardening:
+   an in-box test asserting `command -v go` through the login-shell path.
+2. **Bug, cosmetic — config UI renders `[none]` twice in the Pri. Agent
+   picker** when the config says agent = "none" (any wizard-onboarded
+   agentless project). pickerOpts (internal/configui/skills.go:343)
+   appends the configured-but-not-discovered current value without
+   guarding current == noneOption, then appends the none sentinel.
+   Template row has the same latent case (template = "none").
+   Fix is one condition + a unit test.
+3. **Low — nonsense at the sharing question silently declines.** "banana"
+   at `[y/N, i for info]` → taken as No, wizard moves on. Standard y/N
+   convention, but this prompt has a third key: an `i` typo (or any
+   stray input) silently declines an offer the user may have wanted to
+   read first. A reprompt-on-unrecognized would cost one line.
+4. **Low — a box killed under a live session reports `byre: exit status
+   137` and exits 1.** Deliberate per the develop.go comment (≥125 is
+   docker's engine range, stays a byre error, and the code_below-125
+   pass-through is correct), but the message gives no hint the container
+   was killed/removed externally — "byre: exit status 137" reads like a
+   byre bug to the person whose box just vanished. Legibility, not
+   behavior.
+5. **Low — deliver into a worktree box is labeled with the main
+   project's slug.** `deliver --box 90bef5d3ecdd` (the wt1 box) prints
+   "delivering to got-qa2-3c1130 (docker, 90bef5d3ecdd)" — same text as a
+   main-box delivery except the id. The worktree box has its own slug
+   (got-wt1-qa2-80c17d); naming it would make the two deliveries
+   distinguishable at a glance.
+6. **Low — status names sibling worktree sessions by container id only**
+   ("Worktrees: 1 other session(s) live: 90bef5d3ecdd"). Which worktree
+   (path/branch) that is isn't recoverable from the output.
+
+## Closed threads (no finding)
+
+- **reset/forget decline exit code:** the pass-1 "rc=0" was a pipe
+  artifact (measured `tail`'s status). Code path: the decline is a plain
+  error → main.fatal prints the banner and exits 1. Verified both by
+  reading reset.go/main.go and by an unpiped VM measurement (rc=1). The
+  3-vs-1 asymmetry with develop's decline is deliberate: ExitRefused=3
+  exists only because develop's exit code otherwise carries the agent's
+  own status — an ambiguity reset/forget don't have.
+- **Pre-pause journeys** (codex first-run + Ctrl-C skip, BYRE_HOME
+  startup-notice fix live, develop-while-running rc=3, byre shell
+  round-trip, plain-gemini chooser) — recorded in the pass-2 resume doc,
+  all clean, absorbed here.
+
+## Suggested next steps (each its own dispatch)
+
+- Finding 1 is the one that bites users today (go template + byre
+  shell). Fix + in-box regression test.
+- Finding 2 is a one-line fix + unit test on pickerOpts.
+- Findings 3–6 are wording/legibility rulings — Pete's call which are
+  worth lines of code.
+- Gemini shared-auth field gate: the seed plumbing is now field-proven
+  without credentials; the remaining gate is the LIVE two-box shared
+  login (needs a real Google login once, then two boxes).
