@@ -260,6 +260,13 @@ case (language templates ship CA certs transitively and would mask it).
 - Don't match a banner alone to conclude "box up" — early "firewall
   hung" reports were wait-loop races matching banner text before the
   `dev@` prompt; wait for the prompt (grok explore pass, 2026-07-17).
+- Driving over ssh adds a THIRD shell layer: a `$?` or a quoted TOML
+  string inside an ssh+send-keys wrapper gets expanded/stripped by the
+  REMOTE shell before the keys land (v1.0.0 pass: a cancel measured
+  rc=0 because the wrapper's own last status was echoed; a layer file
+  landed quoteless and byre rightly refused it). Send `echo rc=$?`
+  single-quoted end to end, and write config/layer files via ssh
+  heredoc, never typed keys.
 - ONE driver per VM at a time. The gated suite assumes an exclusive
   engine: a concurrent QA pass's boxes walk into the deliver pool-scan
   tests ("want exactly this box") and fail them — diagnosed 2026-07-17
@@ -268,9 +275,38 @@ case (language templates ship CA certs transitively and would mask it).
   `tmux ls` on every socket you know (`tmux -L <sock> ls`), and
   `docker ps --filter label=byre.project` for boxes you don't own.
 
+## v1.0.0 release pass (2026-07-18) — all journeys green
+
+Full playbook driven on the VM against the v1.0.0 candidate (binary from
+main). PASSED as written: opencode cold user (loginless legs; prefill,
+firstrun preamble, auth.json symlink all verbatim), MCP delivery, deliver
+flows (incl. picker-cancel rc=1), config UI Claude Skills + dirty flag,
+agent cold flows (codex device-login + Ctrl-C skip; claude via the FLAGS
+path — sharing-question copy proven on opencode; gemini), seeded gemini
+chooser-skip (0 chooser hits in scrollback, 4 symlinks, garbage-code
+re-prompt), rude inputs, reset/forget/develop-while-running + orphan
+labeling, worktrees (sibling naming, --box delivery), firewall egress on
+template=none (deny 000 → allowlisted 200, trust store intact), templates
+(go/node/python PATH in login shells) + named layers (validate, extends
+rebuild bakes rg, loud TOML errors on malformed files). Legs not run:
+mid-build cancel (base caches too warm for a window), claude token-paste
+firstrun (flags path has no shared-auth), liveness logins (dummy-creds
+convention). Deviations → Open findings below.
+
 ## Open findings
 
-None open from QA passes. (This section is for report-only pass
+- **^e quit says "wrote" on an un-enrolled project with nothing to write**
+  (v1.0.0 pass): on a never-developed project, `byre config` → `^e`
+  materializes the store file (the known enrollment-at-open trade-off);
+  after an external edit + "Reloaded from file" with NO unsaved changes,
+  `^q` prints `byre: wrote <path>` — a content-no-op write where the
+  recipe (and the enrolled-project behavior) says `byre: config
+  unchanged.` Legibility only.
+- **Wizard abort leaves an enrolled husk** (v1.0.0 pass, note): Ctrl-C at
+  the template prompt leaves `projects/<id>/` holding path record +
+  context dir, no config. Same class as the consciously-accepted
+  reset/forget abort-enrollment stance (2026-07-17); recorded so the
+  next pass doesn't re-discover it. (This section is for report-only pass
 findings awaiting dispatch — live bug reports and design questions are
 handled in-session and tracked in TODO.md when parked, not here.)
 

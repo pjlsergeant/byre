@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v1.0.0 -- 2026-07-18
 
 - **Groundwork: self-recording site demos (not yet published).** A
   recording tier now rides the tmux TUI test harness: gated tests drive
