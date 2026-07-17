@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
@@ -209,6 +211,320 @@ func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 	}
 	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"assets": "/opt/assets"}}, skills.Resolved{}); err == nil {
 		t.Fatal("expected rejection of a symlink nested in a staged directory")
+	}
+}
+
+// Ordinary files and nested directories stage unchanged, preserving modes.
+func TestCopyPathStagesRegularTree(t *testing.T) {
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "sub", "deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "top.txt"), []byte("top"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "exec.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "deep", "leaf"), []byte("leaf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "staged")
+	if err := copyPath(src, dst); err != nil {
+		t.Fatalf("copyPath of a plain tree failed: %v", err)
+	}
+	for rel, wantMode := range map[string]os.FileMode{
+		"top.txt":       0o644,
+		"sub/exec.sh":   0o755,
+		"sub/deep/leaf": 0o600,
+	} {
+		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("%s not staged: %v", rel, err)
+		}
+		if fi.Mode().Perm() != wantMode {
+			t.Errorf("%s mode = %v, want %v", rel, fi.Mode().Perm(), wantMode)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(dst, "sub", "deep", "leaf")); string(b) != "leaf" {
+		t.Errorf("leaf content = %q, want %q", b, "leaf")
+	}
+
+	// A trailing slash (Claude skill `path` values are not Clean'd upstream)
+	// must still stage — openDirRootNoFollow Cleans before splitting parent/base.
+	dst2 := filepath.Join(t.TempDir(), "staged2")
+	if err := copyPath(src+string(filepath.Separator), dst2); err != nil {
+		t.Fatalf("copyPath of a trailing-slash dir failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst2, "top.txt")); err != nil {
+		t.Errorf("trailing-slash source did not stage: %v", err)
+	}
+}
+
+// copyWithin runs copyPath under a timeout: a FIFO/special that slips past the
+// type checks would block the open forever, so a regression must fail, not hang.
+func copyWithin(t *testing.T, src, dst string) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- copyPath(src, dst) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(15 * time.Second):
+		t.Fatal("copyPath blocked — O_NONBLOCK / fstat-type-gate regression")
+		return nil // unreachable
+	}
+}
+
+// A FIFO planted in a staged directory (an agent has /workspace rw) must be a
+// loud rejection AS A NON-REGULAR FILE — never a blocking open, and never
+// staged. The fd-fstat type gate is what enforces this; asserting the message
+// pins that it is the gate firing, not an incidental read error.
+func TestCopyPathRejectsInteriorFIFO(t *testing.T) {
+	src := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(src, "pipe"), 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	err := copyWithin(t, src, filepath.Join(t.TempDir(), "staged"))
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("interior FIFO should be rejected as non-regular, got: %v", err)
+	}
+}
+
+// The same for a top-level `files` source that is a FIFO. Statically this is
+// caught by copyPath's initial pathname Lstat (non-regular); the fd-fstat gate
+// in stageRegularFromFD is the backstop for a regular→FIFO swap after that
+// Lstat. Either way the message is "not a regular file".
+func TestCopyPathRejectsTopLevelFIFO(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "pipe")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	err := copyWithin(t, fifo, filepath.Join(t.TempDir(), "staged"))
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("top-level FIFO should be rejected as non-regular, got: %v", err)
+	}
+}
+
+// A non-escaping in-root symlink is rejected too, not silently dereferenced:
+// os.Root would follow it, so copyPath's Lstat-through-root must catch it. (The
+// escaping variant is covered by TestAssembleFilesRejectsNestedSymlink.)
+func TestCopyPathRejectsInteriorSymlink(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "real"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(src, "link")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+		t.Fatal("an in-root symlink must be rejected, not dereferenced into the image")
+	}
+}
+
+// A symlink escaping the project, whether it is a leaf or an intermediate
+// directory component, is rejected during recursion — the walk Lstats each
+// component through the root before descending, so the escape never reaches an
+// open. (The openat escape refusal is the backstop for the swap-after-Lstat
+// race, which a single-threaded test cannot stage.)
+func TestCopyPathRejectsEscapingSymlinkComponents(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name  string
+		plant func(t *testing.T, src string)
+	}{
+		{"leaf", func(t *testing.T, src string) {
+			if err := os.MkdirAll(filepath.Join(src, "a"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(src, "a", "leak")); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}},
+		{"intermediate-component", func(t *testing.T, src string) {
+			// `a` is itself a symlink to an external directory; the walk must
+			// reject it before descending, not follow it to enumerate outside.
+			if err := os.Symlink(t.TempDir(), filepath.Join(src, "a")); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := t.TempDir()
+			tc.plant(t, src)
+			if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+				t.Fatalf("escaping %s symlink must be rejected", tc.name)
+			}
+		})
+	}
+}
+
+// A top-level `files` source that is itself a symlink to an external directory
+// must be rejected, never followed to stage the external tree. This exercises
+// the STATIC guard (copyPath's initial Lstat); the swap-after-Lstat race that
+// openDirRootNoFollow additionally closes needs a concurrent mutator a
+// single-threaded test cannot stage, so it is design-verified, not pinned here.
+func TestCopyPathRejectsTopLevelDirSymlink(t *testing.T) {
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "host-secret"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "assets")
+	if err := os.Symlink(external, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	dst := filepath.Join(t.TempDir(), "staged")
+	if err := copyPath(link, dst); err == nil {
+		t.Fatal("a top-level directory symlink must be rejected, not followed")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "host-secret")); err == nil {
+		t.Fatal("external file was staged through a top-level directory symlink")
+	}
+}
+
+// copyRootedEntry refuses an entry whose ANCESTOR component escapes the anchored
+// root — the mechanism that closes the ancestor-swap race for `files` sources
+// (safeProjectPath rejects a static escape at plan time; this pins that the
+// openat anchoring is the backstop when an ancestor is swapped after validation).
+func TestCopyRootedEntryRefusesEscapingAncestor(t *testing.T) {
+	projRoot := t.TempDir()
+	external := t.TempDir()
+	if err := os.WriteFile(filepath.Join(external, "secret"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// `sub` inside the root is a symlink to an external directory.
+	if err := os.Symlink(external, filepath.Join(projRoot, "sub")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	root, err := os.OpenRoot(projRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	// topLevel=true mirrors stageCopy's call on a multi-component configured
+	// source; the escaping ancestor is refused regardless of the flag.
+	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), filepath.Join(t.TempDir(), "out"), true); err == nil {
+		t.Fatal("an entry reached through an escaping ancestor symlink must be refused by the root")
+	}
+}
+
+// A `files` source that is itself a symlink to an in-project target IS followed
+// and staged — that is the user's explicit naming, resolved by safeProjectPath,
+// and must not be rejected the way an agent-planted INTERIOR symlink is. Pins
+// the user-vs-agent boundary through the project-root-anchored path.
+func TestAssembleFilesFollowsUserNamedTopLevelSymlink(t *testing.T) {
+	paths := bootstrapped(t)
+	if err := os.WriteFile(filepath.Join(paths.Canonical, "real.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.txt", filepath.Join(paths.Canonical, "link.txt")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"link.txt": "/opt/x"}}, skills.Resolved{}); err != nil {
+		t.Fatalf("a user-named top-level symlink source must be followed, got: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(paths.ContextDir, "files", "link.txt")); err != nil || string(b) != "hi" {
+		t.Errorf("followed symlink content not staged: %q %v", b, err)
+	}
+}
+
+// A nested `files` directory source stages its whole tree through the
+// project-root anchor (exercises copyRootedEntry recursion via Assemble).
+func TestAssembleStagesNestedFilesDir(t *testing.T) {
+	paths := bootstrapped(t)
+	if err := os.MkdirAll(filepath.Join(paths.Canonical, "assets", "img"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.Canonical, "assets", "img", "logo"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"assets": "/opt/assets"}}, skills.Resolved{}); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(paths.ContextDir, "files", "assets", "img", "logo")); err != nil || string(b) != "png" {
+		t.Errorf("nested files dir not staged: %q %v", b, err)
+	}
+}
+
+func TestWithinRoot(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "home", "me", "proj")
+	cases := []struct {
+		path    string
+		wantRel string
+		wantOK  bool
+	}{
+		{filepath.Join(root, "a", "b"), filepath.Join("a", "b"), true},
+		{root, ".", true},
+		{filepath.Join(filepath.Dir(root), "sibling"), "", false},
+		{filepath.Join(string(filepath.Separator), "etc", "passwd"), "", false},
+	}
+	for _, c := range cases {
+		rel, ok := withinRoot(root, c.path)
+		if ok != c.wantOK || (ok && rel != c.wantRel) {
+			t.Errorf("withinRoot(%q,%q) = (%q,%v), want (%q,%v)", root, c.path, rel, ok, c.wantRel, c.wantOK)
+		}
+	}
+}
+
+// A source spelled through a SYMLINK ALIAS of the project root (expandHome does
+// not canonicalize, WorkDir is canonical) must still be recognized as in-tree
+// and anchored — a purely lexical compare would false-negative it onto the
+// unsafe by-pathname route.
+func TestAgentWritableRelResolvesAlias(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(real, "a", "myskill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "linkproj")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	aliased := filepath.Join(alias, "a", "myskill")
+	// Lexical-only would miss it.
+	if _, ok := withinRoot(real, aliased); ok {
+		t.Fatal("precondition: the aliased spelling should not be lexically within root")
+	}
+	rel, ok := agentWritableRel(real, aliased)
+	if !ok || rel != filepath.Join("a", "myskill") {
+		t.Fatalf("agentWritableRel(%q,%q) = (%q,%v), want (%q,true)", real, aliased, rel, ok, filepath.Join("a", "myskill"))
+	}
+
+	// Conversely, a path spelled UNDER root whose intermediate escapes must stay
+	// anchored (lexical match wins), so os.Root refuses it — not demoted to the
+	// by-pathname copyPath route by resolving first.
+	if err := os.Symlink(string(filepath.Separator)+"etc", filepath.Join(real, "sub")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	rel, ok = agentWritableRel(real, filepath.Join(real, "sub", "passwd"))
+	if !ok || rel != filepath.Join("sub", "passwd") {
+		t.Fatalf("a lexically in-tree path with an escaping intermediate must stay anchored, got (%q,%v)", rel, ok)
+	}
+}
+
+// A `[[claude_skills]].path` INSIDE the writable project must stage through the
+// project-root anchor, not the by-pathname copyPath route (whose O_NOFOLLOW
+// guards only the leaf) — else an agent could swap a project-local ancestor.
+// Staged content confirms the anchored route handles the project-local case.
+func TestAssembleStagesProjectLocalClaudeSkill(t *testing.T) {
+	paths := bootstrapped(t)
+	src := filepath.Join(paths.Canonical, "myskill")
+	writeClaudeSkillDir(t, src, "myskill")
+	if err := os.WriteFile(filepath.Join(src, "support.txt"), []byte("quokka"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Assemble(paths, config.Config{Base: "node:22", ClaudeSkills: []config.ClaudeSkill{{Name: "myskill", Path: src}}}, skills.Resolved{}); err != nil {
+		t.Fatalf("project-local claude skill should stage: %v", err)
+	}
+	staged := filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills", "myskill", "support.txt")
+	if b, err := os.ReadFile(staged); err != nil || string(b) != "quokka" {
+		t.Errorf("project-local claude skill not staged through the anchor: %q %v", b, err)
 	}
 }
 
