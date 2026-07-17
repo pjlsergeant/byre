@@ -55,11 +55,17 @@ type Favourite struct {
 type SharedAuthOffer struct {
 	// Claimants are display names of companions to offer (already filtered for
 	// machine-wide enablement). Labels[i] is the provenance label for
-	// Claimants[i] (e.g. "bundled, byre's"). VolumeNotes[i] is that claimant's
-	// own machine-volume disclosure (may be empty).
+	// Claimants[i] (e.g. "bundled with byre"). Foreign[i] is true when the
+	// claimant is NOT byre's own (installed/local): a third party asking to
+	// hold credentials machine-wide is the one provenance that must sit on
+	// the question line itself, unhidden — bundled skills keep the line bare
+	// and their provenance in the i-text (ruling 2026-07-17, field-QA 2).
+	// VolumeNames[i] is that claimant's machine-scoped volume name (may be
+	// empty), disclosed in the i-text.
 	Claimants   []string
 	Labels      []string // same length as Claimants
-	VolumeNotes []string // same length as Claimants; per-claimant
+	Foreign     []bool   // same length as Claimants
+	VolumeNames []string // same length as Claimants; per-claimant
 	// PrefYes is a legacy yes-inclination with no pick (array shape).
 	PrefYes bool
 	// PrefPick is a saved companion display name to preselect in the picker
@@ -174,11 +180,14 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 	if offer.StalePickNotice != "" {
 		fmt.Fprintln(out, offer.StalePickNotice)
 	}
-	volNote := func(i int) string {
-		if i >= 0 && i < len(offer.VolumeNotes) {
-			return offer.VolumeNotes[i]
+	volName := func(i int) string {
+		if i >= 0 && i < len(offer.VolumeNames) {
+			return offer.VolumeNames[i]
 		}
 		return ""
+	}
+	foreign := func(i int) bool {
+		return i >= 0 && i < len(offer.Foreign) && offer.Foreign[i]
 	}
 
 	if len(offer.Claimants) == 1 {
@@ -192,15 +201,18 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 		if prefYes {
 			marker = "Y/n, i for info"
 		}
-		if vn := volNote(0); vn != "" {
-			fmt.Fprintf(out, "  %s\n", vn)
+		// The question is self-disclosing ("machine-wide" IS the scope) and
+		// bare when the claimant is byre's own; a foreign claimant's
+		// provenance rides the question line, deliberately loud.
+		q := fmt.Sprintf("Use machine-wide credentials to log in to %s?", agent)
+		if foreign(0) && label != "" {
+			// A third party asking to hold machine-wide credentials is the
+			// loud case (the ruling's whole point); a local skill is the
+			// user's own work and stays lowercase.
+			q += fmt.Sprintf(" (via %s — %s)", c, strings.Replace(label, "third-party", "THIRD-PARTY", 1))
 		}
 		for {
-			if label != "" {
-				fmt.Fprintf(out, "Opt this box into %s shared credentials? (%s, %s) [%s]: ", agent, c, label, marker)
-			} else {
-				fmt.Fprintf(out, "Opt this box into %s shared credentials? [%s]: ", agent, marker)
-			}
+			fmt.Fprintf(out, "%s [%s]: ", q, marker)
 			line, rerr := r.ReadString('\n')
 			if rerr != nil && line == "" {
 				return "", false, rerr
@@ -214,8 +226,18 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 				}
 				return "", false, nil
 			case "i":
+				prov := ""
+				if label != "" {
+					prov = " (" + label + ")"
+				}
+				vol := "a machine-wide volume"
+				if vn := volName(0); vn != "" {
+					vol = fmt.Sprintf("the machine-wide volume %q", vn)
+				}
 				fmt.Fprintf(out, `
-  y — this box uses the machine-wide shared %s login via %q.
+  This uses the skill %q%s to store one %s login
+  in %s that every opted-in project's box mounts.
+  y — this box uses the machine-wide shared %s login.
       Writes one line — skills = [%q] — into THIS project's byre.config
       (delete it there to undo). No other project changes.
   n — this box keeps its own separate %s login (log in inside the box).
@@ -224,10 +246,7 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
   pre-selected at the NEXT project's question — saving never
   opts any box in by itself.
 
-`, agent, c, c, agent)
-				if vn := volNote(0); vn != "" {
-					fmt.Fprintf(out, "  %s\n", vn)
-				}
+`, c, prov, agent, vol, agent, c, agent)
 			default:
 				return "", false, nil
 			}
@@ -243,8 +262,8 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 			label = "  (" + offer.Labels[i] + ")"
 		}
 		fmt.Fprintf(out, "  %d) %s%s\n", i+1, c, label)
-		if vn := volNote(i); vn != "" {
-			fmt.Fprintf(out, "      %s\n", vn)
+		if vn := volName(i); vn != "" {
+			fmt.Fprintf(out, "      machine-wide volume %q (shared credentials)\n", vn)
 		}
 		if offer.PrefPick != "" && c == offer.PrefPick {
 			pre = i + 1

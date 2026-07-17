@@ -13,7 +13,7 @@ func TestMultiClaimPickerShowsAll(t *testing.T) {
 	var out bytes.Buffer
 	offer := SharedAuthOffer{
 		Claimants: []string{"claude-shared-auth", "my-claude-auth"},
-		Labels:    []string{"bundled, byre's", "local"},
+		Labels:    []string{"bundled with byre", "local"},
 	}
 	// Pick 2)
 	c, yes, err := OfferSharedAuthChoice(&out, bufio.NewReader(strings.NewReader("2\n")), "claude", offer)
@@ -24,7 +24,7 @@ func TestMultiClaimPickerShowsAll(t *testing.T) {
 		t.Fatalf("got companion=%q yes=%v", c, yes)
 	}
 	s := out.String()
-	if !strings.Contains(s, "1) claude-shared-auth") || !strings.Contains(s, "bundled, byre's") {
+	if !strings.Contains(s, "1) claude-shared-auth") || !strings.Contains(s, "bundled with byre") {
 		t.Fatalf("missing first claimant:\n%s", s)
 	}
 	if !strings.Contains(s, "2) my-claude-auth") || !strings.Contains(s, "local") {
@@ -77,7 +77,7 @@ func TestStalePickNotice(t *testing.T) {
 	var out bytes.Buffer
 	offer := SharedAuthOffer{
 		Claimants:       []string{"claude-shared-auth"},
-		Labels:          []string{"bundled, byre's"},
+		Labels:          []string{"bundled with byre"},
 		StalePickNotice: `your saved pick "gone" is no longer installed`,
 	}
 	_, _, err := OfferSharedAuthChoice(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", offer)

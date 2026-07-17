@@ -244,9 +244,11 @@ daemon); not a Podman host skill. Mechanics: ADR 0027; user-facing
 discussion: `docs/DOCKER-HOST.md`.
 
 **Shared-auth offer**:
-The first-run picker's per-box question -- "Opt this box into <agent>
-shared credentials?" -- asked at every onboarding whose chosen agent
-has a companion skill declaring `shared_auth_for`. Yes puts the
+The first-run picker's per-box question -- "Use machine-wide credentials
+to log in to <agent>?" -- asked at every onboarding whose chosen agent
+has a companion skill declaring `shared_auth_for`. The line stays bare
+for byre's own companions; a third-party claimant's provenance rides the
+question itself, loud. Yes puts the
 companion in the project's `byre.config` `skills` -- the only grant the
 answer ever makes; the saved favourite (`shared_auth`, picker-owned,
 cascade-inert) only prefills the next box's offer. Prompt wording,

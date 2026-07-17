@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Field-QA fixes across onboarding, deliver, and the config UI** (from
+  byre's first agent-driven exploratory QA pass). The shared-auth offer
+  is one plain question — "Use machine-wide credentials to log in to
+  <agent>?" — with the mechanism, volume, and write-scopes detailed under
+  `i`; a third-party companion's provenance rides the question line,
+  loud. `byre deliver` exit codes are script-trustworthy: cancelling the
+  picker or paste prompt (or an empty paste) now exits 1 like every other
+  nothing-was-delivered outcome. The config UI wraps long validation
+  errors instead of truncating them at the pane edge, and the Claude
+  Skills editor warns — without blocking — when a declared directory
+  would fail the build (missing, not a dir, no SKILL.md). Store notices
+  name the real byre home instead of a hardcoded `~/.byre`.
+
 - **MCP servers now reach OpenCode boxes (`mcp = "inject"`).** The
   opencode skill launches through `byre-opencode-mcp-launch`, which
   builds an `OPENCODE_CONFIG_CONTENT` from the baked `/etc/byre/mcp.json`

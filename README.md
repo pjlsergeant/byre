@@ -272,9 +272,9 @@ agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
 by hand.
 
 By default agents log in once per project, inside the box. The shared-auth skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth, opencode-shared-auth) move that to once per
-machine. For claude and codex every project's first run asks: "Opt this
-box into <agent> shared credentials?" -- yes enables the skill for that
-project (its `byre.config`), and only for it. Saying yes to "Save these
+machine. For claude, codex, and opencode every project's first run asks:
+"Use machine-wide credentials to log in to <agent>?" -- yes enables the
+skill for that project (its `byre.config`), and only for it. Saying yes to "Save these
 as your default?" remembers your answer like the template/agent
 favourites: the next box's question just defaults to it, one Enter to
 accept. (Enabling the skill by hand in `~/.byre/default.config` is the

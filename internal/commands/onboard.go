@@ -198,21 +198,21 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 	claimants := skills.SharedAuthClaimants(cat, agent)
 	for _, c := range claimants {
 		display := c.Name
-		label := "local"
+		label, foreign := "local skill", true
 		if ent, ok := cat.Lookup(c.Name); ok {
 			if ent.Alias != "" {
 				display = ent.Alias
 			}
 			switch ent.Provenance {
 			case packages.ProvBundled:
-				label = "bundled, byre's"
+				label, foreign = "bundled with byre", false
 			case packages.ProvInstalled:
-				label = "installed, third-party"
+				label = "third-party, installed"
 				if ent.Version != "" {
-					label = "installed " + ent.Version + ", third-party"
+					label = "third-party, installed " + ent.Version
 				}
 			case packages.ProvLocal:
-				label = "local"
+				label = "local skill"
 			}
 		}
 		if onboard.SharedAuthAlreadyOn(home, display) || onboard.SharedAuthAlreadyOn(home, c.Name) {
@@ -220,15 +220,18 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 		}
 		offer.Claimants = append(offer.Claimants, display)
 		offer.Labels = append(offer.Labels, label)
-		// Per-claimant machine-volume disclosure (round 3).
+		offer.Foreign = append(offer.Foreign, foreign)
+		// Per-claimant machine-volume disclosure (round 3; moved into the
+		// i-text / picker rows by the 2026-07-17 copy ruling — the question
+		// itself now says "machine-wide").
 		vol := ""
 		for _, v := range c.File.Volumes {
 			if v.MachineScoped() {
-				vol = fmt.Sprintf("Note: mounts machine-scoped volume %q (shared credentials).", v.Name)
+				vol = v.Name
 				break
 			}
 		}
-		offer.VolumeNotes = append(offer.VolumeNotes, vol)
+		offer.VolumeNames = append(offer.VolumeNames, vol)
 	}
 	offer.PrefYes = onboard.SharedAuthPreference(home, agent)
 	pick := onboard.SharedAuthPick(home, agent)

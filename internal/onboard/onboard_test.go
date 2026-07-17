@@ -266,10 +266,16 @@ func TestOfferSharedAuth(t *testing.T) {
 	if err != nil || !yes {
 		t.Fatalf("yes = %v, err = %v", yes, err)
 	}
-	// The wording must carry the real scope of the write: this box, opting
-	// into an existing shared mechanism — never "all projects".
-	if !strings.Contains(out.String(), "Opt this box into claude shared credentials? [y/N, i for info]") {
-		t.Fatalf("offer must be the per-box question, defaulting No:\n%s", out.String())
+	// The question is self-disclosing — "machine-wide" is the credential's
+	// scope — while the WRITE stays this-box-only (stated in the i-text);
+	// the line never claims the answer reaches all projects. Bundled
+	// claimants keep the line bare: no provenance parenthetical
+	// (ruling 2026-07-17, field-QA finding 2).
+	if !strings.Contains(out.String(), "Use machine-wide credentials to log in to claude? [y/N, i for info]") {
+		t.Fatalf("offer must be the bare machine-wide question, defaulting No:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "(via ") {
+		t.Fatalf("a bundled/unlabeled claimant must not carry a provenance suffix:\n%s", out.String())
 	}
 	// No preference: an empty answer declines.
 	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", false)
@@ -298,8 +304,11 @@ func TestOfferSharedAuthInfo(t *testing.T) {
 			t.Errorf("info must state %q:\n%s", want, got)
 		}
 	}
-	if strings.Count(got, "Opt this box") != 2 {
+	if strings.Count(got, "Use machine-wide credentials") != 2 {
 		t.Fatalf("info must re-ask the question:\n%s", got)
+	}
+	if !strings.Contains(got, "machine-wide volume") {
+		t.Errorf("info must disclose the machine-wide volume:\n%s", got)
 	}
 }
 
@@ -350,7 +359,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	var out bytes.Buffer
 	companions := func(agent string) SharedAuthOffer {
 		if agent == "codex" {
-			return SharedAuthOffer{Claimants: []string{"codex-shared-auth"}, Labels: []string{"bundled, byre's"}}
+			return SharedAuthOffer{Claimants: []string{"codex-shared-auth"}, Labels: []string{"bundled with byre"}}
 		}
 		return SharedAuthOffer{}
 	}
@@ -362,7 +371,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	if c.SharedAuthCompanion != "codex-shared-auth" || !c.SharedAuth || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	if offer, save := strings.Index(out.String(), "Opt this box into codex"), strings.Index(out.String(), "Save these"); offer < 0 || save < 0 || offer > save {
+	if offer, save := strings.Index(out.String(), "Use machine-wide credentials to log in to codex"), strings.Index(out.String(), "Save these"); offer < 0 || save < 0 || offer > save {
 		t.Fatalf("the offer must precede the save-default question:\n%s", out.String())
 	}
 	// An agent without a companion gets no offer.
@@ -371,7 +380,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.SharedAuthCompanion != "" || c.SharedAuth || strings.Contains(out.String(), "Opt this box") {
+	if c.SharedAuthCompanion != "" || c.SharedAuth || strings.Contains(out.String(), "Use machine-wide credentials") {
 		t.Fatalf("no companion — no offer: %+v\n%s", c, out.String())
 	}
 }
@@ -386,7 +395,7 @@ func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
 			if agent == "codex" {
 				return SharedAuthOffer{
 					Claimants: []string{"codex-shared-auth"},
-					Labels:    []string{"bundled, byre's"},
+					Labels:    []string{"bundled with byre"},
 					PrefYes:   pref,
 				}
 			}
@@ -423,5 +432,30 @@ func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Save these") || c.SharedAuth {
 		t.Fatalf("overriding the stored preference is news: %+v\n%s", c, out.String())
+	}
+}
+
+// A FOREIGN claimant — a third-party or local skill asking to hold
+// machine-wide credentials — carries its provenance on the question line
+// itself, loud for third parties; bundled claimants keep the line bare
+// (ruling 2026-07-17, field-QA finding 2; the i-text carries the rest).
+func TestOfferSharedAuthForeignProvenanceOnQuestionLine(t *testing.T) {
+	var out bytes.Buffer
+	offer := SharedAuthOffer{
+		Claimants:   []string{"foo-auth"},
+		Labels:      []string{"third-party, installed 1.2.0"},
+		Foreign:     []bool{true},
+		VolumeNames: []string{"foo-identity"},
+	}
+	c, yes, err := OfferSharedAuthChoice(&out, bufio.NewReader(strings.NewReader("i\ny\n")), "foo", offer)
+	if err != nil || !yes || c != "foo-auth" {
+		t.Fatalf("c=%q yes=%v err=%v", c, yes, err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "(via foo-auth — THIRD-PARTY, installed 1.2.0)") {
+		t.Fatalf("third-party provenance must sit on the question line, loud:\n%s", got)
+	}
+	if !strings.Contains(got, `"foo-identity"`) {
+		t.Fatalf("the i-text must name the machine-wide volume:\n%s", got)
 	}
 }
