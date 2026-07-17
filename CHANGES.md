@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **No write, no enrollment.** Commands that only show or review now leave a
+  never-seen project un-enrolled: `byre dockerfile`, `byre dockerrun`, and
+  `byre ejectfirewall` are documented side-effect-free but bootstrapped the
+  project's host-side store (`~/.byre/projects/<id>/` + path record) before
+  rendering, leaving a durable identity record behind — they now run a
+  read-only check (`ValidateExisting`) that keeps the loud id-collision
+  error without creating anything. The same deferral applies wherever a
+  flow can end without a write: `byre config` opened-and-quit-unsaved (a
+  save the validator refuses also enrolls nothing), `byre mcp remove` with
+  nothing to remove, and a declined `byre preset apply` no longer create
+  the store — enrollment now rides the first landed write. Read-only views
+  (`status`, `mcp list`, `claude-skill list`, `preset inspect`) gained the
+  same loud collision check, and after a ctrl+e round-trip that wrote the
+  file the editor now reports "wrote", not "config unchanged".
+
 - **Box login shells keep the image's PATH.** Debian's `/etc/profile`
   resets PATH in login shells, so a `template = "go"` box had no `go` on
   PATH in `byre shell` or the agent-less foreground shell (the agent

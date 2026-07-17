@@ -20,24 +20,27 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
-// mcpLayerPath resolves which cascade layer file the verb edits and a short
-// human name for it.
-func mcpLayerPath(projectDir string, global bool) (path, label string, err error) {
+// mcpLayerPath resolves which cascade layer file the verb edits, a short
+// human name for it, and the deferred store setup (nil for the global layer):
+// the id-collision check fails loudly here, but the enrolling Bootstrap waits
+// for the verb to actually write, so a no-op remove ("nothing to remove",
+// "already closed") on a never-seen project leaves no ~/.byre/projects/<id>.
+func mcpLayerPath(projectDir string, global bool) (path, label string, prepare func() error, err error) {
 	home, err := project.Home()
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if global {
-		return filepath.Join(home, "default.config"), "global config", nil
+		return filepath.Join(home, "default.config"), "global config", nil, nil
 	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
-	if err := paths.Bootstrap(); err != nil {
-		return "", "", err
+	if err := paths.ValidateExisting(); err != nil {
+		return "", "", nil, err
 	}
-	return filepath.Join(paths.Dir, config.ProjectConfigName), "project config", nil
+	return filepath.Join(paths.Dir, config.ProjectConfigName), "project config", paths.Bootstrap, nil
 }
 
 // mcpBearerNameRe validates a --bearer env-var name at the CLI edge (a bad
@@ -83,7 +86,7 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 		return err
 	}
 
-	path, label, err := mcpLayerPath(projectDir, global)
+	path, label, prepare, err := mcpLayerPath(projectDir, global)
 	if err != nil {
 		return err
 	}
@@ -111,6 +114,11 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 		kept = append(kept, m)
 	}
 	cur.MCPs = kept
+	if prepare != nil {
+		if err := prepare(); err != nil {
+			return err
+		}
+	}
 	if err := configui.Save(path, cur); err != nil {
 		return err
 	}
@@ -162,7 +170,7 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 		return fmt.Errorf("mcp remove: %q is not a valid server name", name)
 	}
 
-	path, label, err := mcpLayerPath(projectDir, global)
+	path, label, prepare, err := mcpLayerPath(projectDir, global)
 	if err != nil {
 		return err
 	}
@@ -211,6 +219,11 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 			return nil
 		}
 		return fmt.Errorf("mcp %s: not declared in the %s and not effective from below — nothing to remove", name, label)
+	}
+	if prepare != nil {
+		if err := prepare(); err != nil {
+			return err
+		}
 	}
 	if err := configui.Save(path, cur); err != nil {
 		return err
@@ -277,6 +290,11 @@ func mcpStillEffective(cur config.Config, name string) (bool, error) {
 func MCPList(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
+		return err
+	}
+	// Read-only, but collision-checked like status: never render another
+	// project's declared set as this one's.
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	cfg, err := config.Load(projectDir)

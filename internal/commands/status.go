@@ -75,6 +75,12 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	if err != nil {
 		return err
 	}
+	// Same loud id-collision check as the other read-only surfaces: on a
+	// collision this view would describe ANOTHER project's config as this
+	// one's grants — refuse instead of rendering a plausible lie.
+	if err := paths.ValidateExisting(); err != nil {
+		return err
+	}
 	// Ensure store (bundled mirror) before loading config (templates feed the
 	// cascade). The error degrades the skills view below rather than failing
 	// status.

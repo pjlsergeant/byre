@@ -1625,3 +1625,122 @@ func TestClaudeSkillBadPathWarnsWithoutBlocking(t *testing.T) {
 		t.Fatal("the warning leaked into the dirty signature")
 	}
 }
+
+// The prepare hook (deferred store setup, e.g. enrolling a project dir) must
+// run before the first write lands — and only then: its whole point is that
+// opening the editor and quitting creates nothing.
+func TestPrepareRunsBeforeSaveWrites(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(store, "byre.config")
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	calls := 0
+	m.prepare = func() error {
+		calls++
+		return os.MkdirAll(store, 0o755) // what commands.Config's Bootstrap does
+	}
+	m = m.save()
+	if calls != 1 {
+		t.Fatalf("prepare ran %d times, want 1", calls)
+	}
+	if !m.savedOnce {
+		t.Fatalf("save failed: %q", m.errMsg)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("saved file missing: %v", err)
+	}
+}
+
+func TestPrepareErrorBlocksSaveAndEditor(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(store, "byre.config")
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.prepare = func() error { return fmt.Errorf("cannot enroll") }
+
+	m = m.save()
+	if m.savedOnce {
+		t.Fatal("a failed prepare must block the save")
+	}
+	if !strings.Contains(m.errMsg, "cannot enroll") {
+		t.Fatalf("prepare error not surfaced: %q", m.errMsg)
+	}
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Fatalf("failed save left state behind: %v", err)
+	}
+
+	// ctrl+e hands the file to $EDITOR, which writes it directly — the same
+	// gate applies before the editor may open.
+	mm, cmd := m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlE})
+	if cmd != nil {
+		t.Fatal("ctrl+e must not open $EDITOR when prepare fails")
+	}
+	if got := mm.(model).errMsg; !strings.Contains(got, "cannot enroll") {
+		t.Fatalf("ctrl+e prepare error not surfaced: %q", got)
+	}
+}
+
+// A save the validator refuses never becomes a write, so it must not run
+// prepare (enrollment): cross-item collisions are deliberately deferred to
+// save-time ValidateLayer, making this an ordinary-use path.
+func TestSaveValidationFailureSkipsPrepare(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(store, "byre.config")
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: "/a", Target: "/x", Mode: "ro"},
+		{Host: "/b", Target: "/x", Mode: "ro"},
+	}}
+	m := newModel("t", path, cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	calls := 0
+	m.prepare = func() error { calls++; return nil }
+	m = m.save()
+	if m.savedOnce {
+		t.Fatal("an invalid layer must not save")
+	}
+	if calls != 0 {
+		t.Fatalf("a refused save ran prepare %d times (enrolls on a no-op)", calls)
+	}
+	if !strings.Contains(m.errMsg, "collides") {
+		t.Fatalf("validation error not surfaced: %q", m.errMsg)
+	}
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Fatalf("refused save left state behind: %v", err)
+	}
+}
+
+// savedOnce must track writes that actually landed in the $EDITOR round-trip:
+// created or changed → saved; look-and-quit → not.
+func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// Look-and-quit on a not-yet-existing file: nothing written.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if got := m.onEditorClosed(nil); got.savedOnce {
+		t.Fatal("no write must not mark savedOnce")
+	}
+	// $EDITOR created the file: that IS the first write.
+	if err := os.WriteFile(path, []byte("agent = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.onEditorClosed(nil); !got.savedOnce {
+		t.Fatal("a landed $EDITOR write must mark savedOnce")
+	}
+	// Re-open on the now-existing file, quit without changing it: not a write.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if got := m.onEditorClosed(nil); got.savedOnce {
+		t.Fatal("an unchanged file must not mark savedOnce")
+	}
+	// Deleted inside the editor: a mutation — "config unchanged" would claim
+	// the config is intact when it is gone.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	got := m.onEditorClosed(nil)
+	if !got.savedOnce {
+		t.Fatal("a deletion in the editor must mark savedOnce")
+	}
+	if !strings.Contains(got.status, "deleted") {
+		t.Fatalf("deletion must be named in the status, got %q", got.status)
+	}
+}

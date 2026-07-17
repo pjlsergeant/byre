@@ -24,9 +24,13 @@ import (
 // saved to filePath at least once (false = the user quit without saving, so the
 // file is untouched). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
-// quitting never writes.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) (bool, error) {
+// quitting never writes. prepare (nil = no-op) runs before the first write can
+// happen — an explicit save or the $EDITOR round-trip — so the caller can defer
+// creating the target's directory until the user actually commits: opening the
+// editor and quitting must leave no trace.
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error) (bool, error) {
 	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
+	m.prepare = prepare
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -201,6 +205,18 @@ type model struct {
 
 	savedSig  string
 	savedOnce bool
+
+	// prepare runs before anything can write filePath (ctrl+s save, $EDITOR);
+	// nil = no-op. The project editor passes Bootstrap here so an uninitialized
+	// project is enrolled in ~/.byre/projects only when a write actually lands
+	// (and re-runs it per write — see runPrepare).
+	prepare func() error
+
+	// preEditorRaw/preEditorErr snapshot filePath as ctrl+e hands it to
+	// $EDITOR (Err non-nil = it didn't exist); onEditorClosed compares to
+	// mark savedOnce only when the editor actually wrote.
+	preEditorRaw []byte
+	preEditorErr error
 
 	mode  uiMode
 	focus int // form row (modeForm)
@@ -485,6 +501,19 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errMsg = "save (ctrl+s) or discard changes before editing the file in $EDITOR"
 			return m, nil
 		}
+		// $EDITOR writes the file directly, so the deferred store setup must
+		// land BEFORE it opens — vi can't create a file in a missing dir. The
+		// accepted cost: opening the raw editor and quitting without writing
+		// still enrolls; the alternative (a half-created store the editor
+		// can't write into) helps nobody.
+		var ok bool
+		if m, ok = m.runPrepare(); !ok {
+			return m, nil
+		}
+		// Snapshot the on-disk state so onEditorClosed can tell a real
+		// $EDITOR write from a look-and-quit — savedOnce must track writes
+		// that actually landed, not editor round-trips.
+		m.preEditorRaw, m.preEditorErr = os.ReadFile(m.filePath)
 		m.errMsg = ""
 		return m, openEditor(m.filePath)
 	case "up", "shift+tab":

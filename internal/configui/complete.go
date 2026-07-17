@@ -3,6 +3,7 @@
 package configui
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,6 +42,19 @@ func (m model) onEditorClosed(err error) model {
 		m.errMsg = "editor: " + err.Error()
 		return m
 	}
+	// Did the editor land a mutation? Compare against the ctrl+e snapshot —
+	// savedOnce feeds Run's saved return (and the caller's wrote/unchanged
+	// report), so it must track disk, not the round-trip. Checked before the
+	// parse: a written-but-invalid file was still written. A file DELETED in
+	// the editor is a mutation too — reporting it "unchanged" would tell the
+	// user their config is intact when it is gone.
+	raw, rerr := os.ReadFile(m.filePath)
+	created := rerr == nil && m.preEditorErr != nil
+	changed := rerr == nil && m.preEditorErr == nil && !bytes.Equal(raw, m.preEditorRaw)
+	deleted := rerr != nil && m.preEditorErr == nil
+	if created || changed || deleted {
+		m.savedOnce = true
+	}
 	cfg, perr := config.ParseFile(m.filePath)
 	if perr != nil {
 		m.errMsg = "file has an error after editing (fix it and ctrl+e again): " + perr.Error()
@@ -49,15 +63,37 @@ func (m model) onEditorClosed(err error) model {
 	m = m.loadConfig(cfg)
 	// The editor may have added (or removed) hand-written comments — recompute
 	// the destroys-comments warning so it tracks the file, not the open-time state.
-	if raw, rerr := os.ReadFile(m.filePath); rerr == nil {
+	if rerr == nil {
 		m.commentWarn = handComments(string(raw))
 	}
 	m.errMsg = ""
 	m.status = "Reloaded from file"
+	if deleted {
+		// Say what actually happened — the empty form below is the file's
+		// true (absent) state, not a glitch.
+		m.status = "Reloaded — the file was deleted in the editor"
+	}
 	return m
 }
 
 // ---- save / assemble / dirty -----------------------------------------------
+
+// runPrepare runs the deferred store setup, shared by every path that is about
+// to write filePath (ctrl+s save, the $EDITOR shell-out). A failure lands in
+// errMsg and reports false. Deliberately re-run on every write, not once: the
+// hook (Bootstrap) is idempotent, and each run re-ensures the store dir AND
+// its path record together — a one-shot hook would let a later write's own
+// MkdirAll resurrect a concurrently-deleted store without the record.
+func (m model) runPrepare() (model, bool) {
+	if m.prepare == nil {
+		return m, true
+	}
+	if err := m.prepare(); err != nil {
+		m.errMsg = err.Error()
+		return m, false
+	}
+	return m, true
+}
 
 func (m model) save() model {
 	cfg := m.assemble()
@@ -67,6 +103,19 @@ func (m model) save() model {
 	// a hand-written key can only be repaired via ^e — say so.
 	if m.target == TargetLayer && cfg.Template != "" {
 		m.errMsg = "template is not allowed in a layer file (shape selection belongs to the project config) — remove it via ctrl+e"
+		m.status = ""
+		return m
+	}
+	// Validate BEFORE the deferred store setup: a save the validator refuses
+	// never becomes a write, so it must not enroll anything. (Save re-runs
+	// the same check on the way to disk; the duplication buys the ordering.)
+	if err := cfg.ValidateLayer(); err != nil {
+		m.errMsg = err.Error()
+		m.status = ""
+		return m
+	}
+	var ok bool
+	if m, ok = m.runPrepare(); !ok {
 		m.status = ""
 		return m
 	}

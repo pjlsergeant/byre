@@ -47,7 +47,11 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	if err != nil {
 		return err
 	}
-	if err := paths.Bootstrap(); err != nil {
+	// Collision check loudly up front; the enrolling Bootstrap waits for the
+	// confirmed write below — declining the review is a first-class outcome
+	// ("not applied; nothing written") and must leave a never-seen project
+	// un-enrolled in ~/.byre/projects.
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
@@ -134,6 +138,11 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		fmt.Fprintln(s.Err, "byre: not applied; nothing written.")
 		return nil
 	}
+	// The write was just confirmed — enroll (dir + path record) before taking
+	// the setup lock, which lives in the store.
+	if err := paths.Bootstrap(); err != nil {
+		return err
+	}
 	h := packages.HashBytes(content)
 	return withSetupLock(s.Err, paths.LockFile, func() error {
 		if cur, _, _, rerr := readPreset(projectDir, arg); rerr == nil && packages.HashBytes(cur) != h {
@@ -173,6 +182,11 @@ func PresetApply(s Streams, projectDir, arg string) error {
 func PresetInspect(s Streams, projectDir, arg string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
+		return err
+	}
+	// Read-only, but collision-checked like status: the drift verdict and
+	// review diff must be against THIS project's store, not a collider's.
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	content, source, legacyName, err := readPreset(projectDir, arg)
