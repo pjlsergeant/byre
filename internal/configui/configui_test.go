@@ -345,29 +345,39 @@ func TestVolumesScreenRendersDegradeNotes(t *testing.T) {
 // names/targets vary wildly (identity volumes, target-less orphan rows).
 func TestVolumesTableAligns(t *testing.T) {
 	fv := &fakeVols{vols: []VolumeStatus{
-		{Name: ".codex", Role: "state", Target: "/home/dev/.codex-home", Exists: true},
-		{Name: "opencode-identity", Exists: true, Machine: true, Orphan: true},
-		{Name: "claude-identity", Role: "state", Target: "/home/dev/.byre-identity/claude", Exists: true, Machine: true},
+		{Name: ".codex", Role: "state", Target: "/home/dev/.codex-home", Exists: true, Engine: "docker"},
+		{Name: "opencode-identity", Exists: true, Machine: true, Orphan: true, Engine: "docker"},
+		{Name: "claude-identity", Role: "state", Target: "/home/dev/.byre-identity/claude", Exists: true, Machine: true, Engine: "docker"},
+		// Mixed state across engines: the [engine] suffix must not drift
+		// between a 5-cell "empty" and a 7-cell "present".
+		{Name: ".codex", Role: "state", Target: "/home/dev/.codex-home", Exists: false, Engine: "podman"},
 	}}
 	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv, TargetProject)
 	m = m.openVolumes()
 	m.width = 200 // no clipping — alignment is what's under test
-	col := -1
+	col, engCol := -1, -1
 	for _, line := range strings.Split(m.viewVolumes(), "\n") {
 		// Byte offsets lie about columns: the ▸ cursor is 3 bytes for 1 cell.
 		line = strings.ReplaceAll(line, "▸ ", "  ")
-		i := strings.Index(line, "present")
-		if i < 0 {
-			continue
+		if i := strings.Index(line, "present"); i >= 0 {
+			if col == -1 {
+				col = i
+			} else if i != col {
+				t.Fatalf("'present' drifts between columns %d and %d:\n%s", col, i, m.viewVolumes())
+			}
 		}
-		if col == -1 {
-			col = i
-		} else if i != col {
-			t.Fatalf("'present' drifts between columns %d and %d:\n%s", col, i, m.viewVolumes())
+		// The [engine] suffix must sit in one column across mixed
+		// empty/present rows (the state cell is padded).
+		if i := strings.Index(line, " ["); i >= 0 {
+			if engCol == -1 {
+				engCol = i
+			} else if i != engCol {
+				t.Fatalf("'[engine]' drifts between columns %d and %d:\n%s", engCol, i, m.viewVolumes())
+			}
 		}
 	}
-	if col == -1 {
-		t.Fatal("no rows rendered")
+	if col == -1 || engCol == -1 {
+		t.Fatal("expected both present rows and engine suffixes")
 	}
 }
 

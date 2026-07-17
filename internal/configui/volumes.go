@@ -164,7 +164,10 @@ func (m model) viewVolumes() string {
 		if v.Exists {
 			state = "present"
 		}
-		line := pad(v.Name, nameW) + "  " + pad(v.Role, roleW) + "  " + pad(v.Target, targetW) + "  " + state
+		// State is padded too ("empty" is 5 cells, "present" 7 — pad works
+		// through the ANSI styling), or the engine suffix and shared/orphan
+		// annotations drift on mixed-state rows (codereview).
+		line := pad(v.Name, nameW) + "  " + pad(v.Role, roleW) + "  " + pad(v.Target, targetW) + "  " + pad(state, len("present"))
 		if multiEngine {
 			line += " [" + v.Engine + "]"
 		}
