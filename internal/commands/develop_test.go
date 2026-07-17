@@ -182,6 +182,25 @@ func TestDevelopEngineFailureStaysByreError(t *testing.T) {
 	}
 }
 
+func TestDevelopSignalExitDecoded(t *testing.T) {
+	p, _ := testPaths(t)
+	// 137 = 128+SIGKILL: the box was killed out from under the session
+	// (docker rm -f, OOM). Still a byre error (exit 1, banner), but the
+	// message must decode the signal instead of the bare "exit status 137"
+	// that reads like a byre bug (QA pass-2 finding).
+	f := &fakeRunner{runErr: exitError(t, 137)}
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	var exitErr ExitError
+	if err == nil || errors.As(err, &exitErr) {
+		t.Fatalf("a killed box must stay an ordinary error, got %v", err)
+	}
+	for _, want := range []string{"exit status 137", "SIGKILL", "killed out from under"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("decoded message missing %q: %s", want, err)
+		}
+	}
+}
+
 func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}

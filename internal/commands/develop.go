@@ -293,8 +293,18 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// cause on stderr, so those pass through as an ordinary failed status.)
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
-			if code := exitErr.ExitCode(); code >= 0 && code < 125 {
+			code := exitErr.ExitCode()
+			if code >= 0 && code < 125 {
 				return ExitError{Code: code}
+			}
+			// 128+n is the engine reporting the box died on signal n — someone
+			// killed it out from under the session (docker rm -f, engine
+			// shutdown, the OOM killer). The bare "exit status 137" reads like
+			// a byre bug to the person whose box just vanished; decode it.
+			// 125-127 stay untouched: the engine already printed its own cause.
+			if code >= 128 {
+				return fmt.Errorf("exit status %d (%s — the box was killed out from under the session: removed externally, engine shutdown, or the kernel OOM killer)",
+					code, signalName(code-128))
 			}
 		}
 		return runErr
@@ -371,6 +381,23 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 	fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
 	fmt.Fprintf(w, "  • open a shell in it:  byre shell\n")
 	fmt.Fprintf(w, "  • stop it:             %s stop %s\n", eng, id)
+}
+
+// signalName names the signal behind a 128+n container exit for the decoded
+// killed-out-from-under message. Only the signals an engine or kernel actually
+// delivers to a whole box get names; anything exotic stays numeric.
+func signalName(n int) string {
+	switch n {
+	case 1:
+		return "SIGHUP"
+	case 2:
+		return "SIGINT"
+	case 9:
+		return "SIGKILL"
+	case 15:
+		return "SIGTERM"
+	}
+	return fmt.Sprintf("signal %d", n)
 }
 
 // exposureOf tallies the resolved view for the launch exposure lines. The

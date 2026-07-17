@@ -27,8 +27,10 @@ func RunTar(cfg Config, opts Options, archive io.Reader) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// pickArg for the same reason as RunSources: name the worktree box by its
+	// own workdir id, not the shared project id.
 	fmt.Fprintf(cfg.Err, "byre: delivering to %s (%s, %s)%s\n",
-		sess.ProjectID, sess.EngineName, shortID(sess.ID), foreignNote(sess))
+		pickArg(sess), sess.EngineName, shortID(sess.ID), foreignNote(sess))
 	u := &tarUnpack{cfg: cfg, sess: sess, claimed: map[string]string{}}
 	err = u.run(archive)
 	shipClipboard(cfg, opts, u.landed)

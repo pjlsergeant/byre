@@ -140,6 +140,22 @@ func TestSoleSessionAutoPick(t *testing.T) {
 	}
 }
 
+// A worktree box shares its project's id; the target line must name it by
+// its own workdir id or main-tree and worktree deliveries are
+// indistinguishable except by container id (QA pass-2 finding).
+func TestDeliveryLineNamesWorktreeBox(t *testing.T) {
+	eng := box("docker", "aaa")
+	eng.labels["aaa"]["byre.workdir"] = "proj-wt1-aaa"
+	cfg, _, errw := testConfig(eng)
+	src := writeFile(t, "report.pdf", "content")
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "delivering to proj-wt1-aaa (docker, aaa)") {
+		t.Fatalf("worktree box not named by workdir id: %q", errw.String())
+	}
+}
+
 // TestRunSurfacesUniquifiedName pins that Run reports the box-claimed name
 // verbatim (the -2 here comes from the fake's claim loop; the REAL loop is
 // pinned by TestFileClaimLoop below).

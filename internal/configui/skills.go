@@ -339,10 +339,13 @@ const noneOption = config.NoneLabel
 
 // pickerOpts builds the option list for a template/agent picker: the discovered
 // items, then a configured-but-not-discovered value (preserved so it round-trips
-// instead of being silently dropped), then the "none" sentinel.
+// instead of being silently dropped), then the "none" sentinel. A configured
+// "none" IS the sentinel (wizard-onboarded agentless configs store it
+// literally), not a preserved value — appending it here would render the
+// sentinel twice.
 func pickerOpts(discovered []string, current string) []string {
 	opts := append([]string{}, discovered...)
-	if current != "" && !contains(opts, current) {
+	if current != "" && current != noneOption && !contains(opts, current) {
 		opts = append(opts, current)
 	}
 	return append(opts, noneOption)

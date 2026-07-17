@@ -158,6 +158,11 @@ func TestPickerOptsPreservesUnknown(t *testing.T) {
 	if got := pickerOpts([]string{"claude"}, ""); !reflect.DeepEqual(got, []string{"claude", "none"}) {
 		t.Fatalf("unset should add only none: %v", got)
 	}
+	// A configured literal "none" IS the sentinel, never a preserved value —
+	// the QA pass-2 double-[none] rendering bug.
+	if got := pickerOpts([]string{"claude"}, "none"); !reflect.DeepEqual(got, []string{"claude", "none"}) {
+		t.Fatalf("configured none duplicated the sentinel: %v", got)
+	}
 }
 
 // The item editor must validate, then add / edit / delete structured items.

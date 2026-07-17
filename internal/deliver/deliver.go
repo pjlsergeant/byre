@@ -107,8 +107,11 @@ func RunSources(cfg Config, opts Options, sources []Source) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// pickArg, not ProjectID: a worktree box shares its project's id, and
+	// naming that here made main-tree and worktree deliveries print the same
+	// line (QA pass-2 finding) — the workdir id is the box's own name.
 	fmt.Fprintf(cfg.Err, "byre: delivering to %s (%s, %s)%s\n",
-		sess.ProjectID, sess.EngineName, shortID(sess.ID), foreignNote(sess))
+		pickArg(sess), sess.EngineName, shortID(sess.ID), foreignNote(sess))
 
 	var landed []string
 	failed := 0

@@ -58,7 +58,7 @@ type statusInfo struct {
 	Containments    []skills.ContainmentDecl
 	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
 	Container       string   // this dir's running container id, or "" if none
-	SiblingSessions []string // short ids of OTHER live sessions in this project (worktrees sharing these volumes)
+	SiblingSessions []string // OTHER live sessions in this project, "workdir-id (short-id)" (worktrees sharing these volumes)
 	Rootless        bool     // true if the engine is rootless Podman
 	KeepID          bool     // rootless Podman with keep-id mapping support (the supported rootless path)
 	EngineErr       string   // why the engine/container state is unknown, if applicable
@@ -211,15 +211,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		// reset/forget correctly refuse on the project label. Empty for a plain
 		// project (no worktree siblings).
 		if fam, cerr := r.RunningContainersByLabel(projectLabel(paths)); cerr == nil {
-			mineSet := map[string]bool{}
-			for _, id := range mine {
-				mineSet[id] = true
-			}
-			for _, id := range fam {
-				if !mineSet[id] {
-					info.SiblingSessions = append(info.SiblingSessions, shortID(id))
-				}
-			}
+			info.SiblingSessions = siblingNames(r, mine, fam)
 		}
 	}
 
@@ -270,6 +262,31 @@ func hostEnvRow(m map[string]string) string {
 
 // renderStatus writes the flat, scannable "what can this thing touch?" block.
 // Raw run_args are shown verbatim and flagged as not introspected by byre.
+// siblingNames renders the OTHER live sessions of the project (fam minus
+// mine) as "workdir-id (short-id)" — the bare container id said "something
+// else is running" without saying WHICH worktree (QA pass-2 finding). The
+// label lookup is best-effort: a box missing it still shows its id.
+func siblingNames(r interface {
+	ContainerLabels(id string) (map[string]string, error)
+}, mine, fam []string) []string {
+	mineSet := map[string]bool{}
+	for _, id := range mine {
+		mineSet[id] = true
+	}
+	var names []string
+	for _, id := range fam {
+		if mineSet[id] {
+			continue
+		}
+		name := shortID(id)
+		if labels, err := r.ContainerLabels(id); err == nil && labels[workdirKey] != "" {
+			name = labels[workdirKey] + " (" + shortID(id) + ")"
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
 func renderStatus(w io.Writer, s statusInfo) {
 	row := func(label, val string) {
 		head := ""

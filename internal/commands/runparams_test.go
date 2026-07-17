@@ -2,6 +2,7 @@ package commands
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -272,6 +273,23 @@ func TestStatusRendersSiblingSessions(t *testing.T) {
 	s := kin.String()
 	if !strings.Contains(s, "2 other session") || !strings.Contains(s, "abc123def456") || !strings.Contains(s, "789beefcafe0") {
 		t.Errorf("sibling sessions not surfaced:\n%s", s)
+	}
+}
+
+// Siblings are named by workdir id — the bare container id said "something
+// else is running" without saying which worktree (QA pass-2 finding).
+func TestSiblingNamesUseWorkdirID(t *testing.T) {
+	f := &fakeRunner{labels: map[string]string{workdirKey: "proj-wt1-abc123"}}
+	got := siblingNames(f, []string{"mine00000000"}, []string{"mine00000000", "sib000000000"})
+	want := []string{"proj-wt1-abc123 (sib000000000)"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("siblingNames = %v, want %v", got, want)
+	}
+	// No label (older box, or lookup failure) falls back to the bare id.
+	bare := &fakeRunner{}
+	got = siblingNames(bare, nil, []string{"sib000000000"})
+	if !reflect.DeepEqual(got, []string{"sib000000000"}) {
+		t.Fatalf("label-less sibling should show its id: %v", got)
 	}
 }
 
