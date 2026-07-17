@@ -3,10 +3,11 @@
 ## Unreleased
 
 - **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
-  the firewall skill's apt list gains `ca-certificates` — byre installs
-  with `--no-install-recommends`, so the skill's diagnostic curl arrived
-  without a trust store on bare bases (`template = "none"`) and failed
-  TLS (77) against allowlisted hosts; the "already configured" refusal
+  the firewall and firewall-open skills' apt lists gain
+  `ca-certificates` — Debian's curl doesn't pull the trust store, so the
+  skills' own diagnostic curl arrived broken on bare bases
+  (`template = "none"`), failing TLS (77) against allowlisted/reachable
+  hosts; the "already configured" refusal
   of `--template`/`--agent`/`--shared-auth` now points at `byre config`
   as the way to reconfigure; and `byre mcp add --help` shows an argv
   example so TOML's `command = [...]` key name doesn't tempt typing the

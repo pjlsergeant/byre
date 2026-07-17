@@ -44,11 +44,12 @@
 # endpoint. They're plain clients, still subject to the netns rules — they let
 # you inspect the boundary, they don't widen it. netcat-openbsd for `nc -l`
 # must stay the OpenBSD variant (the gate uses its `-l host port` form).
-# ca-certificates rides along because byre installs with
-# --no-install-recommends, which strips the trust store curl would otherwise
-# pull in — without it, on a bare base (template = "none"), curl fails TLS
-# verification (exit 77) against ALLOWLISTED hosts, a confusing diagnostic
-# from the skill's own diagnostic tool (field-QA, 2026-07-17).
+# ca-certificates rides along because Debian's curl doesn't pull the trust
+# store (it isn't in curl's dependency chain at all — language templates get
+# it transitively via their toolchains, a bare base has nothing). Without it,
+# on template = "none", curl fails TLS verification (exit 77) against
+# ALLOWLISTED hosts — a confusing diagnostic from the skill's own diagnostic
+# tool (field-QA, 2026-07-17).
 description = "Default-deny egress firewall; allowlist derived from enabled skills."
 
 [build]

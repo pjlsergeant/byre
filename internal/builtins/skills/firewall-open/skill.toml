@@ -28,10 +28,14 @@
 # the same network diagnostics the firewall ships — a box with a denylist is
 # a box where you want to SEE what's blocked vs down. Plain clients, subject
 # to the netns rules; they inspect the boundary, they don't widen it.
+# ca-certificates rides with curl for the same reason as in the firewall
+# skill: Debian's curl doesn't pull the trust store, so on a bare base
+# (template = "none") HTTPS diagnostics would fail TLS verification (77)
+# against reachable hosts (field-QA, 2026-07-17).
 description = "Open egress with the config's !host closures dropped (open-denylist posture)."
 
 [build]
-apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "telnet"]
+apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "ca-certificates", "telnet"]
 files = { "firewall-open.sh" = "/usr/local/bin/byre-firewall-open", "launch-gate" = "/etc/byre/launch-gate" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall-open"]
 

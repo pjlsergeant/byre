@@ -257,9 +257,11 @@ case (language templates ship CA certs transitively and would mask it).
 
 None. The grok explore pass's three (2026-07-17, report-only; the
 report was absorbed here and deleted) were dispatched the same day:
-ca-certificates joined the firewall skill's apt list beside the curl
-that needed it (pinned in TestFirewallSkillResolves; the firewall
-journey above now asserts HTTPS on the none template), the
+ca-certificates joined the firewall AND firewall-open skills' apt
+lists beside the curl that needed it (codereview caught the sibling;
+pinned for both — assertCurlShipsTrustStore in the builtins tests —
+and the firewall journey above now asserts HTTPS on the none
+template), the
 already-configured flag refusal points at `byre config` as the
 reconfigure path, and `mcp add --help` carries the argv example
 (the word `command` is the TOML key, never part of the argv). The

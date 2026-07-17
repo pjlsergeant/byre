@@ -419,17 +419,22 @@ func TestFirewallSkillResolves(t *testing.T) {
 				t.Errorf("firewall skill must ship %s; files: %+v", want, sk.Files)
 			}
 		}
-		// The diagnostic curl must ride with its trust store: byre installs
-		// with --no-install-recommends, so dropping ca-certificates from the
-		// apt list makes curl fail TLS (77) against ALLOWLISTED hosts on a
-		// bare base (field-QA, 2026-07-17).
-		apt := map[string]bool{}
-		for _, p := range sk.File.Build.Apt {
-			apt[p] = true
-		}
-		if !apt["curl"] || !apt["ca-certificates"] {
-			t.Errorf("firewall skill must ship curl AND ca-certificates (apt = %v) — TLS diagnostics break on minimal bases without the pair", sk.File.Build.Apt)
-		}
+		assertCurlShipsTrustStore(t, "firewall", sk.File.Build.Apt)
+	}
+}
+
+// assertCurlShipsTrustStore pins curl and ca-certificates traveling together
+// in a skill's apt list: Debian's curl doesn't pull the trust store, so on a
+// bare base (template = "none") HTTPS diagnostics fail TLS verification (77)
+// against reachable hosts without the pair (field-QA, 2026-07-17).
+func assertCurlShipsTrustStore(t *testing.T, skill string, apt []string) {
+	t.Helper()
+	have := map[string]bool{}
+	for _, p := range apt {
+		have[p] = true
+	}
+	if !have["curl"] || !have["ca-certificates"] {
+		t.Errorf("%s skill must ship curl AND ca-certificates (apt = %v) — TLS diagnostics break on minimal bases without the pair", skill, apt)
 	}
 }
 
@@ -476,6 +481,9 @@ func TestFirewallOpenSkillResolves(t *testing.T) {
 				t.Errorf("firewall-open skill must ship %s; files: %+v", want, sk.Files)
 			}
 		}
+		// Same diagnostic toolkit, same trust-store requirement as the
+		// firewall sibling.
+		assertCurlShipsTrustStore(t, "firewall-open", sk.File.Build.Apt)
 	}
 	if _, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall", "firewall-open"}}, cat); err == nil {
 		t.Error("firewall + firewall-open must be rejected (two posture declarers)")
