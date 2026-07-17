@@ -55,7 +55,7 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 			return err
 		}
 		if out != nil {
-			fmt.Fprintf(out, "byre: refreshed ~/.byre/bundled mirror for %s\n", byreVer)
+			fmt.Fprintf(out, "byre: refreshed %s mirror for %s\n", DisplayPath(filepath.Join(home, "bundled")), byreVer)
 		}
 	}
 

@@ -28,7 +28,7 @@ func SkillUpdate(s Streams) error {
 	}
 	fmt.Fprintln(s.Err, "byre: bundled skills and templates now update with byre itself.")
 	fmt.Fprintln(s.Err, "      There is nothing for `byre skill update` to materialize.")
-	fmt.Fprintf(s.Err, "      Running byre %s; the ~/.byre/bundled mirror matches this version.\n", version.String())
+	fmt.Fprintf(s.Err, "      Running byre %s; the %s mirror matches this version.\n", version.String(), packages.DisplayPath(filepath.Join(home, "bundled")))
 	cat, err := builtins.LoadCatalogRaw(home)
 	if err != nil {
 		return err

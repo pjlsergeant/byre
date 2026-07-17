@@ -61,7 +61,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 				return fmt.Errorf("agents guide: cannot preserve the existing AGENTS.md (not byre's): %w", berr)
 			}
 			if out != nil {
-				fmt.Fprintf(out, "byre: ~/.byre/AGENTS.md existed but is not byre's -- preserved it as %s\n", filepath.Base(bak))
+				fmt.Fprintf(out, "byre: %s existed but is not byre's -- preserved it as %s\n", DisplayPath(path), filepath.Base(bak))
 			}
 		}
 	}
@@ -84,7 +84,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 		return fmt.Errorf("agents guide: %w", err)
 	}
 	if out != nil {
-		fmt.Fprintln(out, "byre: wrote ~/.byre/AGENTS.md (byre-owned agent guide)")
+		fmt.Fprintf(out, "byre: wrote %s (byre-owned agent guide)\n", DisplayPath(path))
 	}
 	return nil
 }
