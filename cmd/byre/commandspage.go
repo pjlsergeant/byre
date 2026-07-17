@@ -41,7 +41,7 @@ description: every byre command, generated from the binary
 
 Every command, one line each, straight from the binary. Flags and detail:
 ` + "`byre <command> --help`" + ` -- and
-[completions](/docs/how-do-i/#get-tab-completion-for-byre-commands) cover
+[completions](/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands) cover
 every command and flag.
 
 | Command | What it does |

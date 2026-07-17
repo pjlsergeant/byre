@@ -106,8 +106,14 @@ exceptions noted inline.
 - `[[volumes]]` -- named volumes: `name`, `role` (`"cache"` or
   `"state"`), `target`, optional `scope = "machine"` (per-user
   machine-wide; default is per-project), optional `seed` for state
-  volumes (`host` path or `literal` + `path`; never on machine scope).
-  See [Volumes & state](/docs/volumes-and-state/).
+  volumes (`host` path or `literal` + `path`; never on machine scope --
+  a seed populates a fresh state volume exactly once, a copy, never a
+  live share). On the engine the names are legible:
+  `byre-<project-id>-<name>` for project scope,
+  `byre-machine-u<uid>-<name>` for machine scope -- per *user*
+  deliberately, so two users on a shared box never silently share
+  state. See [Volumes & state](/docs/volumes-and-state/) for the
+  user-side model.
 - `run_args` -- raw `docker run` flags, appended after byre's own, so
   yours win. Cap resources (`--cpus`, `--memory`), change networking --
   anything the engine accepts. byre never parses inside it; posture
@@ -165,4 +171,4 @@ Build side: `base`, `apt`, `npm_global`, `[files]`, `[env]`, then
 `[[mounts]]`, `[[volumes]]`, `[env_from_host]`, then `run_args` for the
 rest. There is deliberately no full-Dockerfile opt-out -- if you want to
 own the whole file, `byre dockerfile` prints it and you can
-[leave](/docs/how-do-i/#stop-using-byre).
+[leave](/docs/how-do-i/recovery/#stop-using-byre).

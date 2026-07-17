@@ -7,6 +7,16 @@
       <li>
         <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
         {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+        {{ if .IsSection }}
+        <ul class="docs-nav-children">
+          {{ range .Pages.ByWeight }}
+          <li>
+            <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
+            {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+          </li>
+          {{ end }}
+        </ul>
+        {{ end }}
       </li>
       {{ end }}
     </ul>

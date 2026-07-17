@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -16,10 +18,19 @@ import (
 // identical tldr.
 func TestHowDoITldrsMatchSite(t *testing.T) {
 	readme := readFileT(t, "../../README.md")
-	cookbook := readFileT(t, "../../site/content/docs/how-do-i.md")
+	files, err := filepath.Glob("../../site/content/docs/how-do-i/*.md")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("globbing cookbook pages: %v (%d files)", err, len(files))
+	}
+	sort.Strings(files)
+	var cookbook strings.Builder
+	for _, f := range files {
+		cookbook.WriteString(readFileT(t, f))
+		cookbook.WriteString("\n")
+	}
 
 	got := readmeIndexPairs(readme)
-	want := cookbookPairs(cookbook)
+	want := cookbookPairs(cookbook.String())
 
 	if len(got) == 0 || len(want) == 0 {
 		t.Fatalf("extracted %d README pairs and %d cookbook pairs -- extraction broke, fix the test", len(got), len(want))
@@ -76,15 +87,15 @@ func readmeIndexPairs(readme string) [][2]string {
 	return pairs
 }
 
-// cookbookPairs parses the site cookbook: each ### heading is a question
-// (entries sit under ## reader-situation groups), and its first paragraph
-// must be the tldr.
+// cookbookPairs parses the cookbook's group pages (concatenated): each ##
+// heading ending in "?" is a question, and its first paragraph must be
+// the tldr.
 func cookbookPairs(cookbook string) [][2]string {
 	var pairs [][2]string
-	blocks := strings.Split(cookbook, "\n### ")[1:]
+	blocks := strings.Split(cookbook, "\n## ")[1:]
 	for _, blk := range blocks {
 		heading, rest, ok := strings.Cut(blk, "\n\n")
-		if !ok {
+		if !ok || !strings.HasSuffix(heading, "?") {
 			continue
 		}
 		para := rest

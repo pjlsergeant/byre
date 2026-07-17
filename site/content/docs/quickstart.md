@@ -21,7 +21,7 @@ remembers your answers:
   Codex, Gemini, Grok, OpenCode).
 - **Shared login** -- for agents that support it, whether this box uses
   your machine-wide credentials instead of a per-project login (see
-  [How do I…?](/docs/how-do-i/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box)).
+  [How do I…?](/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box)).
 
 Your favourites become the pre-selected defaults, so the second project's
 picker is a couple of Enters. Log the agent in once; the login persists,

@@ -201,68 +201,68 @@ Every answer's full recipe lives in the
 tldr: say **y** when the first-run picker offers shared auth for your
 agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
 by hand.
-([recipe](https://getbyre.com/docs/how-do-i/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box))
+([recipe](https://getbyre.com/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box))
 
 **Run parallel agents on the same repo?**
 tldr: `byre worktree <branch>` -- a linked git worktree plus a second
 boxed session in it, one command.
-([recipe](https://getbyre.com/docs/how-do-i/#run-parallel-agents-on-the-same-repo))
+([recipe](https://getbyre.com/docs/how-do-i/workflow/#run-parallel-agents-on-the-same-repo))
 
 **Set up two agents in a review loop?**
 tldr: keep one agent as `agent`, enable a second agent's skill as a
 ride-along -- byre's own box runs Claude with codex beside it as the
 independent reviewer.
-([recipe](https://getbyre.com/docs/how-do-i/#set-up-two-agents-in-a-review-loop))
+([recipe](https://getbyre.com/docs/how-do-i/workflow/#set-up-two-agents-in-a-review-loop))
 
 **Bring my dotfiles and shell setup into every box?**
 tldr: mount them read-only -- `byre config --global` -> Mounts -- and
 the box's target mirrors your home path, so they land where the agent
 looks.
-([recipe](https://getbyre.com/docs/how-do-i/#bring-my-dotfiles-and-shell-setup-into-every-box))
+([recipe](https://getbyre.com/docs/how-do-i/configure/#bring-my-dotfiles-and-shell-setup-into-every-box))
 
 **Share one config baseline across many projects?**
 tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
 (`byre config`, EXTENDS section).
-([recipe](https://getbyre.com/docs/how-do-i/#share-one-config-baseline-across-many-projects))
+([recipe](https://getbyre.com/docs/how-do-i/toolkit/#share-one-config-baseline-across-many-projects))
 
 **Paste or drag-and-drop images and files into my agent?**
 tldr: `byre deliver <file>` -- or just `byre deliver` and paste (or
 drop a file on the window).
-([recipe](https://getbyre.com/docs/how-do-i/#paste-or-drag-and-drop-images-and-files-into-my-agent))
+([recipe](https://getbyre.com/docs/how-do-i/workflow/#paste-or-drag-and-drop-images-and-files-into-my-agent))
 
 **Get tab completion for byre commands?**
 tldr: `eval "$(byre completion bash)"` in your shell's startup file.
-([recipe](https://getbyre.com/docs/how-do-i/#get-tab-completion-for-byre-commands))
+([recipe](https://getbyre.com/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands))
 
 **Restrict network access?**
 tldr: `byre config` and enable the _firewall_ skill, then pick what to
 open under Egress.
-([recipe](https://getbyre.com/docs/how-do-i/#restrict-network-access))
+([recipe](https://getbyre.com/docs/how-do-i/configure/#restrict-network-access))
 
 **Mount other folders from the host?**
 tldr: `byre config` -> Mounts.
-([recipe](https://getbyre.com/docs/how-do-i/#mount-other-folders-from-the-host))
+([recipe](https://getbyre.com/docs/how-do-i/configure/#mount-other-folders-from-the-host))
 
 **Run other Docker containers from inside the byre environment?**
 tldr: `byre config` and enable the _docker-host_ skill.
-([recipe](https://getbyre.com/docs/how-do-i/#run-other-docker-containers-from-inside-the-byre-environment))
+([recipe](https://getbyre.com/docs/how-do-i/configure/#run-other-docker-containers-from-inside-the-byre-environment))
 
 **Get the coding agent to edit its own byre config?**
 tldr: `byre develop --self-edit` -- the box gets its own config mounted,
 and changes are shown on exit.
-([recipe](https://getbyre.com/docs/how-do-i/#get-the-coding-agent-to-edit-its-own-byre-config))
+([recipe](https://getbyre.com/docs/how-do-i/configure/#get-the-coding-agent-to-edit-its-own-byre-config))
 
 **Stop using byre?**
 tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
 `byre ejectfirewall` prints the firewall's step.
-([recipe](https://getbyre.com/docs/how-do-i/#stop-using-byre))
+([recipe](https://getbyre.com/docs/how-do-i/recovery/#stop-using-byre))
 
 **…do something not listed here?**
 tldr: point your agent at
 [github.com/pjlsergeant/byre](https://github.com/pjlsergeant/byre) and
 ask.
-([recipe](https://getbyre.com/docs/how-do-i/#do-something-not-listed-here))
+([recipe](https://getbyre.com/docs/how-do-i/recovery/#do-something-not-listed-here))
 
 ## Platform
 

@@ -4,34 +4,23 @@ weight: 70
 description: what survives a rebuild, what's disposable, and which hammer resets what
 ---
 
-The container is throwaway; the volumes and image are not. Every
-`byre develop` runs a fresh container and removes it on exit -- what
-persists between sessions is the project's image and its **named
-volumes**. Two axes describe a volume:
+The container is throwaway; your state is not. Every `byre develop`
+runs a fresh container and removes it on exit -- what carries over is
+the project's image and its named volumes:
 
-- **Role.** A **cache** volume (`node_modules`, build caches) is
-  disposable -- wiping it is a shrug, it regenerates. A **state**
-  volume (`.claude`, `.codex`) is precious: the agent's login, history,
-  and scratch live there, so anything that would delete one warns and
-  names it first.
-- **Scope.** A **project** volume (the default) exists once per
-  project. A **machine** volume exists once per user per machine and is
-  mounted identically by every project that declares it -- that's how
-  the shared-auth skills make one agent login serve every box. The
-  per-user qualifier is deliberate: two users on a shared machine never
-  silently share state.
-
-On the engine the names are legible: `byre-<project-id>-<name>` for
-project volumes, `byre-machine-u<uid>-<name>` for machine volumes. A
-state volume can carry a one-time `seed` (a host path, or inline
-non-secret content) that populates it on first creation -- a copy,
-never a live share, and never on machine scope.
+- **Cache volumes** (`node_modules`, build caches) are disposable.
+  Losing one costs a re-download; templates set up the obvious ones.
+- **State volumes** (`.claude`, `.codex`) are precious: the agent's
+  login, history, and scratch. Anything that would delete one names it
+  first and asks.
+- **Machine-wide volumes** hold shared agent logins -- one per user per
+  machine, used by every project that opts in. That's how
+  [shared auth](/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box)
+  makes one login serve every box.
 
 Agents log in once, inside the box, and the login lands in the agent's
 state volume -- byre never reads or copies host credentials; nothing
 crosses unless you enable it, and what you enable, `byre status` shows.
-See the cookbook for
-[sharing one login across projects](/docs/how-do-i/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box).
 
 ## Which hammer
 
@@ -60,3 +49,6 @@ from the path, so the old image and volumes would be orphaned --
 `byre rehome <old-id>` migrates them onto the new path. Bare
 `byre rehome` lists likely candidates: stored projects whose recorded
 path no longer exists.
+
+Declaring your own volumes, engine-side naming, and one-time seeds:
+the [configuration reference](/docs/configuration-reference/#key-reference).

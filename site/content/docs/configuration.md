@@ -50,7 +50,7 @@ the footer names it outright (`Saves to: ~/.byre/projects/<id>/byre.config`).
   [layer](/docs/configuration-reference/#named-layers).
 - `byre develop --self-edit` -- let the *agent* edit this box's config
   from inside; announced at launch, diffed at exit
-  ([recipe](/docs/how-do-i/#get-the-coding-agent-to-edit-its-own-byre-config)).
+  ([recipe](/docs/how-do-i/configure/#get-the-coding-agent-to-edit-its-own-byre-config)).
 
 ## Prefer a text editor?
 

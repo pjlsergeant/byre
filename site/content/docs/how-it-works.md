@@ -54,7 +54,7 @@ to `dev` before anything runs.
 
 Those four commands are also the exit: byre either generates the build
 or isn't involved, so the day you stop wanting it, the files are yours
-and [you leave](/docs/how-do-i/#stop-using-byre) with a working
+and [you leave](/docs/how-do-i/recovery/#stop-using-byre) with a working
 Dockerfile. The deeper design -- block ordering, the chassis, engine
 abstraction, project identity -- is
 [docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md).

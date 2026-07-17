@@ -157,6 +157,13 @@ hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
 .docs-nav #TableOfContents a:hover { color: var(--link); }
 .docs-nav #TableOfContents:empty { display: none; }
 
+/* A section's child pages (the cookbook's groups), nested as real links */
+.docs-nav .docs-nav-children {
+  padding-left: 0.85rem;
+  margin: 0.15rem 0 0.4rem;
+  border-left: 1px solid var(--border);
+}
+
 @media (min-width: 72rem) {
   .docs-wrap { position: relative; }
   .docs-nav {
