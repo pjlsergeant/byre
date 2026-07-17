@@ -305,6 +305,41 @@ flakes-twice rule applies. Placement (P11 applied):
 Engine-bound casts sit in pages identically to generated ones; which is
 which lives in the scenario inventory (P9), not on the page.
 
+Until a cast exists, its slot carries a visible placeholder in the page
+(blockquote marker + `<!-- demo-placeholder: <slug> -->` comment), so
+the layout is judged with the demo's space reserved and the placeholder
+inventory is grep-able.
+
+### The cookbook (decided 2026-07-17)
+
+The bar for a cookbook entry: a question a real user has, a one-or-two
+line tldr, a shipped feature behind it. Entries group by the reader's
+situation (configuring the box; daily workflow; skills & templates;
+lifecycle & recovery). The README index carries the show-off subset
+only (P6); the rest are cookbook-only, found by question when needed.
+The closing entry is always last in both index and cookbook: **"…do
+something not listed here?"** -- point your agent at the repo (P4 as a
+user-facing feature; the long tail of the cookbook nobody has to
+write).
+
+Deliberately not written, so they don't get re-raised: "free disk
+space" (story is per-project `forget`; advertises a gap); "see the
+agent's network calls" (that's the future resolver-sidecar work); "box
+a folder of many repos" (mechanics allow it, but the recipe would bless
+an anti-pattern against the per-project story); one-off command in the
+box / CI / subfolder mount exclusions / offline (no feature, wrong
+shape, not shipped, moot).
+
+### CONTRIBUTING.md (shipped 2026-07-17)
+
+A repo `CONTRIBUTING.md`, canonical repo-side per P8 -- contributors
+are the repo-docs reader, and GitHub surfaces the file natively on
+issues and PRs. The site links it, never mirrors. Content: this repo's
+unusual conventions (TODO.md authoritative, the `wip/` lifecycle, ADRs,
+the binding glossary), the dev environment pointer, and
+young-single-maintainer expectations; written knowing agents read it
+too (P4).
+
 ## Sources (verified 2026-07-03)
 
 - Docker Sandboxes: docs.docker.com/ai/sandboxes (get-started shows `sbx
