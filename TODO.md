@@ -17,6 +17,12 @@ the rationale lives.
 
 ## Open
 
+- [ ] (S) **Uninstall refscan misses layer files** (codex review,
+  2026-07-17): `scanReferences` (internal/commands/refscan.go) reads
+  default.config + project configs but not `~/.byre/layers/*/layer.config`,
+  so a layer-only reference dodges uninstall's warning. Fails loudly at
+  the next develop, so no silent breakage. Fix: scan the layers glob too.
+
 - [ ] (S) **Volumes page polish** (Pete, 2026-07-17): make the config
   editor's Volumes screen nicer. The 07-17 pass fixed the mechanics
   (content-sized columns, engine-degrade notes, honest empty states);
