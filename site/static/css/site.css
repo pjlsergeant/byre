@@ -31,6 +31,12 @@ body {
 
 a { color: var(--link); }
 
+/* In-prose mentions of the name (wrapped by js/wordmark.js) */
+.byre-mark {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 main {
   max-width: 46rem;
   margin: 0 auto;
