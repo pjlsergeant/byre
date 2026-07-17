@@ -125,12 +125,26 @@ var rawFieldKey = map[fieldID]string{
 // labelWidth is the padded width of the label column ("Dockerfile before" is longest).
 const labelWidth = 17
 
+// accentColor is the ONE structural color: the cursor, section headers, and
+// the focused picker selection. ANSI 4-bit, so the terminal theme picks the
+// shade and monochrome terminals drop it cleanly. The other colors carry
+// fixed semantics — red = errors, green = saved — and yellow stays reserved
+// for warnStyle alone (cross-project reach must never blend in).
+var accentColor = lipgloss.Color("6")
+
 var (
-	focusStyle = lipgloss.NewStyle().Bold(true)
-	selStyle   = lipgloss.NewStyle().Reverse(true)            // chosen option, unfocused row
-	selFocus   = lipgloss.NewStyle().Reverse(true).Bold(true) // chosen option, focused row
-	dimStyle   = lipgloss.NewStyle().Faint(true)
-	errStyle   = lipgloss.NewStyle().Bold(true)
+	focusStyle  = lipgloss.NewStyle().Bold(true)
+	accentStyle = lipgloss.NewStyle().Foreground(accentColor)
+	cursorStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	selStyle    = lipgloss.NewStyle().Reverse(true)                                    // chosen option, unfocused row
+	selFocus    = lipgloss.NewStyle().Reverse(true).Bold(true).Foreground(accentColor) // chosen option, focused row
+	dimStyle    = lipgloss.NewStyle().Faint(true)
+	// errStyle is for BANNERS — the unsaved dot, destructive confirms, the
+	// comment warning. Actual error messages get errTextStyle (bold red, via
+	// errLine); on a monochrome terminal both degrade to the same bold.
+	errStyle     = lipgloss.NewStyle().Bold(true)
+	errTextStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
+	okStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	// warnStyle marks cross-project reach — the one thing in this UI that
 	// escapes the current scope must not blend in (ANSI yellow, bold).
 	warnStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
@@ -759,11 +773,6 @@ func footerStart(lines []string) int {
 	return 0
 }
 
-// clipLines truncates every rendered line to the terminal width (ANSI-aware).
-// The inline bubbletea renderer counts the lines it drew to repaint them; a
-// line that WRAPS breaks that accounting and strands stale rows from the
-// previous frame on screen (found live 2026-07-08: a long Egress summary row
-// left the form row above it behind on the item-editor screen).
 // errLine renders an error/validation message wrapped to the terminal width
 // as REAL newline-separated lines. clipLines truncates any longer line
 // (deliberately: soft-wrapped lines break the row accounting), which cut
@@ -771,18 +780,25 @@ func footerStart(lines []string) int {
 // user input, so their length is unbounded (field-QA 2026-07-17, finding 5).
 func (m model) errLine(msg string) string {
 	if m.width > 0 {
-		return errStyle.Render(ansi.Wrap("✗ "+msg, m.width, ""))
+		return errTextStyle.Render(ansi.Wrap("✗ "+msg, m.width, ""))
 	}
-	return errStyle.Render("✗ " + msg)
+	return errTextStyle.Render("✗ " + msg)
 }
 
+// clipLines truncates every rendered line to the terminal width (ANSI-aware).
+// The inline bubbletea renderer counts the lines it drew to repaint them; a
+// line that WRAPS breaks that accounting and strands stale rows from the
+// previous frame on screen (found live 2026-07-08: a long Egress summary row
+// left the form row above it behind on the item-editor screen). The "…" tail
+// makes the clipping visible — same language as clipHeight's "··· (more
+// above)" markers — instead of content silently ending at the edge.
 func clipLines(s string, width int) string {
 	if width <= 0 {
 		return s
 	}
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		lines[i] = ansi.Truncate(l, width, "")
+		lines[i] = ansi.Truncate(l, width, "…")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -796,12 +812,12 @@ func (m model) viewForm() string {
 
 	focusedField := m.field()
 	for _, s := range m.sections {
-		fmt.Fprintf(&b, "%s\n", dimStyle.Render(s.title))
+		fmt.Fprintf(&b, "%s\n", m.sectionRule(s.title))
 		for _, f := range s.fields {
 			focused := f == focusedField
 			cursor := "  "
 			if focused {
-				cursor = focusStyle.Render("▸ ")
+				cursor = cursorStyle.Render("▸ ")
 			}
 			label := fmt.Sprintf("%-*s", labelWidth, fieldLabel[f])
 			if focused {
@@ -821,7 +837,7 @@ func (m model) viewForm() string {
 	case m.dirty():
 		b.WriteString(errStyle.Render("● Unsaved changes") + dimStyle.Render("  (ctrl+s to save)"))
 	case m.status != "":
-		b.WriteString(dimStyle.Render(m.status))
+		b.WriteString(statusNote(m.status))
 	default:
 		b.WriteString(dimStyle.Render("No unsaved changes"))
 	}
@@ -831,8 +847,29 @@ func (m model) viewForm() string {
 		b.WriteString("\n" + errStyle.Render("⚠ this file has hand-written comments — ^s rewrites it and DROPS them (raw blocks survive; use ^e to edit without losing comments)"))
 	}
 	b.WriteString("\n" + dimStyle.Render("Saves to: "+m.filePath))
-	b.WriteString("\n" + dimStyle.Render("↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · ^q quit"))
+	b.WriteString("\n" + helpLine("↑↓", "move", "←→", "change", "↵", "open", "^s", "save", "^e", "$EDITOR", "^q", "quit"))
 	return b.String()
+}
+
+// sectionRule renders a section header as a rule filled toward the terminal
+// width — the section name in the accent color, its description and the
+// dashes dim. Structure without borders: full boxes would eat width and
+// fight clipHeight's blank-separator footer detection.
+func (m model) sectionRule(title string) string {
+	name, desc, cut := strings.Cut(title, " — ")
+	t := accentStyle.Render(name)
+	if cut {
+		t += dimStyle.Render(" — " + desc)
+	}
+	line := dimStyle.Render("── ") + t
+	w := m.width
+	if w > 76 {
+		w = 76 // a full-width rule on an ultrawide terminal is a smear, not structure
+	}
+	if fill := w - ansi.StringWidth("── "+title+" "); fill > 0 {
+		line += " " + dimStyle.Render(strings.Repeat("─", fill))
+	}
+	return line
 }
 
 func (m model) renderValue(f fieldID, focused bool) string {
@@ -1084,9 +1121,35 @@ func cursorMove(key string, cur, n int) (newCur int, ok bool) {
 // marker and bold emphasis, the rest a plain two-space indent.
 func cursorLine(selected bool, line string) string {
 	if selected {
-		return focusStyle.Render("▸ ") + focusStyle.Render(line)
+		return cursorStyle.Render("▸ ") + focusStyle.Render(line)
 	}
 	return "  " + line
+}
+
+// crumb renders a sub-screen title with a dim breadcrumb back to the session
+// title (which file this edits) — orientation two screens deep, the same job
+// the form's "Saves to:" line does on the root screen.
+func (m model) crumb(screen string) string {
+	return focusStyle.Render(screen) + dimStyle.Render("  ·  "+m.title)
+}
+
+// helpLine renders the footer key help from key/verb pairs: keys at normal
+// intensity, verbs faint — scannable, not a uniform grey smear.
+func helpLine(pairs ...string) string {
+	parts := make([]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		parts = append(parts, pairs[i]+" "+dimStyle.Render(pairs[i+1]))
+	}
+	return strings.Join(parts, dimStyle.Render(" · "))
+}
+
+// statusNote renders a transient status line: the save confirmation gets its
+// own green (the state the eye checks most often), everything else stays dim.
+func statusNote(s string) string {
+	if s == savedStatus {
+		return okStyle.Render(s)
+	}
+	return dimStyle.Render(s)
 }
 
 // subFooterNote is the status/error line the sub-screens show above their key
@@ -1098,7 +1161,7 @@ func (m model) subFooterNote() string {
 		return m.errLine(m.errMsg)
 	}
 	if m.status != "" {
-		return dimStyle.Render(m.status)
+		return statusNote(m.status)
 	}
 	return ""
 }

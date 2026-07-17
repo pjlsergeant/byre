@@ -265,7 +265,7 @@ func removeString(s []string, v string) []string {
 
 func (m model) viewSkills() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render("Skills"))
+	fmt.Fprintf(&b, "%s\n\n", m.crumb("Skills"))
 	entries := m.skillEntries()
 	if len(entries) == 0 {
 		b.WriteString(dimStyle.Render("  (no skills discovered)\n"))
@@ -329,7 +329,10 @@ func (m model) viewSkills() string {
 	if note := m.subFooterNote(); note != "" {
 		b.WriteString("\n" + note)
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · space toggle (inherited: adds/removes a !name override) · ^s save · esc back"))
+	// The inherited-toggle nuance rides its own line: inside the key help it
+	// pushed "esc back" past 80 columns and got clipped.
+	b.WriteString("\n" + dimStyle.Render("(toggling an inherited skill adds/removes a !name override in this file)"))
+	b.WriteString("\n" + helpLine("↑/↓", "move", "space", "toggle", "^s", "save", "esc", "back"))
 	return b.String()
 }
 

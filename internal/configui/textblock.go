@@ -72,16 +72,16 @@ func (m model) updateText(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewText() string {
-	hint := "one per line"
-	title := fieldLabel[m.textField]
+	title := focusStyle.Render(fieldLabel[m.textField])
 	if key := rawFieldKey[m.textField]; key != "" {
 		title += dimStyle.Render("  (" + key + ")") // keep the TOML key discoverable
 	}
-	return fmt.Sprintf("%s\n\n%s — ctrl+s accept + save · esc cancel\n%s\n\n%s\n",
+	title += dimStyle.Render("  ·  " + m.title) // crumb, hand-built around the key hint
+	return fmt.Sprintf("%s\n%s\n\n%s\n\n%s\n",
 		title,
-		dimStyle.Render("edit "+fieldLabel[m.textField]),
-		dimStyle.Render("("+hint+")"),
-		m.ta.View())
+		dimStyle.Render("(one per line)"),
+		m.ta.View(),
+		helpLine("^s", "accept + save", "esc", "cancel"))
 }
 
 // splitLines parses one item per line, dropping blanks/whitespace.

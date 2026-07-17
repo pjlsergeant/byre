@@ -1065,7 +1065,7 @@ func splitArgv(s string) ([]string, error) {
 
 func (m model) viewList() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(fieldLabel[m.listField]))
+	fmt.Fprintf(&b, "%s\n\n", m.crumb(fieldLabel[m.listField]))
 	rows := m.fieldRows(m.listField)
 	if len(rows) == 0 {
 		b.WriteString(dimStyle.Render("  (no items yet)\n"))
@@ -1091,7 +1091,7 @@ func (m model) viewList() string {
 	if note := m.subFooterNote(); note != "" {
 		b.WriteString("\n" + note)
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter actions · a add · ^s save · esc back"))
+	b.WriteString("\n" + helpLine("↑/↓", "move", "enter", "actions", "a", "add", "^s", "save", "esc", "back"))
 	return b.String()
 }
 
@@ -1146,7 +1146,7 @@ func (m model) viewMenu() string {
 	if note := m.subFooterNote(); note != "" {
 		b.WriteString("\n" + note)
 	}
-	b.WriteString("\n" + dimStyle.Render("↑/↓ move · enter apply · ^s save · esc back"))
+	b.WriteString("\n" + helpLine("↑/↓", "move", "enter", "apply", "^s", "save", "esc", "back"))
 	return b.String()
 }
 
@@ -1182,7 +1182,7 @@ func (m model) viewItem() string {
 	if m.editIndex < 0 {
 		verb = "Add"
 	}
-	fmt.Fprintf(&b, "%s\n\n", focusStyle.Render(verb+" "+itemTitle(m.listField)))
+	fmt.Fprintf(&b, "%s\n\n", m.crumb(verb+" "+itemTitle(m.listField)))
 
 	// Label column sized to the widest label this form shows, so optional/
 	// required annotations don't push the colons out of line.
@@ -1198,7 +1198,7 @@ func (m model) viewItem() string {
 	picker := func() {
 		cursor := "  "
 		if m.onModePicker() {
-			cursor = focusStyle.Render("▸ ")
+			cursor = cursorStyle.Render("▸ ")
 		}
 		label := fmt.Sprintf("%-*s", pad, m.itemModeLabel)
 		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, renderSeg(m.itemModeOpts, m.itemMode, m.onModePicker()))
@@ -1210,7 +1210,7 @@ func (m model) viewItem() string {
 		cursor := "  "
 		val := in.View()
 		if i == m.itemInputIndex() {
-			cursor = focusStyle.Render("▸ ")
+			cursor = cursorStyle.Render("▸ ")
 			val += dimStyle.Render(m.ghostSuffix()) // autocomplete/suggestion ghost
 		}
 		fmt.Fprintf(&b, "%s%-*s: %s\n", cursor, pad, m.itemLabel(i), val)
@@ -1225,14 +1225,14 @@ func (m model) viewItem() string {
 	if m.itemErr != "" {
 		b.WriteString("\n" + m.errLine(m.itemErr))
 	}
-	hint := "tab next · enter accept · ^s save · esc cancel"
+	hint := helpLine("tab", "next", "enter", "accept", "^s", "save", "esc", "cancel")
 	switch {
 	case m.listField == fMounts:
-		hint = "tab next · → accept suggestion · ←/→ mode · enter accept · ^s save · esc cancel"
+		hint = helpLine("tab", "next", "→", "accept suggestion", "←/→", "mode", "enter", "accept", "^s", "save", "esc", "cancel")
 	case m.itemHasMode:
-		hint = "tab next · ←/→ " + strings.ToLower(m.itemModeLabel) + " · enter accept · ^s save · esc cancel"
+		hint = helpLine("tab", "next", "←/→", strings.ToLower(m.itemModeLabel), "enter", "accept", "^s", "save", "esc", "cancel")
 	}
-	b.WriteString("\n\n" + dimStyle.Render(hint))
+	b.WriteString("\n\n" + hint)
 	return b.String()
 }
 
