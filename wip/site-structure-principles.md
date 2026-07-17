@@ -115,7 +115,21 @@ emits the page, so a new command cannot ship without its line and the
 table cannot rot. Same move as shell completions: derive from the binary,
 never hand-sync.
 
-### Sketch: publish-time asciinema demos (P9+P10 extended; not yet decided)
+**P11. Show the surface, don't describe it.** Wherever a site page
+teaches an interactive surface, a demo cast is the page's opening
+artifact -- the default, not the exception. Disciplines: one demo per
+page/section, doing that page's job (a cast that isn't demonstrating the
+thing taught is decoration -- cut it); every embed's poster frame is the
+final screen, so a non-playing reader still gets the static artifact;
+and where the cast shows the interaction, the prose stops narrating
+keystrokes and states outcomes (P6's genre split -- the demo owns "how
+it feels", prose owns "what it means"). The README stays text (P7), but
+its pinned console blocks become *derived* from the same scenarios'
+final-screen captures -- the demo test emits the cast for the site and
+the text block the README embeds, turning the status/marketing lockstep
+tripwire from a checklist into a build product.
+
+### Publish-time asciinema demos (assumed feasible 2026-07-17; prototype still owed)
 
 The tuitest substrate (ADR 0038) can record site demos: an `asciinema rec
 -c "tmux -L <socket> attach"` spectator alongside the existing driver
@@ -138,6 +152,20 @@ is the backstop). Flake discipline gains teeth: a flaky demo breaks
 publishes, and the flakes-twice rule carries over. To prototype first:
 asciinema under headless CI with geometry pinned to the pane, and a
 seeded store whose `status` output presents well. Rough size: (M).
+
+Placement (P11 applied; decided 2026-07-17):
+
+| Where | Demo |
+|---|---|
+| Landing | the hero clip only (develop → Claude; VM-recorded) -- one cast, then the table and the pitch; resist the arcade |
+| `/docs/quickstart/` | first-run picker + `status` (generated) |
+| `/docs/configuration/` | the `byre config` TUI walk -- the flagship generated demo |
+| Cookbook | per-recipe where interactive: deliver paste flow (generated), completion (generated, short); firewall / worktrees (engine-bound → VM-recorded, added when recorded) |
+| `/docs/install/`, `/docs/commands/`, volumes, contract | none -- nothing interactive; text artifacts suffice |
+
+Engine-bound casts sit in pages identically to generated ones; which is
+which lives in the scenario inventory (P9), not on the page -- the
+reader doesn't care, the sweep does.
 
 ## Disposition map (the principles, applied)
 
