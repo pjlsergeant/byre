@@ -255,7 +255,20 @@ case (language templates ship CA certs transitively and would mask it).
 
 ## Open findings
 
-None. The grok explore pass's three (2026-07-17, report-only; the
+From the codex lifecycle/config explore pass (2026-07-17, report-only):
+
+1. (product, low-medium, lifecycle recovery) Losing the controlling terminal
+   leaves an agent-less session running but detached from `byre`. Reproduced
+   twice: launch `develop` under a private tmux server, wait for the in-box
+   prompt, then kill the pane or the whole tmux server. The host-side `byre`
+   and docker client are gone, but the container remains running after 3s and
+   is still executable; `status` calls it running and `reset --force` refuses
+   it. Normal `exit` removes the same container. Recovery is `docker stop
+   <id>`; consider arranging cleanup on client hangup, or explicitly
+   documenting intentional detach and giving the recovery command at the
+   refusal.
+
+The grok explore pass's three (2026-07-17, report-only; the
 report was absorbed here and deleted) were dispatched the same day:
 ca-certificates joined the firewall AND firewall-open skills' apt
 lists beside the curl that needed it (codereview caught the sibling;
@@ -273,6 +286,11 @@ The same pass confirmed green (no recipes yet — graduate on a future
 pass): host mounts + store-edit apt, deliver of a directory, self-edit
 round-trip + exit report, skill fork, rehome after `mv`, rebuild,
 docker-host containment-hole loudness, forget --force.
+
+The codex lifecycle/config pass also confirmed three-level named-layer
+composition and project precedence, live layer-cycle detection/recovery,
+self-edit's project-only store mount, invalid-config recovery via
+`forget --force`, and canonical identity through a symlinked project path.
 
 Previously: pass-2's six findings were dispatched 2026-07-17 (the PATH
 restore, the everywhere-reprompt, the double-[none] guard, the decoded
