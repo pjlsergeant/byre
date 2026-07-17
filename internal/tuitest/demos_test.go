@@ -150,6 +150,35 @@ func demoEnv(home, path string) Opts {
 // a recording watchable rather than a keystroke dump.
 func hold() { time.Sleep(1500 * time.Millisecond) }
 
+// demoShell starts the recorded session as a styled interactive shell — every
+// demo opens at a prompt and the byre command is visibly typed, never a TUI
+// materializing from nowhere. The prompt renders the fake home's project as
+// ~/code/my-app via \w. withCompletion also loads bash completion for byre
+// (the completion scenario's whole subject).
+func demoShell(t *testing.T, o Opts, withCompletion bool) *Session {
+	t.Helper()
+	rc := `PS1='\[\e[1;32m\]pete@studio\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]$ '` + "\n"
+	if withCompletion {
+		rc = ". " + bashCompletionLib(t) + "\n" + `eval "$(byre completion bash)"` + "\n" + rc
+	}
+	path := filepath.Join(t.TempDir(), "demorc")
+	if err := os.WriteFile(path, []byte(rc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := Start(t, o, "bash", "--rcfile", path, "-i")
+	s.WaitFor("pete@studio")
+	return s
+}
+
+// launch types a command at the demo shell's prompt and runs it.
+func (s *Session) launch(cmd string) {
+	s.t.Helper()
+	hold()
+	s.TypeHuman(cmd)
+	time.Sleep(400 * time.Millisecond)
+	s.Keys("Enter")
+}
+
 func TestDemoConfigTUIWalk(t *testing.T) {
 	RequireDemo(t)
 	home := demoHome(t)
@@ -161,7 +190,8 @@ func TestDemoConfigTUIWalk(t *testing.T) {
 	o := demoEnv(home, path)
 	o.Dir = proj
 	o.RecordTo = filepath.Join(t.TempDir(), "walk.cast")
-	s := Start(t, o, "byre", "config")
+	s := demoShell(t, o, false)
+	s.launch("byre config")
 
 	// The form: grants first, the exposure summary on top.
 	s.WaitFor("GRANTS")
@@ -206,10 +236,8 @@ func TestDemoConfigTUIWalk(t *testing.T) {
 	s.Keys("Escape")
 	s.WaitFor("$EDITOR")
 	s.Keys("C-q")
-	if st := s.WaitForExit(); st != 0 {
-		t.Fatalf("exit = %d\n%s", st, s.CaptureNow())
-	}
 	s.WaitFor("byre: wrote")
+	hold()
 	WriteDemo(t, "config-tui-walk", s.EndCast("byre: wrote"))
 }
 
@@ -225,7 +253,8 @@ func TestDemoQuickstartPickerStatus(t *testing.T) {
 	o := demoEnv(home, path)
 	o.Dir = proj
 	o.RecordTo = filepath.Join(t.TempDir(), "picker.cast")
-	s := Start(t, o, "byre", "develop")
+	s := demoShell(t, o, false)
+	s.launch("byre develop")
 	s.WaitFor("No byre.config here")
 	s.WaitFor("Template")
 	hold()
@@ -242,7 +271,9 @@ func TestDemoQuickstartPickerStatus(t *testing.T) {
 	s.TypeHuman("y")
 	s.Keys("Enter")
 	s.WaitFor("skills=claude-shared-auth")
-	s.WaitForExit() // the engine boundary; everything after the write is trimmed
+	// Develop now hits the engine boundary off-camera: the trim cuts at the
+	// config-written line's first paint, so neither the error nor the
+	// returning prompt ships.
 	picker := s.EndCast("skills=claude-shared-auth")
 
 	// Scene 2: `byre status` on the box scene 1 configured. The stub engine
@@ -252,12 +283,11 @@ func TestDemoQuickstartPickerStatus(t *testing.T) {
 	o2 := demoEnv(home, demoPath(t, stub))
 	o2.Dir = proj
 	o2.RecordTo = filepath.Join(t.TempDir(), "status.cast")
-	s2 := Start(t, o2, "byre", "status")
+	s2 := demoShell(t, o2, false)
+	s2.launch("byre status")
 	s2.WaitFor("Project id:")
 	s2.WaitFor("Container:")
-	if st := s2.WaitForExit(); st != 0 {
-		t.Fatalf("status exit = %d\n%s", st, s2.CaptureNow())
-	}
+	hold()
 	status := s2.EndCast("not running")
 
 	WriteDemo(t, "quickstart-picker-status", picker, status)
@@ -279,7 +309,8 @@ func TestDemoDeliverPasteFlow(t *testing.T) {
 	o.Unset = []string{"DISPLAY", "BYRE_HOME"}
 	o.Dir = proj
 	o.RecordTo = filepath.Join(t.TempDir(), "deliver.cast")
-	s := Start(t, o, "byre", "deliver")
+	s := demoShell(t, o, false)
+	s.launch("byre deliver")
 
 	// The beat sees the screenshot on the (played) pasteboard.
 	s.WaitFor("image on the clipboard")
@@ -289,9 +320,7 @@ func TestDemoDeliverPasteFlow(t *testing.T) {
 	s.WaitFor("delivering to")
 	s.WaitFor("→ /inbox/clipboard-")
 	s.WaitFor("path copied to the clipboard")
-	if st := s.WaitForExit(); st != 0 {
-		t.Fatalf("deliver exit = %d\n%s", st, s.CaptureNow())
-	}
+	hold()
 	WriteDemo(t, "deliver-paste-flow", s.EndCast("path copied to the clipboard"))
 }
 
@@ -301,20 +330,10 @@ func TestDemoCompletionTabWalk(t *testing.T) {
 	path := demoPath(t)
 	proj := demoProject(t, home)
 
-	rc := filepath.Join(t.TempDir(), "demorc")
-	rcContent := fmt.Sprintf(`. %s
-eval "$(byre completion bash)"
-PS1='\[\e[1;32m\]pete@studio\[\e[0m\]:\[\e[1;34m\]~/code/my-app\[\e[0m\]$ '
-`, bashCompletionLib(t))
-	if err := os.WriteFile(rc, []byte(rcContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	o := demoEnv(home, path)
 	o.Dir = proj
 	o.RecordTo = filepath.Join(t.TempDir(), "completion.cast")
-	s := Start(t, o, "bash", "--rcfile", rc, "-i")
-	s.WaitFor("pete@studio")
+	s := demoShell(t, o, true)
 	hold()
 
 	// The commands, with their one-line descriptions.

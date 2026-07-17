@@ -55,12 +55,20 @@ func (s *Session) startRecorder(path string, cols, rows int) {
 		// The idle cap is header metadata the player honors at playback, so a
 		// slow WaitFor never becomes a dead gap in the published demo.
 		"--idle-time-limit", "2",
+		// Capture input events too: what reaches the spectator's stdin is
+		// recorded as "i" events (the trim already matches sentinels against
+		// output events only).
+		"--capture-input",
 		"--window-size", fmt.Sprintf("%dx%d", cols, rows),
 		"-c", fmt.Sprintf("tmux -L %s attach -t main", s.socket),
 		path)
 	// The spectator's tmux client needs a sane TERM regardless of the CI
-	// runner's; everything else inherits.
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	// runner's — and an explicit UTF-8 locale: tmux renders to each CLIENT
+	// per that client's locale, and with none set it substitutes every
+	// non-ASCII glyph with "_" in the recorded stream (found live: em-dashes
+	// as underscores in published casts, while capture-pane — the server
+	// grid — showed them fine, so the assertion tier never noticed).
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "LC_ALL=C.UTF-8")
 	if err := cmd.Start(); err != nil {
 		s.t.Fatalf("starting asciinema: %v", err)
 	}
@@ -192,25 +200,36 @@ func renderCast(header string, events []castEvent) string {
 	return b.String()
 }
 
-// trimCastTail drops every event after the last output event whose data
-// contains sentinel. The sentinel must be painted in one write (styling can
-// split a string across events) — a miss is a loud error naming the fix, not
-// a cast that ships with the server-exited frame as its poster.
+// trimCastTail cuts the cast at the sentinel's FIRST paint: every event
+// after the first output event containing sentinel is dropped, and that
+// event itself is truncated at the sentinel's own line ending (a pty read
+// can coalesce the sentinel's line with whatever printed next — found live:
+// the engine-boundary error riding in the same event as the config-written
+// line). First, not last: after the intended final frame the terminal may
+// keep moving (the error line, then a full-screen tmux repaint that paints
+// the sentinel AGAIN above the error — found live too), so any later
+// occurrence is exactly the footage the trim exists to drop. The authoring
+// rule that makes this correct: pick a sentinel whose first appearance IS
+// the intended final frame, painted in one write (styling can split a
+// string across events). A miss is a loud error naming the fix, not a cast
+// that ships with the server-exited frame as its poster.
 func trimCastTail(raw, sentinel string) (string, error) {
 	header, events, err := parseCast(raw)
 	if err != nil {
 		return "", err
 	}
-	last := -1
 	for i, e := range events {
-		if e.code == "o" && strings.Contains(e.data, sentinel) {
-			last = i
+		if e.code != "o" || !strings.Contains(e.data, sentinel) {
+			continue
 		}
+		kept := append([]castEvent{}, events[:i+1]...)
+		end := strings.Index(e.data, sentinel) + len(sentinel)
+		if nl := strings.Index(e.data[end:], "\n"); nl >= 0 {
+			kept[i].data = e.data[:end+nl+1]
+		}
+		return renderCast(header, kept), nil
 	}
-	if last == -1 {
-		return "", fmt.Errorf("sentinel %q appears in no output event — pick a string the final screen paints in one run (styling splits text across events)", sentinel)
-	}
-	return renderCast(header, events[:last+1]), nil
+	return "", fmt.Errorf("sentinel %q appears in no output event — pick a string the final screen paints in one run (styling splits text across events)", sentinel)
 }
 
 // sceneBreak is what the viewer sees between concatenated scenes: a reset and

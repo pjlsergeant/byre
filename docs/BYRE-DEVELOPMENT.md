@@ -224,11 +224,14 @@ House rules where they DIVERGE from the assertion tier above:
   the same frames as a dev box. The deliver demo's `docker` is a stub
   answering deliver's discovery/exec argv exactly — a transport change
   breaks it loudly.
-- `EndCast(sentinel)` trims the cast's tail back to the last output
-  event containing the sentinel: pick a string the final screen paints
-  in ONE write (styling splits text across events), or the trim fails
-  loudly. Never ship a cast ending on tmux's server-exited frame (the
-  poster IS the final frame — P11).
+- `EndCast(sentinel)` cuts the cast at the sentinel's FIRST paint, at
+  that line's end within the event: pick a string whose first appearance
+  IS the intended final frame, painted in ONE write (styling splits text
+  across events), or the trim fails loudly. First, not last — after the
+  intended frame the terminal may keep moving (an error line, a
+  full-screen repaint that paints the sentinel again), and that footage
+  is what the trim drops. Never ship a cast ending on tmux's
+  server-exited frame (the poster IS the final frame — P11).
 - A scene that must end at an off-camera boundary (develop stopping at
   the engine boundary) records as its own cast; `WriteDemo` concatenates
   scenes with a clear-screen break. The cut is a visible scene change,

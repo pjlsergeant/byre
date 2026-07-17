@@ -32,24 +32,25 @@ func TestTrimCastTailDropsAfterSentinel(t *testing.T) {
 	}
 }
 
-func TestTrimCastTailKeepsTheLastMatch(t *testing.T) {
-	// The sentinel painting twice (a repaint) must keep everything up to the
-	// LAST occurrence, not cut at the first.
+func TestTrimCastTailCutsAtTheFirstMatch(t *testing.T) {
+	// After the intended final frame the terminal may keep moving — the
+	// field case: an error line, then a full-screen repaint painting the
+	// sentinel AGAIN above the error. Everything after the FIRST paint is
+	// the footage the trim exists to drop.
 	raw := mkCast(
 		`[0.1,"o","done"]`,
-		`[0.2,"o","more"]`,
-		`[0.3,"o","done"]`,
+		`[0.2,"o","unwanted error"]`,
+		`[0.3,"o","repaint: done above unwanted error"]`,
 		`[0.4,"o","[server exited]"]`,
 	)
 	got, err := trimCastTail(raw, "done")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got, "more") {
-		t.Fatalf("trim cut at the first match:\n%s", got)
-	}
-	if strings.Contains(got, "server exited") {
-		t.Fatalf("tail survived:\n%s", got)
+	for _, dropped := range []string{"unwanted error", "repaint", "server exited"} {
+		if strings.Contains(got, dropped) {
+			t.Fatalf("footage after the first sentinel paint survived (%q):\n%s", dropped, got)
+		}
 	}
 }
 
@@ -57,6 +58,27 @@ func TestTrimCastTailMissingSentinelIsLoud(t *testing.T) {
 	raw := mkCast(`[0.1,"o","hello"]`)
 	if _, err := trimCastTail(raw, "absent"); err == nil {
 		t.Fatal("a sentinel appearing in no event must error, not ship the untrimmed cast")
+	}
+}
+
+func TestTrimCastTailCutsInsideACoalescedEvent(t *testing.T) {
+	// The field failure: a pty read coalesced the sentinel's line and the
+	// next line into ONE event, so event-granular trimming shipped the
+	// engine-boundary error inside the kept event. The trim must cut at the
+	// sentinel line's end within the event.
+	raw := mkCast(
+		`[0.1,"o","asking questions"]`,
+		`[0.2,"o","byre: wrote config (skills=x)[K\r\nbyre: no container engine found\r\n"]`,
+	)
+	got, err := trimCastTail(raw, "skills=x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "no container engine") {
+		t.Fatalf("text after the sentinel's line survived inside the kept event:\n%s", got)
+	}
+	if !strings.Contains(got, `(skills=x)[K\r\n`) {
+		t.Fatalf("the sentinel's own line ending was lost:\n%s", got)
 	}
 }
 
