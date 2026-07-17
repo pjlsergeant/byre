@@ -119,7 +119,7 @@ to build and cache it (ADR 0001 -- byre owns no caching layer).
 At every launch:
 
 1. Resolve config -> generate Dockerfile *text* + build context.
-2. Write it to `~/.byre/projects/<project_id>/Dockerfile.generated`.
+2. Write it to `~/.byre/projects/<project_id>/context/Dockerfile.generated`.
 3. `docker build --build-arg BYRE_UID=<uid> --build-arg BYRE_GID=<gid> -t byre-<project_id>-u<uid>-g<gid> <context>` (the UID/GID are baked in, so the tag carries them -- ADR 0008).
 4. `docker run --rm -it --label byre.project=<project_id> byre-<project_id>-u<uid>-g<gid>` (foreground; see *Box lifecycle*).
 

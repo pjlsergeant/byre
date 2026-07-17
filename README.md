@@ -84,14 +84,14 @@ Ports:        none
 Host mounts:  none
 Skills:       byre/claude             bundled 0.2.0
 State vols:   .claude
-Cache vols:   node_modules
+Cache vols:   none
 Container:    running (0d95f3a2c1b4)
 ```
 
 ## Your toolkit, every folder
 
-You and your agent can build powerful templates and skills, and add
-them in seconds to any of your projects -- or stick them in the defaults
+You and your agent can build templates and skills, and add them in
+seconds to any of your projects -- or stick them in the defaults
 to always have them available: mounts, volumes, packages, agent contexts.
 
 The first time you want a postgres client,

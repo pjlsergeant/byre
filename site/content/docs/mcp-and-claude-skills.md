@@ -27,6 +27,25 @@ symmetric -- `byre mcp remove <name>` understands the difference
 between deleting your own declaration and switching off one a skill
 ships. A remote server's network reach is attributed in `byre status`.
 
+### Authenticating a server
+
+Declarations carry env var *names*, never token values -- the
+declaration bakes into the image, and secrets don't belong there. The
+value arrives at launch, from the box's environment:
+
+```sh
+byre mcp add tracker https://mcp.example.com/ --bearer TRACKER_TOKEN
+```
+
+sends `Authorization: Bearer <whatever $TRACKER_TOKEN is in the box>`.
+Getting the token *into* the box is a separate, visible grant --
+`[env_from_host]` passes it through from your host environment at
+launch
+([recipe](/docs/how-do-i/configure/#use-my-api-key-instead-of-an-agent-login))
+-- and command servers work the same way: `--env NAMES` declares what
+the process reads. Interactive OAuth flows aren't wired; static tokens
+are the supported story.
+
 ## Claude Skills
 
 ```sh

@@ -18,15 +18,14 @@ same four steps, and every step's output is inspectable.
    setting to the layer or skill that contributed it.
 2. **Generate a Dockerfile.** Deterministically: the same config always
    produces byte-identical output, written to
-   `~/.byre/projects/<id>/Dockerfile.generated` and printed any time by
+   `~/.byre/projects/<id>/context/Dockerfile.generated` and printed any time by
    `byre dockerfile`. Blocks emit in a stable, cache-friendly order --
    base, template, byre's core, each enabled skill, your project's tail
    -- so ten projects on one template share the expensive layers in
    Docker's own cache.
 3. **Build.** Plain `docker build`. byre owns no caching layer of its
-   own: unchanged config means every instruction is a cache hit and
-   launch is effectively instant; a change rebuilds only from the
-   changed instruction onward. `byre rebuild` (`--no-cache`) is the
+   own: an unchanged config is a full cache hit; a change rebuilds
+   only from the changed instruction onward. `byre rebuild` (`--no-cache`) is the
    deliberate valve for pulling fresh upstream versions.
 4. **Run.** `docker run --rm -it`, in the foreground -- see the exact
    command with `byre dockerrun`. The container is throwaway; what

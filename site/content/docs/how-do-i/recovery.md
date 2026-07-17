@@ -87,8 +87,8 @@ tldr: point your agent at
 [github.com/pjlsergeant/byre](https://github.com/pjlsergeant/byre) and
 ask.
 
-byre's repo carries unusually thorough documentation of intentions,
-design constraints, and decisions -- the architecture, the ADRs, the
+byre's repo carries documentation of intentions, design constraints,
+and decisions -- the architecture, the ADRs, the
 glossary, the principles. Your agent can read all of it, which makes it
 the long tail of this cookbook: if byre can do the thing, your agent
 will find the shipped mechanism; if it can't, you'll hear why.

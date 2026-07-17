@@ -50,7 +50,7 @@ Ports:        none
 Host mounts:  none
 Skills:       byre/claude             bundled 0.2.0
 State vols:   .claude
-Cache vols:   node_modules
+Cache vols:   none
 Container:    running (0d95f3a2c1b4)
 ```
 

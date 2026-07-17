@@ -29,7 +29,7 @@ More than one agent skill can be enabled in a box; the config's `agent`
 key decides which one launches, and the rest install their CLI and keep
 their own login. byre develops itself this way: `agent = "claude"`,
 `skills = ["codex", ...]`, plus a small skill that ships the review
-conventions as [standing instructions](#give-my-agent-standing-instructions-in-every-box)
+conventions as [standing instructions](/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box)
 -- the launched agent runs the reviewer as a fresh-eyes second opinion.
 The live example is
 [byre.preset](https://github.com/pjlsergeant/byre/blob/main/byre.preset)
