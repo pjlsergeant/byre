@@ -19,11 +19,23 @@ type worktreeInfo struct {
 	// setup instead of re-onboarding. For a bare repo it is the git dir
 	// itself (there is no working tree to anchor on).
 	mainDir string
-	// commonGitDir is the git common dir, exactly as git dereferences it, so it
-	// can be bind-mounted at the same host path inside the box (see the mount
-	// discussion in docs/adr/0009-worktrees-inherit-project-identity.md). The per-worktree git dir lives
-	// under it, so mounting this one path makes both present.
+	// commonGitDir is the git common dir as git records it (the structural
+	// dir(dir(gitDir))), used as the bind mount TARGET — the in-box path every
+	// git pointer resolves against, so it must match git's on-disk metadata and
+	// is deliberately NOT symlink-resolved (see the mount discussion in
+	// docs/adr/0009-worktrees-inherit-project-identity.md). The per-worktree git dir lives under it, so
+	// mounting this one path makes both present.
 	commonGitDir string
+	// commonGitDirHost is the same directory fully symlink-resolved
+	// (Canonicalize), used as the bind mount SOURCE. The target above is
+	// derived from attacker-controlled .git contents and may contain symlink
+	// components an agent could retarget between validation and the engine
+	// resolving the source (a check-to-mount race → arbitrary rw host mount).
+	// Resolving the source removes every symlink component, so there is nothing
+	// left to flip — matching how WorkDir's mount source is already
+	// canonicalized. ADR 0009's "same-path" constraint is about the TARGET;
+	// the source host path is free to differ.
+	commonGitDirHost string
 }
 
 // detectWorktree inspects <dir>/.git to decide whether dir is a linked git
@@ -44,41 +56,25 @@ type worktreeInfo struct {
 // submodules, whose `.git` points at `.../modules/<name>` and has no `commondir`.
 func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	gitPath := filepath.Join(dir, ".git")
-	// Open the pointer ONCE, WITHOUT following symlinks, and bind every check
-	// below (the content read AND the reciprocal fstat) to this one descriptor.
-	// Separate Lstat / ReadFile / Stat calls would each re-resolve the path, so
-	// an agent (which has /workspace rw) could swap .git for a symlink to
-	// genuine external worktree metadata between them and pass every check —
-	// turning it into an arbitrary rw host mount. O_NOFOLLOW fails (ELOOP) if
-	// .git is itself a symlink; ENOENT if absent — both are standalone.
-	// O_NONBLOCK so a .git swapped to a FIFO returns instead of blocking
-	// forever on a writer (the gitInfo gate below then rejects it).
-	gitFile, err := os.OpenFile(gitPath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	// Read the pointer via readMetaFile, WITHOUT following symlinks, binding
+	// the content read and the regular-file gate to one opened descriptor
+	// (gitInfo, reused for the reciprocal SameFile below, is that exact
+	// inode). Separate Lstat / ReadFile / Stat calls would each re-resolve
+	// the path, so an agent (which has /workspace rw) could swap .git for a
+	// symlink to genuine external worktree metadata between them and pass
+	// every check — turning it into an arbitrary rw host mount.
+	data, gitInfo, err := readMetaFile(gitPath)
 	if err != nil {
-		// Only absence and the no-follow symlink rejection mean "standalone".
-		// A genuine failure (permission, I/O, fd exhaustion) must surface, not
-		// silently mint a separate identity and drop the worktree mount.
-		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ELOOP) {
+		// "Not a worktree pointer" shapes resolve standalone: absent (ENOENT),
+		// a symlink (ELOOP from O_NOFOLLOW), non-regular (a real .git DIR of a
+		// plain repo, or a FIFO an agent swapped in), or implausibly large (a
+		// genuine pointer is one short line). A genuine failure (permission,
+		// I/O, fd exhaustion) must surface, not silently mint a separate
+		// identity and drop the worktree mount.
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ELOOP) ||
+			errors.Is(err, errMetaNotRegular) || errors.Is(err, errMetaTooLarge) {
 			return worktreeInfo{}, false, nil
 		}
-		return worktreeInfo{}, false, err
-	}
-	defer gitFile.Close()
-	// gitInfo is this exact inode — reused for the regular-file gate and the
-	// reciprocal SameFile, so nothing re-resolves the name.
-	gitInfo, err := gitFile.Stat()
-	if err != nil {
-		return worktreeInfo{}, false, err // fstat of an open fd failing is a genuine error
-	}
-	// A genuine linked worktree's .git is a REGULAR FILE (the `gitdir:`
-	// pointer). A real .git dir (main repo / plain repo) or anything else is
-	// standalone.
-	if !gitInfo.Mode().IsRegular() {
-		return worktreeInfo{}, false, nil
-	}
-
-	data, err := io.ReadAll(gitFile)
-	if err != nil {
 		return worktreeInfo{}, false, err
 	}
 	gitDir, ok := parseGitdirPointer(string(data))
@@ -98,14 +94,19 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 		return worktreeInfo{}, false, nil
 	}
 
-	// From here dir is shaped like a worktree, so a missing target is an error,
-	// not a silent standalone fallback. `commondir` both confirms it (submodules
-	// lack it) and points at the common git dir.
-	commonData, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	// From here dir is shaped like a worktree, so an unreadable target is an
+	// error, not a silent standalone fallback. `commondir` both confirms it
+	// (submodules lack it) and points at the common git dir. gitDir came from
+	// agent-writable content, so this read (and the gitdir one below) gets the
+	// same hostile-filesystem discipline as .git — a plain os.ReadFile here
+	// would follow symlinks, block forever on a FIFO, and read a sparse or
+	// device-backed file without bound (a host hang/OOM, not an escape: the
+	// structural checks below stop the mount).
+	commonData, _, err := readMetaFile(filepath.Join(gitDir, "commondir"))
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
-			"%s looks like a git worktree but its metadata is missing (%s): "+
-				"if the main repository moved, run `git worktree repair` in it", dir, gitDir)
+			"%s looks like a git worktree but its metadata is missing or unreadable (%v): "+
+				"if the main repository moved, run `git worktree repair` in it", dir, err)
 	}
 	common := strings.TrimRight(string(commonData), "\r\n")
 	if !filepath.IsAbs(common) {
@@ -146,11 +147,22 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 				"which is not the parent of the worktree git dir %q — refusing to mount it. "+
 				"If the main repository moved, run `git worktree repair` in it", dir, common, gitDir)
 	}
-	backData, err := os.ReadFile(filepath.Join(gitDir, "gitdir"))
+	// From here on use structCommon, NOT common, as the common git dir TARGET.
+	// Both name the same directory (SameFile just proved it), but `common` is
+	// the raw commondir-file content — attacker-authored — while structCommon
+	// is byre's own dir(dir(gitDir)), exactly the git-recorded path the
+	// same-path mount target must use for git to resolve inside the box.
+	// structCommon is still NOT safe to use as the mount SOURCE: it is derived
+	// from gitDir (the .git pointer, attacker-controlled) and may contain
+	// symlink components an agent could retarget between the SameFile check and
+	// the engine resolving the source. So the source is canonicalized below
+	// (commonGitDirHost) — symlink-free, nothing left to flip — while the
+	// target stays structCommon.
+	backData, _, err := readMetaFile(filepath.Join(gitDir, "gitdir"))
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
-			"%s looks like a git worktree but its back-pointer is missing (%s/gitdir): "+
-				"run `git worktree repair`", dir, gitDir)
+			"%s looks like a git worktree but its back-pointer is missing or unreadable (%v): "+
+				"run `git worktree repair`", dir, err)
 	}
 	back := strings.TrimRight(string(backData), "\r\n")
 	bp, bpErr := os.Stat(back)
@@ -165,15 +177,38 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// The identity dir is the main worktree: the parent of a ".git"
 	// common dir, or the common dir itself for a bare repo. Canonicalize
 	// it so the id matches running byre in the main worktree directly.
-	mainDir := common
-	if filepath.Base(common) == ".git" {
-		mainDir = filepath.Dir(common)
+	mainDir := structCommon
+	if filepath.Base(structCommon) == ".git" {
+		mainDir = filepath.Dir(structCommon)
 	}
 	canonMain, err := Canonicalize(mainDir)
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
-	return worktreeInfo{mainDir: canonMain, commonGitDir: common}, true, nil
+	// Symlink-resolved source for the RW bind (see commonGitDirHost). Use
+	// EvalSymlinks directly, NOT Canonicalize: Canonicalize silently falls back
+	// to the un-resolved path when EvalSymlinks fails, which for a
+	// security-sensitive resolve would quietly reinstate the symlink-retarget
+	// race. Fail closed instead — an unresolvable common dir is a loud error,
+	// never a lenient mount. For a symlink-free path this returns structCommon
+	// unchanged.
+	//
+	// Residual (shared with EVERY byre path-based bind, WorkDir included): the
+	// RESULT is a pathname, not an inode-pinned handle, so an agent that can
+	// rename an ancestor of it between here and the engine resolving the source
+	// could still redirect the mount. Fully closing that means fd/inode-pinned
+	// mounting across all binds — an architecture change, not a per-mount fix;
+	// out of scope here.
+	hostCommon, err := filepath.EvalSymlinks(structCommon)
+	if err != nil {
+		return worktreeInfo{}, false, fmt.Errorf(
+			"%s: cannot resolve the common git dir %q for mounting: %w", dir, structCommon, err)
+	}
+	return worktreeInfo{
+		mainDir:          canonMain,
+		commonGitDir:     structCommon,
+		commonGitDirHost: hostCommon,
+	}, true, nil
 }
 
 // parseGitdirPointer extracts the path from a `.git` file's `gitdir: <path>`
@@ -191,4 +226,58 @@ func parseGitdirPointer(content string) (string, bool) {
 		return "", false
 	}
 	return rest, true
+}
+
+// maxMetaFileSize caps reads of git worktree metadata (.git pointer,
+// commondir, gitdir). All three are single-line path files, and PATH_MAX is
+// 4 KiB, so 1 MiB is generous for anything git could have written.
+const maxMetaFileSize = 1 << 20
+
+// Rejection shapes readMetaFile distinguishes (wrapped with the offending
+// path). Callers pick the disposition: detectWorktree treats them as "not a
+// worktree pointer" (standalone) for .git, but as loud metadata errors for
+// commondir/gitdir, where the shape already committed to being a worktree.
+var (
+	errMetaNotRegular = errors.New("not a regular file")
+	errMetaTooLarge   = errors.New("implausibly large for git worktree metadata")
+)
+
+// readMetaFile reads a git worktree metadata file under hostile-filesystem
+// discipline. Every path it is used on is agent-writable or named by
+// agent-writable content, so each shape below is one an agent can stage to
+// hang or OOM the host-side byre process:
+//
+//   - O_NOFOLLOW: git writes these as plain files, never symlinks; a symlink
+//     (e.g. to /dev/zero, or to genuine external metadata) fails with ELOOP.
+//   - O_NONBLOCK: a FIFO opens immediately instead of blocking forever on a
+//     writer that never comes (regular-file reads are unaffected).
+//   - fstat on the OPENED descriptor gates to regular files, so a FIFO or
+//     device that got past open is rejected before any read.
+//   - the read is capped at maxMetaFileSize: os.ReadFile-style read-to-EOF
+//     would balloon on a sparse file's apparent size or read /dev/zero
+//     forever.
+//
+// The returned FileInfo is the opened inode's — valid after close, and usable
+// with os.SameFile so later checks need not re-resolve the name.
+func readMetaFile(path string) ([]byte, os.FileInfo, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, nil, err // fstat of an open fd failing is a genuine error
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("%s: %w", path, errMetaNotRegular)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxMetaFileSize+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(data) > maxMetaFileSize {
+		return nil, nil, fmt.Errorf("%s: %w", path, errMetaTooLarge)
+	}
+	return data, info, nil
 }

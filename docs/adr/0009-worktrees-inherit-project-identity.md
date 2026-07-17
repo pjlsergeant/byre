@@ -24,7 +24,19 @@ Considered and rejected:
   dangling them lets in-box `git worktree repair`/`prune` corrupt *host*
   metadata. Decided: **same-path mounting** (main `.git` and the worktree
   bound at their host-absolute paths, rw) so every pointer resolves and
-  nothing is rewritten.
+  nothing is rewritten. Same-path constrains the mount TARGET (the in-box
+  path pointers resolve against); the common git dir's mount SOURCE is
+  taken symlink-resolved, since its git-recorded path is derived from the
+  agent-controlled `.git` pointer and a mutable symlink component would be
+  a check-to-mount retarget race (worktree.go). Source and target differ
+  only when the recorded path contains symlinks. Accepted residual
+  (2026-07-17, shared by EVERY byre bind, WorkDir included): the resolved
+  source is still a pathname, not an inode-pinned handle, so a concurrent
+  rw session that can rename an ancestor of it during another launch's
+  detect-to-mount window could redirect the bind. Not closable from byre:
+  the docker/podman CLI-to-daemon contract is a pathname, resolved in the
+  daemon's own namespace (a VM under Docker Desktop), so a host-side fd
+  pin cannot cross it. Disclosed here so it isn't re-raised per-mount.
 
 Consequences: detection parses `.git` pointer + `commondir` files
 directly (no git binary dependency; submodules excluded, dangling

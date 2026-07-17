@@ -16,7 +16,15 @@ import (
 )
 
 // hashLen is how many hex chars of the sha256 disambiguate a project. The hash
-// is only a uniqueness suffix on a human-readable slug, so 6 (24 bits) is ample.
+// is only a uniqueness suffix on a human-readable slug, so 6 (24 bits) is ample:
+// a collision needs the same sanitized last-two path components AND the same 24
+// bits, and even then it fails LOUDLY — Bootstrap checks the path record and
+// errors before any state (image, volumes, config) is shared (see
+// TestBootstrapDetectsCollision). Considered and declined bumping this
+// (2026-07-17): the id keys the on-disk store and scoped volume names, so any
+// length change silently orphans every existing project's state — a certain
+// migration break traded against an already-fenced ~2^-24 corner. Do not
+// change without an id-migration story.
 const hashLen = 6
 
 // maxSlug caps the readable slug length so Docker object names stay reasonable.
@@ -143,7 +151,12 @@ type Paths struct {
 
 	IsWorktree   bool   // WorkDir is a linked git worktree of Canonical
 	WorktreeID   string // per-worktree id from WorkDir (container name + workdir label; == ID when not a worktree)
-	CommonGitDir string // git common dir to bind-mount same-path (rw) so git works in the box; "" when not a worktree
+	CommonGitDir string // git common dir: bind mount TARGET (in-box path git pointers resolve against); "" when not a worktree
+	// CommonGitDirHost is the bind mount SOURCE for CommonGitDir — the same
+	// directory, symlink-resolved. It differs from CommonGitDir only when the
+	// git-recorded path contains symlinks; resolving the source closes a
+	// check-to-mount retarget race (see worktree.go). "" when not a worktree.
+	CommonGitDirHost string
 }
 
 // Resolve computes the id and on-disk paths for a project directory. When
@@ -163,11 +176,12 @@ func Resolve(projectDir string) (Paths, error) {
 	// Identity anchor: a linked worktree inherits the main worktree's path.
 	identity := work
 	var isWT bool
-	var commonGitDir string
+	var commonGitDir, commonGitDirHost string
 	if info, ok, derr := detectWorktree(work); derr != nil {
 		return Paths{}, derr
 	} else if ok {
-		identity, isWT, commonGitDir = info.mainDir, true, info.commonGitDir
+		identity, isWT = info.mainDir, true
+		commonGitDir, commonGitDirHost = info.commonGitDir, info.commonGitDirHost
 	}
 
 	id := idFromCanonical(identity)
@@ -178,18 +192,19 @@ func Resolve(projectDir string) (Paths, error) {
 	dir := filepath.Join(home, "projects", id)
 	ctx := filepath.Join(dir, "context")
 	return Paths{
-		ID:           id,
-		Canonical:    identity,
-		WorkDir:      work,
-		Home:         home,
-		Dir:          dir,
-		ContextDir:   ctx,
-		Dockerfile:   filepath.Join(ctx, "Dockerfile.generated"),
-		PathRecord:   filepath.Join(dir, "path"),
-		LockFile:     filepath.Join(dir, "lock"),
-		IsWorktree:   isWT,
-		WorktreeID:   worktreeID,
-		CommonGitDir: commonGitDir,
+		ID:               id,
+		Canonical:        identity,
+		WorkDir:          work,
+		Home:             home,
+		Dir:              dir,
+		ContextDir:       ctx,
+		Dockerfile:       filepath.Join(ctx, "Dockerfile.generated"),
+		PathRecord:       filepath.Join(dir, "path"),
+		LockFile:         filepath.Join(dir, "lock"),
+		IsWorktree:       isWT,
+		WorktreeID:       worktreeID,
+		CommonGitDir:     commonGitDir,
+		CommonGitDirHost: commonGitDirHost,
 	}, nil
 }
 

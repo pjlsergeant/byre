@@ -1,7 +1,7 @@
 package project
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,6 +187,91 @@ func TestDetectWorktreeRejectsForgedCommondir(t *testing.T) {
 	}
 }
 
+// The mounted common git dir must be byre's own structural path, never the
+// raw commondir-file content — even when that content is a symlink that
+// resolves correctly at check time. Returning the symlink would hand an
+// agent-retargetable path to the RW bind mount (a check-to-mount race). The
+// structural check passes here (the symlink resolves to the true common dir),
+// so this pins the RETURNED path, not rejection.
+func TestDetectWorktreeMountsStructuralPathNotSymlinkedCommondir(t *testing.T) {
+	main, wt := makeWorktree(t, "wt")
+	realCommon := filepath.Join(main, ".git")
+	// A symlink that currently resolves to the true common dir; its PATH is
+	// what we plant as commondir content.
+	link := filepath.Join(t.TempDir(), "commonlink")
+	if err := os.Symlink(realCommon, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	gd := filepath.Join(realCommon, "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte(link+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, ok, err := detectWorktree(wt)
+	if err != nil || !ok {
+		t.Fatalf("a symlinked-but-consistent commondir should still detect: ok=%v err=%v", ok, err)
+	}
+	if info.commonGitDir == link {
+		t.Fatalf("commonGitDir is the attacker-controlled symlink path %q — retargetable before the mount resolves", link)
+	}
+	if info.commonGitDir != realCommon {
+		t.Fatalf("commonGitDir = %q, want the structural path %q", info.commonGitDir, realCommon)
+	}
+}
+
+// The mount SOURCE (commonGitDirHost) must be symlink-free even when the
+// git-recorded path itself routes through a symlink — the .git pointer is
+// attacker-controlled, so a symlink COMPONENT of gitDir (not just a symlinked
+// commondir value) is equally retargetable between validation and mount.
+// commonGitDirHost is Canonicalize'd, so it must resolve every component; the
+// target stays the git-recorded path so in-box pointers still resolve.
+func TestDetectWorktreeHostPathResolvesSymlinkedGitDir(t *testing.T) {
+	root := t.TempDir()
+	realBase := filepath.Join(root, "realbase")
+	gd := filepath.Join(realBase, ".git", "worktrees", "wt")
+	if err := os.MkdirAll(gd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(root, "wt")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink standing in for realBase; the .git pointer routes gitDir
+	// THROUGH it, so structCommon = <link>/.git has a symlink component.
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(realBase, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	gdViaLink := filepath.Join(link, ".git", "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gd, "gitdir"), []byte(filepath.Join(wt, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gdViaLink+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	info, ok, err := detectWorktree(wt)
+	if err != nil || !ok {
+		t.Fatalf("a worktree reached via a symlinked gitDir should detect: ok=%v err=%v", ok, err)
+	}
+	// Target: the git-recorded path (routes through the symlink) — unchanged so
+	// in-box pointers resolve.
+	wantTarget := filepath.Join(link, ".git")
+	if info.commonGitDir != wantTarget {
+		t.Fatalf("commonGitDir (target) = %q, want git-recorded %q", info.commonGitDir, wantTarget)
+	}
+	// Source: fully resolved — no symlink component survives for a retarget.
+	wantHost, _ := Canonicalize(filepath.Join(realBase, ".git"))
+	if info.commonGitDirHost != wantHost {
+		t.Fatalf("commonGitDirHost (mount source) = %q, want symlink-free %q", info.commonGitDirHost, wantHost)
+	}
+	if strings.Contains(info.commonGitDirHost, string(filepath.Separator)+"link"+string(filepath.Separator)) {
+		t.Fatalf("commonGitDirHost still routes through the symlink: %q", info.commonGitDirHost)
+	}
+}
+
 // A project .git that is itself a SYMLINK is never treated as a worktree
 // pointer: following it (ReadFile + the reciprocal Stat) would let an agent
 // point .git at genuine external worktree metadata and pass every check,
@@ -209,30 +294,203 @@ func TestDetectWorktreeRejectsSymlinkedDotGit(t *testing.T) {
 	}
 }
 
+// detectWithTimeout runs detectWorktree and fails the test if it blocks: the
+// regression mode for FIFO/device-backed metadata is an indefinite hang (or an
+// unbounded read), so plain test hangs would mask exactly the bug class these
+// tests pin.
+func detectWithTimeout(t *testing.T, dir string) (worktreeInfo, bool, error) {
+	t.Helper()
+	type result struct {
+		info worktreeInfo
+		ok   bool
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		info, ok, err := detectWorktree(dir)
+		done <- result{info, ok, err}
+	}()
+	select {
+	case r := <-done:
+		return r.info, r.ok, r.err
+	case <-time.After(15 * time.Second):
+		t.Fatal("detectWorktree blocked — O_NONBLOCK / size-cap regression")
+		return worktreeInfo{}, false, nil // unreachable
+	}
+}
+
 // A .git that is a FIFO (an agent can swap it in) must not block detection:
 // O_NONBLOCK returns immediately and the regular-file gate resolves standalone.
-// Timeout-guarded so a regression (dropping O_NONBLOCK) fails, not hangs.
 func TestDetectWorktreeDotGitFifoDoesNotBlock(t *testing.T) {
 	dir := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(dir, ".git"), 0o644); err != nil {
 		t.Skipf("mkfifo unavailable: %v", err)
 	}
-	done := make(chan error, 1)
-	go func() {
-		_, ok, err := detectWorktree(dir)
-		if ok {
-			err = fmt.Errorf("a FIFO .git was treated as a worktree")
+	_, ok, err := detectWithTimeout(t, dir)
+	if err != nil {
+		t.Fatalf("a FIFO .git must resolve standalone, not error: %v", err)
+	}
+	if ok {
+		t.Fatal("a FIFO .git was treated as a worktree")
+	}
+}
+
+// A .git whose apparent size is implausibly large (an agent can create a huge
+// SPARSE regular file, which passes the regular-file gate) must resolve
+// standalone without attempting to read it all — read-to-EOF on the apparent
+// size is a host OOM.
+func TestDetectWorktreeOversizedDotGitIsStandalone(t *testing.T) {
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A valid pointer prefix, then sparse-extended: proves the cap rejects on
+	// size rather than the content merely failing to parse.
+	if _, err := f.WriteString("gitdir: /tmp/x/worktrees/y\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxMetaFileSize + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	_, ok, err := detectWithTimeout(t, dir)
+	if err != nil {
+		t.Fatalf("an oversized .git must resolve standalone, not error: %v", err)
+	}
+	if ok {
+		t.Fatal("an oversized .git was treated as a worktree")
+	}
+}
+
+// The worktree metadata files (commondir, gitdir) live in a directory named by
+// agent-writable content, so they get the same hostile-filesystem treatment as
+// .git: a FIFO, a symlink (even one pointing at valid content), or an
+// implausibly large file must be a loud error — never a hang, an unbounded
+// read, or an accepted worktree.
+func TestDetectWorktreeHostileMetadataFiles(t *testing.T) {
+	sabotages := []struct {
+		name  string
+		plant func(t *testing.T, path string, valid []byte)
+	}{
+		{"fifo", func(t *testing.T, path string, _ []byte) {
+			if err := syscall.Mkfifo(path, 0o644); err != nil {
+				t.Skipf("mkfifo unavailable: %v", err)
+			}
+		}},
+		{"symlink-to-dev-zero", func(t *testing.T, path string, _ []byte) {
+			if err := os.Symlink("/dev/zero", path); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}},
+		{"symlink-to-valid-content", func(t *testing.T, path string, valid []byte) {
+			// Even a symlink to a regular file holding the GENUINE content is
+			// rejected: git never writes these as symlinks, and following one
+			// re-opens the hostile-target problem.
+			target := filepath.Join(t.TempDir(), "target")
+			if err := os.WriteFile(target, valid, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+		}},
+		{"oversized", func(t *testing.T, path string, valid []byte) {
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Write(valid); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Truncate(maxMetaFileSize + 1); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+		}},
+	}
+	for _, target := range []string{"commondir", "gitdir"} {
+		for _, s := range sabotages {
+			t.Run(target+"/"+s.name, func(t *testing.T) {
+				main, wt := makeWorktree(t, "wt")
+				path := filepath.Join(main, ".git", "worktrees", "wt", target)
+				valid, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				s.plant(t, path, valid)
+				info, ok, err := detectWithTimeout(t, wt)
+				if err == nil {
+					t.Fatalf("hostile %s (%s) accepted: ok=%v mount=%q", target, s.name, ok, info.commonGitDir)
+				}
+			})
 		}
-		done <- err
-	}()
-	select {
-	case err := <-done:
+	}
+}
+
+// readMetaFile's contract, pinned directly: regular files read fine, and each
+// hostile shape maps to its distinguishable rejection.
+func TestReadMetaFile(t *testing.T) {
+	t.Run("regular", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "f")
+		if err := os.WriteFile(path, []byte("content\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		data, info, err := readMetaFile(path)
+		if err != nil || string(data) != "content\n" || info == nil {
+			t.Fatalf("readMetaFile = (%q, %v, %v)", data, info, err)
+		}
+	})
+	t.Run("fifo", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "f")
+		if err := syscall.Mkfifo(path, 0o644); err != nil {
+			t.Skipf("mkfifo unavailable: %v", err)
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, _, err := readMetaFile(path)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if !errors.Is(err, errMetaNotRegular) {
+				t.Fatalf("want errMetaNotRegular for a FIFO, got %v", err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("readMetaFile blocked on a FIFO — O_NONBLOCK regression")
+		}
+	})
+	t.Run("symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(dir, "target")
+		if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "link")
+		if err := os.Symlink(target, path); err != nil {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		if _, _, err := readMetaFile(path); !errors.Is(err, syscall.ELOOP) {
+			t.Fatalf("want ELOOP for a symlink, got %v", err)
+		}
+	})
+	t.Run("oversized", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "f")
+		f, err := os.Create(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("detectWorktree blocked opening a FIFO .git — O_NONBLOCK regression")
-	}
+		if err := f.Truncate(maxMetaFileSize + 1); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+		if _, _, err := readMetaFile(path); !errors.Is(err, errMetaTooLarge) {
+			t.Fatalf("want errMetaTooLarge, got %v", err)
+		}
+	})
 }
 
 // The reciprocal back-pointer is validated too: a structurally-plausible

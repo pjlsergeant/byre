@@ -162,12 +162,16 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 
 func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 	paths := project.Paths{
-		ID:           "byre-main-000000",
-		Canonical:    "/home/me/main",
-		WorkDir:      "/home/me/wt",
-		WorktreeID:   "byre-wt-111111",
-		IsWorktree:   true,
-		CommonGitDir: "/home/me/main/.git",
+		ID:         "byre-main-000000",
+		Canonical:  "/home/me/main",
+		WorkDir:    "/home/me/wt",
+		WorktreeID: "byre-wt-111111",
+		IsWorktree: true,
+		// Target is the git-recorded path; the source is the symlink-resolved
+		// host path. They differ here (a symlinked recorded path) to pin that
+		// the bind uses the resolved source but the recorded target.
+		CommonGitDir:     "/home/me/main/.git",
+		CommonGitDirHost: "/real/main/.git",
 	}
 	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false, hostIdentity())
 	if err != nil {
@@ -186,20 +190,28 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 	if p.WorkspaceHost != "/home/me/wt" {
 		t.Errorf("workspace host = %q, want the worktree dir", p.WorkspaceHost)
 	}
-	// Same-path git binds (rw) for the common git dir and the worktree.
-	wantBinds := map[string]bool{"/home/me/main/.git": false, "/home/me/wt": false}
+	// Git binds (rw): the worktree is same-path; the common git dir mounts its
+	// symlink-resolved SOURCE at the git-recorded TARGET.
+	var sawWorktree, sawCommon bool
 	for _, b := range p.Binds {
-		if _, ok := wantBinds[b.Target]; ok {
+		switch b.Target {
+		case "/home/me/wt":
+			sawWorktree = true
 			if b.Host != b.Target || b.Mode != "rw" {
-				t.Errorf("git bind %q should be same-path rw, got %+v", b.Target, b)
+				t.Errorf("worktree bind should be same-path rw, got %+v", b)
 			}
-			wantBinds[b.Target] = true
+		case "/home/me/main/.git":
+			sawCommon = true
+			if b.Host != "/real/main/.git" || b.Mode != "rw" {
+				t.Errorf("common git bind should mount the resolved source at the recorded target, got %+v", b)
+			}
 		}
 	}
-	for target, seen := range wantBinds {
-		if !seen {
-			t.Errorf("missing same-path git bind for %q", target)
-		}
+	if !sawWorktree {
+		t.Error("missing same-path git bind for the worktree")
+	}
+	if !sawCommon {
+		t.Error("missing common git dir bind")
 	}
 
 	// A plain project adds neither git bind and keeps name/labels keyed on the id.
