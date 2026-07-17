@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Config editor design accents.** Section headers render as dim rules
+  with the name in a single accent color (4-bit cyan — the terminal
+  theme picks the shade), shared by the cursor and focused picker
+  selection; errors are bold red, "Saved" green, and yellow stays
+  reserved for cross-project-reach warnings. Long lines truncate with a
+  visible ellipsis instead of a silent cut, sub-screens carry a
+  breadcrumb, and monochrome terminals degrade to exactly the old
+  rendering.
+
 - **A store write can no longer resurrect a forgotten store.** Config
   writes (`AtomicWrite`) used to create their parent directory, so a
   write racing a concurrent `byre forget` could re-create the project
