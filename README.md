@@ -199,8 +199,8 @@ Every answer's full recipe lives in the
 
 **Save my LLM credentials so I don't need to re-auth for each box?**
 tldr: say **y** when the first-run picker offers shared auth for your
-agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
-by hand.
+agent -- or enable the relevant _x-shared-auth_ skill(s) in
+`byre config`.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box))
 
 **Run parallel agents on the same repo?**
@@ -215,15 +215,15 @@ independent reviewer.
 ([recipe](https://getbyre.com/docs/how-do-i/workflow/#set-up-two-agents-in-a-review-loop))
 
 **Bring my dotfiles and shell setup into every box?**
-tldr: mount them read-only -- `byre config --global` -> Mounts -- and
-the box's target mirrors your home path, so they land where the agent
-looks.
+tldr: mount them read-only under **Mounts** in `byre config --global`
+-- the box's target mirrors your home path, so they land where the
+agent looks.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#bring-my-dotfiles-and-shell-setup-into-every-box))
 
 **Share one config baseline across many projects?**
 tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
-(`byre config`, EXTENDS section).
+(the **Extends** section of `byre config`).
 ([recipe](https://getbyre.com/docs/how-do-i/toolkit/#share-one-config-baseline-across-many-projects))
 
 **Paste or drag-and-drop images and files into my agent?**
@@ -236,16 +236,16 @@ tldr: `eval "$(byre completion bash)"` in your shell's startup file.
 ([recipe](https://getbyre.com/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands))
 
 **Restrict network access?**
-tldr: `byre config` and enable the _firewall_ skill, then pick what to
-open under Egress.
+tldr: enable the _firewall_ skill in `byre config`, then pick what to
+open under **Egress**.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#restrict-network-access))
 
 **Mount other folders from the host?**
-tldr: `byre config` -> Mounts.
+tldr: the **Mounts** section of `byre config`.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#mount-other-folders-from-the-host))
 
 **Run other Docker containers from inside the byre environment?**
-tldr: `byre config` and enable the _docker-host_ skill.
+tldr: enable the _docker-host_ skill in `byre config`.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#run-other-docker-containers-from-inside-the-byre-environment))
 
 **Get the coding agent to edit its own byre config?**

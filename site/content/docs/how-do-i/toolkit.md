@@ -41,7 +41,7 @@ and installing grants nothing until a box enables the skill.
 
 tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
-(`byre config`, EXTENDS section).
+(the **Extends** section of `byre config`).
 
 A **named layer** is a config file at `~/.byre/layers/<name>/layer.config`
 that any project (or another layer -- chains work) pulls in with

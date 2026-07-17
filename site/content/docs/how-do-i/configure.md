@@ -7,8 +7,8 @@ description: shared logins, MCP, ports, env, dotfiles, the firewall, resource ca
 ## Save my LLM credentials so I don't need to re-auth for each box?
 
 tldr: say **y** when the first-run picker offers shared auth for your
-agent -- or `byre config` and enable the relevant _x-shared-auth_ skill(s)
-by hand.
+agent -- or enable the relevant _x-shared-auth_ skill(s) in
+`byre config`.
 
 By default agents log in once per project, inside the box. The shared-auth
 skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth,
@@ -17,9 +17,9 @@ and opencode every project's first run asks: "Use machine-wide credentials
 to log in to &lt;agent&gt;?" -- yes enables the skill for that project
 (its `byre.config`), and only for it. Saying yes to "Save these as your
 default?" remembers your answer like the template/agent favourites: the
-next box's question just defaults to it, one Enter to accept. (Enabling
-the skill by hand in `~/.byre/default.config` is the machine-wide route --
-then the question stops.) The login lives in a shared volume that
+next box's question just defaults to it, one Enter to accept. (Enabling the
+skill in `byre config --global` is the machine-wide route -- then the
+question stops.) The login lives in a shared volume that
 reset/forget deliberately never touch. See the
 [security model](/docs/security-model/) for the implications of this.
 (Grok's shared auth works differently -- its token rotation can't be
@@ -29,7 +29,7 @@ the skill is hand-enabled rather than offered --
 
 ## Enable a skill in this box?
 
-tldr: `byre config` -> Skills.
+tldr: the **Skills** section of `byre config`.
 
 Bundled skills toggle on the spot; installed and local ones appear once
 they exist on the machine. Everything a skill grants shows up in
@@ -52,12 +52,12 @@ into the agent session; a remote server's host is attributed egress in
 
 ## Add a package to this box -- and promote it to my template?
 
-tldr: `byre config` -> Packages for this box; when it belongs
-everywhere, move the line into your template (fork the bundled one
-first: `byre template fork byre/node my-node`).
+tldr: add it under **Packages** in `byre config`; when it belongs
+everywhere, move it into your template (fork the bundled one first:
+`byre template fork byre/node my-node`).
 
-The first time you want a postgres client, it's one `apt` line in one
-project's config. When it belongs everywhere you write node, fork the
+The first time you want a postgres client, it's one entry under
+**Packages** in that project's `byre config`. When it belongs everywhere you write node, fork the
 bundled template into an editable local one, add the package there, and
 set `template = "my-node"` -- every project on that template gets it on
 its next develop. For literally-everywhere, `byre config --global` puts
@@ -65,8 +65,8 @@ it in your personal baseline.
 
 ## Set my defaults so every new box starts right?
 
-tldr: `byre config --global` edits `~/.byre/default.config` -- the
-bottom layer of every project's cascade.
+tldr: `byre config --global` -- your personal baseline, the bottom
+layer of every project's cascade.
 
 Anything a config can carry can live there: packages, mounts, skills,
 env, egress. The first-run picker's favourites (template, agent, shared
@@ -75,7 +75,7 @@ answers become the pre-selected defaults.
 
 ## Switch agents for one project?
 
-tldr: `byre config` -> Agent, relaunch.
+tldr: the **Agent** section of `byre config`, then relaunch.
 
 The `agent` key decides which enabled agent skill's command launches in
 the foreground. Each agent keeps its login in its own state volume, so
@@ -83,13 +83,11 @@ switching to codex for a week and back to claude costs no re-auth.
 
 ## Expose a port to see the box's dev server?
 
-tldr: `byre config` -> Ports (or `[[ports]] container = 3000` in the
-config).
+tldr: the **Ports** section of `byre config`.
 
 Published ports bind `127.0.0.1` by default -- your browser reaches the
-box, your LAN doesn't. Binding a different interface is an explicit,
-louder choice (`interface = "0.0.0.0"`). Every published port shows in
-`byre status`.
+box, your LAN doesn't; opening a wider interface is an explicit,
+louder choice. Every published port shows in `byre status`.
 
 ## Pass env vars into the box?
 
@@ -128,7 +126,7 @@ images, status -- reads identically across engines.
 
 ## Mount other folders from the host?
 
-tldr: `byre config` -> Mounts.
+tldr: the **Mounts** section of `byre config`.
 
 Each mount is a host path, an in-box path, and a read-only/read-write
 choice (read-only is the default); every mount shows up in `byre
@@ -136,9 +134,9 @@ status` under "Host mounts".
 
 ## Bring my dotfiles and shell setup into every box?
 
-tldr: mount them read-only -- `byre config --global` -> Mounts -- and
-the box's target mirrors your home path, so they land where the agent
-looks.
+tldr: mount them read-only under **Mounts** in `byre config --global`
+-- the box's target mirrors your home path, so they land where the
+agent looks.
 
 A home-relative host path (`~/.config/starship.toml`) suggests the
 matching `/home/dev/...` target automatically. Symlinks into a dotfiles
@@ -153,8 +151,8 @@ tldr: a tiny local skill with a `[context]` block -- every box that
 enables it injects the text into the agent's memory file.
 
 `byre skill init my-conventions`, point its `skill.toml` at a
-`context.md` (`[context] file = "context.md"`), enable it -- globally
-in `~/.byre/default.config` for every box. byre concatenates enabled
+`context.md` (`[context] file = "context.md"`), and enable it in
+`byre config --global` so every box gets it. byre concatenates enabled
 skills' contexts into the agent's own memory path (Claude's
 `CLAUDE.md`, Codex's `AGENTS.md`), additive with whatever the project
 carries. It's how byre's own dev box enforces its diary and review
@@ -196,8 +194,8 @@ the baked-UID ownership model.)
 
 ## Restrict network access?
 
-tldr: `byre config` and enable the _firewall_ skill, then pick what to
-open under Egress.
+tldr: enable the _firewall_ skill in `byre config`, then pick what to
+open under **Egress**.
 
 <!-- demo-placeholder: firewall-enable -->
 > 🎬 *[demo slot: enabling the firewall, opening a door under Egress -- VM-recorded cast]*
@@ -225,7 +223,7 @@ from the full firewall's allowlist too, skill-declared endpoints included.
 
 ## Run other Docker containers from inside the byre environment?
 
-tldr: `byre config` and enable the _docker-host_ skill.
+tldr: enable the _docker-host_ skill in `byre config`.
 
 The skill installs the Docker CLI (plus compose and buildx) in the box and
 mounts the host daemon's socket. It's worth being clear-eyed about what

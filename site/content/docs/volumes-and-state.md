@@ -40,9 +40,9 @@ and require confirmation (`--force` skips it).
 
 **Machine volumes are never touched silently.** `reset` and `forget`
 exclude them and say so -- the machine-wide agent login must never die
-as a side effect of resetting one project. To delete one deliberately:
-`byre config` -> Volumes -> clear (which refuses while any byre session
-is running).
+as a side effect of resetting one project. To delete one deliberately: clear
+it from the **Volumes** section of `byre config` (which refuses while
+any byre session is running).
 
 **Moved or renamed the project directory?** The identity is derived
 from the path, so the old image and volumes would be orphaned --

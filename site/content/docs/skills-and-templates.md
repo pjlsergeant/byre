@@ -15,8 +15,9 @@ A **skill** is a portable bundle: the packages and files a capability
 needs baked into the image, the env and network endpoints it uses at
 runtime, standing instructions for the agent, and any volumes it keeps
 state in. A **template** is shape: base image, packages, egress offers
--- the stack a box is built for. Enable a skill with `byre config` ->
-Skills (or a `skills = [...]` line); pick a template once at first run.
+-- the stack a box is built for. Enable a skill from the
+**Skills** section of `byre config`; pick a template once, at first
+run.
 
 Agent skills carry the agents themselves. More than one can be enabled
 in a box -- the config's `agent` key decides which one launches, and

@@ -51,13 +51,15 @@ See
 
 ## Uninstall byre completely?
 
-tldr: `byre forget` in each project, clear machine volumes via
-`byre config` -> Volumes, then delete `~/.byre` and the binary.
+tldr: `byre forget` in each project, clear machine volumes from the
+**Volumes** section of `byre config`, then delete `~/.byre` and the
+binary.
 
 `forget` clears a project's volumes, image, and host-side config across
 every installed engine. Machine-wide volumes (shared agent logins)
-survive it by design -- clear them from `byre config` -> Volumes, or
-remove `byre-machine-u*` volumes with your engine directly. Everything
+survive it by design -- clear them from the **Volumes** section of
+`byre config`, or remove `byre-machine-u*` volumes with your engine
+directly. Everything
 byre ever makes is prefixed `byre-` on the engine and lives under
 `~/.byre` on the host; there are no daemons, no background services,
 and no networks to clean. If you installed the deliver app, delete
