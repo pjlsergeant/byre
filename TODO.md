@@ -131,9 +131,10 @@ the docs cited and in git history.
   stop. Reviewers WILL re-find this class -- don't re-fix.
 - **Runtime-only env** -- no security value under the threat model (images
   never leave the machine; daemon access is root-equivalent; documented in
-  SECURITY.md). If revived it's build-cache QoL and needs a build_env story.
+  the security model, site/content/docs/security-model.md). If revived it's
+  build-cache QoL and needs a build_env story.
 - **Agent `command` argv validation** -- documented as a deliberate shell
-  fragment instead (SECURITY.md "A skill is trusted code"); typed-field
+  fragment instead (security model, "A skill is trusted code"); typed-field
   allowlists are legibility, not containment. Don't re-fix.
 - **Structured (field-addressable) config validation errors** -- shared
   predicates + `ValidateLayer` is the completeness gate; prose errors

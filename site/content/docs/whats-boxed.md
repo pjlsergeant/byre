@@ -18,5 +18,5 @@ description: the honest contract, including what byre is not
   and that's intentional. byre's promise is that `byre status` always
   tells you where the rope is.
 
-The full security model:
-[docs/SECURITY.md](https://github.com/pjlsergeant/byre/blob/main/docs/SECURITY.md).
+The full [security model](/docs/security-model/): the threat model, the
+contract, and the sharp facts.
