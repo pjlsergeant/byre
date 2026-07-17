@@ -46,7 +46,7 @@ Disciplines and tripwires, not tasks.
     site/content/docs/quickstart.md -- identical blocks.
   - develop launch banner: README hero console block, site landing
     (site/content/_index.md) hero block.
-  - install commands: README hero + "Install" (curl, blessed), site
+  - install commands: README hero + "Install" (brew, blessed), site
     landing hero (brew), site/content/docs/install.md (all routes).
   - How-do-I tldrs: README index and site cookbook are verbatim-identical
     per entry (P6); grep "tldr:" in both when a recipe changes.

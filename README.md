@@ -47,16 +47,15 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 **⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work. All the major planned features have been added, so the interface should be pretty stable at this point.**
 
-byre is a single Go binary; a checksum-verified download of the latest
-release:
+byre is a single Go binary:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | sh
+brew install --cask pjlsergeant/tap/byre
 ```
 
-You need Docker (or Podman) running on the host. Homebrew, `go install`,
-and build-from-source are on the
-[install page](https://getbyre.com/docs/install/).
+You need Docker (or Podman) running on the host. Linux (a
+checksum-verified `install.sh`), `go install`, and build-from-source are
+on the [install page](https://getbyre.com/docs/install/).
 
 ## Quickstart
 

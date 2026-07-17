@@ -53,8 +53,8 @@ goreleaser release --snapshot --clean   # artifacts land in dist/, nothing publi
 
 ## Install paths
 
-All three are live; the README's Install section blesses `install.sh`
-and links the full set on the site's install page
+All three are live; the README's Install section blesses Homebrew and
+links the full set on the site's install page
 (`site/content/docs/install.md`):
 
 - **`go install github.com/pjlsergeant/byre/cmd/byre@latest`** — builds
