@@ -252,14 +252,19 @@ Needs a git repo with a commit; main project already developed.
 From the grok explore pass (2026-07-17, report-only; the report was
 absorbed here and deleted). Pending dispatch:
 
-1. (product, medium on skinny bases) The firewall skill omits
-   `ca-certificates`: `template = "none"` + firewall + allowlisted host
-   → TCP connects but `curl https://…` fails 77 (no trust store), so
-   HTTPS on an ALLOWLISTED host looks like a firewall failure
-   (`curl -k` → 200, `dpkg -l ca-certificates` → absent). Language
-   templates dodge it (they ship CAs). Suggested: add
-   `ca-certificates` to the firewall skill's apt list, or document the
-   requirement for minimal bases.
+1. (product, low-medium, skinny bases) The firewall skill's own
+   diagnostic curl ships without a trust store. The skill's apt list
+   carries curl (+ nc/dig/traceroute), but byre installs apt packages
+   with --no-install-recommends, which strips the ca-certificates that
+   curl's Recommends would pull — so on `template = "none"`,
+   `curl https://…` to an ALLOWLISTED host fails 77 (cert-verify
+   error naming the CA file; a real block is a timeout/000, so the two
+   are distinguishable — the risk is misreading 77 as network trouble
+   in a firewall frame, not a masquerade). Not a firewall defect: the
+   bare base lacks CAs with or without the skill; the skill just hands
+   you the tool that trips on it, on bases where it's the only reason
+   curl exists. Suggested: ship ca-certificates alongside the curl the
+   skill ships (or just document the skinny-base requirement).
 2. (optional UX) `develop --self-edit --agent …` on an already-
    configured project refuses ("only apply when creating a config",
    rc=1) — retyping day-one flags with `--self-edit` aborts the launch;
