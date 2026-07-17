@@ -91,6 +91,12 @@ rather than requiring you to stand in the project directory.
 Only boxes started by your user are considered; `--skip-uid-check`
 includes everyone's (the error tells you when sessions were hidden).
 
+**Exit codes are script-trustworthy:** 0 means bytes landed. Every
+nothing-was-delivered outcome is nonzero — cancelling the picker or the
+paste prompt, an empty paste, an ambiguous box set with no terminal —
+exit 1, alongside ordinary errors (2 stays usage; `--boxes` uses 4 for a
+partial pool, see Remote delivery).
+
 ## What works where
 
 | you are | picker | clipboard out | `byre deliver` (no args) |

@@ -50,7 +50,7 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 		return fmt.Errorf("--remote-byre only applies to an ssh:// delivery")
 	}
 	sources, err := deliverSources(s, opts, paths, hostClipboardReader())
-	if err != nil || sources == nil { // nil sources = beat cancelled, cleanly
+	if err != nil || sources == nil { // cancel arrives as ExitError{1}; nil sources guards the impossible
 		deliverNotify(s, nil, err)
 		return err
 	}
@@ -80,7 +80,7 @@ func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, so
 	landed, err := deliver.RunRemote(cfg, opts, target, sources, sshExec, s.TTY)
 	if deliver.IsCancelled(err) {
 		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
-		return landed, nil
+		return landed, ExitError{Code: 1}
 	}
 	return landed, err
 }
@@ -88,8 +88,10 @@ func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, so
 // deliverSources resolves the input mode (ADR 0021): path args →
 // files; `-` → stdin stream; no args on a TTY → the paste beat, then the
 // pasteboard; no args with piped stdin → stream it; no args, no TTY, no pipe
-// (a graphical launch) → read the pasteboard immediately. A nil, nil return
-// means the user cancelled at the beat.
+// (a graphical launch) → read the pasteboard immediately. A cancel (or empty
+// paste) returns ExitError{1} after its own friendly stderr line: every
+// nothing-was-delivered outcome exits nonzero, so scripts can trust rc=0 to
+// mean bytes landed (ruling 2026-07-17, field-QA finding 3).
 func deliverSources(s Streams, opts deliver.Options, paths []string, reader *clipBackend) ([]deliver.Source, error) {
 	stamp := time.Now().Format("20060102-150405")
 	stdinSource := func(r io.Reader) deliver.Source {
@@ -111,11 +113,11 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 			return nil, err
 		case action == beatCancelled:
 			fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
-			return nil, nil
+			return nil, ExitError{Code: 1}
 		case action == beatText:
 			if len(text) == 0 {
 				fmt.Fprintln(s.Err, "byre: nothing pasted — nothing delivered")
-				return nil, nil
+				return nil, ExitError{Code: 1}
 			}
 			return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
 		case action == beatPaste:
@@ -273,7 +275,7 @@ func deliverTar(s Streams, dir string, opts deliver.Options) error {
 	if _, err := deliver.RunTar(cfg, opts, s.In); err != nil {
 		if deliver.IsCancelled(err) {
 			fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
-			return nil
+			return ExitError{Code: 1}
 		}
 		return err
 	}
@@ -288,7 +290,7 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 	landed, err := deliver.RunSources(cfg, opts, sources)
 	if deliver.IsCancelled(err) {
 		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
-		return landed, nil
+		return landed, ExitError{Code: 1}
 	}
 	return landed, err
 }

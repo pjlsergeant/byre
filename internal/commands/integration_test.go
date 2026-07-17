@@ -1034,8 +1034,12 @@ func TestIntegrationTUIPickerCancel(t *testing.T) {
 	s.WaitFor("deliver to which box?")
 	s.Keys("q")
 	s.WaitFor("cancelled — nothing delivered")
-	if st := s.WaitForExit(); st != 0 {
-		t.Fatalf("cancel should exit 0, got %d\n%s", st, s.CaptureNow())
+	// Cancel exits 1 (ruling 2026-07-17, field-QA finding 3): every
+	// nothing-was-delivered outcome is nonzero — a script wrapping deliver
+	// must be able to trust rc=0 to mean bytes landed. The friendly stderr
+	// line above stays the human disambiguation.
+	if st := s.WaitForExit(); st != 1 {
+		t.Fatalf("cancel should exit 1 (nothing delivered), got %d\n%s", st, s.CaptureNow())
 	}
 	for _, id := range []string{id1, id2} {
 		assertAbsentInBox(t, r, ident, id, "/inbox/unwanted.txt")
