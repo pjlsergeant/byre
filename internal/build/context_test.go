@@ -405,7 +405,9 @@ func TestCopyRootedEntryRefusesEscapingAncestor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), filepath.Join(t.TempDir(), "out"), false); err == nil {
+	// topLevel=true mirrors stageCopy's call on a multi-component configured
+	// source; the escaping ancestor is refused regardless of the flag.
+	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), filepath.Join(t.TempDir(), "out"), true); err == nil {
 		t.Fatal("an entry reached through an escaping ancestor symlink must be refused by the root")
 	}
 }
@@ -445,6 +447,46 @@ func TestAssembleStagesNestedFilesDir(t *testing.T) {
 	}
 	if b, err := os.ReadFile(filepath.Join(paths.ContextDir, "files", "assets", "img", "logo")); err != nil || string(b) != "png" {
 		t.Errorf("nested files dir not staged: %q %v", b, err)
+	}
+}
+
+func TestWithinRoot(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "home", "me", "proj")
+	cases := []struct {
+		path    string
+		wantRel string
+		wantOK  bool
+	}{
+		{filepath.Join(root, "a", "b"), filepath.Join("a", "b"), true},
+		{root, ".", true},
+		{filepath.Join(filepath.Dir(root), "sibling"), "", false},
+		{filepath.Join(string(filepath.Separator), "etc", "passwd"), "", false},
+	}
+	for _, c := range cases {
+		rel, ok := withinRoot(root, c.path)
+		if ok != c.wantOK || (ok && rel != c.wantRel) {
+			t.Errorf("withinRoot(%q,%q) = (%q,%v), want (%q,%v)", root, c.path, rel, ok, c.wantRel, c.wantOK)
+		}
+	}
+}
+
+// A `[[claude_skills]].path` INSIDE the writable project must stage through the
+// project-root anchor, not the by-pathname copyPath route (whose O_NOFOLLOW
+// guards only the leaf) — else an agent could swap a project-local ancestor.
+// Staged content confirms the anchored route handles the project-local case.
+func TestAssembleStagesProjectLocalClaudeSkill(t *testing.T) {
+	paths := bootstrapped(t)
+	src := filepath.Join(paths.Canonical, "myskill")
+	writeClaudeSkillDir(t, src, "myskill")
+	if err := os.WriteFile(filepath.Join(src, "support.txt"), []byte("quokka"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Assemble(paths, config.Config{Base: "node:22", ClaudeSkills: []config.ClaudeSkill{{Name: "myskill", Path: src}}}, skills.Resolved{}); err != nil {
+		t.Fatalf("project-local claude skill should stage: %v", err)
+	}
+	staged := filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills", "myskill", "support.txt")
+	if b, err := os.ReadFile(staged); err != nil || string(b) != "quokka" {
+		t.Errorf("project-local claude skill not staged through the anchor: %q %v", b, err)
 	}
 }
 

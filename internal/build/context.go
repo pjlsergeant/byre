@@ -20,15 +20,16 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
-// fileCopy is one staged copy job: a real source path, its destination inside
-// the build context, and a description for error messages.
+// fileCopy is one staged copy job: a source, its destination inside the build
+// context, and a description for error messages.
 type fileCopy struct {
 	// srcRoot, when non-empty, is a TRUSTED root directory that src is resolved
 	// relative to via openat (os.Root), so an intermediate component an agent
 	// swaps for an escaping symlink after validation cannot redirect the open.
-	// Used for `files` sources, whose ancestors are inside the agent-writable
-	// project. When empty, src is an absolute pathname (skill sources, whose
-	// ancestors live outside the project and are not agent-writable).
+	// planFiles sets it (sources are always project-root relative). When empty,
+	// src is an ABSOLUTE pathname; stageCopy still routes it through the project
+	// root if it lands inside the agent-writable project, and only uses the
+	// by-pathname copyPath for a source genuinely outside it.
 	srcRoot string
 	src     string
 	staged  string
@@ -119,7 +120,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		if err := os.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
 			return "", err
 		}
-		if err := stageCopy(j); err != nil {
+		if err := stageCopy(paths.Canonical, j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
 	}
@@ -363,25 +364,46 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 	return real, clean, nil
 }
 
-// stageCopy realizes one copy job. A job with srcRoot set stages src (a relative
-// path) through an os.Root anchored at that trusted root, so every component —
-// not just the leaf — is resolved via openat and an agent-swapped ancestor
-// cannot escape it. A job without srcRoot has an absolute src whose ancestors
-// are outside the agent-writable project; it uses copyPath.
-func stageCopy(j fileCopy) error {
-	if j.srcRoot == "" {
+// stageCopy realizes one copy job, anchoring the source at the project root
+// whenever it lives inside it so no agent-swappable ancestor is followed by
+// pathname. A job may declare srcRoot itself (planFiles, always project-root
+// relative); otherwise an ABSOLUTE src is routed here: if it resolves inside
+// projectRoot (e.g. a project-local `[[claude_skills]].path`), it is anchored
+// there too; only a source genuinely outside the agent-writable project falls
+// through to the absolute-path copyPath. This ENFORCES — rather than assumes —
+// that no by-pathname reopen happens for an agent-writable source.
+func stageCopy(projectRoot string, j fileCopy) error {
+	root, src := j.srcRoot, j.src
+	if root == "" {
+		if rel, ok := withinRoot(projectRoot, j.src); ok {
+			root, src = projectRoot, rel
+		}
+	}
+	if root == "" {
 		return copyPath(j.src, j.staged)
 	}
-	root, err := os.OpenRoot(j.srcRoot)
+	r, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer r.Close()
 	// The configured source itself (top level) may be a symlink the USER named;
-	// safeProjectPath already resolved it within the project, and os.Root follows
-	// it while refusing escapes. Its interior is agent territory: symlinks there
-	// are rejected (copyRootedEntry with topLevel=false).
-	return copyRootedEntry(root, j.src, j.staged, true)
+	// safeProjectPath / validation already resolved it within the project, and
+	// os.Root follows it while refusing escapes. Its interior is agent territory:
+	// symlinks there are rejected (copyRootedEntry with topLevel=false).
+	return copyRootedEntry(r, src, j.staged, true)
+}
+
+// withinRoot reports whether path (absolute) lies inside root (absolute,
+// cleaned), returning the cleaned relative path if so. Purely lexical — the
+// routing decision; os.Root enforces the actual openat containment, so a
+// symlink under a lexically-contained path still cannot escape.
+func withinRoot(root, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }
 
 // copyRootedEntry copies the entry at rel (relative to root) into dst, opening
