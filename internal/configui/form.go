@@ -209,7 +209,14 @@ type model struct {
 	// prepare runs before anything can write filePath (ctrl+s save, $EDITOR);
 	// nil = no-op. The project editor passes Bootstrap here so an uninitialized
 	// project is enrolled in ~/.byre/projects only when a write actually lands.
+	// runPrepare clears it after the first success.
 	prepare func() error
+
+	// preEditorRaw/preEditorErr snapshot filePath as ctrl+e hands it to
+	// $EDITOR (Err non-nil = it didn't exist); onEditorClosed compares to
+	// mark savedOnce only when the editor actually wrote.
+	preEditorRaw []byte
+	preEditorErr error
 
 	mode  uiMode
 	focus int // form row (modeForm)
@@ -495,13 +502,18 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// $EDITOR writes the file directly, so the deferred store setup must
-		// land first — same as save.
-		if m.prepare != nil {
-			if err := m.prepare(); err != nil {
-				m.errMsg = err.Error()
-				return m, nil
-			}
+		// land BEFORE it opens — vi can't create a file in a missing dir. The
+		// accepted cost: opening the raw editor and quitting without writing
+		// still enrolls; the alternative (a half-created store the editor
+		// can't write into) helps nobody.
+		var ok bool
+		if m, ok = m.runPrepare(); !ok {
+			return m, nil
 		}
+		// Snapshot the on-disk state so onEditorClosed can tell a real
+		// $EDITOR write from a look-and-quit — savedOnce must track writes
+		// that actually landed, not editor round-trips.
+		m.preEditorRaw, m.preEditorErr = os.ReadFile(m.filePath)
 		m.errMsg = ""
 		return m, openEditor(m.filePath)
 	case "up", "shift+tab":

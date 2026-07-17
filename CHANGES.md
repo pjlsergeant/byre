@@ -2,16 +2,20 @@
 
 ## Unreleased
 
-- **Inspection commands no longer enroll the project.** `byre dockerfile`,
-  `byre dockerrun`, and `byre ejectfirewall` are documented side-effect-free,
-  but bootstrapped `~/.byre/projects/<id>/` (directory + path record) before
-  rendering — so pointing them at a directory byre had never seen left a
-  durable identity record behind. They now run a read-only validation
-  (`ValidateExisting`) that keeps the loud id-collision check without
-  creating anything. `byre config` follows the same principle: opening the
-  project editor and quitting without saving no longer creates the project
-  dir — enrollment is deferred to the first actual write (ctrl+s, the
-  $EDITOR round-trip, or a volume clear).
+- **No write, no enrollment.** Commands that only show or review now leave a
+  never-seen project un-enrolled: `byre dockerfile`, `byre dockerrun`, and
+  `byre ejectfirewall` are documented side-effect-free but bootstrapped the
+  project's host-side store (`~/.byre/projects/<id>/` + path record) before
+  rendering, leaving a durable identity record behind — they now run a
+  read-only check (`ValidateExisting`) that keeps the loud id-collision
+  error without creating anything. The same deferral applies wherever a
+  flow can end without a write: `byre config` opened-and-quit-unsaved (a
+  save the validator refuses also enrolls nothing), `byre mcp remove` with
+  nothing to remove, and a declined `byre preset apply` no longer create
+  the store — enrollment now rides the first landed write. Read-only views
+  (`status`, `mcp list`, `claude-skill list`, `preset inspect`) gained the
+  same loud collision check, and after a ctrl+e round-trip that wrote the
+  file the editor now reports "wrote", not "config unchanged".
 
 - **Field-QA fixes across onboarding, deliver, and the config UI** (from
   byre's first agent-driven exploratory QA pass). The shared-auth offer

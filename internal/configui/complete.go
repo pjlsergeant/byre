@@ -3,6 +3,7 @@
 package configui
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -41,6 +42,14 @@ func (m model) onEditorClosed(err error) model {
 		m.errMsg = "editor: " + err.Error()
 		return m
 	}
+	// Did the editor land a write? Compare against the ctrl+e snapshot —
+	// savedOnce feeds Run's saved return (and the caller's wrote/unchanged
+	// report), so it must track disk, not the round-trip. Checked before the
+	// parse: a written-but-invalid file was still written.
+	raw, rerr := os.ReadFile(m.filePath)
+	if rerr == nil && ((m.preEditorErr != nil) || !bytes.Equal(raw, m.preEditorRaw)) {
+		m.savedOnce = true
+	}
 	cfg, perr := config.ParseFile(m.filePath)
 	if perr != nil {
 		m.errMsg = "file has an error after editing (fix it and ctrl+e again): " + perr.Error()
@@ -49,7 +58,7 @@ func (m model) onEditorClosed(err error) model {
 	m = m.loadConfig(cfg)
 	// The editor may have added (or removed) hand-written comments — recompute
 	// the destroys-comments warning so it tracks the file, not the open-time state.
-	if raw, rerr := os.ReadFile(m.filePath); rerr == nil {
+	if rerr == nil {
 		m.commentWarn = handComments(string(raw))
 	}
 	m.errMsg = ""
@@ -58,6 +67,22 @@ func (m model) onEditorClosed(err error) model {
 }
 
 // ---- save / assemble / dirty -----------------------------------------------
+
+// runPrepare runs the deferred store setup, shared by every path that is about
+// to write filePath (ctrl+s save, the $EDITOR shell-out). A failure lands in
+// errMsg and reports false; success clears the hook — it exists to enroll on
+// the FIRST write, and re-running it on every later save is wasted I/O.
+func (m model) runPrepare() (model, bool) {
+	if m.prepare == nil {
+		return m, true
+	}
+	if err := m.prepare(); err != nil {
+		m.errMsg = err.Error()
+		return m, false
+	}
+	m.prepare = nil
+	return m, true
+}
 
 func (m model) save() model {
 	cfg := m.assemble()
@@ -70,14 +95,18 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
-	// Deferred store setup (e.g. enrolling the project dir) happens only now,
-	// when a write is actually about to land — never at editor open.
-	if m.prepare != nil {
-		if err := m.prepare(); err != nil {
-			m.errMsg = err.Error()
-			m.status = ""
-			return m
-		}
+	// Validate BEFORE the deferred store setup: a save the validator refuses
+	// never becomes a write, so it must not enroll anything. (Save re-runs
+	// the same check on the way to disk; the duplication buys the ordering.)
+	if err := cfg.ValidateLayer(); err != nil {
+		m.errMsg = err.Error()
+		m.status = ""
+		return m
+	}
+	var ok bool
+	if m, ok = m.runPrepare(); !ok {
+		m.status = ""
+		return m
 	}
 	if err := Save(m.filePath, cfg); err != nil {
 		m.errMsg = err.Error()

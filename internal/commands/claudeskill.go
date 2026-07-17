@@ -59,7 +59,7 @@ func ClaudeSkillAdd(s Streams, projectDir string, global bool, name, dir string)
 		return err
 	}
 
-	path, label, err := mcpLayerPath(projectDir, global)
+	path, label, prepare, err := mcpLayerPath(projectDir, global)
 	if err != nil {
 		return err
 	}
@@ -87,6 +87,11 @@ func ClaudeSkillAdd(s Streams, projectDir string, global bool, name, dir string)
 		kept = append(kept, cs)
 	}
 	cur.ClaudeSkills = kept
+	if prepare != nil {
+		if err := prepare(); err != nil {
+			return err
+		}
+	}
 	if err := configui.Save(path, cur); err != nil {
 		return err
 	}
@@ -116,7 +121,7 @@ func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) e
 		return fmt.Errorf("claude-skill remove: %q is not a valid claude skill name", name)
 	}
 
-	path, label, err := mcpLayerPath(projectDir, global)
+	path, label, prepare, err := mcpLayerPath(projectDir, global)
 	if err != nil {
 		return err
 	}
@@ -157,6 +162,11 @@ func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) e
 			return nil
 		}
 		return fmt.Errorf("claude skill %s: not declared in the %s and not effective from below — nothing to remove", name, label)
+	}
+	if prepare != nil {
+		if err := prepare(); err != nil {
+			return err
+		}
 	}
 	if err := configui.Save(path, cur); err != nil {
 		return err
@@ -221,6 +231,11 @@ func claudeSkillStillEffective(cur config.Config, name string) (bool, error) {
 func ClaudeSkillList(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
+		return err
+	}
+	// Read-only, but collision-checked like status: never render another
+	// project's declared set as this one's.
+	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
 	cfg, err := config.Load(projectDir)

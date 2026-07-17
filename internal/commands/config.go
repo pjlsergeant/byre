@@ -171,14 +171,20 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		// Fail the id-collision check loudly before the editor opens, but defer
 		// the enrolling Bootstrap to save time: opening the editor on a project
 		// byre has never seen and quitting without saving must leave no
-		// ~/.byre/projects/<id> behind.
+		// ~/.byre/projects/<id> behind. Only an unrecorded project gets the
+		// hook — for an enrolled one it stays nil, so writes hit the store
+		// exactly as before this deferral existed (in particular, a store a
+		// concurrent `byre forget` deletes mid-session keeps failing loudly at
+		// the setup lock instead of being silently re-created).
 		if verr := paths.ValidateExisting(); verr != nil {
 			return verr
 		}
-		prepare = paths.Bootstrap
+		if _, serr := os.Stat(paths.PathRecord); serr != nil {
+			prepare = paths.Bootstrap
+		}
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
-		vols = newVolumeAdmin(paths, projectDir) // nil if the engine/config won't resolve
+		vols = newVolumeAdmin(paths, projectDir, prepare) // nil if the engine/config won't resolve
 	}
 
 	cur, err := config.ParseFile(path)
@@ -213,13 +219,14 @@ type volumeAdmin struct {
 	rs         []engineRunner
 	paths      project.Paths
 	projectDir string
+	prepare    func() error // enrolls an unrecorded project before Clear locks; nil once enrolled
 }
 
 // newVolumeAdmin builds the volume admin for a project, or returns nil (so the
 // editor omits the Volumes section) when the config or engines won't resolve.
 // The section is shown even with zero volumes — the screen re-resolves on each
 // open, so volumes added later (e.g. via $EDITOR) appear without restarting.
-func newVolumeAdmin(paths project.Paths, projectDir string) configui.VolumeAdmin {
+func newVolumeAdmin(paths project.Paths, projectDir string, prepare func() error) configui.VolumeAdmin {
 	if _, err := resolve(paths, projectDir, nil); err != nil {
 		return nil
 	}
@@ -227,7 +234,7 @@ func newVolumeAdmin(paths project.Paths, projectDir string) configui.VolumeAdmin
 	if err != nil {
 		return nil // no engine → can't list/clear; hide the section
 	}
-	return &volumeAdmin{rs: rs, paths: paths, projectDir: projectDir}
+	return &volumeAdmin{rs: rs, paths: paths, projectDir: projectDir, prepare: prepare}
 }
 
 func dedupeVolumes(vs []config.Volume) []config.Volume {
@@ -304,12 +311,16 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, error) {
 // logical name with a declared project one, so name alone is ambiguous.
 func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
 	r := a.runnerFor(v.Engine)
-	// The lock file lives in the project dir, which the deferred-Bootstrap
-	// editor may not have created yet (e.g. clearing an orphaned machine
-	// volume from a never-developed project). Clearing mutates state, so
-	// enrolling here is fair.
-	if err := a.paths.Bootstrap(); err != nil {
-		return err
+	// The lock file lives in the project store, which an unrecorded project
+	// doesn't have yet (e.g. clearing an orphaned machine volume from a
+	// never-developed project) — enroll before locking; a clear is a
+	// mutation, so that's fair even if the clear is then refused (the lock
+	// can't exist without the store). Enrolled projects skip this, so a
+	// store deleted by a concurrent forget still fails loudly at the lock.
+	if a.prepare != nil {
+		if err := a.prepare(); err != nil {
+			return err
+		}
 	}
 	// io.Discard: this runs inside the TUI; a waiting note would corrupt the screen.
 	return withSetupLock(io.Discard, a.paths.LockFile, func() error {

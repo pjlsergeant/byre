@@ -1672,3 +1672,57 @@ func TestPrepareErrorBlocksSaveAndEditor(t *testing.T) {
 		t.Fatalf("ctrl+e prepare error not surfaced: %q", got)
 	}
 }
+
+// A save the validator refuses never becomes a write, so it must not run
+// prepare (enrollment): cross-item collisions are deliberately deferred to
+// save-time ValidateLayer, making this an ordinary-use path.
+func TestSaveValidationFailureSkipsPrepare(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(store, "byre.config")
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: "/a", Target: "/x", Mode: "ro"},
+		{Host: "/b", Target: "/x", Mode: "ro"},
+	}}
+	m := newModel("t", path, cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	calls := 0
+	m.prepare = func() error { calls++; return nil }
+	m = m.save()
+	if m.savedOnce {
+		t.Fatal("an invalid layer must not save")
+	}
+	if calls != 0 {
+		t.Fatalf("a refused save ran prepare %d times (enrolls on a no-op)", calls)
+	}
+	if !strings.Contains(m.errMsg, "collides") {
+		t.Fatalf("validation error not surfaced: %q", m.errMsg)
+	}
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Fatalf("refused save left state behind: %v", err)
+	}
+}
+
+// savedOnce must track writes that actually landed in the $EDITOR round-trip:
+// created or changed → saved; look-and-quit → not.
+func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// Look-and-quit on a not-yet-existing file: nothing written.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if got := m.onEditorClosed(nil); got.savedOnce {
+		t.Fatal("no write must not mark savedOnce")
+	}
+	// $EDITOR created the file: that IS the first write.
+	if err := os.WriteFile(path, []byte("agent = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.onEditorClosed(nil); !got.savedOnce {
+		t.Fatal("a landed $EDITOR write must mark savedOnce")
+	}
+	// Re-open on the now-existing file, quit without changing it: not a write.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if got := m.onEditorClosed(nil); got.savedOnce {
+		t.Fatal("an unchanged file must not mark savedOnce")
+	}
+}

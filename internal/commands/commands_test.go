@@ -242,6 +242,97 @@ func TestInspectionCommandsDoNotEnrollProject(t *testing.T) {
 	}
 }
 
+// No write, no enrollment: flows that CAN write but end without writing must
+// also leave a never-seen project un-enrolled.
+func TestNoWriteFlowsDoNotEnrollProject(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(t *testing.T, proj string)
+	}{
+		{"preset apply declined", func(t *testing.T, proj string) {
+			shipPreset(t, proj, PresetName, "agent = \"none\"\n")
+			s, _, _ := testStreams("n\n", true)
+			if err := PresetApply(s, proj, ""); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"mcp remove nothing", func(t *testing.T, proj string) {
+			s, _, _ := testStreams("", false)
+			if err := MCPRemove(s, proj, false, "ghost"); err == nil {
+				t.Fatal("expected nothing-to-remove error")
+			}
+		}},
+		{"claude-skill remove nothing", func(t *testing.T, proj string) {
+			s, _, _ := testStreams("", false)
+			if err := ClaudeSkillRemove(s, proj, false, "ghost"); err == nil {
+				t.Fatal("expected nothing-to-remove error")
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BYRE_HOME", t.TempDir())
+			proj := t.TempDir()
+			tc.run(t, proj)
+			paths, err := project.Resolve(proj)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, serr := os.Stat(paths.Dir); !os.IsNotExist(serr) {
+				t.Fatalf("%s enrolled the project (created %s)", tc.name, paths.Dir)
+			}
+		})
+	}
+}
+
+// The write-side counterpart: a landed layer-verb write enrolls WITH the path
+// record (dir alone would defeat the collision check).
+func TestMCPAddEnrollsWithPathRecord(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+	s, _, _ := testStreams("", false)
+	if err := MCPAdd(s, proj, false, "srv", []string{"https://example.com/mcp"}, nil, nil, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(paths.PathRecord); err != nil {
+		t.Fatalf("mcp add landed a write but did not enroll (path record): %v", err)
+	}
+}
+
+// Read-only views share the loud id-collision stance: on a collision they
+// would render ANOTHER project's config as this one's — refuse instead.
+func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+	paths, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _, _ := testStreams("", false)
+	for name, run := range map[string]func() error{
+		"status":            func() error { return Status(s, proj, false) },
+		"mcp list":          func() error { return MCPList(s, proj) },
+		"claude-skill list": func() error { return ClaudeSkillList(s, proj) },
+		"preset inspect":    func() error { return PresetInspect(s, proj, "") },
+		"mcp remove":        func() error { return MCPRemove(s, proj, false, "ghost") },
+	} {
+		err := run()
+		if err == nil || !strings.Contains(err.Error(), "collision") {
+			t.Errorf("%s on a collided id: err = %v, want collision error", name, err)
+		}
+	}
+}
+
 func TestShellArgQuoting(t *testing.T) {
 	cases := map[string]string{
 		"plain":                         "plain",
