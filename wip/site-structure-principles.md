@@ -12,9 +12,10 @@ surface. This file is structural only -- which surface says it, not how.
 
 ## The surfaces and their readers
 
-Five surfaces, two jobs. A surface either **converts** (turns a visitor
-into a try) or **serves** (answers a user who already said yes). The devlog
-does neither -- it's evidence.
+Four surfaces, two jobs. A surface either **converts** (turns a visitor
+into a try) or **serves** (answers a user who already said yes). (The old
+site plan had a fifth -- `/devlog/` as published evidence; dropped
+2026-07-17. The devlog stays a private working record, not a surface.)
 
 | Surface | Reader | Moment | Job |
 |---|---|---|---|
@@ -22,7 +23,6 @@ does neither -- it's evidence.
 | Site landing (`/`) | someone sent a link, or searching | same decision, but off-GitHub -- can carry media | convert |
 | Site `/docs/` | someone who said yes | installing, configuring, hitting a question | serve |
 | Repo `docs/` | contributor, auditor, skill author | verifying or extending byre | serve (deep) |
-| `/devlog/` | the trust-but-verify reader | "is this real, is it alive?" | evidence |
 
 A page must know which job it's doing. A page doing both does neither.
 
@@ -47,7 +47,7 @@ link, never a second copy.
 - Deep reference (architecture, security model, skill/template authoring,
   credential mechanics): repo `docs/`. The site links to these on GitHub;
   it never mirrors them.
-- Timeline and rationale-in-motion: devlog and `docs/adr/`.
+- Point-in-time rationale: `docs/adr/`.
 
 **P3. The README keeps the whole trial path.** A GitHub visitor must be
 able to evaluate, install, and reach a first `byre develop` without
@@ -114,8 +114,8 @@ rewrite, not a truncation.
 | Platform | **Keep** -- short, stable, evaluators need it; also belongs on `/docs/install/` | P3, P5 |
 
 And the site's side of the ledger (all already TODO'd, listed for
-completeness): comparison table onto the landing, screencast hero,
-`/devlog/`, and -- new from this pass -- the `/docs/` pages stop being
+completeness): comparison table onto the landing, screencast hero, and --
+new from this pass -- the `/docs/` pages stop being
 README mirrors and become the canonical, fuller text (P2), each absorbing
 the detail the README sheds.
 

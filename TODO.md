@@ -17,8 +17,9 @@ the rationale lives.
 
 ## Open
 
-- [ ] (L) **Site.** Landing page + real docs, devlog demoted to `/devlog/`;
-  the decided shape lives in docs/marketing/positioning.md "Site plan".
+- [ ] (L) **Site.** Landing page + real docs; the decided shape lives in
+  docs/marketing/positioning.md "Site plan", with the placement principles
+  drafted in wip/site-structure-principles.md (2026-07-17).
   v1 skeleton shipped 2026-07-15 (`site/`, hand-rolled Hugo, getbyre.com
   via Pages, docs seeded from the README); logo/favicon and the
   ask-your-agent conceit landed on both surfaces same day. Remaining:
@@ -32,8 +33,6 @@ the rationale lives.
     README-only; the site plan puts the table on the landing page.
   - Screencast hero on the landing (the day-03-style clip -- the media
     the README shouldn't carry).
-  - `/devlog/` -- devlog published under the site, linked as "see what's
-    being built", never the front door.
 
 ## Standing
 

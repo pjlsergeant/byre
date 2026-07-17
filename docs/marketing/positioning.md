@@ -175,8 +175,10 @@ cold readers bouncing.
 ## Site plan
 
 Roles: **site = landing page + real docs; README = landing page +
-simplified docs; devlog = personal accountability record**, never the
-front door. (Open work; tracked as a `TODO.md` pointer to this section.)
+simplified docs**. The devlog stays a private working record — publishing
+it under `/devlog/` was dropped 2026-07-17. (Open work; tracked as a
+`TODO.md` pointer to this section; placement principles drafted in
+`wip/site-structure-principles.md`.)
 
 - **`index.md` becomes the landing page:** headline, the day-03-style
   screencast as hero (the media the README shouldn't carry), the comparison
@@ -184,8 +186,6 @@ front door. (Open work; tracked as a `TODO.md` pointer to this section.)
 - **`/docs/…` becomes real documentation** (install, quickstart, config
   cascade, skills, volumes & state, the boxed/not-boxed contract, commands)
   — the README keeps only the simplified versions and links here.
-- **Devlog moves to `/devlog/`** — linked simply as "see what's being
-  built", never as the authority on what works (that's the README's job).
 - One message everywhere: README converts a repo visitor in 30 seconds; the
   site is the shareable link that *shows* the drop-in moment and holds the
   depth.
