@@ -247,6 +247,9 @@ func commandNames() []string {
 	root := newRootCmd(recorderApp(map[string]string{}), "/proj", s)
 	var names []string
 	for _, c := range root.Commands() {
+		if c.Hidden { // hidden plumbing (commands-page) stays out of help
+			continue
+		}
 		names = append(names, c.Name())
 	}
 	return names
