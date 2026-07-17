@@ -495,6 +495,17 @@ func TestAgentWritableRelResolvesAlias(t *testing.T) {
 	if !ok || rel != filepath.Join("a", "myskill") {
 		t.Fatalf("agentWritableRel(%q,%q) = (%q,%v), want (%q,true)", real, aliased, rel, ok, filepath.Join("a", "myskill"))
 	}
+
+	// Conversely, a path spelled UNDER root whose intermediate escapes must stay
+	// anchored (lexical match wins), so os.Root refuses it — not demoted to the
+	// by-pathname copyPath route by resolving first.
+	if err := os.Symlink(string(filepath.Separator)+"etc", filepath.Join(real, "sub")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	rel, ok = agentWritableRel(real, filepath.Join(real, "sub", "passwd"))
+	if !ok || rel != filepath.Join("sub", "passwd") {
+		t.Fatalf("a lexically in-tree path with an escaping intermediate must stay anchored, got (%q,%v)", rel, ok)
+	}
 }
 
 // A `[[claude_skills]].path` INSIDE the writable project must stage through the

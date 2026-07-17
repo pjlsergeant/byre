@@ -396,20 +396,23 @@ func stageCopy(agentRoot string, j fileCopy) error {
 	return copyRootedEntry(r, src, j.staged, true)
 }
 
-// agentWritableRel reports whether path resolves inside root, returning the
-// resolved relative path. It EvalSymlinks the source first because a config
-// path may spell root through a symlink alias that expandHome does not
-// canonicalize (root — WorkDir — is already Canonicalize'd); a purely lexical
-// compare would then miss a real in-tree source and drop it onto the unsafe
-// by-pathname route. The resolve only ROUTES; os.Root re-resolves at open time,
-// so it need not be race-tight. On resolve failure, fall back to the lexical
-// spelling (os.Root still guards the eventual open).
+// agentWritableRel reports whether path is inside root, returning the relative
+// path to anchor it at. It tries the LEXICAL spelling first: a path already
+// spelled under root is anchored (openat), so an escaping intermediate component
+// is REFUSED by os.Root rather than demoted to the by-pathname route — resolving
+// first would send exactly that case to copyPath, since EvalSymlinks would land
+// outside root. Only if the lexical spelling misses does it EvalSymlinks, to
+// still catch a source spelled through a symlink alias of root (expandHome does
+// not canonicalize; root — WorkDir — is already Canonicalize'd). Either way the
+// resolve only ROUTES; os.Root re-resolves at open time.
 func agentWritableRel(root, path string) (string, bool) {
-	resolved := path
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		resolved = r
+	if rel, ok := withinRoot(root, path); ok {
+		return rel, true
 	}
-	return withinRoot(root, resolved)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return withinRoot(root, resolved)
+	}
+	return "", false
 }
 
 // withinRoot reports whether path (absolute) lies inside root (absolute,
