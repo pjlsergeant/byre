@@ -42,12 +42,17 @@ func (m model) onEditorClosed(err error) model {
 		m.errMsg = "editor: " + err.Error()
 		return m
 	}
-	// Did the editor land a write? Compare against the ctrl+e snapshot —
+	// Did the editor land a mutation? Compare against the ctrl+e snapshot —
 	// savedOnce feeds Run's saved return (and the caller's wrote/unchanged
 	// report), so it must track disk, not the round-trip. Checked before the
-	// parse: a written-but-invalid file was still written.
+	// parse: a written-but-invalid file was still written. A file DELETED in
+	// the editor is a mutation too — reporting it "unchanged" would tell the
+	// user their config is intact when it is gone.
 	raw, rerr := os.ReadFile(m.filePath)
-	if rerr == nil && ((m.preEditorErr != nil) || !bytes.Equal(raw, m.preEditorRaw)) {
+	created := rerr == nil && m.preEditorErr != nil
+	changed := rerr == nil && m.preEditorErr == nil && !bytes.Equal(raw, m.preEditorRaw)
+	deleted := rerr != nil && m.preEditorErr == nil
+	if created || changed || deleted {
 		m.savedOnce = true
 	}
 	cfg, perr := config.ParseFile(m.filePath)
@@ -63,6 +68,11 @@ func (m model) onEditorClosed(err error) model {
 	}
 	m.errMsg = ""
 	m.status = "Reloaded from file"
+	if deleted {
+		// Say what actually happened — the empty form below is the file's
+		// true (absent) state, not a glitch.
+		m.status = "Reloaded — the file was deleted in the editor"
+	}
 	return m
 }
 

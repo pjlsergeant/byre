@@ -169,19 +169,18 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 			return perr
 		}
 		// Fail the id-collision check loudly before the editor opens, but defer
-		// the enrolling Bootstrap to save time: opening the editor on a project
+		// the enrolling Bootstrap to write time: opening the editor on a project
 		// byre has never seen and quitting without saving must leave no
-		// ~/.byre/projects/<id> behind. Only an unrecorded project gets the
-		// hook — for an enrolled one it stays nil, so writes hit the store
-		// exactly as before this deferral existed (in particular, a store a
-		// concurrent `byre forget` deletes mid-session keeps failing loudly at
-		// the setup lock instead of being silently re-created).
+		// ~/.byre/projects/<id> behind. The hook runs on EVERY landing write
+		// (Bootstrap is idempotent), not just the first: Save's AtomicWrite
+		// would happily MkdirAll a store a concurrent `byre forget` deleted
+		// mid-session, and a store re-created WITHOUT its path record is a
+		// half-enrollment the id-collision check can't see. Bootstrap riding
+		// every write keeps dir and record inseparable.
 		if verr := paths.ValidateExisting(); verr != nil {
 			return verr
 		}
-		if _, serr := os.Stat(paths.PathRecord); serr != nil {
-			prepare = paths.Bootstrap
-		}
+		prepare = paths.Bootstrap
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
 		vols = newVolumeAdmin(paths, projectDir, prepare) // nil if the engine/config won't resolve
@@ -219,7 +218,7 @@ type volumeAdmin struct {
 	rs         []engineRunner
 	paths      project.Paths
 	projectDir string
-	prepare    func() error // enrolls an unrecorded project before Clear locks; nil once enrolled
+	prepare    func() error // re-ensures the store (dir + path record) before Clear locks
 }
 
 // newVolumeAdmin builds the volume admin for a project, or returns nil (so the

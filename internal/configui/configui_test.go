@@ -1725,4 +1725,17 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 	if got := m.onEditorClosed(nil); got.savedOnce {
 		t.Fatal("an unchanged file must not mark savedOnce")
 	}
+	// Deleted inside the editor: a mutation — "config unchanged" would claim
+	// the config is intact when it is gone.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	got := m.onEditorClosed(nil)
+	if !got.savedOnce {
+		t.Fatal("a deletion in the editor must mark savedOnce")
+	}
+	if !strings.Contains(got.status, "deleted") {
+		t.Fatalf("deletion must be named in the status, got %q", got.status)
+	}
 }
