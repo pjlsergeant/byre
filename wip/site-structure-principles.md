@@ -139,7 +139,20 @@ wrong genre. Derived final-screen captures are a site-side option only
 (poster frames, docs-page text blocks); for the README's curated blocks
 the lockstep tripwire stays a swept checklist (P9).
 
-### Publish-time asciinema demos (assumed feasible 2026-07-17; prototype still owed)
+### Publish-time asciinema demos (PROTOTYPED 2026-07-17 -- feasible)
+
+Prototype ran in the dev box (script + artifacts:
+`~/scratch/demo-prototype/`): a static asciinema 3.2.1 and static tmux
+3.6b (both plain GitHub-release binaries, no root -- CI-viable), a
+shell driver speaking the tuitest verbs (send-keys + capture-pane
+polling), and `byre config --global` against a throwaway `BYRE_HOME` --
+fully headless, no engine, geometry pinned via asciinema's
+`--window-size` matching the pane. The cast records the real TUI
+escape stream and converts/plays cleanly. One discipline the prototype
+surfaced: ending the recording by killing the tmux server leaves
+"[server exited]" as the cast's final frame, so the harness must trim
+trailing events back to the last intended repaint (trivial on the
+JSON-lines cast; verified poster-frame = final TUI screen after trim).
 
 The tuitest substrate (ADR 0038) can record site demos: an `asciinema rec
 -c "tmux -L <socket> attach"` spectator alongside the existing driver
