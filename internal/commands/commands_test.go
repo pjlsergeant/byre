@@ -325,6 +325,11 @@ func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
 		"claude-skill list": func() error { return ClaudeSkillList(s, proj) },
 		"preset inspect":    func() error { return PresetInspect(s, proj, "") },
 		"mcp remove":        func() error { return MCPRemove(s, proj, false, "ghost") },
+		// Not read-only, but the same stance with higher stakes: shell keys the
+		// session lookup on the id, so a collision must refuse before it can
+		// exec into another project's container (nil engines: the check must
+		// fire before any engine is consulted).
+		"shell": func() error { return shell(s, proj, nil) },
 	} {
 		err := run()
 		if err == nil || !strings.Contains(err.Error(), "collision") {

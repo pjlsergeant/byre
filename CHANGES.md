@@ -16,8 +16,10 @@
   nothing to remove, and a declined `byre preset apply` no longer create
   the store — enrollment now rides the first landed write. Read-only views
   (`status`, `mcp list`, `claude-skill list`, `preset inspect`) gained the
-  same loud collision check, and after a ctrl+e round-trip that wrote the
-  file the editor now reports "wrote", not "config unchanged".
+  same loud collision check — as did `byre shell`, which keys its session
+  lookup on the project id and on a collision would exec into another
+  project's container — and after a ctrl+e round-trip that wrote the file
+  the editor now reports "wrote", not "config unchanged".
 
 - **Box login shells keep the image's PATH.** Debian's `/etc/profile`
   resets PATH in login shells, so a `template = "go"` box had no `go` on

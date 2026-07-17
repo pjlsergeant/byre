@@ -42,6 +42,12 @@ func shell(s Streams, projectDir string, engines []sessionRunner) error {
 	if err != nil {
 		return err
 	}
+	// Same loud id-collision check as the read-only views, with higher stakes:
+	// the session lookup below keys on the id label, so on a collision shell
+	// would exec into ANOTHER project's container — refuse instead.
+	if err := paths.ValidateExisting(); err != nil {
+		return err
+	}
 	// Query the worktree label so `byre shell` opens THIS worktree's session, not
 	// a sibling worktree's (both carry the project label).
 	label := workdirLabel(paths)
