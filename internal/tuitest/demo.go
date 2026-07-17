@@ -55,9 +55,13 @@ func (s *Session) startRecorder(path string, cols, rows int) {
 		// The idle cap is header metadata the player honors at playback, so a
 		// slow WaitFor never becomes a dead gap in the published demo.
 		"--idle-time-limit", "2",
-		// Capture input events too: what reaches the spectator's stdin is
-		// recorded as "i" events (the trim already matches sentinels against
-		// output events only).
+		// Input capture is armed but INERT today (review-verified: zero "i"
+		// events in every cast): scenarios inject keys via `tmux send-keys`,
+		// which never passes the spectator's stdin — typed input shows only
+		// as echoed output. Real "i" events would need key injection through
+		// the recorded client's pty instead; the flag stays so that route
+		// records input the day a scenario takes it (the trim already
+		// matches sentinels against output events only).
 		"--capture-input",
 		"--window-size", fmt.Sprintf("%dx%d", cols, rows),
 		"-c", fmt.Sprintf("tmux -L %s attach -t main", s.socket),
