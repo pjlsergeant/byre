@@ -1,10 +1,13 @@
 package project
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // worktreeInfo describes a detected linked git worktree: where its identity
@@ -41,15 +44,40 @@ type worktreeInfo struct {
 // submodules, whose `.git` points at `.../modules/<name>` and has no `commondir`.
 func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	gitPath := filepath.Join(dir, ".git")
-	fi, err := os.Lstat(gitPath)
+	// Open the pointer ONCE, WITHOUT following symlinks, and bind every check
+	// below (the content read AND the reciprocal fstat) to this one descriptor.
+	// Separate Lstat / ReadFile / Stat calls would each re-resolve the path, so
+	// an agent (which has /workspace rw) could swap .git for a symlink to
+	// genuine external worktree metadata between them and pass every check —
+	// turning it into an arbitrary rw host mount. O_NOFOLLOW fails (ELOOP) if
+	// .git is itself a symlink; ENOENT if absent — both are standalone.
+	// O_NONBLOCK so a .git swapped to a FIFO returns instead of blocking
+	// forever on a writer (the gitInfo gate below then rejects it).
+	gitFile, err := os.OpenFile(gitPath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return worktreeInfo{}, false, nil // no .git — not a repo; standalone
+		// Only absence and the no-follow symlink rejection mean "standalone".
+		// A genuine failure (permission, I/O, fd exhaustion) must surface, not
+		// silently mint a separate identity and drop the worktree mount.
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ELOOP) {
+			return worktreeInfo{}, false, nil
+		}
+		return worktreeInfo{}, false, err
 	}
-	if fi.IsDir() {
-		return worktreeInfo{}, false, nil // a real .git dir — main worktree / plain repo
+	defer gitFile.Close()
+	// gitInfo is this exact inode — reused for the regular-file gate and the
+	// reciprocal SameFile, so nothing re-resolves the name.
+	gitInfo, err := gitFile.Stat()
+	if err != nil {
+		return worktreeInfo{}, false, err // fstat of an open fd failing is a genuine error
+	}
+	// A genuine linked worktree's .git is a REGULAR FILE (the `gitdir:`
+	// pointer). A real .git dir (main repo / plain repo) or anything else is
+	// standalone.
+	if !gitInfo.Mode().IsRegular() {
+		return worktreeInfo{}, false, nil
 	}
 
-	data, err := os.ReadFile(gitPath)
+	data, err := io.ReadAll(gitFile)
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
@@ -84,6 +112,55 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 		common = filepath.Join(gitDir, common)
 	}
 	common = filepath.Clean(common)
+
+	// Reject FORGED worktree metadata. `commonGitDir` becomes a same-path RW
+	// host bind (runparams.go), and the agent can plant a project-local .git
+	// file + commondir via its rw /workspace mount — so an unverified
+	// commondir is an arbitrary-host-dir mount. A genuine linked worktree has
+	// two structural invariants git guarantees, both checked here with
+	// os.SameFile (inode identity — robust to symlinks and path spelling):
+	//
+	//  1. gitDir is exactly <common>/worktrees/<name>, i.e. the parent of
+	//     gitDir's parent IS common. This is the security-critical one: to
+	//     escape, the forged commondir must name a dir OUTSIDE the
+	//     agent-writable tree — but gitDir (which must hold the commondir file
+	//     we just read, so it is agent-writable) then cannot also sit inside
+	//     that outside dir. The two requirements are mutually exclusive.
+	//  2. <gitDir>/gitdir points back at <dir>/.git (git's reciprocal
+	//     back-pointer). Belt-and-suspenders; matches `git worktree repair`.
+	//
+	// Inconsistent metadata is a loud error (never a silent standalone
+	// fallback or a silent mount) — same stance as the missing-commondir case.
+	//
+	// Accepted residual: os.SameFile is inode identity, so a HARDLINK of a
+	// genuine external worktree's .git into /workspace would pass. Unreachable
+	// under byre's mounts — the agent sees only /workspace and explicit binds,
+	// so it has no path to an external .git to hardlink (and hardlinks can't
+	// cross filesystems); recorded so it isn't re-raised.
+	structCommon := filepath.Dir(filepath.Dir(gitDir))
+	sc, scErr := os.Stat(structCommon)
+	cc, ccErr := os.Stat(common)
+	if scErr != nil || ccErr != nil || !os.SameFile(sc, cc) {
+		return worktreeInfo{}, false, fmt.Errorf(
+			"%s has inconsistent git worktree metadata: commondir points at %q, "+
+				"which is not the parent of the worktree git dir %q — refusing to mount it. "+
+				"If the main repository moved, run `git worktree repair` in it", dir, common, gitDir)
+	}
+	backData, err := os.ReadFile(filepath.Join(gitDir, "gitdir"))
+	if err != nil {
+		return worktreeInfo{}, false, fmt.Errorf(
+			"%s looks like a git worktree but its back-pointer is missing (%s/gitdir): "+
+				"run `git worktree repair`", dir, gitDir)
+	}
+	back := strings.TrimRight(string(backData), "\r\n")
+	bp, bpErr := os.Stat(back)
+	// Compare against gitInfo — the inode we OPENED and read — not a fresh
+	// os.Stat(gitPath), so a mid-check .git swap cannot satisfy this.
+	if bpErr != nil || !os.SameFile(bp, gitInfo) {
+		return worktreeInfo{}, false, fmt.Errorf(
+			"%s git worktree back-pointer (%s/gitdir → %q) does not point back to it — "+
+				"refusing to mount; run `git worktree repair`", dir, gitDir, back)
+	}
 
 	// The identity dir is the main worktree: the parent of a ".git"
 	// common dir, or the common dir itself for a bare repo. Canonicalize

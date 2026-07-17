@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // The transport is one `exec -i` per delivered file, running a small POSIX-sh
@@ -100,20 +101,27 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 		return "", fmt.Errorf("delivering %s: %w", src, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
+		// The USER named a symlink — following it is their explicit choice.
+		// Route dirs (skipped, as everywhere — also kills cycles) and reject
+		// non-files up front; the actual open (deliverTopFile, follow=true) is
+		// still nonblocking + fd-stat'd so a symlink to a FIFO can't hang.
 		target, err := os.Stat(src)
 		if err != nil {
 			return "", fmt.Errorf("delivering %s: broken symlink: %w", src, err)
 		}
 		if target.IsDir() {
-			// Directory symlinks are skipped everywhere (also kills cycles).
 			fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to a directory)\n", src)
 			return "", nil
 		}
-		info = target // a file symlink is followed to its content
+		return deliverTopFile(cfg, sess, src, true)
 	}
 	switch {
 	case info.Mode().IsRegular():
-		return deliverFile(cfg, sess, src, filepath.Base(src), "/inbox", false)
+		// A regular file the user named: open race-safely (no-follow +
+		// nonblocking), so a swap to an escaping symlink (exfil) or a FIFO
+		// (hang) in the window after this Lstat can't change what is
+		// delivered — the same protection interior entries get.
+		return deliverTopFile(cfg, sess, src, false)
 	case info.IsDir():
 		return deliverDir(cfg, sess, src)
 	default:
@@ -122,16 +130,30 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 	}
 }
 
-// deliverFile streams one local file into destDir under name, returning the
-// landed path the box reported (uniquify happens in-box, so the reported name
-// is the truth).
-func deliverFile(cfg Config, sess Session, src, name, destDir string, interior bool) (string, error) {
-	f, err := os.Open(src)
+// deliverTopFile opens a top-level source and streams it. follow follows a
+// symlink the user named directly (their choice); otherwise O_NOFOLLOW so a
+// path that was a regular file at Lstat is never followed if swapped to a
+// symlink afterward. O_NONBLOCK + an fd stat means a FIFO (named, swapped, or
+// symlinked-to) returns immediately and is skipped rather than blocking.
+func deliverTopFile(cfg Config, sess Session, src string, follow bool) (string, error) {
+	flag := os.O_RDONLY | syscall.O_NONBLOCK
+	if !follow {
+		flag |= syscall.O_NOFOLLOW
+	}
+	f, err := os.OpenFile(src, flag, 0)
 	if err != nil {
 		return "", fmt.Errorf("delivering %s: %w", src, err)
 	}
 	defer f.Close()
-	return deliverStream(cfg, sess, f, name, destDir, interior)
+	st, err := f.Stat()
+	if err != nil {
+		return "", fmt.Errorf("delivering %s: %w", src, err)
+	}
+	if !st.Mode().IsRegular() {
+		fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file)\n", src)
+		return "", nil
+	}
+	return deliverStream(cfg, sess, f, filepath.Base(src), "/inbox", false)
 }
 
 // deliverStream is deliverFile's engine: content from any reader.
@@ -150,7 +172,11 @@ func deliverStream(cfg Config, sess Session, content io.Reader, name, destDir st
 	if err != nil {
 		return "", fmt.Errorf("delivering %s: %w", name, err)
 	}
-	landed := strings.TrimSpace(out)
+	// Trim ONLY the protocol line-framing, never arbitrary whitespace: a
+	// filename may legitimately end in a space, and the printed path must be
+	// the path that actually landed (TrimSpace would report /inbox/report for
+	// a file that landed as "/inbox/report ").
+	landed := strings.TrimRight(out, "\r\n")
 	if landed == "" {
 		return "", fmt.Errorf("delivering %s: the box reported no landed path", name)
 	}
@@ -171,10 +197,24 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("delivering %s/: %w", src, err)
 	}
-	root := strings.TrimSpace(out)
+	root := strings.TrimRight(out, "\r\n") // line-framing only — see deliverStream
 	if root == "" {
 		return "", fmt.Errorf("delivering %s/: the box reported no landed path", src)
 	}
+
+	// Interior files are opened THROUGH this root, never by their walked path.
+	// os.Root resolves each component with openat, so a symlink the agent
+	// planted inside the tree (it has /workspace rw) cannot pull a file from
+	// OUTSIDE the delivered directory into the box, and the entry cannot be
+	// swapped for an escaping symlink between the walk's Lstat and the open
+	// (the check/open race). This mirrors internal/build's copyPath symlink
+	// rejection. A top-level symlink the USER named is a different case — that
+	// is their explicit choice and is followed by deliverPath, not here.
+	hostRoot, err := os.OpenRoot(src)
+	if err != nil {
+		return root, fmt.Errorf("delivering %s/: %w", src, err)
+	}
+	defer hostRoot.Close()
 
 	files, okFiles, failed := 0, 0, 0
 	var bytes int64
@@ -201,26 +241,52 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		if d := dirOf(dest); d != "" {
 			destDir = root + "/" + d
 		}
-		deliverOne := func(size int64) {
+		// deliverContained opens rel through hostRoot (escape-safe) and streams
+		// it. isLink distinguishes the failure semantics: for a symlink entry,
+		// an open that fails or resolves to a non-regular target is a benign
+		// SKIP (it escaped the tree, or points at a dir/FIFO — same as a
+		// symlink-to-dir); for a real regular-file entry, the same open failing
+		// (unreadable, or swapped to an escaping symlink after the walk) is a
+		// genuine delivery FAILURE the user must hear about.
+		deliverContained := func(isLink bool) {
+			// O_NONBLOCK so opening a FIFO (an interior symlink to one, or a
+			// regular file swapped to one after the walk) returns immediately
+			// instead of blocking forever on a writer — the fd stat below then
+			// rejects it. Harmless on regular files (POSIX ignores O_NONBLOCK
+			// for their reads).
+			f, oerr := hostRoot.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+			if oerr != nil {
+				if isLink {
+					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink outside the delivered directory, or broken)\n", p)
+					return
+				}
+				fmt.Fprintf(cfg.Err, "byre: delivering %s: %v\n", p, oerr)
+				files++
+				failed++
+				return
+			}
+			defer f.Close()
+			st, serr := f.Stat()
+			if serr != nil || !st.Mode().IsRegular() {
+				if isLink {
+					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to something other than a file)\n", p)
+					return
+				}
+				fmt.Fprintf(cfg.Err, "byre: delivering %s: not a regular file\n", p)
+				files++
+				failed++
+				return
+			}
 			files++
-			if _, ferr := deliverFile(cfg, sess, p, filepath.Base(dest), destDir, true); ferr != nil {
+			if _, ferr := deliverStream(cfg, sess, f, filepath.Base(dest), destDir, true); ferr != nil {
 				fmt.Fprintf(cfg.Err, "byre: %v\n", ferr)
 				failed++
 				return
 			}
 			okFiles++
-			bytes += size
+			bytes += st.Size()
 		}
 		switch {
-		case d.Type()&os.ModeSymlink != 0:
-			// Regular targets only: a symlink to a FIFO would pass a
-			// not-a-directory check and then block forever at open time.
-			st, serr := os.Stat(p)
-			if serr != nil || !st.Mode().IsRegular() {
-				fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to something other than a file, or broken)\n", p)
-				return nil
-			}
-			deliverOne(st.Size())
 		case d.IsDir():
 			if _, derr := sess.Engine.ExecInput(sess.ID, sess.UID, sess.GID, strings.NewReader(""),
 				"sh", "-c", mkdirScript, "byre-deliver", root+"/"+dest); derr != nil {
@@ -229,11 +295,15 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 				return filepath.SkipDir
 			}
 		case d.Type().IsRegular():
-			var size int64
-			if st, serr := d.Info(); serr == nil {
-				size = st.Size()
-			}
-			deliverOne(size)
+			deliverContained(false)
+		case d.Type()&os.ModeSymlink != 0:
+			// Followed only if it stays inside the delivered tree (a relative
+			// interior link); an escaping or non-regular target is skipped.
+			// Note os.Root re-roots ABSOLUTE symlink targets, so an
+			// absolute-but-in-tree link is skipped too — a conscious tradeoff
+			// (matches internal/build's "no nested symlinks" spirit) for
+			// swap-safe containment.
+			deliverContained(true)
 		default:
 			fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", p)
 		}

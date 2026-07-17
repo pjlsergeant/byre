@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // Remote delivery, local half (ADR 0037): `byre deliver ssh://host ...` is
@@ -235,7 +236,10 @@ func remoteFailure(err error, target SSHTarget, remoteByre, doing string) error 
 func parseLandedPaths(out string) []string {
 	var landed []string
 	for _, line := range strings.Split(out, "\n") {
-		if line = strings.TrimSpace(line); line != "" {
+		// Strip only the CR of a CRLF frame, never the path's own trailing
+		// space (a filename may end in one; the remote already trimmed the
+		// LF by splitting). See transport.go deliverStream.
+		if line = strings.TrimRight(line, "\r"); line != "" {
 			landed = append(landed, line)
 		}
 	}
@@ -249,14 +253,19 @@ type packPlan struct {
 	bytes   int64 // content bytes (headers excluded — the meter's total)
 }
 
-// packEntry is one archive member. Exactly one of path/data backs a file
-// entry; dir entries have neither.
+// packEntry is one archive member. Exactly one of root+rel / path / data backs
+// a file entry; dir entries have none. root+rel names an interior file opened
+// THROUGH an os.Root (escape-safe, see planPath); path is a top-level source
+// the user named directly; data is in-memory content (clipboard captures).
 type packEntry struct {
-	name string // slash-form archive name
-	path string // host file to stream
-	data []byte // in-memory content (clipboard captures)
-	size int64
-	dir  bool
+	name   string   // slash-form archive name
+	root   *os.Root // interior file: open rel through this contained root
+	rel    string   // interior file: path relative to root
+	path   string   // host file to stream (top-level source or byre spool)
+	follow bool     // path entry: follow a symlink (only a user-named top-level symlink)
+	data   []byte   // in-memory content (clipboard captures)
+	size   int64
+	dir    bool
 }
 
 // planPack walks the sources into a pack plan, mirroring local delivery's
@@ -267,9 +276,16 @@ type packEntry struct {
 func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(), err error) {
 	plan = &packPlan{}
 	var spools []string
+	var roots []*os.Root
+	addRoot := func(r *os.Root) { roots = append(roots, r) }
 	cleanup = func() {
 		for _, s := range spools {
 			os.Remove(s)
+		}
+		// Roots stay open through writeTo (which re-opens interior entries
+		// through them); the caller defers cleanup, so this runs after.
+		for _, r := range roots {
+			r.Close()
 		}
 	}
 	seen := map[string]bool{} // top-level archive names; collisions uniquify locally for legibility
@@ -285,7 +301,7 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 	for _, src := range sources {
 		switch {
 		case src.Path != "":
-			if err := planPath(warn, plan, claim, src.Path); err != nil {
+			if err := planPath(warn, plan, claim, src.Path, addRoot); err != nil {
 				return plan, cleanup, err
 			}
 		case src.Data != nil:
@@ -312,12 +328,20 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 }
 
 // planPath plans one path argument: a file entry, or a directory subtree.
-func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src string) error {
+// Interior files are planned to open THROUGH an os.Root rooted at the
+// delivered directory (registered via addRoot for the plan's lifetime), so an
+// agent-planted symlink inside the tree can't pull a host file from outside it
+// into the archive — the same containment local delivery gets from os.Root and
+// the build context gets from copyPath. A top-level symlink the user named is
+// their explicit choice and is followed.
+func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src string, addRoot func(*os.Root)) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return fmt.Errorf("delivering %s: %w", src, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
+		// User named a symlink — follow it (follow=true); writeTo opens it
+		// nonblocking + fd-stat'd so a symlink to a FIFO can't hang.
 		target, err := os.Stat(src)
 		if err != nil {
 			return fmt.Errorf("delivering %s: broken symlink: %w", src, err)
@@ -326,14 +350,28 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 			fmt.Fprintf(warn, "byre: skipping %s (symlink to a directory)\n", src)
 			return nil
 		}
-		info = target
+		if !target.Mode().IsRegular() {
+			fmt.Fprintf(warn, "byre: skipping %s (symlink to something other than a file)\n", src)
+			return nil
+		}
+		plan.entries = append(plan.entries, packEntry{name: claim(filepath.Base(src)), path: src, follow: true, size: target.Size()})
+		plan.bytes += target.Size()
+		return nil
 	}
 	switch {
 	case info.Mode().IsRegular():
+		// A regular file the user named: writeTo opens it no-follow + nonblock,
+		// so a swap to an escaping symlink or a FIFO after this Lstat can't
+		// change or hang the delivery.
 		plan.entries = append(plan.entries, packEntry{name: claim(filepath.Base(src)), path: src, size: info.Size()})
 		plan.bytes += info.Size()
 		return nil
 	case info.IsDir():
+		hostRoot, err := os.OpenRoot(src)
+		if err != nil {
+			return fmt.Errorf("delivering %s: %w", src, err)
+		}
+		addRoot(hostRoot)
 		root := claim(filepath.Base(src))
 		plan.entries = append(plan.entries, packEntry{name: root + "/", dir: true})
 		return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
@@ -349,24 +387,36 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 			}
 			name := root + "/" + filepath.ToSlash(rel)
 			switch {
-			case d.Type()&os.ModeSymlink != 0:
-				// Regular targets only: a symlink to a FIFO would pass a
-				// not-a-directory check and then block forever at open time.
-				st, serr := os.Stat(p)
-				if serr != nil || !st.Mode().IsRegular() {
-					fmt.Fprintf(warn, "byre: skipping %s (symlink to something other than a file, or broken)\n", p)
-					return nil
-				}
-				plan.entries = append(plan.entries, packEntry{name: name, path: p, size: st.Size()})
-				plan.bytes += st.Size()
 			case d.IsDir():
 				plan.entries = append(plan.entries, packEntry{name: name + "/", dir: true})
-			case d.Type().IsRegular():
-				st, serr := d.Info()
-				if serr != nil {
-					return fmt.Errorf("delivering %s: %w", p, serr)
+			case d.Type().IsRegular(), d.Type()&os.ModeSymlink != 0:
+				// Validate containment now; writeTo re-opens the SAME rel
+				// through the same root, so a later swap still can't escape.
+				// A symlink that escapes the tree (or is non-regular) is a
+				// benign SKIP; a real regular file that won't open is a hard
+				// error (aborts the pack — the old writeTo os.Open behavior).
+				isLink := d.Type()&os.ModeSymlink != 0
+				// O_NONBLOCK so a FIFO (interior symlink to one, or a swap)
+				// can't block the plan — see transport.go.
+				f, oerr := hostRoot.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+				if oerr != nil {
+					if isLink {
+						fmt.Fprintf(warn, "byre: skipping %s (symlink outside the delivered directory, or broken)\n", p)
+						return nil
+					}
+					return fmt.Errorf("delivering %s: %w", p, oerr)
 				}
-				plan.entries = append(plan.entries, packEntry{name: name, path: p, size: st.Size()})
+				st, serr := f.Stat()
+				f.Close()
+				if serr != nil || !st.Mode().IsRegular() {
+					if isLink {
+						fmt.Fprintf(warn, "byre: skipping %s (symlink to something other than a file)\n", p)
+						return nil
+					}
+					fmt.Fprintf(warn, "byre: skipping %s (not a regular file)\n", p)
+					return nil
+				}
+				plan.entries = append(plan.entries, packEntry{name: name, root: hostRoot, rel: rel, size: st.Size()})
 				plan.bytes += st.Size()
 			default:
 				fmt.Fprintf(warn, "byre: skipping %s (not a regular file or directory)\n", p)
@@ -399,12 +449,40 @@ func (p *packPlan) writeTo(w io.Writer, m *sendMeter) error {
 			continue
 		}
 		var content io.Reader
-		if e.data != nil {
+		switch {
+		case e.data != nil:
 			content = bytes.NewReader(e.data)
-		} else {
-			f, err := os.Open(e.path)
+		case e.root != nil:
+			// Interior file: re-open through the contained root (escape-safe
+			// even if the entry was swapped since planning). O_NONBLOCK so a
+			// swap-to-FIFO returns instead of blocking; re-stat the fd and
+			// refuse a non-regular target.
+			f, err := e.root.OpenFile(e.rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 			if err != nil {
 				return err
+			}
+			if st, serr := f.Stat(); serr != nil || !st.Mode().IsRegular() {
+				f.Close()
+				return fmt.Errorf("delivering %s: no longer a regular file", e.name)
+			}
+			content = f
+		default:
+			// Top-level source (or a byre spool). No-follow unless the user
+			// named a symlink, plus nonblocking + an fd stat: a regular-file
+			// arg swapped to an escaping symlink or a FIFO after planning can
+			// neither exfiltrate nor block. Spools are byre's own regular temp
+			// files, so no-follow is a no-op for them.
+			flag := os.O_RDONLY | syscall.O_NONBLOCK
+			if !e.follow {
+				flag |= syscall.O_NOFOLLOW
+			}
+			f, err := os.OpenFile(e.path, flag, 0)
+			if err != nil {
+				return err
+			}
+			if st, serr := f.Stat(); serr != nil || !st.Mode().IsRegular() {
+				f.Close()
+				return fmt.Errorf("delivering %s: not a regular file", e.name)
 			}
 			content = f
 		}

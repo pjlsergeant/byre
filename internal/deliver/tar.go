@@ -166,7 +166,7 @@ func (u *tarUnpack) root(top string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("delivering %s/: %w", top, err)
 	}
-	root := strings.TrimSpace(out)
+	root := strings.TrimRight(out, "\r\n") // line-framing only — see transport.go deliverStream
 	if root == "" {
 		return "", fmt.Errorf("delivering %s/: the box reported no landed path", top)
 	}

@@ -1,10 +1,13 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // makeWorktree fabricates git's on-disk worktree layout (no git binary needed):
@@ -145,6 +148,107 @@ func TestResolveDanglingWorktreeErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "worktree") {
 		t.Fatalf("error should mention worktree/repair, got: %v", err)
+	}
+}
+
+// Security: a FORGED .git + commondir must never become an arbitrary rw host
+// mount. The agent (project mounted rw) plants a project-local .git pointing
+// at a worktrees/<name> dir it controls, whose commondir names an unrelated
+// host dir it wants mounted — even with a consistent back-pointer. The
+// structural check (gitDir must be <common>/worktrees/<name>) must reject it.
+func TestDetectWorktreeRejectsForgedCommondir(t *testing.T) {
+	root := t.TempDir()
+	secret := filepath.Join(root, "secret") // the dir the attacker wants bound
+	if err := os.MkdirAll(secret, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proj := filepath.Join(root, "proj")
+	gd := filepath.Join(proj, "fake", "worktrees", "x") // agent-writable
+	if err := os.MkdirAll(gd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte(secret+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A consistent back-pointer too — the agent can forge this; the structural
+	// check must still catch the escape.
+	if err := os.WriteFile(filepath.Join(gd, "gitdir"), []byte(filepath.Join(proj, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".git"), []byte("gitdir: "+gd+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, ok, err := detectWorktree(proj)
+	if err == nil {
+		t.Fatalf("forged commondir accepted (ok=%v) — would mount %q rw", ok, info.commonGitDir)
+	}
+	if info.commonGitDir == secret {
+		t.Fatalf("forged commondir leaked as the mount target: %q", secret)
+	}
+}
+
+// A project .git that is itself a SYMLINK is never treated as a worktree
+// pointer: following it (ReadFile + the reciprocal Stat) would let an agent
+// point .git at genuine external worktree metadata and pass every check,
+// turning it into an arbitrary rw host mount. It must resolve to standalone.
+func TestDetectWorktreeRejectsSymlinkedDotGit(t *testing.T) {
+	// A genuine external worktree (valid, consistent metadata).
+	extMain, extWT := makeWorktree(t, "wt")
+	_ = extMain
+	// The victim project: its .git is a SYMLINK to the genuine worktree's .git.
+	proj := t.TempDir()
+	if err := os.Symlink(filepath.Join(extWT, ".git"), filepath.Join(proj, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	info, ok, err := detectWorktree(proj)
+	if err != nil {
+		t.Fatalf("a symlinked .git must resolve to standalone, not error: %v", err)
+	}
+	if ok || info.commonGitDir != "" {
+		t.Fatalf("symlinked .git was treated as a worktree: ok=%v mount=%q", ok, info.commonGitDir)
+	}
+}
+
+// A .git that is a FIFO (an agent can swap it in) must not block detection:
+// O_NONBLOCK returns immediately and the regular-file gate resolves standalone.
+// Timeout-guarded so a regression (dropping O_NONBLOCK) fails, not hangs.
+func TestDetectWorktreeDotGitFifoDoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(dir, ".git"), 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, ok, err := detectWorktree(dir)
+		if ok {
+			err = fmt.Errorf("a FIFO .git was treated as a worktree")
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("detectWorktree blocked opening a FIFO .git — O_NONBLOCK regression")
+	}
+}
+
+// The reciprocal back-pointer is validated too: a structurally-plausible
+// worktree whose <gitDir>/gitdir does NOT point back at <dir>/.git is rejected.
+func TestDetectWorktreeRejectsBadBackPointer(t *testing.T) {
+	main, wt := makeWorktree(t, "wt")
+	gd := filepath.Join(main, ".git", "worktrees", "wt")
+	other := filepath.Join(t.TempDir(), "other")
+	if err := os.WriteFile(other, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gd, "gitdir"), []byte(other+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := detectWorktree(wt); err == nil {
+		t.Fatal("a worktree whose back-pointer names an unrelated file must be rejected")
 	}
 }
 

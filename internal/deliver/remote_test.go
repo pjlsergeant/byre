@@ -346,7 +346,10 @@ func TestPackUnpackRoundTripDirectory(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(dir, "bug", "notes.txt"), []byte("n"), 0o644)
 	os.WriteFile(filepath.Join(sub, "deep.txt"), []byte("d"), 0o644)
-	os.Symlink(filepath.Join(dir, "bug", "notes.txt"), filepath.Join(dir, "bug", "link.txt"))
+	// A RELATIVE interior symlink resolves within the delivered tree, so it is
+	// followed and delivered. (An absolute or escaping symlink is contained
+	// out — covered by the escape tests.)
+	os.Symlink("notes.txt", filepath.Join(dir, "bug", "link.txt"))
 
 	ssh := &fakeSSH{responses: []sshResponse{
 		{stdout: "/inbox/bug\n"},
@@ -446,6 +449,37 @@ func TestPackSkipsSymlinkToFifoInTree(t *testing.T) {
 	}
 	if !strings.Contains(errw.String(), "skipping") || !strings.Contains(errw.String(), "pipelink") {
 		t.Fatalf("no skip note: %q", errw.String())
+	}
+}
+
+// Security (remote path): an interior symlink to a regular file OUTSIDE the
+// delivered tree must be skipped at plan time — never packed, so the outside
+// content can't be exfiltrated over ssh.
+func TestPackSkipsSymlinkEscapingTree(t *testing.T) {
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(secret, []byte("TOPSECRET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "bug")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(sub, "notes.txt"), []byte("n"), 0o644)
+	if err := os.Symlink(secret, filepath.Join(sub, "innocent.txt")); err != nil {
+		t.Fatal(err)
+	}
+	var errw bytes.Buffer
+	plan, cleanup, err := planPack(&errw, PathSources([]string{sub}))
+	defer cleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.entries) != 2 { // bug/ and bug/notes.txt; never the escaping link
+		t.Fatalf("escaping symlink was packed: %+v", plan.entries)
+	}
+	if !strings.Contains(errw.String(), "skipping") || !strings.Contains(errw.String(), "innocent.txt") {
+		t.Fatalf("no skip note for the escaping symlink: %q", errw.String())
 	}
 }
 

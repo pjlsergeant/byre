@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // fakeEngine is a configurable Engine. Its ExecInput understands the three
@@ -496,6 +497,127 @@ func TestSymlinkToFifoInTreeSkipped(t *testing.T) {
 	}
 	if got := strings.Join(eng.streams, "|"); !strings.Contains(got, "real.txt") {
 		t.Fatalf("the regular file should still deliver: %v", eng.streams)
+	}
+}
+
+// Security: an interior symlink to a REGULAR file OUTSIDE the delivered tree
+// (the agent-planted-symlink exfiltration vector) must be skipped, and the
+// outside file's content must NEVER reach the box. The agent has /workspace
+// rw, so it can drop such a link inside a dir the user delivers as a unit.
+func TestDirectorySymlinkEscapeNotDelivered(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	dir := t.TempDir()
+	// The "host secret" lives OUTSIDE the delivered tree.
+	secret := filepath.Join(dir, "secret.txt")
+	mustWrite(t, secret, "TOPSECRET")
+	proj := filepath.Join(dir, "proj")
+	mustMkdir(t, proj)
+	mustWrite(t, filepath.Join(proj, "ok.txt"), "OK")
+	if err := os.Symlink(secret, filepath.Join(proj, "innocent.txt")); err != nil {
+		t.Fatal(err)
+	}
+	landed, err := Run(cfg, Options{}, []string{proj})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 {
+		t.Fatalf("landed = %v", landed)
+	}
+	joined := strings.Join(eng.streams, "|")
+	if strings.Contains(joined, "TOPSECRET") || strings.Contains(joined, "innocent") {
+		t.Fatalf("escaping symlink leaked outside content into the box: %v", eng.streams)
+	}
+	if !strings.Contains(joined, "ok.txt<-OK") {
+		t.Fatalf("the real interior file should still deliver: %v", eng.streams)
+	}
+	if !strings.Contains(errw.String(), "skipping") || !strings.Contains(errw.String(), "innocent.txt") {
+		t.Fatalf("expected a skip note for the escaping symlink: %q", errw.String())
+	}
+}
+
+// A filename ending in a space must be reported at the path it ACTUALLY
+// landed — the printed/copied path is the landed path (documented contract).
+// Only the protocol newline is trimmed, never the name's own trailing space.
+func TestTrailingSpaceFilenameLandsAtReportedPath(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, out, _ := testConfig(eng)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "report ") // a trailing space is a legal filename
+	mustWrite(t, src, "R")
+	landed, err := Run(cfg, Options{}, []string{src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(landed) != 1 || landed[0] != "/inbox/report " {
+		t.Fatalf("landed = %q, want \"/inbox/report \" (trailing space preserved)", landed)
+	}
+	if strings.TrimRight(out.String(), "\n") != "/inbox/report " {
+		t.Fatalf("printed path dropped the trailing space: %q", out.String())
+	}
+}
+
+// An interior symlink to a FIFO that is ITSELF inside the delivered tree is
+// contained (os.Root would follow it), so only the nonblocking open stops it
+// from hanging forever on a writer. Timeout-guarded so a regression (dropping
+// O_NONBLOCK) fails loudly instead of wedging the suite.
+func TestInteriorSymlinkToFifoDoesNotBlock(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	dir := t.TempDir()
+	root := filepath.Join(dir, "bug")
+	mustMkdir(t, root)
+	mustWrite(t, filepath.Join(root, "real.txt"), "R")
+	if err := mkfifo(filepath.Join(root, "pipe")); err != nil { // FIFO inside the tree
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	if err := os.Symlink("pipe", filepath.Join(root, "pipelink")); err != nil { // relative → contained
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := Run(cfg, Options{}, []string{root}); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("delivery blocked on an interior symlink-to-FIFO — O_NONBLOCK regression")
+	}
+	if got := strings.Join(eng.streams, "|"); !strings.Contains(got, "real.txt") {
+		t.Fatalf("the regular file should still deliver: %v", eng.streams)
+	}
+	if !strings.Contains(errw.String(), "pipelink") {
+		t.Fatalf("expected a skip note for the FIFO symlink: %q", errw.String())
+	}
+}
+
+// A top-level symlink the user names that points at a FIFO must be skipped
+// (nonblocking open + fd stat), not hang. Timeout-guarded.
+func TestTopLevelSymlinkToFifoDoesNotBlock(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "pipe")
+	if err := mkfifo(fifo); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	link := filepath.Join(dir, "namedlink")
+	if err := os.Symlink(fifo, link); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := Run(cfg, Options{}, []string{link}); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("top-level symlink-to-FIFO blocked — O_NONBLOCK regression")
+	}
+	if !strings.Contains(errw.String(), "skipping") {
+		t.Fatalf("expected a skip note: %q", errw.String())
 	}
 }
 
