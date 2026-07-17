@@ -199,14 +199,24 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 			t.Errorf("decoded message missing %q: %s", want, err)
 		}
 	}
-	// Other signals can be the agent's own exit (in-box Ctrl-C → 130/SIGINT):
-	// still a decoded byre error, but NEUTRAL — no external-kill diagnosis.
+	// 128+n is ambiguous for anything but KILL — a process can literally
+	// exit(130) with no signal — so other in-range codes decode TENTATIVELY
+	// with no external-kill diagnosis.
 	err = develop(&fakeRunner{runErr: exitError(t, 130)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	if err == nil || errors.As(err, &exitErr) {
-		t.Fatalf("a signal exit must stay an ordinary error, got %v", err)
+		t.Fatalf("a signal-range exit must stay an ordinary error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "SIGINT") || strings.Contains(err.Error(), "killed out from under") {
-		t.Errorf("non-KILL signals must decode neutrally: %s", err)
+	if !strings.Contains(err.Error(), "possibly SIGINT") || strings.Contains(err.Error(), "killed out from under") {
+		t.Errorf("non-KILL codes must decode tentatively: %s", err)
+	}
+	// Beyond the classic signal range (128+31) it isn't a signal at all —
+	// no decode ("signal 72" for exit 200 would be nonsense).
+	err = develop(&fakeRunner{runErr: exitError(t, 200)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	if err == nil || errors.As(err, &exitErr) {
+		t.Fatalf("exit 200 must stay an ordinary error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "exit status 200") || strings.Contains(err.Error(), "possibly") {
+		t.Errorf("out-of-range codes must stay undecoded: %s", err)
 	}
 }
 

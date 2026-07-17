@@ -297,19 +297,21 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			if code >= 0 && code < 125 {
 				return ExitError{Code: code}
 			}
-			// 128+n is the engine reporting the box died on signal n. The bare
-			// "exit status 137" reads like a byre bug to the person whose box
-			// just vanished; decode it. Only SIGKILL supports the strong
+			// 128+n usually means the box died on signal n. The bare "exit
+			// status 137" reads like a byre bug to the person whose box just
+			// vanished; decode it. Only SIGKILL supports the strong
 			// killed-out-from-under diagnosis (docker rm -f, engine shutdown,
 			// the OOM killer — nothing in a box's normal life SIGKILLs its
-			// PID 1); other signals can be the agent's own exit (an in-box
-			// Ctrl-C surfacing as 130/SIGINT), so they stay neutral. 125-127
-			// stay untouched: the engine already printed its own cause.
+			// PID 1). The convention is ambiguous for the rest — a process
+			// can literally exit(130) with no signal involved — so other
+			// codes in the classic signal range (1-31) decode tentatively,
+			// and codes beyond it aren't signals at all and stay undecoded.
+			// 125-127 stay untouched: the engine already printed its own cause.
 			if code == 128+9 {
 				return fmt.Errorf("exit status %d (SIGKILL — the box was killed out from under the session: removed externally, engine shutdown, or the kernel OOM killer)", code)
 			}
-			if code >= 128 {
-				return fmt.Errorf("exit status %d (the box's process was terminated by %s)", code, signalName(code-128))
+			if code > 128 && code <= 128+31 {
+				return fmt.Errorf("exit status %d (possibly %s)", code, signalName(code-128))
 			}
 		}
 		return runErr
