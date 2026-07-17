@@ -199,6 +199,15 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 			t.Errorf("decoded message missing %q: %s", want, err)
 		}
 	}
+	// Other signals can be the agent's own exit (in-box Ctrl-C → 130/SIGINT):
+	// still a decoded byre error, but NEUTRAL — no external-kill diagnosis.
+	err = develop(&fakeRunner{runErr: exitError(t, 130)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	if err == nil || errors.As(err, &exitErr) {
+		t.Fatalf("a signal exit must stay an ordinary error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "SIGINT") || strings.Contains(err.Error(), "killed out from under") {
+		t.Errorf("non-KILL signals must decode neutrally: %s", err)
+	}
 }
 
 func TestDevelopSelfEditNotesAndMount(t *testing.T) {
