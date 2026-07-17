@@ -97,8 +97,13 @@ README shouldn't carry, per the site plan.
 
 **P8. Depth links down, never sideways.** README → site `/docs/` → repo
 `docs/`. A repo doc earns a site page only when its audience flips from
-contributor/auditor to user -- until then, link to GitHub. (Watch item:
-SECURITY.md is already cited from user-facing recipes; it may flip first.)
+contributor/auditor to user -- until then, link to GitHub. (First flip,
+decided 2026-07-17: SECURITY.md -- its readers are users deciding what
+to enable, and the cookbook already links it twice. The threat model and
+sharp facts become a site page titled "Security model" -- mostly a list
+of limits, which is the never-claim-secure register working, not against
+it; repo `docs/SECURITY.md` slims to the reporting policy GitHub's
+security tab needs, plus a pointer.)
 
 **P9. Pinned artifacts are inventoried.** Every surface that shows real
 byre output (the status block, the develop banner) is a lockstep liability.
@@ -205,5 +210,3 @@ the detail the README sheds.
 1. **Canonicality flip** (P2): happy to amend positioning.md's "README
    wins" header to "README wins for conversion copy; site page wins for
    operational docs"?
-2. **SECURITY.md** (P8): leave as a GitHub link for now, or is it close
-   enough to user-facing to plan a site page?
