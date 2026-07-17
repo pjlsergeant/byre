@@ -160,9 +160,15 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
 		title = "byre global config  (~/.byre/default.config)"
+		// Not a store — no enrollment semantics — but AtomicWrite no longer
+		// creates directories, and quitting an unsaved editor should leave no
+		// fresh ~/.byre behind either: create home only when a write lands.
+		prepare = func() error { return os.MkdirAll(home, 0o755) }
 	case configui.TargetLayer:
 		path = config.LayerPath(home, layer)
 		title = "byre layer config  (" + layer + ")"
+		layerDir := filepath.Dir(path)
+		prepare = func() error { return os.MkdirAll(layerDir, 0o755) }
 	default:
 		paths, perr := project.Resolve(projectDir)
 		if perr != nil {

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **A store write can no longer resurrect a forgotten store.** Config
+  writes (`AtomicWrite`) used to create their parent directory, so a
+  write racing a concurrent `byre forget` could re-create the project
+  store WITHOUT its path record — a half-enrollment invisible to the
+  id-collision check. Writers no longer create directories: store dirs
+  come only from Bootstrap (dir + record together), and a store that
+  vanished mid-flow fails the write loudly. The `mcp`/`claude-skill`
+  layer verbs also validate before enrolling, matching the config
+  editor's ordering, and the global/layer editors now create their
+  (store-free) target dirs only when a write actually lands.
+
 - **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
   the firewall and firewall-open skills' apt lists gain
   `ca-certificates` — Debian's curl doesn't pull the trust store, so the

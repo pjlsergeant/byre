@@ -84,6 +84,11 @@ func TestSuggestTarget(t *testing.T) {
 
 func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store", "byre.config")
+	// Callers own the parent dir (in the product, Bootstrap creates it with
+	// the path record; AtomicWrite deliberately never does).
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	in := config.Config{
 		Base:    "golang:1.22-bookworm",
 		Agent:   "claude",
@@ -124,6 +129,11 @@ func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 // unsaveable from the editor.
 func TestSaveAcceptsRemovalEntries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store", "byre.config")
+	// Callers own the parent dir (in the product, Bootstrap creates it with
+	// the path record; AtomicWrite deliberately never does).
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	cfg := config.Config{
 		Skills:  []string{"!devloop"},                          // remove an inherited skill
 		Volumes: []config.Volume{{Name: "!creds"}},             // remove an inherited volume

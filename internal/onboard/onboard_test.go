@@ -145,7 +145,12 @@ func TestPickNone(t *testing.T) {
 }
 
 func TestWriteProjectConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "store", "byre.config") // parent created by WriteProjectConfig
+	path := filepath.Join(t.TempDir(), "store", "byre.config")
+	// Parent dir is the caller's job (in the product, develop's Bootstrap
+	// creates it with the path record before onboarding runs).
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := WriteProjectConfig(path, "go", "claude", nil); err != nil {
 		t.Fatal(err)
 	}

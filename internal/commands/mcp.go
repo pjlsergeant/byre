@@ -114,6 +114,13 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 		kept = append(kept, m)
 	}
 	cur.MCPs = kept
+	// Validate before the enrolling prepare (mirrors the config editor's
+	// ordering): a save the validator would refuse must not enroll. Save
+	// re-runs the same check on the way to disk; the duplication buys the
+	// ordering.
+	if err := cur.ValidateLayer(); err != nil {
+		return err
+	}
 	if prepare != nil {
 		if err := prepare(); err != nil {
 			return err
@@ -219,6 +226,13 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 			return nil
 		}
 		return fmt.Errorf("mcp %s: not declared in the %s and not effective from below — nothing to remove", name, label)
+	}
+	// Validate before the enrolling prepare (mirrors the config editor's
+	// ordering): a save the validator would refuse must not enroll. Save
+	// re-runs the same check on the way to disk; the duplication buys the
+	// ordering.
+	if err := cur.ValidateLayer(); err != nil {
+		return err
 	}
 	if prepare != nil {
 		if err := prepare(); err != nil {

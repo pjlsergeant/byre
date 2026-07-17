@@ -87,6 +87,13 @@ func ClaudeSkillAdd(s Streams, projectDir string, global bool, name, dir string)
 		kept = append(kept, cs)
 	}
 	cur.ClaudeSkills = kept
+	// Validate before the enrolling prepare (mirrors the config editor's
+	// ordering): a save the validator would refuse must not enroll. Save
+	// re-runs the same check on the way to disk; the duplication buys the
+	// ordering.
+	if err := cur.ValidateLayer(); err != nil {
+		return err
+	}
 	if prepare != nil {
 		if err := prepare(); err != nil {
 			return err
@@ -162,6 +169,13 @@ func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) e
 			return nil
 		}
 		return fmt.Errorf("claude skill %s: not declared in the %s and not effective from below — nothing to remove", name, label)
+	}
+	// Validate before the enrolling prepare (mirrors the config editor's
+	// ordering): a save the validator would refuse must not enroll. Save
+	// re-runs the same check on the way to disk; the duplication buys the
+	// ordering.
+	if err := cur.ValidateLayer(); err != nil {
+		return err
 	}
 	if prepare != nil {
 		if err := prepare(); err != nil {

@@ -32,9 +32,10 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 		}
 		fmt.Fprintf(&b, "skills = [%s]\n", strings.Join(quoted, ", "))
 	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-		return err
-	}
+	// No MkdirAll: the store dir and its path record are created together by
+	// Bootstrap (develop runs it before onboarding); re-creating the dir here
+	// would resurrect a store a concurrent forget deleted, without its
+	// record. A vanished dir fails the CreateTemp below loudly instead.
 	// Sibling temp file, then link(2) into place: the link fails if destPath
 	// exists, keeping the refuse-to-overwrite guarantee atomic (no Stat/Write
 	// race with a concurrent first-run) — and an interrupted write can never
@@ -77,6 +78,12 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 // are lost). Keep the two roles distinct; don't grow this into a third
 // general-purpose writer.
 func SaveDefault(home, template, agent string) error {
+	// default.config lives directly in home, which is not a project store —
+	// creating it carries no enrollment semantics (AtomicWrite itself never
+	// creates directories).
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return err
+	}
 	path := filepath.Join(home, "default.config")
 	content, err := readDefaultConfig(home)
 	if err != nil {
@@ -150,6 +157,10 @@ func SaveSharedAuthDefault(home, agent string, yes bool) error {
 // SaveSharedAuthDefaultPick is SaveSharedAuthDefault with an explicit
 // companion pick. companion is ignored when yes is false.
 func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
+	// Same as SaveDefault: home is not a store; creating it enrolls nothing.
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return err
+	}
 	path := filepath.Join(home, "default.config")
 	content, err := readDefaultConfig(home)
 	if err != nil {

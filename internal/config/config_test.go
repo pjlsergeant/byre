@@ -1090,3 +1090,18 @@ func TestParseEgressBracketedIPv6(t *testing.T) {
 		}
 	}
 }
+
+// AtomicWrite must never create the parent directory: for a project store,
+// dir + path record are created together (Bootstrap), and a write re-creating
+// the dir would resurrect a store a concurrent forget deleted WITHOUT its
+// record — a half-enrollment the id-collision check can't see.
+func TestAtomicWriteRequiresParentDir(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "gone")
+	err := AtomicWrite(filepath.Join(missing, "byre.config"), "x = 1\n")
+	if err == nil || !strings.Contains(err.Error(), "parent directory is missing") {
+		t.Fatalf("err = %v, want parent-directory-missing error", err)
+	}
+	if _, serr := os.Stat(missing); !os.IsNotExist(serr) {
+		t.Fatalf("AtomicWrite created the missing parent (stat err = %v)", serr)
+	}
+}

@@ -1676,13 +1676,19 @@ func FromNone(v string) string {
 // AtomicWrite writes content to path via a temp file + rename in the same
 // directory, so a crash or a concurrent writer can never leave a truncated
 // config behind. Shared by every byre config writer.
+//
+// The parent directory must already exist — callers own its creation. This
+// is deliberate: for a project store the dir and its path record are created
+// together (Paths.Bootstrap), and re-creating the dir here would resurrect a
+// store a concurrent `byre forget` deleted WITHOUT its record — a
+// half-enrollment the id-collision check cannot see.
 func AtomicWrite(path, content string) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	tmp, err := os.CreateTemp(dir, ".byre-write-*")
 	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("writing %s: parent directory is missing (deleted concurrently?): %w", path, err)
+		}
 		return err
 	}
 	tmpName := tmp.Name()
