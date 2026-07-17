@@ -26,11 +26,11 @@ func Forget(s Streams, projectDir string, force bool) error {
 	// Same short-circuit as reset: never enrolled means nothing of byre's to
 	// forget — enrolling first (or on a declined confirm) would create the
 	// very store this command deletes. Collisions still fail loudly.
-	recorded, err := paths.Recorded()
+	skip, err := neverEnrolled(paths)
 	if err != nil {
 		return err
 	}
-	if !recorded {
+	if skip {
 		fmt.Fprintln(s.Err, "byre: this project has never been developed here — nothing to forget.")
 		return nil
 	}

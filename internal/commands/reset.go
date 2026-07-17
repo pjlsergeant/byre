@@ -23,11 +23,11 @@ func Reset(s Streams, projectDir string, force bool) error {
 	// project has no store or volumes of byre's making, so enrolling one
 	// just to report "no volumes to reset" would leave the durable state
 	// this command exists to remove. Collisions still fail loudly.
-	recorded, err := paths.Recorded()
+	skip, err := neverEnrolled(paths)
 	if err != nil {
 		return err
 	}
-	if !recorded {
+	if skip {
 		fmt.Fprintln(s.Err, "byre: this project has never been developed here — nothing to reset.")
 		return nil
 	}
@@ -39,6 +39,24 @@ func Reset(s Streams, projectDir string, force bool) error {
 		return err
 	}
 	return reset(s, paths, engines, force)
+}
+
+// neverEnrolled reports whether teardown has nothing of byre's to touch: no
+// path record AND no store dir. A dir WITHOUT its record is deliberately not
+// "never developed" — it's recordless residue (the half-enrollment the write
+// paths now refuse to create; hand-mutation can still make one), and teardown
+// is exactly the command that should clean it, so it falls through to the
+// normal flow: Bootstrap claims the dir with this project's record, then
+// removal proceeds. A collision errors loudly (review finding, grok).
+func neverEnrolled(paths project.Paths) (bool, error) {
+	recorded, err := paths.Recorded()
+	if err != nil || recorded {
+		return false, err
+	}
+	if _, serr := os.Stat(paths.Dir); os.IsNotExist(serr) {
+		return true, nil
+	}
+	return false, nil
 }
 
 // liveSession lists the running containers of the project (any of its worktrees).

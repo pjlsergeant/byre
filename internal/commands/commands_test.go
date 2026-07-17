@@ -332,6 +332,72 @@ func TestResetForgetNeverEnrolledLeaveNoStore(t *testing.T) {
 	}
 }
 
+// A fresh machine's first --global verb must be able to create ~/.byre when
+// its write lands (AtomicWrite no longer creates directories; review finding).
+func TestMCPAddGlobalCreatesHomeOnFreshMachine(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "fresh-byre-home")
+	t.Setenv("BYRE_HOME", home)
+	s, _, _ := testStreams("", false)
+	if err := MCPAdd(s, t.TempDir(), true, "srv", []string{"https://example.com/mcp"}, nil, nil, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "default.config")); err != nil {
+		t.Fatalf("global default.config not written on a fresh machine: %v", err)
+	}
+}
+
+// The teardown gate's full truth table: only record-absent AND dir-absent is
+// "never developed". A recordless dir is residue teardown should clean (the
+// half-enrollment shape), and a collision refuses.
+func TestNeverEnrolled(t *testing.T) {
+	setup := func(t *testing.T) project.Paths {
+		t.Setenv("BYRE_HOME", t.TempDir())
+		paths, err := project.Resolve(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return paths
+	}
+	t.Run("nothing at all", func(t *testing.T) {
+		skip, err := neverEnrolled(setup(t))
+		if err != nil || !skip {
+			t.Fatalf("= (%v, %v), want (true, nil)", skip, err)
+		}
+	})
+	t.Run("recordless dir is residue, not never-developed", func(t *testing.T) {
+		paths := setup(t)
+		if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		skip, err := neverEnrolled(paths)
+		if err != nil || skip {
+			t.Fatalf("= (%v, %v), want (false, nil)", skip, err)
+		}
+	})
+	t.Run("enrolled", func(t *testing.T) {
+		paths := setup(t)
+		if err := paths.Bootstrap(); err != nil {
+			t.Fatal(err)
+		}
+		skip, err := neverEnrolled(paths)
+		if err != nil || skip {
+			t.Fatalf("= (%v, %v), want (false, nil)", skip, err)
+		}
+	})
+	t.Run("collision refuses", func(t *testing.T) {
+		paths := setup(t)
+		if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(paths.PathRecord, []byte("/some/other/project\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := neverEnrolled(paths); err == nil || !strings.Contains(err.Error(), "collision") {
+			t.Fatalf("err = %v, want collision", err)
+		}
+	})
+}
+
 // Read-only views share the loud id-collision stance: on a collision they
 // would render ANOTHER project's config as this one's — refuse instead.
 func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {

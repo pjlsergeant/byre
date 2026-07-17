@@ -9,6 +9,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,17 +22,22 @@ import (
 )
 
 // mcpLayerPath resolves which cascade layer file the verb edits, a short
-// human name for it, and the deferred store setup (nil for the global layer):
-// the id-collision check fails loudly here, but the enrolling Bootstrap waits
-// for the verb to actually write, so a no-op remove ("nothing to remove",
-// "already closed") on a never-seen project leaves no ~/.byre/projects/<id>.
+// human name for it, and the deferred target setup, run only when a write
+// lands: for a project layer that's the enrolling Bootstrap (the id-collision
+// check still fails loudly up front, and a no-op remove on a never-seen
+// project leaves no ~/.byre/projects/<id>); for the global layer it's a plain
+// MkdirAll of home.
 func mcpLayerPath(projectDir string, global bool) (path, label string, prepare func() error, err error) {
 	home, err := project.Home()
 	if err != nil {
 		return "", "", nil, err
 	}
 	if global {
-		return filepath.Join(home, "default.config"), "global config", nil, nil
+		// Not a store — no enrollment semantics — but AtomicWrite no longer
+		// creates directories, so a fresh machine's first `--global` verb
+		// must be able to create ~/.byre itself when its write lands.
+		return filepath.Join(home, "default.config"), "global config",
+			func() error { return os.MkdirAll(home, 0o755) }, nil
 	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
