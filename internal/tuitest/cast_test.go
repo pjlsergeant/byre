@@ -123,6 +123,29 @@ func TestSanitizeHeaderKeepsOnlyPlayerFields(t *testing.T) {
 	}
 }
 
+func TestAssembleDemoShipsSanitizedHeader(t *testing.T) {
+	// The regression the review caught: sanitizing the header and then
+	// writing the ORIGINAL joined cast — the published artifact must carry
+	// the sanitized header, not just compute it.
+	recorded := `{"version":3,"term":{"cols":100,"rows":30},"idle_time_limit":2.0,"command":"tmux -L sock attach -t main","env":{"SHELL":"/bin/bash"}}` + "\n" +
+		`[0.1,"o","frame"]` + "\n"
+	cast, meta, err := assembleDemo([]string{recorded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"tmux", "SHELL"} {
+		if strings.Contains(cast, leaked) {
+			t.Fatalf("published cast leaks recorder metadata (%q):\n%s", leaked, cast)
+		}
+	}
+	if !strings.Contains(cast, `"cols":100`) || !strings.Contains(cast, "frame") {
+		t.Fatalf("assembly lost geometry or events:\n%s", cast)
+	}
+	if !strings.Contains(meta, `"duration":0.1`) {
+		t.Fatalf("meta = %q", meta)
+	}
+}
+
 func TestCastDuration(t *testing.T) {
 	_, events, err := parseCast(mkCast(`[0.5,"o","a"]`, `[1.25,"o","b"]`))
 	if err != nil {

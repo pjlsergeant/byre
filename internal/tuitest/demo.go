@@ -298,10 +298,41 @@ func castDuration(events []castEvent) float64 {
 	return d
 }
 
+// assembleDemo joins scene casts and produces the publishable artifact pair:
+// the cast (scene-concatenated, header sanitized of recorder metadata) and
+// its metadata JSON (duration and geometry for the player shortcode; poster
+// = final frame needs the duration, and the cast itself is JSON lines Hugo
+// can't read). Pure — WriteDemo owns the file I/O around it.
+func assembleDemo(raws []string) (cast, meta string, err error) {
+	joined, err := concatCasts(1.2, raws...)
+	if err != nil {
+		return "", "", err
+	}
+	header, events, err := parseCast(joined)
+	if err != nil {
+		return "", "", err
+	}
+	header, err = sanitizeHeader(header)
+	if err != nil {
+		return "", "", err
+	}
+	cols, rows, err := castGeometry(header)
+	if err != nil {
+		return "", "", err
+	}
+	m, err := json.Marshal(map[string]any{
+		"duration": castDuration(events),
+		"cols":     cols,
+		"rows":     rows,
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return renderCast(header, events), string(m) + "\n", nil
+}
+
 // WriteDemo assembles a demo from its scene casts and installs it where the
-// site build picks it up: site/static/casts/<slug>.cast, plus <slug>.json
-// carrying duration and geometry for the player shortcode (poster = final
-// frame needs the duration; the cast itself is JSON lines Hugo can't read).
+// site build picks it up: site/static/casts/<slug>.cast + <slug>.json.
 func WriteDemo(t *testing.T, slug string, scenes ...string) {
 	t.Helper()
 	raws := make([]string, len(scenes))
@@ -312,21 +343,9 @@ func WriteDemo(t *testing.T, slug string, scenes ...string) {
 		}
 		raws[i] = string(b)
 	}
-	joined, err := concatCasts(1.2, raws...)
+	cast, meta, err := assembleDemo(raws)
 	if err != nil {
 		t.Fatalf("assembling demo %s: %v", slug, err)
-	}
-	header, events, err := parseCast(joined)
-	if err != nil {
-		t.Fatal(err)
-	}
-	header, err = sanitizeHeader(header)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cols, rows, err := castGeometry(header)
-	if err != nil {
-		t.Fatal(err)
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -336,16 +355,12 @@ func WriteDemo(t *testing.T, slug string, scenes ...string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, slug+".cast"), []byte(joined), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, slug+".cast"), []byte(cast), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	meta, _ := json.Marshal(map[string]any{
-		"duration": castDuration(events),
-		"cols":     cols,
-		"rows":     rows,
-	})
-	if err := os.WriteFile(filepath.Join(dir, slug+".json"), append(meta, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, slug+".json"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	_, events, _ := parseCast(cast)
 	t.Logf("demo %s: %d events, %.1fs", slug, len(events), castDuration(events))
 }
