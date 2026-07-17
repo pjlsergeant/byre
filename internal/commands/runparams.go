@@ -55,8 +55,12 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	// box and git can commit — without rewriting metadata shared rw with the host
 	// (which would corrupt the host repo). See docs/adr/0009-worktrees-inherit-project-identity.md.
 	if paths.IsWorktree {
+		// Source is the symlink-resolved CommonGitDirHost (no mutable symlink
+		// component an agent could retarget between detection and mount); target
+		// stays the git-recorded CommonGitDir so in-box pointers resolve. They
+		// differ only when the recorded path contains symlinks.
 		binds = append(binds,
-			runner.BindMount{Host: paths.CommonGitDir, Target: paths.CommonGitDir, Mode: "rw"},
+			runner.BindMount{Host: paths.CommonGitDirHost, Target: paths.CommonGitDir, Mode: "rw"},
 			runner.BindMount{Host: paths.WorkDir, Target: paths.WorkDir, Mode: "rw"},
 		)
 	}
@@ -105,7 +109,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 // (comma-separated key=value pairs) cannot express. Covers the workspace bind
 // and, for a worktree, the same-path git binds — all set by byre, not the user.
 func checkMountPaths(paths project.Paths) error {
-	for _, p := range []string{paths.WorkDir, paths.CommonGitDir} {
+	for _, p := range []string{paths.WorkDir, paths.CommonGitDir, paths.CommonGitDirHost} {
 		if strings.Contains(p, ",") {
 			return fmt.Errorf("path contains a comma, which docker --mount cannot express: %q", p)
 		}

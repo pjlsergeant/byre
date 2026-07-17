@@ -218,6 +218,60 @@ func TestDetectWorktreeMountsStructuralPathNotSymlinkedCommondir(t *testing.T) {
 	}
 }
 
+// The mount SOURCE (commonGitDirHost) must be symlink-free even when the
+// git-recorded path itself routes through a symlink — the .git pointer is
+// attacker-controlled, so a symlink COMPONENT of gitDir (not just a symlinked
+// commondir value) is equally retargetable between validation and mount.
+// commonGitDirHost is Canonicalize'd, so it must resolve every component; the
+// target stays the git-recorded path so in-box pointers still resolve.
+func TestDetectWorktreeHostPathResolvesSymlinkedGitDir(t *testing.T) {
+	root := t.TempDir()
+	realBase := filepath.Join(root, "realbase")
+	gd := filepath.Join(realBase, ".git", "worktrees", "wt")
+	if err := os.MkdirAll(gd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(root, "wt")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink standing in for realBase; the .git pointer routes gitDir
+	// THROUGH it, so structCommon = <link>/.git has a symlink component.
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(realBase, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	gdViaLink := filepath.Join(link, ".git", "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gd, "gitdir"), []byte(filepath.Join(wt, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gdViaLink+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	info, ok, err := detectWorktree(wt)
+	if err != nil || !ok {
+		t.Fatalf("a worktree reached via a symlinked gitDir should detect: ok=%v err=%v", ok, err)
+	}
+	// Target: the git-recorded path (routes through the symlink) — unchanged so
+	// in-box pointers resolve.
+	wantTarget := filepath.Join(link, ".git")
+	if info.commonGitDir != wantTarget {
+		t.Fatalf("commonGitDir (target) = %q, want git-recorded %q", info.commonGitDir, wantTarget)
+	}
+	// Source: fully resolved — no symlink component survives for a retarget.
+	wantHost, _ := Canonicalize(filepath.Join(realBase, ".git"))
+	if info.commonGitDirHost != wantHost {
+		t.Fatalf("commonGitDirHost (mount source) = %q, want symlink-free %q", info.commonGitDirHost, wantHost)
+	}
+	if strings.Contains(info.commonGitDirHost, string(filepath.Separator)+"link"+string(filepath.Separator)) {
+		t.Fatalf("commonGitDirHost still routes through the symlink: %q", info.commonGitDirHost)
+	}
+}
+
 // A project .git that is itself a SYMLINK is never treated as a worktree
 // pointer: following it (ReadFile + the reciprocal Stat) would let an agent
 // point .git at genuine external worktree metadata and pass every check,

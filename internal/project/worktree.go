@@ -19,11 +19,23 @@ type worktreeInfo struct {
 	// setup instead of re-onboarding. For a bare repo it is the git dir
 	// itself (there is no working tree to anchor on).
 	mainDir string
-	// commonGitDir is the git common dir, exactly as git dereferences it, so it
-	// can be bind-mounted at the same host path inside the box (see the mount
-	// discussion in docs/adr/0009-worktrees-inherit-project-identity.md). The per-worktree git dir lives
-	// under it, so mounting this one path makes both present.
+	// commonGitDir is the git common dir as git records it (the structural
+	// dir(dir(gitDir))), used as the bind mount TARGET — the in-box path every
+	// git pointer resolves against, so it must match git's on-disk metadata and
+	// is deliberately NOT symlink-resolved (see the mount discussion in
+	// docs/adr/0009-worktrees-inherit-project-identity.md). The per-worktree git dir lives under it, so
+	// mounting this one path makes both present.
 	commonGitDir string
+	// commonGitDirHost is the same directory fully symlink-resolved
+	// (Canonicalize), used as the bind mount SOURCE. The target above is
+	// derived from attacker-controlled .git contents and may contain symlink
+	// components an agent could retarget between validation and the engine
+	// resolving the source (a check-to-mount race → arbitrary rw host mount).
+	// Resolving the source removes every symlink component, so there is nothing
+	// left to flip — matching how WorkDir's mount source is already
+	// canonicalized. ADR 0009's "same-path" constraint is about the TARGET;
+	// the source host path is free to differ.
+	commonGitDirHost string
 }
 
 // detectWorktree inspects <dir>/.git to decide whether dir is a linked git
@@ -135,19 +147,17 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 				"which is not the parent of the worktree git dir %q — refusing to mount it. "+
 				"If the main repository moved, run `git worktree repair` in it", dir, common, gitDir)
 	}
-	// From here on use structCommon, NOT common, as the common git dir. Both
-	// name the same directory (SameFile just proved it), but `common` is the
-	// raw commondir-file content — attacker-authored — while structCommon is
-	// byre's own lexical derivation from gitDir. The SameFile check only proves
-	// they resolve equal AT THIS INSTANT; `common` is then handed to the RW
-	// bind mount, and if it is a symlink an agent could retarget it between
-	// this check and the container engine resolving the mount source (a
-	// check-to-mount race). structCommon closes that: it is dir(dir(gitDir)),
-	// exactly the git-recorded common path the same-path mount must use for
-	// git to resolve inside the box, and it never passes attacker-controlled
-	// commondir bytes through to the mount. (It cannot be Canonicalize'd for
-	// the same reason — the mount target must match the un-resolved path git
-	// wrote into the worktree's .git pointer.)
+	// From here on use structCommon, NOT common, as the common git dir TARGET.
+	// Both name the same directory (SameFile just proved it), but `common` is
+	// the raw commondir-file content — attacker-authored — while structCommon
+	// is byre's own dir(dir(gitDir)), exactly the git-recorded path the
+	// same-path mount target must use for git to resolve inside the box.
+	// structCommon is still NOT safe to use as the mount SOURCE: it is derived
+	// from gitDir (the .git pointer, attacker-controlled) and may contain
+	// symlink components an agent could retarget between the SameFile check and
+	// the engine resolving the source. So the source is canonicalized below
+	// (commonGitDirHost) — symlink-free, nothing left to flip — while the
+	// target stays structCommon.
 	backData, _, err := readMetaFile(filepath.Join(gitDir, "gitdir"))
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
@@ -175,7 +185,19 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
-	return worktreeInfo{mainDir: canonMain, commonGitDir: structCommon}, true, nil
+	// Symlink-resolved source for the RW bind (see commonGitDirHost). For the
+	// common case (a symlink-free path) this equals structCommon, so nothing
+	// changes; when it differs, docker binds the real directory and no symlink
+	// component survives for an agent to retarget mid-mount.
+	hostCommon, err := Canonicalize(structCommon)
+	if err != nil {
+		return worktreeInfo{}, false, err
+	}
+	return worktreeInfo{
+		mainDir:          canonMain,
+		commonGitDir:     structCommon,
+		commonGitDirHost: hostCommon,
+	}, true, nil
 }
 
 // parseGitdirPointer extracts the path from a `.git` file's `gitdir: <path>`
