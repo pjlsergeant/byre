@@ -11,7 +11,11 @@
   vanished mid-flow fails the write loudly. The `mcp`/`claude-skill`
   layer verbs also validate before enrolling, matching the config
   editor's ordering, and the global/layer editors now create their
-  (store-free) target dirs only when a write actually lands.
+  (store-free) target dirs only when a write actually lands. `byre
+  reset` and `byre forget` join the contract from the teardown side: on
+  a never-enrolled project they say so and touch nothing, instead of
+  enrolling a store just to have something to tear down (or leaving one
+  behind after a declined confirm).
 
 - **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
   the firewall and firewall-open skills' apt lists gain

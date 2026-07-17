@@ -235,6 +235,14 @@ func (p Paths) ValidateExisting() error {
 	return err
 }
 
+// Recorded is ValidateExisting plus the answer: whether this project is
+// enrolled (a valid path record exists). Teardown commands (reset, forget)
+// use it to short-circuit a never-enrolled project instead of enrolling one
+// just to have something to tear down; a collision still fails loudly.
+func (p Paths) Recorded() (bool, error) {
+	return p.checkRecord()
+}
+
 // checkRecord reads the path record if present and errors on an id collision
 // (a record naming a different canonical path). recorded reports whether a
 // valid record already exists; a missing record is not an error.

@@ -19,6 +19,18 @@ func Reset(s Streams, projectDir string, force bool) error {
 	if err != nil {
 		return err
 	}
+	// No write, no enrollment applies to teardown too: a never-enrolled
+	// project has no store or volumes of byre's making, so enrolling one
+	// just to report "no volumes to reset" would leave the durable state
+	// this command exists to remove. Collisions still fail loudly.
+	recorded, err := paths.Recorded()
+	if err != nil {
+		return err
+	}
+	if !recorded {
+		fmt.Fprintln(s.Err, "byre: this project has never been developed here — nothing to reset.")
+		return nil
+	}
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}

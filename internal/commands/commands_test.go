@@ -303,6 +303,35 @@ func TestMCPAddEnrollsWithPathRecord(t *testing.T) {
 	}
 }
 
+// Teardown short-circuits a never-enrolled project: enrolling one just to
+// report "nothing to do" (or on a declined confirm) would durably create the
+// exact store these commands exist to remove.
+func TestResetForgetNeverEnrolledLeaveNoStore(t *testing.T) {
+	for name, run := range map[string]func(Streams, string) error{
+		"reset":  func(s Streams, p string) error { return Reset(s, p, true) },
+		"forget": func(s Streams, p string) error { return Forget(s, p, true) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("BYRE_HOME", t.TempDir())
+			proj := t.TempDir()
+			s, _, errBuf := testStreams("", false)
+			if err := run(s, proj); err != nil {
+				t.Fatalf("%s on a never-enrolled project: %v", name, err)
+			}
+			if !strings.Contains(errBuf.String(), "never been developed here") {
+				t.Errorf("%s output = %q, want the never-developed notice", name, errBuf.String())
+			}
+			paths, err := project.Resolve(proj)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, serr := os.Stat(paths.Dir); !os.IsNotExist(serr) {
+				t.Errorf("%s enrolled the project (store dir exists, stat err = %v)", name, serr)
+			}
+		})
+	}
+}
+
 // Read-only views share the loud id-collision stance: on a collision they
 // would render ANOTHER project's config as this one's — refuse instead.
 func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
@@ -330,6 +359,10 @@ func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
 		// exec into another project's container (nil engines: the check must
 		// fire before any engine is consulted).
 		"shell": func() error { return shell(s, proj, nil) },
+		// Teardown refuses too: on a collision these would enumerate and
+		// delete ANOTHER project's volumes/images/store.
+		"reset":  func() error { return Reset(s, proj, true) },
+		"forget": func() error { return Forget(s, proj, true) },
 	} {
 		err := run()
 		if err == nil || !strings.Contains(err.Error(), "collision") {
