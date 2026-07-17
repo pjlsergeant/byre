@@ -132,10 +132,12 @@ from inside the project. The vocabulary covers packages, env, mounts, volumes,
 skills, and MCP servers; raw Dockerfile lines and `docker run` args cover
 the rest.
 
-The merge rules, the `!name` removal syntax, the `env` sharp edge, and
+The editor's walk lives on the
+[configuration page](https://getbyre.com/docs/configuration/); the merge
+rules, the `!name` removal syntax, the `env` sharp edge, and
 `byre.preset` (a repo's saved setup answers -- inert until you review and
-apply it) live on the
-[configuration page](https://getbyre.com/docs/configuration/).
+apply it) live in the
+[configuration reference](https://getbyre.com/docs/configuration-reference/).
 
 ## Commands
 

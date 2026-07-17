@@ -1,8 +1,18 @@
 <nav class="docs-nav">
   <div class="docs-nav-inner">
-    <p><a href="{{ "docs/" | relURL }}">Docs</a></p>
+    {{ $docs := (site.GetPage "/docs").Pages.ByWeight }}
+    <p><a href="{{ "docs/" | relURL }}">User documentation</a></p>
     <ul>
-      {{ range (site.GetPage "/docs").Pages.ByWeight }}
+      {{ range where $docs "Params.reference" "!=" true }}
+      <li>
+        <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
+        {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}
+      </li>
+      {{ end }}
+    </ul>
+    <p class="docs-nav-group">Reference</p>
+    <ul>
+      {{ range where $docs "Params.reference" true }}
       <li>
         <a href="{{ .RelPermalink }}"{{ if eq .Permalink $.Permalink }} aria-current="page"{{ end }}>{{ .Title }}</a>
         {{ if eq .Permalink $.Permalink }}{{ .TableOfContents }}{{ end }}

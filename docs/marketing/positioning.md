@@ -308,7 +308,20 @@ which lives in the scenario inventory (P9), not on the page.
 Until a cast exists, its slot carries a visible placeholder in the page
 (blockquote marker + `<!-- demo-placeholder: <slug> -->` comment), so
 the layout is judged with the demo's space reserved and the placeholder
-inventory is grep-able.
+inventory is grep-able. Static screenshots use the same convention
+(`<!-- image-placeholder: <slug> -->`).
+
+### User documentation vs Reference (decided 2026-07-17)
+
+Site `/docs/` splits into two nav groups. **User documentation** is the
+approachable tier -- task-first pages a newcomer can read without fear
+(the configuration page describes the editor, not the TOML contract).
+**Reference** is the precise tier: the configuration reference (full
+vocabulary + merge rules), How it works, the security model. The split
+is a front-matter flag (`reference: true`), not a URL move -- pages keep
+their addresses when they change tier. A user page may always link down
+into its reference counterpart; reference pages carry the sharp
+register.
 
 ### The cookbook (decided 2026-07-17)
 

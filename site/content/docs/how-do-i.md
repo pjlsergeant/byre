@@ -422,7 +422,7 @@ cloning gives your teammates a file, not a prompt. `apply` walks them
 through any missing package installs (each with its own grant review),
 shows the composed box's grants, and writes the project config on their
 confirm; `[sources]` hints pin where the packages come from and their
-digests. [The full flow](/docs/configuration/#presets-byrepreset).
+digests. [The full flow](/docs/configuration-reference/#presets-byrepreset).
 
 ### Version-control my `~/.byre`?
 

@@ -59,7 +59,7 @@ package, fork it into a local editable copy:
 
 A **template** is shape, not behavior: base image, packages, egress
 offers, optional files copied into the image. It never references other
-packages -- composition belongs in a [preset](/docs/configuration/#presets-byrepreset).
+packages -- composition belongs in a [preset](/docs/configuration-reference/#presets-byrepreset).
 Same verbs: `byre template init / fork / validate / pack / install`.
 
 ## Sharing

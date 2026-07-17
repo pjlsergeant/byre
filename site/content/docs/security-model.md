@@ -2,6 +2,8 @@
 title: Security model
 weight: 85
 description: the threat model, the contract, and the sharp facts
+params:
+  reference: true
 ---
 
 This is the straight version of byre's security story -- the facts that

@@ -2,6 +2,8 @@
 title: How it works
 weight: 25
 description: config in, Dockerfile out, container up -- every step a file you can read
+params:
+  reference: true
 ---
 
 byre is a transparent layer over the Docker or Podman you already run.
@@ -10,7 +12,7 @@ same four steps, and every step's output is inspectable.
 
 ## The pipeline
 
-1. **Resolve config.** The [cascade](/docs/configuration/) -- your
+1. **Resolve config.** The [cascade](/docs/configuration-reference/) -- your
    defaults, the template, any layers, the project -- merges into one
    resolved config. `byre status` shows the result and attributes every
    setting to the layer or skill that contributed it.
