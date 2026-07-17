@@ -70,8 +70,10 @@ func (m model) onEditorClosed(err error) model {
 
 // runPrepare runs the deferred store setup, shared by every path that is about
 // to write filePath (ctrl+s save, the $EDITOR shell-out). A failure lands in
-// errMsg and reports false; success clears the hook — it exists to enroll on
-// the FIRST write, and re-running it on every later save is wasted I/O.
+// errMsg and reports false. Deliberately re-run on every write, not once: the
+// hook (Bootstrap) is idempotent, and each run re-ensures the store dir AND
+// its path record together — a one-shot hook would let a later write's own
+// MkdirAll resurrect a concurrently-deleted store without the record.
 func (m model) runPrepare() (model, bool) {
 	if m.prepare == nil {
 		return m, true
@@ -80,7 +82,6 @@ func (m model) runPrepare() (model, bool) {
 		m.errMsg = err.Error()
 		return m, false
 	}
-	m.prepare = nil
 	return m, true
 }
 

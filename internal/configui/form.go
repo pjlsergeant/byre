@@ -208,8 +208,8 @@ type model struct {
 
 	// prepare runs before anything can write filePath (ctrl+s save, $EDITOR);
 	// nil = no-op. The project editor passes Bootstrap here so an uninitialized
-	// project is enrolled in ~/.byre/projects only when a write actually lands.
-	// runPrepare clears it after the first success.
+	// project is enrolled in ~/.byre/projects only when a write actually lands
+	// (and re-runs it per write — see runPrepare).
 	prepare func() error
 
 	// preEditorRaw/preEditorErr snapshot filePath as ctrl+e hands it to

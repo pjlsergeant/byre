@@ -315,8 +315,7 @@ func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
 	// doesn't have yet (e.g. clearing an orphaned machine volume from a
 	// never-developed project) — enroll before locking; a clear is a
 	// mutation, so that's fair even if the clear is then refused (the lock
-	// can't exist without the store). Enrolled projects skip this, so a
-	// store deleted by a concurrent forget still fails loudly at the lock.
+	// can't exist without the store).
 	if a.prepare != nil {
 		if err := a.prepare(); err != nil {
 			return err
