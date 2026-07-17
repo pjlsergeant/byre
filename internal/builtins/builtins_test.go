@@ -419,6 +419,17 @@ func TestFirewallSkillResolves(t *testing.T) {
 				t.Errorf("firewall skill must ship %s; files: %+v", want, sk.Files)
 			}
 		}
+		// The diagnostic curl must ride with its trust store: byre installs
+		// with --no-install-recommends, so dropping ca-certificates from the
+		// apt list makes curl fail TLS (77) against ALLOWLISTED hosts on a
+		// bare base (field-QA, 2026-07-17).
+		apt := map[string]bool{}
+		for _, p := range sk.File.Build.Apt {
+			apt[p] = true
+		}
+		if !apt["curl"] || !apt["ca-certificates"] {
+			t.Errorf("firewall skill must ship curl AND ca-certificates (apt = %v) — TLS diagnostics break on minimal bases without the pair", sk.File.Build.Apt)
+		}
 	}
 }
 

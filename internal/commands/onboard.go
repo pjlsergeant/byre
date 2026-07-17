@@ -41,7 +41,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			if c, e := config.Load(projectDir); e == nil && c.Agent != "" {
 				cur = fmt.Sprintf(" (currently agent=%s)", c.Agent)
 			}
-			return fmt.Errorf("this project is already configured%s — --template/--agent/--shared-auth only apply when creating a config.\nReconfigure by editing %s, or run 'byre forget' then re-run.", cur, cfgPath)
+			return fmt.Errorf("this project is already configured%s — --template/--agent/--shared-auth only apply when creating a config.\nReconfigure with 'byre config' (or edit %s), or run 'byre forget' then re-run.", cur, cfgPath)
 		}
 		return nil
 	}

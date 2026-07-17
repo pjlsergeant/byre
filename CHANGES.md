@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
+  the firewall skill's apt list gains `ca-certificates` — byre installs
+  with `--no-install-recommends`, so the skill's diagnostic curl arrived
+  without a trust store on bare bases (`template = "none"`) and failed
+  TLS (77) against allowlisted hosts; the "already configured" refusal
+  of `--template`/`--agent`/`--shared-auth` now points at `byre config`
+  as the way to reconfigure; and `byre mcp add --help` shows an argv
+  example so TOML's `command = [...]` key name doesn't tempt typing the
+  word `command` into the argv.
+
 - **No write, no enrollment.** Commands that only show or review now leave a
   never-seen project un-enrolled: `byre dockerfile`, `byre dockerrun`, and
   `byre ejectfirewall` are documented side-effect-free but bootstrapped the

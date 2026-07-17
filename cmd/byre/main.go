@@ -453,7 +453,14 @@ func mcpCmd(dir string, s commands.Streams) *cobra.Command {
 (add-or-update by name; a matching "!name" closure is re-opened). One arg
 that starts http(s):// is a remote server; anything else is a local stdio
 command — put it after -- so its own flags aren't parsed as byre's.
-Applies on the next develop.`,
+Applies on the next develop.
+
+Everything after -- is the argv itself, starting with the executable:
+
+  byre mcp add qa -- npx some-server --stdio    →  command = ["npx", "some-server", "--stdio"]
+
+(the config's key is NAMED command, but the word "command" is never part
+of the argv you type).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 2 {
 				return usageError("usage: byre mcp add <name> (<url> | -- <command>...)")

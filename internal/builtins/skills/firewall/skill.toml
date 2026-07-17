@@ -44,10 +44,15 @@
 # endpoint. They're plain clients, still subject to the netns rules — they let
 # you inspect the boundary, they don't widen it. netcat-openbsd for `nc -l`
 # must stay the OpenBSD variant (the gate uses its `-l host port` form).
+# ca-certificates rides along because byre installs with
+# --no-install-recommends, which strips the trust store curl would otherwise
+# pull in — without it, on a bare base (template = "none"), curl fails TLS
+# verification (exit 77) against ALLOWLISTED hosts, a confusing diagnostic
+# from the skill's own diagnostic tool (field-QA, 2026-07-17).
 description = "Default-deny egress firewall; allowlist derived from enabled skills."
 
 [build]
-apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "telnet"]
+apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "ca-certificates", "telnet"]
 files = { "firewall.sh" = "/usr/local/bin/byre-firewall", "launch-gate" = "/etc/byre/launch-gate" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall"]
 

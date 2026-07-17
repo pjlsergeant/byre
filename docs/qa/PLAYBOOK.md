@@ -202,11 +202,17 @@ Needs a git repo with a commit; main project already developed.
 
 ## Journey: firewall egress (pass #2 — PASSED)
 
+Run on `template = "none"` — the bare base is the regression-sensitive
+case (language templates ship CA certs transitively and would mask it).
+
 1. `skills = ["firewall"]`, no egress key → banner flips to
    "byre: network deny-by-default · egress none"; box still launches
    (gate opened = rules verified). curl anything → timeout, 000.
 2. Add `egress = ["example.com"]` → banner "egress 1 host";
-   example.com=200, everything else still times out.
+   `curl https://example.com` = 200 EVEN ON the none template (the
+   skill ships ca-certificates with its diagnostic curl — a 77
+   cert-verify error here is the trust-store regression, distinct from
+   a block's timeout/000); everything else still times out.
 3. TEARDOWN: rm box.
 
 ## Journey: templates + named layers (pass #2 — PASSED, one bug)
@@ -249,37 +255,24 @@ Needs a git repo with a commit; main project already developed.
 
 ## Open findings
 
-From the grok explore pass (2026-07-17, report-only; the report was
-absorbed here and deleted). Pending dispatch:
-
-1. (product, low-medium, skinny bases) The firewall skill's own
-   diagnostic curl ships without a trust store. The skill's apt list
-   carries curl (+ nc/dig/traceroute), but byre installs apt packages
-   with --no-install-recommends, which strips the ca-certificates that
-   curl's Recommends would pull — so on `template = "none"`,
-   `curl https://…` to an ALLOWLISTED host fails 77 (cert-verify
-   error naming the CA file; a real block is a timeout/000, so the two
-   are distinguishable — the risk is misreading 77 as network trouble
-   in a firewall frame, not a masquerade). Not a firewall defect: the
-   bare base lacks CAs with or without the skill; the skill just hands
-   you the tool that trips on it, on bases where it's the only reason
-   curl exists. Suggested: ship ca-certificates alongside the curl the
-   skill ships (or just document the skinny-base requirement).
-2. (optional UX) `develop --self-edit --agent …` on an already-
-   configured project refuses ("only apply when creating a config",
-   rc=1) — retyping day-one flags with `--self-edit` aborts the launch;
-   consider ignoring/stripping onboarding flags when the config exists.
-3. (optional docs) `byre mcp add qa -- command echo hi` yields
-   `command = ["command", …]` — TOML's key name tempts prefixing the
-   word `command`; show argv examples side-by-side with the TOML.
+None. The grok explore pass's three (2026-07-17, report-only; the
+report was absorbed here and deleted) were dispatched the same day:
+ca-certificates joined the firewall skill's apt list beside the curl
+that needed it (pinned in TestFirewallSkillResolves; the firewall
+journey above now asserts HTTPS on the none template), the
+already-configured flag refusal points at `byre config` as the
+reconfigure path, and `mcp add --help` carries the argv example
+(the word `command` is the TOML key, never part of the argv). The
+refusal itself stays — silently ignoring `--agent` on an existing
+config would launch the OLD agent under a flag that looked like
+consent to the new one.
 
 The same pass confirmed green (no recipes yet — graduate on a future
 pass): host mounts + store-edit apt, deliver of a directory, self-edit
 round-trip + exit report, skill fork, rehome after `mv`, rebuild,
-docker-host containment-hole loudness, forget --force, firewall on the
-none template (TCP allow/deny both correct — only TLS trust missing).
+docker-host containment-hole loudness, forget --force.
 
-Previously: none open. Pass-2's six findings were dispatched 2026-07-17 (the PATH
+Previously: pass-2's six findings were dispatched 2026-07-17 (the PATH
 restore, the everywhere-reprompt, the double-[none] guard, the decoded
 killed-box exit, and the two worktree labels), each with a regression
 test; the recipes above assert the fixed behavior. Future passes append
