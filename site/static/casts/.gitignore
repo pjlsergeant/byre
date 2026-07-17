@@ -1,0 +1,7 @@
+# Generated demos: recorded at publish time by the BYRE_DEMO_REC=1 tests
+# (internal/tuitest/demos_test.go) — never committed. VM-recorded casts
+# (the engine-bound scenarios) are committed here alongside, un-ignored.
+config-tui-walk.*
+quickstart-picker-status.*
+deliver-paste-flow.*
+completion-tab-walk.*

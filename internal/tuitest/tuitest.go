@@ -101,6 +101,7 @@ type Opts struct {
 	Env        map[string]string // set in the child (e.g. BYRE_HOME, PATH)
 	Unset      []string          // removed from the child (e.g. DISPLAY)
 	Dir        string            // child working directory (a cd in the pane's shell — BSD env has no -C)
+	RecordTo   string            // demo recording: attach an asciinema spectator, cast written here (see demo.go)
 }
 
 // Session is one live pane in a private tmux server. The pane outlives its
@@ -110,6 +111,8 @@ type Session struct {
 	t          *testing.T
 	socket     string
 	statusFile string
+	rec        *exec.Cmd // the asciinema spectator, when recording (demo.go)
+	castPath   string
 }
 
 // Epoch is the pre-action screen, captured by Keys/Type/Paste. WaitForAfter
@@ -147,6 +150,18 @@ func Start(t *testing.T, o Opts, argv ...string) *Session {
 		"-x", fmt.Sprint(o.Cols), "-y", fmt.Sprint(o.Rows), "sleep 600")
 	s.tmux("set-option", "-g", "remain-on-exit", "on")
 	s.tmux("set-option", "-g", "status", "off")
+	// The dead-pane banner would be one extra line of output: on a full pane
+	// it scrolls the top line away (found live: `byre status` + banner = 31
+	// rows), corrupting final-screen assertions and recorded demo frames.
+	// Best-effort — an ancient tmux without the option just keeps the banner.
+	_ = exec.Command("tmux", "-L", s.socket, "set-option", "-g", "remain-on-exit-format", "").Run()
+
+	// The spectator must be attached before the real process can paint its
+	// first frame — the placeholder session exists exactly so this ordering
+	// is possible.
+	if o.RecordTo != "" {
+		s.startRecorder(o.RecordTo, o.Cols, o.Rows)
+	}
 
 	// /usr/bin/env carries the overrides and unsets; tmux hands the command
 	// to a shell, so every word is single-quoted.
