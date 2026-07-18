@@ -328,8 +328,10 @@ requires_byre = ">=99.0.0"
 
 // A hostile file where a primary should be must degrade to a scoped INVALID
 // row, never wedge the catalog: load runs on almost every command, so a FIFO
-// (blocks a plain open forever), a symlink (packages carry files, not
-// links), or an oversized file each becomes a problem row within a deadline.
+// (blocks a plain open forever), a symlink resolving to a device, or an
+// oversized file each becomes a problem row within a deadline. A symlink to
+// a REAL primary is the user's own arrangement of their store and loads
+// normally — the judgment is on what the link resolves to.
 func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
 	home := t.TempDir()
 	mk := func(name string) string {
@@ -347,6 +349,13 @@ func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(mk("huge"), "skill.toml"),
 		make([]byte, MaxManifestBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(t.TempDir(), "real-skill.toml")
+	if err := os.WriteFile(real, []byte("# a fine skill\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(mk("linkok"), "skill.toml")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -375,5 +384,8 @@ func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
 	}
 	if ent, _ := cat.Lookup("huge"); !strings.Contains(ent.Reason, "limit") {
 		t.Fatalf("huge reason should name the limit, got %q", ent.Reason)
+	}
+	if ent, ok := cat.Lookup("linkok"); !ok || ent.Provenance != ProvLocal {
+		t.Fatalf("a symlink to a real primary must load as the user's local package, got ok=%v ent=%+v", ok, ent)
 	}
 }

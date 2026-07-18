@@ -31,25 +31,32 @@ func TestInspectBundledShowsDisplayDigest(t *testing.T) {
 	}
 }
 
-// Fork's tree copy follows pack's rule: packages carry files, not links. A
-// symlink in the source must not have its target's bytes materialized into
-// the fork (a cloned skill could link into credentials), and a FIFO must
-// fail loudly instead of hanging the copy.
-func TestCopyDirRefusesLinksAndIrregulars(t *testing.T) {
-	secret := filepath.Join(t.TempDir(), "secret")
-	if err := os.WriteFile(secret, []byte("hunter2"), 0o600); err != nil {
+// Fork's tree copy is judged at the descriptor: a symlink is the user's own
+// arrangement of their store, so it is followed and its target's bytes are
+// materialized as a regular file, while a FIFO fails loudly instead of
+// hanging the copy.
+func TestCopyDirFollowsLinksRefusesIrregulars(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(target, []byte("linked bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "skill.toml"), []byte("# ok\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(secret, filepath.Join(src, "creds")); err != nil {
+	if err := os.Symlink(target, filepath.Join(src, "extra")); err != nil {
 		t.Fatal(err)
 	}
-	err := copyDir(src, filepath.Join(t.TempDir(), "dst"))
-	if err == nil || !strings.Contains(err.Error(), "not links") {
-		t.Fatalf("want symlink refusal, got %v", err)
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := copyDir(src, dst); err != nil {
+		t.Fatalf("copyDir must follow a user symlink: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(dst, "extra"))
+	if err != nil || string(b) != "linked bytes" {
+		t.Fatalf("fork should materialize the link target's bytes, got %q, %v", b, err)
+	}
+	if fi, err := os.Lstat(filepath.Join(dst, "extra")); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("materialized copy must be a regular file, got %v, %v", fi, err)
 	}
 
 	src2 := t.TempDir()

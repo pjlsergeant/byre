@@ -542,13 +542,14 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 }
 
 func copyDir(src, dst string) error {
-	// The whole walk rides one pinned root descriptor: every open resolves
-	// beneath the directory that was opened, so a component swapped mid-copy
-	// cannot pull outside bytes into the fork. Same rule as pack for the
-	// entries themselves — packages carry files, not links — and a FIFO or
-	// device is refused at the descriptor instead of hanging the copy. One
-	// budget across the copy, aligned with install's payload budget, so a
-	// growing or enormous file fails loudly instead of exhausting memory.
+	// The walk rides one pinned root descriptor and every read is judged at
+	// the descriptor (regular file only), so a FIFO or device fails the
+	// fork loudly instead of hanging the copy. A symlink is the user's own
+	// arrangement of their store: it is followed, and its resolved target's
+	// bytes are materialized as a regular file (which is also the only
+	// shape pack accepts later). One budget across the copy, aligned with
+	// install's payload budget, so a growing or enormous file fails loudly
+	// instead of exhausting memory.
 	root, err := os.OpenRoot(src)
 	if err != nil {
 		return err
@@ -563,10 +564,15 @@ func copyDir(src, dst string) error {
 		if d.IsDir() {
 			return os.MkdirAll(out, 0o755)
 		}
+		var fh *os.File
+		var fi os.FileInfo
 		if d.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink; packages carry files, not links", filepath.Join(src, filepath.FromSlash(rel)))
+			// Out-of-tree targets are legitimate here, so the link is
+			// resolved outside the root — by full path, follow=true.
+			fh, fi, err = hostopen.OpenRegular(filepath.Join(src, filepath.FromSlash(rel)), true)
+		} else {
+			fh, fi, err = hostopen.OpenRegularIn(root, filepath.FromSlash(rel))
 		}
-		fh, fi, err := hostopen.OpenRegularIn(root, filepath.FromSlash(rel))
 		if err != nil {
 			return err
 		}

@@ -722,13 +722,14 @@ func (e *Entry) ReadPrimary() ([]byte, error) {
 
 // readPrimaryBounded is the load-side twin of the fetcher's local-manifest
 // read: package content on disk is judged at the descriptor (regular file
-// only, never followed as a symlink — pack's "packages carry files, not
-// links" rule) and read under the manifest cap, so a FIFO, device node, or
-// growing file in a package directory degrades to a scoped error instead of
-// wedging or ballooning the host CLI. Catalog load runs on almost every
-// command; its reads must never block.
+// only) and read under the manifest cap, so a FIFO, device node, or growing
+// file in a package directory degrades to a scoped error instead of wedging
+// or ballooning the host CLI. Catalog load runs on almost every command;
+// its reads must never block. Symlinks are followed (follow=true): the
+// store is the user's own tree and a symlinked primary is their choice —
+// the judgment is on what the link resolves TO, same as the fetcher.
 func readPrimaryBounded(path string) ([]byte, error) {
-	fh, _, err := hostopen.OpenRegular(path, false)
+	fh, _, err := hostopen.OpenRegular(path, true)
 	if err != nil {
 		return nil, err
 	}
