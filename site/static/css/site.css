@@ -6,6 +6,8 @@
   --border: #e0e0e0;
   --code-bg: #f4f4f2;
   --accent: #2d5a27;
+  --banner-bg: #2d5a27;
+  --banner-fg: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,6 +19,8 @@
     --border: #333333;
     --code-bg: #1e1e1e;
     --accent: #8fce85;
+    --banner-bg: #1d3a19;
+    --banner-fg: #b8e0b0;
   }
 }
 
@@ -43,6 +47,25 @@ main {
   padding: 1rem 1.25rem 3rem;
 }
 
+/* GitHub banner: full-width strip above the header, on every page */
+.github-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--banner-bg);
+  color: var(--banner-fg);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.github-banner:hover { text-decoration: underline; }
+.github-banner svg { flex-shrink: 0; }
+@media (max-width: 540px) {
+  .github-banner-repo { display: none; }
+}
+
 /* Header */
 .site-header {
   display: flex;
@@ -66,7 +89,6 @@ main {
 .site-header nav { display: flex; gap: 1.25rem; align-items: center; }
 .site-header nav a { color: var(--fg); text-decoration: none; }
 .site-header nav a:hover { text-decoration: underline; }
-.github-link { display: inline-flex; align-items: center; gap: 0.4rem; }
 
 /* Header search (index built at deploy time; js/search.js) */
 .site-search { position: relative; }
