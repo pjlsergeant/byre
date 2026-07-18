@@ -20,9 +20,11 @@ same four steps, and every step's output is inspectable.
    produces byte-identical output, written to
    `~/.byre/projects/<id>/context/Dockerfile.generated` and printed any time by
    `byre dockerfile`. Blocks emit in a stable, cache-friendly order --
-   base, template, byre's core, each enabled skill, your project's tail
-   -- so ten projects on one template share the expensive layers in
-   Docker's own cache.
+   base, template, byre's core, each enabled skill, your project's tail,
+   and last a short security guard where byre re-asserts its own
+   launcher and enforcement files (in Docker the last write to a path
+   wins, so nothing earlier can quietly replace them) -- so ten projects
+   on one template share the expensive layers in Docker's own cache.
 3. **Build.** Plain `docker build`. byre owns no caching layer of its
    own: an unchanged config is a full cache hit; a change rebuilds
    only from the changed instruction onward. `byre rebuild` (`--no-cache`) is the

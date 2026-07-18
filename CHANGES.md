@@ -1,17 +1,63 @@
 # Changes
 
-## Unreleased
+## v1.1.0 -- 2026-07-19
 
-- **`byre worktree` checks out the new worktree inside the box.** Creating
-  a worktree used to check it out on the host, and a git checkout runs the
-  repository's own hooks and filters -- work that, like everything else a
-  repo brings, belongs inside the box rather than on your machine. byre now
-  creates the worktree without checking it out on the host and materializes
-  the files inside the box instead. Two things you'll notice: the new
-  worktree's files appear at first launch (not before), and `byre worktree`
-  needs a container engine -- it says so and stops if there isn't one,
-  rather than leave you a half-made worktree. A worktree you make yourself
-  with `git worktree add` is unchanged -- that checkout was always yours.
+- **`byre worktree` now runs the repository's git entirely inside the
+  box.** Creating a worktree used to run `git worktree add` on the host,
+  and git runs the repository's own machinery -- hooks, filters -- as it
+  works; code a repo brings belongs inside the box, not on your machine.
+  Both halves of creation moved: the registration runs in a short-lived
+  container on the project image (with no network -- it needs none), and
+  the files are checked out inside the box at first launch. No host-side
+  mutating git remains; the host's role is reduced to read-only probes,
+  making the mount point, and starting containers. Two things you'll
+  notice: the new worktree's files appear at first launch (not before),
+  and `byre worktree` needs a container engine -- it says so and stops if
+  there isn't one, rather than leave you a half-made worktree. A worktree
+  you make yourself with `git worktree add` is unchanged -- that was
+  always yours.
+
+- **The generated Dockerfile re-asserts byre's security files at the
+  tail.** Docker's rule is last-write-wins, and the project's `files`
+  entries and raw build lines are emitted after byre's own blocks -- so a
+  project could silently COPY over the launcher, the launch gate, or the
+  firewall's enforcement script, leaving `byre status` claiming
+  deny-by-default that the image no longer delivered. byre already forced
+  USER/ENTRYPOINT/HEALTHCHECK to the tail; the same treatment now covers
+  the security-critical file *contents*, so the claim is true rather than
+  clobberable. Legibility over refusal: a `files` entry targeting one of
+  these paths still builds, and `byre develop` / `byre dockerfile` print a
+  note that byre's copy wins there.
+
+- **Host-side reads of agent-writable paths can no longer hang, stall, or
+  mislead byre.** A wave of hardening from external reports and paid
+  review rounds, closed as a class rather than per-instance: a FIFO,
+  device node, symlink swap, or mid-read growing file planted in the
+  project tree (or a hand-dropped skill dir) could previously wedge
+  develop/status indefinitely, buffer unbounded data into host memory, or
+  race a delivery into reading a directory the user never named. Every
+  such read now goes through one shared choke point that judges the
+  opened descriptor (never the pathname), bounds what it reads, and
+  degrades to a scoped, legible failure instead of blocking -- covering
+  build staging, `byre deliver` (including a directory source-selection
+  race on both engines), package load and fetch, the preset drift check,
+  and the worktree's git probes.
+
+- **Shared-auth onboarding works for installed third-party agents.**
+  Accepting shared auth with save-as-default for a qualified agent id
+  (`owner/name`) wrote an unparseable config line and aborted onboarding;
+  pick keys are now quoted.
+
+- **Sharper conflict and uninstall messages.** Cross-source mount/volume
+  collisions name both sides with provenance ("skill byre/docker-host's
+  mount ... collides with config's mount ...") instead of restating one
+  path twice, and the uninstall/replace reference scan now covers named
+  layers and follows symlinked config dirs, so an in-use package can't
+  dodge the warning.
+
+- **The Volumes screen groups by scope.** Project-scoped and
+  machine-scoped volumes render as separate groups in the config editor,
+  matching how their lifecycles differ.
 
 ## v1.0.0 -- 2026-07-18
 
