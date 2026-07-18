@@ -68,7 +68,7 @@ cross-project sharing is never invisible.
 Ruled out: variant agent skills (whole-skill duplication per variant);
 credential-file seeding from the host (refresh collisions + reopens
 0007); host env passthrough as the auth path (year-long token in host
-config and byre's hands -- TODO 6's passthrough stays a separate
+config and byre's hands -- `env_from_host` (ADR 0026) stays a separate
 generic feature); a host-side token broker (revocation theater, and
 byre is structurally daemon-less); sharing whole state dirs (cwd-keyed
 state collides across projects -- everything is /workspace).

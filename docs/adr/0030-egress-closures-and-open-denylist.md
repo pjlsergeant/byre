@@ -1,6 +1,6 @@
 # Egress closures reach past the cascade; open-denylist is a posture
 
-Decided 2026-07-14 (grilled with Pete). The `egress` key's `!host[:port]`
+Decided 2026-07-14. The `egress` key's `!host[:port]`
 markers become **closures**: they survive the cascade and subtract from the
 *derived* allowlist -- after skill egress unions in -- and a new builtin,
 **firewall-open**, enforces them as drops on an otherwise-open network (the

@@ -1,6 +1,6 @@
 # Remote delivery is list-then-deliver over plain ssh
 
-Decided 2026-07-16 (Pete driving). `byre deliver ssh://[user@]host[:port]
+Decided 2026-07-16. `byre deliver ssh://[user@]host[:port]
 ...` delivers through another machine running byre as **two headless ssh
 invocations**: enumerate the remote boxes, pick locally, then stream one
 tar archive into a single targeted remote deliver. **Partially

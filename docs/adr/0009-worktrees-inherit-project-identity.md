@@ -56,97 +56,65 @@ exactly the code byre's model keeps inside the box (the project tree
 defines it, and a worktree's common git dir is bound rw), so a host-side
 checkout ran it in the wrong place -- on the host rather than in the box.
 Not the retarget residual above; a plain misplacement of where the
-checkout happens. Found 2026-07-18.
+checkout happens.
 
 Decided: `byre worktree` runs **no mutating git against the repo on the
 host at all** -- host-side git is reduced to bounded read-only probes
 (toplevel, is-this-registered). Creation is staged, both halves in the
 box:
 
-- **Registration** (the branch DWIM -- existing local, existing
-  remote-tracking, else a new branch -- and `git worktree add
-  --no-checkout`) runs in a short-lived **creation container** from the
-  project image: its own entrypoint (never the launcher; no session gate,
-  hooks, or agent), **no session labels** (a running create step is never
-  mistaken for a live session), the box identity/userns (files land
-  dev-owned), and a minimal hermetic mount set -- the main working tree,
-  the common git dir, and the (host-created, empty) target, each rw at its
-  host path, and **nothing else**: no user mounts, volumes, ports, env
-  passthrough, caps, skill `run_args` -- and **no network**
-  (`--network none`): registration is purely local git, and the hooks a
-  `worktree add` fires are repo-authored code, so a step that needs no
-  egress gets none regardless of the session's posture. Whatever hooks or
-  config-selected code a `worktree add` runs execute contained there.
-  From a main tree the common-dir mount source is `<canonical>/.git`
-  gated by `Lstat` to a **plain directory** -- a symlinked or gitfile
-  `.git` is refused, never followed: `.git` is agent-writable, and
-  resolving a planted symlink there would hand the hook-running container
-  an arbitrary rw host mount (grok review, 2026-07-19; from a linked
-  worktree the pair is `project.Resolve`'s inode-validated one).
-  Cleanup removes only state the invocation itself created (codex review,
-  2026-07-19): a failed add needs none (git rolls its own partial state
-  back -- an added `worktree remove --force` there would instead destroy
-  a concurrent invocation's or pre-existing registration at the same
-  path); the one in-box remove is the marker-write failure path, where
-  the script's own add just succeeded. Host-side, the `mkdir` of the
-  target leaf is the create's **ownership token** -- exactly one
-  invocation can create it, so a concurrent create of the same target is
-  refused before any container runs -- and on failure the host removes
-  only that empty mount-point directory (never a recursive delete). A
-  registration that survived a killed create is recognized on retry and
-  answered with the targeted remedy. The host side is reduced to: resolve
-  a location, ensure the image (under the setup lock), `mkdir` the mount
-  point, run the container, hand off to develop.
+- **Registration** (the branch DWIM and `git worktree add --no-checkout`)
+  runs in a short-lived **creation container** from the project image:
+  its own entrypoint (never the launcher; no session gate, hooks, or
+  agent), no session labels, the box identity/userns, and a minimal
+  hermetic mount set -- the main working tree, the common git dir, and
+  the (host-created, empty) target, each rw at its host path, and
+  **nothing else**: no user mounts, volumes, ports, env passthrough,
+  caps, skill `run_args` -- and **no network** (`--network none`):
+  registration is purely local git, and the hooks a `worktree add` fires
+  are repo-authored code. From a main tree the common-dir mount source is
+  `<canonical>/.git` gated by `Lstat` to a **plain directory** -- a
+  symlinked or gitfile `.git` is refused, never followed: `.git` is
+  agent-writable, and resolving a planted symlink there would hand the
+  hook-running container an arbitrary rw host mount. Cleanup removes only
+  state the invocation itself created (a failed add needs none -- git
+  rolls its own partial state back). Host-side, the `mkdir` of the target
+  leaf is the create's **ownership token** -- exactly one invocation can
+  create it -- and on failure the host removes only that empty
+  mount-point directory, never recursively. The host's role is reduced
+  to: resolve a location, ensure the image, `mkdir` the mount point, run
+  the container, hand off to develop.
 - **Population** (the actual checkout) happens at the first session's
-  start via the launcher, keyed on the pending-checkout marker the
-  creation container drops. The repo's hooks and filters run contained
-  like all its other code -- the checkout is where it always should have
-  been.
+  start via the launcher, keyed on the pending-checkout marker
+  (`byre-needs-checkout`) the creation container drops in the worktree's
+  git admin dir. The launcher checks out and clears it **only on
+  success**, so a develop that never started leaves a *resumable*
+  pending worktree, not a dead empty one. The marker is a hint, not a
+  source of truth: a concurrent box sharing the common git dir can
+  delete or add a sibling's marker, but both outcomes stay inside the
+  box, and the launcher warns when a linked worktree looks unpopulated.
 
-(Interim state, 2026-07-18, superseded the next day: the add ran host-side
-under `--no-checkout` plus an emptied `core.hooksPath` -- both verified
-load-bearing on git 2.39.5 -- with the marker write hardened through an
-`os.Root` on the validated common-dir source. Moving the add into the box
-deleted that entire host-side trust path: there is no host-side mutating
-git left to harden.)
+Consequences and rulings:
 
-Mechanics:
-
-- **A pending-checkout marker** (`byre-needs-checkout`) is dropped by the
-  creation container in the worktree's git admin dir, which is bound into
-  the box at its host path. The launcher checks out and clears it **only
-  on success**, so a develop that never started (build failure, daemon
-  down mid-build) leaves a *resumable* pending worktree, not a dead empty
-  one -- the next `byre develop` there finishes the job.
-- **The marker is a hint, not a source of truth** (codex + grok review). A
-  concurrent box sharing the common git dir can delete a sibling worktree's
-  marker (→ that worktree launches unpopulated) or add one (→ a redundant,
-  *contained* checkout). Both stay inside the box: the worst case is an
-  empty or re-checked-out tree in a box the same agent already drives.
-  The launcher warns when a linked worktree looks unpopulated, so a lost
-  marker still surfaces rather than launching silently into emptiness.
 - **Refuse-without-engine.** With no container engine there is nothing to
-  create the worktree in, let alone populate it, so `byre worktree`
-  refuses **before** creating anything (no empty worktree left behind) and
-  names `git worktree add` as the escape hatch. Gated on the engine
-  binary's absence only; a daemon that dies later fails the build or the
-  create container loudly instead (predicting it would add a
-  check-to-build race).
-- **Populate failure is best-effort, not fail-closed** (both reviewers
-  raised the fork; decided 2026-07-18): a failed or git-less populate
-  warns loudly and still launches, rather than locking the user out of
-  the box. The box is a repair environment (fix the cause, re-develop —
-  the marker resumes); a `none` box with no git especially must not be
-  unenterable. Containment is identical either way (the tree stays in the
-  box); this trades strict state-integrity for not trapping the user,
-  matching the launcher's never-block-a-launch culture.
-- **A behavior change users may notice:** a freshly created worktree's
-  files appear at first box start (one status line), not at `byre worktree`
-  time; **git itself must be in the box image** (creation and checkout both
-  run there -- a git-less image gets a loud, actionable error, never a
+  create the worktree in, so `byre worktree` refuses **before** creating
+  anything and names `git worktree add` as the escape hatch. Gated on the
+  engine binary's absence only; a daemon that dies later fails loudly
+  instead (predicting it would add a check-to-build race).
+- **Populate failure is best-effort, not fail-closed**: a failed or
+  git-less populate warns loudly and still launches, rather than locking
+  the user out of the box -- the box is the repair environment (fix the
+  cause, re-develop; the marker resumes), matching the launcher's
+  never-block-a-launch culture. Containment is identical either way.
+- **Behavior users may notice:** a freshly created worktree's files
+  appear at first box start, not at `byre worktree` time; **git itself
+  must be in the box image** (a git-less image gets a loud error, never a
   silently missing worktree); and a filter's tooling (e.g. git-lfs) must
-  live in the **box**, not the host, since the checkout runs there now.
+  live in the **box**, since the checkout runs there now.
 
 Not adopted: enumerating and disabling every exec-capable git config key
 host-side (hooks, smudge, `core.fsmonitor`, …) -- a losing allowlist
-against a moving target. Containing the checkout is the invariant.
+against a moving target. Containing the checkout is the invariant. An
+interim host-side hardening of the add (emptied `core.hooksPath` under
+`--no-checkout`) was built and superseded the next day by the in-box
+design; git history keeps it.

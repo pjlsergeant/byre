@@ -6,7 +6,7 @@ which point it arrives with its own adoption flagging, not as a quiet
 extension". This ADR is that arrival, prompted by two needs: skills
 that consume host-supplied API keys (`GEMINI_API_KEY`), and boxes that
 should render and timestamp like the terminal byre was launched from.
-Decided 2026-07-14 with the maintainer (grilled; each fork his ruling).
+Decided 2026-07-14 with the maintainer.
 
 Mechanics:
 

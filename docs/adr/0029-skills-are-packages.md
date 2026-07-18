@@ -2,11 +2,9 @@
 
 Skills and templates became **packages** with three provenances, an
 installation pipeline, and a preset flow that replaces the develop-time
-adoption offer. Decided 2026-07-13 with the maintainer via /grilling plus
-three codex/grok design-review rounds; built and reviewed the same day
-(the working design of record -- skill-packages-design.md rev 6, a
-`wip/`-lifecycle document -- is absorbed by this ADR and deleted; git
-history keeps it). This is the project's largest
+adoption offer. Decided 2026-07-13 (the working design of record, a
+`wip/`-lifecycle document, is deleted; git history keeps it). This is
+the project's largest
 single decision set; the rationale threads below are the ones that would
 be re-litigated without a record.
 

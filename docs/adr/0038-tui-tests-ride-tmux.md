@@ -1,8 +1,6 @@
 # TUI tests ride tmux
 
-Decided 2026-07-16 (Pete dispatched the tiered release-testing plan; the
-design ran two review rounds -- codex + grok -- before build; the working
-doc `wip/tui-test-harness.md` is absorbed here and deleted). byre's
+Decided 2026-07-16, as part of the tiered release-testing plan. byre's
 interactive surfaces get end-to-end tests: the SHIPPED binary drives a
 real pty inside a **private tmux server per test**, and assertions read
 captured pane text. The harness is `internal/tuitest`; conventions for
@@ -33,7 +31,7 @@ capable but no screen model, plus a language runtime), vhs (golden
 artifacts -- goldens rot), golden screens in any form (fragment
 assertions against exact product strings instead).
 
-## The rules that survived review
+## The rules
 
 - **Lifecycle first.** Panes run `remain-on-exit`; exit status comes
   from a shell wrapper recording `$?` to a file (NOT tmux's
@@ -92,18 +90,12 @@ assertions against exact product strings instead).
   sibling is the route if it ever needs CI teeth). The engine and
   loopback-ssh tiers stay Linux-hosted.
 
-## Open question, resolved same day
+## A discovery this tier forced: the picker rides /dev/tty
 
-The beat requires stdin to BE the terminal (beat.go); the question was
-whether prompts should survive an occupied stdin via /dev/tty, the way
-ssh's own prompts do. **Decided 2026-07-16 (Pete): adopt ssh's
-contract.** Scope turned out to be the picker only -- the beat never
-collides with a busy stdin (piped stdin means the pipe IS the payload
-and the beat correctly doesn't run). hostPicker now tries, in order:
-stdin-as-terminal, /dev/tty (rendering to the terminal device when
-stderr is redirected too), a graphical dialog, then the
-candidates-listing degradation. So `cmd | byre deliver` with several
-boxes running picks interactively instead of erroring. Pinned by a
-gated TUI test (a pipe on stdin, the picker steered over /dev/tty) --
-the product change came first, the test second, as this section
-originally required.
+Building the tier surfaced a product question: should the deliver
+picker survive an occupied stdin via /dev/tty, the way ssh's own
+prompts do? **Decided 2026-07-16: adopt ssh's contract** -- so
+`cmd | byre deliver` with several boxes running picks interactively
+instead of erroring. The behavior itself is DELIVER.md's; here it is
+pinned by a gated TUI test (a pipe on stdin, the picker steered over
+/dev/tty).

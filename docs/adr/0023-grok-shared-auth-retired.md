@@ -11,8 +11,8 @@ symlinked into a machine-scoped identity volume) -- is **retired**
 (2026-07-12). It shipped 2026-07-09 explicitly to run its empirical gates
 (the Grok CLI is closed source, so the two claims file-sharing rests on
 could not be source-verified); the field ran them within a day and both
-failed. Decided by the maintainer; two rebuild designs are parked in
-`wip/grok-shared-auth-v2-designs.md`, mechanics recorded in
+failed. Decided by the maintainer; the rebuild later shipped as the auth broker
+(ADR 0036), mechanics recorded in
 `docs/AGENT-CREDENTIAL-MECHANICS.md`.
 
 ## Why it failed (field evidence, 2026-07-10, twice in one day)

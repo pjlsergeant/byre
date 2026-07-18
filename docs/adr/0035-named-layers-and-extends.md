@@ -14,8 +14,7 @@ default ⊕ template ⊕ chain(root … parent) ⊕ project
 Chains are arbitrary length and strictly linear: no lists, so no
 diamonds and no linearization rule to explain. Cycles and dangling
 parents are hard errors -- the cycle error names the loop, the dangling
-error names the exact path to create. Decided 2026-07-16 (grilling
-session, Pete + Claude).
+error names the exact path to create. Decided 2026-07-16.
 
 ## Why
 

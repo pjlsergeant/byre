@@ -745,7 +745,7 @@ own rotation policy.**
   binary source), so a shared single inode gets the codex-style tolerance:
   a race loser picks up the winner's pair on its next read. That tolerance
   was never gated live: byre's opencode-shared-auth is SCOPED to API-key
-  logins (2026-07-16, Pete's ruling). OAuth entries still ride the share
+  logins (ruled 2026-07-16). OAuth entries still ride the share
   mechanically (the symlink carries the WHOLE file; byre never splits or
   touches entries) but are UNSUPPORTED -- the firstrun hook warns.
 - `OPENCODE_AUTH_CONTENT` (env) overrides the file entirely when set --
