@@ -23,12 +23,6 @@ the rationale lives.
   so a layer-only reference dodges uninstall's warning. Fails loudly at
   the next develop, so no silent breakage. Fix: scan the layers glob too.
 
-- [ ] (S) **Volumes page polish** (Pete, 2026-07-17): make the config
-  editor's Volumes screen nicer. The 07-17 pass fixed the mechanics
-  (content-sized columns, engine-degrade notes, honest empty states);
-  what's left is presentation — grouping/spacing (project vs shared),
-  the annotation clutter on orphan rows. View-layer only.
-
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
