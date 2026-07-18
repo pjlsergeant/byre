@@ -53,7 +53,7 @@ func (m model) openVolumes() model {
 		m.errMsg = "listing volumes: " + err.Error()
 		return m
 	}
-	m.volList = list
+	m.volList = groupVolumes(list)
 	m.volNotes = notes
 	m.volCur = 0
 	m.volPendClear = -1
@@ -83,7 +83,7 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.volErr = ""
 				if list, notes, lerr := m.vols.List(); lerr == nil {
-					m.volList = list
+					m.volList = groupVolumes(list)
 					m.volNotes = notes
 					if m.volCur >= len(list) && m.volCur > 0 {
 						m.volCur = len(list) - 1
@@ -159,7 +159,36 @@ func (m model) viewVolumes() string {
 		}
 		return s
 	}
+	// Cells an orphan row can't fill (no declaration → no role/target) get a
+	// dim "-": a visible n/a, not a gap that reads as a rendering fault.
+	cell := func(s string) string {
+		if s == "" {
+			return dimStyle.Render("-")
+		}
+		return s
+	}
+	// Scope grouping: rows arrive project-first (groupVolumes), and dim
+	// section headers carry the shared-ness once — the per-row
+	// "(shared: all your projects)" tags they replace repeated it on every
+	// machine row. Headers only appear when machine rows exist: an all-project
+	// list has nothing to distinguish, and a lone header is furniture.
+	hasMachine := false
+	for _, v := range m.volList {
+		if v.Machine {
+			hasMachine = true
+		}
+	}
 	for i, v := range m.volList {
+		if hasMachine && (i == 0 || v.Machine != m.volList[i-1].Machine) {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			header := "Project volumes"
+			if v.Machine {
+				header = "Machine volumes — shared by all your projects"
+			}
+			b.WriteString(dimStyle.Render(header) + "\n")
+		}
 		state := dimStyle.Render("empty")
 		if v.Exists {
 			state = "present"
@@ -167,15 +196,14 @@ func (m model) viewVolumes() string {
 		// State is padded too ("empty" is 5 cells, "present" 7 — pad works
 		// through the ANSI styling), or the engine suffix and shared/orphan
 		// annotations drift on mixed-state rows (codereview).
-		line := pad(v.Name, nameW) + "  " + pad(v.Role, roleW) + "  " + pad(v.Target, targetW) + "  " + pad(state, len("present"))
+		line := pad(v.Name, nameW) + "  " + pad(cell(v.Role), roleW) + "  " + pad(cell(v.Target), targetW) + "  " + pad(state, len("present"))
 		if multiEngine {
 			line += " [" + v.Engine + "]"
 		}
-		switch {
-		case v.Orphan:
-			line += dimStyle.Render("  (shared: all your projects — no longer declared)")
-		case v.Machine:
-			line += dimStyle.Render("  (shared: all your projects)")
+		if v.Orphan {
+			// The full story (still on disk, what clearing costs) lives in the
+			// highlighted row's description — the row tag stays a flag.
+			line += dimStyle.Render("  (no longer declared)")
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.volCur, line))
 	}
@@ -214,6 +242,29 @@ func (m model) viewVolumes() string {
 
 	b.WriteString("\n\n" + helpLine("↑/↓", "move", "c", "clear", "^s", "save", "esc", "back"))
 	return b.String()
+}
+
+// groupVolumes orders rows for display: project-scoped first, then
+// machine-scoped, orphans last within the shared group — the view renders one
+// section header per scope, so the scopes must be contiguous. The partition is
+// stable: the admin's per-engine order survives inside each group (the [engine]
+// suffix keeps interleaved engines legible).
+func groupVolumes(rows []VolumeStatus) []VolumeStatus {
+	var project, shared, orphans []VolumeStatus
+	for _, v := range rows {
+		switch {
+		case v.Orphan:
+			orphans = append(orphans, v)
+		case v.Machine:
+			shared = append(shared, v)
+		default:
+			project = append(project, v)
+		}
+	}
+	out := make([]VolumeStatus, 0, len(rows))
+	out = append(out, project...)
+	out = append(out, shared...)
+	return append(out, orphans...)
 }
 
 // volEngines counts the distinct engines among the rows — the label and the

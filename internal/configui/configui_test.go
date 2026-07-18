@@ -381,6 +381,45 @@ func TestVolumesTableAligns(t *testing.T) {
 	}
 }
 
+// Scope grouping: project rows render first under a "Project volumes" header,
+// machine rows under a shared header that carries the all-your-projects fact
+// once (no per-row tags), orphans last with a short flag. An all-project list
+// gets no headers — there's no distinction to draw.
+func TestVolumesGroupedByScope(t *testing.T) {
+	fv := &fakeVols{vols: []VolumeStatus{
+		{Name: "claude-identity", Role: "state", Target: "/x", Exists: true, Machine: true, Engine: "docker"},
+		{Name: "opencode-identity", Exists: true, Machine: true, Orphan: true, Engine: "docker"},
+		{Name: ".claude", Role: "state", Target: "/y", Exists: true, Engine: "docker"},
+	}}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv, TargetProject)
+	m = m.openVolumes()
+	// The model reorders on load (cursor indexes must match what's drawn):
+	// project first, orphans last within the shared group.
+	if m.volList[0].Name != ".claude" || m.volList[2].Name != "opencode-identity" {
+		t.Fatalf("groupVolumes order wrong: %v", m.volList)
+	}
+	out := m.viewVolumes()
+	proj := strings.Index(out, "Project volumes")
+	mach := strings.Index(out, "Machine volumes — shared by all your projects")
+	if proj == -1 || mach == -1 || proj > mach {
+		t.Fatalf("scope headers missing or out of order (proj=%d mach=%d):\n%s", proj, mach, out)
+	}
+	if strings.Contains(out, "(shared: all your projects)") {
+		t.Fatalf("per-row shared tag should be gone (the header carries it):\n%s", out)
+	}
+	if !strings.Contains(out, "(no longer declared)") {
+		t.Fatalf("orphan row lost its flag:\n%s", out)
+	}
+
+	// All-project list: no headers.
+	fv2 := &fakeVols{vols: []VolumeStatus{{Name: ".claude", Role: "state", Target: "/y", Exists: true, Engine: "docker"}}}
+	m2 := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv2, TargetProject)
+	m2 = m2.openVolumes()
+	if out2 := m2.viewVolumes(); strings.Contains(out2, "Project volumes") {
+		t.Fatalf("all-project list should render headerless:\n%s", out2)
+	}
+}
+
 // A resize triggers a full repaint: the inline renderer can't clear
 // previously-drawn lines that wrapped when the terminal SHRANK, so stale
 // fragments linger above the frame without it.
