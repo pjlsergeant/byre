@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -745,6 +746,66 @@ func configEgress(entries []string) []skills.EgressAllow {
 		out = append(out, skills.EgressAllow{Skill: skills.EgressFromConfig, Host: host, Port: port})
 	}
 	return out
+}
+
+// guardedPaths returns the image paths byre re-asserts at the Dockerfile tail
+// for this project — the launcher always, plus a network-posture skill's launch
+// gate and netns enforcement script(s). A project `files` entry (or raw build
+// line) targeting one of these is overridden by byre's own copy at build time
+// (gen's security guard); the caller warns so the override isn't silent.
+func guardedPaths(res skills.Resolved) []string {
+	paths := []string{gen.LauncherPath}
+	if len(res.NetnsInits()) > 0 {
+		paths = append(paths, gen.LaunchGatePath)
+		for _, h := range res.NetnsInits() {
+			paths = append(paths, h.Path)
+		}
+	}
+	return paths
+}
+
+// warnGuardCollisions warns when a project `files` destination targets a
+// byre-managed security path. byre's own copy wins at the build tail, so the
+// file would not take effect there — the warning turns that silent override
+// into a legible fact (footgun doctrine: tell, don't refuse). Skill-contributed
+// files are byre's trusted construction and are not flagged; only the project's
+// own `files` (cfg.Files) are.
+func warnGuardCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
+	guarded := map[string]bool{}
+	for _, p := range guardedPaths(res) {
+		guarded[p] = true
+	}
+	hitSet := map[string]bool{}
+	mark := func(p string) {
+		if c := path.Clean(p); guarded[c] {
+			hitSet[c] = true
+		}
+	}
+	for src, dest := range cfg.Files {
+		// Compare against the destination Docker actually writes, not the raw
+		// string. Two forms reach a guarded path without matching it literally:
+		//   - file-form: dest names the file (possibly with "." / ".." segments
+		//     path.Clean normalizes away);
+		//   - directory-form: dest is a directory — trailing slash OR an existing
+		//     image dir like /usr/local/bin — and Docker appends the source
+		//     basename. dir(dest)+base(src) covers both without needing to know
+		//     image state; it only lands on a guarded path when the basenames
+		//     line up, i.e. an actual clobber, so it doesn't over-warn.
+		// A directory *source* copies its contents in (not modeled here — it needs
+		// staging introspection); the tail guard still wins in that case, so this
+		// note is best-effort legibility, not the security boundary. Image paths
+		// are POSIX, so path (not filepath).
+		mark(dest)
+		mark(path.Join(dest, path.Base(src)))
+	}
+	var hits []string
+	for h := range hitSet {
+		hits = append(hits, h)
+	}
+	sort.Strings(hits)
+	for _, dest := range hits {
+		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, a byre-managed security path; byre re-asserts its own copy at the build tail, so your file does not take effect there.\n", dest)
+	}
 }
 
 // networkLine renders the Network row. Default: "open". With a skill-declared

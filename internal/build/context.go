@@ -76,8 +76,47 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 		VolumeDirs:         volumeDirs(cfg.Volumes, res.Volumes()),
 		DockerfilePre:      cfg.DockerfilePre,
 		DockerfilePost:     cfg.DockerfilePost,
+		Guard:              planGuard(genSkills, res),
 	}
 	return in, append(append(fileJobs, skillJobs...), claudeSkillJobs...), nil
+}
+
+// planGuard derives the security-critical files gen re-asserts at the Dockerfile
+// tail (beyond the launcher, which gen re-COPYs unconditionally). Scope: only a
+// network-posture skill contributes here — its launch gate and netns
+// enforcement script, which a project `files` clobber could otherwise empty or
+// stub while status still reads deny-by-default. The set is DERIVED from the
+// resolved skills (res.NetnsInits gives the script path(s); the gate path is the
+// launcher's constant), so a future posture skill is covered without editing a
+// hardcoded list. Each guarded dest's staged source is looked up from the skill
+// files already planned — byre only re-asserts a file it itself staged.
+func planGuard(genSkills []gen.SkillBlock, res skills.Resolved) []gen.GuardFile {
+	hooks := res.NetnsInits()
+	if len(hooks) == 0 {
+		return nil
+	}
+	byDest := map[string]string{} // image dest -> staged context path
+	for _, s := range genSkills {
+		for staged, dest := range s.Files {
+			byDest[dest] = staged
+		}
+	}
+	var guard []gen.GuardFile
+	add := func(dest string, exec bool) {
+		if staged, ok := byDest[dest]; ok {
+			guard = append(guard, gen.GuardFile{Staged: staged, Dest: dest, Exec: exec})
+		}
+	}
+	// The gate the launcher waits on: re-assert so an empty-file clobber can't
+	// make the launcher skip the wait (a `-s` test that then fails open).
+	add(gen.LaunchGatePath, false)
+	// The netns enforcement script(s) the helper runs as its entrypoint from THIS
+	// image: re-assert so a clobber can't swap in a rules-free stub. Resolution
+	// rejects a second netns_init, so this stays deterministic (single hook).
+	for _, h := range hooks {
+		add(h.Path, true)
+	}
+	return guard
 }
 
 // Render returns the generated Dockerfile text WITHOUT touching the build

@@ -39,6 +39,10 @@ func Dockerfile(s Streams, projectDir string) error {
 	if len(rv.skills.NetnsInits()) > 0 {
 		fmt.Fprint(s.Out, ejectGateComment)
 	}
+	// A `files` entry shadowing a byre-managed security path is overridden by the
+	// tail guard; say so on stderr so the printed artifact isn't read as if the
+	// clobber took effect (stdout stays the clean Dockerfile).
+	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
 	_, err = io.WriteString(s.Out, df)
 	return err
 }

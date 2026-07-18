@@ -141,8 +141,21 @@ FROM <base>                 # from template config
 <core block>                # constant: build-only gosu, baked dev user   │ layer-
 <skill blocks>              # each enabled skill, deterministic order     │ cached
 <project block>             # this project only                           │ across
-USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘ projects
+<security guard>            # re-COPY chassis paths (launcher, gate, fw)  │ projects
+USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘
 ```
+
+The **security guard** re-COPYs byre's own copy of the security-critical
+files -- the launcher (the ENTRYPOINT's content), and, when a network-posture
+skill is enabled, its launch gate and netns enforcement script -- *after* the
+project block. Those files are installed early (core/skill blocks), so without
+this a project `files` entry or raw build line targeting their paths would be a
+later COPY and win in the built image: a one-line clobber could empty the launch
+gate or stub the firewall while `byre status` still read deny-by-default. Same
+posture as the `USER`/`ENTRYPOINT`/`HEALTHCHECK NONE` tail: byre forces its
+security-critical instructions last wherever it controls the order. A `files`
+destination that collides with a guarded path draws a note at develop and
+`byre dockerfile` (byre's copy takes precedence; the override isn't silent).
 
 The **core block precedes skills**: it's constant, so placing it ahead of
 the varying skill blocks keeps it cache-shared across all projects on a

@@ -60,6 +60,22 @@ type Input struct {
 	VolumeDirs     []string
 	DockerfilePre  []string // raw block, before the core block
 	DockerfilePost []string // raw block, project tail
+	// Guard lists security-critical image files re-COPY'd at the Dockerfile
+	// TAIL, after the project block, so no project `files` entry or raw build
+	// line can leave its own content at those paths. The build layer fills this
+	// from the resolved skills (a network-posture skill's gate + netns script);
+	// the launcher is re-asserted unconditionally by Dockerfile itself.
+	Guard []GuardFile
+}
+
+// GuardFile is one security-critical file the tail re-asserts. Staged is its
+// build-context source (as staged), Dest the absolute image path, and Exec
+// whether to re-apply chmod +x after the COPY (a staged script arrives 0644,
+// so the netns enforcement script needs it; the gate file does not).
+type GuardFile struct {
+	Staged string
+	Dest   string
+	Exec   bool
 }
 
 // SkillBlock is one skill's build contribution.
@@ -106,8 +122,16 @@ const (
 // DefaultBase is used when no base is configured (and no template supplies one).
 const DefaultBase = "debian:bookworm"
 
-// launcherPath is where the core block installs the launcher / ENTRYPOINT.
-const launcherPath = "/usr/local/bin/" + LauncherName
+// LauncherPath is where the core block installs the launcher / ENTRYPOINT.
+// Exported because the security guard (build layer + status/develop warnings)
+// reasons about it as a chassis-owned, re-asserted path.
+const LauncherPath = "/usr/local/bin/" + LauncherName
+
+// LaunchGatePath is the launch-gate file the launcher waits on (launcher.sh
+// hardcodes this default; a network-posture skill bakes the gate here). It's a
+// cross-component contract — the shell launcher, the firewall skill.toml, and
+// the security guard must agree on it — so it lives here as the Go-side anchor.
+const LaunchGatePath = "/etc/byre/launch-gate"
 
 // coreBlock is the chassis's build-time slice — core's constant contribution
 // to every generated Dockerfile. It installs gosu (a build-only helper —
@@ -153,8 +177,8 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// not here: healthchecks never execute during build steps, so an early
 	// copy defends nothing — and a second instruction only buys a buildkit
 	// MultipleInstructionsDisallowed warning on every build.
-	"COPY " + LauncherName + " " + launcherPath + "\n" +
-	"RUN chmod +x " + launcherPath + "\n" +
+	"COPY " + LauncherName + " " + LauncherPath + "\n" +
+	"RUN chmod +x " + LauncherPath + "\n" +
 	// Login shells (e.g. `byre shell`) source /etc/profile.d/*.sh; this shim
 	// sources env.d there so a shell session gets the same env.d-provided
 	// environment the launcher gives the agent (COMPOSE_PROJECT_NAME, shared
@@ -163,12 +187,14 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
 // FROM, the template block, the constant core block, skill blocks,
-// the agent files, the project block (byre primitives + post raw block), then
-// USER (drop to the baked dev user) and the constant ENTRYPOINT. The core block
-// precedes skills so the dev user + gosu exist for skill builds and the
-// constant block stays cache-shared; USER comes last so every preceding RUN (core block, skill
-// apt installs, the project block) still runs as root. Empty sections render as
-// bare markers, keeping the layout stable.
+// the agent files, the project block (byre primitives + post raw block), the
+// security guard (re-asserting chassis-owned paths), then USER (drop to the
+// baked dev user) and the constant ENTRYPOINT. The core block precedes skills so
+// the dev user + gosu exist for skill builds and the constant block stays
+// cache-shared; the guard, USER, and ENTRYPOINT come last so every preceding RUN
+// (core block, skill apt installs, the project block) still runs as root and no
+// project input can override the security-critical tail. Empty sections render
+// as bare markers, keeping the layout stable.
 func Dockerfile(in Input) string {
 	base := in.Base
 	if base == "" {
@@ -274,6 +300,28 @@ func Dockerfile(in Input) string {
 	// MultipleInstructionsDisallowed warning). Same tail posture as
 	// USER/ENTRYPOINT below: chassis-owned instructions come last so no raw
 	// block can override them.
+	// Security guard: re-assert byre's own copy of the security-critical files
+	// AFTER the project block (and any dockerfile_post), so a project `files`
+	// entry or raw build line targeting these paths cannot leave its content in
+	// the final image. Same posture as the USER/ENTRYPOINT/HEALTHCHECK tail
+	// below: byre forces its security-critical instructions last wherever it
+	// controls the order. Without this the ENTRYPOINT *pointer* is tail-protected
+	// but its *content* — the launcher, and the launch gate it enforces — sits in
+	// the overridable zone, so a one-line `files` clobber could stub the launcher
+	// or empty the gate while status still reads deny-by-default. The launcher is
+	// re-asserted unconditionally (it is the ENTRYPOINT's content); a
+	// network-posture skill's gate + netns script arrive in in.Guard from the
+	// build layer, derived from the resolved skills so the set can't rot.
+	b.WriteString("\n# --- byre security guard (re-assert chassis paths after the project block) ---\n")
+	b.WriteString("COPY " + LauncherName + " " + LauncherPath + "\n")
+	b.WriteString("RUN chmod +x " + LauncherPath + "\n")
+	for _, g := range in.Guard {
+		b.WriteString(CopyLine(g.Staged, g.Dest) + "\n")
+		if g.Exec {
+			fmt.Fprintf(&b, "RUN chmod +x %s\n", shellQuote(g.Dest))
+		}
+	}
+
 	b.WriteString("\nHEALTHCHECK NONE\n")
 
 	// Drop to the baked dev user for the runtime container. This comes after every
@@ -281,7 +329,7 @@ func Dockerfile(in Input) string {
 	// before the ENTRYPOINT so the launcher and the agent run unprivileged — no
 	// runtime root, no gosu drop.
 	b.WriteString("USER dev\n")
-	fmt.Fprintf(&b, "ENTRYPOINT [%q]\n", launcherPath)
+	fmt.Fprintf(&b, "ENTRYPOINT [%q]\n", LauncherPath)
 	return b.String()
 }
 

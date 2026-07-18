@@ -818,3 +818,46 @@ func TestAssembleRejectsBadClaudeSkill(t *testing.T) {
 		t.Fatalf("duplicate: %v", err)
 	}
 }
+
+// TestPlanGuardDerivesFromNetnsSkill pins that the security guard set is DERIVED
+// from the resolved skills — a network-posture skill contributes its launch gate
+// (non-exec) and netns script (exec, since a staged script arrives 0644), each
+// with the staged source looked up from the skill's own planned files. This is
+// what keeps the set from rotting: a future posture skill is covered without
+// touching a hardcoded path list.
+func TestPlanGuardDerivesFromNetnsSkill(t *testing.T) {
+	genSkills := []gen.SkillBlock{{
+		Name: "firewall",
+		Files: map[string]string{
+			"skills/firewall/firewall.sh": "/usr/local/bin/byre-firewall",
+			"skills/firewall/launch-gate": gen.LaunchGatePath,
+		},
+	}}
+	var f skills.File
+	f.Runtime.NetnsInit = "/usr/local/bin/byre-firewall"
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "firewall", File: f}}}
+
+	guard := planGuard(genSkills, res)
+	got := map[string]gen.GuardFile{}
+	for _, g := range guard {
+		got[g.Dest] = g
+	}
+	gate, ok := got[gen.LaunchGatePath]
+	if !ok || gate.Exec || gate.Staged != "skills/firewall/launch-gate" {
+		t.Fatalf("gate guard wrong: %+v", gate)
+	}
+	fw, ok := got["/usr/local/bin/byre-firewall"]
+	if !ok || !fw.Exec || fw.Staged != "skills/firewall/firewall.sh" {
+		t.Fatalf("firewall guard wrong: %+v", fw)
+	}
+}
+
+// TestPlanGuardEmptyWithoutNetnsSkill: with no netns posture there is nothing to
+// clobber-protect beyond the launcher (which gen re-asserts unconditionally), so
+// the derived guard is empty — a plain box carries no extra guard COPYs.
+func TestPlanGuardEmptyWithoutNetnsSkill(t *testing.T) {
+	genSkills := []gen.SkillBlock{{Name: "tools", Files: map[string]string{"skills/tools/x.sh": "/usr/local/bin/x"}}}
+	if guard := planGuard(genSkills, skills.Resolved{}); guard != nil {
+		t.Fatalf("expected no guard without a netns skill, got %+v", guard)
+	}
+}

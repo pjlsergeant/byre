@@ -50,6 +50,10 @@ WORKDIR /workspace
 # --- image PATH capture (login shells restore from this; see byre-env.sh) ---
 RUN mkdir -p /etc/byre && printf '%s\n' "$PATH" > /etc/byre/image-path
 
+# --- byre security guard (re-assert chassis paths after the project block) ---
+COPY byre-launch /usr/local/bin/byre-launch
+RUN chmod +x /usr/local/bin/byre-launch
+
 HEALTHCHECK NONE
 USER dev
 ENTRYPOINT ["/usr/local/bin/byre-launch"]
@@ -128,6 +132,65 @@ func TestDockerfileSkillFilesCopy(t *testing.T) {
 	// COPY must precede the raw RUN that uses the file.
 	if !(ci < ri) {
 		t.Fatalf("COPY should precede RUN that uses it: copy=%d run=%d\n%s", ci, ri, out)
+	}
+}
+
+// TestDockerfileGuardReassertsAfterProjectFiles pins the security guard: the
+// launcher (always) and any Guard files (a posture skill's gate + netns script)
+// are re-COPY'd AFTER the project block, so a project `files` clobber of those
+// paths loses to byre's own copy. Without this a one-line `files` entry could
+// empty the launch gate or stub the firewall while status still reads
+// deny-by-default. Regression pin for the launch-gate clobber (2026-07-19).
+func TestDockerfileGuardReassertsAfterProjectFiles(t *testing.T) {
+	out := Dockerfile(Input{
+		Base: "node:22",
+		Skills: []SkillBlock{{
+			Name: "firewall",
+			Files: map[string]string{
+				"skills/firewall/firewall.sh": "/usr/local/bin/byre-firewall",
+				"skills/firewall/launch-gate": LaunchGatePath,
+			},
+		}},
+		// A hostile project `files` clobber of every security path.
+		Files: map[string]string{
+			"files/evil-launch": LauncherPath,
+			"files/evil-fw":     "/usr/local/bin/byre-firewall",
+			"files/empty-gate":  LaunchGatePath,
+		},
+		Guard: []GuardFile{
+			{Staged: "skills/firewall/launch-gate", Dest: LaunchGatePath, Exec: false},
+			{Staged: "skills/firewall/firewall.sh", Dest: "/usr/local/bin/byre-firewall", Exec: true},
+		},
+	})
+	// Each project clobber COPY must come BEFORE byre's guard re-COPY, so byre's
+	// copy is the last write to the path and wins in the built image.
+	for _, tc := range []struct {
+		clobber string
+		guard   string
+	}{
+		{CopyLine("files/evil-launch", LauncherPath), "COPY byre-launch " + LauncherPath},
+		{CopyLine("files/evil-fw", "/usr/local/bin/byre-firewall"), CopyLine("skills/firewall/firewall.sh", "/usr/local/bin/byre-firewall")},
+		{CopyLine("files/empty-gate", LaunchGatePath), CopyLine("skills/firewall/launch-gate", LaunchGatePath)},
+	} {
+		ci := strings.Index(out, tc.clobber)
+		gi := strings.LastIndex(out, tc.guard)
+		if ci < 0 || gi < 0 {
+			t.Fatalf("missing clobber or guard line:\nclobber %q (%d)\nguard %q (%d)\n%s", tc.clobber, ci, tc.guard, gi, out)
+		}
+		if !(ci < gi) {
+			t.Fatalf("guard must re-COPY after the project clobber: clobber=%d guard=%d\n%s", ci, gi, out)
+		}
+	}
+	// The guard is the LAST thing before the USER/ENTRYPOINT tail (after
+	// HEALTHCHECK NONE nothing re-COPYs the paths).
+	guard := strings.Index(out, "byre security guard")
+	entry := strings.Index(out, "ENTRYPOINT")
+	if !(guard > 0 && guard < entry) {
+		t.Fatalf("guard not positioned before ENTRYPOINT: guard=%d entry=%d\n%s", guard, entry, out)
+	}
+	// The netns script re-COPY carries its chmod +x (a staged script is 0644).
+	if !strings.Contains(out, "RUN chmod +x '/usr/local/bin/byre-firewall'") {
+		t.Fatalf("guard should re-chmod the netns script:\n%s", out)
 	}
 }
 
