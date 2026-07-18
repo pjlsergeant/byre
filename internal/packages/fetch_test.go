@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -191,5 +192,63 @@ func TestFileURIPath(t *testing.T) {
 	}
 	if _, err := fileURIPath("file://evil.example/x"); err == nil {
 		t.Fatal("non-local file host must be rejected")
+	}
+}
+
+// Local sources are agent-writable paths (a preset can point into the
+// project tree), so the hostile-file classes deliver's transport already
+// guards — FIFO hangs, device reads, grow-after-stat — apply here too.
+func TestFetchLocalManifestRejectsNonRegular(t *testing.T) {
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "skill.toml")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	var f Fetcher
+	// Must error immediately — the old Stat-then-ReadFile path blocked
+	// forever on a FIFO (size 0 passed the limit preflight).
+	if _, _, err := f.FetchManifest(fifo); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("FIFO manifest: err = %v, want not-a-regular-file", err)
+	}
+}
+
+func TestFetchLocalManifestFollowsUserNamedSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.toml")
+	os.WriteFile(real, []byte("[package]\n"), 0o644)
+	link := filepath.Join(dir, "skill.toml")
+	os.Symlink(real, link)
+	var f Fetcher
+	// A symlink the USER named is their choice (deliver's stance); only
+	// the target's type is judged.
+	if body, _, err := f.FetchManifest(link); err != nil || len(body) == 0 {
+		t.Fatalf("symlinked manifest: body=%q err=%v", body, err)
+	}
+}
+
+func TestFetchLocalManifestSizeLimit(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "skill.toml")
+	os.WriteFile(p, []byte(strings.Repeat("x", MaxManifestBytes+1)), 0o644)
+	var f Fetcher
+	if _, _, err := f.FetchManifest(p); err == nil {
+		t.Fatal("oversized local manifest must be rejected")
+	}
+}
+
+func TestFetchLocalPayloadRejectsNonRegular(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
+	if err := syscall.Mkfifo(filepath.Join(dir, "hook.sh"), 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	var f Fetcher
+	_, src, err := f.FetchManifest(filepath.Join(dir, "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := int64(MaxPayloadTotal)
+	if _, err := f.FetchPayload(src, "hook.sh", &budget); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("FIFO payload: err = %v, want not-a-regular-file", err)
 	}
 }

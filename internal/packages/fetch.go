@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // Fetch limits. Deny-by-default distribution: loosening later is
@@ -95,16 +97,22 @@ func (f *Fetcher) fetchManifestFile(raw string) ([]byte, *Source, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	fi, err := os.Stat(abs)
+	// The user NAMED this path, so a symlink to a real manifest is their
+	// choice (follow=true) — hostopen judges the open descriptor (regular
+	// file only; a FIFO or device never reaches the read), and the capped
+	// read means a file that grows between stat and read cannot smuggle
+	// past the declared limit.
+	fh, _, err := hostopen.OpenRegular(abs, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("manifest %s: %w", abs, err)
+	}
+	defer fh.Close()
+	body, err := io.ReadAll(io.LimitReader(fh, MaxManifestBytes+1))
 	if err != nil {
 		return nil, nil, err
 	}
-	if fi.Size() > MaxManifestBytes {
-		return nil, nil, fmt.Errorf("manifest is %d bytes (limit %d)", fi.Size(), MaxManifestBytes)
-	}
-	body, err := os.ReadFile(abs)
-	if err != nil {
-		return nil, nil, err
+	if len(body) > MaxManifestBytes {
+		return nil, nil, fmt.Errorf("manifest exceeds %d bytes (limit)", MaxManifestBytes)
 	}
 	// Contain payloads to the manifest's real directory (symlinks resolved).
 	baseDir, err := filepath.EvalSymlinks(filepath.Dir(abs))
@@ -156,26 +164,34 @@ func (f *Fetcher) FetchPayload(src *Source, rel string, budget *int64) ([]byte, 
 }
 
 func (f *Fetcher) fetchPayloadFile(src *Source, rel string, limit int64) ([]byte, error) {
-	p := filepath.Join(src.baseDir, filepath.FromSlash(rel))
-	real, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return nil, fmt.Errorf("payload %s: %w", rel, err)
-	}
-	// Containment after symlink resolution.
-	if real != src.baseDir && !strings.HasPrefix(real, src.baseDir+string(filepath.Separator)) {
-		return nil, fmt.Errorf("payload %s escapes the manifest directory", rel)
-	}
-	fi, err := os.Stat(real)
+	// Payloads open THROUGH the manifest directory: the rooted open resolves
+	// every component (symlinks included) beneath baseDir, so a swap between
+	// a pathname check and the read can never escape — the EvalSymlinks-
+	// then-prefix-check era re-opened by pathname and had exactly that
+	// window. Type is judged on the open descriptor (hostopen), and the
+	// read is capped by the remaining budget so growth after the stat can't
+	// bypass it.
+	root, err := os.OpenRoot(src.baseDir)
 	if err != nil {
 		return nil, err
 	}
-	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("payload %s is not a regular file", rel)
+	defer root.Close()
+	fh, fi, err := hostopen.OpenRegularIn(root, filepath.FromSlash(rel))
+	if err != nil {
+		return nil, fmt.Errorf("payload %s: %w", rel, err)
 	}
+	defer fh.Close()
 	if fi.Size() > limit {
 		return nil, fmt.Errorf("payload %s is %d bytes (remaining budget %d)", rel, fi.Size(), limit)
 	}
-	return os.ReadFile(real)
+	body, err := io.ReadAll(io.LimitReader(fh, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("payload %s grew past the remaining budget (%d bytes)", rel, limit)
+	}
+	return body, nil
 }
 
 // fileURIPath extracts the filesystem path from a file: URI or plain path.
