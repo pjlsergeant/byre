@@ -46,6 +46,9 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 			hits = append(hits, refHit{Where: where, Path: path})
 		}
 	}
+	// Every entry is a candidate -- no IsDir filter, so symlinked dirs
+	// (which resolution follows) are scanned too; check's stat skips
+	// entries with no config file under them.
 	subdirs := func(dir string) []string {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -53,9 +56,7 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 		}
 		names := make([]string, 0, len(entries))
 		for _, e := range entries {
-			if e.IsDir() {
-				names = append(names, e.Name())
-			}
+			names = append(names, e.Name())
 		}
 		sort.Strings(names)
 		return names

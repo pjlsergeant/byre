@@ -25,6 +25,13 @@ func TestScanReferencesCoversLayers(t *testing.T) {
 	writeCfg("layers/broken/layer.config", "skills = [not toml\n")
 	writeCfg("layers/quiet/layer.config", "skills = [\"pete/other\"]\n")
 	writeCfg("projects/app/byre.config", "skills = [\"pete/tool\"]\n")
+	// Resolution follows symlinked layer dirs, so the scan must too; a
+	// stray plain file in layers/ is skipped (no layer.config under it).
+	writeCfg("elsewhere/layer.config", "skills = [\"pete/tool\"]\n")
+	if err := os.Symlink(filepath.Join(home, "elsewhere"), filepath.Join(home, "layers", "linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeCfg("layers/stray", "not a layer dir\n")
 
 	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
 	if err != nil {
@@ -39,6 +46,7 @@ func TestScanReferencesCoversLayers(t *testing.T) {
 	want := map[string]bool{
 		"layer base":   false,
 		"layer broken": true, // unparsable counts as a reference
+		"layer linked": false,
 		"project app":  false,
 	}
 	if len(got) != len(want) {
