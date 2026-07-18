@@ -1,13 +1,15 @@
 package deliver
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // The transport is one `exec -i` per delivered file, running a small POSIX-sh
@@ -133,26 +135,20 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 // deliverTopFile opens a top-level source and streams it. follow follows a
 // symlink the user named directly (their choice); otherwise O_NOFOLLOW so a
 // path that was a regular file at Lstat is never followed if swapped to a
-// symlink afterward. O_NONBLOCK + an fd stat means a FIFO (named, swapped, or
-// symlinked-to) returns immediately and is skipped rather than blocking.
+// symlink afterward. hostopen's descriptor judgment means a FIFO (named,
+// swapped, or symlinked-to) returns immediately and is skipped rather than
+// blocking — a non-regular here is a SKIP, not a failure, so the sentinel
+// is branched on rather than propagated.
 func deliverTopFile(cfg Config, sess Session, src string, follow bool) (string, error) {
-	flag := os.O_RDONLY | syscall.O_NONBLOCK
-	if !follow {
-		flag |= syscall.O_NOFOLLOW
+	f, _, err := hostopen.OpenRegular(src, follow)
+	if errors.Is(err, hostopen.ErrNotRegular) {
+		fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file)\n", src)
+		return "", nil
 	}
-	f, err := os.OpenFile(src, flag, 0)
 	if err != nil {
 		return "", fmt.Errorf("delivering %s: %w", src, err)
 	}
 	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return "", fmt.Errorf("delivering %s: %w", src, err)
-	}
-	if !st.Mode().IsRegular() {
-		fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file)\n", src)
-		return "", nil
-	}
 	return deliverStream(cfg, sess, f, filepath.Base(src), "/inbox", false)
 }
 
@@ -249,12 +245,22 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		// (unreadable, or swapped to an escaping symlink after the walk) is a
 		// genuine delivery FAILURE the user must hear about.
 		deliverContained := func(isLink bool) {
-			// O_NONBLOCK so opening a FIFO (an interior symlink to one, or a
-			// regular file swapped to one after the walk) returns immediately
-			// instead of blocking forever on a writer — the fd stat below then
-			// rejects it. Harmless on regular files (POSIX ignores O_NONBLOCK
-			// for their reads).
-			f, oerr := hostRoot.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+			// hostopen's rooted open is the same escape-safe walk with the
+			// FIFO/device judgment done at the descriptor (a FIFO — an
+			// interior symlink to one, or a regular file swapped to one
+			// after the walk — returns immediately instead of blocking);
+			// the sentinel keeps the skip-vs-fail split per entry kind.
+			f, st, oerr := hostopen.OpenRegularIn(hostRoot, rel)
+			if errors.Is(oerr, hostopen.ErrNotRegular) {
+				if isLink {
+					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to something other than a file)\n", p)
+					return
+				}
+				fmt.Fprintf(cfg.Err, "byre: delivering %s: not a regular file\n", p)
+				files++
+				failed++
+				return
+			}
 			if oerr != nil {
 				if isLink {
 					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink outside the delivered directory, or broken)\n", p)
@@ -266,17 +272,6 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 				return
 			}
 			defer f.Close()
-			st, serr := f.Stat()
-			if serr != nil || !st.Mode().IsRegular() {
-				if isLink {
-					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to something other than a file)\n", p)
-					return
-				}
-				fmt.Fprintf(cfg.Err, "byre: delivering %s: not a regular file\n", p)
-				files++
-				failed++
-				return
-			}
 			files++
 			if _, ferr := deliverStream(cfg, sess, f, filepath.Base(dest), destDir, true); ferr != nil {
 				fmt.Fprintf(cfg.Err, "byre: %v\n", ferr)
