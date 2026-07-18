@@ -115,7 +115,7 @@ func TestCreateWorktreeNewBranch(t *testing.T) {
 		t.Errorf("worktree project dir %q != repo %q", p.Canonical, canonRepo)
 	}
 	// The new branch exists.
-	if !branchExists(repo, "feat") {
+	if ok, err := branchExists(repo, "feat"); err != nil || !ok {
 		t.Error("expected branch 'feat' to be created")
 	}
 }
@@ -185,7 +185,7 @@ func TestCreateWorktreeRemoteBranch(t *testing.T) {
 	run("-C", repo, "fetch", "-q", "origin")
 
 	// No LOCAL remotefeat, but a remote one exists -> should be detected as existing.
-	if branchExists(repo, "remotefeat") {
+	if ok, err := branchExists(repo, "remotefeat"); err != nil || ok {
 		t.Fatal("precondition: no local remotefeat expected")
 	}
 	if ok, err := remoteBranchExists(repo, "remotefeat"); err != nil || !ok {

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -114,13 +115,16 @@ func worktreeParent(dir, mainDir string) (string, error) {
 // git's progress goes to stderr so stdout stays clean.
 func createWorktree(w io.Writer, dir, name, target string) error {
 	args := []string{"-C", dir, "worktree", "add"}
-	exists := branchExists(dir, name)
+	exists, err := branchExists(dir, name)
+	if err != nil {
+		// A probe refusal is NOT a negative answer — never mutate after an
+		// indeterminate probe (codex rounds 4+5; guessing "no" would -b a
+		// fresh branch where one already exists, or diverge from a remote).
+		return fmt.Errorf("could not determine whether branch %s exists: %w", name, err)
+	}
 	if !exists {
 		remote, err := remoteBranchExists(dir, name)
 		if err != nil {
-			// A probe refusal is NOT a negative answer: guessing "no" here
-			// would -b a fresh branch from HEAD while origin/<name> exists —
-			// a silently divergent checkout (codex, round 4).
 			return fmt.Errorf("could not determine whether %s exists on a remote: %w", name, err)
 		}
 		exists = remote
@@ -150,10 +154,20 @@ func gitToplevel(dir string) (string, bool) {
 	return top, top != ""
 }
 
-// branchExists reports whether a local branch named name already exists.
-func branchExists(dir, name string) bool {
+// branchExists reports whether a local branch named name already exists. A
+// clean negative is EXACTLY exit 1 from `rev-parse --verify --quiet` (the
+// documented missing-ref code); any other refusal — timeout kill, output
+// cap, exit 128 repo errors — is an error, never a "no".
+func branchExists(dir, name string) (bool, error) {
 	_, err := gitProbe("-C", dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name)
-	return err == nil
+	if err == nil {
+		return true, nil
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
 }
 
 // remoteBranchExists reports whether a remote-tracking branch <remote>/<name>
