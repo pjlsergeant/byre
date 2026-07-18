@@ -1,14 +1,12 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -128,17 +126,6 @@ func createWorktree(w io.Writer, dir, name, target string) error {
 		return fmt.Errorf("git worktree add failed: %w", err)
 	}
 	return nil
-}
-
-// gitProbe runs a read-only git query against the (agent-writable) repo
-// under the standing 5s bound — a hostile .git must degrade a probe, never
-// wedge the command. The mutating `git worktree add` above stays unbounded
-// on purpose: a large checkout legitimately takes time, its output streams
-// to the user, and ctrl-C is theirs.
-func gitProbe(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return exec.CommandContext(ctx, "git", args...).Output()
 }
 
 // gitToplevel returns the working tree's root dir for dir (its main or linked
