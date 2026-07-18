@@ -114,7 +114,18 @@ func worktreeParent(dir, mainDir string) (string, error) {
 // git's progress goes to stderr so stdout stays clean.
 func createWorktree(w io.Writer, dir, name, target string) error {
 	args := []string{"-C", dir, "worktree", "add"}
-	if branchOrRemoteExists(dir, name) {
+	exists := branchExists(dir, name)
+	if !exists {
+		remote, err := remoteBranchExists(dir, name)
+		if err != nil {
+			// A probe refusal is NOT a negative answer: guessing "no" here
+			// would -b a fresh branch from HEAD while origin/<name> exists —
+			// a silently divergent checkout (codex, round 4).
+			return fmt.Errorf("could not determine whether %s exists on a remote: %w", name, err)
+		}
+		exists = remote
+	}
+	if exists {
 		args = append(args, target, name) // check out existing (local or remote) branch
 	} else {
 		args = append(args, "-b", name, target) // create a new branch
@@ -145,22 +156,16 @@ func branchExists(dir, name string) bool {
 	return err == nil
 }
 
-// branchOrRemoteExists reports whether name is already a branch — a local branch,
-// or a remote-tracking branch <remote>/<name> — so `git worktree add` should
-// check it out rather than create a new branch.
-func branchOrRemoteExists(dir, name string) bool {
-	if branchExists(dir, name) {
-		return true
-	}
-	out, err := gitProbe("-C", dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
+// remoteBranchExists reports whether a remote-tracking branch <remote>/<name>
+// exists. The query targets the NAME (for-each-ref pattern) instead of
+// listing every remote ref, so a legitimately huge ref set can never hit
+// gitProbe's output cap; a probe refusal surfaces as the error it is.
+// (Like the prior first-slash comparison, remotes with slashes in their own
+// names are not matched — parity, not a regression.)
+func remoteBranchExists(dir, name string) (bool, error) {
+	out, err := gitProbe("-C", dir, "for-each-ref", "--count=1", "--format=%(refname)", "refs/remotes/*/"+name)
 	if err != nil {
-		return false
+		return false, err
 	}
-	for _, ref := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		// ref is "<remote>/<branch>"; compare the part after the first slash.
-		if i := strings.IndexByte(ref, '/'); i >= 0 && ref[i+1:] == name {
-			return true
-		}
-	}
-	return false
+	return strings.TrimSpace(string(out)) != "", nil
 }

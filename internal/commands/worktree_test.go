@@ -188,8 +188,8 @@ func TestCreateWorktreeRemoteBranch(t *testing.T) {
 	if branchExists(repo, "remotefeat") {
 		t.Fatal("precondition: no local remotefeat expected")
 	}
-	if !branchOrRemoteExists(repo, "remotefeat") {
-		t.Fatal("remote-only branch not detected as existing (would fork a divergent branch)")
+	if ok, err := remoteBranchExists(repo, "remotefeat"); err != nil || !ok {
+		t.Fatalf("remote-only branch not detected as existing (would fork a divergent branch): ok=%v err=%v", ok, err)
 	}
 	target := filepath.Join(root, "wt")
 	if err := createWorktree(io.Discard, repo, "remotefeat", target); err != nil {
