@@ -29,11 +29,6 @@ the rationale lives.
   what's left is presentation — grouping/spacing (project vs shared),
   the annotation clutter on orphan rows. View-layer only.
 
-- [ ] (S) **Landing comparison table** (restored 2026-07-18: struck on a
-  bad grep — the Why-not material is still README-only; the site plan
-  puts the table on the landing page). Carry the README's new lead-in
-  point too: the per-folder toolkit is the cross-cutting differentiator.
-
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
