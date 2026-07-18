@@ -73,14 +73,21 @@ box:
   the common git dir, and the (host-created, empty) target, each rw at its
   host path, and **nothing else**: no user mounts, volumes, ports, env
   passthrough, caps, or skill `run_args`. Whatever hooks or
-  config-selected code a `worktree add` runs execute contained there. On
-  failure the container cleans up in-box (`git worktree remove --force`);
-  the host then removes only the empty mount-point directory it made
-  (never a recursive delete), and a registration that survived a killed
-  create is recognized on retry and answered with the targeted remedy.
-  The host side is reduced to: resolve a location, ensure the image (under
-  the setup lock), `mkdir` the mount point, run the container, hand off to
-  develop.
+  config-selected code a `worktree add` runs execute contained there.
+  Cleanup removes only state the invocation itself created (codex review,
+  2026-07-19): a failed add needs none (git rolls its own partial state
+  back -- an added `worktree remove --force` there would instead destroy
+  a concurrent invocation's or pre-existing registration at the same
+  path); the one in-box remove is the marker-write failure path, where
+  the script's own add just succeeded. Host-side, the `mkdir` of the
+  target leaf is the create's **ownership token** -- exactly one
+  invocation can create it, so a concurrent create of the same target is
+  refused before any container runs -- and on failure the host removes
+  only that empty mount-point directory (never a recursive delete). A
+  registration that survived a killed create is recognized on retry and
+  answered with the targeted remedy. The host side is reduced to: resolve
+  a location, ensure the image (under the setup lock), `mkdir` the mount
+  point, run the container, hand off to develop.
 - **Population** (the actual checkout) happens at the first session's
   start via the launcher, keyed on the pending-checkout marker the
   creation container drops. The repo's hooks and filters run contained

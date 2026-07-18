@@ -179,8 +179,8 @@ func TestWorktreeAddScriptRemoteBranch(t *testing.T) {
 	}
 }
 
-// A failed add cleans up after itself in the box: no half-registered worktree
-// left behind (never-half-create, now uniformly in-box).
+// A failed add leaves no half-registered worktree behind (git rolls its own
+// partial state back; the script adds no cleanup of its own there).
 func TestWorktreeAddScriptFailureCleansUp(t *testing.T) {
 	repo := initWtRepo(t)
 	// Checking out the branch the main tree already has checked out makes the
@@ -200,6 +200,33 @@ func TestWorktreeAddScriptFailureCleansUp(t *testing.T) {
 	}
 	if strings.Contains(string(list), target) {
 		t.Errorf("failed add left the worktree registered:\n%s", list)
+	}
+}
+
+// The codex-found race (2026-07-19): a create that collides with an EXISTING
+// registration for the target must not destroy it. The failed-add path runs no
+// `worktree remove` of its own — removing there would delete a concurrent
+// invocation's (or any pre-existing) worktree at the same path.
+func TestWorktreeAddScriptFailedAddPreservesExistingRegistration(t *testing.T) {
+	repo := initWtRepo(t)
+	target := filepath.Join(t.TempDir(), "wt")
+	// Someone already holds the target: a registered worktree with its dir.
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "--no-checkout", "-b", "first", target).CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v\n%s", err, out)
+	}
+	out, serr := runWtScript(t, repo, target, "second")
+	if serr == nil {
+		t.Fatalf("script should fail adding over an existing registration\n%s", out)
+	}
+	list, err := exec.Command("git", "-C", repo, "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(list), "worktree "+target) {
+		t.Errorf("the existing registration was destroyed by the failed add:\n%s", list)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+		t.Errorf("the existing worktree's .git was removed: %v", err)
 	}
 }
 

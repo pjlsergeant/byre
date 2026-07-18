@@ -133,17 +133,31 @@ func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, 
 	}
 	// The target is made host-side only as the bind-mount point (the engine
 	// needs a source to bind); the box does all the git. Modern git accepts a
-	// `worktree add` into an existing empty directory.
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	// `worktree add` into an existing empty directory. The LEAF is made with
+	// os.Mkdir, not MkdirAll: exactly one invocation can create it, so it is
+	// this create's OWNERSHIP TOKEN — a concurrent create of the same target
+	// is refused here, before any container runs, and the failure path below
+	// may remove the dir knowing it is this invocation's own (codex review: a
+	// second create's cleanup must never unlink the first's live mount source,
+	// and its container must never race the first's registration).
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(target, 0o755); err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("target path %s appeared while preparing the worktree — another `byre worktree` for it may be in flight; wait for it (or clear the path) and retry", target)
+		}
 		return err
 	}
 	if err := r.WorktreeAdd(image, worktreeCreateName(target), ident, commonHost, commonTarget, paths.Canonical, target, name); err != nil {
-		// Establish what remains rather than blindly deleting: the in-box script
-		// cleans up after itself, so normally only our empty mount-point dir is
-		// left — remove exactly that (os.Remove refuses a non-empty dir; never
-		// RemoveAll — partial state is diagnostically useful) so a retry isn't
-		// refused by the exists check. If the registration survived (create
-		// killed mid-cleanup), say so with the targeted remedy.
+		// Establish what remains rather than blindly deleting: a failed add
+		// leaves no registration (git rolls its own partial state back, and the
+		// script removes only a worktree it successfully added), so normally
+		// only this invocation's empty mount-point dir is left — remove exactly
+		// that (ours by the Mkdir token above; os.Remove refuses a non-empty
+		// dir; never RemoveAll — partial state is diagnostically useful) so a
+		// retry isn't refused by the exists check. If a registration survived
+		// (create killed mid-remove), say so with the targeted remedy.
 		_ = os.Remove(target)
 		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
 			return fmt.Errorf("creating the worktree in the box failed, and it is still registered: %w\n"+

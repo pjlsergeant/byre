@@ -27,9 +27,15 @@ import "fmt"
 // marker and metadata this container writes are exactly where the host and the
 // next session expect them.
 //
-// On failure the cleanup runs HERE too (in-box `git worktree remove --force`),
-// uniformly with the create; a cleanup that itself fails is surfaced with
-// manual guidance rather than swallowed (never-half-create).
+// Cleanup removes ONLY state this script created (codex review). A failed
+// `worktree add` needs no cleanup — git rolls its own partial state back — and
+// running `worktree remove --force` there would instead destroy whatever
+// ALREADY holds the target path (a concurrent invocation's registration, or a
+// pre-existing worktree the add collided with). The one remove kept is the
+// marker-write failure path, where OUR add just succeeded — so the
+// registration being removed is provably this script's own; a remove that
+// itself fails is surfaced with manual guidance rather than swallowed
+// (never-half-create).
 const worktreeAddScript = `set -u
 command -v git >/dev/null 2>&1 || {
   echo "byre: this project's box image has no git, so byre cannot register the worktree in it." >&2
@@ -60,7 +66,6 @@ else
   set -- -b "$branch" "$target"
 fi
 if ! git -C "$main" worktree add --no-checkout "$@"; then
-  git -C "$main" worktree remove --force "$target" >/dev/null 2>&1 || true
   exit 1
 fi
 if gitdir=$(git -C "$target" rev-parse --absolute-git-dir) && [ -n "$gitdir" ] && touch "$gitdir/byre-needs-checkout"; then

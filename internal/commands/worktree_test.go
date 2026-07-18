@@ -311,6 +311,34 @@ func TestWorktreeCreateFailureRemovesEmptyDir(t *testing.T) {
 	}
 }
 
+// The target-dir Mkdir is the create's ownership token (codex 2026-07-19): a
+// dir that appears between Worktree's exists-check and the create — another
+// invocation's mount point — is a refusal BEFORE any container runs, and the
+// dir is left alone (it isn't ours to remove).
+func TestWorktreeCreateRefusesConcurrentTargetDir(t *testing.T) {
+	repo := initRepo(t)
+	t.Setenv("BYRE_HOME", t.TempDir())
+	paths, err := project.Resolve(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "wt")
+	if err := os.Mkdir(target, 0o755); err != nil { // the other invocation's token
+		t.Fatal(err)
+	}
+	f := &fakeRunner{}
+	err = worktreeCreate(f, discardStreams(), paths, repo, "feat", target)
+	if err == nil || !strings.Contains(err.Error(), "another `byre worktree`") {
+		t.Fatalf("want the concurrent-create refusal, got %v", err)
+	}
+	if len(f.worktreeAdds) != 0 {
+		t.Error("a create container ran despite losing the target-dir token")
+	}
+	if _, serr := os.Stat(target); serr != nil {
+		t.Error("the other invocation's mount-point dir was removed")
+	}
+}
+
 // Interrupted-create recognition, both halves: a registered worktree whose dir
 // exists resumes via develop; a registered one whose dir is GONE gets the
 // targeted prune remedy. Checked before the engine gate, so no engine needed.
