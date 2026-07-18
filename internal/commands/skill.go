@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -540,26 +542,53 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 }
 
 func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+	// The walk rides one pinned root descriptor and every read is judged at
+	// the descriptor (regular file only), so a FIFO or device fails the
+	// fork loudly instead of hanging the copy. A symlink is the user's own
+	// arrangement of their store: it is followed, and its resolved target's
+	// bytes are materialized as a regular file (which is also the only
+	// shape pack accepts later). One budget across the copy, aligned with
+	// install's payload budget, so a growing or enormous file fails loudly
+	// instead of exhausting memory.
+	root, err := os.OpenRoot(src)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	remaining := int64(packages.MaxPayloadTotal)
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		out := filepath.Join(dst, rel)
-		if info.IsDir() {
+		out := filepath.Join(dst, filepath.FromSlash(rel))
+		if d.IsDir() {
 			return os.MkdirAll(out, 0o755)
 		}
-		b, err := os.ReadFile(p)
+		var fh *os.File
+		var fi os.FileInfo
+		if d.Type()&fs.ModeSymlink != 0 {
+			// Out-of-tree targets are legitimate here, so the link is
+			// resolved outside the root — by full path, follow=true.
+			fh, fi, err = hostopen.OpenRegular(filepath.Join(src, filepath.FromSlash(rel)), true)
+		} else {
+			fh, fi, err = hostopen.OpenRegularIn(root, filepath.FromSlash(rel))
+		}
 		if err != nil {
 			return err
+		}
+		b, err := io.ReadAll(io.LimitReader(fh, remaining+1))
+		fh.Close()
+		if err != nil {
+			return err
+		}
+		remaining -= int64(len(b))
+		if remaining < 0 {
+			return fmt.Errorf("fork exceeds the %d-byte budget", packages.MaxPayloadTotal)
 		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(out, b, info.Mode().Perm())
+		return os.WriteFile(out, b, fi.Mode().Perm())
 	})
 }
 

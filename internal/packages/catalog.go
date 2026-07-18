@@ -2,6 +2,7 @@ package packages
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // Entry is one row in the catalog: a resolvable package, or a scoped problem
@@ -241,7 +244,7 @@ func (c *Catalog) loadInstalled() error {
 			continue
 		}
 		dir := SnapshotDir(c.Home, row.Digest)
-		raw, err := os.ReadFile(filepath.Join(dir, prim))
+		raw, err := readPrimaryBounded(filepath.Join(dir, prim))
 		if err != nil {
 			// The exact command, digest-pinned: a bare URI reinstall
 			// would silently accept different bytes.
@@ -359,7 +362,7 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 }
 
 func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
-	raw, err := os.ReadFile(filepath.Join(dir, prim))
+	raw, err := readPrimaryBounded(filepath.Join(dir, prim))
 	if err != nil {
 		c.addProblem(id, kind, ProvInvalid, err.Error(), dir)
 		return nil
@@ -709,12 +712,36 @@ func (c *Catalog) listNames(kind Kind, canonical bool) []string {
 // need the header use Manifest / GenerateBundledHeader).
 func (e *Entry) ReadPrimary() ([]byte, error) {
 	if e.Dir != "" {
-		return os.ReadFile(filepath.Join(e.Dir, e.Primary))
+		return readPrimaryBounded(filepath.Join(e.Dir, e.Primary))
 	}
 	if e.FS != nil {
 		return fs.ReadFile(e.FS, filepath.ToSlash(filepath.Join(e.Sub, e.Primary)))
 	}
 	return nil, fmt.Errorf("package %q has no load location", e.ID)
+}
+
+// readPrimaryBounded is the load-side twin of the fetcher's local-manifest
+// read: package content on disk is judged at the descriptor (regular file
+// only) and read under the manifest cap, so a FIFO, device node, or growing
+// file in a package directory degrades to a scoped error instead of wedging
+// or ballooning the host CLI. Catalog load runs on almost every command;
+// its reads must never block. Symlinks are followed (follow=true): the
+// store is the user's own tree and a symlinked primary is their choice —
+// the judgment is on what the link resolves TO, same as the fetcher.
+func readPrimaryBounded(path string) ([]byte, error) {
+	fh, _, err := hostopen.OpenRegular(path, true)
+	if err != nil {
+		return nil, err
+	}
+	defer fh.Close()
+	raw, err := io.ReadAll(io.LimitReader(fh, MaxManifestBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > MaxManifestBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes (limit)", filepath.Base(path), MaxManifestBytes)
+	}
+	return raw, nil
 }
 
 // OpenRoot returns an fs.FS rooted at the package directory for walking
