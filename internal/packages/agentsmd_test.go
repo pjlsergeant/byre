@@ -102,7 +102,7 @@ func TestEnsureAgentsMDPreservesForeignFile(t *testing.T) {
 	}
 
 	// A stale byre copy (title line intact) is replaced without a .bak.
-	os.Remove(bak)
+	mustRemove(t, bak)
 	if err := os.WriteFile(path, []byte(agentsMDTitle+"\nold byre words\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -208,7 +208,9 @@ func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	outside := filepath.Join(t.TempDir(), "secret")
-	os.WriteFile(outside, []byte("secret"), 0o644)
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(outside, filepath.Join(assets, "leak")); err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +593,9 @@ func TestAssembleFilesRejectsEscapeAndRelativeDest(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "escapes the project dir") {
 		t.Errorf("expected the escape rejection, got: %v", err)
 	}
-	os.WriteFile(filepath.Join(paths.Canonical, "f"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(paths.Canonical, "f"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Assemble(paths, config.Config{Files: map[string]string{"f": "relative/dest"}}, skills.Resolved{}); err == nil {
 		t.Error("expected rejection of non-absolute destination")
 	}

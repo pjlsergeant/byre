@@ -139,8 +139,12 @@ func TestIntegrationSeedingAndMigration(t *testing.T) {
 
 	// SeedFiles: only the listed subset is copied; a missing entry is skipped.
 	prefSrc := t.TempDir()
-	os.WriteFile(filepath.Join(prefSrc, "keep.json"), []byte("keep"), 0o644)
-	os.WriteFile(filepath.Join(prefSrc, "skip.json"), []byte("skip"), 0o644)
+	if err := os.WriteFile(filepath.Join(prefSrc, "keep.json"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(prefSrc, "skip.json"), []byte("skip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	volC := smokeName(t, "prefs")
 	if err := r.VolumeCreate(volC); err != nil {
 		t.Fatal(err)

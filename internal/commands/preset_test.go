@@ -106,7 +106,7 @@ func TestPresetApplyAbortsOnChangeUnderReview(t *testing.T) {
 	p, proj := onboardPaths(t)
 	path := shipPreset(t, proj, PresetName, "agent = \"codex\"\n")
 	in := &mutateOnRead{r: strings.NewReader("y\n"), fn: func() {
-		os.WriteFile(path, []byte("agent = \"codex\"\nrun_args = [\"--privileged\"]\n"), 0o644)
+		mustWriteFile(t, path, []byte("agent = \"codex\"\nrun_args = [\"--privileged\"]\n"), 0o644)
 	}}
 	s := Streams{Out: io.Discard, Err: io.Discard, In: in, TTY: true}
 	err := PresetApply(s, proj, "")
@@ -310,8 +310,8 @@ func TestAdoptionRecordSweep(t *testing.T) {
 	if err := os.MkdirAll(pdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
-	os.WriteFile(filepath.Join(pdir, "declined"), []byte("cafef00d"), 0o644)
+	mustWriteFile(t, filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
+	mustWriteFile(t, filepath.Join(pdir, "declined"), []byte("cafef00d"), 0o644)
 	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -401,8 +401,8 @@ func TestPresetInspectMutatesNothing(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
 	// Plant records the store-ensure sweep would touch.
-	os.WriteFile(filepath.Join(p.Dir, "adopted"), []byte("deadbeef"), 0o644)
-	os.WriteFile(filepath.Join(p.Dir, "declined"), []byte("cafef00d"), 0o644)
+	mustWriteFile(t, filepath.Join(p.Dir, "adopted"), []byte("deadbeef"), 0o644)
+	mustWriteFile(t, filepath.Join(p.Dir, "declined"), []byte("cafef00d"), 0o644)
 	s, _, _ := testStreams("", false)
 	if err := PresetInspect(s, proj, ""); err != nil {
 		t.Fatal(err)
@@ -424,10 +424,10 @@ func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"codex\"\n")
 	storePath := filepath.Join(p.Dir, "byre.config")
-	os.MkdirAll(p.Dir, 0o755)
-	os.WriteFile(storePath, []byte("agent = \"claude\"\n"), 0o644)
+	mustMkdirAll(t, p.Dir, 0o755)
+	mustWriteFile(t, storePath, []byte("agent = \"claude\"\n"), 0o644)
 	in := &mutateOnRead{r: strings.NewReader("y\n"), fn: func() {
-		os.WriteFile(storePath, []byte("agent = \"grok\"\n"), 0o644)
+		mustWriteFile(t, storePath, []byte("agent = \"grok\"\n"), 0o644)
 	}}
 	s := Streams{Out: io.Discard, Err: io.Discard, In: in, TTY: true}
 	err := PresetApply(s, proj, "")
@@ -448,8 +448,8 @@ func TestAdoptionRecordSweepKeepsHistoryOnWriteFailure(t *testing.T) {
 	}
 	home := t.TempDir()
 	pdir := filepath.Join(home, "projects", "someproj")
-	os.MkdirAll(pdir, 0o755)
-	os.WriteFile(filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
+	mustMkdirAll(t, pdir, 0o755)
+	mustWriteFile(t, filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
 	// Make the applied write fail: applied's target is an unwritable dir --
 	// simulate by making the project dir read-only.
 	if err := os.Chmod(pdir, 0o555); err != nil {
@@ -459,7 +459,7 @@ func TestAdoptionRecordSweepKeepsHistoryOnWriteFailure(t *testing.T) {
 	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
 		t.Fatal(err)
 	}
-	os.Chmod(pdir, 0o755)
+	mustChmod(t, pdir, 0o755)
 	if _, err := os.Stat(filepath.Join(pdir, "adopted")); err != nil {
 		t.Fatal("adopted must survive a failed migration write")
 	}
@@ -482,7 +482,7 @@ func TestAdoptionRecordSweepKeepsHistoryOnWriteFailure(t *testing.T) {
 func TestPresetReadFileURI(t *testing.T) {
 	_, proj := onboardPaths(t)
 	elsewhere := filepath.Join(t.TempDir(), "team.preset")
-	os.WriteFile(elsewhere, []byte("agent = \"none\"\n"), 0o644)
+	mustWriteFile(t, elsewhere, []byte("agent = \"none\"\n"), 0o644)
 	for _, arg := range []string{elsewhere, "file://" + elsewhere, "file://localhost" + elsewhere} {
 		if _, _, _, err := readPreset(proj, arg); err != nil {
 			t.Errorf("readPreset(%q): %v", arg, err)
@@ -493,7 +493,7 @@ func TestPresetReadFileURI(t *testing.T) {
 	}
 	// Exact-basename legacy detection: not-byre.config is NOT legacy-named.
 	notLegacy := filepath.Join(t.TempDir(), "not-byre.config")
-	os.WriteFile(notLegacy, []byte("agent = \"none\"\n"), 0o644)
+	mustWriteFile(t, notLegacy, []byte("agent = \"none\"\n"), 0o644)
 	if _, _, legacy, err := readPreset(proj, notLegacy); err != nil || legacy {
 		t.Errorf("suffix match must not trigger the legacy note (legacy=%v err=%v)", legacy, err)
 	}
@@ -507,9 +507,9 @@ func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 	}
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
-	os.MkdirAll(p.Dir, 0o755)
+	mustMkdirAll(t, p.Dir, 0o755)
 	storePath := filepath.Join(p.Dir, "byre.config")
-	os.WriteFile(storePath, []byte("agent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, storePath, []byte("agent = \"claude\"\n"), 0o644)
 	if err := os.Chmod(storePath, 0o000); err != nil {
 		t.Skip("cannot chmod")
 	}
@@ -519,7 +519,7 @@ func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot read") {
 		t.Fatalf("unreadable existing config must abort, got %v", err)
 	}
-	os.Chmod(storePath, 0o644)
+	mustChmod(t, storePath, 0o644)
 	b, _ := os.ReadFile(storePath)
 	if string(b) != "agent = \"claude\"\n" {
 		t.Fatalf("config must be untouched: %s", b)
@@ -540,10 +540,10 @@ func TestPresetConventionalPathIsBounded(t *testing.T) {
 func TestSweepDoesNotClobberConcurrentMarker(t *testing.T) {
 	home := t.TempDir()
 	pdir := filepath.Join(home, "projects", "someproj")
-	os.MkdirAll(pdir, 0o755)
-	os.WriteFile(filepath.Join(pdir, "adopted"), []byte("stalehash"), 0o644)
+	mustMkdirAll(t, pdir, 0o755)
+	mustWriteFile(t, filepath.Join(pdir, "adopted"), []byte("stalehash"), 0o644)
 	// A current marker lands "concurrently" (before the sweep's write).
-	os.WriteFile(filepath.Join(pdir, "applied"), []byte("freshhash\n./byre.preset"), 0o644)
+	mustWriteFile(t, filepath.Join(pdir, "applied"), []byte("freshhash\n./byre.preset"), 0o644)
 	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -580,9 +580,9 @@ func TestPresetInspectAbortsOnUnreadableStoreConfig(t *testing.T) {
 	}
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
-	os.MkdirAll(p.Dir, 0o755)
+	mustMkdirAll(t, p.Dir, 0o755)
 	storePath := filepath.Join(p.Dir, "byre.config")
-	os.WriteFile(storePath, []byte("agent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, storePath, []byte("agent = \"claude\"\n"), 0o644)
 	if err := os.Chmod(storePath, 0o000); err != nil {
 		t.Skip("cannot chmod")
 	}

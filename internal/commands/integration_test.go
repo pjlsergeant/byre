@@ -837,10 +837,10 @@ func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(srcDir, "bug", "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(srcDir, "bug", "notes.txt"), []byte("notes\n"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "bug", "sub", "deep.txt"), []byte("deep\n"), 0o644)
+	mustWriteFile(t, filepath.Join(srcDir, "bug", "notes.txt"), []byte("notes\n"), 0o644)
+	mustWriteFile(t, filepath.Join(srcDir, "bug", "sub", "deep.txt"), []byte("deep\n"), 0o644)
 	top := filepath.Join(srcDir, "top.txt")
-	os.WriteFile(top, []byte("top\n"), 0o644)
+	mustWriteFile(t, top, []byte("top\n"), 0o644)
 	sources := deliver.PathSources([]string{filepath.Join(srcDir, "bug"), top})
 
 	target, isSSH, err := deliver.ParseSSHTarget("ssh://byre-test-loopback")
@@ -1206,10 +1206,10 @@ func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(srcDir, "bug", "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(srcDir, "bug", "notes.txt"), []byte("notes\n"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "bug", "sub", "deep.txt"), []byte("deep\n"), 0o644)
+	mustWriteFile(t, filepath.Join(srcDir, "bug", "notes.txt"), []byte("notes\n"), 0o644)
+	mustWriteFile(t, filepath.Join(srcDir, "bug", "sub", "deep.txt"), []byte("deep\n"), 0o644)
 	top := filepath.Join(srcDir, "top.txt")
-	os.WriteFile(top, []byte("top\n"), 0o644)
+	mustWriteFile(t, top, []byte("top\n"), 0o644)
 
 	// The ssh hop: assert the frozen argv shape, then run the remote side
 	// for real — commands.Deliver dispatching tar mode into the live box.

@@ -3,7 +3,6 @@ package packages
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -109,12 +108,12 @@ func TestFetchManifestSizeLimit(t *testing.T) {
 
 func TestFetchFileManifestAndContainment(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "hooks"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hooks", "a.sh"), []byte("hi"), 0o755)
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
+	mustMkdirAll(t, filepath.Join(dir, "hooks"), 0o755)
+	mustWriteFile(t, filepath.Join(dir, "hooks", "a.sh"), []byte("hi"), 0o755)
 	outside := filepath.Join(t.TempDir(), "secret")
-	os.WriteFile(outside, []byte("secret"), 0o644)
-	os.Symlink(outside, filepath.Join(dir, "link"))
+	mustWriteFile(t, outside, []byte("secret"), 0o644)
+	mustSymlink(t, outside, filepath.Join(dir, "link"))
 
 	var f Fetcher
 	_, src, err := f.FetchManifest(filepath.Join(dir, "skill.toml"))
@@ -215,9 +214,9 @@ func TestFetchLocalManifestRejectsNonRegular(t *testing.T) {
 func TestFetchLocalManifestFollowsUserNamedSymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real.toml")
-	os.WriteFile(real, []byte("[package]\n"), 0o644)
+	mustWriteFile(t, real, []byte("[package]\n"), 0o644)
 	link := filepath.Join(dir, "skill.toml")
-	os.Symlink(real, link)
+	mustSymlink(t, real, link)
 	var f Fetcher
 	// A symlink the USER named is their choice (deliver's stance); only
 	// the target's type is judged.
@@ -229,7 +228,7 @@ func TestFetchLocalManifestFollowsUserNamedSymlink(t *testing.T) {
 func TestFetchLocalManifestSizeLimit(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "skill.toml")
-	os.WriteFile(p, []byte(strings.Repeat("x", MaxManifestBytes+1)), 0o644)
+	mustWriteFile(t, p, []byte(strings.Repeat("x", MaxManifestBytes+1)), 0o644)
 	var f Fetcher
 	if _, _, err := f.FetchManifest(p); err == nil {
 		t.Fatal("oversized local manifest must be rejected")
@@ -238,7 +237,7 @@ func TestFetchLocalManifestSizeLimit(t *testing.T) {
 
 func TestFetchLocalPayloadRejectsNonRegular(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
 	if err := syscall.Mkfifo(filepath.Join(dir, "hook.sh"), 0o644); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -10,8 +11,6 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
-	"os"
-
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 

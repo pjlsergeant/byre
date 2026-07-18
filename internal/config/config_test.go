@@ -585,10 +585,10 @@ func TestListTemplates(t *testing.T) {
 	home := t.TempDir()
 	for _, n := range []string{"go", "python"} {
 		td := filepath.Join(home, "templates", n)
-		os.MkdirAll(td, 0o755)
-		os.WriteFile(filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
+		mustMkdirAll(t, td, 0o755)
+		mustWriteFile(t, filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(home, "templates", "empty"), 0o755) // no template.config -> excluded
+	mustMkdirAll(t, filepath.Join(home, "templates", "empty"), 0o755) // no template.config -> excluded
 	got := ListTemplates(home)
 	if len(got) != 2 || got[0] != "go" || got[1] != "python" {
 		t.Fatalf("ListTemplates = %v", got)
@@ -714,24 +714,24 @@ func TestLoadRejectsWithinLayerCollisionInAnyLayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(p.Dir, 0o755)
+	mustMkdirAll(t, p.Dir, 0o755)
 	storeCfg := filepath.Join(p.Dir, ProjectConfigName)
-	os.WriteFile(storeCfg, []byte(dup), 0o644)
+	mustWriteFile(t, storeCfg, []byte(dup), 0o644)
 	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), storeCfg) {
 		t.Errorf("duplicate in the project layer should fail load naming the file, got %v", err)
 	}
-	os.Remove(storeCfg)
+	mustRemove(t, storeCfg)
 
 	// Default layer.
 	defCfg := filepath.Join(home, "default.config")
-	os.WriteFile(defCfg, []byte(dup), 0o644)
+	mustWriteFile(t, defCfg, []byte(dup), 0o644)
 	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), defCfg) {
 		t.Errorf("duplicate in default.config should fail load naming the file, got %v", err)
 	}
-	os.Remove(defCfg)
+	mustRemove(t, defCfg)
 
 	// ParseFile (the editor's open path) must still tolerate it.
-	os.WriteFile(storeCfg, []byte(dup), 0o644)
+	mustWriteFile(t, storeCfg, []byte(dup), 0o644)
 	if _, err := ParseFile(storeCfg); err != nil {
 		t.Errorf("ParseFile must stay lenient so the editor can open a broken file: %v", err)
 	}

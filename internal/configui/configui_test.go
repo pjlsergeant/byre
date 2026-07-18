@@ -932,13 +932,13 @@ func TestCommitItemRunsLayerValidation(t *testing.T) {
 func TestCommentWarnOnLoad(t *testing.T) {
 	dir := t.TempDir()
 	hand := filepath.Join(dir, "hand.config")
-	os.WriteFile(hand, []byte("# remember: the LAN port is for the demo\nagent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, hand, []byte("# remember: the LAN port is for the demo\nagent = \"claude\"\n"), 0o644)
 	if v := newModel("t", hand, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject).View(); !strings.Contains(v, "hand-written comments") {
 		t.Errorf("hand-commented file should warn on load:\n%s", v)
 	}
 
 	managed := filepath.Join(dir, "managed.config")
-	os.WriteFile(managed, []byte("# Managed by `byre config`. Structured fields are edited there;\n# raw blocks (run_args, dockerfile_pre/post) are edited here by hand.\n\nagent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, managed, []byte("# Managed by `byre config`. Structured fields are edited there;\n# raw blocks (run_args, dockerfile_pre/post) are edited here by hand.\n\nagent = \"claude\"\n"), 0o644)
 	if v := newModel("t", managed, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject).View(); strings.Contains(v, "hand-written comments") {
 		t.Errorf("byre's own header must not trigger the warning:\n%s", v)
 	}
@@ -953,19 +953,19 @@ func TestCommentWarnOnLoad(t *testing.T) {
 // destroys-comments warning — it tracks the file, not the open-time state.
 func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.config")
-	os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, path, []byte("agent = \"claude\"\n"), 0o644)
 	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 	if m.commentWarn {
 		t.Fatal("clean file must not warn at open")
 	}
 	// User adds a hand comment in $EDITOR, then the TUI reloads.
-	os.WriteFile(path, []byte("# my note\nagent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, path, []byte("# my note\nagent = \"claude\"\n"), 0o644)
 	m = m.onEditorClosed(nil)
 	if !m.commentWarn {
 		t.Error("comments added via $EDITOR must arm the warning")
 	}
 	// And removing them disarms it.
-	os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, path, []byte("agent = \"claude\"\n"), 0o644)
 	m = m.onEditorClosed(nil)
 	if m.commentWarn {
 		t.Error("warning must clear once the comments are gone")
@@ -973,7 +973,7 @@ func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
 
 	// A successful ^s re-marshals the file — the comments it warned about are
 	// gone, so the warning must clear rather than nag about the file just written.
-	os.WriteFile(path, []byte("# note\nagent = \"claude\"\n"), 0o644)
+	mustWriteFile(t, path, []byte("# note\nagent = \"claude\"\n"), 0o644)
 	m = m.onEditorClosed(nil)
 	if !m.commentWarn {
 		t.Fatal("precondition: warning armed")

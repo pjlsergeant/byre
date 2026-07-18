@@ -119,11 +119,11 @@ func TestOrphanSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	orphan := SnapshotDir(home, strings.Repeat("ab", 32))
-	os.MkdirAll(orphan, 0o755)
+	mustMkdirAll(t, orphan, 0o755)
 	stage := filepath.Join(packagesDir(home), ".stage-crash")
-	os.MkdirAll(stage, 0o755)
+	mustMkdirAll(t, stage, 0o755)
 	keeper := filepath.Join(packagesDir(home), "not-a-digest")
-	os.MkdirAll(keeper, 0o755)
+	mustMkdirAll(t, keeper, 0o755)
 	if err := WithStoreLock(home, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}

@@ -843,6 +843,13 @@ func mustMkdir(t *testing.T, p string) {
 	}
 }
 
+func mustSymlink(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func mkfifo(p string) error { return syscall.Mkfifo(p, 0o600) }
 
 func TestPickerResolvesAmbiguity(t *testing.T) {

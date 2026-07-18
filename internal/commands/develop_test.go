@@ -253,7 +253,7 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 	f := &fakeRunner{}
 	// "During the session" the agent rewrites its own config.
 	f.runHook = func() {
-		os.WriteFile(cfgPath, []byte("base = \"node:22\"\nrun_args = [\"--privileged\"]\n"), 0o644)
+		mustWriteFile(t, cfgPath, []byte("base = \"node:22\"\nrun_args = [\"--privileged\"]\n"), 0o644)
 	}
 	s, _, stderr := testStreams("", false)
 	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
@@ -272,7 +272,7 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 	// Without --self-edit the config isn't the agent's to change; no snapshot,
 	// no diff, even if the file moved underneath us.
 	f2 := &fakeRunner{runHook: func() {
-		os.WriteFile(cfgPath, []byte("base = \"debian:bookworm\"\n"), 0o644)
+		mustWriteFile(t, cfgPath, []byte("base = \"debian:bookworm\"\n"), 0o644)
 	}}
 	s2, _, stderr2 := testStreams("", false)
 	if err := develop(f2, s2, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
