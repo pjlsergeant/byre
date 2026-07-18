@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -571,5 +572,73 @@ func TestRenderStatusClaudeSkillDeliveryDegrades(t *testing.T) {
 	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentClaudeSkills: "inject", ClaudeSkills: decl, SkillErr: "boom"})
 	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
 		t.Errorf("unresolved must not assert delivery:\n%s", out)
+	}
+}
+
+func TestWarnGuardCollisions(t *testing.T) {
+	var fw skills.File
+	fw.Runtime.NetnsInit = "/usr/local/bin/byre-firewall"
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "firewall", File: fw}}}
+
+	// A project files clobber of the gate and the launcher — both warned.
+	cfg := config.Config{Files: map[string]string{
+		"empty":    gen.LaunchGatePath,
+		"evil":     gen.LauncherPath,
+		"harmless": "/opt/data.txt",
+	}}
+	var b strings.Builder
+	warnGuardCollisions(&b, cfg, res)
+	out := b.String()
+	if !strings.Contains(out, gen.LaunchGatePath) || !strings.Contains(out, gen.LauncherPath) {
+		t.Fatalf("expected warnings for gate and launcher, got:\n%s", out)
+	}
+	if strings.Contains(out, "/opt/data.txt") {
+		t.Fatalf("harmless files dest should not warn:\n%s", out)
+	}
+
+	// No netns skill: the gate/firewall paths aren't guarded, but the launcher
+	// always is — a launcher clobber still warns, a gate clobber does not.
+	cfg2 := config.Config{Files: map[string]string{"g": gen.LaunchGatePath, "l": gen.LauncherPath}}
+	var b2 strings.Builder
+	warnGuardCollisions(&b2, cfg2, skills.Resolved{})
+	out2 := b2.String()
+	if !strings.Contains(out2, gen.LauncherPath) {
+		t.Fatalf("launcher clobber should warn without a netns skill:\n%s", out2)
+	}
+	if strings.Contains(out2, gen.LaunchGatePath) {
+		t.Fatalf("gate is not guarded without a netns skill; should not warn:\n%s", out2)
+	}
+
+	// Docker-equivalent dest forms that clobber a guarded path must still warn:
+	// a "." segment, a "..", and a dir-form dest (trailing slash) that appends
+	// the source basename. All resolve to /usr/local/bin/byre-launch or the gate.
+	cfg3 := config.Config{Files: map[string]string{
+		"a":               "/etc/byre/./launch-gate",
+		"b":               "/usr/local/../local/bin/byre-launch",
+		"sub/byre-launch": "/usr/local/bin/", // dir-form (slash): appends basename
+	}}
+	var b3 strings.Builder
+	warnGuardCollisions(&b3, cfg3, res)
+	out3 := b3.String()
+	if !strings.Contains(out3, gen.LaunchGatePath) {
+		t.Fatalf("'.'-segment gate clobber should warn:\n%s", out3)
+	}
+	if strings.Count(out3, gen.LauncherPath) != 1 {
+		t.Fatalf("expected exactly one launcher warning (deduped) from the '..' and dir-form clobbers:\n%s", out3)
+	}
+
+	// Dir-form WITHOUT a trailing slash (Docker treats an existing image dir like
+	// /usr/local/bin as a directory): source basename byre-launch lands at the
+	// launcher path and must warn.
+	var b4 strings.Builder
+	warnGuardCollisions(&b4, config.Config{Files: map[string]string{"byre-launch": "/usr/local/bin"}}, res)
+	if !strings.Contains(b4.String(), gen.LauncherPath) {
+		t.Fatalf("no-slash dir-form clobber should warn:\n%s", b4.String())
+	}
+	// A non-matching basename into the same dir must NOT warn (no over-warning).
+	var b5 strings.Builder
+	warnGuardCollisions(&b5, config.Config{Files: map[string]string{"notes.txt": "/usr/local/bin"}}, res)
+	if strings.Contains(b5.String(), gen.LauncherPath) {
+		t.Fatalf("unrelated file into /usr/local/bin must not warn:\n%s", b5.String())
 	}
 }

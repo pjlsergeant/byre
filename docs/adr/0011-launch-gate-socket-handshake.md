@@ -29,3 +29,10 @@ Consequences:
 - The startup window between container start and rules landing is benign:
   the gate sits above hooks and agent alike -- only the idling launcher
   has run.
+- The gate is only load-bearing if its baked content is byre's: the
+  launcher waits **only** when the gate file is non-empty (`[ -s ]`), so an
+  emptied gate would make it skip the wait and launch open. The gate file
+  (and the netns script, and the launcher itself) are therefore re-COPY'd
+  by the **security guard** at the Dockerfile tail, after the project
+  block, so a project `files` entry or raw build line targeting those paths
+  can't leave its own content there (see ARCHITECTURE, "security guard").
