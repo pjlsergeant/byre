@@ -49,6 +49,23 @@ func TestSaveSharedAuthDefaultYesCreatesFileAndList(t *testing.T) {
 	}
 }
 
+// Installed third-party agents carry qualified owner/name IDs. The written
+// table key must be quoted ('/' is illegal bare in TOML) or the semantic
+// verify rejects the edit and onboarding aborts before writing byre.config.
+func TestSaveSharedAuthDefaultPickQualifiedAgent(t *testing.T) {
+	home := t.TempDir()
+	if err := SaveSharedAuthDefaultPick(home, "acme/agent", "acme/agent-shared-auth", true); err != nil {
+		t.Fatal(err)
+	}
+	got := parsedDefault(t, home).SharedAuth
+	if pick := got.CompanionPick("acme/agent"); pick != "acme/agent-shared-auth" {
+		t.Fatalf("saved pick round-trip: got %q", pick)
+	}
+	if SharedAuthPick(home, "acme/agent") != "acme/agent-shared-auth" {
+		t.Fatal("saved pick must read back")
+	}
+}
+
 // The saved preference must never leak into config with teeth: saving yes
 // touches shared_auth only — skills stays exactly as the user left it.
 func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {

@@ -136,7 +136,9 @@ func (s SharedAuthPref) EncodeTOMLLine() string {
 		sort.Strings(keys)
 		parts := make([]string, 0, len(keys))
 		for _, k := range keys {
-			parts = append(parts, fmt.Sprintf("%s = %q", k, s.Pick[k]))
+			// Keys are quoted: installed agents have qualified owner/name
+			// IDs, and '/' is illegal in a bare TOML key.
+			parts = append(parts, fmt.Sprintf("%q = %q", k, s.Pick[k]))
 		}
 		return "shared_auth = { " + strings.Join(parts, ", ") + " }"
 	}
