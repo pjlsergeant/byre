@@ -459,6 +459,9 @@ func TestOnboardEOFMidPickerWritesNothing(t *testing.T) {
 // onboards again, so the machine-level record goes first and a failure leaves
 // the whole flow re-runnable.
 func TestOnboardSaveDefaultWriteFailureLeavesProjectUnonboarded(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("read-only mode is not enforceable as root")
+	}
 	p, proj := onboardPaths(t)
 	// Materialize the store first, then make home read-only: default.config's
 	// atomic write (a temp file in home) fails, while byre.config (in the

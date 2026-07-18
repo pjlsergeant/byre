@@ -443,6 +443,9 @@ func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
 // The sweep must never delete the only history copy: a failed applied-write
 // keeps the adopted record for the next sweep (both reviewers, P1).
 func TestAdoptionRecordSweepKeepsHistoryOnWriteFailure(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("read-only mode is not enforceable as root")
+	}
 	home := t.TempDir()
 	pdir := filepath.Join(home, "projects", "someproj")
 	os.MkdirAll(pdir, 0o755)
@@ -499,6 +502,9 @@ func TestPresetReadFileURI(t *testing.T) {
 // An EXISTING but unreadable byre.config must abort apply before the review
 // -- both reads failing must never read as "no current config" (codex P1).
 func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("mode 000 is not enforceable as root")
+	}
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
 	os.MkdirAll(p.Dir, 0o755)
@@ -569,6 +575,9 @@ func TestPresetReviewEscapesGrantLines(t *testing.T) {
 // Inspect treats only ABSENCE as no-config; other read failures abort
 // instead of silently omitting the promised diff (codex round 3).
 func TestPresetInspectAbortsOnUnreadableStoreConfig(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("mode 000 is not enforceable as root")
+	}
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
 	os.MkdirAll(p.Dir, 0o755)
