@@ -198,15 +198,22 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		return "", fmt.Errorf("delivering %s/: the box reported no landed path", src)
 	}
 
-	// Interior files are opened THROUGH this root, never by their walked path.
-	// os.Root resolves each component with openat, so a symlink the agent
-	// planted inside the tree (it has /workspace rw) cannot pull a file from
-	// OUTSIDE the delivered directory into the box, and the entry cannot be
-	// swapped for an escaping symlink between the walk's Lstat and the open
-	// (the check/open race). This mirrors internal/build's copyPath symlink
-	// rejection. A top-level symlink the USER named is a different case — that
+	// Interior files are opened AND enumerated THROUGH this root, never by a
+	// re-walked pathname. os.Root resolves each component with openat, so a
+	// symlink the agent planted inside the tree (it has /workspace rw) cannot
+	// pull a file from OUTSIDE the delivered directory into the box, and an
+	// entry cannot be swapped for an escaping symlink between the walk's
+	// enumeration and the open (the check/open race). The root itself anchors
+	// no-follow: deliverPath classified src as a real directory, so a symlink
+	// here means the source was swapped mid-delivery — refuse rather than
+	// anchor the walk in a tree the user never named (with the delivered
+	// source agent-writable, plain OpenRoot would be a host-exfiltration
+	// primitive). And because the walk rides hostRoot.FS(), the delivered
+	// names and their contents always come from the SAME directory even if
+	// the pathname is swapped mid-walk. This mirrors internal/build's
+	// copyPath. A top-level symlink the USER named is a different case — that
 	// is their explicit choice and is followed by deliverPath, not here.
-	hostRoot, err := os.OpenRoot(src)
+	hostRoot, err := hostopen.OpenDirRootNoFollow(src)
 	if err != nil {
 		return root, fmt.Errorf("delivering %s/: %w", src, err)
 	}
@@ -214,19 +221,14 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 
 	files, okFiles, failed := 0, 0, 0
 	var bytes int64
-	walkErr := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+	walkErr := fs.WalkDir(hostRoot.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+		p := filepath.Join(src, filepath.FromSlash(rel)) // display only — opens ride hostRoot
 		if err != nil {
 			fmt.Fprintf(cfg.Err, "byre: %s: %v\n", p, err)
 			failed++
 			return nil
 		}
-		if p == src {
-			return nil
-		}
-		rel, rerr := filepath.Rel(src, p)
-		if rerr != nil {
-			fmt.Fprintf(cfg.Err, "byre: %s: %v\n", p, rerr)
-			failed++
+		if rel == "." {
 			return nil
 		}
 		dest, sanitized := sanitizeRel(rel)

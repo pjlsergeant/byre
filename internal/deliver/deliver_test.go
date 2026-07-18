@@ -27,8 +27,9 @@ type fakeEngine struct {
 
 	inbox        map[string]bool // existing in-box names, relative to /inbox
 	execErr      error
-	failMkdir    bool     // interior mkdirScript execs fail
-	streams      []string // "id name<-content" per delivered file
+	failMkdir    bool                // interior mkdirScript execs fail
+	hook         func(argv []string) // runs at each exec — race tests mutate the source here
+	streams      []string            // "id name<-content" per delivered file
 	execArgs     [][]string
 	callerScoped bool // rootless engine: every visible session is the caller's
 }
@@ -53,6 +54,9 @@ func (f *fakeEngine) Labels(id string) (map[string]string, error) {
 
 func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ...string) (string, error) {
 	f.execArgs = append(f.execArgs, argv)
+	if f.hook != nil {
+		f.hook(argv)
+	}
 	if f.execErr != nil {
 		return "", f.execErr
 	}
@@ -591,6 +595,88 @@ func TestDirectorySymlinkEscapeNotDelivered(t *testing.T) {
 	}
 	if !strings.Contains(errw.String(), "skipping") || !strings.Contains(errw.String(), "innocent.txt") {
 		t.Fatalf("expected a skip note for the escaping symlink: %q", errw.String())
+	}
+}
+
+// Race regression (classify → root-open window): the source directory is
+// swapped for a symlink to another tree while the in-box name is being
+// claimed — after deliverPath's Lstat classified it a directory, before the
+// root opens. The delivery must refuse: plain os.OpenRoot would follow the
+// symlink and anchor the whole walk in a tree the user never named, which
+// with an agent-writable source is a host-file exfiltration primitive
+// (swap to a symlink at ~/.ssh, swap back to a decoy with matching names).
+func TestDirectorySwappedToSymlinkMidDeliveryRefused(t *testing.T) {
+	eng := box("docker", "aaa")
+	dir := t.TempDir()
+	secrets := filepath.Join(dir, "secrets")
+	mustMkdir(t, secrets)
+	mustWrite(t, filepath.Join(secrets, "id_rsa"), "TOPSECRET")
+	src := filepath.Join(dir, "proj")
+	mustMkdir(t, src)
+	mustWrite(t, filepath.Join(src, "a.txt"), "A")
+	eng.hook = func(argv []string) {
+		if strings.Contains(argv[2], `mkdir "/inbox/$n"`) { // dirScript: the claim moment
+			if err := os.RemoveAll(src); err != nil {
+				t.Error(err)
+			}
+			if err := os.Symlink(secrets, src); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	cfg, _, errw := testConfig(eng)
+	_, err := Run(cfg, Options{}, []string{src})
+	if err == nil {
+		t.Fatalf("a source swapped to a symlink mid-delivery must fail, stderr: %q", errw.String())
+	}
+	if joined := strings.Join(eng.streams, "|"); strings.Contains(joined, "TOPSECRET") || strings.Contains(joined, "id_rsa") {
+		t.Fatalf("external tree exfiltrated through a swapped source: %v", eng.streams)
+	}
+	if !strings.Contains(errw.String(), "symlink") && !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected a symlink-refusal note, got err=%v stderr=%q", err, errw.String())
+	}
+}
+
+// The enumeration side of the same race: once the host root is open, the walk
+// must descend the OPENED root descriptor, never re-resolve the pathname. So a
+// source swapped for an unrelated directory AFTER the root opens cannot change
+// which files are enumerated — names and contents always come from the one
+// selected tree. deliverDir opens the root before the walk and execs one
+// fileScript per interior file; swapping at the first such exec proves later
+// enumeration is unaffected by the pathname.
+func TestDirectoryEnumerationRidesOpenedRoot(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, _ := testConfig(eng)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "proj")
+	mustMkdir(t, filepath.Join(src, "sub"))
+	mustWrite(t, filepath.Join(src, "a.txt"), "A")
+	mustWrite(t, filepath.Join(src, "sub", "b.txt"), "B")
+	decoy := filepath.Join(dir, "decoy")
+	mustMkdir(t, decoy)
+	mustWrite(t, filepath.Join(decoy, "evil.txt"), "EVIL")
+	swapped := false
+	eng.hook = func(argv []string) {
+		if !swapped && strings.Contains(argv[2], "cat >>") { // first interior file exec
+			swapped = true
+			if err := os.Rename(src, filepath.Join(dir, "proj-moved")); err != nil {
+				t.Error(err)
+				return
+			}
+			if err := os.Symlink(decoy, src); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(eng.streams, "|")
+	if strings.Contains(joined, "EVIL") || strings.Contains(joined, "evil.txt") {
+		t.Fatalf("enumeration followed the swapped pathname into the decoy tree: %v", eng.streams)
+	}
+	if !strings.Contains(joined, "a.txt<-A") || !strings.Contains(joined, "sub/b.txt<-B") {
+		t.Fatalf("the selected tree's files must all deliver from the opened root: %v", eng.streams)
 	}
 }
 
