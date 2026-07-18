@@ -153,8 +153,13 @@ hatches. The full table is at
 
 ## Why not…?
 
-byre is a thin layer over the Docker or Podman you already run. The
-alternatives:
+byre is a thin layer over the Docker or Podman you already run, and
+every alternative below has a real answer. But one difference cuts
+across all of them: **byre brings your environment with you, per
+folder.** Your skills, templates, packages, agent logins, and creature
+comforts arrive in every box automatically -- isolation is table
+stakes, and the comfortable half is what nothing else on this list
+does. With that said, the specifics:
 
 **…raw Docker?** Nothing -- and byre never takes it away. You'd just be
 hand-rolling what it generates: host-matched file ownership, per-project
