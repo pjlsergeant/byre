@@ -203,6 +203,12 @@ agent -- or enable the relevant _x-shared-auth_ skill(s) in
 `byre config`.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box))
 
+**Use my API key instead of an agent login?**
+tldr: pass it at runtime -- `[env_from_host]` with
+`OPENAI_API_KEY = "env:OPENAI_API_KEY"` -- never `[env]`, which bakes
+it into the image.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#use-my-api-key-instead-of-an-agent-login))
+
 **Run parallel agents on the same repo?**
 tldr: `byre worktree <branch>` -- a linked git worktree plus a second
 boxed session in it, one command.
@@ -213,6 +219,16 @@ tldr: keep one agent as `agent`, enable a second agent's skill as a
 ride-along -- byre's own box runs Claude with codex beside it as the
 independent reviewer.
 ([recipe](https://getbyre.com/docs/how-do-i/workflow/#set-up-two-agents-in-a-review-loop))
+
+**Give my agent standing instructions in every box?**
+tldr: a tiny local skill with a `[context]` block -- every box that
+enables it injects the text into the agent's memory file.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box))
+
+**Add an MCP server to my agent's session?**
+tldr: `byre mcp add <name> <url>` -- or `byre mcp add <name> --
+<command...>` for a local server; `--global` for every project.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#add-an-mcp-server-to-my-agents-session))
 
 **Bring my dotfiles and shell setup into every box?**
 tldr: mount them read-only under **Mounts** in `byre config --global`
@@ -226,10 +242,20 @@ tldr: `byre layer new torn`, put the shared config in it
 (the **Extends** section of `byre config`).
 ([recipe](https://getbyre.com/docs/how-do-i/toolkit/#share-one-config-baseline-across-many-projects))
 
+**Ship a recommended box config with my project?**
+tldr: commit a `byre.preset`; whoever clones runs `byre preset apply`.
+([recipe](https://getbyre.com/docs/how-do-i/toolkit/#ship-a-recommended-box-config-with-my-project))
+
 **Paste or drag-and-drop images and files into my agent?**
 tldr: `byre deliver <file>` -- or just `byre deliver` and paste (or
 drop a file on the window).
 ([recipe](https://getbyre.com/docs/how-do-i/workflow/#paste-or-drag-and-drop-images-and-files-into-my-agent))
+
+**Use byre on a remote machine over SSH?**
+tldr: byre is terminal-native, so everything works in an SSH session --
+and `byre deliver ssh://host` sends files from your laptop into the
+remote box.
+([recipe](https://getbyre.com/docs/how-do-i/workflow/#use-byre-on-a-remote-machine-over-ssh))
 
 **Get tab completion for byre commands?**
 tldr: `eval "$(byre completion bash)"` in your shell's startup file.
@@ -240,18 +266,41 @@ tldr: enable the _firewall_ skill in `byre config`, then pick what to
 open under **Egress**.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#restrict-network-access))
 
+**Cap the box's CPU or RAM?**
+tldr: `run_args = ["--cpus=2", "--memory=4g"]`.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#cap-the-boxs-cpu-or-ram))
+
 **Mount other folders from the host?**
 tldr: the **Mounts** section of `byre config`.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#mount-other-folders-from-the-host))
+
+**Expose a port to see the box's dev server?**
+tldr: the **Ports** section of `byre config`.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#expose-a-port-to-see-the-boxs-dev-server))
+
+**Stop re-downloading dependencies on every rebuild?**
+tldr: a `[[volumes]]` entry with `role = "cache"` on the dependency
+directory.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#stop-re-downloading-dependencies-on-every-rebuild))
 
 **Run other Docker containers from inside the byre environment?**
 tldr: enable the _docker-host_ skill in `byre config`.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#run-other-docker-containers-from-inside-the-byre-environment))
 
+**Use Podman instead of Docker?**
+tldr: nothing -- `engine = "auto"` (the default) picks docker if
+present, else podman.
+([recipe](https://getbyre.com/docs/how-do-i/configure/#use-podman-instead-of-docker))
+
 **Get the coding agent to edit its own byre config?**
 tldr: `byre develop --self-edit` -- the box gets its own config mounted,
 and changes are shown on exit.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#get-the-coding-agent-to-edit-its-own-byre-config))
+
+**Write my own skill?**
+tldr: `byre skill init <name>`, edit its `skill.toml`, enable it in a
+box.
+([recipe](https://getbyre.com/docs/how-do-i/toolkit/#write-my-own-skill))
 
 **Stop using byre?**
 tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
