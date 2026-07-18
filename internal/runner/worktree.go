@@ -89,9 +89,11 @@ exit 1`
 // host-created) target, each bound rw at its own host path so the metadata
 // git writes records paths that are valid on the host and in every later
 // session (same-path mounting, ADR 0009). commonHost/commonTarget differ only
-// when the recorded common-dir path contains symlinks (the caller resolves the
-// source; the target must stay the git-recorded spelling). No user mounts,
-// volumes, ports, env passthrough, caps, or skill run_args ride along.
+// on the linked-worktree path, when the git-recorded common-dir spelling
+// contains symlinks (there the caller's source is resolved against a
+// structurally validated inode; from a main tree the two are identical). No
+// user mounts, volumes, ports, env passthrough, network, caps, or skill
+// run_args ride along.
 //
 // It runs as the box identity (same uid/gid and userns mode the image was
 // built for), so everything it writes lands owned by the dev user. Output is
@@ -105,6 +107,12 @@ func worktreeAddArgs(image, name string, id Identity, commonHost, commonTarget, 
 	args := []string{"run", "--rm",
 		"--name", name,
 		"--entrypoint", "sh",
+		// No network: registration is a purely local git operation (the DWIM
+		// reads already-fetched remote-tracking refs), and this container runs
+		// repo-authored code (hooks fire on `worktree add`'s ref updates) —
+		// deny-by-default means a step that needs no egress gets none,
+		// whatever the project's session posture is (grok review).
+		"--network", "none",
 		"-u", fmt.Sprintf("%d:%d", id.UID, id.GID),
 	}
 	args = appendUserns(args, id.Userns())

@@ -21,6 +21,7 @@ func TestWorktreeAddArgs(t *testing.T) {
 		" run --rm ",
 		" --name byre-wtadd-x ",
 		" --entrypoint sh ",
+		" --network none ", // local git only; repo hooks run here — no egress
 		" -u 501:20 ",
 		" -e BYRE_WT_MAIN=/repo ",
 		" -e BYRE_WT_TARGET=/wt ",

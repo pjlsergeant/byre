@@ -166,14 +166,14 @@ func TestWorktreeCreateAssemblesContainer(t *testing.T) {
 		t.Errorf("ops order: %v", f.ops)
 	}
 	rec := f.worktreeAdds[0]
-	gd, _ := filepath.EvalSymlinks(filepath.Join(paths.Canonical, ".git"))
+	gd := filepath.Join(paths.Canonical, ".git")
 	for _, want := range []string{
-		f.builds[0] + " ", // the just-built image
-		" byre-wtadd-",    // a create name, never a session name
-		gd + "->" + filepath.Join(paths.Canonical, ".git") + " ", // common dir: resolved source -> recorded target
-		" " + paths.Canonical + " ",                              // main tree
-		" " + target + " ",                                       // target
-		" feat",                                                  // the branch
+		f.builds[0] + " ",           // the just-built image
+		" byre-wtadd-",              // a create name, never a session name
+		gd + "->" + gd + " ",        // common dir, source == target (never resolved)
+		" " + paths.Canonical + " ", // main tree
+		" " + target + " ",          // target
+		" feat",                     // the branch
 	} {
 		if !strings.Contains(rec, want) {
 			t.Errorf("WorktreeAdd record missing %q: %s", want, rec)
@@ -377,20 +377,40 @@ func TestWorktreeRefusesExistingUnregisteredTarget(t *testing.T) {
 	}
 }
 
-// A main tree whose .git is not a directory (separate git dir) is refused with
-// the manual route rather than mis-mounted.
-func TestWorktreeCommonGitDirRefusesGitfileMain(t *testing.T) {
-	dir := t.TempDir()
-	realGit := filepath.Join(t.TempDir(), "gitdir")
-	if err := os.MkdirAll(realGit, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+realGit+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	canon, _ := project.Canonicalize(dir)
-	_, _, err := worktreeCommonGitDir(project.Paths{Canonical: canon})
-	if err == nil || !strings.Contains(err.Error(), "not a directory") {
-		t.Fatalf("want a gitfile refusal, got %v", err)
-	}
+// A main tree whose .git is not a plain directory is refused with the manual
+// route rather than mis-mounted: a gitfile (separate git dir), and — the grok
+// finding (2026-07-19) — a SYMLINK. `.git` is agent-writable, so following it
+// would turn a planted `.git -> /victim/dir` into an arbitrary rw host mount
+// into a container that runs repo hooks.
+func TestWorktreeCommonGitDirRefusesNonDirGit(t *testing.T) {
+	t.Run("gitfile", func(t *testing.T) {
+		dir := t.TempDir()
+		realGit := filepath.Join(t.TempDir(), "gitdir")
+		if err := os.MkdirAll(realGit, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+realGit+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		canon, _ := project.Canonicalize(dir)
+		_, _, err := worktreeCommonGitDir(project.Paths{Canonical: canon})
+		if err == nil || !strings.Contains(err.Error(), "not a plain directory") {
+			t.Fatalf("want a gitfile refusal, got %v", err)
+		}
+	})
+	t.Run("symlinked .git", func(t *testing.T) {
+		dir := t.TempDir()
+		victim := t.TempDir() // a real directory elsewhere on the host
+		if err := os.Symlink(victim, filepath.Join(dir, ".git")); err != nil {
+			t.Fatal(err)
+		}
+		canon, _ := project.Canonicalize(dir)
+		_, host, err := worktreeCommonGitDir(project.Paths{Canonical: canon})
+		if err == nil {
+			t.Fatalf("a symlinked .git must be refused, got mount source %q", host)
+		}
+		if strings.Contains(err.Error()+host, victim) {
+			t.Fatalf("the symlink target leaked into the mount decision: %v %q", err, host)
+		}
+	})
 }

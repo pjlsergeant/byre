@@ -72,8 +72,17 @@ box:
   dev-owned), and a minimal hermetic mount set -- the main working tree,
   the common git dir, and the (host-created, empty) target, each rw at its
   host path, and **nothing else**: no user mounts, volumes, ports, env
-  passthrough, caps, or skill `run_args`. Whatever hooks or
+  passthrough, caps, skill `run_args` -- and **no network**
+  (`--network none`): registration is purely local git, and the hooks a
+  `worktree add` fires are repo-authored code, so a step that needs no
+  egress gets none regardless of the session's posture. Whatever hooks or
   config-selected code a `worktree add` runs execute contained there.
+  From a main tree the common-dir mount source is `<canonical>/.git`
+  gated by `Lstat` to a **plain directory** -- a symlinked or gitfile
+  `.git` is refused, never followed: `.git` is agent-writable, and
+  resolving a planted symlink there would hand the hook-running container
+  an arbitrary rw host mount (grok review, 2026-07-19; from a linked
+  worktree the pair is `project.Resolve`'s inode-validated one).
   Cleanup removes only state the invocation itself created (codex review,
   2026-07-19): a failed add needs none (git rolls its own partial state
   back -- an added `worktree remove --force` there would instead destroy

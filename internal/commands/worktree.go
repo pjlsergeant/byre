@@ -199,32 +199,36 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 
 // worktreeCommonGitDir picks the common-git-dir bind for the create container:
 // target = the git-recorded path (what in-box pointers must resolve against),
-// host = the same directory symlink-resolved (the mount source; fail-closed —
-// an unresolvable path is a loud error, never a lenient mount).
+// host = the mount source.
 //
-// project.Resolve populates CommonGitDir(Host) only for a linked worktree, so
-// when `byre worktree` runs from the MAIN tree the common dir is derived here:
-// <canonical>/.git. A main tree whose .git is a gitfile (git init
-// --separate-git-dir) is refused with the manual route — rare enough that a
-// clear refusal beats chasing the pointer.
+// For a linked worktree both come from project.Resolve, whose values are
+// structurally validated (SameFile inode checks) and whose source is
+// symlink-resolved against that validated inode. When `byre worktree` runs
+// from the MAIN tree the common dir is derived here as <canonical>/.git — and
+// its leaf is gated with Lstat, NEVER resolved: `.git` sits in the
+// agent-writable tree, so following a symlink there would let a planted
+// `.git -> /victim/dir` become an arbitrary rw host mount into a container
+// that runs repo hooks (grok review, 2026-07-19 — the same attacker-shaped-
+// path class detectWorktree refuses by inode validation). Anything but a
+// plain directory — a symlink, a gitfile (git init --separate-git-dir), any
+// special file — is refused with the manual route; a clear refusal beats
+// chasing repo-authored pointers. Source == target: canonical is already
+// symlink-resolved, so what remains after the Lstat gate is only the
+// byre-wide check-to-mount pathname residual every bind shares (ADR 0009).
 func worktreeCommonGitDir(paths project.Paths) (target, host string, err error) {
 	if paths.IsWorktree {
 		return paths.CommonGitDir, paths.CommonGitDirHost, nil
 	}
 	gd := filepath.Join(paths.Canonical, ".git")
-	resolved, err := filepath.EvalSymlinks(gd)
-	if err != nil {
-		return "", "", fmt.Errorf("cannot resolve the repo git dir %q for mounting: %w", gd, err)
-	}
-	info, serr := os.Stat(resolved)
-	if serr != nil {
-		return "", "", fmt.Errorf("cannot resolve the repo git dir %q for mounting: %w", gd, serr)
+	info, lerr := os.Lstat(gd)
+	if lerr != nil {
+		return "", "", fmt.Errorf("cannot read the repo git dir %q for mounting: %w", gd, lerr)
 	}
 	if !info.IsDir() {
-		return "", "", fmt.Errorf("%s is not a directory — byre worktree supports repos whose .git is a directory "+
-			"(for a separate git dir, run `git worktree add` yourself and then `byre develop` in the worktree)", gd)
+		return "", "", fmt.Errorf("%s is not a plain directory — byre worktree supports repos whose .git is a directory "+
+			"(for a symlinked or separate git dir, run `git worktree add` yourself and then `byre develop` in the worktree)", gd)
 	}
-	return gd, resolved, nil
+	return gd, gd, nil
 }
 
 // worktreeRegistered reports whether target is a registered worktree of the
