@@ -571,7 +571,10 @@ existing id.
 For a linked git worktree, identity anchors at the **main worktree's**
 path (ADR 0009): config, volumes, image, and the setup lock come from the
 project; the container name, `byre.workdir` label, and `/workspace` mount
-stay per-worktree.
+stay per-worktree. `byre worktree` creation runs the repository's git
+inside containers, never on the host -- registration in a short-lived,
+network-less creation container, checkout at first launch (ADR 0009) --
+so the hooks and filters a checkout runs stay contained.
 
 Consequence: moving or renaming the folder yields a new id -> fresh image
 and **fresh volumes**; the old volumes persist, orphaned, under the old
