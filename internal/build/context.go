@@ -572,6 +572,12 @@ func openDirRootNoFollow(dir string) (*os.Root, error) {
 // top-level caller opens by name (a swap to a FIFO with O_NONBLOCK, or to a
 // directory, opens successfully), so trusting the fd's fstat here — not a prior
 // pathname Lstat — is what actually keeps a non-regular file out of the image.
+//
+// The copy is bounded at the size this fstat observed: the source is
+// agent-writable, and an unbounded io.Copy of a file being appended to chases
+// the writer indefinitely (the same stall class O_NONBLOCK closes for FIFOs).
+// A source that grew or shrank mid-copy is refused rather than staged — the
+// bytes would be a torn read either way, and the context must be deterministic.
 func stageRegularFromFD(in *os.File, dst string) error {
 	fi, err := in.Stat()
 	if err != nil {
@@ -585,6 +591,31 @@ func stageRegularFromFD(in *os.File, dst string) error {
 		return err
 	}
 	defer o.Close()
-	_, err = io.Copy(o, in)
-	return err
+	return copyExactly(o, in, fi.Size(), in.Name())
+}
+
+// copyExactly copies exactly size bytes from in to out, refusing a source that
+// holds more or fewer. The limit makes a shrink visible (the copy falls short)
+// but hides growth — one read past the promise tells them apart. Mirrors
+// deliver's send-time check (internal/deliver/remote.go).
+func copyExactly(out io.Writer, in io.Reader, size int64, name string) error {
+	n, err := io.Copy(out, io.LimitReader(in, size))
+	if err != nil {
+		return err
+	}
+	var extra int
+	if n == size {
+		// ReadFull, not a bare Read: it loops past a legal zero-byte read, and a
+		// probe that fails outright must surface, not pass as "didn't grow".
+		var b [1]byte
+		var rerr error
+		extra, rerr = io.ReadFull(in, b[:])
+		if rerr != nil && rerr != io.EOF {
+			return fmt.Errorf("%s: checking for growth past the observed size: %w", name, rerr)
+		}
+	}
+	if n != size || extra > 0 {
+		return fmt.Errorf("%s changed while being staged (observed %d bytes)", name, size)
+	}
+	return nil
 }

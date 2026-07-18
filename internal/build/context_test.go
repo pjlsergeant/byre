@@ -1,11 +1,14 @@
 package build
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -304,6 +307,52 @@ func TestCopyPathRejectsTopLevelFIFO(t *testing.T) {
 	err := copyWithin(t, fifo, filepath.Join(t.TempDir(), "staged"))
 	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("top-level FIFO should be rejected as non-regular, got: %v", err)
+	}
+}
+
+// A `files` source is agent-writable and can grow or shrink while it is being
+// staged: the copy is bounded at the size fstat observed (an unbounded copy of
+// a still-growing file chases the writer indefinitely), and a source that
+// mutated mid-copy is refused rather than staged as a torn read. The mid-copy
+// mutation is a race a single-threaded test cannot stage, so the bound is
+// exercised directly with a size that disagrees with the file's content.
+func TestCopyExactlyRefusesMutatedSource(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(src, []byte("0123456789"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	open := func() *os.File {
+		f, err := os.Open(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		return f
+	}
+	var buf strings.Builder
+	if err := copyExactly(&buf, open(), 10, "src"); err != nil {
+		t.Fatalf("exact-size copy should succeed, got: %v", err)
+	}
+	if buf.String() != "0123456789" {
+		t.Fatalf("staged bytes = %q", buf.String())
+	}
+	// Observed 6, file holds 10: it grew after the stat — refuse, don't chase.
+	if err := copyExactly(io.Discard, open(), 6, "src"); err == nil || !strings.Contains(err.Error(), "changed while being staged") {
+		t.Fatalf("grown source should be refused, got: %v", err)
+	}
+	// Observed 14, file holds 10: it shrank — the staged file would be short.
+	if err := copyExactly(io.Discard, open(), 14, "src"); err == nil || !strings.Contains(err.Error(), "changed while being staged") {
+		t.Fatalf("shrunk source should be refused, got: %v", err)
+	}
+}
+
+// A growth probe that fails outright (I/O error, not EOF) must surface, never
+// pass as "didn't grow" — this branch's error was silently discarded once.
+func TestCopyExactlyPropagatesProbeError(t *testing.T) {
+	in := io.MultiReader(strings.NewReader("0123456789"), iotest.ErrReader(errors.New("boom")))
+	err := copyExactly(io.Discard, in, 10, "src")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("failed probe read must surface, got: %v", err)
 	}
 }
 
