@@ -175,12 +175,48 @@ func TestPickerOptsPreservesUnknown(t *testing.T) {
 	}
 }
 
-// The item editor must validate, then add / edit / delete structured items.
-func TestItemAddEditDeleteValidation(t *testing.T) {
+// itemModel returns a fresh model focused on the given structured-list field,
+// the shared starting point for the item-editor tests below.
+func itemModel(field fieldID) model {
 	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = field
+	return m
+}
 
-	// --- env: reject a bad key, accept a good one ---
+// withEnv commits key=value through the env item editor, failing the test if
+// the editor rejects it — fixture setup for tests that need an existing row.
+func withEnv(t *testing.T, m model, key, value string) model {
+	t.Helper()
 	m.listField = fEnv
+	m = m.startItem(-1)
+	m.inputs[0].SetValue(key)
+	m.inputs[1].SetValue(value)
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("env fixture %s=%s rejected: %q", key, value, m.itemErr)
+	}
+	return m
+}
+
+// withMount commits an rw mount through the item editor, failing the test if
+// the editor rejects it.
+func withMount(t *testing.T, m model, host, target string) model {
+	t.Helper()
+	m.listField = fMounts
+	m = m.startItem(-1)
+	m.inputs[0].SetValue(host)
+	m.inputs[1].SetValue(target)
+	m.itemMode = 1 // rw
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("mount fixture %s -> %s rejected: %q", host, target, m.itemErr)
+	}
+	return m
+}
+
+// The env item editor rejects a malformed key and adds a valid pair.
+func TestEnvItemValidation(t *testing.T) {
+	m := itemModel(fEnv)
 	m = m.startItem(-1)
 	m.inputs[0].SetValue("bad key") // space -> invalid
 	m.inputs[1].SetValue("v")
@@ -195,31 +231,40 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("commit should return to the list, mode=%v", m.mode)
 	}
+}
 
-	// --- edit the existing env item in place ---
+// Editing an existing env item replaces it in place, not appends.
+func TestEnvItemEditReplacesInPlace(t *testing.T) {
+	m := withEnv(t, itemModel(fEnv), "TOKEN", "v")
 	m = m.startItem(0)
 	m.inputs[1].SetValue("v2")
 	m = m.commitItem()
 	if len(m.env) != 1 || m.env[0].Value != "v2" {
 		t.Fatalf("env edit should replace in place: %v", m.env)
 	}
+}
 
-	// --- reject a duplicate env key (would silently collapse on save) ---
+// A duplicate env key is rejected (it would silently collapse on save) --
+// but re-committing a row under its own key must not trip the check.
+func TestEnvItemDuplicateRejected(t *testing.T) {
+	m := withEnv(t, itemModel(fEnv), "TOKEN", "v")
 	m = m.startItem(-1)
 	m.inputs[0].SetValue("TOKEN") // already exists
 	m.inputs[1].SetValue("other")
 	if m2 := m.commitItem(); m2.itemErr == "" || len(m2.env) != 1 {
 		t.Fatalf("duplicate env key should be rejected: err=%q env=%v", m2.itemErr, m2.env)
 	}
-	// ...but editing the same row to keep its key is fine.
 	m = m.startItem(0)
 	m.inputs[1].SetValue("v3")
 	if m2 := m.commitItem(); m2.itemErr != "" {
 		t.Fatalf("editing a row without changing its key must not trip the dup check: %q", m2.itemErr)
 	}
+}
 
-	// --- mounts: target must be absolute ---
-	m.listField = fMounts
+// The mount item editor requires an absolute target and refuses a `!` prefix
+// slipping through as a removal marker.
+func TestMountItemTargetValidation(t *testing.T) {
+	m := itemModel(fMounts)
 	m = m.startItem(-1)
 	m.inputs[0].SetValue("~/data")
 	m.inputs[1].SetValue("relative") // not absolute
@@ -239,8 +284,12 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 	if len(m.mounts) != 1 || m.mounts[0].Mode != "rw" || m.mounts[0].Target != "/data" {
 		t.Fatalf("mount not added correctly: %v", m.mounts)
 	}
+}
 
-	// --- disable it: the picker's third state sets the bool, keeps rw ---
+// Disabling a mount (the mode picker's third state) sets the bool, preserves
+// the stored rw mode, and marks the list row.
+func TestMountItemDisablePreservesMode(t *testing.T) {
+	m := withMount(t, itemModel(fMounts), "~/data", "/data")
 	m = m.startItem(0)
 	if m.itemMode != 1 {
 		t.Fatalf("editor should open on the stored rw mode, got %d", m.itemMode)
@@ -253,8 +302,15 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 	if line := mountLine(m.mounts[0]); !strings.Contains(line, "rw, disabled") {
 		t.Fatalf("list row should mark the disabled mount: %q", line)
 	}
+}
 
-	// --- re-enable: editor opens on disabled, picking rw clears the bool ---
+// Re-enabling: the editor opens on the disabled state, and picking rw clears
+// the bool while keeping the mode.
+func TestMountItemReenable(t *testing.T) {
+	m := withMount(t, itemModel(fMounts), "~/data", "/data")
+	m = m.startItem(0)
+	m.itemMode = 2 // disabled
+	m = m.commitItem()
 	m = m.startItem(0)
 	if m.itemMode != 2 {
 		t.Fatalf("editor should open on disabled, got %d", m.itemMode)
@@ -264,8 +320,10 @@ func TestItemAddEditDeleteValidation(t *testing.T) {
 	if m.mounts[0].Disabled || m.mounts[0].Mode != "rw" {
 		t.Fatalf("re-enable should clear the bool and keep rw: %+v", m.mounts[0])
 	}
+}
 
-	// --- delete the mount ---
+func TestMountItemDelete(t *testing.T) {
+	m := withMount(t, itemModel(fMounts), "~/data", "/data")
 	m.deleteItem(fMounts, 0)
 	if len(m.mounts) != 0 {
 		t.Fatalf("mount not deleted: %v", m.mounts)
