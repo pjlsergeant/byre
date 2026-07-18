@@ -1,14 +1,10 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -17,8 +13,15 @@ import (
 
 // Worktree implements `byre worktree <name>`: create a linked git worktree for
 // branch <name> and `byre develop` in it — a parallel agent session that
-// inherits the repo's config, volumes, and image, in one step. It needs git on
-// PATH (it runs `git worktree add`).
+// inherits the repo's config, volumes, and image, in one step.
+//
+// Every git operation on the repo runs INSIDE the box — one rule, no
+// exceptions (ADR 0009). The registration (`git worktree add`) runs in a
+// short-lived creation container from the project image (runner.WorktreeAdd),
+// and the checkout happens at the first session's start (the launcher's
+// populate step). The host side is reduced to: resolve a location, ensure the
+// image, make the mount-point directory, run the create container, hand off
+// to develop. Host-side git is limited to bounded read-only probes (gitProbe).
 //
 // The location comes from --path, or else the configured worktree_base
 // ("sibling" = beside the repo, or a base dir), with the leaf <repo>-<name>;
@@ -62,38 +65,177 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	if err != nil {
 		return err
 	}
-	// Comma in the path would corrupt develop's docker --mount later; fail before
-	// creating the worktree rather than leaving one develop can't run.
+	// Comma in the path would corrupt the create container's and develop's
+	// docker --mount values; fail before creating anything.
 	if strings.Contains(target, ",") {
 		return fmt.Errorf("target path contains a comma, which docker --mount cannot express: %q", target)
 	}
+	// Recognize the leftovers of an interrupted create for this exact target
+	// (registration is a git-side fact, the directory a filesystem one; a kill
+	// mid-create can leave either without the other). Both probes DEGRADE on
+	// refusal — an unanswerable probe falls back to the plain behavior, and the
+	// in-box add fails loudly on a stale registration anyway.
 	if _, lerr := os.Lstat(target); lerr == nil {
+		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
+			return fmt.Errorf("%s is already a registered worktree of this repo — continue with `byre develop` there, "+
+				"or remove it first: git -C %s worktree remove --force %s", target, paths.Canonical, target)
+		}
 		return fmt.Errorf("target path already exists: %s (pass --path to choose another location)", target)
+	} else if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
+		return fmt.Errorf("%s is registered as a worktree but missing on disk — a previous create was likely interrupted. "+
+			"Clear stale registrations with `git -C %s worktree prune` (it drops only entries whose directory is gone), then retry", target, paths.Canonical)
 	}
-	// Refuse before creating anything if there's no engine to populate the
-	// checkout: byre worktree materializes the working tree INSIDE the box
-	// (never on the host — where the repo's hooks/filters run contained), so
-	// without a box there is nothing to populate it. Checked here, pre-create,
-	// so a no-engine machine is never left with an empty worktree; the manual
-	// route is plain `git worktree add`. (Engine binary absence only — a daemon that
-	// is down mid-build is absorbed by the resumable marker, not predicted here,
-	// which avoids a check-to-build race.)
+	// Refuse before creating anything if there's no engine: creation itself now
+	// runs in the box (the registration container), and so does the checkout
+	// that populates it — without an engine there is nothing to run either in.
+	// The manual route is plain `git worktree add`. (Engine binary absence only —
+	// a daemon that is down mid-build fails the build loudly instead, which
+	// avoids a check-to-build race.)
 	cfg, cerr := config.Load(top)
 	if cerr != nil {
 		return cerr
 	}
-	if _, derr := runner.Detect(cfg.Engine, nil); derr != nil {
-		return fmt.Errorf("byre worktree needs a container engine — it checks out the worktree's files inside the box (where the repo's git hooks and filters run contained, not on the host): %w.\n"+
-			"Start Docker or Podman, or run `git worktree add %s %s` yourself (that checks out on the host, running the repo's own git hooks and filters there)", derr, target, name)
+	eng, derr := runner.Detect(cfg.Engine, nil)
+	if derr != nil {
+		return fmt.Errorf("byre worktree needs a container engine — it creates and checks out the worktree inside the box (where the repo's git hooks and filters run contained, not on the host): %w.\n"+
+			"Start Docker or Podman, or run `git worktree add %s %s` yourself (that runs on the host, running the repo's own git hooks and filters there)", derr, target, name)
 	}
-	if err := createWorktree(s.Err, top, name, target); err != nil {
+	if err := worktreeCreate(runner.New(eng), s, paths, top, name, target); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: created worktree at %s (branch %s); starting a session…\n", target, name)
 	// Hand off to develop in the new worktree. If it fails, the worktree is still
 	// valid — retry with `byre develop` there, or drop it with `git worktree
-	// remove` — so we don't roll back a successful checkout on a develop error.
+	// remove` — so we don't roll back a successful creation on a develop error.
 	return Develop(s, target, "", "", nil, selfEdit)
+}
+
+// worktreeCreate is the engine-facing half of Worktree: ensure the project
+// image, make the (empty) target directory as the bind-mount point, and run
+// the one-shot creation container that registers the worktree and drops the
+// pending-checkout marker — all git mutation in the box. Split from Worktree
+// so it runs end-to-end against a fake engine.
+func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, name, target string) error {
+	commonTarget, commonHost, err := worktreeCommonGitDir(paths)
+	if err != nil {
+		return err
+	}
+	// The create container's binds are byre-assembled --mount values; a comma
+	// anywhere in them cannot be expressed (same check develop applies).
+	for _, p := range []string{paths.Canonical, commonTarget, commonHost} {
+		if strings.Contains(p, ",") {
+			return fmt.Errorf("path contains a comma, which docker --mount cannot express: %q", p)
+		}
+	}
+	image, ident, err := ensureProjectImage(r, s, paths, projectDir)
+	if err != nil {
+		return err
+	}
+	// The target is made host-side only as the bind-mount point (the engine
+	// needs a source to bind); the box does all the git. Modern git accepts a
+	// `worktree add` into an existing empty directory.
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return err
+	}
+	if err := r.WorktreeAdd(image, worktreeCreateName(target), ident, commonHost, commonTarget, paths.Canonical, target, name); err != nil {
+		// Establish what remains rather than blindly deleting: the in-box script
+		// cleans up after itself, so normally only our empty mount-point dir is
+		// left — remove exactly that (os.Remove refuses a non-empty dir; never
+		// RemoveAll — partial state is diagnostically useful) so a retry isn't
+		// refused by the exists check. If the registration survived (create
+		// killed mid-cleanup), say so with the targeted remedy.
+		_ = os.Remove(target)
+		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
+			return fmt.Errorf("creating the worktree in the box failed, and it is still registered: %w\n"+
+				"remove it with `git -C %s worktree remove --force %s`, then retry", err, paths.Canonical, target)
+		}
+		return fmt.Errorf("creating the worktree in the box failed: %w", err)
+	}
+	return nil
+}
+
+// ensureProjectImage resolves the project's config and builds its image under
+// the setup lock — the image preparation a create step needs, without
+// develop's session concerns (no onboarding prompts, no volume seeding, no
+// live-session check). It composes the same primitives develop's own flow
+// uses (resolve, resolveIdentity, buildImage); develop keeps its build inline
+// because its build+seed+create must share ONE lock hold (the reset/forget
+// race documented there), which a self-locking helper cannot join.
+func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectDir string) (string, runner.Identity, error) {
+	if err := paths.Bootstrap(); err != nil {
+		return "", runner.Identity{}, err
+	}
+	rv, err := resolve(paths, projectDir, s.Err)
+	if err != nil {
+		return "", runner.Identity{}, err
+	}
+	warnNonDebianBase(s.Err, rv.cfg.Base)
+	ident, err := resolveIdentity(s.Err, r)
+	if err != nil {
+		return "", runner.Identity{}, err
+	}
+	image := imageTag(paths.ID, ident.UID, ident.GID)
+	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+		return buildImage(r, paths, rv.cfg, rv.skills, image, false, ident)
+	}); err != nil {
+		return "", runner.Identity{}, err
+	}
+	return image, ident, nil
+}
+
+// worktreeCommonGitDir picks the common-git-dir bind for the create container:
+// target = the git-recorded path (what in-box pointers must resolve against),
+// host = the same directory symlink-resolved (the mount source; fail-closed —
+// an unresolvable path is a loud error, never a lenient mount).
+//
+// project.Resolve populates CommonGitDir(Host) only for a linked worktree, so
+// when `byre worktree` runs from the MAIN tree the common dir is derived here:
+// <canonical>/.git. A main tree whose .git is a gitfile (git init
+// --separate-git-dir) is refused with the manual route — rare enough that a
+// clear refusal beats chasing the pointer.
+func worktreeCommonGitDir(paths project.Paths) (target, host string, err error) {
+	if paths.IsWorktree {
+		return paths.CommonGitDir, paths.CommonGitDirHost, nil
+	}
+	gd := filepath.Join(paths.Canonical, ".git")
+	resolved, err := filepath.EvalSymlinks(gd)
+	if err != nil {
+		return "", "", fmt.Errorf("cannot resolve the repo git dir %q for mounting: %w", gd, err)
+	}
+	info, serr := os.Stat(resolved)
+	if serr != nil {
+		return "", "", fmt.Errorf("cannot resolve the repo git dir %q for mounting: %w", gd, serr)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("%s is not a directory — byre worktree supports repos whose .git is a directory "+
+			"(for a separate git dir, run `git worktree add` yourself and then `byre develop` in the worktree)", gd)
+	}
+	return gd, resolved, nil
+}
+
+// worktreeRegistered reports whether target is a registered worktree of the
+// repo at mainDir, via a bounded read-only probe (`worktree list --porcelain`
+// prints one `worktree <path>` line per registration). Paths are compared
+// canonicalized, since git records its own absolute spelling.
+func worktreeRegistered(mainDir, target string) (bool, error) {
+	out, err := gitProbe("-C", mainDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	want, err := project.Canonicalize(target)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		p, ok := strings.CutPrefix(line, "worktree ")
+		if !ok {
+			continue
+		}
+		if got, cerr := project.Canonicalize(p); cerr == nil && got == want {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // worktreeLeaf is the single-directory name for a worktree: <repo>-<name>, with
@@ -125,154 +267,6 @@ func worktreeParent(dir, mainDir string) (string, error) {
 	}
 }
 
-// needsCheckoutMarker is the per-worktree file byre drops in the worktree's
-// git admin dir to signal "created --no-checkout; populate me in the box". The
-// launcher consumes it (git checkout in the container), clearing it only on
-// success — so a develop that never started leaves a resumable pending
-// worktree, not a dead empty one. Kept in the admin dir, which is bind-mounted
-// into the box at its host path, so the launcher sees it without extra wiring.
-const needsCheckoutMarker = "byre-needs-checkout"
-
-// createWorktree runs `git worktree add`. If <name> already names a branch —
-// local OR remote-tracking — git checks it out (DWIM-creating a local tracking
-// branch for a remote-only one); otherwise a fresh branch is created with -b.
-// Passing -b unconditionally would fork a divergent local branch off HEAD when a
-// remote branch of that name exists, silently starting the agent on wrong code.
-// git's progress goes to stderr so stdout stays clean.
-//
-// CONTAINMENT: a git checkout runs the repository's own code — the
-// post-checkout hook and smudge/process filters a committed .gitattributes
-// selects — and byre's model keeps a repo's code inside the box. A host-side
-// `worktree add` checkout would run it on the host instead, the wrong place.
-// Two flags keep it off the host, and BOTH are load-bearing (verified on git
-// 2.39.5):
-//   - --no-checkout skips the working-tree write, so the checkout-time code
-//     never runs on the host: the post-checkout hook and smudge/process filters.
-//   - -c core.hooksPath=<empty> is NOT reinforcement: `worktree add` performs
-//     ref updates that run the reference-transaction hook (and any other
-//     non-checkout hook) even under --no-checkout. Emptying hooksPath is the
-//     only thing that keeps those in the box too. A command-line -c also beats
-//     a repo-config core.hooksPath. Dropping EITHER flag puts some back on the host.
-//
-// The actual checkout happens later, inside the box, where the repo's code
-// runs contained by design (see the launcher's populate step; ADR 0009).
-func createWorktree(w io.Writer, dir, name, target string) error {
-	emptyHooks, err := os.MkdirTemp("", "byre-nohooks-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(emptyHooks)
-
-	args := []string{"-C", dir, "-c", "core.hooksPath=" + emptyHooks, "worktree", "add", "--no-checkout"}
-	exists, err := branchExists(dir, name)
-	if err != nil {
-		// A probe refusal is NOT a negative answer — never mutate after an
-		// indeterminate probe (codex rounds 4+5; guessing "no" would -b a
-		// fresh branch where one already exists, or diverge from a remote).
-		return fmt.Errorf("could not determine whether branch %s exists: %w", name, err)
-	}
-	if !exists {
-		remote, err := remoteBranchExists(dir, name)
-		if err != nil {
-			return fmt.Errorf("could not determine whether %s exists on a remote: %w", name, err)
-		}
-		exists = remote
-	}
-	if exists {
-		args = append(args, target, name) // check out existing (local or remote) branch
-	} else {
-		args = append(args, "-b", name, target) // create a new branch
-	}
-	cmd := exec.Command("git", args...)
-	cmd.Stdout = w
-	cmd.Stderr = w
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git worktree add failed: %w", err)
-	}
-	// The worktree exists now but is unpopulated; the marker is what makes the
-	// in-box populate happen. The write is anchored on the TRUSTED common git
-	// dir — the symlink-resolved value byre's OWN validated resolver
-	// (project.Resolve) computes for the bind mount, NOT a fresh rev-parse
-	// against the just-created worktree's mutable .git pointer, which a
-	// concurrent agent could rewrite to point the anchor at a dir it controls
-	// (codex review). If the mark can't be written, roll the worktree back so
-	// no dangling empty one is left (grok review; never-half-create).
-	// Any failure from here on rolls the worktree back and reports uniformly:
-	// a rollback that ALSO fails must never be swallowed (else an empty
-	// registered worktree lingers against never-half-create — codex review),
-	// so it rides the error with manual-cleanup guidance.
-	rollbackOnErr := func(cause error) error {
-		if rberr := rollbackWorktree(dir, emptyHooks, target); rberr != nil {
-			return fmt.Errorf("%w (and rolling it back failed: %v — remove %s by hand)", cause, rberr, target)
-		}
-		return cause
-	}
-	wt, rerr := project.Resolve(target)
-	if rerr != nil {
-		return rollbackOnErr(fmt.Errorf("resolving the new worktree: %w", rerr))
-	}
-	if !wt.IsWorktree || wt.CommonGitDirHost == "" {
-		return rollbackOnErr(fmt.Errorf("the new worktree %s has no resolvable common git dir", target))
-	}
-	if err := markNeedsCheckout(wt.CommonGitDirHost, target); err != nil {
-		return rollbackOnErr(fmt.Errorf("preparing the worktree checkout: %w", err))
-	}
-	return nil
-}
-
-// rollbackWorktree removes a just-created worktree, with the SAME empty
-// core.hooksPath the add used — the rollback is another host-side mutating git
-// command, and the invariant "no host git in this flow runs agent-config hooks"
-// stays uniform rather than resting on `worktree remove` happening not to fire
-// one on today's git (codex review).
-func rollbackWorktree(dir, emptyHooks, target string) error {
-	return exec.Command("git", "-C", dir, "-c", "core.hooksPath="+emptyHooks, "worktree", "remove", "--force", target).Run()
-}
-
-// markNeedsCheckout drops the pending-checkout marker in the worktree's admin
-// dir, anchored on the TRUSTED commonHost (project.Resolve's symlink-resolved
-// common git dir). Only the admin subdir NAME is taken from git — a single path
-// component, contained by the os.Root below whatever it is.
-func markNeedsCheckout(commonHost, target string) error {
-	adminOut, err := gitProbe("-C", target, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return fmt.Errorf("locating the worktree git dir: %w", err)
-	}
-	adminName := filepath.Base(strings.TrimSpace(string(adminOut)))
-	// "" / "." / ".." / separator are not real subdir names: "." and ".."
-	// stay inside the os.Root (no escape) but would put the marker where the
-	// launcher won't look (a silent-ineffective mark) — reject them (grok
-	// review; git is not expected to emit them, belt-and-suspenders).
-	if adminName == "" || adminName == "." || adminName == ".." || adminName == string(os.PathSeparator) {
-		return fmt.Errorf("could not determine the worktree admin dir for %s", target)
-	}
-	return writeCheckoutMarker(commonHost, adminName)
-}
-
-// writeCheckoutMarker creates the marker at worktrees/<adminName>/ under the
-// TRUSTED commonHost, with no followed symlink anywhere below it. Everything
-// under the common git dir is agent-writable (bound rw for a worktree), so the
-// path is resolved THROUGH an os.Root anchored on commonHost: a swapped
-// `worktrees` or `<adminName>` component that escapes the root is refused, and
-// O_EXCL|O_NOFOLLOW refuses a pre-planted marker entry. commonHost is byre's
-// existing trust boundary — the same symlink-resolved path the worktree bind
-// mount is taken from (ADR 0009) — so the ONE residual (a swap of commonHost
-// itself) is exactly the disclosed same-path-mount residual, identical to the
-// mount's, and unclosable host-side. adminName is a basename, no separators.
-func writeCheckoutMarker(commonHost, adminName string) error {
-	root, err := os.OpenRoot(commonHost)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	rel := filepath.Join("worktrees", adminName, needsCheckoutMarker)
-	f, err := root.OpenFile(rel, os.O_CREATE|os.O_EXCL|os.O_WRONLY|syscall.O_NOFOLLOW, 0o644)
-	if err != nil {
-		return fmt.Errorf("writing the worktree checkout marker: %w", err)
-	}
-	return f.Close()
-}
-
 // gitToplevel returns the working tree's root dir for dir (its main or linked
 // worktree root), and false if dir is not inside a git repository.
 func gitToplevel(dir string) (string, bool) {
@@ -282,34 +276,4 @@ func gitToplevel(dir string) (string, bool) {
 	}
 	top := strings.TrimSpace(string(out))
 	return top, top != ""
-}
-
-// branchExists reports whether a local branch named name already exists. A
-// clean negative is EXACTLY exit 1 from `rev-parse --verify --quiet` (the
-// documented missing-ref code); any other refusal — timeout kill, output
-// cap, exit 128 repo errors — is an error, never a "no".
-func branchExists(dir, name string) (bool, error) {
-	_, err := gitProbe("-C", dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name)
-	if err == nil {
-		return true, nil
-	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) && ee.ExitCode() == 1 {
-		return false, nil
-	}
-	return false, err
-}
-
-// remoteBranchExists reports whether a remote-tracking branch <remote>/<name>
-// exists. The query targets the NAME (for-each-ref pattern) instead of
-// listing every remote ref, so a legitimately huge ref set can never hit
-// gitProbe's output cap; a probe refusal surfaces as the error it is.
-// (Like the prior first-slash comparison, remotes with slashes in their own
-// names are not matched — parity, not a regression.)
-func remoteBranchExists(dir, name string) (bool, error) {
-	out, err := gitProbe("-C", dir, "for-each-ref", "--count=1", "--format=%(refname)", "refs/remotes/*/"+name)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(string(out)) != "", nil
 }

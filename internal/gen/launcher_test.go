@@ -259,9 +259,10 @@ func TestProfileEnvShimRestoresImagePath(t *testing.T) {
 	}
 }
 
-// The worktree populate step: byre creates the worktree --no-checkout on the
-// host (agent-safe) and the launcher runs the checkout in the box. Driven via
-// the BYRE_WORKSPACE_DIR seam against a real --no-checkout worktree.
+// The worktree populate step: byre registers the worktree --no-checkout in a
+// one-shot creation container (runner.WorktreeAdd) and the launcher runs the
+// checkout in the box at first session start. Driven via the
+// BYRE_WORKSPACE_DIR seam against a real --no-checkout worktree.
 func TestLauncherPopulatesPendingWorktree(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not on PATH")

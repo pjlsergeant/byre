@@ -1259,3 +1259,102 @@ func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 		t.Fatalf("second landed = %v", again)
 	}
 }
+
+// TestIntegrationWorktreeCreateInBox: staged worktree creation against a live
+// engine (ADR 0009 — every mutating git operation on the repo runs in a box).
+// worktreeCreate builds the project image (git baked in via the config
+// cascade, as a user would) and runs the one-shot creation container; the
+// promises only a live engine can vouch for: the same-path mounts land the
+// registration, marker, and branch exactly where the host and the next
+// session expect them, owned by the invoking user — with the target left
+// --no-checkout. Plus the no-git-image path: a loud failure, nothing
+// registered, no half-created state.
+func TestIntegrationWorktreeCreateInBox(t *testing.T) {
+	r := requireEngineRunner(t)
+	p, proj := testPaths(t)
+	// git must be IN the box for creation now; ride the cascade like a user.
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte("apt = [\"git\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = proj
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	if err := os.WriteFile(filepath.Join(proj, "tracked.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".")
+	git("commit", "-q", "-m", "seed")
+
+	ident := testIdentity(t, r)
+	t.Cleanup(func() { _ = r.ImageRemove(imageTag(p.ID, ident.UID, ident.GID)) })
+	target := filepath.Join(t.TempDir(), "wt")
+	if err := worktreeCreate(r, discardStreams(), p, proj, "boxed", target); err != nil {
+		t.Fatalf("worktreeCreate: %v", err)
+	}
+
+	// Registered, and --no-checkout: the target holds ONLY the .git pointer
+	// (population is the first session's job).
+	if reg, err := worktreeRegistered(p.Canonical, target); err != nil || !reg {
+		t.Fatalf("worktree not registered host-side: reg=%v err=%v", reg, err)
+	}
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != ".git" {
+		t.Fatalf("target should hold only .git (no checkout), got %v", entries)
+	}
+	// The branch was created in the box and is visible to host git.
+	if err := exec.Command("git", "-C", p.Canonical, "rev-parse", "--verify", "-q", "refs/heads/boxed").Run(); err != nil {
+		t.Fatal("branch 'boxed' not created")
+	}
+	// The pending-checkout marker is where the launcher will look.
+	gitdir, err := exec.Command("git", "-C", target, "rev-parse", "--absolute-git-dir").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminDir, err := filepath.EvalSymlinks(strings.TrimSpace(string(gitdir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(adminDir, "byre-needs-checkout")
+	fi, err := os.Stat(marker)
+	if err != nil {
+		t.Fatalf("pending-checkout marker not written: %v", err)
+	}
+	// Ownership: the box identity maps back to the invoking user (rootful
+	// bake, or keep-id under rootless Podman), so in-box writes land ours.
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Uid != uint32(os.Getuid()) {
+		t.Fatalf("marker owned by uid %d, want %d", st.Uid, os.Getuid())
+	}
+
+	// A git-less image: loud failure, nothing registered, no target debris —
+	// exercised at the WorktreeAdd layer so it needs no second image build.
+	commonTarget, commonHost, err := worktreeCommonGitDir(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target2 := filepath.Join(t.TempDir(), "wt-nogit")
+	if err := os.MkdirAll(target2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.WorktreeAdd("busybox", "byre-inttest-wtadd-nogit", ident,
+		commonHost, commonTarget, p.Canonical, target2, "nogit"); err == nil {
+		t.Fatal("WorktreeAdd on a git-less image should fail")
+	}
+	if reg, err := worktreeRegistered(p.Canonical, target2); err != nil || reg {
+		t.Fatalf("git-less create must register nothing: reg=%v err=%v", reg, err)
+	}
+	if entries, _ := os.ReadDir(target2); len(entries) != 0 {
+		t.Fatalf("git-less create left debris in the target: %v", entries)
+	}
+}

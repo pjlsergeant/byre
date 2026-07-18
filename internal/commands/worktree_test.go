@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,8 +73,8 @@ func TestWorktreeRefusesWithoutLocation(t *testing.T) {
 	}
 }
 
-// initRepo makes a real git repo with one commit (git is available on dev hosts;
-// the createWorktree path shells out to it).
+// initRepo makes a real git repo with one commit (git is available on dev
+// hosts; the host-side probes and the tests' own fixtures use it).
 func initRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -91,50 +90,6 @@ func initRepo(t *testing.T) string {
 		}
 	}
 	return dir
-}
-
-func TestCreateWorktreeNewBranch(t *testing.T) {
-	repo := initRepo(t)
-	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-feat")
-	t.Cleanup(func() { os.RemoveAll(target) })
-
-	if err := createWorktree(io.Discard, repo, "feat", target); err != nil {
-		t.Fatalf("createWorktree: %v", err)
-	}
-	// The target is now a real linked worktree that byre detects and inherits from.
-	t.Setenv("BYRE_HOME", t.TempDir())
-	p, err := project.Resolve(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !p.IsWorktree {
-		t.Fatal("created dir is not detected as a linked worktree")
-	}
-	canonRepo, _ := project.Canonicalize(repo)
-	if p.Canonical != canonRepo {
-		t.Errorf("worktree project dir %q != repo %q", p.Canonical, canonRepo)
-	}
-	// The new branch exists.
-	if ok, err := branchExists(repo, "feat"); err != nil || !ok {
-		t.Error("expected branch 'feat' to be created")
-	}
-}
-
-func TestCreateWorktreeExistingBranch(t *testing.T) {
-	repo := initRepo(t)
-	if out, err := exec.Command("git", "-C", repo, "branch", "existing").CombinedOutput(); err != nil {
-		t.Fatalf("git branch: %v\n%s", err, out)
-	}
-	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-existing")
-	t.Cleanup(func() { os.RemoveAll(target) })
-
-	// Should check out the existing branch (not fail trying to -b create it).
-	if err := createWorktree(io.Discard, repo, "existing", target); err != nil {
-		t.Fatalf("createWorktree on existing branch: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
-		t.Errorf("worktree .git not present: %v", err)
-	}
 }
 
 func TestGitToplevel(t *testing.T) {
@@ -162,173 +117,11 @@ func TestGitToplevel(t *testing.T) {
 	}
 }
 
-// TestCreateWorktreeRemoteBranch covers the DWIM footgun: a name that exists only
-// as a remote branch must be checked out (tracking the remote), NOT forked as a
-// new local branch off HEAD.
-func TestCreateWorktreeRemoteBranch(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
-	root := t.TempDir()
-	origin := filepath.Join(root, "origin.git")
-	repo := filepath.Join(root, "main")
-	run := func(args ...string) {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q", "--bare", origin)
-	run("init", "-q", repo)
-	run("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "init")
-	run("-C", repo, "remote", "add", "origin", origin)
-	run("-C", repo, "push", "-q", "origin", "HEAD:refs/heads/remotefeat")
-	run("-C", repo, "fetch", "-q", "origin")
-
-	// No LOCAL remotefeat, but a remote one exists -> should be detected as existing.
-	if ok, err := branchExists(repo, "remotefeat"); err != nil || ok {
-		t.Fatal("precondition: no local remotefeat expected")
-	}
-	if ok, err := remoteBranchExists(repo, "remotefeat"); err != nil || !ok {
-		t.Fatalf("remote-only branch not detected as existing (would fork a divergent branch): ok=%v err=%v", ok, err)
-	}
-	target := filepath.Join(root, "wt")
-	if err := createWorktree(io.Discard, repo, "remotefeat", target); err != nil {
-		t.Fatalf("createWorktree: %v", err)
-	}
-	// The worktree tracks the remote branch.
-	up, err := exec.Command("git", "-C", target, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}").Output()
-	if err != nil || strings.TrimSpace(string(up)) != "origin/remotefeat" {
-		t.Errorf("worktree should track origin/remotefeat, upstream=%q err=%v", strings.TrimSpace(string(up)), err)
-	}
-}
-
-// The sandbox-escape regression (2026-07-18): the host-side worktree add must
-// run NOTHING agent-controlled. An agent with repo write access can plant a
-// post-checkout hook and a smudge filter that git would otherwise run AS THE
-// HOST USER during checkout — host code execution from inside the box.
-func TestCreateWorktreeRunsNoAgentCodeOnHost(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
-	repo := initRepo(t)
-	run := func(args ...string) {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	// A tracked file with a smudge filter, and a post-checkout hook — both the
-	// agent's to write (repo + common git dir are rw from the box).
-	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("* filter=pwn\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("hello\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "add", "-A")
-	run("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "-m", "payload")
-
-	hookProof := filepath.Join(t.TempDir(), "hook-ran")
-	smudgeProof := filepath.Join(t.TempDir(), "smudge-ran")
-	refTxnProof := filepath.Join(t.TempDir(), "reftxn-ran")
-	run("-C", repo, "config", "filter.pwn.smudge", "sh -c 'touch "+smudgeProof+"; cat'")
-	hookDir := filepath.Join(repo, ".git", "hooks")
-	if err := os.MkdirAll(hookDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(hookDir, "post-checkout"),
-		[]byte("#!/bin/sh\ntouch "+hookProof+"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// reference-transaction fires during worktree add's ref updates EVEN under
-	// --no-checkout (git 2.39.5) — so it proves the empty core.hooksPath is
-	// load-bearing, not the post-checkout hook (which --no-checkout alone stops).
-	// This test would fail if createWorktree dropped the hooksPath override.
-	if err := os.WriteFile(filepath.Join(hookDir, "reference-transaction"),
-		[]byte("#!/bin/sh\ntouch "+refTxnProof+"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-hostile")
-	t.Cleanup(func() { os.RemoveAll(target) })
-	if err := createWorktree(io.Discard, repo, "hostile", target); err != nil {
-		t.Fatalf("createWorktree: %v", err)
-	}
-
-	if _, err := os.Stat(hookProof); err == nil {
-		t.Fatal("post-checkout hook executed on the host — sandbox escape")
-	}
-	if _, err := os.Stat(smudgeProof); err == nil {
-		t.Fatal("smudge filter executed on the host — sandbox escape")
-	}
-	if _, err := os.Stat(refTxnProof); err == nil {
-		t.Fatal("reference-transaction hook executed on the host — the empty core.hooksPath is not doing its job")
-	}
-	// --no-checkout leaves the working tree empty (populated in-box later).
-	if _, err := os.Stat(filepath.Join(target, "tracked.txt")); err == nil {
-		t.Fatal("working tree was checked out on the host (want --no-checkout)")
-	}
-	// The pending-checkout marker is present so the launcher populates it. The
-	// admin dir is resolved (the marker is written under the symlink-resolved
-	// common dir), so resolve before checking.
-	gitdir, err := exec.Command("git", "-C", target, "rev-parse", "--absolute-git-dir").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminDir, err := filepath.EvalSymlinks(strings.TrimSpace(string(gitdir)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(adminDir, needsCheckoutMarker)); err != nil {
-		t.Fatalf("pending-checkout marker not written: %v", err)
-	}
-}
-
-// The marker write must not follow a symlink: the admin dir is agent-writable
-// (common git dir bound rw), so a concurrent box could pre-plant the marker
-// name as a symlink and a naive write would clobber its target as the host
-// user (codex review). O_EXCL|O_NOFOLLOW through an os.Root refuses it.
-func TestMarkNeedsCheckoutRefusesSymlink(t *testing.T) {
-	repo := initRepo(t)
-	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-sym")
-	t.Cleanup(func() {
-		os.RemoveAll(target)
-		_ = exec.Command("git", "-C", repo, "worktree", "prune").Run()
-	})
-	// Create the worktree by hand (so we control the marker-write timing), then
-	// pre-plant the marker name as a symlink to a victim file.
-	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "--no-checkout", "-b", "sym", target).CombinedOutput(); err != nil {
-		t.Fatalf("worktree add: %v\n%s", err, out)
-	}
-	t.Setenv("BYRE_HOME", t.TempDir())
-	wt, err := project.Resolve(target)
-	if err != nil || wt.CommonGitDirHost == "" {
-		t.Fatalf("resolving worktree: %v (common=%q)", err, wt.CommonGitDirHost)
-	}
-	adminOut, err := exec.Command("git", "-C", target, "rev-parse", "--absolute-git-dir").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	adminName := filepath.Base(strings.TrimSpace(string(adminOut)))
-	victim := filepath.Join(t.TempDir(), "victim")
-	if err := os.WriteFile(victim, []byte("precious"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Pre-plant the marker NAME as a symlink at the exact path the write targets.
-	if err := os.Symlink(victim, filepath.Join(wt.CommonGitDirHost, "worktrees", adminName, needsCheckoutMarker)); err != nil {
-		t.Fatal(err)
-	}
-	if err := markNeedsCheckout(wt.CommonGitDirHost, target); err == nil {
-		t.Fatal("markNeedsCheckout followed a pre-planted symlink instead of refusing")
-	}
-	if b, _ := os.ReadFile(victim); string(b) != "precious" {
-		t.Fatalf("victim file was clobbered through the symlink: %q", b)
-	}
-}
-
-// The pre-create engine gate: no engine → refuse, nothing created.
+// The pre-create engine gate: no engine → refuse, nothing created. Doubly
+// load-bearing now — creation itself runs in the box.
 func TestWorktreeRefusesWithoutEngine(t *testing.T) {
 	repo := initRepo(t)
-	// A PATH with git (needed for the toplevel/branch probes) but no engine.
+	// A PATH with git (needed for the toplevel/registration probes) but no engine.
 	bin := t.TempDir()
 	if p, err := exec.LookPath("git"); err == nil {
 		if err := os.Symlink(p, filepath.Join(bin, "git")); err != nil {
@@ -347,53 +140,229 @@ func TestWorktreeRefusesWithoutEngine(t *testing.T) {
 	}
 }
 
-// codex rounds 2-3: no component of the admin path BELOW the common git dir
-// (worktrees, <name>, or the marker entry) may be a followed symlink that
-// escapes the common dir — anchoring os.Root on the common dir refuses each.
-func TestWriteCheckoutMarkerRefusesEscapingComponents(t *testing.T) {
-	// Sanity: a real admin dir under the common dir gets its marker.
-	common := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(common, "worktrees", "name"), 0o755); err != nil {
+// worktreeCreate assembles the create step correctly: image built first (under
+// the setup lock), then the create container with the repo's three paths and
+// the resolved identity — and the target dir made host-side as the mount point.
+func TestWorktreeCreateAssemblesContainer(t *testing.T) {
+	repo := initRepo(t)
+	t.Setenv("BYRE_HOME", t.TempDir())
+	paths, err := project.Resolve(repo)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCheckoutMarker(common, "name"); err != nil {
-		t.Fatalf("writeCheckoutMarker on a real dir: %v", err)
+	target := filepath.Join(t.TempDir(), "wt")
+	f := &fakeRunner{}
+	if err := worktreeCreate(f, discardStreams(), paths, repo, "feat", target); err != nil {
+		t.Fatalf("worktreeCreate: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(common, "worktrees", "name", needsCheckoutMarker)); err != nil {
-		t.Fatalf("marker not written to the real admin dir: %v", err)
+	if len(f.builds) != 1 {
+		t.Fatalf("want 1 image build, got %v", f.builds)
+	}
+	if len(f.worktreeAdds) != 1 {
+		t.Fatalf("want 1 WorktreeAdd, got %v", f.worktreeAdds)
+	}
+	// Build strictly before the create container (it runs from that image).
+	if f.ops[0] != "build "+f.builds[0] || !strings.HasPrefix(f.ops[len(f.ops)-1], "worktreeadd ") {
+		t.Errorf("ops order: %v", f.ops)
+	}
+	rec := f.worktreeAdds[0]
+	gd, _ := filepath.EvalSymlinks(filepath.Join(paths.Canonical, ".git"))
+	for _, want := range []string{
+		f.builds[0] + " ", // the just-built image
+		" byre-wtadd-",    // a create name, never a session name
+		gd + "->" + filepath.Join(paths.Canonical, ".git") + " ", // common dir: resolved source -> recorded target
+		" " + paths.Canonical + " ",                              // main tree
+		" " + target + " ",                                       // target
+		" feat",                                                  // the branch
+	} {
+		if !strings.Contains(rec, want) {
+			t.Errorf("WorktreeAdd record missing %q: %s", want, rec)
+		}
+	}
+	// Rootful engine: the host identity rides the create container.
+	if id := f.worktreeIdents[0]; id.UID != os.Getuid() || id.GID != os.Getgid() || id.KeepID {
+		t.Errorf("create identity = %+v, want host identity", id)
+	}
+	// The target was made host-side, empty — the box does the git.
+	entries, rerr := os.ReadDir(target)
+	if rerr != nil || len(entries) != 0 {
+		t.Errorf("target should be an empty mount-point dir: err=%v entries=%d", rerr, len(entries))
+	}
+}
+
+// Run from a LINKED worktree, the create step still anchors on the main tree:
+// its canonical path and its validated common git dir (project.Resolve's),
+// never the current worktree's.
+func TestWorktreeCreateFromLinkedWorktree(t *testing.T) {
+	repo := initRepo(t)
+	linked := filepath.Join(t.TempDir(), "linked")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", "other", linked).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+	t.Setenv("BYRE_HOME", t.TempDir())
+	paths, err := project.Resolve(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !paths.IsWorktree {
+		t.Fatal("fixture: linked dir not detected as a worktree")
+	}
+	target := filepath.Join(t.TempDir(), "wt")
+	f := &fakeRunner{}
+	if err := worktreeCreate(f, discardStreams(), paths, linked, "feat", target); err != nil {
+		t.Fatalf("worktreeCreate: %v", err)
+	}
+	rec := f.worktreeAdds[0]
+	if !strings.Contains(rec, paths.CommonGitDirHost+"->"+paths.CommonGitDir+" ") {
+		t.Errorf("common dir should be the resolver's validated pair, got: %s", rec)
+	}
+	if !strings.Contains(rec, " "+paths.Canonical+" ") || strings.Contains(rec, " "+paths.WorkDir+" "+target) {
+		t.Errorf("main-tree mount should be the MAIN tree %s, got: %s", paths.Canonical, rec)
+	}
+}
+
+// The host-side flow issues NO mutating git command: an agent-plantable hook or
+// filter must never run on the host, and nothing gets registered by the host.
+// (The 2026-07-18 sandbox-escape class — now closed structurally: the host
+// never runs git against the repo except bounded read-only probes.)
+func TestWorktreeCreateRunsNoAgentCodeOnHost(t *testing.T) {
+	repo := initRepo(t)
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	// A tracked file with a smudge filter, and hooks — all the agent's to write
+	// (repo + common git dir are rw from the box).
+	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("* filter=pwn\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "add", "-A")
+	run("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "-m", "payload")
+
+	hookProof := filepath.Join(t.TempDir(), "hook-ran")
+	smudgeProof := filepath.Join(t.TempDir(), "smudge-ran")
+	refTxnProof := filepath.Join(t.TempDir(), "reftxn-ran")
+	run("-C", repo, "config", "filter.pwn.smudge", "sh -c 'touch "+smudgeProof+"; cat'")
+	hookDir := filepath.Join(repo, ".git", "hooks")
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for proof, hook := range map[string]string{
+		hookProof:   "post-checkout",
+		refTxnProof: "reference-transaction",
+	} {
+		if err := os.WriteFile(filepath.Join(hookDir, hook),
+			[]byte("#!/bin/sh\ntouch "+proof+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// Each escaping-symlink swap BELOW the common dir must be refused with no
-	// file created in the attacker dir: the leaf (<name>), AND the intermediate
-	// (worktrees) — the level codex's round-3 finding escalated to.
-	for _, tc := range []struct {
-		name string
-		mk   func(t *testing.T, common, evil string)
-	}{
-		{"leaf <name> swapped", func(t *testing.T, common, evil string) {
-			if err := os.MkdirAll(filepath.Join(common, "worktrees"), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(evil, filepath.Join(common, "worktrees", "wt")); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"intermediate worktrees swapped", func(t *testing.T, common, evil string) {
-			if err := os.Symlink(evil, filepath.Join(common, "worktrees")); err != nil {
-				t.Fatal(err)
-			}
-		}},
+	t.Setenv("BYRE_HOME", t.TempDir())
+	paths, err := project.Resolve(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "wt")
+	f := &fakeRunner{}
+	if err := worktreeCreate(f, discardStreams(), paths, repo, "hostile", target); err != nil {
+		t.Fatalf("worktreeCreate: %v", err)
+	}
+
+	for proof, what := range map[string]string{
+		hookProof:   "post-checkout hook",
+		smudgeProof: "smudge filter",
+		refTxnProof: "reference-transaction hook",
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			common := t.TempDir()
-			evil := t.TempDir()
-			tc.mk(t, common, evil)
-			if err := writeCheckoutMarker(common, "wt"); err == nil {
-				t.Fatal("write followed a symlink escaping the common git dir")
-			}
-			if _, err := os.Stat(filepath.Join(evil, needsCheckoutMarker)); err == nil {
-				t.Fatal("marker created in the attacker directory")
-			}
-		})
+		if _, err := os.Stat(proof); err == nil {
+			t.Fatalf("%s executed on the host — sandbox escape", what)
+		}
+	}
+	// Nothing registered host-side: the registration is the box's job.
+	if reg, err := worktreeRegistered(paths.Canonical, target); err != nil || reg {
+		t.Errorf("host-side registration happened (reg=%v err=%v) — the host must not run git worktree add", reg, err)
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 0 {
+		t.Error("host wrote into the target — only the box may")
+	}
+}
+
+// A failed create removes exactly the empty mount-point dir byre made (never a
+// recursive delete), so a retry isn't refused by the exists check.
+func TestWorktreeCreateFailureRemovesEmptyDir(t *testing.T) {
+	repo := initRepo(t)
+	t.Setenv("BYRE_HOME", t.TempDir())
+	paths, err := project.Resolve(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "wt")
+	f := &fakeRunner{worktreeAddErr: os.ErrDeadlineExceeded}
+	err = worktreeCreate(f, discardStreams(), paths, repo, "feat", target)
+	if err == nil || !strings.Contains(err.Error(), "failed") {
+		t.Fatalf("want create failure, got %v", err)
+	}
+	if _, serr := os.Stat(target); serr == nil {
+		t.Error("empty mount-point dir left behind — a retry would be refused")
+	}
+}
+
+// Interrupted-create recognition, both halves: a registered worktree whose dir
+// exists resumes via develop; a registered one whose dir is GONE gets the
+// targeted prune remedy. Checked before the engine gate, so no engine needed.
+func TestWorktreeRecognizesExistingRegistration(t *testing.T) {
+	repo := initRepo(t)
+	t.Setenv("BYRE_HOME", t.TempDir())
+	target := filepath.Join(t.TempDir(), "wt")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "--no-checkout", "-b", "feat", target).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+
+	// Dir present + registered → resume with develop, not "already exists".
+	err := Worktree(discardStreams(), repo, "feat", target, false)
+	if err == nil || !strings.Contains(err.Error(), "byre develop") {
+		t.Fatalf("want a resume-with-develop refusal, got: %v", err)
+	}
+
+	// Dir gone but still registered → the targeted stale-registration remedy.
+	if err := os.RemoveAll(target); err != nil {
+		t.Fatal(err)
+	}
+	err = Worktree(discardStreams(), repo, "feat", target, false)
+	if err == nil || !strings.Contains(err.Error(), "worktree prune") {
+		t.Fatalf("want a prune remedy for the stale registration, got: %v", err)
+	}
+}
+
+// A plain existing directory (no registration) keeps the plain refusal.
+func TestWorktreeRefusesExistingUnregisteredTarget(t *testing.T) {
+	repo := initRepo(t)
+	t.Setenv("BYRE_HOME", t.TempDir())
+	target := t.TempDir()
+	err := Worktree(discardStreams(), repo, "feat", target, false)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("want the exists refusal, got: %v", err)
+	}
+}
+
+// A main tree whose .git is not a directory (separate git dir) is refused with
+// the manual route rather than mis-mounted.
+func TestWorktreeCommonGitDirRefusesGitfileMain(t *testing.T) {
+	dir := t.TempDir()
+	realGit := filepath.Join(t.TempDir(), "gitdir")
+	if err := os.MkdirAll(realGit, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+realGit+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	canon, _ := project.Canonicalize(dir)
+	_, _, err := worktreeCommonGitDir(project.Paths{Canonical: canon})
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("want a gitfile refusal, got %v", err)
 	}
 }

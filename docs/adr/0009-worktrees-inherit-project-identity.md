@@ -46,7 +46,7 @@ metadata is a hard error -- never a silent standalone fallback);
 blast radius, announced loudly); `rehome` refuses from a worktree and
 points at the main tree.
 
-## The checkout runs in the box, never on the host (2026-07-18)
+## Worktree creation runs in the box, never on the host (2026-07-18/19)
 
 A **containment** correctness issue: `byre worktree` ran `git worktree
 add` on the **host**, and a git checkout runs the repository's own code --
@@ -58,41 +58,50 @@ checkout ran it in the wrong place -- on the host rather than in the box.
 Not the retarget residual above; a plain misplacement of where the
 checkout happens. Found 2026-07-18.
 
-Decided: the host-side add runs **none of the repo's checkout code**, via
-TWO flags that are **both load-bearing** (verified on git 2.39.5 --
-dropping either puts some of it back on the host):
+Decided: `byre worktree` runs **no mutating git against the repo on the
+host at all** -- host-side git is reduced to bounded read-only probes
+(toplevel, is-this-registered). Creation is staged, both halves in the
+box:
 
-- `--no-checkout` skips the working-tree write, so the checkout-time code
-  never runs: the `post-checkout` hook and `smudge`/`process` filters.
-- `-c core.hooksPath=<empty>` is **not** reinforcement. `worktree add`
-  performs ref updates that run the `reference-transaction` hook (and any
-  other non-checkout hook) even under `--no-checkout`; emptying
-  `hooksPath` is the only thing that keeps those in the box too. (A
-  command-line `-c` also overrides a repo-config `core.hooksPath`.)
+- **Registration** (the branch DWIM -- existing local, existing
+  remote-tracking, else a new branch -- and `git worktree add
+  --no-checkout`) runs in a short-lived **creation container** from the
+  project image: its own entrypoint (never the launcher; no session gate,
+  hooks, or agent), **no session labels** (a running create step is never
+  mistaken for a live session), the box identity/userns (files land
+  dev-owned), and a minimal hermetic mount set -- the main working tree,
+  the common git dir, and the (host-created, empty) target, each rw at its
+  host path, and **nothing else**: no user mounts, volumes, ports, env
+  passthrough, caps, or skill `run_args`. Whatever hooks or
+  config-selected code a `worktree add` runs execute contained there. On
+  failure the container cleans up in-box (`git worktree remove --force`);
+  the host then removes only the empty mount-point directory it made
+  (never a recursive delete), and a registration that survived a killed
+  create is recognized on retry and answered with the targeted remedy.
+  The host side is reduced to: resolve a location, ensure the image (under
+  the setup lock), `mkdir` the mount point, run the container, hand off to
+  develop.
+- **Population** (the actual checkout) happens at the first session's
+  start via the launcher, keyed on the pending-checkout marker the
+  creation container drops. The repo's hooks and filters run contained
+  like all its other code -- the checkout is where it always should have
+  been.
 
-The working tree is materialized **inside the box** by the launcher, where
-the repo's hooks and filters run contained like all its other code -- the
-checkout is where it always should have been.
+(Interim state, 2026-07-18, superseded the next day: the add ran host-side
+under `--no-checkout` plus an emptied `core.hooksPath` -- both verified
+load-bearing on git 2.39.5 -- with the marker write hardened through an
+`os.Root` on the validated common-dir source. Moving the add into the box
+deleted that entire host-side trust path: there is no host-side mutating
+git left to harden.)
 
 Mechanics:
 
-- **A pending-checkout marker** (`byre-needs-checkout`) is dropped in the
-  worktree's git admin dir, which is bound into the box at its host path.
-  The launcher checks out and clears it **only on success**, so a develop
-  that never started (build failure, daemon down mid-build) leaves a
-  *resumable* pending worktree, not a dead empty one -- the next `byre
-  develop` there finishes the job. The marker write is anchored on the
-  **common git dir's validated, symlink-resolved host source** (the same
-  `project.Resolve` value the worktree bind mount uses -- NOT a fresh
-  `rev-parse` against the just-created worktree's mutable `.git` pointer,
-  which is repo-writable and a repointed pointer would move the anchor).
-  Only the admin subdir *name* comes from git (a single basename); the
-  `worktrees/<name>/marker` path is resolved THROUGH an `os.Root` on that
-  trusted source with `O_EXCL|O_NOFOLLOW`, so every repo-writable component
-  below the common dir is contained and a pre-planted marker symlink is
-  refused. The sole residual -- a swap of the common dir source itself --
-  is *exactly* the disclosed same-path-mount residual, no wider
-  (codex/grok review).
+- **A pending-checkout marker** (`byre-needs-checkout`) is dropped by the
+  creation container in the worktree's git admin dir, which is bound into
+  the box at its host path. The launcher checks out and clears it **only
+  on success**, so a develop that never started (build failure, daemon
+  down mid-build) leaves a *resumable* pending worktree, not a dead empty
+  one -- the next `byre develop` there finishes the job.
 - **The marker is a hint, not a source of truth** (codex + grok review). A
   concurrent box sharing the common git dir can delete a sibling worktree's
   marker (→ that worktree launches unpopulated) or add one (→ a redundant,
@@ -100,12 +109,13 @@ Mechanics:
   empty or re-checked-out tree in a box the same agent already drives.
   The launcher warns when a linked worktree looks unpopulated, so a lost
   marker still surfaces rather than launching silently into emptiness.
-- **Refuse-without-engine.** With no container engine there is no box to
-  populate the checkout, so `byre worktree` refuses **before** creating
-  anything (no empty worktree left behind) and names `git worktree add` as
-  the escape hatch. Gated on the engine binary's absence only; a daemon
-  that dies mid-build is absorbed by the resumable marker, not predicted
-  (which would add a check-to-build race).
+- **Refuse-without-engine.** With no container engine there is nothing to
+  create the worktree in, let alone populate it, so `byre worktree`
+  refuses **before** creating anything (no empty worktree left behind) and
+  names `git worktree add` as the escape hatch. Gated on the engine
+  binary's absence only; a daemon that dies later fails the build or the
+  create container loudly instead (predicting it would add a
+  check-to-build race).
 - **Populate failure is best-effort, not fail-closed** (both reviewers
   raised the fork; decided 2026-07-18): a failed or git-less populate
   warns loudly and still launches, rather than locking the user out of
@@ -116,8 +126,10 @@ Mechanics:
   matching the launcher's never-block-a-launch culture.
 - **A behavior change users may notice:** a freshly created worktree's
   files appear at first box start (one status line), not at `byre worktree`
-  time; and a filter's tooling (e.g. git-lfs) must live in the **box**, not
-  the host, since the checkout runs there now.
+  time; **git itself must be in the box image** (creation and checkout both
+  run there -- a git-less image gets a loud, actionable error, never a
+  silently missing worktree); and a filter's tooling (e.g. git-lfs) must
+  live in the **box**, not the host, since the checkout runs there now.
 
 Not adopted: enumerating and disabling every exec-capable git config key
 host-side (hooks, smudge, `core.fsmonitor`, …) -- a losing allowlist

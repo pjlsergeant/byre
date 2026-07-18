@@ -18,11 +18,12 @@ just `byre develop` in them. You pick once where new worktrees live
 `byre status` shows every worktree session in the project, and
 `reset`/`forget` name their blast radius before touching anything shared.
 
-The new worktree's files are checked out **inside the box**, at first
-launch, rather than on your machine -- so a repository's own git hooks and
-checkout filters run boxed, alongside the rest of its code, instead of on
-the host. One consequence: `byre worktree` needs Docker or Podman installed
-(it says so and stops if neither is there), and a filter's tooling (e.g.
-git-lfs) has to be in the box. Made your worktree yourself with `git
-worktree add`? Then you already chose to check it out on the host; byre
-just develops in it.
+`byre worktree` runs the repository's git **inside the box**, never on
+your machine: the worktree is registered by a short-lived container from
+the project image, and its files are checked out at first launch -- so a
+repository's own git hooks and checkout filters run boxed, alongside the
+rest of its code, instead of on the host. One consequence: `byre worktree`
+needs Docker or Podman installed (it says so and stops if neither is
+there), and git -- plus any filter tooling like git-lfs -- has to be in
+the box. Made your worktree yourself with `git worktree add`? Then you
+already chose to run its git on the host; byre just develops in it.

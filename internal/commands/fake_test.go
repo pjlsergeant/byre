@@ -57,10 +57,14 @@ type fakeRunner struct {
 	execs         []string // "id uid:gid workdir cmd..."
 	netnsErr      error
 	netnsInits    []string // NetnsInit: "container entrypoint"
-	netMode       string   // NetworkMode result; "" means "bridge" (private netns)
-	netModeErr    error
-	stops         []string // Stop: container ids
-	stopErr       error
+	// WorktreeAdd: recorded argv-shaped summary + the identity it ran with.
+	worktreeAdds   []string // "image name common(host->target) main target branch"
+	worktreeIdents []runner.Identity
+	worktreeAddErr error
+	netMode        string // NetworkMode result; "" means "bridge" (private netns)
+	netModeErr     error
+	stops          []string // Stop: container ids
+	stopErr        error
 	// sock_groups probe (ProbeSockGroup): default gid 0 success; probeErr fails.
 	probeGID   int
 	probeErr   error
@@ -170,6 +174,16 @@ func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[stri
 	f.netnsInits = append(f.netnsInits, rec)
 	f.ops = append(f.ops, "netnsinit "+entrypoint)
 	return f.netnsErr
+}
+
+func (f *fakeRunner) WorktreeAdd(image, name string, id runner.Identity, commonHost, commonTarget, mainDir, target, branch string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.worktreeAdds = append(f.worktreeAdds,
+		fmt.Sprintf("%s %s %s->%s %s %s %s", image, name, commonHost, commonTarget, mainDir, target, branch))
+	f.worktreeIdents = append(f.worktreeIdents, id)
+	f.ops = append(f.ops, "worktreeadd "+target)
+	return f.worktreeAddErr
 }
 
 func (f *fakeRunner) ProbeSockGroup(image, hostPath, targetPath, userns string) (int, error) {

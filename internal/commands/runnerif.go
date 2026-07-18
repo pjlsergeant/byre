@@ -27,6 +27,11 @@ type sessionRunner interface {
 	StartAttach(container string) error
 	ContainerRemove(container string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error
+	// WorktreeAdd runs the one-shot in-box worktree registration container
+	// (see runner.Runner.WorktreeAdd): the project image, the box identity,
+	// and exactly the three repo binds — every mutating git operation on the
+	// repo stays in the box.
+	WorktreeAdd(image, name string, id runner.Identity, commonHost, commonTarget, mainDir, target, branch string) error
 	// SupportsKeepIDMapping reports whether the engine can do the explicit
 	// keep-id userns mapping (rootless Podman path — see resolveIdentity).
 	SupportsKeepIDMapping() (bool, error)

@@ -52,12 +52,12 @@ fi
 WS="${BYRE_WORKSPACE_DIR:-/workspace}"
 git config --global --add safe.directory "$WS" >/dev/null 2>&1 || true
 
-# Worktree populate: `byre worktree` creates the worktree --no-checkout with an
-# empty core.hooksPath on the HOST (so the repo's own git extensions — the
-# post-checkout hook, smudge/process filters, the reference-transaction hook —
-# stay off the host; see createWorktree / ADR 0009) and drops a marker in the
-# worktree git dir. The actual checkout runs HERE, in the box, where the repo's
-# git extensions run contained like all its other code. Gated on the marker,
+# Worktree populate: `byre worktree` registers the worktree --no-checkout in a
+# one-shot creation container (runner.WorktreeAdd — every mutating git
+# operation on the repo runs in a box, never on the host; ADR 0009), which
+# drops a marker in the worktree git dir. The actual checkout runs HERE, in
+# the box, where the repo's git extensions — the post-checkout hook,
+# smudge/process filters — run contained like all its other code. Gated on the marker,
 # so a normal box start (no marker) does nothing; the marker clears ONLY on a
 # successful checkout, so a failed populate stays resumable on the next develop
 # and never traps the user out of the box. Best-effort: a populate failure warns

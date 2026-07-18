@@ -47,6 +47,21 @@ const (
 // byre-<id>.
 func containerName(p project.Paths) string { return "byre-" + p.WorktreeID }
 
+// worktreeCreateName names the one-shot worktree-creation container (runner.
+// WorktreeAdd): distinct from every session name (those are byre-<worktree-id>,
+// and the create step carries no session labels), keyed on the target path so
+// two concurrent creates of one target collide loudly at the engine while
+// creates of different targets proceed. project.ID can only fail on an
+// unresolvable absolute path — unreachable for the already-absolute target —
+// so the bare prefix fallback is a formality.
+func worktreeCreateName(target string) string {
+	id, err := project.ID(target)
+	if err != nil {
+		return "byre-wtadd"
+	}
+	return "byre-wtadd-" + id
+}
+
 // clientGone reports whether a session's recorded byre client (the
 // byre.client pid label) is dead — the box survived a client hangup and no
 // terminal can reach it. Unknown states (no label: a box from an older byre;
