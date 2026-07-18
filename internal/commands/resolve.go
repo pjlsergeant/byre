@@ -51,8 +51,14 @@ func combine(cfg config.Config, res skills.Resolved) resolved {
 
 // validate re-checks the combined mount/volume set for target/name collisions
 // across config and skills (each side is already valid on its own), and the
-// cross-source MCP name collisions MCPSet rejected.
+// cross-source MCP name collisions MCPSet rejected. The attributed scan runs
+// first: a cross-source collision names WHO declared each side — the flat
+// invariant check can't (it sees one list), and "collides with mount X" is a
+// riddle when one X is yours and the other rode in with a skill.
 func (rv resolved) validate() error {
+	if err := rv.attributedCollisions(); err != nil {
+		return fmt.Errorf("config + skills: %w", err)
+	}
 	if err := (config.Config{Mounts: rv.mounts, Volumes: rv.volumes}).Validate(); err != nil {
 		return fmt.Errorf("config + skills: %w", err)
 	}
@@ -61,6 +67,47 @@ func (rv resolved) validate() error {
 	}
 	if rv.claudeSkillsErr != nil {
 		return fmt.Errorf("config + skills: %w", rv.claudeSkillsErr)
+	}
+	return nil
+}
+
+// attributedCollisions mirrors Validate's mount/volume uniqueness invariants
+// (targets unique across both kinds, volume names unique) over the combined
+// set WITH provenance labels, so the error can say which source owns each
+// side. Anything it misses still lands on the flat Validate behind it.
+func (rv resolved) attributedCollisions() error {
+	targets := map[string]string{} // container target -> "config's mount /x" etc.
+	names := map[string]string{}   // volume name -> claimant
+	claim := func(m map[string]string, key, who string) error {
+		if prev := m[key]; prev != "" {
+			return fmt.Errorf("%s collides with %s (skill grants ride the skill — remove the skill or your own entry)", who, prev)
+		}
+		m[key] = who
+		return nil
+	}
+	walk := func(source string, mounts []config.Mount, volumes []config.Volume) error {
+		for _, m := range mounts {
+			if err := claim(targets, m.Target, fmt.Sprintf("%s's mount %s", source, m.Target)); err != nil {
+				return err
+			}
+		}
+		for _, v := range volumes {
+			if err := claim(names, v.Name, fmt.Sprintf("%s's volume %s", source, v.Name)); err != nil {
+				return err
+			}
+			if err := claim(targets, v.Target, fmt.Sprintf("%s's volume %s (target %s)", source, v.Name, v.Target)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk("config", rv.cfg.Mounts, rv.cfg.Volumes); err != nil {
+		return err
+	}
+	for _, sk := range rv.skills.Skills {
+		if err := walk("skill "+sk.Name, sk.File.Runtime.Mounts, sk.File.Volumes); err != nil {
+			return err
+		}
 	}
 	return nil
 }
