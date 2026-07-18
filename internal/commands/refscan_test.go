@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -32,8 +33,13 @@ func TestScanReferencesCoversLayers(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCfg("layers/stray", "not a layer dir\n")
+	// Names resolution refuses are never loaded into any cascade, so even
+	// an unparsable config under one must NOT count as a guarded hit: an
+	// invalid name (grammar), and a bundled bare name (reserved squatter).
+	writeCfg("layers/Bad_Name/layer.config", "skills = [not toml\n")
+	writeCfg("layers/go/layer.config", "skills = [not toml\n")
 
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, builtins.FS(), "v0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}
