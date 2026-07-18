@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
@@ -1007,5 +1009,39 @@ func TestResolveMissingSkillPrintsSourceHint(t *testing.T) {
 	want := "byre skill install https://example.test/linter/skill.toml --digest sha256:8fe3000000000000000000000000000000000000000000000000000000000000"
 	if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "hint from project config") {
 		t.Fatalf("remedy missing:\n%v", err)
+	}
+}
+
+// A hostile [context] file must fail the skill load, never wedge develop: a
+// FIFO named as the context file blocks a plain read forever, and an
+// oversized file must stop at the cap instead of ballooning the host
+// process. Both are judged at the descriptor (same discipline as every
+// package-content read).
+func TestLoadHostileContextFileFailsNotBlocks(t *testing.T) {
+	home := testHome(t)
+	writeSkill(t, home, "evilctx", "[context]\nfile = \"context.md\"\n", nil)
+	if err := syscall.Mkfifo(filepath.Join(home, "skills", "evilctx", "context.md"), 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	cat := catFor(t, home)
+	done := make(chan error, 1)
+	go func() {
+		_, err := Load(cat, "evilctx")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Load must refuse a FIFO context file")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Load blocked on a FIFO context file — the exact hang skill load must never have")
+	}
+
+	home2 := testHome(t)
+	writeSkill(t, home2, "hugectx", "[context]\nfile = \"context.md\"\n",
+		map[string]string{"context.md": strings.Repeat("x", MaxContextBytes+1)})
+	if _, err := Load(catFor(t, home2), "hugectx"); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("oversized context: want limit error, got %v", err)
 	}
 }

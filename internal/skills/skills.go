@@ -10,7 +10,7 @@ package skills
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -20,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -33,6 +34,12 @@ var postureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 // them as data on their own rows; a long blob would crowd the surfaces without
 // adding honesty.
 const oneLinerMaxLen = 300
+
+// MaxContextBytes bounds a skill's [context] file — it is baked into the box
+// as agent memory, so it is prose-sized by nature; the cap exists so a huge
+// or concurrently-growing file cannot balloon the host process (same read
+// discipline as the manifest cap, sized for documents rather than configs).
+const MaxContextBytes = 1 << 20 // 1 MiB
 
 // parseEgress delegates to the shared `host[:port]` grammar in config — the
 // egress config key (ADR 0019) and skill egress are validated by one parser.
@@ -785,9 +792,21 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 		if perr != nil {
 			return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
 		}
-		b, rerr := os.ReadFile(path)
+		// Judged at the descriptor like every package-content read: a FIFO
+		// or device named as the context file fails the load instead of
+		// wedging develop, and follow=false means a symlink swapped in
+		// after skillRelPath's containment check is refused, not followed.
+		fh, _, rerr := hostopen.OpenRegular(path, false)
 		if rerr != nil {
 			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
+		}
+		b, rerr := io.ReadAll(io.LimitReader(fh, MaxContextBytes+1))
+		fh.Close()
+		if rerr != nil {
+			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
+		}
+		if len(b) > MaxContextBytes {
+			return Skill{}, fmt.Errorf("skill %q context: %s exceeds %d bytes (limit)", ent.ID, f.Context.File, MaxContextBytes)
 		}
 		ctx = string(b)
 	}

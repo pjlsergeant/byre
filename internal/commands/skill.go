@@ -10,6 +10,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -552,14 +553,27 @@ func copyDir(src, dst string) error {
 		if info.IsDir() {
 			return os.MkdirAll(out, 0o755)
 		}
-		b, err := os.ReadFile(p)
+		// Same rule as pack: packages carry files, not links — a symlink in
+		// the source tree must not have its target's bytes materialized into
+		// the fork, and a FIFO or device must fail loudly instead of hanging
+		// the copy. The descriptor is judged, not the pathname, so a swap
+		// after Walk's lstat is refused too.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink; packages carry files, not links", p)
+		}
+		fh, fi, err := hostopen.OpenRegular(p, false)
+		if err != nil {
+			return err
+		}
+		b, err := io.ReadAll(fh)
+		fh.Close()
 		if err != nil {
 			return err
 		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(out, b, info.Mode().Perm())
+		return os.WriteFile(out, b, fi.Mode().Perm())
 	})
 }
 

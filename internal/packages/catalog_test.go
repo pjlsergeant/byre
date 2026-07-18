@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -321,5 +323,57 @@ requires_byre = ">=99.0.0"
 		if !found {
 			t.Fatalf("evil should be INVALID under store path; lookup=%v ent=%+v", ok, evilEnt)
 		}
+	}
+}
+
+// A hostile file where a primary should be must degrade to a scoped INVALID
+// row, never wedge the catalog: load runs on almost every command, so a FIFO
+// (blocks a plain open forever), a symlink (packages carry files, not
+// links), or an oversized file each becomes a problem row within a deadline.
+func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
+	home := t.TempDir()
+	mk := func(name string) string {
+		dir := filepath.Join(home, "skills", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	if err := syscall.Mkfifo(filepath.Join(mk("fifo"), "skill.toml"), 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	if err := os.Symlink("/dev/tty", filepath.Join(mk("linked"), "skill.toml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mk("huge"), "skill.toml"),
+		make([]byte, MaxManifestBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan *Catalog, 1)
+	go func() {
+		cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+		if err != nil {
+			t.Errorf("LoadCatalog: %v", err)
+		}
+		done <- cat
+	}()
+	var cat *Catalog
+	select {
+	case cat = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("LoadCatalog blocked on a hostile primary — the exact hang load must never have")
+	}
+	if cat == nil {
+		t.FailNow()
+	}
+	for _, id := range []string{"fifo", "linked", "huge"} {
+		ent, ok := cat.Lookup(id)
+		if !ok || ent.Provenance != ProvInvalid {
+			t.Fatalf("%s: want INVALID row, got ok=%v ent=%+v", id, ok, ent)
+		}
+	}
+	if ent, _ := cat.Lookup("huge"); !strings.Contains(ent.Reason, "limit") {
+		t.Fatalf("huge reason should name the limit, got %q", ent.Reason)
 	}
 }
