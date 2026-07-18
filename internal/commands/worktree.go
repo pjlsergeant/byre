@@ -1,12 +1,14 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -128,10 +130,21 @@ func createWorktree(w io.Writer, dir, name, target string) error {
 	return nil
 }
 
+// gitProbe runs a read-only git query against the (agent-writable) repo
+// under the standing 5s bound — a hostile .git must degrade a probe, never
+// wedge the command. The mutating `git worktree add` above stays unbounded
+// on purpose: a large checkout legitimately takes time, its output streams
+// to the user, and ctrl-C is theirs.
+func gitProbe(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "git", args...).Output()
+}
+
 // gitToplevel returns the working tree's root dir for dir (its main or linked
 // worktree root), and false if dir is not inside a git repository.
 func gitToplevel(dir string) (string, bool) {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	out, err := gitProbe("-C", dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", false
 	}
@@ -141,7 +154,8 @@ func gitToplevel(dir string) (string, bool) {
 
 // branchExists reports whether a local branch named name already exists.
 func branchExists(dir, name string) bool {
-	return exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
+	_, err := gitProbe("-C", dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name)
+	return err == nil
 }
 
 // branchOrRemoteExists reports whether name is already a branch — a local branch,
@@ -151,7 +165,7 @@ func branchOrRemoteExists(dir, name string) bool {
 	if branchExists(dir, name) {
 		return true
 	}
-	out, err := exec.Command("git", "-C", dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes").Output()
+	out, err := gitProbe("-C", dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
 	if err != nil {
 		return false
 	}

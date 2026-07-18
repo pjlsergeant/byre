@@ -188,15 +188,21 @@ func claudeSkillFrontmatter(path string) (name, desc string, err error) {
 	}
 	// The Lstat above owns the message; the actual read rides hostopen so a
 	// swap in the window between the two (regular → FIFO/symlink) is refused
-	// at the descriptor instead of followed or blocked on.
+	// at the descriptor instead of followed or blocked on — and the read is
+	// capped at the dir's own aggregate bound (this runs BEFORE the walk
+	// enforces it, so an oversized or concurrently-growing SKILL.md must be
+	// stopped here, not trusted to a later check).
 	fh, _, err := hostopen.OpenRegular(path, false)
 	if err != nil {
 		return "", "", err
 	}
 	defer fh.Close()
-	raw, err := io.ReadAll(fh)
+	raw, err := io.ReadAll(io.LimitReader(fh, MaxClaudeSkillBytes+1))
 	if err != nil {
 		return "", "", err
+	}
+	if len(raw) > MaxClaudeSkillBytes {
+		return "", "", fmt.Errorf("SKILL.md exceeds %d bytes — not stageable as a claude skill", MaxClaudeSkillBytes)
 	}
 	body, ok := bytes.CutPrefix(raw, []byte("---\n"))
 	if !ok {
