@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -541,31 +542,31 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 }
 
 func copyDir(src, dst string) error {
-	// One budget across the whole copy, aligned with install's payload
-	// budget: a growing or enormous file makes fork fail loudly at the
-	// limit instead of running the host out of memory.
+	// The whole walk rides one pinned root descriptor: every open resolves
+	// beneath the directory that was opened, so a component swapped mid-copy
+	// cannot pull outside bytes into the fork. Same rule as pack for the
+	// entries themselves — packages carry files, not links — and a FIFO or
+	// device is refused at the descriptor instead of hanging the copy. One
+	// budget across the copy, aligned with install's payload budget, so a
+	// growing or enormous file fails loudly instead of exhausting memory.
+	root, err := os.OpenRoot(src)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	remaining := int64(packages.MaxPayloadTotal)
-	return filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		out := filepath.Join(dst, rel)
-		if info.IsDir() {
+		out := filepath.Join(dst, filepath.FromSlash(rel))
+		if d.IsDir() {
 			return os.MkdirAll(out, 0o755)
 		}
-		// Same rule as pack: packages carry files, not links — a symlink in
-		// the source tree must not have its target's bytes materialized into
-		// the fork, and a FIFO or device must fail loudly instead of hanging
-		// the copy. The descriptor is judged, not the pathname, so a swap
-		// after Walk's lstat is refused too.
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink; packages carry files, not links", p)
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink; packages carry files, not links", filepath.Join(src, filepath.FromSlash(rel)))
 		}
-		fh, fi, err := hostopen.OpenRegular(p, false)
+		fh, fi, err := hostopen.OpenRegularIn(root, filepath.FromSlash(rel))
 		if err != nil {
 			return err
 		}

@@ -789,18 +789,19 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	}
 	ctx := f.Context.Text
 	if f.Context.File != "" {
-		// skillRelPath gives the legible containment refusals (absolute
-		// path, ../ escape, symlink out of the dir); the open itself then
-		// re-walks the path under os.Root so a component swapped between
-		// the check and the use cannot escape either, and the descriptor
-		// is judged (regular file only) so a FIFO or device fails the
-		// load instead of wedging develop.
-		if _, perr := skillRelPath(dir, f.Context.File); perr != nil {
-			return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
-		}
+		// The root descriptor is pinned FIRST, so everything after — the
+		// skillRelPath refusals (absolute path, ../ escape, symlink out of
+		// the dir; kept for their legible messages) and the open itself —
+		// resolves against the directory that was actually opened, and the
+		// descriptor is judged (regular file only) so a FIFO or device
+		// fails the load instead of wedging develop.
 		root, rerr := os.OpenRoot(dir)
 		if rerr != nil {
 			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
+		}
+		if _, perr := skillRelPath(dir, f.Context.File); perr != nil {
+			root.Close()
+			return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
 		}
 		fh, _, rerr := hostopen.OpenRegularIn(root, filepath.Clean(f.Context.File))
 		root.Close()
