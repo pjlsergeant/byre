@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 )
@@ -43,7 +45,15 @@ func hostSourceValue(src string) string {
 }
 
 func gitConfig(key string) string {
-	out, err := exec.Command("git", "config", "--get", key).Output()
+	// Bounded: this probe runs unsolicited (develop/status env resolution)
+	// with the agent-writable project as cwd, and git itself will happily
+	// block on a hostile .git (a FIFO, a device symlink) — the same
+	// unsolicited-read-of-agent-shaped-content class as the preset drift
+	// check, one subprocess removed. A timeout degrades to "" like any
+	// unset key; 5s is geological for `git config`.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "config", "--get", key).Output()
 	if err != nil {
 		return ""
 	}

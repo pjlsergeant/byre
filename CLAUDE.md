@@ -97,6 +97,14 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 ## Coding Conventions
 
 - Standard Go style; `gofmt` + `go vet` clean before every commit.
+- **Host-side reads of agent-writable paths ride `internal/hostopen`** —
+  never plain `os.Open`/`os.ReadFile`. Agent-writable = the project tree
+  (and anything a box can shape); a FIFO there hangs a plain open, a
+  device reads unbounded, a pathname re-check races. Unsolicited probes
+  (drift checks, env resolution) must DEGRADE on refusal, never block —
+  and subprocesses probing the project (git) get timeouts. Three external
+  reports found three misses of this pattern in one day (2026-07-18)
+  before it became this rule.
 - Unit tests per package; Docker-touching logic is tested via injected runner
   interfaces (fakes). Gated integration tests (`BYRE_DOCKER_TESTS=1`) run
   host-side.

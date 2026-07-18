@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -653,5 +655,37 @@ func TestPresetApplyResolvesLayerChainInReview(t *testing.T) {
 	}
 	if !strings.Contains(text, "extends: torn -> project") {
 		t.Errorf("review should print the resolved chain:\n%s", text)
+	}
+}
+
+// The class the FIFO reports keep finding: an UNSOLICITED read of an
+// agent-shaped path must never hang. A FIFO (or /dev/tty symlink) planted as
+// byre.preset in the repo blocked every develop/status through the passive
+// drift check; hostopen refuses it at the descriptor and the state degrades
+// like any uninspectable preset.
+func TestPresetStateHostilepresetFileDegrades(t *testing.T) {
+	p, proj := onboardPaths(t)
+	if err := syscall.Mkfifo(filepath.Join(proj, PresetName), 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan string, 1)
+	go func() { s, _ := presetState(proj, p); done <- s }()
+	select {
+	case state := <-done:
+		if state != "unapplied" {
+			t.Fatalf("state = %q, want unapplied for a FIFO preset", state)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("presetState blocked on a FIFO byre.preset — the exact hang the drift check must never have")
+	}
+
+	// A symlinked preset on the PASSIVE path is likewise refused (the
+	// solicited apply path follows user-named symlinks via the fetcher).
+	proj2 := t.TempDir()
+	if err := os.Symlink("/dev/tty", filepath.Join(proj2, PresetName)); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := presetState(proj2, p); state != "unapplied" {
+		t.Fatalf("state = %q, want unapplied for a symlinked preset", state)
 	}
 }

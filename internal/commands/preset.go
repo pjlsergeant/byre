@@ -10,6 +10,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -432,14 +433,19 @@ func stateSansContent(paths project.Paths) string {
 // a cloned repository must not make it allocate an arbitrarily large file.
 // The stat gate is advisory; the limited read is what actually bounds it.
 func readPresetBounded(p string) ([]byte, error) {
-	f, err := os.Open(p)
+	// The path is the agent-writable repo root and this runs UNSOLICITED on
+	// every develop/status, so the open rides hostopen with follow=false: a
+	// FIFO, device node, or symlink planted as byre.preset degrades to
+	// stateSansContent instead of hanging the CLI (a /dev/tty symlink also
+	// ate terminal input while blocked — external report, 2026-07-18). The
+	// solicited apply/inspect path is user-NAMED and rides the fetcher,
+	// which follows symlinks; this passive probe deliberately does not.
+	f, fi, err := hostopen.OpenRegular(p, false)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	if fi, err := f.Stat(); err != nil {
-		return nil, err
-	} else if fi.Size() > packages.MaxManifestBytes {
+	if fi.Size() > packages.MaxManifestBytes {
 		return nil, fmt.Errorf("%s is %d bytes (limit %d)", p, fi.Size(), packages.MaxManifestBytes)
 	}
 	b, err := io.ReadAll(io.LimitReader(f, packages.MaxManifestBytes+1))

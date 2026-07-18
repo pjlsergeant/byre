@@ -18,6 +18,7 @@ package skills
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // ClaudeSkillsFromConfig is the attribution for Claude Skills declared by the
@@ -184,7 +186,15 @@ func claudeSkillFrontmatter(path string) (name, desc string, err error) {
 	if !fi.Mode().IsRegular() {
 		return "", "", fmt.Errorf("SKILL.md is not a regular file — a claude skill dir holds plain files only")
 	}
-	raw, err := os.ReadFile(path)
+	// The Lstat above owns the message; the actual read rides hostopen so a
+	// swap in the window between the two (regular → FIFO/symlink) is refused
+	// at the descriptor instead of followed or blocked on.
+	fh, _, err := hostopen.OpenRegular(path, false)
+	if err != nil {
+		return "", "", err
+	}
+	defer fh.Close()
+	raw, err := io.ReadAll(fh)
 	if err != nil {
 		return "", "", err
 	}
