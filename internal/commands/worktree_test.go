@@ -342,10 +342,18 @@ func TestWorktreeCreateRefusesConcurrentTargetDir(t *testing.T) {
 // Interrupted-create recognition, both halves: a registered worktree whose dir
 // exists resumes via develop; a registered one whose dir is GONE gets the
 // targeted prune remedy. Checked before the engine gate, so no engine needed.
+// The target rides through a symlinked parent: git records its own RESOLVED
+// spelling, so recognition must compare across the link even when the leaf no
+// longer exists to resolve — macOS's /var -> /private/var TMPDIR made CI the
+// first to catch this (v1.1.0 pass).
 func TestWorktreeRecognizesExistingRegistration(t *testing.T) {
 	repo := initRepo(t)
 	t.Setenv("BYRE_HOME", t.TempDir())
-	target := filepath.Join(t.TempDir(), "wt")
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(link, "wt")
 	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "--no-checkout", "-b", "feat", target).CombinedOutput(); err != nil {
 		t.Fatalf("git worktree add: %v\n%s", err, out)
 	}

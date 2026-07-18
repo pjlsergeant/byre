@@ -249,7 +249,7 @@ func worktreeRegistered(mainDir, target string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	want, err := project.Canonicalize(target)
+	want, err := canonWorktreePath(target)
 	if err != nil {
 		return false, err
 	}
@@ -258,11 +258,34 @@ func worktreeRegistered(mainDir, target string) (bool, error) {
 		if !ok {
 			continue
 		}
-		if got, cerr := project.Canonicalize(p); cerr == nil && got == want {
+		if got, cerr := canonWorktreePath(p); cerr == nil && got == want {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// canonWorktreePath canonicalizes a worktree path for registration comparison
+// even when the path itself is gone — the interrupted-create case this
+// comparison exists for. project.Canonicalize falls back to the UNRESOLVED
+// spelling for a missing path, which can never match git's recorded (resolved)
+// one when the path crosses a symlink; macOS's /var -> /private/var TMPDIR is
+// the everyday instance. So for a missing leaf, resolve the parent and carry
+// the leaf verbatim. A parent that is also gone degrades to the plain
+// fallback, same as before.
+func canonWorktreePath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		return filepath.Clean(resolved), nil
+	}
+	parent, err := project.Canonicalize(filepath.Dir(abs))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, filepath.Base(abs)), nil
 }
 
 // worktreeLeaf is the single-directory name for a worktree: <repo>-<name>, with

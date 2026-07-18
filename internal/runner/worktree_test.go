@@ -113,6 +113,17 @@ func adminDir(t *testing.T, target string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// resolveTempDir is t.TempDir() with symlinks resolved, for tests that string-
+// match the path against git output (git prints its own resolved spelling).
+func resolveTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestWorktreeAddScriptNewBranch(t *testing.T) {
 	repo := initWtRepo(t)
 	target := filepath.Join(t.TempDir(), "wt")
@@ -190,7 +201,9 @@ func TestWorktreeAddScriptFailureCleansUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(t.TempDir(), "wt")
+	// git's porcelain list prints git's own resolved spelling; resolve ours too
+	// or the match silently misses on a symlinked TMPDIR (macOS /var).
+	target := filepath.Join(resolveTempDir(t), "wt")
 	out, serr := runWtScript(t, repo, target, strings.TrimSpace(string(head)))
 	if serr == nil {
 		t.Fatalf("script should fail adding the checked-out branch\n%s", out)
@@ -210,7 +223,8 @@ func TestWorktreeAddScriptFailureCleansUp(t *testing.T) {
 // invocation's (or any pre-existing) worktree at the same path.
 func TestWorktreeAddScriptFailedAddPreservesExistingRegistration(t *testing.T) {
 	repo := initWtRepo(t)
-	target := filepath.Join(t.TempDir(), "wt")
+	// Resolved for the same reason as TestWorktreeAddScriptFailureCleansUp.
+	target := filepath.Join(resolveTempDir(t), "wt")
 	// Someone already holds the target: a registered worktree with its dir.
 	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "--no-checkout", "-b", "first", target).CombinedOutput(); err != nil {
 		t.Fatalf("worktree add: %v\n%s", err, out)
