@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // Remote delivery, local half (ADR 0037): `byre deliver ssh://host ...` is
@@ -367,25 +369,29 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 		plan.bytes += info.Size()
 		return nil
 	case info.IsDir():
-		hostRoot, err := os.OpenRoot(src)
+		// No-follow anchor + enumeration through the root fd, exactly as local
+		// delivery (transport.go deliverDir): a source swapped to a symlink
+		// after the Lstat above must fail rather than re-anchor the pack in a
+		// tree the user never named, and the packed names must come from the
+		// same directory instance the contents are read from. The swap races
+		// themselves are pinned by the local transport's tests and hostopen's
+		// (planPack has no seam to stage a mid-plan mutator single-threaded).
+		hostRoot, err := hostopen.OpenDirRootNoFollow(src)
 		if err != nil {
 			return fmt.Errorf("delivering %s: %w", src, err)
 		}
 		addRoot(hostRoot)
 		root := claim(filepath.Base(src))
 		plan.entries = append(plan.entries, packEntry{name: root + "/", dir: true})
-		return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		return fs.WalkDir(hostRoot.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+			p := filepath.Join(src, filepath.FromSlash(rel)) // display only — opens ride hostRoot
 			if err != nil {
 				return fmt.Errorf("delivering %s: %w", p, err)
 			}
-			if p == src {
+			if rel == "." {
 				return nil
 			}
-			rel, rerr := filepath.Rel(src, p)
-			if rerr != nil {
-				return rerr
-			}
-			name := root + "/" + filepath.ToSlash(rel)
+			name := root + "/" + rel
 			switch {
 			case d.IsDir():
 				plan.entries = append(plan.entries, packEntry{name: name + "/", dir: true})

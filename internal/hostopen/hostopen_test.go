@@ -94,3 +94,58 @@ func TestOpenRegularInContainsTheWalk(t *testing.T) {
 		t.Fatal("escaping symlink must be refused by the rooted open")
 	}
 }
+
+func TestOpenDirRootNoFollowAnchorsRealDir(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "d")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := OpenDirRootNoFollow(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if f, err := root.Open("f"); err != nil {
+		t.Fatalf("anchored root cannot see its own file: %v", err)
+	} else {
+		f.Close()
+	}
+	// A trailing slash must anchor the same directory (Clean before split).
+	root2, err := OpenDirRootNoFollow(dir + string(filepath.Separator))
+	if err != nil {
+		t.Fatalf("trailing slash rejected: %v", err)
+	}
+	root2.Close()
+}
+
+// The core fix: a directory classified elsewhere, then swapped for a symlink to
+// an external tree before the root opens, must be REFUSED — os.OpenRoot(dir)
+// alone would follow the final component and anchor the walk outside.
+func TestOpenDirRootNoFollowRefusesSwappedSymlink(t *testing.T) {
+	base := t.TempDir()
+	outside := filepath.Join(base, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "d")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	_, err := OpenDirRootNoFollow(link)
+	if !errors.Is(err, ErrSymlinkRoot) {
+		t.Fatalf("err = %v, want ErrSymlinkRoot", err)
+	}
+}
+
+// The Lstat→open window — base swapped to a contained symlink (os.Root follows
+// those) or a different real directory AFTER the Lstat classified it — is
+// closed by the os.SameFile identity guard in OpenDirRootNoFollow. Staging that
+// window needs a concurrent mutator hitting a sub-microsecond gap, which a test
+// cannot do without a production test seam; the guard is design-verified, as
+// its sibling in internal/build (openDirRootNoFollow → copyPath) already is.
+// The deterministic halves ARE pinned: the pre-existing-symlink rejection above
+// (Lstat guard) and the mid-delivery swap tests in internal/deliver.

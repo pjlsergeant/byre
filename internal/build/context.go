@@ -6,6 +6,7 @@ package build
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -514,11 +516,17 @@ func copyPath(src, dst string) error {
 		return fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", src)
 	}
 	if info.IsDir() {
-		// Anchor a root at the directory and copy its interior through it. A
-		// concurrent swap of a deeper directory component to an escaping symlink
-		// is refused by os.Root's per-component openat, not re-resolved by name.
-		root, err := openDirRootNoFollow(src)
+		// Anchor a root at the directory (no-follow: a dir swapped to a symlink
+		// after the Lstat above must not re-anchor the walk elsewhere) and copy
+		// its interior through it. A concurrent swap of a deeper directory
+		// component to an escaping symlink is refused by os.Root's
+		// per-component openat, not re-resolved by name.
+		root, err := hostopen.OpenDirRootNoFollow(src)
 		if err != nil {
+			if errors.Is(err, hostopen.ErrSymlinkRoot) {
+				// copyPath's contract stages no symlinks; keep the `files` language.
+				return fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", src)
+			}
 			return err
 		}
 		defer root.Close()
@@ -536,35 +544,6 @@ func copyPath(src, dst string) error {
 	}
 	defer in.Close()
 	return stageRegularFromFD(in, dst)
-}
-
-// openDirRootNoFollow anchors an os.Root at dir WITHOUT following a symlink that
-// an agent may have swapped in for dir's final component after it was classified
-// as a directory. os.OpenRoot(dir) alone follows the final component, so a
-// top-level dir swapped to a symlink → external tree would anchor the whole walk
-// OUTSIDE the project. Anchor at the parent and descend the final component via
-// openat (proot.OpenRoot), which refuses a component resolving outside its root.
-func openDirRootNoFollow(dir string) (*os.Root, error) {
-	// Clean first: a trailing slash (Claude skill `path` values are not
-	// Clean'd upstream) makes filepath.Dir(dir) return dir itself and Base the
-	// leaf, so the split below would look for <dir>/<leaf> and ENOENT. os.OpenRoot
-	// tolerated a trailing slash; this must too.
-	dir = filepath.Clean(dir)
-	parent, base := filepath.Dir(dir), filepath.Base(dir)
-	proot, err := os.OpenRoot(parent)
-	if err != nil {
-		return nil, err
-	}
-	defer proot.Close() // the child root below holds its own descriptor
-	// Reject a symlinked final component outright: an escaping one is refused by
-	// OpenRoot anyway, but an in-root one would be silently followed, and
-	// copyPath's contract stages no symlinks.
-	if li, err := proot.Lstat(base); err != nil {
-		return nil, err
-	} else if li.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("symlink %s not allowed in `files` (copy plain files/dirs)", dir)
-	}
-	return proot.OpenRoot(base)
 }
 
 // stageRegularFromFD copies an already-open source file into dst, preserving its
