@@ -52,7 +52,7 @@ Disciplines and tripwires, not tasks.
 - **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
-  (docs/marketing/positioning.md "Copy bank").
+  (docs/marketing/positioning.md "Voice rules").
 - **`internal/commands` is never carved (2026-07-16, supersedes the
   carve-as-you-touch tripwire):** commands is the thin adapter layer —
   domain logic lives in domain packages, commands files hold Streams-glue

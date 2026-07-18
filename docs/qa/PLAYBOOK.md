@@ -6,9 +6,8 @@ and what pass means. Each QA pass EXECUTES this playbook and EXTENDS it;
 exploratory probing happens at the edges and graduates in here once
 repeatable. Findings go to the "Open findings" section at the bottom of
 this file, never fixed mid-pass; they leave it by being dispatched into
-fixes + regression tests. (This file absorbed the pass #1/#2 charter,
-2026-07-17 — pass-1's five findings shipped as the Unit-1 fixes,
-pass-2's six on the same day; git history keeps the full reports.)
+fixes + regression tests. Pass reports themselves are not kept here --
+this file holds the procedure; git history holds the reports.
 
 Recipes assume the sacrificial inttest VM, a fresh
 `BYRE_HOME=$HOME/<qa>/home`, and the tmux vocabulary from
@@ -24,7 +23,7 @@ glyphs otherwise trip grep's binary heuristic).
 - Every recipe ends with TEARDOWN so residue never contaminates the next
   journey.
 
-## Journey: opencode cold user (pass #1, 2026-07-17 — PASSED end to end)
+## Journey: opencode cold user
 
 The full first-contact flow, wizard to working agent.
 
@@ -55,7 +54,7 @@ The full first-contact flow, wizard to working agent.
 8. TEARDOWN: rm boxes, project state volumes, the identity volume; revoke
    any live key.
 
-## Journey: MCP delivery to opencode (pass #1 — PASSED)
+## Journey: MCP delivery to opencode
 
 1. In a project with the opencode agent: append to its byre.config:
    `[[mcp]]` `name = "qa-probe"` `command = ["echo", "hi"]`.
@@ -69,9 +68,10 @@ The full first-contact flow, wizard to working agent.
    `-> the agent session receives: qa-probe  (injected via /etc/byre/mcp.json)`.
 4. TEARDOWN: rm box.
 
-## Journey: deliver flows (pass #1 — PASSED; exit codes per DELIVER.md)
+## Journey: deliver flows
 
-Two boxes running (A: cwd-owned, B: other project).
+Exit codes per DELIVER.md. Two boxes running (A: cwd-owned, B: other
+project).
 1. `byre deliver <file>` from inside A's workdir → lands in A's /inbox,
    bytes exact; repeat same name → `-2` suffix, never clobbered.
 2. `echo x | byre deliver` from a NEUTRAL dir, no tty →
@@ -82,7 +82,7 @@ Two boxes running (A: cwd-owned, B: other project).
    clipboard note.
 5. TEARDOWN: rm boxes.
 
-## Journey: config UI, Claude Skills + dirty flag (pass #1 — PASSED)
+## Journey: config UI, Claude Skills + dirty flag
 
 1. `byre config` in a project → main form renders; `▸` cursor moves.
 2. Down to `Claude Skills`, Enter → "(no items yet)"; `a` → two-field
@@ -94,7 +94,7 @@ Two boxes running (A: cwd-owned, B: other project).
    confirm; after discard the file on disk is byte-identical.
 4. TEARDOWN: none (nothing saved).
 
-## Journey: agent cold flows — claude / codex / grok (pass #2 — PASSED)
+## Journey: agent cold flows — claude / codex / grok
 
 Per agent, fresh dir + wizard (`template` Enter, agent name, decline
 save-default).
@@ -119,7 +119,7 @@ save-default).
    the session: …)`, rc 1 — deliberate, ≥125 = engine range).
 6. TEARDOWN: rm boxes + per-project volumes.
 
-## Journey: seeded gemini — chooser must not appear (pass #2 — PASSED)
+## Journey: seeded gemini — chooser must not appear
 
 The 2026-07-16 field-failure regression check.
 1. gemini-shared-auth is companion_for → not offered; hand-enable:
@@ -137,7 +137,7 @@ The 2026-07-16 field-failure regression check.
    handling); Ctrl-C → gemini exits 0.
 6. TEARDOWN: rm box; keep or rm the machine identity volume deliberately.
 
-## Journey: rude inputs (pass #2 — PASSED; garbage-decline finding fixed)
+## Journey: rude inputs
 
 - Ctrl-C at the wizard: process dies on SIGINT, store gains NO config.
 - Ctrl-C mid-build: buildx prints CANCELED/context canceled; develop
@@ -146,16 +146,16 @@ The 2026-07-16 field-failure regression check.
   python/node project for an uncached pull.)
 - Garbage at any y/N prompt (sharing question, save-default, reset/
   forget Proceed): reprompts with "unrecognized — y, n, …"; y/Y/n/N and
-  i/I answer, Enter takes the default. (Pass-2 found the silent-decline;
-  fixed same day.)
+  i/I answer, Enter takes the default.
 - Resize mid-wizard: line prompts rewrap, keep answering. Resize
   mid-config-UI: re-clips live, "··· (more below)" + footer intact.
 
-## Journey: reset / forget / develop-while-running (pass #2 — PASSED)
+## Journey: reset / forget / develop-while-running
 
 1. Second `byre develop` while one runs: decline + how-to-reach text,
    rc=3 (ExitRefused — develop only; its exit code otherwise carries the
-   agent's own status).
+   agent's own status; reset/forget's decline-while-running stays rc=1,
+   a deliberate asymmetry).
 2. `byre reset` while a session runs: "a session is running … exit it
    before reset", rc=1. NEVER measure through a pipe — `cmd | tail`
    makes $? tail's; echo rc in a separate send (Ctrl-C also aborts the
@@ -167,16 +167,17 @@ The 2026-07-16 field-failure regression check.
    deliberate-delete path. rc=0.
 4. forget: kill-list = image + store dir (config, marker, context); y →
    both gone; next develop re-onboards from the wizard. rc=0.
-5. Orphaned box (codex pass finding, fixed 2026-07-17): develop in a
-   private tmux server, wait for the in-box prompt, kill the whole tmux
-   server. The container SURVIVES (deliberate — a crashed terminal must
-   not kill the agent). Expect: `byre status` shows "running (…) —
-   orphaned: the byre that started it is gone" naming `byre shell` and
-   `<engine> stop <id>`; `byre reset` refuses with the same stop
-   command appended. `docker stop <id>` then reset → normal kill-list.
-   (Older boxes without the byre.client label just say "running".)
+5. Orphaned box: develop in a private tmux server, wait for the in-box
+   prompt, kill the whole tmux server. The container SURVIVES
+   (deliberate — a crashed terminal must not kill the agent). Expect:
+   `byre status` shows "running (…) — orphaned: the byre that started it
+   is gone" naming `byre shell` and `<engine> stop <id>`; `byre reset`
+   refuses with the same stop command appended. `docker stop <id>` then
+   reset → normal kill-list. (Older boxes without the byre.client label
+   just say "running".)
+6. TEARDOWN: rm boxes + per-project volumes.
 
-## Journey: worktrees (pass #2 — PASSED)
+## Journey: worktrees
 
 Needs a git repo with a commit; main project already developed.
 1. `byre worktree wt1 --path ../got-wt1` from the main tree.
@@ -192,11 +193,10 @@ Needs a git repo with a commit; main project already developed.
    (picker is for ambiguity); `deliver --box <wt-id>` lands in the
    worktree box's /inbox (verify bytes), labeled by the box's own
    workdir id ("delivering to <proj>-wt1-…"). status shows siblings the
-   same way: "workdir-id (short-id)". (Both were bare/project-labeled —
-   pass-2 findings, fixed same day.)
+   same way: "workdir-id (short-id)".
 6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
 
-## Journey: config UI ^e round-trip (pass #2 — PASSED)
+## Journey: config UI ^e round-trip
 
 1. `byre config` → `^e` → $EDITOR (vi) on the REAL store config.
 2. Write an INVALID key (`packages = […]` — the Packages row's key is
@@ -205,10 +205,9 @@ Needs a git repo with a commit; main project already developed.
    unknown key(s): [packages]"; the file on disk DOES carry the bad edit.
 3. `^e` again, remove the line, :wq → banner clears, "Reloaded from
    file". `^q` → "byre: config unchanged."
-4. Pickers render `none` exactly once, whatever the config says
-   (pass-2's double-[none] on agent="none", fixed same day).
+4. Pickers render `none` exactly once, whatever the config says.
 
-## Journey: firewall egress (pass #2 — PASSED)
+## Journey: firewall egress
 
 Run on `template = "none"` — the bare base is the regression-sensitive
 case (language templates ship CA certs transitively and would mask it).
@@ -223,13 +222,13 @@ case (language templates ship CA certs transitively and would mask it).
    a block's timeout/000); everything else still times out.
 3. TEARDOWN: rm box.
 
-## Journey: templates + named layers (pass #2 — PASSED, one bug)
+## Journey: templates + named layers
 
 1. go/node/python templates: wizard-onboard each, box up. Toolchain on
    PATH in the box's LOGIN shell — `go version`, `node --version`,
    `python3 --version` in the agent=none foreground shell and via
-   `byre shell`. (go was pass-2's headline bug: /etc/profile clobbered
-   the image ENV PATH; byre-env.sh now restores it from the baked
+   `byre shell`. (The login-shell leg matters: /etc/profile once
+   clobbered the image ENV PATH; byre-env.sh restores it from the baked
    /etc/byre/image-path. If go vanishes again, compare with
    `docker exec <box> go version` — ENV intact there — to distinguish
    shim regression from a broken image.)
@@ -240,6 +239,16 @@ case (language templates ship CA certs transitively and would mask it).
    next develop REBUILDS with rg baked in (`command -v rg`) and the
    layer's egress in the banner/probe. Edit the layer → next develop
    picks it up (live resolution).
+
+## To graduate (confirmed green in past passes, no recipe yet)
+
+Write a recipe when a future pass covers one of these: host mounts +
+store-edit apt; deliver of a directory; self-edit round-trip + exit
+report (and self-edit's project-only store mount); skill fork; rehome
+after `mv`; rebuild; docker-host containment-hole loudness;
+forget --force (and invalid-config recovery through it); three-level
+named-layer composition and project precedence; live layer-cycle
+detection/recovery; canonical identity through a symlinked project path.
 
 ## Harness lessons (carry between passes)
 
@@ -257,104 +266,40 @@ case (language templates ship CA certs transitively and would mask it).
   agent-less or pre-warmed box when the journey isn't about install.
 - Non-TTY `develop` hangs at attach (expected) — always drive it under
   tmux/a real pty.
-- Don't match a banner alone to conclude "box up" — early "firewall
-  hung" reports were wait-loop races matching banner text before the
-  `dev@` prompt; wait for the prompt (grok explore pass, 2026-07-17).
+- Don't match a banner alone to conclude "box up" — wait-loop races have
+  matched banner text before the `dev@` prompt and misreported hangs;
+  wait for the prompt.
 - Driving over ssh adds a THIRD shell layer: a `$?` or a quoted TOML
   string inside an ssh+send-keys wrapper gets expanded/stripped by the
-  REMOTE shell before the keys land (v1.0.0 pass: a cancel measured
-  rc=0 because the wrapper's own last status was echoed; a layer file
-  landed quoteless and byre rightly refused it). Send `echo rc=$?`
+  REMOTE shell before the keys land (observed: a cancel measured rc=0
+  because the wrapper's own last status was echoed; a layer file landed
+  quoteless and byre rightly refused it). Send `echo rc=$?`
   single-quoted end to end, and write config/layer files via ssh
   heredoc, never typed keys.
 - ONE driver per VM at a time. The gated suite assumes an exclusive
   engine: a concurrent QA pass's boxes walk into the deliver pool-scan
-  tests ("want exactly this box") and fail them — diagnosed 2026-07-17
-  when a pass's deliberately-orphaned box photobombed two suite runs.
-  Before starting a suite run or a pass, check for a live driver:
-  `tmux ls` on every socket you know (`tmux -L <sock> ls`), and
-  `docker ps --filter label=byre.project` for boxes you don't own.
-
-## v1.0.0 release pass (2026-07-18) — all journeys green
-
-Full playbook driven on the VM against the v1.0.0 candidate (binary from
-main). PASSED as written: opencode cold user (loginless legs; prefill,
-firstrun preamble, auth.json symlink all verbatim), MCP delivery, deliver
-flows (incl. picker-cancel rc=1), config UI Claude Skills + dirty flag,
-agent cold flows (codex device-login + Ctrl-C skip; claude via the FLAGS
-path — sharing-question copy proven on opencode; gemini), seeded gemini
-chooser-skip (0 chooser hits in scrollback, 4 symlinks, garbage-code
-re-prompt), rude inputs, reset/forget/develop-while-running + orphan
-labeling, worktrees (sibling naming, --box delivery), firewall egress on
-template=none (deny 000 → allowlisted 200, trust store intact), templates
-(go/node/python PATH in login shells) + named layers (validate, extends
-rebuild bakes rg, loud TOML errors on malformed files). Legs not run:
-mid-build cancel (base caches too warm for a window), claude token-paste
-firstrun (flags path has no shared-auth), liveness logins (dummy-creds
-convention). Deviations → Open findings below.
+  tests ("want exactly this box") and fail them. Before starting a suite
+  run or a pass, check for a live driver: `tmux ls` on every socket you
+  know (`tmux -L <sock> ls`), and `docker ps --filter
+  label=byre.project` for boxes you don't own.
 
 ## Open findings
 
+Report-only pass findings awaiting dispatch — live bug reports and
+design questions are handled in-session and tracked in TODO.md when
+parked, not here. Dispatched findings are removed (fix + regression
+test; the recipes above assert fixed behavior); git history keeps the
+reports.
+
 - **^e quit says "wrote" on an un-enrolled project with nothing to write**
-  (v1.0.0 pass): on a never-developed project, `byre config` → `^e`
+  (found 2026-07-18): on a never-developed project, `byre config` → `^e`
   materializes the store file (the known enrollment-at-open trade-off);
   after an external edit + "Reloaded from file" with NO unsaved changes,
   `^q` prints `byre: wrote <path>` — a content-no-op write where the
   recipe (and the enrolled-project behavior) says `byre: config
   unchanged.` Legibility only.
-- **Wizard abort leaves an enrolled husk** (v1.0.0 pass, note): Ctrl-C at
-  the template prompt leaves `projects/<id>/` holding path record +
-  context dir, no config. Same class as the consciously-accepted
+- **Wizard abort leaves an enrolled husk** (found 2026-07-18, note):
+  Ctrl-C at the template prompt leaves `projects/<id>/` holding path
+  record + context dir, no config. Same class as the consciously-accepted
   reset/forget abort-enrollment stance (2026-07-17); recorded so the
-  next pass doesn't re-discover it. (This section is for report-only pass
-findings awaiting dispatch — live bug reports and design questions are
-handled in-session and tracked in TODO.md when parked, not here.)
-
-Previously closed: the codex lifecycle/config pass's finding (2026-07-17: client
-hangup orphans a running box — kill the tmux pane/server and the
-container survives, executable; `status` said only "running" and
-`reset --force` refused with no way out but raw `docker stop`) was
-dispatched the same day as legibility, deliberately NOT kill-on-hangup:
-a box surviving a crashed terminal keeps the agent alive, which is a
-feature once labeled. Boxes now carry a `byre.client=<pid>` label;
-`status` probes it and renders "running (…) — orphaned: the byre that
-started it is gone…" with both routes out (`byre shell`, `<engine>
-stop <id>`), and the reset/forget session-running refusals carry the
-same stop command for the unreachable case. See the orphaned-box step
-in the reset/forget journey.
-
-The grok explore pass's three (2026-07-17, report-only; the
-report was absorbed here and deleted) were dispatched the same day:
-ca-certificates joined the firewall AND firewall-open skills' apt
-lists beside the curl that needed it (codereview caught the sibling;
-pinned for both — assertCurlShipsTrustStore in the builtins tests —
-and the firewall journey above now asserts HTTPS on the none
-template), the
-already-configured flag refusal points at `byre config` as the
-reconfigure path, and `mcp add --help` carries the argv example
-(the word `command` is the TOML key, never part of the argv). The
-refusal itself stays — silently ignoring `--agent` on an existing
-config would launch the OLD agent under a flag that looked like
-consent to the new one.
-
-The same pass confirmed green (no recipes yet — graduate on a future
-pass): host mounts + store-edit apt, deliver of a directory, self-edit
-round-trip + exit report, skill fork, rehome after `mv`, rebuild,
-docker-host containment-hole loudness, forget --force.
-
-The codex lifecycle/config pass also confirmed three-level named-layer
-composition and project precedence, live layer-cycle detection/recovery,
-self-edit's project-only store mount, invalid-config recovery via
-`forget --force`, and canonical identity through a symlinked project path.
-
-Previously: pass-2's six findings were dispatched 2026-07-17 (the PATH
-restore, the everywhere-reprompt, the double-[none] guard, the decoded
-killed-box exit, and the two worktree labels), each with a regression
-test; the recipes above assert the fixed behavior. Future passes append
-findings here, never fix mid-pass.
-
-Worth keeping from pass 2's closed threads: reset/forget's
-decline-while-running exits 1 (an earlier "rc=0" was a pipe-measurement
-artifact — see harness lessons), and the 3-vs-1 asymmetry against
-develop's ExitRefused is deliberate (3 exists only because develop's
-exit code otherwise carries the agent's own status).
+  next pass doesn't re-discover it.

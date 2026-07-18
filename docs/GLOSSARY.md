@@ -112,12 +112,9 @@ deliberately outside the rw-mounted project tree so the boxed agent can't
 rewrite its own sandbox.
 
 **Proposal / Adoption** (historical):
-Pre-preset (ADR 0029) vocabulary: a `byre.config` committed in the
-project tree was a "proposal", inert until "adopted" -- a develop-time
-prompt that reviewed its grants and copied it into the host-side store,
-with sticky per-version yes/no answers. The flow is deleted: presets
-replace it (`byre preset apply`), and old adoption records migrate to
-the Applied marker. Use the words only to describe what was removed.
+Pre-preset (ADR 0029) vocabulary for an in-tree `byre.config` and the
+develop-time prompt that accepted it. The flow is deleted -- presets
+replace it. Use the words only to describe what was removed.
 
 **Raw block**:
 A verbatim passthrough byre never parses inside: `dockerfile_pre`,
@@ -246,14 +243,10 @@ discussion: `docs/DOCKER-HOST.md`.
 **Shared-auth offer**:
 The first-run picker's per-box question -- "Use machine-wide credentials
 to log in to <agent>?" -- asked at every onboarding whose chosen agent
-has a companion skill declaring `shared_auth_for`. The line stays bare
-for byre's own companions; a third-party claimant's provenance rides the
-question itself, loud. Yes puts the
-companion in the project's `byre.config` `skills` -- the only grant the
-answer ever makes; the saved favourite (`shared_auth`, picker-owned,
-cascade-inert) only prefills the next box's offer. Prompt wording,
-suppression rule, and history: ADR 0025 (superseding ADR 0024's
-machine-wide recording).
+has a companion skill declaring `shared_auth_for`. Yes puts the companion
+in the project's `byre.config` `skills` -- the only grant the answer ever
+makes; the saved favourite (`shared_auth`) only prefills the next box's
+offer. Mechanics: ADR 0025.
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
@@ -286,22 +279,19 @@ layers), users block; "plumbing" stays informal prose for core's job
 
 **Materialize** (historical):
 Pre-package-model (ADR 0029) vocabulary: writing a built-in skill's files
-into `~/.byre/skills/<name>/` as editable copies. The mechanism is deleted;
-use the word only to describe what was removed. Leftover materialized dirs
-are LEGACY rows, archived by `byre skill archive-legacy`.
+into `~/.byre/skills/<name>/` as editable copies. The mechanism is
+deleted; use the word only to describe what was removed. Leftovers are
+LEGACY rows.
 
 **Devlog dir**:
 `.byre-devlog/` at the working-tree root -- the self-ignoring dir (its own
 `.gitignore` is `*`) where box-side skills keep their working files: the
 agent diary, the code-review log. A convention that belongs to byre, not to
 any one skill: the devlog skill curates it (bootstraps the dir, keeps the
-diary), but each skill that writes there ensures it exists itself (hardened,
-via the shared devlog lib), so codereview never needs devlog installed.
-Born as `.devloop/`; the old name is dropped, not migrated -- an existing
-old dir is left untouched, renamed by hand if its history matters. The
-devloop *skill* was renamed to devlog in the same breath (a no-op stub
-keeps old configs resolving): dir and skill had drifted two letters apart,
-which confused more than it distinguished.
+diary), but each skill that writes there ensures it exists itself, so
+codereview never needs devlog installed.
+_Avoid_: `.devloop/` (the dir's old name; an existing old dir is left
+untouched, renamed by hand if its history matters)
 
 ### Grants, mounts, volumes
 
@@ -335,39 +325,30 @@ attributed to the skill, and enter prefills the add editor. Cf.
 **MCP declaration (`[[mcp]]`)**:
 Wiring, not a grant (ADR 0033): a declared MCP server -- local
 (`command`, an argv) or remote (`url`), self-discriminating. What's
-real are the grants a declaration *carries* (the url's implied egress
-plus declared extras, and the env NAMES it consumes), which render
-where grants always render, attributed `mcp:<name>`. Merge and bake
-mechanics: ADR 0033.
-_Avoid_: calling an MCP a grant, or its status rows "grant honesty
-machinery" -- they are config-application reporting.
+real are the grants a declaration *carries* (implied egress, consumed
+env NAMES), rendered where grants always render, attributed
+`mcp:<name>`. Mechanics: ADR 0033.
+_Avoid_: calling an MCP a grant
 
 **MCP adapter**:
-How a selected agent's session receives the declared set — always by
-INJECTION: byre never writes an agent's MCP state. `[agent]
-mcp = "inject"` is the skill author's vouch that the agent command
-consumes the baked file; an adapter-less agent degrades honestly
-(declared-but-NOT-delivered). Per-agent mechanics and the walked-back
-registrar design: ADR 0033.
+How a selected agent's session receives the declared MCP set — always by
+INJECTION (`[agent] mcp = "inject"`, the skill author's vouch); byre
+never writes an agent's MCP state, and an adapter-less agent degrades
+honestly (declared-but-NOT-delivered). Mechanics: ADR 0033.
 
 **Claude Skill (`[[claude_skills]]`)**:
 Wiring, not a grant (ADR 0039): a declared Claude Skill — Anthropic's
 agent-skill format, a directory whose root holds a `SKILL.md` — shipped
-into the box for the agent. Config declares a host `path`; a skill.toml
-contributes a package-relative `from`; the merged set bakes to
-`/etc/byre/claude-skills` and the agent receives each skill BARE (as
-`/name`). NOT a byre skill (the box-composition package) — the two words
-never appear unqualified where they could be confused.
+into the box for the agent. NOT a byre skill (the box-composition
+package) — the two words never appear unqualified where they could be
+confused. Mechanics: ADR 0039.
 _Avoid_: bare "skill" for either concept in user-facing prose; calling a
-Claude Skill a grant; `[[agent_skills]]` (collides with "agent skill"
-below).
+Claude Skill a grant; `[[agent_skills]]` (collides with "agent skill")
 
 **Claude Skills adapter**:
 How a selected agent's session receives the baked Claude Skill tree —
-injection only, `[agent] claude_skills = "inject"` as the author's vouch
-(for claude: `--add-dir /etc/byre/claude-skills` in the command). byre
-never writes an agent's skill state; an agent-authored same-name skill on
-the state volume shadows byre's delivery (box state wins). ADR 0039.
+injection only (`[agent] claude_skills = "inject"`, the author's vouch);
+byre never writes an agent's skill state. Mechanics: ADR 0039.
 
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The
