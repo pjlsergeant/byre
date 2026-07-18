@@ -1,5 +1,18 @@
 # Changes
 
+## Unreleased
+
+- **`byre worktree` checks out the new worktree inside the box.** Creating
+  a worktree used to check it out on the host, and a git checkout runs the
+  repository's own hooks and filters -- work that, like everything else a
+  repo brings, belongs inside the box rather than on your machine. byre now
+  creates the worktree without checking it out on the host and materializes
+  the files inside the box instead. Two things you'll notice: the new
+  worktree's files appear at first launch (not before), and `byre worktree`
+  needs a container engine -- it says so and stops if there isn't one,
+  rather than leave you a half-made worktree. A worktree you make yourself
+  with `git worktree add` is unchanged -- that checkout was always yours.
+
 ## v1.0.0 -- 2026-07-18
 
 - **Groundwork: self-recording site demos (not yet published).** A

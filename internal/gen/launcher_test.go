@@ -258,3 +258,197 @@ func TestProfileEnvShimRestoresImagePath(t *testing.T) {
 		t.Fatalf("missing capture file must leave PATH alone: %v (%s)", err, out)
 	}
 }
+
+// The worktree populate step: byre creates the worktree --no-checkout on the
+// host (agent-safe) and the launcher runs the checkout in the box. Driven via
+// the BYRE_WORKSPACE_DIR seam against a real --no-checkout worktree.
+func TestLauncherPopulatesPendingWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	git := func(args ...string) {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	git("-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "init")
+	if err := os.WriteFile(filepath.Join(repo, "file.txt"), []byte("payload\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("-c", "user.email=a@b.c", "-c", "user.name=x", "add", "-A")
+	git("-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "-m", "add file")
+
+	wt := filepath.Join(root, "wt")
+	git("worktree", "add", "--no-checkout", "-b", "feat", wt)
+	if _, err := os.Stat(filepath.Join(wt, "file.txt")); err == nil {
+		t.Fatal("precondition: --no-checkout worktree should be empty")
+	}
+	gitdir, err := exec.Command("git", "-C", wt, "rev-parse", "--absolute-git-dir").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(strings.TrimSpace(string(gitdir)), "byre-needs-checkout")
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := runLauncherInWorktree(t, wt)
+	if code != 0 {
+		t.Fatalf("launcher exit %d\n%s", code, out)
+	}
+	// The launcher checked the tree out, in the box's stead.
+	if b, err := os.ReadFile(filepath.Join(wt, "file.txt")); err != nil || string(b) != "payload\n" {
+		t.Fatalf("worktree not populated: %q err=%v\n%s", b, err, out)
+	}
+	// Marker cleared on success (so a normal re-launch is a no-op).
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("marker not cleared after a successful populate")
+	}
+}
+
+// No marker: a normal box start must not touch the working tree.
+func TestLauncherLeavesNonPendingWorktreeAlone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", dir).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	sentinel := filepath.Join(dir, "untouched")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := runLauncherInWorktree(t, dir); code != 0 {
+		t.Fatalf("launcher exit %d\n%s", code, out)
+	}
+	if b, err := os.ReadFile(sentinel); err != nil || string(b) != "keep" {
+		t.Fatalf("launcher disturbed a non-pending tree: %q err=%v", b, err)
+	}
+}
+
+// runLauncherInWorktree drives the real launcher with BYRE_WORKSPACE_DIR set to
+// a git worktree, asking it to exec `true`.
+func runLauncherInWorktree(t *testing.T, ws string) (int, string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command("bash", script, "true")
+	c.Env = append(os.Environ(),
+		"BYRE_WORKSPACE_DIR="+ws,
+		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
+		"BYRE_FIRSTRUN_DIR="+filepath.Join(dir, "no-firstrun"),
+		"BYRE_ENVD_DIR="+filepath.Join(dir, "no-envd"),
+	)
+	out, err := c.CombinedOutput()
+	if err == nil {
+		return 0, string(out)
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode(), string(out)
+	}
+	t.Fatalf("launcher did not run: %v (%s)", err, out)
+	return -1, ""
+}
+
+// A box without git (the bare `none` template) can't run the checkout — the
+// launcher must say so loudly and KEEP the marker (resumable once git is
+// added), not skip silently into an empty tree.
+func TestLauncherWorktreeNoGitIsLoudAndResumable(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	g := func(a ...string) {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
+		}
+	}
+	g("-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "init")
+	wt := filepath.Join(root, "wt")
+	g("worktree", "add", "--no-checkout", "-b", "feat", wt)
+	gitdir, err := exec.Command("git", "-C", wt, "rev-parse", "--absolute-git-dir").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(strings.TrimSpace(string(gitdir)), "byre-needs-checkout")
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A PATH with the coreutils the launcher needs but NO git.
+	toolbin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(toolbin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"sed", "head", "rm", "cat", "grep", "mkdir", "dirname", "sleep", "tr", "true"} {
+		if p, err := exec.LookPath(tool); err == nil {
+			_ = os.Symlink(p, filepath.Join(toolbin, tool))
+		}
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command("bash", script, "true")
+	c.Env = []string{
+		"PATH=" + toolbin,
+		"BYRE_WORKSPACE_DIR=" + wt,
+		"BYRE_LAUNCH_GATE_FILE=" + filepath.Join(dir, "no-gate"),
+		"BYRE_FIRSTRUN_DIR=" + filepath.Join(dir, "no-firstrun"),
+		"BYRE_ENVD_DIR=" + filepath.Join(dir, "no-envd"),
+		"HOME=" + dir,
+	}
+	out, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("launcher should still launch without git: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "box has no git") {
+		t.Fatalf("expected a loud no-git message, got:\n%s", out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("marker must survive so the populate is resumable once git is added: %v", err)
+	}
+}
+
+// A linked worktree with an empty tree and NO marker (a marker a concurrent
+// box deleted, or a checkout that never happened) must surface loudly, not
+// launch silently into emptiness (codex + grok review).
+func TestLauncherWarnsUnpopulatedWorktreeWithoutMarker(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "init").CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+	wt := filepath.Join(root, "wt")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "--no-checkout", "-b", "feat", wt).CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v\n%s", err, out)
+	}
+	// No marker written — the suppressed/never-created case.
+	code, out := runLauncherInWorktree(t, wt)
+	if code != 0 {
+		t.Fatalf("launcher should still launch: %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "looks unpopulated") {
+		t.Fatalf("expected an unpopulated-worktree warning, got:\n%s", out)
+	}
+}

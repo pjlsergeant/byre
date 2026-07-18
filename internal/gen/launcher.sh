@@ -49,7 +49,46 @@ fi
 
 # git identity: mark the workspace safe so git doesn't refuse the bind-mounted
 # repo (owned by the same uid, but git's dubious-ownership check is path-based).
-git config --global --add safe.directory /workspace >/dev/null 2>&1 || true
+WS="${BYRE_WORKSPACE_DIR:-/workspace}"
+git config --global --add safe.directory "$WS" >/dev/null 2>&1 || true
+
+# Worktree populate: `byre worktree` creates the worktree --no-checkout with an
+# empty core.hooksPath on the HOST (so the repo's own git extensions — the
+# post-checkout hook, smudge/process filters, the reference-transaction hook —
+# stay off the host; see createWorktree / ADR 0009) and drops a marker in the
+# worktree git dir. The actual checkout runs HERE, in the box, where the repo's
+# git extensions run contained like all its other code. Gated on the marker,
+# so a normal box start (no marker) does nothing; the marker clears ONLY on a
+# successful checkout, so a failed populate stays resumable on the next develop
+# and never traps the user out of the box. Best-effort: a populate failure warns
+# and still launches (an empty tree the user can fix beats no box).
+#
+# Detection needs NO git binary: a linked worktree's .git is a file
+# "gitdir: <path>", and that path is bind-mounted into the box at its host path
+# (same-path mounting, ADR 0009). Only the checkout itself needs git — so a box
+# without git gets a loud, actionable message instead of a silently empty tree.
+if [ -f "$WS/.git" ]; then
+  wt_gitdir="$(sed -n 's/^gitdir: //p' "$WS/.git" 2>/dev/null | head -n1)"
+  if [ -n "$wt_gitdir" ] && [ -f "$wt_gitdir/byre-needs-checkout" ]; then
+    if ! command -v git >/dev/null 2>&1; then
+      echo "byre: this worktree still needs to be checked out here, but the box has no git." >&2
+      echo "byre: add 'git' to the box (byre config → Packages), then re-run 'byre develop' here." >&2
+    elif git -C "$WS" checkout >&2; then
+      echo "byre: populated the worktree checkout inside the box." >&2
+      rm -f "$wt_gitdir/byre-needs-checkout"
+    else
+      echo "byre: could not fully populate the worktree checkout — the working tree may be empty or incomplete." >&2
+      echo "byre: fix the cause and run 'git checkout' in the box, or re-run 'byre develop' here to retry." >&2
+    fi
+  elif [ -z "$(ls -A "$WS" 2>/dev/null | grep -v '^\.git$')" ]; then
+    # A linked worktree with nothing but .git and NO pending marker: either a
+    # marker a concurrent box deleted (a hint, not a source of truth; ADR 0009) or
+    # a checkout that never happened. Surface it loudly rather than launch
+    # silently into an empty tree. Not a block: the user may want the box.
+    echo "byre: this worktree looks unpopulated and byre has no pending-checkout record for it." >&2
+    echo "byre: if that's unexpected, run 'git checkout' here, or re-create it with 'byre worktree'." >&2
+  fi
+fi
 
 # Place skill/agent context where the agent reads it. The target (e.g.
 # /home/dev/.claude/CLAUDE.md) usually lives in a state volume that's only mounted

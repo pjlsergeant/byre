@@ -25,6 +25,9 @@ func gitProbe(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
+	// Discard stderr: a probe of an agent-shaped repo must not let git spray
+	// the user's terminal (a hostile repo could emit for the full 5s window).
+	cmd.Stderr = io.Discard
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
