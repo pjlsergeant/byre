@@ -421,12 +421,25 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 		// refresh) — the loser must emit it rather than fail into grok's
 		// ~300s backoff.
 		idbase, base := seedStoreAt(t, 2*time.Hour, 5*time.Second)
-		holder := exec.Command("flock", filepath.Join(base, "broker.lock"), "sleep", "15")
+		// The holder touches the ready file only AFTER flock grants the
+		// lock, so waiting on it proves contention exists — a fixed grace
+		// sleep can lose the race under load.
+		ready := filepath.Join(base, "holder-ready")
+		holder := exec.Command("flock", filepath.Join(base, "broker.lock"),
+			"sh", "-c", `: > "$0" && exec sleep 15`, ready)
 		if err := holder.Start(); err != nil {
 			t.Fatalf("lock holder: %v", err)
 		}
 		defer func() { _ = holder.Process.Kill(); _ = holder.Wait() }()
-		time.Sleep(200 * time.Millisecond) // let the holder take the flock
+		for deadline := time.Now().Add(10 * time.Second); ; {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("lock holder never signalled readiness")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		so, se, err := run(t, idbase, "#!/bin/sh\nexit 97\n", "GROK_AUTH_EXPIRED=1")
 		if err != nil {
 			t.Fatalf("broker failed: %v (stderr %q)", err, se)
