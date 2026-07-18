@@ -175,6 +175,15 @@ func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, 
 // uses (resolve, resolveIdentity, buildImage); develop keeps its build inline
 // because its build+seed+create must share ONE lock hold (the reset/forget
 // race documented there), which a self-locking helper cannot join.
+//
+// It deliberately does NOT run onboarding. On the first-ever `byre worktree`
+// in a never-developed repo that means the create builds from the
+// resolved-default config, and the hand-off to Develop then onboards and may
+// rebuild — a cheap cache-warm second build against an already-registered
+// worktree. Accepted (2026-07-19): pulling onboarding (an interactive session
+// concern) into a plumbing create step is exactly the split this change set
+// out to remove, and the redundant build is one-time and nearly free. The
+// common path — a worktree of a repo you've already developed — builds once.
 func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectDir string) (string, runner.Identity, error) {
 	if err := paths.Bootstrap(); err != nil {
 		return "", runner.Identity{}, err

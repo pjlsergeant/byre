@@ -1358,3 +1358,92 @@ func TestIntegrationWorktreeCreateInBox(t *testing.T) {
 		t.Fatalf("git-less create left debris in the target: %v", entries)
 	}
 }
+
+// TestIntegrationWorktreeCreateIsolatesMetadataWrites is the direct isolation
+// test for the whole in-box-creation change (ADR 0009): every git side effect
+// during `worktree add` resolves in the CONTAINER's filesystem namespace, so a
+// metadata indirection pointing outside the three mounts never reaches the host
+// path it names.
+//
+// The observable indirection: a new branch's reflog leaf
+// (.git/logs/refs/heads/<branch>), pre-planted as a symlink to an absolute path
+// that on the host holds a sentinel. Run host-side, `git worktree add -b`
+// FOLLOWS that symlink and appends the branch-creation entry to the host file
+// (an escape). Run in the box, the same absolute path resolves in the
+// container (a /tmp git creates fresh and writes ephemerally), so the host
+// sentinel is untouched — while the branch, registration, and marker still
+// land correctly in the mounted common dir.
+func TestIntegrationWorktreeCreateIsolatesMetadataWrites(t *testing.T) {
+	r := requireEngineRunner(t)
+	p, proj := testPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"), []byte("apt = [\"git\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = proj
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "seed")
+
+	// The sentinel lives at an absolute path OUTSIDE the three mounts, in the
+	// host's /tmp (container-writable there, but a DIFFERENT /tmp). A host-side
+	// add would append the reflog here; an in-box add must not.
+	victim := filepath.Join("/tmp", fmt.Sprintf("byre-wtiso-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	const sentinel = "SENTINEL-untouched\n"
+	if err := os.WriteFile(victim, []byte(sentinel), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(victim) })
+	// Pre-plant the branch's reflog leaf as a symlink to the sentinel. The
+	// parent (.git/logs/refs/heads) must exist for git to open the leaf.
+	logDir := filepath.Join(proj, ".git", "logs", "refs", "heads")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(logDir, "boxed")); err != nil {
+		t.Fatal(err)
+	}
+
+	ident := testIdentity(t, r)
+	t.Cleanup(func() { _ = r.ImageRemove(imageTag(p.ID, ident.UID, ident.GID)) })
+	target := filepath.Join(t.TempDir(), "wt")
+	if err := worktreeCreate(r, discardStreams(), p, proj, "boxed", target); err != nil {
+		t.Fatalf("worktreeCreate: %v", err)
+	}
+
+	// The isolation claim: the host sentinel is byte-for-byte unchanged — the
+	// reflog write resolved in the container, never at this host path.
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != sentinel {
+		t.Fatalf("host sentinel was modified — a metadata write escaped the box:\n%q", got)
+	}
+	// And the real metadata still landed: registered, branch created, marker set.
+	if reg, err := worktreeRegistered(p.Canonical, target); err != nil || !reg {
+		t.Fatalf("worktree not registered: reg=%v err=%v", reg, err)
+	}
+	if err := exec.Command("git", "-C", p.Canonical, "rev-parse", "--verify", "-q", "refs/heads/boxed").Run(); err != nil {
+		t.Fatal("branch 'boxed' not created in the mounted common dir")
+	}
+	gitdir, err := exec.Command("git", "-C", target, "rev-parse", "--absolute-git-dir").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminDir, err := filepath.EvalSymlinks(strings.TrimSpace(string(gitdir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(adminDir, "byre-needs-checkout")); err != nil {
+		t.Fatalf("pending-checkout marker not written: %v", err)
+	}
+}
