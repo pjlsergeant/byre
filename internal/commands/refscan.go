@@ -25,7 +25,8 @@ type refHit struct {
 // configs that matter most (dangling refs, INVALID packages) are exactly the
 // ones fail-fast resolution dies on. A config that cannot be parsed well
 // enough to PROVE it does not reference the candidate counts as a hit.
-// Scope: every project config under ~/.byre/projects/ plus default.config.
+// Scope: default.config, every named layer under ~/.byre/layers/, and every
+// project config under ~/.byre/projects/ -- the whole stored cascade.
 // A local file walk and catalog lookups; no engine calls. (Templates are
 // shape and reference no packages -- the template KEY itself is the
 // only template reference to follow.)
@@ -45,20 +46,28 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 			hits = append(hits, refHit{Where: where, Path: path})
 		}
 	}
-
-	check("default.config", filepath.Join(home, "default.config"))
-	entries, err := os.ReadDir(filepath.Join(home, "projects"))
-	if err == nil {
+	// Every entry is a candidate -- no IsDir filter, so symlinked dirs
+	// (which resolution follows) are scanned too; check's stat skips
+	// entries with no config file under them.
+	subdirs := func(dir string) []string {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil
+		}
 		names := make([]string, 0, len(entries))
 		for _, e := range entries {
-			if e.IsDir() {
-				names = append(names, e.Name())
-			}
+			names = append(names, e.Name())
 		}
 		sort.Strings(names)
-		for _, n := range names {
-			check("project "+n, filepath.Join(home, "projects", n, "byre.config"))
-		}
+		return names
+	}
+
+	check("default.config", filepath.Join(home, "default.config"))
+	for _, n := range subdirs(config.LayersDir(home)) {
+		check("layer "+n, filepath.Join(config.LayersDir(home), n, config.LayerConfigName))
+	}
+	for _, n := range subdirs(filepath.Join(home, "projects")) {
+		check("project "+n, filepath.Join(home, "projects", n, "byre.config"))
 	}
 	return hits
 }
