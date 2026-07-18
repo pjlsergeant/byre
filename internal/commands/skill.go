@@ -541,6 +541,10 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 }
 
 func copyDir(src, dst string) error {
+	// One budget across the whole copy, aligned with install's payload
+	// budget: a growing or enormous file makes fork fail loudly at the
+	// limit instead of running the host out of memory.
+	remaining := int64(packages.MaxPayloadTotal)
 	return filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -565,10 +569,14 @@ func copyDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		b, err := io.ReadAll(fh)
+		b, err := io.ReadAll(io.LimitReader(fh, remaining+1))
 		fh.Close()
 		if err != nil {
 			return err
+		}
+		remaining -= int64(len(b))
+		if remaining < 0 {
+			return fmt.Errorf("fork exceeds the %d-byte budget", packages.MaxPayloadTotal)
 		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return err

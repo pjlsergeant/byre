@@ -11,6 +11,7 @@ package skills
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -788,15 +789,21 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	}
 	ctx := f.Context.Text
 	if f.Context.File != "" {
-		path, perr := skillRelPath(dir, f.Context.File)
-		if perr != nil {
+		// skillRelPath gives the legible containment refusals (absolute
+		// path, ../ escape, symlink out of the dir); the open itself then
+		// re-walks the path under os.Root so a component swapped between
+		// the check and the use cannot escape either, and the descriptor
+		// is judged (regular file only) so a FIFO or device fails the
+		// load instead of wedging develop.
+		if _, perr := skillRelPath(dir, f.Context.File); perr != nil {
 			return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
 		}
-		// Judged at the descriptor like every package-content read: a FIFO
-		// or device named as the context file fails the load instead of
-		// wedging develop, and follow=false means a symlink swapped in
-		// after skillRelPath's containment check is refused, not followed.
-		fh, _, rerr := hostopen.OpenRegular(path, false)
+		root, rerr := os.OpenRoot(dir)
+		if rerr != nil {
+			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
+		}
+		fh, _, rerr := hostopen.OpenRegularIn(root, filepath.Clean(f.Context.File))
+		root.Close()
 		if rerr != nil {
 			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
 		}
