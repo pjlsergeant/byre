@@ -1187,9 +1187,19 @@ func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the live listing broke its own grammar: %v\n%s", err, listOut.String())
 	}
-	if len(rows) != 1 || rows[0].Project != p.ID {
-		t.Fatalf("rows = %+v, want exactly this box (project %s)", rows, p.ID)
+	// The claim is scoped to THIS project's row: the inttest VM is shared, so
+	// a concurrent suite's boxes may appear in the machine-wide listing and a
+	// "rows == exactly one" assertion races them (seen live 2026-07-18).
+	var mine []deliver.RemoteBox
+	for _, row := range rows {
+		if row.Project == p.ID {
+			mine = append(mine, row)
+		}
 	}
+	if len(mine) != 1 {
+		t.Fatalf("rows for project %s = %+v (full listing %+v), want exactly one", p.ID, mine, rows)
+	}
+	box := mine[0]
 
 	// Sources: a tree and a top-level file.
 	srcDir := t.TempDir()
@@ -1204,17 +1214,17 @@ func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 	// The ssh hop: assert the frozen argv shape, then run the remote side
 	// for real — commands.Deliver dispatching tar mode into the live box.
 	sshLoop := func(tgt deliver.SSHTarget, argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
-		want := []string{"byre", "deliver", "--proto", "1", "--box", rows[0].ID, "--no-clip", "--tar", "-"}
+		want := []string{"byre", "deliver", "--proto", "1", "--box", box.ID, "--no-clip", "--tar", "-"}
 		if strings.Join(argv, " ") != strings.Join(want, " ") {
 			t.Fatalf("remote argv = %v, want %v", argv, want)
 		}
 		s2 := Streams{Out: stdout, Err: stderr, In: stdin}
-		return Deliver(s2, proj, deliver.Options{Tar: true, Proto: 1, Box: rows[0].ID, NoClip: true}, []string{"-"})
+		return Deliver(s2, proj, deliver.Options{Tar: true, Proto: 1, Box: box.ID, NoClip: true}, []string{"-"})
 	}
 	deliverRemoteOnce := func() []string {
 		var out, errw strings.Builder
 		cfg := deliver.Config{Out: &out, Err: &errw}
-		landed, err := deliver.RunRemote(cfg, deliver.Options{Box: rows[0].ID, NoClip: true},
+		landed, err := deliver.RunRemote(cfg, deliver.Options{Box: box.ID, NoClip: true},
 			deliver.SSHTarget{Host: "loop"}, deliver.PathSources([]string{filepath.Join(srcDir, "bug"), top}), sshLoop, false)
 		if err != nil {
 			t.Fatalf("remote delivery failed: %v\nstderr: %s", err, errw.String())
