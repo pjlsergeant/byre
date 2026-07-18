@@ -605,8 +605,14 @@ func copyExactly(out io.Writer, in io.Reader, size int64, name string) error {
 	}
 	var extra int
 	if n == size {
+		// ReadFull, not a bare Read: it loops past a legal zero-byte read, and a
+		// probe that fails outright must surface, not pass as "didn't grow".
 		var b [1]byte
-		extra, _ = in.Read(b[:])
+		var rerr error
+		extra, rerr = io.ReadFull(in, b[:])
+		if rerr != nil && rerr != io.EOF {
+			return fmt.Errorf("%s: checking for growth past the observed size: %w", name, rerr)
+		}
 	}
 	if n != size || extra > 0 {
 		return fmt.Errorf("%s changed while being staged (saw %d bytes)", name, size)

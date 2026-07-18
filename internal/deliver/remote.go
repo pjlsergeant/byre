@@ -490,9 +490,16 @@ func (p *packPlan) writeTo(w io.Writer, m *sendMeter) error {
 		var extra int
 		if err == nil && n == e.size {
 			// The limit makes a shrink visible (n falls short) but hides
-			// growth — one read past the promise tells them apart.
+			// growth — one read past the promise tells them apart. ReadFull,
+			// not a bare Read: it loops past a legal zero-byte read, and a
+			// probe that fails outright must surface, not pass as "didn't
+			// grow".
 			var b [1]byte
-			extra, _ = content.Read(b[:])
+			var rerr error
+			extra, rerr = io.ReadFull(content, b[:])
+			if rerr != nil && rerr != io.EOF {
+				err = fmt.Errorf("checking %s for growth past its promised size: %w", e.name, rerr)
+			}
 		}
 		if c, ok := content.(io.Closer); ok {
 			c.Close()
