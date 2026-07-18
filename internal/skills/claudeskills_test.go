@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,8 +122,8 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 		t.Fatalf("missing SKILL.md: %v", err)
 	}
 
-	if err := ValidateClaudeSkillDir(filepath.Join(base, "nodir"), "nodir"); err == nil {
-		t.Fatalf("missing dir must refuse")
+	if err := ValidateClaudeSkillDir(filepath.Join(base, "nodir"), "nodir"); err == nil || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing dir must refuse with not-exist, got %v", err)
 	}
 
 	mismatch := filepath.Join(base, "mismatch")

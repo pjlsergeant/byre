@@ -108,8 +108,8 @@ func TestUninstallRemovesSnapshotAndRow(t *testing.T) {
 	if _, err := os.Stat(SnapshotDir(home, s.Digest)); !os.IsNotExist(err) {
 		t.Fatal("snapshot must be deleted")
 	}
-	if err := WithStoreLock(home, func() error { return RemoveInstalled(home, "pete/tool") }); err == nil {
-		t.Fatal("double uninstall must error")
+	if err := WithStoreLock(home, func() error { return RemoveInstalled(home, "pete/tool") }); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("double uninstall must error as not-installed, got %v", err)
 	}
 }
 

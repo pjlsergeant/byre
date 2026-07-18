@@ -120,8 +120,8 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 	if !strings.Contains(ent.Reason, "unknown key") {
 		t.Fatalf("want unknown key reason, got %q", ent.Reason)
 	}
-	if _, err := cat.ResolveName("typo"); err == nil {
-		t.Fatal("resolve should hard-error on INVALID")
+	if _, err := cat.ResolveName("typo"); err == nil || !strings.Contains(err.Error(), `package "typo" is invalid`) {
+		t.Fatalf("resolve should hard-error on INVALID, got %v", err)
 	}
 }
 

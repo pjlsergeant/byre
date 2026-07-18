@@ -47,26 +47,27 @@ func TestValidateFilesListRejects(t *testing.T) {
 	cases := []struct {
 		name    string
 		entries []FileEntry
+		want    string // fragment of the intended rule's message
 	}{
-		{"traversal dest", []FileEntry{{Src: "x", Dest: "../evil", SHA256: good}}},
-		{"absolute dest", []FileEntry{{Src: "x", Dest: "/etc/passwd", SHA256: good}}},
-		{"traversal src", []FileEntry{{Src: "../x", Dest: "x", SHA256: good}}},
-		{"unclean dest", []FileEntry{{Src: "x", Dest: "a//b", SHA256: good}}},
-		{"backslash", []FileEntry{{Src: "x", Dest: `a\b`, SHA256: good}}},
-		{"bad hash", []FileEntry{{Src: "x", Dest: "x", SHA256: "zz"}}},
-		{"primary self-entry", []FileEntry{{Src: "skill.toml", Dest: "skill.toml", SHA256: good}}},
+		{"traversal dest", []FileEntry{{Src: "x", Dest: "../evil", SHA256: good}}, "escapes the package"},
+		{"absolute dest", []FileEntry{{Src: "x", Dest: "/etc/passwd", SHA256: good}}, "must be relative"},
+		{"traversal src", []FileEntry{{Src: "../x", Dest: "x", SHA256: good}}, "escapes the package"},
+		{"unclean dest", []FileEntry{{Src: "x", Dest: "a//b", SHA256: good}}, "not clean"},
+		{"backslash", []FileEntry{{Src: "x", Dest: `a\b`, SHA256: good}}, "use '/' separators"},
+		{"bad hash", []FileEntry{{Src: "x", Dest: "x", SHA256: "zz"}}, "not 64 hex characters"},
+		{"primary self-entry", []FileEntry{{Src: "skill.toml", Dest: "skill.toml", SHA256: good}}, "primary file has no files entry"},
 		{"case collision", []FileEntry{
 			{Src: "a", Dest: "Readme.md", SHA256: good},
 			{Src: "b", Dest: "readme.md", SHA256: good},
-		}},
-		{"control char", []FileEntry{{Src: "x", Dest: "a\x1b[31mb", SHA256: good}}},
-		{"encoded traversal", []FileEntry{{Src: "%2e%2e/x", Dest: "x", SHA256: good}}},
-		{"primary case collision", []FileEntry{{Src: "x", Dest: "SKILL.TOML", SHA256: good}}},
+		}, "collides with"},
+		{"control char", []FileEntry{{Src: "x", Dest: "a\x1b[31mb", SHA256: good}}, "control character"},
+		{"encoded traversal", []FileEntry{{Src: "%2e%2e/x", Dest: "x", SHA256: good}}, "percent-encoding is rejected"},
+		{"primary case collision", []FileEntry{{Src: "x", Dest: "SKILL.TOML", SHA256: good}}, "primary file has no files entry"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := ValidateFilesList(tc.entries, "skill.toml"); err == nil {
-				t.Fatalf("want error for %+v", tc.entries)
+			if err := ValidateFilesList(tc.entries, "skill.toml"); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want error containing %q for %+v, got %v", tc.want, tc.entries, err)
 			}
 		})
 	}
@@ -74,8 +75,8 @@ func TestValidateFilesListRejects(t *testing.T) {
 	for i := range over {
 		over[i] = FileEntry{Src: "s", Dest: "d" + strings.Repeat("x", i%50), SHA256: good}
 	}
-	if err := ValidateFilesList(over, "skill.toml"); err == nil {
-		t.Fatal("want count-limit error")
+	if err := ValidateFilesList(over, "skill.toml"); err == nil || !strings.Contains(err.Error(), "entries (limit") {
+		t.Fatalf("want count-limit error, got %v", err)
 	}
 }
 

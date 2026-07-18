@@ -1,6 +1,9 @@
 package packages
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMatchConstraint(t *testing.T) {
 	cases := []struct {
@@ -33,11 +36,11 @@ func TestMatchConstraint(t *testing.T) {
 }
 
 func TestMatchConstraintBad(t *testing.T) {
-	if _, err := MatchConstraint("nope", ">=1.0"); err == nil {
-		t.Fatal("want error for bad version")
+	if _, err := MatchConstraint("nope", ">=1.0"); err == nil || !strings.Contains(err.Error(), `version "nope"`) {
+		t.Fatalf("want bad-version error, got %v", err)
 	}
-	if _, err := MatchConstraint("1.0.0", ">=x"); err == nil {
-		t.Fatal("want error for bad constraint")
+	if _, err := MatchConstraint("1.0.0", ">=x"); err == nil || !strings.Contains(err.Error(), `constraint ">=x"`) {
+		t.Fatalf("want bad-constraint error, got %v", err)
 	}
 }
 
