@@ -615,7 +615,7 @@ func copyExactly(out io.Writer, in io.Reader, size int64, name string) error {
 		}
 	}
 	if n != size || extra > 0 {
-		return fmt.Errorf("%s changed while being staged (saw %d bytes)", name, size)
+		return fmt.Errorf("%s changed while being staged (observed %d bytes)", name, size)
 	}
 	return nil
 }

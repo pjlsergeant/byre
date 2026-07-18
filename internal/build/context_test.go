@@ -1,12 +1,14 @@
 package build
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -341,6 +343,16 @@ func TestCopyExactlyRefusesMutatedSource(t *testing.T) {
 	// Observed 14, file holds 10: it shrank — the staged file would be short.
 	if err := copyExactly(io.Discard, open(), 14, "src"); err == nil || !strings.Contains(err.Error(), "changed while being staged") {
 		t.Fatalf("shrunk source should be refused, got: %v", err)
+	}
+}
+
+// A growth probe that fails outright (I/O error, not EOF) must surface, never
+// pass as "didn't grow" — this branch's error was silently discarded once.
+func TestCopyExactlyPropagatesProbeError(t *testing.T) {
+	in := io.MultiReader(strings.NewReader("0123456789"), iotest.ErrReader(errors.New("boom")))
+	err := copyExactly(io.Discard, in, 10, "src")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("failed probe read must surface, got: %v", err)
 	}
 }
 
