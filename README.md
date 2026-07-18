@@ -8,6 +8,8 @@ Run `byre develop` in a project, worktree, or scratch directory, and byre create
 
 MIT licensed | local | single binary | no lock-in | for Linux and macOS
 
+**📖 Full documentation: [getbyre.com/docs](https://getbyre.com/docs/)** -- [quickstart](https://getbyre.com/docs/quickstart/) · [cookbook](https://getbyre.com/docs/how-do-i/) · [security model](https://getbyre.com/docs/security-model/)
+
 ```console
 $ brew install --cask pjlsergeant/tap/byre   # (see below for Linux)
 $ cd ~/my-project
@@ -87,6 +89,9 @@ State vols:   .claude
 Cache vols:   none
 Container:    running (0d95f3a2c1b4)
 ```
+
+Everything from here on has a page on the docs site:
+**[getbyre.com/docs](https://getbyre.com/docs/)**.
 
 ## Your toolkit, every folder
 
@@ -320,4 +325,6 @@ Podman 4.3+ runs under `--userns=keep-id`). byre bakes a dev identity into
 the image so the agent runs unprivileged as you and files land correctly
 owned. Debian-derived base images only.
 
-Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+**📖 Docs: [getbyre.com/docs](https://getbyre.com/docs/)** · design:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · contributions:
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
