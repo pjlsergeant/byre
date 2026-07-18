@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // worktreeInfo describes a detected linked git worktree: where its identity
@@ -260,33 +262,31 @@ var (
 // readMetaFile reads a git worktree metadata file under hostile-filesystem
 // discipline. Every path it is used on is agent-writable or named by
 // agent-writable content, so each shape below is one an agent can stage to
-// hang or OOM the host-side byre process:
+// hang or OOM the host-side byre process. The open + descriptor judgment is
+// the shared internal/hostopen choke point (follow=false, since these paths
+// are untrusted): O_NONBLOCK so a FIFO opens instead of blocking forever,
+// O_NOFOLLOW so a symlink (e.g. to /dev/zero, or to genuine external metadata)
+// fails with ELOOP, and an fstat on the OPENED descriptor gating to regular
+// files so a FIFO or device that got past open is rejected before any read.
 //
-//   - O_NOFOLLOW: git writes these as plain files, never symlinks; a symlink
-//     (e.g. to /dev/zero, or to genuine external metadata) fails with ELOOP.
-//   - O_NONBLOCK: a FIFO opens immediately instead of blocking forever on a
-//     writer that never comes (regular-file reads are unaffected).
-//   - fstat on the OPENED descriptor gates to regular files, so a FIFO or
-//     device that got past open is rejected before any read.
-//   - the read is capped at maxMetaFileSize: os.ReadFile-style read-to-EOF
-//     would balloon on a sparse file's apparent size or read /dev/zero
-//     forever.
+// The read cap stays here — hostopen leaves reading policy (caps, budgets,
+// streaming) to the caller — because os.ReadFile-style read-to-EOF would
+// balloon on a sparse file's apparent size or read /dev/zero forever. The
+// non-regular refusal is re-wrapped as errMetaNotRegular so detectWorktree's
+// classification (a real .git DIR or an agent-swapped FIFO ⇒ standalone) is
+// unchanged; ELOOP / ENOENT propagate as-is for the same reason.
 //
 // The returned FileInfo is the opened inode's — valid after close, and usable
 // with os.SameFile so later checks need not re-resolve the name.
 func readMetaFile(path string) ([]byte, os.FileInfo, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, info, err := hostopen.OpenRegular(path, false)
 	if err != nil {
+		if errors.Is(err, hostopen.ErrNotRegular) {
+			return nil, nil, fmt.Errorf("%s: %w", path, errMetaNotRegular)
+		}
 		return nil, nil, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, nil, err // fstat of an open fd failing is a genuine error
-	}
-	if !info.Mode().IsRegular() {
-		return nil, nil, fmt.Errorf("%s: %w", path, errMetaNotRegular)
-	}
 	data, err := io.ReadAll(io.LimitReader(f, maxMetaFileSize+1))
 	if err != nil {
 		return nil, nil, err
