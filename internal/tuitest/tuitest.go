@@ -20,9 +20,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -49,10 +51,17 @@ var (
 // Binary builds ./cmd/byre once per test binary and returns the path. The
 // build is plain `go build` — the race detector instruments the TEST binary,
 // never this child.
+//
+// The build dir must outlive the single test that triggered it (sync.Once,
+// shared by every test in the process), so t.TempDir can't own it and no one
+// removes it at exit. Instead the dir name carries this process's pid and
+// each call reaps siblings whose owner is gone — otherwise ~18 MB per gated
+// run accumulates until the tmpfs fills and the suite fails on link errors.
 func Binary(t *testing.T) string {
 	t.Helper()
 	binOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "byre-tuitest-bin-")
+		reapStaleBinDirs()
+		dir, err := os.MkdirTemp("", fmt.Sprintf("byre-tuitest-bin-%d-", os.Getpid()))
 		if err != nil {
 			binErr = err
 			return
@@ -73,6 +82,37 @@ func Binary(t *testing.T) string {
 		t.Fatal(binErr)
 	}
 	return binPath
+}
+
+// reapStaleBinDirs removes byre-tuitest-bin-<pid>-* dirs whose owning process
+// is gone. Best-effort: a dir that won't parse or won't remove is skipped
+// (legacy pid-less dirs from before this scheme age out by hand), and a live
+// sibling — a concurrent package's test binary — is left alone.
+func reapStaleBinDirs() {
+	entries, err := os.ReadDir(os.TempDir())
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Name(), "byre-tuitest-bin-")
+		if !ok || !e.IsDir() {
+			continue
+		}
+		pidStr, _, ok := strings.Cut(rest, "-")
+		if !ok {
+			continue
+		}
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid <= 0 || pid == os.Getpid() {
+			continue
+		}
+		if proc, err := os.FindProcess(pid); err == nil {
+			if proc.Signal(syscall.Signal(0)) == nil {
+				continue // owner still running
+			}
+		}
+		os.RemoveAll(filepath.Join(os.TempDir(), e.Name()))
+	}
 }
 
 // repoRoot walks up from the working directory to the go.mod.
