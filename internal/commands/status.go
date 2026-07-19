@@ -232,12 +232,17 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		// Other live sessions in the same project (worktrees sharing these
 		// volumes). Surfaced so status doesn't imply "nothing running" while
 		// reset/forget correctly refuse on the project label. Empty for a plain
-		// project (no worktree siblings). A failed query is reported (once —
-		// the own-session note already covers the both-failed case).
-		if fam, cerr := r.RunningContainersByLabel(projectLabel(paths)); cerr == nil {
-			info.SiblingSessions = siblingNames(r, mine, fam)
-		} else if info.ContainerQueryErr == "" {
-			info.SiblingQueryErr = firstLine(cerr.Error())
+		// project (no worktree siblings). Derived only when the own-session
+		// query succeeded: siblingNames subtracts `mine` from the family, so
+		// a failed own query with a succeeding family one (a transient
+		// engine flap between them) would list THIS box as its own sibling.
+		// The unknown own-state note covers that case instead.
+		if merr == nil {
+			if fam, cerr := r.RunningContainersByLabel(projectLabel(paths)); cerr == nil {
+				info.SiblingSessions = siblingNames(r, mine, fam)
+			} else {
+				info.SiblingQueryErr = firstLine(cerr.Error())
+			}
 		}
 	}
 
