@@ -16,10 +16,22 @@ import (
 // and partial notes that at least one engine's query failed (so "exactly
 // one" is unknowable).
 type pool struct {
-	sessions []Session
-	hidden   int
-	unusable int
-	partial  bool
+	sessions    []Session
+	hidden      int
+	unusable    int
+	partial     bool
+	unreachable []string // engines skipped as unreachable (podman machine down, ...)
+}
+
+// flushUnreachable emits the deferred "engine skipped" notes. Held back during
+// discovery and printed only when the pool's incompleteness could bear on what
+// the user sees — a not-found, an ambiguity, a picker, a listing — never on a
+// clean auto-pick, where the steady-state "podman unreachable" would otherwise
+// print on every deliver/grab (field report, 2026-07-19).
+func flushUnreachable(cfg Config, p pool) {
+	for _, name := range p.unreachable {
+		fmt.Fprintf(cfg.Err, "byre: %s isn't reachable; skipping it\n", name)
+	}
 }
 
 // discover enumerates running byre boxes across every configured engine —
@@ -34,12 +46,14 @@ func discover(cfg Config, opts Options) (pool, error) {
 		if err != nil {
 			// An UNREACHABLE engine is normal life (podman installed, machine
 			// not started — every Mac with a stale podman install): no daemon
-			// means no running sessions, so it counts as answered-with-zero,
-			// one quiet line, and auto-pick stays alive. Any OTHER failure
-			// degrades loudly and poisons "exactly one" (partial pool) —
-			// never mask a broken engine as "nothing running".
+			// means no running sessions, so it counts as answered-with-zero and
+			// auto-pick stays alive. The note is DEFERRED (flushUnreachable), not
+			// printed here: on a clean pick it is suppressed, surfacing only when
+			// the narrowed pool could bear on the outcome. Any OTHER failure
+			// degrades loudly and poisons "exactly one" (partial pool) — never
+			// mask a broken engine as "nothing running".
 			if isUnreachable(err) {
-				fmt.Fprintf(cfg.Err, "byre: %s isn't reachable; skipping it\n", eng.Name())
+				p.unreachable = append(p.unreachable, eng.Name())
 				continue
 			}
 			fmt.Fprintf(cfg.Err, "byre: warning: %s query failed (%s); its sessions are invisible this run\n", eng.Name(), firstLine(err))
@@ -122,11 +136,30 @@ func inspect(cfg Config, opts Options, eng Engine, id string) (Session, sessionV
 // selectSession runs the target cascade: --box, cwd ancestor walk, sole
 // session, else an ambiguity error listing the candidates (the picker's
 // no-TTY/no-GUI degradation; interactive pickers slot in above it).
-func selectSession(cfg Config, opts Options) (Session, error) {
-	p, err := discover(cfg, opts)
-	if err != nil {
-		return Session{}, err
+func selectSession(cfg Config, opts Options) (sess Session, err error) {
+	p, derr := discover(cfg, opts)
+	if derr != nil {
+		return Session{}, derr
 	}
+	// Surface the deferred unreachable-engine notes on any NON-clean outcome:
+	// an error (the skipped engine may have held the box) or a handoff to the
+	// picker (the candidate list is narrower than the machine). A clean
+	// auto-pick suppresses them. flush is idempotent; the picker path calls it
+	// explicitly BEFORE the prompt so the note precedes it, and the deferred
+	// call covers every error return without threading flushes through each.
+	flushed := false
+	flush := func() {
+		if flushed {
+			return
+		}
+		flushed = true
+		flushUnreachable(cfg, p)
+	}
+	defer func() {
+		if err != nil {
+			flush()
+		}
+	}()
 
 	// Step 0: explicit --box. Operates even on a partial pool; a prefix must
 	// match uniquely (a project prefix legitimately matches several worktree
@@ -201,11 +234,14 @@ func selectSession(cfg Config, opts Options) (Session, error) {
 	}
 
 	// Step 3: ambiguous — the picker's moment. The listing error is the
-	// script/no-picker degradation and the always-available floor.
+	// script/no-picker degradation and the always-available floor. Flush the
+	// skipped-engine notes first: the candidate list the user is about to see
+	// is narrower than the machine, so it earns the disclosure.
+	flush()
 	if cfg.Pick != nil {
-		s, ok, err := cfg.Pick(p.sessions)
-		if err != nil {
-			return Session{}, err
+		s, ok, perr := cfg.Pick(p.sessions)
+		if perr != nil {
+			return Session{}, perr
 		}
 		if !ok {
 			return Session{}, errCancelled

@@ -25,11 +25,37 @@ import (
 // candidates-listing error. byre stays one Go binary — no GUI toolkit
 // dependency.
 
-// hostPicker picks the adapter for this invocation.
-func hostPicker(s Streams) func([]deliver.Session) (deliver.Session, bool, error) {
+// pickText is the human copy for a picker, verb-specific: deliver goes TO a
+// box, grab comes FROM one, so the prompt, footer action, and dialog strings
+// all vary. Built by pickTextFor.
+type pickText struct {
+	title    string // TTY heading: "deliver to which box?" / "grab from which box?"
+	action   string // TTY footer verb: "enter <action> · q cancel"
+	dialog   string // GUI dialog prompt (capitalized)
+	appTitle string // GUI window title: "byre <verb>"
+}
+
+func pickTextFor(verb string) pickText {
+	prep := "to"
+	if verb == "grab" {
+		prep = "from"
+	}
+	cap := strings.ToUpper(verb[:1]) + verb[1:]
+	return pickText{
+		title:    fmt.Sprintf("%s %s which box?", verb, prep),
+		action:   verb,
+		dialog:   fmt.Sprintf("%s %s which box?", cap, prep),
+		appTitle: "byre " + verb,
+	}
+}
+
+// hostPicker picks the adapter for this invocation. verb is "deliver" or
+// "grab" — the shared picker, worded for the caller.
+func hostPicker(s Streams, verb string) func([]deliver.Session) (deliver.Session, bool, error) {
+	pt := pickTextFor(verb)
 	if s.TTY {
 		return func(sessions []deliver.Session) (deliver.Session, bool, error) {
-			return ttyPick(s, sessions)
+			return ttyPick(s, pt, sessions)
 		}
 	}
 	if probe := openControllingTTY(); probe != nil {
@@ -51,10 +77,10 @@ func hostPicker(s Streams) func([]deliver.Session) (deliver.Session, bool, error
 			if ef, ok := s.Err.(*os.File); !ok || !isTTY(ef) {
 				out = tty
 			}
-			return runPick(tty, out, sessions)
+			return runPick(tty, out, pt, sessions)
 		}
 	}
-	if tool := graphicalPickTool(runtime.GOOS, os.Getenv); tool != nil {
+	if tool := graphicalPickTool(runtime.GOOS, os.Getenv, pt); tool != nil {
 		return tool
 	}
 	return nil
@@ -75,6 +101,7 @@ var openControllingTTY = func() *os.File {
 
 type pickModel struct {
 	sessions []deliver.Session
+	text     pickText
 	cursor   int
 	choice   int // -1 until chosen
 	quit     bool
@@ -112,7 +139,7 @@ var (
 
 func (m pickModel) View() string {
 	var b strings.Builder
-	b.WriteString(pickTitleStyle.Render("deliver to which box?") + "\n")
+	b.WriteString(pickTitleStyle.Render(m.text.title) + "\n")
 	for i, s := range m.sessions {
 		row := pickRow(s)
 		if i == m.cursor {
@@ -121,7 +148,7 @@ func (m pickModel) View() string {
 			b.WriteString("  " + row + "\n")
 		}
 	}
-	b.WriteString(pickDimStyle.Render("↑/↓ move · enter deliver · q cancel") + "\n")
+	b.WriteString(pickDimStyle.Render("↑/↓ move · enter "+m.text.action+" · q cancel") + "\n")
 	return b.String()
 }
 
@@ -146,19 +173,19 @@ func pickLabel(s deliver.Session) string {
 	return s.ID
 }
 
-func ttyPick(s Streams, sessions []deliver.Session) (deliver.Session, bool, error) {
+func ttyPick(s Streams, pt pickText, sessions []deliver.Session) (deliver.Session, bool, error) {
 	var in *os.File
 	if f, ok := s.In.(*os.File); ok {
 		in = f
 	}
 	// Render to stderr: stdout is the delivered-paths contract and must stay
 	// clean even through an interactive pick.
-	return runPick(in, s.Err, sessions)
+	return runPick(in, s.Err, pt, sessions)
 }
 
 // runPick runs the Bubble Tea list on the given terminal input and output.
-func runPick(in *os.File, out io.Writer, sessions []deliver.Session) (deliver.Session, bool, error) {
-	m := pickModel{sessions: sessions, choice: -1}
+func runPick(in *os.File, out io.Writer, pt pickText, sessions []deliver.Session) (deliver.Session, bool, error) {
+	m := pickModel{sessions: sessions, text: pt, choice: -1}
 	opts := []tea.ProgramOption{tea.WithOutput(out)}
 	if in != nil {
 		opts = append(opts, tea.WithInput(in))
@@ -179,7 +206,7 @@ func runPick(in *os.File, out io.Writer, sessions []deliver.Session) (deliver.Se
 // graphicalPickTool probes for a dialog tool; each returned func shows the
 // sessions and maps the answer back. Labels are matched by pickLabel, which
 // is unique per session (workdir ids are unique; container ids break ties).
-func graphicalPickTool(goos string, getenv func(string) string) func([]deliver.Session) (deliver.Session, bool, error) {
+func graphicalPickTool(goos string, getenv func(string) string, pt pickText) func([]deliver.Session) (deliver.Session, bool, error) {
 	switch goos {
 	case "darwin":
 		if getenv("SSH_CONNECTION") != "" {
@@ -193,7 +220,7 @@ func graphicalPickTool(goos string, getenv func(string) string) func([]deliver.S
 			for i, s := range sessions {
 				labels[i] = `"` + strings.ReplaceAll(pickRow(s), `"`, `\"`) + `"`
 			}
-			script := fmt.Sprintf(`choose from list {%s} with prompt "Deliver to which box?"`, strings.Join(labels, ", "))
+			script := fmt.Sprintf(`choose from list {%s} with prompt %q`, strings.Join(labels, ", "), pt.dialog)
 			out, err := clipRunOut("osascript", "-e", script)
 			if err != nil {
 				return deliver.Session{}, false, fmt.Errorf("picker dialog: %w", err)
@@ -206,7 +233,7 @@ func graphicalPickTool(goos string, getenv func(string) string) func([]deliver.S
 		}
 		if _, err := clipLookPath("zenity"); err == nil {
 			return func(sessions []deliver.Session) (deliver.Session, bool, error) {
-				args := []string{"--list", "--title", "byre deliver", "--text", "Deliver to which box?", "--column", "box"}
+				args := []string{"--list", "--title", pt.appTitle, "--text", pt.dialog, "--column", "box"}
 				for _, s := range sessions {
 					args = append(args, pickRow(s))
 				}
@@ -224,7 +251,7 @@ func graphicalPickTool(goos string, getenv func(string) string) func([]deliver.S
 		}
 		if _, err := clipLookPath("kdialog"); err == nil {
 			return func(sessions []deliver.Session) (deliver.Session, bool, error) {
-				args := []string{"--menu", "Deliver to which box?"}
+				args := []string{"--menu", pt.dialog}
 				for _, s := range sessions {
 					args = append(args, pickRow(s), pickRow(s)) // tag, label
 				}
