@@ -4,19 +4,21 @@ version = "1.0.0"
 kind = "skill"
 package_api = 1
 requires_byre = ">=0.4.0"
-description = "Run byre's gated integration suite on the sacrificial inttest VM (Lima) over ssh."
+description = "Run byre's gated integration suite on the sacrificial inttest runner (a Lima VM, or a DinD container where the host can't nest VMs) over ssh."
 
 [build]
 apt = ["openssh-client"]
 files = { "byre-inttest" = "/usr/local/bin/byre-inttest", "byre-inttest.yaml" = "/etc/byre/inttest/byre-inttest.yaml" }
 
 [runtime]
-# The VM's fixed ssh endpoint (the Lima template pins localPort 60022), under
-# both engines' spellings of "the host": Docker Desktop's and podman's. Same
-# functional endpoint, so both are granted; the wrapper tries them in order.
-# Overriding BYRE_INTTEST_VM to some other address needs its own egress grant.
+# The Lima runner's fixed ssh endpoint (the template pins localPort 60022),
+# under both engines' spellings of "the host": Docker Desktop's and podman's.
+# Same functional endpoint, so both are granted; the wrapper tries them in
+# order. The DinD runner's addresses (its bridge IP:22, or the host gateway's
+# published 60022) are NOT granted here -- like any BYRE_INTTEST_VM override,
+# they need their own egress grant in the box config.
 egress = ["host.docker.internal:60022", "host.containers.internal:60022"]
-env_docs = { BYRE_INTTEST_USER = "ssh user on the inttest VM; Lima names it after the HOST user -- pass it through with env_from_host = { BYRE_INTTEST_USER = \"env:USER\" }" }
+env_docs = { BYRE_INTTEST_USER = "ssh user on the inttest runner; both runners name it after the HOST user (Lima by convention, the DinD build via --build-arg INTTEST_USER=$USER) -- pass it through with env_from_host = { BYRE_INTTEST_USER = \"env:USER\" }" }
 
 [[volumes]]
 name = "inttest"
@@ -31,7 +33,7 @@ file = "context.md"
 [[package.files]]
 src = "byre-inttest"
 dest = "byre-inttest"
-sha256 = "02db6987ac8e2e5fee553ea26beb42df102a436f4833b68fe231722f3621e512"
+sha256 = "8e716d147ae157babdfe8ad256c22e313804fb55decf078d74091b6bf6397bcf"
 executable = true
 
 [[package.files]]
@@ -42,5 +44,16 @@ sha256 = "6eb0d100044dfee0c1ee36447ffd693071d1d02d08fa2f79235e9c2dd828d059"
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "6f5cb36953b8e58f3061da2bdaa8d006d97ec5f082860d45356daa5d11617830"
+sha256 = "034eed1c3b85aac6abda85b45b4c6acfde74fe8ba385e399faff6b9fd2e964dc"
+
+[[package.files]]
+src = "dind/Dockerfile"
+dest = "dind/Dockerfile"
+sha256 = "88dfc8ebb2b1dcbc79ec0e6dc1904cded9d8a74af5a930e93c6d6dc3f5ee09dd"
+
+[[package.files]]
+src = "dind/entrypoint.sh"
+dest = "dind/entrypoint.sh"
+sha256 = "08d561e1d7bf69d561577a46efdc69d64899b37adf7cada396acd6aa68ac17b5"
+executable = true
 

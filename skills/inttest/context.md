@@ -1,11 +1,17 @@
-# inttest -- byre's sacrificial integration-test VM
+# inttest -- byre's sacrificial integration-test runner
 
-`byre-inttest` (on PATH) syncs `/workspace` to a throwaway Lima VM and runs
+`byre-inttest` (on PATH) syncs `/workspace` to a throwaway RUNNER and runs
 byre's gated integration suite THERE (`BYRE_DOCKER_TESTS=1 go test`).
 Engine-touching tests can't run in this box (no engine, and bind mounts
 resolve engine-side), and running them against the host's real Docker would
-be exactly the blast radius byre exists to avoid -- the VM is disposable by
-design: its entire contents are a synced repo copy and image caches.
+be exactly the blast radius byre exists to avoid -- the runner is disposable
+by design: its entire contents are a synced repo copy and image caches.
+
+The runner is a **Lima VM** where the host can nest VMs, and a **privileged
+DinD container** where it can't (see below). The wrapper's transport is the
+same either way -- but the CONFIG is not: address, port and egress all differ
+per runner. Check `BYRE_INTTEST_VM` / `BYRE_INTTEST_PORT` before assuming the
+Lima defaults apply.
 
 Habits:
 
@@ -13,11 +19,21 @@ Habits:
   `./... -run Integration`) BEFORE calling the work done -- CI's gated job
   only fires on push.
 - Scope it while iterating: `byre-inttest ./internal/runner/ -run 'Integration.*Firewall' -v`.
-- `BYRE_TEST_ENGINE=podman byre-inttest` pins the engine (the VM carries
-  docker AND rootless podman; auto prefers docker).
-- If the VM is unreachable (connection refused / timeout), report that and
-  ask for it to be started host-side (`limactl start byre-inttest`). Never
-  substitute a run against some other engine.
+- `BYRE_TEST_ENGINE=podman byre-inttest` pins the engine (either runner
+  carries docker AND rootless podman; auto prefers docker). Podman is
+  several times slower, so the wrapper lifts go test's 10m default to 40m
+  for podman runs only.
+- If the runner is unreachable (connection refused / timeout), report that
+  and ask for it to be started host-side (`limactl start byre-inttest`, or
+  `docker start byre-inttest` where the runner is the DinD container below).
+  Never substitute a run against some other engine -- least of all the
+  host's, which is the engine your own box is running on.
+  Where the runner is DinD, a connect TIMEOUT is usually the container's
+  bridge IP having drifted (they are assignment-ordered): ask for
+  `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+  byre-inttest` and update `BYRE_INTTEST_VM`.
+- Don't pipe the wrapper through `tail`/`head`: the pipe takes the exit
+  status and a RED suite reports success. Redirect to a file, read that.
 
 Setup, once per machine (the wrapper prints these remedies when they apply):
 
@@ -40,6 +56,24 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   `BYRE_INTTEST_VM` to the host's address there (and grant that endpoint's
   egress yourself on a firewalled box; the skill's grants name only the two
   defaults).
+
+**Hosts without nested virtualisation** (a cloud devbox with no `/dev/kvm`
+-- check `systemd-detect-virt`): Lima can only emulate there, far too slow
+to use. The runner is a privileged Docker-in-Docker container instead
+(`skills/inttest/dind/`), reachable from this box at its bridge IP. The
+wrapper's transport is unchanged; its CONFIG is not:
+
+- `BYRE_INTTEST_PORT = "22"` -- the container's own sshd port. The wrapper
+  still defaults to `60022`, which is Lima's forwarded port and also the
+  DinD container's HOST publish mapping (`-p 60022:22`) -- neither applies
+  when reaching the container directly. Setting only `BYRE_INTTEST_VM`
+  leaves the port wrong and ssh fails.
+- `egress = ["<bridge-ip>:22"]` in the config if the box's network is
+  closed. The skill grants only `host.docker.internal:60022` /
+  `host.containers.internal:60022`, so neither DinD address is covered.
+  (`byre status` shows whether the grant is enforced or inert.)
+
+Build and caveats: `docs/BYRE-DEVELOPMENT.md`.
 
 VM lifecycle is host-side: `limactl stop byre-inttest` pauses it,
 `limactl stop byre-inttest && limactl delete byre-inttest` + a fresh

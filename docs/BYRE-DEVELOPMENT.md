@@ -55,14 +55,23 @@ skill's directory, re-pack and re-install (from the repo root, with a byre
 on PATH):
 
 ```sh
-BYRE_HOME=$(mktemp -d) sh -c 'mkdir -p "$BYRE_HOME/skills/pjlsergeant" \
-  && cp -R skills/inttest "$BYRE_HOME/skills/pjlsergeant/" \
-  && byre skill pack pjlsergeant/inttest' > skills/inttest/skill.toml
-byre skill install skills/inttest/skill.toml
+scripts/repack-skill.sh                 # default: skills/inttest
+scripts/repack-skill.sh skills/other    # any skill in this repo
+byre skill install skills/inttest/skill.toml    # host-side
 ```
 
-(The temp `BYRE_HOME` is because `pack` operates on a *local* package; a
-copy under the real `~/.byre/skills` would contest the installed id.)
+The script uses a `byre` on PATH if there is one and otherwise builds from
+the working tree, so **it also runs inside a box** -- where there is no byre
+binary, but there is Go and the source. Only `skill install` is genuinely
+host-side (it writes the real `~/.byre/skills`).
+
+It packs via a throwaway `BYRE_HOME`, because `pack` operates on a *local*
+package and a copy under the real `~/.byre/skills` would contest the
+installed id. It also writes to a temp file and moves it into place only on
+success: redirecting pack's stdout straight at the manifest
+(`... > skills/inttest/skill.toml`) truncates that file BEFORE pack reads
+it, so pack copies an empty primary and the original is destroyed. Recover
+with `git checkout skills/inttest/skill.toml`.
 
 Pack output is a fixed point -- re-packing an unchanged directory reproduces
 the file byte for byte -- and a forgotten re-pack fails **loudly** at
@@ -94,6 +103,15 @@ from the host, pins ssh to localhost:60022, and provisions both engines --
 docker (get.docker.com) and rootless podman (crun/cgroupfs pinned in
 `containers.conf`, linger enabled: bare-ssh sessions have no user dbus, and
 runc insists on a systemd slice rootlessly).
+
+**Host requirements.** Lima needs qemu on the host (`qemu-utils` for
+`qemu-img`, plus the system emulator for your arch -- `--no-install-recommends`
+unless you want QEMU's GTK/SDL console pulled in) and it needs **hardware
+virtualisation**: without `/dev/kvm` qemu falls back to full software
+emulation, which is too slow to provision, let alone run the suite. Check
+with `systemd-detect-virt` -- if the machine is ITSELF a guest (most cloud
+instances; Hetzner Cloud exposes no nested virt) there is no `/dev/kvm` to
+be had, and no template change fixes it. Use the DinD host below instead.
 
 **Setup, once per machine** (the wrapper prints these remedies too):
 
@@ -143,6 +161,93 @@ re-created VM has a new hostkey: in the box,
 `ssh-keygen -R '[<address>]:<port>'` clears the stale entry. Provisioning
 finishes after ssh comes up -- wait for limactl's `READY` line before
 judging the VM broken.
+
+## The DinD host (machines without nested virtualisation)
+
+On a host that can't run Lima -- a cloud devbox with no `/dev/kvm` -- the
+sacrificial runner is a **privileged Docker-in-Docker container** instead:
+`skills/inttest/dind/`. It runs its OWN `dockerd`, so the suite's
+containers, images and networks are invisible to the engine hosting your
+boxes. It satisfies the same contract the VM does -- an ssh endpoint
+carrying docker, podman, go, tmux and git -- so the wrapper's TRANSPORT is
+unchanged.
+
+Its **configuration** is not: address, port and egress all differ from the
+Lima defaults, and the image needs a build-arg naming the ssh user. Those
+are the parts to get right; see the worked example below.
+
+Its package list mirrors the Lima template's `provision:` block -- **keep
+the two in step** when either changes.
+
+```sh
+cd skills/inttest/dind
+docker build --build-arg INTTEST_USER=$USER -t byre-inttest .
+docker run -d --name byre-inttest --privileged \
+  -p 60022:22 \
+  -v byre-inttest-docker:/var/lib/docker \
+  -v byre-inttest-podman:/home/$USER/.local/share/containers \
+  -v ~/.ssh/byre-inttest.pub:/etc/byre-inttest/authorized_key:ro \
+  byre-inttest
+```
+
+Note where the pubkey goes: the entrypoint **installs** it as
+`authorized_keys`, rather than it being mounted there. The ssh-loop tier
+(`BYRE_SSH_LOOP_TESTS=1`, which the wrapper always sets) rewrites the ssh
+user's `~/.ssh` and restores it on cleanup -- against a read-only bind
+mount those tests fail with `authorized_keys: read-only file system`.
+
+**Both storage volumes are required**, for the same reason: overlayfs
+cannot stack on overlayfs, so each engine's graph storage needs a volume
+(ext4) rather than the container's own root. Without the first, every
+`docker run` dies `failed to mount ... overlay ... invalid argument`;
+without the second, podman fails `'overlay' is not supported over
+overlayfs, a mount_program is required`. They double as the image caches,
+surviving `docker rm` -- `docker volume rm byre-inttest-docker
+byre-inttest-podman` for a clean slate. The ssh key is mounted, never
+baked, so the image carries no secret.
+
+**Addressing it.** A box and this container share docker's default bridge,
+so the box can reach it directly at the container's IP on port 22
+(`docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+byre-inttest`) -- no host round trip:
+
+```toml
+# ROOT keys first: after an [env] header everything belongs to that table
+# until the next header, so an `egress` written below it decodes as
+# env.egress -- which byre's string-map env cannot even hold.
+#
+# egress is needed only if the box's network is CLOSED: the skill grants
+# host.docker.internal:60022 / host.containers.internal:60022, so neither
+# DinD address is covered. `byre status` reports whether a grant is enforced
+# or inert ("unenforced, network open") -- and the same applies to the host
+# gateway address below, if you use that path instead.
+egress = ["172.17.0.4:22"]
+
+# The container's sshd listens on 22. The wrapper still DEFAULTS to 60022 --
+# Lima's forwarded port, which is also this container's host publish mapping
+# (-p 60022:22) -- so setting only the address leaves the port wrong.
+[env]
+  BYRE_INTTEST_VM = "172.17.0.4"   # the container's bridge IP
+  BYRE_INTTEST_PORT = "22"
+```
+
+That IP is assignment-ordered, so a recreate or reboot can shuffle it and
+runs start timing out with nothing else changed. The stable alternative is
+the published port on the host gateway (`172.17.0.1:60022`), which needs
+the host to accept container->host traffic -- a default-deny `INPUT`
+(ufw/nftables, common on cloud images) silently drops it, and the symptom
+is a connect that hangs rather than refuses.
+
+**Known gaps versus the VM.** Privileged means a shared kernel, so this is
+weaker isolation than Lima -- adequate when the host is itself disposable,
+not a substitute for a VM on a machine you care about.
+
+Both engines are verified here: the full gated suite passes under docker,
+and under `BYRE_TEST_ENGINE=podman` once each engine has its storage volume.
+Podman is several times slower (`internal/commands`: ~2 min under docker,
+~8 min warm under podman, and it blew go test's 10m DEFAULT on a cold run
+while pulling images). That is why `byre-inttest` appends `-timeout 40m`
+for podman runs only -- an explicit `-timeout` still wins.
 
 ## The TUI test tier (tmux)
 

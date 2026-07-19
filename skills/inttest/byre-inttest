@@ -75,6 +75,29 @@ tar -C /workspace -czf - --exclude .git --exclude .byre-devlog --exclude moarcod
   | "${SSH[@]}" "$VM" "rm -rf $DEST && mkdir -p $DEST && tar -xzf - -C $DEST"
 
 [ $# -gt 0 ] || set -- ./... -run Integration
+
+# Rootless podman runs the same suite several times slower than docker (crun +
+# cgroupfs, a userns mapping per container, no user dbus): internal/commands
+# takes ~2 min under docker and blew through go test's 10m DEFAULT under
+# podman, dying `panic: test timed out after 10m0s` with the in-flight test
+# only seconds old -- a clock failure, not a hang. Lift the ceiling for podman
+# ONLY, so a genuine hang under docker still surfaces at the default. An
+# explicitly-passed -timeout always wins.
+#
+# KNOWN, DEFERRED (review 2026-07-19): the match is over the joined argv, so
+# `-timeout` appearing as another flag's VALUE reads as user-supplied -- e.g.
+# `byre-inttest ./... -run -timeout` skips the default and podman falls back to
+# go's 10m. Detecting that needs positional argv parsing; the case requires
+# deliberately passing -timeout as a -run pattern, and the failure is a plain
+# `panic: test timed out`, so it is not worth the shell. All normal forms
+# (-timeout 5m, -timeout=5m, --timeout=1m, absent) are correct.
+if [ "${BYRE_TEST_ENGINE:-}" = "podman" ]; then
+  case " $* " in
+    *" -timeout "*|*" -timeout="*|*" --timeout "*|*" --timeout="*) ;;
+    *) set -- "$@" -timeout 40m ;;
+  esac
+fi
+
 # shell-quote everything interpolated into the remote shell: the go test args
 # (a -run pattern may carry |, quotes, spaces) and BYRE_TEST_ENGINE, which
 # forwards so the suite can be pinned to an engine (auto prefers docker; the
