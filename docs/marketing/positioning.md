@@ -24,7 +24,7 @@ authoring** — and everything it does is a generated file you can read.
 Not (yet) the audience: agent-skeptics, teams/eng-leads, Docker aesthetes --
 secondary reads, not the target. Known-unreachable (reader evidence):
 less-technical YOLO users who don't care -- they'd never adopt tooling like
-this; maturity-signal seekers won't adopt a weeks-old project regardless
+this; maturity-signal seekers won't adopt a young project regardless
 (accepted loss); per-case-isolation users who enjoy hand-configuring each
 environment are correctly out of scope.
 
@@ -101,7 +101,7 @@ Full sources at the end.
 | Definition you can read | ✔ generated Dockerfile | partial (templates yes; runtime is product machinery) | n/a | ✔ — because you wrote it |
 | Per-project agent auth & state | ✔ named volumes; `reset` / `rehome` | no per-project story | shared host state | DIY |
 | Engines | Docker & Podman | own runtime | none needed | Docker |
-| Maturity | **young (v1.x, weeks old)** | new (late 2025), Docker Inc. behind it | shipped inside the agents | industry spec, mature ecosystem |
+| Maturity | **young (v1.0 tagged 2026-07)** | new (late 2025), Docker Inc. behind it | shipped inside the agents | industry spec, mature ecosystem |
 | Price / license | MIT, free forever | CLI free; org governance needs Docker Business ($24/user/mo); proprietary | free with the agent | open spec, MIT CLI |
 
 ¹ Claude Code `/sandbox` (Seatbelt / bubblewrap + sandbox-runtime) and Codex
@@ -118,7 +118,7 @@ alternative's win leads the paragraph):**
 1. **Isolation strength** — a microVM with its own kernel beats a
    shared-kernel container. Don't hedge it.
 2. **Maturity and backing** — Docker Inc., an industry spec, and 95k-star
-   vendor CLIs vs. a weeks-old v1.x project.
+   vendor CLIs vs. a young v1.x project.
 3. **Zero-install** — native sandboxes need nothing (macOS) or two packages
    (Linux); byre needs a container engine running.
 
