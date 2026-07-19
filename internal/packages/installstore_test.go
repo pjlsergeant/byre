@@ -224,3 +224,25 @@ func TestRemoveSnapshotRefusesNonDigestNames(t *testing.T) {
 		t.Fatalf("well-formed digest should still delete its snapshot: %v", err)
 	}
 }
+
+// LandSnapshot fails closed on a malformed digest before touching anything —
+// the digest becomes a path component it both creates and (Repair) removes.
+func TestLandSnapshotRejectsMalformedDigest(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(packagesDir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := testSnapshot("pete/tool", "1.0.0")
+	s.Digest = "../victim"
+	err := LandSnapshot(home, s)
+	if err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("want malformed-digest rejection, got %v", err)
+	}
+	ents, rerr := os.ReadDir(packagesDir(home))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if len(ents) != 0 {
+		t.Fatalf("rejected land must leave the store untouched, found %d entries", len(ents))
+	}
+}
