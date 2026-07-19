@@ -192,6 +192,99 @@ func startTestBox(t *testing.T, r *runner.Runner, p project.Paths, proj string, 
 	return ids[0]
 }
 
+// TestIntegrationGrabTransport grabs real files OUT of a live box through
+// the production wiring (grabWith → RunGrab): the box-side classify /
+// enumerate / cat scripts executing over a real engine exec, and the
+// host-side os.Root claim protocol landing them. The seam no unit fake can
+// vouch for — deliver_test's fake simulates the box filesystem. Pins ADR
+// 0040 end to end: a file grabs out byte-exact, a directory preserves
+// structure, and a second grab of the same name claims -2 instead of
+// clobbering a host file.
+func TestIntegrationGrabTransport(t *testing.T) {
+	r := requireEngineRunner(t)
+	ident := testIdentity(t, r)
+	p, proj := testPaths(t)
+	id := startTestBox(t, r, p, proj, ident)
+
+	// Plant content in the box as its own dev identity — /workspace is the
+	// box's writable tree, exactly where the agent would leave things.
+	plant := func(path, content string) {
+		t.Helper()
+		if _, err := r.ExecInput(id, ident.UID, ident.GID, strings.NewReader(content),
+			"sh", "-c", `mkdir -p "$(dirname "$1")" && cat > "$1"`, "byre-plant", path); err != nil {
+			t.Fatalf("planting %s: %v", path, err)
+		}
+	}
+	plant("/workspace/out/report.pdf", "PDF BYTES\n")
+	plant("/workspace/tree/a.txt", "A\n")
+	plant("/workspace/tree/sub/b.txt", "B\n")
+
+	dest := t.TempDir()
+	grab := func(boxPath, hostPath string) string {
+		t.Helper()
+		var out, errw strings.Builder
+		s := Streams{Out: &out, Err: &errw, In: strings.NewReader("")}
+		// proj is the cwd, so discovery resolves our box from the byre.workdir
+		// label — no --box, no picker — proving the shared cascade end to end.
+		if err := grabWith(s, proj, deliver.Options{}, boxPath, hostPath, []sessionRunner{r}, os.Getuid(), nil); err != nil {
+			t.Fatalf("grab %s failed: %v\nstderr: %s", boxPath, err, errw.String())
+		}
+		return strings.TrimRight(out.String(), "\n")
+	}
+
+	// A relative box path resolves against /workspace; the file lands in the
+	// destination directory under its box name.
+	landed := grab("out/report.pdf", dest)
+	if landed != filepath.Join(dest, "report.pdf") {
+		t.Fatalf("landed = %q", landed)
+	}
+	if b, err := os.ReadFile(landed); err != nil || string(b) != "PDF BYTES\n" {
+		t.Fatalf("grabbed content = %q, %v", b, err)
+	}
+
+	// A directory comes out with structure preserved.
+	tree := grab("tree", dest)
+	if tree != filepath.Join(dest, "tree") {
+		t.Fatalf("tree landed = %q", tree)
+	}
+	for rel, want := range map[string]string{
+		"a.txt":     "A\n",
+		"sub/b.txt": "B\n",
+	} {
+		if b, err := os.ReadFile(filepath.Join(tree, filepath.FromSlash(rel))); err != nil || string(b) != want {
+			t.Fatalf("tree/%s = %q, %v", rel, b, err)
+		}
+	}
+
+	// Same destination name again: the host-side link-EEXIST claim uniquifies,
+	// never clobbering the file already there.
+	again := grab("/workspace/out/report.pdf", dest)
+	if again != filepath.Join(dest, "report-2.pdf") {
+		t.Fatalf("second grab landed = %q, want report-2.pdf", again)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dest, "report.pdf")); string(b) != "PDF BYTES\n" {
+		t.Fatalf("first grab was clobbered: %q", b)
+	}
+
+	// Streaming a single file to stdout.
+	var out, errw strings.Builder
+	s := Streams{Out: &out, Err: &errw, In: strings.NewReader("")}
+	if err := grabWith(s, proj, deliver.Options{}, "out/report.pdf", "-", []sessionRunner{r}, os.Getuid(), nil); err != nil {
+		t.Fatalf("grab to stdout failed: %v\nstderr: %s", err, errw.String())
+	}
+	if out.String() != "PDF BYTES\n" {
+		t.Fatalf("stdout stream = %q", out.String())
+	}
+
+	// A missing box path fails loudly, names the resolved path, and lands
+	// nothing.
+	err := grabWith(Streams{Out: io.Discard, Err: io.Discard, In: strings.NewReader("")},
+		proj, deliver.Options{}, "nope.txt", dest, []sessionRunner{r}, os.Getuid(), nil)
+	if err == nil || !strings.Contains(err.Error(), "/workspace/nope.txt") {
+		t.Fatalf("missing path: err = %v", err)
+	}
+}
+
 func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
 	r := requireEngineRunner(t)
 	provisionLoopbackSSH(t)
