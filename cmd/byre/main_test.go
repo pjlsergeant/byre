@@ -47,6 +47,10 @@ func recorderApp(calls map[string]string) app {
 				boolStr(opts.Boxes), boolStr(opts.Tar), fmt.Sprintf("p%d", opts.Proto), opts.RemoteByre,
 				strings.Join(paths, ",")}, " "))
 		},
+		grab: func(_ commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error {
+			return note("grab", strings.Join([]string{dir, opts.Box,
+				boolStr(opts.SkipUIDCheck), boxPath, hostPath}, " "))
+		},
 		installApp: func(_ commands.Streams, box string) error { return note("install-app", box) },
 		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
@@ -114,6 +118,9 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"deliver", "--remote-byre", "/opt/byre", "ssh://far", "f"}, "deliver", "/proj   false false false false p0 /opt/byre ssh://far,f"},
 		{[]string{"deliver", "--install-app"}, "install-app", ""},
 		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", "abc"},
+		{[]string{"grab", "out/report.pdf"}, "grab", "/proj  false out/report.pdf ."},
+		{[]string{"grab", "/workspace/a.txt", "~/dl"}, "grab", "/proj  false /workspace/a.txt ~/dl"},
+		{[]string{"grab", "--box", "x", "--skip-uid-check", "a.txt", "-"}, "grab", "/proj x true a.txt -"},
 		{[]string{"worktree", "feat"}, "worktree", "/proj feat  false"},
 		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x true"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
@@ -165,6 +172,9 @@ func TestRunUsageErrors(t *testing.T) {
 		{"deliver", "--tar"},                            // tar requires '-'
 		{"deliver", "--tar", "x.txt"},                   // the archive arrives on stdin only
 		{"deliver", "--tar", "--name", "n", "-"},        // names ride the archive
+		{"grab"},                                        // the box path is required
+		{"grab", "a", "b", "c"},                         // at most one destination
+		{"grab", "--bogus", "a"},                        // unknown flag
 		{"skill"},                                       // missing subcommand
 		{"skill", "bogus"},                              // unknown subcommand
 		{"rehome", "old", "extra"},                      // extra operand (bare rehome is valid: it lists candidates)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -32,6 +33,14 @@ type fakeEngine struct {
 	streams      []string            // "id name<-content" per delivered file
 	execArgs     [][]string
 	callerScoped bool // rootless engine: every visible session is the caller's
+
+	// The simulated box filesystem grab reads (grab tests).
+	boxfs    map[string]string // box file path -> content
+	boxdirs  []string          // box directory paths
+	boxOther []string          // box paths that are neither (symlinks, FIFOs)
+	enumOut  string            // overrides enumerateScript output (hostile-output tests)
+	enumErr  error             // enumerateScript exec error (partial-walk tests)
+	catErr   error             // catScript exec error
 }
 
 func (f *fakeEngine) Name() string { return f.name }
@@ -69,6 +78,51 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 	}
 	script := argv[2]
 	args := argv[4:] // after the $0 tag
+	switch {
+	case strings.Contains(script, "pwd -P"): // classifyScript: abs path
+		p := args[0]
+		for _, d := range f.boxdirs {
+			if d == p {
+				return "d " + p, nil
+			}
+		}
+		if _, ok := f.boxfs[p]; ok {
+			return "f", nil
+		}
+		for _, o := range f.boxOther {
+			if o == p {
+				return "", fmt.Errorf("exit status 4: %s is not a regular file or directory in the box", p)
+			}
+		}
+		return "", fmt.Errorf("exit status 4: no such path in the box: %s", p)
+	case strings.Contains(script, "-type d -exec"): // enumerateScript: phys dir
+		if f.enumOut != "" || f.enumErr != nil {
+			return f.enumOut, f.enumErr
+		}
+		var b strings.Builder
+		under := func(p string) bool { return p == args[0] || strings.HasPrefix(p, args[0]+"/") }
+		for _, d := range f.boxdirs {
+			if under(d) {
+				fmt.Fprintf(&b, "d\x00%s\x00", d)
+			}
+		}
+		var fps []string
+		for p := range f.boxfs {
+			if under(p) {
+				fps = append(fps, p)
+			}
+		}
+		sort.Strings(fps)
+		for _, p := range fps {
+			fmt.Fprintf(&b, "f\x00%s\x00", p)
+		}
+		for _, o := range f.boxOther {
+			if under(o) {
+				fmt.Fprintf(&b, "o\x00%s\x00", o)
+			}
+		}
+		return b.String(), nil
+	}
 	claim := func(prefix, stem, ext string) string {
 		n := stem + ext
 		for k := 2; f.inbox[prefix+n]; k++ {
@@ -98,6 +152,24 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 		}
 		return "", nil
 	}
+}
+
+// ExecOutput simulates catScript: the named box file's content streams to w.
+func (f *fakeEngine) ExecOutput(id string, uid, gid int, w io.Writer, argv ...string) error {
+	f.execArgs = append(f.execArgs, argv)
+	if f.hook != nil {
+		f.hook(argv)
+	}
+	if f.catErr != nil {
+		return f.catErr
+	}
+	p := argv[4]
+	content, ok := f.boxfs[p]
+	if !ok {
+		return fmt.Errorf("exit status 4: %s is not a file in the box", p)
+	}
+	_, err := io.WriteString(w, content)
+	return err
 }
 
 // session helpers

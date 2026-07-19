@@ -372,3 +372,6 @@ func (a engineAdapter) Labels(id string) (map[string]string, error) { return a.r
 func (a engineAdapter) ExecInput(id string, uid, gid int, stdin io.Reader, argv ...string) (string, error) {
 	return a.r.ExecInput(id, uid, gid, stdin, argv...)
 }
+func (a engineAdapter) ExecOutput(id string, uid, gid int, w io.Writer, argv ...string) error {
+	return a.r.ExecOutput(id, uid, gid, w, argv...)
+}

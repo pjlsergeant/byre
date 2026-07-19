@@ -46,11 +46,19 @@ closed, never launches open.
 Getting a file from the host into a running box, human-initiated: `byre
 deliver` streams path arguments, the host clipboard, or stdin into the
 box's inbox and hands the in-box path back (stdout + host clipboard).
-Machine-scoped -- the one verb that picks a box by discovery, not cwd.
-An `ssh://` target makes it a **remote delivery**: the same verb routed
-through another machine's byre, same inbox, same path back. (ADR 0021;
-remote: ADR 0037)
+Machine-scoped -- picks a box by discovery, not cwd (as does its mirror,
+grab). An `ssh://` target makes it a **remote delivery**: the same verb
+routed through another machine's byre, same inbox, same path back.
+(ADR 0021; remote: ADR 0037)
 _Avoid_: drop, ingest, airlock (all lost the naming)
+
+**Grab**:
+Deliver's mirror, human-initiated: `byre grab` streams a file or
+directory out of a running box onto the host, printing the landed host
+path. Same machine-scoped discovery; never overwrites host files
+(collisions uniquify, like deliveries into the inbox). (ADR 0040)
+_Avoid_: extract, fetch, pull (network/git connotations), eject
+(reserved for leaving byre itself)
 
 **Inbox**:
 Where delivered files land in the box: `/inbox`, a dev-owned directory

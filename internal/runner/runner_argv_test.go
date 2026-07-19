@@ -198,6 +198,26 @@ func TestExecInputArgv(t *testing.T) {
 	}
 }
 
+func TestExecOutputArgv(t *testing.T) {
+	var gotArgs []string
+	r := &Runner{engine: Docker, streamOut: func(stdout io.Writer, name string, args ...string) error {
+		gotArgs = append([]string{name}, args...)
+		_, err := stdout.Write([]byte("content"))
+		return err
+	}}
+	var got strings.Builder
+	if err := r.ExecOutput("ctr1", 501, 20, &got, "sh", "-c", "script", "byre-grab", "/workspace/report.pdf"); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != "content" {
+		t.Fatalf("ExecOutput stdout = %q, want content", got.String())
+	}
+	want := "docker exec -i -u 501:20 -e HOME=/home/dev ctr1 sh -c script byre-grab /workspace/report.pdf"
+	if gotJoined := strings.Join(gotArgs, " "); gotJoined != want {
+		t.Fatalf("ExecOutput argv = %q, want %q", gotJoined, want)
+	}
+}
+
 func TestContainerLabels(t *testing.T) {
 	r := &Runner{engine: Docker, capture: func(name string, args ...string) (string, error) {
 		want := "docker inspect -f {{json .Config.Labels}} ctr1"

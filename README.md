@@ -261,6 +261,11 @@ tldr: `byre deliver <file>` -- or just `byre deliver` and paste (or
 drop a file on the window).
 ([recipe](https://getbyre.com/docs/how-do-i/workflow/#paste-or-drag-and-drop-images-and-files-into-my-agent))
 
+**Get files back out of the box?**
+tldr: `byre grab <box-path>` -- the file lands in your current
+directory, never overwriting anything.
+([recipe](https://getbyre.com/docs/how-do-i/workflow/#get-files-back-out-of-the-box))
+
 **Use byre on a remote machine over SSH?**
 tldr: byre is terminal-native, so everything works in an SSH session --
 and `byre deliver ssh://host` sends files from your laptop into the

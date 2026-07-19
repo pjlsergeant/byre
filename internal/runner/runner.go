@@ -60,13 +60,16 @@ func Detect(setting string, look LookPath) (Engine, error) {
 // stream connects child stdio (interactive build/run/exec); capture returns
 // stdout (ps/inspect); streamIn is stream with a caller-supplied stdin
 // (piping literal content into a container); captureIn is capture with a
-// caller-supplied stdin (streaming content in AND reading a result back).
+// caller-supplied stdin (streaming content in AND reading a result back);
+// streamOut connects child stdout to a caller-supplied writer (streaming
+// arbitrary content OUT of a container, too big or too binary to capture).
 type Runner struct {
 	engine    Engine
 	stream    func(name string, args ...string) error
 	capture   func(name string, args ...string) (string, error)
 	streamIn  func(stdin io.Reader, name string, args ...string) error
 	captureIn func(stdin io.Reader, name string, args ...string) (string, error)
+	streamOut func(stdout io.Writer, name string, args ...string) error
 }
 
 // New returns a Runner for the given engine using real exec.
@@ -77,6 +80,7 @@ func New(e Engine) *Runner {
 		capture:   captureExec,
 		streamIn:  streamInExec,
 		captureIn: captureInExec,
+		streamOut: streamOutExec,
 	}
 }
 
@@ -222,6 +226,16 @@ func (r *Runner) ExecInput(containerID string, uid, gid int, stdin io.Reader, co
 func execInputArgs(containerID string, uid, gid int, command ...string) []string {
 	args := []string{"exec", "-i", "-u", fmt.Sprintf("%d:%d", uid, gid), "-e", "HOME=/home/dev", containerID}
 	return append(args, command...)
+}
+
+// ExecOutput runs a non-interactive command in a running container as the given
+// uid:gid, streaming its stdout to the given writer — grab's exec-stream
+// transport (the mirror of ExecInput: content comes out instead of going in).
+// Same attach model: no -t, no -w, HOME set explicitly. Stdout is streamed
+// rather than captured because grabbed content is arbitrary in size and shape;
+// stderr is captured and surfaces in the error.
+func (r *Runner) ExecOutput(containerID string, uid, gid int, stdout io.Writer, command ...string) error {
+	return r.streamOut(stdout, string(r.engine), execInputArgs(containerID, uid, gid, command...)...)
 }
 
 // NetworkMode returns a container's network mode as the engine reports it
@@ -561,6 +575,21 @@ func captureInExec(stdin io.Reader, name string, args ...string) (string, error)
 		}
 	}
 	return string(out), err
+}
+
+func streamOutExec(stdout io.Writer, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = stdout
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// Surface the child's stderr — otherwise failures are just "exit status 1".
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%s: %s", err, msg)
+		}
+		return err
+	}
+	return nil
 }
 
 func captureExec(name string, args ...string) (string, error) {

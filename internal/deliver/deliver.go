@@ -1,12 +1,15 @@
-// Package deliver implements `byre deliver`: getting files from the host into
-// a running box's /inbox over an exec stream (no mount, no host-side state).
+// Package deliver implements byre's file-transfer pair: `byre deliver` gets
+// files from the host into a running box's /inbox, and `byre grab` gets files
+// from a running box back onto the host — both over exec streams (no mount,
+// no host-side state).
 //
 // The package owns machine-scoped session discovery (union across engines,
 // filtered to the caller's own boxes), the target-selection cascade, and the
-// atomic no-clobber transport. It is deliberately independent of the commands
-// package: engines arrive through the small Engine interface, and host-side
-// identity (label keys, workdir ids, the caller uid) arrives via Config, so
-// the whole flow is unit-testable with a fake engine. ADR 0021 carries the
+// atomic no-clobber transport — box-side for deliver, host-side for grab. It
+// is deliberately independent of the commands package: engines arrive through
+// the small Engine interface, and host-side identity (label keys, workdir
+// ids, the caller uid) arrives via Config, so the whole flow is unit-testable
+// with a fake engine. ADR 0021 (deliver) and ADR 0040 (grab) carry the
 // rationale; docs/DELIVER.md is the user-facing behavior.
 package deliver
 
@@ -30,6 +33,10 @@ type Engine interface {
 	// ExecInput runs a command in the container as uid:gid, feeding stdin and
 	// returning captured stdout.
 	ExecInput(id string, uid, gid int, stdin io.Reader, argv ...string) (string, error)
+	// ExecOutput runs a command in the container as uid:gid, streaming its
+	// stdout to w — grab's read direction (content is arbitrary in size and
+	// shape, so it streams rather than being captured).
+	ExecOutput(id string, uid, gid int, w io.Writer, argv ...string) error
 	// CallerScoped reports that every session this engine can see was started
 	// by the calling user (rootless Podman: per-user storage). The uid
 	// accident-guard is then satisfied by construction — and must not compare

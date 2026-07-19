@@ -48,15 +48,18 @@ type fakeRunner struct {
 	labelsErr     error
 	execInputs    []string // ExecInput: "id uid:gid args <-stdin"
 	execInputErr  error
-	creates       [][]string // Create argvs
-	createErr     error
-	starts        []string // StartAttach: container names
-	runErr        error    // StartAttach result
-	runHook       func()   // called inside StartAttach: "while the session is live"
-	execErr       error
-	execs         []string // "id uid:gid workdir cmd..."
-	netnsErr      error
-	netnsInits    []string // NetnsInit: "container entrypoint"
+
+	execOutputErr     error
+	execOutputContent string     // what ExecOutput streams (grab tests)
+	creates           [][]string // Create argvs
+	createErr         error
+	starts            []string // StartAttach: container names
+	runErr            error    // StartAttach result
+	runHook           func()   // called inside StartAttach: "while the session is live"
+	execErr           error
+	execs             []string // "id uid:gid workdir cmd..."
+	netnsErr          error
+	netnsInits        []string // NetnsInit: "container entrypoint"
 	// WorktreeAdd: recorded argv-shaped summary + the identity it ran with.
 	worktreeAdds   []string // "image name common(host->target) main target branch"
 	worktreeIdents []runner.Identity
@@ -135,6 +138,11 @@ func (f *fakeRunner) ExecInput(id string, uid, gid int, stdin io.Reader, command
 	if f.execInputErr != nil {
 		return "", f.execInputErr
 	}
+	if len(command) >= 3 && strings.Contains(command[2], "pwd -P") {
+		// grab's classifyScript: answer "regular file" — wiring tests grab
+		// files; behavior depth lives in internal/deliver.
+		return "f", nil
+	}
 	if len(command) >= 7 { // sh -c script tag dir stem ext ...
 		return command[4] + "/" + command[5] + command[6] + "\n", nil
 	}
@@ -142,6 +150,18 @@ func (f *fakeRunner) ExecInput(id string, uid, gid int, stdin io.Reader, command
 		return "/inbox/" + command[4] + command[5] + "\n", nil
 	}
 	return "", nil
+}
+
+// ExecOutput records the call and streams fake content — grab's read leg.
+func (f *fakeRunner) ExecOutput(id string, uid, gid int, stdout io.Writer, command ...string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execInputs = append(f.execInputs, fmt.Sprintf("%s %d:%d out %s", id, uid, gid, strings.Join(command[3:], " ")))
+	if f.execOutputErr != nil {
+		return f.execOutputErr
+	}
+	_, err := io.WriteString(stdout, f.execOutputContent)
+	return err
 }
 
 func (f *fakeRunner) NetworkMode(container string) (string, error) {
