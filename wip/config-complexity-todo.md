@@ -166,6 +166,24 @@ features with real distinctions. What we take:
 - **The 1,000-2,000-line target as a goal.** Reduction is a byproduct of items
   2-5; we don't chase a number.
 
+## Review-pass residue (2026-07-19)
+
+The post-refactor code review fixed its findings in-tree (lazy row
+callbacks, per-vocabulary claim sentinel, retiredConfigKeys table,
+fieldInfos growth guard) and consciously deferred three:
+
+- `config.CatalogLoader` nil-fallback is silent (bundled-less catalog for
+  any entrypoint that skips builtins) — the acknowledged residual of item
+  5; the real fix is item 7's catalog-threading.
+- The catalog→ResolveProposed→skills.Resolve orchestration is inlined at
+  three sites with deliberately different error handling (declStillEffective
+  guarantees a closure, review degrades to best-effort) — consolidate only
+  when their policies converge (item 8's rule: extract on the second real
+  consumer).
+- ADRs 0024/0029 mention `byre skill update` in the present tense — ADRs
+  are point-in-time records this repo does not rewrite; CHANGES.md carries
+  the live recovery path.
+
 ## Suggested order
 
 1 (now) -> 2 -> 3 first bundle (parallel with 2) -> 5 -> 4 -> 7 staged -> rest
