@@ -852,29 +852,6 @@ func putAt[T any](s []T, idx int, v T) []T {
 	return out
 }
 
-// itemTitle is the singular noun the item editor's title uses. Explicit per
-// field: naive de-pluralizing turned "Egress" into "Egres" (found live
-// 2026-07-08).
-func itemTitle(f fieldID) string {
-	switch f {
-	case fApt:
-		return "Package"
-	case fEnv:
-		return "Env var"
-	case fMounts:
-		return "Extra mount"
-	case fPorts:
-		return "Port"
-	case fEgress:
-		return "Egress host"
-	case fMCP:
-		return "MCP server"
-	case fClaudeSkills:
-		return "Claude Skill"
-	}
-	return strings.TrimSuffix(fieldLabel[f], "s")
-}
-
 // ---- display helpers ---------------------------------------------------------
 
 func mountLine(mt config.Mount) string {
@@ -1065,7 +1042,7 @@ func splitArgv(s string) ([]string, error) {
 
 func (m model) viewList() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", m.crumb(fieldLabel[m.listField]))
+	fmt.Fprintf(&b, "%s\n\n", m.crumb(fieldLabel(m.listField)))
 	rows := m.fieldRows(m.listField)
 	if len(rows) == 0 {
 		// Newline OUTSIDE the Render: lipgloss pads multi-line renders to
@@ -1084,7 +1061,7 @@ func (m model) viewList() string {
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.listCur, line))
 	}
 	// The "+ add" row.
-	addLine := "+ add " + fieldLabel[m.listField]
+	addLine := "+ add " + fieldLabel(m.listField)
 	if m.listCur == len(rows) {
 		fmt.Fprintf(&b, "%s\n", cursorLine(true, addLine))
 	} else {

@@ -211,7 +211,7 @@ func TestWorktreeBaseRoundTrip(t *testing.T) {
 func fieldIDsToStrings(fs []fieldID) []string {
 	out := make([]string, len(fs))
 	for i, f := range fs {
-		out[i] = fieldLabel[f]
+		out[i] = fieldLabel(f)
 	}
 	return out
 }

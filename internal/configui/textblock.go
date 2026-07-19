@@ -72,8 +72,8 @@ func (m model) updateText(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewText() string {
-	title := focusStyle.Render(fieldLabel[m.textField])
-	if key := rawFieldKey[m.textField]; key != "" {
+	title := focusStyle.Render(fieldLabel(m.textField))
+	if key := rawFieldKey(m.textField); key != "" {
 		title += dimStyle.Render("  (" + key + ")") // keep the TOML key discoverable
 	}
 	title += dimStyle.Render("  ·  " + m.title) // crumb, hand-built around the key hint

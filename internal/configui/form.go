@@ -81,47 +81,6 @@ type section struct {
 	fields []fieldID
 }
 
-// textFields are edited in the multi-line textarea overlay (freeform text).
-func isTextField(f fieldID) bool {
-	return f == fRunArgs || f == fDockerfilePre || f == fDockerfilePost
-}
-
-func isListField(f fieldID) bool {
-	return f == fApt || f == fEnv || f == fMounts || f == fPorts || f == fEgress || f == fMCP || f == fClaudeSkills
-}
-
-// Labels are human/display names (not the raw TOML keys); the underlying key is
-// shown as a hint when editing the raw text blocks.
-var fieldLabel = map[fieldID]string{
-	fBase:            "Base image",
-	fTemplate:        "Template",
-	fAgent:           "Pri. Agent",
-	fEngine:          "Engine",
-	fApt:             "Packages",
-	fEnv:             "Env vars",
-	fEgress:          "Egress",
-	fMounts:          "Extra mounts",
-	fPorts:           "Ports",
-	fMCP:             "MCP servers",
-	fClaudeSkills:    "Claude Skills",
-	fVolumes:         "Volumes",
-	fRunArgs:         "Run args",
-	fDockerfilePre:   "Dockerfile before",
-	fDockerfilePost:  "Dockerfile after",
-	fSkills:          "Skills",
-	fWorktreeSibling: "Worktree loc",
-	fWorktreeBase:    "Base path",
-	fExtends:         "Extends",
-}
-
-// rawFieldKey is the TOML key behind a raw text field, shown as a hint in its
-// editor so the human label stays discoverable as a config key.
-var rawFieldKey = map[fieldID]string{
-	fRunArgs:        "run_args",
-	fDockerfilePre:  "dockerfile_pre",
-	fDockerfilePost: "dockerfile_post",
-}
-
 // labelWidth is the padded width of the label column ("Dockerfile before" is longest).
 const labelWidth = 17
 
@@ -834,7 +793,7 @@ func (m model) viewForm() string {
 			if focused {
 				cursor = cursorStyle.Render("▸ ")
 			}
-			label := fmt.Sprintf("%-*s", labelWidth, fieldLabel[f])
+			label := fmt.Sprintf("%-*s", labelWidth, fieldLabel(f))
 			if focused {
 				label = focusStyle.Render(label)
 			}
@@ -1016,18 +975,6 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		}
 		return s
 	}
-}
-
-// fieldNoun is the summary noun for a list field, pluralized.
-func fieldNoun(f fieldID, n int) string {
-	noun := map[fieldID]string{fApt: "package", fEnv: "var", fMounts: "mount", fPorts: "port", fEgress: "host", fMCP: "server", fClaudeSkills: "skill"}[f]
-	if noun == "" {
-		noun = "item"
-	}
-	if n != 1 {
-		noun += "s"
-	}
-	return noun
 }
 
 // renderSeg renders a segmented picker: every option is bracketed, the chosen
