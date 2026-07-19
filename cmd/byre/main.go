@@ -12,6 +12,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/commands"
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/packages"
 	byreversion "github.com/pjlsergeant/byre/internal/version"
 )
 
@@ -926,13 +927,18 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if err := run(realApp, os.Args[1:], dir, commands.StdStreams()); err != nil {
+	rerr := run(realApp, os.Args[1:], dir, commands.StdStreams())
+	// Before the exit mapping (fatal/os.Exit skip defers): drop the bundled
+	// packages' temp extractions. A forced kill leaves residue for the next
+	// invocation's reap instead.
+	packages.CleanupHostDirs()
+	if rerr != nil {
 		var uerr usageError
-		if errors.As(err, &uerr) {
+		if errors.As(rerr, &uerr) {
 			fmt.Fprintln(os.Stderr, string(uerr))
 			os.Exit(2)
 		}
-		fatal(err)
+		fatal(rerr)
 	}
 }
 
