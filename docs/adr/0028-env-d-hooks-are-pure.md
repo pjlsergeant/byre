@@ -4,8 +4,7 @@ byre skills contribute launch-time environment via `env.d` hooks —
 `.sh` files sourced by the launcher just before it execs the agent, so
 their `export`s land in the agent's process. This ADR pins a contract on
 that mechanism and extends it to login shells. Decided 2026-07-13,
-surfaced building the `docker-host` skill (ADR 0027) and settled with the
-maintainer via /grilling.
+surfaced building the `docker-host` skill (ADR 0027).
 
 ## The problem
 

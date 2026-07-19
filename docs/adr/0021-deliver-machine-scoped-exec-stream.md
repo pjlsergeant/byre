@@ -1,14 +1,12 @@
 # deliver: a machine-scoped verb, exec-streamed into /inbox
 
-Decided 2026-07-10 (grilled with Pete driving; both external reviewers
-run adversarially against the decisions afterwards). `byre deliver` gets
+Decided 2026-07-10. `byre deliver` gets
 files from the host into a running box: path arguments, the host
 clipboard, or stdin, landing in the box's `/inbox`, with the in-box path
 printed and copied back to the host clipboard for pasting into the agent
 prompt. This ADR carries the durable rationale; the full working record
-(32 numbered decisions, reviewer dispositions, field amendments) lived
-in the `docs/deliver/` design workspace, absorbed here and into the
-shipped docs on completion and then deleted — git history holds it.
+lived in the `docs/deliver/` design workspace and is deleted — git
+history holds it.
 
 ## Machine-scoped discovery
 
@@ -109,7 +107,7 @@ a bracketed paste — and only then reads the system pasteboard
 out-of-band (file references → image → text). Enter is not a gesture
 (it isn't semantically paste), and the prompt samples the clipboard's
 *types* — never content — to say what's on offer. Field amendments,
-all Pete-ratified on a real Mac:
+each verified on a real Mac:
 
 - **The captured paste is evidence, not noise.** A file dragged onto
   the terminal window pastes its PATH — text that was never on the

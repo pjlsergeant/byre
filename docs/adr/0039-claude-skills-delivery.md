@@ -1,9 +1,6 @@
 # Claude Skills are wiring: [[claude_skills]] declarations, an always-baked tree, --add-dir injection
 
-Decided 2026-07-16 with the maintainer (a greenfield ideation round — two
-independent reviewer consultations plus a docs pass — then a full /grilling
-session settling five decision points, then an in-box spike; the working
-design doc lived in `wip/` and is absorbed here). byre gains a
+Decided 2026-07-16, design settled against an in-box spike. byre gains a
 `[[claude_skills]]` vocabulary for shipping **Claude Skills** — Anthropic's
 agent-skill format: a directory whose root holds a `SKILL.md` — into the
 box. Declarations are **wiring, not grants**; the effective set bakes to
@@ -100,8 +97,8 @@ assembly, exact per-session convergence by construction. Adapter-less
 agents degrade honestly (declared-but-NOT-delivered plus the baked path).
 Delivery keys off the SELECTED agent; the bake is unconditional.
 
-**Spike facts (claude 2.1.211, in-box, 2026-07-16; raw transcripts in the
-design session):** `.claude/skills/<name>/SKILL.md` under an `--add-dir`
+**Spike facts (claude 2.1.211, in-box, 2026-07-16):**
+`.claude/skills/<name>/SKILL.md` under an `--add-dir`
 root loads bare as `/name`, auto-triggers from its description, works
 headless (`-p`), reads support files, and runs exec-bit scripts; a
 write-bit-stripped tree loads fine; an empty `skills/` dir is silent; a
@@ -130,17 +127,16 @@ delivery verdict keyed off the vouch. The config UI gets the full
 `[[claude_skills]]` editor screen (the MCP-era ruling: the cockpit
 doesn't omit a config class its siblings have).
 
-## Dead (do not re-propose; reasons in the design history)
+## Rejected (do not re-propose without new evidence)
 
 Full Claude plugins as a declarable unit (smuggling vs the grant
 inventory); `--plugin-dir` as the primary rail (plugin skills are
 structurally namespaced `plugin:name` — bare `/name` was ruled a
-must-have; it remains the fallback if `--add-dir` ever regresses, at the
-cost of re-opening that ruling); per-source plugin namespacing;
-launch-copy into `~/.claude/skills/` (the ADR 0033 registrar again —
-explicitly banned for this feature); overlay/mounting user scope (hides
-agent-authored skills); materializing into `/workspace/.claude/skills/`
-(the user's tree); convention-dir delivery with no vocabulary (fails
+must-have; it remains the fallback if `--add-dir` ever regresses);
+launch-copy into `~/.claude/skills/` (the ADR 0033 registrar again);
+overlay/mounting user scope (hides agent-authored skills);
+materializing into `/workspace/.claude/skills/` (the user's tree);
+convention-dir delivery with no vocabulary (fails
 attribution/cascade/`!name`); a manifest bake; a `format` axis;
 `[[agent_skills]]` as the key (collides with the standing "agent skill"
 glossary term).

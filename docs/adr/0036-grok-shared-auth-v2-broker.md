@@ -2,9 +2,8 @@
 
 grok-shared-auth is **rebuilt** (2026-07-16) as an auth broker riding
 `GROK_AUTH_PROVIDER_COMMAND` — grok's own external-auth seam — replacing
-the retired v1 symlink design (ADR 0023). The two parked candidate designs
-(`wip/grok-shared-auth-v2-designs.md`, now absorbed here and deleted)
-required their gates to run BEFORE any build; xAI published the Grok CLI
+the retired v1 symlink design (ADR 0023). The two parked candidate
+designs required their gates to run BEFORE any build; xAI published the Grok CLI
 source ("Grok Build") in the interim, so every gate was answered by
 source inspection of the vendor tree plus live probes against the in-box
 0.2.101 binary, rather than by risking live credentials. The gate record

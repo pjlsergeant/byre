@@ -4,10 +4,8 @@ The `docker-host` skill grants a box access to the **host's** Docker
 daemon via `/var/run/docker.sock`. It is the ergonomic form of a grant a
 user could already assemble by hand (socket mount + docker CLI + group
 membership); the skill's value is bundling that with honest, loud
-legibility. Decided 2026-07-13: designed with the maintainer via
-/grilling (three rounds of codex + grok design review), host-verified on
-Docker Desktop and native Linux, built, and build-reviewed. This ADR
-absorbs the design working-doc (deliver precedent); git history keeps it.
+legibility. Decided 2026-07-13; host-verified on Docker Desktop and
+native Linux.
 
 Not docker-in-docker (no nested daemon), not a Podman host (a Podman host
 would need a sibling skill with its own verified facts), and not the

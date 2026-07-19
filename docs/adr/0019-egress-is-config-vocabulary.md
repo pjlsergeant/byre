@@ -1,6 +1,6 @@
 # Egress is config vocabulary; the firewall stays a skill
 
-Decided 2026-07-08 (with Pete driving). The user's path to extra firewall
+Decided 2026-07-08. The user's path to extra firewall
 allowances moves from the `FIREWALL_ALLOW` env var to a first-class
 `egress` config key, and ejection-with-firewall becomes a documented
 boundary instead of a silent trap. Enforcement does not move: the

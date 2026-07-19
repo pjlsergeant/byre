@@ -1,6 +1,6 @@
 # Egress doors ship closed: offered, not open
 
-Decided 2026-07-08 (Pete's ruling, emphatic). A deny-by-default firewall
+Decided 2026-07-08. A deny-by-default firewall
 must mean it: **nothing opens a hole in the wall except explicit user
 intent, or a skill's own functional requirement.** Convenience endpoints
 -- git hosting, apt mirrors, language registries -- ship *declared but

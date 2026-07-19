@@ -1,9 +1,7 @@
 # MCP servers are wiring: [[mcp]] declarations, an always-baked file, injection-only adapters
 
-Decided 2026-07-14/15 (a four-round design marathon with Pete: three
-anchored reviews plus a greenfield round, then six spikes — spike results in
-`wip/` history, absorbed here; amended same-day after a scope grilling, see
-"The registrar that wasn't" below). byre gains an `[[mcp]]` vocabulary for
+Decided 2026-07-14/15; the design was walked back once mid-flight, see
+"The registrar that wasn't" below. byre gains an `[[mcp]]` vocabulary for
 wiring Model Context Protocol servers into a box. Declarations are
 **configuration, not grants**; the canonical declared set bakes to
 `/etc/byre/mcp.json` in **every** image; adapters are **injection-only** —
@@ -144,34 +142,23 @@ stale-image sibling box injects its own old set into its own session only.
 
 ## The registrar that wasn't (byre__ namespacing, walked back)
 
-The design rounds produced a full state-writing reconcile protocol under a
-reserved `byre__` namespace: pinned volume-resident scopes, authoritative
-JSON reads, diff-before-mutate, stale deletions last and only after clean
-enumeration, a volume lock carrying a declared-set generation stamp, a
-historical receipt rendered by status. It was review-hardened by three
-independent reviewers and pinned "so it isn't re-litigated."
+The first design produced a full state-writing reconcile protocol under
+a reserved `byre__` namespace — byre would write declarations into each
+agent's own MCP state and converge them there. It existed because early
+probes made claude look like the injection *exception* (the one CLI
+whose state verbs were too hostile to reconcile), so state-writing
+looked like the general case.
 
-**Why we had it:** the design night's probes made claude look like the
-injection *exception* — the one CLI whose state verbs were too hostile to
-reconcile — so state-writing looked like the GENERAL case, and safe
-convergence in a file the user also hand-edits needs structural provenance:
-the namespace was load-bearing (the alternatives — a provenance ledger,
-never-deleting, owning the whole table — were each killed on their own
-demerits).
-
-**Why we could discard it (ruled 2026-07-15):** same-day spikes flipped
-the picture. Codex — the protocol's friendliest customer — turned out to
-inject state-free via `-c`, proven with a live tool call. Claude alone was
-weak coverage; claude + codex is dominant, and gemini may inject for free
-once probed. That left the protocol one confirmed customer (grok) and a
-known-unsound piece (the generation stamp has no monotonic source). A
-review-hardened protocol with at most one consumer and a hole is exactly
-the machinery proportionality says not to pin. So: **byre's MCP
-architecture is injection-only.** Outside its own baked file, byre never
-mutates agent MCP state. If a demanded agent someday truly cannot inject,
-the state-writing design gets re-derived from that CLI's live facts — this
-section is the map of what was learned, not a spec to build. The `[[mcp]]`
-name grammar (no underscores) keeps `byre__` structurally unreachable, so
+Same-day spikes flipped the picture: codex — the protocol's friendliest
+customer — turned out to inject state-free via `-c`, proven with a live
+tool call. That left the protocol at most one confirmed customer (grok)
+and a known-unsound piece (its generation stamp has no monotonic
+source), so it was discarded before build (ruled 2026-07-15): **byre's
+MCP architecture is injection-only.** Outside its own baked file, byre
+never mutates agent MCP state. If a demanded agent someday truly cannot
+inject, a state-writing design gets re-derived from that CLI's live
+facts — not rebuilt from the discarded sketch. The `[[mcp]]` name
+grammar (no underscores) keeps `byre__` structurally unreachable, so
 the namespace stays reserved for free.
 
 **Selection seam (unchanged):** delivery keys off the SELECTED agent (the
@@ -215,7 +202,7 @@ regardless.
   (P5). No re-enable knob in v1 — it's a consent question for when a real
   user asks; the parked runtime-env work is the likely vehicle.
 
-## v1 scope (grilled and ruled, 2026-07-15)
+## v1 scope (ruled 2026-07-15)
 
 > **Amended 2026-07-17:** opencode joined the adapter set — its
 > OPENCODE_CONFIG_CONTENT deep-merge was source-answered 2026-07-16 and
@@ -230,16 +217,14 @@ no re-enable knob (a consent question for when a real user asks).
 screen — the earlier no-screen call was schedule dressed as scope, and the
 cockpit doesn't get to omit a config class every sibling class has.
 
-## Dead (do not re-propose; reasons in the design history)
+## Rejected (do not re-propose without new evidence)
 
-Legibility/"read before you run" as the pitch; a from-mcp converter;
-firewall-as-egress-discovery (the firewall DROPs silently BY DESIGN);
-`--strict-mcp-config`; an explicit seed flag; provenance ledgers and
-hash-marker offer-once (injection makes memory jobless); purging outside a
-namespace; uniform-mechanism-for-uniformity's-sake; success-tense status
-captions; names-only drift detection; and the `byre__` state-writing
-registrar itself (walked back above — re-derive from live CLI facts if a
-demanded agent ever truly cannot inject; do not build the recorded sketch).
+A from-mcp converter; firewall-as-egress-discovery (the firewall DROPs
+silently BY DESIGN); `--strict-mcp-config`; an explicit seed flag;
+provenance ledgers and hash-marker offer-once (injection makes memory
+jobless); purging outside a namespace; uniform-mechanism-for-
+uniformity's-sake; and the `byre__` state-writing registrar itself
+(walked back above).
 
 ## Consequences
 
