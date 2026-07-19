@@ -647,3 +647,29 @@ func TestWarnGuardCollisions(t *testing.T) {
 		t.Fatalf("unrelated file into /usr/local/bin must not warn:\n%s", b5.String())
 	}
 }
+
+// A found engine whose daemon won't answer is UNKNOWN, never "not running" —
+// the lifecycle commands refuse in this state and status must not contradict
+// them with a confident negative (external review, 2026-07-19).
+func TestStatusContainerUnknownWhenEngineQueryFails(t *testing.T) {
+	var b strings.Builder
+	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p",
+		ContainerQueryErr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"})
+	rows := statusRows(b.String())
+	if got := strings.Join(rows["Container"], " "); !strings.Contains(got, "unknown") || !strings.Contains(got, "Cannot connect") {
+		t.Fatalf("Container row must be unknown with the engine error, got %q", got)
+	}
+	if strings.Contains(b.String(), "not running") {
+		t.Fatal("a failed query must never render as 'not running'")
+	}
+}
+
+func TestStatusSiblingQueryFailureIsReported(t *testing.T) {
+	var b strings.Builder
+	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p",
+		Container: "deadbeefcafe4567", SiblingQueryErr: "daemon timeout"})
+	rows := statusRows(b.String())
+	if got := strings.Join(rows["Worktrees"], " "); !strings.Contains(got, "unknown") || !strings.Contains(got, "daemon timeout") {
+		t.Fatalf("Worktrees row must report the failed sibling query, got %q", got)
+	}
+}

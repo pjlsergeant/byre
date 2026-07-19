@@ -56,18 +56,20 @@ type statusInfo struct {
 	AgentClaudeSkills  string
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
-	Containments    []skills.ContainmentDecl
-	ProjectRunArgs  bool     // the PROJECT's own raw run_args present (degrades the posture claim)
-	Container       string   // this dir's running container id, or "" if none
-	Orphaned        bool     // Container is running but its byre client is gone (terminal died; box survives)
-	SiblingSessions []string // OTHER live sessions in this project, "workdir-id (short-id)" (worktrees sharing these volumes)
-	Rootless        bool     // true if the engine is rootless Podman
-	KeepID          bool     // rootless Podman with keep-id mapping support (the supported rootless path)
-	EngineErr       string   // why the engine/container state is unknown, if applicable
-	SkillErr        string   // why skills couldn't be resolved, if applicable
-	SelfEdit        string   // host store path when --self-edit is active, else ""
-	Proposal        string   // note about a committed <project>/byre.config, if any
-	Cat             *packages.Catalog
+	Containments      []skills.ContainmentDecl
+	ProjectRunArgs    bool     // the PROJECT's own raw run_args present (degrades the posture claim)
+	Container         string   // this dir's running container id, or "" if none
+	ContainerQueryErr string   // engine found but the container query failed — state is UNKNOWN, not absent
+	SiblingQueryErr   string   // sibling-session query failed while the own-session query worked
+	Orphaned          bool     // Container is running but its byre client is gone (terminal died; box survives)
+	SiblingSessions   []string // OTHER live sessions in this project, "workdir-id (short-id)" (worktrees sharing these volumes)
+	Rootless          bool     // true if the engine is rootless Podman
+	KeepID            bool     // rootless Podman with keep-id mapping support (the supported rootless path)
+	EngineErr         string   // why the engine/container state is unknown, if applicable
+	SkillErr          string   // why skills couldn't be resolved, if applicable
+	SelfEdit          string   // host store path when --self-edit is active, else ""
+	Proposal          string   // note about a committed <project>/byre.config, if any
+	Cat               *packages.Catalog
 }
 
 // Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
@@ -209,8 +211,14 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			}
 		}
 		// This dir's own session: the worktree label, so it reflects THIS worktree,
-		// not a sibling (both carry the project label).
-		mine, _ := r.RunningContainersByLabel(workdirLabel(paths))
+		// not a sibling (both carry the project label). A failed query is NOT
+		// "not running" — a found binary whose daemon is down/unreachable must
+		// render as unknown, not as a confident negative (the lifecycle
+		// commands refuse in this state; status must not contradict them).
+		mine, merr := r.RunningContainersByLabel(workdirLabel(paths))
+		if merr != nil {
+			info.ContainerQueryErr = firstLine(merr.Error())
+		}
 		if len(mine) > 0 {
 			info.Container = mine[0]
 			// A box outliving its byre (terminal killed, ssh dropped) keeps
@@ -224,9 +232,12 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		// Other live sessions in the same project (worktrees sharing these
 		// volumes). Surfaced so status doesn't imply "nothing running" while
 		// reset/forget correctly refuse on the project label. Empty for a plain
-		// project (no worktree siblings).
+		// project (no worktree siblings). A failed query is reported (once —
+		// the own-session note already covers the both-failed case).
 		if fam, cerr := r.RunningContainersByLabel(projectLabel(paths)); cerr == nil {
 			info.SiblingSessions = siblingNames(r, mine, fam)
+		} else if info.ContainerQueryErr == "" {
+			info.SiblingQueryErr = firstLine(cerr.Error())
 		}
 	}
 
@@ -573,6 +584,8 @@ func renderStatus(w io.Writer, s statusInfo) {
 
 	if s.EngineErr != "" {
 		row("Container", "unknown (no engine)")
+	} else if s.ContainerQueryErr != "" {
+		row("Container", "unknown — the engine didn't answer: "+s.ContainerQueryErr)
 	} else if s.Container != "" && s.Orphaned {
 		row("Container", "running ("+shortID(s.Container)+") — orphaned: the byre that started it is gone; the box runs on. Reach it with 'byre shell', or stop it: "+s.Engine+" stop "+shortID(s.Container))
 	} else if s.Container != "" {
@@ -583,6 +596,8 @@ func renderStatus(w io.Writer, s statusInfo) {
 	if len(s.SiblingSessions) > 0 {
 		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s  (share these volumes)",
 			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", ")))
+	} else if s.SiblingQueryErr != "" {
+		row("Worktrees", "sibling sessions unknown — the engine didn't answer: "+s.SiblingQueryErr)
 	}
 }
 
