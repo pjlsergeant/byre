@@ -57,7 +57,7 @@ every command and flag.
 
 | Command | What it does |
 |---|---|
-| `byre skill` | Manage skill packages (list, inspect, fork, init, validate, update). |
+| `byre skill` | Manage skill packages (list, inspect, fork, init, validate). |
 | `byre skill list` | List skill packages in the catalog. |
 | `byre skill inspect <id\|uri>` | Show skill package metadata and grants (URIs fetch without installing). |
 | `byre skill install <manifest-uri>` | Fetch, verify, and snapshot a skill package (grants nothing until enabled). |
@@ -66,7 +66,6 @@ every command and flag.
 | `byre skill fork <id> <new-id>` | Fork an immutable skill into a local editable package. |
 | `byre skill init <name>` | Scaffold a new local skill package. |
 | `byre skill validate [name]` | Two-stage parse and resolve-check a skill (or all). |
-| `byre skill update` | Explain that bundled packages update with byre itself (stub). |
 | `byre skill archive-legacy` | Move LEGACY materialized dirs to skills.legacy/ / templates.legacy/. |
 | `byre template` | Manage template packages (list, inspect, fork, init, validate). |
 | `byre template list` | List template packages in the catalog. |

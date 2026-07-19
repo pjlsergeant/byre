@@ -1,5 +1,26 @@
 # Changes
 
+## Unreleased
+
+- **First compatibility sunset.** Several transition aids for behavior
+  that changed before v1.0 have reached the end of their support window
+  and are removed together:
+  - `shared_auth_declined` in `default.config` (v0.1.7's decline record;
+    nothing has read it since the offer's default became No). The stale
+    key still parses and is ignored -- delete the line at your leisure.
+  - The adoption-record migration: pre-preset `adopted`/`declined` files
+    in project stores no longer auto-migrate to the `applied` marker on
+    store setup. Old records are inert; if you jump many versions and
+    your repo preset shows "unapplied", run `byre preset apply` once to
+    re-record it.
+  - `byre skill update`, the transitional no-op from the packages
+    migration (bundled packages update with byre itself; legacy dirs are
+    reported by store setup and `byre skill archive-legacy`).
+  - The `devloop` compat stub (the skill was renamed `devlog` 2026-07-12,
+    then moved out of byre). A config naming `devloop` now fails loudly
+    with the pinned `pjlsergeant/devlog` install remedy instead of
+    silently contributing nothing.
+
 ## v1.1.0 -- 2026-07-19
 
 - **`byre worktree` now runs the repository's git entirely inside the

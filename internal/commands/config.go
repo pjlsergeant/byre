@@ -63,8 +63,8 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	cat, _ := builtins.LoadCatalogRaw(home)
 	templates := config.ListTemplatesCatalog(cat)
 	agents := skills.ListAgentSkills(cat)
-	// Stubs (description-only compatibility shells: devloop,
-	// grok-shared-auth) are not OFFERED: a picker has nothing to enable.
+	// Stubs (description-only compatibility shells) are not OFFERED: a
+	// picker has nothing to enable.
 	// A config that already references one still shows it -- skillEntries
 	// unions the config-side names back in, so it stays un-referenceable.
 	skillOpts := skillOpts(cat)

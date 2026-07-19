@@ -15,38 +15,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
-	"github.com/pjlsergeant/byre/internal/version"
 )
-
-// SkillUpdate is a transitional stub: bundled packages now update with
-// byre itself. Points at any LEGACY rows and exits 0.
-func SkillUpdate(s Streams) error {
-	home, err := project.Home()
-	if err != nil {
-		return err
-	}
-	if err := builtins.EnsureStoreOut(home, s.Err); err != nil {
-		return err
-	}
-	fmt.Fprintln(s.Err, "byre: bundled skills and templates now update with byre itself.")
-	fmt.Fprintln(s.Err, "      There is nothing for `byre skill update` to materialize.")
-	fmt.Fprintf(s.Err, "      Running byre %s; the %s mirror matches this version.\n", version.String(), packages.DisplayPath(filepath.Join(home, "bundled")))
-	cat, err := builtins.LoadCatalogRaw(home)
-	if err != nil {
-		return err
-	}
-	var legacy int
-	for _, ent := range cat.List("") {
-		if ent.Provenance == packages.ProvLegacy {
-			legacy++
-			fmt.Fprintf(s.Err, "  LEGACY %s  %s\n", ent.ID, ent.Reason)
-		}
-	}
-	if legacy > 0 {
-		fmt.Fprintln(s.Err, "Fork to keep edits; archive with: byre skill archive-legacy")
-	}
-	return nil
-}
 
 // SkillList prints catalog rows for skills.
 func SkillList(s Streams) error { return pkgList(s, packages.KindSkill) }

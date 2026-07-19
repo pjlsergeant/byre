@@ -32,19 +32,18 @@ The best-bounded win: the docs already call Claude Skills "the MCP genus"; the
 code implements it twice, ~verbatim. Unify behind a small internal
 generic/callback service (no grand public interface):
 
-- [ ] Config layer: shared split/replace/merge/reopen/close/stale-marker ops over
-      named closable declarations (`internal/config/mcp.go:280` vs
-      `internal/config/claudeskills.go:110`).
-- [ ] Effective-set construction incl. skill-contribution union and post-union
-      closures.
-- [ ] UI: one effective-row state machine feeding both (`internal/configui/effective.go`
-      -- `mcpRows` / `claudeSkillRows`, ~170 parallel lines).
-- [ ] Commands: one layer-edit lifecycle (choose layer -> parse -> replace/close ->
-      validate -> save atomically -> report) shared by `internal/commands/mcp.go`
-      and `internal/commands/claudeskill.go`; only parsing/validation/rendering/
-      delivery stay per-kind.
-- [ ] Acceptance test: a third named-declaration class would touch only its
-      kind-specific hooks.
+- [x] Config layer: shared split/replace/merge/reopen/close/stale-marker ops
+      (`internal/config/nameddecl.go`, `namedDeclOps`).
+- [x] Effective-set construction incl. skill-contribution union and post-union
+      closures (`internal/skills/nameddecl.go`, `declClaims`).
+- [x] UI: one effective-row state machine feeding both
+      (`internal/configui/effective.go`, `namedDeclRows` over `declRowItem`).
+- [x] Commands: one layer-edit lifecycle shared by the mcp and claude-skill
+      verbs (`internal/commands/nameddecl.go`, `declVerbs`); parsing/
+      validation/rendering/delivery stay per-kind.
+- [x] Acceptance: a third named-declaration class plugs in namedDeclOps +
+      declClaims labels + declRowItem adapters + declVerbs — no re-implemented
+      state machines.
 
 ### 3. Compatibility sunset (the one removal we endorse)
 

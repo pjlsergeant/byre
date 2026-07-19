@@ -51,7 +51,6 @@ func recorderApp(calls map[string]string) app {
 		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
 		},
-		skillUpdate:      func(_ commands.Streams) error { return note("skill update", "-") },
 		rebuild:          func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome:           func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
 		rehomeCandidates: func(_ commands.Streams, dir string) error { return note("rehome candidates", dir) },
@@ -117,7 +116,6 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", "abc"},
 		{[]string{"worktree", "feat"}, "worktree", "/proj feat  false"},
 		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x true"},
-		{[]string{"skill", "update"}, "skill update", "-"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
 		{[]string{"rehome"}, "rehome candidates", "/proj"}, // bare = list likely old ids

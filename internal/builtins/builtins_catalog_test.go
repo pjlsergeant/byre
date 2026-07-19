@@ -348,47 +348,27 @@ func TestNodeTemplateContainerNodeModules(t *testing.T) {
 	}
 }
 
-// Devloop rename upgrade-path dance deleted with materialization (ADR 0029);
-// the stub remains bundled and is covered by TestDevloopRenamedStub.
-
-// TestDevloopRenamedStub pins the devloop -> devlog rename's compat stub: a
-// config naming "devloop" must still resolve (an unknown user's build must
-// not break), contributing nothing — no files, no context, no scratch volume.
-// The description carries the rename pointer into the picker.
-func TestDevloopRenamedStub(t *testing.T) {
+// TestDevloopRetired pins the devloop sunset: the compat stub (devloop ->
+// devlog rename, 2026-07-12) is gone, and a config naming "devloop" fails
+// LOUDLY with the retired-name tombstone's pinned remedy — never a silent
+// no-op, never a bare "not found".
+func TestDevloopRetired(t *testing.T) {
 	_, cat := testCat(t)
-	res, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"devloop"}}, cat)
-	if err != nil {
-		t.Fatalf("a config naming the renamed skill must still resolve: %v", err)
+	_, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"devloop"}}, cat)
+	if err == nil {
+		t.Fatal("a config naming the retired devloop stub must fail resolve")
 	}
-	for _, b := range res.BuildBlocks() {
-		if b.Name == "byre/devloop" && len(b.Files) != 0 {
-			t.Errorf("renamed stub must ship no files, got %+v", b.Files)
-		}
-	}
-	for _, v := range res.Volumes() {
-		if v.Name == "scratch" {
-			t.Errorf("renamed stub must not mount the scratch volume: %+v", v)
-		}
-	}
-	if strings.Contains(res.Context(), "DIARY.md") {
-		t.Error("renamed stub must not contribute the workflow context")
-	}
-	b, err := os.ReadFile(filepath.Join(skillDir(t, cat, "devloop"), "skill.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(b), "RENAMED to devlog") {
-		t.Error("rename pointer missing from the skill description")
+	if !strings.Contains(err.Error(), "pjlsergeant/devlog") {
+		t.Fatalf("the failure must carry the tombstone's remedy: %v", err)
 	}
 }
 
-// The bundled stubs (devloop, grok-shared-auth) contribute nothing and must
-// classify as stubs -- pickers do not offer them; every other bundled skill
-// must NOT (a real skill misclassified as a stub would vanish from pickers).
+// No bundled skill may classify as a stub (a real skill misclassified as a
+// stub would vanish from pickers). The last bundled stub (devloop) was
+// retired to a tombstone; IsStub stays for any future compat shell.
 func TestBundledStubClassification(t *testing.T) {
 	_, cat := testCat(t)
-	stubs := map[string]bool{"devloop": true}
+	stubs := map[string]bool{}
 	for _, name := range skills.ListSkills(cat) {
 		sk, err := skills.Load(cat, name)
 		if err != nil {

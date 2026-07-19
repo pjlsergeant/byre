@@ -11,6 +11,9 @@ package packages
 var RetiredNames = map[string]string{
 	"codereview": "moved out of byre (2026-07-13) -- install it: byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml --digest sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f, then reference pjlsergeant/codereview",
 	"devlog":     "moved out of byre (2026-07-13) -- install it: byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml --digest sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12, then reference pjlsergeant/devlog",
+	// devloop was devlog's pre-rename name (2026-07-12); a description-only
+	// compat stub carried it until the sunset (see CHANGES). Same remedy.
+	"devloop": "renamed to devlog, then moved out of byre -- install it: byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml --digest sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12, then reference pjlsergeant/devlog",
 }
 
 // RetiredTombstone returns the tombstone for a retired bare name, or "".

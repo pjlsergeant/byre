@@ -300,10 +300,9 @@ skills = ["pete/linter"]
 	}
 }
 
-// The record sweep: pre-preset `adopted` records migrate to `applied`
-// markers (history preserved into the drift states); `declined` records are
-// deleted (nothing left to decline).
-func TestAdoptionRecordSweep(t *testing.T) {
+// Retired pre-preset `adopted`/`declined` records are inert: store setup
+// leaves them untouched (the migration sweep is retired; see CHANGES).
+func TestAdoptionRecordsInert(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	pdir := filepath.Join(home, "projects", "someproj")
@@ -315,15 +314,14 @@ func TestAdoptionRecordSweep(t *testing.T) {
 	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(pdir, "applied"))
-	if err != nil || !strings.HasPrefix(string(b), "deadbeef") {
-		t.Fatalf("adopted must migrate to applied: %v %q", err, b)
+	if _, err := os.Stat(filepath.Join(pdir, "adopted")); err != nil {
+		t.Error("store setup must leave old adoption records alone")
 	}
-	if _, err := os.Stat(filepath.Join(pdir, "adopted")); !os.IsNotExist(err) {
-		t.Error("adopted record must be removed after migration")
+	if _, err := os.Stat(filepath.Join(pdir, "declined")); err != nil {
+		t.Error("store setup must leave old decline records alone")
 	}
-	if _, err := os.Stat(filepath.Join(pdir, "declined")); !os.IsNotExist(err) {
-		t.Error("declined record must be swept")
+	if _, err := os.Stat(filepath.Join(pdir, "applied")); !os.IsNotExist(err) {
+		t.Error("no applied marker may be invented from an old record")
 	}
 }
 
@@ -395,23 +393,14 @@ func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
 	}
 }
 
-// Inspect must mutate NOTHING in the store -- no mirror regen, no record
-// sweep (its "Nothing written" line is a promise, codex P1).
+// Inspect must mutate NOTHING in the store -- no mirror regen (its "Nothing
+// written" line is a promise, codex P1).
 func TestPresetInspectMutatesNothing(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
-	// Plant records the store-ensure sweep would touch.
-	mustWriteFile(t, filepath.Join(p.Dir, "adopted"), []byte("deadbeef"), 0o644)
-	mustWriteFile(t, filepath.Join(p.Dir, "declined"), []byte("cafef00d"), 0o644)
 	s, _, _ := testStreams("", false)
 	if err := PresetInspect(s, proj, ""); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "adopted")); err != nil {
-		t.Error("inspect must not run the record sweep")
-	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "declined")); err != nil {
-		t.Error("inspect must not delete declined records")
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, "bundled")); !os.IsNotExist(err) {
 		t.Error("inspect must not regenerate the bundled mirror")
@@ -437,44 +426,6 @@ func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
 	b, _ := os.ReadFile(storePath)
 	if string(b) != "agent = \"grok\"\n" {
 		t.Fatalf("aborted apply must not overwrite the concurrent edit: %s", b)
-	}
-}
-
-// The sweep must never delete the only history copy: a failed applied-write
-// keeps the adopted record for the next sweep (both reviewers, P1).
-func TestAdoptionRecordSweepKeepsHistoryOnWriteFailure(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("read-only mode is not enforceable as root")
-	}
-	home := t.TempDir()
-	pdir := filepath.Join(home, "projects", "someproj")
-	mustMkdirAll(t, pdir, 0o755)
-	mustWriteFile(t, filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
-	// Make the applied write fail: applied's target is an unwritable dir --
-	// simulate by making the project dir read-only.
-	if err := os.Chmod(pdir, 0o555); err != nil {
-		t.Skip("cannot chmod")
-	}
-	t.Cleanup(func() { os.Chmod(pdir, 0o755) })
-	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
-		t.Fatal(err)
-	}
-	mustChmod(t, pdir, 0o755)
-	if _, err := os.Stat(filepath.Join(pdir, "adopted")); err != nil {
-		t.Fatal("adopted must survive a failed migration write")
-	}
-	if _, err := os.Stat(filepath.Join(pdir, "applied")); !os.IsNotExist(err) {
-		t.Fatal("no applied marker should exist after the failed write")
-	}
-	// Next sweep (writable again) completes the migration.
-	if err := packages.EnsureStore(home, nil, "v9.9.8", nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(pdir, "applied")); err != nil {
-		t.Fatal("retry sweep must complete the migration")
-	}
-	if _, err := os.Stat(filepath.Join(pdir, "adopted")); !os.IsNotExist(err) {
-		t.Fatal("adopted removed only after a successful write")
 	}
 }
 
@@ -533,23 +484,6 @@ func TestPresetConventionalPathIsBounded(t *testing.T) {
 	shipPreset(t, proj, PresetName, strings.Repeat("# pad\n", packages.MaxManifestBytes/6+1))
 	if _, _, _, err := readPreset(proj, ""); err == nil {
 		t.Fatal("oversized conventional preset must be rejected")
-	}
-}
-
-// createExclusive must not clobber a marker landed in the race window.
-func TestSweepDoesNotClobberConcurrentMarker(t *testing.T) {
-	home := t.TempDir()
-	pdir := filepath.Join(home, "projects", "someproj")
-	mustMkdirAll(t, pdir, 0o755)
-	mustWriteFile(t, filepath.Join(pdir, "adopted"), []byte("stalehash"), 0o644)
-	// A current marker lands "concurrently" (before the sweep's write).
-	mustWriteFile(t, filepath.Join(pdir, "applied"), []byte("freshhash\n./byre.preset"), 0o644)
-	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(filepath.Join(pdir, "applied"))
-	if !strings.HasPrefix(string(b), "freshhash") {
-		t.Fatalf("sweep must never replace a live marker: %q", b)
 	}
 }
 

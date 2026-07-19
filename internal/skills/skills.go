@@ -217,10 +217,11 @@ func (f File) CompanionAgent() string {
 
 // IsStub reports whether a skill contributes NOTHING to a box -- no build
 // content, no runtime grants, no volumes, no agent, no context, no
-// companionship claim: a description-only compatibility shell (devloop,
-// grok-shared-auth). Stubs exist so configs naming them keep resolving; a
-// picker has nothing to offer for one -- it is only shown when a config
-// already references it (so it can be un-referenced).
+// companionship claim: a description-only compatibility shell. Stubs exist
+// so configs naming them keep resolving through a rename's support window
+// (then the name moves to packages.RetiredNames); a picker has nothing to
+// offer for one -- it is only shown when a config already references it (so
+// it can be un-referenced). No bundled stub currently exists.
 func IsStub(f File) bool {
 	rt := f.Runtime
 	return f.Agent == nil &&

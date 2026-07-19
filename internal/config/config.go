@@ -350,13 +350,6 @@ type Config struct {
 	// cascade; banned in template.config (templates reference no packages).
 	Sources map[string]SourceHint `toml:"sources,omitempty"`
 
-	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
-	// shared-auth offer recorded declines here; nothing reads it anymore —
-	// the offer's default is already No, so a decline needs no record. It
-	// stays decodable only so configs v0.1.7 wrote still parse (Parse
-	// rejects unknown keys); resolveWith strips it like all picker state.
-	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
-
 	Apt       []string          `toml:"apt,omitempty"`
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
@@ -587,7 +580,6 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// never reaches a resolved config — onboarding reads it straight from
 	// default.config, nothing else may.
 	resolved.SharedAuth = SharedAuthPref{}
-	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -734,11 +726,18 @@ func Parse(content []byte) (Config, error) {
 		return Config{}, err
 	}
 	// SharedAuthPref's UnmarshalTOML consumes shared_auth, but BurntSushi still
-	// reports nested keys (shared_auth.claude) as Undecoded. Drop those; any
-	// other undecoded key is a real typo.
+	// reports nested keys (shared_auth.claude) as Undecoded. Drop those, and
+	// tolerate retired keys past versions wrote (their machinery is gone; the
+	// stale line is ignored, never a parse failure); any other undecoded key
+	// is a real typo.
 	var real []toml.Key
 	for _, k := range md.Undecoded() {
 		if len(k) > 0 && k[0] == "shared_auth" {
+			continue
+		}
+		// shared_auth_declined: v0.1.7's decline record (ADR 0025), read by
+		// nothing since — the offer's default is already No.
+		if len(k) == 1 && k[0] == "shared_auth_declined" {
 			continue
 		}
 		real = append(real, k)
@@ -778,7 +777,6 @@ func Merge(base, over Config) Config {
 	if !over.SharedAuth.Empty() {
 		out.SharedAuth = over.SharedAuth.Clone()
 	}
-	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
 	out.Egress, out.EgressClosed = mergeEgress(base, over)
 	// Offered egress keeps the plain-list idiom: it is never enforced, so a
 	// closure has nothing to subtract from and the marker just removes the
