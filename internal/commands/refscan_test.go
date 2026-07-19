@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // scanReferences must cover the whole stored cascade: a reference that lives
@@ -39,7 +41,7 @@ func TestScanReferencesCoversLayers(t *testing.T) {
 	writeCfg("layers/Bad_Name/layer.config", "skills = [not toml\n")
 	writeCfg("layers/go/layer.config", "skills = [not toml\n")
 
-	cat, err := packages.LoadCatalog(home, builtins.FS(), "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, builtins.FS(), "v0.2.0", "0.2.0", packages.Stage2Hooks{Skill: skills.ValidatePrimaryBytes, Template: config.ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}

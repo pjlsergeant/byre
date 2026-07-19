@@ -23,7 +23,7 @@ func testHome(t *testing.T) string {
 // catFor builds a local-only catalog for home (no bundled FS).
 func catFor(t *testing.T, home string) *packages.Catalog {
 	t.Helper()
-	cat, err := packages.LoadCatalog(home, nil, "0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "0.2.0", "0.2.0", packages.Stage2Hooks{Skill: ValidatePrimaryBytes})
 	if err != nil {
 		t.Fatal(err)
 	}

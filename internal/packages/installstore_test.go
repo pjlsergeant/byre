@@ -42,7 +42,7 @@ func TestLandSnapshotAndCatalog(t *testing.T) {
 		t.Fatal("exec bit lost")
 	}
 	// Catalog lists it as installed with the digest label.
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestInstalledBrokenRowsAreScoped(t *testing.T) {
 	if err := writeIndex(home, idx); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}

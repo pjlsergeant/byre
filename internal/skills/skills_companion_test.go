@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"io/fs"
+	"os"
 )
 
 // SharedAuthCompanion maps an agent to the skill VOUCHING itself ready as
@@ -37,7 +38,7 @@ func TestSharedAuthCompanion(t *testing.T) {
 // must NOT.
 func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 	home := t.TempDir()
-	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, bundledSrcFS(t), "0.2.0", "0.2.0", packages.Stage2Hooks{Skill: ValidatePrimaryBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 // opencode pair through their vouch.
 func TestBuiltinCompanionDeclarations(t *testing.T) {
 	home := t.TempDir()
-	cat, err := packages.LoadCatalog(home, builtins.FS(), "0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, bundledSrcFS(t), "0.2.0", "0.2.0", packages.Stage2Hooks{Skill: ValidatePrimaryBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,4 +119,13 @@ func TestSharedAuthCompanionRefusesAmbiguity(t *testing.T) {
 	if got := SharedAuthCompanion(catFor(t, dir), "claude"); got != "" {
 		t.Fatalf("two declarers must yield no companion, got %q", got)
 	}
+}
+
+// bundledSrcFS serves the bundled packages straight from the source tree —
+// the same skills/ and templates/ dirs builtins embeds. skills tests cannot
+// import builtins (builtins imports skills since the stage-2 hooks became
+// explicit), and these tests pin the CONTENT, which is identical.
+func bundledSrcFS(t *testing.T) fs.FS {
+	t.Helper()
+	return os.DirFS("../builtins")
 }

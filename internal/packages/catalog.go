@@ -75,25 +75,29 @@ type Catalog struct {
 	order []string
 
 	// Stage2Skill / Stage2Template run eager stage-2 classification on local
-	// packages at ingest (Pete ruling, round 3). Taken from package-level
-	// Stage2Skill/Stage2Template hooks at LoadCatalog time. Bundled packages
-	// never use these.
+	// packages at ingest (Pete ruling, round 3). Supplied by the caller via
+	// LoadCatalog's hooks — packages cannot import the schema parsers
+	// (skills/config import packages; the other direction would cycle).
+	// Bundled packages never use these.
 	Stage2Skill    func(primary []byte) error
 	Stage2Template func(primary []byte) error
 }
 
-// Stage2 hooks for eager local classification. Wired by skills/config init
-// so packages does not import them (would cycle).
-var (
-	Stage2Skill    func(primary []byte) error
-	Stage2Template func(primary []byte) error
-)
+// Stage2Hooks carries the eager stage-2 parsers into LoadCatalog: Skill
+// strict-parses a skill.toml body, Template a template body. Either may be
+// nil (that kind's local packages skip eager classification and fail later,
+// at load). Callers with the parsers in reach (builtins) pass both; a
+// catalog built for one purpose may pass just what it needs.
+type Stage2Hooks struct {
+	Skill    func(primary []byte) error
+	Template func(primary []byte) error
+}
 
 // LoadCatalog builds the catalog from bundled embed content and the local
 // store under home. It does not mutate the store (EnsureStore does that).
 // bundled is an fs.FS whose top-level dirs are "skills" and "templates".
 // displayVer is shown to humans; compatVer feeds requires_byre only.
-func LoadCatalog(home string, bundled fs.FS, displayVer, compatVer string) (*Catalog, error) {
+func LoadCatalog(home string, bundled fs.FS, displayVer, compatVer string, hooks Stage2Hooks) (*Catalog, error) {
 	if displayVer == "" {
 		displayVer = compatVer
 	}
@@ -107,8 +111,8 @@ func LoadCatalog(home string, bundled fs.FS, displayVer, compatVer string) (*Cat
 		byID:           map[string]*Entry{},
 		aliases:        map[string]string{},
 		protected:      map[string]string{},
-		Stage2Skill:    Stage2Skill,
-		Stage2Template: Stage2Template,
+		Stage2Skill:    hooks.Skill,
+		Stage2Template: hooks.Template,
 	}
 	// Retired names are protected even when not currently bundled.
 	for bare, tomb := range RetiredNames {

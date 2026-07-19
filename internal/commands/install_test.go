@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // publishSkill writes a distributable skill (manifest + payloads) into a
@@ -68,7 +70,7 @@ func TestInstallFreshNonTTY(t *testing.T) {
 		t.Fatalf("missing boundary statement:\n%s", errBuf.String())
 	}
 	// Snapshot exists; resolves as installed through a fresh catalog.
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Skill: skills.ValidatePrimaryBytes, Template: config.ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +340,7 @@ func TestInstallRepairsBrokenSnapshot(t *testing.T) {
 	if _, err := os.Stat(prim); err != nil {
 		t.Fatalf("snapshot primary not restored: %v", err)
 	}
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Skill: skills.ValidatePrimaryBytes, Template: config.ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +437,7 @@ func TestUninstallContestedIdDisclosesTakeover(t *testing.T) {
 		t.Fatalf("referencing box must be named:\n%s", out)
 	}
 	// And the takeover is real: the local package now provides the id.
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Skill: skills.ValidatePrimaryBytes, Template: config.ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +480,7 @@ func TestUninstallMultiClaimantStaysContested(t *testing.T) {
 	if !strings.Contains(out, sdir) || !strings.Contains(out, tdir) {
 		t.Fatalf("disclosure must name every claimant:\n%s", out)
 	}
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Skill: skills.ValidatePrimaryBytes, Template: config.ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}

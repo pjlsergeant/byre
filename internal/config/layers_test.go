@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // writeLayer writes ~/.byre/layers/<name>/layer.config.
@@ -152,13 +153,14 @@ func TestDefaultConfigBansExtends(t *testing.T) {
 // (one template, "go") so reserved-name checks have a bundled alias to hit.
 func withBundledFixture(t *testing.T) {
 	t.Helper()
-	prev := BundledFS
-	BundledFS = func() fs.FS {
-		return fstest.MapFS{
-			"templates/go/template.config": &fstest.MapFile{Data: []byte("# description: fixture\n")},
-		}
+	prev := CatalogLoader
+	bundled := fstest.MapFS{
+		"templates/go/template.config": &fstest.MapFile{Data: []byte("# description: fixture\n")},
 	}
-	t.Cleanup(func() { BundledFS = prev })
+	CatalogLoader = func(h string) (*packages.Catalog, error) {
+		return packages.LoadCatalog(h, bundled, "0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
+	}
+	t.Cleanup(func() { CatalogLoader = prev })
 }
 
 // A layer may not take a BUNDLED package bare name; a squatter dir on such a

@@ -22,50 +22,37 @@ import (
 	"strconv"
 	"strings"
 
-	"io/fs"
-
 	"github.com/BurntSushi/toml"
 
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
-// BundledFS / ByreVersion / ByreCompat are wired by the builtins package (init)
-// so config can build a catalog without importing builtins (avoids an import
-// cycle). Tests may set them to a fixture FS / fixed version.
-var (
-	BundledFS   func() fs.FS
-	ByreVersion func() string // display (version.String)
-	ByreCompat  func() string // requires_byre only (version.Semver)
-)
+// CatalogLoader is the ONE seam through which config's internal resolution
+// (template lookup, name canonicalization) builds a catalog. builtins — the
+// package owning the embedded bundled content, the byre version, and the
+// full stage-2 parser set — constructs the real loader and installs it here,
+// because config cannot import builtins (builtins imports config) or skills
+// (skills imports config). Tests inject fixture loaders the same way. When
+// unset (config-only tests), catalogFor degrades to a local-store-only
+// catalog with config's own template parser and no bundled content.
+var CatalogLoader func(home string) (*packages.Catalog, error)
 
-func init() {
-	// Eager template stage-2 for catalog local ingest (round 3).
-	packages.Stage2Template = func(raw []byte) error {
-		_, err := ParseTemplateBody(raw)
-		return err
-	}
+// ValidateTemplateBytes is the eager stage-2 template check for catalog
+// ingest: strict-parse the template body. Exported for the catalog
+// constructors (builtins, catalogFor's fallback) to hand to LoadCatalog.
+func ValidateTemplateBytes(raw []byte) error {
+	_, err := ParseTemplateBody(raw)
+	return err
 }
 
-// catalogFor builds the multi-provider catalog for home.
+// catalogFor builds the multi-provider catalog for home via CatalogLoader.
 func catalogFor(home string) (*packages.Catalog, error) {
-	var bundled fs.FS
-	if BundledFS != nil {
-		bundled = BundledFS()
+	if CatalogLoader != nil {
+		return CatalogLoader(home)
 	}
-	display := "0.0.0-devel"
-	if ByreVersion != nil {
-		if v := ByreVersion(); v != "" {
-			display = v
-		}
-	}
-	compat := display
-	if ByreCompat != nil {
-		if v := ByreCompat(); v != "" {
-			compat = v
-		}
-	}
-	return packages.LoadCatalog(home, bundled, display, compat)
+	return packages.LoadCatalog(home, nil, "0.0.0-devel", "0.0.0-devel",
+		packages.Stage2Hooks{Template: ValidateTemplateBytes})
 }
 
 // SourceHint is one [sources] acquisition hint. From names the cascade

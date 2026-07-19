@@ -28,18 +28,16 @@ func TestLegacyRowDoesNotDisableBundledAlias(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	old := packages.Stage2Skill
-	packages.Stage2Skill = func(raw []byte) error {
+	hooks := packages.Stage2Hooks{Skill: func(raw []byte) error {
 		if string(raw) == "typo_key = true\n" {
 			return os.ErrInvalid
 		}
 		return nil
-	}
-	t.Cleanup(func() { packages.Stage2Skill = old })
+	}}
 	bundled := fstest.MapFS{
 		"skills/claude/skill.toml": &fstest.MapFile{Data: []byte("description = \"c\"\n[agent]\ncommand = \"claude\"\n")},
 	}
-	cat, err := packages.LoadCatalog(home, bundled, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, bundled, "v0.2.0", "0.2.0", hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
