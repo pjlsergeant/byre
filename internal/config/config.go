@@ -81,6 +81,18 @@ func (h SourceHint) InstallHint(kind string) string {
 	return cmd
 }
 
+// retiredConfigKeys is the table of top-level TOML keys past versions wrote
+// whose machinery a compat sunset removed: the stale line parses and is
+// ignored, never a parse failure (deleting it is the user's housekeeping,
+// not an upgrade gate). Values say what the key was, for this table's
+// readers — the packages.RetiredNames of config vocabulary. Sunset the
+// ENTRY, too, once no supported upgrade path can still carry the key.
+var retiredConfigKeys = map[string]string{
+	// v0.1.7's machine-wide shared-auth decline record (ADR 0025); nothing
+	// has read it since the offer's default became No.
+	"shared_auth_declined": "shared-auth decline record",
+}
+
 // ProjectConfigName is the fixed per-project config filename.
 const ProjectConfigName = "byre.config"
 
@@ -714,17 +726,14 @@ func Parse(content []byte) (Config, error) {
 	}
 	// SharedAuthPref's UnmarshalTOML consumes shared_auth, but BurntSushi still
 	// reports nested keys (shared_auth.claude) as Undecoded. Drop those, and
-	// tolerate retired keys past versions wrote (their machinery is gone; the
-	// stale line is ignored, never a parse failure); any other undecoded key
-	// is a real typo.
+	// tolerate retired top-level keys (retiredConfigKeys) that past versions
+	// wrote; any other undecoded key is a real typo.
 	var real []toml.Key
 	for _, k := range md.Undecoded() {
 		if len(k) > 0 && k[0] == "shared_auth" {
 			continue
 		}
-		// shared_auth_declined: v0.1.7's decline record (ADR 0025), read by
-		// nothing since — the offer's default is already No.
-		if len(k) == 1 && k[0] == "shared_auth_declined" {
+		if len(k) == 1 && retiredConfigKeys[k[0]] != "" {
 			continue
 		}
 		real = append(real, k)
@@ -865,12 +874,15 @@ func isRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!"
 // the stripped name travels to the netns helper's env beside the open
 // entries); `extends` is name-checked (it is consumed by resolution).
 func (c Config) validateScalarsLayer() error {
-	egress := make([]string, 0, len(c.Egress))
-	for _, e := range c.Egress {
-		if isRemoval(e) {
-			e = e[1:]
+	egress := c.Egress
+	if slices.ContainsFunc(egress, isRemoval) {
+		egress = make([]string, 0, len(c.Egress))
+		for _, e := range c.Egress {
+			if isRemoval(e) {
+				e = e[1:]
+			}
+			egress = append(egress, e)
 		}
-		egress = append(egress, e)
 	}
 	return c.validateScalarsCommon(
 		filter(c.Apt, func(s string) bool { return !isRemoval(s) }),

@@ -58,7 +58,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 		return err
 	}
 	// Store-ensure (bundled mirror + LEGACY notices) rides every develop so an
-	// upgraded byre surfaces them without requiring `skill update`.
+	// upgraded byre surfaces them with no separate update step.
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}

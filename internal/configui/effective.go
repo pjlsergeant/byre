@@ -68,13 +68,42 @@ func (m model) fieldRows(f fieldID) []listRow {
 }
 
 // declRowItem is one declaration adapted for the shared named-declaration row
-// builder: the raw name (markers keep their "!" spelling), a stable display
-// line (removed/inherited/skill rows — it feeds the dirty signature, so no
-// live notes), and the override editor's prefill values.
+// builder: the raw name (markers keep their "!" spelling) and its display
+// line. Anything richer — live notes, override prefills — arrives through
+// the namedDeclField callbacks, computed only for the rows that use it.
 type declRowItem struct {
 	name string
 	line string
-	vals []string // inherited-row prefill
+}
+
+// declRowItems adapts one vocabulary's declaration slice for the row builder.
+func declRowItems[T any](decls []T, name, line func(T) string) []declRowItem {
+	out := make([]declRowItem, len(decls))
+	for i, d := range decls {
+		out[i] = declRowItem{name: name(d), line: line(d)}
+	}
+	return out
+}
+
+// namedDeclField is one vocabulary's view for namedDeclRows. The callbacks
+// are lazy on purpose: localText may probe the disk (the Claude Skills
+// build-will-fail note) and lowerVals allocates prefill slices — both run
+// only for the row kinds that surface them, never for every entry per
+// render.
+type namedDeclField struct {
+	local []declRowItem
+	// localText renders a local entry's local/override row; nil = the
+	// entry's own line.
+	localText func(i int) string
+	lower     []declRowItem
+	// lowerVals is the override editor's prefill for an INHERITED row; nil =
+	// no prefill. Only the rowInherited branch calls it.
+	lowerVals   func(i int) []string
+	lowerClosed []string
+	skillDecls  func(sk string) []declRowItem
+	// lowerHas reports whether one lower layer declares rawName (markers
+	// keep their "!" spelling) — the lowerSource attribution probe.
+	lowerHas func(c config.Config, rawName string) bool
 }
 
 // namedDeclRows is the named-declaration genus's effective-row state machine
@@ -85,10 +114,15 @@ type declRowItem struct {
 // skill row here is closable (unlike every other field's read-only skill
 // rows). A marker is only stale when it matches nothing anywhere; lower-layer
 // closures that closed nothing still render (config, never invisible),
-// menu-less because they live in a lower file. localText renders a local
-// entry's local/override row — kept a callback (not precomputed) so a live
-// note that probes the disk runs only for rows that show it.
-func (m model) namedDeclRows(local, lowerDecls []declRowItem, localText func(i int) string, lowerClosed []string, skillDecls func(sk string) []declRowItem, lowerHas func(c config.Config, rawName string) bool) []listRow {
+// menu-less because they live in a lower file.
+func (m model) namedDeclRows(f namedDeclField) []listRow {
+	local, lowerDecls := f.local, f.lower
+	localText := func(i int) string {
+		if f.localText != nil {
+			return f.localText(i)
+		}
+		return local[i].line
+	}
 	localIdx := map[string]int{}  // name -> index of a real local entry
 	markerIdx := map[string]int{} // name -> index of a !name marker
 	for i, it := range local {
@@ -101,7 +135,7 @@ func (m model) namedDeclRows(local, lowerDecls []declRowItem, localText func(i i
 	// Lower-layer closures still active here: a local plain declaration of
 	// the name re-opens (deletes) the closure, same as the merge.
 	var lowerClosures []string
-	for _, c := range lowerClosed {
+	for _, c := range f.lowerClosed {
 		if !hasKey(localIdx, c) {
 			lowerClosures = append(lowerClosures, c)
 		}
@@ -118,10 +152,10 @@ func (m model) namedDeclRows(local, lowerDecls []declRowItem, localText func(i i
 
 	lower := map[string]bool{}
 	var rows []listRow
-	for _, it := range lowerDecls {
+	for i, it := range lowerDecls {
 		it := it
 		lower[it.name] = true
-		src := m.lowerSource(func(c config.Config) bool { return lowerHas(c, it.name) })
+		src := m.lowerSource(func(c config.Config) bool { return f.lowerHas(c, it.name) })
 		switch {
 		case hasKey(markerIdx, it.name):
 			markerMatched[markerIdx[it.name]] = true
@@ -130,7 +164,11 @@ func (m model) namedDeclRows(local, lowerDecls []declRowItem, localText func(i i
 			// Replace-by-name: this layer's declaration shadows the inherited one.
 			rows = append(rows, listRow{kind: rowOverride, text: localText(localIdx[it.name]), source: src, idx: localIdx[it.name]})
 		default:
-			rows = append(rows, listRow{kind: rowInherited, text: it.line, ident: it.name, source: src, vals: it.vals})
+			var vals []string
+			if f.lowerVals != nil {
+				vals = f.lowerVals(i)
+			}
+			rows = append(rows, listRow{kind: rowInherited, text: it.line, ident: it.name, source: src, vals: vals})
 		}
 	}
 	for i, it := range local {
@@ -146,7 +184,7 @@ func (m model) namedDeclRows(local, lowerDecls []declRowItem, localText func(i i
 		rows = append(rows, listRow{kind: rowLocal, text: localText(i), idx: i})
 	}
 	for _, sk := range m.effectiveSkills() {
-		for _, it := range skillDecls(sk) {
+		for _, it := range f.skillDecls(sk) {
 			if i, ok := markerIdx[it.name]; ok {
 				// Closed by this file's own marker: Restore works.
 				markerMatched[i] = true
@@ -169,65 +207,51 @@ func (m model) namedDeclRows(local, lowerDecls []declRowItem, localText func(i i
 	for _, c := range lowerClosures {
 		if !lowerClosureUsed[c] {
 			c := c
-			src := m.lowerSource(func(cf config.Config) bool { return lowerHas(cf, "!"+c) })
+			src := m.lowerSource(func(cf config.Config) bool { return f.lowerHas(cf, "!"+c) })
 			rows = append(rows, listRow{kind: rowSkill, text: "!" + c, source: src})
 		}
 	}
 	return rows
 }
 
+func mcpName(mc config.MCP) string                 { return mc.Name }
+func claudeSkillName(cs config.ClaudeSkill) string { return cs.Name }
+
 // mcpRows builds the MCP screen's effective view — the shared genus state
 // machine (namedDeclRows) over [[mcp]] declarations.
 func (m model) mcpRows() []listRow {
-	local := make([]declRowItem, len(m.mcps))
-	for i, mc := range m.mcps {
-		local[i] = declRowItem{name: mc.Name, line: mcpLine(mc)}
-	}
 	lowerCfg := m.lowerNow()
-	lowerDecls := make([]declRowItem, len(lowerCfg.MCPs))
-	for i, mc := range lowerCfg.MCPs {
-		lowerDecls[i] = declRowItem{name: mc.Name, line: mcpLine(mc), vals: mcpVals(mc)}
-	}
-	return m.namedDeclRows(local, lowerDecls,
-		func(i int) string { return local[i].line },
-		lowerCfg.MCPClosed,
-		func(sk string) []declRowItem {
-			decls := m.inh.Skills[sk].MCPs
-			out := make([]declRowItem, len(decls))
-			for i, mc := range decls {
-				out[i] = declRowItem{name: mc.Name, line: mcpLine(mc)}
-			}
-			return out
+	return m.namedDeclRows(namedDeclField{
+		local:       declRowItems(m.mcps, mcpName, mcpLine),
+		lower:       declRowItems(lowerCfg.MCPs, mcpName, mcpLine),
+		lowerVals:   func(i int) []string { return mcpVals(lowerCfg.MCPs[i]) },
+		lowerClosed: lowerCfg.MCPClosed,
+		skillDecls: func(sk string) []declRowItem {
+			return declRowItems(m.inh.Skills[sk].MCPs, mcpName, mcpLine)
 		},
-		func(c config.Config, rawName string) bool { return hasMCPName(c.MCPs, rawName) })
+		lowerHas: func(c config.Config, rawName string) bool { return hasMCPName(c.MCPs, rawName) },
+	})
 }
 
 // claudeSkillRows builds the Claude Skills screen's effective view — the same
 // genus state machine over [[claude_skills]] declarations. Local/override
-// rows carry the live build-will-fail note (claudeSkillRowText); the stable
-// line (claudeSkillLine) feeds everything signature-sensitive.
+// rows carry the live build-will-fail note (claudeSkillRowText, a disk
+// probe — which is why localText is lazy); everything else renders the
+// stable claudeSkillLine. (The dirty signature is computed separately, from
+// claudeSkillLine directly — row text never feeds it.)
 func (m model) claudeSkillRows() []listRow {
-	local := make([]declRowItem, len(m.claudeSkills))
-	for i, cs := range m.claudeSkills {
-		local[i] = declRowItem{name: cs.Name, line: claudeSkillLine(cs)}
-	}
 	lowerCfg := m.lowerNow()
-	lowerDecls := make([]declRowItem, len(lowerCfg.ClaudeSkills))
-	for i, cs := range lowerCfg.ClaudeSkills {
-		lowerDecls[i] = declRowItem{name: cs.Name, line: claudeSkillLine(cs), vals: claudeSkillVals(cs)}
-	}
-	return m.namedDeclRows(local, lowerDecls,
-		func(i int) string { return claudeSkillRowText(m.claudeSkills[i]) },
-		lowerCfg.ClaudeSkillsClosed,
-		func(sk string) []declRowItem {
-			decls := m.inh.Skills[sk].ClaudeSkills
-			out := make([]declRowItem, len(decls))
-			for i, cs := range decls {
-				out[i] = declRowItem{name: cs.Name, line: claudeSkillLine(cs)}
-			}
-			return out
+	return m.namedDeclRows(namedDeclField{
+		local:       declRowItems(m.claudeSkills, claudeSkillName, claudeSkillLine),
+		localText:   func(i int) string { return claudeSkillRowText(m.claudeSkills[i]) },
+		lower:       declRowItems(lowerCfg.ClaudeSkills, claudeSkillName, claudeSkillLine),
+		lowerVals:   func(i int) []string { return claudeSkillVals(lowerCfg.ClaudeSkills[i]) },
+		lowerClosed: lowerCfg.ClaudeSkillsClosed,
+		skillDecls: func(sk string) []declRowItem {
+			return declRowItems(m.inh.Skills[sk].ClaudeSkills, claudeSkillName, claudeSkillLine)
 		},
-		func(c config.Config, rawName string) bool { return hasClaudeSkillName(c.ClaudeSkills, rawName) })
+		lowerHas: func(c config.Config, rawName string) bool { return hasClaudeSkillName(c.ClaudeSkills, rawName) },
+	})
 }
 
 // claudeSkillRowText is the DISPLAY text for a config-declared Claude Skill

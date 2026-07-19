@@ -16,14 +16,15 @@ import (
 // declClaims tracks one vocabulary's name claims while an effective set is
 // built, enforcing the shared closed/duplicate rules above.
 type declClaims struct {
-	label    string // error noun: "mcp", "claude skill"
-	listName string // the config list the remedy names: "mcp", "claude_skills"
-	closed   []string
-	claimed  map[string]string // name -> claiming source
+	label      string // error noun: "mcp", "claude skill"
+	listName   string // the config list the remedy names: "mcp", "claude_skills"
+	fromConfig string // the vocabulary's own config-declared sentinel
+	closed     []string
+	claimed    map[string]string // name -> claiming source
 }
 
-func newDeclClaims(label, listName string, closed []string) *declClaims {
-	return &declClaims{label: label, listName: listName, closed: closed, claimed: map[string]string{}}
+func newDeclClaims(label, listName, fromConfig string, closed []string) *declClaims {
+	return &declClaims{label: label, listName: listName, fromConfig: fromConfig, closed: closed, claimed: map[string]string{}}
 }
 
 // claim records src's declaration of name. active=false means the name is
@@ -35,17 +36,17 @@ func (c *declClaims) claim(src, name string) (active bool, err error) {
 	}
 	if prev, ok := c.claimed[name]; ok {
 		return false, fmt.Errorf("%s %s: declared by both %s and %s — remove one, or close the name with \"!%s\" in the config %s list",
-			c.label, name, declSourceLabel(prev), declSourceLabel(src), name, c.listName)
+			c.label, name, c.sourceLabel(prev), c.sourceLabel(src), name, c.listName)
 	}
 	c.claimed[name] = src
 	return true, nil
 }
 
-// declSourceLabel renders a claim source for the duplicate error. Both
-// vocabularies spell a config declaration "config" (MCPFromConfig,
-// ClaudeSkillsFromConfig).
-func declSourceLabel(src string) string {
-	if src == MCPFromConfig {
+// sourceLabel renders a claim source for the duplicate error against the
+// vocabulary's OWN config sentinel — never a shared constant, so the two
+// vocabularies' sentinels can diverge without silently mislabeling.
+func (c *declClaims) sourceLabel(src string) string {
+	if src == c.fromConfig {
 		return "the config"
 	}
 	return fmt.Sprintf("skill %q", src)

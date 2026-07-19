@@ -52,7 +52,7 @@ type ClaudeSkillDecl struct {
 // matching nothing is inert.
 func ClaudeSkillSet(cfg config.Config, r Resolved) ([]ClaudeSkillDecl, error) {
 	var out []ClaudeSkillDecl
-	claims := newDeclClaims("claude skill", "claude_skills", cfg.ClaudeSkillsClosed)
+	claims := newDeclClaims("claude skill", "claude_skills", ClaudeSkillsFromConfig, cfg.ClaudeSkillsClosed)
 	add := func(src string, d ClaudeSkillDecl) error {
 		active, err := claims.claim(src, d.CS.Name)
 		if err != nil {
