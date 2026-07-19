@@ -226,6 +226,26 @@ func TestGrabDirectoryPartialEnumeration(t *testing.T) {
 
 // --- destination resolution ---
 
+// TestResolveDestRefusesSymlinkedDir pins finding-1's fix (ADR 0040 / the
+// hostopen rule): a destination directory that is a SYMLINK — the shape an
+// agent swaps in to redirect the grab's anchor outside the named directory —
+// is refused, never followed. Without the fix os.OpenRoot would anchor the
+// grab in the symlink's target and land agent content there.
+func TestResolveDestRefusesSymlinkedDir(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveDest(link, "x.txt"); err == nil {
+		t.Fatal("a symlinked destination directory must be refused, not followed")
+	}
+}
+
 func TestResolveDestMissingParent(t *testing.T) {
 	_, err := resolveDest(filepath.Join(t.TempDir(), "no", "such", "out.txt"), "x")
 	if err == nil || !strings.Contains(err.Error(), "no such file or directory") {

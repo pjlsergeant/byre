@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // The host-side write protocol: ADR 0021's claim, reversed. Grab never
@@ -62,7 +64,18 @@ func resolveDest(hostPath, boxBase string) (*destination, error) {
 	default:
 		return nil, fmt.Errorf("destination %s: %w", hostPath, err)
 	}
-	root, err := os.OpenRoot(dir)
+	// Anchor swap-safely: the destination may sit inside the agent-writable
+	// project tree, and os.OpenRoot(dir) alone would follow a symlink the
+	// agent swapped in for dir after the stat above — anchoring the whole
+	// grab (agent-named files, agent content) OUTSIDE the directory the user
+	// named. OpenDirRootNoFollow refuses that (CLAUDE.md: agent-writable host
+	// access rides hostopen). An absolute path avoids filepath.Dir(".")'s
+	// degenerate self-split; d.dir stays the user-facing spelling.
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("destination %s: %w", hostPath, err)
+	}
+	root, err := hostopen.OpenDirRootNoFollow(abs)
 	if err != nil {
 		return nil, fmt.Errorf("destination %s: %w", hostPath, err)
 	}
