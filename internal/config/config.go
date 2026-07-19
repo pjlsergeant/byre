@@ -574,10 +574,11 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// Extends is a pointer the chain walk above consumed; a resolved config
 	// never carries it (same stance as the picker-state strips below).
 	resolved.Extends = ""
-	// shared_auth (and the vestigial shared_auth_declined) is picker-owned
-	// state (ADR 0025), not container config: whatever layer carries it, it
-	// never reaches a resolved config — onboarding reads it straight from
-	// default.config, nothing else may.
+	// shared_auth is picker-owned state (ADR 0025), not container config:
+	// whatever layer carries it, it never reaches a resolved config —
+	// onboarding reads it straight from default.config, nothing else may.
+	// (shared_auth_declined is gone entirely: a tolerated retired key,
+	// dropped at parse.)
 	resolved.SharedAuth = SharedAuthPref{}
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err

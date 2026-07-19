@@ -99,10 +99,17 @@ func TestMCPLayerMarkersAndDuplicates(t *testing.T) {
 		t.Fatalf("marker must be rejected in a resolved config")
 	}
 
-	// A marker carrying other fields is a mistyped real server.
+	// A marker carrying other fields is a mistyped real server. Headers is
+	// asserted separately: it was the one field the extras check missed
+	// (grok review, 2026-07-19) — a headers-only "closure" validated clean
+	// and silently dropped the headers.
 	c2 := Config{MCPs: []MCP{{Name: "!github", URL: "https://h/m"}}}
 	if err := c2.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "closure marker takes only a name") {
 		t.Fatalf("marker with fields: %v", err)
+	}
+	c2h := Config{MCPs: []MCP{{Name: "!github", Headers: map[string]string{"Authorization": "Bearer x"}}}}
+	if err := c2h.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "closure marker takes only a name") {
+		t.Fatalf("marker with headers only: %v", err)
 	}
 
 	// In-layer duplicate names refuse (merge would silently replace).

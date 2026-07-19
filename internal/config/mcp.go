@@ -280,7 +280,7 @@ var mcpDeclOps = namedDeclOps[MCP]{
 	nameRe:     mcpNameRe,
 	name:       func(m MCP) string { return m.Name },
 	markerExtras: func(m MCP) bool {
-		return len(m.Command) > 0 || m.URL != "" || len(m.Env) > 0 || len(m.Egress) > 0
+		return len(m.Command) > 0 || m.URL != "" || len(m.Env) > 0 || len(m.Egress) > 0 || len(m.Headers) > 0
 	},
 	validate: ValidateMCP,
 }
