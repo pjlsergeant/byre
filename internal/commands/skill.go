@@ -496,8 +496,8 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 	if err := os.WriteFile(primPath, append([]byte(header), body...), 0o644); err != nil {
 		return err
 	}
-	// Publish. Rename refuses a non-empty destination, so a concurrent
-	// fork that won the race is not replaced.
+	// Publish. Rename refuses an existing destination directory, so a
+	// concurrent fork that won the race is not replaced.
 	if err := os.Rename(stage, destDir); err != nil {
 		return fmt.Errorf("publishing the fork: %w", err)
 	}

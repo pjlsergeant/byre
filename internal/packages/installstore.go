@@ -196,6 +196,14 @@ var ErrStoreChanged = fmt.Errorf("the installed-package index changed while conf
 // is why the stronger guarantee is deliberately not bought here. Call inside
 // WithStoreLock.
 func LandSnapshot(home string, s Snapshot) error {
+	// The digest becomes a path component under packages/ that this
+	// function both RemoveAll's (the Repair branch) and creates — fail
+	// closed on shape before it touches anything. Live callers pass
+	// PackageDigest output, so this only ever fires on a future caller's
+	// bug, at the line where it would matter.
+	if !digestDirRe.MatchString(s.Digest) {
+		return fmt.Errorf("snapshot digest %q is malformed (want 64 lowercase hex chars)", s.Digest)
+	}
 	// Re-check the consent precondition under the lock (TOCTOU guard).
 	idx0, err := ReadIndex(home)
 	if err != nil {
@@ -267,10 +275,12 @@ func LandSnapshot(home string, s Snapshot) error {
 	return nil
 }
 
-// removeSnapshot recursively deletes a snapshot dir — the store's only
-// recursive deletions ride through here. The digest-shape gate re-asserts
-// what ReadIndex already enforced (defence in depth: this is the line where
-// a bad value becomes an unconstrained rm -rf, so it double-checks).
+// removeSnapshot recursively deletes a snapshot dir by digest. The shape
+// gate re-asserts what ReadIndex already enforced (defence in depth: this
+// is a line where a bad value becomes an unconstrained rm -rf). The store's
+// other recursive deletions carry their own gates: LandSnapshot validates
+// s.Digest up front (covering its Repair remove), and sweepOrphans deletes
+// only dirent names that match digestDirRe.
 func removeSnapshot(home, digest string) {
 	if !digestDirRe.MatchString(digest) {
 		return

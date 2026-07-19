@@ -114,9 +114,11 @@ func CleanupHostDirs() {
 
 // reapStaleEmbedRoots removes byre-embed-* dirs no live process owns.
 // Pid-carrying names (byre-embed-<pid>-*) are removed on proven death only
-// (ESRCH/ErrProcessDone — an EPERM probe keeps the dir); pre-scheme names
-// carry no owner, so they are removed on age instead: older than a day is
-// no live CLI invocation. Same discipline as tuitest's build-dir reap.
+// (ESRCH/ErrProcessDone — an EPERM probe keeps the dir), except a dir
+// bearing THIS pid, which is a prior incarnation's and goes
+// unconditionally; pre-scheme names carry no owner, so they are removed on
+// age instead: older than a day is no live CLI invocation. Same discipline
+// as tuitest's build-dir reap.
 func reapStaleEmbedRoots() {
 	entries, err := os.ReadDir(os.TempDir())
 	if err != nil {
@@ -138,6 +140,11 @@ func reapStaleEmbedRoots() {
 			continue
 		}
 		if pid == os.Getpid() {
+			// The reap runs only before this process creates its root
+			// (hostDirBase's early return), so a same-pid dir is residue
+			// from a dead pid-reused incarnation — a liveness probe would
+			// misread it as ours. Remove unconditionally, like tuitest.
+			os.RemoveAll(full)
 			continue
 		}
 		proc, ferr := os.FindProcess(pid)

@@ -51,9 +51,13 @@ func TestHostDirCleanupRemovesExtractionRoot(t *testing.T) {
 	CleanupHostDirs()
 }
 
-// The reap clears dead-owner pid roots and day-old legacy dirs, and keeps a
-// live sibling's root and a fresh legacy dir.
+// The reap clears dead-owner pid roots, same-pid prior-incarnation roots,
+// and day-old legacy dirs, and keeps a fresh legacy dir.
 func TestReapStaleEmbedRoots(t *testing.T) {
+	// Production only reaps before this process creates its root; recreate
+	// that invariant here so the same-pid removal can't hit a live root
+	// another test extracted.
+	CleanupHostDirs()
 	tmp := os.TempDir()
 	mk := func(name string) string {
 		d := filepath.Join(tmp, name)
@@ -64,7 +68,7 @@ func TestReapStaleEmbedRoots(t *testing.T) {
 		return d
 	}
 	deadPid := mk("byre-embed-999999999-qa")
-	livePid := mk(fmt.Sprintf("byre-embed-%d-qa", os.Getpid()))
+	samePid := mk(fmt.Sprintf("byre-embed-%d-qa", os.Getpid()))
 	oldLegacy := mk("byre-embed-1234567890")
 	if err := os.Chtimes(oldLegacy, time.Now().Add(-48*time.Hour), time.Now().Add(-48*time.Hour)); err != nil {
 		t.Fatal(err)
@@ -78,8 +82,11 @@ func TestReapStaleEmbedRoots(t *testing.T) {
 	if _, err := os.Stat(deadPid); !os.IsNotExist(err) {
 		t.Error("dead-owner pid root should be reaped")
 	}
-	if _, err := os.Stat(livePid); err != nil {
-		t.Error("live process's own root must survive the reap")
+	// A same-pid dir at reap time is a dead prior incarnation's (the reap
+	// runs before this process creates its own root) — a liveness probe
+	// would misread it as ours, so it goes unconditionally.
+	if _, err := os.Stat(samePid); !os.IsNotExist(err) {
+		t.Error("same-pid root is a prior incarnation's residue and should be reaped")
 	}
 	if _, err := os.Stat(oldLegacy); !os.IsNotExist(err) {
 		t.Error("day-old legacy dir should be reaped")
