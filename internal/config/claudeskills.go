@@ -28,7 +28,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -102,94 +101,28 @@ func ValidateClaudeSkill(cs ClaudeSkill, fromSkill bool) error {
 	return nil
 }
 
+// claudeSkillDeclOps plugs the [[claude_skills]] vocabulary into the shared
+// named-declaration machinery (nameddecl.go).
+var claudeSkillDeclOps = namedDeclOps[ClaudeSkill]{
+	label:        "claude skill",
+	markerNoun:   "a real declaration",
+	nameNoun:     "claude skill name",
+	nameRe:       claudeSkillNameRe,
+	name:         func(cs ClaudeSkill) string { return cs.Name },
+	markerExtras: func(cs ClaudeSkill) bool { return cs.Path != "" || cs.From != "" },
+	validate:     func(cs ClaudeSkill) error { return ValidateClaudeSkill(cs, false) },
+}
+
 // validateClaudeSkills checks the [[claude_skills]] list per the shared
-// layer/resolved split, mirroring validateMCPs: layer mode permits
-// `name = "!skill"` closure markers and rejects in-layer duplicates; resolved
-// mode rejects markers (Merge extracts them into ClaudeSkillsClosed) and
-// duplicates alike.
+// layer/resolved split (see validateNamedDecls).
 func (c Config) validateClaudeSkills(layer bool) error {
-	seen := map[string]bool{}
-	for _, cs := range c.ClaudeSkills {
-		if isRemoval(cs.Name) {
-			if !layer {
-				return fmt.Errorf("claude skill %s: a closure marker is only meaningful in a cascade layer", cs.Name)
-			}
-			// A marker is name-only — other fields set suggest a real
-			// declaration with a mistyped name; refuse rather than silently
-			// discard it.
-			if cs.Path != "" || cs.From != "" {
-				return fmt.Errorf("claude skill %s: a closure marker takes only a name — other fields here suggest a real declaration with a mistyped name", cs.Name)
-			}
-			if !claudeSkillNameRe.MatchString(cs.Name[1:]) {
-				return fmt.Errorf("claude skill closure %q: %q is not a valid claude skill name", cs.Name, cs.Name[1:])
-			}
-			continue
-		}
-		if err := ValidateClaudeSkill(cs, false); err != nil {
-			return err
-		}
-		if seen[cs.Name] {
-			return fmt.Errorf("claude skill %s appears twice in this file; merge would keep only the last one", cs.Name)
-		}
-		seen[cs.Name] = true
-	}
-	for _, cl := range c.ClaudeSkillsClosed {
-		if !claudeSkillNameRe.MatchString(cl) {
-			return fmt.Errorf("claude skill closure %q: not a valid claude skill name", cl)
-		}
-	}
-	return nil
+	return validateNamedDecls(claudeSkillDeclOps, c.ClaudeSkills, c.ClaudeSkillsClosed, layer)
 }
 
 // mergeClaudeSkills folds one cascade step of the [[claude_skills]] list into
-// (open, closed), mirroring mergeMCPs: a `!name` closure is NOT consumed when
-// it removes a declaration — it survives the cascade (ClaudeSkillsClosed) so
-// it can subtract the same name from the EFFECTIVE set after skill
-// contributions union in (skills.ClaudeSkillSet). Precedence stays
-// cascade-ordered: a later layer's plain declaration re-opens an earlier
-// layer's closure; within one layer a closure beats a plain declaration.
+// (open, closed) per the shared genus taxonomy (see mergeNamedDecls):
+// closures survive in ClaudeSkillsClosed so they can subtract after the skill
+// union (skills.ClaudeSkillSet).
 func mergeClaudeSkills(base, over Config) (open []ClaudeSkill, closed []string) {
-	open, closed = splitClaudeSkills(base.ClaudeSkills, base.ClaudeSkillsClosed)
-	overOpen, overClosed := splitClaudeSkills(over.ClaudeSkills, over.ClaudeSkillsClosed)
-	for _, cs := range overOpen {
-		closed = filter(closed, func(c string) bool { return c != cs.Name })
-		replaced := false
-		for i := range open {
-			if open[i].Name == cs.Name {
-				open[i] = cs
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			open = append(open, cs)
-		}
-	}
-	for _, c := range overClosed {
-		open = filter(open, func(cs ClaudeSkill) bool { return cs.Name != c })
-		if !slices.Contains(closed, c) {
-			closed = append(closed, c)
-		}
-	}
-	return open, closed
-}
-
-// splitClaudeSkills separates a [[claude_skills]] list into real declarations
-// and the stripped names of its `!name` closure markers, folding an already-
-// populated ClaudeSkillsClosed (a previously merged config re-entering Merge)
-// into the latter.
-func splitClaudeSkills(decls []ClaudeSkill, alreadyClosed []string) (open []ClaudeSkill, closed []string) {
-	for _, cs := range decls {
-		if isRemoval(cs.Name) {
-			closed = append(closed, cs.Name[1:])
-			continue
-		}
-		open = append(open, cs)
-	}
-	for _, c := range alreadyClosed {
-		if !slices.Contains(closed, c) {
-			closed = append(closed, c)
-		}
-	}
-	return open, closed
+	return mergeNamedDecls(base.ClaudeSkills, base.ClaudeSkillsClosed, over.ClaudeSkills, over.ClaudeSkillsClosed, claudeSkillDeclOps.name)
 }

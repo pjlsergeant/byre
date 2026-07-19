@@ -21,7 +21,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -47,23 +46,21 @@ type ClaudeSkillDecl struct {
 	SrcDir string
 }
 
-// ClaudeSkillSet forms the effective declared set. Duplicate ACTIVE names
-// across sources hard-reject with both claimants named; a CLOSED name is not
-// active (it neither delivers nor collides), which makes `!name` the remedy
-// the duplicate error suggests. A closure matching nothing is inert.
+// ClaudeSkillSet forms the effective declared set per the shared genus rules
+// (declClaims): duplicate ACTIVE names across sources hard-reject with both
+// claimants named; a CLOSED name neither delivers nor collides. A closure
+// matching nothing is inert.
 func ClaudeSkillSet(cfg config.Config, r Resolved) ([]ClaudeSkillDecl, error) {
 	var out []ClaudeSkillDecl
-	claimedBy := map[string]string{}
+	claims := newDeclClaims("claude skill", "claude_skills", cfg.ClaudeSkillsClosed)
 	add := func(src string, d ClaudeSkillDecl) error {
-		if slices.Contains(cfg.ClaudeSkillsClosed, d.CS.Name) {
-			return nil // closed: subtracted from every source, so never active
+		active, err := claims.claim(src, d.CS.Name)
+		if err != nil {
+			return err
 		}
-		if prev, ok := claimedBy[d.CS.Name]; ok {
-			return fmt.Errorf("claude skill %s: declared by both %s and %s — remove one, or close the name with \"!%s\" in the config claude_skills list",
-				d.CS.Name, claudeSkillSourceLabel(prev), claudeSkillSourceLabel(src), d.CS.Name)
+		if active {
+			out = append(out, d)
 		}
-		claimedBy[d.CS.Name] = src
-		out = append(out, d)
 		return nil
 	}
 	for _, cs := range cfg.ClaudeSkills {
@@ -79,13 +76,6 @@ func ClaudeSkillSet(cfg config.Config, r Resolved) ([]ClaudeSkillDecl, error) {
 		}
 	}
 	return out, nil
-}
-
-func claudeSkillSourceLabel(src string) string {
-	if src == ClaudeSkillsFromConfig {
-		return "the config"
-	}
-	return fmt.Sprintf("skill %q", src)
 }
 
 // Bounds for one Claude Skill directory. The file cap matches the installed-

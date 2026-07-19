@@ -9,9 +9,6 @@ package skills
 // through MCPSet, so the surfaces can't drift from what the box gets.
 
 import (
-	"fmt"
-	"slices"
-
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
@@ -26,28 +23,23 @@ type MCPDecl struct {
 	MCP   config.MCP
 }
 
-// MCPSet forms the effective declared set. Duplicate ACTIVE names across
-// sources (config+skill, skill+skill) are a hard reject — replace-by-name is
-// cascade vocabulary, and a skill silently shadowing another's server (or
-// the config's) would be surprising; the remedy names both claimants. A
-// CLOSED name is not active: it neither delivers nor collides, which is
-// what makes `!name` the remedy the duplicate error suggests — the only
-// per-server fix for a skill+skill collision short of disabling a whole
-// skill (codex review, 2026-07-15). A closure matching nothing is inert
-// (config hygiene, not an error).
+// MCPSet forms the effective declared set per the shared genus rules
+// (declClaims): duplicate ACTIVE names across sources hard-reject — replace-
+// by-name is cascade vocabulary, and a skill silently shadowing another's
+// server (or the config's) would be surprising; a CLOSED name neither
+// delivers nor collides. A closure matching nothing is inert (config
+// hygiene, not an error).
 func MCPSet(cfg config.Config, r Resolved) ([]MCPDecl, error) {
 	var out []MCPDecl
-	claimedBy := map[string]string{}
+	claims := newDeclClaims("mcp", "mcp", cfg.MCPClosed)
 	add := func(src string, m config.MCP) error {
-		if slices.Contains(cfg.MCPClosed, m.Name) {
-			return nil // closed: subtracted from every source, so never active
+		active, err := claims.claim(src, m.Name)
+		if err != nil {
+			return err
 		}
-		if prev, ok := claimedBy[m.Name]; ok {
-			return fmt.Errorf("mcp %s: declared by both %s and %s — remove one, or close the name with \"!%s\" in the config mcp list",
-				m.Name, mcpSourceLabel(prev), mcpSourceLabel(src), m.Name)
+		if active {
+			out = append(out, MCPDecl{Skill: src, MCP: m})
 		}
-		claimedBy[m.Name] = src
-		out = append(out, MCPDecl{Skill: src, MCP: m})
 		return nil
 	}
 	for _, m := range cfg.MCPs {
@@ -63,13 +55,6 @@ func MCPSet(cfg config.Config, r Resolved) ([]MCPDecl, error) {
 		}
 	}
 	return out, nil
-}
-
-func mcpSourceLabel(src string) string {
-	if src == MCPFromConfig {
-		return "the config"
-	}
-	return fmt.Sprintf("skill %q", src)
 }
 
 // MCPList strips attribution for the consumers that want the bare
