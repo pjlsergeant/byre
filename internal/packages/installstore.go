@@ -186,9 +186,15 @@ type Snapshot struct {
 // and the store lock; the caller re-runs so the review reflects reality.
 var ErrStoreChanged = fmt.Errorf("the installed-package index changed while confirming; re-run to review the current state")
 
-// LandSnapshot writes a snapshot and flips the index, crash-safe:
-// snapshot directory completely first, index atomically second, superseded
-// snapshot deleted last. Call inside WithStoreLock.
+// LandSnapshot writes a snapshot and flips the index, ordered against
+// process failure: snapshot directory completely first, index atomically
+// second, superseded snapshot deleted last — a killed process leaves either
+// the old state or the new, plus orphans sweepOrphans reclaims. No fsync
+// barriers ride the renames, so power loss/kernel failure may still lose a
+// publication that appeared to succeed; the recovery is a reinstall from the
+// manifest URI (the source of truth is the archive, never this disk), which
+// is why the stronger guarantee is deliberately not bought here. Call inside
+// WithStoreLock.
 func LandSnapshot(home string, s Snapshot) error {
 	// Re-check the consent precondition under the lock (TOCTOU guard).
 	idx0, err := ReadIndex(home)

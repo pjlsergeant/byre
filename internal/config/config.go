@@ -1711,8 +1711,12 @@ func FromNone(v string) string {
 }
 
 // AtomicWrite writes content to path via a temp file + rename in the same
-// directory, so a crash or a concurrent writer can never leave a truncated
-// config behind. Shared by every byre config writer.
+// directory, so a killed process or a concurrent writer can never leave a
+// truncated config behind. (Atomicity against process failure only: no
+// fsync rides the rename, so power loss may drop a write that appeared to
+// succeed — configs are user-recoverable text, and that durability is
+// deliberately not bought at every config write.) Shared by every byre
+// config writer.
 //
 // The parent directory must already exist — callers own its creation. This
 // is deliberate: for a project store the dir and its path record are created

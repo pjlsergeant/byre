@@ -94,6 +94,22 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return fmt.Errorf("checking %s: %w", appPath, err)
 	}
 
+	// Preflight the Quick Action destination BEFORE mutating the app: a
+	// foreign workflow at its path refuses the whole install up front,
+	// instead of surfacing after the app half was already committed and
+	// announced (external review: the failed command had half-happened,
+	// making the error unreliable to interpret and the retry misleading).
+	svcPath := filepath.Join(d.home, "Library", "Services", "Deliver to Byre.workflow")
+	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")
+	switch _, err := os.Stat(svcPath); {
+	case err == nil:
+		if prev, err := os.ReadFile(wflowPath); err != nil || !strings.Contains(string(prev), generatedMarker) {
+			return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", svcPath)
+		}
+	case !os.IsNotExist(err):
+		return fmt.Errorf("checking %s: %w", svcPath, err)
+	}
+
 	srcDir, err := os.MkdirTemp("", "byre-droplet-")
 	if err != nil {
 		return err
@@ -161,21 +177,10 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	fmt.Fprintf(s.Out, "%s\n", appPath)
 	fmt.Fprintf(s.Err, "byre: installed the deliver app — drag it to the Dock, drop files on it, or open it to deliver the clipboard\n")
 
-	// The Finder Quick Action (right-click → Deliver to Byre). Same rule as
-	// the app: the explicit generated marker gates regeneration, and a
-	// bundle that exists without a readable marker is refused, not written
-	// into.
-	svcPath := filepath.Join(d.home, "Library", "Services", "Deliver to Byre.workflow")
+	// The Finder Quick Action (right-click → Deliver to Byre). Ownership was
+	// preflighted above, before the app was touched; regeneration is gated
+	// on the explicit generated marker there.
 	info, wflow := quickActionFiles(d.exe, box)
-	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")
-	switch _, err := os.Stat(svcPath); {
-	case err == nil:
-		if prev, err := os.ReadFile(wflowPath); err != nil || !strings.Contains(string(prev), generatedMarker) {
-			return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", svcPath)
-		}
-	case !os.IsNotExist(err):
-		return fmt.Errorf("checking %s: %w", svcPath, err)
-	}
 	if err := os.MkdirAll(filepath.Join(svcPath, "Contents"), 0o755); err != nil {
 		return err
 	}

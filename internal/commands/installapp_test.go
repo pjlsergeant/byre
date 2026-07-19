@@ -302,6 +302,12 @@ func TestInstallDarwinRefusesForeignQuickAction(t *testing.T) {
 	if err := installApp(s, "", d); err == nil || !strings.Contains(err.Error(), "doesn't look byre-generated") {
 		t.Fatalf("foreign quick action not refused: %v", err)
 	}
+	// The refusal preflights BEFORE the app half runs: nothing may have
+	// been installed or announced (external review: half-committed installs
+	// make the error unreliable and the retry misleading).
+	if _, err := os.Stat(d.home + "/Applications/Byre Deliver.app"); !os.IsNotExist(err) {
+		t.Fatalf("foreign quick action refusal must leave the app uninstalled: %v", err)
+	}
 	// Bundle present but wflow missing entirely: also refused.
 	if err := osWriteFile(svc+"/Contents/document.wflow", nil, 0o644); err != nil {
 		t.Fatal(err)
