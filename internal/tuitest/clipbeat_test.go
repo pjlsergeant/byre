@@ -60,6 +60,7 @@ exit 1
 	env["PATH"] = shimDir
 	env["WAYLAND_DISPLAY"] = "byre-test-fake"
 	env["FAKE_CLIP_DIR"] = clipDir
+	env["BYRE_DELIVER_DEBUG"] = "1" // DEBUG branch: dump paste-classification detail
 	return Opts{Env: env, Unset: []string{"DISPLAY"}}
 }
 
@@ -68,6 +69,13 @@ func TestIntegrationTUILiveBeatDragDeliversFile(t *testing.T) {
 	drag := filepath.Join(t.TempDir(), "dragged.txt")
 	if err := os.WriteFile(drag, []byte("dragged content"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	// DEBUG branch: record what the test created, to compare against the
+	// byre-debug line reporting what the child process received + stat'd.
+	if st, err := os.Stat(drag); err != nil {
+		t.Logf("DEBUG created drag=%q len=%d stat-ERR=%v", drag, len(drag), err)
+	} else {
+		t.Logf("DEBUG created drag=%q len=%d mode=%v", drag, len(drag), st.Mode())
 	}
 	s := Start(t, fakeWaylandClipboard(t, "something else entirely"), Binary(t), "deliver")
 
