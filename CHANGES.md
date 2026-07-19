@@ -59,6 +59,17 @@
   machine-scoped volumes render as separate groups in the config editor,
   matching how their lifecycles differ.
 
+- **State-integrity fixes from an external review.** Four smaller repairs
+  in one wave: a corrupted installed-package index can no longer point
+  package removal outside the store (digests are validated at read, and
+  the deletion sites re-check); `byre status` now says "unknown" with the
+  engine's error when a found docker/podman binary won't answer, instead
+  of the confident lie "not running"; a failed `skill fork`/`template
+  fork` no longer leaves a partial package poisoning the retry (the fork
+  stages beside its destination and publishes with one rename); and the
+  temp directories bundled packages extract into are cleaned up at exit
+  rather than accumulating until the OS sweeps /tmp.
+
 - **First compatibility sunset.** Several transition aids for behavior
   that changed before v1.0 have reached the end of their support window
   and are removed together:
