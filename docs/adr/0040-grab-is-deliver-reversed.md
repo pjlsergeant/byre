@@ -21,10 +21,14 @@ enumerate, cat) with every variable piece passed as argv, never spliced
 into script text — and all judgment lives in the host-side writes:
 
 - **Every write rides an `os.Root`** anchored at the destination
-  directory. A directory the USER names resolves once, at the anchoring
-  open (deliver's rule for user-named symlinks, in reverse); after
-  that, interior paths are openat-walked, so nothing the box supplies
-  can land content outside the directory the user named.
+  directory via `hostopen.OpenDirRootNoFollow` (the mandated primitive
+  for agent-writable host access): a symlink swapped in for the
+  destination's final component is refused and the anchor is pinned by
+  fd, so after that interior paths are openat-walked and nothing the box
+  supplies can land content outside the directory the user named. This
+  is exactly deliver's protection level for a source directory —
+  deliver, too, never follows a symlinked final component (a symlinked
+  destination dir is refused; pass the resolved path).
 - **Grab never overwrites a host file.** The claim protocol is ADR
   0021's, reversed: stream to a dotfile temp created `O_CREAT|O_EXCL`,
   claim the final name with link(2) (mkdir for directories) — both fail
@@ -81,6 +85,19 @@ on stdout — there is nothing to ferry, so no clipboard write and no
   project tree* mid-grab can collide names there (claims uniquify,
   never clobber — containment holds either way). Recorded so reviewers
   don't re-find them.
+- Consciously accepted, shared with deliver via the same
+  `hostopen.OpenDirRootNoFollow` primitive: an agent-swapped symlink in
+  an ANCESTOR component of an agent-writable destination path (e.g.
+  `a` in `/workspace/a/b`) is followed, so a grab to a destination
+  nested inside the project tree can be redirected to land its
+  (agent-authored, no-clobber) files elsewhere on the host. The final
+  component is guarded; ancestors are not, because refusing every
+  ancestor symlink would reject legitimate system symlinks
+  (`/tmp`→`/private/tmp`, `/var` on macOS). Closing it fully needs a
+  component-by-component nofollow walk that distinguishes system from
+  planted symlinks — a cross-cutting change to the shared primitive
+  (deliver inherits the identical residual), deferred rather than
+  re-architected under grab alone.
 - Consciously not built: multiple box paths per invocation (one path,
   one destination — run it twice), grab-over-ssh (deliver's ADR 0037
   shape would carry it if wanted), and a `--force` overwrite (against

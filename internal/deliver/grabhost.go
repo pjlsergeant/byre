@@ -25,9 +25,15 @@ import (
 // project tree: O_EXCL and link(2) never write through a pre-existing
 // symlink, and the Root's openat walk means an interior path the agent
 // redirects mid-grab cannot land content outside the directory the user
-// named. The user's own naming is honored as their explicit choice — a
-// symlink THEY name as the destination directory resolves once, at the
-// anchoring open (deliver's rule for user-named symlinks, reversed).
+// named. The anchor itself rides hostopen.OpenDirRootNoFollow (the mandated
+// primitive for agent-writable host access), which refuses a symlink swapped
+// in for the destination's FINAL component and pins the anchor by fd —
+// exactly deliver's protection level for a source directory (which likewise
+// never follows a symlinked final component; a symlinked destination dir is
+// refused, so pass the resolved path). The residual it shares with deliver:
+// an agent-swapped symlink in an ANCESTOR component is followed, because
+// refusing every ancestor symlink would break legitimate system ones
+// (/tmp→/private/tmp, /var). Consciously accepted — see ADR 0040.
 
 // destination is a resolved grab target: an anchored destination directory
 // and the basename to claim in it.
