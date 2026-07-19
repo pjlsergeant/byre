@@ -69,26 +69,7 @@ plan to get to any time soon:
   2026-07-17; opencode's two gates closed same day via the agent-contract
   tier). Two live checks, each needing Pete + a real login host-side; each
   flips `companion_for` -> `shared_auth_for` in the skill's skill.toml on
-  pass (plus the `TestBuiltinSharedAuthDeclarations` table and the skill's
-  composition pin test). A vouch follows its field gate, never source
-  alone (the grok-v1 lesson). Self-contained runbook:
-  - **gemini two-box OAuth:** two boxes with gemini + gemini-shared-auth.
-    Box A: real "Login with Google" paste-code flow — the seeded
-    `selectedType` means NO auth-method picker appears (if it does,
-    that's a finding); after login, `~/.gemini/oauth_creds.json` must
-    still be a SYMLINK into `~/.byre-identity/gemini/` (a regular file =
-    the login-fork came back). Box B, launched after: `gemini -p 'say ok'`
-    with no login prompt. GOTCHA: do not open gemini's `/auth` dialog
-    after login — it rm's the symlink and re-forks. Rotation is already
-    proven safe (Google installed-app refresh tokens don't rotate;
-    AGENT-CREDENTIAL-MECHANICS, Gemini §3), and the seed plumbing was
-    field-proven credential-less in QA pass #2 — only the live cross-box
-    login remains.
-  - **grok ~6h broker rollover (ADR 0036):** watch a real box refresh
-    through the broker across the access-token lifetime — or force it
-    (the broker honors `GROK_AUTH_EXPIRED=1`; see
-    `grok-shared-auth/grok-auth-broker.sh`) — and confirm the backend
-    accepts the refreshed pair end to end.
+  pass. Runbooks: docs/qa/PLAYBOOK.md, "shared-auth field gates" journey.
 
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect

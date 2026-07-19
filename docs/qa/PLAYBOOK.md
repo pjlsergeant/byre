@@ -282,6 +282,33 @@ existing: `byre config` → Volumes. Expect two groups — "Project
 volumes" and "Machine volumes — shared by all your projects" — engine
 suffix per row, and the state-volume explainer line at the bottom.
 
+## Journey: shared-auth field gates — gemini + grok (PARKED — live logins + maintainer)
+
+Not part of a normal pass: two live checks, each needing the maintainer
+and a real login host-side (an exception to the dummy-creds convention).
+Each flips `companion_for` -> `shared_auth_for` in the skill's skill.toml
+on pass (plus the `TestBuiltinSharedAuthDeclarations` table and the
+skill's composition pin test). A vouch follows its field gate, never
+source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
+
+1. **gemini two-box OAuth:** two boxes with gemini + gemini-shared-auth.
+   Box A: real "Login with Google" paste-code flow — the seeded
+   `selectedType` means NO auth-method picker appears (if it does,
+   that's a finding); after login, `~/.gemini/oauth_creds.json` must
+   still be a SYMLINK into `~/.byre-identity/gemini/` (a regular file =
+   the login-fork came back). Box B, launched after: `gemini -p 'say ok'`
+   with no login prompt. GOTCHA: do not open gemini's `/auth` dialog
+   after login — it rm's the symlink and re-forks. Rotation is already
+   proven safe (Google installed-app refresh tokens don't rotate;
+   AGENT-CREDENTIAL-MECHANICS, Gemini §3), and the seed plumbing was
+   field-proven credential-less in QA pass #2 — only the live cross-box
+   login remains.
+2. **grok ~6h broker rollover (ADR 0036):** watch a real box refresh
+   through the broker across the access-token lifetime — or force it
+   (the broker honors `GROK_AUTH_EXPIRED=1`; see
+   `grok-shared-auth/grok-auth-broker.sh`) — and confirm the backend
+   accepts the refreshed pair end to end.
+
 ## To graduate (confirmed green in past passes, no recipe yet)
 
 Write a recipe when a future pass covers one of these: host mounts +
