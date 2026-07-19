@@ -149,17 +149,15 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 // look hung after a gesture.
 func importFromPaste(s Streams, reader *clipBackend, text []byte, stamp string) ([]deliver.Source, error) {
 	fmt.Fprintf(s.Err, "byre: paste received (%d bytes)\n", len(text))
-	trimmed := strings.TrimSpace(string(text))
-	if os.Getenv("BYRE_DELIVER_DEBUG") == "1" {
-		// DEBUG (branch debug/clipbeat-drag-stat): why does a dragged path
-		// take the literal-text branch on CI's tmux 3.4 but not locally on
-		// 3.3a? Dump the exact bytes and the stat verdict every branch sees.
-		up := shellUnescape(trimmed)
-		_, statErr := os.Stat(up)
-		fmt.Fprintf(s.Err, "byre-debug: raw=%q len=%d\n", string(text), len(text))
-		fmt.Fprintf(s.Err, "byre-debug: trimmed=%q len=%d\n", trimmed, len(trimmed))
-		fmt.Fprintf(s.Err, "byre-debug: unescaped=%q abs=%v stat=%v\n", up, filepath.IsAbs(up), statErr)
+	// DEBUG (branch debug/clipbeat-drag-stat): record the EXACT bytes Bubble
+	// Tea handed us, with the lightest touch — one WriteFile, no os.Stat, no
+	// stderr. The paste is already parsed by the time we're here, so this is
+	// downstream of any read-race and cannot perturb it. The test reads this
+	// back on every run.
+	if capFile := os.Getenv("BYRE_DELIVER_DEBUG_FILE"); capFile != "" {
+		_ = os.WriteFile(capFile, []byte(fmt.Sprintf("%q len=%d", string(text), len(text))), 0o644)
 	}
+	trimmed := strings.TrimSpace(string(text))
 	if trimmed == "" {
 		fmt.Fprintln(s.Err, "byre: empty paste — reading the clipboard instead…")
 		return readClipboard(*reader, time.Now, s.Err)

@@ -60,7 +60,16 @@ exit 1
 	env["PATH"] = shimDir
 	env["WAYLAND_DISPLAY"] = "byre-test-fake"
 	env["FAKE_CLIP_DIR"] = clipDir
-	env["BYRE_DELIVER_DEBUG"] = "1" // DEBUG branch: dump paste-classification detail
+	// DEBUG branch: byre writes the exact bytes it received to this file; a
+	// t.Cleanup reads it back so the value shows on EVERY run (pass or fail),
+	// surviving a harness t.Fatalf raised from inside WaitFor.
+	capFile := filepath.Join(t.TempDir(), "paste-capture")
+	env["BYRE_DELIVER_DEBUG_FILE"] = capFile
+	t.Cleanup(func() {
+		if b, err := os.ReadFile(capFile); err == nil {
+			t.Logf("DEBUG byre received paste: %s", b)
+		}
+	})
 	return Opts{Env: env, Unset: []string{"DISPLAY"}}
 }
 

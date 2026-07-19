@@ -105,6 +105,13 @@ jobs:
           go-version-file: go.mod
       - name: install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
+      # DEBUG (branch debug/clipbeat-drag-stat): stress the live-beat paste
+      # tests at native timing (no byre-side stderr/stat perturbation) to
+      # beat the unknown base rate of the drag-classification flake. Fast:
+      # no docker. `|| true` so a red here still lets the gated step run and
+      # we collect BOTH signals in one push.
+      - name: DEBUG stress live-beat paste tests
+        run: BYRE_TUI_TESTS=1 go test ./internal/tuitest/ -run 'TestIntegrationTUILiveBeat' -count=60 -v || true
       # BYRE_SSH_LOOP_TESTS stays unset here: the runner has no sshd, and
       # those tests edit ~/.ssh — they ride the sacrificial inttest VM.
       - name: gated integration tests
