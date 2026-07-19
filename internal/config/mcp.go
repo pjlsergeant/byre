@@ -285,10 +285,14 @@ var mcpDeclOps = namedDeclOps[MCP]{
 	validate: ValidateMCP,
 }
 
-// validateMCPs checks the [[mcp]] list per the shared layer/resolved split
-// (see validateNamedDecls).
-func (c Config) validateMCPs(layer bool) error {
-	return validateNamedDecls(mcpDeclOps, c.MCPs, c.MCPClosed, layer)
+// validateMCPsLayer / validateMCPsResolved check the [[mcp]] list per the
+// shared lifecycle split (see nameddecl.go).
+func (c Config) validateMCPsLayer() error {
+	return validateNamedDeclsLayer(mcpDeclOps, c.MCPs, c.MCPClosed)
+}
+
+func (c Config) validateMCPsResolved() error {
+	return validateNamedDeclsResolved(mcpDeclOps, c.MCPs, c.MCPClosed)
 }
 
 // mergeMCPs folds one cascade step of the [[mcp]] list into (open, closed)

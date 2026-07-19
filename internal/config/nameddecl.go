@@ -39,25 +39,44 @@ type namedDeclOps[T any] struct {
 	validate func(T) error
 }
 
-// validateNamedDecls checks one vocabulary's declaration list per the shared
-// layer/resolved split: layer mode permits `name = "!x"` closure markers
-// (name-only) and rejects in-layer duplicate names (merge would silently
-// replace); resolved mode rejects markers (Merge extracts them into the
-// closed list) and duplicates alike. The closed list's names are checked
-// against the grammar in both modes.
-func validateNamedDecls[T any](ops namedDeclOps[T], decls []T, closed []string, layer bool) error {
+// The list validators check one vocabulary's declarations per the shared
+// lifecycle split, differing only in marker policy:
+//
+// validateNamedDeclsLayer permits `name = "!x"` closure markers (name-only —
+// other fields set suggest a real declaration with a mistyped name, refused
+// rather than silently discarded) and rejects in-layer duplicate names
+// (merge would silently replace).
+func validateNamedDeclsLayer[T any](ops namedDeclOps[T], decls []T, closed []string) error {
+	return validateNamedDecls(ops, decls, closed, func(d T, name string) error {
+		if ops.markerExtras(d) {
+			return fmt.Errorf("%s %s: a closure marker takes only a name — other fields here suggest %s with a mistyped name", ops.label, name, ops.markerNoun)
+		}
+		if !ops.nameRe.MatchString(name[1:]) {
+			return fmt.Errorf("%s closure %q: %q is not a valid %s", ops.label, name, name[1:], ops.nameNoun)
+		}
+		return nil
+	})
+}
+
+// validateNamedDeclsResolved rejects markers (Merge extracts them into the
+// closed list, so one surviving to a resolved config is a bug) and
+// duplicates alike.
+func validateNamedDeclsResolved[T any](ops namedDeclOps[T], decls []T, closed []string) error {
+	return validateNamedDecls(ops, decls, closed, func(d T, name string) error {
+		return fmt.Errorf("%s %s: a closure marker is only meaningful in a cascade layer", ops.label, name)
+	})
+}
+
+// validateNamedDecls is the shared body; marker is the caller's policy for a
+// `!name` entry (nil error = tolerate and skip the open-declaration checks).
+// The closed list's names are checked against the grammar in both modes.
+func validateNamedDecls[T any](ops namedDeclOps[T], decls []T, closed []string, marker func(d T, name string) error) error {
 	seen := map[string]bool{}
 	for _, d := range decls {
 		name := ops.name(d)
 		if isRemoval(name) {
-			if !layer {
-				return fmt.Errorf("%s %s: a closure marker is only meaningful in a cascade layer", ops.label, name)
-			}
-			if ops.markerExtras(d) {
-				return fmt.Errorf("%s %s: a closure marker takes only a name — other fields here suggest %s with a mistyped name", ops.label, name, ops.markerNoun)
-			}
-			if !ops.nameRe.MatchString(name[1:]) {
-				return fmt.Errorf("%s closure %q: %q is not a valid %s", ops.label, name, name[1:], ops.nameNoun)
+			if err := marker(d, name); err != nil {
+				return err
 			}
 			continue
 		}

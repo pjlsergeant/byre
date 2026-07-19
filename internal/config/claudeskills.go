@@ -113,10 +113,14 @@ var claudeSkillDeclOps = namedDeclOps[ClaudeSkill]{
 	validate:     func(cs ClaudeSkill) error { return ValidateClaudeSkill(cs, false) },
 }
 
-// validateClaudeSkills checks the [[claude_skills]] list per the shared
-// layer/resolved split (see validateNamedDecls).
-func (c Config) validateClaudeSkills(layer bool) error {
-	return validateNamedDecls(claudeSkillDeclOps, c.ClaudeSkills, c.ClaudeSkillsClosed, layer)
+// validateClaudeSkillsLayer / validateClaudeSkillsResolved check the
+// [[claude_skills]] list per the shared lifecycle split (see nameddecl.go).
+func (c Config) validateClaudeSkillsLayer() error {
+	return validateNamedDeclsLayer(claudeSkillDeclOps, c.ClaudeSkills, c.ClaudeSkillsClosed)
+}
+
+func (c Config) validateClaudeSkillsResolved() error {
+	return validateNamedDeclsResolved(claudeSkillDeclOps, c.ClaudeSkills, c.ClaudeSkillsClosed)
 }
 
 // mergeClaudeSkills folds one cascade step of the [[claude_skills]] list into
