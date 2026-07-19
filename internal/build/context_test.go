@@ -91,17 +91,20 @@ func TestAssembleRefusesSymlinkedContextRoot(t *testing.T) {
 	}
 }
 
-// A context symlink whose target is INSIDE the store (a sibling dir) must be
-// refused too — os.Root follows an in-root symlink, so the confinement can't
-// rely on escape-detection alone; the anchor rejects a symlinked context
-// outright (grok review, 2026-07-19). Otherwise a self-edit agent could
-// redirect Assemble's writes onto another store subdir.
+// A context symlink whose target is INSIDE the store must be refused too. The
+// target here is RELATIVE ("sibling") — os.Root's child form FOLLOWS a
+// relative in-root terminal symlink (it refuses only absolute/escaping ones,
+// verified on go1.26), so the confinement can't lean on escape-detection; the
+// anchor Lstat-rejects a symlinked context outright (grok review, 2026-07-19,
+// which the author first wrongly dismissed after probing the absolute shape).
+// Without the fix, Assemble redirects its writes onto the sibling store dir.
 func TestAssembleRefusesInStoreSymlinkedContextRoot(t *testing.T) {
 	paths := bootstrapped(t)
 	if err := os.RemoveAll(paths.ContextDir); err != nil {
 		t.Fatal(err)
 	}
-	// A sibling dir under the store, with a sentinel the redirect would hit.
+	// A sibling dir beside context/ under the store, with a sentinel a
+	// redirected Dockerfile write would clobber.
 	sibling := filepath.Join(paths.Dir, "sibling")
 	if err := os.MkdirAll(sibling, 0o755); err != nil {
 		t.Fatal(err)
@@ -110,7 +113,8 @@ func TestAssembleRefusesInStoreSymlinkedContextRoot(t *testing.T) {
 	if err := os.WriteFile(sentinel, []byte("pre-existing"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(sibling, paths.ContextDir); err != nil {
+	// RELATIVE target: this is the shape os.Root follows, the actual hole.
+	if err := os.Symlink("sibling", paths.ContextDir); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 

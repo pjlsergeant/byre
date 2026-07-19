@@ -143,17 +143,18 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// a real directory: Mkdir through a root at paths.Dir — the self-edit mount
 	// ROOT, which the container cannot retarget (it is the bind-mount point) —
 	// creates it when missing and never follows a planted symlink of that name
-	// (Mkdir returns EEXIST on any existing name). Then open it no-follow:
-	// OpenDirRootNoFollow Lstat-rejects a symlinked context and SameFile-checks
-	// after open. (os.Root already refuses to TRAVERSE a symlinked component,
-	// in-root or escaping — verified on go1.26 — so the by-name ops below would
-	// fail closed regardless; OpenDirRootNoFollow makes that an explicit, legible
-	// refusal here rather than an opaque mkdirat/openat error downstream, and is
-	// the house pattern the source side already uses.) Every op below rides
-	// ctxRoot with a context-relative name. The engine's later by-pathname READ
-	// of the finished context is the disclosed byre-wide check-to-mount residual
-	// (ADR 0009), a different surface but the same class; a rebuild concurrent
-	// with a live self-edit session is where it applies.
+	// (Mkdir returns EEXIST on any existing name, symlink included). Then open it
+	// no-follow: OpenDirRootNoFollow Lstat-rejects a symlinked context and
+	// SameFile-checks after open. This step is load-bearing, not cosmetic:
+	// os.Root's child ops refuse an ABSOLUTE/escaping symlink target ("path
+	// escapes") but FOLLOW a RELATIVE in-root one (verified on go1.26 —
+	// storeRoot.OpenRoot("context") where context -> "sibling" opens the
+	// sibling), so relying on os.Root alone would let a self-edit agent redirect
+	// these writes onto another store subdir. Every op below rides ctxRoot with a
+	// context-relative name. The engine's later by-pathname READ of the finished
+	// context is the disclosed byre-wide check-to-mount residual (ADR 0009), a
+	// different surface but the same class; a rebuild concurrent with a live
+	// self-edit session is where it applies.
 	ctxName := filepath.Base(paths.ContextDir)
 	storeRoot, err := os.OpenRoot(paths.Dir)
 	if err != nil {
