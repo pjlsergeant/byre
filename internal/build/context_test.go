@@ -58,6 +58,81 @@ func TestAssembleWritesDockerfileAndLauncher(t *testing.T) {
 	}
 }
 
+// The project store is agent-writable under develop --self-edit, including
+// context/. A planted context symlink must never turn the next host-side
+// Assemble into recursive deletion or predictable writes outside the store.
+func TestAssembleRefusesSymlinkedContextRoot(t *testing.T) {
+	paths := bootstrapped(t)
+	if err := os.RemoveAll(paths.ContextDir); err != nil {
+		t.Fatal(err)
+	}
+
+	victim := t.TempDir()
+	files := filepath.Join(victim, "files")
+	if err := os.MkdirAll(files, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(files, "keep")
+	if err := os.WriteFile(sentinel, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, paths.ContextDir); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	if _, err := Assemble(paths, config.Config{}, skills.Resolved{}); err == nil {
+		t.Error("Assemble accepted a symlinked context root")
+	}
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "outside" {
+		t.Fatalf("Assemble touched the symlink target: content %q, error %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(victim, "Dockerfile.generated")); !os.IsNotExist(err) {
+		t.Fatalf("Assemble wrote through the symlinked context root: %v", err)
+	}
+}
+
+// The confinement also neutralizes an INTERIOR redirect: a real context dir
+// whose `files` subtree the agent replaced with a symlink to an outside
+// victim. The per-build clear must remove the planted LINK (never recurse
+// through it into the victim) and re-stage a real subtree, so the build both
+// succeeds and leaves the victim's contents intact.
+func TestAssembleNeutralizesSymlinkedContextChild(t *testing.T) {
+	paths := bootstrapped(t)
+
+	victim := t.TempDir()
+	sentinel := filepath.Join(victim, "keep")
+	if err := os.WriteFile(sentinel, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// context/ is a real dir; context/files is a symlink to the victim.
+	filesLink := filepath.Join(paths.ContextDir, "files")
+	if err := os.Symlink(victim, filesLink); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	// A `files` entry so staging must write under files/ this build.
+	if err := os.WriteFile(filepath.Join(paths.Canonical, "seed.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Assemble(paths, config.Config{Files: map[string]string{"seed.txt": "/opt/seed.txt"}}, skills.Resolved{}); err != nil {
+		t.Fatalf("Assemble should neutralize the planted link and succeed: %v", err)
+	}
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "outside" {
+		t.Fatalf("Assemble deleted through the symlinked `files`: content %q, error %v", got, err)
+	}
+	// files/ is now a real directory holding the staged file, not a link.
+	if fi, err := os.Lstat(filesLink); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("files/ should be re-staged as a real dir, got mode %v err %v", fi.Mode(), err)
+	}
+	if b, err := os.ReadFile(filepath.Join(paths.ContextDir, "files", "seed.txt")); err != nil || string(b) != "hi" {
+		t.Fatalf("seed not staged into the real files/: %q %v", b, err)
+	}
+	// The victim gained nothing (staging did not write through the old link).
+	if _, err := os.Stat(filepath.Join(victim, "seed.txt")); !os.IsNotExist(err) {
+		t.Fatalf("staging wrote through the planted link into the victim: %v", err)
+	}
+}
+
 func TestAssembleWritesAgentFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	res := skills.Resolved{
@@ -220,6 +295,20 @@ func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 }
 
 // Ordinary files and nested directories stage unchanged, preserving modes.
+// dstAt opens an os.Root at dst's parent, so a staging helper's now-root-
+// relative destination writes land at the real dst path — tests still verify
+// content by the absolute dst. Its two returns feed the helpers' trailing
+// (dstRoot, dst) parameters directly.
+func dstAt(t *testing.T, dst string) (*os.Root, string) {
+	t.Helper()
+	r, err := os.OpenRoot(filepath.Dir(dst))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close() })
+	return r, filepath.Base(dst)
+}
+
 func TestCopyPathStagesRegularTree(t *testing.T) {
 	src := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(src, "sub", "deep"), 0o755); err != nil {
@@ -236,7 +325,8 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 	}
 
 	dst := filepath.Join(t.TempDir(), "staged")
-	if err := copyPath(src, dst); err != nil {
+	dr, base := dstAt(t, dst)
+	if err := copyPath(src, dr, base); err != nil {
 		t.Fatalf("copyPath of a plain tree failed: %v", err)
 	}
 	for rel, wantMode := range map[string]os.FileMode{
@@ -259,7 +349,8 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 	// A trailing slash (Claude skill `path` values are not Clean'd upstream)
 	// must still stage — openDirRootNoFollow Cleans before splitting parent/base.
 	dst2 := filepath.Join(t.TempDir(), "staged2")
-	if err := copyPath(src+string(filepath.Separator), dst2); err != nil {
+	dr2, base2 := dstAt(t, dst2)
+	if err := copyPath(src+string(filepath.Separator), dr2, base2); err != nil {
 		t.Fatalf("copyPath of a trailing-slash dir failed: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dst2, "top.txt")); err != nil {
@@ -271,8 +362,9 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 // type checks would block the open forever, so a regression must fail, not hang.
 func copyWithin(t *testing.T, src, dst string) error {
 	t.Helper()
+	dr, base := dstAt(t, dst)
 	done := make(chan error, 1)
-	go func() { done <- copyPath(src, dst) }()
+	go func() { done <- copyPath(src, dr, base) }()
 	select {
 	case err := <-done:
 		return err
@@ -369,7 +461,8 @@ func TestCopyPathRejectsInteriorSymlink(t *testing.T) {
 	if err := os.Symlink("real", filepath.Join(src, "link")); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+	dr, base := dstAt(t, filepath.Join(t.TempDir(), "staged"))
+	if err := copyPath(src, dr, base); err == nil {
 		t.Fatal("an in-root symlink must be rejected, not dereferenced into the image")
 	}
 }
@@ -407,7 +500,8 @@ func TestCopyPathRejectsEscapingSymlinkComponents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			src := t.TempDir()
 			tc.plant(t, src)
-			if err := copyPath(src, filepath.Join(t.TempDir(), "staged")); err == nil {
+			dr, base := dstAt(t, filepath.Join(t.TempDir(), "staged"))
+			if err := copyPath(src, dr, base); err == nil {
 				t.Fatalf("escaping %s symlink must be rejected", tc.name)
 			}
 		})
@@ -429,7 +523,8 @@ func TestCopyPathRejectsTopLevelDirSymlink(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	dst := filepath.Join(t.TempDir(), "staged")
-	if err := copyPath(link, dst); err == nil {
+	dr, base := dstAt(t, dst)
+	if err := copyPath(link, dr, base); err == nil {
 		t.Fatal("a top-level directory symlink must be rejected, not followed")
 	}
 	if _, err := os.Stat(filepath.Join(dst, "host-secret")); err == nil {
@@ -458,7 +553,8 @@ func TestCopyRootedEntryRefusesEscapingAncestor(t *testing.T) {
 	defer root.Close()
 	// topLevel=true mirrors stageCopy's call on a multi-component configured
 	// source; the escaping ancestor is refused regardless of the flag.
-	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), filepath.Join(t.TempDir(), "out"), true); err == nil {
+	dr, base := dstAt(t, filepath.Join(t.TempDir(), "out"))
+	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), dr, base, true); err == nil {
 		t.Fatal("an entry reached through an escaping ancestor symlink must be refused by the root")
 	}
 }

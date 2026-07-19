@@ -112,7 +112,13 @@ the docs cited and in git history.
   machine-scoped volumes shipped with shared auth.
 - **Hardening the project store against a --self-edit agent** -- reverted
   (0f35743); `--self-edit` means trusting the agent with the host, full
-  stop. Reviewers WILL re-find this class -- don't re-fix.
+  stop. Reviewers WILL re-find this class -- don't re-fix. CARVE-OUT
+  (2026-07-19): byre must still never let agent-writable state amplify
+  into host actions BEYOND the grant -- a self-edit agent redirecting
+  byre's OWN host-side writes/deletes outside the mounted store (the
+  build-context symlink escape) is a confused-deputy bug, fixed, not this
+  parked class. The line: inside the grant is the agent's; byre becoming
+  a lever on the host beyond it is not.
 - **Runtime-only env** -- no security value under the threat model (images
   never leave the machine; daemon access is root-equivalent; documented in
   the security model, site/content/docs/security-model.md). If revived it's

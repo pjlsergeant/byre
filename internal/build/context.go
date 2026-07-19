@@ -136,11 +136,38 @@ func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string
 // Assemble writes the build context (Dockerfile + launcher + agent files + any
 // `files`) and returns the generated Dockerfile text.
 func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+	// Every mutation below is staged through a descriptor confined to the REAL
+	// context dir, so a `develop --self-edit` agent that swapped context/ (or an
+	// interior staging dir) for a symlink cannot redirect byre's host-side
+	// RemoveAll / writes to a target outside the project store. The anchor is
+	// paths.Dir — the self-edit mount ROOT, which the container cannot retarget
+	// (it is the bind-mount point) — opened as an os.Root: MkdirAll of the
+	// context component through it refuses a symlinked context (os.Root never
+	// traverses a symlink, returning "path escapes"), and OpenRoot re-resolves
+	// under the same rule, so this is a race-free confinement, not a
+	// check-then-use Lstat. The engine's later by-pathname READ of the finished
+	// context is the disclosed byre-wide check-to-mount residual (ADR 0009),
+	// no wider.
+	storeRoot, err := os.OpenRoot(paths.Dir)
+	if err != nil {
+		return "", err
+	}
+	defer storeRoot.Close()
+	ctxName := filepath.Base(paths.ContextDir)
+	if err := storeRoot.MkdirAll(ctxName, 0o755); err != nil {
+		return "", fmt.Errorf("build context dir (a self-edit agent may have replaced it): %w", err)
+	}
+	ctxRoot, err := storeRoot.OpenRoot(ctxName)
+	if err != nil {
+		return "", err
+	}
+	defer ctxRoot.Close()
+
 	// Re-stage from scratch: clear the staging subtrees so a file removed from
 	// `files`/skills since the last build can't linger in the context and make the
 	// build nondeterministic (or get swept into the image).
 	for _, d := range []string{"files", "skills", gen.ClaudeSkillsDirName} {
-		if err := os.RemoveAll(filepath.Join(paths.ContextDir, d)); err != nil {
+		if err := ctxRoot.RemoveAll(d); err != nil {
 			return "", err
 		}
 	}
@@ -148,7 +175,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// condition holds, so a condition that turned false since the last build
 	// (agent removed, context emptied) would otherwise leave a stale file behind.
 	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
-		if err := os.Remove(ctxPath(paths, name)); err != nil && !os.IsNotExist(err) {
+		if err := ctxRoot.Remove(name); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
 	}
@@ -158,28 +185,28 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		return "", err
 	}
 	for _, j := range jobs {
-		if err := os.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
+		if err := ctxRoot.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
 			return "", err
 		}
-		if err := stageCopy(paths.WorkDir, j); err != nil {
+		if err := stageCopy(ctxRoot, paths.WorkDir, j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
 	}
 	df := gen.Dockerfile(in)
 
-	if err := os.WriteFile(paths.Dockerfile, []byte(df), 0o644); err != nil {
+	if err := ctxRoot.WriteFile(filepath.Base(paths.Dockerfile), []byte(df), 0o644); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(ctxPath(paths, gen.LauncherName), gen.LauncherScript(), 0o755); err != nil {
+	if err := ctxRoot.WriteFile(gen.LauncherName, gen.LauncherScript(), 0o755); err != nil {
 		return "", err
 	}
 	// The /etc/profile.d shim that sources env.d for login shells (COPYed by the
 	// core block); 0644, sourced not executed.
-	if err := os.WriteFile(ctxPath(paths, gen.ProfileEnvName), gen.ProfileEnvScript(), 0o644); err != nil {
+	if err := ctxRoot.WriteFile(gen.ProfileEnvName, gen.ProfileEnvScript(), 0o644); err != nil {
 		return "", err
 	}
 	if cmd := res.AgentCommand(); cmd != "" {
-		if err := os.WriteFile(ctxPath(paths, gen.AgentCmdName), agentScript(cmd), 0o755); err != nil {
+		if err := ctxRoot.WriteFile(gen.AgentCmdName, agentScript(cmd), 0o755); err != nil {
 			return "", err
 		}
 	}
@@ -187,7 +214,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// when the declared set is empty (the COPY is unconditional, and claude's
 	// --add-dir tolerates an empty skills dir; spike-verified), so the baked
 	// path exists in every box. The skill dirs themselves were staged as jobs.
-	if err := os.MkdirAll(filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills"), 0o755); err != nil {
+	if err := ctxRoot.MkdirAll(filepath.Join(gen.ClaudeSkillsDirName, ".claude", "skills"), 0o755); err != nil {
 		return "", err
 	}
 	// The canonical declared MCP set — written on every assemble (the COPY is
@@ -199,7 +226,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(ctxPath(paths, gen.MCPConfigName), config.MCPConfigJSON(skills.MCPList(mcps)), 0o644); err != nil {
+	if err := ctxRoot.WriteFile(gen.MCPConfigName, config.MCPConfigJSON(skills.MCPList(mcps)), 0o644); err != nil {
 		return "", err
 	}
 	// The chassis speaks first: mechanism facts every box carries (today, the
@@ -210,16 +237,16 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	if sc := res.Context(); sc != "" {
 		ctx += "\n\n" + sc
 	}
-	if err := os.WriteFile(ctxPath(paths, gen.AgentContextName), []byte(ctx), 0o644); err != nil {
+	if err := ctxRoot.WriteFile(gen.AgentContextName, []byte(ctx), 0o644); err != nil {
 		return "", err
 	}
 	if target := res.AgentContextTarget(); target != "" {
-		if err := os.WriteFile(ctxPath(paths, gen.AgentContextTargetName), []byte(target+"\n"), 0o644); err != nil {
+		if err := ctxRoot.WriteFile(gen.AgentContextTargetName, []byte(target+"\n"), 0o644); err != nil {
 			return "", err
 		}
 		// The --self-edit note the launcher appends to the agent's memory when the
 		// self-edit mount (this project's store at /home/dev/.byre-self) is present.
-		if err := os.WriteFile(ctxPath(paths, gen.SelfEditDocName), []byte(selfEditDoc), 0o644); err != nil {
+		if err := ctxRoot.WriteFile(gen.SelfEditDocName, []byte(selfEditDoc), 0o644); err != nil {
 			return "", err
 		}
 	}
@@ -237,10 +264,6 @@ const chassisContext = "Files the user delivers from the host land in /inbox, ow
 //
 //go:embed self-edit.md
 var selfEditDoc string
-
-func ctxPath(paths project.Paths, name string) string {
-	return filepath.Join(paths.ContextDir, name)
-}
 
 // volumeDirs returns the mount-point dirs of all named volumes (config-declared
 // and skill-contributed), so gen can pre-create them owned by the baked UID/GID —
@@ -290,7 +313,9 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 		if err != nil {
 			return nil, nil, fmt.Errorf("files: %w", err)
 		}
-		staged := filepath.Join(paths.ContextDir, "files", rel)
+		// staged is relative to the build-context root (ctxRoot in Assemble),
+		// so every destination write is confined beneath the real context dir.
+		staged := filepath.Join("files", rel)
 		// Anchor at the project root and stage rel through it (openat), rather
 		// than by the resolved absolute path: the ancestors of a `files` source
 		// are agent-writable, so a by-pathname reopen could be redirected by an
@@ -315,11 +340,11 @@ func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.Ski
 		gb := gen.SkillBlock{Name: b.Name, Apt: b.Apt, NpmGlobal: b.NpmGlobal, Dockerfile: b.Dockerfile}
 		for _, sf := range b.Files {
 			ctxRel := filepath.ToSlash(filepath.Join("skills", b.Name, sf.Rel))
-			staged := filepath.Join(paths.ContextDir, filepath.FromSlash(ctxRel))
-			// Defense-in-depth: skill name + rel are validated upstream, but confirm
-			// the staged path can't escape the context dir before we write to it.
-			if rel, err := filepath.Rel(paths.ContextDir, staged); err != nil ||
-				rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			// staged is relative to the build-context root; ctxRoot (an os.Root)
+			// refuses any component that escapes it, but keep the explicit check
+			// so a malformed name fails with a legible message, not a raw openat.
+			staged := filepath.FromSlash(ctxRel)
+			if staged == ".." || strings.HasPrefix(staged, ".."+string(filepath.Separator)) || filepath.IsAbs(staged) {
 				return nil, nil, fmt.Errorf("skill %q: staged file path escapes the build context", b.Name)
 			}
 			jobs = append(jobs, fileCopy{src: sf.Src, staged: staged, what: fmt.Sprintf("skill %q files: copying %s", b.Name, sf.Rel)})
@@ -357,7 +382,7 @@ func planClaudeSkills(paths project.Paths, cfg config.Config, res skills.Resolve
 		if err := skills.ValidateClaudeSkillDir(src, d.CS.Name); err != nil {
 			return nil, err
 		}
-		staged := filepath.Join(paths.ContextDir, gen.ClaudeSkillsDirName, ".claude", "skills", d.CS.Name)
+		staged := filepath.Join(gen.ClaudeSkillsDirName, ".claude", "skills", d.CS.Name)
 		jobs = append(jobs, fileCopy{src: src, staged: staged, what: fmt.Sprintf("claude skill %s: copying %s", d.CS.Name, src)})
 	}
 	return jobs, nil
@@ -415,7 +440,7 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 // worktree is not agent-writable) falls through to the by-pathname copyPath.
 // This ENFORCES — rather than assumes — that no by-pathname reopen happens for
 // an agent-writable source.
-func stageCopy(agentRoot string, j fileCopy) error {
+func stageCopy(dstRoot *os.Root, agentRoot string, j fileCopy) error {
 	root, src := j.srcRoot, j.src
 	if root == "" {
 		if rel, ok := agentWritableRel(agentRoot, j.src); ok {
@@ -423,7 +448,7 @@ func stageCopy(agentRoot string, j fileCopy) error {
 		}
 	}
 	if root == "" {
-		return copyPath(j.src, j.staged)
+		return copyPath(j.src, dstRoot, j.staged)
 	}
 	r, err := os.OpenRoot(root)
 	if err != nil {
@@ -434,7 +459,7 @@ func stageCopy(agentRoot string, j fileCopy) error {
 	// safeProjectPath / validation already resolved it within the project, and
 	// os.Root follows it while refusing escapes. Its interior is agent territory:
 	// symlinks there are rejected (copyRootedEntry with topLevel=false).
-	return copyRootedEntry(r, src, j.staged, true)
+	return copyRootedEntry(r, src, dstRoot, j.staged, true)
 }
 
 // agentWritableRel reports whether path is inside root, returning the relative
@@ -475,7 +500,7 @@ func withinRoot(root, path string) (string, bool) {
 // interior entries reject symlinks (agent-planted). The fd's fstat is the only
 // thing trusted for the entry's type, and opens are O_NONBLOCK so a FIFO returns
 // instead of blocking. Mirrors internal/deliver/transport.go.
-func copyRootedEntry(root *os.Root, rel, dst string, topLevel bool) error {
+func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, topLevel bool) error {
 	if !topLevel {
 		// Lstat through the root to reject an interior symlink WITHOUT following
 		// it: os.Root silently follows an in-root symlink on Open, and copyPath's
@@ -509,7 +534,7 @@ func copyRootedEntry(root *os.Root, rel, dst string, topLevel bool) error {
 	}
 	switch {
 	case fi.IsDir():
-		if err := os.MkdirAll(dst, 0o755); err != nil {
+		if err := dstRoot.MkdirAll(dst, 0o755); err != nil {
 			return err
 		}
 		entries, err := f.ReadDir(-1)
@@ -517,13 +542,13 @@ func copyRootedEntry(root *os.Root, rel, dst string, topLevel bool) error {
 			return err
 		}
 		for _, e := range entries {
-			if err := copyRootedEntry(root, filepath.Join(rel, e.Name()), filepath.Join(dst, e.Name()), false); err != nil {
+			if err := copyRootedEntry(root, filepath.Join(rel, e.Name()), dstRoot, filepath.Join(dst, e.Name()), false); err != nil {
 				return err
 			}
 		}
 		return nil
 	case fi.Mode().IsRegular():
-		return stageRegularFromFD(f, dst)
+		return stageRegularFromFD(f, dstRoot, dst)
 	default:
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", filepath.Join(root.Name(), rel))
 	}
@@ -546,7 +571,7 @@ func copyRootedEntry(root *os.Root, rel, dst string, topLevel bool) error {
 // Opens are O_NONBLOCK and the type is trusted only from the fd's fstat, so a
 // swap to a FIFO returns instead of hanging and is rejected rather than staged.
 // This mirrors internal/deliver/transport.go.
-func copyPath(src, dst string) error {
+func copyPath(src string, dstRoot *os.Root, dst string) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
@@ -569,7 +594,7 @@ func copyPath(src, dst string) error {
 			return err
 		}
 		defer root.Close()
-		return copyRootedEntry(root, ".", dst, false)
+		return copyRootedEntry(root, ".", dstRoot, dst, false)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", src)
@@ -582,7 +607,7 @@ func copyPath(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	return stageRegularFromFD(in, dst)
+	return stageRegularFromFD(in, dstRoot, dst)
 }
 
 // stageRegularFromFD copies an already-open source file into dst, preserving its
@@ -596,7 +621,7 @@ func copyPath(src, dst string) error {
 // the writer indefinitely (the same stall class O_NONBLOCK closes for FIFOs).
 // A source that grew or shrank mid-copy is refused rather than staged — the
 // bytes would be a torn read either way, and the context must be deterministic.
-func stageRegularFromFD(in *os.File, dst string) error {
+func stageRegularFromFD(in *os.File, dstRoot *os.Root, dst string) error {
 	fi, err := in.Stat()
 	if err != nil {
 		return err
@@ -604,7 +629,7 @@ func stageRegularFromFD(in *os.File, dst string) error {
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", in.Name())
 	}
-	o, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fi.Mode().Perm()&fs.ModePerm)
+	o, err := dstRoot.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fi.Mode().Perm()&fs.ModePerm)
 	if err != nil {
 		return err
 	}

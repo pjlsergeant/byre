@@ -75,7 +75,10 @@
   race-proof — two concurrent first enrollments of id-colliding paths
   can no longer both slip past it and silently share state (exactly one
   wins; the other gets the loud collision error the fence always
-  promised).
+  promised); and the build-context assembly is confined to the real
+  context directory through a descriptor, so a `develop --self-edit`
+  agent that replaced it with a symlink can no longer redirect byre's
+  own host-side cleanup or writes outside the project store.
 
 - **First compatibility sunset.** Several transition aids for behavior
   that changed before v1.0 have reached the end of their support window
