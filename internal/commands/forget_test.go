@@ -11,9 +11,9 @@ import (
 func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 	p, proj := testPaths(t)
 	// host-side config (in the store) + a committed project-tree config
-	os.WriteFile(filepath.Join(p.Dir, "byre.config"), []byte("agent=\"claude\"\n"), 0o644)
+	mustWriteFile(t, filepath.Join(p.Dir, "byre.config"), []byte("agent=\"claude\"\n"), 0o644)
 	projCfg := filepath.Join(proj, "byre.config")
-	os.WriteFile(projCfg, []byte("agent=\"claude\"\n"), 0o644)
+	mustWriteFile(t, projCfg, []byte("agent=\"claude\"\n"), 0o644)
 	f := &fakeRunner{
 		vols:   map[string]bool{volumeName(p.ID, ".claude"): true, volumeName(p.ID, "cache"): true},
 		images: map[string]bool{imageTag(p.ID, os.Getuid(), os.Getgid()): true},

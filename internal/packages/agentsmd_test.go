@@ -102,7 +102,7 @@ func TestEnsureAgentsMDPreservesForeignFile(t *testing.T) {
 	}
 
 	// A stale byre copy (title line intact) is replaced without a .bak.
-	os.Remove(bak)
+	mustRemove(t, bak)
 	if err := os.WriteFile(path, []byte(agentsMDTitle+"\nold byre words\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -141,8 +141,8 @@ func TestEnsureAgentsMDAbortsWhenPreservationFails(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(home, 0o755) })
 
-	if err := EnsureStore(home, nil, "test", nil); err == nil {
-		t.Fatalf("EnsureStore should fail when it cannot preserve a foreign AGENTS.md")
+	if err := EnsureStore(home, nil, "test", nil); err == nil || !strings.Contains(err.Error(), "cannot preserve") {
+		t.Fatalf("EnsureStore should fail when it cannot preserve a foreign AGENTS.md, got %v", err)
 	}
 	if got, _ := os.ReadFile(path); string(got) != "# my own notes\n" {
 		t.Fatalf("foreign AGENTS.md touched despite failed preservation: %q", got)

@@ -344,12 +344,12 @@ func TestPackUnpackRoundTripDirectory(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(dir, "bug", "notes.txt"), []byte("n"), 0o644)
-	os.WriteFile(filepath.Join(sub, "deep.txt"), []byte("d"), 0o644)
+	mustWrite(t, filepath.Join(dir, "bug", "notes.txt"), "n")
+	mustWrite(t, filepath.Join(sub, "deep.txt"), "d")
 	// A RELATIVE interior symlink resolves within the delivered tree, so it is
 	// followed and delivered. (An absolute or escaping symlink is contained
 	// out — covered by the escape tests.)
-	os.Symlink("notes.txt", filepath.Join(dir, "bug", "link.txt"))
+	mustSymlink(t, "notes.txt", filepath.Join(dir, "bug", "link.txt"))
 
 	ssh := &fakeSSH{responses: []sshResponse{
 		{stdout: "/inbox/bug\n"},
@@ -430,7 +430,7 @@ func TestPackSkipsSymlinkToFifoInTree(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(sub, "notes.txt"), []byte("n"), 0o644)
+	mustWrite(t, filepath.Join(sub, "notes.txt"), "n")
 	fifo := filepath.Join(dir, "pipe")
 	if err := syscallMkfifo(fifo); err != nil {
 		t.Skipf("mkfifo: %v", err)
@@ -465,7 +465,7 @@ func TestPackSkipsSymlinkEscapingTree(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(sub, "notes.txt"), []byte("n"), 0o644)
+	mustWrite(t, filepath.Join(sub, "notes.txt"), "n")
 	if err := os.Symlink(secret, filepath.Join(sub, "innocent.txt")); err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +509,7 @@ func TestPackTopLevelNameCollisionUniquifiesLocally(t *testing.T) {
 	a := writeTestFile(t, "report.pdf", "one")
 	bdir := t.TempDir()
 	b := filepath.Join(bdir, "report.pdf")
-	os.WriteFile(b, []byte("two"), 0o644)
+	mustWrite(t, b, "two")
 
 	ssh := &fakeSSH{responses: []sshResponse{{stdout: "/inbox/report.pdf\n/inbox/report-2.pdf\n"}}}
 	cfg, _, _ := remoteConfig()

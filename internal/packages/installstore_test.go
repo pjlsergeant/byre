@@ -108,8 +108,8 @@ func TestUninstallRemovesSnapshotAndRow(t *testing.T) {
 	if _, err := os.Stat(SnapshotDir(home, s.Digest)); !os.IsNotExist(err) {
 		t.Fatal("snapshot must be deleted")
 	}
-	if err := WithStoreLock(home, func() error { return RemoveInstalled(home, "pete/tool") }); err == nil {
-		t.Fatal("double uninstall must error")
+	if err := WithStoreLock(home, func() error { return RemoveInstalled(home, "pete/tool") }); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("double uninstall must error as not-installed, got %v", err)
 	}
 }
 
@@ -119,11 +119,11 @@ func TestOrphanSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	orphan := SnapshotDir(home, strings.Repeat("ab", 32))
-	os.MkdirAll(orphan, 0o755)
+	mustMkdirAll(t, orphan, 0o755)
 	stage := filepath.Join(packagesDir(home), ".stage-crash")
-	os.MkdirAll(stage, 0o755)
+	mustMkdirAll(t, stage, 0o755)
 	keeper := filepath.Join(packagesDir(home), "not-a-digest")
-	os.MkdirAll(keeper, 0o755)
+	mustMkdirAll(t, keeper, 0o755)
 	if err := WithStoreLock(home, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}

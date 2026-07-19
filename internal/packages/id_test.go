@@ -1,6 +1,9 @@
 package packages
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateID(t *testing.T) {
 	ok := []struct {
@@ -30,19 +33,20 @@ func TestValidateID(t *testing.T) {
 	bad := []struct {
 		id   string
 		bare bool
+		want string // fragment of the intended rule's message
 	}{
-		{"", true},
-		{"none", true},
-		{"!claude", true},
-		{"Claude", true},  // uppercase
-		{"has.dot", true}, // dots banned
-		{"pete/claude/extra", true},
-		{"claude", false}, // bare not OK when require qualified
-		{"-leading", true},
+		{"", true, "is empty"},
+		{"none", true, "reserved"},
+		{"!claude", true, "must not start with '!'"},
+		{"Claude", true, "invalid segment"},  // uppercase
+		{"has.dot", true, "invalid segment"}, // dots banned
+		{"pete/claude/extra", true, "at most one '/'"},
+		{"claude", false, "must be qualified"}, // bare not OK when require qualified
+		{"-leading", true, "invalid segment"},
 	}
 	for _, tc := range bad {
-		if err := ValidateID(tc.id, tc.bare); err == nil {
-			t.Errorf("ValidateID(%q, bareOK=%v): want error", tc.id, tc.bare)
+		if err := ValidateID(tc.id, tc.bare); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ValidateID(%q, bareOK=%v): want error containing %q, got %v", tc.id, tc.bare, tc.want, err)
 		}
 	}
 }

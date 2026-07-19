@@ -245,8 +245,8 @@ func TestUninstallScansAndRemoves(t *testing.T) {
 	}
 	// Reference it from a project.
 	pdir := filepath.Join(home, "projects", "someproj")
-	os.MkdirAll(pdir, 0o755)
-	os.WriteFile(filepath.Join(pdir, "byre.config"), []byte("agent = \"none\"\nskills = [\"pete/tool\"]\n"), 0o644)
+	mustMkdirAll(t, pdir, 0o755)
+	mustWriteFile(t, filepath.Join(pdir, "byre.config"), []byte("agent = \"none\"\nskills = [\"pete/tool\"]\n"), 0o644)
 
 	// Pipe without --yes refuses (always).
 	if err := SkillUninstall(discardStreams(), "pete/tool", false); err == nil {
@@ -417,8 +417,8 @@ func TestUninstallContestedIdDisclosesTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 	pdir := filepath.Join(home, "projects", "someproj")
-	os.MkdirAll(pdir, 0o755)
-	os.WriteFile(filepath.Join(pdir, "byre.config"), []byte("agent = \"none\"\nskills = [\"pete/tool\"]\n"), 0o644)
+	mustMkdirAll(t, pdir, 0o755)
+	mustWriteFile(t, filepath.Join(pdir, "byre.config"), []byte("agent = \"none\"\nskills = [\"pete/tool\"]\n"), 0o644)
 
 	s, _, errBuf := testStreams("", false)
 	if err := SkillUninstall(s, "pete/tool", true); err != nil {
@@ -458,11 +458,11 @@ func TestUninstallMultiClaimantStaysContested(t *testing.T) {
 		t.Fatal(err)
 	}
 	sdir := filepath.Join(home, "skills", "pete", "tool")
-	os.MkdirAll(sdir, 0o755)
-	os.WriteFile(filepath.Join(sdir, "skill.toml"), []byte("description = \"local\"\n"), 0o644)
+	mustMkdirAll(t, sdir, 0o755)
+	mustWriteFile(t, filepath.Join(sdir, "skill.toml"), []byte("description = \"local\"\n"), 0o644)
 	tdir := filepath.Join(home, "templates", "pete", "tool")
-	os.MkdirAll(tdir, 0o755)
-	os.WriteFile(filepath.Join(tdir, "template.config"), []byte("base = \"debian:stable\"\n"), 0o644)
+	mustMkdirAll(t, tdir, 0o755)
+	mustWriteFile(t, filepath.Join(tdir, "template.config"), []byte("base = \"debian:stable\"\n"), 0o644)
 
 	s, _, errBuf := testStreams("", false)
 	if err := SkillUninstall(s, "pete/tool", true); err != nil {

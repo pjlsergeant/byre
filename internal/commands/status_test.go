@@ -34,24 +34,19 @@ func TestRenderStatusFull(t *testing.T) {
 	})
 	out := b.String()
 
-	for _, want := range []string{
-		"Agent:", "claude",
-		"Engine:", "docker",
-		"/home/me/proj -> /workspace  (rw)",
-		"Network:", "open",
-		"Ports:", "127.0.0.1:8080 -> 8080", "127.0.0.1:3000 -> 3000",
-		"/data -> /data  (ro)",
-		"/media -> /media  (rw, disabled)",
-		"moarcode",
-		"State vols:", "creds",
-		"Cache vols:", "node_modules",
-		"not introspected",
-		"running (abcdef012345)", // short id
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("status output missing %q:\n%s", want, out)
-		}
-	}
+	assertRow(t, out, "Agent", "claude")
+	assertRow(t, out, "Engine", "docker")
+	assertRow(t, out, "Project", "/home/me/proj -> /workspace  (rw)")
+	assertRow(t, out, "Network", "open")
+	assertRow(t, out, "Ports", "127.0.0.1:8080 -> 8080  (host -> container)")
+	assertRow(t, out, "Ports", "127.0.0.1:3000 -> 3000  (host -> container)")
+	assertRow(t, out, "Host mounts", "/data -> /data  (ro)")
+	assertRow(t, out, "Host mounts", "/media -> /media  (rw, disabled)")
+	assertRow(t, out, "Skills", "moarcode")
+	assertRow(t, out, "State vols", "creds")
+	assertRow(t, out, "Cache vols", "node_modules")
+	assertRow(t, out, "Raw run args", "--cap-add=SYS_PTRACE   (passed through; not introspected)")
+	assertRow(t, out, "Container", "running (abcdef012345)") // short id
 }
 
 func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
@@ -68,26 +63,48 @@ func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
 		BuildRaw: []string{"RUN echo hi"},
 	})
 	out := b.String()
-	for _, want := range []string{
-		"Skill grants:", "shem:", "mounts /var/run/x.sock -> /run/x.sock (rw)", "+cap SYS_PTRACE",
-		"Raw build:", "RUN echo hi", "not introspected",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("status missing %q:\n%s", want, out)
-		}
-	}
+	assertRow(t, out, "Skill grants", "shem: mounts /var/run/x.sock -> /run/x.sock (rw); +cap SYS_PTRACE")
+	assertRow(t, out, "Raw build", "RUN echo hi")
+	assertRow(t, out, "Raw build", "(raw build lines above are passed through; not introspected)")
 }
 
-// hasField reports whether the status output has a "Label: value" row,
-// insensitive to the column padding between them (presentation, not contract).
-func hasField(out, label, value string) bool {
+// statusRows parses renderStatus's "Label:       value" rows into
+// label -> values, folding continuation rows (blank label) into the most
+// recent label — so an assertion can prove a value sits on the row it
+// belongs to, not merely somewhere in the output.
+func statusRows(out string) map[string][]string {
+	rows := map[string][]string{}
+	cur := ""
 	for _, line := range strings.Split(out, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, label) && strings.Contains(trimmed, value) {
-			return true
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if strings.HasPrefix(line, " ") { // blank label: continuation row
+			rows[cur] = append(rows[cur], strings.TrimLeft(line, " "))
+			continue
+		}
+		head, rest, ok := strings.Cut(line, ":")
+		if !ok {
+			continue // free-form text, not a labeled row
+		}
+		cur = head
+		rows[cur] = append(rows[cur], strings.TrimLeft(rest, " "))
+	}
+	return rows
+}
+
+// assertRow requires the labeled row (or one of its continuation rows) to
+// carry exactly want as its value — column padding stays presentation, the
+// row's complete content is the contract.
+func assertRow(t *testing.T, out, label, want string) {
+	t.Helper()
+	vals := statusRows(out)[label]
+	for _, v := range vals {
+		if v == want {
+			return
 		}
 	}
-	return false
+	t.Errorf("status row %q: %q missing value %q\nfull output:\n%s", label, vals, want, out)
 }
 
 func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
@@ -98,15 +115,9 @@ func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 		EngineErr: "no container engine found on PATH",
 	})
 	out := b.String()
-	if !hasField(out, "Agent:", "(none)") {
-		t.Errorf("missing default agent: %s", out)
-	}
-	if !hasField(out, "Host mounts:", "none") {
-		t.Errorf("missing 'none' mounts: %s", out)
-	}
-	if !hasField(out, "Container:", "unknown (no engine)") {
-		t.Errorf("missing no-engine container line: %s", out)
-	}
+	assertRow(t, out, "Agent", "(none)")
+	assertRow(t, out, "Host mounts", "none")
+	assertRow(t, out, "Container", "unknown (no engine)")
 }
 
 // An orphaned box (running, byre client dead) must say so and give both
@@ -347,19 +358,13 @@ func TestRenderStatusContainmentAndSockGroups(t *testing.T) {
 		}},
 	})
 	out := b.String()
-	for _, want := range []string{
-		"Containment:", "🛑 HOLE", "docker-host opens a containment hole", "(skill: docker-host)",
-		"Skill grants:", "sock group access via /var/run/docker.sock",
-		"mounts /var/run/docker.sock",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("status missing %q:\n%s", want, out)
-		}
-	}
+	assertRow(t, out, "Containment",
+		"🛑 HOLE -- docker-host opens a containment hole -- skim docs/DOCKER-HOST.md  (skill: docker-host)")
+	assertRow(t, out, "Skill grants",
+		"docker-host: mounts /var/run/docker.sock -> /var/run/docker.sock (rw); "+
+			"sock group access via /var/run/docker.sock (gid resolved at launch; wider than the named path)")
 	// Network row must stay unqualified (warranty model: hole is separate).
-	if !hasField(out, "Network:", "open") {
-		t.Errorf("Network row should stay open/unqualified:\n%s", out)
-	}
+	assertRow(t, out, "Network", "open")
 }
 
 func TestRenderStatusMultiContainment(t *testing.T) {

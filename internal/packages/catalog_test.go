@@ -66,15 +66,15 @@ requires_byre = ">=99.0.0"
 kind = "skill"
 `
 	dir2 := filepath.Join(home, "skills", "need99")
-	os.MkdirAll(dir2, 0o755)
-	os.WriteFile(filepath.Join(dir2, "skill.toml"), []byte(body2), 0o644)
+	mustMkdirAll(t, dir2, 0o755)
+	mustWriteFile(t, filepath.Join(dir2, "skill.toml"), []byte(body2), 0o644)
 	cat3, err := LoadCatalog(home, nil, "(devel)", "0.0.0-devel")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// need99 only
-	os.RemoveAll(filepath.Join(home, "skills", "need9"))
-	os.RemoveAll(filepath.Join(home, "skills", "claude"))
+	mustRemoveAll(t, filepath.Join(home, "skills", "need9"))
+	mustRemoveAll(t, filepath.Join(home, "skills", "claude"))
 	cat3, err = LoadCatalog(home, nil, "(devel)", "0.0.0-devel")
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ kind = "skill"
 func TestEagerStage2UnknownKey(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, "skills", "typo")
-	os.MkdirAll(dir, 0o755)
+	mustMkdirAll(t, dir, 0o755)
 	old := Stage2Skill
 	Stage2Skill = func(raw []byte) error {
 		body := StripPackageTable(raw)
@@ -102,7 +102,7 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { Stage2Skill = old })
-	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("typo_key = true\n"), 0o644)
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("typo_key = true\n"), 0o644)
 	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
 	if err != nil {
 		t.Fatal(err)
@@ -120,8 +120,8 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 	if !strings.Contains(ent.Reason, "unknown key") {
 		t.Fatalf("want unknown key reason, got %q", ent.Reason)
 	}
-	if _, err := cat.ResolveName("typo"); err == nil {
-		t.Fatal("resolve should hard-error on INVALID")
+	if _, err := cat.ResolveName("typo"); err == nil || !strings.Contains(err.Error(), `package "typo" is invalid`) {
+		t.Fatalf("resolve should hard-error on INVALID, got %v", err)
 	}
 }
 

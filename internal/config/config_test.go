@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -83,14 +84,14 @@ func TestMergeMountsReenableByReplacing(t *testing.T) {
 func TestValidateDisabledMountStillChecked(t *testing.T) {
 	// A disabled mount is still config: shape errors and target collisions
 	// fail now, not on re-enable.
-	if err := (Config{Mounts: []Mount{{Target: "/t", Disabled: true}}}).Validate(); err == nil {
-		t.Error("disabled mount without host should still fail validation")
+	if err := (Config{Mounts: []Mount{{Target: "/t", Disabled: true}}}).Validate(); err == nil || !strings.Contains(err.Error(), "host path is required") {
+		t.Errorf("disabled mount without host should still fail validation, got %v", err)
 	}
 	dup := Config{Mounts: []Mount{
 		{Host: "/a", Target: "/t", Disabled: true}, {Host: "/b", Target: "/t"},
 	}}
-	if err := dup.Validate(); err == nil {
-		t.Error("disabled mount should still collide on target")
+	if err := dup.Validate(); err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Errorf("disabled mount should still collide on target, got %v", err)
 	}
 }
 
@@ -112,8 +113,8 @@ func TestAptHonorsRemoval(t *testing.T) {
 }
 
 func TestValidateMountHostRequired(t *testing.T) {
-	if err := (Config{Mounts: []Mount{{Target: "/t"}}}).Validate(); err == nil {
-		t.Fatal("expected error for mount without host")
+	if err := (Config{Mounts: []Mount{{Target: "/t"}}}).Validate(); err == nil || !strings.Contains(err.Error(), "host path is required") {
+		t.Fatalf("expected error for mount without host, got %v", err)
 	}
 }
 
@@ -134,35 +135,38 @@ func TestValidateHostPathShape(t *testing.T) {
 		"relative": "run/docker.sock", "dot relative": "./x", "tilde user": "~pete/x", "comma": "/a,b",
 	} {
 		c := Config{Mounts: []Mount{{Host: host, Target: "/t"}}}
-		if err := c.Validate(); err == nil {
-			t.Errorf("%s mount host accepted; expandHostPath would refuse it at run assembly", name)
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("host path %q", host)) {
+			t.Errorf("%s mount host accepted; expandHostPath would refuse it at run assembly, got %v", name, err)
 		}
 	}
 	seeded := Config{Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Seed: &Seed{Host: "x/y"}}}}
-	if err := seeded.Validate(); err == nil {
-		t.Error("relative seed host accepted; expandHostPath would refuse it at seed time")
+	if err := seeded.Validate(); err == nil || !strings.Contains(err.Error(), `host path "x/y"`) {
+		t.Errorf("relative seed host accepted; expandHostPath would refuse it at seed time, got %v", err)
 	}
 }
 
 func TestValidateTargetCollisions(t *testing.T) {
-	cases := map[string]Config{
-		"dup mount target": {Mounts: []Mount{
+	cases := map[string]struct {
+		cfg     Config
+		wantErr string
+	}{
+		"dup mount target": {Config{Mounts: []Mount{
 			{Host: "/a", Target: "/t"}, {Host: "/b", Target: "/t"},
-		}},
-		"dup volume name": {Volumes: []Volume{
+		}}, "mount target /t collides"},
+		"dup volume name": {Config{Volumes: []Volume{
 			{Name: "v", Role: "cache", Target: "/x"}, {Name: "v", Role: "cache", Target: "/y"},
-		}},
-		"dup volume target": {Volumes: []Volume{
+		}}, "duplicate name"},
+		"dup volume target": {Config{Volumes: []Volume{
 			{Name: "v1", Role: "cache", Target: "/t"}, {Name: "v2", Role: "cache", Target: "/t"},
-		}},
-		"mount/volume target collision": {
+		}}, "target /t collides with volume v1"},
+		"mount/volume target collision": {Config{
 			Mounts:  []Mount{{Host: "/a", Target: "/shared"}},
 			Volumes: []Volume{{Name: "v", Role: "cache", Target: "/shared"}},
-		},
+		}, "target /shared collides with mount /shared"},
 	}
 	for name, c := range cases {
-		if err := c.Validate(); err == nil {
-			t.Errorf("%s: expected collision error", name)
+		if err := c.cfg.Validate(); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("%s: expected collision error containing %q, got %v", name, c.wantErr, err)
 		}
 	}
 }
@@ -172,8 +176,8 @@ func TestLoadMissingTemplateErrors(t *testing.T) {
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir()
 	writeProjectCfg(t, proj, "template = \"nope\"\n")
-	if _, err := Load(proj); err == nil {
-		t.Fatal("expected error for missing explicitly-selected template")
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), `template "nope"`) {
+		t.Fatalf("expected error for missing explicitly-selected template, got %v", err)
 	}
 }
 
@@ -189,8 +193,8 @@ func TestDockerfileKeyRejectedLoudly(t *testing.T) {
 }
 
 func TestValidateRejectsBadEngine(t *testing.T) {
-	if err := (Config{Engine: "containerd"}).Validate(); err == nil {
-		t.Fatal("expected invalid-engine rejection")
+	if err := (Config{Engine: "containerd"}).Validate(); err == nil || !strings.Contains(err.Error(), `engine: "containerd" invalid`) {
+		t.Fatalf("expected invalid-engine rejection, got %v", err)
 	}
 }
 
@@ -201,24 +205,27 @@ func TestValidateWorktreeBase(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"relative-dir", "./x", "/has,comma"} {
-		if err := (Config{WorktreeBase: bad}).Validate(); err == nil {
-			t.Errorf("worktree_base %q should be rejected", bad)
+		if err := (Config{WorktreeBase: bad}).Validate(); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("worktree_base = %q", bad)) {
+			t.Errorf("worktree_base %q should be rejected, got %v", bad, err)
 		}
 	}
 }
 
 func TestValidateVolumeRules(t *testing.T) {
-	cases := map[string]Config{
-		"bad role":      {Volumes: []Volume{{Name: "v", Role: "nope", Target: "/t"}}},
-		"no target":     {Volumes: []Volume{{Name: "v", Role: "cache"}}},
-		"seed on cache": {Volumes: []Volume{{Name: "v", Role: "cache", Target: "/t", Seed: &Seed{Host: "/h"}}}},
-		"empty seed":    {Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Seed: &Seed{}}}},
-		"two seed srcs": {Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Seed: &Seed{Host: "/h", Literal: "x"}}}},
-		"no name":       {Volumes: []Volume{{Role: "cache", Target: "/t"}}},
+	cases := map[string]struct {
+		cfg     Config
+		wantErr string
+	}{
+		"bad role":      {Config{Volumes: []Volume{{Name: "v", Role: "nope", Target: "/t"}}}, `role "nope" invalid`},
+		"no target":     {Config{Volumes: []Volume{{Name: "v", Role: "cache"}}}, "target is required"},
+		"seed on cache": {Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/t", Seed: &Seed{Host: "/h"}}}}, "seed is only valid for state-role"},
+		"empty seed":    {Config{Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Seed: &Seed{}}}}, "seed set but empty"},
+		"two seed srcs": {Config{Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Seed: &Seed{Host: "/h", Literal: "x"}}}}, "both host and literal"},
+		"no name":       {Config{Volumes: []Volume{{Role: "cache", Target: "/t"}}}, "name is required"},
 	}
 	for name, c := range cases {
-		if err := c.Validate(); err == nil {
-			t.Errorf("%s: expected validation error", name)
+		if err := c.cfg.Validate(); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("%s: expected validation error containing %q, got %v", name, c.wantErr, err)
 		}
 	}
 }
@@ -230,8 +237,8 @@ func TestValidateVolumeNameCharset(t *testing.T) {
 		t.Errorf(".claude volume name rejected: %v", err)
 	}
 	bad := Config{Volumes: []Volume{{Name: "bad/name", Role: "cache", Target: "/t"}}}
-	if err := bad.Validate(); err == nil {
-		t.Error("expected rejection of volume name with '/'")
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "not allowed in a docker volume name") {
+		t.Errorf("expected rejection of volume name with '/', got %v", err)
 	}
 }
 
@@ -245,14 +252,14 @@ func TestValidateVolumeScope(t *testing.T) {
 		t.Errorf("explicit project scope rejected: %v", err)
 	}
 	bad := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/t", Scope: "global"}}}
-	if err := bad.Validate(); err == nil {
-		t.Error("expected rejection of unknown scope")
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), `scope "global" invalid`) {
+		t.Errorf("expected rejection of unknown scope, got %v", err)
 	}
 	// seed + machine scope don't compose: the seed pipeline names its target
 	// volume project-scoped, and identity volumes are box-born (ADR 0017).
 	seeded := Config{Volumes: []Volume{{Name: "v", Role: "state", Target: "/t", Scope: "machine", Seed: &Seed{Host: "~/x"}}}}
-	if err := seeded.Validate(); err == nil {
-		t.Error("expected rejection of seed on a machine-scoped volume")
+	if err := seeded.Validate(); err == nil || !strings.Contains(err.Error(), "not valid on a machine-scoped volume") {
+		t.Errorf("expected rejection of seed on a machine-scoped volume, got %v", err)
 	}
 }
 
@@ -261,15 +268,18 @@ func TestValidateLiteralSeed(t *testing.T) {
 	if err := ok.Validate(); err != nil {
 		t.Errorf("valid literal seed rejected: %v", err)
 	}
-	bad := map[string]Config{
-		"literal without path": {Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x"}}}},
-		"literal abs path":     {Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x", Path: "/etc/x"}}}},
-		"literal escape path":  {Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x", Path: "../x"}}}},
-		"path on host seed":    {Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Host: "~/x", Path: "a"}}}},
+	bad := map[string]struct {
+		cfg     Config
+		wantErr string
+	}{
+		"literal without path": {Config{Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x"}}}}, "literal seed requires a path"},
+		"literal abs path":     {Config{Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x", Path: "/etc/x"}}}}, "must be relative"},
+		"literal escape path":  {Config{Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x", Path: "../x"}}}}, "must be relative"},
+		"path on host seed":    {Config{Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Host: "~/x", Path: "a"}}}}, "seed path is only for literal seeds"},
 	}
 	for name, c := range bad {
-		if err := c.Validate(); err == nil {
-			t.Errorf("%s: expected validation error", name)
+		if err := c.cfg.Validate(); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("%s: expected validation error containing %q, got %v", name, c.wantErr, err)
 		}
 	}
 }
@@ -339,8 +349,8 @@ func TestTemplateAgentBannedAndNoneSentinel(t *testing.T) {
 	writeFile(t, filepath.Join(tmplDir, "template.config"), "agent = \"claude\"\n")
 	writeProjectCfg(t, proj, "template = \"opinionated\"\nagent = \"none\"\n")
 
-	if _, err := Load(proj); err == nil {
-		t.Fatal("template with agent must be a validation error (composition belongs in a preset)")
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), "agent is not allowed in template.config") {
+		t.Fatalf("template with agent must be a validation error (composition belongs in a preset), got %v", err)
 	}
 
 	// template = "none" resolves as no template at all.
@@ -392,8 +402,8 @@ func TestLoadMalformedTOML(t *testing.T) {
 	t.Setenv("BYRE_HOME", home)
 	proj := t.TempDir()
 	writeProjectCfg(t, proj, "this is = not = valid toml\n")
-	if _, err := Load(proj); err == nil {
-		t.Fatal("expected malformed-TOML error")
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), "toml") {
+		t.Fatalf("expected malformed-TOML error, got %v", err)
 	}
 }
 
@@ -420,49 +430,52 @@ func writeProjectCfg(t *testing.T, projectDir, content string) {
 
 func TestValidateRejectsNonAbsoluteVolumeTarget(t *testing.T) {
 	c := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "rel/path"}}}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected rejection of non-absolute volume target")
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "must be an absolute path") {
+		t.Fatalf("expected rejection of non-absolute volume target, got %v", err)
 	}
 }
 
 func TestValidateRejectsControlCharInTarget(t *testing.T) {
 	c := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/x\nRUN evil"}}}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected rejection of newline in volume target (Dockerfile injection)")
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "must not contain control characters") {
+		t.Fatalf("expected rejection of newline in volume target (Dockerfile injection), got %v", err)
 	}
 	m := Config{Mounts: []Mount{{Host: "/h", Target: "/x\ny"}}}
-	if err := m.Validate(); err == nil {
-		t.Fatal("expected rejection of newline in mount target")
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "must not contain control characters") {
+		t.Fatalf("expected rejection of newline in mount target, got %v", err)
 	}
 }
 
 func TestValidateRejectsCommaInTarget(t *testing.T) {
 	// A comma injects extra fields into docker's comma-delimited --mount value.
 	m := Config{Mounts: []Mount{{Host: "/h", Target: "/x,readonly"}}}
-	if err := m.Validate(); err == nil {
-		t.Fatal("expected rejection of comma in mount target (--mount option injection)")
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "must not contain a comma") {
+		t.Fatalf("expected rejection of comma in mount target (--mount option injection), got %v", err)
 	}
 	v := Config{Volumes: []Volume{{Name: "v", Role: "cache", Target: "/x,volume-opt=device=/"}}}
-	if err := v.Validate(); err == nil {
-		t.Fatal("expected rejection of comma in volume target")
+	if err := v.Validate(); err == nil || !strings.Contains(err.Error(), "must not contain a comma") {
+		t.Fatalf("expected rejection of comma in volume target, got %v", err)
 	}
 }
 
 func TestValidateContent(t *testing.T) {
-	bad := map[string]Config{
-		"base newline":     {Base: "debian\nRUN evil"},
-		"base space":       {Base: "debian AS x"},
-		"apt shell":        {Apt: []string{"git; curl evil | sh"}},
-		"apt space":        {Apt: []string{"git curl"}},
-		"npm shell":        {NpmGlobal: []string{"pkg && evil"}},
-		"npm redirect":     {NpmGlobal: []string{"pkg@>1 x"}},
-		"env key space":    {Env: map[string]string{"A B": "v"}},
-		"env key newline":  {Env: map[string]string{"A\nENV X": "v"}},
-		"env key leading$": {Env: map[string]string{"1A": "v"}},
+	bad := map[string]struct {
+		cfg     Config
+		wantErr string
+	}{
+		"base newline":     {Config{Base: "debian\nRUN evil"}, "not a valid image reference"},
+		"base space":       {Config{Base: "debian AS x"}, "not a valid image reference"},
+		"apt shell":        {Config{Apt: []string{"git; curl evil | sh"}}, "not a valid package name"},
+		"apt space":        {Config{Apt: []string{"git curl"}}, "not a valid package name"},
+		"npm shell":        {Config{NpmGlobal: []string{"pkg && evil"}}, "not a valid package spec"},
+		"npm redirect":     {Config{NpmGlobal: []string{"pkg@>1 x"}}, "not a valid package spec"},
+		"env key space":    {Config{Env: map[string]string{"A B": "v"}}, "not a valid environment variable name"},
+		"env key newline":  {Config{Env: map[string]string{"A\nENV X": "v"}}, "not a valid environment variable name"},
+		"env key leading$": {Config{Env: map[string]string{"1A": "v"}}, "not a valid environment variable name"},
 	}
 	for name, c := range bad {
-		if err := c.Validate(); err == nil {
-			t.Errorf("%s: expected rejection, got nil", name)
+		if err := c.cfg.Validate(); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("%s: expected rejection containing %q, got %v", name, c.wantErr, err)
 		}
 	}
 	// Legitimate specs must still pass.
@@ -488,13 +501,13 @@ func TestValidateLayerAllowsRemovals(t *testing.T) {
 	if err := layer.ValidateLayer(); err != nil {
 		t.Fatalf("ValidateLayer rejected removal markers: %v", err)
 	}
-	if err := layer.Validate(); err == nil {
-		t.Fatal("Validate should reject removal markers in a resolved config")
+	if err := layer.Validate(); err == nil || !strings.Contains(err.Error(), "mount !/x") {
+		t.Fatalf("Validate should reject removal markers in a resolved config, got %v", err)
 	}
 	// ValidateLayer still catches a genuinely malformed real entry.
 	bad := Config{Volumes: []Volume{{Name: "creds", Role: "bogus", Target: "/c"}}}
-	if err := bad.ValidateLayer(); err == nil {
-		t.Fatal("ValidateLayer should still reject a bad role on a real entry")
+	if err := bad.ValidateLayer(); err == nil || !strings.Contains(err.Error(), `role "bogus" invalid`) {
+		t.Fatalf("ValidateLayer should still reject a bad role on a real entry, got %v", err)
 	}
 }
 
@@ -513,8 +526,8 @@ func TestValidateLayerMarkersAreBare(t *testing.T) {
 		{Volumes: []Volume{{Name: "!creds", Seed: &Seed{Host: "~/x"}}}},
 	}
 	for i, c := range cases {
-		if err := c.ValidateLayer(); err == nil {
-			t.Errorf("case %d: marker with extra fields should be rejected: %+v", i, c)
+		if err := c.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "removal marker takes only") {
+			t.Errorf("case %d: marker with extra fields should be rejected: %+v, got %v", i, c, err)
 		}
 	}
 }
@@ -526,19 +539,22 @@ func TestValidateLayerRejectsEmptyMarkers(t *testing.T) {
 	// ParseEgress, validContainerTarget, volumeNameRe), which are all loud;
 	// the skills list has no shape grammar, so it gets an explicit guard that
 	// also covers an empty-string entry.
-	cases := []Config{
-		{Apt: []string{"!"}},
-		{NpmGlobal: []string{"!"}},
-		{Egress: []string{"!"}},
-		{EgressOffered: []string{"!"}},
-		{Mounts: []Mount{{Target: "!"}}},
-		{Volumes: []Volume{{Name: "!"}}},
-		{Skills: []string{"!"}},
-		{Skills: []string{""}},
+	cases := []struct {
+		cfg     Config
+		wantErr string
+	}{
+		{Config{Apt: []string{"!"}}, "not a valid package name"},
+		{Config{NpmGlobal: []string{"!"}}, "not a valid package spec"},
+		{Config{Egress: []string{"!"}}, "not a valid host[:port]"},
+		{Config{EgressOffered: []string{"!"}}, "not a valid host[:port]"},
+		{Config{Mounts: []Mount{{Target: "!"}}}, "host path is required"},
+		{Config{Volumes: []Volume{{Name: "!"}}}, "not allowed in a docker volume name"},
+		{Config{Skills: []string{"!"}}, "missing a skill name"},
+		{Config{Skills: []string{""}}, "missing a skill name"},
 	}
 	for i, c := range cases {
-		if err := c.ValidateLayer(); err == nil {
-			t.Errorf("case %d: bare/empty marker should be rejected: %+v", i, c)
+		if err := c.cfg.ValidateLayer(); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("case %d: bare/empty marker should be rejected with %q: %+v, got %v", i, c.wantErr, c.cfg, err)
 		}
 	}
 }
@@ -548,22 +564,25 @@ func TestValidatePorts(t *testing.T) {
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("valid ports rejected: %v", err)
 	}
-	bad := map[string]Config{
-		"container out of range": {Ports: []Port{{Container: 0}}},
-		"host out of range":      {Ports: []Port{{Container: 80, Host: 99999}}},
-		"dup host binding":       {Ports: []Port{{Container: 80, Host: 8080}, {Container: 81, Host: 8080}}},
+	bad := map[string]struct {
+		cfg     Config
+		wantErr string
+	}{
+		"container out of range": {Config{Ports: []Port{{Container: 0}}}, "container port 0 out of range"},
+		"host out of range":      {Config{Ports: []Port{{Container: 80, Host: 99999}}}, "host port 99999 out of range"},
+		"dup host binding":       {Config{Ports: []Port{{Container: 80, Host: 8080}, {Container: 81, Host: 8080}}}, "host binding 127.0.0.1:8080 is used by two ports"},
 		// The interface lands in docker's colon-delimited -p grammar: only a
 		// canonical IPv4 literal may pass, or the value fails (or changes
 		// meaning) at engine invocation instead of at validation.
-		"hostname interface":      {Ports: []Port{{Container: 80, Interface: "localhost"}}},
-		"ipv6 interface":          {Ports: []Port{{Container: 80, Interface: "::1"}}},
-		"mapped-ipv4 spelling":    {Ports: []Port{{Container: 80, Interface: "::ffff:127.0.0.1"}}},
-		"whitespace interface":    {Ports: []Port{{Container: 80, Interface: " 127.0.0.1"}}},
-		"colon-bearing interface": {Ports: []Port{{Container: 80, Interface: "127.0.0.1:80"}}},
+		"hostname interface":      {Config{Ports: []Port{{Container: 80, Interface: "localhost"}}}, "must be an IPv4 address literal"},
+		"ipv6 interface":          {Config{Ports: []Port{{Container: 80, Interface: "::1"}}}, "must be an IPv4 address literal"},
+		"mapped-ipv4 spelling":    {Config{Ports: []Port{{Container: 80, Interface: "::ffff:127.0.0.1"}}}, "must be an IPv4 address literal"},
+		"whitespace interface":    {Config{Ports: []Port{{Container: 80, Interface: " 127.0.0.1"}}}, "must be an IPv4 address literal"},
+		"colon-bearing interface": {Config{Ports: []Port{{Container: 80, Interface: "127.0.0.1:80"}}}, "must be an IPv4 address literal"},
 	}
 	for name, c := range bad {
-		if err := c.Validate(); err == nil {
-			t.Errorf("%s: expected a validation error", name)
+		if err := c.cfg.Validate(); err == nil || !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("%s: expected a validation error containing %q, got %v", name, c.wantErr, err)
 		}
 	}
 	// Two blank-host ports (mirror distinct container ports) don't collide.
@@ -585,10 +604,10 @@ func TestListTemplates(t *testing.T) {
 	home := t.TempDir()
 	for _, n := range []string{"go", "python"} {
 		td := filepath.Join(home, "templates", n)
-		os.MkdirAll(td, 0o755)
-		os.WriteFile(filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
+		mustMkdirAll(t, td, 0o755)
+		mustWriteFile(t, filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(home, "templates", "empty"), 0o755) // no template.config -> excluded
+	mustMkdirAll(t, filepath.Join(home, "templates", "empty"), 0o755) // no template.config -> excluded
 	got := ListTemplates(home)
 	if len(got) != 2 || got[0] != "go" || got[1] != "python" {
 		t.Fatalf("ListTemplates = %v", got)
@@ -662,15 +681,15 @@ func TestValidateLayerRejectsWithinLayerDuplicates(t *testing.T) {
 		{Host: "/a", Target: "/x", Mode: "ro"},
 		{Host: "/b", Target: "/x", Mode: "ro"},
 	}}
-	if err := dupMount.ValidateLayer(); err == nil {
-		t.Error("duplicate mount target within one layer must be rejected")
+	if err := dupMount.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "mount target /x collides with mount /x in this file") {
+		t.Errorf("duplicate mount target within one layer must be rejected, got %v", err)
 	}
 	dupVol := Config{Volumes: []Volume{
 		{Name: "v", Role: "cache", Target: "/c1"},
 		{Name: "v", Role: "cache", Target: "/c2"},
 	}}
-	if err := dupVol.ValidateLayer(); err == nil {
-		t.Error("duplicate volume name within one layer must be rejected")
+	if err := dupVol.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "volume v appears twice in this file") {
+		t.Errorf("duplicate volume name within one layer must be rejected, got %v", err)
 	}
 	// Cross-kind: a volume claiming a mount's target (or another volume's)
 	// fails the resolved Validate at develop time — refuse at save instead.
@@ -678,15 +697,15 @@ func TestValidateLayerRejectsWithinLayerDuplicates(t *testing.T) {
 		Mounts:  []Mount{{Host: "/a", Target: "/x", Mode: "ro"}},
 		Volumes: []Volume{{Name: "v", Role: "cache", Target: "/x"}},
 	}
-	if err := mixed.ValidateLayer(); err == nil {
-		t.Error("mount + volume on one target within a layer must be rejected")
+	if err := mixed.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "volume v target /x collides with mount /x in this file") {
+		t.Errorf("mount + volume on one target within a layer must be rejected, got %v", err)
 	}
 	twoVols := Config{Volumes: []Volume{
 		{Name: "a", Role: "cache", Target: "/x"},
 		{Name: "b", Role: "cache", Target: "/x"},
 	}}
-	if err := twoVols.ValidateLayer(); err == nil {
-		t.Error("two volumes on one target within a layer must be rejected")
+	if err := twoVols.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "volume b target /x collides with volume a in this file") {
+		t.Errorf("two volumes on one target within a layer must be rejected, got %v", err)
 	}
 
 	// A removal marker plus the real entry it removes elsewhere is fine.
@@ -714,24 +733,24 @@ func TestLoadRejectsWithinLayerCollisionInAnyLayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(p.Dir, 0o755)
+	mustMkdirAll(t, p.Dir, 0o755)
 	storeCfg := filepath.Join(p.Dir, ProjectConfigName)
-	os.WriteFile(storeCfg, []byte(dup), 0o644)
+	mustWriteFile(t, storeCfg, []byte(dup), 0o644)
 	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), storeCfg) {
 		t.Errorf("duplicate in the project layer should fail load naming the file, got %v", err)
 	}
-	os.Remove(storeCfg)
+	mustRemove(t, storeCfg)
 
 	// Default layer.
 	defCfg := filepath.Join(home, "default.config")
-	os.WriteFile(defCfg, []byte(dup), 0o644)
+	mustWriteFile(t, defCfg, []byte(dup), 0o644)
 	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), defCfg) {
 		t.Errorf("duplicate in default.config should fail load naming the file, got %v", err)
 	}
-	os.Remove(defCfg)
+	mustRemove(t, defCfg)
 
 	// ParseFile (the editor's open path) must still tolerate it.
-	os.WriteFile(storeCfg, []byte(dup), 0o644)
+	mustWriteFile(t, storeCfg, []byte(dup), 0o644)
 	if _, err := ParseFile(storeCfg); err != nil {
 		t.Errorf("ParseFile must stay lenient so the editor can open a broken file: %v", err)
 	}
@@ -788,8 +807,8 @@ func TestValidateLayerAcceptsPackageMarkers(t *testing.T) {
 		t.Errorf("layer with package removal markers should validate: %v", err)
 	}
 	// A marker surviving to a RESOLVED config is a bug and must be rejected.
-	if err := c.Validate(); err == nil {
-		t.Error("resolved config with a `!name` package should fail validation")
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), `apt package "!htop"`) {
+		t.Errorf("resolved config with a `!name` package should fail validation, got %v", err)
 	}
 }
 
@@ -801,11 +820,11 @@ func TestValidateLayerPortRemoveEntries(t *testing.T) {
 	// Removal ignores host/interface; an entry setting them implies a narrower
 	// removal than will happen — refused at save.
 	narrow := Config{Ports: []Port{{Container: 5432, Host: 15432, Remove: true}}}
-	if err := narrow.ValidateLayer(); err == nil {
-		t.Error("port remove with host set should fail layer validation")
+	if err := narrow.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "remove takes only a container port") {
+		t.Errorf("port remove with host set should fail layer validation, got %v", err)
 	}
-	if err := ok.Validate(); err == nil {
-		t.Error("resolved config with a port remove marker should fail validation")
+	if err := ok.Validate(); err == nil || !strings.Contains(err.Error(), "remove is only meaningful in a cascade layer") {
+		t.Errorf("resolved config with a port remove marker should fail validation, got %v", err)
 	}
 }
 
@@ -911,28 +930,28 @@ func TestValidateEgressEntries(t *testing.T) {
 	if err := (Config{Egress: []string{"grafana.com", "internal:8443"}}).ValidateLayer(); err != nil {
 		t.Errorf("valid egress should pass: %v", err)
 	}
-	if err := (Config{Egress: []string{"internal:99999"}}).ValidateLayer(); err == nil {
-		t.Error("out-of-range egress port should fail")
+	if err := (Config{Egress: []string{"internal:99999"}}).ValidateLayer(); err == nil || !strings.Contains(err.Error(), "port out of range") {
+		t.Errorf("out-of-range egress port should fail, got %v", err)
 	}
-	if err := (Config{Egress: []string{"bad host"}}).ValidateLayer(); err == nil {
-		t.Error("egress host with a space should fail")
+	if err := (Config{Egress: []string{"bad host"}}).ValidateLayer(); err == nil || !strings.Contains(err.Error(), "not a valid host[:port]") {
+		t.Errorf("egress host with a space should fail, got %v", err)
 	}
 	// Markers: legal in a layer, a bug in a resolved config.
 	marker := Config{Egress: []string{"!grafana.com"}}
 	if err := marker.ValidateLayer(); err != nil {
 		t.Errorf("egress removal marker should pass layer validation: %v", err)
 	}
-	if err := marker.Validate(); err == nil {
-		t.Error("egress marker surviving to a resolved config should fail")
+	if err := marker.Validate(); err == nil || !strings.Contains(err.Error(), `"!grafana.com"`) {
+		t.Errorf("egress marker surviving to a resolved config should fail, got %v", err)
 	}
 	// A closure's stripped name is NOT exempt from the entry grammar (unlike
 	// package markers): it survives the cascade and travels to the netns
 	// helper's env, so it is held to the same injection-safe parser.
-	if err := (Config{Egress: []string{"!bad host"}}).ValidateLayer(); err == nil {
-		t.Error("closure marker with a malformed name should fail layer validation")
+	if err := (Config{Egress: []string{"!bad host"}}).ValidateLayer(); err == nil || !strings.Contains(err.Error(), "not a valid host[:port]") {
+		t.Errorf("closure marker with a malformed name should fail layer validation, got %v", err)
 	}
-	if err := (Config{EgressClosed: []string{"bad host"}}).Validate(); err == nil {
-		t.Error("malformed EgressClosed entry should fail resolved validation")
+	if err := (Config{EgressClosed: []string{"bad host"}}).Validate(); err == nil || !strings.Contains(err.Error(), "not a valid host[:port]") {
+		t.Errorf("malformed EgressClosed entry should fail resolved validation, got %v", err)
 	}
 }
 
@@ -943,9 +962,15 @@ func TestParseEgress(t *testing.T) {
 	if h, p, err := ParseEgress("grafana.com"); err != nil || h != "grafana.com" || p != 443 {
 		t.Fatalf("ParseEgress default = (%q,%d,%v)", h, p, err)
 	}
-	for _, bad := range []string{"", "host:0", "host:99999", "::1", "a b"} {
-		if _, _, err := ParseEgress(bad); err == nil {
-			t.Errorf("ParseEgress(%q) should fail", bad)
+	for bad, wantErr := range map[string]string{
+		"":           "empty egress entry",
+		"host:0":     "port out of range",
+		"host:99999": "port out of range",
+		"::1":        "write it bracketed",
+		"a b":        "not a valid host[:port]",
+	} {
+		if _, _, err := ParseEgress(bad); err == nil || !strings.Contains(err.Error(), wantErr) {
+			t.Errorf("ParseEgress(%q) should fail with %q, got %v", bad, wantErr, err)
 		}
 	}
 }
@@ -1040,7 +1065,7 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 		t.Fatalf("unknown source must be rejected pointing at [env], got %v", err)
 	}
 	badEnv := Config{EnvFromHost: map[string]string{"FOO": "env:not a var"}}
-	if err := badEnv.Validate(); err == nil {
+	if err := badEnv.Validate(); err == nil || !strings.Contains(err.Error(), "not a valid env var name") {
 		t.Fatalf("env: with an invalid var name must be rejected, got %v", err)
 	}
 	badTz := Config{EnvFromHost: map[string]string{"TZ": "tz:Europe/London"}}
@@ -1048,8 +1073,8 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 		t.Fatalf("tz: with an argument must be rejected, got %v", err)
 	}
 	badKey := Config{EnvFromHost: map[string]string{"BAD KEY": "git:user.name"}}
-	if err := badKey.Validate(); err == nil {
-		t.Fatal("invalid env key must be rejected")
+	if err := badKey.Validate(); err == nil || !strings.Contains(err.Error(), "not a valid environment variable name") {
+		t.Fatalf("invalid env key must be rejected, got %v", err)
 	}
 }
 

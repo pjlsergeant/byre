@@ -236,7 +236,9 @@ func TestFavouritesReadsLiteralStrings(t *testing.T) {
 	// TOML literal (single-quoted) strings are valid; the old regex reader
 	// silently returned "" for them. A real parse must not.
 	home := t.TempDir()
-	os.WriteFile(filepath.Join(home, "default.config"), []byte("template = 'go'\nagent = 'claude'\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(home, "default.config"), []byte("template = 'go'\nagent = 'claude'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	tmpl, agent := Favourites(home)
 	if tmpl != "go" || agent != "claude" {
 		t.Fatalf("literal-string favourites misread: %q %q", tmpl, agent)
@@ -256,7 +258,9 @@ func TestSaveDefaultCreatesWhenAbsent(t *testing.T) {
 
 func TestSaveDefaultRemovesOnEmpty(t *testing.T) {
 	home := t.TempDir()
-	os.WriteFile(filepath.Join(home, "default.config"), []byte("template = \"go\"\nagent = \"claude\"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(home, "default.config"), []byte("template = \"go\"\nagent = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := SaveDefault(home, "", "claude"); err != nil { // none template
 		t.Fatal(err)
 	}

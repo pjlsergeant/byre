@@ -3,7 +3,6 @@ package packages
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -102,19 +101,19 @@ func TestFetchManifestSizeLimit(t *testing.T) {
 	big := strings.Repeat("x", MaxManifestBytes+1)
 	mux.HandleFunc("/pkg/skill.toml", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(big)) })
 	f, base := tlsFetcher(t, mux)
-	if _, _, err := f.FetchManifest(base + "/pkg/skill.toml"); err == nil {
-		t.Fatal("oversized manifest must be rejected")
+	if _, _, err := f.FetchManifest(base + "/pkg/skill.toml"); err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("oversized manifest must be rejected at the size limit, got %v", err)
 	}
 }
 
 func TestFetchFileManifestAndContainment(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "hooks"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hooks", "a.sh"), []byte("hi"), 0o755)
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
+	mustMkdirAll(t, filepath.Join(dir, "hooks"), 0o755)
+	mustWriteFile(t, filepath.Join(dir, "hooks", "a.sh"), []byte("hi"), 0o755)
 	outside := filepath.Join(t.TempDir(), "secret")
-	os.WriteFile(outside, []byte("secret"), 0o644)
-	os.Symlink(outside, filepath.Join(dir, "link"))
+	mustWriteFile(t, outside, []byte("secret"), 0o644)
+	mustSymlink(t, outside, filepath.Join(dir, "link"))
 
 	var f Fetcher
 	_, src, err := f.FetchManifest(filepath.Join(dir, "skill.toml"))
@@ -129,17 +128,17 @@ func TestFetchFileManifestAndContainment(t *testing.T) {
 		t.Fatalf("pay=%q err=%v", pay, err)
 	}
 	// Symlink escaping the manifest dir is rejected after resolution.
-	if _, err := f.FetchPayload(src, "link", &budget); err == nil {
-		t.Fatal("symlink escape must be rejected")
+	if _, err := f.FetchPayload(src, "link", &budget); err == nil || !strings.Contains(err.Error(), "escapes from parent") {
+		t.Fatalf("symlink escape must be rejected by the rooted open, got %v", err)
 	}
 }
 
 func TestParseSourceURI(t *testing.T) {
-	if _, err := ParseSourceURI("http://x/skill.toml"); err == nil {
-		t.Fatal("http must be rejected")
+	if _, err := ParseSourceURI("http://x/skill.toml"); err == nil || !strings.Contains(err.Error(), "https only") {
+		t.Fatalf("http must be rejected as https-only, got %v", err)
 	}
-	if _, err := ParseSourceURI("ftp://x/skill.toml"); err == nil {
-		t.Fatal("ftp must be rejected")
+	if _, err := ParseSourceURI("ftp://x/skill.toml"); err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
+		t.Fatalf("ftp must be rejected as an unsupported scheme, got %v", err)
 	}
 	for raw, want := range map[string]string{
 		"https://x/skill.toml":  "https",
@@ -190,8 +189,8 @@ func TestFileURIPath(t *testing.T) {
 			t.Errorf("fileURIPath(%q) = %q, %v (want %q)", raw, got, err, want)
 		}
 	}
-	if _, err := fileURIPath("file://evil.example/x"); err == nil {
-		t.Fatal("non-local file host must be rejected")
+	if _, err := fileURIPath("file://evil.example/x"); err == nil || !strings.Contains(err.Error(), "is not local") {
+		t.Fatalf("non-local file host must be rejected, got %v", err)
 	}
 }
 
@@ -215,9 +214,9 @@ func TestFetchLocalManifestRejectsNonRegular(t *testing.T) {
 func TestFetchLocalManifestFollowsUserNamedSymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real.toml")
-	os.WriteFile(real, []byte("[package]\n"), 0o644)
+	mustWriteFile(t, real, []byte("[package]\n"), 0o644)
 	link := filepath.Join(dir, "skill.toml")
-	os.Symlink(real, link)
+	mustSymlink(t, real, link)
 	var f Fetcher
 	// A symlink the USER named is their choice (deliver's stance); only
 	// the target's type is judged.
@@ -229,16 +228,16 @@ func TestFetchLocalManifestFollowsUserNamedSymlink(t *testing.T) {
 func TestFetchLocalManifestSizeLimit(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "skill.toml")
-	os.WriteFile(p, []byte(strings.Repeat("x", MaxManifestBytes+1)), 0o644)
+	mustWriteFile(t, p, []byte(strings.Repeat("x", MaxManifestBytes+1)), 0o644)
 	var f Fetcher
-	if _, _, err := f.FetchManifest(p); err == nil {
-		t.Fatal("oversized local manifest must be rejected")
+	if _, _, err := f.FetchManifest(p); err == nil || !strings.Contains(err.Error(), "bytes (limit)") {
+		t.Fatalf("oversized local manifest must be rejected at the size limit, got %v", err)
 	}
 }
 
 func TestFetchLocalPayloadRejectsNonRegular(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
 	if err := syscall.Mkfifo(filepath.Join(dir, "hook.sh"), 0o644); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
