@@ -166,3 +166,61 @@ func TestInstalledBrokenRowsAreScoped(t *testing.T) {
 		t.Fatalf("broken row must be INVALID with a reinstall remedy, got %v", err)
 	}
 }
+
+// A digest from the index becomes a path component that removal deletes
+// RECURSIVELY — a corrupted or hand-edited index must be rejected whole at
+// read time, and the deletion gate must hold even if a bad value slips past
+// (grok-external review, 2026-07-19).
+func TestReadIndexRejectsMalformedDigests(t *testing.T) {
+	for _, bad := range []string{
+		"../victim",
+		"../../etc",
+		"/abs/path",
+		strings.ToUpper(strings.Repeat("a", 64)), // uppercase: not canonical
+		"abc123",                                 // short
+		strings.Repeat("a", 63) + "/",            // separator
+	} {
+		home := t.TempDir()
+		if err := os.MkdirAll(packagesDir(home), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		idx := "[packages.\"pete/tool\"]\ndigest = " + `"` + bad + `"` + "\nversion = \"1.0.0\"\nkind = \"skill\"\nuri = \"https://x/s.toml\"\ninstalled_at = \"2026-07-19T00:00:00Z\"\n"
+		if err := os.WriteFile(indexPath(home), []byte(idx), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ReadIndex(home)
+		if err == nil || !strings.Contains(err.Error(), "malformed digest") {
+			t.Errorf("digest %q: want malformed-digest rejection, got %v", bad, err)
+		}
+	}
+}
+
+func TestRemoveSnapshotRefusesNonDigestNames(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(packagesDir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An outside sentinel a traversal digest would reach.
+	victim := filepath.Join(home, "victim")
+	if err := os.MkdirAll(victim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(victim, "keep.txt")
+	if err := os.WriteFile(sentinel, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	removeSnapshot(home, "../victim")
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("outside sentinel deleted by traversal digest: %v", err)
+	}
+	// A well-formed digest still deletes its snapshot dir.
+	good := strings.Repeat("ab", 32)
+	snap := SnapshotDir(home, good)
+	if err := os.MkdirAll(snap, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	removeSnapshot(home, good)
+	if _, err := os.Stat(snap); !os.IsNotExist(err) {
+		t.Fatalf("well-formed digest should still delete its snapshot: %v", err)
+	}
+}

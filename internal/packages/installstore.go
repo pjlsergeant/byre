@@ -43,6 +43,10 @@ func SnapshotDir(home, digest string) string {
 }
 
 // ReadIndex loads the installed-package index. Missing file = empty index.
+// Every entry's digest must be exactly 64 lowercase hex characters — the
+// digest becomes a path component under packages/ that removal REMOVES
+// RECURSIVELY, so a corrupted or hand-edited index (digest = "../victim")
+// must die here, before any entry is exposed, never at a deletion site.
 func ReadIndex(home string) (map[string]IndexEntry, error) {
 	var f indexFile
 	b, err := os.ReadFile(indexPath(home))
@@ -54,6 +58,12 @@ func ReadIndex(home string) (map[string]IndexEntry, error) {
 	}
 	if _, err := toml.Decode(string(b), &f); err != nil {
 		return nil, fmt.Errorf("%s: %w", indexPath(home), err)
+	}
+	for id, e := range f.Packages {
+		if !digestDirRe.MatchString(e.Digest) {
+			return nil, fmt.Errorf("%s: package %q has a malformed digest %q (want 64 lowercase hex chars) — the index is corrupt; restore it or remove the bad entry",
+				indexPath(home), id, e.Digest)
+		}
 	}
 	if f.Packages == nil {
 		f.Packages = map[string]IndexEntry{}
@@ -246,9 +256,20 @@ func LandSnapshot(home string, s Snapshot) error {
 	if had && old.Digest != s.Digest && !digestReferenced(idx0, old.Digest) {
 		// Superseded snapshot deleted last; rollback is reinstalling the old
 		// manifest URI -- the source is the archive, not our disk.
-		_ = os.RemoveAll(SnapshotDir(home, old.Digest))
+		removeSnapshot(home, old.Digest)
 	}
 	return nil
+}
+
+// removeSnapshot recursively deletes a snapshot dir — the store's only
+// recursive deletions ride through here. The digest-shape gate re-asserts
+// what ReadIndex already enforced (defence in depth: this is the line where
+// a bad value becomes an unconstrained rm -rf, so it double-checks).
+func removeSnapshot(home, digest string) {
+	if !digestDirRe.MatchString(digest) {
+		return
+	}
+	_ = os.RemoveAll(SnapshotDir(home, digest))
 }
 
 // RemoveInstalled drops an id from the index and deletes its snapshot when no
@@ -267,7 +288,7 @@ func RemoveInstalled(home, id string) error {
 		return err
 	}
 	if !digestReferenced(idx, old.Digest) {
-		_ = os.RemoveAll(SnapshotDir(home, old.Digest))
+		removeSnapshot(home, old.Digest)
 	}
 	return nil
 }
