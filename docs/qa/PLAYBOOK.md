@@ -107,9 +107,13 @@ save-default).
    straight from Agent to save-default. (Flips when their skill gains
    `shared_auth_for`; update this recipe then.)
 3. In-box firstrun: claude prompts for a setup-token paste, Enter skips
-   ("byre: skipped — using this project's own login"); codex/grok run a
-   device login, Ctrl-C skips (trap prints the byre-shell-later line —
-   grok's own alt-screen may repaint over it immediately).
+   ("byre: skipped — using this project's own login") — the paste prompt
+   belongs to claude-shared-auth, so it appears ONLY with the skill
+   enabled (sharing answered y, or the skill added to the store config);
+   with sharing declined claude goes straight to its own onboarding.
+   codex/grok run a device login, Ctrl-C skips (trap prints the
+   byre-shell-later line — the agent's own alt-screen may repaint over
+   it immediately; scrollback still shows it).
 4. After any skip the agent shows its OWN onboarding/login — a skip gets
    a box, not a ready agent (informational, all agents).
 5. Exits: gemini Ctrl-C at its login → exits 0, develop propagates; grok
@@ -176,15 +180,30 @@ The 2026-07-16 field-failure regression check.
    command appended. `docker stop <id>` then reset → normal kill-list.
    (Older boxes without the byre.client label just say "running".)
 
-## Journey: worktrees (pass #2 — PASSED)
+## Journey: worktrees (pass #2 — PASSED; recipe updated for in-box creation, v1.1.0)
 
-Needs a git repo with a commit; main project already developed.
+Needs a git repo with a commit; main project already developed, and the
+box image must CARRY git (`apt = ["git"]` or a template that ships it) —
+creation now runs `git worktree add` in a one-shot container on the
+project image. A git-less image refuses loudly, naming the `byre config`
+remedy, and creates nothing.
 1. `byre worktree wt1 --path ../got-wt1` from the main tree.
-   Expect: worktree + branch wt1 created; develop starts IN it; image is
-   the MAIN project's (no rebuild beyond cache); container slug
-   `<proj>-wt1-…`.
+   Expect: registration runs in-box, then develop starts IN the worktree
+   and prints "populated the worktree checkout inside the box" (files
+   appear at FIRST LAUNCH, not at create); image is the MAIN project's
+   (no rebuild beyond cache); container slug from the worktree DIR name
+   (`--path ../got-wt1` → `got-wt1-…`).
 2. In-box: /workspace is the worktree, `git branch --show-current` works
    (worktree-metadata mount path).
+2b. Stale-registration remedy: exit the wt session, `rm -rf` the worktree
+   dir (registration stays), re-run the same `byre worktree`. Expect the
+   targeted remedy naming `git -C <main> worktree prune` — never the
+   engine-gate message and never a raw git error. (Pinned unit-side after
+   the v1.1.0 macOS CI catch: recognition must compare git's RESOLVED
+   path spelling even when the dir is gone.)
+   The no-engine refusal itself can't be staged on the VM by stripping
+   PATH — /bin is usr-merged into /usr/bin, so docker stays findable;
+   macOS CI (engine-less runner) exercises that message instead.
 3. Concurrent main-tree develop in another window: both boxes up.
 4. `byre status` in the project: "Worktrees: 1 other session(s) live:
    <id> (share these volumes)".
@@ -241,6 +260,29 @@ case (language templates ship CA certs transitively and would mask it).
    layer's egress in the banner/probe. Edit the layer → next develop
    picks it up (live resolution).
 
+## Journey: security-guard clobber note (new, v1.1.0)
+
+On a project with a netns skill enabled (`skills = ["firewall"]`):
+1. Add a `files` entry targeting a guarded path:
+   `[files]` `"fake-launch" = "/usr/local/bin/byre-launch"` (any source
+   file). `byre dockerfile` → stderr carries the note ("a `files` entry
+   targets /usr/local/bin/byre-launch, a byre-managed security path …
+   byre re-asserts its own copy at the build tail"); stdout stays the
+   clean Dockerfile, whose tail shows the guard block re-COPYing the
+   launcher, the launch gate, and the netns script before
+   HEALTHCHECK/USER/ENTRYPOINT.
+2. `byre develop` prints the same note; in the built box
+   `/usr/local/bin/byre-launch` is byre's launcher (shebang + header),
+   not the planted file — and the deny-by-default banner still holds.
+3. TEARDOWN: remove the entry + rm box.
+
+## Journey: Volumes screen scope grouping (new, v1.1.0)
+
+With at least one project volume and one machine identity volume
+existing: `byre config` → Volumes. Expect two groups — "Project
+volumes" and "Machine volumes — shared by all your projects" — engine
+suffix per row, and the state-volume explainer line at the bottom.
+
 ## Harness lessons (carry between passes)
 
 - Never pipe the measured command when capturing an exit code, and never
@@ -293,15 +335,52 @@ mid-build cancel (base caches too warm for a window), claude token-paste
 firstrun (flags path has no shared-auth), liveness logins (dummy-creds
 convention). Deviations → Open findings below.
 
+## v1.1.0 release pass (2026-07-19) — all journeys green
+
+Full playbook driven on the VM against the v1.1.0 candidate (main incl.
+the macOS CI fix), loginless/dummy-creds convention. PASSED as written,
+plus first coverage of three legs: the claude token-paste firstrun
+(enabled via claude-shared-auth in the store config — Enter-skip line
+verbatim), the security-guard clobber note (both surfaces; byre's
+launcher wins in the image), and the Volumes scope grouping. Worktrees
+ran the updated in-box recipe end to end: git-less image refusal with
+remedy, populate-at-first-launch, sibling naming, --box delivery, and
+the stale-registration prune remedy (the CI fix, live — git marks the
+entry prunable). Firewall on template=none: deny 000 → allowlisted 200,
+trust store intact. Agent cold flows: vouched/unvouched contract holds
+for all five agents; killed-box decode (docker rm -f → decoded 137
+SIGKILL message, rc=1); grok/codex skip-trap lines confirmed in
+scrollback. Seeded gemini: zero chooser hits, straight to the
+oauth-personal code prompt, all four identity symlinks, settings.json
+seed exact, garbage code → invalid_grant + re-prompt, Ctrl-C exit 0.
+Rude inputs: wizard SIGINT leaves no config (husk finding unchanged),
+garbage-y/N reprompt verbatim, mid-build cancel (Canceled + rc=130, no
+stray containers, re-develop skips onboarding and bakes the package),
+resize re-clips config UI (footer + "more below") and rewraps the
+wizard. Two deviations → Open findings below.
+
+New harness lessons this pass: /bin is usr-merged on the VM, so
+PATH-stripping cannot hide docker for the no-engine leg (macOS CI
+covers that message); gemini's oauth code prompt times out after 5
+minutes of inactivity (its own limit, exit 41) — drive it promptly;
+the opencode shared-auth firstrun gate re-runs on EVERY launch until a
+login exists, so a loginless box must be skipped past the gate before
+probing agent env.
+
 ## Open findings
 
-- **^e quit says "wrote" on an un-enrolled project with nothing to write**
-  (v1.0.0 pass): on a never-developed project, `byre config` → `^e`
-  materializes the store file (the known enrollment-at-open trade-off);
-  after an external edit + "Reloaded from file" with NO unsaved changes,
-  `^q` prints `byre: wrote <path>` — a content-no-op write where the
-  recipe (and the enrolled-project behavior) says `byre: config
-  unchanged.` Legibility only.
+- **^e quit says "wrote" with nothing to write — enrolled projects too**
+  (v1.0.0 pass, WIDENED by the v1.1.0 pass): after an external edit +
+  "Reloaded from file" with NO unsaved changes, `^q` prints
+  `byre: wrote <path>` where the recipe says `byre: config unchanged.`
+  v1.0.0 recorded this for a never-developed project (the
+  enrollment-at-open trade-off); v1.1.0 reproduced it on a fully
+  enrolled one, so the no-op-write applies generally. Content verified
+  identical after the write. Legibility only.
+- **Worktree create double-prints two messages** (v1.1.0 pass): the
+  git-less-image failure ("creating the worktree in the box failed:
+  exit status 1") and the success line ("populated the worktree
+  checkout inside the box.") each print twice per run. Legibility only.
 - **Wizard abort leaves an enrolled husk** (v1.0.0 pass, note): Ctrl-C at
   the template prompt leaves `projects/<id>/` holding path record +
   context dir, no config. Same class as the consciously-accepted
