@@ -91,6 +91,38 @@ func TestAssembleRefusesSymlinkedContextRoot(t *testing.T) {
 	}
 }
 
+// A context symlink whose target is INSIDE the store (a sibling dir) must be
+// refused too — os.Root follows an in-root symlink, so the confinement can't
+// rely on escape-detection alone; the anchor rejects a symlinked context
+// outright (grok review, 2026-07-19). Otherwise a self-edit agent could
+// redirect Assemble's writes onto another store subdir.
+func TestAssembleRefusesInStoreSymlinkedContextRoot(t *testing.T) {
+	paths := bootstrapped(t)
+	if err := os.RemoveAll(paths.ContextDir); err != nil {
+		t.Fatal(err)
+	}
+	// A sibling dir under the store, with a sentinel the redirect would hit.
+	sibling := filepath.Join(paths.Dir, "sibling")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(sibling, "Dockerfile.generated")
+	if err := os.WriteFile(sentinel, []byte("pre-existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(sibling, paths.ContextDir); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	if _, err := Assemble(paths, config.Config{}, skills.Resolved{}); err == nil {
+		t.Error("Assemble followed an in-store symlinked context root")
+	}
+	// The sibling's file was not overwritten by a redirected Dockerfile write.
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "pre-existing" {
+		t.Fatalf("Assemble redirected a write onto a sibling store dir: content %q, error %v", got, err)
+	}
+}
+
 // The confinement also neutralizes an INTERIOR redirect: a real context dir
 // whose `files` subtree the agent replaced with a symlink to an outside
 // victim. The per-build clear must remove the planted LINK (never recurse

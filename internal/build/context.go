@@ -139,26 +139,36 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// Every mutation below is staged through a descriptor confined to the REAL
 	// context dir, so a `develop --self-edit` agent that swapped context/ (or an
 	// interior staging dir) for a symlink cannot redirect byre's host-side
-	// RemoveAll / writes to a target outside the project store. The anchor is
-	// paths.Dir — the self-edit mount ROOT, which the container cannot retarget
-	// (it is the bind-mount point) — opened as an os.Root: MkdirAll of the
-	// context component through it refuses a symlinked context (os.Root never
-	// traverses a symlink, returning "path escapes"), and OpenRoot re-resolves
-	// under the same rule, so this is a race-free confinement, not a
-	// check-then-use Lstat. The engine's later by-pathname READ of the finished
-	// context is the disclosed byre-wide check-to-mount residual (ADR 0009),
-	// no wider.
+	// RemoveAll / writes elsewhere. First ensure the context component exists as
+	// a real directory: Mkdir through a root at paths.Dir — the self-edit mount
+	// ROOT, which the container cannot retarget (it is the bind-mount point) —
+	// creates it when missing and never follows a planted symlink of that name
+	// (Mkdir returns EEXIST on any existing name). Then open it no-follow:
+	// OpenDirRootNoFollow Lstat-rejects a symlinked context and SameFile-checks
+	// after open. (os.Root already refuses to TRAVERSE a symlinked component,
+	// in-root or escaping — verified on go1.26 — so the by-name ops below would
+	// fail closed regardless; OpenDirRootNoFollow makes that an explicit, legible
+	// refusal here rather than an opaque mkdirat/openat error downstream, and is
+	// the house pattern the source side already uses.) Every op below rides
+	// ctxRoot with a context-relative name. The engine's later by-pathname READ
+	// of the finished context is the disclosed byre-wide check-to-mount residual
+	// (ADR 0009), a different surface but the same class; a rebuild concurrent
+	// with a live self-edit session is where it applies.
+	ctxName := filepath.Base(paths.ContextDir)
 	storeRoot, err := os.OpenRoot(paths.Dir)
 	if err != nil {
 		return "", err
 	}
-	defer storeRoot.Close()
-	ctxName := filepath.Base(paths.ContextDir)
-	if err := storeRoot.MkdirAll(ctxName, 0o755); err != nil {
-		return "", fmt.Errorf("build context dir (a self-edit agent may have replaced it): %w", err)
+	if err := storeRoot.Mkdir(ctxName, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		storeRoot.Close()
+		return "", err
 	}
-	ctxRoot, err := storeRoot.OpenRoot(ctxName)
+	storeRoot.Close()
+	ctxRoot, err := hostopen.OpenDirRootNoFollow(paths.ContextDir)
 	if err != nil {
+		if errors.Is(err, hostopen.ErrSymlinkRoot) {
+			return "", fmt.Errorf("build context %s is a symlink, not a directory — refusing to stage through it (a self-edit agent may have planted it); remove it and rebuild", paths.ContextDir)
+		}
 		return "", err
 	}
 	defer ctxRoot.Close()
