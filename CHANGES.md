@@ -68,10 +68,14 @@
   fork` no longer leaves a partial package poisoning the retry (the fork
   stages beside its destination and publishes with one rename); the temp
   directories bundled packages extract into are cleaned up at exit rather
-  than accumulating until the OS sweeps /tmp; and the macOS deliver-app
+  than accumulating until the OS sweeps /tmp; the macOS deliver-app
   installer checks both destinations before touching either, so a foreign
   Quick Action refuses the install up front instead of after the app half
-  was already committed.
+  was already committed; and the project-id collision fence is now
+  race-proof — two concurrent first enrollments of id-colliding paths
+  can no longer both slip past it and silently share state (exactly one
+  wins; the other gets the loud collision error the fence always
+  promised).
 
 - **First compatibility sunset.** Several transition aids for behavior
   that changed before v1.0 have reached the end of their support window
