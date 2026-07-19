@@ -71,6 +71,21 @@ any directory -- it finds your running box. The full surface, including
 piping from stdin:
 [docs/DELIVER.md](https://github.com/pjlsergeant/byre/blob/main/docs/DELIVER.md).
 
+## Get files back out of the box?
+
+tldr: `byre grab <box-path>` -- the file lands in your current
+directory, never overwriting anything.
+
+The agent made you something -- a PDF, a chart, a patch --
+`byre grab out/report.pdf` copies it out and prints where it landed.
+Box paths count from `/workspace`; directories come out recursively;
+a second argument names the destination, and `-` streams to stdout
+(`byre grab build.log - | grep error`). Grab never overwrites your
+files: name collisions land uniquified (`report-2.pdf`) and byre says
+so. Works from any directory -- it finds your running box, exactly like
+deliver. The full surface:
+[docs/DELIVER.md](https://github.com/pjlsergeant/byre/blob/main/docs/DELIVER.md).
+
 ## Use byre on a remote machine over SSH?
 
 tldr: byre is terminal-native, so everything works in an SSH session --

@@ -664,16 +664,21 @@ byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox — locally, or through another machine
                   via ssh://. User docs: docs/DELIVER.md.
 
+byre grab         Deliver's mirror: stream a file or directory out of a running
+                  box onto the host (never overwriting). User docs:
+                  docs/DELIVER.md.
+
 byre version      Print the version (also --version).
 byre completion   Per-shell completion scripts (bash/zsh/fish/powershell).
 ```
 
-### Deliver
+### Deliver and grab
 
-`byre deliver` is the one **machine-scoped** verb: instead of deriving a
-project from cwd, it discovers running boxes across every installed
+`byre deliver` and its mirror `byre grab` are the **machine-scoped**
+verbs: instead of deriving a project from cwd, they discover running
+boxes across every installed
 engine (`ps` filtered on the `byre.project` label; each hit keeps engine
-affinity for the later exec) and resolves a target through a cascade —
+affinity for the later exec) and resolve a target through a cascade —
 `--box` (unique prefix), cwd match walking ancestor directories against
 the `byre.workdir` label, sole owned session (an unreachable engine
 quietly counts as zero; any other failed query disables this step -- a
@@ -694,7 +699,16 @@ their top-level name with an atomic `mkdir` and stream the tree
 per-file. `/inbox` itself is baked by the chassis: dev-owned under
 root-owned `/`, so the boxed agent can't replace it with a symlink.
 
-An `ssh://[user@]host[:port]` first argument routes the same verb
+Grab runs the same transport in reverse with the judgment moved
+host-side (ADR 0040): dumb box scripts classify the path, enumerate a
+directory (NUL-framed find output), and `cat` each file out over an
+exec, while the host treats everything the box says as agent input —
+writes ride an `os.Root` anchored at the destination, names claim via
+an O_EXCL dotfile temp + hardlink (mkdir for directories) so nothing
+ever overwrites a host file or writes through a planted symlink, and
+enumeration records outside the grabbed root are ignored loudly.
+
+An `ssh://[user@]host[:port]` first argument routes deliver
 through another machine running byre (ADR 0037): the local byre asks
 the remote for its box list (`byre deliver --boxes --proto N` — a
 frozen tab-separated line grammar on stdout; a distinct exit code

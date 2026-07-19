@@ -74,8 +74,9 @@ pngpaste - | byre deliver - --name shot.png
 
 ## Which box?
 
-`deliver` is byre's one machine-scoped command: it finds a running box
-rather than requiring you to stand in the project directory.
+`deliver` (like its mirror, `grab` — below) is machine-scoped: it finds
+a running box rather than requiring you to stand in the project
+directory.
 
 1. `--box <id-or-project-prefix>` picks explicitly (the prefix must
    match exactly one session).
@@ -130,6 +131,37 @@ box -- it's a hand-off point, not storage; if the box is rebuilt,
 deliver again (it's one command). Deliveries never land in `/workspace`,
 so your repo stays clean. Boxes built before this feature don't have an
 `/inbox`; rebuild with `byre develop`.
+
+## Getting files back out: `byre grab`
+
+The mirror move. The agent built you a PDF, rendered a chart, produced
+a patch -- `byre grab` lands it next to you:
+
+```
+$ byre grab out/report.pdf
+report.pdf
+```
+
+`byre grab <box-path> [<host-path>]` copies a file (or a directory,
+recursively) out of the running box. The box path counts from
+`/workspace` unless absolute (`/inbox/...`, `/home/dev/...` work too);
+the host path defaults to your current directory, and an existing
+directory receives the file under its box name. The landed host path
+prints to stdout. `-` streams a single file's content to stdout
+instead -- `byre grab build.log - | grep error`.
+
+The box is found exactly as deliver finds one (see "Which box?"), and
+the same script-trustworthy exit codes apply: 0 means bytes landed.
+
+**Grab never overwrites host files.** Everything a grab writes was
+authored inside the box -- by the agent -- so byre won't let it replace
+anything of yours, even when you name an existing file exactly:
+collisions land uniquified (`report.pdf` → `report-2.pdf`), byre tells
+you when that happened, and the printed path is always where the bytes
+actually went. Delete the old file first if you want the old name.
+Directory grabs skip symlinks and other non-files (with a note), and a
+partially unreadable tree grabs what it can -- the exit code and a
+summary line carry the truth.
 
 ## The deliver app
 
