@@ -52,15 +52,20 @@ supported release; removal = parser field + migration + command + catalog/UI
 state + tests + docs together, with release-note recovery path). Then execute
 the first bundle:
 
-- [ ] Remove `SharedAuthDeclined` (parsed, read by nothing -- `internal/config/config.go`).
-- [ ] Drop the legacy shared-auth array shape (`internal/config/sharedauth.go`);
-      warn one release first.
-- [ ] Retire adoption-record migration / decline-record deletion
-      (`sweepAdoptionRecords` in `internal/packages/store.go` runs on every
-      ordinary store setup).
-- [ ] Stop accepting repo-root `byre.config` as a legacy preset name (after warning).
-- [ ] Retire `skill update` (transitional no-op) and description-only compat
-      skill stubs.
+- [x] Remove `SharedAuthDeclined`: field/merge/strip machinery gone; the stale
+      key parses as a tolerated retired key (ignored).
+- [ ] Drop the legacy shared-auth array shape (`internal/config/sharedauth.go`).
+      DEFERRED: still round-tripped by EncodeTOMLLine and needs a warning
+      release first; no parse-time warning channel exists today.
+- [x] Retire adoption-record migration / decline-record deletion (removed;
+      old records are inert files, CHANGES carries the recovery path).
+- [ ] Stop accepting repo-root `byre.config` as a legacy preset name.
+      DEFERRED: the in-product rename note IS the warning; remove at the end
+      of its window (a release-time decision, not a code call).
+- [x] Retire `skill update` (removed, command page regenerated) and the
+      `devloop` compat stub (now a RetiredNames tombstone with the pinned
+      install remedy). Note: `grok-shared-auth` turned out NOT to be a stub —
+      it's the live v2 auth broker; the review's stub list was stale.
 - [ ] Schedule the legacy-materialized-package machinery (ProvLegacy rows,
       `skill archive-legacy`, store-setup detection, retired-name protection)
       for the end of its window -- keep until then, it's user-facing recovery.
@@ -75,22 +80,30 @@ section, legal targets, and the row/start/commit/remove/delete/render hooks.
 Genuinely specialized screens (base image, agent, volumes, skills, raw blocks)
 stay specialized.
 
-- [ ] Centralize field metadata + target placement first (cheap, kills the
-      independent declarations in `form.go:279` and the `fieldID`/`isListField`/
-      `fieldLabel` switches).
-- [ ] Then fold the `listitem.go` per-field switches (`removeHere`, `startOverride`,
-      `deleteItem`, `startItem`, `commitItem`, `itemTitle`, `itemLabel`,
-      `itemNotes`) into descriptor hooks.
+- [x] Centralize field metadata (`fields.go` fieldInfos: label, kind, TOML-key
+      hint, item title, noun — was five independent structures). Target/section
+      placement stays in newModel: it is target-specific prose with per-target
+      section titles, and a data table would obscure it, not shrink it.
+- [ ] Fold the `listitem.go` per-field operation switches into descriptor
+      hooks. DEFERRED as a judgment call: after the genus extraction removed
+      the mcp/claude-skill duplication, the remaining switches are one
+      switch per operation — field-specific behavior in one place each, not
+      copies. Folding them adds indirection without deleting code. Revisit
+      if a new list field lands and the touch-point count still hurts.
 - [ ] Acceptance test: adding a simple list field is one descriptor + tests, not
-      ~20 touch points.
+      ~20 touch points. (Partially met: identity is one table row; behavior
+      is still one case per operation switch.)
 
 ### 5. Explicit dependencies instead of callback globals
 
-- [ ] Replace `config.BundledFS` / `ByreVersion` / `ByreCompat` and the
-      `packages.Stage2Skill` init-wiring (`internal/skills/skills.go`) with a
-      constructed loader/parser registry passed into resolution and acquisition.
-      Small, mechanical, makes ownership visible; good to pair with item 2 since
-      both touch the config/skills/packages seams.
+- [x] Stage-2 parser hooks are now an explicit LoadCatalog argument
+      (packages.Stage2Hooks); both init() wirings (skills, config) are gone.
+      config's three func globals collapsed into ONE documented seam,
+      `config.CatalogLoader`, constructed by builtins (the composition point:
+      embedded content + version + full parser set). Residual: that one seam
+      is still installed by builtins' init — config cannot import builtins
+      (cycle); fully removing it requires threading a catalog into
+      config.Load's signature, which is item 7's territory.
 
 ### 6. Comment hygiene (opportunistic)
 
@@ -106,11 +119,13 @@ The review's Layer/ProjectConfig/GlobalConfig/ResolvedConfig split is the
 highest-value architectural change *and* the highest-risk one. Don't big-bang
 it. Sequence:
 
-- [ ] First: kill the `layer bool` validation flags by splitting validation
-      entry points, not yet types.
+- [x] First: kill the `layer bool` validation flags — every validator is now
+      a named Layer/Resolved pair over a shared core parameterized by marker
+      policy (config.go, nameddecl.go); messages and precedence unchanged.
 - [ ] Then: move internal merge state (`EgressClosed`, `MCPClosed`,
       `ClaudeSkillsClosed`, `Sources.From`) out of the persisted struct so
-      Merge no longer tolerates its own output as input.
+      Merge no longer tolerates its own output as input. NOT cheap — those
+      fields are read across status/UI/commands; needs its own session.
 - [ ] Only then decide whether the full type split still pays for itself.
       TOML vocabulary is untouched throughout.
 
