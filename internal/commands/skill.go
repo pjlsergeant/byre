@@ -459,12 +459,29 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 	if err != nil {
 		return err
 	}
-	if err := copyDir(hostSrc, destDir); err != nil {
+	// Stage the whole fork beside the destination and publish with one
+	// rename at the end. Copying into the final name meant any expected
+	// failure (FIFO refusal, payload budget, unreadable source, a primary
+	// that won't rewrite) left a partial tree there — poisoning the retry
+	// with "already exists" and, when the failure landed before the
+	// rewrite, carrying the SOURCE package's identity under the fork's
+	// path. The stage dir is removed on every failure path.
+	parent := filepath.Dir(destDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(parent, ".fork-stage-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage) // no-op once the publish rename succeeds
+	if err := copyDir(hostSrc, stage); err != nil {
 		return err
 	}
 
-	// Provenance comment at the top of the primary file.
-	primPath := filepath.Join(destDir, prim)
+	// Provenance comment at the top of the primary file — rewritten in
+	// staging, so a published fork always carries the fork's identity.
+	primPath := filepath.Join(stage, prim)
 	body, err := os.ReadFile(primPath)
 	if err != nil {
 		return err
@@ -478,6 +495,11 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 	)
 	if err := os.WriteFile(primPath, append([]byte(header), body...), 0o644); err != nil {
 		return err
+	}
+	// Publish. Rename refuses a non-empty destination, so a concurrent
+	// fork that won the race is not replaced.
+	if err := os.Rename(stage, destDir); err != nil {
+		return fmt.Errorf("publishing the fork: %w", err)
 	}
 
 	fmt.Fprintf(s.Err, "byre: forked %s -> %s\n", src.ID, destDir)

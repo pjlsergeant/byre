@@ -75,3 +75,59 @@ func TestCopyDirFollowsLinksRefusesIrregulars(t *testing.T) {
 		t.Fatal("copyDir blocked on a FIFO — the exact hang fork must never have")
 	}
 }
+
+// A failed fork must leave NOTHING at the destination: copying into the
+// final name left a partial tree that poisoned retries with "already
+// exists" and could carry the source's identity under the fork's path
+// (external review, 2026-07-19). The fork stages beside the destination
+// and publishes with one rename.
+func TestForkFailureLeavesNoDestination(t *testing.T) {
+	home := installHome(t)
+	srcDir := filepath.Join(home, "skills", "pete", "tool")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "skill.toml"), []byte("description = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(srcDir, "pipe"), 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	s, _, _ := testStreams("", false)
+	if err := SkillFork(s, "pete/tool", "me/fork"); err == nil {
+		t.Fatal("fork of a FIFO-bearing source must fail")
+	}
+	if _, err := os.Stat(filepath.Join(home, "skills", "me", "fork")); !os.IsNotExist(err) {
+		t.Fatalf("failed fork left a destination behind: %v", err)
+	}
+	ents, _ := os.ReadDir(filepath.Join(home, "skills", "me"))
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".fork-stage-") {
+			t.Fatalf("failed fork left staging residue %s", e.Name())
+		}
+	}
+}
+
+// The staged fork still publishes: destination exists afterwards with the
+// fork's own identity in the rewritten primary.
+func TestForkPublishesStagedTree(t *testing.T) {
+	home := installHome(t)
+	srcDir := filepath.Join(home, "skills", "pete", "tool")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "skill.toml"), []byte("description = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _, _ := testStreams("", false)
+	if err := SkillFork(s, "pete/tool", "me/fork"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, "skills", "me", "fork", "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `id = "me/fork"`) || !strings.Contains(string(b), "Forked from pete/tool") {
+		t.Fatalf("published primary must carry the fork identity, got:\n%s", b)
+	}
+}
