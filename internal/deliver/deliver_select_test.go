@@ -345,7 +345,10 @@ func TestBoxNoMatchNamesUnusableSessions(t *testing.T) {
 
 func TestUnreachableEngineDoesNotPoisonAutoPick(t *testing.T) {
 	// Field-found 2026-07-10: podman installed but its machine not started is
-	// normal life — one quiet line, zero sessions, auto-pick stays alive.
+	// normal life — zero sessions, auto-pick stays alive. The skip note is
+	// SUPPRESSED on a clean auto-pick (field report 2026-07-19: it printed on
+	// every deliver/grab where podman is perpetually down); it never degrades
+	// loudly (no "warning"/"libpod").
 	stale := &fakeEngine{name: "podman", idsErr: fmt.Errorf("exit status 125: Cannot connect to Podman. Please verify your connection ...")}
 	eng := box("docker", "aaa")
 	cfg, out, errw := testConfig(eng, stale)
@@ -357,11 +360,27 @@ func TestUnreachableEngineDoesNotPoisonAutoPick(t *testing.T) {
 		t.Fatalf("delivery should proceed: %q", out.String())
 	}
 	msg := errw.String()
-	if !strings.Contains(msg, "podman isn't reachable; skipping it") {
-		t.Fatalf("no quiet skip note: %q", msg)
+	if strings.Contains(msg, "isn't reachable") {
+		t.Fatalf("clean auto-pick must SUPPRESS the skip note: %q", msg)
 	}
 	if strings.Contains(msg, "warning") || strings.Contains(msg, "libpod") {
-		t.Fatalf("unreachable engine should be one quiet line: %q", msg)
+		t.Fatalf("unreachable engine should never degrade loudly: %q", msg)
+	}
+}
+
+// But when the outcome is NOT a clean pick, the skip note surfaces — the
+// narrowed pool could be why the box the user expected isn't there.
+func TestUnreachableEngineNoteSurfacesOnNotFound(t *testing.T) {
+	stale := &fakeEngine{name: "podman", idsErr: fmt.Errorf("exit status 125: Cannot connect to Podman ...")}
+	// docker also has no matching box, so --box misses → not a clean pick.
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng, stale)
+	src := writeFile(t, "f.txt", "x")
+	if _, err := Run(cfg, Options{Box: "nope"}, []string{src}); err == nil {
+		t.Fatal("expected --box miss")
+	}
+	if !strings.Contains(errw.String(), "podman isn't reachable; skipping it") {
+		t.Fatalf("skip note should surface on a not-found: %q", errw.String())
 	}
 }
 

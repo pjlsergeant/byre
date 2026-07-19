@@ -53,6 +53,8 @@ func Boxes(cfg Config, opts Options) (partial bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	// A listing discloses its own completeness: a skipped engine narrows it.
+	flushUnreachable(cfg, p)
 	for _, s := range p.sessions {
 		fmt.Fprintln(cfg.Out, boxLine(s))
 	}

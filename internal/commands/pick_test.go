@@ -54,7 +54,7 @@ func TestHostPickerRidesControllingTTYWhenStdinBusy(t *testing.T) {
 	}
 	t.Cleanup(func() { f.Close() })
 	openControllingTTY = func() *os.File { return f }
-	if hostPicker(Streams{TTY: false}) == nil {
+	if hostPicker(Streams{TTY: false}, "deliver") == nil {
 		t.Fatal("no picker despite a controlling terminal")
 	}
 }
@@ -68,20 +68,20 @@ func TestHostPickerNilWithoutAnyTerminal(t *testing.T) {
 	t.Setenv("DISPLAY", "")
 	t.Setenv("WAYLAND_DISPLAY", "")
 	t.Setenv("SSH_CONNECTION", "r") // darwin: a remote shell has no WindowServer
-	if hostPicker(Streams{TTY: false}) != nil {
+	if hostPicker(Streams{TTY: false}, "deliver") != nil {
 		t.Fatal("picker conjured from nothing")
 	}
 }
 
 func TestPickModelSelects(t *testing.T) {
-	m := drive(pickModel{sessions: pickSessions(), choice: -1}, "down", "enter")
+	m := drive(pickModel{sessions: pickSessions(), text: pickTextFor("deliver"), choice: -1}, "down", "enter")
 	if m.quit || m.choice != 1 {
 		t.Fatalf("model = %+v", m)
 	}
 }
 
 func TestPickModelCursorBounds(t *testing.T) {
-	m := drive(pickModel{sessions: pickSessions(), choice: -1}, "up", "up", "down", "down", "down", "enter")
+	m := drive(pickModel{sessions: pickSessions(), text: pickTextFor("deliver"), choice: -1}, "up", "up", "down", "down", "down", "enter")
 	if m.choice != 1 {
 		t.Fatalf("cursor escaped the list: %+v", m)
 	}
@@ -89,7 +89,7 @@ func TestPickModelCursorBounds(t *testing.T) {
 
 func TestPickModelCancels(t *testing.T) {
 	for _, k := range []string{"q", "esc"} {
-		m := drive(pickModel{sessions: pickSessions(), choice: -1}, k)
+		m := drive(pickModel{sessions: pickSessions(), text: pickTextFor("deliver"), choice: -1}, k)
 		if !m.quit || m.choice != -1 {
 			t.Fatalf("%s should cancel: %+v", k, m)
 		}
@@ -97,7 +97,7 @@ func TestPickModelCancels(t *testing.T) {
 }
 
 func TestPickViewShowsHonestMetadata(t *testing.T) {
-	v := pickModel{sessions: pickSessions(), choice: -1}.View()
+	v := pickModel{sessions: pickSessions(), text: pickTextFor("deliver"), choice: -1}.View()
 	for _, want := range []string{"proj-aaa (docker)", "wt-bbb (podman)", "owned by uid 777, not you"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("view missing %q:\n%s", want, v)
@@ -105,22 +105,43 @@ func TestPickViewShowsHonestMetadata(t *testing.T) {
 	}
 }
 
+// The picker is shared by deliver and grab, but you deliver TO a box and grab
+// FROM one — the prompt and footer verb must follow the caller, not always
+// say "deliver" (field report on `byre grab`, 2026-07-19).
+func TestPickViewVerbFollowsCaller(t *testing.T) {
+	deliverV := pickModel{sessions: pickSessions(), text: pickTextFor("deliver"), choice: -1}.View()
+	if !strings.Contains(deliverV, "deliver to which box?") || !strings.Contains(deliverV, "enter deliver") {
+		t.Errorf("deliver picker wording wrong:\n%s", deliverV)
+	}
+	grabV := pickModel{sessions: pickSessions(), text: pickTextFor("grab"), choice: -1}.View()
+	if !strings.Contains(grabV, "grab from which box?") || !strings.Contains(grabV, "enter grab") {
+		t.Errorf("grab picker wording wrong:\n%s", grabV)
+	}
+	if strings.Contains(grabV, "deliver") {
+		t.Errorf("grab picker still says 'deliver':\n%s", grabV)
+	}
+	// GUI dialog copy is capitalized and verb-specific too.
+	if got := pickTextFor("grab"); got.dialog != "Grab from which box?" || got.appTitle != "byre grab" {
+		t.Errorf("grab dialog text wrong: %+v", got)
+	}
+}
+
 func TestGraphicalPickToolDarwinNeedsLocalSession(t *testing.T) {
 	stubClipTools(t, "osascript")
-	if p := graphicalPickTool("darwin", env(map[string]string{"SSH_CONNECTION": "1.2.3.4"})); p != nil {
+	if p := graphicalPickTool("darwin", env(map[string]string{"SSH_CONNECTION": "1.2.3.4"}), pickTextFor("deliver")); p != nil {
 		t.Fatal("SSH'd darwin must not attempt a dialog")
 	}
-	if p := graphicalPickTool("darwin", env(nil)); p == nil {
+	if p := graphicalPickTool("darwin", env(nil), pickTextFor("deliver")); p == nil {
 		t.Fatal("local darwin with osascript should offer a dialog")
 	}
 }
 
 func TestGraphicalPickToolLinuxNeedsDisplay(t *testing.T) {
 	stubClipTools(t, "zenity")
-	if p := graphicalPickTool("linux", env(nil)); p != nil {
+	if p := graphicalPickTool("linux", env(nil), pickTextFor("deliver")); p != nil {
 		t.Fatal("no DISPLAY/WAYLAND_DISPLAY: no dialog")
 	}
-	if p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"})); p == nil {
+	if p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver")); p == nil {
 		t.Fatal("X11 with zenity should offer a dialog")
 	}
 }
@@ -150,7 +171,7 @@ func TestGraphicalPickerToolFailureIsNotCancel(t *testing.T) {
 	clipRunOut = func(name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("zenity: cannot open display")
 	}
-	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}))
+	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"))
 	_, ok, err := p(pickSessions())
 	if ok || err == nil {
 		t.Fatalf("broken dialog masqueraded as a choice: ok=%v err=%v", ok, err)
@@ -167,7 +188,7 @@ func TestGraphicalPickerExitOneIsCancel(t *testing.T) {
 	clipRunOut = func(name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("zenity: %w", realErr)
 	}
-	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}))
+	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"))
 	_, ok, err := p(pickSessions())
 	if ok || err != nil {
 		t.Fatalf("cancel (exit 1) should be a clean no: ok=%v err=%v", ok, err)
