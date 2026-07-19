@@ -114,7 +114,8 @@ rewrite its own sandbox.
 **Proposal / Adoption** (historical):
 Pre-preset (ADR 0029) vocabulary for an in-tree `byre.config` and the
 develop-time prompt that accepted it. The flow is deleted -- presets
-replace it. Use the words only to describe what was removed.
+replace it, and old adoption records are inert files (their migration
+window has closed). Use the words only to describe what was removed.
 
 **Raw block**:
 A verbatim passthrough byre never parses inside: `dockerfile_pre`,
@@ -291,7 +292,9 @@ any one skill: the devlog skill curates it (bootstraps the dir, keeps the
 diary), but each skill that writes there ensures it exists itself, so
 codereview never needs devlog installed.
 _Avoid_: `.devloop/` (the dir's old name; an existing old dir is left
-untouched, renamed by hand if its history matters)
+untouched, renamed by hand if its history matters) and `devloop` as the
+skill name (retired -- a config naming it gets the tombstone's pinned
+install remedy)
 
 ### Grants, mounts, volumes
 

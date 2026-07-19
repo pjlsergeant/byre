@@ -23,7 +23,6 @@ import (
 	"net"
 	"net/url"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -272,97 +271,35 @@ func mcpPrintable(s string) error {
 	return nil
 }
 
-// validateMCPs checks the [[mcp]] list per the shared layer/resolved split:
-// layer mode permits `name = "!server"` closure markers (name-only, like
-// mount markers) and rejects in-layer duplicate names (merge would silently
-// replace); resolved mode rejects markers (Merge extracts them into
-// MCPClosed) and duplicates alike.
-func (c Config) validateMCPs(layer bool) error {
-	seen := map[string]bool{}
-	for _, m := range c.MCPs {
-		if isRemoval(m.Name) {
-			if !layer {
-				return fmt.Errorf("mcp %s: a closure marker is only meaningful in a cascade layer", m.Name)
-			}
-			// A marker is name-only — other fields set suggest a real server
-			// with a mistyped name; refuse rather than silently discard it.
-			if len(m.Command) > 0 || m.URL != "" || len(m.Env) > 0 || len(m.Egress) > 0 {
-				return fmt.Errorf("mcp %s: a closure marker takes only a name — other fields here suggest a real server with a mistyped name", m.Name)
-			}
-			if !mcpNameRe.MatchString(m.Name[1:]) {
-				return fmt.Errorf("mcp closure %q: %q is not a valid server name", m.Name, m.Name[1:])
-			}
-			continue
-		}
-		if err := ValidateMCP(m); err != nil {
-			return err
-		}
-		if seen[m.Name] {
-			return fmt.Errorf("mcp %s appears twice in this file; merge would keep only the last one", m.Name)
-		}
-		seen[m.Name] = true
-	}
-	for _, cl := range c.MCPClosed {
-		if !mcpNameRe.MatchString(cl) {
-			return fmt.Errorf("mcp closure %q: not a valid server name", cl)
-		}
-	}
-	return nil
+// mcpDeclOps plugs the [[mcp]] vocabulary into the shared named-declaration
+// machinery (nameddecl.go): validation split, split/merge, closure taxonomy.
+var mcpDeclOps = namedDeclOps[MCP]{
+	label:      "mcp",
+	markerNoun: "a real server",
+	nameNoun:   "server name",
+	nameRe:     mcpNameRe,
+	name:       func(m MCP) string { return m.Name },
+	markerExtras: func(m MCP) bool {
+		return len(m.Command) > 0 || m.URL != "" || len(m.Env) > 0 || len(m.Egress) > 0
+	},
+	validate: ValidateMCP,
 }
 
-// mergeMCPs folds one cascade step of the [[mcp]] list into (open, closed),
-// mirroring mergeEgress: a `!name` closure is NOT consumed when it removes a
-// declaration — it survives the cascade (in MCPClosed) so it can subtract
-// the same name from the EFFECTIVE set after skill contributions union in
-// (skills.MCPSet). Precedence stays cascade-ordered: a later layer's plain
-// declaration re-opens an earlier layer's closure; within one layer a
-// closure beats a plain declaration (adds fold first, closures after).
-// Open declarations replace by name (structured cascade, like volumes),
-// closures match by exact name.
+// validateMCPsLayer / validateMCPsResolved check the [[mcp]] list per the
+// shared lifecycle split (see nameddecl.go).
+func (c Config) validateMCPsLayer() error {
+	return validateNamedDeclsLayer(mcpDeclOps, c.MCPs, c.MCPClosed)
+}
+
+func (c Config) validateMCPsResolved() error {
+	return validateNamedDeclsResolved(mcpDeclOps, c.MCPs, c.MCPClosed)
+}
+
+// mergeMCPs folds one cascade step of the [[mcp]] list into (open, closed)
+// per the shared genus taxonomy (see mergeNamedDecls): closures survive in
+// MCPClosed so they can subtract after the skill union (skills.MCPSet).
 func mergeMCPs(base, over Config) (open []MCP, closed []string) {
-	open, closed = splitMCPs(base.MCPs, base.MCPClosed)
-	overOpen, overClosed := splitMCPs(over.MCPs, over.MCPClosed)
-	for _, m := range overOpen {
-		closed = filter(closed, func(c string) bool { return c != m.Name })
-		replaced := false
-		for i := range open {
-			if open[i].Name == m.Name {
-				open[i] = m
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			open = append(open, m)
-		}
-	}
-	for _, c := range overClosed {
-		open = filter(open, func(m MCP) bool { return m.Name != c })
-		if !slices.Contains(closed, c) {
-			closed = append(closed, c)
-		}
-	}
-	return open, closed
-}
-
-// splitMCPs separates an [[mcp]] list into real declarations and the
-// stripped names of its `!name` closure markers, folding an already-
-// populated MCPClosed (a previously merged config re-entering Merge) into
-// the latter.
-func splitMCPs(mcps []MCP, mcpClosed []string) (open []MCP, closed []string) {
-	for _, m := range mcps {
-		if isRemoval(m.Name) {
-			closed = append(closed, m.Name[1:])
-			continue
-		}
-		open = append(open, m)
-	}
-	for _, c := range mcpClosed {
-		if !slices.Contains(closed, c) {
-			closed = append(closed, c)
-		}
-	}
-	return open, closed
+	return mergeNamedDecls(base.MCPs, base.MCPClosed, over.MCPs, over.MCPClosed, mcpDeclOps.name)
 }
 
 // MCPConfigJSON renders the effective declared set as the canonical

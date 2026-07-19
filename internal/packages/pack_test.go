@@ -42,7 +42,7 @@ text = "hi"
 		"hooks/login.sh": "#!/bin/sh\necho hi\n",
 		"CONTEXT.md":     "notes\n",
 	})
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestPackRefusesMissingIdentity(t *testing.T) {
 	writeLocalSkill(t, home, "tool", map[string]string{
 		"skill.toml": "description = \"no package block\"\n",
 	})
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ requires_byre = ">=0.1.0"
 	if err := os.Symlink("/etc/passwd", filepath.Join(dir, "link")); err != nil {
 		t.Skip("symlinks unavailable")
 	}
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestDisplayDigestBundled(t *testing.T) {
 			"skills/tool/skill.toml": &fstest.MapFile{Data: []byte("description = \"a tool\"\n")},
 			"skills/tool/CONTEXT.md": &fstest.MapFile{Data: []byte(payload)},
 		}
-		cat, err := LoadCatalog(t.TempDir(), fsys, displayVer, strings.TrimPrefix(displayVer, "v"))
+		cat, err := LoadCatalog(t.TempDir(), fsys, displayVer, strings.TrimPrefix(displayVer, "v"), Stage2Hooks{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +171,7 @@ func TestDisplayDigestRefusesNonBundled(t *testing.T) {
 	writeLocalSkill(t, home, "pete/tool", map[string]string{
 		"skill.toml": "description = \"local\"\n",
 	})
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 `,
 		"install.sh": "#!/bin/sh\n",
 	})
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), first, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err = LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err = LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ requires_byre = ">=0.1.0"
 			"skill.toml": primary,
 			"install.sh": "#!/bin/sh\n",
 		})
-		cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+		cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -323,7 +323,7 @@ text = """
 `,
 		"install.sh": "#!/bin/sh\n",
 	})
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}

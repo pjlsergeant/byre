@@ -23,7 +23,7 @@ func bundledFS() fstest.MapFS {
 
 func TestDisplayVsCompatVersion(t *testing.T) {
 	home := t.TempDir()
-	cat, err := LoadCatalog(home, bundledFS(), "v9.9.9", "9.9.9")
+	cat, err := LoadCatalog(home, bundledFS(), "v9.9.9", "9.9.9", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ kind = "skill"
 	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat2, err := LoadCatalog(home, bundledFS(), "v9.9.9", "9.9.9")
+	cat2, err := LoadCatalog(home, bundledFS(), "v9.9.9", "9.9.9", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,14 +68,14 @@ kind = "skill"
 	dir2 := filepath.Join(home, "skills", "need99")
 	mustMkdirAll(t, dir2, 0o755)
 	mustWriteFile(t, filepath.Join(dir2, "skill.toml"), []byte(body2), 0o644)
-	cat3, err := LoadCatalog(home, nil, "(devel)", "0.0.0-devel")
+	cat3, err := LoadCatalog(home, nil, "(devel)", "0.0.0-devel", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// need99 only
 	mustRemoveAll(t, filepath.Join(home, "skills", "need9"))
 	mustRemoveAll(t, filepath.Join(home, "skills", "claude"))
-	cat3, err = LoadCatalog(home, nil, "(devel)", "0.0.0-devel")
+	cat3, err = LoadCatalog(home, nil, "(devel)", "0.0.0-devel", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +88,7 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, "skills", "typo")
 	mustMkdirAll(t, dir, 0o755)
-	old := Stage2Skill
-	Stage2Skill = func(raw []byte) error {
+	hooks := Stage2Hooks{Skill: func(raw []byte) error {
 		body := StripPackageTable(raw)
 		type empty struct{}
 		md, err := toml.Decode(string(body), &empty{})
@@ -100,10 +99,9 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 			return fmt.Errorf("unknown key(s) in skill.toml: %v", und)
 		}
 		return nil
-	}
-	t.Cleanup(func() { Stage2Skill = old })
+	}}
 	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("typo_key = true\n"), 0o644)
-	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +125,7 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 
 func TestCatalogAliasExpansion(t *testing.T) {
 	home := t.TempDir()
-	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +166,7 @@ func TestCatalogLegacyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +265,7 @@ target = "/home/dev/.claude"
 	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +297,7 @@ requires_byre = ">=99.0.0"
 	if err := os.WriteFile(filepath.Join(evil, "skill.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0")
+	cat, err := LoadCatalog(home, bundledFS(), "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +359,7 @@ func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
 
 	done := make(chan *Catalog, 1)
 	go func() {
-		cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+		cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 		if err != nil {
 			t.Errorf("LoadCatalog: %v", err)
 		}

@@ -77,6 +77,15 @@ type SharedAuthOffer struct {
 	StalePickNotice string
 }
 
+// SharedAuthPrompt is the shared-auth offer's question line for agent — the
+// ONE definition of that prose. Exported for tests: they assert the offer
+// was (or wasn't) shown against the string the product actually prints, so
+// the wording can change in one place. The prose is not a contract; its
+// presence at the right moment is.
+func SharedAuthPrompt(agent string) string {
+	return fmt.Sprintf("Use machine-wide credentials to log in to %s?", agent)
+}
+
 // Pick runs the interactive picker. templates and agents are the available
 // options (a "none" choice is always offered); tmplFav/agentFav are the user's
 // favourites — Effective pre-selected so an empty answer accepts it.
@@ -204,7 +213,7 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 		// The question is self-disclosing ("machine-wide" IS the scope) and
 		// bare when the claimant is byre's own; a foreign claimant's
 		// provenance rides the question line, deliberately loud.
-		q := fmt.Sprintf("Use machine-wide credentials to log in to %s?", agent)
+		q := SharedAuthPrompt(agent)
 		if foreign(0) && label != "" {
 			// A third party asking to hold machine-wide credentials is the
 			// loud case (the ruling's whole point); a local skill is the

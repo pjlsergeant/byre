@@ -371,8 +371,8 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	proj := t.TempDir() // no byre.config
 
 	// default.config sets template/agent (picker pre-selections) and
-	// shared_auth_declined (vestigial v0.1.7 picker state, ADR 0025 — must
-	// still parse and never cascade) plus base/apt.
+	// shared_auth_declined (retired v0.1.7 picker state, ADR 0025 — the
+	// stale key must still parse, ignored) plus base/apt.
 	writeFile(t, filepath.Join(home, "default.config"),
 		"agent = \"claude\"\ntemplate = \"node\"\nshared_auth_declined = [\"claude\"]\nbase = \"debian:bookworm\"\napt = [\"git\"]\n")
 
@@ -383,10 +383,6 @@ func TestLoadIgnoresDefaultTemplateAndAgent(t *testing.T) {
 	// template/agent must NOT cascade from default.config...
 	if cfg.Agent != "" {
 		t.Errorf("default agent must not cascade, got %q", cfg.Agent)
-	}
-	// ...nor the picker-owned decline record...
-	if len(cfg.SharedAuthDeclined) != 0 {
-		t.Errorf("shared_auth_declined must not cascade, got %v", cfg.SharedAuthDeclined)
 	}
 	if cfg.Base != "debian:bookworm" {
 		t.Errorf("default template must not apply (base should stay debian), got %q", cfg.Base)
@@ -633,7 +629,6 @@ func sampleConfig() Config {
 		Skills:             []string{"devloop"},
 		SharedAuth:         SharedAuthPref{Yes: []string{"claude"}},
 		Sources:            map[string]SourceHint{"pete/x": {URI: "https://example.test/x/skill.toml", Digest: "sha256:ab", From: "project config"}},
-		SharedAuthDeclined: []string{"claude"},
 		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
 		Egress:             []string{"grafana.com"},
 		EgressClosed:       []string{"statsig.anthropic.com"},
@@ -996,9 +991,9 @@ func TestEgressHostCaseInsensitive(t *testing.T) {
 	}
 }
 
-// shared_auth (and the vestigial shared_auth_declined) is stripped from
-// EVERY resolved config, whatever layer carried it — picker-owned state must
-// not ride the cascade (ADR 0025).
+// shared_auth is stripped from EVERY resolved config, whatever layer carried
+// it — picker-owned state must not ride the cascade (ADR 0025). The retired
+// shared_auth_declined key still parses (ignored, no field behind it).
 func TestSharedAuthKeysNeverResolve(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
@@ -1010,9 +1005,6 @@ func TestSharedAuthKeysNeverResolve(t *testing.T) {
 	}
 	if !cfg.SharedAuth.Empty() {
 		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %+v", cfg.SharedAuth)
-	}
-	if len(cfg.SharedAuthDeclined) != 0 {
-		t.Fatalf("project-layer shared_auth_declined must be stripped from the resolved config, got %v", cfg.SharedAuthDeclined)
 	}
 }
 

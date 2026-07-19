@@ -29,9 +29,9 @@ func TemplateInstall(s Streams, uri, expectDigest string, yes bool) error {
 
 func stage2For(kind packages.Kind) func([]byte) error {
 	if kind == packages.KindSkill {
-		return packages.Stage2Skill
+		return skills.ValidatePrimaryBytes
 	}
-	return packages.Stage2Template
+	return config.ValidateTemplateBytes
 }
 
 func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes bool) error {

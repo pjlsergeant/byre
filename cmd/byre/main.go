@@ -36,7 +36,6 @@ type app struct {
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	installApp    func(s commands.Streams, box string) error
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
-	skillUpdate   func(s commands.Streams) error
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
@@ -58,7 +57,6 @@ var realApp = app{
 	deliver:          commands.Deliver,
 	installApp:       commands.InstallApp,
 	worktree:         commands.Worktree,
-	skillUpdate:      commands.SkillUpdate,
 	rebuild:          commands.Rebuild,
 	rehome:           commands.Rehome,
 	rehomeCandidates: commands.RehomeCandidates,
@@ -565,10 +563,10 @@ next develop.`,
 func skillCmd(a app, s commands.Streams) *cobra.Command {
 	skill := &cobra.Command{
 		Use:   "skill",
-		Short: "Manage skill packages (list, inspect, fork, init, validate, update).",
+		Short: "Manage skill packages (list, inspect, fork, init, validate).",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usageError("usage: byre skill list|inspect|install|uninstall|fork|init|validate|pack|update|archive-legacy")
+			return usageError("usage: byre skill list|inspect|install|uninstall|fork|init|validate|pack|archive-legacy")
 		},
 	}
 	skill.AddCommand(
@@ -615,12 +613,6 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 				}
 				return commands.SkillValidate(s, name)
 			},
-		},
-		&cobra.Command{
-			Use:   "update",
-			Short: "Explain that bundled packages update with byre itself (stub).",
-			Args:  noArgsU,
-			RunE:  func(cmd *cobra.Command, args []string) error { return a.skillUpdate(s) },
 		},
 		&cobra.Command{
 			Use:   "archive-legacy",

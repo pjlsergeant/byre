@@ -14,6 +14,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/skills"
 	"github.com/pjlsergeant/byre/internal/version"
 )
 
@@ -21,12 +22,19 @@ import (
 var fsys embed.FS
 
 func init() {
-	// Wire the catalog hooks config needs without config importing this
-	// package (would cycle: config tests import builtins which imports config).
-	// Display version for humans; compat for requires_byre only.
-	config.BundledFS = FS
-	config.ByreVersion = version.String
-	config.ByreCompat = version.Semver
+	// builtins is the composition point for catalog construction: it owns
+	// the embedded content, the version, and (via imports config cannot
+	// have) the full stage-2 parser set. This is the ONE loader seam config
+	// consumes — everything else about a catalog is an explicit argument.
+	config.CatalogLoader = LoadCatalogRaw
+}
+
+// stage2Hooks is the full eager stage-2 parser set for catalog ingest.
+func stage2Hooks() packages.Stage2Hooks {
+	return packages.Stage2Hooks{
+		Skill:    skills.ValidatePrimaryBytes,
+		Template: config.ValidateTemplateBytes,
+	}
 }
 
 // FS returns the embedded bundled packages filesystem. Top-level entries are
@@ -60,9 +68,8 @@ func LoadCatalog(home string) (*packages.Catalog, error) {
 
 // LoadCatalogRaw builds a catalog without EnsureStore (tests that manage the
 // store themselves). Display version is version.String(); compat is Semver.
-// Eager stage-2 hooks are package-level on packages (wired by skills/config init).
 func LoadCatalogRaw(home string) (*packages.Catalog, error) {
-	return packages.LoadCatalog(home, fsys, version.String(), version.Semver())
+	return packages.LoadCatalog(home, fsys, version.String(), version.Semver(), stage2Hooks())
 }
 
 // noticeOnce ensures store-ensure human notices print at most once per process.

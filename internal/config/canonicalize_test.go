@@ -1,7 +1,6 @@
 package config
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,14 +14,14 @@ func TestAliasEquivalenceAndBangCancel(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
 	// Wire a minimal bundled FS so aliases exist.
-	BundledFS = func() fs.FS {
-		return fstest.MapFS{
-			"skills/claude/skill.toml":     &fstest.MapFile{Data: []byte("description = \"c\"\n")},
-			"templates/go/template.config": &fstest.MapFile{Data: []byte("base = \"golang:1.22\"\n")},
-		}
+	bundled := fstest.MapFS{
+		"skills/claude/skill.toml":     &fstest.MapFile{Data: []byte("description = \"c\"\n")},
+		"templates/go/template.config": &fstest.MapFile{Data: []byte("base = \"golang:1.22\"\n")},
 	}
-	ByreVersion = func() string { return "0.2.0" }
-	t.Cleanup(func() { BundledFS = nil; ByreVersion = nil })
+	CatalogLoader = func(h string) (*packages.Catalog, error) {
+		return packages.LoadCatalog(h, bundled, "0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
+	}
+	t.Cleanup(func() { CatalogLoader = nil })
 
 	// default enables bare claude; project cancels with !byre/claude.
 	if err := os.WriteFile(filepath.Join(home, "default.config"),
@@ -30,7 +29,7 @@ func TestAliasEquivalenceAndBangCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Use resolveWithCatalog directly (avoids project.Resolve store layout).
-	cat, err := packages.LoadCatalog(home, BundledFS(), "0.2.0", "0.2.0")
+	cat, err := CatalogLoader(home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,15 +52,15 @@ func TestAliasEquivalenceAndBangCancel(t *testing.T) {
 func TestBareAndCanonicalAgentEquivalent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)
-	BundledFS = func() fs.FS {
-		return fstest.MapFS{
-			"skills/claude/skill.toml": &fstest.MapFile{Data: []byte("description = \"c\"\n")},
-		}
+	bundled := fstest.MapFS{
+		"skills/claude/skill.toml": &fstest.MapFile{Data: []byte("description = \"c\"\n")},
 	}
-	ByreVersion = func() string { return "0.2.0" }
-	t.Cleanup(func() { BundledFS = nil; ByreVersion = nil })
+	CatalogLoader = func(h string) (*packages.Catalog, error) {
+		return packages.LoadCatalog(h, bundled, "0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
+	}
+	t.Cleanup(func() { CatalogLoader = nil })
 
-	cat, err := packages.LoadCatalog(home, BundledFS(), "0.2.0", "0.2.0")
+	cat, err := CatalogLoader(home)
 	if err != nil {
 		t.Fatal(err)
 	}

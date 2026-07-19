@@ -9,6 +9,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/onboard"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -108,7 +109,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "none", "claude", &yes); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Use machine-wide credentials") {
+	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("a given --shared-auth must suppress the question:\n%s", errBuf.String())
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
@@ -128,7 +129,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 	if err := onboardIfNeeded(s2, proj2, p2, "none", "claude", &no); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf2.String(), "Use machine-wide credentials") {
+	if strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("--shared-auth=false must suppress the question:\n%s", errBuf2.String())
 	}
 	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"))
@@ -161,7 +162,7 @@ func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Use machine-wide credentials to log in to claude?") {
+	if !strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("expected the shared-auth offer:\n%s", errBuf.String())
 	}
 	// A "no" leaves no trace: nothing was saved, so no default.config at all.
@@ -189,7 +190,7 @@ func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf2.String(), "Use machine-wide credentials to log in to claude?") {
+	if !strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("the offer is per box — the next box must be asked:\n%s", errBuf2.String())
 	}
 }
@@ -232,7 +233,7 @@ func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf2.String(), "Use machine-wide credentials to log in to claude?") {
+	if !strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("one box's yes must not settle the question for the next box:\n%s", errBuf2.String())
 	}
 }
@@ -250,7 +251,7 @@ func TestOnboardVestigialDeclinedKeyDoesNotSuppressOffer(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf.String(), "Use machine-wide credentials to log in to claude?") {
+	if !strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("a v0.1.7 decline must not silence the per-box offer:\n%s", errBuf.String())
 	}
 }
@@ -291,7 +292,7 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errBuf2.String(), "Use machine-wide credentials to log in to claude?") ||
+	if !strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) ||
 		!strings.Contains(errBuf2.String(), "[Y/n, i for info]") {
 		t.Fatalf("the next box must be asked, prefilled from the preference:\n%s", errBuf2.String())
 	}
@@ -368,7 +369,7 @@ func TestOnboardNoOfferWhenCompanionAlreadyOnMachineWide(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Use machine-wide credentials") {
+	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
@@ -395,7 +396,7 @@ func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Use machine-wide credentials") {
+	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
 	}
 	got, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
@@ -415,7 +416,7 @@ func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Use machine-wide credentials") {
+	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("grok")) {
 		t.Fatalf("no ready companion — no offer:\n%s", errBuf.String())
 	}
 }
@@ -428,7 +429,7 @@ func TestOnboardFullyFlaggedMakesNoOffer(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "none", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(errBuf.String(), "Use machine-wide credentials") {
+	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("fully-flagged onboarding must stay non-interactive:\n%s", errBuf.String())
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {

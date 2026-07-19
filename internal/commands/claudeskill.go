@@ -15,10 +15,30 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/configui"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
+
+// claudeSkillVerbs plugs the [[claude_skills]] vocabulary into the shared
+// layer-edit lifecycle (nameddecl.go).
+var claudeSkillVerbs = declVerbs[config.ClaudeSkill]{
+	kind:   "claude skill",
+	name:   func(cs config.ClaudeSkill) string { return cs.Name },
+	marker: func(name string) config.ClaudeSkill { return config.ClaudeSkill{Name: name} },
+	list:   func(c *config.Config) *[]config.ClaudeSkill { return &c.ClaudeSkills },
+	effectiveHas: func(effective config.Config, res skills.Resolved, name string) (bool, error) {
+		set, err := skills.ClaudeSkillSet(effective, res)
+		if err != nil {
+			return false, err
+		}
+		for _, d := range set {
+			if d.CS.Name == name {
+				return true, nil
+			}
+		}
+		return false, nil
+	},
+}
 
 // ClaudeSkillAdd implements `byre claude-skill add <dir> [--name <name>]`:
 // validate the directory as a Claude Skill and add-or-update the declaration
@@ -58,185 +78,23 @@ func ClaudeSkillAdd(s Streams, projectDir string, global bool, name, dir string)
 	if err := config.ValidateClaudeSkill(cs, false); err != nil {
 		return err
 	}
-
-	path, label, prepare, err := mcpLayerPath(projectDir, global)
-	if err != nil {
+	if err := addNamedDecl(s, projectDir, global, claudeSkillVerbs, name, cs); err != nil {
 		return err
-	}
-	cur, err := config.ParseFile(path)
-	if err != nil {
-		return err
-	}
-
-	reopened := false
-	kept := cur.ClaudeSkills[:0:0]
-	replaced := false
-	for _, e := range cur.ClaudeSkills {
-		if e.Name == "!"+name {
-			reopened = true // a closure on this name is superseded by the add
-			continue
-		}
-		if e.Name == name {
-			kept = append(kept, cs)
-			replaced = true
-			continue
-		}
-		kept = append(kept, e)
-	}
-	if !replaced {
-		kept = append(kept, cs)
-	}
-	cur.ClaudeSkills = kept
-	// Validate before the enrolling prepare (mirrors the config editor's
-	// ordering): a save the validator would refuse must not enroll. Save
-	// re-runs the same check on the way to disk; the duplication buys the
-	// ordering.
-	if err := cur.ValidateLayer(); err != nil {
-		return err
-	}
-	if prepare != nil {
-		if err := prepare(); err != nil {
-			return err
-		}
-	}
-	if err := configui.Save(path, cur); err != nil {
-		return err
-	}
-
-	verb := "added"
-	if replaced {
-		verb = "updated"
-	}
-	fmt.Fprintf(s.Err, "byre: %s claude skill %s in the %s (%s)\n", verb, name, label, path)
-	if reopened {
-		fmt.Fprintf(s.Err, "byre: the layer's \"!%s\" closure was removed — the add re-opens it\n", name)
 	}
 	fmt.Fprintf(s.Err, "byre: the directory bakes into the image at the next develop — edits to %s apply on rebuild\n", dir)
 	fmt.Fprintln(s.Err, "byre: `byre status` shows the effective set and delivery.")
 	return nil
 }
 
-// ClaudeSkillRemove implements `byre claude-skill remove <name>` — the same
-// closure-smart contract as `byre mcp remove` (see MCPRemove for the ruling
-// trail): delete the layer's own declaration; write the `!name` closure when
-// the name is still effective from below OR the check is unresolvable (the
-// closure guarantees the verb's promise; an inert marker is visible and
-// cheap to delete); error only when there is nothing to remove anywhere.
+// ClaudeSkillRemove implements `byre claude-skill remove <name>` — the shared
+// closure-smart contract (see removeNamedDecl for the full taxonomy and
+// ruling trail).
 func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) error {
 	name = strings.TrimPrefix(name, "!") // tolerate a pasted closure spelling
 	if !config.ValidClaudeSkillName(name) {
 		return fmt.Errorf("claude-skill remove: %q is not a valid claude skill name", name)
 	}
-
-	path, label, prepare, err := mcpLayerPath(projectDir, global)
-	if err != nil {
-		return err
-	}
-	cur, err := config.ParseFile(path)
-	if err != nil {
-		return err
-	}
-
-	hadEntry, hadClosure := false, false
-	kept := cur.ClaudeSkills[:0:0]
-	for _, e := range cur.ClaudeSkills {
-		switch e.Name {
-		case name:
-			hadEntry = true
-		case "!" + name:
-			hadClosure = true
-			kept = append(kept, e) // an existing closure stays
-		default:
-			kept = append(kept, e)
-		}
-	}
-	cur.ClaudeSkills = kept
-
-	stillEffective := false
-	var checkErr error
-	if !global {
-		stillEffective, checkErr = claudeSkillStillEffective(cur, name)
-	}
-
-	wroteClosure := false
-	if (stillEffective || checkErr != nil) && !hadClosure {
-		cur.ClaudeSkills = append(cur.ClaudeSkills, config.ClaudeSkill{Name: "!" + name})
-		wroteClosure = true
-	}
-	if !hadEntry && !wroteClosure {
-		if hadClosure {
-			fmt.Fprintf(s.Err, "byre: claude skill %s is already closed in the %s — nothing to do\n", name, label)
-			return nil
-		}
-		return fmt.Errorf("claude skill %s: not declared in the %s and not effective from below — nothing to remove", name, label)
-	}
-	// Validate before the enrolling prepare (mirrors the config editor's
-	// ordering): a save the validator would refuse must not enroll. Save
-	// re-runs the same check on the way to disk; the duplication buys the
-	// ordering.
-	if err := cur.ValidateLayer(); err != nil {
-		return err
-	}
-	if prepare != nil {
-		if err := prepare(); err != nil {
-			return err
-		}
-	}
-	if err := configui.Save(path, cur); err != nil {
-		return err
-	}
-
-	switch {
-	case hadEntry && wroteClosure && checkErr == nil:
-		fmt.Fprintf(s.Err, "byre: removed claude skill %s from the %s AND closed the name (\"!%s\") — a lower layer or skill still declares it\n", name, label, name)
-	case hadEntry && wroteClosure:
-		fmt.Fprintf(s.Err, "byre: removed claude skill %s from the %s AND closed the name (\"!%s\")\n", name, label, name)
-	case hadEntry:
-		fmt.Fprintf(s.Err, "byre: removed claude skill %s from the %s (%s)\n", name, label, path)
-	case checkErr != nil:
-		fmt.Fprintf(s.Err, "byre: closed claude skill %s in the %s (\"!%s\")\n", name, label, name)
-	default:
-		fmt.Fprintf(s.Err, "byre: closed claude skill %s in the %s (\"!%s\") — it was declared by a lower layer or skill\n", name, label, name)
-	}
-	if checkErr != nil {
-		fmt.Fprintf(s.Err, "byre: couldn't verify lower layers/skills (%v) — the closure guarantees the removal either way; it's inert if nothing else declares %s (delete it in `byre config` if so)\n", checkErr, name)
-	}
-	fmt.Fprintln(s.Err, "byre: applies on the next develop.")
-	return nil
-}
-
-// claudeSkillStillEffective reports whether name survives in the effective
-// Claude Skill set with `cur` as the project layer (post tentative edit).
-func claudeSkillStillEffective(cur config.Config, name string) (bool, error) {
-	home, err := project.Home()
-	if err != nil {
-		return false, err
-	}
-	cat, err := builtins.LoadCatalogRaw(home)
-	if err != nil {
-		return false, err
-	}
-	if cat == nil {
-		return false, fmt.Errorf("catalog unavailable")
-	}
-	effective, err := config.ResolveProposed(cur)
-	if err != nil {
-		return false, err
-	}
-	res, err := skills.Resolve(effective, cat)
-	if err != nil {
-		return false, err
-	}
-	set, err := skills.ClaudeSkillSet(effective, res)
-	if err != nil {
-		return false, err
-	}
-	for _, d := range set {
-		if d.CS.Name == name {
-			return true, nil
-		}
-	}
-	return false, nil
+	return removeNamedDecl(s, projectDir, global, claudeSkillVerbs, name)
 }
 
 // ClaudeSkillList implements `byre claude-skill list`: the effective declared

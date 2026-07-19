@@ -22,50 +22,37 @@ import (
 	"strconv"
 	"strings"
 
-	"io/fs"
-
 	"github.com/BurntSushi/toml"
 
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
-// BundledFS / ByreVersion / ByreCompat are wired by the builtins package (init)
-// so config can build a catalog without importing builtins (avoids an import
-// cycle). Tests may set them to a fixture FS / fixed version.
-var (
-	BundledFS   func() fs.FS
-	ByreVersion func() string // display (version.String)
-	ByreCompat  func() string // requires_byre only (version.Semver)
-)
+// CatalogLoader is the ONE seam through which config's internal resolution
+// (template lookup, name canonicalization) builds a catalog. builtins — the
+// package owning the embedded bundled content, the byre version, and the
+// full stage-2 parser set — constructs the real loader and installs it here,
+// because config cannot import builtins (builtins imports config) or skills
+// (skills imports config). Tests inject fixture loaders the same way. When
+// unset (config-only tests), catalogFor degrades to a local-store-only
+// catalog with config's own template parser and no bundled content.
+var CatalogLoader func(home string) (*packages.Catalog, error)
 
-func init() {
-	// Eager template stage-2 for catalog local ingest (round 3).
-	packages.Stage2Template = func(raw []byte) error {
-		_, err := ParseTemplateBody(raw)
-		return err
-	}
+// ValidateTemplateBytes is the eager stage-2 template check for catalog
+// ingest: strict-parse the template body. Exported for the catalog
+// constructors (builtins, catalogFor's fallback) to hand to LoadCatalog.
+func ValidateTemplateBytes(raw []byte) error {
+	_, err := ParseTemplateBody(raw)
+	return err
 }
 
-// catalogFor builds the multi-provider catalog for home.
+// catalogFor builds the multi-provider catalog for home via CatalogLoader.
 func catalogFor(home string) (*packages.Catalog, error) {
-	var bundled fs.FS
-	if BundledFS != nil {
-		bundled = BundledFS()
+	if CatalogLoader != nil {
+		return CatalogLoader(home)
 	}
-	display := "0.0.0-devel"
-	if ByreVersion != nil {
-		if v := ByreVersion(); v != "" {
-			display = v
-		}
-	}
-	compat := display
-	if ByreCompat != nil {
-		if v := ByreCompat(); v != "" {
-			compat = v
-		}
-	}
-	return packages.LoadCatalog(home, bundled, display, compat)
+	return packages.LoadCatalog(home, nil, "0.0.0-devel", "0.0.0-devel",
+		packages.Stage2Hooks{Template: ValidateTemplateBytes})
 }
 
 // SourceHint is one [sources] acquisition hint. From names the cascade
@@ -92,6 +79,18 @@ func (h SourceHint) InstallHint(kind string) string {
 		return fmt.Sprintf("%s   (hint from %s)", cmd, h.From)
 	}
 	return cmd
+}
+
+// retiredConfigKeys is the table of top-level TOML keys past versions wrote
+// whose machinery a compat sunset removed: the stale line parses and is
+// ignored, never a parse failure (deleting it is the user's housekeeping,
+// not an upgrade gate). Values say what the key was, for this table's
+// readers — the packages.RetiredNames of config vocabulary. Sunset the
+// ENTRY, too, once no supported upgrade path can still carry the key.
+var retiredConfigKeys = map[string]string{
+	// v0.1.7's machine-wide shared-auth decline record (ADR 0025); nothing
+	// has read it since the offer's default became No.
+	"shared_auth_declined": "shared-auth decline record",
 }
 
 // ProjectConfigName is the fixed per-project config filename.
@@ -350,13 +349,6 @@ type Config struct {
 	// cascade; banned in template.config (templates reference no packages).
 	Sources map[string]SourceHint `toml:"sources,omitempty"`
 
-	// SharedAuthDeclined is VESTIGIAL (ADR 0025): v0.1.7's machine-wide
-	// shared-auth offer recorded declines here; nothing reads it anymore —
-	// the offer's default is already No, so a decline needs no record. It
-	// stays decodable only so configs v0.1.7 wrote still parse (Parse
-	// rejects unknown keys); resolveWith strips it like all picker state.
-	SharedAuthDeclined []string `toml:"shared_auth_declined,omitempty"`
-
 	Apt       []string          `toml:"apt,omitempty"`
 	NpmGlobal []string          `toml:"npm_global,omitempty"`
 	Env       map[string]string `toml:"env,omitempty"`
@@ -587,7 +579,6 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// never reaches a resolved config — onboarding reads it straight from
 	// default.config, nothing else may.
 	resolved.SharedAuth = SharedAuthPref{}
-	resolved.SharedAuthDeclined = nil
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -734,11 +725,15 @@ func Parse(content []byte) (Config, error) {
 		return Config{}, err
 	}
 	// SharedAuthPref's UnmarshalTOML consumes shared_auth, but BurntSushi still
-	// reports nested keys (shared_auth.claude) as Undecoded. Drop those; any
-	// other undecoded key is a real typo.
+	// reports nested keys (shared_auth.claude) as Undecoded. Drop those, and
+	// tolerate retired top-level keys (retiredConfigKeys) that past versions
+	// wrote; any other undecoded key is a real typo.
 	var real []toml.Key
 	for _, k := range md.Undecoded() {
 		if len(k) > 0 && k[0] == "shared_auth" {
+			continue
+		}
+		if len(k) == 1 && retiredConfigKeys[k[0]] != "" {
 			continue
 		}
 		real = append(real, k)
@@ -778,7 +773,6 @@ func Merge(base, over Config) Config {
 	if !over.SharedAuth.Empty() {
 		out.SharedAuth = over.SharedAuth.Clone()
 	}
-	out.SharedAuthDeclined = mergeStrings(base.SharedAuthDeclined, over.SharedAuthDeclined)
 	out.Egress, out.EgressClosed = mergeEgress(base, over)
 	// Offered egress keeps the plain-list idiom: it is never enforced, so a
 	// closure has nothing to subtract from and the marker just removes the
@@ -871,27 +865,64 @@ func isRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!"
 // lists from the content allowlists (packageRe rejects a leading '!', which is
 // exactly what makes the marker unambiguous — but a marker is legal in a
 // layer, and Merge consumes it before the resolved check runs).
-func (c Config) validateScalars(layer bool) error {
-	apt, npm := c.Apt, c.NpmGlobal
-	if layer {
-		apt = filter(apt, func(s string) bool { return !isRemoval(s) })
-		npm = filter(npm, func(s string) bool { return !isRemoval(s) })
+// validateScalarsLayer is the layer-mode view: `!name` removal markers in the
+// package lists and offered egress are exempt from the content allowlists
+// (packageRe rejects a leading '!', which is exactly what makes the marker
+// unambiguous — but a marker is legal in a layer, and Merge consumes it
+// before the resolved check runs); an egress closure marker is stripped to
+// its name and held to the same injection-safe parser (Merge KEEPS it, and
+// the stripped name travels to the netns helper's env beside the open
+// entries); `extends` is name-checked (it is consumed by resolution).
+func (c Config) validateScalarsLayer() error {
+	egress := c.Egress
+	if slices.ContainsFunc(egress, isRemoval) {
+		egress = make([]string, 0, len(c.Egress))
+		for _, e := range c.Egress {
+			if isRemoval(e) {
+				e = e[1:]
+			}
+			egress = append(egress, e)
+		}
 	}
+	return c.validateScalarsCommon(
+		filter(c.Apt, func(s string) bool { return !isRemoval(s) }),
+		filter(c.NpmGlobal, func(s string) bool { return !isRemoval(s) }),
+		egress,
+		filter(c.EgressOffered, func(s string) bool { return !isRemoval(s) }),
+		func() error {
+			if err := ValidateLayerName(c.Extends); err != nil {
+				return fmt.Errorf("extends: %w", err)
+			}
+			return nil
+		},
+	)
+}
+
+// validateScalarsResolved is the resolved-mode view: markers must be gone
+// (Merge consumed or extracted them; the shape checks reject a surviving
+// '!'), and `extends` must not survive resolution — same stance as every
+// other resolved-config marker.
+func (c Config) validateScalarsResolved() error {
+	return c.validateScalarsCommon(c.Apt, c.NpmGlobal, c.Egress, c.EgressOffered,
+		func() error { return fmt.Errorf("extends: only meaningful in a cascade layer") })
+}
+
+// validateScalarsCommon is the mode-independent body; the two entry points
+// above hand it their mode's view of the marker-carrying lists and the
+// `extends` policy (checked in original precedence order — after engine,
+// before content). The layer/resolved duality exists because one Config type
+// currently carries both lifecycles; if that ever splits into distinct types,
+// these entry points become their methods.
+func (c Config) validateScalarsCommon(apt, npm, egress, offered []string, extends func() error) error {
 	switch c.Engine {
 	case "", "auto", "docker", "podman":
 	default:
 		return fmt.Errorf("engine: %q invalid (want auto|docker|podman)", c.Engine)
 	}
 
-	// extends is a chain pointer, consumed by resolution: legal (and
-	// name-checked) in a layer, a bug if it survives to a resolved config —
-	// same stance as every other resolved-config marker.
 	if c.Extends != "" {
-		if !layer {
-			return fmt.Errorf("extends: only meaningful in a cascade layer")
-		}
-		if err := ValidateLayerName(c.Extends); err != nil {
-			return fmt.Errorf("extends: %w", err)
+		if err := extends(); err != nil {
+			return err
 		}
 	}
 
@@ -922,16 +953,9 @@ func (c Config) validateScalars(layer bool) error {
 	}
 
 	// Egress entries (open and offered) share the skills' grammar (ADR 0019).
-	// Unlike the package lists above, an egress closure marker is NOT exempt
-	// in layer mode: Merge keeps it (as EgressClosed) instead of consuming
-	// it, and the stripped name travels to the netns helper's env beside the
-	// open entries -- so it is held to the same injection-safe parser. In
-	// resolved mode a marker still left in Egress fails loudly (the parser
-	// rejects '!'), same stance as every other resolved-config marker.
-	for _, e := range c.Egress {
-		if layer && isRemoval(e) {
-			e = e[1:]
-		}
+	// The callers already applied their mode's marker policy to the egress
+	// and offered views handed in here.
+	for _, e := range egress {
 		if _, _, err := ParseEgress(e); err != nil {
 			return err
 		}
@@ -940,10 +964,6 @@ func (c Config) validateScalars(layer bool) error {
 		if _, _, err := ParseEgress(e); err != nil {
 			return err
 		}
-	}
-	offered := c.EgressOffered
-	if layer {
-		offered = filter(offered, func(s string) bool { return !isRemoval(s) })
 	}
 	for _, e := range offered {
 		if _, _, err := ParseEgress(e); err != nil {
@@ -1065,12 +1085,34 @@ func validateVolumeShape(v Volume) error {
 	return nil
 }
 
-// validatePorts checks each port binding and that no two collide. Layer mode
-// permits `remove = true` marker entries (ADR 0018) — container in range,
-// nothing else set, and no collision accounting since a marker binds nothing.
-// Resolved mode rejects them: Merge consumes markers, so one surviving to a
-// resolved config is a bug, same stance as `!name` in the shape checks.
-func (c Config) validatePorts(layer bool) error {
+// The port validators check each binding and that no two collide (ADR 0018);
+// they differ only in marker policy, split per lifecycle:
+//
+// validatePortsLayer permits `remove = true` markers (name-only shape:
+// removal keys on container port alone, so a host/interface set alongside
+// implies a narrower removal than the one that will happen — refuse rather
+// than silently over-remove).
+func (c Config) validatePortsLayer() error {
+	return c.validatePorts(func(p Port) error {
+		if p.Host != 0 || p.Interface != "" {
+			return fmt.Errorf("port %d: remove takes only a container port (removal ignores host/interface)", p.Container)
+		}
+		return nil
+	})
+}
+
+// validatePortsResolved rejects markers: Merge consumes them, so one
+// surviving to a resolved config is a bug, same stance as `!name` in the
+// shape checks.
+func (c Config) validatePortsResolved() error {
+	return c.validatePorts(func(p Port) error {
+		return fmt.Errorf("port %d: remove is only meaningful in a cascade layer", p.Container)
+	})
+}
+
+// validatePorts is the shared body; marker is the caller's policy for a
+// `remove = true` entry (nil error = tolerate and skip binding checks).
+func (c Config) validatePorts(marker func(Port) error) error {
 	// container required in range; host 0 (= same as container) or in range; no
 	// two bindings collide on the same effective interface:host, and a binding on
 	// 0.0.0.0 (all interfaces) can't share a host port with any other interface —
@@ -1081,14 +1123,8 @@ func (c Config) validatePorts(layer bool) error {
 			return fmt.Errorf("port: container port %d out of range (1-65535)", p.Container)
 		}
 		if p.Remove {
-			if !layer {
-				return fmt.Errorf("port %d: remove is only meaningful in a cascade layer", p.Container)
-			}
-			// Removal keys on container port alone; a host/interface here implies
-			// a narrower removal than the one that will happen — refuse rather
-			// than silently over-remove.
-			if p.Host != 0 || p.Interface != "" {
-				return fmt.Errorf("port %d: remove takes only a container port (removal ignores host/interface)", p.Container)
+			if err := marker(p); err != nil {
+				return err
 			}
 			continue
 		}
@@ -1133,7 +1169,7 @@ func (c Config) validatePorts(layer bool) error {
 // removal marker reaching here would be a bug (Merge should have consumed it) and
 // is correctly rejected by the shape checks.
 func (c Config) Validate() error {
-	if err := c.validateScalars(false); err != nil {
+	if err := c.validateScalarsResolved(); err != nil {
 		return err
 	}
 
@@ -1163,13 +1199,13 @@ func (c Config) Validate() error {
 		}
 		targets[v.Target] = "volume " + v.Name
 	}
-	if err := c.validateMCPs(false); err != nil {
+	if err := c.validateMCPsResolved(); err != nil {
 		return err
 	}
-	if err := c.validateClaudeSkills(false); err != nil {
+	if err := c.validateClaudeSkillsResolved(); err != nil {
 		return err
 	}
-	return c.validatePorts(false)
+	return c.validatePortsResolved()
 }
 
 // ValidateLayer checks a SINGLE unmerged layer (a raw byre.config) for the
@@ -1187,7 +1223,7 @@ func (c Config) Validate() error {
 // or mount vs volume) fail the resolved Validate at develop time — better to
 // refuse at save, with the file open, than during the next develop.
 func (c Config) ValidateLayer() error {
-	if err := c.validateScalars(true); err != nil {
+	if err := c.validateScalarsLayer(); err != nil {
 		return err
 	}
 	for id, h := range c.Sources {
@@ -1249,13 +1285,13 @@ func (c Config) ValidateLayer() error {
 		}
 		seenTargets[v.Target] = "volume " + v.Name
 	}
-	if err := c.validateMCPs(true); err != nil {
+	if err := c.validateMCPsLayer(); err != nil {
 		return err
 	}
-	if err := c.validateClaudeSkills(true); err != nil {
+	if err := c.validateClaudeSkillsLayer(); err != nil {
 		return err
 	}
-	return c.validatePorts(true)
+	return c.validatePortsLayer()
 }
 
 // RelSafe reports whether p names a relative path strictly BELOW its root: not

@@ -59,13 +59,6 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		}
 	}
 
-	// Adoption-record sweep: pre-preset adoption records migrate to `applied`
-	// markers (same concept -- the sha of what the project took on -- so
-	// adopted projects land in the right drift state instead of losing
-	// their history); sticky-decline records are deleted (with no
-	// unsolicited prompt there is nothing to decline).
-	sweepAdoptionRecords(home)
-
 	// LEGACY notice: dirs under skills/templates whose bare names are
 	// protected (bundled or retired). Never load them; offer archive once
 	// per EnsureStore when any exist (caller may ignore the notice).
@@ -79,69 +72,6 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		fmt.Fprintln(out, "      (or move them by hand to skills.legacy/ / templates.legacy/)")
 	}
 	return nil
-}
-
-// sweepAdoptionRecords is the adoption-record half of the migration sweep: per project
-// store, `adopted` (the sha of the last adopted repo config) becomes an
-// `applied` marker -- hash line, then a source line marking the migration --
-// and `declined` records are removed. Idempotent, and it NEVER deletes the
-// only copy of the history: `adopted` is removed only once an `applied`
-// marker provably exists (already there, or the migrated write -- staged
-// then hard-linked into place, so a crash cannot leave a truncated marker
-// and a concurrent writer cannot be clobbered -- succeeded).
-func sweepAdoptionRecords(home string) {
-	entries, err := os.ReadDir(filepath.Join(home, "projects"))
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dir := filepath.Join(home, "projects", e.Name())
-		adopted := filepath.Join(dir, "adopted")
-		applied := filepath.Join(dir, "applied")
-		if b, err := os.ReadFile(adopted); err == nil {
-			switch _, statErr := os.Stat(applied); {
-			case statErr == nil:
-				// A marker already exists; the old record is redundant.
-				_ = os.Remove(adopted)
-			case os.IsNotExist(statErr):
-				h := strings.TrimSpace(string(b))
-				// Create-if-absent, atomically: EnsureStore runs outside the
-				// per-project setup lock, so a concurrent `preset apply` may
-				// write a CURRENT marker between the stat and here -- a
-				// replacing rename would clobber it with stale history.
-				if createExclusive(applied, h+"\n(migrated from a pre-preset adoption record)\n") == nil {
-					_ = os.Remove(adopted)
-				}
-				// Write failed (including lost the race): keep `adopted`;
-				// the next sweep re-evaluates against the live marker.
-			default:
-				// Stat failed for an unknown reason: touch nothing.
-			}
-		}
-		_ = os.Remove(filepath.Join(dir, "declined"))
-	}
-}
-
-// createExclusive lands content at path atomically AND only if path does not
-// exist: full bytes staged to a temp file, then hard-linked into place --
-// link(2) fails on an existing destination, unlike rename(2), which replaces.
-func createExclusive(path, content string) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Link(tmp.Name(), path)
 }
 
 // findLegacyDirs returns store-relative paths of flat skill/template dirs

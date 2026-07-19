@@ -18,7 +18,7 @@ func TestSourcesParseMergeAndTemplateRemedy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "default.config"), []byte(def), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestSourcesDefaultLayerRemedy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "default.config"), []byte(def), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
 	if err != nil {
 		t.Fatal(err)
 	}

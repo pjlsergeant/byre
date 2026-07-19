@@ -10,7 +10,7 @@ import (
 func testCat(t *testing.T) (home string, cat *packages.Catalog) {
 	t.Helper()
 	home = t.TempDir()
-	cat, err := packages.LoadCatalog(home, FS(), "0.2.0", "0.2.0")
+	cat, err := packages.LoadCatalog(home, FS(), "0.2.0", "0.2.0", stage2Hooks())
 	if err != nil {
 		t.Fatal(err)
 	}
