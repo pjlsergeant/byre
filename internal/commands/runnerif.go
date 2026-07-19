@@ -44,6 +44,7 @@ type sessionRunner interface {
 	IsDockerDesktop() (bool, error)
 	Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error
 	ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error)
+	ExecOutput(containerID string, uid, gid int, stdout io.Writer, command ...string) error
 }
 
 // volumeRunner is the named-volume surface: enumeration, lifecycle, and the

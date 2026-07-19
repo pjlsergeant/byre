@@ -40,7 +40,7 @@ var commandsPageAreas = []struct {
 	title string
 	names []string
 }{
-	{"Daily driving", []string{"develop", "shell", "worktree", "deliver"}},
+	{"Daily driving", []string{"develop", "shell", "worktree", "deliver", "grab"}},
 	{"Inspection", []string{"status", "dockerfile", "dockerrun", "ejectfirewall", "version"}},
 	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill"}},
 	{"Skills & templates", []string{"skill", "template"}},

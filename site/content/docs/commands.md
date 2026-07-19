@@ -21,6 +21,7 @@ every command and flag.
 | `byre shell` | Open a shell (as the dev user) in the running session. |
 | `byre worktree <name>` | Create a git worktree and start a parallel session in it. |
 | `byre deliver [<path>... \| -]` | Deliver files from the host into a running box's /inbox. |
+| `byre grab <box-path> [<host-path> \| -]` | Grab a file or directory out of a running box onto the host. |
 
 ## Inspection
 

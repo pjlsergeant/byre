@@ -35,6 +35,7 @@ type app struct {
 	forget        func(s commands.Streams, dir string, force bool) error
 	shell         func(s commands.Streams, dir string) error
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
+	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
 	installApp    func(s commands.Streams, box string) error
 	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
 	rebuild       func(s commands.Streams, dir string) error
@@ -56,6 +57,7 @@ var realApp = app{
 	forget:           commands.Forget,
 	shell:            commands.Shell,
 	deliver:          commands.Deliver,
+	grab:             commands.Grab,
 	installApp:       commands.InstallApp,
 	worktree:         commands.Worktree,
 	rebuild:          commands.Rebuild,
@@ -163,6 +165,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		statusCmd(a, dir, s),
 		shellCmd(a, dir, s),
 		deliverCmd(a, dir, s),
+		grabCmd(a, dir, s),
 		worktreeCmd(a, dir, s),
 		skillCmd(a, s),
 		templateCmd(s),
@@ -402,6 +405,47 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 	c.Flags().BoolVar(&opts.Tar, "tar", false, "unpack a tar archive from stdin into /inbox (remote delivery's transport)")
 	c.Flags().IntVar(&opts.Proto, "proto", 0, "remote-delivery protocol handshake (fails on version skew)")
 	c.Flags().StringVar(&opts.RemoteByre, "remote-byre", "", "byre binary path on the ssh:// remote (when it isn't on the ssh PATH)")
+	return c
+}
+
+func grabCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var opts deliver.Options
+	c := &cobra.Command{
+		Use:   "grab <box-path> [<host-path> | -]",
+		Short: "Grab a file or directory out of a running box onto the host.",
+		Long: `Get a file (or directory, recursively) out of a running box: deliver's
+mirror. <box-path> is a path inside the box — relative paths count from
+/workspace — and it lands at <host-path> (default: the current directory),
+with the landed host path printed to stdout.
+
+Grab never overwrites host files: an existing <host-path> directory receives
+the file under its box name; any name collision uniquifies (report.pdf →
+report-2.pdf), and the printed path is always where the bytes actually
+landed. '-' streams a single file's content to stdout instead.
+
+The box is found machine-wide exactly as 'byre deliver' finds one: --box
+picks explicitly, otherwise the box whose workdir contains the current
+directory, otherwise the only running box owned by you, otherwise a picker.
+Boxes started by other users are hidden unless --skip-uid-check.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			switch {
+			case len(args) < 1:
+				return usageError("usage: byre grab <box-path> [<host-path> | -]")
+			case len(args) > 2:
+				return usageError(fmt.Sprintf("byre grab: unexpected argument %q", args[2]))
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hostPath := "."
+			if len(args) == 2 {
+				hostPath = args[1]
+			}
+			return a.grab(s, dir, opts, args[0], hostPath)
+		},
+	}
+	c.Flags().StringVar(&opts.Box, "box", "", "grab from this box (unique id or project prefix)")
+	c.Flags().BoolVar(&opts.SkipUIDCheck, "skip-uid-check", false, "include (and permit) boxes owned by other users")
 	return c
 }
 
