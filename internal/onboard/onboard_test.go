@@ -280,7 +280,7 @@ func TestOfferSharedAuth(t *testing.T) {
 	// the line never claims the answer reaches all projects. Bundled
 	// claimants keep the line bare: no provenance parenthetical
 	// (ruling 2026-07-17, field-QA finding 2).
-	if !strings.Contains(out.String(), "Use machine-wide credentials to log in to claude? [y/N, i for info]") {
+	if !strings.Contains(out.String(), SharedAuthPrompt("claude")+" [y/N, i for info]") {
 		t.Fatalf("offer must be the bare machine-wide question, defaulting No:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "(via ") {
@@ -313,7 +313,7 @@ func TestOfferSharedAuthInfo(t *testing.T) {
 			t.Errorf("info must state %q:\n%s", want, got)
 		}
 	}
-	if strings.Count(got, "Use machine-wide credentials") != 2 {
+	if strings.Count(got, SharedAuthPrompt("claude")) != 2 {
 		t.Fatalf("info must re-ask the question:\n%s", got)
 	}
 	if !strings.Contains(got, "machine-wide volume") {
@@ -413,7 +413,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	if c.SharedAuthCompanion != "codex-shared-auth" || !c.SharedAuth || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	if offer, save := strings.Index(out.String(), "Use machine-wide credentials to log in to codex"), strings.Index(out.String(), "Save these"); offer < 0 || save < 0 || offer > save {
+	if offer, save := strings.Index(out.String(), SharedAuthPrompt("codex")), strings.Index(out.String(), "Save these"); offer < 0 || save < 0 || offer > save {
 		t.Fatalf("the offer must precede the save-default question:\n%s", out.String())
 	}
 	// An agent without a companion gets no offer.
@@ -422,7 +422,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.SharedAuthCompanion != "" || c.SharedAuth || strings.Contains(out.String(), "Use machine-wide credentials") {
+	if c.SharedAuthCompanion != "" || c.SharedAuth || strings.Contains(out.String(), SharedAuthPrompt("claude")) {
 		t.Fatalf("no companion — no offer: %+v\n%s", c, out.String())
 	}
 }

@@ -108,6 +108,15 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 - Unit tests per package; Docker-touching logic is tested via injected runner
   interfaces (fakes). Gated integration tests (`BYRE_DOCKER_TESTS=1`) run
   host-side.
+- **Tests pin contracts byte-exact; behavior they assert by rule, not
+  prose.** Contracts (the gen Dockerfile golden, mcp.json, exit codes, the
+  commands-page pin) stay byte-exact, commented as contracts. A rejection
+  or output test asserts the RULE fired — a stable identifying fragment
+  plus the offending value/remedy — never full sentences; `err == nil`
+  alone under-asserts (the wrong rule keeps it green). Prose asserted in
+  3+ tests gets an exported const/func the product prints and tests
+  reference (e.g. `onboard.SharedAuthPrompt`), so wording changes in one
+  place — presence is the assertion, prose is not.
 - Determinism matters in `internal/gen` (byte-stable Dockerfile output; a golden
   test pins it).
 - Keep core opinion-free: opinions live in skills. The agent is a skill.
