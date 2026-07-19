@@ -16,6 +16,7 @@ package tuitest
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -87,7 +88,12 @@ func Binary(t *testing.T) string {
 // reapStaleBinDirs removes byre-tuitest-bin-<pid>-* dirs whose owning process
 // is gone. Best-effort: a dir that won't parse or won't remove is skipped
 // (legacy pid-less dirs from before this scheme age out by hand), and a live
-// sibling — a concurrent package's test binary — is left alone.
+// sibling — a concurrent package's test binary — is left alone. Runs before
+// this process creates its own dir, so a dir carrying OUR pid is a previous
+// pid incarnation's and is removed unconditionally — the liveness probe would
+// misread it as alive. Death is proven only by "no such process" (ESRCH /
+// ErrProcessDone); any other probe result (e.g. EPERM: alive, different
+// user) keeps the dir.
 func reapStaleBinDirs() {
 	entries, err := os.ReadDir(os.TempDir())
 	if err != nil {
@@ -103,12 +109,17 @@ func reapStaleBinDirs() {
 			continue
 		}
 		pid, err := strconv.Atoi(pidStr)
-		if err != nil || pid <= 0 || pid == os.Getpid() {
+		if err != nil || pid <= 0 {
 			continue
 		}
-		if proc, err := os.FindProcess(pid); err == nil {
-			if proc.Signal(syscall.Signal(0)) == nil {
-				continue // owner still running
+		if pid != os.Getpid() {
+			proc, ferr := os.FindProcess(pid)
+			if ferr != nil {
+				continue
+			}
+			serr := proc.Signal(syscall.Signal(0))
+			if !errors.Is(serr, os.ErrProcessDone) && !errors.Is(serr, syscall.ESRCH) {
+				continue // running, or not provably dead — keep
 			}
 		}
 		os.RemoveAll(filepath.Join(os.TempDir(), e.Name()))
