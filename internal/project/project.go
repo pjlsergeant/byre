@@ -212,16 +212,45 @@ func Resolve(projectDir string) (Paths, error) {
 // path. If a different path is already recorded under the same id, that is a
 // hash collision and Bootstrap returns an error rather than silently reusing
 // another project's image and volumes.
+//
+// The claim is atomic: the record is staged as a temp file and published
+// with os.Link, which refuses an existing name — so two concurrent FIRST
+// enrollments whose paths collide on one id cannot both pass the fence (a
+// check-then-WriteFile here let both through, and the short id hash is
+// documented safe precisely because collisions fail loudly before any state
+// is shared). The loser re-runs the collision check against whoever won:
+// same canonical path (two racing invocations of one project) is success,
+// a different one is the loud collision error. Link also publishes the
+// record atomically, so a concurrent reader can never see a partial write
+// as a false collision. Runs before the setup lock can exist — the lock
+// file lives inside the directory created here — so the fence cannot ride
+// that lock instead.
 func (p Paths) Bootstrap() error {
 	if err := os.MkdirAll(p.ContextDir, 0o755); err != nil {
 		return err
 	}
 	recorded, err := p.checkRecord()
+	if err != nil || recorded {
+		return err
+	}
+	tmp, err := os.CreateTemp(p.Dir, ".path-*")
 	if err != nil {
 		return err
 	}
-	if !recorded {
-		return os.WriteFile(p.PathRecord, []byte(p.Canonical+"\n"), 0o644)
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(p.Canonical + "\n"); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(tmp.Name(), p.PathRecord); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			_, cerr := p.checkRecord()
+			return cerr
+		}
+		return err
 	}
 	return nil
 }

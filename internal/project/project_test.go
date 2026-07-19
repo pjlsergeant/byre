@@ -141,6 +141,78 @@ func TestBootstrapDetectsCollision(t *testing.T) {
 	}
 }
 
+// Two concurrent FIRST enrollments whose paths collide on one id must never
+// both pass the fence: the record claim is an atomic no-replace publish, so
+// exactly one wins and the loser gets the loud collision error (external
+// review, 2026-07-19 — a check-then-WriteFile let both through and silently
+// share the id's config, image, and volumes).
+func TestBootstrapConcurrentFirstEnrollmentSingleWinner(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		t.Setenv("BYRE_HOME", t.TempDir())
+		a, err := Resolve(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The colliding twin: same id-derived paths, different canonical.
+		b := a
+		b.Canonical = a.Canonical + "-evil-twin"
+
+		start := make(chan struct{})
+		errs := make(chan error, 2)
+		for _, p := range []Paths{a, b} {
+			p := p
+			go func() {
+				<-start
+				errs <- p.Bootstrap()
+			}()
+		}
+		close(start)
+		var succeeded int
+		for j := 0; j < 2; j++ {
+			if err := <-errs; err == nil {
+				succeeded++
+			} else if !strings.Contains(err.Error(), "collision") {
+				t.Fatalf("iteration %d: loser must fail with the collision error, got: %v", i, err)
+			}
+		}
+		if succeeded != 1 {
+			t.Fatalf("iteration %d: want exactly one winner, got %d", i, succeeded)
+		}
+		// The surviving record is the winner's, intact — never empty/partial.
+		rec, err := os.ReadFile(a.PathRecord)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.TrimSuffix(string(rec), "\n"); got != a.Canonical && got != b.Canonical {
+			t.Fatalf("iteration %d: record holds neither claimant: %q", i, got)
+		}
+	}
+}
+
+// Two racing enrollments of the SAME project (same canonical) both succeed —
+// the no-replace claim must not turn idempotent re-enrollment into an error.
+func TestBootstrapConcurrentSameProjectBothSucceed(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	p, err := Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for j := 0; j < 2; j++ {
+		go func() {
+			<-start
+			errs <- p.Bootstrap()
+		}()
+	}
+	close(start)
+	for j := 0; j < 2; j++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("same-project concurrent bootstrap must succeed: %v", err)
+		}
+	}
+}
+
 func TestValidateExistingIsReadOnly(t *testing.T) {
 	t.Setenv("BYRE_HOME", filepath.Join(t.TempDir(), "home"))
 	proj := t.TempDir()
