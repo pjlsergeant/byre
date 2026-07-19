@@ -74,7 +74,7 @@ pngpaste - | byre deliver - --name shot.png
 
 ## Which box?
 
-`deliver` (like its mirror, `grab` — below) is machine-scoped: it finds
+`deliver` (like its mirror, `grab` -- below) is machine-scoped: it finds
 a running box rather than requiring you to stand in the project
 directory.
 
