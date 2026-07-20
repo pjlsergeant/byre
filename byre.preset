@@ -36,7 +36,7 @@ dockerfile_pre = [
 # Acquisition hints (ADR 0029): where the installed skills above come from. Never
 # auto-fetched — a missing package prints the exact install command from here.
 [sources]
-"pjlsergeant/codereview" = { uri = "https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml", digest = "sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f" }
+"pjlsergeant/codereview" = { uri = "https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.2/skills/codereview/skill.toml", digest = "sha256:3d0bf433dfab52ad947e125987d50b44aa47000414bbe14023bbcf80277ade86" }
 "pjlsergeant/devlog" = { uri = "https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml", digest = "sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12" }
 # Path source: inttest lives IN this repo and installs from the working tree
 # (run the install from the repo root). No digest pin — the trust boundary is

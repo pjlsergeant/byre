@@ -108,7 +108,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 func TestRetiredNamesTombstone(t *testing.T) {
 	_, cat := testCat(t)
 	want := map[string]string{
-		"codereview": "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/codereview/skill.toml --digest sha256:366093764005feacafa40560a47c2847ba130678de86fdbc02e7a465c553bb3f, then reference pjlsergeant/codereview",
+		"codereview": "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.2/skills/codereview/skill.toml --digest sha256:3d0bf433dfab52ad947e125987d50b44aa47000414bbe14023bbcf80277ade86, then reference pjlsergeant/codereview",
 		"devlog":     "byre skill install https://raw.githubusercontent.com/pjlsergeant/pjlsergeant-byre-skills/v1.0.0/skills/devlog/skill.toml --digest sha256:9ecb65b18386ceea0dc54b7bb040b42e29a9872ab8fed4f9b1f86d5562926c12, then reference pjlsergeant/devlog",
 	}
 	for bare, remedy := range want {
