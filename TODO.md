@@ -17,6 +17,13 @@ the rationale lives.
 
 ## Open
 
+- [ ] (XS) **Warn when an `env_from_host` source resolves empty** (2026-07-20).
+  A devbox with no global git identity got no `GIT_AUTHOR_*` in the box, but
+  `byre status` still showed `<- git:user.email` as if delivery were assured;
+  first symptom was a failed commit mid-session. A develop-time note ("resolved
+  empty -- box commits will fail until set") turns that into a ten-second fix.
+  Degrade-not-block stays; this is legibility only.
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
