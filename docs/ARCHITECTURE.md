@@ -139,11 +139,21 @@ order, expensive-and-shared first, cheap-and-project-specific last:
 FROM <base>                 # from template config
 <template block>            # shared across all projects on this template ┐ Docker
 <core block>                # constant: build-only gosu, baked dev user   │ layer-
-<skill blocks>              # each enabled skill, deterministic order     │ cached
+<skill blocks>              # enabled skills: bundled, installed, local   │ cached
 <project block>             # this project only                           │ across
 <security guard>            # re-COPY chassis paths (launcher, gate, fw)  │ projects
 USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘
 ```
+
+**Skill blocks** emit in provenance order -- bundled, then installed, then
+local, stable within each class (ADR 0041). Provenance is a volatility proxy:
+bundled skills change only with the byre binary, installed packages on install
+events, local packages whenever their working tree is edited. Docker
+invalidates every layer after the first changed one, so stable-before-volatile
+means editing an installed skill's payload no longer re-runs the bundled
+installers (agent, codex, grok) behind it. Enable order is unchanged
+everywhere the agent sees it (context composition, status); only image layers
+move.
 
 The **security guard** re-COPYs byre's own copy of the security-critical
 files -- the launcher (the ENTRYPOINT's content), and, when a network-posture

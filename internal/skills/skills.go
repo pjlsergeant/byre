@@ -246,6 +246,10 @@ type Skill struct {
 	File    File
 	Context string      // resolved context snippet
 	Files   []SkillFile // resolved [build].files, sorted by source
+	// Provenance is how the package entered the catalog (bundled / installed /
+	// local). Build uses it to order skill blocks for layer-cache locality;
+	// it never affects the agent-facing enable order.
+	Provenance packages.Provenance
 	// ClaudeSkills are the skill's [[claude_skills]] contributions with their
 	// `from` dirs resolved against the skill dir (containment-checked), in
 	// declaration order — filled by Resolve, consumed via ClaudeSkillSet.
@@ -285,6 +289,9 @@ type BuildBlock struct {
 	NpmGlobal  []string
 	Dockerfile []string    // raw lines
 	Files      []SkillFile // files this skill ships into the image
+	// Provenance rides along so build can order blocks by volatility class
+	// (ADR 0041) without reaching back into the catalog.
+	Provenance packages.Provenance
 }
 
 // Resolved is the set of enabled skills — loaded and validated, in enable
@@ -317,6 +324,7 @@ func (r Resolved) BuildBlocks() []BuildBlock {
 			NpmGlobal:  sk.File.Build.NpmGlobal,
 			Dockerfile: sk.File.Build.Dockerfile,
 			Files:      sk.Files,
+			Provenance: sk.Provenance,
 		})
 	}
 	return blocks
@@ -815,7 +823,7 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 		ctx = string(b)
 	}
 	// Skill.Name is the canonical ID (comparisons, grants, status).
-	return Skill{Name: ent.ID, File: f, Context: ctx, dir: dir}, nil
+	return Skill{Name: ent.ID, File: f, Context: ctx, dir: dir, Provenance: ent.Provenance}, nil
 }
 
 // skillRelPath resolves a skill-relative file path, rejecting absolute paths,

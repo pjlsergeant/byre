@@ -12,12 +12,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -341,10 +343,38 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 // its COPY map (staged-context-path -> image dest) for files the skill ships
 // under "skills/<skill>/<rel>", and returns the copy jobs. Sources were
 // already validated for containment by skills.Resolve; this writes nothing.
+// provenanceRank orders skill blocks by volatility class for layer-cache
+// locality (ADR 0041): bundled skills change only with the byre binary,
+// installed packages change on install events, local packages are
+// working-tree-editable. Emitting stable-before-volatile means editing an
+// installed skill no longer re-runs every bundled installer behind it.
+// Unknown provenances (legacy/conflict/invalid never reach build; resolve
+// rejects them) sort last, defensively.
+func provenanceRank(p packages.Provenance) int {
+	switch p {
+	case packages.ProvBundled:
+		return 0
+	case packages.ProvInstalled:
+		return 1
+	case packages.ProvLocal:
+		return 2
+	default:
+		return 3
+	}
+}
+
 func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, error) {
 	if len(blocks) == 0 {
 		return nil, nil, nil
 	}
+	// Layer order is a build decision, made here at the skills->gen seam: sort
+	// by volatility class, stable within one (enable order still breaks ties,
+	// and the agent-facing enable order -- context composition, status -- is
+	// untouched; only image layers move).
+	blocks = append([]skills.BuildBlock(nil), blocks...)
+	sort.SliceStable(blocks, func(i, j int) bool {
+		return provenanceRank(blocks[i].Provenance) < provenanceRank(blocks[j].Provenance)
+	})
 	out := make([]gen.SkillBlock, 0, len(blocks))
 	var jobs []fileCopy
 	for _, b := range blocks {
