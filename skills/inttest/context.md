@@ -57,7 +57,9 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   loopback only. The template binds a second forward on the docker bridge
   gateway for exactly this: set `BYRE_INTTEST_VM = "172.17.0.1"` (port stays
   60022; grant that endpoint's egress yourself on a firewalled box -- the
-  skill's grants name only the two defaults).
+  skill's grants name only the two defaults). That address assumes docker's
+  DEFAULT bridge: a custom `bip` moves the gateway, so adjust the template's
+  `hostIP` and `BYRE_INTTEST_VM` together.
 
 **Hosts without nested virtualisation** (a cloud devbox with no `/dev/kvm`
 -- check `systemd-detect-virt`): Lima can only emulate there, far too slow

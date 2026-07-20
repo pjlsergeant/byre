@@ -33,7 +33,7 @@ file = "context.md"
 [[package.files]]
 src = "byre-inttest"
 dest = "byre-inttest"
-sha256 = "bde86f9ed383539ebbfcafc06d7a4afdf398027d4251c16901d7b6398cbac395"
+sha256 = "0649add0625a2c56001ba69b9aa01d6ac9e6bddef074489e7a87dd762d12aeb5"
 executable = true
 
 [[package.files]]
@@ -44,7 +44,7 @@ sha256 = "c9801e104df544d800738ccd6f4f6cf2625a00de32714ce559039f5e60b5de52"
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "bb771a2abe3a383975ebd8598e0998e0ef65275f73118a95d37fd8880fe40a5a"
+sha256 = "752ee5c1add25eada1f4f432d77d8e1d57fd01f4048c718c3b0bdf1873d226f3"
 
 [[package.files]]
 src = "dind/Dockerfile"

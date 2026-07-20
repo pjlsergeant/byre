@@ -19,8 +19,11 @@
 #                      host names in order: host.docker.internal (Docker
 #                      Desktop), host.containers.internal (podman) -- both
 #                      carry egress grants. Native-Linux docker provides
-#                      neither: set this to the host's address there (and
-#                      grant that egress yourself on a firewalled box).
+#                      neither: set this to the docker bridge gateway there
+#                      (172.17.0.1 on the default bridge; the template binds
+#                      it -- the host's own address cannot work, Lima's
+#                      builtin forward is loopback-only). Grant that egress
+#                      yourself on a firewalled box.
 #   BYRE_INTTEST_PORT  ssh port (default 60022, fixed by the Lima template)
 #   BYRE_INTTEST_KEY   private key (default: the machine-volume path below)
 set -eu
