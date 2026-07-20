@@ -11,8 +11,9 @@ enable order alone.
 
 ## Why
 
-Docker invalidates every layer after the first changed one. A skill block is
-`apt -> COPY files -> raw lines`, so one skill's payload edit re-runs every
+Docker invalidates every layer after the first changed one. A skill block was
+then `apt -> COPY files -> raw lines` (apt has since hoisted out; ADR 0042),
+so one skill's payload edit re-runs every
 later skill's raw lines -- and the expensive raw lines are the agent and
 reviewer installers, which all live in bundled skills. Bumping an installed
 package (the codereview 1.0.1 release, 2026-07-20) re-ran every installer
