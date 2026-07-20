@@ -14,6 +14,9 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 - `apt = ["build-essential", "jq"]` — extra Debian packages
 - `npm_global = ["prettier"]` — global npm installs
 - `env = { FOO = "bar" }` — env vars baked into the image
+- `env_from_host = { BYRE_FOO = "env:USER" }` — env resolved on the HOST at
+  launch (`env:NAME`, `git:key`, `tz:`) and passed into the box, never baked;
+  a source that resolves empty is dropped, not an error
 - `files = { "./seed" = "/opt/seed" }` — copy project files into the image
 - `skills = ["codex"]` — enabled skill bundles (the agent is itself a skill)
 - `agent = "claude"` — which agent runs (claude | codex | gemini)
@@ -36,6 +39,14 @@ restart the session to apply them. (`byre dockerfile` previews the build.)
 
 So: need a **package** → add it to `apt`. Need a **custom build step** → add a
 `RUN ...` line to `dockerfile_pre` or `dockerfile_post`.
+
+**The repo-shipped variant — `byre.preset`:** this same dialect, committed at
+the repo ROOT as `byre.preset`, is how a project ships a recommended sandbox
+config. It is not a config key and byre never reads it live: a human applies
+it host-side with `byre preset apply` (review + confirm; writes the real
+per-project config). If it names installed skills (`owner/name` ids), give it
+a `[sources]` table of `{ uri, digest }` acquisition hints — never
+auto-fetched; a missing package prints its install command from there.
 
 Cascade rules: this file layers over `~/.byre/default.config` and any template.
 Scalars override; `env`/`files` merge per key; list keys union. `!name` removes
