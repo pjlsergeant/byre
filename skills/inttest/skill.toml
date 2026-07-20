@@ -39,12 +39,12 @@ executable = true
 [[package.files]]
 src = "byre-inttest.yaml"
 dest = "byre-inttest.yaml"
-sha256 = "6eb0d100044dfee0c1ee36447ffd693071d1d02d08fa2f79235e9c2dd828d059"
+sha256 = "1666c0a160546c3e45915ef9e1f55107dd7231f2d35160edf93681a78431a08f"
 
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "034eed1c3b85aac6abda85b45b4c6acfde74fe8ba385e399faff6b9fd2e964dc"
+sha256 = "bb771a2abe3a383975ebd8598e0998e0ef65275f73118a95d37fd8880fe40a5a"
 
 [[package.files]]
 src = "dind/Dockerfile"

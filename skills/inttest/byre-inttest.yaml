@@ -35,6 +35,19 @@ ssh:
   # byre-inttest key. Generate that key BEFORE limactl start.
   loadDotSSHPubKeys: true
 
+# Native-Linux docker has no host.docker.internal, and Lima's own ssh
+# forward binds the host's LOOPBACK only -- unreachable from a container,
+# which can reach the host solely at the docker bridge gateway (172.17.0.1).
+# So bind a second forward there. Lima refuses portForwards on guest port
+# 22 (the builtin owns it), hence the guest sshd's second port (provision
+# below). On hosts without a 172.17.0.1 (Docker Desktop: the bridge lives
+# inside Docker's VM) this bind fails with a harmless hostagent warning and
+# the default path is untouched.
+portForwards:
+  - guestPort: 2222
+    hostIP: "172.17.0.1"
+    hostPort: 60022
+
 containerd:
   system: false
   user: false
@@ -57,6 +70,11 @@ provision:
       # private tmux server.
       apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go \
         podman crun uidmap passt slirp4netns aardvark-dns tmux
+      # Second sshd port for the bridge-bound portForward above (Lima refuses
+      # forwarding guest 22). Both Port lines: naming any port drops the
+      # implicit 22, and 22 must stay for Lima's own control channel.
+      printf 'Port 22\nPort 2222\n' > /etc/ssh/sshd_config.d/10-byre-bridge.conf
+      systemctl restart ssh
       command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh
   - mode: user
     script: |

@@ -52,10 +52,12 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   `env_from_host = { BYRE_INTTEST_USER = "env:USER" }`.
 - **The VM address:** unset, the wrapper tries `host.docker.internal`
   (Docker Desktop) then `host.containers.internal` (podman); both carry
-  egress grants. Native-Linux docker provides neither name -- set
-  `BYRE_INTTEST_VM` to the host's address there (and grant that endpoint's
-  egress yourself on a firewalled box; the skill's grants name only the two
-  defaults).
+  egress grants. Native-Linux docker provides neither name, and the host's
+  own address does NOT work either -- Lima's builtin forward binds host
+  loopback only. The template binds a second forward on the docker bridge
+  gateway for exactly this: set `BYRE_INTTEST_VM = "172.17.0.1"` (port stays
+  60022; grant that endpoint's egress yourself on a firewalled box -- the
+  skill's grants name only the two defaults).
 
 **Hosts without nested virtualisation** (a cloud devbox with no `/dev/kvm`
 -- check `systemd-detect-virt`): Lima can only emulate there, far too slow
@@ -73,12 +75,27 @@ wrapper's transport is unchanged; its CONFIG is not:
   `host.containers.internal:60022`, so neither DinD address is covered.
   (`byre status` shows whether the grant is enforced or inert.)
 
+**IPv6-only hosts** (no v4 egress at all -- e.g. a hostedpi Pi with NAT64/
+DNS64): qemu's slirp gives the Lima VM NO external egress there (external
+v6 times out through slirp; v4 has nowhere to go), and DinD is no refuge if
+the host's storage can't hold `security.capability` xattrs (NFS root: the
+image won't even unpack). What works: the guest CAN reach host loopback at
+`192.168.5.2`, so run a proxy container published on the host's
+`127.0.0.1` and point the VM's apt, dockerd (systemd drop-in), docker
+client (`~/.docker/config.json` proxies -- buildkit injects into RUN
+steps), and `/etc/environment` at `http://192.168.5.2:<port>`. Sufficient
+for the build/run/deliver/TUI tests. NOT sufficient for the firewall
+tests: their IP-literal v4 asserts (`1.1.1.1` allow) can never pass
+without v4 -- scope them out with `-run` and note it, don't chase them.
+
 Build and caveats: `docs/BYRE-DEVELOPMENT.md`.
 
 VM lifecycle is host-side: `limactl stop byre-inttest` pauses it,
 `limactl stop byre-inttest && limactl delete byre-inttest` + a fresh
 `limactl start` resets it (delete refuses a running VM) -- nothing
-on it is precious. After a re-create the VM's hostkey changes; clear the
-stale entry in the box with `ssh-keygen -R '[<address>]:<port>'` -- with the
-defaults, `ssh-keygen -R '[host.docker.internal]:60022'` (substitute your
+on it is precious. After a re-create the VM's hostkey changes -- and on
+setups where Lima re-seeds cloud-init per start, EVERY restart regenerates
+it. Clear the stale entry in the box with
+`ssh-keygen -R '[<address>]:<port>'` -- with the defaults,
+`ssh-keygen -R '[host.docker.internal]:60022'` (substitute your
 `BYRE_INTTEST_VM`/`BYRE_INTTEST_PORT` overrides if you set them).
