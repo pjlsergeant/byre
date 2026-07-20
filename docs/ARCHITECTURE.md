@@ -139,9 +139,10 @@ order, expensive-and-shared first, cheap-and-project-specific last:
 FROM <base>                 # from template config
 <template block>            # shared across all projects on this template ┐ Docker
 <core block>                # constant: build-only gosu, baked dev user   │ layer-
-<skill blocks>              # enabled skills: bundled, installed, local   │ cached
-<project block>             # this project only                           │ across
-<security guard>            # re-COPY chassis paths (launcher, gate, fw)  │ projects
+<skill apt (hoisted)>       # every skill's apt RUN, ahead of all blocks  │ cached
+<skill blocks>              # enabled skills: bundled, installed, local   │ across
+<project block>             # this project only                           │ projects
+<security guard>            # re-COPY chassis paths (launcher, gate, fw)  │
 USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘
 ```
 
@@ -154,6 +155,16 @@ means editing an installed skill's payload no longer re-runs the bundled
 installers (agent, codex, grok) behind it. Enable order is unchanged
 everywhere the agent sees it (context composition, status); only image layers
 move.
+
+**Skill apt hoists above the skill blocks** (ADR 0042): every skill's apt
+RUN emits, one per skill in the same provenance order, in its own section
+between the core block and the skill blocks. Within a block apt already ran
+before the skill's own COPYs and raw lines, so no declarative apt list can
+depend on a raw line; hoisting preserves that order while putting the only
+skill layers with a network dependency on mutable external state (`apt-get
+update`) where payload and raw-line churn can't invalidate them. `npm_global`
+stays in the block -- node/npm may be provided by an earlier skill's raw
+lines.
 
 The **security guard** re-COPYs byre's own copy of the security-critical
 files -- the launcher (the ENTRYPOINT's content), and, when a network-posture

@@ -186,7 +186,8 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	"COPY " + ProfileEnvName + " " + profileEnvPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
-// FROM, the template block, the constant core block, skill blocks,
+// FROM, the template block, the constant core block, the hoisted skill apt
+// section, skill blocks,
 // the agent files, the project block (byre primitives + post raw block), the
 // security guard (re-asserting chassis-owned paths), then USER (drop to the
 // baked dev user) and the constant ENTRYPOINT. The core block precedes skills so
@@ -215,10 +216,26 @@ func Dockerfile(in Input) string {
 	b.WriteString("\n# --- byre core block (constant) ---\n")
 	b.WriteString(coreBlock)
 
+	// Skill apt installs hoist ABOVE the skill blocks (ADR 0042). Within a
+	// block apt already ran before the skill's own COPYs and raw lines, so no
+	// declarative apt list can depend on any raw line — hoisting preserves
+	// that order while moving the only layers with a network dependency on
+	// mutable external state (apt-get update) where payload and raw-line
+	// churn can't invalidate them. One RUN per skill keeps cache granularity
+	// and attribution. npm_global stays in the block: node/npm may be
+	// provided by an earlier skill's raw lines.
+	b.WriteString("\n# --- skill apt (hoisted; see ADR 0042) ---\n")
+	for _, s := range in.Skills {
+		if len(s.Apt) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "# skill: %s\n", s.Name)
+		writeApt(&b, s.Apt)
+	}
+
 	b.WriteString("\n# --- skills ---\n")
 	for _, s := range in.Skills {
 		fmt.Fprintf(&b, "# skill: %s\n", s.Name)
-		writeApt(&b, s.Apt)
 		writeNpm(&b, s.NpmGlobal)
 		writeFiles(&b, s.Files) // COPY before raw lines so a RUN can use the file
 		writeRaw(&b, s.Dockerfile)

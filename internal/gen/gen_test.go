@@ -36,6 +36,8 @@ COPY byre-launch /usr/local/bin/byre-launch
 RUN chmod +x /usr/local/bin/byre-launch
 COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
 
+# --- skill apt (hoisted; see ADR 0042) ---
+
 # --- skills ---
 
 # --- mcp (canonical declared set; stable path) ---
@@ -114,6 +116,40 @@ func TestDockerfileLastHealthcheckIsNone(t *testing.T) {
 	}
 	if !strings.HasPrefix(out[last:], "HEALTHCHECK NONE\n") {
 		t.Fatalf("last HEALTHCHECK is not NONE (a raw block can reopen the pre-gate window):\n%s", out)
+	}
+}
+
+// TestDockerfileSkillAptHoistsAboveSkillBlocks pins the ADR 0042 property: a
+// LATER skill's apt RUN precedes an EARLIER skill's COPYs and raw lines, so
+// payload/raw-line churn in any skill cannot invalidate any apt layer.
+func TestDockerfileSkillAptHoistsAboveSkillBlocks(t *testing.T) {
+	out := Dockerfile(Input{Base: "node:22", Skills: []SkillBlock{
+		{
+			Name:       "early",
+			Files:      map[string]string{"skills/early/tool.sh": "/usr/local/bin/early-tool"},
+			Dockerfile: []string{"RUN /usr/local/bin/early-tool --install"},
+		},
+		{Name: "late", Apt: []string{"ripgrep"}},
+	}})
+	apt := strings.Index(out, "--no-install-recommends 'ripgrep'")
+	copyLine := strings.Index(out, CopyLine("skills/early/tool.sh", "/usr/local/bin/early-tool"))
+	raw := strings.Index(out, "RUN /usr/local/bin/early-tool --install")
+	if apt < 0 || copyLine < 0 || raw < 0 {
+		t.Fatalf("missing apt/copy/raw line:\napt=%d copy=%d raw=%d\n%s", apt, copyLine, raw, out)
+	}
+	if !(apt < copyLine && apt < raw) {
+		t.Fatalf("later skill's apt should precede earlier skill's COPY and raw lines: apt=%d copy=%d raw=%d\n%s", apt, copyLine, raw, out)
+	}
+	// The hoisted section carries per-skill attribution, and skills without
+	// apt contribute no comment line to it.
+	hoisted := strings.Index(out, "# --- skill apt (hoisted")
+	blocks := strings.Index(out, "# --- skills ---")
+	if !(hoisted >= 0 && hoisted < blocks) {
+		t.Fatalf("hoisted apt section missing or after skill blocks: hoisted=%d blocks=%d\n%s", hoisted, blocks, out)
+	}
+	section := out[hoisted:blocks]
+	if !strings.Contains(section, "# skill: late\n") || strings.Contains(section, "# skill: early\n") {
+		t.Fatalf("hoisted section attribution wrong (want late only):\n%s", section)
 	}
 }
 

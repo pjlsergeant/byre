@@ -57,10 +57,14 @@ func TestDockerHostSkillResolves(t *testing.T) {
 	}
 	gb.Dockerfile = block.Dockerfile
 	full := gen.Dockerfile(gen.Input{Base: "debian:bookworm", Skills: []gen.SkillBlock{gb}})
-	const wantSection = `# skill: byre/docker-host
+	// The declarative apt (curl + ca-certificates, used by the repo RUN below)
+	// emits in the hoisted section ahead of the block (ADR 0042).
+	const wantApt = `# skill: byre/docker-host
 RUN apt-get update \
  && apt-get install -y --no-install-recommends 'ca-certificates' 'curl' \
  && rm -rf /var/lib/apt/lists/*
+`
+	const wantSection = `# skill: byre/docker-host
 COPY "skills/byre/docker-host/env.sh" "/etc/byre/env.d/50-docker-host.sh"
 RUN . /etc/os-release \
  && install -m 0755 -d /etc/apt/keyrings \
@@ -71,13 +75,15 @@ RUN . /etc/os-release \
  && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin \
  && rm -rf /var/lib/apt/lists/*
 `
-	if !strings.Contains(full, wantSection) {
+	ai := strings.Index(full, wantApt)
+	si := strings.Index(full, wantSection)
+	if ai < 0 || si < 0 || ai > si {
 		start := strings.Index(full, "# skill: byre/docker-host")
 		got := full
 		if start >= 0 {
 			got = full[start:]
 		}
-		t.Errorf("docker-host generated block drifted from golden.\n--- want ---\n%s\n--- got ---\n%s", wantSection, got)
+		t.Errorf("docker-host generated output drifted from golden (apt=%d block=%d; apt must precede the block).\n--- want apt ---\n%s--- want block ---\n%s\n--- got ---\n%s", ai, si, wantApt, wantSection, got)
 	}
 	// Agent context against the accident class.
 	ctx := res.Context()

@@ -1,5 +1,9 @@
 # Skill blocks emit in provenance order
 
+> Extended by ADR 0042 (2026-07-20): skill apt installs now hoist out of the
+> blocks into their own section ahead of them (the "hoisting" deferral below
+> was for payload COPYs, which stay deferred).
+
 Decided 2026-07-20. The generated Dockerfile's skill blocks emit ordered by
 catalog provenance -- bundled, then installed, then local -- stable within
 each class, with enable order breaking ties. Before this they emitted in
