@@ -42,7 +42,9 @@ ssh:
 # 22 (the builtin owns it), hence the guest sshd's second port (provision
 # below). On hosts without a 172.17.0.1 (Docker Desktop: the bridge lives
 # inside Docker's VM) this bind fails with a harmless hostagent warning and
-# the default path is untouched.
+# the default path is untouched. 172.17.0.1 assumes docker's DEFAULT bridge;
+# a custom bip/address-pool moves the gateway -- adjust hostIP and
+# BYRE_INTTEST_VM together.
 portForwards:
   - guestPort: 2222
     hostIP: "172.17.0.1"

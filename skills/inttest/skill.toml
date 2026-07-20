@@ -33,13 +33,13 @@ file = "context.md"
 [[package.files]]
 src = "byre-inttest"
 dest = "byre-inttest"
-sha256 = "8e716d147ae157babdfe8ad256c22e313804fb55decf078d74091b6bf6397bcf"
+sha256 = "bde86f9ed383539ebbfcafc06d7a4afdf398027d4251c16901d7b6398cbac395"
 executable = true
 
 [[package.files]]
 src = "byre-inttest.yaml"
 dest = "byre-inttest.yaml"
-sha256 = "1666c0a160546c3e45915ef9e1f55107dd7231f2d35160edf93681a78431a08f"
+sha256 = "c9801e104df544d800738ccd6f4f6cf2625a00de32714ce559039f5e60b5de52"
 
 [[package.files]]
 src = "context.md"

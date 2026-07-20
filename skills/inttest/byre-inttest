@@ -38,8 +38,10 @@ if [ -z "$VM_HOST" ]; then
   done
   if [ -z "$VM_HOST" ]; then
     echo "byre-inttest: neither host.docker.internal nor host.containers.internal resolves in this box." >&2
-    echo "Native-Linux docker provides neither name: set BYRE_INTTEST_VM to the host's address" >&2
-    echo "(and grant that endpoint's egress yourself on a firewalled box)." >&2
+    echo "Native-Linux docker provides neither name: set BYRE_INTTEST_VM to the docker bridge" >&2
+    echo "gateway -- 172.17.0.1 with docker's default bridge -- which the Lima template binds" >&2
+    echo "(the host's own address does NOT work: Lima's builtin forward is loopback-only)." >&2
+    echo "Grant that endpoint's egress yourself on a firewalled box." >&2
     exit 1
   fi
 fi

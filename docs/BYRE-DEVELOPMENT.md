@@ -136,8 +136,12 @@ per-worktree directory on the VM, so concurrent sessions don't collide.
 Unset, the VM address falls back across `host.docker.internal` (Docker
 Desktop) and `host.containers.internal` (podman), both egress-granted by
 the skill; native-Linux docker provides neither name, so set
-`BYRE_INTTEST_VM` there (and grant that egress yourself on a firewalled
-box).
+`BYRE_INTTEST_VM = "172.17.0.1"` there -- the docker bridge gateway, which
+the Lima template binds via the guest sshd's second port (the host's own
+address cannot work: Lima's builtin forward is loopback-only). Assumes
+docker's default bridge; a custom `bip` moves the gateway, so adjust both
+the template's `hostIP` and `BYRE_INTTEST_VM`. Grant that egress yourself
+on a firewalled box.
 
 **The agent-contract tier** (`BYRE_AGENT_TESTS=1`, its own gate on top of
 the engine): `internal/commands/agent_contract_test.go` builds each agent's
