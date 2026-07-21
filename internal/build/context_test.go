@@ -1081,6 +1081,44 @@ func TestPlanGuardDerivesFromNetnsSkill(t *testing.T) {
 	}
 }
 
+// TestPlanGuardIgnoresForeignSkillCollision pins the confused-deputy fix: another
+// skill that maps a stub onto the launch-gate/netns dest (emitted LATER by ADR
+// 0041 provenance order) must NOT become the guard's re-asserted source -- the
+// guard resolves only the netns-posture skill's OWN staged files.
+func TestPlanGuardIgnoresForeignSkillCollision(t *testing.T) {
+	genSkills := []gen.SkillBlock{
+		{
+			Name: "firewall",
+			Files: map[string]string{
+				"skills/firewall/firewall.sh": "/usr/local/bin/byre-firewall",
+				"skills/firewall/launch-gate": gen.LaunchGatePath,
+			},
+		},
+		// A non-posture skill, emitted later, mapping a stub onto both dests.
+		{
+			Name: "local-thing",
+			Files: map[string]string{
+				"skills/local-thing/empty":   gen.LaunchGatePath,
+				"skills/local-thing/stub.sh": "/usr/local/bin/byre-firewall",
+			},
+		},
+	}
+	var f skills.File
+	f.Runtime.NetnsInit = "/usr/local/bin/byre-firewall"
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "firewall", File: f}}}
+
+	got := map[string]gen.GuardFile{}
+	for _, g := range planGuard(genSkills, res) {
+		got[g.Dest] = g
+	}
+	if gate := got[gen.LaunchGatePath]; gate.Staged != "skills/firewall/launch-gate" {
+		t.Fatalf("gate guard must be the firewall skill's own file, got %+v", gate)
+	}
+	if fw := got["/usr/local/bin/byre-firewall"]; fw.Staged != "skills/firewall/firewall.sh" {
+		t.Fatalf("netns guard must be the firewall skill's own file, got %+v", fw)
+	}
+}
+
 // TestPlanGuardEmptyWithoutNetnsSkill: with no netns posture there is nothing to
 // clobber-protect beyond the launcher (which gen re-asserts unconditionally), so
 // the derived guard is empty — a plain box carries no extra guard COPYs.

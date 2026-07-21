@@ -99,8 +99,21 @@ func planGuard(genSkills []gen.SkillBlock, res skills.Resolved) []gen.GuardFile 
 	if len(hooks) == 0 {
 		return nil
 	}
-	byDest := map[string]string{} // image dest -> staged context path
+	// Resolve the security-critical staged sources from the NETNS-POSTURE skill's
+	// OWN blocks only -- never a global last-wins map over every skill. By ADR
+	// 0041 provenance order (bundled -> installed -> local) a later block could
+	// otherwise map a stub onto the gate/netns dest and win, making the guard
+	// re-assert a foreign file as the "protected" content (fail-open while status
+	// still reads deny-by-default). A foreign block can no longer shadow it.
+	posture := map[string]bool{}
+	for _, h := range hooks {
+		posture[h.Skill] = true
+	}
+	byDest := map[string]string{} // image dest -> staged context path (posture skill only)
 	for _, s := range genSkills {
+		if !posture[s.Name] {
+			continue
+		}
 		for staged, dest := range s.Files {
 			byDest[dest] = staged
 		}
