@@ -317,13 +317,47 @@ func worktreeParent(dir, mainDir string) (string, error) {
 	}
 }
 
-// gitToplevel returns the working tree's root dir for dir (its main or linked
-// worktree root), and false if dir is not inside a git repository.
+// gitToplevel returns the working tree's root for dir: the nearest ancestor
+// (dir itself included) holding a `.git` entry -- a DIRECTORY for a main
+// worktree, a regular FILE (a `gitdir:` pointer) for a linked worktree. Both
+// root the working tree at that ancestor; project.Resolve/detectWorktree then
+// validate the pointer and map identity to the main worktree.
+//
+// Derived STRUCTURALLY, never from `git rev-parse --show-toplevel`: that command
+// honors a `.git/config` core.worktree, which an agent writing the repo's .git
+// (rw in the box) can set to retarget `byre worktree` onto an unrelated HOST
+// repository -- one byre would then mount rw and mutate. ADR 0009's forged-.git
+// checks never catch it, because they run AFTER top is chosen. The walk can only
+// ever select an ancestor of the invocation dir, and the agent cannot plant a
+// .git in the host dirs ABOVE the mounted project; a .git entry is Lstat'd (a
+// symlink is refused) so it can't relocate the root either.
 func gitToplevel(dir string) (string, bool) {
-	out, err := gitProbe("-C", dir, "rev-parse", "--show-toplevel")
+	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", false
 	}
-	top := strings.TrimSpace(string(out))
-	return top, top != ""
+	for {
+		fi, err := os.Lstat(filepath.Join(abs, ".git"))
+		if err == nil {
+			switch {
+			case fi.Mode()&os.ModeSymlink != 0:
+				return "", false // a symlinked .git could point the repo anywhere
+			case fi.IsDir() || fi.Mode().IsRegular():
+				return abs, true
+			default:
+				return "", false // a .git that is a device/FIFO/socket is not a repo
+			}
+		}
+		if !os.IsNotExist(err) {
+			// A refusal (EACCES/EIO/ENOTDIR/...) is NOT absence. Climbing past it
+			// could select an ENCLOSING host repository's .git -- the retarget
+			// this walk exists to prevent -- so only genuine absence walks upward.
+			return "", false
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return "", false // reached the filesystem root without finding .git
+		}
+		abs = parent
+	}
 }

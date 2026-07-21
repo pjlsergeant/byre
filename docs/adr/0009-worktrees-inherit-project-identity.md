@@ -118,3 +118,28 @@ against a moving target. Containing the checkout is the invariant. An
 interim host-side hardening of the add (emptied `core.hooksPath` under
 `--no-checkout`) was built and superseded the next day by the in-box
 design; git history keeps it.
+
+## Toplevel is derived structurally, not via `git rev-parse` (2026-07-22)
+
+The one remaining host-side git call for the toplevel probe
+(`git -C <dir> rev-parse --show-toplevel`) honored a `.git/config`
+**core.worktree**, which the box's agent can write (the repo's `.git` is
+rw in the box). Set to an absolute or relative path, it made
+`--show-toplevel` report an **unrelated** working tree, so `byre worktree`
+would `project.Resolve`/`config.Load`/mount-and-mutate *that* host repo --
+a stable cross-session retarget, not the concurrent-rename residual above.
+The forged-`.git` inode checks never caught it: they validate whatever
+`top` was already chosen, and here `top` itself is the poison, naming a
+genuine but wrong repo.
+
+Decided: `gitToplevel` walks ancestors of the invocation dir for the
+nearest `.git` **entry** -- a directory (main worktree) or a regular file
+(a linked worktree's `gitdir:` pointer), each rooting the tree at that
+ancestor; a symlinked `.git` is refused. No git binary, no `--show-toplevel`
+trust. This preserves linked worktrees (their `.git` *file* is their legit
+root; `detectWorktree` still maps identity to the main tree) and cannot
+select a root outside the invocation dir's ancestors, where the agent
+cannot plant a `.git` anyway. Residual: a repository whose only working
+tree is defined purely via `core.worktree` with no `.git` in any ancestor
+of the cwd is unsupported by `byre worktree` -- not a shape `git init` or
+linked worktrees produce.

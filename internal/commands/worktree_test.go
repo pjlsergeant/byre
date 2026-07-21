@@ -117,6 +117,88 @@ func TestGitToplevel(t *testing.T) {
 	}
 }
 
+// TestGitToplevelStructural pins the structural derivation directly (no git
+// binary needed): the root is found by the .git entry, and a core.worktree an
+// agent could plant in .git/config must NOT move it -- that retarget onto an
+// unrelated host repo is exactly what going structural closes.
+func TestGitToplevelStructural(t *testing.T) {
+	canon := func(p string) string { c, _ := project.Canonicalize(p); return c }
+	mkdir := func(p string) {
+		t.Helper()
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("main worktree: a .git directory roots the tree, from root or subdir", func(t *testing.T) {
+		repo := t.TempDir()
+		mkdir(filepath.Join(repo, ".git"))
+		sub := filepath.Join(repo, "a", "b")
+		mkdir(sub)
+		for _, start := range []string{repo, sub} {
+			got, ok := gitToplevel(start)
+			if !ok || canon(got) != canon(repo) {
+				t.Errorf("from %s: got (%q,%v), want (%q,true)", start, got, ok, repo)
+			}
+		}
+	})
+
+	t.Run("core.worktree cannot retarget the root", func(t *testing.T) {
+		repo := t.TempDir()
+		gitdir := filepath.Join(repo, ".git")
+		mkdir(gitdir)
+		evil := t.TempDir()
+		// An agent-planted core.worktree pointing at an unrelated tree.
+		if err := os.WriteFile(filepath.Join(gitdir, "config"),
+			[]byte("[core]\n\tworktree = "+evil+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := gitToplevel(repo)
+		if !ok || canon(got) != canon(repo) {
+			t.Fatalf("got (%q,%v); core.worktree must not move the root off %q", got, ok, repo)
+		}
+	})
+
+	t.Run("linked worktree: a .git FILE roots the tree", func(t *testing.T) {
+		wt := t.TempDir()
+		if err := os.WriteFile(filepath.Join(wt, ".git"),
+			[]byte("gitdir: /somewhere/.git/worktrees/feature\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := gitToplevel(wt)
+		if !ok || canon(got) != canon(wt) {
+			t.Errorf("got (%q,%v), want (%q,true)", got, ok, wt)
+		}
+	})
+
+	t.Run("a non-absence lookup error refuses, never climbs to an outer repo", func(t *testing.T) {
+		outer := t.TempDir()
+		mkdir(filepath.Join(outer, ".git")) // an enclosing (host) repo
+		// A regular file where a directory would be: Lstat of .git under it
+		// returns ENOTDIR -- a refusal, not absence. The walk must stop here and
+		// NOT fall through to outer/.git.
+		blocker := filepath.Join(outer, "blocker")
+		if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := gitToplevel(filepath.Join(blocker, "sub")); ok {
+			t.Errorf("a lookup refusal must not select the outer repo, got (%q,%v)", got, ok)
+		}
+	})
+
+	t.Run("a symlinked .git is refused", func(t *testing.T) {
+		repo := t.TempDir()
+		target := t.TempDir()
+		mkdir(filepath.Join(target, ".git"))
+		if err := os.Symlink(filepath.Join(target, ".git"), filepath.Join(repo, ".git")); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := gitToplevel(repo); ok {
+			t.Errorf("a symlinked .git must be refused, got (%q,%v)", got, ok)
+		}
+	})
+}
+
 // The pre-create engine gate: no engine → refuse, nothing created. Doubly
 // load-bearing now — creation itself runs in the box.
 func TestWorktreeRefusesWithoutEngine(t *testing.T) {
