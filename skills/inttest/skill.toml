@@ -44,7 +44,7 @@ sha256 = "c9801e104df544d800738ccd6f4f6cf2625a00de32714ce559039f5e60b5de52"
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "752ee5c1add25eada1f4f432d77d8e1d57fd01f4048c718c3b0bdf1873d226f3"
+sha256 = "5899fc0ca2a3869cdb00e3324aec6449fa0bcebfdbce18e7511c8687a5a4b23d"
 
 [[package.files]]
 src = "dind/Dockerfile"

@@ -59,7 +59,11 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   60022; grant that endpoint's egress yourself on a firewalled box -- the
   skill's grants name only the two defaults). That address assumes docker's
   DEFAULT bridge: a custom `bip` moves the gateway, so adjust the template's
-  `hostIP` and `BYRE_INTTEST_VM` together.
+  `hostIP` and `BYRE_INTTEST_VM` together. Newer Lima versions bind the
+  builtin forward wider than loopback, so the template's bridge forward can
+  warn `bind: address already in use` at start -- harmless either way: the
+  endpoint is served, by one listener or the other (verified 2026-07-21,
+  Lima-latest on native-Linux docker).
 
 **Hosts without nested virtualisation** (a cloud devbox with no `/dev/kvm`
 -- check `systemd-detect-virt`): Lima can only emulate there, far too slow
