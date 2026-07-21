@@ -219,7 +219,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		}
 	}
 	if sink.truncated {
-		fmt.Fprintf(cfg.Err, "byre: enumeration of %s exceeded %d entries — grab truncated (incomplete)\n", abs, maxGrabEntries)
+		fmt.Fprintf(cfg.Err, "byre: enumeration of %s exceeded byre's grab limits (%d entries / %d bytes) — grab truncated (incomplete)\n", abs, maxGrabEntries, maxGrabBytes)
 		failed++
 	}
 	if sink.outOfFrame {
