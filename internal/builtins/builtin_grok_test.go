@@ -585,7 +585,8 @@ func TestGrokLoginHookHealsRetiredSymlink(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"PATH="+bin+":/usr/bin:/bin",
 			"GROK_HOME="+home,
-			"XAI_API_KEY=", // must not short-circuit
+			"XAI_API_KEY=",                // must not short-circuit
+			"GROK_AUTH_PROVIDER_COMMAND=", // ditto — a shared-auth box carries it
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("hook failed: %v (%s)", err, out)
