@@ -251,9 +251,13 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// The base image is the box's biggest unannounced surface (toolchains ride
 	// it): one bake-time line closes that. Bake-time is accurate here — a base
 	// change always forces a rebuild, unlike egress (announced at launch).
-	if cfg.Base != "" {
-		ctx += "\n\nBox base image: " + cfg.Base + "."
+	// Announce the EFFECTIVE base: an unset config falls back to gen's default
+	// (gen.Dockerfile does the same), so the line never claims less than FROM.
+	base := cfg.Base
+	if base == "" {
+		base = gen.DefaultBase
 	}
+	ctx += "\n\nBox base image: " + base + "."
 	if p := provisionedContext(cfg); p != "" {
 		ctx += "\n\n" + p
 	}

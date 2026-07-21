@@ -812,6 +812,19 @@ func TestAssembleContextListsConfigProvisions(t *testing.T) {
 	if !(strings.Index(s, "/inbox") < strings.Index(s, "(apt)") && strings.Index(s, "(apt)") < strings.Index(s, "be concise")) {
 		t.Errorf("context order wrong (want chassis < provisions < skill):\n%s", s)
 	}
+
+	// An unset base announces the EFFECTIVE base (gen's fallback), never
+	// nothing — the FROM line and the announcement must agree.
+	if _, err := Assemble(paths, config.Config{}, skills.Resolved{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err = os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(ctx), "Box base image: "+gen.DefaultBase+".") {
+		t.Errorf("default base not announced:\n%s", ctx)
+	}
 }
 
 func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
