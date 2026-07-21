@@ -424,7 +424,7 @@ func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
 		// session lookup on the id, so a collision must refuse before it can
 		// exec into another project's container (nil engines: the check must
 		// fire before any engine is consulted).
-		"shell": func() error { return shell(s, proj, nil) },
+		"shell": func() error { return shell(s, proj, nil, 1000, false) },
 		// Teardown refuses too: on a collision these would enumerate and
 		// delete ANOTHER project's volumes/images/store.
 		"reset":  func() error { return Reset(s, proj, true) },

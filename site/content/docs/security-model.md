@@ -54,8 +54,13 @@ This is Docker's design, not a byre gap, and byre cannot change it. On
 shared machines, treat daemon access as root. byre's uid-qualified
 naming (`byre-<id>-u<uid>-...` images, `byre-machine-u<uid>-...`
 volumes) prevents users *accidentally* sharing state; it cannot stop a
-daemon user doing it deliberately. The optional `docker-host` skill is
-exactly this grant, made legible: see
+daemon user doing it deliberately. **Project state volumes
+(`byre-<id>-...`) are not uid-qualified**, so two Unix users sharing one
+checkout on the same daemon share -- and one's `reset`/`forget` can
+clobber -- that agent state; byre is a single-operator tool and does not
+re-key them. `byre shell` does hide a box started by another Unix user
+(`--skip-uid-check` enters it anyway, as that box's dev identity). The
+optional `docker-host` skill is exactly this grant, made legible: see
 [docs/DOCKER-HOST.md](https://github.com/pjlsergeant/byre/blob/main/docs/DOCKER-HOST.md)
 before enabling it.
 

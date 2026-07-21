@@ -39,7 +39,9 @@ func recorderApp(calls map[string]string) app {
 		forget: func(_ commands.Streams, dir string, force bool) error {
 			return note("forget", dir+" "+boolStr(force))
 		},
-		shell:         func(_ commands.Streams, dir string) error { return note("shell", dir) },
+		shell: func(_ commands.Streams, dir string, skipUID bool) error {
+			return note("shell", dir+" "+boolStr(skipUID))
+		},
 		ejectfirewall: func(_ commands.Streams, dir string) error { return note("ejectfirewall", dir) },
 		deliver: func(_ commands.Streams, dir string, opts deliver.Options, paths []string) error {
 			return note("deliver", strings.Join([]string{dir, opts.Box, opts.Name,
@@ -104,7 +106,8 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"reset", "--force"}, "reset", "/proj true"},
 		{[]string{"reset", "-y"}, "reset", "/proj true"},
 		{[]string{"forget", "--force"}, "forget", "/proj true"},
-		{[]string{"shell"}, "shell", "/proj"},
+		{[]string{"shell"}, "shell", "/proj false"},
+		{[]string{"shell", "--skip-uid-check"}, "shell", "/proj true"},
 		{[]string{"ejectfirewall"}, "ejectfirewall", "/proj"},
 		{[]string{"deliver", "a.txt", "b.txt"}, "deliver", "/proj   false false false false p0  a.txt,b.txt"},
 		{[]string{"deliver", "--box", "x", "--no-clip", "f"}, "deliver", "/proj x  false true false false p0  f"},
@@ -312,7 +315,7 @@ func TestRootHelpCoversCommands(t *testing.T) {
 func TestRunCommandErrorPassesThrough(t *testing.T) {
 	boom := errors.New("boom")
 	a := recorderApp(map[string]string{})
-	a.shell = func(commands.Streams, string) error { return boom }
+	a.shell = func(commands.Streams, string, bool) error { return boom }
 	s, _ := testStreams()
 	if err := run(a, []string{"shell"}, "/proj", s); !errors.Is(err, boom) {
 		t.Fatalf("expected the command error back, got %v", err)

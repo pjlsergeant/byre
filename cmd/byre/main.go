@@ -33,7 +33,7 @@ type app struct {
 	status        func(s commands.Streams, dir string, selfEdit bool) error
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
-	shell         func(s commands.Streams, dir string) error
+	shell         func(s commands.Streams, dir string, skipUIDCheck bool) error
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
 	installApp    func(s commands.Streams, box string) error
@@ -290,17 +290,23 @@ skill grants, and whether a session is running.`,
 }
 
 func shellCmd(a app, dir string, s commands.Streams) *cobra.Command {
-	return &cobra.Command{
+	var skipUIDCheck bool
+	c := &cobra.Command{
 		Use:   "shell",
 		Short: "Open a shell (as the dev user) in the running session.",
 		Long: `Open an interactive shell in this project's running container, as the dev
 user — for agent logins, running tests, poking around. Needs a session
-started by 'byre develop'.`,
+started by 'byre develop'.
+
+On a shared rootful daemon a box started by another Unix user is hidden;
+--skip-uid-check enters it anyway (it runs as that box's dev identity).`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.shell(s, dir)
+			return a.shell(s, dir, skipUIDCheck)
 		},
 	}
+	c.Flags().BoolVar(&skipUIDCheck, "skip-uid-check", false, "enter a session owned by another Unix user (shared rootful daemon)")
+	return c
 }
 
 func deliverCmd(a app, dir string, s commands.Streams) *cobra.Command {

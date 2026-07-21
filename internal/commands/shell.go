@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -19,8 +20,8 @@ import (
 // already inherits the container's env (CLAUDE_CONFIG_DIR/CODEX_HOME/git identity
 // were set as run-time -e vars), so we only add HOME, which the launcher sets at
 // runtime and isn't in the container's configured env.
-func Shell(s Streams, projectDir string) error {
-	return shell(s, projectDir, installedEngines())
+func Shell(s Streams, projectDir string, skipUIDCheck bool) error {
+	return shell(s, projectDir, installedEngines(), os.Getuid(), skipUIDCheck)
 }
 
 // installedEngines returns a sessionRunner per installed engine, in shell's
@@ -49,7 +50,7 @@ func installedEnginesExcept(self runner.Engine) []sessionRunner {
 	return out
 }
 
-func shell(s Streams, projectDir string, engines []sessionRunner) error {
+func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int, skipUIDCheck bool) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -63,43 +64,83 @@ func shell(s Streams, projectDir string, engines []sessionRunner) error {
 	// Query the worktree label so `byre shell` opens THIS worktree's session, not
 	// a sibling worktree's (both carry the project label).
 	label := workdirLabel(paths)
-	// Find the session in whichever installed engine actually holds it — a session
-	// may run under podman even when docker is also installed. Skip engines that
-	// can't be queried; the first with a match wins.
-	var r sessionRunner
-	var ids []string
-	var queryErr error
+	// Find the session in whichever installed engine holds it — a session may run
+	// under podman even when docker is also installed. On a shared ROOTFUL daemon
+	// a box owned by ANOTHER Unix user carries their BYRE_UID; entering it would
+	// hand this caller that user's mounted project state and agent credentials.
+	// So mirror the deliver/grab accident guard: skip a container whose BYRE_UID
+	// differs from the caller's (unless --skip-uid-check), and KEEP scanning — a
+	// foreign box on one engine must not shadow this caller's own box on another.
+	// Rootless podman is caller-scoped: everything it sees is the caller's, and a
+	// keep-id box's BYRE_UID is the generic in-container uid, so the filter must
+	// not run there.
+	var (
+		r          sessionRunner
+		targetID   string
+		cenv       map[string]string
+		chosen     []string
+		queryErr   error
+		hidden     int
+		unreadable int
+	)
 	for _, rr := range engines {
 		got, qerr := rr.RunningContainersByLabel(label)
 		if qerr != nil {
 			queryErr = qerr // remember; another engine may still hold the session
 			continue
 		}
-		if len(got) > 0 {
-			r, ids = rr, got
+		if len(got) == 0 {
+			continue
+		}
+		callerScoped := false
+		if rootless, rerr := rr.IsRootlessPodman(); rerr == nil {
+			callerScoped = rootless
+		}
+		for _, id := range got {
+			env, eerr := rr.ContainerEnv(id)
+			if eerr != nil {
+				queryErr = eerr
+				continue
+			}
+			uid, uerr := strconv.Atoi(strings.TrimSpace(env["BYRE_UID"]))
+			gid, gerr := strconv.Atoi(strings.TrimSpace(env["BYRE_GID"]))
+			if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
+				unreadable++ // a box whose dev identity we can't read -- can't safely enter it, and it must not shadow a valid candidate on another engine
+				continue
+			}
+			if !callerScoped && !skipUIDCheck && uid != callerUID {
+				hidden++
+				continue // foreign box — skip and keep scanning
+			}
+			r, targetID, cenv, chosen = rr, id, env, got
+			break
+		}
+		if r != nil {
 			break
 		}
 	}
 	if r == nil {
+		if hidden > 0 {
+			return fmt.Errorf("a session for this project is running under another user's identity (%d hidden); it isn't yours to enter — pass --skip-uid-check to enter it anyway", hidden)
+		}
+		if unreadable > 0 {
+			return fmt.Errorf("a session is running for this project but its dev identity (BYRE_UID/BYRE_GID) couldn't be read — refusing to enter it")
+		}
 		// Don't mask a broken engine as "nothing running".
 		if queryErr != nil {
 			return fmt.Errorf("no running session found for this project (an engine query failed: %w)", queryErr)
 		}
 		return fmt.Errorf("no session is running for this project; start one with 'byre develop'")
 	}
-	if len(ids) > 1 {
-		fmt.Fprintf(s.Err, "byre: %d containers match this project; using %s\n", len(ids), shortID(ids[0]))
-	}
-	cenv, err := r.ContainerEnv(ids[0])
-	if err != nil {
-		return fmt.Errorf("reading session environment: %w", err)
+	if len(chosen) > 1 {
+		fmt.Fprintf(s.Err, "byre: %d containers match this project; using %s\n", len(chosen), shortID(targetID))
 	}
 	// Fail closed: the dev identity must come from the container. Don't fall back
 	// to the caller's uid, which could be 0:0 under sudo.
 	uid, uerr := strconv.Atoi(strings.TrimSpace(cenv["BYRE_UID"]))
 	gid, gerr := strconv.Atoi(strings.TrimSpace(cenv["BYRE_GID"]))
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
-		return fmt.Errorf("could not determine a valid dev user (BYRE_UID/BYRE_GID) from container %s", shortID(ids[0]))
+		return fmt.Errorf("could not determine a valid dev user (BYRE_UID/BYRE_GID) from container %s", shortID(targetID))
 	}
 	// Pass the container's BYRE_* plumbing through so the /etc/profile.d shim's
 	// env.d hooks have their inputs (e.g. docker-host's COMPOSE_PROJECT_NAME
@@ -111,5 +152,5 @@ func shell(s Streams, projectDir string, engines []sessionRunner) error {
 			env[k] = v
 		}
 	}
-	return r.Exec(ids[0], uid, gid, "/workspace", env, s.TTY, "bash", "-l")
+	return r.Exec(targetID, uid, gid, "/workspace", env, s.TTY, "bash", "-l")
 }
