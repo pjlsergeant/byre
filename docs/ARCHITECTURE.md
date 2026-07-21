@@ -572,7 +572,10 @@ Runtime constants:
   grant -- attributed in status, counted in exposure, disable-able per
   layer (`KEY = ""`). Host env is otherwise isolated (ADR 0026).
 - The launcher: wait at the launch gate if a network-posture skill is
-  enabled (ADR 0011), place agent context, run first-run hooks as the
+  enabled (ADR 0011), place agent context (the chassis facts, then a
+  one-line inventory of config-provisioned `apt`/`npm_global` packages
+  when any exist -- the agent shouldn't discover tools by probing --
+  then skill snippets in enable order), run first-run hooks as the
   user (agent login flows live here), then exec the selected agent's
   command in autonomous mode. The box is the safety boundary.
 

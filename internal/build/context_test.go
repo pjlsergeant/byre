@@ -783,6 +783,37 @@ func TestAssembleWritesAgentContextTarget(t *testing.T) {
 	}
 }
 
+// Config-provisioned packages are announced to the agent: the rule is a
+// stable fragment plus the provisioned names, chassis first, skills after —
+// not pinned prose. Absence when nothing is provisioned is pinned by the
+// byte-exact context assertions elsewhere in this file.
+func TestAssembleContextListsConfigProvisions(t *testing.T) {
+	paths := bootstrapped(t)
+	cfg := config.Config{
+		Base:      "node:22",
+		Apt:       []string{"ripgrep", "jq"},
+		NpmGlobal: []string{"typescript"},
+	}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "claude", Context: "be concise"}}}
+	if _, err := Assemble(paths, cfg, res); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(ctx)
+	for _, want := range []string{"ripgrep, jq (apt)", "typescript (npm -g)"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("context missing provisioned entry %q:\n%s", want, s)
+		}
+	}
+	// Order: chassis, then provisions, then skill opinions.
+	if !(strings.Index(s, "/inbox") < strings.Index(s, "(apt)") && strings.Index(s, "(apt)") < strings.Index(s, "be concise")) {
+		t.Errorf("context order wrong (want chassis < provisions < skill):\n%s", s)
+	}
+}
+
 func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	paths := bootstrapped(t)
 	// Target set, no skill context: the target + self-edit note are baked, and

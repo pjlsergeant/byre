@@ -243,10 +243,14 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 		return "", err
 	}
 	// The chassis speaks first: mechanism facts every box carries (today, the
-	// deliver inbox), then the skills' opinions in enable order. Chassis text
-	// is a mechanism description like /workspace — not a skill's opinion — so
-	// it rides every box, not a skill toggle (ADR 0021).
+	// deliver inbox), then what the config provisioned, then the skills'
+	// opinions in enable order. Chassis text is a mechanism description like
+	// /workspace — not a skill's opinion — so it rides every box, not a skill
+	// toggle (ADR 0021).
 	ctx := chassisContext
+	if p := provisionedContext(cfg); p != "" {
+		ctx += "\n\n" + p
+	}
 	if sc := res.Context(); sc != "" {
 		ctx += "\n\n" + sc
 	}
@@ -270,6 +274,27 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 // carries — facts about the box itself, not workflow opinions (those belong
 // to skills). One sentence per mechanism; keep it lean.
 const chassisContext = "Files the user delivers from the host land in /inbox, owned by you. The inbox is ephemeral (it dies with the container) — treat it as a hand-off point, not storage."
+
+// provisionedContext tells the agent what the CONFIG put in the box. Skills
+// document their own tools via [context]; a plain `apt`/`npm_global` entry
+// otherwise leaves no in-box trace, and the agent should not have to discover
+// provisioned tools by probing (legibility runs inward too). One sentence,
+// emitted only when the config actually provisions something. Raw dockerfile
+// lines stay unmentioned — passed through, not introspected, same posture as
+// status.
+func provisionedContext(cfg config.Config) string {
+	var parts []string
+	if len(cfg.Apt) > 0 {
+		parts = append(parts, strings.Join(cfg.Apt, ", ")+" (apt)")
+	}
+	if len(cfg.NpmGlobal) > 0 {
+		parts = append(parts, strings.Join(cfg.NpmGlobal, ", ")+" (npm -g)")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "The box config additionally provisions: " + strings.Join(parts, "; ") + "."
+}
 
 // selfEditDoc is placed into the agent's memory only when a session is started
 // with --self-edit, so the agent knows it can edit its own byre sandbox config —
