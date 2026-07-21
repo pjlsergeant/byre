@@ -197,6 +197,33 @@ func TestReportSelfEditChanges(t *testing.T) {
 		}
 	})
 
+	t.Run("config oversized at session start, then deleted, reports coherently", func(t *testing.T) {
+		d := t.TempDir()
+		cfgp := filepath.Join(d, "byre.config")
+		if err := os.WriteFile(cfgp, bytes.Repeat([]byte("x"), 9<<20), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshotStore(d)
+		if before.configReadable {
+			t.Fatal("a 9 MiB config must not be captured as readable")
+		}
+		if err := os.Remove(cfgp); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		reportSelfEditChanges(&out, d, before)
+		got := out.String()
+		if !strings.Contains(got, "(deleted)") {
+			t.Errorf("expected the deletion reported: %q", got)
+		}
+		if strings.Contains(got, "now present") {
+			t.Errorf("a deleted config must not also claim it is now present: %q", got)
+		}
+		if !strings.Contains(got, "session start") {
+			t.Errorf("expected the session-start-unreadable note: %q", got)
+		}
+	})
+
 	t.Run("store dir swapped for a symlink degrades to a notice", func(t *testing.T) {
 		real := t.TempDir()
 		if err := os.WriteFile(filepath.Join(real, "byre.config"), []byte("base = \"node:22\"\n"), 0o644); err != nil {

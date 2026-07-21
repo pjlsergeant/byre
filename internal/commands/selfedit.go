@@ -165,18 +165,26 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 		case !bHas:
 			fmt.Fprintln(w, "      (created)")
 		}
-		// Diffable = absent (empty side) or captured-readable; a side that is
-		// present-but-unreadable (device/FIFO/oversize) has no bytes to diff.
-		beforeDiffable := !bHas || before.configReadable
-		afterDiffable := !aHas || after.configReadable
-		if beforeDiffable && afterDiffable {
-			// Any byte change yields hunks (a final-newline-only edit shows as a
-			// "\ No newline" marker), so unequal content never prints a bare header.
+		// A present-but-unreadable side (device/FIFO/oversize) has no captured
+		// bytes to diff; an absent side is just the empty string. Name which side
+		// lacked bytes so the notice can't contradict the (deleted)/(created)
+		// line above (e.g. a config oversized at session start, then deleted).
+		beforeUnreadable := bHas && !before.configReadable
+		afterUnreadable := aHas && !after.configReadable
+		switch {
+		case !beforeUnreadable && !afterUnreadable:
+			// Both sides diffable. Any byte change yields hunks (a final-newline-only
+			// edit shows a "\ No newline" marker), so unequal content never prints a
+			// bare header.
 			for _, l := range unifiedDiff("byre.config (session start)", "byre.config (now)", string(before.config), string(after.config)) {
 				fmt.Fprintln(w, "      "+l)
 			}
-		} else {
+		case beforeUnreadable && afterUnreadable:
+			fmt.Fprintln(w, "      (not a readable regular file before or after — cannot show a diff)")
+		case afterUnreadable:
 			fmt.Fprintln(w, "      (now present but not a readable regular file — cannot show a diff)")
+		default: // beforeUnreadable only
+			fmt.Fprintln(w, "      (was not a readable regular file at session start — cannot show a diff)")
 		}
 	}
 
