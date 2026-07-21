@@ -29,6 +29,11 @@ type resolved struct {
 	// Skill set (skills.ClaudeSkillSet).
 	claudeSkills    []skills.ClaudeSkillDecl
 	claudeSkillsErr error
+	// otherEngines are session runners for installed engines OTHER than the
+	// configured one, so develop can enforce single-session across an engine
+	// switch (ADR 0004). Set by Develop; nil in combine() (and thus in unit
+	// tests, which drive develop directly) means "no cross-engine check".
+	otherEngines []sessionRunner
 }
 
 // combine forms the resolved view from a loaded config and its skills — the

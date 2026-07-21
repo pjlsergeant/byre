@@ -37,6 +37,18 @@ func installedEngines() []sessionRunner {
 	return out
 }
 
+// installedEnginesExcept is installedEngines minus the given engine — the OTHER
+// engines develop must check for a competing session after an engine switch.
+func installedEnginesExcept(self runner.Engine) []sessionRunner {
+	var out []sessionRunner
+	for _, rr := range installedEngines() {
+		if rr.Engine() != self {
+			out = append(out, rr)
+		}
+	}
+	return out
+}
+
 func shell(s Streams, projectDir string, engines []sessionRunner) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {

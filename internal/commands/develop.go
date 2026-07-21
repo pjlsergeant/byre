@@ -11,6 +11,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/build"
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -92,6 +93,11 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err != nil {
 		return err
 	}
+	// Single-session must hold across an engine SWITCH: if `engine` was flipped
+	// while a box runs on the previous engine, the configured runner can't see
+	// it. Hand develop the other installed engines so it can check them under
+	// the setup lock (ADR 0004).
+	rv.otherEngines = installedEnginesExcept(eng)
 	return develop(runner.New(eng), s, paths, rv, selfEdit)
 }
 
@@ -199,6 +205,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// `byre forget` could have cleared the store (path record included) while
 		// we waited; building now would resurrect a forgotten project.
 		if err := requireRecorded(paths); err != nil {
+			return err
+		}
+		// Single-session across an engine switch (ADR 0004): under the lock, refuse
+		// if a competing box exists on any OTHER installed engine.
+		if err := refuseCrossEngineSession(s.Err, rv.otherEngines, r.Engine(), paths); err != nil {
 			return err
 		}
 		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
@@ -387,6 +398,45 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 	if paths.IsWorktree {
 		fmt.Fprintf(w, "byre: worktree of %s — inheriting its config, volumes, and image.\n", paths.Canonical)
 	}
+}
+
+// refuseCrossEngineSession enforces ADR 0004 single-session across an engine
+// switch: once `engine` is flipped mid-session, a box on the PREVIOUS engine is
+// invisible to the configured runner, so a second develop would launch a second
+// autonomous agent on the same working tree. Under the setup lock, query every
+// OTHER installed engine for a container in ANY state (pre-start included) on
+// this worktree and refuse if one exists. Any query failure that ISN'T a clean
+// unreachability is fatal, since sole-session can't then be established.
+//
+// UNRESOLVED residual (reviewer split, 2026-07-22 -- Pete to rule): a
+// cleanly-unreachable OTHER engine is currently SKIPPED with a loud note rather
+// than failing closed. The case for skipping: the common reality is "podman
+// installed, machine never started", which has no sessions at all -- failing
+// closed there would brick every such develop. The case against (codex): Docker
+// live-restore (opt-in) and a remote Podman can keep containers RUNNING while
+// the daemon is unreachable, so a skipped engine could still host a competing
+// box, and develop then launches a second agent on the tree. The hole is narrow
+// (needs live-restore/remote + an outage + a running box + a mid-session engine
+// switch); the brick is common. Kept as skip-and-disclose pending Pete's call
+// on whether to fail closed (a ~2-line change here).
+func refuseCrossEngineSession(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) error {
+	label := workdirLabel(paths)
+	for _, rr := range others {
+		ids, err := rr.ContainersByLabel(label)
+		if err != nil {
+			if deliver.IsUnreachable(err) {
+				fmt.Fprintf(w, "byre: %s isn't reachable, so a competing session there can't be ruled out — single-session isn't guaranteed against it (start %s to check).\n", rr.Engine(), rr.Engine())
+				continue
+			}
+			return fmt.Errorf("checking %s for a competing session on this project: %w", rr.Engine(), err)
+		}
+		if len(ids) > 0 {
+			fmt.Fprintf(w, "byre: a session for this project already exists under %s, but the configured engine is now %s — refusing to start a second box on the same working tree.\n", rr.Engine(), self)
+			reportRunning(w, rr.Engine(), ids)
+			return ExitError{Code: ExitRefused}
+		}
+	}
+	return nil
 }
 
 // reportRunning tells the user a session is already live and how to act on it,

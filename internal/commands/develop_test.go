@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -51,6 +53,62 @@ func TestDevelopRefusesWhenSessionLive(t *testing.T) {
 	if strings.Contains(stderr.String(), "byre: exposure:") {
 		t.Errorf("exposure lines must not print when develop refuses: %s", stderr.String())
 	}
+}
+
+// TestDevelopRefusesCrossEngineSession pins the engine-switch guard: with the
+// configured engine (docker) idle but a box live on ANOTHER installed engine
+// (podman) for this worktree, develop refuses under the lock rather than launch
+// a second agent on the same tree (ADR 0004).
+func TestDevelopRefusesCrossEngineSession(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{} // configured engine (docker); no local session
+	// A competing box on podman, visible only via the cross-engine query.
+	other := &fakeRunner{engine: runner.Podman, allContainers: liveWorkdir(p, "podman00")}
+	rv := combine(config.Config{}, skills.Resolved{})
+	rv.otherEngines = []sessionRunner{other}
+	s, _, stderr := testStreams("", false)
+
+	err := develop(f, s, p, rv, false)
+	var exitErr ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
+		t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
+	}
+	if len(f.builds) != 0 || len(f.creates) != 0 {
+		t.Fatalf("must not build/create when another engine holds a session: builds=%v creates=%v", f.builds, f.creates)
+	}
+	if !strings.Contains(stderr.String(), "podman") {
+		t.Errorf("refusal should name the competing engine: %s", stderr.String())
+	}
+}
+
+// A cross-engine query error that is NOT unreachable is fatal (sole-session
+// can't be established); a cleanly-unreachable other engine is skipped.
+func TestDevelopCrossEngineQueryPolicy(t *testing.T) {
+	p, _ := testPaths(t)
+
+	t.Run("hard query error fails closed", func(t *testing.T) {
+		f := &fakeRunner{}
+		other := &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("dial unix: connect: permission denied")}
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = []sessionRunner{other}
+		err := develop(f, discardStreams(), p, rv, false)
+		if err == nil || len(f.creates) != 0 {
+			t.Fatalf("a non-unreachable cross-engine error must abort before create, got err=%v creates=%v", err, f.creates)
+		}
+	})
+
+	t.Run("unreachable other engine is skipped", func(t *testing.T) {
+		f := &fakeRunner{}
+		other := &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("Cannot connect to Podman: connection refused")}
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = []sessionRunner{other}
+		if err := develop(f, discardStreams(), p, rv, false); err != nil {
+			t.Fatalf("an unreachable other engine must not block develop: %v", err)
+		}
+		if len(f.creates) != 1 {
+			t.Fatalf("develop should proceed past an unreachable other engine: creates=%v", f.creates)
+		}
+	})
 }
 
 func TestDevelopBuildsSeedsThenRuns(t *testing.T) {

@@ -52,7 +52,7 @@ func discover(cfg Config, opts Options) (pool, error) {
 			// the narrowed pool could bear on the outcome. Any OTHER failure
 			// degrades loudly and poisons "exactly one" (partial pool) — never
 			// mask a broken engine as "nothing running".
-			if isUnreachable(err) {
+			if IsUnreachable(err) {
 				p.unreachable = append(p.unreachable, eng.Name())
 				continue
 			}
@@ -251,7 +251,7 @@ func selectSession(cfg Config, opts Options) (sess Session, err error) {
 	return Session{}, fmt.Errorf("%d boxes are running — pick one with --box:\n%s", len(p.sessions), sessionList(p.sessions))
 }
 
-// isUnreachable classifies can't-talk-to-the-daemon failures (podman machine
+// IsUnreachable classifies can't-talk-to-the-daemon failures (podman machine
 // not started, docker daemon down) by their message — the engine CLIs give no
 // typed errors across an exec boundary. The markers are deliberately
 // CONNECTION-shaped (dial/refused/daemon-not-running phrasings), not generic:
@@ -262,7 +262,7 @@ func selectSession(cfg Config, opts Options) (sess Session, err error) {
 // zero-classification never sends a delivery somewhere wrong, only proceeds
 // past boxes that couldn't have received it. A missed marker just means the
 // louder path.
-func isUnreachable(err error) bool {
+func IsUnreachable(err error) bool {
 	msg := strings.ToLower(err.Error())
 	// Cause overrides transport: a permission or TLS failure names a daemon
 	// that may well be RUNNING — always the loud partial path, even when the
