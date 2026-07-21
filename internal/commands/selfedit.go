@@ -1,19 +1,26 @@
 package commands
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
+
+// maxStoreFileBytes bounds every host-side read the self-edit report makes of
+// the agent-writable store: a planted device node or a symlink to /dev/zero
+// cannot stream unbounded into the host byre process, and an oversized regular
+// file is recorded by size rather than hashed. The store's real files
+// (byre.config, skill context) are kilobytes; this is pure slack.
+const maxStoreFileBytes = 8 << 20 // 8 MiB
 
 // storeSnapshot captures the self-edit mount's contents before the session so
 // the exit report can say exactly what the agent touched: content signatures
@@ -21,47 +28,89 @@ import (
 // things, so it gets a content diff rather than just a name).
 type storeSnapshot struct {
 	sigs   map[string]string // rel path -> content signature
-	config []byte            // byre.config bytes; nil when absent
+	config []byte            // byre.config bytes; set only when configReadable
+	// configReadable is true when byre.config was captured as a present, regular,
+	// within-cap file (so config holds its bytes for a diff). It is false when the
+	// config is absent, oversized, or a non-regular file -- change detection then
+	// rides the signature map and the diff falls back to a status line.
+	configReadable bool
+	// unreadable is set when the store directory itself could not be opened as
+	// a contained root -- e.g. a --self-edit agent swapped it for a symlink.
+	// The diff against such a snapshot is meaningless, so the report degrades to
+	// a notice rather than inventing mass additions or deletions.
+	unreadable bool
 }
 
+// snapshotStore reads the store through a no-follow contained root
+// (hostopen.OpenDirRootNoFollow + a rooted walk), so a --self-edit agent that
+// planted a FIFO, a device node, or a swapped symlink in the mount can neither
+// hang nor OOM the host byre process taking this snapshot. Every read is
+// bounded; a refusal degrades that one entry, never the whole report.
 func snapshotStore(dir string) storeSnapshot {
 	s := storeSnapshot{sigs: map[string]string{}}
-	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	root, err := hostopen.OpenDirRootNoFollow(dir)
+	if err != nil {
+		s.unreadable = true
+		return s
+	}
+	defer root.Close()
+	// Enumerate THROUGH the root (never by re-walking the pathname), so the
+	// opens below and this walk cannot observe two different directories.
+	fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil // an unreadable entry just sits out the comparison
 		}
-		if rel, rerr := filepath.Rel(dir, p); rerr == nil {
-			s.sigs[filepath.ToSlash(rel)] = fileSig(p, d)
-		}
+		s.sigs[p] = fileSig(root, p, d)
 		return nil
 	})
-	s.config, _ = os.ReadFile(filepath.Join(dir, config.ProjectConfigName))
+	// byre.config, bounded and rooted like every other read: oversize or
+	// non-regular leaves config nil (reported as absent), never an unbounded
+	// slurp of a device or a hung open of a FIFO.
+	if f, fi, ferr := hostopen.OpenRegularIn(root, config.ProjectConfigName); ferr == nil {
+		if fi.Size() <= maxStoreFileBytes {
+			s.config, _ = io.ReadAll(io.LimitReader(f, maxStoreFileBytes))
+			s.configReadable = true
+		}
+		f.Close()
+	}
 	return s
 }
 
-// fileSig is a comparison signature: content hash for regular files, the
-// target for symlinks (a retargeted link IS a change), the type otherwise.
-func fileSig(path string, d fs.DirEntry) string {
+// fileSig is a comparison signature: content hash for regular files, the target
+// for symlinks (a retargeted link IS a change), a size + capped-prefix hash for
+// a file too large to hash whole (so a same-size rewrite within the prefix is
+// still caught), and the type otherwise. Reads ride the contained root and are
+// bounded -- a device or FIFO can neither hang nor stream unbounded.
+func fileSig(root *os.Root, rel string, d fs.DirEntry) string {
 	if d.Type()&fs.ModeSymlink != 0 {
-		t, err := os.Readlink(path)
+		t, err := root.Readlink(rel)
 		if err != nil {
 			return "link:?"
 		}
 		return "link:" + t
 	}
-	if !d.Type().IsRegular() {
-		return "special:" + d.Type().String()
-	}
-	f, err := os.Open(path)
+	f, fi, err := hostopen.OpenRegularIn(root, rel)
 	if err != nil {
+		if errors.Is(err, hostopen.ErrNotRegular) {
+			return "special:" + d.Type().String()
+		}
 		return "unreadable"
 	}
 	defer f.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := io.Copy(h, io.LimitReader(f, maxStoreFileBytes)); err != nil {
 		return "unreadable"
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+	sum := hex.EncodeToString(h.Sum(nil))
+	if fi.Size() > maxStoreFileBytes {
+		// Too large to hash whole under the time bound: sign by size plus a hash
+		// of the capped prefix, so a same-size content rewrite within the prefix
+		// is still caught. Residual: a change confined to bytes BEYOND the cap
+		// that also preserves the exact size and prefix goes unreported -- an
+		// extreme corner at an 8 MiB cap, accepted over hashing unbounded.
+		return fmt.Sprintf("large:%d:%s", fi.Size(), sum)
+	}
+	return "sha256:" + sum
 }
 
 // reportSelfEditChanges closes a --self-edit session by showing what the agent
@@ -71,6 +120,14 @@ func fileSig(path string, d fs.DirEntry) string {
 // nothing changed.
 func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 	after := snapshotStore(dir)
+	if before.unreadable || after.unreadable {
+		// The store couldn't be opened as a contained directory on at least one
+		// side -- a --self-edit agent may have swapped it for a symlink. Say so
+		// rather than build a diff from an empty side, which would misreport
+		// every file as added or deleted.
+		fmt.Fprintln(w, "🛑 self-edit: the project store could not be read to report changes (it may have been replaced during the session)")
+		return
+	}
 	var added, changed, deleted []string
 	for rel, sig := range after.sigs {
 		switch bsig, ok := before.sigs[rel]; {
@@ -93,20 +150,33 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 	// misattributed by the stronger claim.
 	fmt.Fprintln(w, "🛑 self-edit: the project store changed during this session:")
 
-	// byre.config first, as a content diff (existence flips called out -- a
-	// created or deleted EMPTY config is still a change).
-	beforeMissing, afterMissing := before.config == nil, after.config == nil
-	if beforeMissing != afterMissing || !bytes.Equal(before.config, after.config) {
+	// byre.config gets special handling: a content diff when both snapshots
+	// captured it as a readable regular file, else an honest status line.
+	// Change detection rides the signature map (which encodes absent /
+	// regular-hash / oversize / non-regular uniformly), so a config swapped for a
+	// FIFO or device reads as a change, never a false "(deleted)".
+	bSig, bHas := before.sigs[config.ProjectConfigName]
+	aSig, aHas := after.sigs[config.ProjectConfigName]
+	if bHas != aHas || bSig != aSig {
 		fmt.Fprintln(w, "   byre.config (applies on the next develop):")
-		if afterMissing {
+		switch {
+		case !aHas:
 			fmt.Fprintln(w, "      (deleted)")
-		} else if beforeMissing {
+		case !bHas:
 			fmt.Fprintln(w, "      (created)")
 		}
-		// Any byte change yields hunks (a final-newline-only edit shows as a
-		// "\ No newline" marker), so unequal content never prints a bare header.
-		for _, l := range unifiedDiff("byre.config (session start)", "byre.config (now)", string(before.config), string(after.config)) {
-			fmt.Fprintln(w, "      "+l)
+		// Diffable = absent (empty side) or captured-readable; a side that is
+		// present-but-unreadable (device/FIFO/oversize) has no bytes to diff.
+		beforeDiffable := !bHas || before.configReadable
+		afterDiffable := !aHas || after.configReadable
+		if beforeDiffable && afterDiffable {
+			// Any byte change yields hunks (a final-newline-only edit shows as a
+			// "\ No newline" marker), so unequal content never prints a bare header.
+			for _, l := range unifiedDiff("byre.config (session start)", "byre.config (now)", string(before.config), string(after.config)) {
+				fmt.Fprintln(w, "      "+l)
+			}
+		} else {
+			fmt.Fprintln(w, "      (now present but not a readable regular file — cannot show a diff)")
 		}
 	}
 
