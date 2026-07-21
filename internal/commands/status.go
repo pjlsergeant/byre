@@ -58,6 +58,7 @@ type statusInfo struct {
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments      []skills.ContainmentDecl
 	ProjectRunArgs    bool     // the PROJECT's own raw run_args present (degrades the posture claim)
+	GuardMountShadow  bool     // a project mount/volume covers a security path (degrades the posture claim)
 	Container         string   // this dir's running container id, or "" if none
 	ContainerQueryErr string   // engine found but the container query failed — state is UNKNOWN, not absent
 	SiblingQueryErr   string   // sibling-session query failed while the own-session query worked
@@ -178,6 +179,9 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.Grants = res.Grants()
 			info.RunArgs = append(append([]string{}, res.RunArgs()...), cfg.RunArgs...)
 			info.NetPosture, info.NetPostureSkill = res.NetworkPosture()
+			// A project mount/volume over a guarded path shadows byre's own
+			// launcher/gate/netns file at runtime — the network claim can't stand.
+			info.GuardMountShadow = len(guardMountVolumeHits(cfg, res)) > 0
 			info.Egress = res.EgressAllows()
 			// The `egress` config key is the user's extension path (ADR 0019),
 			// so status must show those holes too — attributed to config, not a
@@ -778,7 +782,11 @@ func guardedPaths(res skills.Resolved) []string {
 	if len(res.NetnsInits()) > 0 {
 		paths = append(paths, gen.LaunchGatePath)
 		for _, h := range res.NetnsInits() {
-			paths = append(paths, h.Path)
+			// Clean the hook path: skills.Resolve requires it absolute but not
+			// clean, so a target on its CANONICAL form (e.g. /usr/local/../usr/
+			// local/bin/fw -> /usr/local/bin/fw) must still match here and in
+			// warnGuardCollisions.
+			paths = append(paths, path.Clean(h.Path))
 		}
 	}
 	return paths
@@ -828,6 +836,57 @@ func warnGuardCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
 	}
 }
 
+// covers reports whether a mount/volume target covers guarded: it equals the
+// path or is an ancestor directory of it, so a mount/volume there shadows it.
+func covers(target, guarded string) bool {
+	target, guarded = path.Clean(target), path.Clean(guarded)
+	return target == guarded || target == "/" || strings.HasPrefix(guarded, target+"/")
+}
+
+// guardMountVolumeHits returns the byre-managed security paths (launcher, launch
+// gate, netns script) that a PROJECT-config mount or volume target covers. A
+// typed mount/volume over such a path shadows byre's own file at RUNTIME --
+// unlike `files`, which byre re-asserts at the build tail, byre cannot re-assert
+// over a runtime mount. E.g. a `[[volumes]] target = "/etc/byre"` seeds the
+// fresh volume with the launch gate, which the agent then owns and can delete; a
+// `docker restart` recreates the netns without the firewall and the empty gate
+// makes the launcher skip its wait (fail open). Only the project's own
+// mounts/volumes are checked; skill contributions are byre's trusted
+// construction (as with `files`).
+func guardMountVolumeHits(cfg config.Config, res skills.Resolved) []string {
+	guarded := guardedPaths(res)
+	seen := map[string]bool{}
+	var hits []string
+	check := func(target string) {
+		for _, g := range guarded {
+			if covers(target, g) && !seen[g] {
+				seen[g] = true
+				hits = append(hits, g)
+			}
+		}
+	}
+	for _, m := range cfg.Mounts {
+		if !m.Disabled {
+			check(m.Target)
+		}
+	}
+	for _, v := range cfg.Volumes {
+		check(v.Target)
+	}
+	sort.Strings(hits)
+	return hits
+}
+
+// warnGuardMountCollisions warns at develop when a project mount/volume covers a
+// security path. This is a real containment hole (byre can't re-assert over a
+// runtime mount), made legible per the footgun doctrine -- tell, don't refuse;
+// status degrades the network claim to match.
+func warnGuardMountCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
+	for _, g := range guardMountVolumeHits(cfg, res) {
+		fmt.Fprintf(w, "🛑 byre: a mount or volume covers %s, a byre-managed security path — it shadows byre's own file at runtime, so byre's containment (firewall / launch gate) is NOT guaranteed for this session.\n", g)
+	}
+}
+
 // networkLine renders the Network row. Default: "open". With a skill-declared
 // posture, the claim follows the footgun doctrine's honesty rules — status
 // only asserts unqualified what byre set up itself, and never blocks anything:
@@ -860,6 +919,9 @@ func networkLine(s statusInfo) string {
 	}
 	if len(s.BuildRaw) > 0 {
 		raw = append(raw, "raw build lines")
+	}
+	if s.GuardMountShadow {
+		raw = append(raw, "a mount/volume over a security path")
 	}
 	if len(raw) > 0 {
 		return claim + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"

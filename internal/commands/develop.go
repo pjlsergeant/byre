@@ -89,6 +89,7 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	}
 	warnNonDebianBase(s.Err, rv.cfg.Base)
 	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
+	warnGuardMountCollisions(s.Err, rv.cfg, rv.skills)
 	eng, err := runner.Detect(rv.cfg.Engine, nil)
 	if err != nil {
 		return err

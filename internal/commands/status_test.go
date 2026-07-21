@@ -168,6 +168,8 @@ func TestNetworkLine(t *testing.T) {
 			"deny-by-default  (declared; raw build lines present — not guaranteed)"},
 		{"both degrade", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", ProjectRunArgs: true, BuildRaw: []string{"RUN x"}},
 			"deny-by-default  (declared; raw run_args + raw build lines present — not guaranteed)"},
+		{"mount over a security path degrades", statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", GuardMountShadow: true},
+			"deny-by-default  (declared; a mount/volume over a security path present — not guaranteed)"},
 		{"unresolved skills", statusInfo{SkillErr: "boom", NetPosture: ""},
 			"unknown  (skills unresolved)"},
 		{"open-denylist composes the blocked count", statusInfo{NetPosture: "open-denylist", NetPostureSkill: "firewall-open",
@@ -577,6 +579,61 @@ func TestRenderStatusClaudeSkillDeliveryDegrades(t *testing.T) {
 	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentClaudeSkills: "inject", ClaudeSkills: decl, SkillErr: "boom"})
 	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
 		t.Errorf("unresolved must not assert delivery:\n%s", out)
+	}
+}
+
+func TestGuardMountVolumeCollisions(t *testing.T) {
+	var fw skills.File
+	fw.Runtime.NetnsInit = "/usr/local/bin/byre-firewall"
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "firewall", File: fw}}}
+
+	// A volume over /etc/byre covers the launch gate (ancestor match); a mount
+	// directly on the netns script covers it (equal match); a harmless mount
+	// elsewhere doesn't. A DISABLED mount over a guarded path doesn't count.
+	cfg := config.Config{
+		Volumes: []config.Volume{{Name: "v", Role: "state", Target: "/etc/byre"}},
+		Mounts: []config.Mount{
+			{Host: "~/x", Target: "/usr/local/bin/byre-firewall", Mode: "ro"},
+			{Host: "~/y", Target: "/opt/data", Mode: "ro"},
+			{Host: "~/z", Target: "/etc/byre", Mode: "rw", Disabled: true},
+		},
+	}
+	hits := guardMountVolumeHits(cfg, res)
+	hitSet := map[string]bool{}
+	for _, h := range hits {
+		hitSet[h] = true
+	}
+	if !hitSet[gen.LaunchGatePath] {
+		t.Errorf("a volume over /etc/byre must cover the launch gate: %v", hits)
+	}
+	if !hitSet["/usr/local/bin/byre-firewall"] {
+		t.Errorf("a mount on the netns script must be a hit: %v", hits)
+	}
+
+	var b strings.Builder
+	warnGuardMountCollisions(&b, cfg, res)
+	out := b.String()
+	if !strings.Contains(out, gen.LaunchGatePath) || !strings.Contains(out, "NOT guaranteed") {
+		t.Fatalf("expected a loud mount/volume-shadow warning, got:\n%s", out)
+	}
+	if strings.Contains(out, "/opt/data") {
+		t.Fatalf("a harmless mount target must not warn:\n%s", out)
+	}
+
+	// Skill contributions are byre's trusted construction — a skill volume over a
+	// guarded path is not flagged (only the project's own are).
+	if h := guardMountVolumeHits(config.Config{}, res); len(h) != 0 {
+		t.Errorf("no project mounts/volumes -> no hits, got %v", h)
+	}
+
+	// An UNCLEAN netns_init hook (absolute but not clean) must still match a mount
+	// on its canonical form — both operands are cleaned before comparison.
+	var fwU skills.File
+	fwU.Runtime.NetnsInit = "/usr/local/lib/../bin/byre-firewall" // cleans to /usr/local/bin/byre-firewall
+	resU := skills.Resolved{Skills: []skills.Skill{{Name: "firewall", File: fwU}}}
+	cfgU := config.Config{Mounts: []config.Mount{{Host: "~/x", Target: "/usr/local/bin/byre-firewall", Mode: "ro"}}}
+	if h := guardMountVolumeHits(cfgU, resU); len(h) == 0 {
+		t.Errorf("a mount on the canonical hook path must match an unclean hook, got %v", h)
 	}
 }
 
