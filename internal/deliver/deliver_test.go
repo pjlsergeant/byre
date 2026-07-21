@@ -95,33 +95,6 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 			}
 		}
 		return "", fmt.Errorf("exit status 4: no such path in the box: %s", p)
-	case strings.Contains(script, "-type d -exec"): // enumerateScript: phys dir
-		if f.enumOut != "" || f.enumErr != nil {
-			return f.enumOut, f.enumErr
-		}
-		var b strings.Builder
-		under := func(p string) bool { return p == args[0] || strings.HasPrefix(p, args[0]+"/") }
-		for _, d := range f.boxdirs {
-			if under(d) {
-				fmt.Fprintf(&b, "d\x00%s\x00", d)
-			}
-		}
-		var fps []string
-		for p := range f.boxfs {
-			if under(p) {
-				fps = append(fps, p)
-			}
-		}
-		sort.Strings(fps)
-		for _, p := range fps {
-			fmt.Fprintf(&b, "f\x00%s\x00", p)
-		}
-		for _, o := range f.boxOther {
-			if under(o) {
-				fmt.Fprintf(&b, "o\x00%s\x00", o)
-			}
-		}
-		return b.String(), nil
 	}
 	claim := func(prefix, stem, ext string) string {
 		n := stem + ext
@@ -154,11 +127,25 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 	}
 }
 
-// ExecOutput simulates catScript: the named box file's content streams to w.
+// ExecOutput simulates the two streaming reads: enumerateScript (NUL-framed
+// records) and catScript (a box file's content), each streamed to w.
 func (f *fakeEngine) ExecOutput(id string, uid, gid int, w io.Writer, argv ...string) error {
 	f.execArgs = append(f.execArgs, argv)
 	if f.hook != nil {
 		f.hook(argv)
+	}
+	script := argv[2]
+	if strings.Contains(script, "-type d -exec") { // enumerateScript: phys dir
+		out := f.enumOut
+		if out == "" && f.enumErr == nil {
+			out = f.buildEnum(argv[4]) // after the $0 tag
+		}
+		if out != "" {
+			if _, err := io.WriteString(w, out); err != nil {
+				return err
+			}
+		}
+		return f.enumErr // may carry partial output already written above
 	}
 	if f.catErr != nil {
 		return f.catErr
@@ -170,6 +157,34 @@ func (f *fakeEngine) ExecOutput(id string, uid, gid int, w io.Writer, argv ...st
 	}
 	_, err := io.WriteString(w, content)
 	return err
+}
+
+// buildEnum renders the simulated box tree under root as enumerateScript would:
+// directories first, then files (sorted), then others, each `tag\0path\0`.
+func (f *fakeEngine) buildEnum(root string) string {
+	var b strings.Builder
+	under := func(p string) bool { return p == root || strings.HasPrefix(p, root+"/") }
+	for _, d := range f.boxdirs {
+		if under(d) {
+			fmt.Fprintf(&b, "d\x00%s\x00", d)
+		}
+	}
+	var fps []string
+	for p := range f.boxfs {
+		if under(p) {
+			fps = append(fps, p)
+		}
+	}
+	sort.Strings(fps)
+	for _, p := range fps {
+		fmt.Fprintf(&b, "f\x00%s\x00", p)
+	}
+	for _, o := range f.boxOther {
+		if under(o) {
+			fmt.Fprintf(&b, "o\x00%s\x00", o)
+		}
+	}
+	return b.String()
 }
 
 // session helpers

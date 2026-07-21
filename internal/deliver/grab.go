@@ -1,6 +1,7 @@
 package deliver
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"path"
@@ -153,12 +154,17 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 	}
 	defer tree.Close()
 
-	enum, enumErr := sess.Engine.ExecInput(sess.ID, sess.UID, sess.GID, strings.NewReader(""),
+	// Enumeration is agent-shaped and unbounded; stream it through recordSink
+	// (an io.Writer) so the full listing is never buffered in host memory. The
+	// sink caps stored entries and drains-discards past the cap, so a hostile
+	// tree can neither OOM nor hang the host byre process.
+	sink := &recordSink{}
+	enumErr := sess.Engine.ExecOutput(sess.ID, sess.UID, sess.GID, sink,
 		"sh", "-c", enumerateScript, "byre-grab", phys)
 
 	files, okFiles, failed := 0, 0, 0
-	var bytes int64
-	for _, rec := range parseRecords(enum) {
+	var nbytes int64
+	for _, rec := range sink.recs {
 		rel, ok := relUnder(phys, rec.path)
 		if !ok {
 			// Enumeration output is agent input: a record naming a path outside
@@ -207,10 +213,18 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 				continue
 			}
 			okFiles++
-			bytes += size
+			nbytes += size
 		case 'o':
 			fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", rec.path)
 		}
+	}
+	if sink.truncated {
+		fmt.Fprintf(cfg.Err, "byre: enumeration of %s exceeded %d entries — grab truncated (incomplete)\n", abs, maxGrabEntries)
+		failed++
+	}
+	if sink.outOfFrame {
+		fmt.Fprintf(cfg.Err, "byre: enumeration of %s was malformed partway — the grab may be incomplete\n", abs)
+		failed++
 	}
 	if enumErr != nil {
 		fmt.Fprintf(cfg.Err, "byre: enumerating %s in the box failed partway (%v) — the grab may be incomplete\n", abs, firstLine(enumErr))
@@ -222,10 +236,10 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		// `failed` counts ENTRIES (files, dirs, and the enumeration itself),
 		// so a dirs-only failure can't hide behind an "N of N files" line.
 		fmt.Fprintf(cfg.Err, "byre: grabbed %s — %d of %d files, %s; %d %s failed\n",
-			landed, okFiles, files, sizeString(bytes), failed, plural(failed, "entry", "entries"))
+			landed, okFiles, files, sizeString(nbytes), failed, plural(failed, "entry", "entries"))
 		return []string{landed}, fmt.Errorf("grabbing %s/: %d entries failed", abs, failed)
 	}
-	fmt.Fprintf(cfg.Err, "byre: grabbed %s — %d %s, %s\n", landed, files, plural(files, "file", "files"), sizeString(bytes))
+	fmt.Fprintf(cfg.Err, "byre: grabbed %s — %d %s, %s\n", landed, files, plural(files, "file", "files"), sizeString(nbytes))
 	return []string{landed}, nil
 }
 
@@ -235,27 +249,75 @@ type record struct {
 	path string
 }
 
-// parseRecords decodes enumerateScript's NUL-framed output. NUL is the one
-// byte a filename cannot contain, so the framing holds against any name the
-// agent invents; a malformed tail (a died exec mid-record) is dropped.
-func parseRecords(out string) []record {
-	var recs []record
-	fields := strings.Split(out, "\x00")
-	// A well-formed stream is tag,path pairs with one trailing "" from the
-	// final NUL; iterate pairwise and ignore an incomplete tail.
-	for i := 0; i+1 < len(fields); i += 2 {
-		tag := fields[i]
+// Grab enumeration is agent-shaped: an agent can plant a tree of millions of
+// entries or absurdly long names and suggest grabbing it. recordSink bounds
+// host memory with two ceilings, both required: maxGrabEntries bounds the
+// record slice (many tiny paths), maxGrabBytes bounds the retained pathname
+// strings (few enormous paths). maxGrabPending bounds a single unframed run.
+// All are generous for real trees (each entry also costs a downstream file
+// copy, so time bounds long before these do).
+const (
+	maxGrabEntries = 500_000
+	maxGrabBytes   = 64 << 20 // 64 MiB of retained pathname bytes
+	maxGrabPending = 1 << 20  // 1 MiB single unframed run
+)
+
+// recordSink decodes enumerateScript's NUL-framed `tag\0path\0` stream as it
+// arrives -- it is the io.Writer handed straight to ExecOutput, so the full
+// enumeration is never buffered in host memory. NUL is the one byte a filename
+// cannot contain, so the framing holds against any name the agent invents. Past
+// the entry cap or on a malformed frame it stops STORING but keeps consuming
+// (Write returns len(p)), so the box-side `find` never blocks on a full pipe --
+// an OOM traded for a hang would be no fix at all.
+type recordSink struct {
+	pending    []byte
+	recs       []record
+	stored     int64 // cumulative bytes of retained pathnames (memory bound)
+	truncated  bool  // hit maxGrabEntries/maxGrabBytes -- enumeration incomplete
+	outOfFrame bool  // malformed tag or an over-long unframed run -- rest untrusted
+}
+
+func (s *recordSink) Write(p []byte) (int, error) {
+	if s.truncated || s.outOfFrame {
+		return len(p), nil // drain-and-discard: keep the box writer unblocked
+	}
+	s.pending = append(s.pending, p...)
+	for {
+		i1 := bytes.IndexByte(s.pending, 0)
+		if i1 < 0 {
+			break // tag not yet terminated
+		}
+		i2 := bytes.IndexByte(s.pending[i1+1:], 0)
+		if i2 < 0 {
+			break // path not yet terminated; wait for more bytes
+		}
+		tag := s.pending[:i1]
+		name := string(s.pending[i1+1 : i1+1+i2])
+		s.pending = s.pending[i1+1+i2+1:]
 		if len(tag) != 1 {
-			break // out of frame — nothing after this point is trustworthy
+			s.outOfFrame = true // out of frame -- nothing after this is trustworthy
+			return len(p), nil
 		}
 		switch tag[0] {
 		case 'd', 'f', 'o':
-			recs = append(recs, record{tag: tag[0], path: fields[i+1]})
+			if len(s.recs) >= maxGrabEntries || s.stored+int64(len(name)) > maxGrabBytes {
+				s.truncated = true
+				return len(p), nil
+			}
+			s.recs = append(s.recs, record{tag: tag[0], path: name})
+			s.stored += int64(len(name))
 		default:
-			return recs
+			s.outOfFrame = true
+			return len(p), nil
 		}
 	}
-	return recs
+	if len(s.pending) > maxGrabPending {
+		// A run this long with no complete frame is a hostile unframed flood or
+		// corruption: stop trusting the stream and stop growing the buffer.
+		s.outOfFrame = true
+		s.pending = nil
+	}
+	return len(p), nil
 }
 
 // relUnder returns p relative to root ("" for root itself) and whether p is

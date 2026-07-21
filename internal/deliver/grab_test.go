@@ -1,6 +1,7 @@
 package deliver
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -329,8 +330,17 @@ func TestClaimStreamCleansTempOnFailure(t *testing.T) {
 
 // --- pure helpers ---
 
+// decode drives recordSink to completion for the whole string in one Write,
+// the equivalent of the old parseRecords (streaming behavior is pinned
+// separately in TestRecordSinkStreamingAndCaps).
+func decode(s string) []record {
+	var sink recordSink
+	sink.Write([]byte(s))
+	return sink.recs
+}
+
 func TestParseRecords(t *testing.T) {
-	recs := parseRecords("d\x00/a\x00f\x00/a/b\x00o\x00/a/l\x00")
+	recs := decode("d\x00/a\x00f\x00/a/b\x00o\x00/a/l\x00")
 	want := []record{{'d', "/a"}, {'f', "/a/b"}, {'o', "/a/l"}}
 	if len(recs) != len(want) {
 		t.Fatalf("recs = %v", recs)
@@ -341,15 +351,65 @@ func TestParseRecords(t *testing.T) {
 		}
 	}
 	// A malformed tail (died exec mid-record) drops cleanly.
-	if got := parseRecords("f\x00/a\x00garbage"); len(got) != 1 || got[0].path != "/a" {
+	if got := decode("f\x00/a\x00garbage"); len(got) != 1 || got[0].path != "/a" {
 		t.Fatalf("malformed tail: %v", got)
 	}
 	// An out-of-frame tag stops parsing — nothing after it is trusted.
-	if got := parseRecords("f\x00/a\x00zz\x00/b\x00f\x00/c\x00"); len(got) != 1 {
+	if got := decode("f\x00/a\x00zz\x00/b\x00f\x00/c\x00"); len(got) != 1 {
 		t.Fatalf("out-of-frame: %v", got)
 	}
-	if parseRecords("") != nil {
+	if decode("") != nil {
 		t.Fatal("empty output must parse to no records")
+	}
+}
+
+// TestRecordSinkStreamingAndCaps pins the streaming decode: records split
+// across Write boundaries reassemble, the entry cap truncates without dropping
+// bytes on the floor (Write always reports full consumption), and an unframed
+// flood past the pending cap goes out-of-frame instead of growing forever.
+func TestRecordSinkStreamingAndCaps(t *testing.T) {
+	// A frame split mid-path across two writes must still decode.
+	var s recordSink
+	full := "f\x00/workspace/proj/file\x00"
+	n1, _ := s.Write([]byte(full[:10]))
+	n2, _ := s.Write([]byte(full[10:]))
+	if n1 != 10 || n2 != len(full)-10 {
+		t.Fatalf("Write must report full consumption: %d,%d", n1, n2)
+	}
+	if len(s.recs) != 1 || s.recs[0].path != "/workspace/proj/file" {
+		t.Fatalf("split frame not reassembled: %v", s.recs)
+	}
+
+	// Past the entry cap: truncated set, Write still consumes fully (no block).
+	var capped recordSink
+	capped.recs = make([]record, maxGrabEntries) // pre-fill to the ceiling
+	over := "f\x00/x\x00"
+	if n, _ := capped.Write([]byte(over)); n != len(over) {
+		t.Fatalf("over-cap Write must still consume all bytes: %d", n)
+	}
+	if !capped.truncated {
+		t.Fatal("exceeding maxGrabEntries must set truncated")
+	}
+
+	// Past the cumulative byte budget (few but enormous paths): truncated too.
+	var bytesCap recordSink
+	bytesCap.stored = maxGrabBytes // already at the budget
+	if n, _ := bytesCap.Write([]byte("f\x00/x\x00")); n != len("f\x00/x\x00") {
+		t.Fatalf("over-byte-budget Write must still consume all bytes: %d", n)
+	}
+	if !bytesCap.truncated {
+		t.Fatal("exceeding maxGrabBytes must set truncated")
+	}
+
+	// An unframed flood (no NUL) past the pending cap goes out-of-frame, not
+	// unbounded — the buffer is dropped rather than grown forever.
+	var flood recordSink
+	blob := bytes.Repeat([]byte("a"), maxGrabPending+1)
+	if n, _ := flood.Write(blob); n != len(blob) {
+		t.Fatalf("flood Write must consume all bytes: %d", n)
+	}
+	if !flood.outOfFrame || flood.pending != nil {
+		t.Fatalf("an over-long unframed run must go out-of-frame and drop the buffer")
 	}
 }
 
@@ -486,7 +546,7 @@ func TestEnumerateScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v (out %q)", err, out)
 	}
-	recs := parseRecords(out)
+	recs := decode(out)
 	got := map[string]byte{}
 	for _, r := range recs {
 		got[r.path] = r.tag

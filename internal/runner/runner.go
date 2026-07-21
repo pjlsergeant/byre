@@ -580,8 +580,11 @@ func captureInExec(stdin io.Reader, name string, args ...string) (string, error)
 func streamOutExec(stdout io.Writer, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = stdout
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	// The child's stderr is agent-shaped (grab enumerates an agent-controlled
+	// tree; find can emit an error per path), so cap it: enough to diagnose a
+	// failure, never an unbounded buffer the box can grow to OOM host byre.
+	stderr := &capBuffer{max: 64 << 10}
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		// Surface the child's stderr — otherwise failures are just "exit status 1".
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
@@ -591,6 +594,27 @@ func streamOutExec(stdout io.Writer, name string, args ...string) error {
 	}
 	return nil
 }
+
+// capBuffer is an io.Writer that keeps at most max bytes but always reports a
+// full write, so a child writing past the cap is never blocked on its stderr
+// pipe (it just stops being recorded).
+type capBuffer struct {
+	b   bytes.Buffer
+	max int
+}
+
+func (c *capBuffer) Write(p []byte) (int, error) {
+	if room := c.max - c.b.Len(); room > 0 {
+		if len(p) > room {
+			c.b.Write(p[:room])
+		} else {
+			c.b.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (c *capBuffer) String() string { return c.b.String() }
 
 func captureExec(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
