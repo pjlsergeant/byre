@@ -48,6 +48,11 @@ func Rebuild(s Streams, projectDir string) error {
 func rebuild(w io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, ident runner.Identity) error {
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	return withSetupLock(w, paths.LockFile, func() error {
+		// Re-establish enrollment under the lock, same as develop: a concurrent
+		// forget could have cleared the store while rebuild waited.
+		if err := requireRecorded(paths); err != nil {
+			return err
+		}
 		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)
 		return buildImage(r, paths, cfg, res, image, true, ident)
 	})

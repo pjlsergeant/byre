@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +12,33 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/lock"
 )
+
+// TestRequireRecorded pins the forget/develop TOCTOU guard: a setup writer that
+// waited for the lock while a concurrent forget cleared the store must abort,
+// not build on the cleared store.
+func TestRequireRecorded(t *testing.T) {
+	paths, _ := testPaths(t) // bootstrapped: a valid path record exists
+
+	if err := requireRecorded(paths); err != nil {
+		t.Fatalf("a freshly bootstrapped project must be recorded: %v", err)
+	}
+
+	// A concurrent `byre forget` clears the store, path record included.
+	if err := os.Remove(paths.PathRecord); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireRecorded(paths); err == nil || !strings.Contains(err.Error(), "cleared") {
+		t.Fatalf("a cleared record must abort with a cleared-store error, got %v", err)
+	}
+
+	// A record naming a different canonical path (id collision) also aborts.
+	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireRecorded(paths); err == nil {
+		t.Fatal("a colliding path record must abort")
+	}
+}
 
 // TestWithSetupLockNotesWhenWaiting pins the contended-lock UX: a second
 // invocation says it's waiting instead of hanging silently; an uncontended one

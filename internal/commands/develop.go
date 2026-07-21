@@ -194,6 +194,13 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// volumes; if one does, the start below fails loudly instead of the
 	// session launching against wiped, engine-recreated volumes.
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+		// Re-establish enrollment UNDER the lock before any store/engine mutation.
+		// develop resolved config/skills BEFORE taking the lock, so a concurrent
+		// `byre forget` could have cleared the store (path record included) while
+		// we waited; building now would resurrect a forgotten project.
+		if err := requireRecorded(paths); err != nil {
+			return err
+		}
 		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
 			return berr
 		}

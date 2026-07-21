@@ -6,7 +6,38 @@ import (
 	"io"
 
 	"github.com/pjlsergeant/byre/internal/lock"
+	"github.com/pjlsergeant/byre/internal/project"
 )
+
+// requireRecorded fails if the project is no longer enrolled -- its
+// collision-fence `path` record is gone (a concurrent `byre forget` cleared the
+// store while this command waited for the setup lock) or names a different
+// canonical path. Setup writers call it as the FIRST action inside the lock, so
+// they never build images/volumes/containers on a store another command already
+// tore down (which would resurrect a forgotten project). It deliberately does
+// NOT re-Bootstrap: recreating the record would convert forget's cancellation
+// into resurrection and could race a colliding claimant.
+//
+// Applied to the two image BUILDERS (develop, rebuild). The other setup-lock
+// writers are consciously deferred: forget/reset are the teardown side (they do
+// the clearing), and rehome/worktree/preset/config have create/retire semantics
+// where a plain "must already be recorded" check is not obviously correct --
+// they want the per-command analysis the tombstone design below implies.
+//
+// Residual (consciously deferred): re-checking Recorded() does not preserve the
+// collision fence across an id-hash-collision window -- if `forget` left `path`
+// in place a colliding claimant's own check would pass. Closing that needs a
+// retiring-tombstone/generation design across every setup writer; not built.
+func requireRecorded(paths project.Paths) error {
+	recorded, err := paths.Recorded()
+	if err != nil {
+		return err // id collision or an unreadable record -- fail loudly
+	}
+	if !recorded {
+		return fmt.Errorf("the project store was cleared while waiting for the setup lock (a concurrent `byre forget`?) — re-run the command")
+	}
+	return nil
+}
 
 // acquireNoisy takes the setup lock, telling the user (on w — stderr) when it
 // has to wait. Without the message, a second byre invocation just hangs
