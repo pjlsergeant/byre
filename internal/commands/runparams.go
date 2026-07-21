@@ -56,6 +56,9 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		if err != nil {
 			return runner.RunParams{}, err
 		}
+		if err := checkContainedHostSource(host, paths.WorkDir); err != nil {
+			return runner.RunParams{}, err
+		}
 		binds = append(binds, runner.BindMount{Host: host, Target: m.Target, Mode: m.Mode})
 	}
 	// Worktree git support: a linked worktree's .git is a pointer into the repo's
@@ -127,6 +130,45 @@ func checkMountPaths(paths project.Paths) error {
 		}
 	}
 	return nil
+}
+
+// checkContainedHostSource guards a mount/seed source that lives INSIDE the
+// agent-writable project tree: between sessions the agent can replace such a
+// path (or an interior component) with a symlink, so byre must not blindly hand
+// the engine a source that now escapes the tree -- e.g. a configured
+// <project>/data retargeted to ~/.ssh. A source OUTSIDE the tree is the user's
+// own host choice and is left untouched (footgun doctrine -- no nannying). For
+// an in-tree source that exists, resolve it and require the real path to stay
+// within the tree; refuse an escape. It deliberately does NOT rebind to the
+// resolved target -- mounting that would COMPLETE the exfiltration the config
+// never named. There is no adversary in the develop-time check-to-mount window:
+// the prior session has ended and the new box has not started.
+func checkContainedHostSource(host, workDir string) error {
+	if !underTree(workDir, host) {
+		return nil // the user's own host path, outside the agent-writable tree
+	}
+	resolved, err := filepath.EvalSymlinks(host)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing there to escape through; the engine makes an in-tree dir
+		}
+		return fmt.Errorf("host source %q under the project tree could not be resolved (a swapped or broken symlink?): %w", host, err)
+	}
+	if !underTree(workDir, resolved) {
+		return fmt.Errorf("host source %q resolves to %q, outside the project tree — refusing to mount or seed it (an agent may have retargeted a path the config named inside the project; byre won't follow it out)", host, resolved)
+	}
+	return nil
+}
+
+// underTree reports whether p is workDir itself or a descendant of it. Both are
+// cleaned by filepath.Rel; a p outside workDir yields a rel path that is ".." or
+// begins "../".
+func underTree(workDir, p string) bool {
+	rel, err := filepath.Rel(workDir, p)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // expandHostPath expands a leading ~ and requires the result to be absolute, so

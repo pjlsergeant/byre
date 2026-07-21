@@ -14,6 +14,58 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
+func TestCheckContainedHostSource(t *testing.T) {
+	tree := t.TempDir()    // stands in for the project tree (paths.WorkDir)
+	outside := t.TempDir() // an unrelated host dir, e.g. where ~/.ssh lives
+
+	mk := func(p string) string {
+		t.Helper()
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	sym := func(target, link string) string {
+		t.Helper()
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		return link
+	}
+
+	// An in-tree symlink escaping to an outside tree -- the attack.
+	mk(filepath.Join(outside, "secrets"))
+	escape := sym(filepath.Join(outside, "secrets"), filepath.Join(tree, "data"))
+	// An in-tree symlink that stays in the tree -- benign (agent already has the tree).
+	mk(filepath.Join(tree, "real"))
+	inTreeLink := sym(filepath.Join(tree, "real"), filepath.Join(tree, "alias"))
+	// An interior component escaping: tree/via -> outside, then .../via/x (which
+	// exists as outside/x, so EvalSymlinks resolves it out of the tree).
+	sym(outside, filepath.Join(tree, "via"))
+	mk(filepath.Join(outside, "x"))
+
+	cases := []struct {
+		name    string
+		host    string
+		wantErr bool
+	}{
+		{"outside the tree is the user's choice", filepath.Join(outside, "anything"), false},
+		{"plain in-tree dir is fine", mk(filepath.Join(tree, "plain")), false},
+		{"in-tree path that does not exist is fine", filepath.Join(tree, "willbecreated"), false},
+		{"in-tree symlink escaping the tree is refused", escape, true},
+		{"in-tree symlink staying in the tree is fine", inTreeLink, false},
+		{"interior symlink escaping the tree is refused", filepath.Join(tree, "via", "x"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkContainedHostSource(tc.host, tree)
+			if tc.wantErr != (err != nil) {
+				t.Errorf("checkContainedHostSource(%q) err=%v, wantErr=%v", tc.host, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	paths, _ := testPaths(t)
 
