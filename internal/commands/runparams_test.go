@@ -15,8 +15,18 @@ import (
 )
 
 func TestCheckContainedHostSource(t *testing.T) {
-	tree := t.TempDir()    // stands in for the project tree (paths.WorkDir)
-	outside := t.TempDir() // an unrelated host dir, e.g. where ~/.ssh lives
+	// paths.WorkDir is canonical (project.Canonicalize), so mirror that here --
+	// on macOS t.TempDir() is under a symlinked /var, and a lexical workDir
+	// would defeat the whole containment check.
+	canon := func(p string) string {
+		r, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	tree := canon(t.TempDir())    // stands in for the project tree (paths.WorkDir)
+	outside := canon(t.TempDir()) // an unrelated host dir, e.g. where ~/.ssh lives
 
 	mk := func(p string) string {
 		t.Helper()
@@ -44,6 +54,12 @@ func TestCheckContainedHostSource(t *testing.T) {
 	sym(outside, filepath.Join(tree, "via"))
 	mk(filepath.Join(outside, "x"))
 
+	// An ALIAS spelling of the project root: aliasRoot -> tree, and the escape
+	// lives under it. Lexically aliasRoot/data is "outside" tree; canonically it
+	// is the in-tree escape symlink, and must still be refused.
+	aliasRoot := filepath.Join(t.TempDir(), "alias")
+	sym(tree, aliasRoot)
+
 	cases := []struct {
 		name    string
 		host    string
@@ -55,6 +71,7 @@ func TestCheckContainedHostSource(t *testing.T) {
 		{"in-tree symlink escaping the tree is refused", escape, true},
 		{"in-tree symlink staying in the tree is fine", inTreeLink, false},
 		{"interior symlink escaping the tree is refused", filepath.Join(tree, "via", "x"), true},
+		{"alias spelling of the root still catches the escape", filepath.Join(aliasRoot, "data"), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

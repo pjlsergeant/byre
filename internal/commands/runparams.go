@@ -144,8 +144,19 @@ func checkMountPaths(paths project.Paths) error {
 // never named. There is no adversary in the develop-time check-to-mount window:
 // the prior session has ended and the new box has not started.
 func checkContainedHostSource(host, workDir string) error {
-	if !underTree(workDir, host) {
-		return nil // the user's own host path, outside the agent-writable tree
+	host = filepath.Clean(host)
+	dir, base := filepath.Split(host)
+	// The source is in the agent-writable region if EITHER its lexical spelling
+	// is under the tree (an interior component the agent planted to point OUT
+	// still lives at a lexically-in-tree path), OR its canonical parent is under
+	// the tree (an alias for an ancestor, /tmp/link/data where /tmp/link ->
+	// <project>, is lexically outside but really in-tree). Resolving only the
+	// parent never follows the agent-controlled final component -- that final
+	// escape is judged below, not trusted here.
+	lexicalIn := underTree(workDir, host)
+	canonParentIn := underTree(workDir, filepath.Join(canonicalizeExisting(dir), base))
+	if !lexicalIn && !canonParentIn {
+		return nil // genuinely outside the tree -- the user's own host path
 	}
 	resolved, err := filepath.EvalSymlinks(host)
 	if err != nil {
@@ -158,6 +169,27 @@ func checkContainedHostSource(host, workDir string) error {
 		return fmt.Errorf("host source %q resolves to %q, outside the project tree — refusing to mount or seed it (an agent may have retargeted a path the config named inside the project; byre won't follow it out)", host, resolved)
 	}
 	return nil
+}
+
+// canonicalizeExisting returns the canonical (symlink-resolved) form of dir,
+// resolving the longest existing ancestor and appending any not-yet-existing
+// tail lexically. It never fails: an unresolvable path degrades to its cleaned
+// form. Used to canonicalize a mount/seed PARENT without requiring the whole
+// path to exist.
+func canonicalizeExisting(dir string) string {
+	dir = filepath.Clean(dir)
+	rest := ""
+	for {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Join(dir, rest) // reached root; nothing resolved
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+	}
 }
 
 // underTree reports whether p is workDir itself or a descendant of it. Both are
