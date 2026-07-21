@@ -191,7 +191,7 @@ func TestAssembleWritesAgentFiles(t *testing.T) {
 		t.Errorf("agent script wrong: %s", script)
 	}
 	ctx, err := os.ReadFile(paths.ContextDir + "/" + gen.AgentContextName)
-	if err != nil || string(ctx) != chassisContext+"\n\nbe concise" {
+	if err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22.\n\nbe concise" {
 		t.Errorf("agent context wrong: %q %v", ctx, err)
 	}
 }
@@ -771,7 +771,7 @@ func TestAssembleWritesAgentContextTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName))
-	if err != nil || string(ctx) != chassisContext+"\n\nworkflow rules" {
+	if err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22.\n\nworkflow rules" {
 		t.Fatalf("context file wrong: %q err=%v", ctx, err)
 	}
 	tgt, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextTargetName))
@@ -803,7 +803,7 @@ func TestAssembleContextListsConfigProvisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(ctx)
-	for _, want := range []string{"ripgrep, jq (apt)", "typescript (npm -g)"} {
+	for _, want := range []string{"Box base image: node:22.", "ripgrep, jq (apt)", "typescript (npm -g)"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("context missing provisioned entry %q:\n%s", want, s)
 		}
@@ -824,8 +824,8 @@ func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext {
-		t.Errorf("agent-context.md should carry exactly the chassis paragraph without skill context: %q %v", ctx, err)
+	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22." {
+		t.Errorf("agent-context.md should carry exactly the chassis + base paragraphs without skill context: %q %v", ctx, err)
 	}
 	if _, err := os.Stat(filepath.Join(paths.ContextDir, gen.AgentContextTargetName)); err != nil {
 		t.Errorf("target file should be written when the agent declares a target: %v", err)
@@ -930,8 +930,8 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	}
 	// agent-context.md is no longer conditional: the chassis paragraph keeps it
 	// present (and truthful) on every box, agent or not.
-	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext {
-		t.Errorf("agent-context.md should persist with the chassis paragraph: %q %v", ctx, err)
+	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22." {
+		t.Errorf("agent-context.md should persist with the chassis + base paragraphs: %q %v", ctx, err)
 	}
 }
 

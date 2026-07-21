@@ -3,6 +3,8 @@
 This box's outbound network is firewalled: only an allowlist of hosts is
 reachable — by default just the agent's own API endpoints, plus whatever
 doors the user has opened — resolved to IPs when the session started.
+The session's actual allowlist is appended at the end of this file (under
+"This session's egress allowlist").
 Everything else is dropped — a connection that hangs then times out is
 the wall, not a network outage.
 

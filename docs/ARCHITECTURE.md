@@ -572,12 +572,16 @@ Runtime constants:
   grant -- attributed in status, counted in exposure, disable-able per
   layer (`KEY = ""`). Host env is otherwise isolated (ADR 0026).
 - The launcher: wait at the launch gate if a network-posture skill is
-  enabled (ADR 0011), place agent context (the chassis facts, then a
-  one-line inventory of config-provisioned `apt`/`npm_global` packages
-  when any exist -- the agent shouldn't discover tools by probing --
-  then skill snippets in enable order), run first-run hooks as the
-  user (agent login flows live here), then exec the selected agent's
-  command in autonomous mode. The box is the safety boundary.
+  enabled (ADR 0011), place agent context (the chassis facts, the base
+  image, then a one-line inventory of config-provisioned
+  `apt`/`npm_global` packages when any exist -- the agent shouldn't
+  discover tools by probing -- then skill snippets in enable order;
+  under an allowlist posture the launcher also appends the session's
+  enforced egress allowlist, handed over as the same `BYRE_EGRESS`
+  string the netns helper applied, so announcement and enforcement
+  share one source), run first-run hooks as the user (agent login
+  flows live here), then exec the selected agent's command in
+  autonomous mode. The box is the safety boundary.
 
 ## Project identity
 

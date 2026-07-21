@@ -34,6 +34,15 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		env[k] = v
 	}
 	addEnvFromHost(env, rv.cfg) // host passthrough beats skill env for its keys; explicit [env] beats it
+	// Under an allowlist posture, hand the box the enforced allowlist so its
+	// launcher can announce it in agent memory (the firewall context points
+	// there — legibility runs inward). Same resolvedEgress string the netns
+	// helper enforces, so announcement and enforcement share one source; set
+	// AFTER the host/config env so no [env] key can skew what the box is told
+	// byre enforces. Open-denylist boxes have no allowlist to announce.
+	if p, _ := rv.skills.NetworkPosture(); config.PostureEnforcesAllowlist(p) {
+		env["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
+	}
 
 	binds := make([]runner.BindMount, 0, len(rv.mounts))
 	for _, m := range rv.mounts {

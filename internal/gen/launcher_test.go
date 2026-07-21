@@ -453,3 +453,151 @@ func TestLauncherWarnsUnpopulatedWorktreeWithoutMarker(t *testing.T) {
 		t.Fatalf("expected an unpopulated-worktree warning, got:\n%s", out)
 	}
 }
+
+// runLauncherCompose drives the real launcher with the context-dir seam,
+// returning the exit code, combined output, and the composed memory file's
+// content ("" if absent). BYRE_EGRESS is stripped from the inherited env
+// (the box running this suite may itself carry one) and set only when the
+// test passes it via extraEnv.
+func runLauncherCompose(t *testing.T, ctxDir, gateFile string, extraEnv ...string) (int, string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "memory", "CLAUDE.md")
+	if err := os.WriteFile(filepath.Join(ctxDir, "agent-context-target"), []byte(target+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "BYRE_EGRESS=") {
+			env = append(env, e)
+		}
+	}
+	cmd := exec.Command("bash", script, "true")
+	cmd.Env = append(append(env,
+		"BYRE_CONTEXT_DIR="+ctxDir,
+		"BYRE_LAUNCH_GATE_FILE="+gateFile,
+		"BYRE_LAUNCH_GATE_TIMEOUT=10",
+		"BYRE_FIRSTRUN_DIR="+filepath.Join(dir, "no-firstrun"),
+		"BYRE_ENVD_DIR="+filepath.Join(dir, "no-envd"),
+	), extraEnv...)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if err != nil {
+		ee, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("launcher did not run: %v (%s)", err, out)
+		}
+		code = ee.ExitCode()
+	}
+	mem, rerr := os.ReadFile(target)
+	if rerr != nil {
+		return code, string(out), ""
+	}
+	return code, string(out), string(mem)
+}
+
+// gateWithListener writes a gate file whose port has a live listener, so the
+// launcher's wall wait succeeds — the announced-allowlist path requires the
+// wall to actually be up.
+func gateWithListener(t *testing.T, dir string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	gate := filepath.Join(dir, "launch-gate")
+	if err := os.WriteFile(gate, []byte(fmt.Sprintf("%d", ln.Addr().(*net.TCPAddr).Port)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return gate
+}
+
+// With the wall up (gate present) and BYRE_EGRESS passed by byre, the
+// launcher appends the enforced allowlist to the agent's memory: the rule is
+// the heading fragment + the entries + the closed-by-default sentence, after
+// the baked context.
+func TestLauncherAnnouncesEgressAllowlist(t *testing.T) {
+	ctxDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ctxDir, "agent-context.md"), []byte("skill opinions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gate := gateWithListener(t, t.TempDir())
+	code, out, mem := runLauncherCompose(t, ctxDir, gate,
+		"BYRE_EGRESS=api.example.com:443 github.com:22")
+	if code != 0 {
+		t.Fatalf("launcher exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"egress allowlist",
+		"api.example.com:443, github.com:22",
+		"Anything not listed is closed",
+	} {
+		if !strings.Contains(mem, want) {
+			t.Errorf("memory missing %q:\n%s", want, mem)
+		}
+	}
+	if strings.Index(mem, "skill opinions") > strings.Index(mem, "egress allowlist") {
+		t.Errorf("allowlist should follow the baked context:\n%s", mem)
+	}
+}
+
+// No gate file = no wall was requested: BYRE_EGRESS alone must not make the
+// launcher claim one. The baked context still lands.
+func TestLauncherNoEgressSectionWithoutGate(t *testing.T) {
+	ctxDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ctxDir, "agent-context.md"), []byte("skill opinions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, mem := runLauncherCompose(t, ctxDir, filepath.Join(t.TempDir(), "no-gate"),
+		"BYRE_EGRESS=api.example.com:443")
+	if code != 0 {
+		t.Fatalf("launcher exit %d\n%s", code, out)
+	}
+	if !strings.Contains(mem, "skill opinions") {
+		t.Fatalf("baked context not placed:\n%s", mem)
+	}
+	if strings.Contains(mem, "egress allowlist") {
+		t.Errorf("no wall, yet the launcher announced one:\n%s", mem)
+	}
+}
+
+// Wall up, allowlist empty (posture skill with zero grants): say EMPTY —
+// "every connection is closed" is exactly what the agent needs to know.
+// And with the wall up but NO BYRE_EGRESS handed over (an image run outside
+// byre), announce nothing rather than guess.
+func TestLauncherEgressEmptyAndAbsent(t *testing.T) {
+	ctxDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ctxDir, "agent-context.md"), []byte("skill opinions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gate := gateWithListener(t, t.TempDir())
+	code, out, mem := runLauncherCompose(t, ctxDir, gate, "BYRE_EGRESS=")
+	if code != 0 {
+		t.Fatalf("launcher exit %d\n%s", code, out)
+	}
+	if !strings.Contains(mem, "EMPTY") {
+		t.Errorf("empty allowlist should be announced as EMPTY:\n%s", mem)
+	}
+
+	code, out, mem = runLauncherCompose(t, ctxDir, gate)
+	if code != 0 {
+		t.Fatalf("launcher exit %d\n%s", code, out)
+	}
+	if strings.Contains(mem, "egress allowlist") {
+		t.Errorf("no BYRE_EGRESS handed over, yet a list was announced:\n%s", mem)
+	}
+}

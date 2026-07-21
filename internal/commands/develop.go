@@ -164,8 +164,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
 			// union of every enabled skill's declared egress plus the config
 			// `egress` key (ADR 0019) — computed here, so it can't come from
-			// baked image ENV. Copy params.Env so the added key doesn't leak
-			// into the box's own runtime env.
+			// baked image ENV. Copy params.Env so keys added below don't leak
+			// into the box's own runtime env. (Under an allowlist posture the
+			// box ALSO carries BYRE_EGRESS — runParams set it there so the
+			// launcher announces the list in agent memory; same value, so the
+			// overwrite below is a no-op on that path.)
 			netnsEnv = make(map[string]string, len(params.Env)+1)
 			for k, v := range params.Env {
 				netnsEnv[k] = v

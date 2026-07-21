@@ -93,9 +93,12 @@ fi
 # Place skill/agent context where the agent reads it. The target (e.g.
 # /home/dev/.claude/CLAUDE.md) usually lives in a state volume that's only mounted
 # now, at runtime — so this can't be a build-time COPY. Best-effort: a failure
-# here must never block the launch.
-if [ -s /etc/byre/agent-context-target ]; then
-  CTX_TARGET="$(cat /etc/byre/agent-context-target)"
+# here must never block the launch. The dir override is a test seam (the gate
+# precedent): the launcher tests compose against a temp dir instead of the
+# suite box's real /etc/byre.
+CTX_DIR="${BYRE_CONTEXT_DIR:-/etc/byre}"
+if [ -s "$CTX_DIR/agent-context-target" ]; then
+  CTX_TARGET="$(cat "$CTX_DIR/agent-context-target")"
   if [ -n "$CTX_TARGET" ]; then
     # The agent's memory = skill [context], plus a --self-edit note when that grant
     # is actually present. The real signal is the project's byre.config mounted rw
@@ -105,8 +108,8 @@ if [ -s /etc/byre/agent-context-target ]; then
     # A symlink a prior agent run may have planted can't redirect the write: rm -f
     # drops it so we write a fresh regular file. Best-effort: never block launch.
     sh -c '
-      t="$1"
-      have_ctx=; [ -f /etc/byre/agent-context.md ] && have_ctx=1
+      t="$1"; etc="$2"; gate="$3"
+      have_ctx=; [ -f "$etc/agent-context.md" ] && have_ctx=1
       # self-edit grant = the store actually bind-mounted READ-WRITE at
       # /home/dev/.byre-self (what --self-edit does). Check /proc/mounts for an rw
       # mount at that target — not mere file existence (a baked files/ entry) nor a
@@ -114,18 +117,37 @@ if [ -s /etc/byre/agent-context-target ]; then
       # self-edit path is a self-granted, status-visible choice; the note is only
       # informational either way.)
       have_se=
-      grep -Eq " /home/dev/\.byre-self [^ ]+ rw[, ]" /proc/mounts && [ -f /etc/byre/self-edit.md ] && have_se=1
-      [ -n "$have_ctx" ] || [ -n "$have_se" ] || exit 0
+      grep -Eq " /home/dev/\.byre-self [^ ]+ rw[, ]" /proc/mounts && [ -f "$etc/self-edit.md" ] && have_se=1
+      # Egress announcement: the wall is up (a posture skill baked the gate we
+      # already waited on) AND byre handed us the enforced allowlist — the same
+      # BYRE_EGRESS string the netns helper applied, so what we announce IS what
+      # is enforced. Informational only, hence an env var is fine here: a user
+      # setting it lies to their own agent (footgun doctrine), and the agent can
+      # edit its memory file anyway.
+      have_eg=; [ -s "$gate" ] && [ -n "${BYRE_EGRESS+set}" ] && have_eg=1
+      [ -n "$have_ctx" ] || [ -n "$have_se" ] || [ -n "$have_eg" ] || exit 0
       mkdir -p "$(dirname "$t")" || exit 0
       rm -f "$t"
       wrote=
-      [ -n "$have_ctx" ] && cat /etc/byre/agent-context.md > "$t" && wrote=1
+      [ -n "$have_ctx" ] && cat "$etc/agent-context.md" > "$t" && wrote=1
+      if [ -n "$have_eg" ]; then
+        [ -n "$wrote" ] && printf "\n\n" >> "$t"
+        {
+          printf "## This session\047s egress allowlist\n\n"
+          if [ -n "$BYRE_EGRESS" ]; then
+            printf "%s\n\n" "$(printf "%s" "$BYRE_EGRESS" | sed "s/ /, /g")"
+            printf "Anything not listed is closed. The list was resolved when this session\nstarted; a restart re-reads the config.\n"
+          else
+            printf "The allowlist is EMPTY: every outbound connection is closed. A restart\nre-reads the config.\n"
+          fi
+        } >> "$t" && wrote=1
+      fi
       if [ -n "$have_se" ]; then
         [ -n "$wrote" ] && printf "\n\n" >> "$t"
-        cat /etc/byre/self-edit.md >> "$t" && wrote=1
+        cat "$etc/self-edit.md" >> "$t" && wrote=1
       fi
       [ -n "$wrote" ] || rm -f "$t"
-    ' _ "$CTX_TARGET"
+    ' _ "$CTX_TARGET" "$CTX_DIR" "$GATE_FILE"
   fi
 fi 2>/dev/null || true
 

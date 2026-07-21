@@ -248,6 +248,12 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// /workspace — not a skill's opinion — so it rides every box, not a skill
 	// toggle (ADR 0021).
 	ctx := chassisContext
+	// The base image is the box's biggest unannounced surface (toolchains ride
+	// it): one bake-time line closes that. Bake-time is accurate here — a base
+	// change always forces a rebuild, unlike egress (announced at launch).
+	if cfg.Base != "" {
+		ctx += "\n\nBox base image: " + cfg.Base + "."
+	}
 	if p := provisionedContext(cfg); p != "" {
 		ctx += "\n\n" + p
 	}

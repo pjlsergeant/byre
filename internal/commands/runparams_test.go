@@ -342,3 +342,51 @@ func TestRunParamsWorktreeDistinctEnv(t *testing.T) {
 		t.Fatal("worktree must keep PROJECT and WORKTREE distinct")
 	}
 }
+
+// Under an allowlist posture the box env carries BYRE_EGRESS — the same
+// enforced union the netns helper gets — so the launcher can announce the
+// allowlist in agent memory. No posture (open) and open-denylist boxes must
+// NOT carry it: the launcher would announce a wall that isn't an allowlist.
+func TestRunParamsEgressAnnouncementEnv(t *testing.T) {
+	paths, _ := testPaths(t)
+
+	var fw skills.File
+	fw.Runtime.NetworkPosture = "deny-by-default"
+	var ag skills.File
+	ag.Runtime.Egress = []string{"api.anthropic.com"}
+	res := skills.Resolved{Skills: []skills.Skill{
+		{Name: "firewall", File: fw},
+		{Name: "claude", File: ag},
+	}}
+	cfg := config.Config{Egress: []string{"github.com:443"}}
+	p, err := runParams(paths, combine(cfg, res), "img", false, false, hostIdentity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := p.Env["BYRE_EGRESS"]
+	for _, want := range []string{"api.anthropic.com:443", "github.com:443"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("BYRE_EGRESS missing %q: %q", want, got)
+		}
+	}
+
+	// open-denylist: no allowlist exists, so no announcement env.
+	var od skills.File
+	od.Runtime.NetworkPosture = "open-denylist"
+	p, err = runParams(paths, combine(config.Config{}, skills.Resolved{Skills: []skills.Skill{{Name: "fw-open", File: od}}}), "img", false, false, hostIdentity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := p.Env["BYRE_EGRESS"]; ok {
+		t.Errorf("open-denylist box must not carry BYRE_EGRESS, got %q", v)
+	}
+
+	// No posture at all: same.
+	p, err = runParams(paths, combine(config.Config{Egress: []string{"github.com"}}, skills.Resolved{}), "img", false, false, hostIdentity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := p.Env["BYRE_EGRESS"]; ok {
+		t.Errorf("postureless box must not carry BYRE_EGRESS, got %q", v)
+	}
+}
