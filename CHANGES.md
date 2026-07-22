@@ -1,5 +1,99 @@
 # Changes
 
+## v1.2.0 -- 2026-07-22
+
+- **`byre grab <box-path> [<host-path>]` -- deliver's mirror.** Pull a
+  file or directory out of the running box: `byre grab /workspace/out.pdf`
+  lands it beside you on the host (or at the path you name), with the
+  same session discovery, picker, and uid accident-guard as `byre
+  deliver`. Directory grabs enumerate inside the box and stream out
+  entry by entry; because that listing is agent-shaped, byre bounds what
+  it will hold in host memory (500k entries / 64 MiB of pathnames) and
+  says plainly when a grab was truncated or the stream went malformed --
+  a hostile tree can make a grab incomplete (loudly), never wedge or
+  OOM the host. Destinations are anchored swap-safely, so a symlink
+  planted where the files land can't redirect the write elsewhere.
+  Reference: docs/DELIVER.md.
+
+- **Single-session now survives an engine switch.** Flipping `engine`
+  while a box runs left that box invisible to the newly configured
+  engine, so a second `byre develop` would happily launch a second
+  autonomous agent on the same working tree. develop now checks the
+  other installed engine for a competing session under the setup lock
+  and refuses with the session named. To keep that check from nagging --
+  nobody wants "podman isn't reachable" on every develop beside a
+  podman that's merely installed-but-stopped -- byre records which
+  engine each session starts under (per worktree, in the project
+  store): the steady state skips the query entirely, a real switch
+  checks exactly the engines a prior session implicated, and an
+  implicated engine that can't be reached stays marked unresolved and
+  is re-checked, with the disclosure repeated, until one develop finds
+  it reachable and clear. ADR 0004 records the rulings and residuals.
+
+- **`byre shell` respects Unix identity on a shared rootful daemon.**
+  A rootful Docker daemon shows every user's containers; `byre shell`
+  would open the first match for the project even when another Unix
+  user started it -- handing you their mounted checkout and agent
+  credentials. A box whose recorded dev identity isn't yours is now
+  hidden (matching deliver/grab's accident guard), with
+  `--skip-uid-check` to enter it deliberately; rootless podman is
+  per-user storage and is exempt. When byre can't even determine the
+  engine's rootless mode it still hides the box but says exactly that,
+  instead of asserting someone else owns it. The "N containers match"
+  disclosure now counts only boxes you could actually enter.
+
+- **A mount or seed source inside the project tree can't be retargeted
+  out of it.** The agent owns the tree between sessions, so a configured
+  in-tree path (`<project>/data`, say) could be swapped for a symlink to
+  `~/.ssh` and the next develop would mount or seed the target. develop
+  now resolves in-tree sources and refuses ones that escape the tree --
+  judged by file identity rather than path spelling, so alias spellings,
+  case-insensitive filesystems (macOS), and `..` tricks all classify
+  correctly, and the exact path byre checked is the exact path the
+  engine receives. Sources outside the tree are untouched: those are
+  your own host paths, and byre doesn't police your choices.
+
+- **A mount or volume covering a byre security path degrades the
+  network claim.** byre re-asserts its launcher, launch gate, and
+  firewall script at the image's build tail, but a runtime mount or
+  volume over one of those paths shadows the file where byre cannot
+  re-assert. develop now warns at launch and `byre status` qualifies
+  the Network row ("a mount/volume over a security path present -- not
+  guaranteed") instead of letting the deny-by-default claim stand.
+  Relatedly, the build-time guard now resolves its protected sources
+  only from the network-posture skill's own files, so another skill's
+  block can't shadow the gate or firewall script with a stub while the
+  guard re-asserts the wrong content.
+
+- **`byre worktree` derives the repository root structurally.** It used
+  `git rev-parse --show-toplevel`, which honors `core.worktree` in
+  `.git/config` -- a file the boxed agent can write. Aimed at an
+  unrelated host repository, that retargeted worktree creation (and its
+  rw mounts) onto a repo you never named. byre now walks the invocation
+  directory's ancestors for the `.git` entry itself, follows no symlinked
+  `.git`, and never consults the config for the answer. (ADR 0009.)
+
+- **The box's agent memory announces more of its real situation.** The
+  agent context now names the base image it's running on, the enforced
+  egress allowlist when a deny-by-default firewall is up, and the
+  packages the config provisioned -- so the agent stops rediscovering
+  (or guessing wrong about) its own sandbox.
+
+- **Cheaper rebuilds through steadier Dockerfile layers.** Skill blocks
+  now emit in provenance order (bundled, installed, local) with their
+  apt installs hoisted into the shared apt layer, so editing a local
+  skill or project config no longer busts the cache for every layer
+  beneath it. (ADRs 0041, 0042.)
+
+- **Hardening grab bag.** `develop`/`rebuild` re-check enrollment under
+  the setup lock, so racing a `byre forget` can't resurrect a project
+  the forget just tore down; the `--self-edit` exit report reads the
+  store through the descriptor-judging choke point (a planted FIFO or
+  device can't hang it) and its config diff names which side was
+  unreadable instead of printing a contradiction; and in-box command
+  stderr is capped in host memory, closing the last unbounded buffer an
+  agent could grow from inside.
+
 ## v1.1.0 -- 2026-07-19
 
 - **`byre worktree` now runs the repository's git entirely inside the
