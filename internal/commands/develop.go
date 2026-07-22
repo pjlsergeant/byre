@@ -211,16 +211,24 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// Single-session across an engine switch (ADR 0004): under the lock, refuse
 		// if a competing box exists on another installed engine. The per-worktree
 		// engine record scopes the query (crossEnginesToCheck): steady state skips
-		// it entirely, a recorded switch narrows it to the one engine that could
-		// hold this worktree's box, and a missing/invalid record widens it to every
-		// other installed engine (#4 ruling, 2026-07-22 -- no ambient "podman isn't
+		// it entirely, a recorded switch narrows it to the engines a prior session
+		// implicated, and a missing/invalid record widens it to every other
+		// installed engine (#4 ruling, 2026-07-22 -- no ambient "podman isn't
 		// reachable" note on every develop beside an installed-but-stopped engine).
-		if err := refuseCrossEngineSession(s.Err, crossEnginesToCheck(s.Err, rv.otherEngines, r.Engine(), paths), r.Engine(), paths); err != nil {
+		toCheck, tracked := crossEnginesToCheck(s.Err, rv.otherEngines, r.Engine(), paths)
+		skipped, err := refuseCrossEngineSession(s.Err, toCheck, r.Engine(), paths)
+		if err != nil {
 			return err
 		}
 		// Only after sole-session is established: a refusal above must leave the
-		// record pointing at the engine that still holds the session.
-		recordSessionEngine(s.Err, paths, r.Engine())
+		// record pointing at the engine that still holds the session. An engine
+		// skipped as unreachable stays UNRESOLVED in the record -- but only when
+		// the record implicated it (tracked); an untracked check carries no prior
+		// session's claim, so its skips are disclosed above and not carried.
+		if !tracked {
+			skipped = nil
+		}
+		recordSessionEngine(s.Err, paths, r.Engine(), skipped)
 		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
 			return berr
 		}
@@ -426,25 +434,29 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 // engine could host a competing box) is real but vanishingly narrow: it needs
 // live-restore/remote + an outage + a running box + a mid-session engine switch.
 // Disclosed, not gated -- degrade the claim, never block the user (footgun
-// doctrine).
-func refuseCrossEngineSession(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) error {
+// doctrine). Skipped engine names are RETURNED so an implicated engine's
+// uncertainty lands back in the engine record as unresolved and keeps being
+// re-checked -- an inconclusive check must never advance the record into
+// silence (codex review of the record scoping).
+func refuseCrossEngineSession(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) (skipped []string, err error) {
 	label := workdirLabel(paths)
 	for _, rr := range others {
 		ids, err := rr.ContainersByLabel(label)
 		if err != nil {
 			if deliver.IsUnreachable(err) {
 				fmt.Fprintf(w, "byre: %s isn't reachable, so a competing session there can't be ruled out — single-session isn't guaranteed against it (start %s to check).\n", rr.Engine(), rr.Engine())
+				skipped = append(skipped, string(rr.Engine()))
 				continue
 			}
-			return fmt.Errorf("checking %s for a competing session on this project: %w", rr.Engine(), err)
+			return nil, fmt.Errorf("checking %s for a competing session on this project: %w", rr.Engine(), err)
 		}
 		if len(ids) > 0 {
 			fmt.Fprintf(w, "byre: a session for this project already exists under %s, but the configured engine is now %s — refusing to start a second box on the same working tree.\n", rr.Engine(), self)
 			reportRunning(w, rr.Engine(), ids)
-			return ExitError{Code: ExitRefused}
+			return nil, ExitError{Code: ExitRefused}
 		}
 	}
-	return nil
+	return skipped, nil
 }
 
 // reportRunning tells the user a session is already live and how to act on it,

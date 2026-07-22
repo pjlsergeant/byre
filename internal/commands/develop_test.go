@@ -152,8 +152,8 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 			t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
 		}
 		// A refusal must not advance the record: podman still holds the session.
-		if got := lastSessionEngine(p); got != "podman" {
-			t.Fatalf("record advanced on refusal: %q", got)
+		if got := loadEngineRecord(p); got.last != "podman" {
+			t.Fatalf("record advanced on refusal: %+v", got)
 		}
 	})
 
@@ -175,12 +175,12 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		if err := develop(&fakeRunner{}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
 			t.Fatal(err)
 		}
-		if got := lastSessionEngine(p); got != "docker" {
-			t.Fatalf("record after develop = %q, want docker", got)
+		if got := loadEngineRecord(p); got.last != "docker" || len(got.unresolved) != 0 {
+			t.Fatalf("record after develop = %+v, want clean docker", got)
 		}
 	})
 
-	t.Run("recorded engine no longer installed: disclosed, not blocked", func(t *testing.T) {
+	t.Run("recorded engine no longer installed: disclosed, not blocked, then dropped", func(t *testing.T) {
 		p, _ := testPaths(t)
 		writeRecord(t, p, "podman")
 		rv := combine(config.Config{}, skills.Resolved{})
@@ -191,6 +191,79 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		}
 		if !strings.Contains(stderr.String(), "no longer installed") || !strings.Contains(stderr.String(), "podman") {
 			t.Errorf("expected the vanished-engine disclosure naming podman:\n%s", stderr.String())
+		}
+		// A CLI-less daemon can never be queried again; carrying it unresolved
+		// would nag forever after a deliberate uninstall.
+		if got := loadEngineRecord(p); got.last != "docker" || len(got.unresolved) != 0 {
+			t.Fatalf("record after vanished-engine develop = %+v, want clean docker", got)
+		}
+	})
+
+	// An INCONCLUSIVE check of an implicated engine must not launder the record
+	// into silence (codex P1): the skipped engine stays unresolved, re-checked
+	// and re-disclosed every develop until conclusively cleared.
+	t.Run("unreachable implicated engine stays unresolved until cleared", func(t *testing.T) {
+		p, _ := testPaths(t)
+		writeRecord(t, p, "podman")
+		down := func() *fakeRunner {
+			return &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("Cannot connect to Podman: connection refused")}
+		}
+		run := func(other *fakeRunner) string {
+			rv := combine(config.Config{}, skills.Resolved{})
+			rv.otherEngines = []sessionRunner{other}
+			s, _, stderr := testStreams("", false)
+			if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+				t.Fatalf("an unreachable implicated engine must not block develop: %v", err)
+			}
+			return stderr.String()
+		}
+		if out := run(down()); !strings.Contains(out, "isn't reachable") {
+			t.Fatalf("first develop should disclose the unreachable engine:\n%s", out)
+		}
+		got := loadEngineRecord(p)
+		if got.last != "docker" || len(got.unresolved) != 1 || got.unresolved[0] != "podman" {
+			t.Fatalf("record after inconclusive check = %+v, want docker + unresolved podman", got)
+		}
+		// Still unresolved: the SECOND develop re-checks and re-discloses.
+		if out := run(down()); !strings.Contains(out, "isn't reachable") {
+			t.Fatalf("second develop must re-disclose while unresolved:\n%s", out)
+		}
+		// Podman back up and empty: the check concludes, the record cleans.
+		up := &fakeRunner{engine: runner.Podman}
+		if out := run(up); strings.Contains(out, "isn't reachable") {
+			t.Fatalf("a reachable engine must not be disclosed as unreachable:\n%s", out)
+		}
+		if got := loadEngineRecord(p); got.last != "docker" || len(got.unresolved) != 0 {
+			t.Fatalf("record after conclusive check = %+v, want clean docker", got)
+		}
+	})
+
+	// The #4 noise goal: with NO record (fresh project) a stopped second engine
+	// is disclosed once, the record converges clean, and the next develop is
+	// silent -- an untracked check's skips carry no prior session's claim.
+	t.Run("fresh project beside a stopped engine converges to silence", func(t *testing.T) {
+		p, _ := testPaths(t)
+		down := &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("Cannot connect to Podman: connection refused")}
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = []sessionRunner{down}
+		s, _, stderr := testStreams("", false)
+		if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(stderr.String(), "isn't reachable") {
+			t.Fatalf("first develop should disclose once:\n%s", stderr.String())
+		}
+		if got := loadEngineRecord(p); got.last != "docker" || len(got.unresolved) != 0 {
+			t.Fatalf("untracked skips must not be carried: %+v", got)
+		}
+		s2, _, stderr2 := testStreams("", false)
+		rv2 := combine(config.Config{}, skills.Resolved{})
+		rv2.otherEngines = []sessionRunner{down}
+		if err := develop(&fakeRunner{}, s2, p, rv2, false); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(stderr2.String(), "isn't reachable") {
+			t.Errorf("steady state must be silent about the stopped engine:\n%s", stderr2.String())
 		}
 	})
 }
