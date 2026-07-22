@@ -68,6 +68,32 @@ func (m model) onEditorClosed(err error) model {
 
 // ---- save / assemble / dirty -----------------------------------------------
 
+// reportSaved is Run's saved return: whether the caller should say "wrote
+// <path>" (true) or "byre: config unchanged." (false). A ctrl+s save always
+// reports true — the user asked for that write. $EDITOR mutations report by
+// NET content instead: a round-trip that ends byte-identical to the open-time
+// file (a bad line edited in, then fixed back out) leaves nothing changed,
+// and reporting "wrote" for it contradicted the on-disk truth (QA playbook
+// finding 2026-07-18, fixed 2026-07-22). A file created or deleted while the
+// editor was open is a real mutation and still reports true.
+func (m model) reportSaved() bool {
+	if m.uiWrote {
+		return true
+	}
+	if !m.savedOnce {
+		return false
+	}
+	raw, err := os.ReadFile(m.filePath)
+	switch {
+	case err == nil && m.openErr == nil:
+		return !bytes.Equal(raw, m.openRaw)
+	case err != nil && m.openErr != nil:
+		return false // absent at open and at quit alike
+	default:
+		return true // created or deleted during the session
+	}
+}
+
 // savedStatus is the post-save status note; statusNote singles it out (green).
 const savedStatus = "Saved ✓"
 
@@ -120,6 +146,7 @@ func (m model) save() model {
 	m.errMsg = ""
 	m.savedSig = m.sig()
 	m.savedOnce = true
+	m.uiWrote = true
 	m.status = savedStatus
 	m.confirmQuit = false
 	return m

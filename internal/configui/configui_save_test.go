@@ -607,3 +607,60 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 		check(t, path, nil)
 	})
 }
+
+// reportSaved (Run's saved return) judges $EDITOR-only sessions by NET
+// content: an edit round-trip that ends byte-identical to the open-time file
+// must report "unchanged" — the QA playbook's ^e journey edits a bad line in
+// and back out, and "wrote <path>" for that contradicted the on-disk truth
+// (finding 2026-07-18, fixed 2026-07-22). A ctrl+s save reports written
+// unconditionally; a lasting $EDITOR change reports written.
+func TestReportSavedEditorNetNoop(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	orig := []byte("agent = \"none\"\n")
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// $EDITOR writes a bad line, the UI reloads, a second $EDITOR fixes it
+	// back: savedOnce is true (real writes landed) but the net content is the
+	// open-time bytes — reportSaved must say unchanged.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.WriteFile(path, []byte("agent = \"none\"\npackages = [\"x\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	if !m.savedOnce {
+		t.Fatal("precondition: the round-trip's writes must mark savedOnce")
+	}
+	if m.reportSaved() {
+		t.Fatal("a net-identical $EDITOR round-trip must report unchanged")
+	}
+
+	// A LASTING $EDITOR change reports written.
+	lasting := m
+	lasting.preEditorRaw, lasting.preEditorErr = os.ReadFile(path)
+	if err := os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lasting = lasting.onEditorClosed(nil)
+	if !lasting.reportSaved() {
+		t.Fatal("a lasting $EDITOR change must report written")
+	}
+
+	// ctrl+s reports written unconditionally, net content notwithstanding.
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	saved := m
+	saved.uiWrote = true
+	if !saved.reportSaved() {
+		t.Fatal("a ctrl+s save must always report written")
+	}
+}

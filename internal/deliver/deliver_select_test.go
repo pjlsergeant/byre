@@ -441,3 +441,22 @@ func TestMissingSocketIsUnreachable(t *testing.T) {
 		t.Fatalf("auto-pick should survive a missing socket: %q", out.String())
 	}
 }
+
+// A plain project's --box pick arg IS its project id: the candidate row must
+// print it once, not in both columns (QA finding 2026-07-22). A worktree
+// session keeps both columns — the workdir id is the pick arg, the project id
+// is the context that makes it recognizable.
+func TestSessionListPlainProjectPrintsIDOnce(t *testing.T) {
+	plain := Session{EngineName: "docker", ID: "aaaabbbbcccc", ProjectID: "p1-qa-51de00", WorkdirID: "p1-qa-51de00"}
+	wt := Session{EngineName: "docker", ID: "ddddeeeeffff", ProjectID: "proj-main-0877d7", WorkdirID: "proj-wt1-abc123"}
+	out := sessionList([]Session{plain, wt})
+	if got := strings.Count(out, "p1-qa-51de00"); got != 1 {
+		t.Fatalf("plain project id must appear once per row, got %d in:\n%s", got, out)
+	}
+	if !strings.Contains(out, "p1-qa-51de00 (docker)") {
+		t.Fatalf("plain row lost its engine suffix:\n%s", out)
+	}
+	if !strings.Contains(out, "proj-wt1-abc123  proj-main-0877d7 (docker)") {
+		t.Fatalf("worktree row must keep pick arg + project id:\n%s", out)
+	}
+}

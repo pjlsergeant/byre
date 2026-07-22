@@ -395,21 +395,6 @@ parked, not here. Dispatched findings are removed (fix + regression
 test; the recipes above assert fixed behavior); git history keeps the
 reports.
 
-- **^e quit says "wrote" with nothing to write** (found 2026-07-18,
-  widened 2026-07-19, reconfirmed 2026-07-22 at the exact recipe step):
-  after an external edit + "Reloaded from file" with NO unsaved changes,
-  `^q` prints `byre: wrote <path>` — a content-no-op write where the
-  recipe says `byre: config unchanged.` First seen on a never-developed
-  project (the enrollment-at-open trade-off), since reproduced on a
-  fully enrolled one, so the no-op-write applies generally. Content
-  verified identical after the write. A plain open + resize + `^q`
-  (no ^e) says "config unchanged" correctly, so the no-op write rides
-  the external-edit reload path. Legibility only.
-- **deliver/grab `--box` candidate list prints the workdir id twice per
-  row** (found 2026-07-22): the no-tty ambiguity refusal renders
-  `p1-qa-51de00  p1-qa-51de00 (docker)` — name and workdir id are the
-  same string, printed in both columns. Both commands share the list.
-  Legibility only.
 - **Worktree create double-prints two messages** (found 2026-07-19; NOT
   reproduced 2026-07-22 — both the git-less failure and the "populated"
   line printed exactly once on the v1.2.0 pass; watch one more pass,

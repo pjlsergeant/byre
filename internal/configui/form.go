@@ -20,9 +20,11 @@ import (
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
-// Run shows the interactive editor for cfg and returns whether the config was
-// saved to filePath at least once (false = the user quit without saving, so the
-// file is untouched). templates and agents populate the pickers. Saving happens
+// Run shows the interactive editor for cfg and returns whether the caller
+// should report the config as written: a ctrl+s save landed, or an $EDITOR
+// round-trip left the file NET-different from its open-time bytes (false = the
+// file ends as it began — untouched, or edited and restored — see
+// reportSaved). templates and agents populate the pickers. Saving happens
 // inside the UI (explicit ctrl+s), so the user can edit, save, and keep editing;
 // quitting never writes. prepare (nil = no-op) runs before the first write can
 // happen — an explicit save or the $EDITOR round-trip — so the caller can defer
@@ -35,7 +37,7 @@ func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts
 	if err != nil {
 		return false, err
 	}
-	return fm.(model).savedOnce, nil
+	return fm.(model).reportSaved(), nil
 }
 
 // fieldID identifies one editable row, in focus order.
@@ -181,7 +183,14 @@ type model struct {
 	dfPost  string // dockerfile_post lines
 
 	savedSig  string
-	savedOnce bool
+	savedOnce bool // disk was mutated at some point (ctrl+s or a real $EDITOR write)
+	uiWrote   bool // a ctrl+s save landed — reportSaved is unconditionally true then
+
+	// openRaw/openErr snapshot filePath as the editor OPENED (Err non-nil =
+	// absent); reportSaved compares the quit-time file against it so an
+	// $EDITOR round-trip that nets out byte-identical reports "unchanged".
+	openRaw []byte
+	openErr error
 
 	// prepare runs before anything can write filePath (ctrl+s save, $EDITOR);
 	// nil = no-op. The project editor passes Bootstrap here so an uninitialized
@@ -240,6 +249,11 @@ type model struct {
 }
 
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
+	// Snapshot the on-disk bytes as OPENED, so reportSaved (Run's saved
+	// return) can judge an $EDITOR-only session by NET content against them.
+	// (The hand-comment warning that used to ride this read is gone: the
+	// preservation engine keeps comments, so there is nothing to apologize for.)
+	openRaw, openErr := os.ReadFile(filePath)
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Focus()
@@ -314,6 +328,8 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		ta:           ta,
 		width:        80,
 		volPendClear: -1,
+		openRaw:      openRaw,
+		openErr:      openErr,
 	}
 	return m.loadConfig(cfg)
 }
