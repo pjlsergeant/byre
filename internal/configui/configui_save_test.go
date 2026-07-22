@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -662,5 +663,35 @@ func TestReportSavedEditorNetNoop(t *testing.T) {
 	saved.uiWrote = true
 	if !saved.reportSaved() {
 		t.Fatal("a ctrl+s save must always report written")
+	}
+}
+
+// A read failure that is NOT absence (permissions, I/O) must not masquerade
+// as created/deleted: reportSaved degrades to the coarse truth (writes landed
+// this session) instead of comparing against bytes it couldn't read, and
+// onEditorClosed sets no mutation flag it can't prove (codex review of the
+// net-content fix).
+func TestReportSavedUnreadableEdgesDegradeCoarse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("agent = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// Open-time read failed for a non-absence reason; editor writes landed.
+	// The net comparison is untrustworthy — report written, never "unchanged".
+	m.openRaw, m.openErr = nil, errors.New("permission denied")
+	m.savedOnce = true
+	if !m.reportSaved() {
+		t.Fatal("an unreadable open endpoint must degrade to reporting written")
+	}
+
+	// onEditorClosed: a non-absence pre-editor error plus a readable file is
+	// NOT proof of creation — savedOnce must stay unset.
+	clean := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	clean.preEditorRaw, clean.preEditorErr = nil, errors.New("permission denied")
+	if got := clean.onEditorClosed(nil); got.savedOnce {
+		t.Fatal("a non-absence read error must not count as a landed write")
 	}
 }

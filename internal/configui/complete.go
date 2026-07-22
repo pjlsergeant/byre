@@ -4,7 +4,9 @@ package configui
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -43,10 +45,13 @@ func (m model) onEditorClosed(err error) model {
 	// parse: a written-but-invalid file was still written. A file DELETED in
 	// the editor is a mutation too — reporting it "unchanged" would tell the
 	// user their config is intact when it is gone.
+	// Absence is only ever fs.ErrNotExist: any OTHER read error (permissions,
+	// I/O) proves nothing about a write landing, so it sets none of the flags
+	// — the ParseFile below fails on the same unreadable file and surfaces it.
 	raw, rerr := os.ReadFile(m.filePath)
-	created := rerr == nil && m.preEditorErr != nil
+	created := rerr == nil && errors.Is(m.preEditorErr, fs.ErrNotExist)
 	changed := rerr == nil && m.preEditorErr == nil && !bytes.Equal(raw, m.preEditorRaw)
-	deleted := rerr != nil && m.preEditorErr == nil
+	deleted := errors.Is(rerr, fs.ErrNotExist) && m.preEditorErr == nil
 	if created || changed || deleted {
 		m.savedOnce = true
 	}
@@ -87,10 +92,18 @@ func (m model) reportSaved() bool {
 	switch {
 	case err == nil && m.openErr == nil:
 		return !bytes.Equal(raw, m.openRaw)
-	case err != nil && m.openErr != nil:
+	case errors.Is(err, fs.ErrNotExist) && errors.Is(m.openErr, fs.ErrNotExist):
 		return false // absent at open and at quit alike
-	default:
+	case (err == nil && errors.Is(m.openErr, fs.ErrNotExist)) ||
+		(errors.Is(err, fs.ErrNotExist) && m.openErr == nil):
 		return true // created or deleted during the session
+	default:
+		// An endpoint failed to read for a reason OTHER than absence
+		// (permissions, I/O): the net comparison can't be trusted in either
+		// direction, so degrade to the coarse truth already established —
+		// $EDITOR writes landed during this session (codex review: any-error-
+		// as-absence made this report lie both ways on unreadable edges).
+		return true
 	}
 }
 
