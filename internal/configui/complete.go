@@ -101,12 +101,15 @@ func (m model) reportSaved() bool {
 		return true // created or deleted during the session
 	default:
 		// An endpoint failed to read for a reason OTHER than absence
-		// (permissions, I/O): the net comparison can't be trusted in either
-		// direction. Report written if anything OBSERVABLY happened — a write
-		// landed (savedOnce) or readability itself changed across the session
-		// — and "unchanged" only for a look-and-quit whose endpoints failed
-		// identically (near-impossible: the caller ParseFiles before opening).
-		return m.savedOnce || (m.openErr == nil) != (err == nil)
+		// (permissions, I/O): the net comparison can't be trusted, and
+		// "unchanged" is claimed ONLY on positive evidence (the two cases
+		// above) — so every incomparable shape reports written, no
+		// evidence-weighing (codex round 3: weighing lied for double-fault
+		// endpoints). The residual false "wrote" needs a file the caller's
+		// pre-open ParseFile could read that no longer reads at quit with
+		// nothing done — an unreadable endpoint on a session that gate let
+		// in means something happened to the file while we were here.
+		return true
 	}
 }
 
