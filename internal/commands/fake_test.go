@@ -39,9 +39,10 @@ type fakeRunner struct {
 	liveCalls     int
 	allContainers map[string][]string // label -> ANY-state ids (ContainersByLabel; pre-start markers)
 	allErr        error
-	rmContainers  []string          // ContainerRemove calls
-	failRmCont    map[string]bool   // container ids whose removal fails (started meanwhile)
-	env           map[string]string // ContainerEnv of any id
+	rmContainers  []string                     // ContainerRemove calls
+	failRmCont    map[string]bool              // container ids whose removal fails (started meanwhile)
+	env           map[string]string            // ContainerEnv of any id
+	envByID       map[string]map[string]string // per-id override, consulted before env
 	envErr        error
 	execEnv       map[string]string // env map passed to the last Exec
 	labels        map[string]string // ContainerLabels of any id
@@ -121,7 +122,12 @@ func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
 	return f.live[label], nil
 }
 
-func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) { return f.env, f.envErr }
+func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) {
+	if e, ok := f.envByID[id]; ok {
+		return e, f.envErr
+	}
+	return f.env, f.envErr
+}
 
 func (f *fakeRunner) ContainerLabels(id string) (map[string]string, error) {
 	return f.labels, f.labelsErr

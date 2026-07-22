@@ -104,6 +104,12 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 		if rerr == nil {
 			callerScoped = rootless
 		}
+		// Judge EVERY candidate on this engine (no early break): the first
+		// enterable one is entered, but the "N containers match" disclosure
+		// below must count only enterable boxes — a count that included the
+		// foreign/unreadable ones just filtered out would overstate the
+		// ambiguity being disclosed.
+		var enterable []string
 		for _, id := range got {
 			env, eerr := rr.ContainerEnv(id)
 			if eerr != nil {
@@ -123,10 +129,13 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 				}
 				continue // foreign box — skip and keep scanning
 			}
-			r, targetID, cenv, chosen = rr, id, env, got
-			break
+			if r == nil {
+				r, targetID, cenv = rr, id, env
+			}
+			enterable = append(enterable, id)
 		}
 		if r != nil {
+			chosen = enterable
 			break
 		}
 	}

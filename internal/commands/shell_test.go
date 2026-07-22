@@ -132,6 +132,47 @@ func TestShellHidesForeignUIDSession(t *testing.T) {
 	})
 }
 
+// The "N containers match" disclosure counts only ENTERABLE boxes: a foreign
+// box the identity check just filtered out must not inflate the count — one
+// enterable candidate is not ambiguous, however many were hidden.
+func TestShellMultiMatchCountExcludesFiltered(t *testing.T) {
+	p, proj := testPaths(t)
+	h := &fakeRunner{
+		live: liveWorkdir(p, "foreignbox01", "minebox00001"),
+		envByID: map[string]map[string]string{
+			"foreignbox01": {"BYRE_UID": "2222", "BYRE_GID": "2222"},
+			"minebox00001": {"BYRE_UID": strconv.Itoa(testCallerUID), "BYRE_GID": "1000"},
+		},
+	}
+	s, _, stderr := testStreams("", false)
+	if err := shell(s, proj, []sessionRunner{h}, testCallerUID, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.execs) != 1 || !strings.Contains(h.execs[0], "minebox00001") {
+		t.Fatalf("expected the caller's box entered: %v", h.execs)
+	}
+	if strings.Contains(stderr.String(), "containers match") {
+		t.Errorf("one enterable box is not ambiguous; no multi-match line expected:\n%s", stderr.String())
+	}
+
+	// Two enterable boxes ARE ambiguous: disclose with the enterable count,
+	// still excluding the hidden one.
+	h2 := &fakeRunner{
+		live: liveWorkdir(p, "mine00000001", "mine00000002", "foreignbox01"),
+		envByID: map[string]map[string]string{
+			"foreignbox01": {"BYRE_UID": "2222", "BYRE_GID": "2222"},
+		},
+		env: map[string]string{"BYRE_UID": strconv.Itoa(testCallerUID), "BYRE_GID": "1000"},
+	}
+	s2, _, stderr2 := testStreams("", false)
+	if err := shell(s2, proj, []sessionRunner{h2}, testCallerUID, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr2.String(), "2 containers match") {
+		t.Errorf("expected the enterable count (2) disclosed:\n%s", stderr2.String())
+	}
+}
+
 // A box with a valid UID but an unreadable GID is "unreadable" too — it must be
 // skipped (not selected-then-failed), so it can't shadow the caller's valid box
 // on another engine.
