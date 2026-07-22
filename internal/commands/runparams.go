@@ -169,34 +169,62 @@ func checkContainedHostSource(host, workDir string) error {
 }
 
 // inTreeByIdentity reports whether p denotes workDir or a descendant of it,
-// judged by FILE IDENTITY -- os.SameFile over p's ancestor chain -- never by
-// spelling. A lexical comparison misclassifies on a case-insensitive
-// filesystem (macOS APFS): a case-variant spelling of an in-tree path reads
-// as "outside", skipping the escape check entirely. The walk subsumes both
-// spelling-based probes this replaced: a lexically-in-tree path reaches
-// workDir as its own ancestor, and an alias through a symlinked ancestor
-// (/tmp/link/data where /tmp/link -> <project>) reaches it because Stat
-// follows symlinks -- deliberately, since an ancestor that RESOLVES into the
-// tree makes p agent-reachable; the final-component escape is judged by the
-// caller on the EvalSymlinks'd path, not here. Missing or unresolvable
-// components (ENOENT, ELOOP) just walk upward. Stat never opens the file, so
-// an agent-planted FIFO can't hang the walk (the hostopen concern). If
-// workDir itself can't be stat'd, degrade to the lexical judgment -- develop
-// is about to fail on the workspace bind anyway.
+// judged by FILE IDENTITY -- os.SameFile against workDir over real ancestor
+// chains -- never by spelling. A lexical comparison misclassifies on a
+// case-insensitive filesystem (macOS APFS): a case-variant spelling of an
+// in-tree path reads as "outside", skipping the escape check entirely.
+//
+// Each spelled ancestor of p (deepest first) is resolved and its OWN real
+// ancestor chain is compared against workDir (identityUnder). Two chains are
+// required, not one: a lexically-in-tree spelling whose interior component
+// escapes (<tree>/via/x with via -> /outside) only meets the tree at the
+// spelled ancestor <tree> itself, while an alias into a SUBDIRECTORY
+// (/tmp/link/data with /tmp/link -> <tree>/subdir) never spells the tree and
+// only meets it on the resolved chain above subdir (codex review: comparing
+// identity with the root alone missed exactly this alias). Missing or
+// unresolvable components (ENOENT, ELOOP) just walk upward; identityUnder
+// stats but never opens, so an agent-planted FIFO can't hang the walk (the
+// hostopen concern). The final-component escape is judged by the caller on
+// the EvalSymlinks'd path, not here. If workDir itself can't be stat'd,
+// degrade to the lexical judgment -- develop is about to fail on the
+// workspace bind anyway.
 func inTreeByIdentity(workDir, p string) bool {
 	wd, err := os.Stat(workDir)
 	if err != nil {
 		return underTree(workDir, p)
 	}
 	for q := filepath.Clean(p); ; {
-		if fi, ferr := os.Stat(q); ferr == nil && os.SameFile(wd, fi) {
+		if identityUnder(wd, q) {
 			return true
 		}
 		parent := filepath.Dir(q)
 		if parent == q {
-			return false // reached the filesystem root without meeting workDir
+			return false // no spelled ancestor resolves into the tree
 		}
 		q = parent
+	}
+}
+
+// identityUnder reports whether q resolves to wd or to a descendant of it: q
+// is canonicalized (so its lexical ancestors ARE its real ones -- ".." after a
+// symlink component would otherwise be resolved against the wrong parent) and
+// each ancestor is identity-compared to wd. A q that doesn't exist or can't
+// resolve is simply not evidence of containment (false); the caller keeps
+// walking its spelled ancestors.
+func identityUnder(wd os.FileInfo, q string) bool {
+	resolved, err := filepath.EvalSymlinks(q)
+	if err != nil {
+		return false
+	}
+	for cur := resolved; ; {
+		if fi, ferr := os.Stat(cur); ferr == nil && os.SameFile(wd, fi) {
+			return true
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return false
+		}
+		cur = parent
 	}
 }
 

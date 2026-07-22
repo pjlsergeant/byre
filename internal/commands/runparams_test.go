@@ -60,6 +60,15 @@ func TestCheckContainedHostSource(t *testing.T) {
 	aliasRoot := filepath.Join(t.TempDir(), "alias")
 	sym(tree, aliasRoot)
 
+	// An alias into a SUBDIRECTORY of the tree (codex review): aliasSub ->
+	// tree/subdir. The spelled ancestors of aliasSub/... never include the tree
+	// itself, so identity-vs-root alone misclassified this as outside; the
+	// resolved-ancestor chain above subdir must catch it.
+	mk(filepath.Join(tree, "subdir", "benign"))
+	sym(filepath.Join(outside, "secrets"), filepath.Join(tree, "subdir", "leak"))
+	aliasSub := filepath.Join(t.TempDir(), "aliassub")
+	sym(filepath.Join(tree, "subdir"), aliasSub)
+
 	cases := []struct {
 		name    string
 		host    string
@@ -72,6 +81,8 @@ func TestCheckContainedHostSource(t *testing.T) {
 		{"in-tree symlink staying in the tree is fine", inTreeLink, false},
 		{"interior symlink escaping the tree is refused", filepath.Join(tree, "via", "x"), true},
 		{"alias spelling of the root still catches the escape", filepath.Join(aliasRoot, "data"), true},
+		{"alias into a subdirectory still catches the escape", filepath.Join(aliasSub, "leak"), true},
+		{"alias into a subdirectory allows a benign path", filepath.Join(aliasSub, "benign"), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,6 +107,19 @@ func TestInTreeByIdentity(t *testing.T) {
 	}
 	if !inTreeByIdentity(tree, filepath.Join(alias, "sub")) {
 		t.Error("an alias spelling through a symlinked ancestor must classify in-tree")
+	}
+	// Alias to a SUBDIRECTORY: the spelled chain never meets the root, only the
+	// resolved chain above the subdir does (the codex-review regression).
+	sub := filepath.Join(tree, "deep", "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	aliasSub := filepath.Join(t.TempDir(), "aliassub")
+	if err := os.Symlink(sub, aliasSub); err != nil {
+		t.Fatal(err)
+	}
+	if !inTreeByIdentity(tree, filepath.Join(aliasSub, "x")) {
+		t.Error("an alias into a subdirectory must classify in-tree")
 	}
 	if inTreeByIdentity(tree, filepath.Dir(tree)) {
 		t.Error("the tree's parent must not classify in-tree")
