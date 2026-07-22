@@ -133,6 +133,32 @@ func TestInTreeByIdentity(t *testing.T) {
 	}
 }
 
+// A mount host must reach the engine CLEANED: the containment check validates
+// the cleaned spelling, so an unclean bind source (`<tree>/link/../x`) would
+// let the daemon resolve `link` first and apply `..` to its target — a
+// checker/use mismatch (codex review). expandHostPath is the one
+// normalization point, so check and mount agree by construction.
+func TestMountHostPathReachesBindCleaned(t *testing.T) {
+	if got, err := expandHostPath("/a/b/../c/"); err != nil || got != "/a/c" {
+		t.Fatalf("expandHostPath = %q, %v; want /a/c", got, err)
+	}
+	paths, _ := testPaths(t)
+	cfg := config.Config{Mounts: []config.Mount{{Host: "/live/sub/..", Target: "/t", Mode: "rw"}}}
+	p, err := runParams(paths, combine(cfg, skills.Resolved{}), "img", false, false, hostIdentity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range p.Binds {
+		if b.Target == "/t" {
+			if b.Host != "/live" {
+				t.Fatalf("bind host not cleaned: %+v", b)
+			}
+			return
+		}
+	}
+	t.Fatalf("mount missing from binds: %+v", p.Binds)
+}
+
 func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	paths, _ := testPaths(t)
 

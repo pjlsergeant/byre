@@ -239,8 +239,15 @@ func underTree(workDir, p string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
-// expandHostPath expands a leading ~ and requires the result to be absolute, so
-// a relative or home-relative mount host can't be misread by the engine.
+// expandHostPath expands a leading ~, requires the result to be absolute (so a
+// relative or home-relative mount host can't be misread by the engine), and
+// CLEANS it. Cleaning here is load-bearing, not cosmetic: the cleaned form is
+// the ONE spelling both the containment check and the engine receive. Left
+// unclean, `<tree>/link/../x` would be VALIDATED on its lexical collapse
+// (`<tree>/x`) while the daemon resolves `link` FIRST and applies `..` to the
+// link's target -- a checker/use mismatch an agent could aim through a
+// retargeted `link` (codex review). byre defines a mount/seed source as its
+// cleaned spelling; the check and the mount then agree by construction.
 func expandHostPath(p string) (string, error) {
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		home, err := os.UserHomeDir()
@@ -257,5 +264,5 @@ func expandHostPath(p string) (string, error) {
 	if strings.Contains(p, ",") {
 		return "", fmt.Errorf("mount host path contains a comma, which docker --mount cannot express: %q", p)
 	}
-	return p, nil
+	return filepath.Clean(p), nil
 }
