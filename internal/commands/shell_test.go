@@ -98,6 +98,24 @@ func TestShellHidesForeignUIDSession(t *testing.T) {
 		}
 	})
 
+	t.Run("undetermined rootless mode hides fail-closed but says so", func(t *testing.T) {
+		// The probe failing must not silently assert "another user's identity":
+		// on rootless podman the filter can only false-hide the caller's own
+		// keep-id box, so the refusal names the undetermined mode and the
+		// probe's error alongside the --skip-uid-check remedy.
+		h := foreign()
+		h.rootlessErr = errors.New("info query boom")
+		err := shell(discardStreams(), proj, []sessionRunner{h}, testCallerUID, false)
+		if err == nil || !strings.Contains(err.Error(), "rootless podman") ||
+			!strings.Contains(err.Error(), "info query boom") ||
+			!strings.Contains(err.Error(), "--skip-uid-check") {
+			t.Fatalf("expected an undetermined-mode refusal naming the probe error and remedy, got %v", err)
+		}
+		if len(h.execs) != 0 {
+			t.Fatal("must not exec into the box while the mode is undetermined")
+		}
+	})
+
 	t.Run("caller's own box beats a foreign box on an earlier engine", func(t *testing.T) {
 		mine := &fakeRunner{
 			live: liveWorkdir(p, "mybox000000"),

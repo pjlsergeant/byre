@@ -75,13 +75,14 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 	// keep-id box's BYRE_UID is the generic in-container uid, so the filter must
 	// not run there.
 	var (
-		r          sessionRunner
-		targetID   string
-		cenv       map[string]string
-		chosen     []string
-		queryErr   error
-		hidden     int
-		unreadable int
+		r           sessionRunner
+		targetID    string
+		cenv        map[string]string
+		chosen      []string
+		queryErr    error
+		hidden      int
+		unreadable  int
+		modeUnknown error // the rootless probe failed on an engine that then hid a box
 	)
 	for _, rr := range engines {
 		got, qerr := rr.RunningContainersByLabel(label)
@@ -92,8 +93,15 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 		if len(got) == 0 {
 			continue
 		}
+		// A probe FAILURE (rerr != nil) leaves callerScoped false, so the filter
+		// still runs -- fail-closed, matching deliver's wiring: entering a
+		// possibly-foreign box is the worse accident. But on rootless podman the
+		// filter can only ever false-hide the caller's own keep-id box (generic
+		// in-container uid), so a hide under an UNDETERMINED mode must say so
+		// below instead of asserting "another user's identity".
 		callerScoped := false
-		if rootless, rerr := rr.IsRootlessPodman(); rerr == nil {
+		rootless, rerr := rr.IsRootlessPodman()
+		if rerr == nil {
 			callerScoped = rootless
 		}
 		for _, id := range got {
@@ -110,6 +118,9 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 			}
 			if !callerScoped && !skipUIDCheck && uid != callerUID {
 				hidden++
+				if rerr != nil {
+					modeUnknown = rerr
+				}
 				continue // foreign box — skip and keep scanning
 			}
 			r, targetID, cenv, chosen = rr, id, env, got
@@ -121,6 +132,9 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 	}
 	if r == nil {
 		if hidden > 0 {
+			if modeUnknown != nil {
+				return fmt.Errorf("a session for this project is hidden by the identity check (%d), but whether the engine is rootless podman couldn't be determined (%v) — on rootless podman the check doesn't apply and the session is likely yours; pass --skip-uid-check to enter it", hidden, modeUnknown)
+			}
 			return fmt.Errorf("a session for this project is running under another user's identity (%d hidden); it isn't yours to enter — pass --skip-uid-check to enter it anyway", hidden)
 		}
 		if unreadable > 0 {

@@ -145,50 +145,58 @@ func checkMountPaths(paths project.Paths) error {
 // the prior session has ended and the new box has not started.
 func checkContainedHostSource(host, workDir string) error {
 	host = filepath.Clean(host)
-	dir, base := filepath.Split(host)
-	// The source is in the agent-writable region if EITHER its lexical spelling
-	// is under the tree (an interior component the agent planted to point OUT
-	// still lives at a lexically-in-tree path), OR its canonical parent is under
-	// the tree (an alias for an ancestor, /tmp/link/data where /tmp/link ->
-	// <project>, is lexically outside but really in-tree). Resolving only the
-	// parent never follows the agent-controlled final component -- that final
-	// escape is judged below, not trusted here.
-	lexicalIn := underTree(workDir, host)
-	canonParentIn := underTree(workDir, filepath.Join(canonicalizeExisting(dir), base))
-	if !lexicalIn && !canonParentIn {
+	if !inTreeByIdentity(workDir, host) {
 		return nil // genuinely outside the tree -- the user's own host path
 	}
 	resolved, err := filepath.EvalSymlinks(host)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // nothing there to escape through; the engine makes an in-tree dir
+			// Nothing exists at host -- including a dangling symlink or a dangling
+			// interior component. Passing it on is safe ONLY because binds ride
+			// `--mount type=bind` (runner.RunArgs), which REFUSES a missing source:
+			// the daemon resolves the path, finds nothing, and the run fails loudly
+			// with nothing created host-side. `-v` would instead auto-create the
+			// resolved target (as root, wherever a dangling link points), so if
+			// binds ever switch to -v this branch must refuse instead.
+			return nil
 		}
 		return fmt.Errorf("host source %q under the project tree could not be resolved (a swapped or broken symlink?): %w", host, err)
 	}
-	if !underTree(workDir, resolved) {
+	if !inTreeByIdentity(workDir, resolved) {
 		return fmt.Errorf("host source %q resolves to %q, outside the project tree — refusing to mount or seed it (an agent may have retargeted a path the config named inside the project; byre won't follow it out)", host, resolved)
 	}
 	return nil
 }
 
-// canonicalizeExisting returns the canonical (symlink-resolved) form of dir,
-// resolving the longest existing ancestor and appending any not-yet-existing
-// tail lexically. It never fails: an unresolvable path degrades to its cleaned
-// form. Used to canonicalize a mount/seed PARENT without requiring the whole
-// path to exist.
-func canonicalizeExisting(dir string) string {
-	dir = filepath.Clean(dir)
-	rest := ""
-	for {
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			return filepath.Join(resolved, rest)
+// inTreeByIdentity reports whether p denotes workDir or a descendant of it,
+// judged by FILE IDENTITY -- os.SameFile over p's ancestor chain -- never by
+// spelling. A lexical comparison misclassifies on a case-insensitive
+// filesystem (macOS APFS): a case-variant spelling of an in-tree path reads
+// as "outside", skipping the escape check entirely. The walk subsumes both
+// spelling-based probes this replaced: a lexically-in-tree path reaches
+// workDir as its own ancestor, and an alias through a symlinked ancestor
+// (/tmp/link/data where /tmp/link -> <project>) reaches it because Stat
+// follows symlinks -- deliberately, since an ancestor that RESOLVES into the
+// tree makes p agent-reachable; the final-component escape is judged by the
+// caller on the EvalSymlinks'd path, not here. Missing or unresolvable
+// components (ENOENT, ELOOP) just walk upward. Stat never opens the file, so
+// an agent-planted FIFO can't hang the walk (the hostopen concern). If
+// workDir itself can't be stat'd, degrade to the lexical judgment -- develop
+// is about to fail on the workspace bind anyway.
+func inTreeByIdentity(workDir, p string) bool {
+	wd, err := os.Stat(workDir)
+	if err != nil {
+		return underTree(workDir, p)
+	}
+	for q := filepath.Clean(p); ; {
+		if fi, ferr := os.Stat(q); ferr == nil && os.SameFile(wd, fi) {
+			return true
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return filepath.Join(dir, rest) // reached root; nothing resolved
+		parent := filepath.Dir(q)
+		if parent == q {
+			return false // reached the filesystem root without meeting workDir
 		}
-		rest = filepath.Join(filepath.Base(dir), rest)
-		dir = parent
+		q = parent
 	}
 }
 

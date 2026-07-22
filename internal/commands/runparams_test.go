@@ -83,6 +83,32 @@ func TestCheckContainedHostSource(t *testing.T) {
 	}
 }
 
+// The in-tree judgment is by file IDENTITY (os.SameFile over the ancestor
+// chain), not spelling — that is what makes a case-variant spelling on a
+// case-insensitive filesystem (untestable here on ext4) classify correctly.
+// Pin the mechanism with a symlink alias, and the lexical fallback for an
+// unstattable workDir.
+func TestInTreeByIdentity(t *testing.T) {
+	tree := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(tree, alias); err != nil {
+		t.Fatal(err)
+	}
+	if !inTreeByIdentity(tree, filepath.Join(alias, "sub")) {
+		t.Error("an alias spelling through a symlinked ancestor must classify in-tree")
+	}
+	if inTreeByIdentity(tree, filepath.Dir(tree)) {
+		t.Error("the tree's parent must not classify in-tree")
+	}
+	// workDir unstattable: degrade to the lexical judgment, not a panic or a
+	// blanket false (which would skip the escape check for lexically-in-tree
+	// spellings).
+	gone := filepath.Join(t.TempDir(), "gone")
+	if !inTreeByIdentity(gone, filepath.Join(gone, "sub")) {
+		t.Error("lexical fallback must still classify a spelled-under path in-tree")
+	}
+}
+
 func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	paths, _ := testPaths(t)
 
