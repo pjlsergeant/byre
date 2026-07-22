@@ -409,17 +409,15 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 // this worktree and refuse if one exists. Any query failure that ISN'T a clean
 // unreachability is fatal, since sole-session can't then be established.
 //
-// UNRESOLVED residual (reviewer split, 2026-07-22 -- Pete to rule): a
-// cleanly-unreachable OTHER engine is currently SKIPPED with a loud note rather
-// than failing closed. The case for skipping: the common reality is "podman
-// installed, machine never started", which has no sessions at all -- failing
-// closed there would brick every such develop. The case against (codex): Docker
-// live-restore (opt-in) and a remote Podman can keep containers RUNNING while
-// the daemon is unreachable, so a skipped engine could still host a competing
-// box, and develop then launches a second agent on the tree. The hole is narrow
-// (needs live-restore/remote + an outage + a running box + a mid-session engine
-// switch); the brick is common. Kept as skip-and-disclose pending Pete's call
-// on whether to fail closed (a ~2-line change here).
+// Residual, DECIDED (Pete, 2026-07-22): a cleanly-unreachable OTHER engine is
+// SKIPPED with a loud note, NOT failed closed. Failing closed would brick every
+// develop whenever podman is installed-but-never-started (the common Mac case) --
+// a non-starter. The residual codex raised (Docker live-restore or a remote
+// Podman can keep a box RUNNING while the daemon is unreachable, so a skipped
+// engine could host a competing box) is real but vanishingly narrow: it needs
+// live-restore/remote + an outage + a running box + a mid-session engine switch.
+// Disclosed, not gated -- degrade the claim, never block the user (footgun
+// doctrine).
 func refuseCrossEngineSession(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) error {
 	label := workdirLabel(paths)
 	for _, rr := range others {
