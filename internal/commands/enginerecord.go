@@ -152,7 +152,10 @@ func crossEnginesToCheck(w io.Writer, others []sessionRunner, self runner.Engine
 		}
 	}
 	for name := range implicated {
-		fmt.Fprintf(w, "byre: the last session here ran under %s, which is no longer installed — a competing session there can't be ruled out.\n", name)
+		// Wording covers both sources of implication (rec.last after a switch,
+		// or an unresolved leftover) — "the last session ran under X" would
+		// misattribute an unresolved engine (codex P3).
+		fmt.Fprintf(w, "byre: a prior session here implicated %s, which is no longer installed — a competing session there can't be ruled out.\n", name)
 	}
 	return toCheck, true
 }
