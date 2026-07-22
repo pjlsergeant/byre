@@ -82,12 +82,30 @@ project).
    clipboard note.
 5. TEARDOWN: rm boxes.
 
+## Journey: grab flows
+
+deliver's mirror; exit codes per DELIVER.md. Two boxes running (A:
+cwd-owned, B: other project), added 2026-07-22 (grab shipped post-1.1.0).
+
+1. Plant a file in A's box (`docker exec … sh -c 'printf x > /workspace/out.txt'`);
+   `byre grab /workspace/out.txt` from A's workdir → lands in the cwd,
+   bytes exact; repeat → `-2` suffix, never clobbered.
+2. Directory: plant `qa-dir/` holding two files in subdirs, a symlink and
+   a FIFO. `byre grab /workspace/qa-dir` → regular files land with the
+   tree shape; the symlink and FIFO each get a loud
+   "skipping … (not a regular file or directory)"; summary counts files
+   + bytes; rc=0.
+3. From a NEUTRAL dir, no tty → "2 boxes are running — pick one with
+   --box" + candidates; rc=1.
+4. Missing box path → "no such path in the box: <path>", rc=1.
+5. TEARDOWN: rm boxes, rm the landed files.
+
 ## Journey: config UI, Claude Skills + dirty flag
 
 1. `byre config` in a project → main form renders; `▸` cursor moves.
-2. Down to `Claude Skills`, Enter → "(no items yet)"; `a` → two-field
-   form. Junk NAME → immediate ✗ validation (message wraps at narrow
-   widths). Valid name + nonexistent dir → live note
+2. Down to `Claude Skills`, Enter → "(none yet)"; `a` → two-field
+   form. Junk NAME → the rule line shows live; ✗ validation renders on
+   the accept attempt (Enter). Valid name + nonexistent dir → live note
    "⚠ path missing — build will fail (accepted anyway…)"; accepting
    lists the row with the same warning suffix.
 3. Esc → main shows `● Unsaved changes`; `^q` → discard needs a SECOND
@@ -356,6 +374,15 @@ detection/recovery; canonical identity through a symlinked project path.
   those messages instead.
 - gemini's oauth code prompt times out after 5 minutes of inactivity
   (its own limit, exit 41) — drive it promptly.
+- gemini's auth chooser and code prompt each swallow a lone Ctrl-C
+  (2026-07-22: a "seeded box still shows the chooser" scare was the OLD
+  plain box still alive because its Ctrl-C never landed). Send Ctrl-C
+  twice as separate calls, then VERIFY the session died (docker ps)
+  before treating later screens as the new box's.
+- Stale pane frames satisfy wait-loops: a "dev@"/banner match can hit
+  the PREVIOUS session's scrollback and misreport the new one as up.
+  `clear` + `tmux clear-history` before a relaunch you intend to wait
+  on, or match against `tail -1` of the pane, not the whole capture.
 - The opencode shared-auth firstrun gate re-runs on EVERY launch until a
   login exists, so a loginless box must be skipped past the gate before
   probing agent env.
@@ -369,18 +396,29 @@ test; the recipes above assert fixed behavior); git history keeps the
 reports.
 
 - **^e quit says "wrote" with nothing to write** (found 2026-07-18,
-  widened 2026-07-19): after an external edit + "Reloaded from file"
-  with NO unsaved changes, `^q` prints `byre: wrote <path>` — a
-  content-no-op write where the recipe says `byre: config unchanged.`
-  First seen on a never-developed project (the enrollment-at-open
-  trade-off), since reproduced on a fully enrolled one, so the
-  no-op-write applies generally. Content verified identical after the
-  write. Legibility only.
-- **Worktree create double-prints two messages** (found 2026-07-19): the
-  git-less-image failure ("creating the worktree in the box failed:
-  exit status 1") and the success line ("populated the worktree
-  checkout inside the box.") each print twice per run. Legibility only.
-- **Wizard abort leaves an enrolled husk** (found 2026-07-18, note):
+  widened 2026-07-19, reconfirmed 2026-07-22 at the exact recipe step):
+  after an external edit + "Reloaded from file" with NO unsaved changes,
+  `^q` prints `byre: wrote <path>` — a content-no-op write where the
+  recipe says `byre: config unchanged.` First seen on a never-developed
+  project (the enrollment-at-open trade-off), since reproduced on a
+  fully enrolled one, so the no-op-write applies generally. Content
+  verified identical after the write. A plain open + resize + `^q`
+  (no ^e) says "config unchanged" correctly, so the no-op write rides
+  the external-edit reload path. Legibility only.
+- **deliver/grab `--box` candidate list prints the workdir id twice per
+  row** (found 2026-07-22): the no-tty ambiguity refusal renders
+  `p1-qa-51de00  p1-qa-51de00 (docker)` — name and workdir id are the
+  same string, printed in both columns. Both commands share the list.
+  Legibility only.
+- **Worktree create double-prints two messages** (found 2026-07-19; NOT
+  reproduced 2026-07-22 — both the git-less failure and the "populated"
+  line printed exactly once on the v1.2.0 pass; watch one more pass,
+  then drop): the git-less-image failure ("creating the worktree in the
+  box failed: exit status 1") and the success line ("populated the
+  worktree checkout inside the box.") each printed twice per run.
+  Legibility only.
+- **Wizard abort leaves an enrolled husk** (found 2026-07-18, note;
+  reconfirmed 2026-07-22):
   Ctrl-C at the template prompt leaves `projects/<id>/` holding path
   record + context dir, no config. Same class as the consciously-accepted
   reset/forget abort-enrollment stance (2026-07-17); recorded so the
