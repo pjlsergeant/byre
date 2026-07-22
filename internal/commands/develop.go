@@ -209,10 +209,18 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			return err
 		}
 		// Single-session across an engine switch (ADR 0004): under the lock, refuse
-		// if a competing box exists on any OTHER installed engine.
-		if err := refuseCrossEngineSession(s.Err, rv.otherEngines, r.Engine(), paths); err != nil {
+		// if a competing box exists on another installed engine. The per-worktree
+		// engine record scopes the query (crossEnginesToCheck): steady state skips
+		// it entirely, a recorded switch narrows it to the one engine that could
+		// hold this worktree's box, and a missing/invalid record widens it to every
+		// other installed engine (#4 ruling, 2026-07-22 -- no ambient "podman isn't
+		// reachable" note on every develop beside an installed-but-stopped engine).
+		if err := refuseCrossEngineSession(s.Err, crossEnginesToCheck(s.Err, rv.otherEngines, r.Engine(), paths), r.Engine(), paths); err != nil {
 			return err
 		}
+		// Only after sole-session is established: a refusal above must leave the
+		// record pointing at the engine that still holds the session.
+		recordSessionEngine(s.Err, paths, r.Engine())
 		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
 			return berr
 		}
@@ -404,8 +412,9 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 // refuseCrossEngineSession enforces ADR 0004 single-session across an engine
 // switch: once `engine` is flipped mid-session, a box on the PREVIOUS engine is
 // invisible to the configured runner, so a second develop would launch a second
-// autonomous agent on the same working tree. Under the setup lock, query every
-// OTHER installed engine for a container in ANY state (pre-start included) on
+// autonomous agent on the same working tree. Under the setup lock, query the
+// given OTHER engines (scoped by the per-worktree engine record — see
+// crossEnginesToCheck) for a container in ANY state (pre-start included) on
 // this worktree and refuse if one exists. Any query failure that ISN'T a clean
 // unreachability is fatal, since sole-session can't then be established.
 //

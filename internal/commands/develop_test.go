@@ -111,6 +111,90 @@ func TestDevelopCrossEngineQueryPolicy(t *testing.T) {
 	})
 }
 
+// TestDevelopEngineRecordScopesCrossEngineCheck pins the #4 ruling
+// (2026-07-22): the per-worktree engine record scopes the ADR 0004
+// cross-engine check, so the steady state (no switch since the last session)
+// stops printing the ambient unreachable-engine disclosure on every develop.
+func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
+	writeRecord := func(t *testing.T, p project.Paths, name string) {
+		t.Helper()
+		if err := os.WriteFile(engineRecordPath(p), []byte(name+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("steady state skips the other-engine query entirely", func(t *testing.T) {
+		p, _ := testPaths(t)
+		writeRecord(t, p, "docker")
+		// A HARD (non-unreachable) error would abort develop if podman were
+		// queried — succeeding proves the record short-circuited the check.
+		other := &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("dial unix: connect: permission denied")}
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = []sessionRunner{other}
+		s, _, stderr := testStreams("", false)
+		if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+			t.Fatalf("record == configured engine must skip the cross-engine query: %v", err)
+		}
+		if strings.Contains(stderr.String(), "isn't reachable") {
+			t.Errorf("steady state must not print the unreachable disclosure:\n%s", stderr.String())
+		}
+	})
+
+	t.Run("a recorded switch still refuses the competing box", func(t *testing.T) {
+		p, _ := testPaths(t)
+		writeRecord(t, p, "podman")
+		other := &fakeRunner{engine: runner.Podman, allContainers: liveWorkdir(p, "podman00")}
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = []sessionRunner{other}
+		err := develop(&fakeRunner{}, discardStreams(), p, rv, false)
+		var exitErr ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
+			t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
+		}
+		// A refusal must not advance the record: podman still holds the session.
+		if got := lastSessionEngine(p); got != "podman" {
+			t.Fatalf("record advanced on refusal: %q", got)
+		}
+	})
+
+	t.Run("a garbage record widens to every other engine, never suppresses", func(t *testing.T) {
+		p, _ := testPaths(t)
+		writeRecord(t, p, "not-an-engine")
+		other := &fakeRunner{engine: runner.Podman, allContainers: liveWorkdir(p, "podman00")}
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = []sessionRunner{other}
+		err := develop(&fakeRunner{}, discardStreams(), p, rv, false)
+		var exitErr ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
+			t.Fatalf("an invalid record must degrade to the full check, got %v", err)
+		}
+	})
+
+	t.Run("a successful develop records its engine", func(t *testing.T) {
+		p, _ := testPaths(t)
+		if err := develop(&fakeRunner{}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+			t.Fatal(err)
+		}
+		if got := lastSessionEngine(p); got != "docker" {
+			t.Fatalf("record after develop = %q, want docker", got)
+		}
+	})
+
+	t.Run("recorded engine no longer installed: disclosed, not blocked", func(t *testing.T) {
+		p, _ := testPaths(t)
+		writeRecord(t, p, "podman")
+		rv := combine(config.Config{}, skills.Resolved{})
+		rv.otherEngines = nil // podman gone from PATH
+		s, _, stderr := testStreams("", false)
+		if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+			t.Fatalf("a vanished recorded engine must not block develop: %v", err)
+		}
+		if !strings.Contains(stderr.String(), "no longer installed") || !strings.Contains(stderr.String(), "podman") {
+			t.Errorf("expected the vanished-engine disclosure naming podman:\n%s", stderr.String())
+		}
+	})
+}
+
 func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 	p, _ := testPaths(t)
 	seedSrc := t.TempDir()
