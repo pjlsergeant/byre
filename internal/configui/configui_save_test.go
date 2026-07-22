@@ -695,3 +695,34 @@ func TestReportSavedUnreadableEdgesDegradeCoarse(t *testing.T) {
 		t.Fatal("a non-absence read error must not count as a landed write")
 	}
 }
+
+// An $EDITOR session that changes the file and leaves it UNREADABLE sets no
+// mutation flag — but the quit report must not call that "unchanged": the
+// readability transition itself is observable (codex review, round 2). The
+// unreadable quit endpoint is simulated by replacing the file with a
+// directory (EISDIR: a non-absence read failure that works under any uid).
+func TestReportSavedUnreadableQuitEndpointReportsWritten(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("agent = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// $EDITOR breaks the file: onEditorClosed can't prove a write landed…
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	if m.savedOnce {
+		t.Fatal("precondition: an unreadable post-editor file must not set savedOnce")
+	}
+	// …but quit must still report written, never "config unchanged."
+	if !m.reportSaved() {
+		t.Fatal("readable→unreadable across the session must report written")
+	}
+}

@@ -85,9 +85,11 @@ func (m model) reportSaved() bool {
 	if m.uiWrote {
 		return true
 	}
-	if !m.savedOnce {
-		return false
-	}
+	// No savedOnce shortcut here: "unchanged" must be POSITIVELY established
+	// from the endpoints, never assumed. An $EDITOR session that changed the
+	// file and left it unreadable sets no mutation flag (onEditorClosed can't
+	// prove the write), and a shortcut on savedOnce reported that session
+	// "unchanged" (codex review, round 2).
 	raw, err := os.ReadFile(m.filePath)
 	switch {
 	case err == nil && m.openErr == nil:
@@ -100,10 +102,11 @@ func (m model) reportSaved() bool {
 	default:
 		// An endpoint failed to read for a reason OTHER than absence
 		// (permissions, I/O): the net comparison can't be trusted in either
-		// direction, so degrade to the coarse truth already established —
-		// $EDITOR writes landed during this session (codex review: any-error-
-		// as-absence made this report lie both ways on unreadable edges).
-		return true
+		// direction. Report written if anything OBSERVABLY happened — a write
+		// landed (savedOnce) or readability itself changed across the session
+		// — and "unchanged" only for a look-and-quit whose endpoints failed
+		// identically (near-impossible: the caller ParseFiles before opening).
+		return m.savedOnce || (m.openErr == nil) != (err == nil)
 	}
 }
 
