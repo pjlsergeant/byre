@@ -196,6 +196,77 @@ func TestAssembleWritesAgentFiles(t *testing.T) {
 	}
 }
 
+// Config [[context]] declarations (the operator's standing instructions)
+// concatenate AFTER the skill context, in cascade order; a `file` source is
+// read at bake time.
+func TestAssembleWritesConfigContext(t *testing.T) {
+	paths := bootstrapped(t)
+	notes := filepath.Join(t.TempDir(), "notes.md")
+	if err := os.WriteFile(notes, []byte("from a file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Base: "node:22", Contexts: []config.ContextDecl{
+		{Name: "house-rules", Text: "inline rules"},
+		{Name: "notes", File: notes},
+	}}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "claude", Context: "be concise"}}}
+	if _, err := Assemble(paths, cfg, res); err != nil {
+		t.Fatal(err)
+	}
+	ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := chassisContext + "\n\nBox base image: node:22.\n\nbe concise\n\ninline rules\n\nfrom a file"
+	if string(ctx) != want {
+		t.Errorf("agent context = %q; want %q", ctx, want)
+	}
+}
+
+// A declared file that isn't there fails the develop loudly, attributed to
+// its declaration — a build input the operator asked for, never degraded.
+func TestAssembleConfigContextMissingFileFails(t *testing.T) {
+	paths := bootstrapped(t)
+	cfg := config.Config{Base: "node:22", Contexts: []config.ContextDecl{
+		{Name: "notes", File: filepath.Join(t.TempDir(), "gone.md")},
+	}}
+	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "context notes") {
+		t.Fatalf("err = %v; want the declaration named", err)
+	}
+}
+
+// A context file inside the agent-writable tree is opened through a root
+// anchored there: an agent-planted symlink escaping the project cannot pull
+// arbitrary host content into the baked agent context.
+func TestAssembleConfigContextRefusesEscapingProjectSymlink(t *testing.T) {
+	paths := bootstrapped(t)
+	sentinel := filepath.Join(t.TempDir(), "victim.txt")
+	if err := os.WriteFile(sentinel, []byte("host secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(paths.WorkDir, "notes.md")
+	if err := os.Symlink(sentinel, link); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "notes", File: link}}}
+	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "context notes") {
+		t.Fatalf("err = %v; want the escaping symlink refused", err)
+	}
+}
+
+// The skill-context size cap applies to config context files too.
+func TestAssembleConfigContextFileCap(t *testing.T) {
+	paths := bootstrapped(t)
+	big := filepath.Join(t.TempDir(), "big.md")
+	if err := os.WriteFile(big, make([]byte, skills.MaxContextBytes+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "big", File: big}}}
+	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("err = %v; want the cap enforced", err)
+	}
+}
+
 // The canonical MCP file is baked on EVERY assemble — empty set included —
 // so /etc/byre/mcp.json exists in every box and the claude skill's
 // --mcp-config flag is unconditionally safe. Declared sets render the

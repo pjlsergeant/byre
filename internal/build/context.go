@@ -277,6 +277,16 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	if sc := res.Context(); sc != "" {
 		ctx += "\n\n" + sc
 	}
+	// The operator's standing instructions ([[context]] declarations) speak
+	// last: cascade order after the skills' opinions — the voice closest to
+	// the user closes the file.
+	cc, err := configContext(paths.WorkDir, cfg.Contexts)
+	if err != nil {
+		return "", err
+	}
+	if cc != "" {
+		ctx += "\n\n" + cc
+	}
 	if err := ctxRoot.WriteFile(gen.AgentContextName, []byte(ctx), 0o644); err != nil {
 		return "", err
 	}
@@ -475,6 +485,74 @@ func planClaudeSkills(paths project.Paths, cfg config.Config, res skills.Resolve
 		jobs = append(jobs, fileCopy{src: src, staged: staged, what: fmt.Sprintf("claude skill %s: copying %s", d.CS.Name, src)})
 	}
 	return jobs, nil
+}
+
+// configContext concatenates the resolved [[context]] declarations in
+// cascade order — the operator's standing instructions (contextdecl.go).
+// Inline text is used as written; a `file` source is a declared build input:
+// it is read here, size-capped, and a missing or unreadable file fails the
+// develop loudly (nothing to degrade — the operator asked for exactly this
+// content). Reads follow the stageCopy routing: a path inside the
+// agent-writable tree is opened through an os.Root anchored there (openat, so
+// an agent-swapped ancestor or escaping symlink is refused rather than
+// followed into arbitrary host content), while a path genuinely outside it is
+// a user-named host file, opened following their symlink if they made one.
+func configContext(agentRoot string, decls []config.ContextDecl) (string, error) {
+	var b strings.Builder
+	for _, cd := range decls {
+		content := cd.Text
+		if cd.File != "" {
+			path, err := expandHome(cd.File)
+			if err != nil {
+				return "", fmt.Errorf("context %s: %w", cd.Name, err)
+			}
+			data, err := readCappedHostFile(agentRoot, path)
+			if err != nil {
+				return "", fmt.Errorf("context %s: %s: %w", cd.Name, cd.File, err)
+			}
+			content = string(data)
+		}
+		if content == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(content)
+	}
+	return b.String(), nil
+}
+
+// readCappedHostFile reads one host file under the skill-context size cap,
+// routed per configContext's containment rule.
+func readCappedHostFile(agentRoot, path string) ([]byte, error) {
+	var f *os.File
+	if rel, ok := agentWritableRel(agentRoot, path); ok {
+		root, err := os.OpenRoot(agentRoot)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		f, _, err = hostopen.OpenRegularIn(root, rel)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		f, _, err = hostopen.OpenRegular(path, true)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, skills.MaxContextBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > skills.MaxContextBytes {
+		return nil, fmt.Errorf("exceeds %d bytes (limit)", skills.MaxContextBytes)
+	}
+	return data, nil
 }
 
 // expandHome expands a leading ~ against the current user's home and requires
