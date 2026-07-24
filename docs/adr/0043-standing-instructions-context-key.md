@@ -12,8 +12,9 @@ layer is per-stack, the project config is per-project.
 Principles: opinion-free core (byre ships no prose; the key is wiring, the
 words are the user's), legibility (declarations are named, attributed, and
 removable, never smuggled), the footgun doctrine (the threat model is the
-agent -- the config lives host-side where the box can't rewrite it; the
-user's own file choices are never policed, only read safely).
+agent -- the config lives host-side, out of the box's reach short of an
+explicit `--self-edit` grant; the user's own file choices are never
+policed, only read safely).
 
 ## The problem
 
@@ -32,9 +33,13 @@ the *project's* voice -- committed, collaborator-visible, agent-writable
 **Three prose voices, three channels.** The skill author's opinions ride
 skill.toml `[context]` (travel with the tool, toggle with the skill). The
 project's voice is its in-tree agent memory (committed, agent-writable).
-The operator's voice is `[[context]]`: host-side config, so the boxed
-agent cannot rewrite its own standing orders, and agent-neutral, because
-it rides whatever `context_target` the selected agent skill declares.
+The operator's voice is `[[context]]`: host-side config, out of the
+boxed agent's reach -- with one explicit exception: a `--self-edit`
+session mounts the project's own store config read-write, so the agent
+can then edit the PROJECT layer's declarations (that grant is the
+feature); the global default and named layers stay outside every box.
+It is also agent-neutral, because it rides whatever `context_target`
+the selected agent skill declares.
 
 **Genus, with one home.** The key joins the named-declaration genus
 (`[[mcp]]`, `[[claude_skills]]`; nameddecl.go): layers replace by name,

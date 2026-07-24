@@ -94,10 +94,13 @@ func TestContextDeclMergeReplaceByName(t *testing.T) {
 	if len(got.Contexts) != 2 {
 		t.Fatalf("Contexts = %+v", got.Contexts)
 	}
-	if got.Contexts[0].Name != "house-rules" || got.Contexts[0].Text != "new" {
-		t.Fatalf("later layer must replace by name: %+v", got.Contexts[0])
+	// The replacement speaks at the REPLACING layer's position — a later
+	// layer's prose lands after what it didn't replace, so cascade
+	// precedence and rendered order agree.
+	if got.Contexts[1].Name != "house-rules" || got.Contexts[1].Text != "new" {
+		t.Fatalf("replacement must take the replacing layer's position: %+v", got.Contexts)
 	}
-	if got.Contexts[1].Name != "tone" {
+	if got.Contexts[0].Name != "tone" {
 		t.Fatalf("unrelated entry lost: %+v", got.Contexts)
 	}
 }

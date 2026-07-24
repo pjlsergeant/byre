@@ -10,8 +10,9 @@
   The prose lands in the agent's memory file after any enabled skills'
   context, whatever agent the box runs; layers replace a block by
   name, `!name` removes one. Config lives host-side, so the boxed
-  agent can't rewrite its own standing orders. The context-only-skill
-  recipe is superseded for operator prose. ADR 0043.
+  agent can't rewrite its own standing orders (short of a
+  `--self-edit` session's explicit grant over the project layer). The
+  context-only-skill recipe is superseded for operator prose. ADR 0043.
 
 ## v1.2.0 -- 2026-07-22
 

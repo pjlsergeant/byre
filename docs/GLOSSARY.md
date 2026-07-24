@@ -369,7 +369,8 @@ project). Inline `text` or a host `file`; joins the baked agent context
 after the skill snippets and rides the agent's `context_target` pipe.
 One of three prose voices: the skill author's (skill.toml `[context]`),
 the project's (in-tree agent memory, e.g. a repo `CLAUDE.md`), the
-operator's (this key -- host-side, agent-unwritable).
+operator's (this key -- host-side, out of the box's reach short of a
+`--self-edit` grant).
 _Avoid_: "memory" for the key (the agent's own state volume owns that
 word); calling standing instructions a grant
 

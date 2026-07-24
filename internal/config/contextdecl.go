@@ -9,8 +9,9 @@ package config
 // already exist: a skill's own [context] table (the skill author's opinions,
 // riding the skill toggle) and a repo's in-tree CLAUDE.md (the project's
 // voice -- committed, collaborator-visible, and agent-writable). Config
-// declarations live host-side in the store, so the boxed agent cannot
-// rewrite its own standing orders.
+// declarations live host-side in the store, out of the boxed agent's
+// reach short of a `--self-edit` session's explicit grant over the
+// project layer.
 //
 // A declaration is WIRING, not a grant: text confers nothing bash doesn't
 // already have inside the box (the [[claude_skills]] stance). The `file`

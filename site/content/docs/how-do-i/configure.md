@@ -149,7 +149,8 @@ like `~/.claude`, are masked by the volume at runtime).
 ## Give my agent standing instructions in every box?
 
 tldr: a `[[context]]` block -- `name` plus inline `text` or a host
-`file` -- in any config layer; the layer picks the reach.
+`file` -- in any config layer: the global default for every box, a
+layer or template for a stack, the project config for one project.
 
 ```toml
 [[context]]
@@ -173,6 +174,8 @@ additive with whatever the project tree carries; a `file` source is
 re-read at the next rebuild. Because the config lives host-side, the
 boxed agent can't rewrite its own standing orders -- unlike a repo's
 in-tree `CLAUDE.md`, which is the project's (agent-writable) voice.
+(The one exception is deliberate: `byre develop --self-edit` hands the
+box its own project config, project-layer declarations included.)
 
 A skill can still carry opinions via its own `[context]` table --
 that's the right home when the prose should travel with a tool (it's

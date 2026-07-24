@@ -88,10 +88,12 @@ func TestClaudeSkillMergeReplaceByName(t *testing.T) {
 	if len(got.ClaudeSkills) != 2 {
 		t.Fatalf("ClaudeSkills = %+v", got.ClaudeSkills)
 	}
-	if got.ClaudeSkills[0].Name != "tdd-loop" || got.ClaudeSkills[0].Path != "/new" {
-		t.Fatalf("later layer must replace by name: %+v", got.ClaudeSkills[0])
+	// The replacement takes the replacing layer's position (last): list
+	// order is cascade precedence, observable where a vocabulary renders it.
+	if got.ClaudeSkills[1].Name != "tdd-loop" || got.ClaudeSkills[1].Path != "/new" {
+		t.Fatalf("later layer must replace by name at its own position: %+v", got.ClaudeSkills)
 	}
-	if got.ClaudeSkills[1].Name != "review" {
+	if got.ClaudeSkills[0].Name != "review" {
 		t.Fatalf("unrelated entry lost: %+v", got.ClaudeSkills)
 	}
 }

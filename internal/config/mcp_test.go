@@ -129,10 +129,12 @@ func TestMCPMergeReplaceByName(t *testing.T) {
 	if len(got.MCPs) != 2 {
 		t.Fatalf("MCPs = %+v", got.MCPs)
 	}
-	if got.MCPs[0].Name != "github" || got.MCPs[0].Command[0] != "new" {
-		t.Fatalf("later layer must replace by name: %+v", got.MCPs[0])
+	// The replacement takes the replacing layer's position (last): list
+	// order is cascade precedence, observable where a vocabulary renders it.
+	if got.MCPs[1].Name != "github" || got.MCPs[1].Command[0] != "new" {
+		t.Fatalf("later layer must replace by name at its own position: %+v", got.MCPs)
 	}
-	if got.MCPs[1].Name != "linear" {
+	if got.MCPs[0].Name != "linear" {
 		t.Fatalf("unrelated entry lost: %+v", got.MCPs)
 	}
 }

@@ -121,25 +121,20 @@ func splitNamedDecls[T any](decls []T, alreadyClosed []string, name func(T) stri
 // the EFFECTIVE set after skill contributions union in. Precedence stays
 // cascade-ordered: a later layer's plain declaration re-opens an earlier
 // layer's closure; within one layer a closure beats a plain declaration (adds
-// fold first, closures after). Open declarations replace by name (structured
-// cascade, like volumes); closures match by exact name.
+// fold first, closures after). Open declarations replace by name; the
+// replacement takes the REPLACING layer's position (remove-then-append),
+// not the replaced entry's slot — list order is the one place cascade
+// precedence is observable, and [[context]] renders it (a later layer's
+// prose must speak after what it didn't replace, review finding 2026-07-24).
+// Closures match by exact name.
 func mergeNamedDecls[T any](baseDecls []T, baseClosed []string, overDecls []T, overClosed []string, name func(T) string) (open []T, closed []string) {
 	open, closed = splitNamedDecls(baseDecls, baseClosed, name)
 	overOpen, overClosedAll := splitNamedDecls(overDecls, overClosed, name)
 	for _, d := range overOpen {
 		n := name(d)
 		closed = filter(closed, func(c string) bool { return c != n })
-		replaced := false
-		for i := range open {
-			if name(open[i]) == n {
-				open[i] = d
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			open = append(open, d)
-		}
+		open = filter(open, func(o T) bool { return name(o) != n })
+		open = append(open, d)
 	}
 	for _, c := range overClosedAll {
 		open = filter(open, func(d T) bool { return name(d) != c })
