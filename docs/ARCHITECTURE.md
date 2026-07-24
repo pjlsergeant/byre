@@ -326,6 +326,10 @@ env = ["GITHUB_TOKEN"]                        # var NAMES the server consumes, n
 [[claude_skills]]                             # Claude Skills: wiring, not grants (ADR 0039)
 name = "tdd-loop"                             # same `!name` closure semantics as [[mcp]]
 path = "~/claude-skills/tdd-loop"             # host dir whose root holds SKILL.md
+
+[[context]]                                   # standing agent instructions (ADR 0043)
+name = "house-rules"                          # layers replace by name; `!name` removes
+text = "Run the linter before committing."    # inline -- or file = "~/notes/agent.md"
 ```
 
 Escape hatches are symmetric across both layers byre controls
@@ -465,6 +469,25 @@ writes; a same-name skill the in-box agent authored into its own
 Adapter-less agents degrade honestly in status. `byre claude-skill
 add|remove|list` is the CLI sugar; the config UI has the editor screen.
 
+### Standing instructions
+
+`[[context]]` blocks declare **standing agent instructions** -- prose the
+operator wants in the agent's memory in every box the declaring layer
+reaches (ADR 0043). The cascade is the scoping: `default.config` reaches
+every box on the machine, a template or named layer its stack, the
+project config one project. Config-only vocabulary (no skill.toml twin --
+a skill's prose is its own `[context]` table): layers replace by name,
+`!name` removes an inherited snippet. Each declaration carries inline
+`text` (the portable form for templates) or a host `file` (`~/…` or
+absolute), read at bake under the skill-context size cap -- a missing
+file fails the develop, attributed to its declaration. The merged prose
+joins the baked agent context AFTER the skill snippets, in cascade order,
+and reaches the agent through the same `context_target` pipe -- so it is
+agent-neutral, unlike a repo's in-tree `CLAUDE.md`. Three voices, three
+channels: the skill author's (`[context]` in skill.toml), the project's
+(in-tree agent memory, committed and agent-writable), the operator's
+(`[[context]]`, host-side where the boxed agent can't rewrite it).
+
 ## Mounts & volumes
 
 Two mount species:
@@ -575,7 +598,8 @@ Runtime constants:
   enabled (ADR 0011), place agent context (the chassis facts, the base
   image, then a one-line inventory of config-provisioned
   `apt`/`npm_global` packages when any exist -- the agent shouldn't
-  discover tools by probing -- then skill snippets in enable order;
+  discover tools by probing -- then skill snippets in enable order,
+  then the operator's `[[context]]` declarations in cascade order;
   under an allowlist posture the launcher also appends the session's
   enforced egress allowlist, handed over as the same `BYRE_EGRESS`
   string the netns helper applied, so announcement and enforcement

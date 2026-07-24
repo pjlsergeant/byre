@@ -43,7 +43,7 @@ works, fork any bundled or installed package into an editable local
 copy: `byre skill fork byre/go my-go`. Templates use the same verbs
 (`byre template init / fork / validate`). Two worked examples in the
 cookbook:
-[standing instructions](/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box)
+[launch hooks](/docs/how-do-i/configure/#run-project-setup-automatically)
 and [a custom stack](/docs/how-do-i/toolkit/#make-a-template-for-a-stack-byre-doesnt-ship).
 
 ## Share it

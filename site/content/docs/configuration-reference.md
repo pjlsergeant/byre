@@ -130,6 +130,10 @@ exceptions noted inline.
   launch, `egress` adds hosts beyond the URL when the firewall is on.
 - `[[claude_skills]]` -- a Claude Skill: `name` + `path` to a host
   directory whose root holds `SKILL.md`.
+- `[[context]]` -- standing agent instructions: `name` + inline `text`
+  or a host `file` (`~/…` or absolute, read at bake). Joins the agent's
+  memory file after skill context; layers replace by `name`, `!name`
+  removes.
 
 **Preferences** (picker-owned; never a grant)
 

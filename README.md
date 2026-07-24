@@ -231,8 +231,9 @@ independent reviewer.
 ([recipe](https://getbyre.com/docs/how-do-i/workflow/#set-up-two-agents-in-a-review-loop))
 
 **Give my agent standing instructions in every box?**
-tldr: a tiny local skill with a `[context]` block -- every box that
-enables it injects the text into the agent's memory file.
+tldr: a `[[context]]` block -- `name` plus inline `text` or a host
+`file` -- in any config layer: the global default for every box, a
+layer or template for a stack, the project config for one project.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box))
 
 **Add an MCP server to my agent's session?**

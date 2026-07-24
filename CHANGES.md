@@ -1,5 +1,18 @@
 # Changes
 
+## unreleased
+
+- **Standing agent instructions: the `[[context]]` config key.** Tell
+  your agent "always run the linter" once, at the scope you mean it:
+  a `[[context]]` block (`name` + inline `text` or a host `file`) in
+  the global default reaches every box on the machine, in a template
+  or named layer its stack, in a project's config just that project.
+  The prose lands in the agent's memory file after any enabled skills'
+  context, whatever agent the box runs; layers replace a block by
+  name, `!name` removes one. Config lives host-side, so the boxed
+  agent can't rewrite its own standing orders. The context-only-skill
+  recipe is superseded for operator prose. ADR 0043.
+
 ## v1.2.0 -- 2026-07-22
 
 - **`byre grab <box-path> [<host-path>]` -- deliver's mirror.** Pull a

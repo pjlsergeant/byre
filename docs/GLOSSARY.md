@@ -361,6 +361,18 @@ How a selected agent's session receives the baked Claude Skill tree —
 injection only (`[agent] claude_skills = "inject"`, the author's vouch);
 byre never writes an agent's skill state. Mechanics: ADR 0039.
 
+**Standing instructions (`[[context]]`)**:
+The operator's prose for the agent's memory, declared in config layers
+(ADR 0043) -- the cascade is the scoping (default.config =
+machine-global, template/named layer = per-stack, project config = one
+project). Inline `text` or a host `file`; joins the baked agent context
+after the skill snippets and rides the agent's `context_target` pipe.
+One of three prose voices: the skill author's (skill.toml `[context]`),
+the project's (in-tree agent memory, e.g. a repo `CLAUDE.md`), the
+operator's (this key -- host-side, agent-unwritable).
+_Avoid_: "memory" for the key (the agent's own state volume owns that
+word); calling standing instructions a grant
+
 **Host mount**:
 A host path bound into the box via `mounts` (default read-only). The
 project itself is the implicit one: mounted read-write at `/workspace`.

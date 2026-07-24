@@ -148,16 +148,35 @@ like `~/.claude`, are masked by the volume at runtime).
 
 ## Give my agent standing instructions in every box?
 
-tldr: a tiny local skill with a `[context]` block -- every box that
-enables it injects the text into the agent's memory file.
+tldr: a `[[context]]` block -- `name` plus inline `text` or a host
+`file` -- in any config layer; the layer picks the reach.
 
-`byre skill init my-conventions`, point its `skill.toml` at a
-`context.md` (`[context] file = "context.md"`), and enable it in
-`byre config --global` so every box gets it. byre concatenates enabled
-skills' contexts into the agent's own memory path (Claude's
-`CLAUDE.md`, Codex's `AGENTS.md`), additive with whatever the project
-carries. It's how byre's own dev box enforces its diary and review
-habits.
+```toml
+[[context]]
+name = "house-rules"
+text = """
+Run the linter before committing. Never force-push.
+"""
+
+[[context]]
+name = "conventions"
+file = "~/notes/agent-conventions.md"
+```
+
+Put it in the global default (`~/.byre/default.config`) for every box
+on the machine, a named layer or template for a stack of projects, or
+a project's own config for just that project -- the cascade merges by
+`name` (a later layer's same-name block replaces, `name = "!x"`
+removes). The prose lands in the agent's own memory path (Claude's
+`CLAUDE.md`, Codex's `AGENTS.md`) after any enabled skills' context,
+additive with whatever the project tree carries; a `file` source is
+re-read at the next rebuild. Because the config lives host-side, the
+boxed agent can't rewrite its own standing orders -- unlike a repo's
+in-tree `CLAUDE.md`, which is the project's (agent-writable) voice.
+
+A skill can still carry opinions via its own `[context]` table --
+that's the right home when the prose should travel with a tool (it's
+how byre's own dev box enforces its diary and review habits).
 
 ## Stop re-downloading dependencies on every rebuild?
 
