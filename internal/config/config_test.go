@@ -640,6 +640,8 @@ func sampleConfig() Config {
 		MCPClosed:          []string{"linear"},
 		ClaudeSkills:       []ClaudeSkill{{Name: "tdd-loop", Path: "~/claude-skills/tdd-loop"}},
 		ClaudeSkillsClosed: []string{"review"},
+		Contexts:           []ContextDecl{{Name: "house-rules", Text: "sample"}},
+		ContextsClosed:     []string{"tone"},
 		DockerfilePre:      []string{"RUN true"},
 		DockerfilePost:     []string{"RUN false"},
 		RunArgs:            []string{"--cap-add=X"},

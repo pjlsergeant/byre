@@ -420,6 +420,17 @@ type Config struct {
 	// wholesale). Stored stripped.
 	ClaudeSkillsClosed []string `toml:"-"`
 
+	// Contexts are declared standing-instruction snippets ([[context]]
+	// blocks): the operator's prose for the agent's memory — see
+	// contextdecl.go for the model. One home (config layers only); within
+	// the cascade a later layer replaces by name.
+	Contexts []ContextDecl `toml:"context,omitempty"`
+	// ContextsClosed is the set of `!name` context closures that survived
+	// the cascade — never a TOML key of its own; Merge extracts markers
+	// here (genus uniformity — with no skill home to subtract from after
+	// the merge, survivors are inert). Stored stripped.
+	ContextsClosed []string `toml:"-"`
+
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
 	RunArgs        []string `toml:"run_args,omitempty"`
@@ -795,6 +806,9 @@ func Merge(base, over Config) Config {
 	out.MCPs, out.MCPClosed = mergeMCPs(base, over)
 	// Claude Skill declarations: same taxonomy.
 	out.ClaudeSkills, out.ClaudeSkillsClosed = mergeClaudeSkills(base, over)
+	// Context declarations: same taxonomy, one home (closures spend
+	// themselves in the merge; survivors are inert).
+	out.Contexts, out.ContextsClosed = mergeContexts(base, over)
 
 	// Raw blocks: append-only/union, no per-line removal in v0.
 	out.DockerfilePre = appendAll(base.DockerfilePre, over.DockerfilePre)
@@ -1206,6 +1220,9 @@ func (c Config) Validate() error {
 	if err := c.validateClaudeSkillsResolved(); err != nil {
 		return err
 	}
+	if err := c.validateContextsResolved(); err != nil {
+		return err
+	}
 	return c.validatePortsResolved()
 }
 
@@ -1290,6 +1307,9 @@ func (c Config) ValidateLayer() error {
 		return err
 	}
 	if err := c.validateClaudeSkillsLayer(); err != nil {
+		return err
+	}
+	if err := c.validateContextsLayer(); err != nil {
 		return err
 	}
 	return c.validatePortsLayer()
