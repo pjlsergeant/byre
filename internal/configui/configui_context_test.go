@@ -147,3 +147,35 @@ func TestContextProseEditFlipsDirtySignature(t *testing.T) {
 		t.Fatal("prose change must flip the dirty signature")
 	}
 }
+
+// The item editor SHOWS the stored prose read-only (maintainer call,
+// 2026-07-25: reading the instructions must not require launching $EDITOR;
+// only editing does). Long prose truncates with a tail count.
+func TestContextItemViewShowsProse(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{Contexts: []config.ContextDecl{
+		{Name: "house-rules", Text: "Run the linter.\nNever force-push.\n"},
+	}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fContext
+	m = m.startItem(0)
+
+	v := m.viewItem()
+	for _, want := range []string{"Run the linter.", "Never force-push."} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("prose not shown in item view (%q missing):\n%s", want, v)
+		}
+	}
+
+	// Long prose truncates with a tail count instead of flooding the form.
+	long := strings.Repeat("line\n", 40)
+	m.itemProse = long
+	v = m.viewItem()
+	if !strings.Contains(v, "+28 more lines") {
+		t.Fatalf("long prose should truncate with a tail count:\n%s", v)
+	}
+
+	// File mode shows no prose block.
+	m.itemMode = 1
+	if v := m.viewItem(); strings.Contains(v, "│") {
+		t.Fatalf("file mode must not render a prose block:\n%s", v)
+	}
+}

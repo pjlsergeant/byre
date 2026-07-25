@@ -1316,6 +1316,25 @@ func (m model) viewItem() string {
 	for _, note := range m.itemNotes() {
 		b.WriteString(dimStyle.Render("  "+note) + "\n")
 	}
+	// The stored prose, read-only: the editing path is ^e, but READING the
+	// standing instructions must not require launching a second program
+	// (P4 — the maintainer's call, 2026-07-25: the $EDITOR ruling was about
+	// not building a worse text editor, never about hiding the text).
+	if m.listField == fContext && m.itemMode == 0 && strings.TrimSpace(m.itemProse) != "" {
+		b.WriteString("\n")
+		lines := strings.Split(strings.TrimRight(m.itemProse, "\n"), "\n")
+		const proseview = 12
+		shown := lines
+		if len(shown) > proseview {
+			shown = shown[:proseview]
+		}
+		for _, l := range shown {
+			b.WriteString("  " + dimStyle.Render("│ ") + l + "\n")
+		}
+		if extra := len(lines) - len(shown); extra > 0 {
+			b.WriteString("  " + dimStyle.Render(fmt.Sprintf("│ … +%d more lines (^e to view and edit)", extra)) + "\n")
+		}
+	}
 
 	if m.itemErr != "" {
 		b.WriteString("\n" + m.errLine(m.itemErr))
@@ -1361,14 +1380,11 @@ func (m model) itemNotes() []string {
 	if m.listField == fContext {
 		notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
 		if m.itemMode == 0 {
-			lines := 0
-			if t := strings.TrimRight(m.itemProse, "\n"); t != "" {
-				lines = strings.Count(t, "\n") + 1
-			}
-			if lines == 0 {
+			if strings.TrimSpace(m.itemProse) == "" {
 				notes = append(notes, "text: empty — ^e opens $EDITOR to write it")
 			} else {
-				notes = append(notes, fmt.Sprintf("text: %d line(s) — ^e edits in $EDITOR", lines))
+				// The text itself renders below (viewItem's prose block).
+				notes = append(notes, "text — ^e edits in $EDITOR")
 			}
 		} else {
 			notes = append(notes, "file: read at bake; machine-local (won't ride a preset — inline text does)")
