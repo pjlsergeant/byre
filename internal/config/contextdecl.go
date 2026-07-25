@@ -79,6 +79,18 @@ func ValidateContextDecl(cd ContextDecl) error {
 	case cd.Text == "" && cd.File == "":
 		return fmt.Errorf("context %s: needs text (an inline snippet) or file (a host file, ~/… or absolute)", cd.Name)
 	}
+	// The text renders verbatim in the config UI (the mcpPrintable stance):
+	// an ESC sequence in an inherited layer's prose could forge the
+	// surrounding terminal UI when its row is opened. Prose has no
+	// legitimate control characters beyond newline and tab.
+	for _, r := range cd.Text {
+		if r == '\n' || r == '\t' {
+			continue
+		}
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("context %s: text must not contain control characters (beyond newline and tab)", cd.Name)
+		}
+	}
 	if cd.File != "" && cd.File != "~" && !strings.HasPrefix(cd.File, "~/") && !filepath.IsAbs(cd.File) {
 		return fmt.Errorf("context %s: file %q must be absolute or ~/…", cd.Name, cd.File)
 	}
