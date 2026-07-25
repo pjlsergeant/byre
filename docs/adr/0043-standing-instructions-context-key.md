@@ -83,8 +83,13 @@ a bake artifact).
 
 - The context-only-skill recipe is superseded for operator prose; skills
   keep `[context]` for opinions that travel with a tool.
-- No config-UI screen in v1: the editor round-trips the key untouched
-  (assemble builds onto the loaded base); hand-editing is the interface,
-  as it was for `[[mcp]]` before its screen.
+- The key ships WITH its editor story (PRINCIPLES.md #6 -- written off
+  the back of this decision's first draft, which shipped "hand-editing
+  is the interface" and was reversed by maintainer ruling 2026-07-25):
+  a CONTEXT section in `byre config` for every target, effective-view
+  rows attributing each snippet to its layer, prose edited via the
+  editor's `$EDITOR` handoff. Until the screen lands the editor
+  round-trips the key untouched (assemble builds onto the loaded base),
+  so no surface can destroy a declaration it cannot yet structure.
 - No status surface: a declaration is wiring with no grant to render --
   the `files` class, not the mounts class.

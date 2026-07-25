@@ -131,9 +131,12 @@ choices, in the same vocabulary `byre status` prints. Adding a package or
 mounting another repo read-only takes a couple of seconds.
 
 Underneath, it's a cascade of TOML files -- your personal baseline, the
-template, optional shared layers, this project's overrides -- always
-yours to edit by hand, and read only from byre's host-side store, never
-from inside the project. The vocabulary covers packages, env, mounts, volumes,
+template, optional shared layers, this project's overrides -- read only
+from byre's host-side store, never from inside the project. The editor
+is the interface: no byre feature ever requires you to open those files
+yourself. They stay plain TOML so they're diffable, shareable, and
+always yours to edit by hand if you prefer -- a right, not a step in
+any recipe. The vocabulary covers packages, env, mounts, volumes,
 skills, and MCP servers; raw Dockerfile lines and `docker run` args cover
 the rest.
 

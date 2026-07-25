@@ -118,7 +118,39 @@ Implications:
 - The mechanism's scope is not the decision's scope: a machine-scoped
   volume does not make opting in machine-scoped.
 
-## What byre is not
+## 6. The editor is the interface
+
+**`byre config` is how configuration is edited -- for every config
+feature, always. The TOML files are byre's storage format, not its user
+interface.** No recipe, prompt, error remedy, or doc may require or
+expect a user to open a config file in a text editor; a config
+vocabulary that can only be reached by hand-editing is not done, the
+same way a grant `byre status` can't name is not done (P4). Hand-editing
+remains a defended *right* (P1: plain files, no lock-in, the editor and
+`vim` write the same file, held to the same validation) -- a right is
+not an interface.
+
+Implications:
+
+- A new config key ships with its editor story, in the same unit of
+  work: a structured section or screen (plus CLI verbs where scripting
+  matters), not "edit the file".
+- User docs speak editor-first. Raw TOML appears in the configuration
+  *reference* (the format spec, needed for presets, layer sharing, and
+  review) -- never as the instruction in a how-do-i recipe.
+- The stored file is written only through the one validated save path,
+  whichever surface edits it; the editor must round-trip untouched any
+  key it does not yet structure, so partial coverage never destroys
+  hand-written or flow-written config.
+- Where prose or free text is the value, the editor hands off to
+  `$EDITOR` (suspend, edit, reload) rather than growing a worse text
+  editor inside the form.
+
+Precedents: `[[mcp]]` ships the full editor screen plus `byre mcp
+add|remove|list`; the `[[context]]` episode (2026-07-25) is the type
+specimen -- the key shipped with "hand-editing is the interface" as its
+documented v1 surface, the author's ruling reversed it within a day, and
+this principle exists so the next key never repeats it.
 
 Boundary statements, kept here so they don't get re-argued feature by
 feature. byre is not: an agent (it runs one); a Docker replacement; a

@@ -52,8 +52,12 @@ the footer names it outright (`Saves to: ~/.byre/projects/<id>/byre.config`).
 
 ## Prefer a text editor?
 
-Underneath, it's a cascade of plain TOML files that are always yours to
-edit by hand -- the editor and `vim ~/.byre/projects/<id>/byre.config`
-write the same file. The complete vocabulary, the cascade's merge
-rules, presets, and layers live in the
+Underneath, it's a cascade of plain TOML files, and they're always
+yours to edit by hand -- the editor and
+`vim ~/.byre/projects/<id>/byre.config` write the same file, held to
+the same validation. That's a right byre defends, never a requirement
+it imposes: `byre config` is the interface, every config feature is
+editable there, and no recipe or error message will ever send you into
+the files. The complete vocabulary, the cascade's merge rules, presets,
+and layers live in the
 [configuration reference](/docs/configuration-reference/).
