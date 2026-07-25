@@ -244,12 +244,12 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 }
 
 // A structured save of a config carrying a shared-auth preference must
-// produce a file byre can load again. Without SharedAuthPref.MarshalTOML the
-// encoder reflects the struct into [shared_auth.Pick] -- a shape the
-// dual-shape decoder refuses, bricking default.config on a normal global
-// save (external review find, 2026-07-25; reproduced). Covers every
-// reachable stored state; mixed canonicalizes to picks-only (the
-// EncodeTOMLValue rule: yes-without-pick re-asks).
+// produce a file byre can load again. The old whole-file encoder reflected
+// the struct into [shared_auth.Pick] -- a shape the dual-shape decoder
+// refuses, bricking default.config on a normal global save (external review
+// find, 2026-07-25; reproduced) -- so reconcile's canonical emission is
+// pinned for every reachable stored state; mixed canonicalizes to
+// picks-only (the EncodeTOMLValue rule: yes-without-pick re-asks).
 func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	cases := []struct {
 		name string

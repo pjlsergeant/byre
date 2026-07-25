@@ -482,11 +482,14 @@ absolute), read at bake under the skill-context size cap -- a missing
 file fails the develop, attributed to its declaration. The merged prose
 joins the baked agent context AFTER the skill snippets, in cascade order,
 and reaches the agent through the same `context_target` pipe -- so it is
-agent-neutral, unlike a repo's in-tree `CLAUDE.md`. Three voices, three
-channels: the skill author's (`[context]` in skill.toml), the project's
-(in-tree agent memory, committed and agent-writable), the operator's
-(`[[context]]`, host-side and out of the box's reach -- short of a
-`--self-edit` session's explicit grant over the project layer).
+agent-neutral, unlike a repo's in-tree `CLAUDE.md`. Edited in the
+Instructions section of `byre config` (prose via the `$EDITOR` handoff)
+or `byre context add|remove|list` (add with no flags opens `$EDITOR`,
+the git-commit shape). Three voices, three channels: the skill author's
+(`[context]` in skill.toml), the project's (in-tree agent memory,
+committed and agent-writable), the operator's (`[[context]]`, host-side
+and out of the box's reach -- short of a `--self-edit` session's
+explicit grant over the project layer).
 
 ## Mounts & volumes
 
