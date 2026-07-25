@@ -179,3 +179,64 @@ func TestContextItemViewShowsProse(t *testing.T) {
 		t.Fatalf("file mode must not render a prose block:\n%s", v)
 	}
 }
+
+// An invalid name warns WHILE TYPING, not first at commit (maintainer
+// review: "check first" only failed on enter). The check runs after the
+// auto-lowercase transform, so a merely-uppercase name draws no warning —
+// save fixes it silently. Shared by the named-decl editors; asserted here
+// for context and spot-checked for MCP.
+func TestContextItemNameWarnsLive(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fContext
+	m = m.startItem(-1)
+
+	m.inputs[0].SetValue("check first")
+	if v := m.viewItem(); !strings.Contains(v, "won't save") {
+		t.Fatalf("invalid name must warn live:\n%s", v)
+	}
+	m.inputs[0].SetValue("Check-First")
+	if v := m.viewItem(); strings.Contains(v, "won't save") {
+		t.Fatalf("a name the auto-lowercase fixes must not warn:\n%s", v)
+	}
+	m.inputs[0].SetValue("check-first")
+	if v := m.viewItem(); strings.Contains(v, "won't save") {
+		t.Fatalf("valid name must not warn:\n%s", v)
+	}
+	m.inputs[0].SetValue("")
+	if v := m.viewItem(); strings.Contains(v, "won't save") {
+		t.Fatalf("empty (still typing) must not warn:\n%s", v)
+	}
+
+	m.listField = fMCP
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("bad name")
+	if v := m.viewItem(); !strings.Contains(v, "won't save") {
+		t.Fatalf("MCP editor must share the live warning:\n%s", v)
+	}
+}
+
+// Opening an INHERITED instructions row shows the full prose in its menu —
+// the user can't edit another layer's snippet from this file, but reading
+// it never requires leaving the screen (maintainer call, 2026-07-25).
+func TestContextInheritedRowMenuShowsFullProse(t *testing.T) {
+	inh := Inherited{
+		HasLower: true,
+		Default: config.Config{Contexts: []config.ContextDecl{
+			{Name: "house-rules", Text: "Run the linter.\nNever force-push.\nAsk before deploys.\n"},
+		}},
+	}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, inh, nil, TargetProject)
+	m.listField = fContext
+	rows := m.fieldRows(fContext)
+	if len(rows) != 1 || rows[0].kind != rowInherited {
+		t.Fatalf("rows = %+v", rows)
+	}
+	m.menuRow = rows[0]
+
+	v := m.viewMenu()
+	for _, want := range []string{"Never force-push.", "Ask before deploys.", "Override here"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("inherited menu must show the full prose and actions (%q missing):\n%s", want, v)
+		}
+	}
+}

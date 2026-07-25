@@ -1227,10 +1227,37 @@ func rowAnnotation(r listRow) string {
 
 // viewMenu renders the per-row action menu: the row, where it's set, and the
 // actions it supports -- terse labels, accelerator keys beside them.
+// proseBlock renders stored instruction text read-only: gutter-marked,
+// capped, with a tail count naming the way to the rest. Shared by the item
+// editor and the row menu — reading the instructions never requires opening
+// an editor, wherever the row lives (maintainer calls, 2026-07-25).
+func proseBlock(text, more string) string {
+	var b strings.Builder
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	const proseview = 12
+	shown := lines
+	if len(shown) > proseview {
+		shown = shown[:proseview]
+	}
+	for _, l := range shown {
+		b.WriteString("  " + dimStyle.Render("│ ") + l + "\n")
+	}
+	if extra := len(lines) - len(shown); extra > 0 {
+		b.WriteString("  " + dimStyle.Render(fmt.Sprintf("│ … +%d more lines (%s)", extra, more)) + "\n")
+	}
+	return b.String()
+}
+
 func (m model) viewMenu() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.menuRow.text))
 	b.WriteString(dimStyle.Render("Set in: "+setIn(m.menuRow)) + "\n\n")
+	// An INHERITED instructions row is readable right here, in full — the
+	// user can't edit another layer's snippet from this file, but seeing
+	// what their agent will be told never requires leaving the screen.
+	if m.listField == fContext && m.menuRow.kind == rowInherited && len(m.menuRow.vals) > 2 && strings.TrimSpace(m.menuRow.vals[2]) != "" {
+		b.WriteString(proseBlock(m.menuRow.vals[2], "full text in "+m.menuRow.source+"'s own editor") + "\n")
+	}
 	choices := m.rowChoices(m.listField, m.menuRow)
 	for i, c := range choices {
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.menuCur, c.label+dimStyle.Render("  "+c.key)))
@@ -1321,19 +1348,7 @@ func (m model) viewItem() string {
 	// (P4 — the maintainer's call, 2026-07-25: the $EDITOR ruling was about
 	// not building a worse text editor, never about hiding the text).
 	if m.listField == fContext && m.itemMode == 0 && strings.TrimSpace(m.itemProse) != "" {
-		b.WriteString("\n")
-		lines := strings.Split(strings.TrimRight(m.itemProse, "\n"), "\n")
-		const proseview = 12
-		shown := lines
-		if len(shown) > proseview {
-			shown = shown[:proseview]
-		}
-		for _, l := range shown {
-			b.WriteString("  " + dimStyle.Render("│ ") + l + "\n")
-		}
-		if extra := len(lines) - len(shown); extra > 0 {
-			b.WriteString("  " + dimStyle.Render(fmt.Sprintf("│ … +%d more lines (^e to view and edit)", extra)) + "\n")
-		}
+		b.WriteString("\n" + proseBlock(m.itemProse, "^e to view and edit"))
 	}
 
 	if m.itemErr != "" {
@@ -1367,18 +1382,33 @@ func (m model) itemLabel(i int) string {
 	return m.inputLabels[i]
 }
 
+// nameNotes is the name-input guidance shared by the named-declaration item
+// editors: the grammar line, plus a LIVE warning the moment the current
+// value can't become valid — flagged while typing, not first at commit
+// (maintainer review, 2026-07-25). The check runs on the lowercased trim,
+// because that transform is what save applies; a name that only needs
+// lowercasing draws no warning.
+func nameNotes(raw string, valid func(string) bool) []string {
+	notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+	name := strings.ToLower(strings.TrimSpace(raw))
+	if name != "" && !valid(name) {
+		notes = append(notes, "⚠ this name won't save — lowercase a-z 0-9 - only, starting with a letter or digit, max 64")
+	}
+	return notes
+}
+
 // itemNotes are the dim guidance lines under the editor — the form explains
 // itself instead of failing at commit (Pete's review of the first form).
 func (m model) itemNotes() []string {
 	if m.listField == fClaudeSkills {
-		notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+		notes := nameNotes(m.inputs[0].Value(), config.ValidClaudeSkillName)
 		if n := claudeSkillDirNote(m.inputs[0].Value(), m.inputs[1].Value()); n != "" {
 			notes = append(notes, "⚠ "+n+" (accepted anyway — the dir can be created later)")
 		}
 		return notes
 	}
 	if m.listField == fContext {
-		notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+		notes := nameNotes(m.inputs[0].Value(), config.ValidContextName)
 		if m.itemMode == 0 {
 			if strings.TrimSpace(m.itemProse) == "" {
 				notes = append(notes, "text: empty — ^e opens $EDITOR to write it")
@@ -1394,7 +1424,7 @@ func (m model) itemNotes() []string {
 	if m.listField != fMCP {
 		return nil
 	}
-	notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+	notes := nameNotes(m.inputs[0].Value(), config.ValidMCPName)
 	if m.itemMode == 1 {
 		probe := config.MCP{Name: "x", URL: strings.TrimSpace(m.inputs[1].Value())}
 		if host, port, ok := probe.Endpoint(); ok {
