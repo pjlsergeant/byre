@@ -1227,18 +1227,29 @@ func rowAnnotation(r listRow) string {
 
 // viewMenu renders the per-row action menu: the row, where it's set, and the
 // actions it supports -- terse labels, accelerator keys beside them.
-// proseBlock renders stored instruction text read-only: gutter-marked,
-// capped, with a tail count naming the way to the rest. Shared by the item
-// editor and the row menu — reading the instructions never requires opening
-// an editor, wherever the row lives (maintainer calls, 2026-07-25).
-func proseBlock(text, more string) string {
-	var b strings.Builder
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+// proseBlock renders stored instruction text read-only: soft-wrapped to the
+// available width, gutter-marked, capped, with a tail count naming the way
+// to the rest. Shared by the item editor and the row menu — reading the
+// instructions never requires opening an editor, wherever the row lives
+// (maintainer calls, 2026-07-25). Wrapping happens HERE because the view's
+// clipLines truncates long rendered lines with an ellipsis — prose written
+// as one long line (the natural shape of an instruction sentence) showed
+// only its first screen-width otherwise.
+func proseBlock(text, more string, width int) string {
+	w := width - 4 // two-space indent + gutter
+	if w < 20 {
+		w = 20
+	}
+	var lines []string
+	for _, src := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		lines = append(lines, wrapLine(src, w)...)
+	}
 	const proseview = 12
 	shown := lines
 	if len(shown) > proseview {
 		shown = shown[:proseview]
 	}
+	var b strings.Builder
 	for _, l := range shown {
 		b.WriteString("  " + dimStyle.Render("│ ") + l + "\n")
 	}
@@ -1246,6 +1257,41 @@ func proseBlock(text, more string) string {
 		b.WriteString("  " + dimStyle.Render(fmt.Sprintf("│ … +%d more lines (%s)", extra, more)) + "\n")
 	}
 	return b.String()
+}
+
+// wrapLine greedy-word-wraps one source line to width w (an empty line stays
+// one empty display line; a single word longer than w is hard-split so it
+// can never re-trip the view's ellipsis clip).
+func wrapLine(src string, w int) []string {
+	if strings.TrimSpace(src) == "" {
+		return []string{""}
+	}
+	var out []string
+	cur := ""
+	for _, word := range strings.Fields(src) {
+		for len([]rune(word)) > w { // pathological: one word wider than the screen
+			if cur != "" {
+				out = append(out, cur)
+				cur = ""
+			}
+			r := []rune(word)
+			out = append(out, string(r[:w]))
+			word = string(r[w:])
+		}
+		switch {
+		case cur == "":
+			cur = word
+		case len([]rune(cur))+1+len([]rune(word)) <= w:
+			cur += " " + word
+		default:
+			out = append(out, cur)
+			cur = word
+		}
+	}
+	if cur != "" {
+		out = append(out, cur)
+	}
+	return out
 }
 
 func (m model) viewMenu() string {
@@ -1256,7 +1302,7 @@ func (m model) viewMenu() string {
 	// user can't edit another layer's snippet from this file, but seeing
 	// what their agent will be told never requires leaving the screen.
 	if m.listField == fContext && m.menuRow.kind == rowInherited && len(m.menuRow.vals) > 2 && strings.TrimSpace(m.menuRow.vals[2]) != "" {
-		b.WriteString(proseBlock(m.menuRow.vals[2], "full text in "+m.menuRow.source+"'s own editor") + "\n")
+		b.WriteString(proseBlock(m.menuRow.vals[2], "full text in "+m.menuRow.source+"'s own editor", m.width) + "\n")
 	}
 	choices := m.rowChoices(m.listField, m.menuRow)
 	for i, c := range choices {
@@ -1348,7 +1394,7 @@ func (m model) viewItem() string {
 	// (P4 — the maintainer's call, 2026-07-25: the $EDITOR ruling was about
 	// not building a worse text editor, never about hiding the text).
 	if m.listField == fContext && m.itemMode == 0 && strings.TrimSpace(m.itemProse) != "" {
-		b.WriteString("\n" + proseBlock(m.itemProse, "^e to view and edit"))
+		b.WriteString("\n" + proseBlock(m.itemProse, "^e to view and edit", m.width))
 	}
 
 	if m.itemErr != "" {

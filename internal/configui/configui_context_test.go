@@ -240,3 +240,42 @@ func TestContextInheritedRowMenuShowsFullProse(t *testing.T) {
 		}
 	}
 }
+
+// Prose written as ONE long line — the natural shape of an instruction
+// sentence — soft-wraps to the terminal width instead of being clipped to
+// its first screen-width by the view's ellipsis truncation (maintainer
+// find: the menu showed one clipped line of a full instruction).
+func TestContextProseSoftWrapsToWidth(t *testing.T) {
+	long := "Don't kick off work or long running tool-use without at least one sentence of what you are doing and why it matters right now."
+	inh := Inherited{HasLower: true, Default: config.Config{Contexts: []config.ContextDecl{{Name: "check-first", Text: long + "\n"}}}}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, inh, nil, TargetProject)
+	m.listField = fContext
+	m.width = 60
+	rows := m.fieldRows(fContext)
+	m.menuRow = rows[0]
+
+	// The full sentence is present once wrapped display lines are rejoined
+	// (a wanted substring can span a wrap boundary).
+	rejoin := func(v string) string {
+		return strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(v), "│", "")), " ")
+	}
+	v := m.viewMenu()
+	if !strings.Contains(rejoin(v), "why it matters right now.") {
+		t.Fatalf("long line not wrapped — tail missing:\n%s", v)
+	}
+	// And no rendered line exceeds the width clipLines would truncate at.
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "│") && len([]rune(stripANSI(l))) > 60 {
+			t.Fatalf("wrapped line still exceeds width (%d): %q", len([]rune(stripANSI(l))), stripANSI(l))
+		}
+	}
+
+	// Same through the item editor.
+	m2 := newModel("t", "/tmp/x", config.Config{Contexts: []config.ContextDecl{{Name: "check-first", Text: long}}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m2.listField = fContext
+	m2.width = 60
+	m2 = m2.startItem(0)
+	if v := m2.viewItem(); !strings.Contains(rejoin(v), "why it matters right now.") {
+		t.Fatalf("item editor must wrap too:\n%s", v)
+	}
+}
