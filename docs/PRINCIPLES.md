@@ -195,8 +195,8 @@ prose was nearly chosen because the TOML binding's encoder lacks
 multiline string emission, the binding's accident almost dictating
 byre's file layout before design review caught it. Existing instances
 (the comment-destruction warning, the `seed_prefs` bool that can't be
-un-set) are inventoried and dispositioned per this principle rather
-than grandfathered.
+un-set) are inventoried for disposition per this principle rather than
+grandfathered.
 
 ## What byre is not
 
