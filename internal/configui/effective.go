@@ -63,6 +63,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.mcpRows()
 	case fClaudeSkills:
 		return m.claudeSkillRows()
+	case fContext:
+		return m.contextRows()
 	}
 	return nil
 }
@@ -282,6 +284,39 @@ func hasClaudeSkillName(cs []config.ClaudeSkill, name string) bool {
 // in the item editor's input order (name, source path).
 func claudeSkillVals(cs config.ClaudeSkill) []string {
 	return []string{cs.Name, cs.Path}
+}
+
+func contextDeclName(cd config.ContextDecl) string { return cd.Name }
+
+func hasContextName(cds []config.ContextDecl, name string) bool {
+	for _, cd := range cds {
+		if cd.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// contextVals flattens a declaration for the override editor's prefill, in
+// the item editor's shape (name, file, text).
+func contextVals(cd config.ContextDecl) []string {
+	return []string{cd.Name, cd.File, cd.Text}
+}
+
+// contextRows builds the Instructions screen's effective view — the shared
+// genus state machine over [[context]] declarations. Config-only vocabulary
+// (ADR 0043): skills have their own prose channel, so the skill-contribution
+// arm is empty.
+func (m model) contextRows() []listRow {
+	lowerCfg := m.lowerNow()
+	return m.namedDeclRows(namedDeclField{
+		local:       declRowItems(m.contexts, contextDeclName, contextDeclLine),
+		lower:       declRowItems(lowerCfg.Contexts, contextDeclName, contextDeclLine),
+		lowerVals:   func(i int) []string { return contextVals(lowerCfg.Contexts[i]) },
+		lowerClosed: lowerCfg.ContextsClosed,
+		skillDecls:  func(sk string) []declRowItem { return nil },
+		lowerHas:    func(c config.Config, rawName string) bool { return hasContextName(c.Contexts, rawName) },
+	})
 }
 
 func hasMCPName(ms []config.MCP, name string) bool {

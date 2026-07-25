@@ -86,10 +86,9 @@ a bake artifact).
 - The key ships WITH its editor story (PRINCIPLES.md #6 -- written off
   the back of this decision's first draft, which shipped "hand-editing
   is the interface" and was reversed by maintainer ruling 2026-07-25):
-  a CONTEXT section in `byre config` for every target, effective-view
-  rows attributing each snippet to its layer, prose edited via the
-  editor's `$EDITOR` handoff. Until the screen lands the editor
-  round-trips the key untouched (assemble builds onto the loaded base),
-  so no surface can destroy a declaration it cannot yet structure.
+  the Instructions section in `byre config` for every target,
+  effective-view rows attributing each snippet to its layer, prose
+  edited via the `$EDITOR` handoff (in the form and in the
+  `byre context add` verb alike -- the git-commit shape).
 - No status surface: a declaration is wiring with no grant to render --
   the `files` class, not the mounts class.

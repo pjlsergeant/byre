@@ -58,6 +58,7 @@ const (
 	fSkills
 	fMCP             // [[mcp]] declarations (wiring, not grants — ADR 0033)
 	fClaudeSkills    // [[claude_skills]] declarations (wiring, the MCP genus)
+	fContext         // [[context]] standing instructions (ADR 0043)
 	fWorktreeSibling // checkbox: worktrees beside the repo
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
@@ -165,7 +166,14 @@ type model struct {
 	egress       []string             // firewall-allowlist extensions, host[:port] (ADR 0019)
 	mcps         []config.MCP         // [[mcp]] declarations incl. `!name` closure markers
 	claudeSkills []config.ClaudeSkill // [[claude_skills]] declarations incl. `!name` closure markers
-	skills       []string             // enabled skill names (multi-select)
+	contexts     []config.ContextDecl // [[context]] declarations incl. `!name` closure markers
+
+	// itemProse is the [[context]] item editor's inline-text draft, edited
+	// via the $EDITOR handoff; prosePath is the temp file while $EDITOR has
+	// it (non-empty routes editorClosedMsg back to the item editor).
+	itemProse string
+	prosePath string
+	skills    []string // enabled skill names (multi-select)
 
 	// Freeform raw-tier working state (edited as text blocks).
 	runArgs string // one arg per line
@@ -252,7 +260,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills}},
+		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
 	case TargetGlobal:
@@ -264,7 +272,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
-			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP, fClaudeSkills}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
@@ -275,7 +283,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
 			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
 		}
 	}
 	// The chain pointer: project configs and layers may name a parent layer;
@@ -351,6 +359,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.egress = append([]string{}, cfg.Egress...)
 	m.mcps = append([]config.MCP{}, cfg.MCPs...)
 	m.claudeSkills = append([]config.ClaudeSkill{}, cfg.ClaudeSkills...)
+	m.contexts = append([]config.ContextDecl{}, cfg.Contexts...)
 	m.skills = append([]string{}, cfg.Skills...)
 	m.runArgs = strings.Join(cfg.RunArgs, "\n")
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
@@ -402,6 +411,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// resizing a few times).
 		return m, tea.ClearScreen
 	case editorClosedMsg:
+		if m.prosePath != "" {
+			return m.onProseEditorClosed(msg.err), nil
+		}
 		return m.onEditorClosed(msg.err), nil
 	case tea.KeyMsg:
 		switch m.mode {

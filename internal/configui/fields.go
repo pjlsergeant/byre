@@ -44,6 +44,7 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fPorts:           {label: "Ports", kind: kindList, item: "Port", noun: "port"},
 	fMCP:             {label: "MCP servers", kind: kindList, item: "MCP server", noun: "server"},
 	fClaudeSkills:    {label: "Claude Skills", kind: kindList, item: "Claude Skill", noun: "skill"},
+	fContext:         {label: "Instructions", kind: kindList, item: "Standing instructions", noun: "snippet"},
 	fVolumes:         {label: "Volumes"},
 	fRunArgs:         {label: "Run args", kind: kindText, tomlKey: "run_args"},
 	fDockerfilePre:   {label: "Dockerfile before", kind: kindText, tomlKey: "dockerfile_pre"},

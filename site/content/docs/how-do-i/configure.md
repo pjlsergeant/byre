@@ -148,38 +148,36 @@ like `~/.claude`, are masked by the volume at runtime).
 
 ## Give my agent standing instructions in every box?
 
-tldr: a `[[context]]` block -- `name` plus inline `text` or a host
-`file` -- in any config layer: the global default for every box, a
-layer or template for a stack, the project config for one project.
+tldr: `byre context add house-rules` opens your $EDITOR -- `--global`
+for every box on the machine, plain for just this project; also the
+**Instructions** section of `byre config`.
 
-```toml
-[[context]]
-name = "house-rules"
-text = """
-Run the linter before committing. Never force-push.
-"""
+Write the prose, save, quit -- the git-commit shape. The text joins the
+agent's own memory (Claude's `CLAUDE.md`, Codex's `AGENTS.md`) at the
+next develop, after any enabled skills' context and additive with
+whatever the project tree carries -- whichever agent the box runs. The
+scope is the layer you write: `--global` reaches every box on the
+machine, a named layer (`byre config --layer <name>`, **Instructions**)
+reaches its stack, the project config just that project. A later
+layer's same-name entry replaces an inherited one, and the
+**Instructions** screen's "Remove in this project" (or
+`byre context remove <name>`) switches one off; `byre context list`
+shows what's in effect.
 
-[[context]]
-name = "conventions"
-file = "~/notes/agent-conventions.md"
-```
-
-Put it in the global default (`~/.byre/default.config`) for every box
-on the machine, a named layer or template for a stack of projects, or
-a project's own config for just that project -- the cascade merges by
-`name` (a later layer's same-name block replaces, `name = "!x"`
-removes). The prose lands in the agent's own memory path (Claude's
-`CLAUDE.md`, Codex's `AGENTS.md`) after any enabled skills' context,
-additive with whatever the project tree carries; a `file` source is
-re-read at the next rebuild. Because the config lives host-side, the
-boxed agent can't rewrite its own standing orders -- unlike a repo's
-in-tree `CLAUDE.md`, which is the project's (agent-writable) voice.
-(The one exception is deliberate: `byre develop --self-edit` hands the
-box its own project config, project-layer declarations included.)
+Long documents can stay your own file: `byre context add conventions
+--file ~/notes/agent-conventions.md` reads it at each rebuild
+(machine-local -- inline text is what travels in a preset). Because the
+config lives host-side, the boxed agent can't rewrite its own standing
+orders -- unlike a repo's in-tree `CLAUDE.md`, which is the project's
+(agent-writable) voice. (The one exception is deliberate: `byre develop
+--self-edit` hands the box its own project config, project-layer
+declarations included.)
 
 A skill can still carry opinions via its own `[context]` table --
 that's the right home when the prose should travel with a tool (it's
-how byre's own dev box enforces its diary and review habits).
+how byre's own dev box enforces its diary and review habits). The
+stored form (`[[context]]` blocks) is in the
+[configuration reference](/docs/configuration-reference/).
 
 ## Stop re-downloading dependencies on every rebuild?
 

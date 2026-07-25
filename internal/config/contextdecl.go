@@ -55,6 +55,11 @@ type ContextDecl struct {
 // (`!name`) unambiguous everywhere.
 var contextNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
+// ValidContextName reports whether s satisfies the context name grammar --
+// for callers (the context verbs) validating a bare name with no
+// declaration around it.
+func ValidContextName(s string) bool { return contextNameRe.MatchString(s) }
+
 // ValidateContextDecl checks one declaration's own shape (not its file's
 // content or existence -- that's the bake-time read in build.Assemble).
 func ValidateContextDecl(cd ContextDecl) error {

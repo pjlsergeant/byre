@@ -53,6 +53,10 @@ every command and flag.
 | `byre claude-skill add <dir>` | Declare a Claude Skill (a directory with a SKILL.md) in the project config (or --global defaults). |
 | `byre claude-skill remove <name>` | Remove a declared Claude Skill (closure-smart). |
 | `byre claude-skill list` | Show the effective Claude Skill set (config + skills, attributed) and its delivery. |
+| `byre context` | Manage standing agent instructions ([[context]] config blocks). |
+| `byre context add <name>` | Add or update standing instructions in the project config (or --global defaults). |
+| `byre context remove <name>` | Remove standing instructions (closure-smart). |
+| `byre context list` | Show the resolved standing instructions (name + source). |
 
 ## Skills & templates
 

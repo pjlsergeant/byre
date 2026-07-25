@@ -42,7 +42,7 @@ var commandsPageAreas = []struct {
 }{
 	{"Daily driving", []string{"develop", "shell", "worktree", "deliver", "grab"}},
 	{"Inspection", []string{"status", "dockerfile", "dockerrun", "ejectfirewall", "version"}},
-	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill"}},
+	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill", "context"}},
 	{"Skills & templates", []string{"skill", "template"}},
 	{"Lifecycle & recovery", []string{"reset", "rebuild", "rehome", "forget"}},
 	{"Shell integration", []string{"completion"}},

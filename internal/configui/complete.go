@@ -180,6 +180,10 @@ func (m model) assemble() config.Config {
 	if len(out.ClaudeSkills) == 0 {
 		out.ClaudeSkills = nil
 	}
+	out.Contexts = append([]config.ContextDecl{}, m.contexts...)
+	if len(out.Contexts) == 0 {
+		out.Contexts = nil
+	}
 	// The primary agent is implied by `agent`, so never write it into `skills`
 	// (even if it lingers in m.skills from a config that listed it before it became
 	// primary) — the locked row shows it on via the agent, not via this list.
@@ -252,6 +256,11 @@ func (m model) sig() string {
 	}
 	for _, cs := range m.claudeSkills {
 		parts = append(parts, "cskill:"+claudeSkillLine(cs))
+	}
+	for _, cd := range m.contexts {
+		// The full text signs (not just the summary line): a prose edit via
+		// $EDITOR must flip dirty even when the first line didn't change.
+		parts = append(parts, "ctx:"+cd.Name+""+cd.File+""+cd.Text)
 	}
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost)

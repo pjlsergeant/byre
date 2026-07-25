@@ -172,6 +172,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		layerCmd(s),
 		mcpCmd(dir, s),
 		claudeSkillCmd(dir, s),
+		contextCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
@@ -609,6 +610,64 @@ next develop.`,
 		},
 	)
 	return cs
+}
+
+func contextCmd(dir string, s commands.Streams) *cobra.Command {
+	ctx := &cobra.Command{
+		Use:   "context",
+		Short: "Manage standing agent instructions ([[context]] config blocks).",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre context add|remove|list")
+		},
+	}
+	var addGlobal, rmGlobal bool
+	var text, file string
+	add := &cobra.Command{
+		Use:   "add <name>",
+		Short: "Add or update standing instructions in the project config (or --global defaults).",
+		Long: `Write a [[context]] declaration into this project's host-side config
+(add-or-update by name; a matching "!name" closure is re-opened). The prose
+joins the agent's memory after any enabled skills' context, whatever agent
+the box runs. With neither --text nor --file, your $EDITOR opens on the
+current text (the git-commit shape). Applies on the next develop.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return usageError("usage: byre context add <name> [--text <prose>|--file <host-path>]")
+			}
+			return commands.ContextAdd(s, dir, addGlobal, args[0], text, file)
+		},
+	}
+	add.Flags().BoolVar(&addGlobal, "global", false, "write your global defaults (~/.byre/default.config) instead")
+	add.Flags().StringVar(&text, "text", "", "inline prose (skips the $EDITOR flow)")
+	add.Flags().StringVar(&file, "file", "", "host file to read at bake (~/… or absolute; machine-local, won't ride a preset)")
+	remove := &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove standing instructions (closure-smart).",
+		Long: `Remove a [[context]] declaration from this project's effective set:
+deletes the layer's own block, and/or writes the "!name" closure when a
+lower layer still declares the name. Applies on the next develop.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return usageError("usage: byre context remove <name>")
+			}
+			return commands.ContextRemove(s, dir, rmGlobal, args[0])
+		},
+	}
+	remove.Flags().BoolVar(&rmGlobal, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	ctx.AddCommand(
+		add,
+		remove,
+		&cobra.Command{
+			Use:   "list",
+			Short: "Show the resolved standing instructions (name + source).",
+			Args:  noArgsU,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.ContextList(s, dir)
+			},
+		},
+	)
+	return ctx
 }
 
 func skillCmd(a app, s commands.Streams) *cobra.Command {

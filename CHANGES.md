@@ -2,17 +2,33 @@
 
 ## unreleased
 
-- **Standing agent instructions: the `[[context]]` config key.** Tell
-  your agent "always run the linter" once, at the scope you mean it:
-  a `[[context]]` block (`name` + inline `text` or a host `file`) in
-  the global default reaches every box on the machine, in a template
-  or named layer its stack, in a project's config just that project.
+- **Standing agent instructions.** Tell your agent "always run the
+  linter" once, at the scope you mean it: `byre context add
+  house-rules` opens your $EDITOR (the git-commit shape) — `--global`
+  reaches every box on the machine, plain just this project; a named
+  layer covers a stack. The **Instructions** section of `byre config`
+  is the same feature with effective-view rows attributing each
+  snippet to its layer, and `byre context list|remove` round it out.
   The prose lands in the agent's memory file after any enabled skills'
-  context, whatever agent the box runs; layers replace a block by
-  name, `!name` removes one. Config lives host-side, so the boxed
-  agent can't rewrite its own standing orders (short of a
+  context, whatever agent the box runs. Config lives host-side, so the
+  boxed agent can't rewrite its own standing orders (short of a
   `--self-edit` session's explicit grant over the project layer). The
   context-only-skill recipe is superseded for operator prose. ADR 0043.
+
+- **Saves preserve your files.** `byre config`, the `byre
+  mcp|claude-skill|context` verbs, and the onboarding picker now edit
+  config files with targeted, style-preserving edits: hand-written
+  comments, formatting, and unusual-but-valid TOML spellings survive
+  every save byte-identically outside the thing you actually changed.
+  The destroys-comments warning is gone because the destruction is.
+  Also fixed on the way: a `byre config --global` save of a file
+  carrying the onboarding-written `shared_auth` preference produced a
+  file byre then refused to load. ADR 0044.
+
+- **`seed_prefs` can be turned off per project.** An explicit
+  `seed_prefs = false` in a later layer now wins over an inherited
+  `true`, like every other scalar — previously a silent no-op the docs
+  described as deliberate. ADR 0045.
 
 ## v1.2.0 -- 2026-07-22
 

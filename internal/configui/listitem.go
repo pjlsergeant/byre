@@ -130,7 +130,7 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		switch f {
 		case fEnv:
 			return []menuChoice{{"Override here", "e", actOverride}}
-		case fMounts, fMCP, fClaudeSkills:
+		case fMounts, fMCP, fClaudeSkills, fContext:
 			return []menuChoice{
 				{"Override here", "e", actOverride},
 				{"Remove in this project", "d", actRemoveHere},
@@ -256,6 +256,8 @@ func (m *model) removeHere(r listRow) {
 		m.mcps = append(m.mcps, config.MCP{Name: "!" + r.ident})
 	case fClaudeSkills:
 		m.claudeSkills = append(m.claudeSkills, config.ClaudeSkill{Name: "!" + r.ident})
+	case fContext:
+		m.contexts = append(m.contexts, config.ContextDecl{Name: "!" + r.ident})
 	case fPorts:
 		if c, err := strconv.Atoi(r.ident); err == nil {
 			m.ports = append(m.ports, config.Port{Container: c, Remove: true})
@@ -293,6 +295,15 @@ func (m model) startOverride(r listRow) model {
 		next.inputs[2].SetValue(r.vals[3])
 		next.inputs[3].SetValue(r.vals[4])
 		next.inputs[4].SetValue(r.vals[5])
+	case fContext:
+		// vals: name, file, text (contextVals). The override starts as a copy
+		// of the inherited declaration; saving shadows it by name.
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(r.vals[1])
+		next.itemProse = r.vals[2]
+		if r.vals[1] != "" {
+			next.itemMode = 1
+		}
 	case fClaudeSkills:
 		// vals: name, path (claudeSkillVals). An inherited skill contribution
 		// has no config path; the override starts with the name prefilled and
@@ -348,6 +359,8 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.mcps = append(m.mcps[:i], m.mcps[i+1:]...)
 	case fClaudeSkills:
 		m.claudeSkills = append(m.claudeSkills[:i], m.claudeSkills[i+1:]...)
+	case fContext:
+		m.contexts = append(m.contexts[:i], m.contexts[i+1:]...)
 	}
 }
 
@@ -426,6 +439,28 @@ func (m model) startItem(idx int) model {
 			name, path = m.claudeSkills[idx].Name, m.claudeSkills[idx].Path
 		}
 		m.inputs = []textinput.Model{newInput(name), newInput(path)}
+	case fContext:
+		// Name + (file-mode) path. The prose itself is NOT a form input: it is
+		// edited in $EDITOR (^e — the suspend/reload shape the whole-file ^e
+		// already uses), held in m.itemProse until commit.
+		m.inputLabels = []string{
+			"Name (required)",
+			"File (host path, ~/… or absolute — file mode only)",
+		}
+		name, file := "", ""
+		m.itemProse = ""
+		if idx >= 0 {
+			cd := m.contexts[idx]
+			name, file = cd.Name, cd.File
+			m.itemProse = cd.Text
+			if cd.File != "" {
+				m.itemMode = 1
+			}
+		}
+		m.inputs = []textinput.Model{newInput(name), newInput(file)}
+		m.itemHasMode = true
+		m.itemModeOpts = []string{"inline text", "host file"}
+		m.itemModeLabel = "Source"
 	case fEnv:
 		m.inputLabels = []string{"Key", "Value"}
 		k, val := "", ""
@@ -520,6 +555,28 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		return m.commitItem(), nil
+	case "ctrl+e":
+		// [[context]] inline prose is edited in a real editor, not a form
+		// input: write the draft to a temp file, suspend to $EDITOR, and
+		// editorClosedMsg routes back here via prosePath (form.go).
+		if m.listField == fContext && m.itemMode == 0 {
+			f, err := os.CreateTemp("", "byre-context-*.md")
+			if err != nil {
+				m.itemErr = err.Error()
+				return m, nil
+			}
+			if _, err := f.WriteString(m.itemProse); err != nil {
+				f.Close()
+				m.itemErr = err.Error()
+				return m, nil
+			}
+			if err := f.Close(); err != nil {
+				m.itemErr = err.Error()
+				return m, nil
+			}
+			m.prosePath = f.Name()
+			return m, openEditor(m.prosePath)
+		}
 	case "ctrl+s":
 		// Global save: accept the open item first — a ^s that silently dropped
 		// the row being typed would be lossy — then write the file. An invalid
@@ -761,6 +818,24 @@ func (m model) commitItem() model {
 			return m
 		}
 		m.mcps = putAt(m.mcps, m.editIndex, mc)
+	case fContext:
+		cd := config.ContextDecl{
+			Name: strings.ToLower(strings.TrimSpace(m.inputs[0].Value())),
+		}
+		if m.itemMode == 1 {
+			cd.File = strings.TrimSpace(m.inputs[1].Value())
+		} else {
+			cd.Text = m.itemProse
+			if strings.TrimSpace(cd.Text) == "" {
+				m.itemErr = "no text yet — ^e opens $EDITOR to write it"
+				return m
+			}
+		}
+		if err := config.ValidateContextDecl(cd); err != nil {
+			m.itemErr = err.Error()
+			return m
+		}
+		m.contexts = putAt(m.contexts, m.editIndex, cd)
 	case fClaudeSkills:
 		// Shape rules stay config's (ValidateClaudeSkill — the same check the
 		// layer gate runs); the name lowercases itself like MCP names.
@@ -914,6 +989,44 @@ func claudeSkillLine(cs config.ClaudeSkill) string {
 		return cs.Name
 	}
 	return cs.Name + " — " + src
+}
+
+// contextDeclLine is one [[context]] declaration's row: its source at a
+// glance (file path, or the prose's first line and extent).
+func contextDeclLine(cd config.ContextDecl) string {
+	if cd.File != "" {
+		return cd.Name + " — file: " + cd.File
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(cd.Text), "\n")
+	if len(first) > 48 {
+		first = first[:47] + "…"
+	}
+	if lines := strings.Count(strings.TrimRight(cd.Text, "\n"), "\n"); lines > 0 {
+		return fmt.Sprintf("%s — %q +%d lines", cd.Name, first, lines)
+	}
+	return fmt.Sprintf("%s — %q", cd.Name, first)
+}
+
+// onProseEditorClosed completes the [[context]] prose round-trip: read the
+// temp file back into the item draft and return to the item editor. The
+// whole-file ^e reload (onEditorClosed) is untouched — prosePath is what
+// routed here.
+func (m model) onProseEditorClosed(err error) model {
+	path := m.prosePath
+	m.prosePath = ""
+	defer os.Remove(path)
+	if err != nil {
+		m.itemErr = "$EDITOR: " + err.Error()
+		return m
+	}
+	b, rerr := os.ReadFile(path)
+	if rerr != nil {
+		m.itemErr = rerr.Error()
+		return m
+	}
+	m.itemProse = string(b)
+	m.itemErr = ""
+	return m
 }
 
 func mcpLine(mc config.MCP) string {
@@ -1240,6 +1353,23 @@ func (m model) itemNotes() []string {
 		notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
 		if n := claudeSkillDirNote(m.inputs[0].Value(), m.inputs[1].Value()); n != "" {
 			notes = append(notes, "⚠ "+n+" (accepted anyway — the dir can be created later)")
+		}
+		return notes
+	}
+	if m.listField == fContext {
+		notes := []string{"name: lowercase a-z 0-9 - (auto-lowercased on save)"}
+		if m.itemMode == 0 {
+			lines := 0
+			if t := strings.TrimRight(m.itemProse, "\n"); t != "" {
+				lines = strings.Count(t, "\n") + 1
+			}
+			if lines == 0 {
+				notes = append(notes, "text: empty — ^e opens $EDITOR to write it")
+			} else {
+				notes = append(notes, fmt.Sprintf("text: %d line(s) — ^e edits in $EDITOR", lines))
+			}
+		} else {
+			notes = append(notes, "file: read at bake; machine-local (won't ride a preset — inline text does)")
 		}
 		return notes
 	}
