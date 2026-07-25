@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // ContextDecl is one declared standing-instruction snippet. Exactly one of
@@ -82,12 +83,14 @@ func ValidateContextDecl(cd ContextDecl) error {
 	// The text renders verbatim in the config UI (the mcpPrintable stance):
 	// an ESC sequence in an inherited layer's prose could forge the
 	// surrounding terminal UI when its row is opened. Prose has no
-	// legitimate control characters beyond newline and tab.
+	// legitimate control characters beyond newline and tab —
+	// unicode.IsControl, so Unicode C1 (a raw CSI byte) is covered like
+	// ASCII C0.
 	for _, r := range cd.Text {
 		if r == '\n' || r == '\t' {
 			continue
 		}
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) {
 			return fmt.Errorf("context %s: text must not contain control characters (beyond newline and tab)", cd.Name)
 		}
 	}

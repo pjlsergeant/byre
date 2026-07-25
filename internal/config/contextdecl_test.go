@@ -132,9 +132,16 @@ func TestContextDeclAllowedInTemplateBody(t *testing.T) {
 // inherited layer's text could forge the surrounding terminal UI when its
 // row is opened (the mcpPrintable stance; codex pre-ship review).
 func TestContextDeclRejectsControlCharacters(t *testing.T) {
-	bad := ContextDecl{Name: "sneaky", Text: "look normal\x1b[2Kthen forge the line\n"}
-	if err := ValidateContextDecl(bad); err == nil || !strings.Contains(err.Error(), "control characters") {
-		t.Fatalf("err = %v, want the control-character refusal", err)
+	for name, text := range map[string]string{
+		"esc":     "look normal\x1b[2Kthen forge the line\n",
+		"c1-csi":  "unicode CSI \u009b2K sneaks past an ASCII-only check\n",
+		"del":     "del\x7fchar\n",
+		"nul-ish": "bell\a\n",
+	} {
+		bad := ContextDecl{Name: "sneaky", Text: text}
+		if err := ValidateContextDecl(bad); err == nil || !strings.Contains(err.Error(), "control characters") {
+			t.Fatalf("%s: err = %v, want the control-character refusal", name, err)
+		}
 	}
 	ok := ContextDecl{Name: "fine", Text: "newlines\nand\ttabs are prose\n"}
 	if err := ValidateContextDecl(ok); err != nil {
