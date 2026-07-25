@@ -429,3 +429,24 @@ FOO = "bar"
 	}
 	mustParse(t, d2)
 }
+
+// Integer identities normalize numerically: `container = 3_000` and hex
+// spellings match the canonical decimal identity (review round 3 — raw-token
+// comparison silently missed them, so a port edit appended a duplicate
+// instead of replacing).
+func TestIntegerIdentityNormalizes(t *testing.T) {
+	d := load(t, "[[ports]]\ncontainer = 3_000\n\n[[ports]]\ncontainer = 0xBB8 # 3000 in hex? no — 0xBB8 is 3000\n")
+	ok, err := d.RemoveArrayTable("ports", "container", "3000")
+	if err != nil || !ok {
+		t.Fatalf("remove by canonical identity: ok=%v err=%v", ok, err)
+	}
+	// The first spelled match went; the second (also 3000) is now the match.
+	ok, err = d.RemoveArrayTable("ports", "container", "3000")
+	if err != nil || !ok {
+		t.Fatalf("second spelling must also match: ok=%v err=%v", ok, err)
+	}
+	if strings.Contains(string(d.Bytes()), "container") {
+		t.Fatalf("ports not fully removed:\n%s", d.Bytes())
+	}
+	mustParse(t, d)
+}

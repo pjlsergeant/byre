@@ -29,6 +29,8 @@ package tomldoc
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2/unstable"
 )
@@ -55,7 +57,8 @@ type expr struct {
 	// parser reports no range for container values).
 	valSpan span
 	// strValue is the decoded value for scalar values ("" otherwise): the
-	// string content for String kinds, the raw text for Integer/Bool --
+	// string content for String kinds, raw text for Bool, and CANONICAL
+	// DECIMAL for Integer (the raw token may be spelled 3_000 or 0xBB8) --
 	// enough for identity matching (blocks match by a name key or a port
 	// number).
 	strValue string
@@ -175,8 +178,17 @@ func (d *Doc) keyValueExpr(p *unstable.Parser, e *unstable.Node, table []string)
 		valSpan: val,
 	}
 	switch v.Kind {
-	case unstable.String, unstable.Integer, unstable.Bool:
+	case unstable.String, unstable.Bool:
 		ex.strValue = string(v.Data)
+	case unstable.Integer:
+		// The parser keeps the raw token (`3_000`, `0xBB8`); identity
+		// matching compares canonical decimal, so normalize numerically --
+		// callers pass fmt.Sprintf("%d", ...) identities (review round 3).
+		if n, err := strconv.ParseInt(strings.ReplaceAll(string(v.Data), "_", ""), 0, 64); err == nil {
+			ex.strValue = strconv.FormatInt(n, 10)
+		} else {
+			ex.strValue = string(v.Data)
+		}
 	}
 	return ex, nil
 }
