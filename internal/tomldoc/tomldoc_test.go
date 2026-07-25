@@ -450,3 +450,27 @@ func TestIntegerIdentityNormalizes(t *testing.T) {
 	}
 	mustParse(t, d)
 }
+
+// The SECOND edit of an inline-table value must work: the parser reports an
+// InlineTable's Raw as just the opening brace, so trusting the length made
+// the re-edit splice one byte into invalid TOML (grok review find,
+// 2026-07-25 — byre's own house shapes are inline tables, so every
+// change-after-first-write hit this).
+func TestInlineTableValueSecondEdit(t *testing.T) {
+	d := load(t, "shared_auth = { \"claude\" = \"old\" } # keep\nbase = \"node:22\"\n")
+	if err := d.SetKey(nil, "shared_auth", `{ "claude" = "new" }`); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	if !strings.Contains(out, `shared_auth = { "claude" = "new" } # keep`) {
+		t.Fatalf("inline table not replaced in place:\n%s", out)
+	}
+	if err := d.SetKey(nil, "shared_auth", `{ "grok" = "third" }`); err != nil {
+		t.Fatalf("third edit: %v", err)
+	}
+	m := mustParse(t, d)
+	sa := m["shared_auth"].(map[string]any)
+	if sa["grok"] != "third" || len(sa) != 1 {
+		t.Fatalf("shared_auth = %v", sa)
+	}
+}

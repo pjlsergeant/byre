@@ -567,10 +567,12 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if _, err := f.WriteString(m.itemProse); err != nil {
 				f.Close()
+				os.Remove(f.Name())
 				m.itemErr = err.Error()
 				return m, nil
 			}
 			if err := f.Close(); err != nil {
+				os.Remove(f.Name())
 				m.itemErr = err.Error()
 				return m, nil
 			}

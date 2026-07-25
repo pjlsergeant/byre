@@ -447,3 +447,93 @@ func TestSaveIsDeterministicForMaps(t *testing.T) {
 		t.Fatalf("sample missing env:\n%s", first)
 	}
 }
+
+// Every [sources] spelling reconciles: house shape re-edited, the
+// [sources."id"] subtable form (normalized on change), the root-inline
+// form, and clearing each (grok review find, 2026-07-25 — subtable updates
+// wrote files byre then refused to load; clears were silent no-ops).
+func TestSaveSourcesSpellings(t *testing.T) {
+	hint := func(uri string) map[string]config.SourceHint {
+		return map[string]config.SourceHint{"acme/tool": {URI: uri}}
+	}
+	cases := []struct{ name, orig string }{
+		{"house-inline", "[sources]\n\"acme/tool\" = { uri = \"https://old\" }\n"},
+		{"subtable", "[sources.\"acme/tool\"]\nuri = \"https://old\"\n"},
+		{"root-inline", "sources = { \"acme/tool\" = { uri = \"https://old\" } }\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "byre.config")
+			// The comment is DETACHED (blank line): a glued comment belongs
+			// to the construct and rightly goes when normalization rewrites
+			// it; a detached one must survive every spelling's rewrite.
+			mustWriteFile(t, path, []byte("# keep me\n\n"+tc.orig), 0o644)
+			cfg, err := config.ParseFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Sources = hint("https://new")
+			if err := Save(path, cfg); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+			back, err := config.ParseFile(path)
+			if err != nil {
+				raw, _ := os.ReadFile(path)
+				t.Fatalf("re-parse after update: %v\n%s", err, raw)
+			}
+			if back.Sources["acme/tool"].URI != "https://new" {
+				t.Fatalf("update lost: %+v", back.Sources)
+			}
+			raw, _ := os.ReadFile(path)
+			if !strings.Contains(string(raw), "# keep me") {
+				t.Fatalf("comment lost:\n%s", raw)
+			}
+
+			// Second update exercises the house shape the first write left.
+			cfg2, _ := config.ParseFile(path)
+			cfg2.Sources = hint("https://third")
+			if err := Save(path, cfg2); err != nil {
+				t.Fatalf("second update: %v", err)
+			}
+
+			// Clear.
+			cfg3, _ := config.ParseFile(path)
+			cfg3.Sources = nil
+			if err := Save(path, cfg3); err != nil {
+				t.Fatalf("clear: %v", err)
+			}
+			back, err = config.ParseFile(path)
+			if err != nil {
+				raw, _ := os.ReadFile(path)
+				t.Fatalf("re-parse after clear: %v\n%s", err, raw)
+			}
+			if len(back.Sources) != 0 {
+				raw, _ := os.ReadFile(path)
+				t.Fatalf("clear was a no-op: %+v\n%s", back.Sources, raw)
+			}
+		})
+	}
+}
+
+// The second save of a changed shared-auth pick — the first write leaves the
+// house inline table; the re-edit must replace it, not error (grok find:
+// the inline-table span bug made every second write fail).
+func TestSaveSharedAuthSecondWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "default.config")
+	pick := func(c string) config.Config {
+		return config.Config{Base: "node:22", SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": c}}}
+	}
+	if err := Save(path, pick("first")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, pick("second")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	back, err := config.ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.SharedAuth.CompanionPick("claude") != "second" {
+		t.Fatalf("pick = %+v", back.SharedAuth)
+	}
+}

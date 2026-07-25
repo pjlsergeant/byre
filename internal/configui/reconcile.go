@@ -241,11 +241,28 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 	if equal {
 		return nil
 	}
+	// A root-inline `sources = { ... }` spelling is one construct: any
+	// change rewrites the whole map in house shape ([sources] + inline
+	// values). Grok review find 2026-07-25: the per-id path silently missed
+	// this and the subtable spelling below.
+	if doc.HasKey(nil, "sources") {
+		if err := doc.RemoveKey(nil, "sources"); err != nil {
+			return err
+		}
+		cur = nil
+	}
 	for _, id := range slices.Sorted(maps.Keys(want)) {
 		h := want[id]
 		c, ok := cur[id]
 		if ok && c.URI == h.URI && c.Digest == h.Digest && doc.HasKey([]string{"sources"}, id) {
 			continue
+		}
+		// A `[sources."id"]` subtable spelling is that entry's construct:
+		// changing the entry normalizes it to the house inline value. It
+		// must go BEFORE the set, or the insert would collide with the
+		// still-open subtable.
+		if err := doc.RemoveTable([]string{"sources", id}); err != nil {
+			return err
 		}
 		v := map[string]string{"uri": h.URI}
 		if h.Digest != "" {
@@ -257,6 +274,9 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 	}
 	for id := range cur {
 		if _, ok := want[id]; !ok {
+			if err := doc.RemoveTable([]string{"sources", id}); err != nil {
+				return err
+			}
 			if err := doc.RemoveKey([]string{"sources"}, id); err != nil {
 				return err
 			}

@@ -130,6 +130,16 @@ func (d *Doc) HasKey(table []string, key string) bool {
 	return d.findKeyValue(table, []string{key}) >= 0
 }
 
+// HasTable reports whether a [table] header with exactly this path exists.
+func (d *Doc) HasTable(table []string) bool {
+	for _, e := range d.exprs {
+		if e.kind == unstable.Table && eq(e.table, table) {
+			return true
+		}
+	}
+	return false
+}
+
 // ---- lookup helpers --------------------------------------------------------
 
 // findKeyValue finds a KeyValue expression by table context and key path.

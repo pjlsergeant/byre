@@ -156,7 +156,12 @@ func (d *Doc) keyValueExpr(p *unstable.Parser, e *unstable.Node, table []string)
 	}
 	v := e.Value()
 	val := d.rawSpan(v.Raw)
-	if val.len() == 0 { // container value: parser reports no range
+	// Container values get their span from '=' to the expression's end, BY
+	// KIND: the parser reports no range for an Array but a one-byte range
+	// (the opening brace) for an InlineTable -- trusting the length made the
+	// second edit of any inline-table value splice a single byte into
+	// invalid TOML (grok review find 2026-07-25, probed).
+	if v.Kind == unstable.Array || v.Kind == unstable.InlineTable || val.len() == 0 {
 		start := keyEnd
 		for start < whole.end && d.src[start] != '=' {
 			start++
