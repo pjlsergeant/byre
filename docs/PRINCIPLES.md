@@ -152,6 +152,54 @@ specimen -- the key shipped with "hand-editing is the interface" as its
 documented v1 surface, the author's ruling reversed it within a day, and
 this principle exists so the next key never repeats it.
 
+## 7. Dependencies don't make design decisions
+
+**byre's contracts are designed; a dependency is a component behind a
+contract byre owns.** The file a user diffs, the exit code a script
+checks, the Dockerfile a human reads, the merge semantics a cascade
+promises -- product surfaces, all of them. What a library happens to
+implement is never, by itself, a reason for a product surface to be
+worse. When a dependency can't meet a contract byre wants, there are
+exactly three honest moves: **own the seam** (build the missing piece
+around it), **replace the dependency**, or **accept the limitation on
+the record** (an ADR that names the cost). Never available: letting the
+limitation masquerade as a design preference.
+
+Implications:
+
+- Distinguish the format from the binding. Choosing TOML, Docker, or
+  the terminal is a product decision whose constraints are legitimate
+  design inputs; what one library's encoder happens to emit is an
+  accident. "The library can't" is an unfinished argument -- it ends
+  at owned-around, replaced, or accepted-and-recorded, or it isn't
+  over.
+- Artifacts byre emits for humans are designed surfaces with pinned
+  contracts (gen's byte-stable, golden-pinned Dockerfile is the
+  model). An emitted file whose shape is whatever the serializer
+  produced is an unowned surface.
+- Compensating apparatus is the tell: a warning, a sentinel, or a
+  docs caveat built to apologize for a dependency's gap marks a
+  decision that was never actually made. Each one either graduates to
+  an accepted-on-the-record limitation or becomes work.
+- Rewrites are not an argument. byre is coded by agents: a rewrite
+  that would justify expediency elsewhere is a reviewable unit here,
+  provided a human signs off and the tests hold the contract. byre
+  strives for excellence, not expediency; "the rewrite is big" is a
+  scheduling fact, not a design input.
+
+Precedents: the exit-code contract (usage errors = 2) is byre's
+promise, preserved deliberately around cobra; gen owns the Dockerfile's
+shape down to the byte. Type specimen of the failure mode: the
+2026-07-25 sidecar near-miss -- a storage architecture for `[[context]]`
+prose was nearly chosen because the TOML binding's encoder lacks
+multiline string emission, the binding's accident almost dictating
+byre's file layout before design review caught it. Existing instances
+(the comment-destruction warning, the `seed_prefs` bool that can't be
+un-set) are inventoried and dispositioned per this principle rather
+than grandfathered.
+
+## What byre is not
+
 Boundary statements, kept here so they don't get re-argued feature by
 feature. byre is not: an agent (it runs one); a Docker replacement; a
 devcontainer implementation; a policy engine; a secret manager (it seeds
