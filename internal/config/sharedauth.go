@@ -125,10 +125,17 @@ func (s SharedAuthPref) EncodeTOMLLine() string {
 	if s.Empty() {
 		return ""
 	}
+	return "shared_auth = " + s.encodeTOMLValue()
+}
+
+// encodeTOMLValue renders the canonical VALUE for a non-empty preference --
+// the single owner of the stored shape, shared by the surgical line writer
+// (EncodeTOMLLine) and the whole-file encoder (MarshalTOML). Any pick
+// present -> inline table of picks only; Yes-without-pick agents are omitted
+// (they re-ask; Save always writes a pick when it knows one). No picks ->
+// the legacy array shape.
+func (s SharedAuthPref) encodeTOMLValue() string {
 	if len(s.Pick) > 0 {
-		// Table shape: any pick present -> table of picks only; Yes-without-
-		// pick agents are omitted (they re-ask). Save always writes a pick
-		// when it knows one.
 		keys := make([]string, 0, len(s.Pick))
 		for k := range s.Pick {
 			keys = append(keys, k)
@@ -140,12 +147,26 @@ func (s SharedAuthPref) EncodeTOMLLine() string {
 			// IDs, and '/' is illegal in a bare TOML key.
 			parts = append(parts, fmt.Sprintf("%q = %q", k, s.Pick[k]))
 		}
-		return "shared_auth = { " + strings.Join(parts, ", ") + " }"
+		return "{ " + strings.Join(parts, ", ") + " }"
 	}
-	// Legacy array shape.
 	quoted := make([]string, len(s.Yes))
 	for i, a := range s.Yes {
 		quoted[i] = fmt.Sprintf("%q", a)
 	}
-	return "shared_auth = [" + strings.Join(quoted, ", ") + "]"
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// MarshalTOML emits the canonical value shape UnmarshalTOML reads. Without
+// it the whole-file encoder reflects the exported struct fields into
+// `[shared_auth.Pick]` -- a shape the dual-shape decoder REFUSES, so a
+// structured save of a file carrying an onboarding-written preference
+// bricked the file until hand-repaired (found by external review
+// 2026-07-25, reproduced). The empty case is unreachable via the encoder
+// (omitempty recurses struct fields), but stays total for any direct
+// caller.
+func (s SharedAuthPref) MarshalTOML() ([]byte, error) {
+	if s.Empty() {
+		return []byte("[]"), nil
+	}
+	return []byte(s.encodeTOMLValue()), nil
 }

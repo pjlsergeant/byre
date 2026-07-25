@@ -260,3 +260,57 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 		t.Fatalf("deletion must be named in the status, got %q", got.status)
 	}
 }
+
+// A structured save of a config carrying a shared-auth preference must
+// produce a file byre can load again. Without SharedAuthPref.MarshalTOML the
+// encoder reflects the struct into [shared_auth.Pick] -- a shape the
+// dual-shape decoder refuses, bricking default.config on a normal global
+// save (external review find, 2026-07-25; reproduced). Covers every
+// reachable stored state; mixed canonicalizes to picks-only (the
+// EncodeTOMLLine rule: yes-without-pick re-asks).
+func TestSaveRoundTripsSharedAuth(t *testing.T) {
+	cases := []struct {
+		name string
+		pref config.SharedAuthPref
+		want config.SharedAuthPref
+	}{
+		{"pick",
+			config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}},
+			config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}},
+		{"legacy-yes",
+			config.SharedAuthPref{Yes: []string{"claude"}},
+			config.SharedAuthPref{Yes: []string{"claude"}}},
+		{"mixed-canonicalizes-to-picks",
+			config.SharedAuthPref{Yes: []string{"grok"}, Pick: map[string]string{"claude": "c"}},
+			config.SharedAuthPref{Pick: map[string]string{"claude": "c"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "default.config")
+			if err := Save(path, config.Config{Base: "node:22", SharedAuth: tc.pref}); err != nil {
+				t.Fatal(err)
+			}
+			back, err := config.ParseFile(path)
+			if err != nil {
+				raw, _ := os.ReadFile(path)
+				t.Fatalf("re-parse of saved config failed (the brick):\n%v\n%s", err, raw)
+			}
+			if !reflect.DeepEqual(back.SharedAuth.Pick, tc.want.Pick) || !reflect.DeepEqual(back.SharedAuth.Yes, tc.want.Yes) {
+				t.Fatalf("round-trip: got %+v want %+v", back.SharedAuth, tc.want)
+			}
+		})
+	}
+
+	// An empty preference stays omitted -- no shared_auth key materializes.
+	path := filepath.Join(t.TempDir(), "byre.config")
+	if err := Save(path, config.Config{Base: "node:22"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "shared_auth") {
+		t.Fatalf("empty preference must stay omitted:\n%s", raw)
+	}
+}
