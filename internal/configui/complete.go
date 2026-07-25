@@ -61,11 +61,6 @@ func (m model) onEditorClosed(err error) model {
 		return m
 	}
 	m = m.loadConfig(cfg)
-	// The editor may have added (or removed) hand-written comments — recompute
-	// the destroys-comments warning so it tracks the file, not the open-time state.
-	if rerr == nil {
-		m.commentWarn = handComments(string(raw))
-	}
 	m.errMsg = ""
 	m.status = "Reloaded from file"
 	if deleted {
@@ -132,9 +127,6 @@ func (m model) save() model {
 	m.savedOnce = true
 	m.status = savedStatus
 	m.confirmQuit = false
-	// The save re-marshaled the file: any hand-written comments are gone now,
-	// so the destroys-comments warning has nothing left to protect.
-	m.commentWarn = false
 	return m
 }
 

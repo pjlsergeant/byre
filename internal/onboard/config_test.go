@@ -116,33 +116,40 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	}
 }
 
-// A file the editor can't parse is refused with a point-at-the-file error —
-// never a guessed write.
+// A file the editor can't parse is refused with a remedy naming the config
+// UI (P6: no error sends the user into the file) — never a guessed write.
 func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "skills = [\"unclosed\n")
 	err := SaveSharedAuthDefault(home, "claude", true)
-	if err == nil || !strings.Contains(err.Error(), "by hand") {
-		t.Fatalf("err = %v, want a manual-edit instruction", err)
+	if err == nil || !strings.Contains(err.Error(), "byre config --global") {
+		t.Fatalf("err = %v, want the config-UI remedy", err)
 	}
 	if got := readDefault(t, home); !strings.Contains(got, "unclosed") {
 		t.Fatalf("a refused edit must leave the file untouched:\n%s", got)
 	}
 }
 
-// A hand-formatted multi-line shared_auth list is a shape the one-line
-// rewrite can't follow: the re-parse verification must refuse it loudly
-// (do-it-by-hand) rather than mangle the file.
-func TestSaveSharedAuthDefaultRefusesMultilineList(t *testing.T) {
+// A hand-formatted multi-line shared_auth list was a shape the old one-line
+// rewriter refused; the style-preserving editor (ADR 0044) handles it — the
+// whole construct is rewritten canonically because the edit targets it, and
+// surrounding content survives.
+func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	home := t.TempDir()
-	content := "shared_auth = [\n  \"codex\",\n]\n"
-	writeDefault(t, home, content)
-	err := SaveSharedAuthDefault(home, "claude", true)
-	if err == nil || !strings.Contains(err.Error(), "by hand") {
-		t.Fatalf("err = %v, want a manual-edit refusal", err)
+	writeDefault(t, home, "# keep me\nshared_auth = [\n  \"codex\",\n]\nbase = \"node:22\"\n")
+	if err := SaveSharedAuthDefault(home, "claude", true); err != nil {
+		t.Fatal(err)
 	}
-	if got := readDefault(t, home); got != content {
-		t.Fatalf("a refused edit must leave the file untouched:\n%s", got)
+	got := readDefault(t, home)
+	if !strings.Contains(got, "# keep me") || !strings.Contains(got, "base = \"node:22\"") {
+		t.Fatalf("surrounding content must survive:\n%s", got)
+	}
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SharedAuth.HasYes("codex") || !cfg.SharedAuth.HasYes("claude") {
+		t.Fatalf("both answers must be stored: %+v", cfg.SharedAuth)
 	}
 }
 

@@ -28,6 +28,24 @@ func (s SharedAuthPref) Empty() bool {
 	return len(s.Yes) == 0 && len(s.Pick) == 0
 }
 
+// Equal reports whether two preferences store the same answers.
+func (s SharedAuthPref) Equal(o SharedAuthPref) bool {
+	if len(s.Yes) != len(o.Yes) || len(s.Pick) != len(o.Pick) {
+		return false
+	}
+	for i := range s.Yes {
+		if s.Yes[i] != o.Yes[i] {
+			return false
+		}
+	}
+	for k, v := range s.Pick {
+		if o.Pick[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 // Clone returns a deep copy.
 func (s SharedAuthPref) Clone() SharedAuthPref {
 	out := SharedAuthPref{}
@@ -118,23 +136,13 @@ func (s SharedAuthPref) Agents() []string {
 	return out
 }
 
-// EncodeTOMLLine returns a single-line TOML assignment for surgical writers.
-// Prefer the table shape when any pick is present; otherwise the legacy array.
-// Empty preference returns "" (caller removes the key).
-func (s SharedAuthPref) EncodeTOMLLine() string {
-	if s.Empty() {
-		return ""
-	}
-	return "shared_auth = " + s.encodeTOMLValue()
-}
-
-// encodeTOMLValue renders the canonical VALUE for a non-empty preference --
-// the single owner of the stored shape, shared by the surgical line writer
-// (EncodeTOMLLine) and the whole-file encoder (MarshalTOML). Any pick
-// present -> inline table of picks only; Yes-without-pick agents are omitted
-// (they re-ask; Save always writes a pick when it knows one). No picks ->
-// the legacy array shape.
-func (s SharedAuthPref) encodeTOMLValue() string {
+// EncodeTOMLValue renders the canonical VALUE for a non-empty preference --
+// the single owner of the stored shape, used by every writer (the config
+// editor's reconcile and the onboarding save alike). Any pick present ->
+// inline table of picks only; Yes-without-pick agents are omitted (they
+// re-ask; Save always writes a pick when it knows one). No picks -> the
+// legacy array shape.
+func (s SharedAuthPref) EncodeTOMLValue() string {
 	if len(s.Pick) > 0 {
 		keys := make([]string, 0, len(s.Pick))
 		for k := range s.Pick {
@@ -154,19 +162,4 @@ func (s SharedAuthPref) encodeTOMLValue() string {
 		quoted[i] = fmt.Sprintf("%q", a)
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
-}
-
-// MarshalTOML emits the canonical value shape UnmarshalTOML reads. Without
-// it the whole-file encoder reflects the exported struct fields into
-// `[shared_auth.Pick]` -- a shape the dual-shape decoder REFUSES, so a
-// structured save of a file carrying an onboarding-written preference
-// bricked the file until hand-repaired (found by external review
-// 2026-07-25, reproduced). The empty case is unreachable via the encoder
-// (omitempty recurses struct fields), but stays total for any direct
-// caller.
-func (s SharedAuthPref) MarshalTOML() ([]byte, error) {
-	if s.Empty() {
-		return []byte("[]"), nil
-	}
-	return []byte(s.encodeTOMLValue()), nil
 }

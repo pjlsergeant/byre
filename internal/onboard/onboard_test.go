@@ -222,8 +222,16 @@ func TestSaveDefaultPreservesOtherKeys(t *testing.T) {
 
 func TestScalarEditingIsTopLevelOnly(t *testing.T) {
 	// A nested key with the same name in a [section] must not be edited.
-	content := "agent = \"claude\"\n\n[env]\nagent = \"nested-should-be-ignored\"\n"
-	out := setScalar(content, "agent", "codex")
+	home := t.TempDir()
+	orig := "agent = \"claude\"\n\n[env]\nagent = \"nested-should-be-ignored\"\n"
+	if err := os.WriteFile(filepath.Join(home, "default.config"), []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveDefault(home, "", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, "default.config"))
+	out := string(b)
 	if !strings.Contains(out, `agent = "codex"`) || strings.Contains(out, `agent = "claude"`) {
 		t.Fatalf("top-level agent not updated:\n%s", out)
 	}

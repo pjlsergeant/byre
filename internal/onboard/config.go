@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
 // WriteProjectConfig writes a byre.config (the host-side store path) from the
@@ -67,16 +67,9 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 }
 
 // SaveDefault updates the template/agent scalars in ~/.byre/default.config
-// (creating it if absent), preserving any other content. An empty value removes
-// that scalar.
-//
-// Write philosophy: this is the SURGICAL writer — it touches only its two
-// top-level scalars and leaves the user's comments and hand-set fields alone,
-// because it runs from the onboarding picker where the user never chose to
-// edit the whole file. The full-file editor (`byre config --global`) is the
-// other philosophy: it re-marshals the entire file (and warns that comments
-// are lost). Keep the two roles distinct; don't grow this into a third
-// general-purpose writer.
+// (creating it if absent), preserving any other content -- the picker never
+// chose to edit the whole file, so it edits exactly two keys (tomldoc's
+// style-preserving contract, ADR 0044). An empty value removes its scalar.
 func SaveDefault(home, template, agent string) error {
 	// default.config lives directly in home, which is not a project store —
 	// creating it carries no enrollment semantics (AtomicWrite itself never
@@ -89,10 +82,22 @@ func SaveDefault(home, template, agent string) error {
 	if err != nil {
 		return err
 	}
-	content = setScalar(content, "template", template)
-	content = setScalar(content, "agent", agent)
+	doc, err := tomldoc.Load([]byte(content))
+	if err != nil {
+		return fmt.Errorf("%s: %w — fix it (byre config --global opens it), then re-run", path, err)
+	}
+	for _, kv := range []struct{ key, val string }{{"template", template}, {"agent", agent}} {
+		if kv.val == "" {
+			err = doc.RemoveKey(nil, kv.key)
+		} else {
+			err = doc.SetKey(nil, kv.key, tomldoc.String(kv.val))
+		}
+		if err != nil {
+			return err
+		}
+	}
 	// Atomic write, so a crash or concurrent save can't truncate the favourites.
-	return config.AtomicWrite(path, content)
+	return config.AtomicWrite(path, string(doc.Bytes()))
 }
 
 // Favourites reads the template/agent scalars from ~/.byre/default.config (the
@@ -168,7 +173,7 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	}
 	cfg, err := config.Parse([]byte(content))
 	if err != nil {
-		return fmt.Errorf("%s: %w — set `shared_auth` there by hand", path, err)
+		return fmt.Errorf("%s: %w — fix it (byre config --global opens it), then answer again", path, err)
 	}
 	want := cfg.SharedAuth.Clone()
 	if yes {
@@ -198,19 +203,34 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 		}
 	}
 	// No-op when the stored preference already matches.
-	if sharedAuthEqual(want, cfg.SharedAuth) {
+	if want.Equal(cfg.SharedAuth) {
 		return nil
 	}
 
-	line := want.EncodeTOMLLine()
-	edited := setScalarLine(content, "shared_auth", line)
-	// Verify the edit SEMANTICALLY.
-	check, perr := config.Parse([]byte(edited))
-	if perr != nil || !sharedAuthEqual(check.SharedAuth, want) {
-		return fmt.Errorf("could not update %s (edit did not verify) — set `shared_auth` there by hand", path)
+	doc, err := tomldoc.Load([]byte(content))
+	if err != nil {
+		return err
 	}
-	if err := config.AtomicWrite(path, edited); err != nil {
-		return fmt.Errorf("could not update %s (%v) — set `shared_auth` there by hand", path, err)
+	// Canonical inline value; a hand-written [shared_auth] table spelling is
+	// one construct, normalized only now that the preference itself changed.
+	if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
+		return err
+	}
+	if want.Empty() {
+		err = doc.RemoveKey(nil, "shared_auth")
+	} else {
+		err = doc.SetKey(nil, "shared_auth", want.EncodeTOMLValue())
+	}
+	if err != nil {
+		return err
+	}
+	// Verify the edit SEMANTICALLY before it lands.
+	check, perr := config.Parse(doc.Bytes())
+	if perr != nil || !check.SharedAuth.Equal(want) {
+		return fmt.Errorf("could not update %s (edit did not verify) — answer again via byre config --global", path)
+	}
+	if err := config.AtomicWrite(path, string(doc.Bytes())); err != nil {
+		return fmt.Errorf("could not update %s (%v)", path, err)
 	}
 	return nil
 }
@@ -223,26 +243,6 @@ func removeString(ss []string, x string) []string {
 		}
 	}
 	return out
-}
-
-func sharedAuthEqual(a, b config.SharedAuthPref) bool {
-	if len(a.Yes) != len(b.Yes) {
-		return false
-	}
-	for i := range a.Yes {
-		if a.Yes[i] != b.Yes[i] {
-			return false
-		}
-	}
-	if len(a.Pick) != len(b.Pick) {
-		return false
-	}
-	for k, v := range a.Pick {
-		if b.Pick[k] != v {
-			return false
-		}
-	}
-	return true
 }
 
 // defaultConfigStub heads a default.config the surgical writers create from
@@ -260,82 +260,4 @@ func readDefaultConfig(home string) (string, error) {
 		return defaultConfigStub, nil
 	}
 	return string(b), nil
-}
-
-// findTopLevelScalar returns the line index of a top-level `key =` assignment
-// (one that appears before any `[section]` header, so it isn't a nested key like
-// `[env] agent = ...`), or -1.
-func findTopLevelScalar(lines []string, key string) int {
-	re := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(key) + `\s*=`)
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "[") {
-			return -1 // entered a section; top-level keys precede all sections
-		}
-		if re.MatchString(l) {
-			return i
-		}
-	}
-	return -1
-}
-
-// setList replaces (or, for an empty list, removes; or appends) a top-level
-// `key = ["a", "b"]` line, leaving sections and other content untouched. It
-// rewrites the assignment as ONE line whatever shape it had; the caller's
-// re-parse verification refuses the edit if that mangled a hand-formatted
-// multi-line array rather than replacing it.
-func setList(content, key string, values []string) string {
-	if len(values) == 0 {
-		return setScalarLine(content, key, "")
-	}
-	quoted := make([]string, len(values))
-	for i, v := range values {
-		quoted[i] = fmt.Sprintf("%q", v)
-	}
-	return setScalarLine(content, key, fmt.Sprintf("%s = [%s]", key, strings.Join(quoted, ", ")))
-}
-
-// setScalar replaces (or, for an empty value, removes; or appends) a top-level
-// `key = "value"` line, leaving sections and other content untouched.
-func setScalar(content, key, value string) string {
-	if value == "" {
-		return setScalarLine(content, key, "")
-	}
-	return setScalarLine(content, key, fmt.Sprintf("%s = %q", key, value))
-}
-
-// setScalarLine is the shared line-level primitive under setScalar/setList:
-// it replaces the top-level `key =` assignment line with newline, removes it
-// when newline is empty, or inserts newline into the top-level region when
-// the key is absent.
-func setScalarLine(content, key, newline string) string {
-	lines := strings.Split(content, "\n")
-	i := findTopLevelScalar(lines, key)
-
-	if newline == "" {
-		if i >= 0 {
-			lines = append(lines[:i], lines[i+1:]...)
-		}
-		return strings.Join(lines, "\n")
-	}
-	if i >= 0 {
-		lines[i] = newline
-		return strings.Join(lines, "\n")
-	}
-	return strings.Join(insertTopLevel(lines, newline), "\n")
-}
-
-// insertTopLevel splices newline into the top-level region: just before the
-// first section header, or at the end when there is none. Shared by the
-// surgical writers so new scalars and new lists land in the same place.
-func insertTopLevel(lines []string, newline string) []string {
-	insert := len(lines)
-	for j, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "[") {
-			insert = j
-			break
-		}
-	}
-	out := append([]string{}, lines[:insert]...)
-	out = append(out, newline)
-	return append(out, lines[insert:]...)
 }

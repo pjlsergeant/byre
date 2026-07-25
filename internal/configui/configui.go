@@ -5,63 +5,50 @@
 package configui
 
 import (
-	"strings"
-
-	"github.com/BurntSushi/toml"
+	"fmt"
+	"os"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
-// Save validates cfg as a single layer, marshals it to TOML (only set fields,
-// via omitempty), and writes it to path atomically with a managed-by header. Raw
-// fields (run_args, dockerfile_*) round-trip untouched. Validation is
-// ValidateLayer, NOT the resolved Validate: this file is one cascade layer, so
-// `!name` removal entries are legal here and cross-layer collisions aren't its
-// concern — using Validate made any config with a removal entry unsaveable.
+// managedHeader fronts a config file byre CREATES. One line of ownership,
+// nothing more: the file is shared custody (ADR 0044), and saves preserve
+// whatever the user writes in it, this header included.
+const managedHeader = "# Managed by `byre config`.\n\n"
+
+// Save validates cfg as a single layer and reconciles it onto the file's
+// current content with targeted, style-preserving edits (tomldoc): fields
+// the caller didn't change produce no edit at all, so hand-written comments
+// and formatting survive; a changed field rewrites only its own construct.
+// A missing file is created in byre's house layout. Validation is
+// ValidateLayer, NOT the resolved Validate: this file is one cascade layer,
+// so `!name` removal entries are legal here and cross-layer collisions
+// aren't its concern.
 func Save(path string, cfg config.Config) error {
 	if err := cfg.ValidateLayer(); err != nil {
 		return err
 	}
-	var b strings.Builder
-	b.WriteString("# Managed by `byre config`. Structured fields are edited there;\n")
-	b.WriteString("# raw blocks (run_args, dockerfile_pre/post) are edited here by hand.\n\n")
-	if err := toml.NewEncoder(&b).Encode(cfg); err != nil {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		raw = []byte(managedHeader)
+	}
+	cur, err := config.Parse(raw)
+	if err != nil {
+		// Reconciling against a file byre can't read would guess at what to
+		// preserve. The parse error names the problem; fixing the file is
+		// the editor's flow (it refuses to open broken files the same way).
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	doc, err := tomldoc.Load(raw)
+	if err != nil {
 		return err
 	}
-	return config.AtomicWrite(path, b.String())
-}
-
-// handComments reports whether raw config content has hand-written full-line
-// # comments — ones a re-marshaling Save would destroy. byre's own boilerplate
-// headers (the managed-by header Save writes, onboarding's markers) don't
-// count: they're regenerated or expendable, and warning on them would make
-// every byre-created file cry wolf. Inline comments (after a value) are not
-// detected — TOML strings can contain '#', and a false positive costs more
-// than the rare miss.
-func handComments(raw string) bool {
-	for _, line := range strings.Split(raw, "\n") {
-		t := strings.TrimSpace(line)
-		if !strings.HasPrefix(t, "#") {
-			continue
-		}
-		if byreBoilerplate(t) {
-			continue
-		}
-		return true
+	if err := reconcile(doc, cur, cfg); err != nil {
+		return err
 	}
-	return false
-}
-
-func byreBoilerplate(comment string) bool {
-	for _, p := range []string{
-		"# Managed by `byre config`",
-		"# raw blocks (run_args",
-		"# Created by byre",
-		"# byre default.config",
-	} {
-		if strings.HasPrefix(comment, p) {
-			return true
-		}
-	}
-	return false
+	return config.AtomicWrite(path, string(doc.Bytes()))
 }

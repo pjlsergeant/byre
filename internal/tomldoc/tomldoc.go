@@ -54,8 +54,10 @@ type expr struct {
 	// valSpan covers a KeyValue's value bytes (computed even where the
 	// parser reports no range for container values).
 	valSpan span
-	// strValue is the decoded value for String-kind values ("" otherwise) --
-	// enough for identity matching (blocks match by a string key like name).
+	// strValue is the decoded value for scalar values ("" otherwise): the
+	// string content for String kinds, the raw text for Integer/Bool --
+	// enough for identity matching (blocks match by a name key or a port
+	// number).
 	strValue string
 }
 
@@ -172,7 +174,8 @@ func (d *Doc) keyValueExpr(p *unstable.Parser, e *unstable.Node, table []string)
 		span:    whole,
 		valSpan: val,
 	}
-	if v.Kind == unstable.String {
+	switch v.Kind {
+	case unstable.String, unstable.Integer, unstable.Bool:
 		ex.strValue = string(v.Data)
 	}
 	return ex, nil

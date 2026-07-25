@@ -82,63 +82,45 @@ func TestSaveAcceptsRemovalEntries(t *testing.T) {
 	}
 }
 
-// TestCommentWarnOnLoad pins Q7: opening a hand-commented file warns that
-// saving rewrites it; byre's own boilerplate headers don't cry wolf.
-func TestCommentWarnOnLoad(t *testing.T) {
-	dir := t.TempDir()
-	hand := filepath.Join(dir, "hand.config")
-	mustWriteFile(t, hand, []byte("# remember: the LAN port is for the demo\nagent = \"claude\"\n"), 0o644)
-	if v := newModel("t", hand, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject).View(); !strings.Contains(v, "hand-written comments") {
-		t.Errorf("hand-commented file should warn on load:\n%s", v)
-	}
-
-	managed := filepath.Join(dir, "managed.config")
-	mustWriteFile(t, managed, []byte("# Managed by `byre config`. Structured fields are edited there;\n# raw blocks (run_args, dockerfile_pre/post) are edited here by hand.\n\nagent = \"claude\"\n"), 0o644)
-	if v := newModel("t", managed, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject).View(); strings.Contains(v, "hand-written comments") {
-		t.Errorf("byre's own header must not trigger the warning:\n%s", v)
-	}
-
-	if v := newModel("t", filepath.Join(dir, "absent.config"), config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject).View(); strings.Contains(v, "hand-written comments") {
-		t.Errorf("a missing file must not warn:\n%s", v)
-	}
-}
-
-// TestCommentWarnTracksEditorRoundTrip pins the reviewer's finding: comments
-// added (or removed) via the ^e $EDITOR round-trip must update the
-// destroys-comments warning — it tracks the file, not the open-time state.
-func TestCommentWarnTracksEditorRoundTrip(t *testing.T) {
+// Saves preserve hand-written comments and formatting (ADR 0044): the
+// reconcile writer edits only what changed, so everything else -- comments
+// included -- survives byte-identically. The old destroys-comments warning
+// apparatus is gone because there is nothing left to warn about.
+func TestSavePreservesHandComments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x.config")
-	mustWriteFile(t, path, []byte("agent = \"claude\"\n"), 0o644)
-	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
-	if m.commentWarn {
-		t.Fatal("clean file must not warn at open")
-	}
-	// User adds a hand comment in $EDITOR, then the TUI reloads.
-	mustWriteFile(t, path, []byte("# my note\nagent = \"claude\"\n"), 0o644)
-	m = m.onEditorClosed(nil)
-	if !m.commentWarn {
-		t.Error("comments added via $EDITOR must arm the warning")
-	}
-	// And removing them disarms it.
-	mustWriteFile(t, path, []byte("agent = \"claude\"\n"), 0o644)
-	m = m.onEditorClosed(nil)
-	if m.commentWarn {
-		t.Error("warning must clear once the comments are gone")
-	}
+	orig := "# remember: the LAN port is for the demo\nagent = \"claude\" # chosen for this customer\n\n# glued to env\n[env]\nFOO = \"bar\"\n"
+	mustWriteFile(t, path, []byte(orig), 0o644)
 
-	// A successful ^s re-marshals the file — the comments it warned about are
-	// gone, so the warning must clear rather than nag about the file just written.
-	mustWriteFile(t, path, []byte("# note\nagent = \"claude\"\n"), 0o644)
-	m = m.onEditorClosed(nil)
-	if !m.commentWarn {
-		t.Fatal("precondition: warning armed")
+	cfg, err := config.ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	m = m.save()
-	if m.errMsg != "" {
-		t.Fatalf("save failed: %s", m.errMsg)
+	cfg.Base = "node:22" // one edit
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
 	}
-	if m.commentWarn {
-		t.Error("warning must clear after the save that removed the comments")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"# remember: the LAN port is for the demo",
+		"agent = \"claude\" # chosen for this customer",
+		"# glued to env",
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("comment lost on save: %q missing from:\n%s", want, raw)
+		}
+	}
+	if !strings.Contains(string(raw), "base = \"node:22\"") {
+		t.Errorf("edit did not land:\n%s", raw)
+	}
+	back, err := config.ParseFile(path)
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if back.Base != "node:22" || back.Agent != "claude" || back.Env["FOO"] != "bar" {
+		t.Errorf("semantic drift after preserving save: %+v", back)
 	}
 }
 
@@ -267,7 +249,7 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 // dual-shape decoder refuses, bricking default.config on a normal global
 // save (external review find, 2026-07-25; reproduced). Covers every
 // reachable stored state; mixed canonicalizes to picks-only (the
-// EncodeTOMLLine rule: yes-without-pick re-asks).
+// EncodeTOMLValue rule: yes-without-pick re-asks).
 func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	cases := []struct {
 		name string
@@ -312,5 +294,96 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "shared_auth") {
 		t.Fatalf("empty preference must stay omitted:\n%s", raw)
+	}
+}
+
+// TestReconcileCoversEveryField is the Merge guard's sibling: every
+// toml-visible Config field must be written by reconcile, or a UI edit to
+// that field silently never reaches the file. For each field, a sample value
+// is saved onto an existing (commented) file and must round-trip; the
+// reflection walk fails the test when a Config field gains a toml tag
+// without a sample here.
+func TestReconcileCoversEveryField(t *testing.T) {
+	samples := map[string]config.Config{
+		"engine":          {Engine: "podman"},
+		"template":        {Template: "go"},
+		"agent":           {Agent: "claude"},
+		"base":            {Base: "node:22"},
+		"extends":         {Extends: "torn"},
+		"seed_prefs":      {SeedPrefs: true},
+		"worktree_base":   {WorktreeBase: "sibling"},
+		"shared_auth":     {SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}},
+		"sources":         {Sources: map[string]config.SourceHint{"acme/tool": {URI: "https://x", Digest: ""}}},
+		"apt":             {Apt: []string{"jq"}},
+		"npm_global":      {NpmGlobal: []string{"prettier"}},
+		"env":             {Env: map[string]string{"FOO": "bar"}},
+		"env_from_host":   {EnvFromHost: map[string]string{"TERM": "env:TERM"}},
+		"files":           {Files: map[string]string{"./seed": "/opt/seed"}},
+		"skills":          {Skills: []string{"firewall"}},
+		"mounts":          {Mounts: []config.Mount{{Host: "~/d", Target: "/d", Mode: "rw"}}},
+		"volumes":         {Volumes: []config.Volume{{Name: "creds", Role: "state", Target: "/c", Seed: &config.Seed{Host: "~/s"}}}},
+		"ports":           {Ports: []config.Port{{Container: 3000, Host: 3001, Interface: "0.0.0.0"}}},
+		"egress":          {Egress: []string{"api.example.com:443"}},
+		"egress_offered":  {EgressOffered: []string{"telemetry.example.com"}},
+		"mcp":             {MCPs: []config.MCP{{Name: "github", Command: []string{"gh-mcp", "stdio"}, Env: []string{"GITHUB_TOKEN"}}}},
+		"claude_skills":   {ClaudeSkills: []config.ClaudeSkill{{Name: "tdd-loop", Path: "~/cs/tdd-loop"}}},
+		"context":         {Contexts: []config.ContextDecl{{Name: "rules", Text: "Line one.\nLine two.\n"}}},
+		"dockerfile_pre":  {DockerfilePre: []string{"RUN echo pre"}},
+		"dockerfile_post": {DockerfilePost: []string{"RUN echo post"}},
+		"run_args":        {RunArgs: []string{"--cpus=2"}},
+	}
+
+	// Reflection guard: every toml-tagged Config field needs a sample.
+	rt := reflect.TypeOf(config.Config{})
+	for i := 0; i < rt.NumField(); i++ {
+		tag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if _, ok := samples[tag]; !ok {
+			t.Errorf("Config.%s (toml %q) has no reconcile sample — give it one (and handle it in reconcile)", rt.Field(i).Name, tag)
+		}
+	}
+
+	for tag, cfg := range samples {
+		t.Run(tag, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "byre.config")
+			orig := "# hand comment survives\nnpm_global = [\"left-alone\"]\n"
+			if tag == "npm_global" {
+				orig = "# hand comment survives\napt = [\"left-alone\"]\n"
+			}
+			mustWriteFile(t, path, []byte(orig), 0o644)
+			base, err := config.ParseFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Overlay the sample onto the file's parsed content, then Save.
+			merged := config.Merge(base, cfg)
+			if err := Save(path, merged); err != nil {
+				t.Fatalf("save: %v", err)
+			}
+			back, err := config.ParseFile(path)
+			if err != nil {
+				raw, _ := os.ReadFile(path)
+				t.Fatalf("re-parse: %v\n%s", err, raw)
+			}
+			rv := reflect.ValueOf(cfg)
+			bv := reflect.ValueOf(back)
+			for i := 0; i < rt.NumField(); i++ {
+				fTag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]
+				if fTag != tag {
+					continue
+				}
+				if !reflect.DeepEqual(rv.Field(i).Interface(), bv.Field(i).Interface()) {
+					raw, _ := os.ReadFile(path)
+					t.Fatalf("field %s did not round-trip:\n got %+v\nwant %+v\nfile:\n%s",
+						rt.Field(i).Name, bv.Field(i).Interface(), rv.Field(i).Interface(), raw)
+				}
+			}
+			raw, _ := os.ReadFile(path)
+			if !strings.Contains(string(raw), "# hand comment survives") {
+				t.Fatalf("hand comment lost:\n%s", raw)
+			}
+		})
 	}
 }

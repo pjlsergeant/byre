@@ -147,10 +147,6 @@ type model struct {
 	sections []section   // rendered groups (Grants / Build / Advanced)
 	order    []fieldID   // flattened focus order across all sections
 
-	// commentWarn: the loaded file has hand-written comments that a ^s
-	// re-marshal would drop; shown persistently in the form footer (Q7).
-	commentWarn bool
-
 	ti        textinput.Model // base image editor
 	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
 	wtSibling bool            // fWorktreeSibling checkbox: worktrees beside the repo
@@ -236,12 +232,6 @@ type model struct {
 }
 
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
-	// Q7: saving re-marshals the whole file, so a hand-commented config would
-	// lose its comments — say so on LOAD, while the user can still bail to ^e.
-	commentWarn := false
-	if raw, err := os.ReadFile(filePath); err == nil {
-		commentWarn = handComments(string(raw))
-	}
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Focus()
@@ -316,7 +306,6 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		ta:           ta,
 		width:        80,
 		volPendClear: -1,
-		commentWarn:  commentWarn,
 	}
 	return m.loadConfig(cfg)
 }
@@ -817,9 +806,6 @@ func (m model) viewForm() string {
 	}
 	b.WriteString("\n")
 
-	if m.commentWarn {
-		b.WriteString("\n" + errStyle.Render("⚠ this file has hand-written comments — ^s rewrites it and DROPS them (raw blocks survive; use ^e to edit without losing comments)"))
-	}
 	b.WriteString("\n" + dimStyle.Render("Saves to: "+m.filePath))
 	b.WriteString("\n" + helpLine("↑↓", "move", "←→", "change", "↵", "open", "^s", "save", "^e", "$EDITOR", "^q", "quit"))
 	return b.String()

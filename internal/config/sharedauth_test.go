@@ -3,15 +3,15 @@ package config
 import "testing"
 
 // Installed agents have qualified owner/name IDs; '/' is illegal in a bare
-// TOML key, so the encoder must quote pick keys or the emitted line is
-// unparsable and every surgical save for a third-party agent fails its
-// semantic verify.
-func TestEncodeTOMLLineQuotesQualifiedPickKeys(t *testing.T) {
+// TOML key, so the encoder must quote pick keys or the emitted value is
+// unparsable and every save for a third-party agent fails its semantic
+// verify.
+func TestEncodeTOMLValueQuotesQualifiedPickKeys(t *testing.T) {
 	pref := SharedAuthPref{Pick: map[string]string{
 		"acme/agent": "acme/agent-shared-auth",
 		"claude":     "claude-shared-auth",
 	}}
-	line := pref.EncodeTOMLLine()
+	line := "shared_auth = " + pref.EncodeTOMLValue()
 	cfg, err := Parse([]byte(line + "\n"))
 	if err != nil {
 		t.Fatalf("emitted line %q must parse: %v", line, err)
