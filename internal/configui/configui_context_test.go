@@ -6,8 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/pjlsergeant/byre/internal/config"
 )
+
+// ansiStringWidth measures display cells — the unit the view clips by.
+func ansiStringWidth(s string) int { return ansi.StringWidth(s) }
 
 func TestContextRowsEffectiveView(t *testing.T) {
 	inh := Inherited{
@@ -277,5 +282,44 @@ func TestContextProseSoftWrapsToWidth(t *testing.T) {
 	m2 = m2.startItem(0)
 	if v := m2.viewItem(); !strings.Contains(rejoin(v), "why it matters right now.") {
 		t.Fatalf("item editor must wrap too:\n%s", v)
+	}
+}
+
+// The wrap is faithful and cell-accurate (codex pre-ship review): CJK prose
+// (two cells per glyph) never exceeds the width clipLines truncates at;
+// indented example lines keep their indentation verbatim; narrow terminals
+// wrap to the REAL remaining width instead of a floor the clip would eat.
+func TestContextProseWrapFidelity(t *testing.T) {
+	prose := "説明はここから始まり、日本語の指示文はセル幅で折り返されなければならない。\n" +
+		"Steps:\n" +
+		"    indented example line\n" +
+		"short\n"
+	m := newModel("t", "/tmp/x", config.Config{Contexts: []config.ContextDecl{{Name: "n", Text: prose}}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fContext
+	m.width = 30
+	m = m.startItem(0)
+	v := m.viewItem()
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "│") && ansiStringWidth(stripANSI(l)) > 30 {
+			t.Fatalf("gutter line exceeds %d cells (%d): %q", 30, ansiStringWidth(stripANSI(l)), stripANSI(l))
+		}
+	}
+	if !strings.Contains(v, "    indented example line") {
+		t.Fatalf("indentation must render verbatim:\n%s", v)
+	}
+	// Nothing lost: rejoining recovers the CJK tail.
+	joined := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(v), "│", "")), "")
+	if !strings.Contains(joined, "折り返されなければならない。") {
+		t.Fatalf("CJK tail lost:\n%s", v)
+	}
+
+	// A very narrow terminal still fits PROSE inside its own width (the
+	// "+k more" chrome line is fixed text — the view's ellipsis clip is the
+	// right treatment for chrome; stored prose is what must never clip).
+	m.width = 12
+	for _, l := range strings.Split(m.viewItem(), "\n") {
+		if strings.Contains(l, "│") && !strings.Contains(l, "more lines") && ansiStringWidth(stripANSI(l)) > 12 {
+			t.Fatalf("narrow terminal prose line exceeds 12 cells: %q", stripANSI(l))
+		}
 	}
 }

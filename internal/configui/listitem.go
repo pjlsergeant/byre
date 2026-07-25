@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -1236,9 +1237,13 @@ func rowAnnotation(r listRow) string {
 // as one long line (the natural shape of an instruction sentence) showed
 // only its first screen-width otherwise.
 func proseBlock(text, more string, width int) string {
+	// Wrap to the REAL remaining width (never a floor above it — a floor
+	// hands lines back to the clip's ellipsis on a narrow terminal), in
+	// display CELLS, the unit clipLines truncates by (CJK and emoji are two
+	// cells wide; rune counting re-clipped them — codex pre-ship review).
 	w := width - 4 // two-space indent + gutter
-	if w < 20 {
-		w = 20
+	if w < 1 {
+		w = 1
 	}
 	var lines []string
 	for _, src := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
@@ -1259,37 +1264,38 @@ func proseBlock(text, more string, width int) string {
 	return b.String()
 }
 
-// wrapLine greedy-word-wraps one source line to width w (an empty line stays
-// one empty display line; a single word longer than w is hard-split so it
-// can never re-trip the view's ellipsis clip).
+// wrapLine wraps one source line to w display cells, FAITHFULLY: a line
+// that fits is returned verbatim (indentation, aligned spacing, and all —
+// showing the stored prose means showing it, not a re-flowed paraphrase);
+// a longer line breaks at the last space inside the window, consuming only
+// that one break space, with the line's own leading indent carried onto
+// continuations. A space-less stretch wider than the window is hard-cut at
+// the cell boundary (grapheme-aware via ansi.Truncate), so nothing ever
+// reaches the view's ellipsis clip.
 func wrapLine(src string, w int) []string {
-	if strings.TrimSpace(src) == "" {
-		return []string{""}
+	if ansi.StringWidth(src) <= w {
+		return []string{src}
 	}
+	indent := src[:len(src)-len(strings.TrimLeft(src, " \t"))]
+	if ansi.StringWidth(indent) >= w {
+		indent = "" // pathological indent wider than the window
+	}
+	chunkw := w - ansi.StringWidth(indent)
+	rest := src[len(indent):]
 	var out []string
-	cur := ""
-	for _, word := range strings.Fields(src) {
-		for len([]rune(word)) > w { // pathological: one word wider than the screen
-			if cur != "" {
-				out = append(out, cur)
-				cur = ""
-			}
-			r := []rune(word)
-			out = append(out, string(r[:w]))
-			word = string(r[w:])
+	for rest != "" {
+		if ansi.StringWidth(rest) <= chunkw {
+			out = append(out, indent+rest)
+			break
 		}
-		switch {
-		case cur == "":
-			cur = word
-		case len([]rune(cur))+1+len([]rune(word)) <= w:
-			cur += " " + word
-		default:
-			out = append(out, cur)
-			cur = word
+		head := ansi.Truncate(rest, chunkw, "")
+		if i := strings.LastIndexByte(head, ' '); i > 0 {
+			head = head[:i]
+			rest = rest[i+1:] // consume the one break space, keep any others
+		} else {
+			rest = rest[len(head):]
 		}
-	}
-	if cur != "" {
-		out = append(out, cur)
+		out = append(out, indent+head)
 	}
 	return out
 }
