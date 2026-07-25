@@ -333,10 +333,14 @@ func TestContextProseWrapFidelity(t *testing.T) {
 }
 
 // A one-cell prose window (terminal width 5) with two-cell glyphs must
-// terminate — the hard-cut path emits the next grapheme even though it
+// TERMINATE — the hard-cut path emits the next grapheme even though it
 // overflows the nominal window (codex pre-ship round 2: ansi.Truncate
 // returns "" for a wide glyph in a one-cell window, and the unchanged rest
-// looped forever, freezing the TUI).
+// looped forever, freezing the TUI). Termination is the whole claim: at a
+// width this far below usable, the production clip still ellipsizes every
+// line of the form, prose included — accepted (codex round 3); a terminal
+// narrower than the gutter is not a rendering target, but it must never
+// hang.
 func TestContextProseWrapNarrowCJKTerminates(t *testing.T) {
 	m := newModel("t", "/tmp/x", config.Config{Contexts: []config.ContextDecl{{Name: "n", Text: "日本語のテスト\n"}}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 	m.listField = fContext
@@ -347,9 +351,11 @@ func TestContextProseWrapNarrowCJKTerminates(t *testing.T) {
 	go func() { done <- m.viewItem() }()
 	select {
 	case v := <-done:
+		// wrapLine's own output carries every glyph (one per line); what
+		// the clip then shows on a 5-cell screen is the clip's business.
 		joined := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(v), "│", "")), "")
 		if !strings.Contains(joined, "テスト") {
-			t.Fatalf("CJK content lost at narrow width:\n%s", v)
+			t.Fatalf("wrap dropped glyphs:\n%s", v)
 		}
 	case <-timeAfter(t):
 		t.Fatal("viewItem hung wrapping wide glyphs at a one-cell window")
