@@ -388,3 +388,30 @@ func TestReconcileCoversEveryField(t *testing.T) {
 		})
 	}
 }
+
+// Clearing a map spelled with dotted root keys must actually clear it
+// (review finding 2026-07-25: the header-only removal path silently left
+// `env.FOO = ...` in place).
+func TestSaveClearsDottedSpelledMap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "byre.config")
+	mustWriteFile(t, path, []byte("env.FOO = \"bar\"\nenv.BAZ = \"qux\"\nbase = \"node:22\"\n"), 0o644)
+	cfg, err := config.ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Env = nil
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	back, err := config.ParseFile(path)
+	if err != nil {
+		raw, _ := os.ReadFile(path)
+		t.Fatalf("re-parse: %v\n%s", err, raw)
+	}
+	if len(back.Env) != 0 {
+		t.Fatalf("env not cleared: %+v", back.Env)
+	}
+	if back.Base != "node:22" {
+		t.Fatalf("unrelated key lost: %+v", back)
+	}
+}

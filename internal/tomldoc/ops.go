@@ -30,9 +30,37 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 		at := d.rootInsertPoint()
 		return d.splice(span{at, at}, []byte(line))
 	}
+	// No [table] header, but the table may exist through DOTTED spellings
+	// (`env.FOO = "x"` at root). Emitting a [table] header then would
+	// redefine the implicit table -- invalid TOML -- so the new key joins
+	// its kin in their spelling, after the last of them.
+	if at, ok := d.dottedKinInsert(table); ok {
+		dotted := fmt.Sprintf("%s = %s\n", encodeKeyPath(append(append([]string(nil), table...), key)), rendered)
+		return d.splice(span{at, at}, []byte(dotted))
+	}
 	block := fmt.Sprintf("[%s]\n%s", encodeKeyPath(table), line)
 	at := len(d.src)
 	return d.splice(span{at, at}, []byte(d.separated(at)+block))
+}
+
+// dottedKinInsert finds where a new key of table lands when the table exists
+// only via dotted key-values declared in a SHALLOWER context: after the last
+// such kin. ok=false when no kin exist.
+func (d *Doc) dottedKinInsert(table []string) (int, bool) {
+	at, ok := -1, false
+	for _, e := range d.exprs {
+		if e.kind != unstable.KeyValue || eq(e.table, table) {
+			continue
+		}
+		full := append(append([]string(nil), e.table...), e.key...)
+		if len(full) <= len(table) {
+			continue
+		}
+		if eq(full[:len(table)], table) {
+			at, ok = d.lineSpan(e.span).end, true
+		}
+	}
+	return at, ok
 }
 
 // RemoveKey removes key (relative to table) if present: its full line --
@@ -189,41 +217,34 @@ func (d *Doc) matchArrayTable(name, matchKey, matchValue string) int {
 	return -1
 }
 
-// blockEnd is the offset just past a header expression's block: the start of
-// the next header line (its glued comments included), or end of document.
-// Trailing blank lines before the next header stay with the GAP, not the
-// block, so removals don't eat separators.
+// blockEnd is the offset just past a header expression's block: through its
+// last key-value (interior comments and blank lines are block content,
+// wherever they sit) plus any comment run GLUED to that last key-value. A
+// trailing comment separated by a blank line is NOT the block's -- it
+// belongs to whatever follows (or to the file), and replacing or removing
+// the block must not consume it (review finding 2026-07-25: the old
+// next-header/EOF rule ate a blank-line-separated trailing file comment).
 func (d *Doc) blockEnd(hdr int) int {
+	last, stop := hdr, len(d.exprs)
 	for i := hdr + 1; i < len(d.exprs); i++ {
 		e := d.exprs[i]
 		if e.kind == unstable.Table || e.kind == unstable.ArrayTable {
-			start := d.gluedCommentStart(i, d.lineStart(e.span.start))
-			return d.trimTrailingBlank(start)
+			stop = i
+			break
+		}
+		if e.kind == unstable.KeyValue {
+			last = i
 		}
 	}
-	return d.trimTrailingBlank(len(d.src))
-}
-
-// trimTrailingBlank walks back over whole blank lines ending at off,
-// returning the offset after the last non-blank line.
-func (d *Doc) trimTrailingBlank(off int) int {
-	for {
-		ls := d.lineStart(off - 1)
-		if ls >= off {
-			return off
+	end := d.lineSpan(d.exprs[last].span).end
+	for j := last + 1; j < stop; j++ {
+		e := d.exprs[j]
+		if e.kind != unstable.Comment || d.blankLineBetween(d.exprs[j-1].span.end, e.span.start) {
+			break
 		}
-		blank := true
-		for i := ls; i < off-1; i++ {
-			if d.src[i] != ' ' && d.src[i] != '\t' && d.src[i] != '\r' {
-				blank = false
-				break
-			}
-		}
-		if !blank || ls == 0 {
-			return off
-		}
-		off = ls
+		end = d.lineSpan(e.span).end
 	}
+	return end
 }
 
 // gluedCommentStart walks upward from expression i over full-line comment

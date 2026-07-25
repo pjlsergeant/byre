@@ -6,29 +6,24 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/editorcmd"
 )
 
 // ---- $EDITOR shell-out -----------------------------------------------------
 
 type editorClosedMsg struct{ err error }
 
-// openEditor suspends the TUI and runs $EDITOR (falling back to vi) on path. The
-// editor value is split on spaces so "code -w" / "emacsclient -nw"-style values
-// work. On exit, editorClosedMsg triggers a reload from disk.
+// openEditor suspends the TUI and runs $EDITOR (falling back to vi) on
+// path, through the shared shell-semantics launcher (editorcmd). On exit,
+// editorClosedMsg triggers a reload from disk (or the prose round-trip,
+// when prosePath is set).
 func openEditor(path string) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if strings.TrimSpace(editor) == "" {
-		editor = "vi"
-	}
-	parts := strings.Fields(editor)
-	args := append(parts[1:], path)
-	return tea.ExecProcess(exec.Command(parts[0], args...), func(err error) tea.Msg {
+	return tea.ExecProcess(editorcmd.Command(editorcmd.Resolve(), path), func(err error) tea.Msg {
 		return editorClosedMsg{err}
 	})
 }

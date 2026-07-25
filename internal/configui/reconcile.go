@@ -189,8 +189,16 @@ func reconcileStringMap(doc *tomldoc.Doc, key string, cur, want map[string]strin
 		return nil
 	}
 	if len(want) == 0 {
+		// Every spelling covered: the inline `key = {...}` form, then each
+		// entry by full path (matches [table] and root-dotted spellings
+		// alike), then a now-empty [table] header if one exists.
 		if err := doc.RemoveKey(nil, key); err != nil {
 			return err
+		}
+		for k := range cur {
+			if err := doc.RemoveKey([]string{key}, k); err != nil {
+				return err
+			}
 		}
 		return doc.RemoveTable([]string{key})
 	}

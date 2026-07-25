@@ -304,3 +304,77 @@ func TestProseRendererFallback(t *testing.T) {
 		}
 	}
 }
+
+// Replacing or removing the LAST block must not consume a trailing comment
+// separated by a blank line (review finding 2026-07-25) — while a
+// blank-separated comment BETWEEN a block's key-values stays block content.
+func TestBlockEndLeavesDetachedTrailingComment(t *testing.T) {
+	src := `[[mcp]]
+name = "solo"
+
+# note between kvs, blank-separated
+
+command = ["x"]
+# glued after last kv
+
+# detached trailing file comment
+`
+	d := load(t, src)
+	ok, err := d.ReplaceArrayTable("mcp", "name", "solo", KV("name", String("solo"))+KV("url", String("https://x")))
+	if err != nil || !ok {
+		t.Fatalf("replace: ok=%v err=%v", ok, err)
+	}
+	out := string(d.Bytes())
+	if !strings.Contains(out, "# detached trailing file comment") {
+		t.Fatalf("detached trailing comment consumed:\n%s", out)
+	}
+	// Interior + glued comments belonged to the replaced construct.
+	if strings.Contains(out, "between kvs") || strings.Contains(out, "glued after last kv") {
+		t.Fatalf("interior comments must go with the replaced construct:\n%s", out)
+	}
+	mustParse(t, d)
+
+	d2 := load(t, src)
+	ok, err = d2.RemoveArrayTable("mcp", "name", "solo")
+	if err != nil || !ok {
+		t.Fatalf("remove: ok=%v err=%v", ok, err)
+	}
+	out = string(d2.Bytes())
+	if !strings.Contains(out, "# detached trailing file comment") {
+		t.Fatalf("remove consumed the detached comment:\n%s", out)
+	}
+	if strings.Contains(out, "solo") || strings.Contains(out, "command") {
+		t.Fatalf("block not fully removed:\n%s", out)
+	}
+}
+
+// A table that exists only through dotted spellings gains new keys in the
+// same spelling — emitting a [table] header would redefine the implicit
+// table (invalid TOML). Removal matches dotted entries by full path.
+func TestDottedSpellingSetAndRemove(t *testing.T) {
+	d := load(t, "env.FOO = \"bar\" # keep my comment\nbase = \"node:22\"\n")
+	if err := d.SetKey([]string{"env"}, "BAR", String("baz")); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	if !strings.Contains(out, "env.BAR = \"baz\"") || strings.Contains(out, "[env]") {
+		t.Fatalf("new key should join its dotted kin, not open a header:\n%s", out)
+	}
+	m := mustParse(t, d)
+	env := m["env"].(map[string]any)
+	if env["FOO"] != "bar" || env["BAR"] != "baz" {
+		t.Fatalf("env = %v", env)
+	}
+
+	if err := d.RemoveKey([]string{"env"}, "FOO"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.RemoveKey([]string{"env"}, "BAR"); err != nil {
+		t.Fatal(err)
+	}
+	out = string(d.Bytes())
+	if strings.Contains(out, "env") || strings.Contains(out, "keep my comment") {
+		t.Fatalf("dotted entries (and their line comments) must remove by full path:\n%s", out)
+	}
+	mustParse(t, d)
+}

@@ -10,11 +10,11 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/editorcmd"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -36,10 +36,10 @@ var contextVerbs = declVerbs[config.ContextDecl]{
 	},
 }
 
-// editProse hands prose to $EDITOR (fallback vi) via a temp file and returns
-// the result — the `git commit` shape: `byre context add <name>` with no
-// --text/--file opens an editor rather than demanding prose on a command
-// line. Swapped in tests.
+// editProse hands prose to $EDITOR via a temp file and returns the result —
+// the `git commit` shape: `byre context add <name>` with no --text/--file
+// opens an editor rather than demanding prose on a command line. The launch
+// rides the shared shell-semantics launcher (editorcmd). Swapped in tests.
 var editProse = func(seed string) (string, error) {
 	f, err := os.CreateTemp("", "byre-context-*.md")
 	if err != nil {
@@ -54,14 +54,8 @@ var editProse = func(seed string) (string, error) {
 	if err := f.Close(); err != nil {
 		return "", err
 	}
-	editor := strings.TrimSpace(os.Getenv("EDITOR"))
-	if editor == "" {
-		editor = "vi"
-	}
-	parts := strings.Fields(editor)
-	cmd := exec.Command(parts[0], append(parts[1:], path)...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
+	editor := editorcmd.Resolve()
+	if err := editorcmd.Command(editor, path).Run(); err != nil {
 		return "", fmt.Errorf("%s: %w", editor, err)
 	}
 	b, err := os.ReadFile(path)
