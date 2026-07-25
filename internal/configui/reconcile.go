@@ -48,14 +48,14 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 		}
 	}
 
-	// seed_prefs: a bool opt-in; false is expressed by absence (the
-	// tri-state decision rides ADR 0045's field change).
-	if cur.SeedPrefs != want.SeedPrefs {
-		if want.SeedPrefs {
-			if err := doc.SetKey(nil, "seed_prefs", tomldoc.Bool(true)); err != nil {
+	// seed_prefs: tri-state (ADR 0045) — unset removes the key (inherit),
+	// an explicit true or false is written as such.
+	if !boolPtrEqual(cur.SeedPrefs, want.SeedPrefs) {
+		if want.SeedPrefs == nil {
+			if err := doc.RemoveKey(nil, "seed_prefs"); err != nil {
 				return err
 			}
-		} else if err := doc.RemoveKey(nil, "seed_prefs"); err != nil {
+		} else if err := doc.SetKey(nil, "seed_prefs", tomldoc.Bool(*want.SeedPrefs)); err != nil {
 			return err
 		}
 	}
@@ -165,6 +165,13 @@ var blockIdentity = map[string]string{
 	"mcp":           "name",
 	"claude_skills": "name",
 	"context":       "name",
+}
+
+func boolPtrEqual(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func reconcileList(doc *tomldoc.Doc, key string, cur, want []string, render func([]string) string) error {

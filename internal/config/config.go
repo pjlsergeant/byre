@@ -324,7 +324,10 @@ type Config struct {
 	// SeedPrefs opts into a one-time copy of the selected agent's curated, non-secret
 	// pref files (theme, keybindings — see the skill's [agent.prefs]) from the host
 	// into a FRESH agent state volume. Off by default; only acts on a fresh volume.
-	SeedPrefs bool `toml:"seed_prefs,omitempty"`
+	// A pointer so the cascade sees three states (ADR 0045): unset inherits, and
+	// an explicit `seed_prefs = false` in a later layer turns an inherited opt-in
+	// OFF — the ordinary scalar-override promise. Read it via SeedPrefsEnabled.
+	SeedPrefs *bool `toml:"seed_prefs,omitempty"`
 
 	// WorktreeBase controls where `byre worktree` creates worktrees (leaf:
 	// <repo>-<name>). Three values: unset -> refuse (byre won't guess a location);
@@ -435,6 +438,12 @@ type Config struct {
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
 	RunArgs        []string `toml:"run_args,omitempty"`
+}
+
+// SeedPrefsEnabled reports whether the resolved config opts into the
+// one-time pref seed — the one reader of the tri-state pointer (ADR 0045).
+func (c Config) SeedPrefsEnabled() bool {
+	return c.SeedPrefs != nil && *c.SeedPrefs
 }
 
 // Load resolves the full cascade for a project directory and validates the
@@ -799,10 +808,11 @@ func Merge(base, over Config) Config {
 	out.Template = override(base.Template, over.Template)
 	out.Agent = override(base.Agent, over.Agent)
 	out.Base = override(base.Base, over.Base)
-	// Bool opt-in: enabled if any layer sets it (default/template never do in
-	// practice, so this is effectively "project wins"). A bool can't distinguish
-	// unset from false, so there's no "turn it back off" in a higher layer.
-	out.SeedPrefs = base.SeedPrefs || over.SeedPrefs
+	// Tri-state scalar (ADR 0045): an explicit later value — true OR false —
+	// wins; unset inherits. The ordinary scalar-override promise.
+	if over.SeedPrefs != nil {
+		out.SeedPrefs = over.SeedPrefs
+	}
 	out.WorktreeBase = override(base.WorktreeBase, over.WorktreeBase)
 
 	// String lists: union with `!name` removal (ADR 0018). Unambiguous for

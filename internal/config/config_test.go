@@ -613,6 +613,8 @@ func TestListTemplates(t *testing.T) {
 // sampleConfig sets EVERY Config field to a non-zero sample. The merge growth
 // guard reflects over Config and fails if a field is left zero here, so adding
 // a field to Config forces adding it both here and to Merge.
+func boolPtr(b bool) *bool { return &b }
+
 func sampleConfig() Config {
 	return Config{
 		Engine:             "podman",
@@ -620,7 +622,7 @@ func sampleConfig() Config {
 		Template:           "go",
 		Agent:              "claude",
 		Base:               "debian:bookworm",
-		SeedPrefs:          true,
+		SeedPrefs:          boolPtr(true),
 		WorktreeBase:       "sibling",
 		Apt:                []string{"jq"},
 		NpmGlobal:          []string{"typescript"},
@@ -1122,5 +1124,43 @@ func TestAtomicWriteRequiresParentDir(t *testing.T) {
 	}
 	if _, serr := os.Stat(missing); !os.IsNotExist(serr) {
 		t.Fatalf("AtomicWrite created the missing parent (stat err = %v)", serr)
+	}
+}
+
+// seed_prefs is an ordinary tri-state scalar (ADR 0045): an explicit later
+// value — true OR false — wins, unset inherits. The old `base || over` merge
+// made an inherited opt-in impossible to turn off, a decode-representation
+// gap the docs mislabeled as deliberate (P7).
+func TestMergeSeedPrefsTriState(t *testing.T) {
+	on, off := boolPtr(true), boolPtr(false)
+	if got := Merge(Config{SeedPrefs: on}, Config{}); !got.SeedPrefsEnabled() {
+		t.Fatal("unset over must inherit true")
+	}
+	if got := Merge(Config{SeedPrefs: on}, Config{SeedPrefs: off}); got.SeedPrefsEnabled() {
+		t.Fatal("an explicit false in a later layer must turn the opt-in OFF")
+	}
+	if got := Merge(Config{}, Config{SeedPrefs: off}); got.SeedPrefsEnabled() || got.SeedPrefs == nil {
+		t.Fatal("explicit false must survive as explicit (not decay to unset)")
+	}
+	if got := Merge(Config{SeedPrefs: off}, Config{SeedPrefs: on}); !got.SeedPrefsEnabled() {
+		t.Fatal("a later true must win over an earlier false")
+	}
+}
+
+// An explicit `seed_prefs = false` parses as explicit, not as absence.
+func TestParseSeedPrefsExplicitFalse(t *testing.T) {
+	c, err := Parse([]byte("seed_prefs = false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SeedPrefs == nil || *c.SeedPrefs {
+		t.Fatalf("SeedPrefs = %v, want explicit false", c.SeedPrefs)
+	}
+	c2, err := Parse([]byte("base = \"node:22\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c2.SeedPrefs != nil {
+		t.Fatalf("absent seed_prefs must stay nil, got %v", *c2.SeedPrefs)
 	}
 }

@@ -285,10 +285,9 @@ session opens with a loud escalation warning and closes by reporting what
 changed in the project store -- byre.config as a content diff (it applies
 on the next develop), every other file listed as added/changed/deleted.
 
-- **Scalars override** -- last layer wins. Exception: `seed_prefs` is a
-  **monotonic opt-in** -- any layer setting it `true` turns it on, and a
-  later layer can't set it back to `false` (a plain TOML bool can't
-  distinguish unset from false).
+- **Scalars override** -- last layer wins, `seed_prefs` included: an
+  explicit `seed_prefs = false` in a later layer turns an inherited
+  opt-in off (tri-state, ADR 0045); unset inherits.
 - **Lists union** -- `skills`, `mounts`, etc. accumulate across layers.
 - **Removal markers** -- a later layer drops something an earlier layer
   added: `!name` where the entry's identity is a string (skills, apt,

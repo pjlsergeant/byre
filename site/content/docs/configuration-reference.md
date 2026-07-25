@@ -23,8 +23,8 @@ Layers merge in that order -- defaults, template, the `extends` chain
 (root first), project -- and the last layer to speak wins:
 
 - **Scalars override.** A later layer's `base` or `engine` replaces an
-  earlier one's. (One deliberate exception: `seed_prefs` is a monotonic
-  opt-in -- once any layer turns it on, a later layer can't turn it off.)
+  earlier one's -- `seed_prefs` included: an explicit `false` in a later
+  layer turns an inherited opt-in off; leaving it unset inherits.
 - **Lists union.** `skills`, `apt`, `mounts` and friends accumulate
   across layers.
 - **A later layer can remove an inherited entry:** `"!name"` for named

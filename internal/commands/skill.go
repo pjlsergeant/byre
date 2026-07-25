@@ -379,7 +379,7 @@ func printTemplateShape(w io.Writer, raw []byte) {
 	if cfg.WorktreeBase != "" {
 		fmt.Fprintf(w, "  worktree_base: %s\n", packages.EscapeTerminal(cfg.WorktreeBase))
 	}
-	if cfg.SeedPrefs {
+	if cfg.SeedPrefsEnabled() {
 		fmt.Fprintln(w, "  seed_prefs: true")
 	}
 }

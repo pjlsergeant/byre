@@ -304,13 +304,14 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 // reflection walk fails the test when a Config field gains a toml tag
 // without a sample here.
 func TestReconcileCoversEveryField(t *testing.T) {
+	boolPtr := func(b bool) *bool { return &b }
 	samples := map[string]config.Config{
 		"engine":          {Engine: "podman"},
 		"template":        {Template: "go"},
 		"agent":           {Agent: "claude"},
 		"base":            {Base: "node:22"},
 		"extends":         {Extends: "torn"},
-		"seed_prefs":      {SeedPrefs: true},
+		"seed_prefs":      {SeedPrefs: boolPtr(true)},
 		"worktree_base":   {WorktreeBase: "sibling"},
 		"shared_auth":     {SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}},
 		"sources":         {Sources: map[string]config.SourceHint{"acme/tool": {URI: "https://x", Digest: ""}}},
