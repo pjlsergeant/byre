@@ -196,20 +196,26 @@ func (d *Doc) lastArrayTable(name string) int {
 }
 
 // matchArrayTable finds the [[name]] header whose block contains a KeyValue
-// matchKey with string value matchValue.
+// matchKey with string value matchValue. Only a DIRECT child key-value
+// matches -- a same-named key inside a descendant subtable ([mcp.headers])
+// is that subtable's, not the block's identity -- and a descendant header
+// doesn't end the candidate block (it's block content, see blockEnd).
 func (d *Doc) matchArrayTable(name, matchKey, matchValue string) int {
+	want := []string{name}
 	hdr := -1
 	for i, e := range d.exprs {
 		switch e.kind {
 		case unstable.Table:
-			hdr = -1
+			if !(len(e.table) > 1 && e.table[0] == name) {
+				hdr = -1
+			}
 		case unstable.ArrayTable:
 			hdr = -1
-			if eq(e.table, []string{name}) {
+			if eq(e.table, want) {
 				hdr = i
 			}
 		case unstable.KeyValue:
-			if hdr >= 0 && len(e.key) == 1 && e.key[0] == matchKey && e.strValue == matchValue {
+			if hdr >= 0 && eq(e.table, want) && len(e.key) == 1 && e.key[0] == matchKey && e.strValue == matchValue {
 				return hdr
 			}
 		}
@@ -218,23 +224,33 @@ func (d *Doc) matchArrayTable(name, matchKey, matchValue string) int {
 }
 
 // blockEnd is the offset just past a header expression's block: through its
-// last key-value (interior comments and blank lines are block content,
-// wherever they sit) plus any comment run GLUED to that last key-value. A
-// trailing comment separated by a blank line is NOT the block's -- it
-// belongs to whatever follows (or to the file), and replacing or removing
-// the block must not consume it (review finding 2026-07-25: the old
-// next-header/EOF rule ate a blank-line-separated trailing file comment).
+// last key-value or DESCENDANT subtable header (a `[mcp.headers]` under a
+// `[[mcp]]` is that block's content -- review finding 2026-07-25, round 2:
+// stopping at every header left a replaced block's subtable behind, where it
+// re-attached to the replacement or a peer), plus any comment run GLUED to
+// that last expression. Interior comments and blank lines are block content
+// wherever they sit; a trailing comment separated by a blank line is NOT the
+// block's -- it belongs to whatever follows, and replacing or removing the
+// block must not consume it (round 1 finding).
 func (d *Doc) blockEnd(hdr int) int {
+	own := d.exprs[hdr].table
 	last, stop := hdr, len(d.exprs)
 	for i := hdr + 1; i < len(d.exprs); i++ {
 		e := d.exprs[i]
-		if e.kind == unstable.Table || e.kind == unstable.ArrayTable {
+		switch e.kind {
+		case unstable.Table, unstable.ArrayTable:
+			if len(e.table) > len(own) && eq(e.table[:len(own)], own) {
+				last = i // descendant subtable header: block content
+				continue
+			}
 			stop = i
-			break
-		}
-		if e.kind == unstable.KeyValue {
+		case unstable.KeyValue:
 			last = i
+			continue
+		default:
+			continue
 		}
+		break
 	}
 	end := d.lineSpan(d.exprs[last].span).end
 	for j := last + 1; j < stop; j++ {

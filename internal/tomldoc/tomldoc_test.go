@@ -378,3 +378,54 @@ func TestDottedSpellingSetAndRemove(t *testing.T) {
 	}
 	mustParse(t, d)
 }
+
+// A descendant subtable ([mcp.headers] under [[mcp]]) is block content
+// (review round 2): replace/remove must take it, and it must not migrate to
+// a preceding peer; a same-named key INSIDE the subtable is not the block's
+// identity.
+func TestBlockIncludesDescendantSubtables(t *testing.T) {
+	src := `[[mcp]]
+name = "first"
+
+[[mcp]]
+name = "github"
+
+[mcp.headers]
+Authorization = "token"
+name = "decoy-not-identity"
+
+[env]
+FOO = "bar"
+`
+	d := load(t, src)
+	ok, err := d.ReplaceArrayTable("mcp", "name", "github", KV("name", String("github"))+KV("url", String("https://x")))
+	if err != nil || !ok {
+		t.Fatalf("replace: ok=%v err=%v", ok, err)
+	}
+	out := string(d.Bytes())
+	if strings.Contains(out, "Authorization") || strings.Contains(out, "decoy") {
+		t.Fatalf("descendant subtable must go with the replaced block:\n%s", out)
+	}
+	if !strings.Contains(out, "[env]\nFOO = \"bar\"") {
+		t.Fatalf("following unrelated table damaged:\n%s", out)
+	}
+	mustParse(t, d)
+
+	// The decoy name inside the subtable must never match as identity.
+	d2 := load(t, src)
+	if ok, _ := d2.RemoveArrayTable("mcp", "name", "decoy-not-identity"); ok {
+		t.Fatal("a subtable key must not match as block identity")
+	}
+	ok, err = d2.RemoveArrayTable("mcp", "name", "github")
+	if err != nil || !ok {
+		t.Fatalf("remove: ok=%v err=%v", ok, err)
+	}
+	out = string(d2.Bytes())
+	if strings.Contains(out, "Authorization") {
+		t.Fatalf("subtable left behind on remove (would migrate to peer):\n%s", out)
+	}
+	if !strings.Contains(out, "\"first\"") || !strings.Contains(out, "[env]") {
+		t.Fatalf("neighbors damaged:\n%s", out)
+	}
+	mustParse(t, d2)
+}
