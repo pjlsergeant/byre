@@ -21,8 +21,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -105,15 +103,12 @@ func ParseLayerBody(raw []byte) (Config, error) {
 // rejectLayerKeys bans the `template` KEY in a layer file when present at
 // all — even empty (same stance as rejectTemplateComposition).
 func rejectLayerKeys(body []byte) error {
-	var probe struct {
-		Template string `toml:"template"`
-	}
-	md, err := toml.Decode(string(body), &probe)
+	present, err := topLevelKeys(body)
 	if err != nil {
 		// Let Parse surface the real syntax error.
 		return nil
 	}
-	if md.IsDefined("template") {
+	if present["template"] {
 		return fmt.Errorf("shape selection belongs to the project config (template is not allowed in a layer file)")
 	}
 	return nil

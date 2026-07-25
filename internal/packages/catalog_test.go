@@ -1,6 +1,8 @@
 package packages
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +12,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 func bundledFS() fstest.MapFS {
@@ -91,12 +93,14 @@ func TestEagerStage2UnknownKey(t *testing.T) {
 	hooks := Stage2Hooks{Skill: func(raw []byte) error {
 		body := StripPackageTable(raw)
 		type empty struct{}
-		md, err := toml.Decode(string(body), &empty{})
-		if err != nil {
+		d := toml.NewDecoder(bytes.NewReader(body))
+		d.DisallowUnknownFields()
+		if err := d.Decode(&empty{}); err != nil {
+			var strict *toml.StrictMissingError
+			if errors.As(err, &strict) {
+				return fmt.Errorf("unknown key(s) in skill.toml: %v", strict.Errors[0].Key())
+			}
 			return err
-		}
-		if und := md.Undecoded(); len(und) > 0 {
-			return fmt.Errorf("unknown key(s) in skill.toml: %v", und)
 		}
 		return nil
 	}}

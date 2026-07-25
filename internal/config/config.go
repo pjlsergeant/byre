@@ -11,6 +11,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -22,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -673,30 +674,39 @@ func ParseTemplateBody(raw []byte) (Config, error) {
 // [sources], and extends when present at all — even when empty (a skills or
 // agent key in template.config is a validation error).
 func rejectTemplateComposition(body []byte) error {
-	var probe struct {
-		Skills  []string       `toml:"skills"`
-		Agent   string         `toml:"agent"`
-		Sources map[string]any `toml:"sources"`
-		Extends string         `toml:"extends"`
-	}
-	md, err := toml.Decode(string(body), &probe)
+	present, err := topLevelKeys(body)
 	if err != nil {
 		// Let Parse surface the real syntax error.
 		return nil
 	}
-	if md.IsDefined("skills") {
+	if present["skills"] {
 		return fmt.Errorf("composition belongs in a preset (skills is not allowed in template.config)")
 	}
-	if md.IsDefined("agent") {
+	if present["agent"] {
 		return fmt.Errorf("composition belongs in a preset (agent is not allowed in template.config)")
 	}
-	if md.IsDefined("sources") {
+	if present["sources"] {
 		return fmt.Errorf("composition belongs in a preset ([sources] is not allowed in template.config)")
 	}
-	if md.IsDefined("extends") {
+	if present["extends"] {
 		return fmt.Errorf("a distributable template cannot pull in machine-local layers (extends is not allowed in template.config)")
 	}
 	return nil
+}
+
+// topLevelKeys reports which top-level keys a TOML document defines — the
+// presence probe behind the key-ban checks (a banned key is refused even
+// when empty, which a typed decode's zero value cannot see).
+func topLevelKeys(body []byte) (map[string]bool, error) {
+	var m map[string]any
+	if err := toml.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	present := make(map[string]bool, len(m))
+	for k := range m {
+		present[k] = true
+	}
+	return present, nil
 }
 
 // loadFile decodes one TOML layer. A missing file is an empty layer; an unknown
@@ -731,27 +741,48 @@ func loadFile(path string) (Config, error) {
 // actually read the file back — a second hand-rolled decode would drift from
 // these rules.
 func Parse(content []byte) (Config, error) {
-	var c Config
-	md, err := toml.Decode(string(content), &c)
-	if err != nil {
+	c, err := decodeStrict(content)
+	if err == nil {
+		return c, nil
+	}
+	var strict *toml.StrictMissingError
+	if !errors.As(err, &strict) {
 		return Config{}, err
 	}
-	// SharedAuthPref's UnmarshalTOML consumes shared_auth, but BurntSushi still
-	// reports nested keys (shared_auth.claude) as Undecoded. Drop those, and
-	// tolerate retired top-level keys (retiredConfigKeys) that past versions
-	// wrote; any other undecoded key is a real typo.
-	var real []toml.Key
-	for _, k := range md.Undecoded() {
-		if len(k) > 0 && k[0] == "shared_auth" {
-			continue
-		}
+	// Tolerate retired top-level keys (retiredConfigKeys) that past versions
+	// wrote; any other unknown key is a real typo.
+	var real []string
+	for _, de := range strict.Errors {
+		k := de.Key()
 		if len(k) == 1 && retiredConfigKeys[k[0]] != "" {
 			continue
 		}
-		real = append(real, k)
+		real = append(real, strings.Join(k, "."))
 	}
 	if len(real) > 0 {
-		return Config{}, fmt.Errorf("unknown key(s): %v", real)
+		return Config{}, fmt.Errorf("unknown key(s): [%s]", strings.Join(real, " "))
+	}
+	// Retired keys only: decode again leniently so their values drop.
+	var lenient Config
+	d := toml.NewDecoder(bytes.NewReader(content))
+	d.EnableUnmarshalerInterface()
+	if err := d.Decode(&lenient); err != nil {
+		return Config{}, err
+	}
+	return lenient, nil
+}
+
+// decodeStrict is the one strict decode under Parse: unknown keys error
+// (typo detection), and custom unmarshalers are honored — SharedAuthPref's
+// dual-shape decode consumes the whole shared_auth subtree, so its nested
+// keys never surface as unknowns.
+func decodeStrict(content []byte) (Config, error) {
+	var c Config
+	d := toml.NewDecoder(bytes.NewReader(content))
+	d.DisallowUnknownFields()
+	d.EnableUnmarshalerInterface()
+	if err := d.Decode(&c); err != nil {
+		return Config{}, err
 	}
 	return c, nil
 }

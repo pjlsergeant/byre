@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/pjlsergeant/byre/internal/lock"
 )
@@ -56,7 +56,7 @@ func ReadIndex(home string) (map[string]IndexEntry, error) {
 		}
 		return nil, err
 	}
-	if _, err := toml.Decode(string(b), &f); err != nil {
+	if err := toml.Unmarshal(b, &f); err != nil {
 		return nil, fmt.Errorf("%s: %w", indexPath(home), err)
 	}
 	for id, e := range f.Packages {

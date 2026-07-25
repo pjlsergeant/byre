@@ -8,7 +8,6 @@ module github.com/pjlsergeant/byre
 go 1.25
 
 require (
-	github.com/BurntSushi/toml v1.4.0
 	github.com/akedrou/textdiff v0.1.0
 	github.com/charmbracelet/bubbles v0.20.0
 	github.com/charmbracelet/bubbletea v1.1.0
@@ -16,6 +15,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.2.3
 	github.com/charmbracelet/x/term v0.2.0
 	github.com/mattn/go-isatty v0.0.20
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -31,7 +31,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a // indirect
-	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	golang.org/x/sync v0.8.0 // indirect

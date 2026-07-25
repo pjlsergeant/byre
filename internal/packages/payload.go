@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // FileEntry is one [[package.files]] row in an installed manifest:
@@ -33,7 +33,7 @@ func ParseManifestFiles(content []byte) ([]FileEntry, error) {
 			Files []FileEntry `toml:"files"`
 		} `toml:"package"`
 	}
-	if _, err := toml.Decode(string(content), &root); err != nil {
+	if err := toml.Unmarshal(content, &root); err != nil {
 		return nil, fmt.Errorf("parse [[package.files]]: %w", err)
 	}
 	return root.Package.Files, nil

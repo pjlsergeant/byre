@@ -9,6 +9,8 @@
 package skills
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,7 +20,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/hostopen"
@@ -717,15 +719,32 @@ func ValidatePrimaryBytes(raw []byte) error {
 // exists to load.
 func ParsePrimaryBytes(raw []byte) (File, error) {
 	body := packages.StripPackageTable(raw)
-	var f File
-	md, err := toml.Decode(string(body), &f)
+	f, err := decodeSkillFile(body)
 	if err != nil {
 		return File{}, err
 	}
-	if und := md.Undecoded(); len(und) > 0 {
-		return File{}, fmt.Errorf("unknown key(s) in skill.toml: %v", und)
-	}
 	if err := validatePairing(f); err != nil {
+		return File{}, err
+	}
+	return f, nil
+}
+
+// decodeSkillFile strict-decodes skill.toml body bytes: byre owns the
+// skill.toml schema, so a typo'd key is an error, not a silent no-op that
+// produces a broken skill.
+func decodeSkillFile(body []byte) (File, error) {
+	var f File
+	d := toml.NewDecoder(bytes.NewReader(body))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&f); err != nil {
+		var strict *toml.StrictMissingError
+		if errors.As(err, &strict) {
+			keys := make([]string, len(strict.Errors))
+			for i, de := range strict.Errors {
+				keys[i] = strings.Join(de.Key(), ".")
+			}
+			return File{}, fmt.Errorf("unknown key(s) in skill.toml: [%s]", strings.Join(keys, " "))
+		}
 		return File{}, err
 	}
 	return f, nil
@@ -755,15 +774,9 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	// Stage 2: strip [package] so the strict skill schema does not see it.
 	body := packages.StripPackageTable(raw)
 
-	var f File
-	md, err := toml.Decode(string(body), &f)
+	f, err := decodeSkillFile(body)
 	if err != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, err)
-	}
-	// byre owns the skill.toml schema — a typo'd key is an error, not a silent
-	// no-op that produces a broken skill.
-	if und := md.Undecoded(); len(und) > 0 {
-		return Skill{}, fmt.Errorf("skill %q: unknown key(s) in skill.toml: %v", ent.ID, und)
 	}
 	// Prefer [package].description when the body has none.
 	if f.Description == "" && ent.Description != "" {

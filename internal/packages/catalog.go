@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/pjlsergeant/byre/internal/hostopen"
 )
@@ -312,7 +312,7 @@ func peekDescription(raw []byte) string {
 	var root struct {
 		Description string `toml:"description"`
 	}
-	if _, err := toml.Decode(string(raw), &root); err == nil {
+	if err := toml.Unmarshal(raw, &root); err == nil {
 		return root.Description
 	}
 	return ""
@@ -466,11 +466,10 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 // leniently. Only when the file is not TOML at all does the raw substring
 // fallback apply (best-effort classification of an unparsable file).
 func looksLikeAgent(raw []byte) bool {
-	var probe struct {
-		Agent map[string]any `toml:"agent"`
-	}
-	if md, err := toml.Decode(string(raw), &probe); err == nil {
-		return md.IsDefined("agent")
+	var m map[string]any
+	if err := toml.Unmarshal(raw, &m); err == nil {
+		_, ok := m["agent"]
+		return ok
 	}
 	return strings.Contains(string(raw), "[agent]")
 }

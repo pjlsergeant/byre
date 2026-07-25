@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // SharedAuthPref is the dual-shape shared_auth favourite (ADR 0025):
@@ -87,31 +89,39 @@ func (s SharedAuthPref) CompanionPick(agent string) string {
 	return s.Pick[agent]
 }
 
-// UnmarshalTOML accepts both array and table shapes.
-func (s *SharedAuthPref) UnmarshalTOML(data interface{}) error {
-	switch v := data.(type) {
-	case []interface{}:
-		s.Yes = s.Yes[:0]
-		for i, item := range v {
-			str, ok := item.(string)
-			if !ok {
-				return fmt.Errorf("shared_auth[%d]: want string, got %T", i, item)
-			}
-			s.Yes = append(s.Yes, str)
+// UnmarshalTOML accepts both array and table shapes. The decoder hands over
+// the raw TOML of the relevant portion (unstable.Unmarshaler): value bytes
+// for the inline spellings (`["claude"]`, `{ claude = "c" }`), a key-value
+// document for the `[shared_auth]` table form. Consuming the whole subtree
+// here is also what keeps the strict unknown-key check out of it.
+func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
+	t := strings.TrimSpace(string(data))
+	switch {
+	case strings.HasPrefix(t, "["):
+		var v struct {
+			V []string `toml:"v"`
 		}
+		if err := toml.Unmarshal([]byte("v = "+t), &v); err != nil {
+			return fmt.Errorf("shared_auth: want an array of agent names: %w", err)
+		}
+		s.Yes = v.V
 		return nil
-	case map[string]interface{}:
-		s.Pick = map[string]string{}
-		for k, val := range v {
-			str, ok := val.(string)
-			if !ok {
-				return fmt.Errorf("shared_auth.%s: want string, got %T", k, val)
-			}
-			s.Pick[k] = str
+	case strings.HasPrefix(t, "{"):
+		var v struct {
+			V map[string]string `toml:"v"`
 		}
+		if err := toml.Unmarshal([]byte("v = "+t), &v); err != nil {
+			return fmt.Errorf("shared_auth: want agent = companion strings: %w", err)
+		}
+		s.Pick = v.V
 		return nil
 	default:
-		return fmt.Errorf("shared_auth: want array or table, got %T", data)
+		var m map[string]string
+		if err := toml.Unmarshal([]byte(t), &m); err != nil {
+			return fmt.Errorf("shared_auth: want array or table of agent = companion strings: %w", err)
+		}
+		s.Pick = m
+		return nil
 	}
 }
 

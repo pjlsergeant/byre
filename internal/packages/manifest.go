@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // PackageAPI is the manifest-format contract byre currently understands.
@@ -34,7 +34,7 @@ func ParseManifestCore(content []byte) (m Manifest, ok bool, err error) {
 	var root packageRoot
 	// Lenient: do NOT check Undecoded. Stage 1 must survive a newer package
 	// that carries keys this byre does not yet know.
-	if _, err := toml.Decode(string(content), &root); err != nil {
+	if err := toml.Unmarshal(content, &root); err != nil {
 		return Manifest{}, false, fmt.Errorf("parse [package]: %w", err)
 	}
 	if root.Package == (Manifest{}) {
