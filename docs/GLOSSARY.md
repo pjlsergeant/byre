@@ -114,6 +114,16 @@ node). A config-cascade concept, not a Dockerfile template.
 **Base**:
 The `FROM` image the generated Dockerfile builds on. Debian-derived in v0.
 
+**Preservation engine (tomldoc)**:
+byre's style-preserving TOML document editor (`internal/tomldoc`, ADR
+0044) -- every surface that edits a stored config file goes through it.
+Edits are byte-range splices, so bytes an edit doesn't touch (comments,
+formatting, exotic spellings) survive identically; content byre writes
+comes out in house shape. Config files are **shared custody**: byre
+owns the layout only where it is sole author.
+_Avoid_: renderer (it edits in place; whole-file rendering is only the
+fresh-file case), serializer
+
 **Host-side store**:
 `~/.byre/projects/<id>/` -- where a project's live config actually lives,
 deliberately outside the rw-mounted project tree so the boxed agent can't

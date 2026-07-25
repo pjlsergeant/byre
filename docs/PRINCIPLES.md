@@ -138,10 +138,11 @@ Implications:
 - User docs speak editor-first. Raw TOML appears in the configuration
   *reference* (the format spec, needed for presets, layer sharing, and
   review) -- never as the instruction in a how-do-i recipe.
-- The stored file is written only through the one validated save path,
-  whichever surface edits it; the editor must round-trip untouched any
-  key it does not yet structure, so partial coverage never destroys
-  hand-written or flow-written config.
+- Every surface that edits a stored config file rides byre's one
+  style-preserving document engine and the same validation (ADR 0044);
+  the editor round-trips untouched any key it does not yet structure,
+  so partial coverage never destroys hand-written or flow-written
+  config.
 - Where prose or free text is the value, the editor hands off to
   `$EDITOR` (suspend, edit, reload) rather than growing a worse text
   editor inside the form.
@@ -162,8 +163,9 @@ implement is never, by itself, a reason for a product surface to be
 worse. When a dependency can't meet a contract byre wants, there are
 exactly three honest moves: **own the seam** (build the missing piece
 around it), **replace the dependency**, or **accept the limitation on
-the record** (an ADR that names the cost). Never available: letting the
-limitation masquerade as a design preference.
+the record** -- an ADR that names the cost, which may equally conclude
+byre didn't need the contract it first wanted. Never available: letting
+the limitation masquerade as a design preference.
 
 Implications:
 
@@ -173,10 +175,11 @@ Implications:
   accident. "The library can't" is an unfinished argument -- it ends
   at owned-around, replaced, or accepted-and-recorded, or it isn't
   over.
-- Artifacts byre emits for humans are designed surfaces with pinned
-  contracts (gen's byte-stable, golden-pinned Dockerfile is the
-  model). An emitted file whose shape is whatever the serializer
-  produced is an unowned surface.
+- Artifacts byre emits for humans are designed surfaces whose
+  *contract* -- semantics and readability -- byre pins; byte-stability
+  is promised only where it is deliberately part of that contract
+  (gen's golden-pinned Dockerfile is the model). An emitted file whose
+  shape is whatever the serializer produced is an unowned surface.
 - Compensating apparatus is the tell: a warning, a sentinel, or a
   docs caveat built to apologize for a dependency's gap marks a
   decision that was never actually made. Each one either graduates to
@@ -184,8 +187,10 @@ Implications:
 - Rewrites are not an argument. byre is coded by agents: a rewrite
   that would justify expediency elsewhere is a reviewable unit here,
   provided a human signs off and the tests hold the contract. byre
-  strives for excellence, not expediency; "the rewrite is big" is a
-  scheduling fact, not a design input.
+  strives for excellence, not expediency; the *size* of a rewrite is
+  a scheduling fact, not a design input -- its migration risk and
+  ongoing maintenance burden remain real design inputs, argued on
+  their own terms.
 
 Precedents: the exit-code contract (usage errors = 2) is byre's
 promise, preserved deliberately around cobra; gen owns the Dockerfile's
@@ -193,10 +198,10 @@ shape down to the byte. Type specimen of the failure mode: the
 2026-07-25 sidecar near-miss -- a storage architecture for `[[context]]`
 prose was nearly chosen because the TOML binding's encoder lacks
 multiline string emission, the binding's accident almost dictating
-byre's file layout before design review caught it. Existing instances
-(the comment-destruction warning, the `seed_prefs` bool that can't be
-un-set) are inventoried for disposition per this principle rather than
-grandfathered.
+byre's file layout before design review caught it. The standing
+instances found by the same audit (comment destruction behind a warning,
+a `seed_prefs` bool that couldn't be un-set) were dispositioned
+same-day rather than grandfathered -- ADR 0044 and ADR 0045.
 
 ## What byre is not
 
