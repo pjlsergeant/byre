@@ -89,7 +89,10 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
   seam keeps flag->function wiring test-pinned; the exit-code contract
   (usage errors = 2) is byre's, preserved deliberately around cobra.
   Dependencies are added on demonstrated merit, not collected.
-- TOML config via `github.com/BurntSushi/toml` (byre's own merge/`!name` layer).
+- TOML via `github.com/pelletier/go-toml/v2` (the ONE TOML library, ADR
+  0044): strict decode plus the unstable parser under `internal/tomldoc`,
+  byre's style-preserving document editor — every config-file write rides
+  it. Merge/`!name` semantics are byre's own layer.
 - Container engine: shells out to the `docker`/`podman` **CLI** (no SDK).
 - Layout: `cmd/byre`, `internal/{project,config,gen,build,runner,skills,
   packages,builtins,onboard,commands,deliver,lock,configui,version}`.
