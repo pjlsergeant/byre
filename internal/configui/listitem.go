@@ -1289,6 +1289,19 @@ func wrapLine(src string, w int) []string {
 			break
 		}
 		head := ansi.Truncate(rest, chunkw, "")
+		if head == "" {
+			// No complete grapheme fits the window (a two-cell glyph in a
+			// one-cell window): emit the next grapheme anyway — progress
+			// beats the nominal width, and the view clip absorbs the
+			// one-glyph overflow (codex pre-ship round 2: the unchanged
+			// rest looped forever and froze the TUI).
+			for take := 1; head == ""; take++ {
+				head = ansi.Truncate(rest, take, "")
+			}
+			out = append(out, indent+head)
+			rest = rest[len(head):]
+			continue
+		}
 		if i := strings.LastIndexByte(head, ' '); i > 0 {
 			head = head[:i]
 			rest = rest[i+1:] // consume the one break space, keep any others

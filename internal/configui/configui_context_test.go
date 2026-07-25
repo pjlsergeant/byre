@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -13,6 +14,13 @@ import (
 
 // ansiStringWidth measures display cells — the unit the view clips by.
 func ansiStringWidth(s string) int { return ansi.StringWidth(s) }
+
+// timeAfter is the hang guard for render tests: generous enough for any CI
+// box, instant relative to a real freeze.
+func timeAfter(t *testing.T) <-chan time.Time {
+	t.Helper()
+	return time.After(5 * time.Second)
+}
 
 func TestContextRowsEffectiveView(t *testing.T) {
 	inh := Inherited{
@@ -321,5 +329,29 @@ func TestContextProseWrapFidelity(t *testing.T) {
 		if strings.Contains(l, "│") && !strings.Contains(l, "more lines") && ansiStringWidth(stripANSI(l)) > 12 {
 			t.Fatalf("narrow terminal prose line exceeds 12 cells: %q", stripANSI(l))
 		}
+	}
+}
+
+// A one-cell prose window (terminal width 5) with two-cell glyphs must
+// terminate — the hard-cut path emits the next grapheme even though it
+// overflows the nominal window (codex pre-ship round 2: ansi.Truncate
+// returns "" for a wide glyph in a one-cell window, and the unchanged rest
+// looped forever, freezing the TUI).
+func TestContextProseWrapNarrowCJKTerminates(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{Contexts: []config.ContextDecl{{Name: "n", Text: "日本語のテスト\n"}}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fContext
+	m.width = 5
+	m = m.startItem(0)
+
+	done := make(chan string, 1)
+	go func() { done <- m.viewItem() }()
+	select {
+	case v := <-done:
+		joined := strings.Join(strings.Fields(strings.ReplaceAll(stripANSI(v), "│", "")), "")
+		if !strings.Contains(joined, "テスト") {
+			t.Fatalf("CJK content lost at narrow width:\n%s", v)
+		}
+	case <-timeAfter(t):
+		t.Fatal("viewItem hung wrapping wide glyphs at a one-cell window")
 	}
 }
