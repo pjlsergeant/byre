@@ -241,12 +241,32 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 	if equal {
 		return nil
 	}
-	// A root-inline `sources = { ... }` spelling is one construct: any
-	// change rewrites the whole map in house shape ([sources] + inline
-	// values). Grok review find 2026-07-25: the per-id path silently missed
-	// this and the subtable spelling below.
-	if doc.HasKey(nil, "sources") {
+	// Non-house spellings are one construct each (grok review finds,
+	// 2026-07-25, rounds 1-2): a root-inline `sources = { ... }` rewrites
+	// whole; and if ANY `[sources."id"]` subtable exists, the whole family
+	// normalizes to house shape -- with a sibling subtable still open, a
+	// per-id edit has no sound insertion point (the sibling's context would
+	// swallow it), so strip everything and emit fresh.
+	subtabled := false
+	for id := range cur {
+		if doc.HasTable([]string{"sources", id}) {
+			subtabled = true
+			break
+		}
+	}
+	if doc.HasKey(nil, "sources") || subtabled {
 		if err := doc.RemoveKey(nil, "sources"); err != nil {
+			return err
+		}
+		for _, id := range slices.Sorted(maps.Keys(cur)) {
+			if err := doc.RemoveTable([]string{"sources", id}); err != nil {
+				return err
+			}
+			if err := doc.RemoveKey([]string{"sources"}, id); err != nil {
+				return err
+			}
+		}
+		if err := doc.RemoveTable([]string{"sources"}); err != nil {
 			return err
 		}
 		cur = nil
@@ -256,13 +276,6 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 		c, ok := cur[id]
 		if ok && c.URI == h.URI && c.Digest == h.Digest && doc.HasKey([]string{"sources"}, id) {
 			continue
-		}
-		// A `[sources."id"]` subtable spelling is that entry's construct:
-		// changing the entry normalizes it to the house inline value. It
-		// must go BEFORE the set, or the insert would collide with the
-		// still-open subtable.
-		if err := doc.RemoveTable([]string{"sources", id}); err != nil {
-			return err
 		}
 		v := map[string]string{"uri": h.URI}
 		if h.Digest != "" {
@@ -274,9 +287,6 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 	}
 	for id := range cur {
 		if _, ok := want[id]; !ok {
-			if err := doc.RemoveTable([]string{"sources", id}); err != nil {
-				return err
-			}
 			if err := doc.RemoveKey([]string{"sources"}, id); err != nil {
 				return err
 			}

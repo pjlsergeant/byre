@@ -33,9 +33,11 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	// No [table] header, but the table may exist through DOTTED spellings
 	// (`env.FOO = "x"` at root). Emitting a [table] header then would
 	// redefine the implicit table -- invalid TOML -- so the new key joins
-	// its kin in their spelling, after the last of them.
-	if at, ok := d.dottedKinInsert(table); ok {
-		dotted := fmt.Sprintf("%s = %s\n", encodeKeyPath(append(append([]string(nil), table...), key)), rendered)
+	// its kin in their spelling, after the last of them, spelled relative
+	// to the kin's own context.
+	if at, ctx, ok := d.dottedKinInsert(table); ok {
+		rel := append(append([]string(nil), table[len(ctx):]...), key)
+		dotted := fmt.Sprintf("%s = %s\n", encodeKeyPath(rel), rendered)
 		return d.splice(span{at, at}, []byte(dotted))
 	}
 	block := fmt.Sprintf("[%s]\n%s", encodeKeyPath(table), line)
@@ -45,22 +47,30 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 
 // dottedKinInsert finds where a new key of table lands when the table exists
 // only via dotted key-values declared in a SHALLOWER context: after the last
-// such kin. ok=false when no kin exist.
-func (d *Doc) dottedKinInsert(table []string) (int, bool) {
+// such kin, whose table context is returned so the caller can spell the new
+// key relative to it. Only a kin whose declaring context is a strict prefix
+// of table qualifies -- a key-value living under a DEEPER header (a
+// [sources."other"] subtable) is no anchor: a line inserted there would land
+// inside that header's context and change meaning (grok review find
+// 2026-07-25, round 2: sibling subtables swallowed the insert). ok=false
+// when no kin exist.
+func (d *Doc) dottedKinInsert(table []string) (int, []string, bool) {
 	at, ok := -1, false
+	var ctx []string
 	for _, e := range d.exprs {
-		if e.kind != unstable.KeyValue || eq(e.table, table) {
+		if e.kind != unstable.KeyValue {
+			continue
+		}
+		if len(e.table) >= len(table) || !eq(e.table, table[:len(e.table)]) {
 			continue
 		}
 		full := append(append([]string(nil), e.table...), e.key...)
-		if len(full) <= len(table) {
+		if len(full) <= len(table) || !eq(full[:len(table)], table) {
 			continue
 		}
-		if eq(full[:len(table)], table) {
-			at, ok = d.lineSpan(e.span).end, true
-		}
+		at, ctx, ok = d.lineSpan(e.span).end, e.table, true
 	}
-	return at, ok
+	return at, ctx, ok
 }
 
 // RemoveKey removes key (relative to table) if present: its full line --

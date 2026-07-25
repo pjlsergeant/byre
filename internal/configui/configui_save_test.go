@@ -537,3 +537,73 @@ func TestSaveSharedAuthSecondWrite(t *testing.T) {
 		t.Fatalf("pick = %+v", back.SharedAuth)
 	}
 }
+
+// Multiple [sources."id"] subtables reconcile safely (grok round 2: a
+// per-id edit beside a still-open sibling subtable nested the insert under
+// the sibling, silently dropping entries): update one, update all, delete
+// one, add beside.
+func TestSaveSourcesMultiSubtable(t *testing.T) {
+	orig := "base = \"node:22\"\n\n[sources.\"a/tool\"]\nuri = \"https://a\"\n\n[sources.\"b/tool\"]\nuri = \"https://b\"\n"
+	setup := func(t *testing.T) (string, config.Config) {
+		path := filepath.Join(t.TempDir(), "byre.config")
+		mustWriteFile(t, path, []byte(orig), 0o644)
+		cfg, err := config.ParseFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return path, cfg
+	}
+	check := func(t *testing.T, path string, want map[string]string) {
+		back, err := config.ParseFile(path)
+		if err != nil {
+			raw, _ := os.ReadFile(path)
+			t.Fatalf("re-parse: %v\n%s", err, raw)
+		}
+		if len(back.Sources) != len(want) {
+			raw, _ := os.ReadFile(path)
+			t.Fatalf("sources = %+v, want %v\n%s", back.Sources, want, raw)
+		}
+		for id, uri := range want {
+			if back.Sources[id].URI != uri {
+				raw, _ := os.ReadFile(path)
+				t.Fatalf("sources[%s] = %+v, want %s\n%s", id, back.Sources[id], uri, raw)
+			}
+		}
+		if back.Base != "node:22" {
+			t.Fatalf("unrelated key lost: %+v", back)
+		}
+	}
+
+	t.Run("update-one", func(t *testing.T) {
+		path, cfg := setup(t)
+		cfg.Sources["a/tool"] = config.SourceHint{URI: "https://a2"}
+		if err := Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		check(t, path, map[string]string{"a/tool": "https://a2", "b/tool": "https://b"})
+	})
+	t.Run("delete-one", func(t *testing.T) {
+		path, cfg := setup(t)
+		delete(cfg.Sources, "a/tool")
+		if err := Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		check(t, path, map[string]string{"b/tool": "https://b"})
+	})
+	t.Run("add-beside", func(t *testing.T) {
+		path, cfg := setup(t)
+		cfg.Sources["c/tool"] = config.SourceHint{URI: "https://c"}
+		if err := Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		check(t, path, map[string]string{"a/tool": "https://a", "b/tool": "https://b", "c/tool": "https://c"})
+	})
+	t.Run("clear-all", func(t *testing.T) {
+		path, cfg := setup(t)
+		cfg.Sources = nil
+		if err := Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		check(t, path, nil)
+	})
+}
