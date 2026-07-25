@@ -415,3 +415,35 @@ func TestSaveClearsDottedSpelledMap(t *testing.T) {
 		t.Fatalf("unrelated key lost: %+v", back)
 	}
 }
+
+// Identical configs emit identical bytes on a fresh file — map-backed
+// vocabularies write in sorted order (review round 4: raw map ranging made
+// fresh-file layout nondeterministic).
+func TestSaveIsDeterministicForMaps(t *testing.T) {
+	cfg := config.Config{
+		Base:    "node:22",
+		Env:     map[string]string{"ZED": "1", "ALPHA": "2", "MID": "3"},
+		Files:   map[string]string{"./b": "/opt/b", "./a": "/opt/a"},
+		Sources: map[string]config.SourceHint{"z/tool": {URI: "https://z"}, "a/tool": {URI: "https://a"}},
+	}
+	render := func() string {
+		path := filepath.Join(t.TempDir(), "byre.config")
+		if err := Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	first := render()
+	for i := 0; i < 8; i++ {
+		if got := render(); got != first {
+			t.Fatalf("nondeterministic save:\n--- first ---\n%s\n--- got ---\n%s", first, got)
+		}
+	}
+	if !strings.Contains(first, "ALPHA") {
+		t.Fatalf("sample missing env:\n%s", first)
+	}
+}

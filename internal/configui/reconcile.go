@@ -207,7 +207,10 @@ func reconcileStringMap(doc *tomldoc.Doc, key string, cur, want map[string]strin
 	if doc.HasKey(nil, key) {
 		return doc.SetKey(nil, key, tomldoc.InlineStringMap(want))
 	}
-	for k, v := range want {
+	// Sorted, so a fresh file's layout is canonical and identical configs
+	// emit identical bytes (Go map order is unspecified).
+	for _, k := range slices.Sorted(maps.Keys(want)) {
+		v := want[k]
 		if cur[k] != v || !doc.HasKey([]string{key}, k) {
 			if err := doc.SetKey([]string{key}, k, tomldoc.String(v)); err != nil {
 				return err
@@ -238,7 +241,8 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 	if equal {
 		return nil
 	}
-	for id, h := range want {
+	for _, id := range slices.Sorted(maps.Keys(want)) {
+		h := want[id]
 		c, ok := cur[id]
 		if ok && c.URI == h.URI && c.Digest == h.Digest && doc.HasKey([]string{"sources"}, id) {
 			continue
