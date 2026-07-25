@@ -361,3 +361,32 @@ func TestContextProseWrapNarrowCJKTerminates(t *testing.T) {
 		t.Fatal("viewItem hung wrapping wide glyphs at a one-cell window")
 	}
 }
+
+// Tab-indented prose (a code sample) renders inside the width: tabs are
+// 0-cell to ansi.StringWidth but ~8 to a terminal, so unexpanded tabs
+// measured as fitting while visually overflowing past both wrap and clip
+// (grok pre-ship probe). Display expands to 8-column stops; storage keeps
+// the tabs.
+func TestContextProseTabsExpandForDisplay(t *testing.T) {
+	prose := "Steps:\n\tif err != nil {\n\t\treturn err\n\t}\n"
+	m := newModel("t", "/tmp/x", config.Config{Contexts: []config.ContextDecl{{Name: "n", Text: prose}}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fContext
+	m.width = 30
+	m = m.startItem(0)
+	v := m.viewItem()
+	if strings.Contains(v, "\t") {
+		t.Fatalf("tabs must expand for display:\n%q", v)
+	}
+	if !strings.Contains(v, "        if err != nil {") {
+		t.Fatalf("tab should expand to the 8-column stop:\n%s", v)
+	}
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "│") && !strings.Contains(l, "more lines") && ansiStringWidth(stripANSI(l)) > 30 {
+			t.Fatalf("tab-expanded line exceeds width (%d): %q", ansiStringWidth(stripANSI(l)), stripANSI(l))
+		}
+	}
+	// Storage untouched: the draft still carries the tabs.
+	if !strings.Contains(m.itemProse, "\tif err") {
+		t.Fatalf("stored prose must keep its tabs: %q", m.itemProse)
+	}
+}

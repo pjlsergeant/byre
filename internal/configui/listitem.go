@@ -1247,7 +1247,7 @@ func proseBlock(text, more string, width int) string {
 	}
 	var lines []string
 	for _, src := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		lines = append(lines, wrapLine(src, w)...)
+		lines = append(lines, wrapLine(expandTabs(src), w)...)
 	}
 	const proseview = 12
 	shown := lines
@@ -1260,6 +1260,31 @@ func proseBlock(text, more string, width int) string {
 	}
 	if extra := len(lines) - len(shown); extra > 0 {
 		b.WriteString("  " + dimStyle.Render(fmt.Sprintf("│ … +%d more lines (%s)", extra, more)) + "\n")
+	}
+	return b.String()
+}
+
+// expandTabs replaces tabs with spaces to the next 8-column stop, measured
+// in display cells — ansi.StringWidth counts a tab as ZERO cells while a
+// real terminal expands it, so tab-indented prose (a code sample in the
+// instructions, which validation deliberately permits) measured as fitting
+// while visually blowing the width, past both the wrap and the clip (grok
+// pre-ship probe). Display-only: the stored prose keeps its tabs.
+func expandTabs(src string) string {
+	if !strings.ContainsRune(src, '\t') {
+		return src
+	}
+	var b strings.Builder
+	col := 0
+	for _, r := range src {
+		if r == '\t' {
+			n := 8 - col%8
+			b.WriteString(strings.Repeat(" ", n))
+			col += n
+			continue
+		}
+		b.WriteRune(r)
+		col += ansi.StringWidth(string(r))
 	}
 	return b.String()
 }
