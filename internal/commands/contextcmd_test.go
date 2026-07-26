@@ -213,8 +213,8 @@ func TestContextAddMissingFileWarns(t *testing.T) {
 }
 
 // list attributes every row to the layer that speaks it and shows the
-// cascade's shadows — overridden lower declarations and closures (Pete's
-// ruling 2026-07-26: list is the "where did my snippet go?" surface).
+// cascade's shadows — overridden lower declarations and closures: list is
+// the "where did my snippet go?" surface.
 func TestContextListAttributionAndShadows(t *testing.T) {
 	dir, _, defaultCfg, s, _ := mcpTestProject(t)
 	out := s.Out.(*bytes.Buffer)
@@ -255,8 +255,8 @@ text = "global house"
 
 // A closure a HIGHER layer re-opens is SPENT: it must not render as a
 // shadow, and the re-opening declaration overrides nothing (the closure
-// already consumed what sat below it). A first-seen scan got both wrong
-// (codex review 2026-07-26): default→x, layer→!x, project→x showed a
+// already consumed what sat below it). A first-seen scan got both wrong:
+// default→x, layer→!x, project→x showed a
 // removed-row AND "overrides default" simultaneously with the shipping row.
 func TestContextListSpentClosureNeitherShadowsNorOverrides(t *testing.T) {
 	dir, projPath, defaultCfg, s, _ := mcpTestProject(t)
@@ -298,7 +298,7 @@ func TestContextListSpentClosureNeitherShadowsNorOverrides(t *testing.T) {
 
 // Within ONE layer, declarations apply before closures whatever the TOML
 // order (mergeNamedDecls's split) — a layer carrying both `x` and `!x`
-// ships nothing, and list must say so (codex review round 2).
+// ships nothing, and list must say so.
 func TestContextListSameLayerClosureWins(t *testing.T) {
 	dir, projPath, defaultCfg, s, _ := mcpTestProject(t)
 	out := s.Out.(*bytes.Buffer)
@@ -319,7 +319,7 @@ func TestContextListSameLayerClosureWins(t *testing.T) {
 }
 
 // Duplicate `!x` markers in one layer are layer-valid; the second must not
-// erase the first's victim attribution (codex review round 3).
+// erase the first's victim attribution.
 func TestContextListDuplicateClosureKeepsVictim(t *testing.T) {
 	dir, projPath, defaultCfg, s, _ := mcpTestProject(t)
 	out := s.Out.(*bytes.Buffer)

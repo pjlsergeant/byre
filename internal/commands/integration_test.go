@@ -101,7 +101,7 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 		t.Fatalf("container runs as uid %q, want %q (the identity baked at build)", got, want)
 	}
 
-	// Login shells keep the image's ENV PATH (QA pass-2: a go-template box had
+	// Login shells keep the image's ENV PATH (a go-template box had
 	// no `go` in `byre shell` — /etc/profile resets PATH; byre-env.sh restores
 	// it from the baked /etc/byre/image-path). The core block's own
 	// /home/dev/.local/bin entry is the sentinel: /etc/profile drops it, so

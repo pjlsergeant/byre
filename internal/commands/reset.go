@@ -47,7 +47,7 @@ func Reset(s Streams, projectDir string, force bool) error {
 // paths now refuse to create; hand-mutation can still make one), and teardown
 // is exactly the command that should clean it, so it falls through to the
 // normal flow: Bootstrap claims the dir with this project's record, then
-// removal proceeds. A collision errors loudly (review finding, grok).
+// removal proceeds. A collision errors loudly.
 func neverEnrolled(paths project.Paths) (bool, error) {
 	recorded, err := paths.Recorded()
 	if err != nil || recorded {
@@ -110,7 +110,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 		total += len(vols)
 		// The machine-volume note comes before the empty-case return: a project
 		// whose ONLY volumes are machine-scoped must still hear what was spared
-		// and why (review finding on ADR 0017).
+		// and why (ADR 0017).
 		noteMachineVolumes(s.Err, r, os.Getuid())
 	}
 	if total == 0 {

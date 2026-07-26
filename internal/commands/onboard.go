@@ -48,7 +48,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 
 	// Catalog lists options / resolves flags. Silent EnsureStore: develop
 	// already ran EnsureStoreOut so a second noticed call would double-print
-	// LEGACY lines (round 3). Standalone paths without a prior notice still
+	// LEGACY lines. Standalone paths without a prior notice still
 	// prepare the store; they just skip the human lines here.
 	if err := builtins.EnsureStore(paths.Home); err != nil {
 		return err
@@ -221,9 +221,8 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 		offer.Claimants = append(offer.Claimants, display)
 		offer.Labels = append(offer.Labels, label)
 		offer.Foreign = append(offer.Foreign, foreign)
-		// Per-claimant machine-volume disclosure (round 3; moved into the
-		// i-text / picker rows by the 2026-07-17 copy ruling — the question
-		// itself now says "machine-wide").
+		// Per-claimant machine-volume disclosure rides the i-text and the
+		// picker rows; the question itself says "machine-wide".
 		vol := ""
 		for _, v := range c.File.Volumes {
 			if v.MachineScoped() {

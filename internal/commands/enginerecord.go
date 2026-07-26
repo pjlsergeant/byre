@@ -18,7 +18,7 @@ import (
 // cross-engine single-session check to actual engine switches -- without it,
 // every develop on a machine with a second engine installed but stopped
 // (podman on a Mac, typically) printed the "can't be ruled out" disclosure as
-// ambient noise (#4 ruling, 2026-07-22). Keyed by WorktreeID because sessions
+// ambient noise. Keyed by WorktreeID because sessions
 // are per-worktree (the workdir label), while paths.Dir is shared by every
 // worktree of the project.
 //
@@ -80,7 +80,7 @@ func knownEngine(name string) bool {
 // engines that check could NOT conclusively clear (unreachable at the time):
 // they stay in the record, so every later develop re-checks and re-discloses
 // them until one finds the engine reachable and empty -- an inconclusive
-// check must never launder the record into silence (codex review).
+// check must never launder the record into silence.
 // Temp+rename: rename(2) replaces the destination's final component without
 // following it, so a symlink a --self-edit agent planted at the record name
 // can't redirect the write onto another host file. Failure degrades loudly,
@@ -154,7 +154,7 @@ func crossEnginesToCheck(w io.Writer, others []sessionRunner, self runner.Engine
 	for name := range implicated {
 		// Wording covers both sources of implication (rec.last after a switch,
 		// or an unresolved leftover) — "the last session ran under X" would
-		// misattribute an unresolved engine (codex P3).
+		// misattribute an unresolved engine.
 		fmt.Fprintf(w, "byre: a prior session here implicated %s, which is no longer installed — a competing session there can't be ruled out.\n", name)
 	}
 	return toCheck, true

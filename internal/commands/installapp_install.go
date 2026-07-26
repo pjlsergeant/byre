@@ -97,7 +97,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// Preflight the Quick Action destination BEFORE mutating the app: a
 	// foreign workflow at its path refuses the whole install up front,
 	// instead of surfacing after the app half was already committed and
-	// announced (external review: the failed command had half-happened,
+	// announced (the failed command had half-happened,
 	// making the error unreliable to interpret and the retry misleading).
 	svcPath := filepath.Join(d.home, "Library", "Services", "Deliver to Byre.workflow")
 	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")

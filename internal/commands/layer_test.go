@@ -56,7 +56,7 @@ func TestLayerNewScaffoldsAndGates(t *testing.T) {
 	}
 
 	// Retired names are deliberately NOT reserved (layers are a new
-	// namespace; ruled 2026-07-16): "codereview" is a legal layer.
+	// namespace): "codereview" is a legal layer.
 	s5, _, _ := testStreams("", false)
 	if err := LayerNew(s5, "codereview"); err != nil {
 		t.Errorf("retired name must be a legal layer name, got: %v", err)

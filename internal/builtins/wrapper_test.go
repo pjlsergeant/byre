@@ -214,7 +214,7 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 		"BYRE_AGENT_CONTEXT="+ctxPath,
 		"BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"),
 		// Deliberately REVERSE-sorted user paths: a sorting dedupe (jq's
-		// unique — codex review find) would scramble them and interleave
+		// unique) would scramble them and interleave
 		// byre's entry; order must be user's-as-written, byre's appended.
 		`OPENCODE_CONFIG_CONTENT={"theme":"nord","instructions":["/z/mine.md","/a/mine.md"],"mcp":{"user-srv":{"type":"local","command":["mine"]}}}`,
 	)
@@ -319,7 +319,7 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 // The grok launch adapter injects baked context + session additions as ONE
 // --append-system-prompt argv element, and caps the value under Linux's
 // per-argument exec limit (~128 KiB) with a loud disclosure instead of
-// killing the exec (grok review find, probed: MAX_ARG_STRLEN binds far
+// killing the exec (MAX_ARG_STRLEN binds far
 // under byre's uncapped-but-tiered context bounds).
 func TestGrokLaunchWrapperInjectsAndCaps(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
@@ -411,7 +411,7 @@ func TestCodexLaunchWrapperCapsContext(t *testing.T) {
 }
 
 // A user's non-array `instructions` (bare string) coerces instead of
-// bricking the launch on a jq type error (grok review find, probed).
+// bricking the launch on a jq type error.
 func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
 	for _, bin := range []string{"bash", "jq"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -451,7 +451,7 @@ func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
 }
 
 // The cap measures BYTES: multi-byte prose under 100k characters but over
-// the wire limit must still truncate (grok round 2 — ${#} counts characters
+// the wire limit must still truncate (${#} counts characters
 // and let UTF-8 slip past to a dead exec). And the session additions append
 // AFTER the disclosure, never silently dropped by the truncation.
 func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
@@ -490,7 +490,7 @@ func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 	if !strings.HasSuffix(args[1], "session survives") {
 		t.Fatalf("session additions must survive truncation, tail = %q", args[1][len(args[1])-80:])
 	}
-	// The truncation lands on a codepoint boundary (codex review: a raw
+	// The truncation lands on a codepoint boundary (a raw
 	// head -c splits UTF-8 and hands the CLI an invalid string).
 	if !utf8.ValidString(args[1]) {
 		t.Fatalf("truncated prompt is not valid UTF-8")
@@ -518,7 +518,7 @@ func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 
 // The grok skill must chmod its wrapper: bundled extraction writes 0644, and
 // a non-executable /usr/local/bin/byre-grok-launch is Permission denied at
-// exec — a bricked box (grok round 2; the codex/opencode skills carry the
+// exec — a bricked box (the codex/opencode skills carry the
 // same line).
 func TestGrokSkillChmodsLaunchWrapper(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("skills", "grok", "skill.toml"))
@@ -531,7 +531,7 @@ func TestGrokSkillChmodsLaunchWrapper(t *testing.T) {
 }
 
 // The codex wrapper shares the byte-cap + session-survival algorithm; its
-// own fixture so a codex-only edit can't regress it (grok round 3 nit).
+// own fixture so a codex-only edit can't regress it.
 func TestCodexLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 	for _, bin := range []string{"bash", "jq"} {
 		if _, err := exec.LookPath(bin); err != nil {

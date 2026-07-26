@@ -135,7 +135,7 @@ func splitNamedDecls[T any](decls []T, alreadyClosed []string, name func(T) stri
 // replacement takes the REPLACING layer's position (remove-then-append),
 // not the replaced entry's slot — list order is the one place cascade
 // precedence is observable, and [[context]] renders it (a later layer's
-// prose must speak after what it didn't replace, review finding 2026-07-24).
+// prose must speak after what it didn't replace).
 // Closures match by exact name.
 func mergeNamedDecls[T any](baseDecls []T, baseClosed []string, overDecls []T, overClosed []string, name func(T) string) (open []T, closed []string) {
 	open, closed = splitNamedDecls(baseDecls, baseClosed, name)

@@ -1153,7 +1153,7 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 
 // Bracketed IPv6 egress entries (RFC 3986 form, parsed to RFC 5952 canonical
 // text): the grammar the rest of the planet uses, adopted so IPv6 endpoints
-// stop being unsayable (grilling ruling 2026-07-15). The host round-trips
+// stop being unsayable. The host round-trips
 // WITH brackets so every "%s:%d" composition re-parses.
 func TestParseEgressBracketedIPv6(t *testing.T) {
 	h, p, err := ParseEgress("[2001:DB8::1]:8443")

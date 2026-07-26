@@ -96,8 +96,7 @@ func TestAssembleRefusesSymlinkedContextRoot(t *testing.T) {
 // target here is RELATIVE ("sibling") — os.Root's child form FOLLOWS a
 // relative in-root terminal symlink (it refuses only absolute/escaping ones,
 // verified on go1.26), so the confinement can't lean on escape-detection; the
-// anchor Lstat-rejects a symlinked context outright (grok review, 2026-07-19,
-// which the author first wrongly dismissed after probing the absolute shape).
+// anchor Lstat-rejects a symlinked context outright.
 // Without the fix, Assemble redirects its writes onto the sibling store dir.
 func TestAssembleRefusesInStoreSymlinkedContextRoot(t *testing.T) {
 	paths := bootstrapped(t)
@@ -255,7 +254,7 @@ func TestAssembleConfigContextRefusesEscapingProjectSymlink(t *testing.T) {
 	}
 }
 
-// Prose is never capped (Pete's ruling 2026-07-26) — the size tiers
+// Prose is never capped — the size tiers
 // disclose instead, identically for file and inline sources, and only the
 // technical read ceiling (fstat-judged, far above the tiers) refuses.
 func TestAssembleConfigContextSizeTiers(t *testing.T) {

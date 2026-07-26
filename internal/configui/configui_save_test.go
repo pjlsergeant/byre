@@ -247,8 +247,8 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 // A structured save of a config carrying a shared-auth preference must
 // produce a file byre can load again. The old whole-file encoder reflected
 // the struct into [shared_auth.Pick] -- a shape the dual-shape decoder
-// refuses, bricking default.config on a normal global save (external review
-// find, 2026-07-25; reproduced) -- so reconcile's canonical emission is
+// refuses, bricking default.config on a normal global save (reproduced)
+// -- so reconcile's canonical emission is
 // pinned for every reachable stored state; mixed canonicalizes to
 // picks-only (the EncodeTOMLValue rule: yes-without-pick re-asks).
 func TestSaveRoundTripsSharedAuth(t *testing.T) {
@@ -391,8 +391,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 }
 
 // Clearing a map spelled with dotted root keys must actually clear it
-// (review finding 2026-07-25: the header-only removal path silently left
-// `env.FOO = ...` in place).
+// -- the header-only removal path silently left `env.FOO = ...` in place.
 func TestSaveClearsDottedSpelledMap(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "byre.config")
 	mustWriteFile(t, path, []byte("env.FOO = \"bar\"\nenv.BAZ = \"qux\"\nbase = \"node:22\"\n"), 0o644)
@@ -418,8 +417,8 @@ func TestSaveClearsDottedSpelledMap(t *testing.T) {
 }
 
 // Identical configs emit identical bytes on a fresh file — map-backed
-// vocabularies write in sorted order (review round 4: raw map ranging made
-// fresh-file layout nondeterministic).
+// vocabularies write in sorted order. Raw map ranging made fresh-file
+// layout nondeterministic.
 func TestSaveIsDeterministicForMaps(t *testing.T) {
 	cfg := config.Config{
 		Base:    "node:22",
@@ -451,8 +450,8 @@ func TestSaveIsDeterministicForMaps(t *testing.T) {
 
 // Every [sources] spelling reconciles: house shape re-edited, the
 // [sources."id"] subtable form (normalized on change), the root-inline
-// form, and clearing each (grok review find, 2026-07-25 — subtable updates
-// wrote files byre then refused to load; clears were silent no-ops).
+// form, and clearing each. Subtable updates wrote files byre then refused
+// to load; clears were silent no-ops.
 func TestSaveSourcesSpellings(t *testing.T) {
 	hint := func(uri string) map[string]config.SourceHint {
 		return map[string]config.SourceHint{"acme/tool": {URI: uri}}
@@ -539,9 +538,9 @@ func TestSaveSharedAuthSecondWrite(t *testing.T) {
 	}
 }
 
-// Multiple [sources."id"] subtables reconcile safely (grok round 2: a
-// per-id edit beside a still-open sibling subtable nested the insert under
-// the sibling, silently dropping entries): update one, update all, delete
+// Multiple [sources."id"] subtables reconcile safely -- a per-id edit beside
+// a still-open sibling subtable nested the insert under the sibling, silently
+// dropping entries. Update one, update all, delete
 // one, add beside.
 func TestSaveSourcesMultiSubtable(t *testing.T) {
 	orig := "base = \"node:22\"\n\n[sources.\"a/tool\"]\nuri = \"https://a\"\n\n[sources.\"b/tool\"]\nuri = \"https://b\"\n"
@@ -612,8 +611,8 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 // reportSaved (Run's saved return) judges $EDITOR-only sessions by NET
 // content: an edit round-trip that ends byte-identical to the open-time file
 // must report "unchanged" — the QA playbook's ^e journey edits a bad line in
-// and back out, and "wrote <path>" for that contradicted the on-disk truth
-// (finding 2026-07-18, fixed 2026-07-22). A ctrl+s save reports written
+// and back out, and "wrote <path>" for that contradicted the on-disk truth.
+// A ctrl+s save reports written
 // unconditionally; a lasting $EDITOR change reports written.
 func TestReportSavedEditorNetNoop(t *testing.T) {
 	dir := t.TempDir()
@@ -669,8 +668,7 @@ func TestReportSavedEditorNetNoop(t *testing.T) {
 // A read failure that is NOT absence (permissions, I/O) must not masquerade
 // as created/deleted: reportSaved degrades to the coarse truth (writes landed
 // this session) instead of comparing against bytes it couldn't read, and
-// onEditorClosed sets no mutation flag it can't prove (codex review of the
-// net-content fix).
+// onEditorClosed sets no mutation flag it can't prove.
 func TestReportSavedUnreadableEdgesDegradeCoarse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "byre.config")
@@ -698,7 +696,7 @@ func TestReportSavedUnreadableEdgesDegradeCoarse(t *testing.T) {
 
 // An $EDITOR session that changes the file and leaves it UNREADABLE sets no
 // mutation flag — but the quit report must not call that "unchanged": the
-// readability transition itself is observable (codex review, round 2). The
+// readability transition itself is observable. The
 // unreadable quit endpoint is simulated by replacing the file with a
 // directory (EISDIR: a non-absence read failure that works under any uid).
 func TestReportSavedUnreadableQuitEndpointReportsWritten(t *testing.T) {

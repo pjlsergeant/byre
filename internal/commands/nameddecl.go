@@ -137,8 +137,7 @@ func addNamedDecl[T any](s Streams, projectDir string, global bool, v declVerbs[
 //     template) → write the closure regardless and say why: the closure
 //     guarantees the verb's promise (gone from the effective set) whatever
 //     byre couldn't check, at the cost of a possibly-inert marker the user
-//     can see and delete. Never a refusal, never a silent resurrection
-//     (maintainer ruling 2026-07-15, revising the round-4 refusal).
+//     can see and delete. Never a refusal, never a silent resurrection.
 //
 // The still-effective check only runs for the project layer (the cascade
 // below it is knowable); a global remove that deletes an entry can't see

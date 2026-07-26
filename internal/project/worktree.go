@@ -208,8 +208,8 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 		return worktreeInfo{}, false, fmt.Errorf(
 			"%s: cannot resolve the common git dir %q for mounting: %w", dir, structCommon, err)
 	}
-	// Rebind the resolved result to the inode the structural check validated
-	// (grok review). EvalSymlinks re-walked structCommon, whose components an
+	// Rebind the resolved result to the inode the structural check validated.
+	// EvalSymlinks re-walked structCommon, whose components an
 	// agent can still flip, so its result is not automatically the directory
 	// SameFile approved above — without this, a symlink component retargeted
 	// between the check and the resolve would swap the mount source INSIDE this

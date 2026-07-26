@@ -457,7 +457,7 @@ func TestRowsFollowTemplatePicker(t *testing.T) {
 
 // Same-layer add+remove resolves OFF (Merge applies removals last), so the
 // rows and counts must not show the local entry as effective — and the marker
-// is NOT stale: it's doing real work (review finding, round 1).
+// is NOT stale: it's doing real work.
 func TestSameLayerMarkerBeatsSameLayerEntry(t *testing.T) {
 	m := effectiveModel()
 	m.apt = []string{"foo", "!foo"}
@@ -502,7 +502,7 @@ func TestSameLayerMarkerBeatsSameLayerEntry(t *testing.T) {
 }
 
 // A port removal marker must not share a dirty-detection signature with the
-// real binding it removes (review finding, round 1).
+// real binding it removes.
 func TestSigDistinguishesPortMarker(t *testing.T) {
 	m := effectiveModel()
 	m.ports = []config.Port{{Container: 5432, Remove: true}}
@@ -514,7 +514,7 @@ func TestSigDistinguishesPortMarker(t *testing.T) {
 }
 
 // Two lower layers binding the same container port on different interfaces
-// must each be attributed to their own layer (review finding, round 3).
+// must each be attributed to their own layer.
 func TestPortAttributionByFullIdentity(t *testing.T) {
 	m := effectiveModel()
 	m.inh.Templates["go"] = config.Config{
@@ -802,7 +802,7 @@ func TestEgressSummaryCountsOffered(t *testing.T) {
 }
 
 // Offered-door suppression compares normalized host:port and counts skill
-// egress as open (review finding): "github.com" offered vs "github.com:443"
+// egress as open: "github.com" offered vs "github.com:443"
 // open is the same door.
 func TestEgressOfferedSuppressionNormalized(t *testing.T) {
 	m := effectiveModel()

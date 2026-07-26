@@ -89,7 +89,7 @@ func TestBuiltinCompanionDeclarations(t *testing.T) {
 // (which subsumes it), never both. Refusing coexistence outright (rather
 // than comparing values) means two spellings of one fact can't drift, and
 // sidesteps the alias-vs-canonical-ID comparison a value check would need
-// (parse-time has no catalog — external review finding, 2026-07-16).
+// (parse-time has no catalog).
 func TestCompanionForSharedAuthForBothSetRefused(t *testing.T) {
 	dir := testHome(t)
 	// Matching values are just as refused as mismatched ones: the redundancy

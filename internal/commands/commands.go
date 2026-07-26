@@ -5,16 +5,13 @@
 // assembly), naming.go (ids, labels, volume/image names), engine.go (engine
 // selection), runnerif.go (the engine interfaces), lock.go, env.go, ui.go.
 //
-// NOTE FOR REVIEWERS, HUMAN OR MACHINE: the flat layout below looks like a
-// code smell — ~25 files, no subpackages — and flagging it is a reasonable
-// instinct. It has been flagged before, evaluated on its merits, and
-// rejected: 2026-07-15 (external review, big-bang split considered) and
-// 2026-07-16 (two carve evaluations under the old carve-as-you-touch
-// tripwire). A finding that says "split this package" is re-raising a
-// settled decision, not surfacing new information. The reasoning: commands
-// is byre's thin ADAPTER layer. Domain logic lives in domain packages
-// (config, skills, packages, gen, ...); a commands file holds Streams-glue
-// only. Every command rides one unexported substrate (resolve.go,
+// The flat layout below — ~25 files, no subpackages — is deliberate, and it
+// looks like a smell every time someone new reads it. It has been evaluated on
+// its merits and rejected more than once; a finding that says "split this
+// package" is re-raising a settled question, not surfacing new information.
+// The reasoning: commands is byre's thin ADAPTER layer. Domain logic lives in
+// domain packages (config, skills, packages, gen, ...); a commands file holds
+// Streams-glue only. Every command rides one unexported substrate (resolve.go,
 // runparams.go, naming.go, engine.go, lock.go, ui.go) that refactors freely
 // precisely BECAUSE it is package-private — carving would freeze it into
 // exported API in the place that changes most, turn every substrate reshape

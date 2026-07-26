@@ -145,7 +145,7 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 				fmt.Fprintf(s.Err, "byre: ⚠ %s does not exist yet — the next develop will fail until it does (accepted anyway; create it before then).\n", file)
 			case serr != nil:
 				// Permission, loop, I/O — a different problem than absence
-				// deserves a different diagnosis (codex review).
+				// deserves a different diagnosis.
 				fmt.Fprintf(s.Err, "byre: ⚠ %s is not readable right now (%v) — the next develop will fail until it is (accepted anyway).\n", file, serr)
 			}
 		}
@@ -166,9 +166,9 @@ func ContextRemove(s Streams, projectDir string, global bool, name string) error
 
 // ContextList implements `byre context list`: the resolved set, each snippet
 // attributed to the layer that speaks it, PLUS the cascade's shadows —
-// overridden lower declarations and closures (Pete's ruling, 2026-07-26:
-// the moment an operator runs list is usually "where did my snippet go?",
-// and the confusing cases are precisely the shadowed ones). Config-only
+// overridden lower declarations and closures: the moment an operator runs
+// list is usually "where did my snippet go?", and the confusing cases are
+// precisely the shadowed ones. Config-only
 // vocabulary, so no skill union. The delivery verdict closes the listing,
 // by the same renderer status uses (ADR 0046).
 func ContextList(s Streams, projectDir string) error {
@@ -221,8 +221,8 @@ func ContextList(s Streams, projectDir string) error {
 // label so list can attribute it. A declaration opens (consuming any
 // closure below it); a `!name` marker closes, remembering exactly what it
 // shadowed AT THAT POINT (later re-adds are re-openings, not victims).
-// First-seen scans get this wrong in both directions (codex review of the
-// first cut): a closure followed by a re-add is SPENT and must not render
+// First-seen scans get this wrong in both directions: a closure followed by
+// a re-add is SPENT and must not render
 // as removed, and an override across a spent closure does not override the
 // layers the closure already consumed.
 type ctxCascadeState struct {
@@ -248,7 +248,7 @@ func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeStat
 		// Two passes per layer, matching mergeNamedDecls: declarations apply
 		// first, closures second, so a layer holding both `x` and `!x` (legal
 		// — markers dodge duplicate tracking) ends CLOSED whatever the TOML
-		// order (codex review round 2).
+		// order.
 		for _, cd := range sl.Cfg.Contexts {
 			if config.IsRemoval(cd.Name) {
 				continue
@@ -264,7 +264,7 @@ func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeStat
 				// Duplicate markers are layer-valid (markers dodge duplicate
 				// tracking); replaying the second would overwrite wasAt with
 				// the now-empty openIn and misreport the victim as "nothing
-				// below" (codex review round 3).
+				// below".
 				continue
 			}
 			closedHere[name] = true

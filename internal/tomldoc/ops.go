@@ -51,8 +51,8 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 // key relative to it. Only a kin whose declaring context is a strict prefix
 // of table qualifies -- a key-value living under a DEEPER header (a
 // [sources."other"] subtable) is no anchor: a line inserted there would land
-// inside that header's context and change meaning (grok review find
-// 2026-07-25, round 2: sibling subtables swallowed the insert). ok=false
+// inside that header's context and change meaning -- sibling subtables
+// swallowed the insert before this existed. ok=false
 // when no kin exist.
 func (d *Doc) dottedKinInsert(table []string) (int, []string, bool) {
 	at, ok := -1, false
@@ -243,13 +243,13 @@ func (d *Doc) matchArrayTable(name, matchKey, matchValue string) int {
 
 // blockEnd is the offset just past a header expression's block: through its
 // last key-value or DESCENDANT subtable header (a `[mcp.headers]` under a
-// `[[mcp]]` is that block's content -- review finding 2026-07-25, round 2:
-// stopping at every header left a replaced block's subtable behind, where it
-// re-attached to the replacement or a peer), plus any comment run GLUED to
+// `[[mcp]]` is that block's content: stopping at every header left a replaced
+// block's subtable behind, where it re-attached to the replacement or a
+// peer), plus any comment run GLUED to
 // that last expression. Interior comments and blank lines are block content
 // wherever they sit; a trailing comment separated by a blank line is NOT the
 // block's -- it belongs to whatever follows, and replacing or removing the
-// block must not consume it (round 1 finding).
+// block must not consume it.
 func (d *Doc) blockEnd(hdr int) int {
 	own := d.exprs[hdr].table
 	last, stop := hdr, len(d.exprs)

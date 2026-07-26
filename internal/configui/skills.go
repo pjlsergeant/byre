@@ -71,7 +71,7 @@ func (m model) skillEntries() []skillEntry {
 	// it enables nothing anywhere — so there is no primary agent to lock on:
 	// a "[x] (primary agent)" row would claim a machine-wide enable that
 	// isn't happening, and the lock would silently prevent enabling that
-	// agent's skill machine-wide via this screen (audit finding).
+	// agent's skill machine-wide via this screen.
 	if m.target == TargetGlobal {
 		primary = ""
 	}

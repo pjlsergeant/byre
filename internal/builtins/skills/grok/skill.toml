@@ -13,8 +13,7 @@
 # packs into $HOME/.grok/bundled (the image tree) while skill discovery reads
 # $GROK_HOME/bundled — the grok-bundled firstrun hook bridges that with a
 # symlink, or the bundled review/design/execute-plan/pr-babysit skills
-# silently never appear (reproduced in-box; caught by grok reviewing its own
-# packaging).
+# silently never appear (reproduced in-box).
 #
 # The installer needs no secret at build time (VERIFIED 2026-07-09): with no
 # credential present it downloads the public artifact (x.ai/cli, with a

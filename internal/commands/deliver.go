@@ -91,7 +91,7 @@ func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, so
 // (a graphical launch) → read the pasteboard immediately. A cancel (or empty
 // paste) returns ExitError{1} after its own friendly stderr line: every
 // nothing-was-delivered outcome exits nonzero, so scripts can trust rc=0 to
-// mean bytes landed (ruling 2026-07-17, field-QA finding 3).
+// mean bytes landed.
 func deliverSources(s Streams, opts deliver.Options, paths []string, reader *clipBackend) ([]deliver.Source, error) {
 	stamp := time.Now().Format("20060102-150405")
 	stdinSource := func(r io.Reader) deliver.Source {
@@ -340,8 +340,8 @@ func deliverConfig(s Streams, dir string, engines []sessionRunner, uid int, clip
 // metadata, permissions, home resolution), and it aborts selection rather
 // than wrap deliver.ErrNoWorkdirID: a skipped level falls through to the
 // sole-session/picker fallbacks, which could hand the delivery to an
-// unrelated box (codereview finding — the same unsafe fallback the collision
-// abort exists to prevent). The collision case rides the same non-sentinel
+// unrelated box (the same unsafe fallback the collision abort exists to
+// prevent). The collision case rides the same non-sentinel
 // path via ValidateExisting, matching shell/status.
 func workdirIDOf(d string) (string, error) {
 	p, err := project.Resolve(d)

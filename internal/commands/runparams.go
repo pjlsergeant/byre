@@ -180,7 +180,7 @@ func checkContainedHostSource(host, workDir string) error {
 // escapes (<tree>/via/x with via -> /outside) only meets the tree at the
 // spelled ancestor <tree> itself, while an alias into a SUBDIRECTORY
 // (/tmp/link/data with /tmp/link -> <tree>/subdir) never spells the tree and
-// only meets it on the resolved chain above subdir (codex review: comparing
+// only meets it on the resolved chain above subdir (comparing
 // identity with the root alone missed exactly this alias). Missing or
 // unresolvable components (ENOENT, ELOOP) just walk upward; identityUnder
 // stats but never opens, so an agent-planted FIFO can't hang the walk (the
@@ -246,7 +246,7 @@ func underTree(workDir, p string) bool {
 // unclean, `<tree>/link/../x` would be VALIDATED on its lexical collapse
 // (`<tree>/x`) while the daemon resolves `link` FIRST and applies `..` to the
 // link's target -- a checker/use mismatch an agent could aim through a
-// retargeted `link` (codex review). byre defines a mount/seed source as its
+// retargeted `link`. byre defines a mount/seed source as its
 // cleaned spelling; the check and the mount then agree by construction.
 func expandHostPath(p string) (string, error) {
 	if p == "~" || strings.HasPrefix(p, "~/") {

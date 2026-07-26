@@ -18,7 +18,7 @@ func bundledEntry(id string) *Entry {
 
 // Extraction lands under ONE process root and CleanupHostDirs removes it —
 // the success path used to leak one temp dir per package per invocation
-// until the OS swept /tmp (external review counted 2,201 leaked dirs).
+// until the OS swept /tmp -- 2,201 were counted in one such tree.
 func TestHostDirCleanupRemovesExtractionRoot(t *testing.T) {
 	CleanupHostDirs() // isolate from other tests' extractions
 	d1, err := bundledEntry("byre/one").HostDir()

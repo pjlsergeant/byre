@@ -130,7 +130,7 @@ func TestContextDeclAllowedInTemplateBody(t *testing.T) {
 // Prose renders verbatim in the config UI, so control characters beyond
 // newline and tab are refused at validation — an ESC sequence in an
 // inherited layer's text could forge the surrounding terminal UI when its
-// row is opened (the mcpPrintable stance; codex pre-ship review).
+// row is opened (the mcpPrintable stance).
 func TestContextDeclRejectsControlCharacters(t *testing.T) {
 	for name, text := range map[string]string{
 		"esc":     "look normal\x1b[2Kthen forge the line\n",

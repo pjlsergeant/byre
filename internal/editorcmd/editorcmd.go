@@ -5,8 +5,7 @@
 //
 //	EDITOR='"/Applications/Visual Studio Code.app/.../code" --wait'
 //
-// work as the user wrote them -- a whitespace split cannot parse those
-// (review finding 2026-07-25, replacing two independent Fields-split sites).
+// work as the user wrote them -- a whitespace split cannot parse those.
 package editorcmd
 
 import (

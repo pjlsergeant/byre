@@ -75,7 +75,7 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 
 // On a non-TTY an un-flagged axis has nobody to answer for it: refuse loudly
 // rather than fill it from the machine favourite — a favourite is what Enter
-// means at a prompt, and there is no Enter on a pipe (audit finding 4).
+// means at a prompt, and there is no Enter on a pipe.
 func TestOnboardPartialFlagNonTTYErrors(t *testing.T) {
 	p, proj := onboardPaths(t)
 	err := onboardIfNeeded(discardStreams(), proj, p, "", "codex", nil)

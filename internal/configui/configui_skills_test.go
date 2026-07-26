@@ -55,7 +55,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 		t.Fatalf("locked primary agent must not be added to skills: %v", m.skills)
 	}
 
-	// A non-primary agent skill (codex) can be enabled as a plain skill.
+	// A non-primary agent skill can be enabled as a plain skill.
 	m.skillCur = entryIdx(m, "codex")
 	mm, _ = m.updateSkills(key(" "))
 	m = mm.(model)
@@ -273,7 +273,7 @@ func TestSkillsExistingRemovalMarkerRendered(t *testing.T) {
 
 // Same-layer enable+remove resolves OFF (Merge applies removals last), so the
 // checkbox must show OFF; and a stale !primary marker must stay visible and
-// clearable on the locked row (review findings).
+// clearable on the locked row.
 func TestSkillsMarkerEdgeCases(t *testing.T) {
 	// ["devloop", "!devloop"] in one layer -> effectively off.
 	m := newModel("t", "/tmp/x", config.Config{Agent: "claude", Skills: []string{"devloop", "!devloop"}}, nil,

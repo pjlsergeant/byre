@@ -200,7 +200,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 	})
 
 	// An INCONCLUSIVE check of an implicated engine must not launder the record
-	// into silence (codex P1): the skipped engine stays unresolved, re-checked
+	// into silence: the skipped engine stays unresolved, re-checked
 	// and re-disclosed every develop until conclusively cleared.
 	t.Run("unreachable implicated engine stays unresolved until cleared", func(t *testing.T) {
 		p, _ := testPaths(t)
@@ -402,7 +402,7 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 	// 137 = 128+SIGKILL: the box was killed out from under the session
 	// (docker rm -f, OOM). Still a byre error (exit 1, banner), but the
 	// message must decode the signal instead of the bare "exit status 137"
-	// that reads like a byre bug (QA pass-2 finding).
+	// that reads like a byre bug.
 	f := &fakeRunner{runErr: exitError(t, 137)}
 	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
 	var exitErr ExitError

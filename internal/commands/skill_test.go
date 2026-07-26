@@ -79,7 +79,7 @@ func TestCopyDirFollowsLinksRefusesIrregulars(t *testing.T) {
 // A failed fork must leave NOTHING at the destination: copying into the
 // final name left a partial tree that poisoned retries with "already
 // exists" and could carry the source's identity under the fork's path
-// (external review, 2026-07-19). The fork stages beside the destination
+// before this existed. The fork stages beside the destination
 // and publishes with one rename.
 func TestForkFailureLeavesNoDestination(t *testing.T) {
 	home := installHome(t)

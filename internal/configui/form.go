@@ -279,7 +279,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// In default.config, template/agent are the first-run picker's
 		// PRE-SELECTIONS — the resolver strips them from every resolved config,
 		// so filing them under BUILD would claim they shape boxes. Their own
-		// section says what they actually do (audit finding: the global editor
+		// section says what they actually do (the global editor
 		// presented inert favourites as live machine-wide config).
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
@@ -766,7 +766,7 @@ func footerStart(lines []string) int {
 // as REAL newline-separated lines. clipLines truncates any longer line
 // (deliberately: soft-wrapped lines break the row accounting), which cut
 // long messages off mid-word at the pane edge — and error messages echo
-// user input, so their length is unbounded (field-QA 2026-07-17, finding 5).
+// user input, so their length is unbounded.
 func (m model) errLine(msg string) string {
 	if m.width > 0 {
 		return errTextStyle.Render(ansi.Wrap("✗ "+msg, m.width, ""))

@@ -46,7 +46,7 @@ func TestCheckCompatibility(t *testing.T) {
 	if err := CheckCompatibility(Manifest{PackageAPI: 99}, "0.2.1"); err == nil || !strings.Contains(err.Error(), "package_api") {
 		t.Fatalf("want package_api failure, got %v", err)
 	}
-	// Dev binary passes every requires_byre (Pete ruling, round 3).
+	// Dev binary passes every requires_byre.
 	if err := CheckCompatibility(Manifest{RequiresByre: ">=99.0.0"}, "0.0.0-devel"); err != nil {
 		t.Fatalf("devel should pass any requires_byre: %v", err)
 	}

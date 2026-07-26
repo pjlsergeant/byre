@@ -138,7 +138,7 @@ func TestExitReportGitConfig(t *testing.T) {
 
 	// git-lfs writes filter.lfs.{clean,smudge,process} on `git lfs install`, in
 	// every LFS repo, as ordinary setup. Ranking those would break the silence
-	// the whole feature depends on (grok review).
+	// the whole feature depends on.
 	t.Run("git lfs config is not wallpaper", func(t *testing.T) {
 		paths, dir := exitRepo(t)
 		got := exitReport(t, paths, func() {
@@ -167,7 +167,7 @@ func TestExitReportGitConfig(t *testing.T) {
 }
 
 // A watched file deleted outright takes its keys with it -- the same
-// user-visible event as clearing them one at a time (grok review).
+// user-visible event as clearing them one at a time.
 func TestExitReportWholeFileDeletion(t *testing.T) {
 	paths, dir := exitRepo(t)
 	env := filepath.Join(dir, ".env")
@@ -366,7 +366,7 @@ func TestExitReportWorktreeNamesTheMainTree(t *testing.T) {
 	}
 	// It must not read as a path inside the worktree's own checkout. Checked
 	// per LINE: the banner means the whole report never starts with ".git/",
-	// so a whole-output prefix check can never fail (grok review caught that
+	// so a whole-output prefix check can never fail
 	// this assertion was vacuous).
 	for _, line := range strings.Split(got, "\n") {
 		if strings.HasPrefix(strings.TrimLeft(line, " "), ".git/") {
@@ -396,7 +396,7 @@ func TestExitReportIncludeIsNamedNotFollowed(t *testing.T) {
 // Secrets hide in the KEY as often as the value: url.https://TOKEN@host/.insteadOf
 // and credential.https://user:pass@host.helper are ordinary CI shapes. Naming
 // the key verbatim reprints the token into scrollback -- the same channel the
-// value suppression closes (both reviewers, round 2).
+// value suppression closes.
 func TestExitReportRedactsKeyUserinfo(t *testing.T) {
 	for _, tc := range []struct{ name, key, val, secret string }{
 		{"url insteadOf", "url.https://tok3n@example.com/.insteadOf", "https://example.com/", "tok3n"},
@@ -434,7 +434,7 @@ func TestExitReportNoDanglingVerbs(t *testing.T) {
 }
 
 // A file byre could not READ this time is still sitting there. Reporting its
-// keys as gone would be a deletion byre invented (codex, round 2).
+// keys as gone would be a deletion byre invented.
 func TestExitReportUnreadableIsNotDeletion(t *testing.T) {
 	paths, dir := exitRepo(t)
 	env := filepath.Join(dir, ".env")
@@ -471,7 +471,7 @@ func TestExitReportUnreadableConfigIsNotDeletion(t *testing.T) {
 }
 
 // The mirror case: unreadable BEFORE, readable after. Without a both-sides
-// guard every key reads as newly set, which is a change byre invented (codex).
+// guard every key reads as newly set, which is a change byre invented.
 func TestExitReportUnreadableBeforeInventsNothing(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads regardless of mode")
@@ -488,7 +488,7 @@ func TestExitReportUnreadableBeforeInventsNothing(t *testing.T) {
 
 // "Cannot tell" must never become "it was deleted". An unstattable parent makes
 // both the read AND the stat fail; treating every Lstat error as absence put
-// the invented-deletion bug straight back (codex, round 4).
+// the invented-deletion bug straight back.
 func TestExitReportUnstattableParentIsNotDeletion(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root traverses regardless of mode")
@@ -510,7 +510,7 @@ func TestExitReportUnstattableParentIsNotDeletion(t *testing.T) {
 
 // A hooks directory whose SUBDIRECTORY is unreadable yields a partial map. Read
 // as complete, the hidden entries report as removed -- the invented deletion
-// again, one level down (codex, round 6).
+// again, one level down.
 func TestExitReportPartialHooksWalkIsNotDeletion(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads regardless of mode")

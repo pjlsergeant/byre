@@ -511,7 +511,7 @@ func TestRenderStatusMCPClosedRows(t *testing.T) {
 // Declared extra egress renders ON the MCP row, whatever the posture — on
 // an open network the Egress section suppresses mcp:-attributed entries as
 // noise, and without the row rendering the extras would be invisible teeth
-// a later posture toggle arms (grok review).
+// a later posture toggle arms.
 func TestRenderStatusMCPExtrasAlwaysOnRow(t *testing.T) {
 	var buf strings.Builder
 	renderStatus(&buf, statusInfo{
@@ -707,7 +707,7 @@ func TestWarnGuardCollisions(t *testing.T) {
 
 // A found engine whose daemon won't answer is UNKNOWN, never "not running" —
 // the lifecycle commands refuse in this state and status must not contradict
-// them with a confident negative (external review, 2026-07-19).
+// them with a confident negative.
 func TestStatusContainerUnknownWhenEngineQueryFails(t *testing.T) {
 	var b strings.Builder
 	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p",

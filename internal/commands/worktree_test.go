@@ -393,7 +393,7 @@ func TestWorktreeCreateFailureRemovesEmptyDir(t *testing.T) {
 	}
 }
 
-// The target-dir Mkdir is the create's ownership token (codex 2026-07-19): a
+// The target-dir Mkdir is the create's ownership token: a
 // dir that appears between Worktree's exists-check and the create — another
 // invocation's mount point — is a refusal BEFORE any container runs, and the
 // dir is left alone (it isn't ours to remove).

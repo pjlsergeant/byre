@@ -241,8 +241,8 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 	if equal {
 		return nil
 	}
-	// Non-house spellings are one construct each (grok review finds,
-	// 2026-07-25, rounds 1-2): a root-inline `sources = { ... }` rewrites
+	// Non-house spellings are one construct each: a root-inline
+	// `sources = { ... }` rewrites
 	// whole; and if ANY `[sources."id"]` subtable exists, the whole family
 	// normalizes to house shape -- with a sibling subtable still open, a
 	// per-id edit has no sound insertion point (the sibling's context would

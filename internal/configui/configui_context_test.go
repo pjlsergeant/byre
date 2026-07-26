@@ -334,11 +334,10 @@ func TestContextProseWrapFidelity(t *testing.T) {
 
 // A one-cell prose window (terminal width 5) with two-cell glyphs must
 // TERMINATE — the hard-cut path emits the next grapheme even though it
-// overflows the nominal window (codex pre-ship round 2: ansi.Truncate
-// returns "" for a wide glyph in a one-cell window, and the unchanged rest
-// looped forever, freezing the TUI). Termination is the whole claim: at a
+// overflows the nominal window: ansi.Truncate returns "" for a wide glyph in
+// a one-cell window, and the unchanged rest looped forever, freezing the TUI. Termination is the whole claim: at a
 // width this far below usable, the production clip still ellipsizes every
-// line of the form, prose included — accepted (codex round 3); a terminal
+// line of the form, prose included — accepted; a terminal
 // narrower than the gutter is not a rendering target, but it must never
 // hang.
 func TestContextProseWrapNarrowCJKTerminates(t *testing.T) {

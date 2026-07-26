@@ -60,7 +60,7 @@ func TestCheckContainedHostSource(t *testing.T) {
 	aliasRoot := filepath.Join(t.TempDir(), "alias")
 	sym(tree, aliasRoot)
 
-	// An alias into a SUBDIRECTORY of the tree (codex review): aliasSub ->
+	// An alias into a SUBDIRECTORY of the tree: aliasSub ->
 	// tree/subdir. The spelled ancestors of aliasSub/... never include the tree
 	// itself, so identity-vs-root alone misclassified this as outside; the
 	// resolved-ancestor chain above subdir must catch it.
@@ -136,7 +136,7 @@ func TestInTreeByIdentity(t *testing.T) {
 // A mount host must reach the engine CLEANED: the containment check validates
 // the cleaned spelling, so an unclean bind source (`<tree>/link/../x`) would
 // let the daemon resolve `link` first and apply `..` to its target — a
-// checker/use mismatch (codex review). expandHostPath is the one
+// checker/use mismatch. expandHostPath is the one
 // normalization point, so check and mount agree by construction.
 func TestMountHostPathReachesBindCleaned(t *testing.T) {
 	if got, err := expandHostPath("/a/b/../c/"); err != nil || got != "/a/c" {
@@ -427,7 +427,7 @@ func TestStatusRendersSiblingSessions(t *testing.T) {
 }
 
 // Siblings are named by workdir id — the bare container id said "something
-// else is running" without saying which worktree (QA pass-2 finding).
+// else is running" without saying which worktree.
 func TestSiblingNamesUseWorkdirID(t *testing.T) {
 	f := &fakeRunner{labels: map[string]string{workdirKey: "proj-wt1-abc123"}}
 	got := siblingNames(f, []string{"mine00000000"}, []string{"mine00000000", "sib000000000"})

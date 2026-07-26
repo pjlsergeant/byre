@@ -160,7 +160,7 @@ func (d *Doc) keyValueExpr(p *unstable.Parser, e *unstable.Node, table []string)
 	// KIND: the parser reports no range for an Array but a one-byte range
 	// (the opening brace) for an InlineTable -- trusting the length made the
 	// second edit of any inline-table value splice a single byte into
-	// invalid TOML (grok review find 2026-07-25, probed).
+	// invalid TOML (probed).
 	if v.Kind == unstable.Array || v.Kind == unstable.InlineTable || val.len() == 0 {
 		start := keyEnd
 		for start < whole.end && d.src[start] != '=' {
@@ -188,7 +188,7 @@ func (d *Doc) keyValueExpr(p *unstable.Parser, e *unstable.Node, table []string)
 	case unstable.Integer:
 		// The parser keeps the raw token (`3_000`, `0xBB8`); identity
 		// matching compares canonical decimal, so normalize numerically --
-		// callers pass fmt.Sprintf("%d", ...) identities (review round 3).
+		// callers pass fmt.Sprintf("%d", ...) identities.
 		if n, err := strconv.ParseInt(strings.ReplaceAll(string(v.Data), "_", ""), 0, 64); err == nil {
 			ex.strValue = strconv.FormatInt(n, 10)
 		} else {

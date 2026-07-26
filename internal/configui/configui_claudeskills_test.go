@@ -101,7 +101,7 @@ func TestClaudeSkillItemEditorCommit(t *testing.T) {
 
 // A Claude Skill edit must flip dirty — sig() has to sign m.claudeSkills or
 // quitting after an add/close loses the edit without the unsaved-changes
-// confirm (review finding).
+// confirm.
 func TestClaudeSkillEditsFlipDirty(t *testing.T) {
 	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 	if m.dirty() {
@@ -121,7 +121,7 @@ func TestClaudeSkillEditsFlipDirty(t *testing.T) {
 }
 
 // The Claude Skill editor warns — never gates — on a host dir the bake would
-// reject (field-QA 2026-07-17, finding 4). The validator that decides is the
+// reject. The validator that decides is the
 // bake's own (skills.ValidateClaudeSkillDir), so editor and develop cannot
 // disagree; the note classifies briefly.
 func TestClaudeSkillDirNoteClasses(t *testing.T) {

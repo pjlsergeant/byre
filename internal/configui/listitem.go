@@ -953,7 +953,7 @@ func portLine(p config.Port) string {
 // claudeSkillLine renders one Claude Skill declaration: name plus whichever
 // source spelling its home carries (a config path or a skill-relative from).
 // claudeSkillDirNote is the live legibility check on a declared host dir
-// (field-QA 2026-07-17, finding 4): the editor accepted a nonexistent path
+// : the editor accepted a nonexistent path
 // silently, deferring the failure to the next develop. skills.
 // ValidateClaudeSkillDir — the exact check the bake runs — decides WHETHER
 // the build would fail (so editor and develop can never disagree); the label
@@ -1055,12 +1055,12 @@ func mcpLine(mc config.MCP) string {
 // joinArgv/splitArgv are the editor's REVERSIBLE argv text form: elements
 // join on spaces; an element containing whitespace or a double quote renders
 // double-quoted, with `\\` and `\"` escapes inside the quotes (backslash
-// first, or a quoted arg ENDING in `\` would swallow its own closing quote —
-// codex review round 5). splitArgv parses exactly that back. Round-trip
+// first, or a quoted arg ENDING in `\` would swallow its own closing quote).
+// splitArgv parses exactly that back. Round-trip
 // property: splitArgv(joinArgv(x)) == x for every argv config validation
 // admits (no control characters). Not a shell: no single quotes, no
 // variable expansion — just enough to keep `["--label", "hello world"]`
-// intact through an open-and-commit (codex review round 4).
+// intact through an open-and-commit.
 func joinArgv(args []string) string {
 	parts := make([]string, len(args))
 	for i, a := range args {
@@ -1316,8 +1316,8 @@ func wrapLine(src string, w int) []string {
 			// No complete grapheme fits the window (a two-cell glyph in a
 			// one-cell window): emit the next grapheme anyway — progress
 			// beats the nominal width, and the view clip absorbs the
-			// one-glyph overflow (codex pre-ship round 2: the unchanged
-			// rest looped forever and froze the TUI).
+			// one-glyph overflow (the unchanged rest looped forever and
+			// froze the TUI).
 			for take := 1; head == ""; take++ {
 				head = ansi.Truncate(rest, take, "")
 			}

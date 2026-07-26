@@ -208,8 +208,8 @@ func TestResetPromptProceedsOnYes(t *testing.T) {
 	}
 }
 
-// Garbage at the confirm reprompts instead of silently taking the default
-// (QA pass-2); the explicit answer after it lands.
+// Garbage at the confirm reprompts instead of silently taking the default;
+// the explicit answer after it lands.
 func TestResetPromptRepromptsOnGarbage(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}

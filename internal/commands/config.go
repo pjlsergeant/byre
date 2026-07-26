@@ -219,7 +219,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 // every-installed-engine stance: this screen is the advertised deliberate-
 // delete route for machine volumes, and "logged out everywhere" would be a
 // lie if a same-named volume survived on the engine the config doesn't name
-// (the lifecycle-batch bug class; audit finding).
+// (the lifecycle-batch bug class).
 type volumeAdmin struct {
 	rs         []engineRunner
 	paths      project.Paths
@@ -312,7 +312,7 @@ func (a *volumeAdmin) List() ([]configui.VolumeStatus, []string, error) {
 		// Orphaned machine-scoped volumes: present on the engine but no longer
 		// declared by any enabled skill/config (e.g. shared-auth disabled after a
 		// login). Listed so the deliberate-delete route reset/forget advertises
-		// keeps working for them (review finding on ADR 0017's logout story).
+		// keeps working for them (ADR 0017's logout story).
 		prefix := fmt.Sprintf("byre-machine-u%d-", os.Getuid())
 		engineVols, verr := r.VolumesByPrefix(prefix)
 		if verr != nil {

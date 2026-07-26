@@ -224,7 +224,7 @@ name = "!closed-one"
 // cascade), remove neither refuses nor proceeds silently: it deletes the
 // block AND writes the closure — the closure guarantees the verb's promise
 // against whatever couldn't be checked — with the disclosure line saying
-// why (maintainer ruling 2026-07-15, revising the round-4 refusal; the
+// why (the
 // original codex finding was the silent path that resurrected servers).
 func TestMCPRemoveGuaranteesWithClosureWhenResolutionBroken(t *testing.T) {
 	dir, projPath, _, s, errw := mcpTestProject(t)

@@ -31,7 +31,7 @@
 # ca-certificates rides with curl for the same reason as in the firewall
 # skill: Debian's curl doesn't pull the trust store, so on a bare base
 # (template = "none") HTTPS diagnostics would fail TLS verification (77)
-# against reachable hosts (field-QA, 2026-07-17).
+# against reachable hosts.
 description = "Open egress with the config's !host closures dropped (open-denylist posture)."
 
 [build]

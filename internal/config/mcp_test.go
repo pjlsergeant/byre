@@ -101,8 +101,8 @@ func TestMCPLayerMarkersAndDuplicates(t *testing.T) {
 
 	// A marker carrying other fields is a mistyped real server. Headers is
 	// asserted separately: it was the one field the extras check missed
-	// (grok review, 2026-07-19) — a headers-only "closure" validated clean
-	// and silently dropped the headers.
+	// — a headers-only "closure" validated clean and silently dropped the
+	// headers.
 	c2 := Config{MCPs: []MCP{{Name: "!github", URL: "https://h/m"}}}
 	if err := c2.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "closure marker takes only a name") {
 		t.Fatalf("marker with fields: %v", err)
@@ -220,8 +220,7 @@ func TestMCPConfigJSONDeterministicAndShaped(t *testing.T) {
 
 // A basic-auth url (user:pass@host) is ACCEPTED — a self-hosted MCP behind
 // a reverse proxy is a real shape with no alternative spelling, and the
-// footgun doctrine polices the agent, never the user (maintainer ruling
-// 2026-07-15, reversing a review-round refusal). The secret bakes into the
+// footgun doctrine polices the agent, never the user. The secret bakes into the
 // image like an [env] literal; docs + `byre mcp add` disclose it. The
 // endpoint derivation must strip the userinfo from the implied egress.
 func TestMCPAcceptsBasicAuthURL(t *testing.T) {
@@ -235,7 +234,7 @@ func TestMCPAcceptsBasicAuthURL(t *testing.T) {
 	}
 }
 
-// IPv6 url hosts are supported end-to-end via the bracket grammar (grok
+// IPv6 url hosts are supported end-to-end via the bracket grammar
 // found the original refusal; Pete pulled the real fix into the arc): the
 // implied endpoint comes back bracketed + canonicalized, so downstream
 // "%s:%d" compositions re-parse and the firewall's v6 rules apply.

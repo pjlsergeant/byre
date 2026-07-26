@@ -75,7 +75,7 @@ func TestMCPSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 	// A CLOSED name is not ACTIVE: it neither delivers nor collides. That
 	// makes `!name` the duplicate error's own working remedy — including for
 	// a skill+skill collision, which no cascade merge could otherwise fix
-	// short of disabling a whole skill (codex review 2026-07-15).
+	// short of disabling a whole skill.
 	cfg3 := config.Config{
 		MCPs:      []config.MCP{{Name: "github", Command: []string{"a"}}},
 		MCPClosed: []string{"github"},

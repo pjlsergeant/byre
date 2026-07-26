@@ -263,7 +263,7 @@ func TestInstallLinuxRefusesForeignEntry(t *testing.T) {
 }
 
 func TestInstallDarwinOsacompileFailurePreservesOldApp(t *testing.T) {
-	// Review finding: regeneration must never destroy the working app when
+	// regeneration must never destroy the working app when
 	// assembly fails — compile staged, swap last.
 	d, _ := testDeps(t, "darwin")
 	s, _, _ := testStreams("", false)
@@ -287,7 +287,7 @@ func TestInstallDarwinOsacompileFailurePreservesOldApp(t *testing.T) {
 }
 
 func TestInstallDarwinRefusesForeignQuickAction(t *testing.T) {
-	// Review finding: the Quick Action check must require the explicit
+	// the Quick Action check must require the explicit
 	// marker — a wflow merely containing 'byre', or an unreadable bundle,
 	// is refused.
 	d, _ := testDeps(t, "darwin")
@@ -303,7 +303,7 @@ func TestInstallDarwinRefusesForeignQuickAction(t *testing.T) {
 		t.Fatalf("foreign quick action not refused: %v", err)
 	}
 	// The refusal preflights BEFORE the app half runs: nothing may have
-	// been installed or announced (external review: half-committed installs
+	// been installed or announced (half-committed installs
 	// make the error unreliable and the retry misleading).
 	if _, err := os.Stat(d.home + "/Applications/Byre Deliver.app"); !os.IsNotExist(err) {
 		t.Fatalf("foreign quick action refusal must leave the app uninstalled: %v", err)
@@ -318,7 +318,7 @@ func TestInstallDarwinRefusesForeignQuickAction(t *testing.T) {
 }
 
 func TestDesktopEntryEscapesBoxArgument(t *testing.T) {
-	// Review finding: --box is arbitrary user input; spaces must not split
+	// --box is arbitrary user input; spaces must not split
 	// it and % must not become a field code.
 	entry := desktopEntry("/usr/bin/byre", "my box 100%")
 	if !strings.Contains(entry, `--box "my box 100%%"`) {

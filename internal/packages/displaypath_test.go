@@ -9,7 +9,7 @@ import (
 )
 
 // The store notices must name the path byre actually used: a hardcoded
-// "~/.byre" lies under a BYRE_HOME override (field-QA 2026-07-17, finding 1).
+// "~/.byre" lies under a BYRE_HOME override.
 // DisplayPath contracts the real $HOME to "~" and leaves foreign roots alone.
 func TestDisplayPath(t *testing.T) {
 	home, err := os.UserHomeDir()

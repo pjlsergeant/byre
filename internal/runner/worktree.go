@@ -27,7 +27,7 @@ import "fmt"
 // marker and metadata this container writes are exactly where the host and the
 // next session expect them.
 //
-// Cleanup removes ONLY state this script created (codex review). A failed
+// Cleanup removes ONLY state this script created. A failed
 // `worktree add` needs no cleanup — git rolls its own partial state back — and
 // running `worktree remove --force` there would instead destroy whatever
 // ALREADY holds the target path (a concurrent invocation's registration, or a
@@ -111,7 +111,7 @@ func worktreeAddArgs(image, name string, id Identity, commonHost, commonTarget, 
 		// reads already-fetched remote-tracking refs), and this container runs
 		// repo-authored code (hooks fire on `worktree add`'s ref updates) —
 		// deny-by-default means a step that needs no egress gets none,
-		// whatever the project's session posture is (grok review).
+		// whatever the project's session posture is.
 		"--network", "none",
 		"-u", fmt.Sprintf("%d:%d", id.UID, id.GID),
 	}

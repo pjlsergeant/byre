@@ -119,8 +119,8 @@ func TestGeminiSharedAuthCompositionAndHook(t *testing.T) {
 		}
 
 		// Odd shape (string-valued security): the seed must NOT error out and
-		// must NOT mangle the user's file — left byte-for-byte untouched
-		// (codereview 2026-07-16, finding 2). Partial-object shapes still seed.
+		// must NOT mangle the user's file — left byte-for-byte untouched.
+		// Partial-object shapes still seed.
 		for _, odd := range []string{`{"security":"strict"}`, `{"security":{"auth":"external"}}`} {
 			if err := os.WriteFile(settings, []byte(odd), 0o600); err != nil {
 				t.Fatal(err)

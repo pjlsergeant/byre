@@ -205,7 +205,7 @@ func TestProfileEnvShimSourcesEnvd(t *testing.T) {
 }
 
 // The shim restores the image's ENV PATH after Debian's /etc/profile resets
-// it (QA pass-2: a go-template box had no `go` in `byre shell` or the
+// it (a go-template box had no `go` in `byre shell` or the
 // agent=none foreground shell). Additive merge: missing entries only, image
 // order preserved, prepended; already-present entries are not duplicated.
 func TestProfileEnvShimRestoresImagePath(t *testing.T) {
@@ -427,7 +427,7 @@ func TestLauncherWorktreeNoGitIsLoudAndResumable(t *testing.T) {
 
 // A linked worktree with an empty tree and NO marker (a marker a concurrent
 // box deleted, or a checkout that never happened) must surface loudly, not
-// launch silently into emptiness (codex + grok review).
+// launch silently into emptiness.
 func TestLauncherWarnsUnpopulatedWorktreeWithoutMarker(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not on PATH")

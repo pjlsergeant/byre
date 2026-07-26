@@ -9,8 +9,7 @@ import (
 // DisplayPath renders a store path for human notices: the user's real home
 // prefix contracts to "~" for readability, and any other root (BYRE_HOME
 // overrides outside $HOME, tests) prints as-is. Notices must name the path
-// byre actually used — a hardcoded "~/.byre" lies under BYRE_HOME (field-QA
-// 2026-07-17, finding 1).
+// byre actually used — a hardcoded "~/.byre" lies under BYRE_HOME.
 func DisplayPath(p string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" || home == "/" {

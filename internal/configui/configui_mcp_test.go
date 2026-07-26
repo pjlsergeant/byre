@@ -167,7 +167,7 @@ func TestMCPSigTracksChanges(t *testing.T) {
 
 // The argv text form must be REVERSIBLE: opening a declaration whose command
 // carries spaced/quoted args and committing it unchanged must not corrupt
-// the argv (codex review round 4 — join/Fields split "hello world" apart).
+// the argv (join/Fields split "hello world" apart).
 func TestMCPArgvRoundTrip(t *testing.T) {
 	cases := [][]string{
 		{"server", "--label", "hello world"},

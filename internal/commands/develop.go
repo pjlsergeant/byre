@@ -322,7 +322,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if l, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr != nil {
 			// Couldn't tell. Not knowing is not the same as knowing it ended:
 			// treating a failed query as "no container" would put the premature
-			// report straight back (codex review).
+			// report straight back.
 			liveUnknown = true
 		} else {
 			live = l
@@ -469,7 +469,7 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 // doctrine). Skipped engine names are RETURNED so an implicated engine's
 // uncertainty lands back in the engine record as unresolved and keeps being
 // re-checked -- an inconclusive check must never advance the record into
-// silence (codex review of the record scoping).
+// silence.
 func refuseCrossEngineSession(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) (skipped []string, err error) {
 	label := workdirLabel(paths)
 	for _, rr := range others {

@@ -4,7 +4,7 @@
 # the data-dir auth.json becomes a symlink into the machine-scoped identity
 # volume.
 #
-# STATUS 2026-07-16 — SCOPED TO API-KEY LOGINS ONLY (Pete's ruling):
+# STATUS 2026-07-16 — SCOPED TO API-KEY LOGINS ONLY:
 #   * Write pattern VERIFIED: opencode 1.18.3 writes auth.json IN PLACE
 #     (FileSystem.writeJson = writeFileString + chmod, no temp+rename —
 #     repo-source-verified; live-verified through a symlink). The grok

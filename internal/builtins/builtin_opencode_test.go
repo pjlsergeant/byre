@@ -342,7 +342,7 @@ func TestOpencodeSharedAuthHookBehavior(t *testing.T) {
 	}
 }
 
-// The API-key-only scope (Pete's ruling): an OAuth entry in the shared store
+// The API-key-only scope: an OAuth entry in the shared store
 // draws a friendly warning and is NEVER touched; an API-key-only store is
 // silent.
 func TestOpencodeSharedAuthWarnsOnOAuthEntry(t *testing.T) {

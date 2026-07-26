@@ -56,7 +56,7 @@ func TestFirewallSkillResolves(t *testing.T) {
 // assertCurlShipsTrustStore pins curl and ca-certificates traveling together
 // in a skill's apt list: Debian's curl doesn't pull the trust store, so on a
 // bare base (template = "none") HTTPS diagnostics fail TLS verification (77)
-// against reachable hosts without the pair (field-QA, 2026-07-17).
+// against reachable hosts without the pair.
 func assertCurlShipsTrustStore(t *testing.T, skill string, apt []string) {
 	t.Helper()
 	have := map[string]bool{}

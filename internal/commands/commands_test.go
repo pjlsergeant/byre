@@ -333,7 +333,7 @@ func TestResetForgetNeverEnrolledLeaveNoStore(t *testing.T) {
 }
 
 // A fresh machine's first --global verb must be able to create ~/.byre when
-// its write lands (AtomicWrite no longer creates directories; review finding).
+// its write lands: AtomicWrite does not create directories.
 func TestMCPAddGlobalCreatesHomeOnFreshMachine(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "fresh-byre-home")
 	t.Setenv("BYRE_HOME", home)

@@ -137,7 +137,7 @@ func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, 
 	// os.Mkdir, not MkdirAll: exactly one invocation can create it, so it is
 	// this create's OWNERSHIP TOKEN — a concurrent create of the same target
 	// is refused here, before any container runs, and the failure path below
-	// may remove the dir knowing it is this invocation's own (codex review: a
+	// may remove the dir knowing it is this invocation's own (a
 	// second create's cleanup must never unlink the first's live mount source,
 	// and its container must never race the first's registration).
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -217,7 +217,7 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 // its leaf is gated with Lstat, NEVER resolved: `.git` sits in the
 // agent-writable tree, so following a symlink there would let a planted
 // `.git -> /victim/dir` become an arbitrary rw host mount into a container
-// that runs repo hooks (grok review, 2026-07-19 — the same attacker-shaped-
+// that runs repo hooks (the same attacker-shaped-
 // path class detectWorktree refuses by inode validation). Anything but a
 // plain directory — a symlink, a gitfile (git init --separate-git-dir), any
 // special file — is refused with the manual route; a clear refusal beats

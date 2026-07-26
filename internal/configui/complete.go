@@ -89,7 +89,7 @@ func (m model) reportSaved() bool {
 	// from the endpoints, never assumed. An $EDITOR session that changed the
 	// file and left it unreadable sets no mutation flag (onEditorClosed can't
 	// prove the write), and a shortcut on savedOnce reported that session
-	// "unchanged" (codex review, round 2).
+	// "unchanged".
 	raw, err := os.ReadFile(m.filePath)
 	switch {
 	case err == nil && m.openErr == nil:
@@ -104,7 +104,7 @@ func (m model) reportSaved() bool {
 		// (permissions, I/O): the net comparison can't be trusted, and
 		// "unchanged" is claimed ONLY on positive evidence (the two cases
 		// above) — so every incomparable shape reports written, no
-		// evidence-weighing (codex round 3: weighing lied for double-fault
+		// evidence-weighing (weighing lied for double-fault
 		// endpoints). The residual false "wrote" needs a file the caller's
 		// pre-open ParseFile could read that no longer reads at quit with
 		// nothing done — an unreadable endpoint on a session that gate let
@@ -231,7 +231,7 @@ func (m model) assemble() config.Config {
 	// EXCEPT in the --global editor: there `agent` is an onboarding favourite
 	// that enables nothing, so a skills entry naming it is the user's real
 	// (and only) way to enable that skill machine-wide — stripping it made
-	// the choice silently impossible (audit finding).
+	// the choice silently impossible.
 	primaryAgent := config.FromNone(m.agentOpts[m.agentSel])
 	if m.target == TargetGlobal {
 		primaryAgent = ""
@@ -284,7 +284,7 @@ func (m model) sig() string {
 	for _, pt := range m.ports {
 		// portLine renders the effective binding, which a removal marker
 		// doesn't have — sign the marker distinctly or swapping a marker for
-		// the real binding it removes would read as clean (review finding).
+		// the real binding it removes would read as clean.
 		if pt.Remove {
 			parts = append(parts, fmt.Sprintf("port:!%d", pt.Container))
 		} else {

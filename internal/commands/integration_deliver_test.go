@@ -525,7 +525,7 @@ func TestIntegrationTUIPickerCancel(t *testing.T) {
 	s.WaitFor("deliver to which box?")
 	s.Keys("q")
 	s.WaitFor("cancelled — nothing delivered")
-	// Cancel exits 1 (ruling 2026-07-17, field-QA finding 3): every
+	// Cancel exits 1: every
 	// nothing-was-delivered outcome is nonzero — a script wrapping deliver
 	// must be able to trust rc=0 to mean bytes landed. The friendly stderr
 	// line above stays the human disambiguation.

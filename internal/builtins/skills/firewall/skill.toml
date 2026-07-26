@@ -49,7 +49,7 @@
 # it transitively via their toolchains, a bare base has nothing). Without it,
 # on template = "none", curl fails TLS verification (exit 77) against
 # ALLOWLISTED hosts — a confusing diagnostic from the skill's own diagnostic
-# tool (field-QA, 2026-07-17).
+# tool.
 description = "Default-deny egress firewall; allowlist derived from enabled skills."
 
 [build]

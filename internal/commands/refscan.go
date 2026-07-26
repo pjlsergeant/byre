@@ -67,7 +67,7 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 		// Resolution refuses invalid and reserved (bundled-shadowing) names
 		// outright — a squatter dir under such a name is never loaded into
 		// any cascade (LoadExtendsChain), so a reference or parse failure
-		// beneath one is noise, not a hit (codex review: a malformed config
+		// beneath one is noise, not a hit (a malformed config
 		// there flipped fresh installs into consent mode).
 		if config.ValidateLayerName(n) != nil || config.ReservedLayerName(cat, n) != "" {
 			continue

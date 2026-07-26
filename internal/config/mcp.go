@@ -157,10 +157,9 @@ func ValidateMCP(m MCP) error {
 		}
 		// Userinfo (user:pass@), query strings, and command argv are all
 		// ALLOWED to carry whatever the user puts there — including secrets,
-		// which then bake into the image like [env] literals. A refusal here
-		// shipped briefly (codex review round 1) and was walked back by
-		// maintainer ruling 2026-07-15: the threat model is the agent, never
-		// the user (footgun doctrine), and a basic-auth URL is a real shape
+		// which then bake into the image like [env] literals. byre does not
+		// refuse this: the threat model is the agent, never the user (footgun
+		// doctrine), and a basic-auth URL is a real shape
 		// (a self-hosted MCP behind a reverse proxy) with no alternative
 		// spelling — refusing it breaks a working setup to police the user's
 		// own config. The docs and `byre mcp add` disclose the bake instead.
@@ -200,7 +199,7 @@ func ValidateMCP(m MCP) error {
 // headerNameRe is RFC 9110's field-name token grammar (tchar), length-capped:
 // the name lands in JSON keys, codex -c TOML keys (both quoted), and status
 // rows (no control chars in tchar). Real-world names like X_API_KEY and
-// 2FA-Token are valid tokens (codex review round 10).
+// 2FA-Token are valid tokens.
 var headerNameRe = regexp.MustCompile("^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$")
 
 // headerEnvRefRe finds ${NAME} template references in header values.
@@ -319,7 +318,7 @@ func MCPConfigJSON(mcps []MCP) []byte {
 			entry["type"] = "http"
 			entry["url"] = m.URL
 			if len(m.Headers) > 0 {
-				// Templates VERBATIM — ${NAME} refs expand at launch (claude
+				// Templates VERBATIM — ${NAME} refs expand at launch
 				// natively; the codex wrapper maps/expands), so the baked
 				// file stays free of byre-placed secrets.
 				entry["headers"] = m.Headers

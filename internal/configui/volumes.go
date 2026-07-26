@@ -130,7 +130,7 @@ func (m model) viewVolumes() string {
 		// on no degrade notes: with every engine unreachable an empty list
 		// proves nothing about declarations, and "(no volumes declared)"
 		// beside "copies aren't shown" would be a contradiction — the notes
-		// alone tell the true story there (codereview finding).
+		// alone tell the true story there.
 		b.WriteString(dimStyle.Render("  (no volumes declared for this project)") + "\n")
 	}
 	// Engine degrade notes: loud (bold, not dim) — an unreachable engine
@@ -145,7 +145,7 @@ func (m model) viewVolumes() string {
 	// orphan rows have no role/target at all, so "present" floated to a
 	// different column per row (live field report, 2026-07-17).
 	// Display cells, not bytes/runes: a target path with accented or wide
-	// characters would mis-size byte- or rune-counted columns (codereview);
+	// characters would mis-size byte- or rune-counted columns;
 	// ansi.StringWidth + manual padding is the cell-true pair.
 	nameW, roleW, targetW := 0, 0, 0
 	for _, v := range m.volList {
@@ -195,7 +195,7 @@ func (m model) viewVolumes() string {
 		}
 		// State is padded too ("empty" is 5 cells, "present" 7 — pad works
 		// through the ANSI styling), or the engine suffix and shared/orphan
-		// annotations drift on mixed-state rows (codereview).
+		// annotations drift on mixed-state rows.
 		line := pad(v.Name, nameW) + "  " + pad(cell(v.Role), roleW) + "  " + pad(cell(v.Target), targetW) + "  " + pad(state, len("present"))
 		if multiEngine {
 			line += " [" + v.Engine + "]"

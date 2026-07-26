@@ -9,9 +9,8 @@
 # MAX_ARG_STRLEN (~128 KiB) — far under byre's context bounds (config
 # prose is disclosure-tiered, never capped; the technical read ceiling is
 # 16 MiB). A
-# legal-but-large context must DEGRADE loudly, not kill the exec (grok
-# review find, probed 2026-07-26): cap with a disclosure pointing at the
-# baked file, which the agent can read in-box.
+# legal-but-large context must DEGRADE loudly, not kill the exec: cap with a
+# disclosure pointing at the baked file, which the agent can read in-box.
 set -eu
 
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}

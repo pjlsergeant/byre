@@ -307,7 +307,7 @@ func hostEnvRow(m map[string]string) string {
 // Raw run_args are shown verbatim and flagged as not introspected by byre.
 // siblingNames renders the OTHER live sessions of the project (fam minus
 // mine) as "workdir-id (short-id)" — the bare container id said "something
-// else is running" without saying WHICH worktree (QA pass-2 finding). The
+// else is running" without saying WHICH worktree. The
 // label lookup is best-effort: a box missing it still shows its id.
 func siblingNames(r interface {
 	ContainerLabels(id string) (map[string]string, error)
@@ -656,8 +656,7 @@ func mcpStatusLine(d skills.MCPDecl, s statusInfo) string {
 	// Declared extra egress renders ON the row, whatever the posture: the
 	// extras join the allowlist the moment a restrictive posture arms, and
 	// the Egress section suppresses non-config attribution on an open
-	// network — without this they'd be the ADR 0019 invisible-teeth pattern
-	// (grok review, 2026-07-15).
+	// network — without this they'd be the ADR 0019 invisible-teeth pattern.
 	if len(m.Egress) > 0 {
 		notes = append(notes, "+egress "+strings.Join(m.Egress, ", "))
 	}

@@ -18,7 +18,7 @@ import (
 // All extractions live under ONE process-scoped root (byre-embed-<pid>-*),
 // removed by CleanupHostDirs at process exit — without that, every invocation
 // that touched a bundled package leaked its extraction until the OS got
-// around to /tmp (an external review counted 2,201 leaked dirs).
+// around to /tmp -- 2,201 leaked dirs were counted in one such tree.
 var (
 	hostDirMu    sync.Mutex
 	hostDirCache = map[string]string{} // key: version+"\x00"+id

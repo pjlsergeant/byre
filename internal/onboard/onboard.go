@@ -59,7 +59,7 @@ type SharedAuthOffer struct {
 	// claimant is NOT byre's own (installed/local): a third party asking to
 	// hold credentials machine-wide is the one provenance that must sit on
 	// the question line itself, unhidden — bundled skills keep the line bare
-	// and their provenance in the i-text (ruling 2026-07-17, field-QA 2).
+	// and their provenance in the i-text.
 	// VolumeNames[i] is that claimant's machine-scoped volume name (may be
 	// empty), disclosed in the i-text.
 	Claimants   []string
@@ -249,7 +249,7 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 `, c, prov, agent, vol, agent, c, agent)
 			default:
 				// Unrecognized input reprompts — an `i` typo used to read as
-				// a silent decline (QA pass-2). EOF terminates via the empty
+				// a silent decline. EOF terminates via the empty
 				// read at the top of the next pass.
 				fmt.Fprintln(out, "unrecognized — y, n, i, or Enter for the default.")
 			}
@@ -329,7 +329,7 @@ func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
 // AnswerClass is the one shared reading of a line typed at a yes/no prompt.
 // Every interactive y/N prompt in byre classifies the same way: an explicit
 // yes or no, an empty accept-the-default, and everything else REPROMPTS —
-// unrecognized input never silently lands on either side (QA pass-2: "banana"
+// unrecognized input never silently lands on either side ("banana"
 // at the shared-auth offer used to read as a decline).
 type AnswerClass int
 

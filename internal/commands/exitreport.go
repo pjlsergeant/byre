@@ -150,26 +150,26 @@ type exitSnapshot struct {
 	// actually walkable. Without it an unstattable .git makes the hooks map
 	// empty, and diffHooks reports git's own stock *.sample hooks as removed --
 	// the same invented-deletion bug as the config side, on the other half of
-	// the watch set (grok).
+	// the watch set.
 	hooksWalked bool
 	// configFromListing marks config files that exist only because the
 	// worktrees/ listing found them. When that listing failed on either side
 	// they cannot be compared -- but the common config always can, so the
-	// primary signal is never suppressed along with them (codex, grok).
+	// primary signal is never suppressed along with them.
 	configFromListing map[string]bool
 	// configListed records that the git admin dir's worktrees/ enumeration
 	// succeeded. A failed listing hides linked-worktree config files, which
-	// would then read as deleted (codex).
+	// would then read as deleted.
 	configListed bool
 	// envListed records that the project root was successfully enumerated. A
 	// failed enumeration is not an empty project: without this, every .env
-	// byre had seen would read as deleted (codex).
+	// byre had seen would read as deleted.
 	envListed bool
 	// unreadable marks a watched file that EXISTS but could not be read or
 	// parsed (a transient git probe failure, an oversize .env, a planted
 	// special file). Without it, absence from the maps is indistinguishable
 	// from deletion, and the whole-file-deletion report would announce that
-	// every key vanished from a file that is sitting right there (codex).
+	// every key vanished from a file that is sitting right there.
 	unreadable map[string]bool
 }
 
@@ -352,7 +352,7 @@ func containedHooksPath(paths project.Paths) (string, bool) {
 // counts: an EACCES on a parent directory means byre cannot tell, and "cannot
 // tell" must never become "it was deleted" -- that is the whole point of the
 // unreadable state, and treating every Lstat error as absence quietly
-// reintroduced the bug it exists to prevent (codex). Never follows a final
+// reintroduced the bug it exists to prevent. Never follows a final
 // symlink and opens nothing.
 func confirmedAbsent(p string) bool {
 	_, err := os.Lstat(p)
@@ -378,7 +378,7 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) bool
 			// An unreadable subdirectory hides entries. Continuing produces a
 			// PARTIAL map, and a partial map read as complete reports the
 			// hidden hooks as removed -- the same invented deletion, one level
-			// down (codex).
+			// down.
 			complete = false
 			return nil
 		}
@@ -495,7 +495,7 @@ func reportExit(w io.Writer, before, after exitSnapshot) {
 func diffHooks(before, after exitSnapshot) []string {
 	// Neither side may be guessed at: an unwalkable hooks dir is not an empty
 	// one, and saying git's own sample hooks were "removed" is a change byre
-	// invented (grok).
+	// invented.
 	if !before.hooksWalked || !after.hooksWalked {
 		return nil
 	}
@@ -524,7 +524,7 @@ func diffConfig(before, after exitSnapshot) []string {
 	var out []string
 	// say picks the verb to match whether a value follows it. A shared
 	// "is set to" for both cases left suppressed lines reading as truncated
-	// English -- ".git/config: credential.helper is set to" (grok).
+	// English -- ".git/config: credential.helper is set to".
 	say := func(file, key, value string, had bool) {
 		label := redactKeyUserinfo(key)
 		if configValueShown(key) && value != "" {
@@ -546,14 +546,14 @@ func diffConfig(before, after exitSnapshot) []string {
 	}
 	for file, akv := range after.config {
 		// Unreadable on EITHER side means byre has no basis for a comparison:
-		// an unreadable BEFORE would otherwise report every key as newly set
-		// (codex). Say nothing rather than invent a change.
+		// an unreadable BEFORE would otherwise report every key as newly set.
+		// Say nothing rather than invent a change.
 		if before.unreadable[file] || after.unreadable[file] {
 			continue
 		}
 		// A file only one enumeration could see cannot be compared: treating a
 		// newly VISIBLE worktree config as newly SET is the addition-side
-		// mirror of the deletion bug (codex, grok).
+		// mirror of the deletion bug.
 		if (before.configFromListing[file] || after.configFromListing[file]) &&
 			(!before.configListed || !after.configListed) {
 			continue
@@ -575,7 +575,7 @@ func diffConfig(before, after exitSnapshot) []string {
 	// A watched config file that disappeared takes its keys with it -- the same
 	// user-visible event as clearing them one by one. Only when it is really
 	// GONE: a file byre could not read this time is still there, and saying its
-	// keys vanished would be a lie byre invented (codex).
+	// keys vanished would be a lie byre invented.
 	for file, bkv := range before.config {
 		if _, still := after.config[file]; still || after.unreadable[file] || before.unreadable[file] {
 			continue

@@ -140,7 +140,7 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 // namespace — see the opencode hook's comment), so a unit test can't build a
 // sibling-identity fixture; a temp-dir target is foreign under BOTH the old
 // wildcard and the new equality. The narrowing itself is pinned by the source
-// assertions below (codereview 2026-07-17); the behavioral cases cover
+// assertions below; the behavioral cases cover
 // foreign-link removal and the logged-in short-circuit.
 func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	_, cat := testCat(t)

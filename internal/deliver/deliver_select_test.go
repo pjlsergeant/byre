@@ -34,7 +34,7 @@ func TestSoleSessionAutoPick(t *testing.T) {
 
 // A worktree box shares its project's id; the target line must name it by
 // its own workdir id or main-tree and worktree deliveries are
-// indistinguishable except by container id (QA pass-2 finding).
+// indistinguishable except by container id.
 func TestDeliveryLineNamesWorktreeBox(t *testing.T) {
 	eng := box("docker", "aaa")
 	eng.labels["aaa"]["byre.workdir"] = "proj-wt1-aaa"
@@ -317,7 +317,7 @@ func TestPickerNotConsultedWhenUnambiguous(t *testing.T) {
 }
 
 func TestUnreadableIdentityNotBlamedOnUIDFilter(t *testing.T) {
-	// Review finding: a session whose env can't be read must NOT be counted
+	// a session whose env can't be read must NOT be counted
 	// as "hidden; --skip-uid-check to include" — that flag can't reveal it.
 	eng := box("docker", "aaa")
 	eng.envErr = fmt.Errorf("inspect broke")
@@ -396,8 +396,8 @@ func TestPartialWarningIsOneLine(t *testing.T) {
 
 func TestPermissionFailureStaysPartial(t *testing.T) {
 	// A permission/TLS failure against a possibly-RUNNING daemon must keep
-	// the loud partial-pool semantics, not classify as unreachable (codex
-	// field-fix review: sessions exist and are merely invisible).
+	// the loud partial-pool semantics, not classify as unreachable: the
+	// sessions exist and are merely invisible.
 	broken := &fakeEngine{name: "docker", idsErr: fmt.Errorf("permission denied while trying to connect to the Docker daemon socket")}
 	eng := box("podman", "aaa")
 	cfg, _, errw := testConfig(broken, eng)

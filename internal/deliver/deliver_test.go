@@ -682,8 +682,8 @@ func mustSymlink(t *testing.T, oldname, newname string) {
 func mkfifo(p string) error { return syscall.Mkfifo(p, 0o600) }
 
 func TestDirectoryRenameIsNoted(t *testing.T) {
-	// grok review finding: a control-char DIRECTORY name was sanitized
-	// silently while files printed a note.
+	// A control-char DIRECTORY name was sanitized silently while files printed
+	// a note.
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng)
 	dir := t.TempDir()
@@ -703,8 +703,8 @@ func TestDirectoryRenameIsNoted(t *testing.T) {
 }
 
 func TestDirSummaryCountsFailedDirEntries(t *testing.T) {
-	// grok review finding: with only an interior mkdir failing, the summary
-	// claimed "N of N files" — the failed-entries count must be visible.
+	// With only an interior mkdir failing, the summary claimed "N of N files";
+	// the failed-entries count must be visible.
 	eng := box("docker", "aaa")
 	eng.failMkdir = true
 	cfg, _, errw := testConfig(eng)

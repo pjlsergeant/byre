@@ -75,7 +75,7 @@ type Catalog struct {
 	order []string
 
 	// Stage2Skill / Stage2Template run eager stage-2 classification on local
-	// packages at ingest (Pete ruling, round 3). Supplied by the caller via
+	// packages at ingest. Supplied by the caller via
 	// LoadCatalog's hooks — packages cannot import the schema parsers
 	// (skills/config import packages; the other direction would cycle).
 	// Bundled packages never use these.
@@ -427,7 +427,7 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		return nil
 	}
 
-	// Eager stage-2 classification (round 3): local packages that fail the
+	// Eager stage-2 classification: local packages that fail the
 	// same strict parse as Load/validate become INVALID rows. Primary only —
 	// no payload/context file I/O. Bundled packages skip this.
 	if kind == KindSkill && c.Stage2Skill != nil {

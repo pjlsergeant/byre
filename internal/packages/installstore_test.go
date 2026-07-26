@@ -169,8 +169,7 @@ func TestInstalledBrokenRowsAreScoped(t *testing.T) {
 
 // A digest from the index becomes a path component that removal deletes
 // RECURSIVELY — a corrupted or hand-edited index must be rejected whole at
-// read time, and the deletion gate must hold even if a bad value slips past
-// (grok-external review, 2026-07-19).
+// read time, and the deletion gate must hold even if a bad value slips past.
 func TestReadIndexRejectsMalformedDigests(t *testing.T) {
 	for _, bad := range []string{
 		"../victim",

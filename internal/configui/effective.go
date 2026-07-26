@@ -258,8 +258,8 @@ func (m model) claudeSkillRows() []listRow {
 }
 
 // claudeSkillRowText is the DISPLAY text for a config-declared Claude Skill
-// row: the line plus the live build-will-fail note (field-QA 2026-07-17,
-// finding 4). Kept out of claudeSkillLine, which feeds the dirty signature —
+// row: the line plus the live build-will-fail note. Kept out of
+// claudeSkillLine, which feeds the dirty signature —
 // a filesystem-tracking suffix there would flip dirty with no edit.
 func claudeSkillRowText(cs config.ClaudeSkill) string {
 	line := claudeSkillLine(cs)
@@ -476,7 +476,7 @@ func (m model) egressRows() []listRow {
 	// (first offerer wins the credit). Open/offered comparison is on the
 	// NORMALIZED host:port ("github.com" == "github.com:443" at enforcement
 	// time), and skill egress counts as open too -- an offered row claiming a
-	// reachable host is closed would be a lie (review finding).
+	// reachable host is closed would be a lie.
 	normalize := func(e string) string {
 		host, port, err := config.ParseEgress(e)
 		if err != nil {
@@ -744,7 +744,7 @@ func (m model) portRows() []listRow {
 		c := p.Container
 		// Attribute by the full effective identity, not container alone: two
 		// layers may bind the same container port on different interfaces/host
-		// ports, and each row must name its own layer (review finding).
+		// ports, and each row must name its own layer.
 		k := portKey(p)
 		src := m.lowerSource(func(cf config.Config) bool { return hasPortKey(cf.Ports, k) })
 		switch {

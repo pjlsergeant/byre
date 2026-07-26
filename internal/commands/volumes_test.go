@@ -110,7 +110,7 @@ func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
 // screen — the advertised deliberate-delete route — must show one row per
 // engine copy and clear exactly the row's engine, or its "logged out
 // everywhere" claim is false while the other engine keeps the login alive
-// (the lifecycle-batch bug class; audit finding).
+// (the lifecycle-batch bug class).
 func TestVolumeAdminListsAndClearsPerEngine(t *testing.T) {
 	p, dir := testPaths(t)
 	orphan := machineVolumeName(os.Getuid(), "claude-identity")

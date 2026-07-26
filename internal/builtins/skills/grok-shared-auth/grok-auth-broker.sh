@@ -48,8 +48,7 @@ EPCACHE="$BASE/token_endpoint"
 # loop adds up to 60s jitter, so anything above 360 keeps us ahead of every
 # grok-initiated call. Never emit a token with less than MIN_EMIT left: a
 # token under grok's 300s buffer is already "expired" the moment grok stores
-# it, and emitting one just thrashes the refresh loop (review finding,
-# 2026-07-16) — failing instead lets grok's own 300s failure TTL pace the
+# it, and emitting one just thrashes the refresh loop -- failing instead lets grok's own 300s failure TTL pace the
 # retries while its in-memory token keeps the session alive.
 MARGIN=420
 MIN_EMIT=360
@@ -60,7 +59,7 @@ MIN_EMIT=360
 # then the window self-expires and the next call force-refreshes.
 SIBLING_FRESH=60
 
-# GROK_AUTH_EXPIRED=1 accompanies every 5s-budget refresh invocation (grok
+# GROK_AUTH_EXPIRED=1 accompanies every 5s-budget refresh invocation
 # sets it whenever it considers the stored token expired — occasionally that
 # includes the patient login path, where the tight budget is merely
 # conservative); scale every wait to the least-patient caller that can carry
@@ -156,8 +155,7 @@ if [ "${GROK_AUTH_EXPIRED:-}" = "1" ]; then
   # grok says the token it holds is dead — from expiry OR a 401 rejection;
   # the flag doesn't distinguish. The STORE's wall-clock freshness must not
   # short-circuit here: on a server-side revocation the stored pair still
-  # looks fresh, and re-emitting it would 401-loop (review finding,
-  # 2026-07-16). The one token emittable without refreshing is a pair
+  # looks fresh, and re-emitting it would 401-loop. The one token emittable without refreshing is a pair
   # rotated moments ago — almost always a sibling box's refresh, i.e. a
   # different token (see SIBLING_FRESH for the bounded residual).
   age=$(entry_age "$KEY")

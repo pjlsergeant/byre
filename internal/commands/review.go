@@ -43,7 +43,7 @@ func effectiveReview(paths project.Paths, proposal config.Config) (config.Config
 	grants = append(grants, skillGrantSummary(res)...)
 	// The EFFECTIVE MCP set — skill contributions included, attributed —
 	// so a preset can't enable a skill whose wiring (and carried reach)
-	// goes undisclosed at confirm time (codex review round 2).
+	// goes undisclosed at confirm time.
 	mcps, merr := skills.MCPSet(effective, res)
 	grants = append(grants, mcpGrantLines(mcps, merr)...)
 	return effective, sortGrantLines(grants)

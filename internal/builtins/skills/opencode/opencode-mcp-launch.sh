@@ -58,7 +58,7 @@ fi
 # ON TOP: mcp servers win per-name (the precedence opencode itself gives this
 # env layer), instructions UNION. A user's non-array `instructions` (a bare
 # string some configs use) coerces to a one-element array rather than
-# bricking the launch on a jq type error (grok review find, probed); any
+# bricking the launch on a jq type error; any
 # other wrong type is dropped — opencode itself would refuse it.
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 base=${OPENCODE_CONFIG_CONTENT:-'{}'}

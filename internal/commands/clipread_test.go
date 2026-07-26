@@ -153,7 +153,7 @@ func TestParseDarwinClipInfoJPEGAndGIF(t *testing.T) {
 
 func TestReadClipboardFetchErrorFallsThrough(t *testing.T) {
 	// A type the backend advertises but can't serve must degrade to the next
-	// tier, not take working text down with it (grok review finding).
+	// tier, not take working text down with it.
 	cb := clipBackend{
 		listTypes: func() ([]string, error) { return []string{typeFileRefs, "image/png", "text/plain"}, nil },
 		fetch: func(typ string) ([]byte, error) {

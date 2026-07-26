@@ -191,7 +191,7 @@ func TestWriteProjectConfigWritesOptedSkills(t *testing.T) {
 
 // An explicit "none" answer is stored as the literal sentinel — an omitted
 // scalar would mean "inherit" and let a template silently override the
-// user's explicit no (audit finding 5).
+// user's explicit no.
 func TestWriteProjectConfigStoresNoneExplicitly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "byre.config")
 	if err := WriteProjectConfig(path, "", "claude", nil); err != nil {
@@ -287,8 +287,7 @@ func TestOfferSharedAuth(t *testing.T) {
 	// The question is self-disclosing — "machine-wide" is the credential's
 	// scope — while the WRITE stays this-box-only (stated in the i-text);
 	// the line never claims the answer reaches all projects. Bundled
-	// claimants keep the line bare: no provenance parenthetical
-	// (ruling 2026-07-17, field-QA finding 2).
+	// claimants keep the line bare: no provenance parenthetical.
 	if !strings.Contains(out.String(), SharedAuthPrompt("claude")+" [y/N, i for info]") {
 		t.Fatalf("offer must be the bare machine-wide question, defaulting No:\n%s", out.String())
 	}
@@ -346,7 +345,7 @@ func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 	if err != nil || yes {
 		t.Fatalf("explicit n must override the preference: yes = %v, err = %v", yes, err)
 	}
-	// Garbage REPROMPTS (QA pass-2: it used to read as a silent decline —
+	// Garbage REPROMPTS (it used to read as a silent decline —
 	// an `i` typo threw the offer away); the explicit answer after it lands.
 	out.Reset()
 	yes, err = offerSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\nn\n")), "claude", "claude-shared-auth", true)
@@ -365,7 +364,7 @@ func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 }
 
 // Every y/N prompt shares one behavior: y/n answers, Enter takes the default,
-// anything else reprompts (QA pass-2: garbage used to read as the default).
+// anything else reprompts (garbage used to read as the default).
 func TestAskYesNoDefaultReprompts(t *testing.T) {
 	var out bytes.Buffer
 	yes, err := askYesNoDefault(&out, bufio.NewReader(strings.NewReader("banana\ny\n")), "Proceed?", false)
@@ -488,8 +487,7 @@ func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
 
 // A FOREIGN claimant — a third-party or local skill asking to hold
 // machine-wide credentials — carries its provenance on the question line
-// itself, loud for third parties; bundled claimants keep the line bare
-// (ruling 2026-07-17, field-QA finding 2; the i-text carries the rest).
+// itself, loud for third parties; bundled claimants keep the line bare.
 func TestOfferSharedAuthForeignProvenanceOnQuestionLine(t *testing.T) {
 	var out bytes.Buffer
 	offer := SharedAuthOffer{

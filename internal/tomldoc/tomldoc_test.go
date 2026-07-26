@@ -306,7 +306,7 @@ func TestProseRendererFallback(t *testing.T) {
 }
 
 // Replacing or removing the LAST block must not consume a trailing comment
-// separated by a blank line (review finding 2026-07-25) — while a
+// separated by a blank line — while a
 // blank-separated comment BETWEEN a block's key-values stays block content.
 func TestBlockEndLeavesDetachedTrailingComment(t *testing.T) {
 	src := `[[mcp]]
@@ -379,8 +379,8 @@ func TestDottedSpellingSetAndRemove(t *testing.T) {
 	mustParse(t, d)
 }
 
-// A descendant subtable ([mcp.headers] under [[mcp]]) is block content
-// (review round 2): replace/remove must take it, and it must not migrate to
+// A descendant subtable ([mcp.headers] under [[mcp]]) is block content:
+// replace/remove must take it, and it must not migrate to
 // a preceding peer; a same-named key INSIDE the subtable is not the block's
 // identity.
 func TestBlockIncludesDescendantSubtables(t *testing.T) {
@@ -431,9 +431,9 @@ FOO = "bar"
 }
 
 // Integer identities normalize numerically: `container = 3_000` and hex
-// spellings match the canonical decimal identity (review round 3 — raw-token
-// comparison silently missed them, so a port edit appended a duplicate
-// instead of replacing).
+// spellings match the canonical decimal identity. Raw-token comparison
+// silently missed them, so a port edit appended a duplicate instead of
+// replacing.
 func TestIntegerIdentityNormalizes(t *testing.T) {
 	d := load(t, "[[ports]]\ncontainer = 3_000\n\n[[ports]]\ncontainer = 0xBB8 # 3000 in hex? no — 0xBB8 is 3000\n")
 	ok, err := d.RemoveArrayTable("ports", "container", "3000")
@@ -453,9 +453,8 @@ func TestIntegerIdentityNormalizes(t *testing.T) {
 
 // The SECOND edit of an inline-table value must work: the parser reports an
 // InlineTable's Raw as just the opening brace, so trusting the length made
-// the re-edit splice one byte into invalid TOML (grok review find,
-// 2026-07-25 — byre's own house shapes are inline tables, so every
-// change-after-first-write hit this).
+// the re-edit splice one byte into invalid TOML. byre's own house shapes are
+// inline tables, so every change-after-first-write hit this.
 func TestInlineTableValueSecondEdit(t *testing.T) {
 	d := load(t, "shared_auth = { \"claude\" = \"old\" } # keep\nbase = \"node:22\"\n")
 	if err := d.SetKey(nil, "shared_auth", `{ "claude" = "new" }`); err != nil {

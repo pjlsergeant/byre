@@ -408,7 +408,7 @@ func TestPresetInspectMutatesNothing(t *testing.T) {
 }
 
 // Consent is to replacing the REVIEWED store config: a concurrent write to
-// byre.config between review and the locked landing must abort (codex P1).
+// byre.config between review and the locked landing must abort.
 func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"codex\"\n")
@@ -429,7 +429,7 @@ func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
 	}
 }
 
-// file: preset sources get the real URI parse, not a prefix trim (grok).
+// file: preset sources get the real URI parse, not a prefix trim.
 func TestPresetReadFileURI(t *testing.T) {
 	_, proj := onboardPaths(t)
 	elsewhere := filepath.Join(t.TempDir(), "team.preset")
@@ -451,7 +451,7 @@ func TestPresetReadFileURI(t *testing.T) {
 }
 
 // An EXISTING but unreadable byre.config must abort apply before the review
-// -- both reads failing must never read as "no current config" (codex P1).
+// -- both reads failing must never read as "no current config".
 func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("mode 000 is not enforceable as root")
@@ -478,7 +478,7 @@ func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 }
 
 // The conventional ./byre.preset gets the same size bound as explicit
-// sources (codex P2).
+// sources.
 func TestPresetConventionalPathIsBounded(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, strings.Repeat("# pad\n", packages.MaxManifestBytes/6+1))
@@ -488,7 +488,7 @@ func TestPresetConventionalPathIsBounded(t *testing.T) {
 }
 
 // Grant-summary lines carry preset-controlled bytes: the review escapes them
-// before styling, so hostile run_args cannot forge rows (codex round 3).
+// before styling, so hostile run_args cannot forge rows.
 func TestPresetReviewEscapesGrantLines(t *testing.T) {
 	_, proj := onboardPaths(t)
 	// Raw control bytes fail TOML parsing; the realistic vector is a TOML
@@ -507,7 +507,7 @@ func TestPresetReviewEscapesGrantLines(t *testing.T) {
 }
 
 // Inspect treats only ABSENCE as no-config; other read failures abort
-// instead of silently omitting the promised diff (codex round 3).
+// instead of silently omitting the promised diff.
 func TestPresetInspectAbortsOnUnreadableStoreConfig(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("mode 000 is not enforceable as root")

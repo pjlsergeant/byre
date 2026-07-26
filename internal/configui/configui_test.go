@@ -100,7 +100,7 @@ func TestPickerOptsPreservesUnknown(t *testing.T) {
 		t.Fatalf("unset should add only none: %v", got)
 	}
 	// A configured literal "none" IS the sentinel, never a preserved value —
-	// the QA pass-2 double-[none] rendering bug.
+	// or the picker renders [none] twice.
 	if got := pickerOpts([]string{"claude"}, "none"); !reflect.DeepEqual(got, []string{"claude", "none"}) {
 		t.Fatalf("configured none duplicated the sentinel: %v", got)
 	}
@@ -598,7 +598,7 @@ func TestCtrlSSavesFromSubScreens(t *testing.T) {
 }
 
 // Error lines WRAP to the terminal width instead of truncating at the pane
-// edge (field-QA 2026-07-17, finding 5): clipLines cuts any longer line, so
+// edge: clipLines cuts any longer line, so
 // an unwrapped long message — they echo user input, unbounded — silently
 // lost its tail. Every wrapped line must fit, and the message's TAIL must
 // survive to the screen.

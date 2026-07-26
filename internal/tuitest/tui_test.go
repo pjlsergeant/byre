@@ -98,7 +98,7 @@ func TestIntegrationTUIBeatCancelDegraded(t *testing.T) {
 
 	s.WaitFor("no clipboard access here")
 	s.Keys("C-c")
-	// Cancel exits 1 (ruling 2026-07-17, field-QA finding 3): nothing was
+	// Cancel exits 1: nothing was
 	// delivered, so scripts must see nonzero; the notice stays for humans.
 	if st := s.WaitForExit(); st != 1 {
 		t.Fatalf("cancel should exit 1 (nothing delivered), got %d\n%s", st, s.CaptureNow())
