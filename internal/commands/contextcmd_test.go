@@ -346,7 +346,7 @@ func TestContextListShowsDeliveryVerdict(t *testing.T) {
 	if err := ContextList(s, dir); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); !strings.Contains(got, "injected by the agent command from /etc/byre/agent-context.md") {
+	if got := out.String(); !strings.Contains(got, "the agent command injects the baked text (/etc/byre/agent-context.md") {
 		t.Fatalf("delivery verdict missing:\n%s", got)
 	}
 }

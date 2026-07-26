@@ -295,6 +295,14 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	if cc != "" {
 		ctx += "\n\n" + cc
 	}
+	// The per-declaration tiers can't see a CUMULATIVE crossing (two 60 KiB
+	// snippets, or prose stacked on chassis + skill context), and the argv
+	// transport caps the COMBINED text — warn on the composed total too, so
+	// the size-aware surface covers every truncation the wrappers disclose
+	// (codex merge review).
+	if len(ctx) > argvChannelBudget {
+		fmt.Fprintf(warn, "byre: ⚠ the composed instructions total %s — agents on argument-based injection channels truncate near 100 KiB, with an in-session disclosure; file-channel agents carry the full text.\n", fmtSize(len(ctx)))
+	}
 	if err := ctxRoot.WriteFile(gen.AgentContextName, []byte(ctx), 0o644); err != nil {
 		return "", err
 	}
@@ -513,6 +521,12 @@ const (
 	contextWarnBytes   = 500 << 10 // a lot: suggest a skill
 	contextShoutBytes  = 1 << 20   // wrong home: say so loudly
 	contextReadCeiling = 16 << 20  // file reads only: not agent-memory-sized
+	// argvChannelBudget mirrors the wrappers' whole-argument byte budget
+	// (100000, under the ~131072 per-string exec limit): past this, the
+	// argv-channel agents truncate — the composed-total warning fires here
+	// so the develop report covers cumulative crossings the per-declaration
+	// tiers can't see.
+	argvChannelBudget = 100000
 )
 
 // warnContextSize emits the tier note for one snippet's prose size.

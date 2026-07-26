@@ -750,7 +750,7 @@ func TestRenderStatusContextDelivery(t *testing.T) {
 	if !strings.Contains(out, "conventions  (file: ~/notes/conv.md)") {
 		t.Errorf("file row wrong:\n%s", out)
 	}
-	if !strings.Contains(out, "the agent session receives the text (injected by the agent command from /etc/byre/agent-context.md)") {
+	if !strings.Contains(out, "the agent command injects the baked text (/etc/byre/agent-context.md") {
 		t.Errorf("inject verdict wrong:\n%s", out)
 	}
 

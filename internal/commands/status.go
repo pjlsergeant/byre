@@ -761,7 +761,7 @@ func contextDeliveryLine(s statusInfo) string {
 	case s.Agent == "":
 		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
 	case s.AgentContext == "inject":
-		return "-> the agent session receives the text (injected by the agent command from " + baked + ")"
+		return "-> the agent command injects the baked text (" + baked + "; argument-channel agents truncate very large context, disclosed in-session)"
 	default:
 		return fmt.Sprintf("-> NOT delivered: agent skill %s has no context adapter — the text bakes to %s; wire it into the agent yourself", s.Agent, baked)
 	}

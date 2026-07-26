@@ -319,8 +319,8 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 // The grok launch adapter injects baked context + session additions as ONE
 // --append-system-prompt argv element, and caps the value under Linux's
 // per-argument exec limit (~128 KiB) with a loud disclosure instead of
-// killing the exec (grok review find, probed: MAX_ARG_STRLEN binds well
-// under byre's 1 MiB context budget).
+// killing the exec (grok review find, probed: MAX_ARG_STRLEN binds far
+// under byre's uncapped-but-tiered context bounds).
 func TestGrokLaunchWrapperInjectsAndCaps(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash unavailable")
