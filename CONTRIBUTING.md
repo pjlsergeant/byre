@@ -76,6 +76,10 @@ deliberate, with its reason on file:
   notebook by design, not an unedited draft.
 - **Per-package test helpers are duplicated on purpose.** Small
   unexported helpers beat a shared test-util package.
+- **Feature scale-backs proposed by complexity reviews were adjudicated
+  and rejected.** The package manager, typed skill fields, and the
+  legibility rows stay; ADR 0048 records the rulings and the guardrails
+  that replaced the cuts.
 - **Long cobra `Long` texts are not bloat.** They render the site's
   commands page via a byte pin -- one source, two surfaces; trimming
   the help trims the docs.

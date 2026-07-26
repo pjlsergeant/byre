@@ -203,6 +203,22 @@ instances found by the same audit (comment destruction behind a warning,
 a `seed_prefs` bool that couldn't be un-set) were dispositioned
 same-day rather than grandfathered -- ADR 0044 and ADR 0045.
 
+## Accretion guardrails
+
+Standing rules against configuration-surface sprawl, promoted from the
+2026-07-18 complexity review after surviving contact (ADR 0048 -- kept
+unnumbered so `PRINCIPLES.md §n` cites stay unambiguous):
+
+- No new top-level config class until it shares the named-declaration
+  rails.
+- No new removal/absence spelling; new absence semantics reuse an
+  existing one.
+- No new compatibility path without a stated removal release (windows
+  and inventory: ADR 0049).
+- A new typed skill field needs a stated justification: a second
+  consumer, a security reason raw fields can't carry, or a legibility
+  reason status must understand it.
+
 ## What byre is not
 
 Boundary statements, kept here so they don't get re-argued feature by

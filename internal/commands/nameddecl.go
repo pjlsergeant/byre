@@ -214,6 +214,12 @@ func removeNamedDecl[T any](s Streams, projectDir string, global bool, v declVer
 // effective set with `cur` as the project layer (post tentative edit). An
 // unresolvable check returns its error; the caller writes the guaranteeing
 // closure and disclosure, never a refusal or a silent false.
+//
+// The catalog -> ResolveProposed -> skills.Resolve orchestration is inlined
+// here AND at review/preset sites with deliberately different error
+// handling: this site must guarantee a closure, review degrades to
+// best-effort. Consolidate only when the policies converge -- extraction
+// waits for a second consumer with the SAME policy, not a lookalike.
 func declStillEffective[T any](cur config.Config, v declVerbs[T], name string) (bool, error) {
 	home, err := project.Home()
 	if err != nil {

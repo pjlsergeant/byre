@@ -1,5 +1,14 @@
 // listitem.go owns the list-field modes: the item browser (modeList) and the
 // single-item add/edit editor (modeItem) for apt, env, mounts, and ports.
+//
+// The per-field operation switches below stay switches, not descriptor
+// hooks, on a measured call: after the named-declaration genus extraction
+// removed the mcp/claude-skill duplication, each switch is ONE case per
+// field -- field-specific behavior with one home each, not copies -- and
+// folding them into descriptors adds indirection without deleting code.
+// Revisit when a new list field lands and the touch-point count still
+// hurts (identity is already one fieldInfos row; behavior is one case per
+// operation switch).
 package configui
 
 import (

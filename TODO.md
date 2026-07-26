@@ -17,6 +17,22 @@ the rationale lives.
 
 ## Open
 
+- [ ] (XS) **Retire legacy `byre.config` preset name at window end** (ADR 0049
+  #2): refuse with the rename remedy; release-time call.
+- [ ] (XS) **Schedule archive-legacy machinery removal at window end**
+  (ADR 0049 #3): collapse to RetiredNames tombstones.
+- [ ] (S) **shared_auth array-shape retirement: build the warning channel first**
+  (ADR 0049 #1). No parse-time warning channel exists; the array shape is also
+  round-tripped by EncodeTOMLLine. Warn one release, then drop both arms.
+- [ ] (M) **config.CatalogLoader silent nil-fallback** (ADR 0049 residue): an
+  entrypoint that skips builtins gets a bundled-less catalog silently; the
+  real fix is threading a catalog into config.Load's signature (the staged
+  lifecycle-split territory).
+- [ ] (L) **Config lifecycle split, staged** (ADR 0049): move merge state
+  (EgressClosed, MCPClosed, ClaudeSkillsClosed, Sources.From) out of the
+  persisted struct so Merge no longer tolerates its own output as input;
+  only then decide whether the full type split pays.
+
 - [ ] (XS) **Warn when an `env_from_host` source resolves empty** (2026-07-20).
   A devbox with no global git identity got no `GIT_AUTHOR_*` in the box, but
   `byre status` still showed `<- git:user.email` as if delivery were assured;
