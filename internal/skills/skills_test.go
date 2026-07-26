@@ -324,3 +324,26 @@ func TestResolveMissingSkillPrintsSourceHint(t *testing.T) {
 		t.Fatalf("remedy missing:\n%v", err)
 	}
 }
+
+// ReservedEnv surfaces exactly the BYRE_-namespace runtime env keys, with
+// skill attribution, deterministically ordered -- the data the status
+// degradation lines render. Ordinary skill env stays out of it.
+func TestReservedEnvListsOnlyByreNamespace(t *testing.T) {
+	var a, b File
+	a.Runtime.Env = map[string]string{"BYRE_LAUNCH_GATE_FILE": "/dev/null", "PATH_EXTRA": "/x", "BYRE_CONTEXT_DIR": "/tmp"}
+	b.Runtime.Env = map[string]string{"NODE_ENV": "dev"}
+	r := Resolved{Skills: []Skill{{Name: "evil", File: a}, {Name: "plain", File: b}}}
+	got := r.ReservedEnv()
+	want := []ReservedEnvSet{
+		{Skill: "evil", Key: "BYRE_CONTEXT_DIR"},
+		{Skill: "evil", Key: "BYRE_LAUNCH_GATE_FILE"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ReservedEnv = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ReservedEnv[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

@@ -3,8 +3,10 @@ package commands
 import (
 	"fmt"
 	"io"
+	"maps"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -48,6 +50,16 @@ type statusInfo struct {
 	MCPClosed   []string
 	AgentMCP    string
 	EnvProvided map[string]bool
+	// EnvKeys are the config [env] keys (sorted): rendered so the one
+	// config table that reaches every box process is never invisible.
+	// Values are omitted -- the row is exposure legibility, and the
+	// security model already discloses where the values live (image
+	// layers). BYRE_* keys can't appear here (refused at validation).
+	EnvKeys []string
+	// SkillReservedEnv are skill runtime-env keys in byre's reserved
+	// BYRE_ namespace: accepted (trusted machinery) but rendered, with
+	// the claims each can skew degraded -- see reservedEnvClaims.
+	SkillReservedEnv []skills.ReservedEnvSet
 	// ClaudeSkills is the effective declared Claude Skill set — wiring, not
 	// grants, zero exposure contribution (claudeskills.go); the closed/vouch
 	// fields mirror the MCP trio.
@@ -147,6 +159,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	for k := range cfg.Env {
 		info.EnvProvided[k] = true
 	}
+	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
 	for k, src := range cfg.EnvFromHost {
 		if src != "" {
 			info.EnvProvided[k] = true
@@ -208,6 +221,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
 			}
+			info.SkillReservedEnv = res.ReservedEnv()
 		}
 	}
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
@@ -573,6 +587,13 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Host env", hostEnv)
 	}
 
+	// Config [env]: the one table every box process inherits. Keys only --
+	// this row is exposure legibility, not a value dump; where the values
+	// live (image layers, docker history) is the security model's page.
+	if len(s.EnvKeys) > 0 {
+		row("Env", strings.Join(s.EnvKeys, ", ")+"  (baked into the image)")
+	}
+
 	// Skill-granted runtime holes, attributed to the skill that opened them.
 	for i, g := range s.Grants {
 		label := "Skill grants"
@@ -598,6 +619,19 @@ func renderStatus(w io.Writer, s statusInfo) {
 			parts = append(parts, "sock group access via "+p+" (gid resolved at launch; wider than the named path)")
 		}
 		row(label, g.Skill+": "+strings.Join(parts, "; "))
+	}
+
+	// Skill-set reserved BYRE_* variables: accepted (a skill is trusted
+	// machinery, P2) but never silent -- each line names the skill, the
+	// key, and the claims that stop being warranted while it is set. The
+	// same key in config [env] is refused at validation instead.
+	for i, e := range s.SkillReservedEnv {
+		label := "Reserved env"
+		if i > 0 {
+			label = ""
+		}
+		row(label, fmt.Sprintf("⚠ %s sets %s — byre runtime control; the %s claim(s) above ride it",
+			e.Skill, e.Key, strings.Join(reservedEnvClaims(e.Key), " + ")))
 	}
 
 	if len(s.RunArgs) > 0 {
@@ -703,6 +737,8 @@ func mcpDeliveryLine(s statusInfo) string {
 		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.MCPConfigPath
 	case s.Agent == "":
 		return "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"
+	case reservedEnvTouches(s, "MCP delivery"):
+		return "-> delivery not warranted: a skill sets byre's MCP controls (see Reserved env)"
 	case s.AgentMCP == "inject":
 		return fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath)
 	default:
@@ -759,6 +795,8 @@ func contextDeliveryLine(s statusInfo) string {
 		return "-> delivery unknown (skills unresolved); the text bakes to " + baked
 	case s.Agent == "":
 		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
+	case reservedEnvTouches(s, "context delivery"):
+		return "-> delivery not warranted: a skill sets byre's context controls (see Reserved env)"
 	case s.AgentContext == "inject":
 		return "-> the agent command injects the baked text (" + baked + "; argument-channel agents truncate very large context, disclosed in-session)"
 	default:
@@ -929,6 +967,40 @@ func warnGuardMountCollisions(w io.Writer, cfg config.Config, res skills.Resolve
 	}
 }
 
+// reservedEnvClaims names the status claims one reserved BYRE_ variable
+// can skew, for the degradation lines. Unknown BYRE_* keys (a future
+// chassis knob this map hasn't met) conservatively degrade "network" --
+// the claim with the most riding on it -- plus "launch". The chassis-
+// knob inventory itself is pinned by gen's
+// TestChassisScriptKnobsRideReservedPrefix.
+func reservedEnvClaims(key string) []string {
+	switch key {
+	case "BYRE_EGRESS", "BYRE_EGRESS_DENY", "BYRE_LAUNCH_GATE_FILE", "BYRE_LAUNCH_GATE_TIMEOUT":
+		return []string{"network"}
+	case "BYRE_CONTEXT_DIR", "BYRE_AGENT_CONTEXT", "BYRE_SESSION_CONTEXT":
+		return []string{"context delivery"}
+	case "BYRE_MCP_CONFIG":
+		return []string{"MCP delivery"}
+	case "BYRE_WORKSPACE_DIR", "BYRE_ENVD_DIR", "BYRE_FIRSTRUN_DIR",
+		"BYRE_IMAGE_PATH_FILE", "BYRE_ASSUME_TTY", "BYRE_GEMINI_DIR",
+		"BYRE_IDENTITY_BASE", "BYRE_UID", "BYRE_GID", "BYRE_PROJECT", "BYRE_WORKTREE":
+		return []string{"launch"}
+	default:
+		return []string{"network", "launch"}
+	}
+}
+
+// reservedEnvTouches reports whether any skill-set reserved variable can
+// skew the named claim -- the hedge predicate the claim lines consult.
+func reservedEnvTouches(s statusInfo, claim string) bool {
+	for _, e := range s.SkillReservedEnv {
+		if slices.Contains(reservedEnvClaims(e.Key), claim) {
+			return true
+		}
+	}
+	return false
+}
+
 // networkLine renders the Network row. Default: "open". With a skill-declared
 // posture, the claim follows the footgun doctrine's honesty rules — status
 // only asserts unqualified what byre set up itself, and never blocks anything:
@@ -964,6 +1036,9 @@ func networkLine(s statusInfo) string {
 	}
 	if s.GuardMountShadow {
 		raw = append(raw, "a mount/volume over a security path")
+	}
+	if reservedEnvTouches(s, "network") {
+		raw = append(raw, "a skill setting byre's network controls")
 	}
 	if len(raw) > 0 {
 		return claim + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"

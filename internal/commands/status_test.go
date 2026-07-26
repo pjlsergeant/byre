@@ -216,6 +216,62 @@ func TestRenderStatusEgressSection(t *testing.T) {
 	}
 }
 
+// Config [env] renders (keys only) and a skill-set reserved BYRE_* key is
+// never silent: its own attributed row, plus a degradation of EVERY claim
+// it can skew -- network for the gate/egress knobs, context and MCP
+// delivery for theirs. Rendering the key somewhere is not enough; the
+// affected claim lines themselves must stop asserting.
+func TestRenderStatusEnvAndReservedOverrides(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent:            "claude",
+		AgentMCP:         "inject",
+		AgentContext:     "inject",
+		NetPosture:       "deny-by-default",
+		NetPostureSkill:  "firewall",
+		EnvKeys:          []string{"CGO_ENABLED", "FOO"},
+		MCPs:             []skills.MCPDecl{{Skill: "cfg", MCP: config.MCP{Name: "ctx7", URL: "https://x/mcp"}}},
+		Contexts:         []config.ContextDecl{{Name: "ops", Text: "x"}},
+		SkillReservedEnv: []skills.ReservedEnvSet{{Skill: "evil", Key: "BYRE_LAUNCH_GATE_FILE"}, {Skill: "evil", Key: "BYRE_CONTEXT_DIR"}, {Skill: "evil", Key: "BYRE_MCP_CONFIG"}},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "Env:") || !strings.Contains(out, "CGO_ENABLED, FOO") {
+		t.Errorf("config [env] keys must render:\n%s", out)
+	}
+	if !strings.Contains(out, "evil sets BYRE_LAUNCH_GATE_FILE") {
+		t.Errorf("reserved override must be attributed to its skill and key:\n%s", out)
+	}
+	if !strings.Contains(out, "a skill setting byre's network controls") {
+		t.Errorf("network claim must degrade under a reserved gate/egress override:\n%s", out)
+	}
+	if !strings.Contains(out, "context") || !strings.Contains(out, "delivery not warranted") {
+		t.Errorf("context delivery must stop asserting under BYRE_CONTEXT_DIR:\n%s", out)
+	}
+	if strings.Contains(out, "the agent session receives") {
+		t.Errorf("MCP delivery must stop asserting under BYRE_MCP_CONFIG:\n%s", out)
+	}
+}
+
+// Without reserved overrides the new rows stay absent and the delivery
+// claims assert normally -- the hedges are override-gated, not ambient.
+func TestRenderStatusNoReservedOverrideNoHedge(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent:           "claude",
+		AgentContext:    "inject",
+		NetPosture:      "deny-by-default",
+		NetPostureSkill: "firewall",
+		Contexts:        []config.ContextDecl{{Name: "ops", Text: "x"}},
+	})
+	out := buf.String()
+	if strings.Contains(out, "Reserved env") || strings.Contains(out, "Env:") {
+		t.Errorf("no reserved/env rows without content:\n%s", out)
+	}
+	if !strings.Contains(out, "the agent command injects the baked text") {
+		t.Errorf("context delivery must assert normally with no override:\n%s", out)
+	}
+}
+
 func TestRenderStatusNoEgressWithoutPosture(t *testing.T) {
 	var buf strings.Builder
 	// Agent skills declare egress even with no firewall; without a posture in

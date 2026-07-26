@@ -358,6 +358,31 @@ func (r Resolved) Env() map[string]string {
 	return env
 }
 
+// ReservedEnvSet is one skill runtime-env key inside byre's reserved
+// BYRE_ namespace: the variables that parameterize the chassis scripts.
+// A skill setting one is ACCEPTED -- enabling a skill is trusting it,
+// and refusal here would be theater while raw Dockerfile lines exist --
+// but never silent: status renders each and degrades the claims it can
+// skew (the same key is refused outright in config [env]).
+type ReservedEnvSet struct {
+	Skill string
+	Key   string
+}
+
+// ReservedEnv lists the skills' BYRE_-namespace runtime env keys, in
+// enable order then key order -- deterministic for rendering.
+func (r Resolved) ReservedEnv() []ReservedEnvSet {
+	var out []ReservedEnvSet
+	for _, sk := range r.Skills {
+		for _, k := range slices.Sorted(maps.Keys(sk.File.Runtime.Env)) {
+			if strings.HasPrefix(k, "BYRE_") {
+				out = append(out, ReservedEnvSet{Skill: sk.Name, Key: k})
+			}
+		}
+	}
+	return out
+}
+
 // RunArgs concatenates the skills' raw run args, in enable order.
 func (r Resolved) RunArgs() []string {
 	var out []string
