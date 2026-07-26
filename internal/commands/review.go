@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -178,6 +180,15 @@ func grantSummary(c config.Config) []grantLine {
 	// not this proposal's ask, so they don't cry wolf here.
 	if extra := extraHostEnv(c.EnvFromHost); len(extra) > 0 {
 		s = append(s, grantLine{Text: "passes host values into the box's env: " + strings.Join(extra, ", ")})
+	}
+	// Config [env] is not a host grant, but it reaches every box process
+	// and bakes into the image -- content you consented to without
+	// authoring deserves the same ⚠ weight whichever table it rides in
+	// (the review's preset-vector finding: an [env] line rendered as one
+	// unremarkable TOML line in a body a user may skim). Reserved BYRE_*
+	// keys never get this far: validation refuses the apply outright.
+	if len(c.Env) > 0 {
+		s = append(s, grantLine{Text: "sets env in every box process, baked into the image: " + strings.Join(slices.Sorted(maps.Keys(c.Env)), ", ")})
 	}
 	if len(c.Skills) > 0 {
 		s = append(s, grantLine{Text: "enables skills (each can add mounts/caps/run_args/volumes): " + strings.Join(c.Skills, ", ")})

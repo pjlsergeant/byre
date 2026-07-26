@@ -31,6 +31,20 @@ func TestGrantSummaryMarksDisabledMounts(t *testing.T) {
 	}
 }
 
+// A preset's [env] table reaches every box process and bakes into the
+// image -- consented-to-but-not-authored content gets a summary line, not
+// one unremarkable TOML line in a skimmable body (the review's preset-
+// vector finding). Keys, sorted; an empty table adds nothing.
+func TestGrantSummaryListsEnvKeys(t *testing.T) {
+	got := grantTexts(grantSummary(config.Config{Env: map[string]string{"ZED": "1", "AAA": "2"}}))
+	if !strings.Contains(got, "sets env in every box process") || !strings.Contains(got, "AAA, ZED") {
+		t.Errorf("[env] keys must appear in the grant summary, sorted: %q", got)
+	}
+	if got := grantTexts(grantSummary(config.Config{})); strings.Contains(got, "sets env") {
+		t.Errorf("no [env], no line: %q", got)
+	}
+}
+
 // The summary's charter (nothing smuggled unseen) covers every Grant class
 // it owns: machine-scoped volumes — the shared-credential shape, and the only
 // grant that crosses project scope — plus ports. Egress is the caller's per
