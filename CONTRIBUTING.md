@@ -62,7 +62,12 @@ The conventions, for humans and their agents alike:
   a skill. Dependencies are added on demonstrated merit.
 
 Settled positions a reviewer will be tempted to flag -- each is
-deliberate, with its reason on file:
+deliberate, with its reason on file. These aren't taboo, they're
+pre-litigated: if you want to re-open one, steelman it first -- state
+the current position's strongest case in your own words, then say
+precisely where it fails. An objection that clears that bar gets
+engaged on the merits; one that doesn't was already answered by the
+reason each entry carries:
 
 - **`internal/commands` is one flat package.** It is a thin adapter
   layer whose private substrate refactors freely BECAUSE it is
