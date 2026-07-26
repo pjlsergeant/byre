@@ -861,8 +861,8 @@ func TestAssembleFilesRejectsEscapeAndRelativeDest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(paths.Canonical, "f"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Assemble(paths, config.Config{Files: map[string]string{"f": "relative/dest"}}, skills.Resolved{}); err == nil {
-		t.Error("expected rejection of non-absolute destination")
+	if _, err := Assemble(paths, config.Config{Files: map[string]string{"f": "relative/dest"}}, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "must be an absolute path in the image") {
+		t.Errorf("non-absolute destination must be refused by the files-dest rule, got: %v", err)
 	}
 }
 

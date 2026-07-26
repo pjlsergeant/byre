@@ -359,8 +359,8 @@ func TestNodeTemplateContainerNodeModules(t *testing.T) {
 func TestDevloopRetired(t *testing.T) {
 	_, cat := testCat(t)
 	_, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"devloop"}}, cat)
-	if err == nil {
-		t.Fatal("a config naming the retired devloop stub must fail resolve")
+	if err == nil || !strings.Contains(err.Error(), "renamed to devlog") {
+		t.Fatalf("a config naming the retired devloop stub must fail resolve via its tombstone, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "pjlsergeant/devlog") {
 		t.Fatalf("the failure must carry the tombstone's remedy: %v", err)

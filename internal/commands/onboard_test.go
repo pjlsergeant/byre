@@ -59,8 +59,8 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := onboardIfNeeded(discardStreams(), proj, p, "", "codex", nil)
-	if err == nil {
-		t.Fatal("expected an error when a flag is passed to an already-configured project")
+	if err == nil || !strings.Contains(err.Error(), "already configured") {
+		t.Fatalf("a flag against a configured project must refuse with already-configured, got: %v", err)
 	}
 	// Names the current agent (canonical byre/claude after catalog expand)
 	// and the full path to the file.

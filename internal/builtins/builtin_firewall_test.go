@@ -115,8 +115,8 @@ func TestFirewallOpenSkillResolves(t *testing.T) {
 		// firewall sibling.
 		assertCurlShipsTrustStore(t, "firewall-open", sk.File.Build.Apt)
 	}
-	if _, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall", "firewall-open"}}, cat); err == nil {
-		t.Error("firewall + firewall-open must be rejected (two posture declarers)")
+	if _, err := skills.Resolve(config.Config{Agent: "claude", Skills: []string{"firewall", "firewall-open"}}, cat); err == nil || !strings.Contains(err.Error(), "both declare a network_posture") {
+		t.Errorf("firewall + firewall-open must be rejected by the two-posture rule, got: %v", err)
 	}
 }
 

@@ -29,8 +29,8 @@ func TestSourcesParseMergeAndTemplateRemedy(t *testing.T) {
 		},
 	}
 	_, err = resolveWithCatalog(home, proj, cat)
-	if err == nil {
-		t.Fatal("missing template must error")
+	if err == nil || !strings.Contains(err.Error(), "template") {
+		t.Fatalf("missing template must error on the template rule, got: %v", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "byre template install https://new.example/box/template.config --digest sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") {

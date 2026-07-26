@@ -11,8 +11,8 @@ func TestCheckProto(t *testing.T) {
 		t.Fatalf("same version: %v", err)
 	}
 	err := CheckProto(ProtoVersion + 1)
-	if err == nil {
-		t.Fatal("future version accepted")
+	if err == nil || !strings.Contains(err.Error(), "is not supported") {
+		t.Fatalf("a future protocol version must refuse by the version rule, got: %v", err)
 	}
 	for _, want := range []string{fmt.Sprint(ProtoVersion + 1), fmt.Sprint(ProtoVersion), "update"} {
 		if !strings.Contains(err.Error(), want) {
@@ -137,14 +137,16 @@ func TestParseBoxesRoundTrip(t *testing.T) {
 }
 
 func TestParseBoxesRejectsPollution(t *testing.T) {
-	for _, in := range []string{
-		"aaa\tdocker\tproj\n",               // too few fields
-		"aaa\tdocker\tproj\twd\tf\textra\n", // too many
-		"\tdocker\tproj\twd\t\n",            // empty id
-		"some banner text\n",                // stdout pollution
+	// Each declared failure mode must trip ITS rule -- one blanket nil-check
+	// would stay green if a single rule caught all four inputs.
+	for _, tc := range []struct{ in, rule string }{
+		{"aaa\tdocker\tproj\n", "3 fields, want 5"},               // too few fields
+		{"aaa\tdocker\tproj\twd\tf\textra\n", "6 fields, want 5"}, // too many
+		{"\tdocker\tproj\twd\t\n", "empty id"},                    // empty id
+		{"some banner text\n", "1 fields, want 5"},                // stdout pollution
 	} {
-		if _, err := ParseBoxes(in); err == nil {
-			t.Errorf("ParseBoxes(%q) accepted", in)
+		if _, err := ParseBoxes(tc.in); err == nil || !strings.Contains(err.Error(), tc.rule) {
+			t.Errorf("ParseBoxes(%q): want the %q rule, got: %v", tc.in, tc.rule, err)
 		}
 	}
 }

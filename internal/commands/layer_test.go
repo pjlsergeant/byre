@@ -64,8 +64,8 @@ func TestLayerNewScaffoldsAndGates(t *testing.T) {
 
 	// Name grammar is enforced before any path is built.
 	s4, _, _ := testStreams("", false)
-	if err := LayerNew(s4, "../evil"); err == nil {
-		t.Error("path-shaped layer name must be refused")
+	if err := LayerNew(s4, "../evil"); err == nil || !strings.Contains(err.Error(), "want lowercase [a-z0-9-]") {
+		t.Errorf("path-shaped layer name must be refused by the name grammar, got: %v", err)
 	}
 }
 
@@ -132,8 +132,8 @@ func TestLayerValidate(t *testing.T) {
 	// A broken layer fails validate-all with its reason.
 	writeLayerFile(t, home, "broken", "template = \"go\"\n")
 	s3, _, err3 := testStreams("", false)
-	if err := LayerValidate(s3, ""); err == nil {
-		t.Fatal("validate-all with a broken layer must fail")
+	if err := LayerValidate(s3, ""); err == nil || !strings.Contains(err.Error(), "broken layer") {
+		t.Fatalf("validate-all must fail on the broken-layer count rule (the per-layer detail rides the stream), got: %v", err)
 	}
 	if !strings.Contains(err3.String(), "template is not allowed in a layer file") {
 		t.Errorf("broken reason missing, got: %s", err3.String())
@@ -190,8 +190,12 @@ func TestLayerValidateEscapesHostileBytes(t *testing.T) {
 
 	s, _, _ := testStreams("", false)
 	err := LayerValidate(s, "evil")
+	// Which rule refuses is incidental here (the TOML parser rejects the
+	// control character before the unknown-key rule could): the contract
+	// under test is the next assertion -- hostile bytes never reach the
+	// error text raw.
 	if err == nil {
-		t.Fatal("unknown key must fail validate")
+		t.Fatal("a hostile-key layer must fail validate")
 	}
 	if strings.Contains(err.Error(), "\x1b") {
 		t.Errorf("error text must not carry raw control bytes: %q", err.Error())

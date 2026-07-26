@@ -129,11 +129,11 @@ func TestPackICNS(t *testing.T) {
 }
 
 func TestPackICNSRejectsBadSizes(t *testing.T) {
-	if _, err := packICNS(testPNG(t, 100)); err == nil {
-		t.Fatal("100px should be rejected")
+	if _, err := packICNS(testPNG(t, 100)); err == nil || !strings.Contains(err.Error(), "must be 128, 256, 512, or 1024") {
+		t.Fatalf("100px must be rejected by the size rule, got: %v", err)
 	}
-	if _, err := packICNS([]byte("not a png")); err == nil {
-		t.Fatal("non-PNG should be rejected")
+	if _, err := packICNS([]byte("not a png")); err == nil || !strings.Contains(err.Error(), "must be a PNG") {
+		t.Fatalf("non-PNG must be rejected by the decode rule, got: %v", err)
 	}
 }
 

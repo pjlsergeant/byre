@@ -158,8 +158,8 @@ func TestMatchPick(t *testing.T) {
 	if _, ok, err := matchPick(sessions, ""); ok || err != nil {
 		t.Fatalf("empty answer should be a clean no: ok=%v err=%v", ok, err)
 	}
-	if _, _, err := matchPick(sessions, "nonsense"); err == nil {
-		t.Fatal("unknown answer must error, not guess")
+	if _, _, err := matchPick(sessions, "nonsense"); err == nil || !strings.Contains(err.Error(), "unknown choice") {
+		t.Fatalf("unknown answer must error by the unknown-choice rule, not guess, got: %v", err)
 	}
 }
 

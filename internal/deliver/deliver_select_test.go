@@ -376,8 +376,8 @@ func TestUnreachableEngineNoteSurfacesOnNotFound(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng, stale)
 	src := writeFile(t, "f.txt", "x")
-	if _, err := RunSources(cfg, Options{Box: "nope"}, PathSources([]string{src})); err == nil {
-		t.Fatal("expected --box miss")
+	if _, err := RunSources(cfg, Options{Box: "nope"}, PathSources([]string{src})); err == nil || !strings.Contains(err.Error(), "no running box matches --box") {
+		t.Fatalf("a --box miss must refuse by the no-match rule, got: %v", err)
 	}
 	if !strings.Contains(errw.String(), "podman isn't reachable; skipping it") {
 		t.Fatalf("skip note should surface on a not-found: %q", errw.String())

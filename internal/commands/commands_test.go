@@ -202,8 +202,8 @@ func TestDockerfileHonorsByreHomeAndCollision(t *testing.T) {
 	}
 
 	s, _, _ := testStreams("", false)
-	if err := Dockerfile(s, proj); err == nil {
-		t.Fatal("expected collision error from Dockerfile, got nil")
+	if err := Dockerfile(s, proj); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("Dockerfile must fail on the id-collision rule, got: %v", err)
 	}
 }
 
@@ -258,14 +258,14 @@ func TestNoWriteFlowsDoNotEnrollProject(t *testing.T) {
 		}},
 		{"mcp remove nothing", func(t *testing.T, proj string) {
 			s, _, _ := testStreams("", false)
-			if err := MCPRemove(s, proj, false, "ghost"); err == nil {
-				t.Fatal("expected nothing-to-remove error")
+			if err := MCPRemove(s, proj, false, "ghost"); err == nil || !strings.Contains(err.Error(), "nothing to remove") {
+				t.Fatalf("must refuse with nothing-to-remove, got: %v", err)
 			}
 		}},
 		{"claude-skill remove nothing", func(t *testing.T, proj string) {
 			s, _, _ := testStreams("", false)
-			if err := ClaudeSkillRemove(s, proj, false, "ghost"); err == nil {
-				t.Fatal("expected nothing-to-remove error")
+			if err := ClaudeSkillRemove(s, proj, false, "ghost"); err == nil || !strings.Contains(err.Error(), "nothing to remove") {
+				t.Fatalf("must refuse with nothing-to-remove, got: %v", err)
 			}
 		}},
 	}
@@ -512,7 +512,7 @@ func TestEjectSurfacesUnfirewalled(t *testing.T) {
 		t.Errorf("unfirewalled dockerrun should not warn: %q", errBuf.String())
 	}
 	s2, _, _ := testStreams("", false)
-	if err := EjectFirewall(s2, proj); err == nil {
-		t.Fatal("ejectfirewall without a firewall skill should refuse")
+	if err := EjectFirewall(s2, proj); err == nil || !strings.Contains(err.Error(), "nothing to eject") {
+		t.Fatalf("ejectfirewall without a firewall skill must refuse with nothing-to-eject, got: %v", err)
 	}
 }

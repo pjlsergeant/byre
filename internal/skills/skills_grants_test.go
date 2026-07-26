@@ -15,8 +15,8 @@ func TestResolveRejectsCrossSkillEnvConflict(t *testing.T) {
 	writeSkill(t, dir, "a", "[runtime]\nenv = { EDITOR = \"vim\" }\n", nil)
 	writeSkill(t, dir, "b", "[runtime]\nenv = { EDITOR = \"emacs\" }\n", nil)
 	_, err := Resolve(config.Config{Skills: []string{"a", "b"}}, catFor(t, dir))
-	if err == nil {
-		t.Fatal("expected an error for a cross-skill env conflict")
+	if err == nil || !strings.Contains(err.Error(), "both set env") {
+		t.Fatalf("a cross-skill env conflict must refuse by the both-set rule, got: %v", err)
 	}
 	// The error must name both skills and the key, so the fix is obvious.
 	for _, want := range []string{"a", "b", "EDITOR"} {

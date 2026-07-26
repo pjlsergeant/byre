@@ -251,8 +251,8 @@ func TestUninstallScansAndRemoves(t *testing.T) {
 	mustWriteFile(t, filepath.Join(pdir, "byre.config"), []byte("agent = \"none\"\nskills = [\"pete/tool\"]\n"), 0o644)
 
 	// Pipe without --yes refuses (always).
-	if err := PackageUninstall(discardStreams(), packages.KindSkill, "pete/tool", false); err == nil {
-		t.Fatal("uninstall in a pipe must demand --yes")
+	if err := PackageUninstall(discardStreams(), packages.KindSkill, "pete/tool", false); err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("uninstall in a pipe must demand --yes by the confirmation rule, got: %v", err)
 	}
 	s, _, errBuf := testStreams("", false)
 	if err := PackageUninstall(s, packages.KindSkill, "pete/tool", true); err != nil {
@@ -484,8 +484,8 @@ func TestUninstallMultiClaimantStaysContested(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.ResolveName("pete/tool"); err == nil {
-		t.Fatal("id must stay conflicted after removing one of three claimants")
+	if _, err := cat.ResolveName("pete/tool"); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("id must stay conflicted after removing one of three claimants, got: %v", err)
 	}
 }
 

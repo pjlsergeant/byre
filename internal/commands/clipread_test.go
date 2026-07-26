@@ -125,8 +125,8 @@ func TestParseDarwinHexData(t *testing.T) {
 	if string(got) != "\x89PNG" {
 		t.Fatalf("decoded = %q", got)
 	}
-	if _, err := parseDarwinHexData("something else", "PNGf"); err == nil {
-		t.Fatal("bad shape should error")
+	if _, err := parseDarwinHexData("something else", "PNGf"); err == nil || !strings.Contains(err.Error(), "unexpected clipboard data shape") {
+		t.Fatalf("bad shape must error by the shape rule, got: %v", err)
 	}
 }
 

@@ -266,8 +266,8 @@ func TestResolveNoAgent(t *testing.T) {
 func TestResolveRejectsUnsafeSkillName(t *testing.T) {
 	dir := t.TempDir()
 	_, err := Resolve(config.Config{Skills: []string{"../evil"}}, catFor(t, dir))
-	if err == nil {
-		t.Fatal("expected rejection of skill name with path separator")
+	if err == nil || !strings.Contains(err.Error(), "invalid skill name") {
+		t.Fatalf("a path-separator skill name must be rejected by the name grammar, got: %v", err)
 	}
 	// The name GRAMMAR must reject it — a missing-skill error would mean the
 	// load-bearing ValidateID check is gone and the lookup happened to fail.

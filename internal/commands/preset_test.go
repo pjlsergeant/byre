@@ -424,8 +424,8 @@ func TestPresetReadFileURI(t *testing.T) {
 			t.Errorf("readPreset(%q): %v", arg, err)
 		}
 	}
-	if _, _, _, err := readPreset(proj, "file://evil.example/x"); err == nil {
-		t.Error("non-local file host must be rejected")
+	if _, _, _, err := readPreset(proj, "file://evil.example/x"); err == nil || !strings.Contains(err.Error(), "host") {
+		t.Errorf("non-local file host must be rejected by the file-URI host rule (a plain missing-file error also keeps a bare nil-check green), got: %v", err)
 	}
 	// Exact-basename legacy detection: not-byre.config is NOT legacy-named.
 	notLegacy := filepath.Join(t.TempDir(), "not-byre.config")
@@ -467,8 +467,8 @@ func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 func TestPresetConventionalPathIsBounded(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, strings.Repeat("# pad\n", packages.MaxManifestBytes/6+1))
-	if _, _, _, err := readPreset(proj, ""); err == nil {
-		t.Fatal("oversized conventional preset must be rejected")
+	if _, _, _, err := readPreset(proj, ""); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("oversized conventional preset must be rejected by the size bound, got: %v", err)
 	}
 }
 
@@ -555,8 +555,8 @@ func TestPresetApplyFailsOnMissingLayer(t *testing.T) {
 
 	s, _, _ := testStreams("y\n", true)
 	err := PresetApply(s, proj, "")
-	if err == nil {
-		t.Fatal("apply with a missing layer must fail loudly")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("apply with a missing layer must fail on the layer-not-found rule, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), config.LayerPath(p.Home, "torn")) {
 		t.Errorf("error should name the exact path to create, got: %v", err)

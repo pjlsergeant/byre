@@ -253,8 +253,8 @@ func TestRehomeSameIDErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	s, _, _ := testStreams("", false)
 	err := rehome(s, p, p.ID, engines(&fakeRunner{}), 1000, 1000)
-	if err == nil {
-		t.Fatal("expected error rehoming to the same id")
+	if err == nil || !strings.Contains(err.Error(), "already homed here") {
+		t.Fatalf("rehoming to the same id must refuse with already-homed, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "already homed here") {
 		t.Errorf("wrong rule fired: %v", err)

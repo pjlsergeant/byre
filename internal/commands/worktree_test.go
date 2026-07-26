@@ -61,8 +61,8 @@ func TestWorktreeRefusesWithoutLocation(t *testing.T) {
 	repo := initRepo(t)
 	t.Setenv("BYRE_HOME", t.TempDir()) // empty ~/.byre -> no worktree_base
 	err := Worktree(discardStreams(), repo, "feat", "", false)
-	if err == nil {
-		t.Fatal("expected refusal without --path or worktree_base")
+	if err == nil || !strings.Contains(err.Error(), "needs a location") {
+		t.Fatalf("worktree without --path or worktree_base must refuse with the needs-a-location rule, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "byre config") || !strings.Contains(err.Error(), "--path") {
 		t.Errorf("error should name both remedies (byre config / --path): %v", err)

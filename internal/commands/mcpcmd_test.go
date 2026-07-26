@@ -69,9 +69,14 @@ func TestMCPAddRemoteAndLocal(t *testing.T) {
 		t.Errorf("update must say so: %s", errw)
 	}
 
-	// A bad declaration is refused before any write.
-	if err := MCPAdd(s, dir, false, "Bad_Name", []string{"x"}, nil, nil, nil, ""); err == nil {
-		t.Fatal("bad name must refuse")
+	// A bad declaration is refused before any write: the rule names itself
+	// and the stored config is byte-identical after the refusal.
+	pre := readStoreConfig(t, dir)
+	if err := MCPAdd(s, dir, false, "Bad_Name", []string{"x"}, nil, nil, nil, ""); err == nil || !strings.Contains(err.Error(), "must be lowercase [a-z0-9-]") {
+		t.Fatalf("bad name must refuse by the name grammar, got: %v", err)
+	}
+	if got := readStoreConfig(t, dir); got != pre {
+		t.Fatalf("a refused add must not write: config changed\nbefore: %q\nafter: %q", pre, got)
 	}
 	// A basic-auth url is the user's own choice (footgun doctrine): accepted,
 	// with the bakes-into-the-image disclosure printed.
@@ -271,14 +276,37 @@ func TestMCPAddHeadersAndBearer(t *testing.T) {
 		t.Errorf("env-refs disclosure missing: %s", out)
 	}
 
-	// Shape errors refuse before any write.
-	if err := MCPAdd(s, dir, false, "x", []string{"https://h/m"}, nil, nil, []string{"no-colon-here"}, ""); err == nil {
-		t.Fatal("malformed --header must refuse")
+	// Shape errors refuse before any write, each by its own rule, leaving
+	// the stored config byte-identical.
+	pre := readStoreConfig(t, dir)
+	if err := MCPAdd(s, dir, false, "x", []string{"https://h/m"}, nil, nil, []string{"no-colon-here"}, ""); err == nil || !strings.Contains(err.Error(), `--header wants "Name: value"`) {
+		t.Fatalf("malformed --header must refuse by its shape rule, got: %v", err)
 	}
-	if err := MCPAdd(s, dir, false, "x", []string{"https://h/m"}, nil, nil, nil, "not a name"); err == nil {
-		t.Fatal("malformed --bearer must refuse")
+	if err := MCPAdd(s, dir, false, "x", []string{"https://h/m"}, nil, nil, nil, "not a name"); err == nil || !strings.Contains(err.Error(), "--bearer wants an env var NAME") {
+		t.Fatalf("malformed --bearer must refuse by its shape rule, got: %v", err)
 	}
-	if err := MCPAdd(s, dir, false, "x", []string{"srv"}, nil, nil, nil, "TOK"); err == nil {
-		t.Fatal("bearer on a local server must refuse (headers are remote-only)")
+	if err := MCPAdd(s, dir, false, "x", []string{"srv"}, nil, nil, nil, "TOK"); err == nil || !strings.Contains(err.Error(), "headers are for remote (url) servers") {
+		t.Fatalf("bearer on a local server must refuse by the remote-only rule, got: %v", err)
 	}
+	if got := readStoreConfig(t, dir); got != pre {
+		t.Fatalf("a refused add must not write: config changed\nbefore: %q\nafter: %q", pre, got)
+	}
+}
+
+// readStoreConfig snapshots the stored project config for the
+// refused-means-unwritten assertions; absence reads as "".
+func readStoreConfig(t *testing.T, projectDir string) string {
+	t.Helper()
+	p, err := project.Resolve(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(p.Dir, config.ProjectConfigName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		t.Fatal(err)
+	}
+	return string(b)
 }

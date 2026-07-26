@@ -186,8 +186,8 @@ func TestMCPArgvRoundTrip(t *testing.T) {
 			t.Errorf("round trip lost data: %v -> %q -> %v", argv, joinArgv(argv), got)
 		}
 	}
-	if _, err := splitArgv(`bad "unterminated`); err == nil {
-		t.Error("unterminated quote must error")
+	if _, err := splitArgv(`bad "unterminated`); err == nil || !strings.Contains(err.Error(), "unterminated") {
+		t.Errorf("unterminated quote must error by the quote rule, got: %v", err)
 	}
 
 	// The regression as the user hits it: open the existing item, commit

@@ -85,8 +85,8 @@ func TestExtendsCycleIsNamedError(t *testing.T) {
 	writeProjectCfg(t, proj, "extends = \"a\"\n")
 
 	_, err := Load(proj)
-	if err == nil {
-		t.Fatal("extends cycle must be a hard error")
+	if err == nil || !strings.Contains(err.Error(), "extends cycle") {
+		t.Fatalf("extends cycle must fail on the cycle rule, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "cycle") || !strings.Contains(err.Error(), "a -> b -> a") {
 		t.Errorf("cycle error should name the loop, got: %v", err)
@@ -100,8 +100,8 @@ func TestExtendsDanglingNamesThePathToCreate(t *testing.T) {
 	writeProjectCfg(t, proj, "extends = \"torn\"\n")
 
 	_, err := Load(proj)
-	if err == nil {
-		t.Fatal("dangling extends must be a hard error")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("dangling extends must fail on the layer-not-found rule, got: %v", err)
 	}
 	want := LayerPath(home, "torn")
 	if !strings.Contains(err.Error(), want) {
@@ -132,8 +132,8 @@ func TestTemplateBansExtendsKey(t *testing.T) {
 	const want = "extends is not allowed in template.config"
 	for _, body := range []string{"extends = \"torn\"\n", "extends = \"\"\n"} {
 		_, err := ParseTemplateBody([]byte(body))
-		if err == nil {
-			t.Fatalf("%q: want the extends rule to fire", body)
+		if err == nil || !strings.Contains(err.Error(), "extends") {
+			t.Fatalf("%q: want the extends rule to fire, got: %v", body, err)
 		}
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: wrong rule fired: %v, want it to name %q", body, err, want)

@@ -164,8 +164,8 @@ func TestWriteProjectConfig(t *testing.T) {
 		t.Fatalf("no opted skills — no skills key: %s", s)
 	}
 	// Refuses to overwrite.
-	if err := WriteProjectConfig(path, "node", "codex", nil); err == nil {
-		t.Fatal("should refuse to overwrite an existing byre.config")
+	if err := WriteProjectConfig(path, "node", "codex", nil); err == nil || !strings.Contains(err.Error(), "already exists; not overwriting") {
+		t.Fatalf("must refuse to overwrite an existing byre.config by the no-overwrite rule, got: %v", err)
 	}
 }
 

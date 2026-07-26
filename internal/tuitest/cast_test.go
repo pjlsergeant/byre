@@ -56,8 +56,8 @@ func TestTrimCastTailCutsAtTheFirstMatch(t *testing.T) {
 
 func TestTrimCastTailMissingSentinelIsLoud(t *testing.T) {
 	raw := mkCast(`[0.1,"o","hello"]`)
-	if _, err := trimCastTail(raw, "absent"); err == nil {
-		t.Fatal("a sentinel appearing in no event must error, not ship the untrimmed cast")
+	if _, err := trimCastTail(raw, "absent"); err == nil || !strings.Contains(err.Error(), "appears in no output event") {
+		t.Fatalf("a sentinel appearing in no event must error by the missing-sentinel rule, not ship the untrimmed cast; got: %v", err)
 	}
 }
 
@@ -120,8 +120,8 @@ func TestConcatCastsInsertsSceneBreak(t *testing.T) {
 func TestConcatCastsRefusesGeometryMismatch(t *testing.T) {
 	a := mkCast(`[0.1,"o","x"]`)
 	b := `{"version":3,"term":{"cols":80,"rows":24}}` + "\n" + `[0.1,"o","y"]` + "\n"
-	if _, err := concatCasts(1, a, b); err == nil {
-		t.Fatal("scenes with different geometry must refuse to concat")
+	if _, err := concatCasts(1, a, b); err == nil || !strings.Contains(err.Error(), "must share geometry") {
+		t.Fatalf("scenes with different geometry must refuse by the geometry rule, got: %v", err)
 	}
 }
 

@@ -136,8 +136,8 @@ func TestBootstrapDetectsCollision(t *testing.T) {
 	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/path\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := paths.Bootstrap(); err == nil {
-		t.Fatal("expected collision error, got nil")
+	if err := paths.Bootstrap(); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("Bootstrap must fail on the id-collision rule (a mkdir failure would also keep a bare nil-check green), got: %v", err)
 	}
 }
 
@@ -239,8 +239,8 @@ func TestValidateExistingIsReadOnly(t *testing.T) {
 	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/path\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := paths.ValidateExisting(); err == nil {
-		t.Fatal("expected collision error, got nil")
+	if err := paths.ValidateExisting(); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("ValidateExisting must fail on the id-collision rule, got: %v", err)
 	}
 }
 

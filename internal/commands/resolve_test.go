@@ -18,8 +18,8 @@ func TestValidateAttributesCrossSourceCollisions(t *testing.T) {
 
 	cfg := config.Config{Mounts: []config.Mount{{Host: "~/notes", Target: "/var/run/docker.sock", Mode: "ro"}}}
 	err := combine(cfg, skills.Resolved{Skills: []skills.Skill{dockerHost}}).validate()
-	if err == nil {
-		t.Fatal("cross-source target collision must be rejected")
+	if err == nil || !strings.Contains(err.Error(), "collides with") {
+		t.Fatalf("cross-source target collision must be rejected by the collision rule, got: %v", err)
 	}
 	for _, want := range []string{"config's mount", "skill byre/docker-host's mount", "/var/run/docker.sock"} {
 		if !strings.Contains(err.Error(), want) {
@@ -34,8 +34,8 @@ func TestValidateAttributesCrossSourceCollisions(t *testing.T) {
 	b.Name = "pete/two"
 	b.File.Volumes = []config.Volume{{Name: "shared", Role: "state", Target: "/home/dev/.y"}}
 	err = combine(config.Config{}, skills.Resolved{Skills: []skills.Skill{a, b}}).validate()
-	if err == nil {
-		t.Fatal("skill-vs-skill volume name collision must be rejected")
+	if err == nil || !strings.Contains(err.Error(), "collides with") {
+		t.Fatalf("skill-vs-skill volume name collision must be rejected by the collision rule, got: %v", err)
 	}
 	for _, want := range []string{"skill pete/one's volume shared", "skill pete/two's volume shared"} {
 		if !strings.Contains(err.Error(), want) {

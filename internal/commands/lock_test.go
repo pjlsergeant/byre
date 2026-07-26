@@ -35,8 +35,8 @@ func TestRequireRecorded(t *testing.T) {
 	if err := os.WriteFile(paths.PathRecord, []byte("/some/other/project\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireRecorded(paths); err == nil {
-		t.Fatal("a colliding path record must abort")
+	if err := requireRecorded(paths); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("a colliding path record must abort on the id-collision rule, got: %v", err)
 	}
 }
 

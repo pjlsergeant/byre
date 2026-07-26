@@ -61,8 +61,8 @@ func TestClaudeSkillLayerMarkersAndDuplicates(t *testing.T) {
 	if err := c.ValidateLayer(); err != nil {
 		t.Fatalf("marker should be layer-legal: %v", err)
 	}
-	if err := c.Validate(); err == nil {
-		t.Fatalf("marker must be rejected in a resolved config")
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "only meaningful in a cascade layer") {
+		t.Fatalf("marker must be rejected in a resolved config by the cascade-layer rule, got: %v", err)
 	}
 
 	// A marker carrying other fields is a mistyped real declaration.
