@@ -47,7 +47,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 		t.Fatal("primary agent (claude) should appear as a locked agent skill")
 	}
 
-	// Toggling the locked primary agent is a no-op (change it via Pri. Agent).
+	// Toggling the locked primary agent is a no-op (change it via Agent).
 	m.skillCur = entryIdx(m, "claude")
 	mm, _ := m.updateSkills(key(" "))
 	m = mm.(model)

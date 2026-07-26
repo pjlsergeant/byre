@@ -32,7 +32,7 @@ type fieldInfo struct {
 var fieldInfos = map[fieldID]fieldInfo{
 	fBase:            {label: "Base image"},
 	fTemplate:        {label: "Template"},
-	fAgent:           {label: "Pri. Agent"},
+	fAgent:           {label: "Agent"},
 	fEngine:          {label: "Engine"},
 	fApt:             {label: "Packages", kind: kindList, item: "Package", noun: "package"},
 	fEnv:             {label: "Env vars", kind: kindList, item: "Env var", noun: "var"},

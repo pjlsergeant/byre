@@ -60,7 +60,7 @@ func (m model) inheritedNow() []string {
 // skills. The set is the discovered skills, plus anything this layer enables or
 // removes, plus anything a lower layer enables, plus the primary agent (so
 // nothing an existing config references disappears). The primary agent (from
-// the Pri. Agent picker) is marked locked+on.
+// the Agent picker) is marked locked+on.
 func (m model) skillEntries() []skillEntry {
 	agentSet := map[string]bool{}
 	for _, a := range m.agents {
@@ -236,7 +236,7 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case e.removedHere:
 				m.skills = removeString(m.skills, "!"+e.name)
 			case e.locked:
-				m.status = "that's the primary agent — change it in Pri. Agent"
+				m.status = "that's the primary agent — change it in Agent"
 			case e.enabledHere:
 				m.skills = removeString(m.skills, e.name)
 				if e.inherited {

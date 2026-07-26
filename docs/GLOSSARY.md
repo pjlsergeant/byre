@@ -35,7 +35,14 @@ _Avoid_: "review" (taken: the preset grant-adoption review), "audit",
 
 **Agent**:
 The AI coding CLI (Claude, Codex, Gemini, Grok, OpenCode) that runs inside the
-box. byre is not an agent; it runs one.
+box. byre is not an agent; it runs one. The `agent` config key selects it, and
+`byre status` and the config UI both label it **Agent**.
+_Primary agent_: the agent that launches, as distinct from other agent skills
+that are merely enabled. The distinction only arises on the config UI's Skills
+screen, where the primary's row is shown locked and ticked -- elsewhere there is
+one agent and it needs no qualifier.
+_Avoid_: Pri. Agent (an abbreviation that saved nothing -- the label column fits
+the unabbreviated word).
 
 **Engine**:
 The container tool byre shells out to: Docker or Podman.
