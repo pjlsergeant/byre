@@ -437,22 +437,6 @@ func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
 	}
 }
 
-func TestShellArgQuoting(t *testing.T) {
-	cases := map[string]string{
-		"plain":                         "plain",
-		"type=bind,source=/a,target=/b": "type=bind,source=/a,target=/b", // = and , stay bare
-		"127.0.0.1:8080:8080":           "127.0.0.1:8080:8080",
-		"has space":                     "'has space'",
-		"a'b":                           `'a'\''b'`,
-		"":                              "''",
-	}
-	for in, want := range cases {
-		if got := shellArg(in); got != want {
-			t.Errorf("shellArg(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // writeStoreConfig writes the project's host-side byre.config directly.
 func writeStoreConfig(t *testing.T, proj, content string) {
 	t.Helper()

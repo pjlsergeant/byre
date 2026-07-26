@@ -80,3 +80,23 @@ func TestEscapeTerminal(t *testing.T) {
 		t.Fatalf("EscapeTerminal lone ESC: %q", got)
 	}
 }
+
+func TestShellArgQuoting(t *testing.T) {
+	// The eject path prints --mount/-e specs, so = , : stay bare; brace and
+	// bracket must not, or a paste expands into different argv than exec passes.
+	cases := map[string]string{
+		"plain":                         "plain",
+		"type=bind,source=/a,target=/b": "type=bind,source=/a,target=/b", // = and , stay bare
+		"127.0.0.1:8080:8080":           "127.0.0.1:8080:8080",
+		"has space":                     "'has space'",
+		"a'b":                           `'a'\''b'`,
+		"":                              "''",
+		"--flag={a,b}":                  `'--flag={a,b}'`,
+		"line\nbreak":                   "'line\nbreak'",
+	}
+	for in, want := range cases {
+		if got := ShellArg(in); got != want {
+			t.Errorf("ShellArg(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

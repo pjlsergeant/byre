@@ -29,6 +29,18 @@ func TestClipboardPayloadOnePerLine(t *testing.T) {
 	}
 }
 
+func TestClipboardPayloadQuotesEmbeddedNewline(t *testing.T) {
+	// The payload delimiter is \n, so a filename containing one must be quoted
+	// or it reads as two delivered paths. grab names come from the box.
+	got := clipboardPayload([]string{"/inbox/a\nb.png", "/inbox/c.png"})
+	if strings.Count(got, "\n") != 2 {
+		t.Fatalf("embedded newline must stay inside its quoted path: %q", got)
+	}
+	if !strings.HasPrefix(got, "'/inbox/a\nb.png'") {
+		t.Fatalf("payload = %q, want the newline-bearing path quoted", got)
+	}
+}
+
 func TestClipboardRoundTrip(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng)

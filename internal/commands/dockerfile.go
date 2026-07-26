@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/build"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 )
@@ -163,7 +164,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 		if ident.KeepID {
 			b.WriteString(` --userns "container:$BOX"`)
 		}
-		b.WriteString(` --net "container:$BOX" ` + shellArg(image) + "\n")
+		b.WriteString(` --net "container:$BOX" ` + packages.ShellArg(image) + "\n")
 	}
 	_, err = io.WriteString(s.Out, b.String())
 	return err
@@ -174,21 +175,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 func shellCommand(argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, a := range argv {
-		quoted[i] = shellArg(a)
+		quoted[i] = packages.ShellArg(a)
 	}
 	return strings.Join(quoted, " ")
-}
-
-// shellArg single-quotes an argument when it contains shell-significant
-// characters, escaping embedded single quotes; leaves plain args (including the
-// = and , that fill docker --mount/-e specs) bare for readability.
-func shellArg(s string) string {
-	// Includes brace/bracket/tilde/bang/hash so a shell can't expand a raw run
-	// arg (e.g. --flag={a,b}) into different argv than develop's exec would pass.
-	// = , : / . - _ @ stay bare so --mount/-e specs read cleanly.
-	const unsafe = " \t\n\"'$\\|&;<>*?(){}[]~!#"
-	if s != "" && !strings.ContainsAny(s, unsafe) && !strings.ContainsRune(s, '`') {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

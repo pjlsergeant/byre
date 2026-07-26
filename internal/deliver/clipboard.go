@@ -36,8 +36,13 @@ func clipboardPayload(paths []string) string {
 // quoteIfNeeded single-quotes a path only when pasting it bare would break —
 // quotes are noise on the common tame path, and boundary markers on the
 // macOS-screenshot kind ("Screenshot 2026-07-10 at 3.14.15 PM.png").
+//
+// \n is in the set because clipboardPayload joins with it: a filename may
+// contain a newline (POSIX forbids only NUL and /), and grab names come from an
+// agent-controlled tree, so an unquoted one would split into two lines and read
+// as two delivered paths. The delimiter has to be quotable.
 func quoteIfNeeded(p string) string {
-	if p != "" && !strings.ContainsAny(p, " \t'\"\\!$&()*,;<>?[]^`{|}~#%") {
+	if p != "" && !strings.ContainsAny(p, " \t\n'\"\\!$&()*,;<>?[]^`{|}~#%") {
 		return p
 	}
 	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"

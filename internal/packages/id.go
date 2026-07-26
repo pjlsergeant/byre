@@ -105,10 +105,15 @@ func LocalDir(id string) string {
 	return id // nested path IS the id for local packages
 }
 
-// ShellArg single-quotes an argument for a printed, copy-pasteable command
-// when it contains shell-significant characters (same rule as the develop
-// eject path's shellArg). Remedy text embeds hint-controlled URIs -- a
-// hostile hint must buy an install review, not command injection on paste.
+// ShellArg single-quotes an argument for a printed, copy-pasteable command when
+// it contains shell-significant characters. Two callers with the same need:
+// install-hint remedies embed hint-controlled URIs -- a hostile hint must buy an
+// install review, not command injection on paste -- and the develop eject path
+// prints raw run args.
+//
+// The unsafe set includes brace/bracket/tilde/bang/hash so a shell can't expand
+// a printed arg (e.g. --flag={a,b}) into different argv than develop's exec
+// would pass. = , : / . - _ @ stay bare so --mount/-e specs read cleanly.
 func ShellArg(s string) string {
 	const unsafe = " \t\n\"'$\\|&;<>*?(){}[]~!#"
 	if s != "" && !strings.ContainsAny(s, unsafe) && !strings.ContainsRune(s, '`') {
