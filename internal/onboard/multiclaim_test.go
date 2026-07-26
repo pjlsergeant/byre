@@ -40,7 +40,7 @@ func TestSharedAuthTableShapeRoundTrip(t *testing.T) {
 	if err := SaveSharedAuthDefaultPick(home, "claude", "claude-shared-auth", true); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(home + "/default.config")
+	cfg, err := config.ParseFile(home+"/default.config", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestSharedAuthTableShapeRoundTrip(t *testing.T) {
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", false); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err = config.ParseFile(home + "/default.config")
+	cfg, err = config.ParseFile(home+"/default.config", true)
 	if err != nil {
 		t.Fatal(err)
 	}

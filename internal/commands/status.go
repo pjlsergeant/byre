@@ -105,7 +105,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// off the raw project layer for attribution. Load succeeded above, so
 	// the chain walks; a race that breaks it mid-status just drops the row.
 	var chain []string
-	if raw, rerr := config.ParseFile(filepath.Join(paths.Dir, config.ProjectConfigName)); rerr == nil && raw.Extends != "" {
+	if raw, rerr := config.ParseFile(filepath.Join(paths.Dir, config.ProjectConfigName), false); rerr == nil && raw.Extends != "" {
 		if c, cerr := config.LoadExtendsChain(paths.Home, cat, raw.Extends); cerr == nil {
 			chain = config.ChainNames(c)
 		}

@@ -526,7 +526,7 @@ func TestCtrlSSavesFromSubScreens(t *testing.T) {
 	if !m.savedOnce || m.dirty() {
 		t.Fatalf("ctrl+s on the skills screen should have saved: err=%q", m.errMsg)
 	}
-	if back, err := config.ParseFile(path); err != nil || len(back.Skills) != 1 || back.Skills[0] != "devlog" {
+	if back, err := config.ParseFile(path, true); err != nil || len(back.Skills) != 1 || back.Skills[0] != "devlog" {
 		t.Fatalf("saved file wrong: %v %v", back.Skills, err)
 	}
 
@@ -551,7 +551,7 @@ func TestCtrlSSavesFromSubScreens(t *testing.T) {
 	if m.dirty() {
 		t.Fatal("item ctrl+s should have committed AND saved")
 	}
-	if back, _ := config.ParseFile(path); len(back.Apt) != 2 || back.Apt[1] != "ripgrep" {
+	if back, _ := config.ParseFile(path, true); len(back.Apt) != 2 || back.Apt[1] != "ripgrep" {
 		t.Fatalf("open item not committed into the save: %v", back.Apt)
 	}
 
@@ -563,7 +563,7 @@ func TestCtrlSSavesFromSubScreens(t *testing.T) {
 	if m.mode != modeItem || m.itemErr == "" {
 		t.Fatalf("invalid item must keep the editor open with the error (mode=%v err=%q)", m.mode, m.itemErr)
 	}
-	if back, _ := config.ParseFile(path); len(back.Apt) != 2 {
+	if back, _ := config.ParseFile(path, true); len(back.Apt) != 2 {
 		t.Fatalf("invalid item must not be saved around: %v", back.Apt)
 	}
 
@@ -592,7 +592,7 @@ func TestCtrlSSavesFromSubScreens(t *testing.T) {
 	if m.mode != modeForm || m.dirty() {
 		t.Fatalf("text ctrl+s should accept and save (mode=%v dirty=%v)", m.mode, m.dirty())
 	}
-	if back, _ := config.ParseFile(path); len(back.RunArgs) != 1 || back.RunArgs[0] != "--privileged" {
+	if back, _ := config.ParseFile(path, true); len(back.RunArgs) != 1 || back.RunArgs[0] != "--privileged" {
 		t.Fatalf("text buffer not in the save: %v", back.RunArgs)
 	}
 }

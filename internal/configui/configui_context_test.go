@@ -108,7 +108,7 @@ func TestContextItemProseEditorRoundTrip(t *testing.T) {
 	if !strings.Contains(string(raw), "text = '''") {
 		t.Fatalf("prose should land as a multiline literal:\n%s", raw)
 	}
-	back, err := config.ParseFile(m.filePath)
+	back, err := config.ParseFile(m.filePath, true)
 	if err != nil {
 		t.Fatal(err)
 	}

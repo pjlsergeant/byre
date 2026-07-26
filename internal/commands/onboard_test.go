@@ -112,7 +112,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("a given --shared-auth must suppress the question:\n%s", errBuf.String())
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 	if strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("--shared-auth=false must suppress the question:\n%s", errBuf2.String())
 	}
-	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"))
+	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.Home, "default.config")); !os.IsNotExist(err) {
 		t.Fatalf("declining must record nothing machine-level: %v", err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 		!strings.Contains(errBuf2.String(), "[Y/n, i for info]") {
 		t.Fatalf("the next box must be asked, prefilled from the preference:\n%s", errBuf2.String())
 	}
-	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"))
+	cfg2, err := config.ParseFile(filepath.Join(p2.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 	if !strings.Contains(errBuf.String(), "[Y/n, i for info]") {
 		t.Fatalf("the stored yes must prefill the offer:\n%s", errBuf.String())
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 		t.Fatalf("a saved no must remove the preference, shared_auth = %+v", cfg.SharedAuth)
 	}
 	// And the box itself was not opted in.
-	pcfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	pcfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestOnboardFlagPathOffersSharedAuth(t *testing.T) {
 	if err := onboardIfNeeded(s, proj, p, "", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestOnboardNoOfferWhenCompanionAlreadyOnMachineWide(t *testing.T) {
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
 	}
-	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"))
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
 		t.Fatalf("companion already on machine-wide — no offer:\n%s", errBuf.String())
 	}
-	got, err := config.ParseFile(filepath.Join(p.Home, "default.config"))
+	got, err := config.ParseFile(filepath.Join(p.Home, "default.config"), true)
 	if err != nil {
 		t.Fatal(err)
 	}

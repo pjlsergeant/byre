@@ -77,11 +77,11 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 		return fmt.Errorf("context add: --text and --file are exclusive (a snippet is inline or a file, not both)")
 	}
 	if file == "" && text == "" {
-		path, _, _, _, err := declLayerPath(projectDir, global)
+		path, _, follow, _, err := declLayerPath(projectDir, global)
 		if err != nil {
 			return err
 		}
-		cur, err := config.ParseFile(path)
+		cur, err := config.ParseFile(path, follow)
 		if err != nil {
 			return err
 		}

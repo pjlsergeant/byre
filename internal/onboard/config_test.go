@@ -28,7 +28,7 @@ func readDefault(t *testing.T, home string) string {
 
 func parsedDefault(t *testing.T, home string) config.Config {
 	t.Helper()
-	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		t.Fatalf("edited default.config must still parse: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	if !strings.Contains(got, "# keep me") || !strings.Contains(got, "base = \"node:22\"") {
 		t.Fatalf("surrounding content must survive:\n%s", got)
 	}
-	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		t.Fatal(err)
 	}

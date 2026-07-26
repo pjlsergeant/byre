@@ -721,8 +721,12 @@ func topLevelKeys(body []byte) (map[string]bool, error) {
 
 // ParseFile parses a single byre.config file (no cascade), for inspecting a
 // candidate config before it is applied. A missing file yields a zero Config.
-func ParseFile(path string) (Config, error) {
-	return loadFile(path, true) // the caller named the path: their choice
+// follow is the path's trust class, decided by every caller explicitly:
+// true when the USER named the path (or it is a host-owned home no box can
+// reach), false for store project configs and anything else a --self-edit
+// box can shape.
+func ParseFile(path string, follow bool) (Config, error) {
+	return loadFile(path, follow)
 }
 
 // loadFile reads one TOML cascade layer. A missing file is an empty layer

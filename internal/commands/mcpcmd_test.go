@@ -43,7 +43,7 @@ func TestMCPAddRemoteAndLocal(t *testing.T) {
 		t.Fatalf("add local: %v", err)
 	}
 
-	cfg, err := config.ParseFile(projPath)
+	cfg, err := config.ParseFile(projPath, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestMCPAddRemoteAndLocal(t *testing.T) {
 	if err := MCPAdd(s, dir, false, "github", []string{"gh2"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	cfg, _ = config.ParseFile(projPath)
+	cfg, _ = config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 2 || cfg.MCPs[1].Command[0] != "gh2" {
 		t.Fatalf("update must replace in place: %+v", cfg.MCPs)
 	}
@@ -97,7 +97,7 @@ func TestMCPAddReopensClosure(t *testing.T) {
 	if err := MCPAdd(s, dir, false, "github", []string{"gh-mcp"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("add over closure: %v", err)
 	}
-	cfg, _ := config.ParseFile(projPath)
+	cfg, _ := config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "github" {
 		t.Fatalf("closure must be re-opened by the add: %+v", cfg.MCPs)
 	}
@@ -111,11 +111,11 @@ func TestMCPAddGlobalTargetsDefaultConfig(t *testing.T) {
 	if err := MCPAdd(s, dir, true, "github", []string{"gh-mcp"}, nil, nil, nil, ""); err != nil {
 		t.Fatalf("global add: %v", err)
 	}
-	g, err := config.ParseFile(globalPath)
+	g, err := config.ParseFile(globalPath, true)
 	if err != nil || len(g.MCPs) != 1 {
 		t.Fatalf("global config: %+v %v", g.MCPs, err)
 	}
-	if p, _ := config.ParseFile(projPath); len(p.MCPs) != 0 {
+	if p, _ := config.ParseFile(projPath, true); len(p.MCPs) != 0 {
 		t.Fatalf("project config must be untouched: %+v", p.MCPs)
 	}
 }
@@ -130,7 +130,7 @@ func TestMCPRemoveClosureSmart(t *testing.T) {
 	if err := MCPRemove(s, dir, false, "own"); err != nil {
 		t.Fatalf("remove own: %v", err)
 	}
-	cfg, _ := config.ParseFile(projPath)
+	cfg, _ := config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 0 {
 		t.Fatalf("own-layer entry must delete cleanly: %+v", cfg.MCPs)
 	}
@@ -144,7 +144,7 @@ func TestMCPRemoveClosureSmart(t *testing.T) {
 	if err := MCPRemove(s, dir, false, "inherited"); err != nil {
 		t.Fatalf("remove inherited: %v", err)
 	}
-	cfg, _ = config.ParseFile(projPath)
+	cfg, _ = config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "!inherited" {
 		t.Fatalf("inherited remove must write the closure: %+v", cfg.MCPs)
 	}
@@ -160,7 +160,7 @@ func TestMCPRemoveClosureSmart(t *testing.T) {
 	if err := MCPRemove(s, dir, false, "inherited"); err != nil {
 		t.Fatalf("remove overriding entry: %v", err)
 	}
-	cfg, _ = config.ParseFile(projPath)
+	cfg, _ = config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "!inherited" {
 		t.Fatalf("override remove must delete AND close: %+v", cfg.MCPs)
 	}
@@ -245,7 +245,7 @@ command = ["srv"]
 	if err := MCPRemove(s, dir, false, "own"); err != nil {
 		t.Fatalf("broken resolution must not refuse: %v", err)
 	}
-	cfg, _ := config.ParseFile(projPath)
+	cfg, _ := config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 1 || cfg.MCPs[0].Name != "!own" {
 		t.Fatalf("entry must be deleted AND the guaranteeing closure written: %+v", cfg.MCPs)
 	}
@@ -264,7 +264,7 @@ func TestMCPAddHeadersAndBearer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add with headers: %v", err)
 	}
-	cfg, _ := config.ParseFile(projPath)
+	cfg, _ := config.ParseFile(projPath, true)
 	if len(cfg.MCPs) != 1 {
 		t.Fatalf("declarations = %+v", cfg.MCPs)
 	}

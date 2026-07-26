@@ -37,7 +37,9 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 		if err != nil || st.IsDir() {
 			return // no config here = provably no reference
 		}
-		cfg, err := config.ParseFile(path)
+		// The walk covers store project configs a --self-edit box can shape:
+		// no-follow, and an unreadable config degrades to a Guarded hit below.
+		cfg, err := config.ParseFile(path, false)
 		if err != nil {
 			hits = append(hits, refHit{Where: where, Path: path, Guarded: true})
 			return

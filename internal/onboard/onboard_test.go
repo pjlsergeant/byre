@@ -180,7 +180,7 @@ func TestWriteProjectConfigWritesOptedSkills(t *testing.T) {
 	if !strings.Contains(string(b), `skills = ["claude-shared-auth"]`) {
 		t.Fatalf("byre.config content: %s", b)
 	}
-	cfg, err := config.ParseFile(path)
+	cfg, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatalf("written config must parse: %v", err)
 	}

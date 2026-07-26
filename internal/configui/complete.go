@@ -55,7 +55,7 @@ func (m model) onEditorClosed(err error) model {
 	if created || changed || deleted {
 		m.savedOnce = true
 	}
-	cfg, perr := config.ParseFile(m.filePath)
+	cfg, perr := config.ParseFile(m.filePath, m.followFile)
 	if perr != nil {
 		m.errMsg = "file has an error after editing (fix it and ctrl+e again): " + perr.Error()
 		return m

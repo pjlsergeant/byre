@@ -105,7 +105,7 @@ func SaveDefault(home, template, agent string) error {
 // replaced broke on literal ('single-quoted') strings. Missing or unparsable
 // values come back empty (the picker just starts without favourites).
 func Favourites(home string) (template, agent string) {
-	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		return "", ""
 	}
@@ -121,7 +121,7 @@ func Favourites(home string) (template, agent string) {
 // `skills` here. An unreadable/unparsable file counts as on — the picker
 // must not offer through (or, on save, edit) a file it can't read.
 func SharedAuthAlreadyOn(home, companion string) bool {
-	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		return true
 	}
@@ -132,7 +132,7 @@ func SharedAuthAlreadyOn(home, companion string) bool {
 // whether the per-box offer should prefill Yes. Missing or unparsable file =
 // no preference (the offer defaults No). Covers both dual-shape forms.
 func SharedAuthPreference(home, agent string) bool {
-	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		return false
 	}
@@ -142,7 +142,7 @@ func SharedAuthPreference(home, agent string) bool {
 // SharedAuthPick returns the saved companion pick for agent, or "" when the
 // preference is a legacy yes-inclination with no pick (or absent).
 func SharedAuthPick(home, agent string) string {
-	cfg, err := config.ParseFile(filepath.Join(home, "default.config"))
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		return ""
 	}

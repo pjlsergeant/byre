@@ -89,7 +89,7 @@ func addNamedDecl[T any](s Streams, projectDir string, global bool, v declVerbs[
 	if err != nil {
 		return err
 	}
-	cur, err := config.ParseFile(path)
+	cur, err := config.ParseFile(path, follow)
 	if err != nil {
 		return err
 	}
@@ -151,7 +151,7 @@ func removeNamedDecl[T any](s Streams, projectDir string, global bool, v declVer
 	if err != nil {
 		return err
 	}
-	cur, err := config.ParseFile(path)
+	cur, err := config.ParseFile(path, follow)
 	if err != nil {
 		return err
 	}

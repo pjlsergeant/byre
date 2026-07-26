@@ -829,7 +829,7 @@ func TestLoadRejectsWithinLayerCollisionInAnyLayer(t *testing.T) {
 
 	// ParseFile (the editor's open path) must still tolerate it.
 	mustWriteFile(t, storeCfg, []byte(dup), 0o644)
-	if _, err := ParseFile(storeCfg); err != nil {
+	if _, err := ParseFile(storeCfg, true); err != nil {
 		t.Errorf("ParseFile must stay lenient so the editor can open a broken file: %v", err)
 	}
 }

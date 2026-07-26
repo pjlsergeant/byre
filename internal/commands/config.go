@@ -93,7 +93,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}, Catalog: cat}
 	if target != configui.TargetGlobal {
 		inh.HasLower = true
-		if def, derr := config.ParseFile(filepath.Join(home, "default.config")); derr == nil {
+		if def, derr := config.ParseFile(filepath.Join(home, "default.config"), true); derr == nil {
 			inh.Default = def
 		}
 		inh.Templates = map[string]config.Config{}
@@ -192,7 +192,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		vols = newVolumeAdmin(paths, projectDir, prepare) // nil if the engine/config won't resolve
 	}
 
-	cur, err := config.ParseFile(path)
+	cur, err := config.ParseFile(path, target != configui.TargetProject)
 	if err != nil {
 		return err
 	}

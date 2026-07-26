@@ -16,7 +16,7 @@ func TestContextAddInlineAndUpdate(t *testing.T) {
 	if err := ContextAdd(s, dir, false, "house-rules", "Run the linter.\n", ""); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	cfg, err := config.ParseFile(projPath)
+	cfg, err := config.ParseFile(projPath, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestContextAddInlineAndUpdate(t *testing.T) {
 	if err := ContextAdd(s, dir, false, "house-rules", "New text.\n", ""); err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
-	cfg, _ = config.ParseFile(projPath)
+	cfg, _ = config.ParseFile(projPath, true)
 	if len(cfg.Contexts) != 1 || cfg.Contexts[0].Text != "New text.\n" {
 		t.Fatalf("update: %+v", cfg.Contexts)
 	}
@@ -62,7 +62,7 @@ func TestContextAddEditorFlow(t *testing.T) {
 	if !strings.Contains(seen, "From the editor.") {
 		t.Fatalf("re-edit must seed the stored text, got %q", seen)
 	}
-	cfg, _ := config.ParseFile(projPath)
+	cfg, _ := config.ParseFile(projPath, true)
 	if len(cfg.Contexts) != 1 || strings.Count(cfg.Contexts[0].Text, "From the editor.") != 2 {
 		t.Fatalf("editor text not stored: %+v", cfg.Contexts)
 	}
@@ -84,7 +84,7 @@ func TestContextAddExclusiveFlagsAndFileAnchor(t *testing.T) {
 	if err := ContextAdd(s, dir, false, "conventions", "", "~/notes/conv.md"); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ := config.ParseFile(projPath)
+	cfg, _ := config.ParseFile(projPath, true)
 	if cfg.Contexts[0].File != "~/notes/conv.md" {
 		t.Fatalf("file = %+v", cfg.Contexts)
 	}
@@ -99,7 +99,7 @@ func TestContextRemoveWritesClosureForInherited(t *testing.T) {
 	if err := ContextRemove(s, dir, false, "house-rules"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	cfg, err := config.ParseFile(projPath)
+	cfg, err := config.ParseFile(projPath, true)
 	if err != nil {
 		t.Fatal(err)
 	}

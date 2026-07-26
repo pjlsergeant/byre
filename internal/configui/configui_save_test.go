@@ -31,7 +31,7 @@ func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 	if err := Save(path, false, in); err != nil {
 		t.Fatal(err)
 	}
-	back, err := config.ParseFile(path)
+	back, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatalf("re-parse: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSaveAcceptsRemovalEntries(t *testing.T) {
 	if err := Save(path, false, cfg); err != nil {
 		t.Fatalf("Save rejected a valid removal-entry layer: %v", err)
 	}
-	back, err := config.ParseFile(path)
+	back, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatalf("re-parse: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestSavePreservesHandComments(t *testing.T) {
 	orig := "# remember: the LAN port is for the demo\nagent = \"claude\" # chosen for this customer\n\n# glued to env\n[env]\nFOO = \"bar\"\n"
 	mustWriteFile(t, path, []byte(orig), 0o644)
 
-	cfg, err := config.ParseFile(path)
+	cfg, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestSavePreservesHandComments(t *testing.T) {
 	if !strings.Contains(string(raw), "base = \"node:22\"") {
 		t.Errorf("edit did not land:\n%s", raw)
 	}
-	back, err := config.ParseFile(path)
+	back, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatalf("re-parse: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 			if err := Save(path, false, config.Config{Base: "node:22", SharedAuth: tc.pref}); err != nil {
 				t.Fatal(err)
 			}
-			back, err := config.ParseFile(path)
+			back, err := config.ParseFile(path, true)
 			if err != nil {
 				raw, _ := os.ReadFile(path)
 				t.Fatalf("re-parse of saved config failed (the brick):\n%v\n%s", err, raw)
@@ -355,7 +355,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 				orig = "# hand comment survives\napt = [\"left-alone\"]\n"
 			}
 			mustWriteFile(t, path, []byte(orig), 0o644)
-			base, err := config.ParseFile(path)
+			base, err := config.ParseFile(path, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -364,7 +364,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 			if err := Save(path, false, merged); err != nil {
 				t.Fatalf("save: %v", err)
 			}
-			back, err := config.ParseFile(path)
+			back, err := config.ParseFile(path, true)
 			if err != nil {
 				raw, _ := os.ReadFile(path)
 				t.Fatalf("re-parse: %v\n%s", err, raw)
@@ -395,7 +395,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 func TestSaveClearsDottedSpelledMap(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "byre.config")
 	mustWriteFile(t, path, []byte("env.FOO = \"bar\"\nenv.BAZ = \"qux\"\nbase = \"node:22\"\n"), 0o644)
-	cfg, err := config.ParseFile(path)
+	cfg, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestSaveClearsDottedSpelledMap(t *testing.T) {
 	if err := Save(path, false, cfg); err != nil {
 		t.Fatal(err)
 	}
-	back, err := config.ParseFile(path)
+	back, err := config.ParseFile(path, true)
 	if err != nil {
 		raw, _ := os.ReadFile(path)
 		t.Fatalf("re-parse: %v\n%s", err, raw)
@@ -468,7 +468,7 @@ func TestSaveSourcesSpellings(t *testing.T) {
 			// to the construct and rightly goes when normalization rewrites
 			// it; a detached one must survive every spelling's rewrite.
 			mustWriteFile(t, path, []byte("# keep me\n\n"+tc.orig), 0o644)
-			cfg, err := config.ParseFile(path)
+			cfg, err := config.ParseFile(path, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -476,7 +476,7 @@ func TestSaveSourcesSpellings(t *testing.T) {
 			if err := Save(path, false, cfg); err != nil {
 				t.Fatalf("update: %v", err)
 			}
-			back, err := config.ParseFile(path)
+			back, err := config.ParseFile(path, true)
 			if err != nil {
 				raw, _ := os.ReadFile(path)
 				t.Fatalf("re-parse after update: %v\n%s", err, raw)
@@ -490,19 +490,19 @@ func TestSaveSourcesSpellings(t *testing.T) {
 			}
 
 			// Second update exercises the house shape the first write left.
-			cfg2, _ := config.ParseFile(path)
+			cfg2, _ := config.ParseFile(path, true)
 			cfg2.Sources = hint("https://third")
 			if err := Save(path, false, cfg2); err != nil {
 				t.Fatalf("second update: %v", err)
 			}
 
 			// Clear.
-			cfg3, _ := config.ParseFile(path)
+			cfg3, _ := config.ParseFile(path, true)
 			cfg3.Sources = nil
 			if err := Save(path, false, cfg3); err != nil {
 				t.Fatalf("clear: %v", err)
 			}
-			back, err = config.ParseFile(path)
+			back, err = config.ParseFile(path, true)
 			if err != nil {
 				raw, _ := os.ReadFile(path)
 				t.Fatalf("re-parse after clear: %v\n%s", err, raw)
@@ -529,7 +529,7 @@ func TestSaveSharedAuthSecondWrite(t *testing.T) {
 	if err := Save(path, false, pick("second")); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
-	back, err := config.ParseFile(path)
+	back, err := config.ParseFile(path, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,14 +547,14 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	setup := func(t *testing.T) (string, config.Config) {
 		path := filepath.Join(t.TempDir(), "byre.config")
 		mustWriteFile(t, path, []byte(orig), 0o644)
-		cfg, err := config.ParseFile(path)
+		cfg, err := config.ParseFile(path, true)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return path, cfg
 	}
 	check := func(t *testing.T, path string, want map[string]string) {
-		back, err := config.ParseFile(path)
+		back, err := config.ParseFile(path, true)
 		if err != nil {
 			raw, _ := os.ReadFile(path)
 			t.Fatalf("re-parse: %v\n%s", err, raw)

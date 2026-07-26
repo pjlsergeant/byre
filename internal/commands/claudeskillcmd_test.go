@@ -32,7 +32,7 @@ func TestClaudeSkillAddDerivesNameAndValidates(t *testing.T) {
 	if err := ClaudeSkillAdd(s, dir, false, "", src); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	cfg, err := config.ParseFile(projPath)
+	cfg, err := config.ParseFile(projPath, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestClaudeSkillAddDerivesNameAndValidates(t *testing.T) {
 	if err := ClaudeSkillAdd(s, dir, false, "tdd-loop", src); err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
-	cfg, _ = config.ParseFile(projPath)
+	cfg, _ = config.ParseFile(projPath, true)
 	if len(cfg.ClaudeSkills) != 1 {
 		t.Fatalf("re-add duplicated: %+v", cfg.ClaudeSkills)
 	}
@@ -70,7 +70,7 @@ func TestClaudeSkillAddGlobalAndReopen(t *testing.T) {
 	if err := ClaudeSkillAdd(s, dir, true, "", src); err != nil {
 		t.Fatalf("global add: %v", err)
 	}
-	g, err := config.ParseFile(globalPath)
+	g, err := config.ParseFile(globalPath, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestClaudeSkillAddGlobalAndReopen(t *testing.T) {
 	if err := ClaudeSkillAdd(s, dir, false, "", src); err != nil {
 		t.Fatalf("reopen add: %v", err)
 	}
-	p, _ := config.ParseFile(projPath)
+	p, _ := config.ParseFile(projPath, true)
 	if len(p.ClaudeSkills) != 1 || p.ClaudeSkills[0].Name != "review-loop" {
 		t.Fatalf("closure not superseded: %+v", p.ClaudeSkills)
 	}
@@ -106,7 +106,7 @@ func TestClaudeSkillRemoveClosureSmart(t *testing.T) {
 	if err := ClaudeSkillRemove(s, dir, false, "tdd-loop"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	p, _ := config.ParseFile(projPath)
+	p, _ := config.ParseFile(projPath, true)
 	if len(p.ClaudeSkills) != 0 {
 		t.Fatalf("block not deleted: %+v", p.ClaudeSkills)
 	}
@@ -119,7 +119,7 @@ func TestClaudeSkillRemoveClosureSmart(t *testing.T) {
 	if err := ClaudeSkillRemove(s, dir, false, "tdd-loop"); err != nil {
 		t.Fatalf("remove inherited: %v", err)
 	}
-	p, _ = config.ParseFile(projPath)
+	p, _ = config.ParseFile(projPath, true)
 	if len(p.ClaudeSkills) != 1 || p.ClaudeSkills[0].Name != "!tdd-loop" {
 		t.Fatalf("closure not written: %+v", p.ClaudeSkills)
 	}
