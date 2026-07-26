@@ -907,13 +907,18 @@ func ValidateContent(base string, apt, npm []string, env map[string]string) erro
 	return nil
 }
 
-// isRemoval reports whether a named-list entry is a `!name` removal marker
+// IsRemoval reports whether a named-list entry is a `!name` removal marker
 // rather than a real entry. Markers are only meaningful in an unmerged layer
 // (Merge consumes them), so ValidateLayer skips them and they never reach a
 // resolved config. A marker needs an identity: a bare "!" is NOT a marker (it
 // would merge as a silent no-op removal of ""), so it falls through to the
 // real-entry shape checks, which all reject it loudly.
-func isRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!") }
+//
+// Exported because the config UI's effective view classifies the same entries:
+// a second predicate there disagreed on the bare-"!" edge case this one exists
+// to reject, so the preview could show a removal where the resolver rejects an
+// entry. One rule, one owner.
+func IsRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!") }
 
 // validateScalars checks the layer-safe scalar/content fields — those valid or
 // invalid on their own, independent of the cascade. Shared by Validate and
@@ -931,20 +936,20 @@ func isRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!"
 // entries); `extends` is name-checked (it is consumed by resolution).
 func (c Config) validateScalarsLayer() error {
 	egress := c.Egress
-	if slices.ContainsFunc(egress, isRemoval) {
+	if slices.ContainsFunc(egress, IsRemoval) {
 		egress = make([]string, 0, len(c.Egress))
 		for _, e := range c.Egress {
-			if isRemoval(e) {
+			if IsRemoval(e) {
 				e = e[1:]
 			}
 			egress = append(egress, e)
 		}
 	}
 	return c.validateScalarsCommon(
-		filter(c.Apt, func(s string) bool { return !isRemoval(s) }),
-		filter(c.NpmGlobal, func(s string) bool { return !isRemoval(s) }),
+		filter(c.Apt, func(s string) bool { return !IsRemoval(s) }),
+		filter(c.NpmGlobal, func(s string) bool { return !IsRemoval(s) }),
 		egress,
-		filter(c.EgressOffered, func(s string) bool { return !isRemoval(s) }),
+		filter(c.EgressOffered, func(s string) bool { return !IsRemoval(s) }),
 		func() error {
 			if err := ValidateLayerName(c.Extends); err != nil {
 				return fmt.Errorf("extends: %w", err)
@@ -1304,7 +1309,7 @@ func (c Config) ValidateLayer() error {
 	}
 	seenTargets := map[string]string{} // target -> what claims it
 	for _, m := range c.Mounts {
-		if isRemoval(m.Target) {
+		if IsRemoval(m.Target) {
 			// A removal marker is just `target = "!name"` — same stance as
 			// validatePorts' remove entries. Any other field set means the
 			// author probably meant a REAL mount with a mistyped target (the
@@ -1325,7 +1330,7 @@ func (c Config) ValidateLayer() error {
 	}
 	seenNames := map[string]bool{}
 	for _, v := range c.Volumes {
-		if isRemoval(v.Name) {
+		if IsRemoval(v.Name) {
 			// Same rule as mount markers above: a marker is name-only.
 			if v.Role != "" || v.Target != "" || v.Seed != nil || v.Scope != "" {
 				return fmt.Errorf("volume %s: a removal marker takes only a name — other fields here suggest a real volume with a mistyped name", v.Name)
@@ -1411,7 +1416,7 @@ func mergeEgress(base, over Config) (open, closed []string) {
 // (a previously merged config re-entering Merge) into the latter.
 func splitEgress(egress, egressClosed []string) (open, closed []string) {
 	for _, e := range egress {
-		if isRemoval(e) {
+		if IsRemoval(e) {
 			closed = append(closed, e[1:])
 			continue
 		}
@@ -1485,7 +1490,7 @@ func mergeStrings(base, over []string) []string {
 		}
 	}
 	for _, rm := range removals {
-		out = removeString(out, rm)
+		out = filter(out, func(s string) bool { return s != rm })
 	}
 	return out
 }
@@ -1533,6 +1538,11 @@ func mergeMap(base, over map[string]string) map[string]string {
 	return out
 }
 
+// mergeMounts replaces by target, remove-then-append: a replacement takes the
+// REPLACING layer's position, not the replaced entry's slot. Same genus rule as
+// mergeNamedDecls, for the same reason -- list order is where cascade precedence
+// shows, and mount order is observable (status renders it, and it is --mount
+// argv order, which decides what a nested target sees).
 func mergeMounts(base, over []Mount) []Mount {
 	out := append([]Mount{}, base...)
 	var removals []string
@@ -1541,17 +1551,8 @@ func mergeMounts(base, over []Mount) []Mount {
 			removals = append(removals, name)
 			continue
 		}
-		replaced := false
-		for i := range out {
-			if out[i].Target == m.Target {
-				out[i] = m
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			out = append(out, m)
-		}
+		out = filter(out, func(o Mount) bool { return o.Target != m.Target })
+		out = append(out, m)
 	}
 	for _, rm := range removals {
 		out = filter(out, func(m Mount) bool { return m.Target != rm })
@@ -1592,6 +1593,7 @@ func mergePorts(base, over []Port) []Port {
 	return out
 }
 
+// mergeVolumes replaces by name, remove-then-append -- see mergeMounts.
 func mergeVolumes(base, over []Volume) []Volume {
 	out := append([]Volume{}, base...)
 	var removals []string
@@ -1600,20 +1602,11 @@ func mergeVolumes(base, over []Volume) []Volume {
 			removals = append(removals, name)
 			continue
 		}
-		replaced := false
-		for i := range out {
-			if out[i].Name == v.Name {
-				out[i] = v
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			out = append(out, v)
-		}
+		out = filter(out, func(o Volume) bool { return o.Name != v.Name })
+		out = append(out, v)
 	}
 	for _, rm := range removals {
-		out = filterVolumes(out, func(v Volume) bool { return v.Name != rm })
+		out = filter(out, func(v Volume) bool { return v.Name != rm })
 	}
 	return out
 }
@@ -1626,27 +1619,7 @@ func appendAll(base, over []string) []string {
 	return append(out, over...)
 }
 
-func removeString(s []string, v string) []string {
-	out := s[:0:0]
-	for _, x := range s {
-		if x != v {
-			out = append(out, x)
-		}
-	}
-	return out
-}
-
 func filter[T any](s []T, keep func(T) bool) []T {
-	out := s[:0:0]
-	for _, x := range s {
-		if keep(x) {
-			out = append(out, x)
-		}
-	}
-	return out
-}
-
-func filterVolumes(s []Volume, keep func(Volume) bool) []Volume {
 	out := s[:0:0]
 	for _, x := range s {
 		if keep(x) {

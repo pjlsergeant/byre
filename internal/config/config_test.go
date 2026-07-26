@@ -81,6 +81,46 @@ func TestMergeMountsReenableByReplacing(t *testing.T) {
 	}
 }
 
+func TestMergeMountsReplacementTakesReplacingLayerPosition(t *testing.T) {
+	// Same genus rule as mergeNamedDecls (see TestContextDeclMergeReplaceByName):
+	// a replacement takes the REPLACING layer's position, not the replaced
+	// entry's slot. Mount order is observable -- status renders it, and it is
+	// --mount argv order, which decides what a nested target sees.
+	base := Config{Mounts: []Mount{
+		{Host: "/h", Target: "/t", Mode: "ro"},
+		{Host: "/o", Target: "/other", Mode: "ro"},
+	}}
+	over := Config{Mounts: []Mount{{Host: "/h2", Target: "/t", Mode: "rw"}}}
+	got := Merge(base, over).Mounts
+	if len(got) != 2 {
+		t.Fatalf("Mounts = %+v", got)
+	}
+	if got[1].Target != "/t" || got[1].Host != "/h2" {
+		t.Errorf("replacement must land at the replacing layer's position: %+v", got)
+	}
+	if got[0].Target != "/other" {
+		t.Errorf("unreplaced entry lost its place: %+v", got)
+	}
+}
+
+func TestMergeVolumesReplacementTakesReplacingLayerPosition(t *testing.T) {
+	base := Config{Volumes: []Volume{
+		{Name: "cache", Role: "cache", Target: "/c"},
+		{Name: "other", Role: "state", Target: "/o"},
+	}}
+	over := Config{Volumes: []Volume{{Name: "cache", Role: "cache", Target: "/c2"}}}
+	got := Merge(base, over).Volumes
+	if len(got) != 2 {
+		t.Fatalf("Volumes = %+v", got)
+	}
+	if got[1].Name != "cache" || got[1].Target != "/c2" {
+		t.Errorf("replacement must land at the replacing layer's position: %+v", got)
+	}
+	if got[0].Name != "other" {
+		t.Errorf("unreplaced entry lost its place: %+v", got)
+	}
+}
+
 func TestValidateDisabledMountStillChecked(t *testing.T) {
 	// A disabled mount is still config: shape errors and target collisions
 	// fail now, not on re-enable.

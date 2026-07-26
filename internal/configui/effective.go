@@ -174,7 +174,7 @@ func (m model) namedDeclRows(f namedDeclField) []listRow {
 		}
 	}
 	for i, it := range local {
-		if isRemovalName(it.name) || lower[it.name] {
+		if config.IsRemoval(it.name) || lower[it.name] {
 			continue
 		}
 		// Same-layer marker beats the same-layer declaration (closures fold last).
@@ -346,7 +346,7 @@ func mcpVals(mc config.MCP) []string {
 func (m model) egressRows() []listRow {
 	localIdx := map[string]int{}
 	for i, e := range m.egress {
-		if !isRemovalName(e) {
+		if !config.IsRemoval(e) {
 			localIdx[e] = i
 		}
 	}
@@ -389,7 +389,7 @@ func (m model) egressRows() []listRow {
 	lower := map[string]bool{}
 	var rows []listRow
 	for _, e := range m.lowerNow().Egress {
-		if isRemovalName(e) || lower[e] {
+		if config.IsRemoval(e) || lower[e] {
 			continue
 		}
 		lower[e] = true
@@ -407,7 +407,7 @@ func (m model) egressRows() []listRow {
 		rows = append(rows, listRow{kind: rowInherited, text: e, ident: e, source: src})
 	}
 	for i, e := range m.egress {
-		if isRemovalName(e) || lower[e] {
+		if config.IsRemoval(e) || lower[e] {
 			continue
 		}
 		if mi, _, ok := localMarkerFor(e); ok {
@@ -485,7 +485,7 @@ func (m model) egressRows() []listRow {
 	}
 	open := map[string]bool{}
 	addOpen := func(e string) {
-		if isRemovalName(e) {
+		if config.IsRemoval(e) {
 			return
 		}
 		n := normalize(e)
@@ -517,7 +517,7 @@ func (m model) egressRows() []listRow {
 	offered := map[string]bool{}
 	addOffered := func(e, source string) {
 		n := normalize(e)
-		if isRemovalName(e) || n == "" || open[n] || offered[n] {
+		if config.IsRemoval(e) || n == "" || open[n] || offered[n] {
 			return
 		}
 		offered[n] = true
@@ -563,7 +563,7 @@ func (m model) aptRows() []listRow {
 	lower := map[string]bool{}
 	var rows []listRow
 	for _, p := range m.lowerNow().Apt {
-		if isRemovalName(p) || lower[p] {
+		if config.IsRemoval(p) || lower[p] {
 			continue // a marker in the base layer removes nothing; ignore
 		}
 		lower[p] = true
@@ -579,7 +579,7 @@ func (m model) aptRows() []listRow {
 		}
 	}
 	for i, p := range m.apt {
-		if isRemovalName(p) || lower[p] {
+		if config.IsRemoval(p) || lower[p] {
 			continue
 		}
 		// Merge applies removals after additions, so a same-layer marker turns
@@ -672,7 +672,7 @@ func (m model) mountRows() []listRow {
 	lower := map[string]bool{}
 	var rows []listRow
 	for _, mt := range m.lowerNow().Mounts {
-		if isRemovalName(mt.Target) || lower[mt.Target] {
+		if config.IsRemoval(mt.Target) || lower[mt.Target] {
 			continue
 		}
 		lower[mt.Target] = true
@@ -695,7 +695,7 @@ func (m model) mountRows() []listRow {
 		}
 	}
 	for i, mt := range m.mounts {
-		if isRemovalName(mt.Target) || lower[mt.Target] {
+		if config.IsRemoval(mt.Target) || lower[mt.Target] {
 			continue
 		}
 		// Same-layer marker beats the same-layer entry (removals apply last).
@@ -865,7 +865,7 @@ func (m model) exposureNow() config.Exposure {
 	// local plain entry re-opened (mirroring egressRows' matching).
 	var localPlain []string
 	for _, en := range m.egress {
-		if isRemovalName(en) {
+		if config.IsRemoval(en) {
 			e.Closed++
 		} else {
 			localPlain = append(localPlain, en)
@@ -915,8 +915,6 @@ func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 	}
 	return
 }
-
-func isRemovalName(s string) bool { return strings.HasPrefix(s, "!") }
 
 func hasKey[K comparable, V any](m map[K]V, k K) bool { _, ok := m[k]; return ok }
 
