@@ -189,7 +189,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		deliverCmd(a, dir, s),
 		grabCmd(a, dir, s),
 		worktreeCmd(a, dir, s),
-		skillCmd(a, s),
+		skillCmd(s),
 		templateCmd(s),
 		layerCmd(s),
 		mcpCmd(dir, s),
@@ -693,60 +693,79 @@ lower layer still declares the name. Applies on the next develop.`,
 	return ctx
 }
 
-func skillCmd(a app, s commands.Streams) *cobra.Command {
-	skill := &cobra.Command{
-		Use:   "skill",
-		Short: "Manage skill packages (list, inspect, fork, init, validate).",
+// packageCmd builds one package-noun subtree (skill or template): the verbs
+// are identical by construction -- one registrar, so a flag or wording fix
+// lands on both nouns -- while genuinely kind-specific text (inspect's
+// grants, validate's resolve-check) and kind-only verbs arrive as
+// parameters.
+func packageCmd(s commands.Streams, noun string, kind packages.Kind, usage, inspectShort, validateShort string, extra ...*cobra.Command) *cobra.Command {
+	root := &cobra.Command{
+		Use:   noun,
+		Short: "Manage " + noun + " packages (list, inspect, fork, init, validate).",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return usageError("usage: byre skill list|inspect|install|uninstall|fork|init|validate|pack|archive-legacy")
+			return usageError("usage: byre " + noun + " " + usage)
 		},
 	}
-	skill.AddCommand(
+	root.AddCommand(
 		&cobra.Command{
 			Use:   "list",
-			Short: "List skill packages in the catalog.",
+			Short: "List " + noun + " packages in the catalog.",
 			Args:  noArgsU,
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillList(s) },
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackageList(s, kind) },
 		},
 		&cobra.Command{
 			Use:   "inspect <id|uri>",
-			Short: "Show skill package metadata and grants (URIs fetch without installing).",
-			Args:  exactArgsU(1, "skill inspect <id|uri>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInspect(s, args[0]) },
+			Short: inspectShort,
+			Args:  exactArgsU(1, noun+" inspect <id|uri>"),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackageInspect(s, kind, args[0]) },
 		},
-		installCmd(s, "skill", commands.SkillInstall),
-		uninstallCmd(s, "skill", commands.SkillUninstall),
+		installCmd(s, noun, func(st commands.Streams, uri, digest string, yes bool) error {
+			return commands.PackageInstall(st, kind, uri, digest, yes)
+		}),
+		uninstallCmd(s, noun, func(st commands.Streams, id string, yes bool) error {
+			return commands.PackageUninstall(st, kind, id, yes)
+		}),
 		&cobra.Command{
 			Use:   "pack <name>",
-			Short: "Emit the distribution manifest for a local skill.",
-			Args:  exactArgsU(1, "skill pack <name>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillPack(s, args[0]) },
+			Short: "Emit the distribution manifest for a local " + noun + ".",
+			Args:  exactArgsU(1, noun+" pack <name>"),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackagePack(s, kind, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "fork <id> <new-id>",
-			Short: "Fork an immutable skill into a local editable package.",
-			Args:  exactArgsU(2, "skill fork <id> <new-id>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillFork(s, args[0], args[1]) },
+			Short: "Fork an immutable " + noun + " into a local editable package.",
+			Args:  exactArgsU(2, noun+" fork <id> <new-id>"),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackageFork(s, kind, args[0], args[1]) },
 		},
 		&cobra.Command{
 			Use:   "init <name>",
-			Short: "Scaffold a new local skill package.",
-			Args:  exactArgsU(1, "skill init <name>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInit(s, args[0]) },
+			Short: "Scaffold a new local " + noun + " package.",
+			Args:  exactArgsU(1, noun+" init <name>"),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackageInit(s, kind, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "validate [name]",
-			Short: "Two-stage parse and resolve-check a skill (or all).",
-			Args:  maxArgsU(1, "skill validate [name]"),
+			Short: validateShort,
+			Args:  maxArgsU(1, noun+" validate [name]"),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				name := ""
 				if len(args) == 1 {
 					name = args[0]
 				}
-				return commands.SkillValidate(s, name)
+				return commands.PackageValidate(s, kind, name)
 			},
 		},
+	)
+	root.AddCommand(extra...)
+	return root
+}
+
+func skillCmd(s commands.Streams) *cobra.Command {
+	return packageCmd(s, "skill", packages.KindSkill,
+		"list|inspect|install|uninstall|fork|init|validate|pack|archive-legacy",
+		"Show skill package metadata and grants (URIs fetch without installing).",
+		"Two-stage parse and resolve-check a skill (or all).",
 		&cobra.Command{
 			Use:   "archive-legacy",
 			Short: "Move LEGACY materialized dirs to skills.legacy/ / templates.legacy/.",
@@ -754,7 +773,14 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillArchiveLegacy(s) },
 		},
 	)
-	return skill
+}
+
+func templateCmd(s commands.Streams) *cobra.Command {
+	return packageCmd(s, "template", packages.KindTemplate,
+		"list|inspect|install|uninstall|fork|init|validate|pack",
+		"Show template package metadata (URIs fetch without installing).",
+		"Two-stage parse a template (or all).",
+	)
 }
 
 // presetCmd: a preset is a saved answer to onboarding's
@@ -827,64 +853,6 @@ func uninstallCmd(s commands.Streams, noun string, fn func(commands.Streams, str
 	}
 	c.Flags().BoolVar(&yes, "yes", false, "confirm without a prompt (required in a pipe)")
 	return c
-}
-
-func templateCmd(s commands.Streams) *cobra.Command {
-	tmpl := &cobra.Command{
-		Use:   "template",
-		Short: "Manage template packages (list, inspect, fork, init, validate).",
-		Args:  cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return usageError("usage: byre template list|inspect|install|uninstall|fork|init|validate|pack")
-		},
-	}
-	tmpl.AddCommand(
-		&cobra.Command{
-			Use:   "list",
-			Short: "List template packages in the catalog.",
-			Args:  noArgsU,
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateList(s) },
-		},
-		&cobra.Command{
-			Use:   "inspect <id|uri>",
-			Short: "Show template package metadata (URIs fetch without installing).",
-			Args:  exactArgsU(1, "template inspect <id|uri>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInspect(s, args[0]) },
-		},
-		installCmd(s, "template", commands.TemplateInstall),
-		uninstallCmd(s, "template", commands.TemplateUninstall),
-		&cobra.Command{
-			Use:   "pack <name>",
-			Short: "Emit the distribution manifest for a local template.",
-			Args:  exactArgsU(1, "template pack <name>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplatePack(s, args[0]) },
-		},
-		&cobra.Command{
-			Use:   "fork <id> <new-id>",
-			Short: "Fork an immutable template into a local editable package.",
-			Args:  exactArgsU(2, "template fork <id> <new-id>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateFork(s, args[0], args[1]) },
-		},
-		&cobra.Command{
-			Use:   "init <name>",
-			Short: "Scaffold a new local template package.",
-			Args:  exactArgsU(1, "template init <name>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInit(s, args[0]) },
-		},
-		&cobra.Command{
-			Use:   "validate [name]",
-			Short: "Two-stage parse a template (or all).",
-			Args:  maxArgsU(1, "template validate [name]"),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				name := ""
-				if len(args) == 1 {
-					name = args[0]
-				}
-				return commands.TemplateValidate(s, name)
-			},
-		},
-	)
-	return tmpl
 }
 
 func layerCmd(s commands.Streams) *cobra.Command {

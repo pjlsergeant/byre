@@ -11,18 +11,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/version"
 )
 
-// SkillPack / TemplatePack implement `byre skill|template pack <name>`:
-// the distribution manifest on stdout, the digest and a ready install hint on
-// stderr.
-func SkillPack(s Streams, name string) error {
-	return pkgPack(s, packages.KindSkill, name)
-}
-
-func TemplatePack(s Streams, name string) error {
-	return pkgPack(s, packages.KindTemplate, name)
-}
-
-func pkgPack(s Streams, kind packages.Kind, name string) error {
+func PackagePack(s Streams, kind packages.Kind, name string) error {
 	home, err := project.Home()
 	if err != nil {
 		return err

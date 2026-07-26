@@ -18,13 +18,11 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
-// SkillList prints catalog rows for skills.
-func SkillList(s Streams) error { return pkgList(s, packages.KindSkill) }
-
-// TemplateList prints catalog rows for templates.
-func TemplateList(s Streams) error { return pkgList(s, packages.KindTemplate) }
-
-func pkgList(s Streams, kind packages.Kind) error {
+// PackageList, PackageInspect, PackageInstall, PackageUninstall,
+// PackageFork, PackageInit, PackageValidate and PackagePack are the
+// kind-taking package operations; the CLI binds skill and template onto
+// them once, so a fix lands on both nouns by construction.
+func PackageList(s Streams, kind packages.Kind) error {
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -57,18 +55,7 @@ func pkgList(s Streams, kind packages.Kind) error {
 	return nil
 }
 
-// SkillInspect prints package metadata for a skill ID, or for a URI/path the
-// catalog does not know (inspected without installing).
-func SkillInspect(s Streams, id string) error {
-	return pkgInspect(s, packages.KindSkill, id)
-}
-
-// TemplateInspect prints package metadata for a template ID.
-func TemplateInspect(s Streams, id string) error {
-	return pkgInspect(s, packages.KindTemplate, id)
-}
-
-func pkgInspect(s Streams, kind packages.Kind, id string) error {
+func PackageInspect(s Streams, kind packages.Kind, id string) error {
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -395,17 +382,7 @@ func listLine(key, val string) string {
 	return fmt.Sprintf("%s: %s", key, packages.EscapeTerminal(val))
 }
 
-// SkillFork copies an immutable skill into the local store under newID.
-func SkillFork(s Streams, id, newID string) error {
-	return pkgFork(s, packages.KindSkill, id, newID)
-}
-
-// TemplateFork copies an immutable template into the local store under newID.
-func TemplateFork(s Streams, id, newID string) error {
-	return pkgFork(s, packages.KindTemplate, id, newID)
-}
-
-func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
+func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -571,17 +548,7 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// SkillInit scaffolds a new local skill.
-func SkillInit(s Streams, name string) error {
-	return pkgInit(s, packages.KindSkill, name)
-}
-
-// TemplateInit scaffolds a new local template.
-func TemplateInit(s Streams, name string) error {
-	return pkgInit(s, packages.KindTemplate, name)
-}
-
-func pkgInit(s Streams, kind packages.Kind, name string) error {
+func PackageInit(s Streams, kind packages.Kind, name string) error {
 	if err := packages.ValidateID(name, true); err != nil {
 		return err
 	}
@@ -667,17 +634,7 @@ base = "debian:bookworm-slim"
 `, id)
 }
 
-// SkillValidate two-stage-parses and resolve-checks a skill.
-func SkillValidate(s Streams, name string) error {
-	return pkgValidate(s, packages.KindSkill, name)
-}
-
-// TemplateValidate two-stage-parses a template.
-func TemplateValidate(s Streams, name string) error {
-	return pkgValidate(s, packages.KindTemplate, name)
-}
-
-func pkgValidate(s Streams, kind packages.Kind, name string) error {
+func PackageValidate(s Streams, kind packages.Kind, name string) error {
 	home, err := project.Home()
 	if err != nil {
 		return err

@@ -319,9 +319,9 @@ func missingRefs(home string, preset config.Config) ([]missingRef, error) {
 // manifest fetched, its own grant summary, its own confirm, digest verified.
 func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 	if kind == packages.KindTemplate {
-		return TemplateInstall(s, uri, digest, false)
+		return PackageInstall(s, packages.KindTemplate, uri, digest, false)
 	}
-	return SkillInstall(s, uri, digest, false)
+	return PackageInstall(s, packages.KindSkill, uri, digest, false)
 }
 
 // renderPresetReview is apply step 5: the grant summary of every key and every

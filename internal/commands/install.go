@@ -17,16 +17,6 @@ import (
 	"github.com/pjlsergeant/byre/internal/version"
 )
 
-// SkillInstall / TemplateInstall implement `byre skill|template install <uri>`
-// (ADR 0029). expectDigest is the optional --digest sha256:... pin; yes is --yes.
-func SkillInstall(s Streams, uri, expectDigest string, yes bool) error {
-	return pkgInstall(s, packages.KindSkill, uri, expectDigest, yes)
-}
-
-func TemplateInstall(s Streams, uri, expectDigest string, yes bool) error {
-	return pkgInstall(s, packages.KindTemplate, uri, expectDigest, yes)
-}
-
 func stage2For(kind packages.Kind) func([]byte) error {
 	if kind == packages.KindSkill {
 		return skills.ValidatePrimaryBytes
@@ -34,7 +24,7 @@ func stage2For(kind packages.Kind) func([]byte) error {
 	return config.ValidateTemplateBytes
 }
 
-func pkgInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes bool) error {
+func PackageInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes bool) error {
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -362,18 +352,7 @@ func readSnapshotPrimary(home, digest, primary string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(packages.SnapshotDir(home, digest), primary))
 }
 
-// SkillUninstall / TemplateUninstall implement `byre skill|template uninstall
-// <id>`: scan effective configs, warn + confirm, remove under the store
-// lock. Uninstall always refuses in a pipe without --yes.
-func SkillUninstall(s Streams, id string, yes bool) error {
-	return pkgUninstall(s, packages.KindSkill, id, yes)
-}
-
-func TemplateUninstall(s Streams, id string, yes bool) error {
-	return pkgUninstall(s, packages.KindTemplate, id, yes)
-}
-
-func pkgUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
+func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error {
 	home, err := project.Home()
 	if err != nil {
 		return err

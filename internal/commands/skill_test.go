@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"github.com/pjlsergeant/byre/internal/packages"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,7 +16,7 @@ import (
 func TestInspectBundledShowsDisplayDigest(t *testing.T) {
 	installHome(t)
 	s, out, _ := testStreams("", false)
-	if err := SkillInspect(s, "claude"); err != nil {
+	if err := PackageInspect(s, packages.KindSkill, "claude"); err != nil {
 		t.Fatal(err)
 	}
 	m := regexp.MustCompile(`Digest:\s+sha256:([0-9a-f]{64})\n`).FindStringSubmatch(out.String())
@@ -23,7 +24,7 @@ func TestInspectBundledShowsDisplayDigest(t *testing.T) {
 		t.Fatalf("no display digest in bundled inspect output:\n%s", out.String())
 	}
 	s2, out2, _ := testStreams("", false)
-	if err := SkillInspect(s2, "claude"); err != nil {
+	if err := PackageInspect(s2, packages.KindSkill, "claude"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out2.String(), m[1]) {
@@ -94,7 +95,7 @@ func TestForkFailureLeavesNoDestination(t *testing.T) {
 		t.Skipf("mkfifo: %v", err)
 	}
 	s, _, _ := testStreams("", false)
-	if err := SkillFork(s, "pete/tool", "me/fork"); err == nil {
+	if err := PackageFork(s, packages.KindSkill, "pete/tool", "me/fork"); err == nil {
 		t.Fatal("fork of a FIFO-bearing source must fail")
 	}
 	if _, err := os.Stat(filepath.Join(home, "skills", "me", "fork")); !os.IsNotExist(err) {
@@ -120,7 +121,7 @@ func TestForkPublishesStagedTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _, _ := testStreams("", false)
-	if err := SkillFork(s, "pete/tool", "me/fork"); err != nil {
+	if err := PackageFork(s, packages.KindSkill, "pete/tool", "me/fork"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(home, "skills", "me", "fork", "skill.toml"))
