@@ -212,7 +212,10 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 		"BYRE_MCP_CONFIG="+mcpPath,
 		"BYRE_AGENT_CONTEXT="+ctxPath,
 		"BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"),
-		`OPENCODE_CONFIG_CONTENT={"theme":"nord","instructions":["/home/me/mine.md"],"mcp":{"user-srv":{"type":"local","command":["mine"]}}}`,
+		// Deliberately REVERSE-sorted user paths: a sorting dedupe (jq's
+		// unique — codex review find) would scramble them and interleave
+		// byre's entry; order must be user's-as-written, byre's appended.
+		`OPENCODE_CONFIG_CONTENT={"theme":"nord","instructions":["/z/mine.md","/a/mine.md"],"mcp":{"user-srv":{"type":"local","command":["mine"]}}}`,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed: %v\n%s", err, out)
@@ -235,8 +238,8 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 	if _, ok := got.MCP["github"]; !ok {
 		t.Fatalf("byre's injected server must be present: %v", got.MCP)
 	}
-	if strings.Join(got.Instructions, " ") != "/home/me/mine.md "+ctxPath {
-		t.Fatalf("instructions must UNION (user's first, byre's appended): %v", got.Instructions)
+	if strings.Join(got.Instructions, " ") != "/z/mine.md /a/mine.md "+ctxPath {
+		t.Fatalf("instructions must keep the user's order and append byre's: %v", got.Instructions)
 	}
 }
 

@@ -63,7 +63,7 @@ printf '%s' "$base" | jq empty 2>/dev/null || base='{}'
 OPENCODE_CONFIG_CONTENT=$(printf '%s' "$base" \
   | jq -c --argjson mcp "$byre_mcp" --arg ctx "$CTX" '
       . * {mcp: ((.mcp // {}) * $mcp)}
-      | .instructions = (((.instructions // []) + [$ctx]) | unique)
+      | .instructions = ((.instructions // []) + (if ((.instructions // []) | index($ctx)) then [] else [$ctx] end))
       | if .mcp == {} then del(.mcp) else . end')
 export OPENCODE_CONFIG_CONTENT
 
