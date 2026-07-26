@@ -88,7 +88,8 @@ func providedEnv(cfg config.Config, hostEnv []hostEnvResult) map[string]bool {
 
 // hostSourceValue reads one env_from_host source on the host. Unknown schemes
 // read as empty — validation already refused them at config load; this is
-// just the belt to that suspender.
+// a total function here so a scheme reaching this point through a path
+// that skipped validation sets nothing rather than panicking.
 func hostSourceValue(src string) string {
 	if key, ok := strings.CutPrefix(src, "git:"); ok {
 		return gitConfig(key)

@@ -131,7 +131,14 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	//     we just read, so it is agent-writable) then cannot also sit inside
 	//     that outside dir. The two requirements are mutually exclusive.
 	//  2. <gitDir>/gitdir points back at <dir>/.git (git's reciprocal
-	//     back-pointer). Belt-and-suspenders; matches `git worktree repair`.
+	//     back-pointer; matches `git worktree repair`). Load-bearing on its
+	//     own, NOT a redundant restatement of (1): an agent writing a `.git`
+	//     file that points at ANOTHER repo's admin dir
+	//     (gitdir: /home/u/other/.git/worktrees/w) satisfies (1) -- genuine
+	//     metadata is self-consistent -- and only this check rejects it.
+	//     Without it, commonGitDir becomes an rw bind of that repo's git dir
+	//     and mainDir becomes its identity, config, volumes, and image. Do
+	//     not "simplify" it away.
 	//
 	// Inconsistent metadata is a loud error (never a silent standalone
 	// fallback or a silent mount) — same stance as the missing-commondir case.
