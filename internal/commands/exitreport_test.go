@@ -489,3 +489,22 @@ func TestExitReportUnreadableBeforeInventsNothing(t *testing.T) {
 		t.Errorf("a file unreadable at session start must not report its keys as added, got:\n%s", got)
 	}
 }
+
+// "Cannot tell" must never become "it was deleted". An unstattable parent makes
+// both the read AND the stat fail; treating every Lstat error as absence put
+// the invented-deletion bug straight back (codex, round 4).
+func TestExitReportUnstattableParentIsNotDeletion(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root traverses regardless of mode")
+	}
+	paths, dir := exitRepo(t)
+	gitIn(t, dir, "config", "core.hooksPath", ".husky")
+	gitDir := filepath.Join(dir, ".git")
+
+	got := exitReport(t, paths, func() { mustChmod(t, gitDir, 0o000) })
+	t.Cleanup(func() { _ = os.Chmod(gitDir, 0o755) })
+
+	if strings.Contains(got, "went away") {
+		t.Errorf("an unstattable config must not be reported as deleted, got:\n%s", got)
+	}
+}

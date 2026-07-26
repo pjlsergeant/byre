@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -118,6 +119,9 @@ func configValueShown(key string) bool {
 // `credential.https://user:pass@host.helper` -- and the key is what names the
 // finding. Host and scheme survive (they are what makes the line legible);
 // anything before the `@` does not.
+//
+// Accepted residual: scp-style keys (`url.git@github.com:.insteadOf`) carry no
+// `://` and are left verbatim. That shape names a user, not a credential.
 func redactKeyUserinfo(key string) string {
 	i := strings.Index(key, "://")
 	if i < 0 {
@@ -142,6 +146,10 @@ type exitSnapshot struct {
 	hooks  map[string]string            // display path -> content signature
 	config map[string]map[string]string // display path -> git config key -> value
 	env    map[string]map[string]string // display path -> env key -> value
+	// configListed records that the git admin dir's worktrees/ enumeration
+	// succeeded. A failed listing hides linked-worktree config files, which
+	// would then read as deleted (codex).
+	configListed bool
 	// envListed records that the project root was successfully enumerated. A
 	// failed enumeration is not an empty project: without this, every .env
 	// byre had seen would read as deleted (codex).
@@ -178,12 +186,15 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		// worktree's and each linked worktree's admin dir. `git config
 		// --worktree core.hooksPath ...` opens the whole channel without ever
 		// touching `config`.
-		for _, cfg := range gitConfigFiles(gitDir) {
+		cfgFiles, listed := gitConfigFiles(gitDir)
+		s.configListed = listed
+		for _, cfg := range cfgFiles {
 			if kv, ok := readGitConfig(cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
-			} else if exists(cfg) {
-				// Present but unread -- a transient git probe failure is the
-				// motivating case. Absent from both maps would read as deletion.
+			} else if !confirmedAbsent(cfg) {
+				// Present, or byre cannot tell. Either way it is not a
+				// confirmed deletion -- a transient git probe failure is the
+				// motivating case, and an unstattable parent is the other.
 				s.unreadable[exitDisplay(paths, cfg)] = true
 			}
 		}
@@ -236,21 +247,23 @@ func commonGitDirOf(paths project.Paths) string {
 // gitConfigFiles lists the config files that can carry exec-capable keys for
 // this repository: the common config, the main worktree's config.worktree, and
 // each linked worktree's. Missing files are simply absent from the snapshot.
-func gitConfigFiles(gitDir string) []string {
+func gitConfigFiles(gitDir string) ([]string, bool) {
 	files := []string{
 		filepath.Join(gitDir, "config"),
 		filepath.Join(gitDir, "config.worktree"),
 	}
 	entries, err := os.ReadDir(filepath.Join(gitDir, "worktrees"))
 	if err != nil {
-		return files
+		// No worktrees/ at all is the ordinary case and perfectly known; any
+		// other error means byre cannot see the linked worktrees' configs.
+		return files, errors.Is(err, fs.ErrNotExist)
 	}
 	for _, e := range entries {
 		if e.IsDir() {
 			files = append(files, filepath.Join(gitDir, "worktrees", e.Name(), "config.worktree"))
 		}
 	}
-	return files
+	return files, true
 }
 
 // readGitConfig reads one config file's key/value pairs using git's OWN parser
@@ -286,6 +299,13 @@ func readGitConfig(path string) (map[string]string, bool) {
 // watched inactive directories and then claimed "your git runs this" about
 // them, which is a definite statement that was sometimes false (both
 // reviewers).
+//
+// Tradeoff, deliberate: unlike reading the repo's own config file, asking git
+// also applies the user's GLOBAL and system config. That is the right answer
+// to "which directory will git use" -- but it means an in-tree hooks dir named
+// by the user's own ~/.gitconfig gets watched, and can produce a line the agent
+// had nothing to do with. Passive attribution already covers that, and
+// inTreeByIdentity still gates the walk.
 func containedHooksPath(paths project.Paths) (string, bool) {
 	raw, err := gitProbe("-C", paths.WorkDir, "config", "--get", "core.hooksPath")
 	if err != nil {
@@ -307,11 +327,15 @@ func containedHooksPath(paths project.Paths) (string, bool) {
 	return "", false
 }
 
-// exists reports whether a path is present at all, without following a final
-// symlink or opening anything.
-func exists(p string) bool {
+// confirmedAbsent reports that a path is DEFINITELY not there. Only ENOENT
+// counts: an EACCES on a parent directory means byre cannot tell, and "cannot
+// tell" must never become "it was deleted" -- that is the whole point of the
+// unreadable state, and treating every Lstat error as absence quietly
+// reintroduced the bug it exists to prevent (codex). Never follows a final
+// symlink and opens nothing.
+func confirmedAbsent(p string) bool {
 	_, err := os.Lstat(p)
-	return err == nil
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // snapshotHooks records a signature per file under dir. Enumeration rides a
@@ -498,6 +522,10 @@ func diffConfig(before, after exitSnapshot) []string {
 				gone(file, k, "was removed")
 			}
 		}
+	}
+	if !before.configListed || !after.configListed {
+		sort.Strings(out)
+		return out // cannot enumerate the config set: never claim a file vanished
 	}
 	// A watched config file that disappeared takes its keys with it -- the same
 	// user-visible event as clearing them one by one. Only when it is really
