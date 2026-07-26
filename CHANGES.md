@@ -1,5 +1,29 @@
 # Changes
 
+## Unreleased
+
+- **A replaced mount or volume now takes the replacing layer's position.**
+  Previously it stayed in the slot the *base* entry occupied, so a later
+  layer's mount could be ordered before entries it never replaced. The
+  named-declaration genus was fixed this way in v1.3.0 (`[[context]]`
+  prose has to speak in cascade order); mounts and volumes are where that
+  algorithm was copied from and kept the old form. Order is observable:
+  `byre status` renders it, and it is `--mount` argv order, which decides
+  what a nested target sees.
+- **A bare `!` is no longer treated as a removal marker anywhere.** A
+  marker needs an identity -- `!name`. A lone `!` was being consumed as a
+  removal of the empty name in the merge (so it vanished silently instead
+  of being rejected), and the config UI's effective view rendered it twice,
+  once as an invalid entry and once as a stale marker. It is now a plain
+  entry everywhere, which validation rejects loudly, and the resolver and
+  the preview agree.
+- **Fixed:** a delivered filename containing a newline is now quoted on the
+  clipboard. The payload is newline-delimited, so an unquoted one read as
+  two separate delivered paths.
+- **Fixed:** `byre skill inspect` and the eject paths no longer print an
+  unbounded amount of a child's error output. The cap that already
+  protected one in-box exec transport now covers the other.
+
 ## v1.3.1 -- 2026-07-26
 
 - **Sessions end by pointing out what changed where you can't see it.**
