@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -219,35 +218,6 @@ func TestPrintVersion(t *testing.T) {
 	}
 	if !strings.HasPrefix(out.String(), "byre ") {
 		t.Errorf("expected a 'byre <version>' line, got %q", out.String())
-	}
-}
-
-// TestVersionString pins the resolution order: stamped tag, then module
-// version, then (devel) with the VCS revision when recorded.
-func TestVersionString(t *testing.T) {
-	withRev := &debug.BuildInfo{}
-	withRev.Main.Version = "(devel)"
-	withRev.Settings = []debug.BuildSetting{{Key: "vcs.revision", Value: "0123456789abcdef"}}
-	shortRev := &debug.BuildInfo{}
-	shortRev.Settings = []debug.BuildSetting{{Key: "vcs.revision", Value: "abc"}}
-	fromModule := &debug.BuildInfo{}
-	fromModule.Main.Version = "v0.2.1"
-	cases := []struct {
-		stamped string
-		bi      *debug.BuildInfo
-		want    string
-	}{
-		{"v1.0.0", fromModule, "v1.0.0"},      // stamped wins over build info
-		{"", fromModule, "v0.2.1"},            // go install ...@vX.Y.Z
-		{"", withRev, "(devel) 0123456789ab"}, // local build with VCS info
-		{"", shortRev, "(devel) abc"},         // revision shorter than display width
-		{"", &debug.BuildInfo{}, "(devel)"},   // build info without a version
-		{"", nil, "(devel)"},                  // no build info at all
-	}
-	for _, tc := range cases {
-		if got := versionString(tc.stamped, tc.bi); got != tc.want {
-			t.Errorf("versionString(%q, %+v) = %q, want %q", tc.stamped, tc.bi, got, tc.want)
-		}
 	}
 }
 

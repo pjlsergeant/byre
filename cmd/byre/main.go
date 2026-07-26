@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -992,42 +991,12 @@ build info — a module or pseudo-version, or (devel) when nothing was.`,
 	}
 }
 
-// versionString resolves what `byre version` prints, in priority order: the
-// release-stamped tag (main.version or internal/version.Version), then the
-// version Go recorded in build info, then "(devel)" with a short VCS
-// revision when available.
-func versionString(stamped string, bi *debug.BuildInfo) string {
-	if stamped != "" {
-		return stamped
-	}
-	if byreversion.Version != "" {
-		return byreversion.Version
-	}
-	if bi == nil {
-		return "(devel)"
-	}
-	if v := bi.Main.Version; v != "" && v != "(devel)" {
-		return v
-	}
-	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" && s.Value != "" {
-			n := 12
-			if len(s.Value) < n {
-				n = len(s.Value)
-			}
-			return "(devel) " + s.Value[:n]
-		}
-	}
-	return "(devel)"
-}
-
 func printVersion(s commands.Streams) error {
 	// Propagate legacy main.version stamp into the shared package once.
 	if version != "" && byreversion.Version == "" {
 		byreversion.Version = version
 	}
-	bi, _ := debug.ReadBuildInfo()
-	_, err := fmt.Fprintln(s.Out, "byre "+versionString(version, bi))
+	_, err := fmt.Fprintln(s.Out, "byre "+byreversion.String())
 	return err
 }
 

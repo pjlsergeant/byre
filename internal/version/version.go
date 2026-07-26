@@ -20,11 +20,18 @@ var Version string
 // package manifests. Priority: stamped Version, then module build info, then
 // "(devel)" (with a short VCS revision when available).
 func String() string {
-	if Version != "" {
-		return Version
+	bi, _ := debug.ReadBuildInfo()
+	return resolve(Version, bi)
+}
+
+// resolve is String's priority chain with its inputs injected, so the ordering
+// can be tested without a real build. cmd/byre used to carry a second copy of
+// this chain for exactly that reason.
+func resolve(stamped string, bi *debug.BuildInfo) string {
+	if stamped != "" {
+		return stamped
 	}
-	bi, ok := debug.ReadBuildInfo()
-	if !ok || bi == nil {
+	if bi == nil {
 		return "(devel)"
 	}
 	if v := bi.Main.Version; v != "" && v != "(devel)" {
