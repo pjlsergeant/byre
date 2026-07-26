@@ -17,7 +17,7 @@ without byre's ready signal (it fails closed rather than launching
 unwalled). Two ways out:
 
 ```sh
-byre ejectfirewall > firewall.sh   # the sidecar byre runs, as a script:
+byre ejectfirewall > firewall.sh   # the netns helper byre runs, as a script:
                                    # start the box, then ./firewall.sh <container>
 ```
 

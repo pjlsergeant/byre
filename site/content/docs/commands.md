@@ -30,7 +30,7 @@ every command and flag.
 | `byre status` | Show resolved config, mounts, skills, container state. |
 | `byre dockerfile` | Print the generated Dockerfile for this directory. |
 | `byre dockerrun` | Print the docker/podman run command byre would use. |
-| `byre ejectfirewall` | Print the firewall sidecar as a standalone script. |
+| `byre ejectfirewall` | Print the firewall netns helper as a standalone script. |
 | `byre version` | Print the byre version. |
 
 ## Configuration

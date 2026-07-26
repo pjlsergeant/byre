@@ -454,7 +454,7 @@ func writeStoreConfig(t *testing.T, proj, content string) {
 
 // The eject surfaces (ADR 0019): a firewalled project's dockerfile output
 // explains its launch gate, dockerrun warns on stderr, and ejectfirewall
-// prints the standalone sidecar with the resolved allowlist.
+// prints the standalone netns helper with the resolved allowlist.
 func TestEjectSurfacesFirewalled(t *testing.T) {
 	t.Setenv("BYRE_HOME", t.TempDir())
 	proj := t.TempDir()

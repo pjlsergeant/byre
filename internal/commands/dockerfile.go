@@ -56,7 +56,7 @@ const ejectGateComment = `# NOTE (byre): this image expects byre's launch-time f
 # container at launch; the baked launch gate (/etc/byre/launch-gate) waits for
 # that and exits after ~30s if it never comes -- failing closed rather than
 # running unwalled. Ejected from byre, either:
-#   - replay the sidecar yourself: byre ejectfirewall > firewall.sh
+#   - replay the netns helper yourself: byre ejectfirewall > firewall.sh
 #   - or run WITHOUT the walls: delete /etc/byre/launch-gate from the image
 #     (or set BYRE_LAUNCH_GATE_FILE=/dev/null), accepting an open network.
 
@@ -107,13 +107,13 @@ func DockerRun(s Streams, projectDir string) error {
 	// alone yields a box that dies at its launch gate. Stderr, so the
 	// copy-pasteable stdout line stays clean.
 	if len(rv.skills.NetnsInits()) > 0 {
-		fmt.Fprintln(s.Err, "byre: note — this project runs a firewall byre applies at launch; started with just this command, the box fails closed at its launch gate (~30s). `byre ejectfirewall` prints the sidecar to run alongside it.")
+		fmt.Fprintln(s.Err, "byre: note — this project runs a firewall byre applies at launch; started with just this command, the box fails closed at its launch gate (~30s). `byre ejectfirewall` prints the netns helper to run alongside it.")
 	}
 	return nil
 }
 
 // EjectFirewall implements `byre ejectfirewall`: print, as a standalone shell
-// script, the firewall sidecar byre runs for this project — the one piece of
+// script, the firewall netns helper byre runs for this project — the one piece of
 // the box `byre dockerfile` + `byre dockerrun` cannot carry (ADR 0019), made
 // portable. The enforcement script already ships inside the image; ejected,
 // the user replays byre's own invocation of it against their running box.
@@ -143,7 +143,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 
 	var b strings.Builder
 	b.WriteString("#!/bin/sh\n")
-	b.WriteString("# byre ejectfirewall — the firewall sidecar byre runs for " + paths.ID + ",\n")
+	b.WriteString("# byre ejectfirewall — the firewall netns helper byre runs for " + paths.ID + ",\n")
 	b.WriteString("# as a standalone script. Start the box first (see `byre dockerrun`); it\n")
 	b.WriteString("# waits at its launch gate (~30s) for this to apply and verify the egress\n")
 	b.WriteString("# rules, and proceeds only then (no rules = the box exits, failing closed).\n")
@@ -159,7 +159,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 			"-e", "BYRE_EGRESS_DENY=" + strings.Join(rv.cfg.EgressClosed, " "),
 		}))
 		// Keep-id boxes (rootless Podman) own their netns from inside their
-		// userns; the sidecar must join it or iptables gets EPERM (mirrors
+		// userns; the helper must join it or iptables gets EPERM (mirrors
 		// runner.NetnsInit).
 		if ident.KeepID {
 			b.WriteString(` --userns "container:$BOX"`)

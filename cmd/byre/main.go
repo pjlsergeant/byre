@@ -255,8 +255,8 @@ the run-time counterpart to 'byre dockerfile'. Side-effect-free.`,
 func ejectfirewallCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ejectfirewall",
-		Short: "Print the firewall sidecar as a standalone script.",
-		Long: `Print, as a shell script, the firewall sidecar byre runs for this project —
+		Short: "Print the firewall netns helper as a standalone script.",
+		Long: `Print, as a shell script, the firewall netns helper byre runs for this project —
 the one piece of the box 'byre dockerfile' + 'byre dockerrun' can't carry.
 Run the printed script right after starting the box; it applies the resolved
 egress allowlist from outside and opens the launch gate. Side-effect-free;
