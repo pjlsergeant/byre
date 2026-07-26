@@ -82,17 +82,19 @@ fi
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 ctx_text=""
 [ -r "$CTX" ] && ctx_text="$(cat "$CTX")"
-ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
 # The value rides ONE argv string; Linux caps a single exec argument at
 # MAX_ARG_STRLEN (~128 KiB), under byre's 1 MiB context budget. A
 # legal-but-large context must DEGRADE loudly, not kill the exec (grok
-# review find, probed 2026-07-26): cap with a disclosure pointing at the
-# baked file, which the agent can read in-box.
-if [ "${#ctx_text}" -gt 100000 ]; then
+# review find, probed 2026-07-26): cap in BYTES (wc -c, not ${#} — that
+# counts characters and multi-byte prose slips past; round 2) with a
+# disclosure pointing at the baked file. Only the BAKED part is capped; the
+# per-session additions (small) always append after, never silently dropped.
+if [ "$(printf '%s' "$ctx_text" | wc -c)" -gt 100000 ]; then
   ctx_text="$(printf '%s' "$ctx_text" | head -c 100000)
 
 [byre: instructions truncated at this agent's argv limit — full text: $CTX]"
 fi
+ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
 if [ -n "$ctx_text" ]; then
   flags+=(-c "developer_instructions=$ctx_text")
 fi

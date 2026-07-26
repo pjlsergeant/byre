@@ -45,6 +45,9 @@ apt = ["curl", "ca-certificates"]
 # grok-bundled bridges $GROK_HOME/bundled to the image tree (see its header).
 files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login", "grok-bundled.sh" = "/etc/byre/firstrun.d/grok-bundled", "grok-launch.sh" = "/usr/local/bin/byre-grok-launch" }
 dockerfile = [
+  # The launch wrapper must be executable: bundled extraction writes 0644
+  # (the codex/opencode wrappers carry the same line).
+  "RUN chmod +x /usr/local/bin/byre-grok-launch",
   "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://x.ai/cli/install.sh | bash'",
   # grok installs its BINARY into ~/.grok (downloads/ holds the file, bin/
   # symlinks to it). ~/.grok is NOT a volume — the state volume mounts at

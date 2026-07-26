@@ -15,15 +15,18 @@ set -eu
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 ctx_text=""
 [ -r "$CTX" ] && ctx_text="$(cat "$CTX")"
-ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
 
-# 100000 bytes: headroom under the ~131072 per-string limit for the note and
-# the rest of the command line.
-if [ "${#ctx_text}" -gt 100000 ]; then
+# 100000 BYTES (wc -c, not ${#} — that counts characters, and multi-byte
+# prose under 100k chars can still blow the ~131072-byte per-string limit;
+# grok review round 2). Only the BAKED part is capped; the per-session
+# additions (small: egress list, self-edit note) always append after the
+# disclosure, so they are never silently dropped.
+if [ "$(printf '%s' "$ctx_text" | wc -c)" -gt 100000 ]; then
   ctx_text="$(printf '%s' "$ctx_text" | head -c 100000)
 
 [byre: instructions truncated at this agent's argv limit — full text: $CTX]"
 fi
+ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
 
 if [ -n "$ctx_text" ]; then
   exec grok --append-system-prompt "$ctx_text" "$@"

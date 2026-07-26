@@ -448,3 +448,59 @@ func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
 		t.Fatalf("string must coerce to a one-element array, byre appended: %v", got.Instructions)
 	}
 }
+
+// The cap measures BYTES: multi-byte prose under 100k characters but over
+// the wire limit must still truncate (grok round 2 — ${#} counts characters
+// and let UTF-8 slip past to a dead exec). And the session additions append
+// AFTER the disclosure, never silently dropped by the truncation.
+func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash unavailable")
+	}
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "grok"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 70k é = 140k bytes but only 70k characters.
+	big := filepath.Join(dir, "utf8.md")
+	if err := os.WriteFile(big, []byte(strings.Repeat("é", 70_000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join("skills", "grok", "grok-launch.sh"), "--always-approve")
+	cmd.Env = append(os.Environ(),
+		"BYRE_AGENT_CONTEXT="+big, "BYRE_SESSION_CONTEXT=\n\nsession survives",
+		"PATH="+dir+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wrapper failed: %v\n%s", err, out)
+	}
+	raw, _ := os.ReadFile(argvFile)
+	args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+	if len(args) != 3 {
+		t.Fatalf("argv = %d elements", len(args))
+	}
+	if len(args[1]) > 102_000 {
+		t.Fatalf("byte cap missed UTF-8 content: %d bytes", len(args[1]))
+	}
+	if !strings.Contains(args[1], "truncated at this agent's argv limit") {
+		t.Fatalf("disclosure missing")
+	}
+	if !strings.HasSuffix(args[1], "session survives") {
+		t.Fatalf("session additions must survive truncation, tail = %q", args[1][len(args[1])-80:])
+	}
+}
+
+// The grok skill must chmod its wrapper: bundled extraction writes 0644, and
+// a non-executable /usr/local/bin/byre-grok-launch is Permission denied at
+// exec — a bricked box (grok round 2; the codex/opencode skills carry the
+// same line).
+func TestGrokSkillChmodsLaunchWrapper(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("skills", "grok", "skill.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "chmod +x /usr/local/bin/byre-grok-launch") {
+		t.Fatal("grok skill.toml must chmod the launch wrapper")
+	}
+}
