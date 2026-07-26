@@ -357,8 +357,6 @@ func pickerOpts(discovered []string, current string) []string {
 	return append(opts, noneOption)
 }
 
-// orNone/fromNone delegate to the shared sentinel vocabulary in config.
-
 func orDefault(v, def string) string {
 	if v == "" {
 		return def
