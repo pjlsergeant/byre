@@ -494,9 +494,14 @@ func planClaudeSkills(paths project.Paths, cfg config.Config, res skills.Resolve
 }
 
 // [[context]] prose size tiers (Pete's ruling, 2026-07-26): prose is NEVER
-// capped — escalating disclosures instead, because standing instructions
-// this big almost always want to be a skill (prose + tooling, toggled per
-// project) rather than unconditional agent memory. The tiers apply to inline
+// capped at the bake — escalating disclosures instead, because standing
+// instructions this big almost always want to be a skill (prose + tooling,
+// toggled per project) rather than unconditional instructions. One
+// TRANSPORT truth rides every tier (ADR 0046 merge): agents whose
+// injection channel is a command-line argument truncate near 100 KiB (the
+// per-argument exec limit), with an in-session disclosure — file-channel
+// agents carry the full text. The tiers disclose that too, so the
+// develop-time report and the delivery never tell different stories. The tiers apply to inline
 // text and file sources alike, so moving the same prose between forms never
 // changes the outcome (the asymmetry the QA pass flagged). The only refusal
 // is contextReadCeiling, far above the loudest tier: the same
@@ -514,11 +519,11 @@ const (
 func warnContextSize(warn io.Writer, name string, n int) {
 	switch {
 	case n >= contextShoutBytes:
-		fmt.Fprintf(warn, "byre: 🛑 context %s is %s of standing instructions — agent memory is the WRONG HOME for prose this size; package it as a skill, or mount the file into the box.\n", name, fmtSize(n))
+		fmt.Fprintf(warn, "byre: 🛑 context %s is %s of standing instructions — injected instructions are the WRONG HOME for prose this size; package it as a skill (prose + tooling, per-project toggle), or mount the file into the box. Agents on argument-based injection channels truncate near 100 KiB either way, with an in-session disclosure.\n", name, fmtSize(n))
 	case n >= contextWarnBytes:
-		fmt.Fprintf(warn, "byre: ⚠ context %s is %s — that is a lot of standing prose; consider packaging it as a skill instead.\n", name, fmtSize(n))
+		fmt.Fprintf(warn, "byre: ⚠ context %s is %s — that is a lot of standing prose; consider packaging it as a skill. Agents on argument-based injection channels truncate near 100 KiB, with an in-session disclosure.\n", name, fmtSize(n))
 	case n >= contextNoteBytes:
-		fmt.Fprintf(warn, "byre: context %s: %s of prose joins the agent's memory.\n", name, fmtSize(n))
+		fmt.Fprintf(warn, "byre: context %s: %s of prose joins the injected instructions; agents on argument-based injection channels truncate near 100 KiB, with an in-session disclosure.\n", name, fmtSize(n))
 	}
 }
 
