@@ -199,7 +199,7 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 	}
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		return buildImage(r, paths, rv.cfg, rv.skills, image, false, ident)
+		return buildImageWarn(s.Err, r, paths, rv.cfg, rv.skills, image, false, ident)
 	}); err != nil {
 		return "", runner.Identity{}, err
 	}

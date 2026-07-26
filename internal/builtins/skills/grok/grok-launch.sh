@@ -6,7 +6,9 @@
 # user's file.
 #
 # The value rides ONE argv string, and Linux caps a single exec argument at
-# MAX_ARG_STRLEN (~128 KiB) — well under byre's 1 MiB context budget. A
+# MAX_ARG_STRLEN (~128 KiB) — far under byre's context bounds (config
+# prose is disclosure-tiered, never capped; the technical read ceiling is
+# 16 MiB). A
 # legal-but-large context must DEGRADE loudly, not kill the exec (grok
 # review find, probed 2026-07-26): cap with a disclosure pointing at the
 # baked file, which the agent can read in-box.

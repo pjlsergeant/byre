@@ -66,9 +66,19 @@ a `file` in a template fails loudly on a machine that lacks it.
 or absolute -- the `[[claude_skills]] path` anchor rule, for the same
 reason: configs live in the user's store and a `default.config`
 declaration must reach the same file from every project. It is a declared
-build input, read at bake (Assemble), capped at the skill-context bound
-(1 MiB), and a missing/unreadable file fails the develop attributed to
-its declaration -- solicited means loud, never degraded.
+build input, read at bake (Assemble), and a missing/unreadable file fails
+the develop attributed to its declaration -- solicited means loud, never
+degraded.
+
+**Prose size is disclosed, never capped** (ruled 2026-07-26, superseding
+the original 1 MiB skill-context cap on file sources, which made the
+same prose behave differently by form): escalating develop-time tiers at
+100 KiB / 500 KiB / 1 MiB apply identically to inline and file sources,
+the loudest saying plainly that a skill is the right home. The one
+refusal left is the technical read ceiling far above the tiers (16 MiB,
+judged from fstat before reading): the read-boundedness every host read
+in byre obeys, so a fat-fingered `file` target cannot balloon the
+develop -- a boundedness rule, not a prose budget.
 
 The read rides the stageCopy containment stance: a path inside the
 agent-writable tree opens through an `os.Root` anchored there (an

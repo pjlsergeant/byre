@@ -4,7 +4,9 @@ package configui
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -43,10 +45,13 @@ func (m model) onEditorClosed(err error) model {
 	// parse: a written-but-invalid file was still written. A file DELETED in
 	// the editor is a mutation too — reporting it "unchanged" would tell the
 	// user their config is intact when it is gone.
+	// Absence is only ever fs.ErrNotExist: any OTHER read error (permissions,
+	// I/O) proves nothing about a write landing, so it sets none of the flags
+	// — the ParseFile below fails on the same unreadable file and surfaces it.
 	raw, rerr := os.ReadFile(m.filePath)
-	created := rerr == nil && m.preEditorErr != nil
+	created := rerr == nil && errors.Is(m.preEditorErr, fs.ErrNotExist)
 	changed := rerr == nil && m.preEditorErr == nil && !bytes.Equal(raw, m.preEditorRaw)
-	deleted := rerr != nil && m.preEditorErr == nil
+	deleted := errors.Is(rerr, fs.ErrNotExist) && m.preEditorErr == nil
 	if created || changed || deleted {
 		m.savedOnce = true
 	}
@@ -67,6 +72,46 @@ func (m model) onEditorClosed(err error) model {
 }
 
 // ---- save / assemble / dirty -----------------------------------------------
+
+// reportSaved is Run's saved return: whether the caller should say "wrote
+// <path>" (true) or "byre: config unchanged." (false). A ctrl+s save always
+// reports true — the user asked for that write. $EDITOR mutations report by
+// NET content instead: a round-trip that ends byte-identical to the open-time
+// file (a bad line edited in, then fixed back out) leaves nothing changed,
+// and reporting "wrote" for it contradicted the on-disk truth (QA playbook
+// finding 2026-07-18, fixed 2026-07-22). A file created or deleted while the
+// editor was open is a real mutation and still reports true.
+func (m model) reportSaved() bool {
+	if m.uiWrote {
+		return true
+	}
+	// No savedOnce shortcut here: "unchanged" must be POSITIVELY established
+	// from the endpoints, never assumed. An $EDITOR session that changed the
+	// file and left it unreadable sets no mutation flag (onEditorClosed can't
+	// prove the write), and a shortcut on savedOnce reported that session
+	// "unchanged" (codex review, round 2).
+	raw, err := os.ReadFile(m.filePath)
+	switch {
+	case err == nil && m.openErr == nil:
+		return !bytes.Equal(raw, m.openRaw)
+	case errors.Is(err, fs.ErrNotExist) && errors.Is(m.openErr, fs.ErrNotExist):
+		return false // absent at open and at quit alike
+	case (err == nil && errors.Is(m.openErr, fs.ErrNotExist)) ||
+		(errors.Is(err, fs.ErrNotExist) && m.openErr == nil):
+		return true // created or deleted during the session
+	default:
+		// An endpoint failed to read for a reason OTHER than absence
+		// (permissions, I/O): the net comparison can't be trusted, and
+		// "unchanged" is claimed ONLY on positive evidence (the two cases
+		// above) — so every incomparable shape reports written, no
+		// evidence-weighing (codex round 3: weighing lied for double-fault
+		// endpoints). The residual false "wrote" needs a file the caller's
+		// pre-open ParseFile could read that no longer reads at quit with
+		// nothing done — an unreadable endpoint on a session that gate let
+		// in means something happened to the file while we were here.
+		return true
+	}
+}
 
 // savedStatus is the post-save status note; statusNote singles it out (green).
 const savedStatus = "Saved ✓"
@@ -120,6 +165,7 @@ func (m model) save() model {
 	m.errMsg = ""
 	m.savedSig = m.sig()
 	m.savedOnce = true
+	m.uiWrote = true
 	m.status = savedStatus
 	m.confirmQuit = false
 	return m

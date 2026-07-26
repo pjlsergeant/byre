@@ -32,6 +32,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // ContextDecl is one declared standing-instruction snippet. Exactly one of
@@ -128,4 +130,50 @@ func (c Config) validateContextsResolved() error {
 // ContextsClosed are inert.
 func mergeContexts(base, over Config) (open []ContextDecl, closed []string) {
 	return mergeNamedDecls(base.Contexts, base.ContextsClosed, over.Contexts, over.ContextsClosed, contextDeclOps.name)
+}
+
+// SourceLayer is one raw cascade layer with its attribution label, in merge
+// order (later wins): "default", "template:<name>", "layer:<name>",
+// "project".
+type SourceLayer struct {
+	Label string
+	Cfg   Config
+}
+
+// ContextSources returns the raw cascade layers that can declare [[context]]
+// blocks for projectDir, in merge order — the attribution view `context
+// list` renders (ADR 0043 promises declarations are "named, attributed, and
+// removable"; the resolved set alone can't say which layer speaks).
+// Attribution probes walk the slice in REVERSE (the latest declarer wins),
+// mirroring the config editor's lowerSource. These are RAW layers for
+// name-probing only — the resolved set stays Load's answer. Sublayers that
+// fail to load just drop out (attribution degrades to fewer labels; develop
+// still fails loudly on a genuinely broken cascade); only an unreadable
+// PROJECT layer errors, since the caller is about to render its content.
+func ContextSources(projectDir string) ([]SourceLayer, error) {
+	paths, err := project.Resolve(projectDir)
+	if err != nil {
+		return nil, err
+	}
+	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName))
+	if err != nil {
+		return nil, err
+	}
+	var out []SourceLayer
+	if def, derr := loadLayer(filepath.Join(paths.Home, "default.config")); derr == nil {
+		out = append(out, SourceLayer{Label: "default", Cfg: def})
+	}
+	cat, _ := catalogFor(paths.Home)
+	if t := FromNone(proj.Template); t != "" && cat != nil {
+		if tc, terr := loadTemplateLayer(cat, t); terr == nil {
+			out = append(out, SourceLayer{Label: "template:" + t, Cfg: tc})
+		}
+	}
+	if chain, cerr := LoadExtendsChain(paths.Home, cat, proj.Extends); cerr == nil {
+		for _, nl := range chain {
+			out = append(out, SourceLayer{Label: "layer:" + nl.Name, Cfg: nl.Config})
+		}
+	}
+	out = append(out, SourceLayer{Label: "project", Cfg: proj})
+	return out, nil
 }

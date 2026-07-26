@@ -83,7 +83,9 @@ CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 ctx_text=""
 [ -r "$CTX" ] && ctx_text="$(cat "$CTX")"
 # The value rides ONE argv string; Linux caps a single exec argument at
-# MAX_ARG_STRLEN (~128 KiB), under byre's 1 MiB context budget — a
+# MAX_ARG_STRLEN (~128 KiB), far under byre's context bounds (config
+# prose is disclosure-tiered, never capped; the technical read ceiling is
+# 16 MiB) — a
 # legal-but-large context must DEGRADE loudly, not kill the exec.
 # Whole-argument byte budget: 100000 (headroom under the ~131072 per-string
 # exec limit). The SESSION additions have priority (operational: the

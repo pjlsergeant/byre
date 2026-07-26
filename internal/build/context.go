@@ -148,8 +148,15 @@ func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string
 }
 
 // Assemble writes the build context (Dockerfile + launcher + agent files + any
-// `files`) and returns the generated Dockerfile text.
+// `files`) and returns the generated Dockerfile text. Operator-facing notes
+// (the context prose size tiers) are discarded; develop calls AssembleWarn.
 func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+	return AssembleWarn(paths, cfg, res, io.Discard)
+}
+
+// AssembleWarn is Assemble with the operator's stderr attached: size-tier
+// notes about [[context]] prose land on warn as the context is staged.
+func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, warn io.Writer) (string, error) {
 	// Every mutation below is staged through a descriptor confined to the REAL
 	// context dir, so a `develop --self-edit` agent that swapped context/ (or an
 	// interior staging dir) for a symlink cannot redirect byre's host-side
@@ -281,7 +288,7 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// The operator's standing instructions ([[context]] declarations) speak
 	// last: cascade order after the skills' opinions — the voice closest to
 	// the user closes the file.
-	cc, err := configContext(paths.WorkDir, cfg.Contexts)
+	cc, err := configContext(warn, paths.WorkDir, cfg.Contexts)
 	if err != nil {
 		return "", err
 	}
@@ -486,17 +493,57 @@ func planClaudeSkills(paths project.Paths, cfg config.Config, res skills.Resolve
 	return jobs, nil
 }
 
+// [[context]] prose size tiers (Pete's ruling, 2026-07-26): prose is NEVER
+// capped — escalating disclosures instead, because standing instructions
+// this big almost always want to be a skill (prose + tooling, toggled per
+// project) rather than unconditional agent memory. The tiers apply to inline
+// text and file sources alike, so moving the same prose between forms never
+// changes the outcome (the asymmetry the QA pass flagged). The only refusal
+// is contextReadCeiling, far above the loudest tier: the same
+// read-boundedness every host read in byre obeys — a fat-fingered `file`
+// target (a VM image, a tarball) must not balloon the develop — judged from
+// fstat before a byte is read, never a prose budget.
+const (
+	contextNoteBytes   = 100 << 10 // sizeable: worth a mention
+	contextWarnBytes   = 500 << 10 // a lot: suggest a skill
+	contextShoutBytes  = 1 << 20   // wrong home: say so loudly
+	contextReadCeiling = 16 << 20  // file reads only: not agent-memory-sized
+)
+
+// warnContextSize emits the tier note for one snippet's prose size.
+func warnContextSize(warn io.Writer, name string, n int) {
+	switch {
+	case n >= contextShoutBytes:
+		fmt.Fprintf(warn, "byre: 🛑 context %s is %s of standing instructions — agent memory is the WRONG HOME for prose this size; package it as a skill, or mount the file into the box.\n", name, fmtSize(n))
+	case n >= contextWarnBytes:
+		fmt.Fprintf(warn, "byre: ⚠ context %s is %s — that is a lot of standing prose; consider packaging it as a skill instead.\n", name, fmtSize(n))
+	case n >= contextNoteBytes:
+		fmt.Fprintf(warn, "byre: context %s: %s of prose joins the agent's memory.\n", name, fmtSize(n))
+	}
+}
+
+// fmtSize renders a byte count the way the tier notes speak: KiB below a
+// mebibyte, MiB with one decimal above.
+func fmtSize(n int) string {
+	if n >= 1<<20 {
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	}
+	return fmt.Sprintf("%d KiB", n>>10)
+}
+
 // configContext concatenates the resolved [[context]] declarations in
 // cascade order — the operator's standing instructions (contextdecl.go).
 // Inline text is used as written; a `file` source is a declared build input:
-// it is read here, size-capped, and a missing or unreadable file fails the
-// develop loudly (nothing to degrade — the operator asked for exactly this
-// content). Reads follow the stageCopy routing: a path inside the
-// agent-writable tree is opened through an os.Root anchored there (openat, so
-// an agent-swapped ancestor or escaping symlink is refused rather than
-// followed into arbitrary host content), while a path genuinely outside it is
-// a user-named host file, opened following their symlink if they made one.
-func configContext(agentRoot string, decls []config.ContextDecl) (string, error) {
+// it is read here, and a missing or unreadable file fails the develop loudly
+// (nothing to degrade — the operator asked for exactly this content). Reads
+// follow the stageCopy routing: a path inside the agent-writable tree is
+// opened through an os.Root anchored there (openat, so an agent-swapped
+// ancestor or escaping symlink is refused rather than followed into
+// arbitrary host content), while a path genuinely outside it is a user-named
+// host file, opened following their symlink if they made one. Size is
+// disclosed per snippet (warnContextSize), never capped short of the read
+// ceiling.
+func configContext(warn io.Writer, agentRoot string, decls []config.ContextDecl) (string, error) {
 	var b strings.Builder
 	for _, cd := range decls {
 		content := cd.Text
@@ -505,12 +552,13 @@ func configContext(agentRoot string, decls []config.ContextDecl) (string, error)
 			if err != nil {
 				return "", fmt.Errorf("context %s: %w", cd.Name, err)
 			}
-			data, err := readCappedHostFile(agentRoot, path)
+			data, err := readBoundedHostFile(agentRoot, path)
 			if err != nil {
 				return "", fmt.Errorf("context %s: %s: %w", cd.Name, cd.File, err)
 			}
 			content = string(data)
 		}
+		warnContextSize(warn, cd.Name, len(content))
 		if content == "" {
 			continue
 		}
@@ -522,34 +570,40 @@ func configContext(agentRoot string, decls []config.ContextDecl) (string, error)
 	return b.String(), nil
 }
 
-// readCappedHostFile reads one host file under the skill-context size cap,
-// routed per configContext's containment rule.
-func readCappedHostFile(agentRoot, path string) ([]byte, error) {
+// readBoundedHostFile reads one host file under the technical read ceiling
+// (fstat-judged before reading — see the tier constants), routed per
+// configContext's containment rule.
+func readBoundedHostFile(agentRoot, path string) ([]byte, error) {
 	var f *os.File
+	var fi os.FileInfo
 	if rel, ok := agentWritableRel(agentRoot, path); ok {
 		root, err := os.OpenRoot(agentRoot)
 		if err != nil {
 			return nil, err
 		}
 		defer root.Close()
-		f, _, err = hostopen.OpenRegularIn(root, rel)
+		f, fi, err = hostopen.OpenRegularIn(root, rel)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		var err error
-		f, _, err = hostopen.OpenRegular(path, true)
+		f, fi, err = hostopen.OpenRegular(path, true)
 		if err != nil {
 			return nil, err
 		}
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, skills.MaxContextBytes+1))
+	if fi.Size() > contextReadCeiling {
+		return nil, fmt.Errorf("%s is not agent-memory-sized — refusing to read it into the box's context (mount it into the box, or package a skill)", fmtSize(int(fi.Size())))
+	}
+	data, err := io.ReadAll(io.LimitReader(f, contextReadCeiling+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > skills.MaxContextBytes {
-		return nil, fmt.Errorf("exceeds %d bytes (limit)", skills.MaxContextBytes)
+	if int64(len(data)) > contextReadCeiling {
+		// The file grew past the ceiling between fstat and the read.
+		return nil, fmt.Errorf("exceeds %d bytes (the read ceiling)", contextReadCeiling)
 	}
 	return data, nil
 }

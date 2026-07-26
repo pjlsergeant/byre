@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -606,4 +607,122 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 		}
 		check(t, path, nil)
 	})
+}
+
+// reportSaved (Run's saved return) judges $EDITOR-only sessions by NET
+// content: an edit round-trip that ends byte-identical to the open-time file
+// must report "unchanged" — the QA playbook's ^e journey edits a bad line in
+// and back out, and "wrote <path>" for that contradicted the on-disk truth
+// (finding 2026-07-18, fixed 2026-07-22). A ctrl+s save reports written
+// unconditionally; a lasting $EDITOR change reports written.
+func TestReportSavedEditorNetNoop(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	orig := []byte("agent = \"none\"\n")
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// $EDITOR writes a bad line, the UI reloads, a second $EDITOR fixes it
+	// back: savedOnce is true (real writes landed) but the net content is the
+	// open-time bytes — reportSaved must say unchanged.
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.WriteFile(path, []byte("agent = \"none\"\npackages = [\"x\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	if !m.savedOnce {
+		t.Fatal("precondition: the round-trip's writes must mark savedOnce")
+	}
+	if m.reportSaved() {
+		t.Fatal("a net-identical $EDITOR round-trip must report unchanged")
+	}
+
+	// A LASTING $EDITOR change reports written.
+	lasting := m
+	lasting.preEditorRaw, lasting.preEditorErr = os.ReadFile(path)
+	if err := os.WriteFile(path, []byte("agent = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lasting = lasting.onEditorClosed(nil)
+	if !lasting.reportSaved() {
+		t.Fatal("a lasting $EDITOR change must report written")
+	}
+
+	// ctrl+s reports written unconditionally, net content notwithstanding.
+	if err := os.WriteFile(path, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	saved := m
+	saved.uiWrote = true
+	if !saved.reportSaved() {
+		t.Fatal("a ctrl+s save must always report written")
+	}
+}
+
+// A read failure that is NOT absence (permissions, I/O) must not masquerade
+// as created/deleted: reportSaved degrades to the coarse truth (writes landed
+// this session) instead of comparing against bytes it couldn't read, and
+// onEditorClosed sets no mutation flag it can't prove (codex review of the
+// net-content fix).
+func TestReportSavedUnreadableEdgesDegradeCoarse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("agent = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// Open-time read failed for a non-absence reason; editor writes landed.
+	// The net comparison is untrustworthy — report written, never "unchanged".
+	m.openRaw, m.openErr = nil, errors.New("permission denied")
+	m.savedOnce = true
+	if !m.reportSaved() {
+		t.Fatal("an unreadable open endpoint must degrade to reporting written")
+	}
+
+	// onEditorClosed: a non-absence pre-editor error plus a readable file is
+	// NOT proof of creation — savedOnce must stay unset.
+	clean := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	clean.preEditorRaw, clean.preEditorErr = nil, errors.New("permission denied")
+	if got := clean.onEditorClosed(nil); got.savedOnce {
+		t.Fatal("a non-absence read error must not count as a landed write")
+	}
+}
+
+// An $EDITOR session that changes the file and leaves it UNREADABLE sets no
+// mutation flag — but the quit report must not call that "unchanged": the
+// readability transition itself is observable (codex review, round 2). The
+// unreadable quit endpoint is simulated by replacing the file with a
+// directory (EISDIR: a non-absence read failure that works under any uid).
+func TestReportSavedUnreadableQuitEndpointReportsWritten(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("agent = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	// $EDITOR breaks the file: onEditorClosed can't prove a write landed…
+	m.preEditorRaw, m.preEditorErr = os.ReadFile(path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	if m.savedOnce {
+		t.Fatal("precondition: an unreadable post-editor file must not set savedOnce")
+	}
+	// …but quit must still report written, never "config unchanged."
+	if !m.reportSaved() {
+		t.Fatal("readable→unreadable across the session must report written")
+	}
 }

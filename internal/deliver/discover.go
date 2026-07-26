@@ -312,10 +312,19 @@ func unusableNote(p pool) string {
 }
 
 // sessionList renders candidates for ambiguity errors (and, later, pickers).
+// The row is "<--box arg>  <project id> (engine)" — but for a plain project
+// the pick arg IS the project id, and printing both columns rendered the same
+// string twice per row (QA finding 2026-07-22), so the project column only
+// appears when it adds information (worktree sessions, engine-only pick args).
 func sessionList(sessions []Session) string {
 	var b strings.Builder
 	for _, s := range sessions {
-		fmt.Fprintf(&b, "  %s  %s (%s)%s\n", pickArg(s), s.ProjectID, s.EngineName, foreignNote(s))
+		arg := pickArg(s)
+		if arg == s.ProjectID {
+			fmt.Fprintf(&b, "  %s (%s)%s\n", arg, s.EngineName, foreignNote(s))
+		} else {
+			fmt.Fprintf(&b, "  %s  %s (%s)%s\n", arg, s.ProjectID, s.EngineName, foreignNote(s))
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

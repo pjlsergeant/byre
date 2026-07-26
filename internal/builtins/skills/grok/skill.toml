@@ -88,7 +88,8 @@ egress_offered = ["x.ai"]
 # --append-system-prompt (alias of --rules; appended, <human_rules> block;
 # NOT re-applied on `--resume` — byre launches are fresh sessions, inert
 # here), argv-capped with a loud disclosure: Linux limits one exec argument
-# to ~128 KiB, under byre's 1 MiB context budget, and a legal-but-large
+# to ~128 KiB, far under byre's uncapped-but-tiered context bounds, and a
+# legal-but-large
 # context must degrade, not kill the exec.
 command = "byre-grok-launch --always-approve"
 state = ".grok"
