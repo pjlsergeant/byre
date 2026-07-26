@@ -77,8 +77,8 @@ fi
 # discovery untouched (source-verified: config_toml.rs developer_instructions,
 # session/mod.rs developer_sections). The multi-line value fails TOML parse
 # inside -c and falls back to a literal string by design (config_override.rs).
-# byre writes NOTHING into $CODEX_HOME: its AGENTS.md is the user's file (the
-# retired context_target rewrote it every launch).
+# byre writes NOTHING into $CODEX_HOME: its AGENTS.md is the user's file,
+# never byre's to rewrite (ADR 0046).
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 ctx_text=""
 [ -r "$CTX" ] && ctx_text="$(cat "$CTX")"

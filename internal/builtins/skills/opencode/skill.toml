@@ -105,8 +105,8 @@ command = "byre-opencode-mcp-launch --auto"
 # APPENDS instruction files to the system context and CONCATs the arrays
 # across config layers, ADR 0046), then execs opencode with the passthrough
 # args — pure injection, no state writes. byre writes NOTHING into
-# ~/.config/opencode: its AGENTS.md is the user's file (the retired
-# context_target rewrote it every launch). Per-session additions
+# ~/.config/opencode: its AGENTS.md is the user's file, never byre's to
+# rewrite (ADR 0046). Per-session additions
 # ($BYRE_SESSION_CONTEXT) don't ride this file-path channel — not delivered
 # for opencode, recorded in the ADR.
 mcp = "inject"

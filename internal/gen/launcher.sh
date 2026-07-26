@@ -98,8 +98,8 @@ fi
 # to inject alongside the BAKED /etc/byre/agent-context.md (claude:
 # --append-system-prompt-file for the baked file, --append-system-prompt for
 # this var). byre never writes an agent-owned file to deliver prose (ADR
-# 0046) — the retired context_target placement rewrote the agent's own
-# memory file every launch, expropriating a file that was never byre's.
+# 0046): the agent's memory file belongs to the user, and expropriating it
+# was never byre's to do.
 # Always exported (possibly empty), so an injecting command's
 # "$BYRE_SESSION_CONTEXT" reference is safe unconditionally. Best-effort
 # throughout: a failure composing informational text must never block the

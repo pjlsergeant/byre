@@ -97,7 +97,7 @@ exceptions noted inline.
   `env_from_host` for runtime values).
 - `[files]` -- host paths copied into the image, read-only.
 - `dockerfile_pre` / `dockerfile_post` -- raw Dockerfile lines, emitted
-  before / after the core block. The build-time escape hatch, and the
+  before / after the core block. The build-time raw block, and the
   honest place for project setup that should happen once per build
   rather than at every launch.
 

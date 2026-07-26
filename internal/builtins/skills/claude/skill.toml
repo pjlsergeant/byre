@@ -86,9 +86,8 @@ claude_skills = "inject"
 # carries the launcher's per-session additions ($BYRE_SESSION_CONTEXT: the
 # enforced egress allowlist, the --self-edit note; always exported, possibly
 # empty, so the reference is safe unconditionally). byre writes NOTHING into
-# ~/.claude: the user-memory CLAUDE.md is the USER'S file (the retired
-# context_target rewrote it every launch — expropriation, ADR 0046 buried
-# it), and both the repo's /workspace/CLAUDE.md and the user's own memory
+# ~/.claude: the user-memory CLAUDE.md is the USER'S file, never byre's to
+# rewrite (ADR 0046), and both the repo's /workspace/CLAUDE.md and the user's own memory
 # now reach the session untouched, on top of the injected prompt.
 context = "inject"
 state = ".claude"

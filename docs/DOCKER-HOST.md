@@ -63,10 +63,10 @@ of them. Clean up what you create; label it so it is attributable.
 
 - **Yes:** the agent's job *is* containers (building images, driving
   compose stacks, debugging against a real daemon).
-- **Prefer not, when compose-deps alone are enough:** service sidecars
-  (planned; see the project TODO) cover compose-deps **without** this
-  grant. Prefer that path when the agent only needs dependencies, not
-  daemon control.
+- **Prefer not, when compose-deps alone are enough:** daemon control is a
+  much larger grant than dependencies need. Service sidecars would cover
+  that case without this grant, but they are not built yet (see the project
+  TODO), so today the choice is this grant or none.
 
 ## Compose project names
 
@@ -79,10 +79,9 @@ without reason.
 ## Warranty model
 
 byre warrants its own **construction**, never the consequences of your
-hole. The per-wall status rows (filesystem, network, privilege, ...) still
-describe what byre built and hold **for the box**. The Containment line
-disclaims everything done through the socket in one place -- including
-attacks not yet enumerated.
+hole. Every `byre status` row still describes what byre built, and holds
+**for the box**. The Containment line disclaims everything done through the
+socket in one place -- including attacks not yet enumerated.
 
 See also: the security model at <https://getbyre.com/docs/security-model/>
 (daemon access is root-equivalent),

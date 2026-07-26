@@ -95,7 +95,7 @@ command = "byre-grok-launch --always-approve"
 state = ".grok"
 # context = "inject": the command's --append-system-prompt carries the baked
 # context; byre writes NOTHING into $GROK_HOME — its AGENTS.md is the user's
-# rules file (the retired context_target rewrote it every launch, ADR 0046).
+# rules file, never byre's to rewrite (ADR 0046).
 # Project rules files (AGENTS.md/CLAUDE.md/... repo root down to cwd) still
 # load natively on top. Note grok's 10,000-char per-rules-file cap does NOT
 # apply to --append-system-prompt text.

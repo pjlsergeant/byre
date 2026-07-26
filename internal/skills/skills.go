@@ -68,9 +68,9 @@ type AgentContrib struct {
 	// MCP/claude_skills pattern (ADR 0046). Absent means no adapter: the
 	// context still bakes, and status reports declared-but-not-delivered
 	// with the path. byre NEVER writes an agent-owned file to deliver
-	// prose — the retired context_target mechanism rewrote the agent's own
-	// memory file every launch, expropriating a file that belongs to the
-	// user (or the agent), and ADR 0046 buried it.
+	// prose: that file belongs to the user (or the agent), never to byre
+	// (ADR 0046). The retired key it replaced is documented on ContextTarget
+	// below -- the one place its name still has to appear.
 	Context string `toml:"context"`
 	// ContextTarget is the RETIRED delivery key (pre-ADR 0046 skills
 	// declared where byre should write the agent's memory file). Parsed so

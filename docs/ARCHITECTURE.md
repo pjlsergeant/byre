@@ -336,10 +336,10 @@ name = "house-rules"                          # layers replace by name; `!name` 
 text = "Run the linter before committing."    # inline -- or file = "~/notes/agent.md"
 ```
 
-Escape hatches are symmetric across both layers byre controls
+Raw blocks are symmetric across both layers byre controls
 (PRINCIPLES.md #3):
 
-| layer   | nice primitives                             | raw escape hatch                    |
+| layer   | nice primitives                             | raw block                           |
 |---------|---------------------------------------------|-------------------------------------|
 | build   | `base`, `apt`, `npm_global`, `files`, `env` | `dockerfile_pre`, `dockerfile_post` |
 | runtime | `mounts`, `volumes`, `env`                  | `run_args`                          |
@@ -653,12 +653,11 @@ which re-resolves automatically once git's own pointers are repaired).
 
 ## Commands
 
-Commands fall into *lifecycle* (`develop`, `worktree`, `reset`,
-`rebuild`, `rehome`, `forget`), *inspection and ejection* (`status`,
-`dockerfile`, `dockerrun`, `ejectfirewall`, `shell`, `config`), *package
-and wiring management* (`skill`, `template`, `preset`, `mcp`), one
-*transfer* verb, `deliver` (below), and the self-describers (`version`,
-`completion`).
+Commands fall into *lifecycle*, *inspection and ejection*, *package and
+wiring management*, *transfer* (`deliver` and `grab`, below), and the
+self-describers. `byre --help` is the authoritative list, and the site's
+commands page is generated from the command tree; the reference below
+covers the ones with architectural weight rather than every verb.
 **No command mutates config behind your back** -- config *content*
 changes only where you asked for the write: files you edit, the `byre
 config` editor, `byre mcp add`/`remove`, `byre preset apply` (after its

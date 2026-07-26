@@ -101,8 +101,8 @@ mcp = "inject"
 # plus the launcher's per-session additions as `-c developer_instructions=…`
 # — a separate developer-role message codex APPENDS (source-verified);
 # base_instructions and AGENTS.md discovery untouched. byre writes NOTHING
-# into $CODEX_HOME: its AGENTS.md is the user's file (the retired
-# context_target rewrote it every launch).
+# into $CODEX_HOME: its AGENTS.md is the user's file, never byre's to rewrite
+# (ADR 0046).
 context = "inject"
 state = ".codex"
 

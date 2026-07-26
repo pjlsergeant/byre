@@ -61,8 +61,8 @@ egress = ["generativelanguage.googleapis.com", "cloudcode-pa.googleapis.com", "o
 # include-dirs list CONCATs with the user's own — source-verified,
 # memoryDiscovery/settingsSchema). Trust-gated memory is already forced open
 # by GEMINI_CLI_TRUST_WORKSPACE above. byre writes NOTHING into ~/.gemini:
-# its GEMINI.md is the user's file (the retired context_target rewrote it
-# every launch, ADR 0046). Per-session additions ($BYRE_SESSION_CONTEXT)
+# its GEMINI.md is the user's file, never byre's to rewrite (ADR 0046).
+# Per-session additions ($BYRE_SESSION_CONTEXT)
 # don't ride this file-based channel — not delivered for gemini, recorded in
 # the ADR.
 command = "gemini --yolo --include-directories /etc/byre/context"
