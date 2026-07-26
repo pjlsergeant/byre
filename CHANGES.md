@@ -1,6 +1,6 @@
 # Changes
 
-## unreleased
+## v1.3.1 -- 2026-07-26
 
 - **Sessions end by pointing out what changed where you can't see it.**
   Most of what an agent writes lands in your diff, where reviewing it is
