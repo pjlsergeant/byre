@@ -30,10 +30,14 @@ func TestBeatModelPasteCapturesTextAsEvidence(t *testing.T) {
 	}
 }
 
-func TestBeatModelCtrlCCancels(t *testing.T) {
-	m, cmd := beatModel{action: beatCancelled}.Update(beatKey(tea.KeyCtrlC))
-	if got := m.(beatModel); got.action != beatCancelled || cmd == nil {
-		t.Fatalf("action = %v cmd = %v", got.action, cmd)
+func TestBeatModelCtrlCAndEscCancel(t *testing.T) {
+	// Seeded with a NON-cancelled action: beatCancelled is the zero value, so
+	// seeding it would keep this green with the cancel assignment deleted.
+	for _, k := range []tea.KeyType{tea.KeyCtrlC, tea.KeyEsc} {
+		m, cmd := beatModel{action: beatGesture}.Update(beatKey(k))
+		if got := m.(beatModel); got.action != beatCancelled || cmd == nil {
+			t.Fatalf("%v: action = %v cmd = %v", k, got.action, cmd)
+		}
 	}
 }
 

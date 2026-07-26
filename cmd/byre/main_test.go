@@ -199,51 +199,64 @@ func TestArityUsageErrorsNameTheShape(t *testing.T) {
 }
 
 // TestRunUsageErrors pins that parse failures come back as usageError (exit 2
-// in main) without dispatching any command.
+// in main) without dispatching any command. Rows carrying a want fragment are
+// byre's OWN rules -- the fragment names which rule fired, because several
+// rules can reject one argv and the wrong one keeps a presence-only check
+// green (the strict tier; TestArityUsageErrorsNameTheShape states the rule).
+// An empty want is a rejection cobra itself produces (unknown flag, missing
+// flag value, the root usage): "cobra rejected it as usage" is the whole
+// contract there, and pinning its prose would couple the suite to a
+// dependency's wording.
 func TestRunUsageErrors(t *testing.T) {
-	cases := [][]string{
-		{},                                    // no command
-		{"bogus"},                             // unknown command
-		{"dockerfile", "extra"},               // operands after a no-arg command
-		{"develop", "--template"},             // flag missing its value
-		{"develop", "--bogus"},                // unknown flag
-		{"config", "--bogus"},                 // unknown flag
-		{"status", "--bogus"},                 // unknown flag
-		{"reset", "--bogus"},                  // unknown flag
-		{"worktree"},                          // missing name
-		{"worktree", "--bogus"},               // unknown flag
-		{"worktree", "a", "b"},                // extra operand
-		{"deliver", "--bogus"},                // unknown flag
-		{"deliver", "-", "x.txt"},             // stdin mixed with paths
-		{"deliver", "--install-app", "x.txt"}, // install-app takes no paths
-		{"deliver", "--install-app", "--no-clip=false"}, // supplied flag, even =false
-		{"deliver", "--install-app", "--proto", "1"},    // remote flags never mix with install-app
-		{"deliver", "--boxes", "x.txt"},                 // boxes takes no paths
-		{"deliver", "--boxes", "--tar", "-"},            // one remote mode at a time
-
-		{"deliver", "--boxes", "--box", "x"},     // boxes answers, never selects
-		{"deliver", "--tar"},                     // tar requires '-'
-		{"deliver", "--tar", "x.txt"},            // the archive arrives on stdin only
-		{"deliver", "--tar", "--name", "n", "-"}, // names ride the archive
-		{"grab"},                                 // the box path is required
-		{"grab", "a", "b", "c"},                  // at most one destination
-		{"grab", "--bogus", "a"},                 // unknown flag
-		{"skill"},                                // missing subcommand
-		{"skill", "bogus"},                       // unknown subcommand
-		{"rehome", "old", "extra"},               // extra operand (bare rehome is valid: it lists candidates)
-		{"version", "extra"},                     // operands after a no-arg command
-		{"--version", "extra"},                   // the alias gets the same operand check
+	cases := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{}, ""}, // no command (root usage)
+		{[]string{"bogus"}, `unknown command "bogus"`},
+		{[]string{"dockerfile", "extra"}, "unexpected arguments"},
+		{[]string{"develop", "--template"}, ""}, // flag missing its value
+		{[]string{"develop", "--bogus"}, ""},    // unknown flag
+		{[]string{"config", "--bogus"}, ""},     // unknown flag
+		{[]string{"status", "--bogus"}, ""},     // unknown flag
+		{[]string{"reset", "--bogus"}, ""},      // unknown flag
+		{[]string{"worktree"}, "usage: byre worktree <name>"},
+		{[]string{"worktree", "--bogus"}, ""}, // unknown flag
+		{[]string{"worktree", "a", "b"}, `unexpected argument "b"`},
+		{[]string{"deliver", "--bogus"}, ""}, // unknown flag
+		{[]string{"deliver", "-", "x.txt"}, "cannot be mixed with path arguments"},
+		{[]string{"deliver", "--install-app", "x.txt"}, "takes only an optional --box"},
+		// --no-clip=false is still a supplied flag the exclusivity promise rejects.
+		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes only an optional --box"},
+		{[]string{"deliver", "--install-app", "--proto", "1"}, "takes only an optional --box"},
+		{[]string{"deliver", "--boxes", "x.txt"}, "--boxes: takes no paths"},
+		{[]string{"deliver", "--boxes", "--tar", "-"}, "takes only --proto and --skip-uid-check"},
+		{[]string{"deliver", "--boxes", "--box", "x"}, "takes only --proto and --skip-uid-check"},
+		{[]string{"deliver", "--tar"}, "takes exactly '-'"},
+		{[]string{"deliver", "--tar", "x.txt"}, "takes exactly '-'"},
+		{[]string{"deliver", "--tar", "--name", "n", "-"}, "--name does not apply"},
+		{[]string{"grab"}, "usage: byre grab <box-path>"},
+		{[]string{"grab", "a", "b", "c"}, `unexpected argument "c"`},
+		{[]string{"grab", "--bogus", "a"}, ""}, // unknown flag
+		{[]string{"skill"}, "usage: byre skill list|inspect"},
+		{[]string{"skill", "bogus"}, "usage: byre skill list|inspect"},
+		// bare rehome is valid: it lists candidates.
+		{[]string{"rehome", "old", "extra"}, "usage: byre rehome [<old-id>]"},
+		{[]string{"version", "extra"}, "unexpected arguments"},
+		{[]string{"--version", "extra"}, "unexpected arguments"},
 	}
-	for _, argv := range cases {
+	for _, tc := range cases {
 		calls := map[string]string{}
 		s, _ := testStreams()
-		err := run(recorderApp(calls), argv, "/proj", s)
+		err := run(recorderApp(calls), tc.argv, "/proj", s)
 		var uerr usageError
 		if !errors.As(err, &uerr) {
-			t.Errorf("%v: expected usageError, got %v", argv, err)
+			t.Errorf("%v: expected usageError, got %v", tc.argv, err)
+		} else if tc.want != "" && !strings.Contains(string(uerr), tc.want) {
+			t.Errorf("%v: wrong rule fired: got %q, want a message containing %q", tc.argv, string(uerr), tc.want)
 		}
 		if len(calls) != 0 {
-			t.Errorf("%v: usage error must not dispatch, got %v", argv, calls)
+			t.Errorf("%v: usage error must not dispatch, got %v", tc.argv, calls)
 		}
 	}
 }

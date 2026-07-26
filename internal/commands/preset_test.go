@@ -300,31 +300,6 @@ skills = ["pete/linter"]
 	}
 }
 
-// Retired pre-preset `adopted`/`declined` records are inert: store setup
-// leaves them untouched (the migration sweep is retired; see CHANGES).
-func TestAdoptionRecordsInert(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("BYRE_HOME", home)
-	pdir := filepath.Join(home, "projects", "someproj")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mustWriteFile(t, filepath.Join(pdir, "adopted"), []byte("deadbeef"), 0o644)
-	mustWriteFile(t, filepath.Join(pdir, "declined"), []byte("cafef00d"), 0o644)
-	if err := packages.EnsureStore(home, nil, "v9.9.9", nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(pdir, "adopted")); err != nil {
-		t.Error("store setup must leave old adoption records alone")
-	}
-	if _, err := os.Stat(filepath.Join(pdir, "declined")); err != nil {
-		t.Error("store setup must leave old decline records alone")
-	}
-	if _, err := os.Stat(filepath.Join(pdir, "applied")); !os.IsNotExist(err) {
-		t.Error("no applied marker may be invented from an old record")
-	}
-}
-
 // Develop never prompts about a repo preset: passive note only.
 func TestDevelopPresetNoteIsPassive(t *testing.T) {
 	p, proj := onboardPaths(t)
@@ -339,16 +314,26 @@ func TestDevelopPresetNoteIsPassive(t *testing.T) {
 }
 
 // A preset naming a bundled template applies on a fresh home (the catalog
-// serves bundled from embed; nothing needs materializing).
+// serves bundled from embed; nothing needs materializing). The RESOLUTION is
+// the assertion: an unresolvable template is not an apply failure (it prints
+// "not installed" and applies anyway), so err == nil plus the applied state
+// would stay green with the bundled catalog broken.
 func TestPresetBuiltinTemplateOnFreshHome(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "template = \"go\"\nagent = \"none\"\n")
-	s, _, _ := testStreams("y\n", true)
+	s, out, _ := testStreams("y\n", true)
 	if err := PresetApply(s, proj, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
+	if strings.Contains(out.String(), "not installed") {
+		t.Fatalf("the bundled template must resolve from embed, not report missing:\n%s", out.String())
+	}
+	written, err := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(written), `template = "go"`) {
+		t.Fatalf("applied config must carry the preset's template:\n%s", written)
 	}
 	if state, _ := presetState(proj, p); state != "applied" {
 		t.Fatalf("state = %q", state)

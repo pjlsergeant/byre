@@ -31,10 +31,11 @@ func TestGrantSummaryMarksDisabledMounts(t *testing.T) {
 	}
 }
 
-// The summary's charter (nothing smuggled unseen) covers every Grant class:
-// machine-scoped volumes — the shared-credential shape, and the only grant
-// that crosses project scope — plus ports and egress.
-func TestGrantSummaryFlagsMachineVolumesPortsEgress(t *testing.T) {
+// The summary's charter (nothing smuggled unseen) covers every Grant class
+// it owns: machine-scoped volumes — the shared-credential shape, and the only
+// grant that crosses project scope — plus ports. Egress is the caller's per
+// grantSummary's own doc (its live/inert status needs the resolved posture).
+func TestGrantSummaryFlagsMachineVolumesAndPorts(t *testing.T) {
 	lines := grantSummary(config.Config{
 		Volumes: []config.Volume{
 			{Name: "claude-identity", Role: "state", Target: "/x", Scope: "machine"},

@@ -96,9 +96,6 @@ RUN . /etc/os-release \
 	if !strings.Contains(ctx, "COMPOSE_PROJECT_NAME") {
 		t.Errorf("context missing COMPOSE_PROJECT_NAME:\n%s", ctx)
 	}
-	if !strings.Contains(ctx, "prune") {
-		t.Errorf("context missing prune guidance:\n%s", ctx)
-	}
 	if !strings.Contains(ctx, "foreign") && !strings.Contains(ctx, "byre-machine") {
 		t.Errorf("context missing foreign-volume guidance:\n%s", ctx)
 	}

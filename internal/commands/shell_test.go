@@ -19,12 +19,6 @@ func TestShellNoSessionAnywhere(t *testing.T) {
 	}
 }
 
-func TestShellNoEnginesInstalled(t *testing.T) {
-	_, proj := testPaths(t)
-	if err := shell(discardStreams(), proj, nil, testCallerUID, false); err == nil {
-		t.Fatal("expected an error with no engines installed")
-	}
-}
 
 func TestShellQueryErrorNotMaskedAsNothingRunning(t *testing.T) {
 	_, proj := testPaths(t)

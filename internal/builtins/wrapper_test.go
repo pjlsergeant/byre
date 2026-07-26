@@ -91,13 +91,15 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 		"-c", "developer_instructions=test context", "", "session note",
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
-	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("argv mismatch:\n got %q\nwant %q", got, want)
-	}
-	// The secret values must appear ONLY where the tier says: never for the
-	// bearer/by-name tiers.
+	// The leak check runs BEFORE the byte-exact compare: after an exact match
+	// against a want with no secret in it, a leak is impossible, so ordered
+	// the other way this assertion could never fire -- and a leak should
+	// report as a leak, not as an argv mismatch.
 	if strings.Contains(string(argv), "sekrit") {
 		t.Fatalf("by-name tiers must keep token values off the argv:\n%s", argv)
+	}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("argv mismatch:\n got %q\nwant %q", got, want)
 	}
 }
 

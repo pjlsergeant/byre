@@ -885,7 +885,11 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 	}
 }
 
-func TestAssembleWritesAgentContextTarget(t *testing.T) {
+// A pre-ADR-0046 skill's context_target is tolerated and INERT: the context
+// file assembles as if the field were absent, and no placement pointer bakes
+// anywhere -- delivery is the agent command's injection, never a byre write
+// into agent state.
+func TestAssembleIgnoresRetiredContextTarget(t *testing.T) {
 	paths := bootstrapped(t)
 	res := skills.Resolved{
 		Skills: []skills.Skill{{Name: "claude", Context: "workflow rules"}},
@@ -899,8 +903,6 @@ func TestAssembleWritesAgentContextTarget(t *testing.T) {
 	if err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22.\n\nworkflow rules" {
 		t.Fatalf("context file wrong: %q err=%v", ctx, err)
 	}
-	// No placement pointer bakes anywhere: delivery is the agent command's
-	// injection (ADR 0046), never a byre write into agent state.
 	if strings.Contains(df, "agent-context-target") {
 		t.Errorf("retired context-target artifact in the Dockerfile:\n%s", df)
 	}
@@ -950,11 +952,11 @@ func TestAssembleContextListsConfigProvisions(t *testing.T) {
 	}
 }
 
-func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
+func TestAssembleChassisContextWithoutSkillContext(t *testing.T) {
 	paths := bootstrapped(t)
-	// Target set, no skill context: the target + self-edit note are baked, and
-	// the context file still exists — the chassis paragraph (the /inbox fact)
-	// rides every box even with no skill contributing context.
+	// No skill contributes context: the context file still exists — the
+	// chassis paragraph (the /inbox fact) rides every box — and the self-edit
+	// doc is baked whenever an agent launches.
 	res := skills.Resolved{Agent: &skills.AgentContrib{Command: "claude", Context: "inject"}}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
