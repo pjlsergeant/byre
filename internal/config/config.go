@@ -951,8 +951,8 @@ func (c Config) validateScalarsLayer() error {
 	if slices.ContainsFunc(egress, IsRemoval) {
 		egress = make([]string, 0, len(c.Egress))
 		for _, e := range c.Egress {
-			if IsRemoval(e) {
-				e = e[1:]
+			if n, ok := CutRemoval(e); ok {
+				e = n
 			}
 			egress = append(egress, e)
 		}
@@ -1428,8 +1428,8 @@ func mergeEgress(base, over Config) (open, closed []string) {
 // (a previously merged config re-entering Merge) into the latter.
 func splitEgress(egress, egressClosed []string) (open, closed []string) {
 	for _, e := range egress {
-		if IsRemoval(e) {
-			closed = append(closed, e[1:])
+		if n, ok := CutRemoval(e); ok {
+			closed = append(closed, n)
 			continue
 		}
 		open = append(open, e)

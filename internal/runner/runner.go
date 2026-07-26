@@ -565,8 +565,9 @@ func streamInExec(stdin io.Reader, name string, args ...string) error {
 // variant). Stderr is capped for the same reason streamOutExec caps it: this
 // backs Runner.ExecInput, whose callers (grab, the deliver transports) run
 // children over an agent-controlled tree, so the error text must never become
-// an unbounded buffer the box can grow to OOM host byre. Only stderr is capped;
-// stdout is the payload and stays whole.
+// an unbounded buffer the box can grow to OOM host byre. New() also routes the
+// plain capture seam here, so every captured engine call gets the cap. Only
+// stderr is capped; stdout is the payload and stays whole.
 func captureInExec(stdin io.Reader, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = stdin

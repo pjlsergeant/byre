@@ -253,7 +253,6 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// removeString drops the first occurrence of v from s (preserving order).
 // removeString returns s without v. Non-mutating (the caller's backing array is
 // left alone) and removes every match -- the same contract the config and
 // onboard copies have. It used to splice in place and stop at the first match,

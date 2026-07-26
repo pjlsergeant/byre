@@ -111,8 +111,8 @@ func validateNamedDecls[T any](ops namedDeclOps[T], decls []T, closed []string, 
 // closed list (a previously merged config re-entering Merge) into the latter.
 func splitNamedDecls[T any](decls []T, alreadyClosed []string, name func(T) string) (open []T, closed []string) {
 	for _, d := range decls {
-		if n := name(d); IsRemoval(n) {
-			closed = append(closed, n[1:])
+		if n, ok := CutRemoval(name(d)); ok {
+			closed = append(closed, n)
 			continue
 		}
 		open = append(open, d)
