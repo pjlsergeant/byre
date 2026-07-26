@@ -318,7 +318,7 @@ func printTemplateShape(w io.Writer, raw []byte) {
 		fmt.Fprintf(w, "  %s\n", listLine("egress", e))
 	}
 	for _, m := range cfg.Mounts {
-		if name, ok := strings.CutPrefix(m.Target, "!"); ok && name != "" {
+		if name, ok := config.CutRemoval(m.Target); ok {
 			fmt.Fprintf(w, "  removes mount: %s\n", packages.EscapeTerminal(name))
 			continue
 		}
@@ -332,7 +332,7 @@ func printTemplateShape(w io.Writer, raw []byte) {
 		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), mode)
 	}
 	for _, v := range cfg.Volumes {
-		if name, ok := strings.CutPrefix(v.Name, "!"); ok && name != "" {
+		if name, ok := config.CutRemoval(v.Name); ok {
 			fmt.Fprintf(w, "  removes volume: %s\n", packages.EscapeTerminal(name))
 			continue
 		}
@@ -389,7 +389,7 @@ func printTemplateShape(w io.Writer, raw []byte) {
 // listLine renders one string-list entry, showing `!name` cascade markers as
 // removals instead of grants.
 func listLine(key, val string) string {
-	if name, ok := strings.CutPrefix(val, "!"); ok && name != "" {
+	if name, ok := config.CutRemoval(val); ok {
 		return fmt.Sprintf("removes %s: %s", key, packages.EscapeTerminal(name))
 	}
 	return fmt.Sprintf("%s: %s", key, packages.EscapeTerminal(val))

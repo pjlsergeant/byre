@@ -65,6 +65,28 @@ func TestAptRowsClassification(t *testing.T) {
 	}
 }
 
+// The preview and the resolver must classify markers by the same rule. A bare
+// "!" is not a marker (config.IsRemoval requires an identity), so it must not
+// render as a stale marker -- it used to be classified by a bare CutPrefix
+// here, which reported a marker for the empty name and rendered the entry
+// twice.
+func TestBareBangIsNotAMarkerInTheEffectiveView(t *testing.T) {
+	m := effectiveModel()
+	m.apt = append(m.apt, "!")
+	var stale int
+	for _, r := range m.aptRows() {
+		if r.kind == rowStaleMarker {
+			stale++
+		}
+	}
+	if r := rowByText(t, m.aptRows(), "!"); r.kind != rowLocal {
+		t.Errorf(`bare "!" must render as a local entry, not a marker: %+v`, r)
+	}
+	if stale != 0 {
+		t.Errorf(`bare "!" produced %d stale-marker row(s)`, stale)
+	}
+}
+
 func TestAptRemoveHereAndRestore(t *testing.T) {
 	m := effectiveModel()
 	m.listField = fApt

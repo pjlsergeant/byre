@@ -259,7 +259,7 @@ func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeStat
 		}
 		closedHere := map[string]bool{}
 		for _, cd := range sl.Cfg.Contexts {
-			name, ok := strings.CutPrefix(cd.Name, "!")
+			name, ok := config.CutRemoval(cd.Name)
 			if !ok || closedHere[name] {
 				// Duplicate markers are layer-valid (markers dodge duplicate
 				// tracking); replaying the second would overwrite wasAt with

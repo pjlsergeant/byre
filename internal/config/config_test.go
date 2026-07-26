@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -78,6 +79,38 @@ func TestMergeMountsReenableByReplacing(t *testing.T) {
 	got := Merge(base, over).Mounts
 	if len(got) != 1 || got[0].Disabled {
 		t.Errorf("later layer should re-enable by replacement: got %+v", got)
+	}
+}
+
+// A bare "!" has no identity, so it is not a removal marker anywhere: not in
+// the resolver, not in Merge, and not in the config UI's preview (see
+// TestBareBangIsNotAMarkerInTheEffectiveView). It falls through to the
+// real-entry shape checks, which reject it loudly. CutRemoval exists so the
+// classify-and-strip pair cannot be spelled two ways again.
+func TestCutRemovalRequiresAnIdentity(t *testing.T) {
+	if _, ok := CutRemoval("!"); ok {
+		t.Error(`bare "!" must not classify as a removal marker`)
+	}
+	if name, ok := CutRemoval("!ripgrep"); !ok || name != "ripgrep" {
+		t.Errorf(`CutRemoval("!ripgrep") = %q, %v`, name, ok)
+	}
+	if _, ok := CutRemoval("ripgrep"); ok {
+		t.Error("a plain entry must not classify as a marker")
+	}
+	if IsRemoval("!") {
+		t.Error(`IsRemoval("!") must be false`)
+	}
+}
+
+func TestMergeDoesNotConsumeBareBang(t *testing.T) {
+	// Consumed as a marker, "!" would silently remove the entry named "" and
+	// vanish. It must survive as an entry so validation can reject it.
+	got := Merge(Config{Apt: []string{"curl"}}, Config{Apt: []string{"!"}})
+	if !slices.Contains(got.Apt, "!") {
+		t.Errorf(`bare "!" must survive the merge as an entry: %v`, got.Apt)
+	}
+	if !slices.Contains(got.Apt, "curl") {
+		t.Errorf("unrelated entry lost: %v", got.Apt)
 	}
 }
 

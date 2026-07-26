@@ -40,7 +40,7 @@ func (e skillEntry) on() bool {
 func splitSkillLayer(entries []string) (enabled []string, removed map[string]bool) {
 	removed = map[string]bool{}
 	for _, s := range entries {
-		if n, ok := strings.CutPrefix(s, "!"); ok {
+		if n, ok := config.CutRemoval(s); ok {
 			removed[n] = true
 		} else {
 			enabled = append(enabled, s)

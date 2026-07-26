@@ -919,6 +919,19 @@ func ValidateContent(base string, apt, npm []string, env map[string]string) erro
 // entry. One rule, one owner.
 func IsRemoval(id string) bool { return len(id) > 1 && strings.HasPrefix(id, "!") }
 
+// CutRemoval splits a `!name` marker into the name it removes. It is IsRemoval
+// and the strip in one call, because doing them separately is exactly how a
+// bare "!" becomes a marker for the empty name: strings.CutPrefix reports ok
+// for "!", so every caller has to remember the identity check separately, and
+// several did not. Use this instead of CutPrefix(s, "!") for marker
+// classification anywhere -- resolver, merge, or the config UI's preview.
+func CutRemoval(id string) (name string, ok bool) {
+	if !IsRemoval(id) {
+		return "", false
+	}
+	return id[1:], true
+}
+
 // validateScalars checks the layer-safe scalar/content fields — those valid or
 // invalid on their own, independent of the cascade. Shared by Validate and
 // ValidateLayer; layer mode exempts `!name` removal markers in the package
@@ -1480,7 +1493,7 @@ func mergeStrings(base, over []string) []string {
 	out := append([]string{}, base...)
 	var removals []string
 	for _, it := range over {
-		if name, ok := strings.CutPrefix(it, "!"); ok {
+		if name, ok := CutRemoval(it); ok {
 			removals = append(removals, name)
 			continue
 		}
@@ -1546,7 +1559,7 @@ func mergeMounts(base, over []Mount) []Mount {
 	out := append([]Mount{}, base...)
 	var removals []string
 	for _, m := range over {
-		if name, ok := strings.CutPrefix(m.Target, "!"); ok {
+		if name, ok := CutRemoval(m.Target); ok {
 			removals = append(removals, name)
 			continue
 		}
@@ -1597,7 +1610,7 @@ func mergeVolumes(base, over []Volume) []Volume {
 	out := append([]Volume{}, base...)
 	var removals []string
 	for _, v := range over {
-		if name, ok := strings.CutPrefix(v.Name, "!"); ok {
+		if name, ok := CutRemoval(v.Name); ok {
 			removals = append(removals, name)
 			continue
 		}

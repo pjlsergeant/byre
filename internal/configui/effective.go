@@ -129,7 +129,7 @@ func (m model) namedDeclRows(f namedDeclField) []listRow {
 	localIdx := map[string]int{}  // name -> index of a real local entry
 	markerIdx := map[string]int{} // name -> index of a !name marker
 	for i, it := range local {
-		if n, ok := strings.CutPrefix(it.name, "!"); ok {
+		if n, ok := config.CutRemoval(it.name); ok {
 			markerIdx[n] = i
 		} else {
 			localIdx[it.name] = i
@@ -203,7 +203,7 @@ func (m model) namedDeclRows(f namedDeclField) []listRow {
 		}
 	}
 	for i, it := range local {
-		if n, ok := strings.CutPrefix(it.name, "!"); ok && !markerMatched[i] {
+		if n, ok := config.CutRemoval(it.name); ok && !markerMatched[i] {
 			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
 		}
 	}
@@ -354,7 +354,7 @@ func (m model) egressRows() []listRow {
 	// localMarkerFor finds this file's own closure matching an open entry.
 	localMarkerFor := func(entry string) (idx int, name string, ok bool) {
 		for i, e := range m.egress {
-			if n, isM := strings.CutPrefix(e, "!"); isM && config.EgressClosureMatches(n, entry) {
+			if n, isM := config.CutRemoval(e); isM && config.EgressClosureMatches(n, entry) {
 				return i, n, true
 			}
 		}
@@ -448,7 +448,7 @@ func (m model) egressRows() []listRow {
 	// "removes nothing".
 	openDenylist := m.postureNow() == config.PostureOpenDenylist
 	for i, e := range m.egress {
-		n, ok := strings.CutPrefix(e, "!")
+		n, ok := config.CutRemoval(e)
 		if !ok || markerMatched[i] {
 			continue
 		}
@@ -555,7 +555,7 @@ func (m model) aptRows() []listRow {
 	localIdx := map[string]int{}  // real entry -> index in m.apt
 	markerIdx := map[string]int{} // marker name -> index in m.apt
 	for i, p := range m.apt {
-		if n, ok := strings.CutPrefix(p, "!"); ok {
+		if n, ok := config.CutRemoval(p); ok {
 			markerIdx[n] = i
 		} else {
 			localIdx[p] = i
@@ -592,7 +592,7 @@ func (m model) aptRows() []listRow {
 		rows = append(rows, listRow{kind: rowLocal, text: p, idx: i})
 	}
 	for i, p := range m.apt {
-		if n, ok := strings.CutPrefix(p, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
+		if n, ok := config.CutRemoval(p); ok && !lower[n] && !hasKey(localIdx, n) {
 			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
 		}
 	}
@@ -664,7 +664,7 @@ func (m model) mountRows() []listRow {
 	localIdx := map[string]int{}  // target -> index of a real local entry
 	markerIdx := map[string]int{} // target -> index of a !target marker
 	for i, mt := range m.mounts {
-		if n, ok := strings.CutPrefix(mt.Target, "!"); ok {
+		if n, ok := config.CutRemoval(mt.Target); ok {
 			markerIdx[n] = i
 		} else {
 			localIdx[mt.Target] = i
@@ -707,7 +707,7 @@ func (m model) mountRows() []listRow {
 		rows = append(rows, listRow{kind: rowLocal, text: mountLine(mt), disabled: mt.Disabled, idx: i})
 	}
 	for i, mt := range m.mounts {
-		if n, ok := strings.CutPrefix(mt.Target, "!"); ok && !lower[n] && !hasKey(localIdx, n) {
+		if n, ok := config.CutRemoval(mt.Target); ok && !lower[n] && !hasKey(localIdx, n) {
 			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
 		}
 	}
