@@ -504,3 +504,45 @@ func TestGrokSkillChmodsLaunchWrapper(t *testing.T) {
 		t.Fatal("grok skill.toml must chmod the launch wrapper")
 	}
 }
+
+// The codex wrapper shares the byte-cap + session-survival algorithm; its
+// own fixture so a codex-only edit can't regress it (grok round 3 nit).
+func TestCodexLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
+	for _, bin := range []string{"bash", "jq"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s unavailable", bin)
+		}
+	}
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mcpPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(mcpPath, config.MCPConfigJSON(nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	big := filepath.Join(dir, "utf8.md")
+	if err := os.WriteFile(big, []byte(strings.Repeat("é", 70_000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "--flag")
+	cmd.Env = append(os.Environ(),
+		"BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+big,
+		"BYRE_SESSION_CONTEXT=\n\nsession survives", "PATH="+dir+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wrapper failed: %v\n%s", err, out)
+	}
+	raw, _ := os.ReadFile(argvFile)
+	args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+	if len(args) != 3 || args[0] != "-c" {
+		t.Fatalf("argv = %q…", args[0])
+	}
+	if len(args[1]) > 102_100 {
+		t.Fatalf("byte cap missed UTF-8 content: %d bytes", len(args[1]))
+	}
+	if !strings.Contains(args[1], "truncated at this agent's argv limit") || !strings.HasSuffix(args[1], "session survives") {
+		t.Fatalf("disclosure/session wrong, tail = %q", args[1][len(args[1])-80:])
+	}
+}
