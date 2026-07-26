@@ -11,7 +11,14 @@ SHARED="$IDENTITY_DIR/auth.json"
 export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
 cred="$CODEX_HOME/auth.json"
 
-mkdir -p "$IDENTITY_DIR" "$CODEX_HOME" 2>/dev/null || exit 0
+# Failing to create either dir means shared auth cannot be asserted this
+# launch; say so before degrading (best-effort, never block the launch) —
+# otherwise the fallback to a per-project login is silent and the user
+# believes the machine-wide credential is in play.
+if ! mkdir -p "$IDENTITY_DIR" "$CODEX_HOME" 2>/dev/null; then
+  echo "byre codex-shared-auth: cannot create $IDENTITY_DIR or $CODEX_HOME — shared auth not asserted this launch (falling back to a per-project login)." >&2
+  exit 0
+fi
 
 # Adopt an existing per-project login rather than clobbering it: if this box
 # already has a real auth.json and the shared copy doesn't exist yet, MOVE the

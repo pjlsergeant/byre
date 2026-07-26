@@ -27,7 +27,7 @@ cred="$GROK_HOME/auth.json"
 # be the user's own arrangement, and they should know it stopped working.
 if [ -L "$cred" ]; then
   if rm -f "$cred" 2>/dev/null; then
-    echo "byre: removed symlinked grok credential (symlinks never count; shared-auth is retired, ADR 0023) — grok logs in per project." >&2
+    echo "byre: removed symlinked grok credential (symlinks never count; v1 file-shared auth is retired, ADR 0023 — to share a login, enable the grok-shared-auth broker) — grok logs in per project." >&2
   else
     echo "byre: WARNING — could not remove symlinked grok credential $cred; it shadows any XAI_API_KEY and grok auth will misbehave until it's removed by hand." >&2
   fi

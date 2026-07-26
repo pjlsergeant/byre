@@ -9,10 +9,18 @@
 IDENTITY_DIR="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/gemini"
 GEMINI_DIR="${BYRE_GEMINI_DIR:-/home/dev/.gemini}"
 
-mkdir -p "$IDENTITY_DIR" "$GEMINI_DIR" 2>/dev/null || exit 0
+# Failing to create either dir means shared auth cannot be asserted this
+# launch; say so before degrading (best-effort, never block the launch) —
+# otherwise the fallback to a per-project login is silent and the user
+# believes the machine-wide credential is in play.
+if ! mkdir -p "$IDENTITY_DIR" "$GEMINI_DIR" 2>/dev/null; then
+  echo "byre gemini-shared-auth: cannot create $IDENTITY_DIR or $GEMINI_DIR — shared auth not asserted this launch (falling back to a per-project login)." >&2
+  exit 0
+fi
 
-# gemini-credentials.json is the 0.49+ encrypted credential (FileKeychain);
-# oauth_creds.json is the legacy name -- link both, dangling is harmless.
+# oauth_creds.json is the default PLAINTEXT OAuth store; gemini-credentials.json
+# is the opt-in encrypted one (FileKeychain) and what the API-key store always
+# uses (see skill.toml) -- link both, dangling is harmless.
 for f in gemini-credentials.json oauth_creds.json google_accounts.json installation_id; do
   shared="$IDENTITY_DIR/$f"
   local_f="$GEMINI_DIR/$f"
