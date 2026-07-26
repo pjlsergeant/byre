@@ -244,7 +244,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 		if err := ctxRoot.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
 			return "", err
 		}
-		if err := stageCopy(ctxRoot, paths.WorkDir, j); err != nil {
+		if err := stageCopy(ctxRoot, agentWritableRoots(paths, cfg), j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
 	}
@@ -310,7 +310,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	// The operator's standing instructions ([[context]] declarations) speak
 	// last: cascade order after the skills' opinions — the voice closest to
 	// the user closes the file.
-	cc, err := configContext(warn, paths.WorkDir, cfg.Contexts)
+	cc, err := configContext(warn, agentWritableRoots(paths, cfg), cfg.Contexts)
 	if err != nil {
 		return "", err
 	}
@@ -594,7 +594,7 @@ func fmtSize(n int) string {
 // host file, opened following their symlink if they made one. Size is
 // disclosed per snippet (warnContextSize), never capped short of the read
 // ceiling.
-func configContext(warn io.Writer, agentRoot string, decls []config.ContextDecl) (string, error) {
+func configContext(warn io.Writer, agentRoots []string, decls []config.ContextDecl) (string, error) {
 	var b strings.Builder
 	for _, cd := range decls {
 		content := cd.Text
@@ -603,7 +603,7 @@ func configContext(warn io.Writer, agentRoot string, decls []config.ContextDecl)
 			if err != nil {
 				return "", fmt.Errorf("context %s: %w", cd.Name, err)
 			}
-			data, err := readBoundedHostFile(agentRoot, path)
+			data, err := readBoundedHostFile(agentRoots, path)
 			if err != nil {
 				return "", fmt.Errorf("context %s: %s: %w", cd.Name, cd.File, err)
 			}
@@ -624,10 +624,10 @@ func configContext(warn io.Writer, agentRoot string, decls []config.ContextDecl)
 // readBoundedHostFile reads one host file under the technical read ceiling
 // (fstat-judged before reading — see the tier constants), routed per
 // configContext's containment rule.
-func readBoundedHostFile(agentRoot, path string) ([]byte, error) {
+func readBoundedHostFile(agentRoots []string, path string) ([]byte, error) {
 	var f *os.File
 	var fi os.FileInfo
-	if rel, ok := agentWritableRel(agentRoot, path); ok {
+	if agentRoot, rel, ok := anchorAgentWritable(agentRoots, path); ok {
 		root, err := os.OpenRoot(agentRoot)
 		if err != nil {
 			return nil, err
@@ -708,11 +708,11 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 // worktree is not agent-writable) falls through to the by-pathname copyPath.
 // This ENFORCES — rather than assumes — that no by-pathname reopen happens for
 // an agent-writable source.
-func stageCopy(dstRoot *os.Root, agentRoot string, j fileCopy) error {
+func stageCopy(dstRoot *os.Root, agentRoots []string, j fileCopy) error {
 	root, src := j.srcRoot, j.src
 	if root == "" {
-		if rel, ok := agentWritableRel(agentRoot, j.src); ok {
-			root, src = agentRoot, rel
+		if r, rel, ok := anchorAgentWritable(agentRoots, j.src); ok {
+			root, src = r, rel
 		}
 	}
 	if root == "" {
@@ -728,6 +728,46 @@ func stageCopy(dstRoot *os.Root, agentRoot string, j fileCopy) error {
 	// os.Root follows it while refusing escapes. Its interior is agent territory:
 	// symlinks there are rejected (copyRootedEntry with topLevel=false).
 	return copyRootedEntry(r, src, dstRoot, j.staged, true, j.budget)
+}
+
+// agentWritableRoots is the definition CLAUDE.md states -- "the project tree
+// AND anything a box can shape" -- as one list the build path shares, instead
+// of each caller assuming WorkDir is the whole of it. Members: the project
+// tree; the common git dir of a linked worktree (bound rw into every worktree
+// box); and every rw mount. A host read of a path under ANY of these must be
+// anchored (openat, no by-pathname reopen), because a box can swap a
+// component between validation and use.
+//
+// Ordering matters: the most specific root wins, so a path inside a rw mount
+// nested under the project anchors at the mount. Read-only mounts are absent
+// deliberately -- the box cannot shape them.
+func agentWritableRoots(paths project.Paths, cfg config.Config) []string {
+	roots := []string{paths.WorkDir}
+	if paths.CommonGitDirHost != "" {
+		roots = append(roots, paths.CommonGitDirHost)
+	}
+	for _, m := range cfg.Mounts {
+		if m.Disabled || m.Mode != "rw" {
+			continue
+		}
+		if host, err := expandHome(m.Host); err == nil {
+			roots = append(roots, host)
+		}
+	}
+	// Longest first: the innermost containing root is the right anchor.
+	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
+	return roots
+}
+
+// anchorAgentWritable finds the agent-writable root containing path, if any,
+// and returns it with the relative path to open through it.
+func anchorAgentWritable(roots []string, path string) (root, rel string, ok bool) {
+	for _, r := range roots {
+		if rel, ok := agentWritableRel(r, path); ok {
+			return r, rel, true
+		}
+	}
+	return "", "", false
 }
 
 // agentWritableRel reports whether path is inside root, returning the relative

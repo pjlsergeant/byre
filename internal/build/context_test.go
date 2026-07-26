@@ -1351,3 +1351,42 @@ func TestCopyBudgetRefusesGrowthAtStaging(t *testing.T) {
 		t.Errorf("in-budget staging must succeed, got %v", err)
 	}
 }
+
+// "Agent-writable" is the project tree AND anything a box can shape
+// (CLAUDE.md): the definition was implemented as WorkDir alone, so a
+// [[context]] file inside a rw mount or the shared common git dir was read
+// BY PATHNAME -- swappable for a symlink to a host secret between develops
+// (Opus). One shared predicate now names the set; the innermost containing
+// root wins so a nested rw mount anchors at the mount.
+func TestAgentWritableRootsCoverShapeableTrees(t *testing.T) {
+	work := t.TempDir()
+	gitDir := t.TempDir()
+	rw := filepath.Join(work, "data")
+	ro := t.TempDir()
+	if err := os.MkdirAll(rw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := project.Paths{WorkDir: work, Canonical: work, CommonGitDirHost: gitDir}
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: rw, Target: "/data", Mode: "rw"},
+		{Host: ro, Target: "/ro", Mode: "ro"},
+		{Host: t.TempDir(), Target: "/off", Mode: "rw", Disabled: true},
+	}}
+	roots := agentWritableRoots(paths, cfg)
+
+	for _, c := range []struct{ path, wantRoot string }{
+		{filepath.Join(work, "a.md"), work},
+		{filepath.Join(gitDir, "config"), gitDir},
+		{filepath.Join(rw, "x.md"), rw}, // innermost wins over work
+	} {
+		root, _, ok := anchorAgentWritable(roots, c.path)
+		if !ok || root != c.wantRoot {
+			t.Errorf("anchor(%s) = %q,%v; want %q", c.path, root, ok, c.wantRoot)
+		}
+	}
+	for _, p := range []string{filepath.Join(ro, "x"), filepath.Join(t.TempDir(), "x")} {
+		if _, _, ok := anchorAgentWritable(roots, p); ok {
+			t.Errorf("%s is not agent-writable (ro mount / unrelated dir) but anchored", p)
+		}
+	}
+}
