@@ -75,9 +75,13 @@ type Runner struct {
 // New returns a Runner for the given engine using real exec.
 func New(e Engine) *Runner {
 	return &Runner{
-		engine:    e,
-		stream:    streamExec,
-		capture:   captureExec,
+		engine: e,
+		// stream/capture are the no-input cases of their ...In siblings:
+		// os.Stdin for the interactive form, a nil Reader (== no stdin) for
+		// the captured one. Separate implementations drifted -- one grew a
+		// stderr cap the other never got.
+		stream:    func(name string, args ...string) error { return streamInExec(os.Stdin, name, args...) },
+		capture:   func(name string, args ...string) (string, error) { return captureInExec(nil, name, args...) },
 		streamIn:  streamInExec,
 		captureIn: captureInExec,
 		streamOut: streamOutExec,
@@ -549,12 +553,6 @@ chown -R "$BYRE_OWNER" /dest`
 	return r.stream(string(r.engine), args...)
 }
 
-func streamExec(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
-}
-
 func streamInExec(stdin io.Reader, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = stdin
@@ -562,11 +560,18 @@ func streamInExec(stdin io.Reader, name string, args ...string) error {
 	return cmd.Run()
 }
 
+// captureInExec runs name with stdin and returns its stdout. A nil stdin leaves
+// Cmd.Stdin nil, which is the no-input case (there is no separate no-stdin
+// variant). Stderr is capped for the same reason streamOutExec caps it: this
+// backs Runner.ExecInput, whose callers (grab, the deliver transports) run
+// children over an agent-controlled tree, so the error text must never become
+// an unbounded buffer the box can grow to OOM host byre. Only stderr is capped;
+// stdout is the payload and stays whole.
 func captureInExec(stdin io.Reader, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = stdin
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderr := &capBuffer{max: 64 << 10}
+	cmd.Stderr = stderr
 	out, err := cmd.Output()
 	if err != nil {
 		// Surface the child's stderr — otherwise failures are just "exit status 1".
@@ -615,17 +620,3 @@ func (c *capBuffer) Write(p []byte) (int, error) {
 }
 
 func (c *capBuffer) String() string { return c.b.String() }
-
-func captureExec(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		// Surface the engine's stderr — otherwise failures are just "exit status 1".
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return string(out), fmt.Errorf("%s: %s", err, msg)
-		}
-	}
-	return string(out), err
-}
