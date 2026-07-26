@@ -19,7 +19,6 @@ func TestShellNoSessionAnywhere(t *testing.T) {
 	}
 }
 
-
 func TestShellQueryErrorNotMaskedAsNothingRunning(t *testing.T) {
 	_, proj := testPaths(t)
 	broken := &fakeRunner{liveErr: errors.New("daemon down")}

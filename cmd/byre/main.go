@@ -198,6 +198,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		versionCmd(a, s),
 		completionCmd(s),
 		commandsPageCmd(s),
+		configRefDocCmd(s),
 	)
 	// byre ships its own completion command (above) so its help carries the
 	// per-shell setup lines and bare/unknown invocations stay usage errors;

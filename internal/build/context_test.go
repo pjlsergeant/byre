@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -971,12 +972,56 @@ func TestAssembleChassisContextWithoutSkillContext(t *testing.T) {
 	if !strings.Contains(df, "COPY "+gen.SelfEditDocName+" /etc/byre/"+gen.SelfEditDocName) {
 		t.Errorf("Dockerfile missing self-edit COPY:\n%s", df)
 	}
-	// The doc must name the real config keys, so the agent doesn't have to guess.
+	if !strings.Contains(df, "COPY "+gen.ConfigRefName+" /etc/byre/"+gen.ConfigRefName) {
+		t.Errorf("Dockerfile missing config-reference COPY:\n%s", df)
+	}
+	// The injected note stays a POINTER (its bytes compete with standing
+	// instructions on argv-budgeted agents); the full vocabulary lives in the
+	// baked reference the note names. TestConfigReferenceCoversEveryKey pins
+	// the reference's coverage.
 	doc, _ := os.ReadFile(filepath.Join(paths.ContextDir, gen.SelfEditDocName))
-	for _, key := range []string{"apt =", "npm_global", "dockerfile_pre", "dockerfile_post", "run_args", "skills =", "mounts =", "volumes =", "ports =", "disabled = true", `scope = "machine"`, "byre.config"} {
-		if !strings.Contains(string(doc), key) {
-			t.Errorf("self-edit doc should reference %q:\n%s", key, doc)
+	if !strings.Contains(string(doc), "/etc/byre/"+gen.ConfigRefName) {
+		t.Errorf("self-edit doc should point at the baked reference:\n%s", doc)
+	}
+	ref, _ := os.ReadFile(filepath.Join(paths.ContextDir, gen.ConfigRefName))
+	if !strings.Contains(string(ref), "## Key reference") {
+		t.Errorf("baked config reference should carry the key vocabulary:\n%.400s", ref)
+	}
+}
+
+// TestConfigReferenceCoversEveryKey walks config.Config's toml tags and
+// requires each key to appear in the baked reference -- the growth guard the
+// old hand-listed key pin was not: a new config key cannot ship without its
+// reference entry (the self-edit.md staleness class this replaces: the doc
+// and its allowlisted pin both silently omitted extends, egress,
+// claude_skills, and context).
+func TestConfigReferenceCoversEveryKey(t *testing.T) {
+	rt := reflect.TypeOf(config.Config{})
+	for i := 0; i < rt.NumField(); i++ {
+		tag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]
+		if tag == "" || tag == "-" {
+			continue
 		}
+		if !strings.Contains(configRefDoc, "`"+tag+"`") && !strings.Contains(configRefDoc, "[["+tag+"]]") && !strings.Contains(configRefDoc, "["+tag+"]") {
+			t.Errorf("config key %q missing from the baked config reference (regenerate after documenting it on the site page: go run ./cmd/byre config-reference-doc > internal/build/config-reference.md)", tag)
+		}
+	}
+}
+
+// TestConfigReferenceDerivedFromSite pins the checked-in derived file to the
+// live site page through StripSiteReference -- one source, two renderings
+// (the commands-page pattern, pointed the other way).
+func TestConfigReferenceDerivedFromSite(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "site", "content", "docs", "configuration-reference.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := StripSiteReference(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configRefDoc != string(want) {
+		t.Fatal("internal/build/config-reference.md is stale against the site page — regenerate: go run ./cmd/byre config-reference-doc > internal/build/config-reference.md")
 	}
 }
 

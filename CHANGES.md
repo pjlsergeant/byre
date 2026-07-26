@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **`--self-edit` boxes now carry the full configuration reference, and the
+  injected note shrinks to a pointer at it.** The old `self-edit.md` -- folded
+  whole into the agent's session context -- had rotted three ways: it said
+  `apt`/`npm_global` "just union" (both take `!name` removal, ADR 0018), its
+  agent enum stopped at gemini, and its heading named a `byre --self-edit`
+  invocation that doesn't exist. It also competed for bytes with the
+  operator's standing instructions on argv-budgeted agents. The complete key
+  vocabulary now bakes at `/etc/byre/config-reference.md`, derived from the
+  site's configuration-reference page (one source, two renderings -- the
+  commands-page pattern, pointed the other way); a growth-guard test walks
+  every `config.Config` toml tag, so a new config key cannot ship without
+  its reference entry.
+- **Shared-auth firstrun hooks announce a failed setup instead of degrading
+  silently.** codex and gemini ported opencode's mkdir-failure announcement:
+  the user was otherwise left on a per-project login while believing the
+  machine-wide credential was in play. grok's login hook also stops saying
+  "shared-auth is retired" unqualified -- v1 file-sharing is what ADR 0023
+  retired; the message now points at the live grok-shared-auth broker.
+- **The README/site hero banner is now output byre can produce.** The old
+  block showed one line (with an `extra host mounts: none` segment that the
+  exposure line skips at zero); the heroes now carry develop's real two-line
+  exposure output.
+
 - **Usage errors on the package and layer verbs now exit 2, like every other
   usage error.** Sixteen commands (`skill`/`template` inspect, pack, fork,
   init, validate, install, uninstall; `preset apply`/`inspect`; `layer

@@ -208,7 +208,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	// (agent removed, context emptied) would otherwise leave a stale file behind.
 	// "agent-context-target" is the RETIRED placement pointer (pre-ADR 0046
 	// stores may still carry one) — removed like the live conditional files.
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, "agent-context-target", gen.SelfEditDocName} {
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, "agent-context-target", gen.SelfEditDocName, gen.ConfigRefName} {
 		if err := ctxRoot.Remove(name); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
@@ -310,6 +310,12 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 		// (BYRE_SESSION_CONTEXT) when the self-edit mount (this project's store
 		// at /home/dev/.byre-self) is present.
 		if err := ctxRoot.WriteFile(gen.SelfEditDocName, []byte(selfEditDoc), 0o644); err != nil {
+			return "", err
+		}
+		// The full config reference the note points at -- baked, never
+		// injected, so its size never competes with standing instructions on
+		// argv-budgeted agents.
+		if err := ctxRoot.WriteFile(gen.ConfigRefName, []byte(configRefDoc), 0o644); err != nil {
 			return "", err
 		}
 	}

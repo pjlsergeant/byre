@@ -94,6 +94,12 @@ const (
 	AgentCmdName     = "agent-cmd"
 	AgentContextName = "agent-context.md"
 	SelfEditDocName  = "self-edit.md"
+	// ConfigRefName is the full config reference (derived from the site's
+	// configuration-reference page) that self-edit.md points the agent at --
+	// a file on disk costs nothing until read, unlike the injected self-edit
+	// note, whose bytes compete with standing instructions on argv-budgeted
+	// agents.
+	ConfigRefName = "config-reference.md"
 )
 
 // MCPConfigName is the build-context filename of the canonical declared MCP
@@ -257,6 +263,7 @@ func Dockerfile(in Input) string {
 			// The launcher folds this into BYRE_SESSION_CONTEXT only when the
 			// self-edit mount is actually present.
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", SelfEditDocName, SelfEditDocName)
+			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", ConfigRefName, ConfigRefName)
 		}
 	}
 
