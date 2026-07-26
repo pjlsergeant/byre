@@ -111,6 +111,30 @@ func configValueShown(key string) bool {
 	return false
 }
 
+// redactKeyUserinfo strips credentials that live in a git config KEY rather
+// than its value. Suppressing values alone does not close the channel: real
+// shapes put the secret in the subsection --
+// `url.https://TOKEN@example.com/.insteadOf`,
+// `credential.https://user:pass@host.helper` -- and the key is what names the
+// finding. Host and scheme survive (they are what makes the line legible);
+// anything before the `@` does not.
+func redactKeyUserinfo(key string) string {
+	i := strings.Index(key, "://")
+	if i < 0 {
+		return key
+	}
+	rest := key[i+3:]
+	at := strings.IndexByte(rest, '@')
+	if at < 0 {
+		return key
+	}
+	// Userinfo is only userinfo before the path begins.
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 && at > slash {
+		return key
+	}
+	return key[:i+3] + "<redacted>@" + rest[at+1:]
+}
+
 // exitSnapshot is what the report compares. Each map is keyed by a DISPLAY
 // path (what the user will read), so a worktree session naming the main tree's
 // git dir cannot be mistaken for something inside its own checkout.
@@ -118,6 +142,12 @@ type exitSnapshot struct {
 	hooks  map[string]string            // display path -> content signature
 	config map[string]map[string]string // display path -> git config key -> value
 	env    map[string]map[string]string // display path -> env key -> value
+	// unreadable marks a watched file that EXISTS but could not be read or
+	// parsed (a transient git probe failure, an oversize .env, a planted
+	// special file). Without it, absence from the maps is indistinguishable
+	// from deletion, and the whole-file-deletion report would announce that
+	// every key vanished from a file that is sitting right there (codex).
+	unreadable map[string]bool
 }
 
 // snapshotExit derives the watch set fresh and reads it. Derived fresh on BOTH
@@ -131,9 +161,10 @@ type exitSnapshot struct {
 // the comparison.
 func snapshotExit(paths project.Paths) exitSnapshot {
 	s := exitSnapshot{
-		hooks:  map[string]string{},
-		config: map[string]map[string]string{},
-		env:    map[string]map[string]string{},
+		hooks:      map[string]string{},
+		config:     map[string]map[string]string{},
+		env:        map[string]map[string]string{},
+		unreadable: map[string]bool{},
 	}
 
 	gitDir := commonGitDirOf(paths)
@@ -154,7 +185,9 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		// (core.hookspath is exec-relevant) but never traversed: the target can
 		// be $HOME or /tmp, and walking an arbitrary host directory is a cost
 		// and a privacy problem byre has no business taking on.
-		hooksDirs = append(hooksDirs, containedHooksPaths(paths, gitConfigFiles(gitDir))...)
+		if p, ok := containedHooksPath(paths); ok {
+			hooksDirs = append(hooksDirs, p)
+		}
 		for _, dir := range hooksDirs {
 			snapshotHooks(s.hooks, paths, dir)
 		}
@@ -163,6 +196,8 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 	for _, f := range envFiles(paths.WorkDir) {
 		if kv, ok := readEnvKeys(f); ok {
 			s.env[exitDisplay(paths, f)] = kv
+		} else {
+			s.unreadable[exitDisplay(paths, f)] = true // envFiles only lists what it saw
 		}
 	}
 	return s
@@ -232,43 +267,41 @@ func readGitConfig(path string) (map[string]string, bool) {
 	return kv, true
 }
 
-// containedHooksPaths resolves core.hooksPath from EVERY watched config file --
-// `config.worktree` can set it as readily as `config`, and watching the keys
-// there while resolving the target only from `config` would be a lopsided
-// half-fix. Over-collecting is harmless: an extra directory just gets watched.
-//
-// A target is returned only when it stays inside a tree byre already reaches
-// (the worktree, or the main checkout). Relative values resolve against the
-// working tree root, which for a linked worktree is the WORKTREE -- not the
-// main tree and not the git dir.
-func containedHooksPaths(paths project.Paths, configFiles []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, cfg := range configFiles {
-		raw, err := gitProbe("config", "--file", cfg, "--get", "core.hooksPath")
-		if err != nil {
-			continue
-		}
-		p := strings.TrimSpace(string(raw))
-		if p == "" {
-			continue
-		}
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(paths.WorkDir, p)
-		}
-		p = filepath.Clean(p)
-		if seen[p] {
-			continue
-		}
-		for _, root := range []string{paths.WorkDir, paths.Canonical} {
-			if root != "" && inTreeByIdentity(root, p) {
-				seen[p] = true
-				out = append(out, p)
-				break
-			}
+// containedHooksPath resolves the hooks directory git will ACTUALLY use for
+// this worktree, and returns it only when it stays inside a tree byre already
+// reaches. Asking git (`-C <worktree> config --get`) rather than reading config
+// files ourselves is the point: hooksPath values in `config` and
+// `config.worktree` are ALTERNATIVES under git's precedence, not a set, and a
+// relative one resolves against the worktree that owns it. Collecting them all
+// watched inactive directories and then claimed "your git runs this" about
+// them, which is a definite statement that was sometimes false (both
+// reviewers).
+func containedHooksPath(paths project.Paths) (string, bool) {
+	raw, err := gitProbe("-C", paths.WorkDir, "config", "--get", "core.hooksPath")
+	if err != nil {
+		return "", false
+	}
+	p := strings.TrimSpace(string(raw))
+	if p == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(paths.WorkDir, p)
+	}
+	p = filepath.Clean(p)
+	for _, root := range []string{paths.WorkDir, paths.Canonical} {
+		if root != "" && inTreeByIdentity(root, p) {
+			return p, true
 		}
 	}
-	return out
+	return "", false
+}
+
+// exists reports whether a path is present at all, without following a final
+// symlink or opening anything.
+func exists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
 }
 
 // snapshotHooks records a signature per file under dir. Enumeration rides a
@@ -372,9 +405,9 @@ func exitDisplay(paths project.Paths, p string) string {
 // makes the same choice for the store, for the same reason.
 func reportExit(w io.Writer, before, after exitSnapshot) {
 	var lines []string
-	lines = append(lines, diffConfig(before.config, after.config)...)
+	lines = append(lines, diffConfig(before, after)...)
 	lines = append(lines, diffHooks(before.hooks, after.hooks)...)
-	lines = append(lines, diffEnv(before.env, after.env)...)
+	lines = append(lines, diffEnv(before, after)...)
 	if len(lines) == 0 {
 		return
 	}
@@ -409,46 +442,58 @@ func diffHooks(before, after map[string]string) []string {
 }
 
 // diffConfig names the exec-relevant git config keys that moved. Ranking keeps
-// the message rare (see execRelevantConfig); configValueShown keeps it from
-// echoing anything secret-shaped.
-func diffConfig(before, after map[string]map[string]string) []string {
+// the message rare (execRelevantConfig); configValueShown and redactKeyUserinfo
+// keep it from echoing anything secret-shaped, from either side of the `=`.
+func diffConfig(before, after exitSnapshot) []string {
 	var out []string
-	say := func(file, key, verb, value string) {
+	// say picks the verb to match whether a value follows it. A shared
+	// "is set to" for both cases left suppressed lines reading as truncated
+	// English -- ".git/config: credential.helper is set to" (grok).
+	say := func(file, key, value string, had bool) {
+		label := redactKeyUserinfo(key)
 		if configValueShown(key) && value != "" {
-			out = append(out, fmt.Sprintf("%s: %s %s %s", file, key, verb, value))
+			verb := "is set to"
+			if had {
+				verb = "is now"
+			}
+			out = append(out, fmt.Sprintf("%s: %s %s %s", file, label, verb, value))
 			return
 		}
-		out = append(out, fmt.Sprintf("%s: %s %s", file, key, verb))
+		verb := "was set"
+		if had {
+			verb = "changed"
+		}
+		out = append(out, fmt.Sprintf("%s: %s %s", file, label, verb))
 	}
-	for file, akv := range after {
-		bkv := before[file]
+	gone := func(file, key, suffix string) {
+		out = append(out, fmt.Sprintf("%s: %s %s", file, redactKeyUserinfo(key), suffix))
+	}
+	for file, akv := range after.config {
+		bkv := before.config[file]
 		for k, av := range akv {
 			bv, had := bkv[k]
 			if (had && bv == av) || !execRelevantConfig(k, av) {
 				continue
 			}
-			if had {
-				say(file, k, "is now", av)
-			} else {
-				say(file, k, "is set to", av)
-			}
+			say(file, k, av, had)
 		}
 		for k, bv := range bkv {
 			if _, still := akv[k]; !still && execRelevantConfig(k, bv) {
-				say(file, k, "was removed", "")
+				gone(file, k, "was removed")
 			}
 		}
 	}
 	// A watched config file that disappeared takes its keys with it -- the same
-	// user-visible event as clearing them one by one, and a normal thing for an
-	// agent to do. Iterating `after` alone would miss it entirely.
-	for file, bkv := range before {
-		if _, still := after[file]; still {
+	// user-visible event as clearing them one by one. Only when it is really
+	// GONE: a file byre could not read this time is still there, and saying its
+	// keys vanished would be a lie byre invented (codex).
+	for file, bkv := range before.config {
+		if _, still := after.config[file]; still || after.unreadable[file] {
 			continue
 		}
 		for k, bv := range bkv {
 			if execRelevantConfig(k, bv) {
-				say(file, k, "went away with the file", "")
+				gone(file, k, "went away with the file")
 			}
 		}
 	}
@@ -461,7 +506,7 @@ func diffConfig(before, after map[string]map[string]string) []string {
 // NO VALUE is ever printed. Env files hold secrets, and a value echoed here
 // would land in the terminal, in scrollback, and in any captured log: an
 // exposure byre would have created. Names only, and a test pins it.
-func diffEnv(before, after map[string]map[string]string) []string {
+func diffEnv(before, after exitSnapshot) []string {
 	var out []string
 	emit := func(file string, groups [3][]string) {
 		for i, verb := range [3]string{"added", "changed", "removed"} {
@@ -472,8 +517,8 @@ func diffEnv(before, after map[string]map[string]string) []string {
 			out = append(out, fmt.Sprintf("%s: %s %s", file, verb, strings.Join(groups[i], ", ")))
 		}
 	}
-	for file, akv := range after {
-		bkv := before[file]
+	for file, akv := range after.env {
+		bkv := before.env[file]
 		var g [3][]string
 		for k, av := range akv {
 			switch bv, had := bkv[k]; {
@@ -490,9 +535,9 @@ func diffEnv(before, after map[string]map[string]string) []string {
 		}
 		emit(file, g)
 	}
-	// Deleted outright: every key it held is gone (see diffConfig).
-	for file, bkv := range before {
-		if _, still := after[file]; still {
+	// Deleted outright -- and only when really gone, not merely unreadable.
+	for file, bkv := range before.env {
+		if _, still := after.env[file]; still || after.unreadable[file] {
 			continue
 		}
 		var g [3][]string

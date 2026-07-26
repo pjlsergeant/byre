@@ -100,7 +100,9 @@ func TestExitReportGitConfig(t *testing.T) {
 		{"fsmonitor", "core.fsmonitor", "/tmp/mon --token=abc123", false},
 		{"filter smudge", "filter.evil.smudge", "/tmp/s --key=sekrit", false},
 		{"diff textconv", "diff.evil.textconv", "/tmp/t", false},
-		{"url insteadOf", "url.https://tok3n@example.com/.insteadOf", "https://example.com/", false},
+		// Key and value must not share a substring, or "value absent" can't be
+		// asserted independently of the key being named.
+		{"url insteadOf", "url.https://example.com/.insteadOf", "git@other.example.net:", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			paths, dir := exitRepo(t)
@@ -392,5 +394,62 @@ func TestExitReportIncludeIsNamedNotFollowed(t *testing.T) {
 	got := exitReport(t, paths, func() { gitIn(t, dir, "config", "include.path", extra) })
 	if !strings.Contains(strings.ToLower(got), "include.path") {
 		t.Errorf("a new include must be named, got:\n%s", got)
+	}
+}
+
+// Secrets hide in the KEY as often as the value: url.https://TOKEN@host/.insteadOf
+// and credential.https://user:pass@host.helper are ordinary CI shapes. Naming
+// the key verbatim reprints the token into scrollback -- the same channel the
+// value suppression closes (both reviewers, round 2).
+func TestExitReportRedactsKeyUserinfo(t *testing.T) {
+	for _, tc := range []struct{ name, key, val, secret string }{
+		{"url insteadOf", "url.https://tok3n@example.com/.insteadOf", "https://example.com/", "tok3n"},
+		{"credential helper per-url", "credential.https://usr:pa55w0rd@example.com.helper", "store", "pa55w0rd"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths, dir := exitRepo(t)
+			got := exitReport(t, paths, func() { gitIn(t, dir, "config", tc.key, tc.val) })
+			if strings.Contains(got, tc.secret) {
+				t.Errorf("SECRET LEAKED from the key (%q):\n%s", tc.secret, got)
+			}
+			// Still has to say something -- redaction must not silence the class.
+			if !strings.Contains(got, "example.com") {
+				t.Errorf("expected the key class to still speak, got:\n%s", got)
+			}
+		})
+	}
+}
+
+// Suppressing a value must not leave the sentence hanging ("credential.helper
+// is set to" with nothing after it) -- a regression the value fix introduced.
+func TestExitReportNoDanglingVerbs(t *testing.T) {
+	paths, dir := exitRepo(t)
+	got := exitReport(t, paths, func() {
+		gitIn(t, dir, "config", "credential.helper", "!f() { :; }; f")
+		gitIn(t, dir, "config", "core.sshCommand", "ssh -i /tmp/k")
+	})
+	for _, line := range strings.Split(strings.TrimSpace(got), "\n") {
+		for _, dangling := range []string{"is set to", "is now"} {
+			if strings.HasSuffix(strings.TrimRight(line, " "), dangling) {
+				t.Errorf("dangling verb with no object: %q\nfull:\n%s", line, got)
+			}
+		}
+	}
+}
+
+// A file byre could not READ this time is still sitting there. Reporting its
+// keys as gone would be a deletion byre invented (codex, round 2).
+func TestExitReportUnreadableIsNotDeletion(t *testing.T) {
+	paths, dir := exitRepo(t)
+	env := filepath.Join(dir, ".env")
+	mustWriteFile(t, env, []byte("DATABASE_URL=x\nAPI_TOKEN=y\n"), 0o644)
+
+	got := exitReport(t, paths, func() {
+		// Past maxEnvFileBytes: present, but not parsed.
+		big := append(bytes.Repeat([]byte("PADDING=0123456789\n"), 60000), '\n')
+		mustWriteFile(t, env, big, 0o644)
+	})
+	if strings.Contains(got, "removed") {
+		t.Errorf("an unreadable file must not be reported as deleted, got:\n%s", got)
 	}
 }
