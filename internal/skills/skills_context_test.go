@@ -206,7 +206,7 @@ target = "/home/dev/.fake"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.AgentContextInjects() {
+	if res.Agent == nil || res.Agent.Context != "inject" {
 		t.Errorf("context vouch not resolved")
 	}
 	if res.Context() != "workflow rules" {
@@ -252,7 +252,7 @@ target = "/home/dev/.fake"
 	if err != nil {
 		t.Fatalf("retired key must not fail the load: %v", err)
 	}
-	if res.AgentContextInjects() {
+	if res.Agent != nil && res.Agent.Context == "inject" {
 		t.Fatal("a retired target is not an injection vouch")
 	}
 }

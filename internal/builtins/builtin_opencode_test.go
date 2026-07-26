@@ -37,7 +37,7 @@ func TestOpencodeSkillPinsLoadBearingFacts(t *testing.T) {
 	if res.Agent.MCP != "inject" {
 		t.Errorf("opencode mcp vouch = %q, want inject (live-verified 2026-07-17)", res.Agent.MCP)
 	}
-	if !res.AgentContextInjects() {
+	if res.Agent == nil || res.Agent.Context != "inject" {
 		t.Errorf("opencode must vouch context injection (ADR 0046)")
 	}
 	egress := strings.Join(res.Egress(), " ")

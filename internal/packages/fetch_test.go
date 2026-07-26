@@ -30,8 +30,8 @@ func TestFetchManifestAndPayloadHTTPS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "pete/x") || !src.IsRemote() {
-		t.Fatalf("body=%q remote=%v", body, src.IsRemote())
+	if !strings.Contains(string(body), "pete/x") || !(src.origin != "") {
+		t.Fatalf("body=%q remote=%v", body, (src.origin != ""))
 	}
 	budget := int64(MaxPayloadTotal)
 	pay, err := f.FetchPayload(src, "hooks/a.sh", &budget)
@@ -120,7 +120,7 @@ func TestFetchFileManifestAndContainment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if src.IsRemote() {
+	if src.origin != "" {
 		t.Fatal("file source must not be remote")
 	}
 	budget := int64(MaxPayloadTotal)

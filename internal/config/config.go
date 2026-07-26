@@ -1629,36 +1629,8 @@ func filter[T any](s []T, keep func(T) bool) []T {
 	return out
 }
 
-// SortedEnvKeys returns env keys in deterministic order (helper for generation).
-func SortedEnvKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// TemplatePath is the on-disk path of a LOCAL template's primary file under
-// templatesDir. Bundled templates are not on disk in the store (they live in
-// embed.FS); prefer the catalog for loading. Kept for callers that write
-// local templates (fork/init).
-func TemplatePath(templatesDir, name string) string {
-	// Nested mapping: bare name or owner/name (ADR 0029).
-	return filepath.Join(templatesDir, filepath.FromSlash(name), "template.config")
-}
-
-// ListTemplates returns display names of loadable templates from the catalog
-// for home (bundled bare aliases + local IDs), sorted.
-func ListTemplates(home string) []string {
-	cat, err := catalogFor(home)
-	if err != nil {
-		return nil
-	}
-	return ListTemplatesCatalog(cat)
-}
-
-// ListTemplatesCatalog is ListTemplates over an already-built catalog.
+// ListTemplatesCatalog returns display names of loadable templates from the
+// catalog (bundled bare aliases + local IDs), sorted.
 func ListTemplatesCatalog(cat *packages.Catalog) []string {
 	if cat == nil {
 		return nil

@@ -97,7 +97,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	}
 	// Workflow context is INJECTED (ADR 0046) — never written into Claude's
 	// own memory file.
-	if !res.AgentContextInjects() {
+	if res.Agent == nil || res.Agent.Context != "inject" {
 		t.Errorf("claude must vouch context injection")
 	}
 	if !strings.Contains(res.AgentCommand(), "--append-system-prompt-file /etc/byre/agent-context.md") {

@@ -644,9 +644,13 @@ func TestListTemplates(t *testing.T) {
 		mustWriteFile(t, filepath.Join(td, "template.config"), []byte("base = \"x\"\n"), 0o644)
 	}
 	mustMkdirAll(t, filepath.Join(home, "templates", "empty"), 0o755) // no template.config -> excluded
-	got := ListTemplates(home)
+	cat, err := catalogFor(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ListTemplatesCatalog(cat)
 	if len(got) != 2 || got[0] != "go" || got[1] != "python" {
-		t.Fatalf("ListTemplates = %v", got)
+		t.Fatalf("ListTemplatesCatalog = %v", got)
 	}
 }
 

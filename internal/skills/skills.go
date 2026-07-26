@@ -588,14 +588,6 @@ func (r Resolved) AgentState() string {
 	return r.Agent.State
 }
 
-// AgentContextInjects reports whether the selected agent's command consumes
-// the baked agent context (the [agent] context = "inject" vouch, ADR 0046).
-// byre never writes an agent-owned file to deliver prose; an agent without
-// the vouch simply doesn't receive it, and status says so.
-func (r Resolved) AgentContextInjects() bool {
-	return r.Agent != nil && r.Agent.Context == "inject"
-}
-
 // AgentPrefs is the selected agent's curated seedable prefs (nil if none). The
 // seed only runs when the user opts in (config seed_prefs) and the agent's
 // state volume is fresh.
@@ -1191,15 +1183,6 @@ func validateOneLiner(s string) error {
 		if unicode.IsControl(r) {
 			return fmt.Errorf("must not contain control characters")
 		}
-	}
-	return nil
-}
-
-// validateSkillName requires a skill name to match the package ID grammar,
-// so it can't escape the store or the build-context staging dir.
-func validateSkillName(name string) error {
-	if err := packages.ValidateID(name, true); err != nil {
-		return fmt.Errorf("invalid skill name %q: %w", name, err)
 	}
 	return nil
 }

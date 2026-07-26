@@ -31,7 +31,7 @@ func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
 	if !strings.Contains(res.AgentCommand(), "--always-approve") {
 		t.Errorf("grok autonomy flag missing from launch command %q", res.AgentCommand())
 	}
-	if !res.AgentContextInjects() {
+	if res.Agent == nil || res.Agent.Context != "inject" {
 		t.Errorf("grok must vouch context injection (ADR 0046)")
 	}
 	if !strings.Contains(res.AgentCommand(), "byre-grok-launch") {

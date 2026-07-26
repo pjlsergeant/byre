@@ -40,9 +40,6 @@ type Source struct {
 	baseDir string
 }
 
-// IsRemote reports whether the source came over the network.
-func (s *Source) IsRemote() bool { return s.origin != "" }
-
 // ParseSourceURI classifies an install/inspect URI: https://... is remote;
 // file://... and plain paths are local files. Other schemes are rejected.
 func ParseSourceURI(raw string) (kind string, err error) {

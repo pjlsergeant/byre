@@ -3,6 +3,7 @@ package onboard
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -279,7 +280,7 @@ func TestSaveDefaultRemovesOnEmpty(t *testing.T) {
 
 func TestOfferSharedAuth(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude", "claude-shared-auth", false)
+	yes, err := offerSharedAuth(&out, bufio.NewReader(strings.NewReader("y\n")), "claude", "claude-shared-auth", false)
 	if err != nil || !yes {
 		t.Fatalf("yes = %v, err = %v", yes, err)
 	}
@@ -295,7 +296,7 @@ func TestOfferSharedAuth(t *testing.T) {
 		t.Fatalf("a bundled/unlabeled claimant must not carry a provenance suffix:\n%s", out.String())
 	}
 	// No preference: an empty answer declines.
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", false)
+	yes, err = offerSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", false)
 	if err != nil || yes {
 		t.Fatalf("empty answer must decline, got yes = %v, err = %v", yes, err)
 	}
@@ -306,7 +307,7 @@ func TestOfferSharedAuth(t *testing.T) {
 // the answer itself.
 func TestOfferSharedAuthInfo(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("i\ny\n")), "claude", "claude-shared-auth", false)
+	yes, err := offerSharedAuth(&out, bufio.NewReader(strings.NewReader("i\ny\n")), "claude", "claude-shared-auth", false)
 	if err != nil || !yes {
 		t.Fatalf("after info the real answer must still be read: yes = %v, err = %v", yes, err)
 	}
@@ -334,21 +335,21 @@ func TestOfferSharedAuthInfo(t *testing.T) {
 // granting side whatever the default.
 func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 	var out bytes.Buffer
-	yes, err := OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", true)
+	yes, err := offerSharedAuth(&out, bufio.NewReader(strings.NewReader("\n")), "claude", "claude-shared-auth", true)
 	if err != nil || !yes {
 		t.Fatalf("Enter must accept the saved yes: yes = %v, err = %v", yes, err)
 	}
 	if !strings.Contains(out.String(), "[Y/n, i for info]") {
 		t.Fatalf("a saved yes must show as the prefilled default:\n%s", out.String())
 	}
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", "claude-shared-auth", true)
+	yes, err = offerSharedAuth(&out, bufio.NewReader(strings.NewReader("n\n")), "claude", "claude-shared-auth", true)
 	if err != nil || yes {
 		t.Fatalf("explicit n must override the preference: yes = %v, err = %v", yes, err)
 	}
 	// Garbage REPROMPTS (QA pass-2: it used to read as a silent decline —
 	// an `i` typo threw the offer away); the explicit answer after it lands.
 	out.Reset()
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\nn\n")), "claude", "claude-shared-auth", true)
+	yes, err = offerSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\nn\n")), "claude", "claude-shared-auth", true)
 	if err != nil || yes {
 		t.Fatalf("garbage then n must decline: yes = %v, err = %v", yes, err)
 	}
@@ -357,7 +358,7 @@ func TestOfferSharedAuthPrefilledYes(t *testing.T) {
 	}
 	// Garbage with input exhausted surfaces the read error — terminates, and
 	// still never lands on the granting side, whatever the default.
-	yes, err = OfferSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", "claude-shared-auth", true)
+	yes, err = offerSharedAuth(&out, bufio.NewReader(strings.NewReader("wat\n")), "claude", "claude-shared-auth", true)
 	if err == nil || yes {
 		t.Fatalf("garbage + EOF must error without granting: yes = %v, err = %v", yes, err)
 	}
@@ -396,7 +397,7 @@ func TestPromptsShareABufferedReader(t *testing.T) {
 	if c.Template != "node" || c.Agent != "codex" || c.SaveDefault {
 		t.Fatalf("choice = %+v", c)
 	}
-	yes, err := OfferSharedAuth(&out, in, "codex", "codex-shared-auth", false)
+	yes, err := offerSharedAuth(&out, in, "codex", "codex-shared-auth", false)
 	if err != nil || !yes {
 		t.Fatalf("the shared-auth answer was buffered by Pick's reader and must still be readable: yes = %v, err = %v", yes, err)
 	}
@@ -508,4 +509,16 @@ func TestOfferSharedAuthForeignProvenanceOnQuestionLine(t *testing.T) {
 	if !strings.Contains(got, `"foo-identity"`) {
 		t.Fatalf("the i-text must name the machine-wide volume:\n%s", got)
 	}
+}
+
+// offerSharedAuth is the single-claimant call shape, kept here because only
+// these tests want it -- it used to sit in the package as an exported wrapper
+// whose comment claimed a flag path that never existed.
+func offerSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
+	_, yes, err := OfferSharedAuthChoice(out, r, agent, SharedAuthOffer{
+		Claimants: []string{companion},
+		Labels:    []string{""},
+		PrefYes:   prefYes,
+	})
+	return yes, err
 }

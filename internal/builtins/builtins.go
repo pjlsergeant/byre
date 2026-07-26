@@ -58,14 +58,6 @@ func EnsureStoreOut(home string, notices io.Writer) error {
 	return packages.EnsureStore(home, fsys, version.String(), ensureNotices(notices))
 }
 
-// LoadCatalog builds the multi-provider catalog for home.
-func LoadCatalog(home string) (*packages.Catalog, error) {
-	if err := EnsureStore(home); err != nil {
-		return nil, err
-	}
-	return LoadCatalogRaw(home)
-}
-
 // LoadCatalogRaw builds a catalog without EnsureStore (tests that manage the
 // store themselves). Display version is version.String(); compat is Semver.
 func LoadCatalogRaw(home string) (*packages.Catalog, error) {

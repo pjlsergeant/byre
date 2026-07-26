@@ -20,9 +20,3 @@ var RetiredNames = map[string]string{
 func RetiredTombstone(bare string) string {
 	return RetiredNames[bare]
 }
-
-// IsRetired reports whether bare is in the retired table.
-func IsRetired(bare string) bool {
-	_, ok := RetiredNames[bare]
-	return ok
-}

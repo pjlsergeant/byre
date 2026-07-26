@@ -166,17 +166,6 @@ func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def
 	return fromNone(v), nil
 }
 
-// OfferSharedAuth is the single-claimant form (kept for tests and flag paths).
-// Prefer OfferSharedAuthChoice when provenance labels or multi-claim apply.
-func OfferSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
-	_, yes, err := OfferSharedAuthChoice(out, r, agent, SharedAuthOffer{
-		Claimants: []string{companion},
-		Labels:    []string{""},
-		PrefYes:   prefYes,
-	})
-	return yes, err
-}
-
 // OfferSharedAuthChoice runs the shared-auth offer: single claimant keeps
 // [y/N] (plus provenance line and optional volume note); multi-claim is a
 // numbered picker (bundled-first already sorted by the caller), N = none.

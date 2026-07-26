@@ -99,12 +99,6 @@ func BundledID(bare string) string {
 	return "byre/" + bare
 }
 
-// LocalDir maps a package ID to its store-relative directory path:
-// bare my-linter -> my-linter; qualified pete/claude -> pete/claude.
-func LocalDir(id string) string {
-	return id // nested path IS the id for local packages
-}
-
 // ShellArg single-quotes an argument for a printed, copy-pasteable command when
 // it contains shell-significant characters. Two callers with the same need:
 // install-hint remedies embed hint-controlled URIs -- a hostile hint must buy an
