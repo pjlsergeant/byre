@@ -110,11 +110,6 @@ var errCancelled = fmt.Errorf("cancelled")
 // IsCancelled reports whether err is the user cancelling at the picker.
 func IsCancelled(err error) bool { return err == errCancelled }
 
-// Run delivers path arguments.
-func Run(cfg Config, opts Options, paths []string) ([]string, error) {
-	return RunSources(cfg, opts, PathSources(paths))
-}
-
 // RunSources delivers each source into the selected box and returns the
 // landed in-box paths (top-level: one per source; a directory is one path).
 // Failures are per-source: successes stay, the error reports the count.

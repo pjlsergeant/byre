@@ -26,7 +26,7 @@ type Choice struct {
 	// whether THIS box opts into the shared credentials (the companion goes
 	// into this project's byre.config, the only grant the answer ever makes).
 	// With SaveDefault set, the caller also saves the answer as the
-	// preference prefilling future offers (SaveSharedAuthDefault) — a
+	// preference prefilling future offers (SaveSharedAuthDefaultPick) — a
 	// favourite, not a grant.
 	SharedAuthCompanion string
 	SharedAuth          bool

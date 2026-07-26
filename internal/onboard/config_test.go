@@ -37,7 +37,7 @@ func parsedDefault(t *testing.T, home string) config.Config {
 
 func TestSaveSharedAuthDefaultYesCreatesFileAndList(t *testing.T) {
 	home := t.TempDir()
-	if err := SaveSharedAuthDefault(home, "claude", true); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
 		t.Fatal(err)
 	}
 	got := parsedDefault(t, home).SharedAuth
@@ -71,7 +71,7 @@ func TestSaveSharedAuthDefaultPickQualifiedAgent(t *testing.T) {
 func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "# my comment\nbase = \"debian:bookworm\"\nskills = [\"devloop\"] # keep\n\n[env]\nK = \"v\"\n")
-	if err := SaveSharedAuthDefault(home, "claude", true); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
 		t.Fatal(err)
 	}
 	got := readDefault(t, home)
@@ -94,13 +94,13 @@ func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {
 func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "shared_auth = [\"claude\", \"codex\"]\n")
-	if err := SaveSharedAuthDefault(home, "claude", false); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := parsedDefault(t, home).SharedAuth; !got.HasYes("codex") || got.HasYes("claude") {
 		t.Fatalf("shared_auth = %+v", got)
 	}
-	if err := SaveSharedAuthDefault(home, "codex", false); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "codex", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(readDefault(t, home), "shared_auth") {
@@ -108,7 +108,7 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	}
 
 	before := readDefault(t, home)
-	if err := SaveSharedAuthDefault(home, "claude", false); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := readDefault(t, home); got != before {
@@ -121,7 +121,7 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "skills = [\"unclosed\n")
-	err := SaveSharedAuthDefault(home, "claude", true)
+	err := SaveSharedAuthDefaultPick(home, "claude", "", true)
 	if err == nil || !strings.Contains(err.Error(), "byre config --global") {
 		t.Fatalf("err = %v, want the config-UI remedy", err)
 	}
@@ -137,7 +137,7 @@ func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "# keep me\nshared_auth = [\n  \"codex\",\n]\nbase = \"node:22\"\n")
-	if err := SaveSharedAuthDefault(home, "claude", true); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
 		t.Fatal(err)
 	}
 	got := readDefault(t, home)

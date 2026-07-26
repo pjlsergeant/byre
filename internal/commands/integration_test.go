@@ -83,7 +83,7 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
 
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("generated Dockerfile failed to build: %v", err)
 	}
 	if ok, err := r.ImageExists(image); err != nil || !ok {
@@ -152,7 +152,7 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
@@ -247,10 +247,10 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	ident := testIdentity(t, r)
 	imageA, imageB := imageTag(pA.ID, ident.UID, ident.GID), imageTag(pB.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(imageA); _ = r.ImageRemove(imageB) })
-	if err := buildImage(r, pA, cfg, res, imageA, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, pA, cfg, res, imageA, false, ident); err != nil {
 		t.Fatalf("project A image failed to build: %v", err)
 	}
-	if err := buildImage(r, pB, cfg, res, imageB, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, pB, cfg, res, imageB, false, ident); err != nil {
 		t.Fatalf("project B image failed to build: %v", err)
 	}
 
@@ -361,7 +361,7 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("generic-uid image failed to build: %v", err)
 	}
 
@@ -452,7 +452,7 @@ name = "!dropped"
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 
@@ -483,7 +483,7 @@ name = "!dropped"
 	}
 	image2 := imageTag(p2.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image2) })
-	if err := buildImage(r, p2, rv2.cfg, rv2.skills, image2, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p2, rv2.cfg, rv2.skills, image2, false, ident); err != nil {
 		t.Fatalf("empty-set build: %v", err)
 	}
 	out2, err := exec.Command(string(r.Engine()), "run", "--rm",

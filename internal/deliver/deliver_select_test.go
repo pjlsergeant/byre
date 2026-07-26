@@ -14,7 +14,7 @@ func TestSoleSessionAutoPick(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, out, errw := testConfig(eng)
 	src := writeFile(t, "report.pdf", "content")
-	landed, err := Run(cfg, Options{}, []string{src})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestDeliveryLineNamesWorktreeBox(t *testing.T) {
 	eng.labels["aaa"]["byre.workdir"] = "proj-wt1-aaa"
 	cfg, _, errw := testConfig(eng)
 	src := writeFile(t, "report.pdf", "content")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errw.String(), "delivering to proj-wt1-aaa (docker, aaa)") {
@@ -54,7 +54,7 @@ func TestUIDFilterHidesForeign(t *testing.T) {
 	cfg, _, _ := testConfig(eng)
 	src := writeFile(t, "f", "x")
 	// aaa is ours, bbb is foreign: sole-owned auto-pick should choose aaa.
-	landed, err := Run(cfg, Options{}, []string{src})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestCallerScopedEngineSkipsUIDFilter(t *testing.T) {
 	eng.env["aaa"]["BYRE_GID"] = "1000"
 	cfg, _, _ := testConfig(eng)
 	src := writeFile(t, "f", "x")
-	landed, err := Run(cfg, Options{}, []string{src})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err != nil {
 		t.Fatalf("caller-scoped engine's keep-id box must be deliverable: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestUIDFilterZeroOwnedNamesHiddenCount(t *testing.T) {
 	eng := box("docker", "bbb")
 	eng.env["bbb"]["BYRE_UID"] = "777"
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{}, []string{"whatever"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"whatever"}))
 	if err == nil || !strings.Contains(err.Error(), "1 hidden; --skip-uid-check") {
 		t.Fatalf("err = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestSkipUIDCheckIncludesForeignAndSaysSo(t *testing.T) {
 	eng.env["bbb"]["BYRE_UID"] = "777"
 	cfg, _, errw := testConfig(eng)
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{SkipUIDCheck: true}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{SkipUIDCheck: true}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errw.String(), "owned by uid 777, not you") {
@@ -113,7 +113,7 @@ func TestSkipUIDCheckIncludesForeignAndSaysSo(t *testing.T) {
 func TestAmbiguityListsSessions(t *testing.T) {
 	eng := box("docker", "aaa", "bbb")
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{}, []string{"whatever"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"whatever"}))
 	if err == nil || !strings.Contains(err.Error(), "2 boxes are running") ||
 		!strings.Contains(err.Error(), "proj-aaa") || !strings.Contains(err.Error(), "proj-bbb") {
 		t.Fatalf("err = %v", err)
@@ -124,7 +124,7 @@ func TestBoxSelectsByPrefix(t *testing.T) {
 	eng := box("docker", "aaa", "bbb")
 	cfg, out, _ := testConfig(eng)
 	src := writeFile(t, "f.txt", "x")
-	if _, err := Run(cfg, Options{Box: "proj-b"}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{Box: "proj-b"}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "/inbox/f.txt") {
@@ -138,7 +138,7 @@ func TestBoxSelectsByPrefix(t *testing.T) {
 func TestBoxAmbiguousPrefixErrors(t *testing.T) {
 	eng := box("docker", "aaa", "abc")
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{Box: "proj-a"}, []string{"x"})
+	_, err := RunSources(cfg, Options{Box: "proj-a"}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("err = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestBoxAmbiguousPrefixErrors(t *testing.T) {
 func TestBoxNoMatchErrors(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{Box: "nope"}, []string{"x"})
+	_, err := RunSources(cfg, Options{Box: "nope"}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), `no running box matches --box "nope"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -157,7 +157,7 @@ func TestPartialPoolDisablesAutoPick(t *testing.T) {
 	broken := &fakeEngine{name: "podman", idsErr: fmt.Errorf("permission denied on the socket")}
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng, broken)
-	_, err := Run(cfg, Options{}, []string{"x"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), "engine query failed") {
 		t.Fatalf("err = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestPartialPoolBoxStillWorks(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, _ := testConfig(eng, broken)
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{Box: "proj-aaa"}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{Box: "proj-aaa"}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -181,7 +181,7 @@ func TestEngineUnionAndAffinity(t *testing.T) {
 	p := box("podman", "zzz")
 	cfg, _, _ := testConfig(d, p)
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{Box: "proj-zzz"}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{Box: "proj-zzz"}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.streams) != 1 || len(d.streams) != 0 {
@@ -200,7 +200,7 @@ func TestCwdAncestorWalkMatches(t *testing.T) {
 		return "no-match-" + dir, nil
 	}
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if len(eng.streams) != 1 || !strings.HasPrefix(eng.streams[0], "bbb ") {
@@ -223,7 +223,7 @@ func TestCollisionAbortsSelectionBeforeFallbacks(t *testing.T) {
 		return "", fmt.Errorf("%w: not a project", ErrNoWorkdirID)
 	}
 	src := writeFile(t, "f", "x")
-	_, err := Run(cfg, Options{}, []string{src})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("err = %v, want the collision refusal", err)
 	}
@@ -242,7 +242,7 @@ func TestNoWorkdirIDKeepsWalkingToFallback(t *testing.T) {
 		return "", fmt.Errorf("%w: not a project", ErrNoWorkdirID)
 	}
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if len(eng.streams) != 1 {
@@ -253,7 +253,7 @@ func TestNoWorkdirIDKeepsWalkingToFallback(t *testing.T) {
 func TestZeroSessions(t *testing.T) {
 	eng := box("docker")
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{}, []string{"x"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), "no running byre boxes") {
 		t.Fatalf("err = %v", err)
 	}
@@ -263,7 +263,7 @@ func TestNoValidIdentitySkipped(t *testing.T) {
 	eng := box("docker", "aaa")
 	eng.env["aaa"] = map[string]string{} // no BYRE_UID/GID
 	cfg, _, errw := testConfig(eng)
-	_, err := Run(cfg, Options{}, []string{"x"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"x"}))
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -282,7 +282,7 @@ func TestPickerResolvesAmbiguity(t *testing.T) {
 		return sessions[1], true, nil
 	}
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if len(eng.streams) != 1 || !strings.HasPrefix(eng.streams[0], "bbb ") {
@@ -294,7 +294,7 @@ func TestPickerCancelIsClean(t *testing.T) {
 	eng := box("docker", "aaa", "bbb")
 	cfg, out, _ := testConfig(eng)
 	cfg.Pick = func([]Session) (Session, bool, error) { return Session{}, false, nil }
-	_, err := Run(cfg, Options{}, []string{"whatever"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"whatever"}))
 	if !IsCancelled(err) {
 		t.Fatalf("err = %v, want the cancelled marker", err)
 	}
@@ -311,7 +311,7 @@ func TestPickerNotConsultedWhenUnambiguous(t *testing.T) {
 		return Session{}, false, nil
 	}
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -322,7 +322,7 @@ func TestUnreadableIdentityNotBlamedOnUIDFilter(t *testing.T) {
 	eng := box("docker", "aaa")
 	eng.envErr = fmt.Errorf("inspect broke")
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{}, []string{"x"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"x"}))
 	if err == nil || strings.Contains(err.Error(), "skip-uid-check") {
 		t.Fatalf("err = %v (must not prescribe --skip-uid-check)", err)
 	}
@@ -337,7 +337,7 @@ func TestBoxNoMatchNamesUnusableSessions(t *testing.T) {
 	eng := box("docker", "aaa")
 	eng.envErr = fmt.Errorf("inspect broke")
 	cfg, _, _ := testConfig(eng)
-	_, err := Run(cfg, Options{Box: "proj-aaa"}, []string{"x"})
+	_, err := RunSources(cfg, Options{Box: "proj-aaa"}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), "readable dev identity") {
 		t.Fatalf("err = %v", err)
 	}
@@ -353,7 +353,7 @@ func TestUnreachableEngineDoesNotPoisonAutoPick(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, out, errw := testConfig(eng, stale)
 	src := writeFile(t, "f.txt", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "/inbox/f.txt") {
@@ -376,7 +376,7 @@ func TestUnreachableEngineNoteSurfacesOnNotFound(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng, stale)
 	src := writeFile(t, "f.txt", "x")
-	if _, err := Run(cfg, Options{Box: "nope"}, []string{src}); err == nil {
+	if _, err := RunSources(cfg, Options{Box: "nope"}, PathSources([]string{src})); err == nil {
 		t.Fatal("expected --box miss")
 	}
 	if !strings.Contains(errw.String(), "podman isn't reachable; skipping it") {
@@ -388,7 +388,7 @@ func TestPartialWarningIsOneLine(t *testing.T) {
 	multi := &fakeEngine{name: "podman", idsErr: fmt.Errorf("broke badly\nwith a second line\nand a third")}
 	eng := box("docker", "aaa", "bbb")
 	cfg, _, errw := testConfig(eng, multi)
-	_, _ = Run(cfg, Options{Box: "proj-aaa"}, []string{writeFile(t, "f", "x")})
+	_, _ = RunSources(cfg, Options{Box: "proj-aaa"}, PathSources([]string{writeFile(t, "f", "x")}))
 	if strings.Contains(errw.String(), "second line") {
 		t.Fatalf("engine essay leaked into the warning: %q", errw.String())
 	}
@@ -401,7 +401,7 @@ func TestPermissionFailureStaysPartial(t *testing.T) {
 	broken := &fakeEngine{name: "docker", idsErr: fmt.Errorf("permission denied while trying to connect to the Docker daemon socket")}
 	eng := box("podman", "aaa")
 	cfg, _, errw := testConfig(broken, eng)
-	_, err := Run(cfg, Options{}, []string{"x"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), "engine query failed") {
 		t.Fatalf("err = %v (auto-pick must stay disabled)", err)
 	}
@@ -418,7 +418,7 @@ func TestPermissionDeniedWithDialPhrasingStaysPartial(t *testing.T) {
 		"Got permission denied while trying to connect to the Docker daemon socket: Get \"http://...\": dial unix /var/run/docker.sock: connect: permission denied")}
 	eng := box("podman", "aaa")
 	cfg, _, errw := testConfig(broken, eng)
-	_, err := Run(cfg, Options{}, []string{"x"})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{"x"}))
 	if err == nil || !strings.Contains(err.Error(), "engine query failed") {
 		t.Fatalf("err = %v (permission failure must not be 'unreachable')", err)
 	}
@@ -434,7 +434,7 @@ func TestMissingSocketIsUnreachable(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, out, _ := testConfig(eng, broken)
 	src := writeFile(t, "f.txt", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "/inbox/f.txt") {

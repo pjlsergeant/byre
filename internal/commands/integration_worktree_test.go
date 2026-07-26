@@ -6,6 +6,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +89,7 @@ func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 	ident := testIdentity(t, r)
 	image := imageTag(pMain.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, pMain, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, pMain, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 

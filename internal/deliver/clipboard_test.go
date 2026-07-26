@@ -48,7 +48,7 @@ func TestClipboardRoundTrip(t *testing.T) {
 	var wrote string
 	cfg.Clip = &Clipboard{Name: "pbcopy", Write: func(s string) error { wrote = s; return nil }}
 	src := writeFile(t, "shot.png", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if wrote != "/inbox/shot.png" {
@@ -63,7 +63,7 @@ func TestClipboardUnavailableSaysSo(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, _, errw := testConfig(eng)
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errw.String(), "clipboard unavailable — path printed above") {
@@ -76,7 +76,7 @@ func TestClipboardWriteFailureDegrades(t *testing.T) {
 	cfg, out, errw := testConfig(eng)
 	cfg.Clip = &Clipboard{Name: "xclip", Write: func(string) error { return fmt.Errorf("no display") }}
 	src := writeFile(t, "f.txt", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err) // a failed clipboard write must NOT fail the delivery
 	}
 	if !strings.Contains(errw.String(), "clipboard write failed") {
@@ -93,7 +93,7 @@ func TestNoClipSkipsSilently(t *testing.T) {
 	called := false
 	cfg.Clip = &Clipboard{Name: "pbcopy", Write: func(string) error { called = true; return nil }}
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{NoClip: true}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{NoClip: true}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if called {
@@ -109,7 +109,7 @@ func TestBestEffortClaimIsHedged(t *testing.T) {
 	cfg, _, errw := testConfig(eng)
 	cfg.Clip = &Clipboard{Name: "OSC 52", BestEffort: true, Write: func(string) error { return nil }}
 	src := writeFile(t, "f", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errw.String(), "OSC 52 (best-effort)") {

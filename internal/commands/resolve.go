@@ -6,7 +6,6 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -17,7 +16,6 @@ import (
 type resolved struct {
 	cfg     config.Config
 	skills  skills.Resolved
-	cat     *packages.Catalog
 	mounts  []config.Mount  // config mounts, then skill contributions
 	volumes []config.Volume // config volumes, then skill contributions
 	// mcps is the effective declared MCP set (config ∪ skills, minus config
@@ -139,7 +137,6 @@ func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolve
 		return resolved{}, err
 	}
 	rv := combine(cfg, res)
-	rv.cat = cat
 	if err := rv.validate(); err != nil {
 		return resolved{}, err
 	}

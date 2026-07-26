@@ -26,8 +26,6 @@ type Entry struct {
 	Description string
 	// Reason explains INVALID / LEGACY / conflict rows.
 	Reason string
-	// ConflictWith names the other location when Provenance == ProvConflict.
-	ConflictWith string
 	// Claimants lists EVERY location fighting over the id of a conflict row,
 	// in load order -- an id can have more than two (installed + local skill
 	// + local template), and remedies need the full set.
@@ -502,12 +500,10 @@ func (c *Catalog) put(ent *Entry) error {
 		reason := fmt.Sprintf("duplicate id %q: %s", ent.ID, strings.Join(prev.Claimants, " and "))
 		prev.Provenance = ProvConflict
 		prev.Reason = reason
-		prev.ConflictWith = locationOf(ent)
 		// Keep the first as the conflict row; drop the new as a loadable entry
 		// but record its location on the first.
 		ent.Provenance = ProvConflict
 		ent.Reason = reason
-		ent.ConflictWith = locationOf(prev)
 		// Only one row in byID; the list surface shows the conflict once.
 		c.byID[ent.ID] = prev
 		return nil
@@ -672,21 +668,6 @@ func (c *Catalog) ListProblemRows(kind Kind) []*Entry {
 			out = append(out, ent)
 		}
 	}
-	return out
-}
-
-// ListSkills returns loadable skill IDs (and aliases for bundled) for pickers.
-// Prefer alias when present so UIs keep writing friendly bare names.
-func (c *Catalog) ListSkills() []string {
-	var out []string
-	for _, ent := range c.ListLoadable(KindSkill) {
-		if ent.Alias != "" {
-			out = append(out, ent.Alias)
-		} else {
-			out = append(out, ent.ID)
-		}
-	}
-	sort.Strings(out)
 	return out
 }
 

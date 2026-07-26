@@ -18,6 +18,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -59,7 +60,7 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("firewall image failed to build: %v", err)
 	}
 	// Mirror develop's netns env exactly: BYRE_EGRESS is the full allowlist
@@ -320,7 +321,7 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, cfg, res, image, false, ident); err != nil {
 		t.Fatalf("firewall-open image failed to build: %v", err)
 	}
 	env := res.Env()

@@ -149,18 +149,12 @@ func SharedAuthPick(home, agent string) string {
 	return cfg.SharedAuth.CompanionPick(agent)
 }
 
-// SaveSharedAuthDefault records the shared-auth answer as agent's saved
+// SaveSharedAuthDefaultPick records the shared-auth answer as agent's saved
 // preference (ADR 0025). yes with a non-empty companion writes the
 // table-shape pick; yes with empty companion writes a legacy-style
-// yes-inclination (array) only when no other picks exist; no removes the
-// agent from both shapes. Surgical, idempotent, and refused when the file
-// can't be parsed.
-func SaveSharedAuthDefault(home, agent string, yes bool) error {
-	return SaveSharedAuthDefaultPick(home, agent, "", yes)
-}
-
-// SaveSharedAuthDefaultPick is SaveSharedAuthDefault with an explicit
-// companion pick. companion is ignored when yes is false.
+// yes-inclination (array) only when no picks exist at all; no removes the
+// agent from both shapes. companion is ignored when yes is false.
+// Surgical, idempotent, and refused when the file can't be parsed.
 func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	// Same as SaveDefault: home is not a store; creating it enrolls nothing.
 	if err := os.MkdirAll(home, 0o755); err != nil {
@@ -184,14 +178,13 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 			want.Pick[agent] = companion
 			// Drop any legacy Yes entry for this agent.
 			want.Yes = removeString(want.Yes, agent)
-		} else {
-			// Yes-inclination only: if we already have picks for others, add
-			// a pick-less agent as a Yes entry; when no picks at all, array.
-			if _, ok := want.Pick[agent]; ok {
-				// Already has a pick; leave it (yes without new pick keeps).
-			} else if !slices.Contains(want.Yes, agent) {
-				want.Yes = append(append([]string{}, want.Yes...), agent)
-			}
+		} else if len(want.Pick) == 0 && !slices.Contains(want.Yes, agent) {
+			// Yes-inclination only, the legacy array shape. Guarded to the
+			// no-picks case: EncodeTOMLValue renders picks-only whenever any
+			// pick exists, so a Yes entry appended beside picks would be
+			// dropped at encode and fail the semantic verify below. With any
+			// pick stored, yes-without-a-new-pick keeps what's stored.
+			want.Yes = append(append([]string{}, want.Yes...), agent)
 		}
 	} else {
 		want.Yes = removeString(want.Yes, agent)
@@ -246,7 +239,7 @@ func removeString(ss []string, x string) []string {
 }
 
 // defaultConfigStub heads a default.config the surgical writers create from
-// nothing — SaveDefault and SaveSharedAuthDefault must stamp the same one.
+// nothing — SaveDefault and SaveSharedAuthDefaultPick must stamp the same one.
 const defaultConfigStub = "# byre default.config — your favourites for new projects.\n"
 
 // readDefaultConfig returns ~/.byre/default.config's content, or the stub for

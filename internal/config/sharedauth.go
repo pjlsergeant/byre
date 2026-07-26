@@ -125,27 +125,6 @@ func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 	}
 }
 
-// Agents returns every agent with any stored preference, sorted (for writers
-// that need a stable list).
-func (s SharedAuthPref) Agents() []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, a := range s.Yes {
-		if !seen[a] {
-			seen[a] = true
-			out = append(out, a)
-		}
-	}
-	for a := range s.Pick {
-		if !seen[a] {
-			seen[a] = true
-			out = append(out, a)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 // EncodeTOMLValue renders the canonical VALUE for a non-empty preference --
 // the single owner of the stored shape, used by every writer (the config
 // editor's reconcile and the onboarding save alike). Any pick present ->

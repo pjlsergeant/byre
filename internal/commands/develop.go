@@ -384,18 +384,13 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	return nil
 }
 
-// buildImage generates the build context and builds the project's image. The
-// build bakes the identity's UID/GID via --build-arg so /home/dev and the
-// volume mount points are born owned by the runtime user (no runtime chown)
-// — the host user's ids on the rootful path, the generic keep-id ids under
-// rootless Podman (ADR 0032).
-func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
-	return buildImageWarn(io.Discard, r, paths, cfg, res, image, noCache, ident)
-}
-
-// buildImageWarn is buildImage with the operator's stderr attached, so
-// assemble-time disclosures (the [[context]] prose size tiers) reach the
-// user on the paths a human watches (develop, rebuild).
+// buildImageWarn generates the build context and builds the project's image,
+// with the operator's stderr attached so assemble-time disclosures (the
+// [[context]] prose size tiers) reach the user on the paths a human watches
+// (develop, rebuild); tests pass io.Discard. The build bakes the identity's
+// UID/GID via --build-arg so /home/dev and the volume mount points are born
+// owned by the runtime user (no runtime chown) — the host user's ids on the
+// rootful path, the generic keep-id ids under rootless Podman (ADR 0032).
 func buildImageWarn(warn io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
 	if _, err := build.AssembleWarn(paths, cfg, res, warn); err != nil {
 		return err

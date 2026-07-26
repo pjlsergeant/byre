@@ -221,7 +221,7 @@ func TestRunSurfacesUniquifiedName(t *testing.T) {
 	eng.inbox = map[string]bool{"report.pdf": true}
 	cfg, out, _ := testConfig(eng)
 	src := writeFile(t, "report.pdf", "x")
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != "/inbox/report-2.pdf\n" {
@@ -270,7 +270,7 @@ func TestMultiFilePartialFailureKeepsSuccesses(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, out, _ := testConfig(eng)
 	good := writeFile(t, "good.txt", "x")
-	landed, err := Run(cfg, Options{}, []string{good, "/does/not/exist"})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{good, "/does/not/exist"}))
 	if err == nil || !strings.Contains(err.Error(), "1 of 2 deliveries failed") {
 		t.Fatalf("err = %v", err)
 	}
@@ -287,7 +287,7 @@ func TestDirectoryDeliveryPreservesStructure(t *testing.T) {
 	mustMkdir(t, filepath.Join(proj, "sub"))
 	mustWrite(t, filepath.Join(proj, "a.txt"), "A")
 	mustWrite(t, filepath.Join(proj, "sub", "b.txt"), "B")
-	landed, err := Run(cfg, Options{}, []string{proj})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{proj}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestDirectoryPartialStillPrintsPath(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root reads anything; the unreadable-file case needs a plain user")
 	}
-	landed, err := Run(cfg, Options{}, []string{proj})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{proj}))
 	if err == nil {
 		t.Fatal("expected the partial-delivery error")
 	}
@@ -348,7 +348,7 @@ func TestSymlinkFileFollowedDirSkipped(t *testing.T) {
 	if err := os.Symlink(filepath.Join(dir, "realdir"), dl); err != nil {
 		t.Fatal(err)
 	}
-	landed, err := Run(cfg, Options{}, []string{fl, dl})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{fl, dl}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +376,7 @@ func TestSymlinkToFifoInTreeSkipped(t *testing.T) {
 	if err := os.Symlink(fifo, filepath.Join(root, "pipelink")); err != nil {
 		t.Fatal(err)
 	}
-	landed, err := Run(cfg, Options{}, []string{root})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{root}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestDirectorySymlinkEscapeNotDelivered(t *testing.T) {
 	if err := os.Symlink(secret, filepath.Join(proj, "innocent.txt")); err != nil {
 		t.Fatal(err)
 	}
-	landed, err := Run(cfg, Options{}, []string{proj})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{proj}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestDirectorySwappedToSymlinkMidDeliveryRefused(t *testing.T) {
 		}
 	}
 	cfg, _, errw := testConfig(eng)
-	_, err := Run(cfg, Options{}, []string{src})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err == nil {
 		t.Fatalf("a source swapped to a symlink mid-delivery must fail, stderr: %q", errw.String())
 	}
@@ -497,7 +497,7 @@ func TestDirectoryEnumerationRidesOpenedRoot(t *testing.T) {
 			}
 		}
 	}
-	if _, err := Run(cfg, Options{}, []string{src}); err != nil {
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{src})); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(eng.streams, "|")
@@ -518,7 +518,7 @@ func TestTrailingSpaceFilenameLandsAtReportedPath(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "report ") // a trailing space is a legal filename
 	mustWrite(t, src, "R")
-	landed, err := Run(cfg, Options{}, []string{src})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestInteriorSymlinkToFifoDoesNotBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { _, err := Run(cfg, Options{}, []string{root}); done <- err }()
+	go func() { _, err := RunSources(cfg, Options{}, PathSources([]string{root})); done <- err }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -580,7 +580,7 @@ func TestTopLevelSymlinkToFifoDoesNotBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { _, err := Run(cfg, Options{}, []string{link}); done <- err }()
+	go func() { _, err := RunSources(cfg, Options{}, PathSources([]string{link})); done <- err }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -602,7 +602,7 @@ func TestFifoSkippedWithNote(t *testing.T) {
 	if err := mkfifo(fifo); err != nil {
 		t.Skipf("mkfifo unavailable: %v", err)
 	}
-	landed, err := Run(cfg, Options{}, []string{fifo})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{fifo}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func TestInboxMissingErrorSurfaces(t *testing.T) {
 	eng.execErr = fmt.Errorf("exit status 3: this box has no /inbox (image predates it); rebuild with 'byre develop'")
 	cfg, _, errw := testConfig(eng)
 	src := writeFile(t, "f", "x")
-	_, err := Run(cfg, Options{}, []string{src})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{src}))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -690,7 +690,7 @@ func TestDirectoryRenameIsNoted(t *testing.T) {
 	weird := filepath.Join(dir, "pro\nj")
 	mustMkdir(t, weird)
 	mustWrite(t, filepath.Join(weird, "a.txt"), "A")
-	landed, err := Run(cfg, Options{}, []string{weird})
+	landed, err := RunSources(cfg, Options{}, PathSources([]string{weird}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -712,7 +712,7 @@ func TestDirSummaryCountsFailedDirEntries(t *testing.T) {
 	proj := filepath.Join(dir, "proj")
 	mustMkdir(t, filepath.Join(proj, "sub"))
 	mustWrite(t, filepath.Join(proj, "a.txt"), "A")
-	_, err := Run(cfg, Options{}, []string{proj})
+	_, err := RunSources(cfg, Options{}, PathSources([]string{proj}))
 	if err == nil {
 		t.Fatal("expected the partial-delivery error")
 	}

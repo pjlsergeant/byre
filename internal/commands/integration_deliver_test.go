@@ -39,7 +39,7 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func startTestBox(t *testing.T, r *runner.Runner, p project.Paths, proj string, 
 	}
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 	params, err := runParams(p, rv, image, false, false, ident)
@@ -627,7 +627,7 @@ func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 	params, err := runParams(p, rv, image, false, false, ident)

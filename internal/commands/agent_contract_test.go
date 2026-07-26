@@ -29,6 +29,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +75,7 @@ func buildAgentBox(t *testing.T, r *runner.Runner, cfgTOML string) (string, reso
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImage(r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("agent box failed to build: %v", err)
 	}
 	return image, rv, ident, p
