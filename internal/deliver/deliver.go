@@ -110,7 +110,7 @@ var errCancelled = fmt.Errorf("cancelled")
 // IsCancelled reports whether err is the user cancelling at the picker.
 func IsCancelled(err error) bool { return err == errCancelled }
 
-// Run delivers path arguments — RunSources over PathSources.
+// Run delivers path arguments.
 func Run(cfg Config, opts Options, paths []string) ([]string, error) {
 	return RunSources(cfg, opts, PathSources(paths))
 }
