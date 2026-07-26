@@ -193,7 +193,10 @@ func grantSummary(c config.Config) []grantLine {
 func configMCPDecls(mcps []config.MCP) []skills.MCPDecl {
 	var out []skills.MCPDecl
 	for _, m := range mcps {
-		if strings.HasPrefix(m.Name, "!") {
+		// IsRemoval, not a bare prefix test: a bare "!" is an invalid entry, not
+		// a closure, and this is the raw fallback -- omitting it would hide its
+		// grants from the summary exactly when resolution already failed.
+		if config.IsRemoval(m.Name) {
 			continue
 		}
 		out = append(out, skills.MCPDecl{Skill: skills.MCPFromConfig, MCP: m})

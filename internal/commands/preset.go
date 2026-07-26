@@ -296,7 +296,7 @@ func missingRefs(home string, preset config.Config) ([]missingRef, error) {
 	var out []missingRef
 	check := func(name string, kind packages.Kind) {
 		name = strings.TrimSpace(name)
-		if name == "" || name == config.NoneLabel || strings.HasPrefix(name, "!") {
+		if name == "" || name == config.NoneLabel || config.IsRemoval(name) {
 			return
 		}
 		if _, err := cat.ResolveName(name); err != nil {

@@ -250,7 +250,7 @@ func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeStat
 		// — markers dodge duplicate tracking) ends CLOSED whatever the TOML
 		// order (codex review round 2).
 		for _, cd := range sl.Cfg.Contexts {
-			if strings.HasPrefix(cd.Name, "!") {
+			if config.IsRemoval(cd.Name) {
 				continue
 			}
 			st := get(cd.Name)
