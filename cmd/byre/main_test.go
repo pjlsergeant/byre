@@ -148,13 +148,13 @@ func TestRunDispatch(t *testing.T) {
 	}
 }
 
-// TestRunUsageErrors pins that parse failures come back as usageError (exit 2
-// in main) without dispatching any command.
-// The strict tier (CLAUDE.md): an arity rejection must name the RULE that
-// fired, not merely produce some usageError. These sixteen commands used
-// cobra's validators, which exited 1 with "accepts 1 arg(s), received 0" --
-// so a wrong or typo'd usage string, or a different rule rejecting first,
-// would be invisible to a presence-only check.
+// TestArityUsageErrorsNameTheShape pins the usage SHAPE each arity rejection
+// prints, per the strict tier (CLAUDE.md): an arity rejection must name the rule
+// that fired, not merely produce some usageError. These commands used cobra's
+// validators, which exited 1 with "accepts 1 arg(s), received 0" -- so a wrong
+// or typo'd usage string, or a different rule rejecting first, would be
+// invisible to a presence-only check. Sixteen Args: sites, eighteen resolved
+// commands: installCmd/uninstallCmd each bind both package nouns.
 func TestArityUsageErrorsNameTheShape(t *testing.T) {
 	cases := []struct {
 		argv []string
@@ -198,6 +198,8 @@ func TestArityUsageErrorsNameTheShape(t *testing.T) {
 	}
 }
 
+// TestRunUsageErrors pins that parse failures come back as usageError (exit 2
+// in main) without dispatching any command.
 func TestRunUsageErrors(t *testing.T) {
 	cases := [][]string{
 		{},                                    // no command
