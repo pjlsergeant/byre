@@ -68,6 +68,12 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 - **Code review (mandatory after a feature/fix).** Run `byre-codereview`
   yourself, read every finding, fix or consciously defer each, then re-run with
   `byre-codereview --continue "..."`. Stop when clean.
+- **Every review checks the doctrine index.** Give every reviewer — the
+  `byre-codereview` run and any hand-rolled subagent alike — this instruction
+  verbatim as (part of) its focus: *"Check the change against the index in
+  docs/adr/README.md: report which entries apply and whether the change
+  complies, or state 'Doctrine: none apply'."* A review whose output has no
+  Doctrine line has not done the check — send it back before reading findings.
 - **Green before commit:** `gofmt` + `go vet` + `go test ./...` clean.
 - **Docs sweep (part of shipping, not a follow-up).** When a change alters
   behavior a settled doc describes, update the doc in the same unit of
