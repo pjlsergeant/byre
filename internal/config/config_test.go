@@ -7,7 +7,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -1239,5 +1241,83 @@ func TestParseSeedPrefsExplicitFalse(t *testing.T) {
 	}
 	if c2.SeedPrefs != nil {
 		t.Fatalf("absent seed_prefs must stay nil, got %v", *c2.SeedPrefs)
+	}
+}
+
+// The store project config is the one config file --self-edit mounts into a
+// box, so its load is no-follow and fd-judged: a planted symlink or FIFO is
+// refused, not followed or hung. Containment tier: the refusal is the
+// contract; no message fragment is pinned.
+func TestLoadRefusesSymlinkedStoreConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(home, "victim.config")
+	writeFile(t, victim, "agent = \"claude\"\n")
+	if err := os.Symlink(victim, filepath.Join(p.Dir, ProjectConfigName)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(proj); err == nil {
+		t.Fatal("a symlinked store config must be refused, not followed")
+	}
+}
+
+func TestLoadRefusesFifoStoreConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(p.Dir, ProjectConfigName), 0o644); err != nil {
+		t.Skipf("mkfifo unavailable: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := Load(proj)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a FIFO planted as the store config must be refused")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Load hung on a FIFO store config — the exact hang hostopen exists to prevent")
+	}
+}
+
+// default.config is host-owned — never inside any box mount, --self-edit
+// included — and the README invites keeping configs "diffable, shareable":
+// a user symlinking it into a dotfiles repo is a legitimate arrangement the
+// loader must keep working (follow=true for host-owned homes; refusing it
+// would guard against an agent that can never reach the path).
+func TestLoadFollowsSymlinkedDefaultConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	proj := t.TempDir()
+	writeProjectCfg(t, proj, "agent = \"claude\"\n")
+	dotfiles := filepath.Join(t.TempDir(), "dotfiles-default.config")
+	writeFile(t, dotfiles, "base = \"debian:bookworm\"\n")
+	if err := os.Symlink(dotfiles, filepath.Join(home, "default.config")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatalf("a symlinked default.config is the user's own arrangement: %v", err)
+	}
+	if cfg.Base != "debian:bookworm" {
+		t.Errorf("symlinked default.config must be read: base = %q", cfg.Base)
 	}
 }

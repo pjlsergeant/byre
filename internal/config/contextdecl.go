@@ -148,12 +148,12 @@ func ContextSources(projectDir string) ([]SourceLayer, error) {
 	if err != nil {
 		return nil, err
 	}
-	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName))
+	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName), false)
 	if err != nil {
 		return nil, err
 	}
 	var out []SourceLayer
-	if def, derr := loadLayer(filepath.Join(paths.Home, "default.config")); derr == nil {
+	if def, derr := loadLayer(filepath.Join(paths.Home, "default.config"), true); derr == nil {
 		out = append(out, SourceLayer{Label: "default", Cfg: def})
 	}
 	cat, _ := catalogFor(paths.Home)

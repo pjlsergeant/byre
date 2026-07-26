@@ -25,6 +25,7 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -459,7 +460,7 @@ func Load(projectDir string) (Config, error) {
 	// trusts a config that the (rw-mounted) project could contain — a repo-shipped
 	// preset reaches the store only through an explicit, host-side human action
 	// (`byre preset apply`), never read directly here.
-	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName))
+	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName), false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -472,8 +473,8 @@ func Load(projectDir string) (Config, error) {
 // last-wins-merged before the resolved Validate could see the loss. ParseFile
 // stays lenient on purpose — the config editor must be able to OPEN a broken
 // file so it can be fixed.
-func loadLayer(path string) (Config, error) {
-	c, err := loadFile(path)
+func loadLayer(path string, follow bool) (Config, error) {
+	c, err := loadFile(path, follow)
 	if err != nil {
 		return Config{}, err
 	}
@@ -515,7 +516,7 @@ func resolveWith(home string, proj Config) (Config, error) {
 
 // resolveWithCatalog is the testable core of resolveWith.
 func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config, error) {
-	def, err := loadLayer(filepath.Join(home, "default.config"))
+	def, err := loadLayer(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		return Config{}, err
 	}
@@ -721,14 +722,20 @@ func topLevelKeys(body []byte) (map[string]bool, error) {
 // ParseFile parses a single byre.config file (no cascade), for inspecting a
 // candidate config before it is applied. A missing file yields a zero Config.
 func ParseFile(path string) (Config, error) {
-	return loadFile(path)
+	return loadFile(path, true) // the caller named the path: their choice
 }
 
 // loadFile reads one TOML cascade layer. A missing file is an empty layer
 // (the cascade tolerates absent layers); an unknown key is an error, so a
-// typo can't silently produce a default.
-func loadFile(path string) (Config, error) {
-	b, err := os.ReadFile(path)
+// typo can't silently produce a default. The read is fd-judged and bounded
+// (hostopen): a FIFO or device planted at a config path fails loudly
+// instead of hanging every command. follow is the path's trust class --
+// false for the store project config (the one config file --self-edit
+// mounts into a box), true for host-owned homes (default.config, ParseFile
+// candidates the user named): a dotfiles symlink at ~/.byre/default.config
+// is the user's own arrangement and must keep working.
+func loadFile(path string, follow bool) (Config, error) {
+	b, err := hostopen.ReadFileBounded(path, follow, MaxConfigBytes)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Config{}, nil
