@@ -318,7 +318,7 @@ func MCPConfigJSON(mcps []MCP) []byte {
 			entry["type"] = "http"
 			entry["url"] = m.URL
 			if len(m.Headers) > 0 {
-				// Templates VERBATIM — ${NAME} refs expand at launch
+				// Templates VERBATIM — ${NAME} refs expand at launch (claude
 				// natively; the codex wrapper maps/expands), so the baked
 				// file stays free of byre-placed secrets.
 				entry["headers"] = m.Headers
