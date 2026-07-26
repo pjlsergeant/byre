@@ -71,7 +71,7 @@ func TestExitReportSilence(t *testing.T) {
 	// session that ends by wiring up a remote and an upstream must stay quiet,
 	// or the ⚠ becomes wallpaper before it ever matters.
 	t.Run("ordinary config churn stays silent", func(t *testing.T) {
-		_, dir := paths, paths.WorkDir
+		dir := paths.WorkDir
 		got := exitReport(t, paths, func() {
 			gitIn(t, dir, "config", "remote.origin.url", "git@example.com:x/y.git")
 			gitIn(t, dir, "config", "branch.main.remote", "origin")
@@ -304,7 +304,7 @@ func TestExitReportHostileFilesystem(t *testing.T) {
 		go func() { done <- exitReport(t, paths, func() {}) }()
 		select {
 		case <-done:
-		case <-timeAfterSeconds(20):
+		case <-time.After(20 * time.Second):
 			t.Fatal("snapshot hung on a planted FIFO")
 		}
 	})
@@ -377,10 +377,6 @@ func TestExitReportWorktreeNamesTheMainTree(t *testing.T) {
 		t.Errorf("expected an unambiguous location for the main tree, got:\n%s", got)
 	}
 }
-
-// timeAfterSeconds keeps the hang test readable without importing time into
-// every case above.
-func timeAfterSeconds(n int) <-chan time.Time { return time.After(time.Duration(n) * time.Second) }
 
 // byre does not follow git's include graph (ADR 0047's stated residual): an
 // exec-capable key can sit in an included file byre never reads. What it CAN

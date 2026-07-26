@@ -2,8 +2,6 @@
 //
 // byre shells out to the engine CLI rather than binding the Docker SDK, which
 // keeps Docker and Podman as two implementations of the same small surface.
-// The Runner stays minimal and grows only as commands need build/run/volume
-// operations.
 package runner
 
 import (

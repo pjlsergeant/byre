@@ -70,8 +70,9 @@ var (
 	noticeDone bool
 )
 
-// EnsureStoreOut prints mirror/LEGACY notices on the first noticed call in this
-// process; later calls with a writer are silent so develop+onboard do not double.
+// ensureNotices yields a writer that prints mirror/LEGACY notices on the first
+// noticed call in this process; later calls with a writer are silent so
+// develop+onboard do not double.
 func ensureNotices(w io.Writer) io.Writer {
 	if w == nil {
 		return nil

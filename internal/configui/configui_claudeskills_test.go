@@ -178,9 +178,6 @@ func TestClaudeSkillBadPathWarnsWithoutBlocking(t *testing.T) {
 	if got := claudeSkillRowText(m.claudeSkills[0]); !strings.Contains(got, "path missing — build will fail") {
 		t.Fatalf("list row must carry the warning: %q", got)
 	}
-	// Signature stability: the same entry with an existing vs missing dir
-	// signs identically (the note is display-only).
-	sigBad := m.sig()
 	good := t.TempDir()
 	if err := os.WriteFile(filepath.Join(good, "SKILL.md"),
 		[]byte("---\nname: qa-skill\ndescription: d\n---\nbody\n"), 0o644); err != nil {
@@ -191,7 +188,8 @@ func TestClaudeSkillBadPathWarnsWithoutBlocking(t *testing.T) {
 	if claudeSkillRowText(m2.claudeSkills[0]) != claudeSkillLine(m2.claudeSkills[0]) {
 		t.Fatal("valid entry must carry no row warning")
 	}
-	_ = sigBad // both models sign via claudeSkillLine — pinned by the substring below
+	// The row warning is display-only: it must not reach the signature, or an
+	// unreachable path would read as an unsaved edit.
 	if strings.Contains(m.sig(), "build will fail") {
 		t.Fatal("the warning leaked into the dirty signature")
 	}

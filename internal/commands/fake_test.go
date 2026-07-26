@@ -43,21 +43,16 @@ type fakeRunner struct {
 	failRmCont    map[string]bool              // container ids whose removal fails (started meanwhile)
 	env           map[string]string            // ContainerEnv of any id
 	envByID       map[string]map[string]string // per-id override, consulted before env
-	envErr        error
-	execEnv       map[string]string // env map passed to the last Exec
-	labels        map[string]string // ContainerLabels of any id
-	labelsErr     error
-	execInputs    []string // ExecInput: "id uid:gid args <-stdin"
-	execInputErr  error
+	execEnv       map[string]string            // env map passed to the last Exec
+	labels        map[string]string            // ContainerLabels of any id
+	execInputs    []string                     // ExecInput: "id uid:gid args <-stdin"
 
-	execOutputErr     error
 	execOutputContent string     // what ExecOutput streams (grab tests)
 	creates           [][]string // Create argvs
 	createErr         error
 	starts            []string // StartAttach: container names
 	runErr            error    // StartAttach result
 	runHook           func()   // called inside StartAttach: "while the session is live"
-	execErr           error
 	execs             []string // "id uid:gid workdir cmd..."
 	netnsErr          error
 	netnsInits        []string // NetnsInit: "container entrypoint"
@@ -68,13 +63,11 @@ type fakeRunner struct {
 	netMode        string // NetworkMode result; "" means "bridge" (private netns)
 	netModeErr     error
 	stops          []string // Stop: container ids
-	stopErr        error
 	// sock_groups probe (ProbeSockGroup): default gid 0 success; probeErr fails.
-	probeGID   int
-	probeErr   error
-	probes     []string // "image host target"
-	desktop    bool
-	desktopErr error
+	probeGID int
+	probeErr error
+	probes   []string // "image host target"
+	desktop  bool
 
 	// volumes
 	vols        map[string]bool // existing named volumes
@@ -93,7 +86,6 @@ type fakeRunner struct {
 	images   map[string]bool // tag -> exists
 	rmImages []string
 	builds   []string // tag, with " nocache" appended when noCache
-	buildErr error
 
 	ops []string
 }
@@ -124,13 +116,13 @@ func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
 
 func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) {
 	if e, ok := f.envByID[id]; ok {
-		return e, f.envErr
+		return e, nil
 	}
-	return f.env, f.envErr
+	return f.env, nil
 }
 
 func (f *fakeRunner) ContainerLabels(id string) (map[string]string, error) {
-	return f.labels, f.labelsErr
+	return f.labels, nil
 }
 
 // ExecInput records the call and answers like deliver's in-box scripts do:
@@ -141,9 +133,6 @@ func (f *fakeRunner) ExecInput(id string, uid, gid int, stdin io.Reader, command
 	defer f.mu.Unlock()
 	b, _ := io.ReadAll(stdin)
 	f.execInputs = append(f.execInputs, fmt.Sprintf("%s %d:%d %s <-%s", id, uid, gid, strings.Join(command[3:], " "), b))
-	if f.execInputErr != nil {
-		return "", f.execInputErr
-	}
 	if len(command) >= 3 && strings.Contains(command[2], "pwd -P") {
 		// grab's classifyScript: answer "regular file" — wiring tests grab
 		// files; behavior depth lives in internal/deliver.
@@ -163,9 +152,6 @@ func (f *fakeRunner) ExecOutput(id string, uid, gid int, stdout io.Writer, comma
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.execInputs = append(f.execInputs, fmt.Sprintf("%s %d:%d out %s", id, uid, gid, strings.Join(command[3:], " ")))
-	if f.execOutputErr != nil {
-		return f.execOutputErr
-	}
 	_, err := io.WriteString(stdout, f.execOutputContent)
 	return err
 }
@@ -187,7 +173,7 @@ func (f *fakeRunner) Stop(container string) error {
 	defer f.mu.Unlock()
 	f.stops = append(f.stops, container)
 	f.ops = append(f.ops, "stop "+container)
-	return f.stopErr
+	return nil
 }
 
 func (f *fakeRunner) NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error {
@@ -228,7 +214,7 @@ func (f *fakeRunner) ProbeSockGroup(image, hostPath, targetPath, userns string) 
 }
 
 func (f *fakeRunner) IsDockerDesktop() (bool, error) {
-	return f.desktop, f.desktopErr
+	return f.desktop, nil
 }
 
 // ContainersByLabel answers with the any-state extras only (fake simplicity:
@@ -277,7 +263,7 @@ func (f *fakeRunner) Exec(id string, uid, gid int, workdir string, env map[strin
 	f.execs = append(f.execs, fmt.Sprintf("%s %d:%d %s %s", id, uid, gid, workdir, strings.Join(command, " ")))
 	f.execEnv = env
 	f.ops = append(f.ops, "exec")
-	return f.execErr
+	return nil
 }
 
 func (f *fakeRunner) VolumesByPrefix(prefix string) ([]string, error) {
@@ -368,7 +354,7 @@ func (f *fakeRunner) Build(tag, dockerfile, contextDir string, noCache bool, bui
 	}
 	f.builds = append(f.builds, b)
 	f.ops = append(f.ops, "build "+tag)
-	return f.buildErr
+	return nil
 }
 
 var _ engineRunner = (*fakeRunner)(nil)

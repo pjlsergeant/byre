@@ -24,10 +24,10 @@ import (
 // `report-2.pdf`) has no window in which two writers pick the same name and
 // no rename ever clobbers. A died stream leaves at worst an orphaned dotfile.
 //
-// /inbox integrity: the inbox must be a real directory. It is baked
-// dev-owned under root-owned / (the agent cannot replace it), so the check is
-// belt-and-braces; a box whose image predates the bake gets the rebuild error
-// (exit 3) rather than a root-exec backfill (reversed in review — ADR 0008).
+// /inbox integrity: the inbox must be a real directory. It is baked dev-owned
+// under root-owned / (the agent cannot replace it), so the check only fires on
+// a box whose image predates the bake -- and that gets the rebuild error
+// (exit 3) rather than a root-exec backfill (ADR 0008).
 const inboxCheck = `
 if [ -L /inbox ] || { [ -e /inbox ] && [ ! -d /inbox ]; }; then
   echo "/inbox exists but is not a plain directory - refusing to deliver" >&2

@@ -328,8 +328,6 @@ func TestClaimStreamCleansTempOnFailure(t *testing.T) {
 	}
 }
 
-// --- pure helpers ---
-
 // decode drives recordSink to completion for the whole string in one Write,
 // the equivalent of the old parseRecords (streaming behavior is pinned
 // separately in TestRecordSinkStreamingAndCaps).

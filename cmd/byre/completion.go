@@ -17,9 +17,8 @@ import (
 // script is regenerated at shell startup (~3ms — it's one exec of a static
 // binary) so it always matches the installed byre, it needs no extra package
 // (the bash script only uses bash-completion's _init_completion when
-// present, with its own fallback), and byre writes nothing anywhere. A
-// static-file `--install` shipped briefly in v0.1.5 and was walked back —
-// see ADR 0022.
+// present, with its own fallback), and byre writes nothing anywhere.
+// Decision record: ADR 0022.
 func completionCmd(s commands.Streams) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "completion <shell>",

@@ -290,8 +290,7 @@ func TestDetectWorktreeHostPathResolvesSymlinkedGitDir(t *testing.T) {
 // turning it into an arbitrary rw host mount. It must resolve to standalone.
 func TestDetectWorktreeRejectsSymlinkedDotGit(t *testing.T) {
 	// A genuine external worktree (valid, consistent metadata).
-	extMain, extWT := makeWorktree(t, "wt")
-	_ = extMain
+	_, extWT := makeWorktree(t, "wt")
 	// The victim project: its .git is a SYMLINK to the genuine worktree's .git.
 	proj := t.TempDir()
 	if err := os.Symlink(filepath.Join(extWT, ".git"), filepath.Join(proj, ".git")); err != nil {

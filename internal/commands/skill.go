@@ -56,7 +56,8 @@ func pkgList(s Streams, kind packages.Kind) error {
 	return nil
 }
 
-// SkillInspect prints package metadata for a skill ID (phase 1: IDs only).
+// SkillInspect prints package metadata for a skill ID, or for a URI/path the
+// catalog does not know (inspected without installing).
 func SkillInspect(s Streams, id string) error {
 	return pkgInspect(s, packages.KindSkill, id)
 }

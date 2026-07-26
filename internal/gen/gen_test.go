@@ -5,13 +5,6 @@ import (
 	"testing"
 )
 
-func TestDockerfileDeterministic(t *testing.T) {
-	in := Input{Base: "node:22"}
-	if Dockerfile(in) != Dockerfile(in) {
-		t.Fatal("generation is not deterministic for identical input")
-	}
-}
-
 // TestDockerfileGolden pins the exact bytes so layer ordering and formatting
 // can't drift silently — cross-project layer caching depends on byte stability.
 func TestDockerfileGolden(t *testing.T) {

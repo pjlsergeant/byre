@@ -103,8 +103,7 @@ func egressHostForm(hostname string) string {
 // mcpNameRe is the MCP name grammar. Deliberately tighter than most: the
 // name becomes a JSON key in the baked mcp.json and an attribution label
 // (mcp:<name>) on status rows. No underscores, so a declared name can never
-// carry the `byre__` prefix — reserved for free against a state-writing
-// future byre walked back (ADR 0033, "The registrar that wasn't").
+// carry the reserved `byre__` prefix (ADR 0033).
 var mcpNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // ValidMCPName reports whether s satisfies the MCP name grammar — for

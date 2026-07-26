@@ -150,8 +150,6 @@ func (d *Doc) HasTable(table []string) bool {
 	return false
 }
 
-// ---- lookup helpers --------------------------------------------------------
-
 // findKeyValue finds a KeyValue expression by table context and key path.
 // Dotted spellings match their flattened path: `a.b = 1` at root is found by
 // table=["a"], key=["b"]... which callers express as table ["a"], key "b" --

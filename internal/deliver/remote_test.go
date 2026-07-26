@@ -7,11 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 )
-
-func syscallMkfifo(p string) error { return syscall.Mkfifo(p, 0o600) }
 
 // fakeSSH scripts one response per remote invocation, records what was
 // invoked, and captures each invocation's stdin (the tar stream).
@@ -407,7 +404,7 @@ func TestPackNothingDeliverable(t *testing.T) {
 	ssh := &fakeSSH{responses: []sshResponse{}}
 	cfg, _, errw := remoteConfig()
 	fifo := filepath.Join(t.TempDir(), "pipe")
-	if err := syscallMkfifo(fifo); err != nil {
+	if err := mkfifo(fifo); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
 	_, err := RunRemote(cfg, Options{Box: "abc"}, SSHTarget{Host: "far"}, PathSources([]string{fifo}), ssh.exec, false)
@@ -432,7 +429,7 @@ func TestPackSkipsSymlinkToFifoInTree(t *testing.T) {
 	}
 	mustWrite(t, filepath.Join(sub, "notes.txt"), "n")
 	fifo := filepath.Join(dir, "pipe")
-	if err := syscallMkfifo(fifo); err != nil {
+	if err := mkfifo(fifo); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
 	if err := os.Symlink(fifo, filepath.Join(sub, "pipelink")); err != nil {

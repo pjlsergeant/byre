@@ -800,8 +800,9 @@ func closureLine(c string, s statusInfo) string {
 
 // configEgress parses the resolved config's egress entries, attributed to
 // config, so status shows the user's extension holes alongside the skills'.
-// The resolved config is already validated, so parse failures can't happen;
-// skipping is belt-and-braces, mirroring EgressAllows.
+// The resolved config is already validated, so a parse failure here would mean
+// validation let a bad entry through; skip it rather than render garbage, as
+// EgressAllows does.
 func configEgress(entries []string) []skills.EgressAllow {
 	var out []skills.EgressAllow
 	for _, e := range entries {

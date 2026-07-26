@@ -337,8 +337,6 @@ func (m model) viewSkills() string {
 	return b.String()
 }
 
-// ---- option/value helpers --------------------------------------------------
-
 const noneOption = config.NoneLabel
 
 // pickerOpts builds the option list for a template/agent picker: the discovered

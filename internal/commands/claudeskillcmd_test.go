@@ -96,7 +96,7 @@ func TestClaudeSkillAddGlobalAndReopen(t *testing.T) {
 }
 
 func TestClaudeSkillRemoveClosureSmart(t *testing.T) {
-	dir, projPath, globalPath, s, errw := mcpTestProject(t)
+	dir, projPath, _, s, errw := mcpTestProject(t)
 	src := writeTestClaudeSkill(t, "tdd-loop")
 
 	// Declared in the project layer only: remove deletes the block, no closure.
@@ -140,7 +140,6 @@ func TestClaudeSkillRemoveClosureSmart(t *testing.T) {
 	if err := ClaudeSkillRemove(s, dir, false, "ghost"); err == nil || !strings.Contains(err.Error(), "nothing to remove") {
 		t.Fatalf("ghost: %v", err)
 	}
-	_ = globalPath
 }
 
 func TestClaudeSkillListRendersEffectiveSet(t *testing.T) {

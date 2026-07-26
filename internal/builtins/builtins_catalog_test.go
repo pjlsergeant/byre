@@ -187,7 +187,6 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, cat := testCat(t)
-	_ = cat
 	// The bundled slice of this repo's own byre.config skill set (codex +
 	// grok; codereview/devlog are installed packages now, covered by the
 	// host-side dogfood).
@@ -372,14 +371,13 @@ func TestDevloopRetired(t *testing.T) {
 // retired to a tombstone; IsStub stays for any future compat shell.
 func TestBundledStubClassification(t *testing.T) {
 	_, cat := testCat(t)
-	stubs := map[string]bool{}
 	for _, name := range skills.ListSkills(cat) {
 		sk, err := skills.Load(cat, name)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if got := skills.IsStub(sk.File); got != stubs[name] {
-			t.Errorf("IsStub(%s) = %v, want %v", name, got, stubs[name])
+		if skills.IsStub(sk.File) {
+			t.Errorf("bundled skill %s classifies as a stub", name)
 		}
 	}
 }

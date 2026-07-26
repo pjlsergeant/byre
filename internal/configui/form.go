@@ -251,8 +251,6 @@ type model struct {
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
 	// Snapshot the on-disk bytes as OPENED, so reportSaved (Run's saved
 	// return) can judge an $EDITOR-only session by NET content against them.
-	// (The hand-comment warning that used to ride this read is gone: the
-	// preservation engine keeps comments, so there is nothing to apologize for.)
 	openRaw, openErr := os.ReadFile(filePath)
 	ti := textinput.New()
 	ti.Prompt = ""
@@ -1144,8 +1142,6 @@ func (m model) subFooterNote() string {
 	}
 	return ""
 }
-
-// ---- small shared helpers ----------------------------------------------------
 
 func contains(opts []string, v string) bool {
 	for _, o := range opts {

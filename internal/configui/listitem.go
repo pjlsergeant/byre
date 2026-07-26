@@ -930,8 +930,6 @@ func putAt[T any](s []T, idx int, v T) []T {
 	return out
 }
 
-// ---- display helpers ---------------------------------------------------------
-
 func mountLine(mt config.Mount) string {
 	mode := mt.Mode
 	if mode == "" {

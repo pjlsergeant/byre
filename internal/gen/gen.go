@@ -278,7 +278,7 @@ func Dockerfile(in Input) string {
 	// unprivileged agent — no runtime chown needed. (Keeping a state volume's seed
 	// CLEAN is each agent skill's job — it cleans its own installer residue from
 	// its state dir; byre does not blanket-wipe arbitrary config-supplied targets.)
-	if dirs := SortedUnique(in.VolumeDirs); len(dirs) > 0 {
+	if dirs := sortedUnique(in.VolumeDirs); len(dirs) > 0 {
 		b.WriteString("\n# --- volume mount points (owned by the baked uid) ---\n")
 		quoted := make([]string, len(dirs))
 		for i, d := range dirs {
@@ -394,11 +394,8 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// SortedUnique returns the distinct, sorted, non-empty entries of s. Exported
-// because internal/build reuses it to derive the volume-dirs set: build and gen
-// must agree on the mkdir/chown set this package emits into the Dockerfile, so
-// both sides derive it from this one function.
-func SortedUnique(s []string) []string {
+// sortedUnique returns the distinct, sorted, non-empty entries of s.
+func sortedUnique(s []string) []string {
 	seen := make(map[string]struct{}, len(s))
 	out := make([]string, 0, len(s))
 	for _, v := range s {
@@ -415,10 +412,9 @@ func SortedUnique(s []string) []string {
 	return out
 }
 
-// writeApt / writeNpm shell-quote every package name, matching the posture of
-// writeVolumeDirs: upstream validation (config.ValidateContent) already
-// allowlists the charset, but this layer interpolates into shell and should
-// not depend on a check two packages away.
+// writeApt / writeNpm shell-quote every package name: upstream validation
+// (config.ValidateContent) already allowlists the charset, but this layer
+// interpolates into shell and should not depend on a check two packages away.
 func writeApt(b *strings.Builder, pkgs []string) {
 	if len(pkgs) == 0 {
 		return

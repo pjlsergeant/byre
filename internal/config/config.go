@@ -859,7 +859,6 @@ func Merge(base, over Config) Config {
 	return out
 }
 
-// Validate checks the resolved config for v0-supported, well-formed values.
 // validContainerTarget requires an in-container mount/volume target to be an
 // absolute path with no control characters and no comma. Absolute keeps mounts
 // unambiguous; rejecting control chars (esp. CR/LF) stops a target from injecting

@@ -2,14 +2,11 @@ package configui
 
 import "strings"
 
-// This table is the ONE place a field's cross-cutting metadata lives:
-// display label, editing kind, the raw-block TOML key hint, the item
-// editor's singular title, and the summary noun. Behavior stays where it
-// was (rows in effective.go, item editors in listitem.go, placement in
-// newModel's target-specific sections); what this table removes is a new
-// field having to declare its IDENTITY across five independent switches —
-// label, kind classification, editor title, and noun now arrive together
-// or not at all.
+// This table is the ONE place a field's cross-cutting metadata lives: display
+// label, editing kind, the raw-block TOML key hint, the item editor's singular
+// title, and the summary noun. A new field declares its identity here or not at
+// all. Behavior stays elsewhere: rows in effective.go, item editors in
+// listitem.go, placement in newModel's target-specific sections.
 
 // fieldKind classifies how a field is edited.
 type fieldKind int

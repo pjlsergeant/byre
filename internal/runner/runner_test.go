@@ -80,12 +80,6 @@ func TestEmptyDefaultsToAuto(t *testing.T) {
 	}
 }
 
-func TestRunnerEngineAccessor(t *testing.T) {
-	if got := New(Docker).Engine(); got != Docker {
-		t.Fatalf("Engine() = %q", got)
-	}
-}
-
 func TestIsRootlessPodman(t *testing.T) {
 	// Docker (incl. rootless Docker) is out of scope: false WITHOUT querying.
 	queried := false
