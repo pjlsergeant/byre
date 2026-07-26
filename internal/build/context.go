@@ -38,6 +38,33 @@ type fileCopy struct {
 	src     string
 	staged  string
 	what    string
+	// budget, when set, re-enforces a validated bound AT the copy: the
+	// source is agent-writable and the project stays live between the
+	// validation walk and this staging, so the walk's verdict can be
+	// stale -- the bound must hold where the bytes actually move.
+	budget *copyBudget
+}
+
+// copyBudget is a cumulative files/bytes allowance charged per staged
+// regular file, at the fd's own fstat size. Exhaustion refuses the stage
+// with attribution; nil charges nothing (`files` sources carry no bound
+// today -- theirs is the per-file torn-read check).
+type copyBudget struct {
+	files int
+	bytes int64
+	what  string
+}
+
+func (b *copyBudget) charge(size int64) error {
+	if b == nil {
+		return nil
+	}
+	b.files--
+	b.bytes -= size
+	if b.files < 0 || b.bytes < 0 {
+		return fmt.Errorf("%s: grew past its validated bound between validation and staging — refusing to stage a torn set", b.what)
+	}
+	return nil
 }
 
 // buildInput computes the generator input for a project WITHOUT writing anything
@@ -496,7 +523,12 @@ func planClaudeSkills(cfg config.Config, res skills.Resolved) ([]fileCopy, error
 			return nil, err
 		}
 		staged := filepath.Join(gen.ClaudeSkillsDirName, ".claude", "skills", d.CS.Name)
-		jobs = append(jobs, fileCopy{src: src, staged: staged, what: fmt.Sprintf("claude skill %s: copying %s", d.CS.Name, src)})
+		jobs = append(jobs, fileCopy{src: src, staged: staged, what: fmt.Sprintf("claude skill %s: copying %s", d.CS.Name, src),
+			// The bound ValidateClaudeSkillDir just walked, re-enforced at
+			// the copy itself: the dir is agent-writable, so the walk's
+			// verdict can be stale by staging time (the review's
+			// bound-exists-one-field-over sweep).
+			budget: &copyBudget{files: skills.MaxClaudeSkillFiles, bytes: skills.MaxClaudeSkillBytes, what: "claude skill " + d.CS.Name}})
 	}
 	return jobs, nil
 }
@@ -684,7 +716,7 @@ func stageCopy(dstRoot *os.Root, agentRoot string, j fileCopy) error {
 		}
 	}
 	if root == "" {
-		return copyPath(j.src, dstRoot, j.staged)
+		return copyPath(j.src, dstRoot, j.staged, j.budget)
 	}
 	r, err := os.OpenRoot(root)
 	if err != nil {
@@ -695,7 +727,7 @@ func stageCopy(dstRoot *os.Root, agentRoot string, j fileCopy) error {
 	// safeProjectPath / validation already resolved it within the project, and
 	// os.Root follows it while refusing escapes. Its interior is agent territory:
 	// symlinks there are rejected (copyRootedEntry with topLevel=false).
-	return copyRootedEntry(r, src, dstRoot, j.staged, true)
+	return copyRootedEntry(r, src, dstRoot, j.staged, true, j.budget)
 }
 
 // agentWritableRel reports whether path is inside root, returning the relative
@@ -736,7 +768,7 @@ func withinRoot(root, path string) (string, bool) {
 // interior entries reject symlinks (agent-planted). The fd's fstat is the only
 // thing trusted for the entry's type, and opens are O_NONBLOCK so a FIFO returns
 // instead of blocking. Mirrors internal/deliver/transport.go.
-func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, topLevel bool) error {
+func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, topLevel bool, b *copyBudget) error {
 	if !topLevel {
 		// Lstat through the root to reject an interior symlink WITHOUT following
 		// it: os.Root silently follows an in-root symlink on Open, and copyPath's
@@ -778,13 +810,13 @@ func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, to
 			return err
 		}
 		for _, e := range entries {
-			if err := copyRootedEntry(root, filepath.Join(rel, e.Name()), dstRoot, filepath.Join(dst, e.Name()), false); err != nil {
+			if err := copyRootedEntry(root, filepath.Join(rel, e.Name()), dstRoot, filepath.Join(dst, e.Name()), false, b); err != nil {
 				return err
 			}
 		}
 		return nil
 	case fi.Mode().IsRegular():
-		return stageRegularFromFD(f, dstRoot, dst)
+		return stageRegularFromFD(f, dstRoot, dst, b)
 	default:
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", filepath.Join(root.Name(), rel))
 	}
@@ -807,7 +839,7 @@ func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, to
 // Opens are O_NONBLOCK and the type is trusted only from the fd's fstat, so a
 // swap to a FIFO returns instead of hanging and is rejected rather than staged.
 // This mirrors internal/deliver/transport.go.
-func copyPath(src string, dstRoot *os.Root, dst string) error {
+func copyPath(src string, dstRoot *os.Root, dst string, b *copyBudget) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
@@ -830,7 +862,7 @@ func copyPath(src string, dstRoot *os.Root, dst string) error {
 			return err
 		}
 		defer root.Close()
-		return copyRootedEntry(root, ".", dstRoot, dst, false)
+		return copyRootedEntry(root, ".", dstRoot, dst, false, b)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", src)
@@ -843,7 +875,7 @@ func copyPath(src string, dstRoot *os.Root, dst string) error {
 		return err
 	}
 	defer in.Close()
-	return stageRegularFromFD(in, dstRoot, dst)
+	return stageRegularFromFD(in, dstRoot, dst, b)
 }
 
 // stageRegularFromFD copies an already-open source file into dst, preserving its
@@ -857,13 +889,18 @@ func copyPath(src string, dstRoot *os.Root, dst string) error {
 // the writer indefinitely (the same stall class O_NONBLOCK closes for FIFOs).
 // A source that grew or shrank mid-copy is refused rather than staged — the
 // bytes would be a torn read either way, and the context must be deterministic.
-func stageRegularFromFD(in *os.File, dstRoot *os.Root, dst string) error {
+func stageRegularFromFD(in *os.File, dstRoot *os.Root, dst string, b *copyBudget) error {
 	fi, err := in.Stat()
 	if err != nil {
 		return err
 	}
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file (only plain files/dirs may be staged in `files`)", in.Name())
+	}
+	// Charge at the fd's own fstat size -- the number copyExactly will hold
+	// the copy to -- so the budget and the bytes can't disagree.
+	if err := b.charge(fi.Size()); err != nil {
+		return err
 	}
 	o, err := dstRoot.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fi.Mode().Perm()&fs.ModePerm)
 	if err != nil {

@@ -495,7 +495,7 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 
 	dst := filepath.Join(t.TempDir(), "staged")
 	dr, base := dstAt(t, dst)
-	if err := copyPath(src, dr, base); err != nil {
+	if err := copyPath(src, dr, base, nil); err != nil {
 		t.Fatalf("copyPath of a plain tree failed: %v", err)
 	}
 	for rel, wantMode := range map[string]os.FileMode{
@@ -519,7 +519,7 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 	// must still stage — openDirRootNoFollow Cleans before splitting parent/base.
 	dst2 := filepath.Join(t.TempDir(), "staged2")
 	dr2, base2 := dstAt(t, dst2)
-	if err := copyPath(src+string(filepath.Separator), dr2, base2); err != nil {
+	if err := copyPath(src+string(filepath.Separator), dr2, base2, nil); err != nil {
 		t.Fatalf("copyPath of a trailing-slash dir failed: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dst2, "top.txt")); err != nil {
@@ -533,7 +533,7 @@ func copyWithin(t *testing.T, src, dst string) error {
 	t.Helper()
 	dr, base := dstAt(t, dst)
 	done := make(chan error, 1)
-	go func() { done <- copyPath(src, dr, base) }()
+	go func() { done <- copyPath(src, dr, base, nil) }()
 	select {
 	case err := <-done:
 		return err
@@ -631,7 +631,7 @@ func TestCopyPathRejectsInteriorSymlink(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	dr, base := dstAt(t, filepath.Join(t.TempDir(), "staged"))
-	if err := copyPath(src, dr, base); err == nil {
+	if err := copyPath(src, dr, base, nil); err == nil {
 		t.Fatal("an in-root symlink must be rejected, not dereferenced into the image")
 	}
 }
@@ -670,7 +670,7 @@ func TestCopyPathRejectsEscapingSymlinkComponents(t *testing.T) {
 			src := t.TempDir()
 			tc.plant(t, src)
 			dr, base := dstAt(t, filepath.Join(t.TempDir(), "staged"))
-			if err := copyPath(src, dr, base); err == nil {
+			if err := copyPath(src, dr, base, nil); err == nil {
 				t.Fatalf("escaping %s symlink must be rejected", tc.name)
 			}
 		})
@@ -693,7 +693,7 @@ func TestCopyPathRejectsTopLevelDirSymlink(t *testing.T) {
 	}
 	dst := filepath.Join(t.TempDir(), "staged")
 	dr, base := dstAt(t, dst)
-	if err := copyPath(link, dr, base); err == nil {
+	if err := copyPath(link, dr, base, nil); err == nil {
 		t.Fatal("a top-level directory symlink must be rejected, not followed")
 	}
 	if _, err := os.Stat(filepath.Join(dst, "host-secret")); err == nil {
@@ -723,7 +723,7 @@ func TestCopyRootedEntryRefusesEscapingAncestor(t *testing.T) {
 	// topLevel=true mirrors stageCopy's call on a multi-component configured
 	// source; the escaping ancestor is refused regardless of the flag.
 	dr, base := dstAt(t, filepath.Join(t.TempDir(), "out"))
-	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), dr, base, true); err == nil {
+	if err := copyRootedEntry(root, filepath.Join("sub", "secret"), dr, base, true, nil); err == nil {
 		t.Fatal("an entry reached through an escaping ancestor symlink must be refused by the root")
 	}
 }
@@ -1320,5 +1320,34 @@ func TestPlanGuardEmptyWithoutNetnsSkill(t *testing.T) {
 	genSkills := []gen.SkillBlock{{Name: "tools", Files: map[string]string{"skills/tools/x.sh": "/usr/local/bin/x"}}}
 	if guard := planGuard(genSkills, skills.Resolved{}); guard != nil {
 		t.Fatalf("expected no guard without a netns skill, got %+v", guard)
+	}
+}
+
+// The Claude Skills bound is enforced where the bytes move, not only in
+// the pre-copy validation walk: the source dir is agent-writable and the
+// project stays live, so the walk's verdict can be stale by staging time
+// (the review's bound-exists-one-field-over sweep). A set that grew past
+// its budget refuses mid-copy; an in-budget set stages.
+func TestCopyBudgetRefusesGrowthAtStaging(t *testing.T) {
+	src := t.TempDir()
+	for _, f := range []string{"SKILL.md", "extra.md"} {
+		if err := os.WriteFile(filepath.Join(src, f), []byte("0123456789"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stage := func(b *copyBudget) error {
+		dst := t.TempDir()
+		dr, err := os.OpenRoot(dst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer dr.Close()
+		return copyPath(src, dr, "skill", b)
+	}
+	if err := stage(&copyBudget{files: 1, bytes: 1 << 10, what: "claude skill x"}); err == nil || !strings.Contains(err.Error(), "grew past its validated bound") {
+		t.Errorf("over-budget staging must refuse with the bound named, got %v", err)
+	}
+	if err := stage(&copyBudget{files: 2, bytes: 1 << 10, what: "claude skill x"}); err != nil {
+		t.Errorf("in-budget staging must succeed, got %v", err)
 	}
 }
