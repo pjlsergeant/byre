@@ -24,9 +24,12 @@ The editor shows one screen, organized the way `byre status` reports:
 <!-- image-placeholder: config-grants-section -->
 
 - **Build -- how the box is made.** Base image, engine (docker/podman),
-  packages, enabled skills, MCP servers, Claude Skills. Adding a
-  postgres client is: arrow to Packages, type the name, done -- it
-  installs on the next develop.
+  packages, enabled skills, MCP servers, Claude Skills, and your
+  agent's standing
+  [instructions](/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box)
+  (prose opens in your `$EDITOR`; inherited snippets are readable in
+  full, attributed to their layer). Adding a postgres client is: arrow
+  to Packages, type the name, done -- it installs on the next develop.
 - **Onboarding favourites.** The template/agent/shared-login answers
   the first-run picker will pre-select next time. Preferences, never
   grants -- they apply nothing to any box.
@@ -55,7 +58,9 @@ the footer names it outright (`Saves to: ~/.byre/projects/<id>/byre.config`).
 Underneath, it's a cascade of plain TOML files, and they're always
 yours to edit by hand -- the editor and
 `vim ~/.byre/projects/<id>/byre.config` write the same file, held to
-the same validation. That's a right byre defends, never a requirement
+the same validation. The two coexist safely: byre's saves edit only
+what you changed, so your comments, formatting, and hand-arranged
+layout survive every save byte-for-byte. That's a right byre defends, never a requirement
 it imposes: `byre config` is the interface, every config feature is
 editable there, and no recipe or error message will ever send you into
 the files. The complete vocabulary, the cascade's merge rules, presets,
