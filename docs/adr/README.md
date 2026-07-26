@@ -25,6 +25,11 @@ this index:
    the check.
 3. Give `[no arm]` entries extra suspicion: for those, this check is
    the only enforcement they get.
+4. When the diff adds a defensive bound, guard, cap, or re-assertion,
+   ask where the sibling is: the same class of input one field or one
+   call site over, still uncovered. Require it covered or named as
+   consciously out of scope -- a fix that stops at the instance leaves
+   the class.
 
 ## Maintenance
 
