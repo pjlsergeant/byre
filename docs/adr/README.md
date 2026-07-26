@@ -37,6 +37,11 @@ this index:
   of every clause); a marker never claims completeness. When in doubt
   whether a test qualifies, it doesn't -- `[no arm]` is the honest
   default.
+- An ADR that accepts a residual -- a limitation users are left living
+  with -- puts that residual on the user-facing security-model page
+  (`site/content/docs/security-model.md`) in the same unit of work; a
+  disclosure only contributors can find has not been made. Convention
+  by choice: no arm.
 - Superseded ADRs keep their line, noted, stating what they decided.
 
 ## Principles

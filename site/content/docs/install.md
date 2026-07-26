@@ -13,8 +13,10 @@ go install github.com/pjlsergeant/byre/cmd/byre@latest
 ```
 
 (that puts `byre` in `$(go env GOPATH)/bin` -- make sure it's on your PATH).
-Or, no Go toolchain needed, a checksum-verified download of the latest
-release binary:
+Or, no Go toolchain needed, a download of the latest release binary,
+verified against the release's `checksums.txt` (this catches a corrupted
+download, not a compromised release -- the checksums ship from the same
+GitHub release as the binary):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | sh

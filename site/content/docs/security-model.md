@@ -104,6 +104,18 @@ well-behaved telemetry clients, trivially routed around by an agent that
 wants to. The network under it is still open, and this document treats
 it as such.
 
+**Concurrent sessions share a pathname race.** Every byre bind mount is
+handed to the engine as a pathname, not an inode-pinned handle -- the
+docker/podman CLI-to-daemon contract is a pathname, resolved in the
+daemon's own namespace (a VM under Docker Desktop), so byre cannot pin
+it from the host side. The consequence: an agent in a concurrent rw
+session that can rename an ancestor of a bind source during *another*
+launch's short detect-to-mount window could redirect that bind.
+Worktrees make concurrent sessions an ordinary workflow, which is why
+this is worth knowing; the window belongs to a launch in progress -- a
+session already running is not affected. The full analysis is in
+[ADR 0009](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0009-worktrees-inherit-project-identity.md).
+
 **The firewall's allowlist is an IP snapshot.** A hostname grant is
 resolved once, at session launch, and the rules pin those IPs; the name
 is never re-resolved while the box runs. If the host's DNS answer moves
