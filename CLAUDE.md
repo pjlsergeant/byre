@@ -89,7 +89,8 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
   it. Merge/`!name` semantics are byre's own layer.
 - Container engine: shells out to the `docker`/`podman` **CLI** (no SDK).
 - Layout: `cmd/byre`, `internal/{project,config,gen,build,runner,skills,
-  packages,builtins,onboard,commands,deliver,lock,configui,version}`.
+  packages,builtins,onboard,commands,deliver,lock,configui,version,
+  editorcmd,hostopen,tomldoc,tuitest}`.
 
 ## Coding Conventions
 

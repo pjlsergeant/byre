@@ -90,7 +90,11 @@ a readable macOS `.app` (display name "Byre Deliver") or Linux
 `.desktop` entry whose only job is invoking `byre deliver` on what you
 drop. The Finder Quick Action is "Deliver to Byre". (ADR 0021)
 _Avoid_: droplet (DigitalOcean owns it), materialize (reserved for
-built-in skill copies), shim
+built-in skill copies), shim.
+Exempt from the droplet avoidance: the `.app` bundle's INTERNAL
+`droplet.applescript`/`droplet.icns` paths are Apple's applet-stub
+naming, and the `.applescript` path doubles as the ownership marker
+existing installs are recognized by -- they keep Apple's names.
 
 ### Config
 
@@ -103,7 +107,7 @@ override (last wins), lists union, a removal marker removes.
 **Removal marker**:
 A later layer's off-switch for an inherited list entry. Two spellings by
 identity type: `!name` where the entry's identity is a string (skills,
-apt, volumes, mounts by target), `remove = true` where it's structured
+apt, npm_global, volumes, mounts by target), `remove = true` where it's structured
 (ports, keyed by container port alone). Applied after the same layer's
 additions; the removed entry is gone from the resolved set -- contrast a
 mount's `disabled`, which keeps the entry visible (ADR 0015). (ADR 0018)
@@ -128,7 +132,7 @@ A named, reusable config layer under `~/.byre/templates/<name>` (e.g. go,
 node). A config-cascade concept, not a Dockerfile template.
 
 **Base**:
-The `FROM` image the generated Dockerfile builds on. Debian-derived in v0.
+The `FROM` image the generated Dockerfile builds on. Debian-derived.
 
 **Preservation engine (tomldoc)**:
 byre's style-preserving TOML document editor (`internal/tomldoc`, ADR
@@ -368,27 +372,27 @@ env NAMES), rendered where grants always render, attributed
 _Avoid_: calling an MCP a grant
 
 **MCP adapter**:
-How a selected agent's session receives the declared MCP set — always by
+How a selected agent's session receives the declared MCP set -- always by
 INJECTION (`[agent] mcp = "inject"`, the skill author's vouch); byre
 never writes an agent's MCP state, and an adapter-less agent degrades
 honestly (declared-but-NOT-delivered). Mechanics: ADR 0033.
 
 **Claude Skill (`[[claude_skills]]`)**:
-Wiring, not a grant (ADR 0039): a declared Claude Skill — Anthropic's
-agent-skill format, a directory whose root holds a `SKILL.md` — shipped
+Wiring, not a grant (ADR 0039): a declared Claude Skill -- Anthropic's
+agent-skill format, a directory whose root holds a `SKILL.md` -- shipped
 into the box for the agent. NOT a byre skill (the box-composition
-package) — the two words never appear unqualified where they could be
+package) -- the two words never appear unqualified where they could be
 confused. Mechanics: ADR 0039.
 _Avoid_: bare "skill" for either concept in user-facing prose; calling a
 Claude Skill a grant; `[[agent_skills]]` (collides with "agent skill")
 
 **Claude Skills adapter**:
-How a selected agent's session receives the baked Claude Skill tree —
+How a selected agent's session receives the baked Claude Skill tree --
 injection only (`[agent] claude_skills = "inject"`, the author's vouch);
 byre never writes an agent's skill state. Mechanics: ADR 0039.
 
 **Context adapter**:
-How a selected agent's session receives the baked agent context —
+How a selected agent's session receives the baked agent context --
 injection only (`[agent] context = "inject"`, the author's vouch; each
 agent's own vendor channel, ADR 0046); byre never writes an agent-owned
 file to deliver prose, and an adapter-less agent degrades honestly
@@ -545,8 +549,8 @@ flags what it can't introspect, and degrades claims it can't stand behind.
 Substance: PRINCIPLES.md #4.
 
 **Exposure line**:
-The terse one-line tally of what a box can reach — host mounts (disabled
-split out), ports, env vars, and the network stance — spoken in one shared
+The terse one-line tally of what a box can reach -- host mounts (disabled
+split out), ports, env vars, and the network stance -- spoken in one shared
 voice on two surfaces: atop the config UI's form, and as `byre:` lines at
 launch (where the implicit `/workspace` mount and, when active, the
 `--self-edit` store mount are named too). Counts only; `byre status`

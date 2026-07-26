@@ -22,7 +22,8 @@ skill in `byre config --global` is the machine-wide route -- then the
 question stops.) The login lives in a shared volume that
 reset/forget deliberately never touch. See the
 [security model](/docs/security-model/) for the implications of this.
-(Grok's shared auth works differently -- its token rotation can't be
+(Gemini's skill exists but is hand-enabled, not offered, until its
+two-box verification gate passes. Grok's shared auth works differently -- its token rotation can't be
 file-shared, so a broker mediates instead, and until its field gate passes
 the skill is hand-enabled rather than offered --
 [ADR 0036](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0036-grok-shared-auth-v2-broker.md).)
@@ -241,8 +242,8 @@ open under **Egress**.
 
 <!-- demo-placeholder: firewall-enable -->
 
-By default, we don't restrict network access. The _firewall_ skill flips
-that to deny-by-default: your container starts but runs nothing while a
+By default byre doesn't restrict network access. The _firewall_ skill flips
+that to deny-by-default: your box starts but runs nothing while a
 privileged one-shot helper joins its network namespace, installs the
 allowlist rules, and verifies them. Only then does the agent launch behind
 the wall -- and if any of that fails, the box dies closed rather than
@@ -273,8 +274,8 @@ effective root on the host, and `byre status` disclaims that hole for as
 long as the skill is enabled.
 [docs/DOCKER-HOST.md](https://github.com/pjlsergeant/byre/blob/main/docs/DOCKER-HOST.md)
 covers what the grant really means and when to prefer something narrower.
-Nested Podman (a daemon inside the box, granting nothing on the host) is
-possible future work; there's no support for it today.
+Nested Podman (a daemon inside the box, granting nothing on the host)
+is unsupported.
 
 ## Get the coding agent to edit its own byre config?
 

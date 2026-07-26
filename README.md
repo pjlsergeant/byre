@@ -79,13 +79,13 @@ Ask the box what it can touch, any time:
 $ byre status
 Project id:   my-project-pjl-069d95
 Agent:        byre/claude
-Template:     byre/go                 bundled 0.2.0
+Template:     byre/go                 bundled v1.3.1
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
 Network:      open
 Ports:        none
 Host mounts:  none
-Skills:       byre/claude             bundled 0.2.0
+Skills:       byre/claude             bundled v1.3.1
 State vols:   .claude
 Cache vols:   none
 Container:    running (0d95f3a2c1b4)
@@ -137,9 +137,9 @@ from byre's host-side store, never from inside the project. The editor
 is the interface: no byre feature ever requires you to open those files
 yourself. They stay plain TOML so they're diffable, shareable, and
 always yours to edit by hand if you prefer -- a right, not a step in
-any recipe. The vocabulary covers packages, env, mounts, volumes,
-skills, and MCP servers; raw Dockerfile lines and `docker run` args cover
-the rest.
+any recipe. The vocabulary covers packages, env, mounts, volumes, skills,
+MCP servers, Claude Skills, and standing instructions for your agent;
+raw Dockerfile lines and `docker run` args cover the rest.
 
 The editor's walk lives on the
 [configuration page](https://getbyre.com/docs/configuration/); the merge

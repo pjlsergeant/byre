@@ -169,8 +169,7 @@ The gate checklist -- what to answer for ANY agent CLI:
   caught the bundled-packs bug in its own packaging. Expect and welcome
   reviewer probes; keep green YOUR job.
 - **Ops**: the gated engine-side suite must actually run before
-  handoff (`byre-inttest`, or `.byre-devlog/inttest.sh` in older boxes
-  -- which needs `~/.ssh` to exist); verify the tests RAN rather than
+  handoff (`byre-inttest`); verify the tests RAN rather than
   skipped (count RUN/PASS lines, don't trust a fast `ok`).
 
 ## What's next

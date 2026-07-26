@@ -17,7 +17,7 @@ every command and flag.
 
 | Command | What it does |
 |---|---|
-| `byre develop` | Set up and run the project container in the foreground. |
+| `byre develop` | Set up and run the project box in the foreground. |
 | `byre shell` | Open a shell (as the dev user) in the running session. |
 | `byre worktree <name>` | Create a git worktree and start a parallel session in it. |
 | `byre deliver [<path>... \| -]` | Deliver files from the host into a running box's /inbox. |
@@ -27,7 +27,7 @@ every command and flag.
 
 | Command | What it does |
 |---|---|
-| `byre status` | Show resolved config, mounts, skills, container state. |
+| `byre status` | Show resolved config, mounts, skills, session state. |
 | `byre dockerfile` | Print the generated Dockerfile for this directory. |
 | `byre dockerrun` | Print the docker/podman run command byre would use. |
 | `byre ejectfirewall` | Print the firewall netns helper as a standalone script. |

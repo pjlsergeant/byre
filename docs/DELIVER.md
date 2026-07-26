@@ -182,7 +182,8 @@ clipboard before it ships. The right-click **Deliver to Byre** Quick
 Action delivers from Finder's context menu.
 
 The app is a *generated, readable artifact* -- its AppleScript source
-ships inside the bundle (`Contents/Resources/droplet.applescript`), it's
+ships inside the bundle (at `Contents/Resources/droplet.applescript`,
+the applet stub's own filename convention -- Apple's word, not ours), it's
 assembled on your machine by macOS's own `osacompile` (nothing prebuilt,
 so no signing or notarization is ever involved), and re-running
 `--install-app` regenerates it -- do that if you move the byre binary.

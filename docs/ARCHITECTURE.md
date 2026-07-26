@@ -241,9 +241,9 @@ image (ADR 0009).
 ## Config
 
 (The user-facing reference -- every key, with usage guidance -- is the
-site's configuration page, `site/content/docs/configuration.md`. This
-section is the design view: the same facts with their rationale and
-ADRs.)
+site's key reference, `site/content/docs/configuration-reference.md`;
+the editor walkthrough is `configuration.md`. This section is the
+design view: the same facts with their rationale and ADRs.)
 
 Cascade, config-only (image steps are compiled output, never hand-written
 twice):
@@ -489,10 +489,10 @@ joins the baked agent context AFTER the skill snippets, in cascade order,
 and is INJECTED into the agent's session through that agent's own
 vendor channel (ADR 0046: claude's `--append-system-prompt-file`,
 codex's `developer_instructions`, grok's `--append-system-prompt`,
-gemini's include-dir memory, opencode's `instructions` config — each
+gemini's include-dir memory, opencode's `instructions` config -- each
 vouched per skill with `[agent] context = "inject"`; no vouch = not
 delivered, and status says so). byre never writes an agent-owned file
-to deliver prose — the retired `context_target` placement rewrote each
+to deliver prose -- the retired `context_target` placement rewrote each
 agent's own instruction file every launch, and ADR 0046 buried it.
 Edited in the Instructions section of `byre config` (prose via the
 `$EDITOR` handoff) or `byre context add|remove|list` (add with no flags
@@ -548,8 +548,8 @@ Codex, Gemini, and OpenCode log in once in any box (the credential
 lands in the shared volume through symlinks; Gemini's API-key path is
 verified and its two-box OAuth check is gate-pending; OpenCode is
 vouched for API-key logins -- two-box gate passed 2026-07-17, OAuth
-entries unsupported and warned -- see the skills and ADR 0017's
-verification record); Grok's v1 file-sharing was retired in the field
+entries unsupported and warned -- see the skills' own skill.toml
+gate records); Grok's v1 file-sharing was retired in the field
 (ADR 0023) and its v2 auth broker awaits its rollover field gate
 (ADR 0036);
 Claude uses a user-minted `claude
@@ -569,14 +569,14 @@ companion is already hand-granted machine-wide in `default.config`
 `skills`, a key the picker never writes (ADR 0025). Gemini (two-box
 OAuth check pending) and grok (broker rollover gate pending, ADR 0036)
 deliberately don't declare it yet; opencode's gate passed 2026-07-17
-and it now does. The gate-pending pair still declare `companion_for` —
+and it now does. The gate-pending pair still declare `companion_for` --
 the pairing fact, which nests a companion under its agent's row in the
 config UI without putting anything in front of onboarding; readiness
 gates the offer, never the display (ADR 0034).
 
 ## The chassis
 
-Core's constant provision to every box. **Supported base (v0):
+Core's constant provision to every box. **Supported base:
 Debian-derived images** -- the core block assumes `apt`, a POSIX shell,
 glibc, and root at build time. Alpine/distroless/non-glibc bases are
 unsupported; for those, use Docker directly (ADR 0014).
@@ -687,13 +687,13 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
 
                       Project id:   repo-abc123
                       Agent:        byre/claude
-                      Template:     byre/go                 bundled 0.2.0
+                      Template:     byre/go                 bundled v1.3.1
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
                       Network:      open
                       Ports:        none
                       Host mounts:  none
-                      Skills:       byre/claude             bundled 0.2.0
+                      Skills:       byre/claude             bundled v1.3.1
                                     pjlsergeant/devlog      installed 1.0.0
                       State vols:   .claude
                       Cache vols:   none
@@ -731,7 +731,7 @@ byre claude-skill ...  add / remove / list -- declare Claude Skills in the
                   project config (wiring, not a grant; ADR 0039).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
-                  a running box's /inbox — locally, or through another machine
+                  a running box's /inbox -- locally, or through another machine
                   via ssh://. User docs: docs/DELIVER.md.
 
 byre grab         Deliver's mirror: stream a file or directory out of a running
@@ -748,21 +748,21 @@ byre completion   Per-shell completion scripts (bash/zsh/fish/powershell).
 verbs: instead of deriving a project from cwd, they discover running
 boxes across every installed
 engine (`ps` filtered on the `byre.project` label; each hit keeps engine
-affinity for the later exec) and resolve a target through a cascade —
+affinity for the later exec) and resolve a target through a cascade --
 `--box` (unique prefix), cwd match walking ancestor directories against
 the `byre.workdir` label, sole owned session (an unreachable engine
 quietly counts as zero; any other failed query disables this step -- a
 partial pool can't prove "exactly one"), interactive
-picker (Bubble Tea on the terminal — /dev/tty when stdin is busy
+picker (Bubble Tea on the terminal -- /dev/tty when stdin is busy
 carrying a piped payload, ssh's own contract; osascript/zenity/kdialog
 on a graphical launch), else an error listing the candidates. Discovery filters to
-boxes whose `BYRE_UID` matches the caller — an accident filter, not
+boxes whose `BYRE_UID` matches the caller -- an accident filter, not
 confinement (`--skip-uid-check` reveals and permits the rest).
 
 Transport is an `exec -i` per file, as the container's own
 `BYRE_UID:BYRE_GID` (the `byre shell` attach model), running a POSIX-sh
 script that streams stdin to a dotfile temp under `set -C` (noclobber)
-and claims the final name with `ln` — link(2) fails EEXIST atomically,
+and claims the final name with `ln` -- link(2) fails EEXIST atomically,
 so collisions uniquify (`report-2.pdf`) with no overwrite window, and a
 died stream leaves no half-file under a real name. Directories claim
 their top-level name with an atomic `mkdir` and stream the tree
@@ -772,7 +772,7 @@ root-owned `/`, so the boxed agent can't replace it with a symlink.
 Grab runs the same transport in reverse with the judgment moved
 host-side (ADR 0040): dumb box scripts classify the path, enumerate a
 directory (NUL-framed find output), and `cat` each file out over an
-exec, while the host treats everything the box says as agent input —
+exec, while the host treats everything the box says as agent input --
 writes ride an `os.Root` anchored at the destination, names claim via
 an O_EXCL dotfile temp + hardlink (mkdir for directories) so nothing
 ever overwrites a host file or writes through a planted symlink, and
@@ -780,7 +780,7 @@ enumeration records outside the grabbed root are ignored loudly.
 
 An `ssh://[user@]host[:port]` first argument routes deliver
 through another machine running byre (ADR 0037): the local byre asks
-the remote for its box list (`byre deliver --boxes --proto N` — a
+the remote for its box list (`byre deliver --boxes --proto N` -- a
 frozen tab-separated line grammar on stdout; a distinct exit code
 marks a partial pool, which forbids auto-picking), picks locally with
 the ordinary picker, then streams every source as ONE tar archive up a
@@ -788,7 +788,7 @@ single plain-ssh exec into the remote's `byre deliver --tar -`. The
 archive's entries feed the ordinary per-file transport, so claiming,
 uniquify, and /inbox confinement are identical to a local delivery and
 nothing touches the remote host's disk. `--box` skips enumeration (one
-connection — the deliver-app/script path); `--remote-byre` names the
+connection -- the deliver-app/script path); `--remote-byre` names the
 remote binary when sshd's sparse non-interactive PATH hides it. Local
 capabilities stay local: the paste beat, stdin spooling, the sending
 meter, and the clipboard round-trip run on the near side (the remote's
@@ -808,11 +808,11 @@ on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021 and
 (remote) ADR 0037; user behavior (and the what-works-where matrix) in
 `docs/DELIVER.md`.
 
-`byre deliver --install-app` writes the deliver app — generated,
+`byre deliver --install-app` writes the deliver app -- generated,
 readable host artifacts whose only job is invoking `byre deliver`: an
 AppleScript app assembled by the OS's own `osacompile` (source
 shipped inside the bundle; nothing prebuilt crosses a machine boundary,
-so no signing certificate is involved — the ad-hoc codesign repairs the
+so no signing certificate is involved -- the ad-hoc codesign repairs the
 signature that writing byre's script and icons into the applet stub
 invalidates), a Finder Quick Action, and a Linux `.desktop`
 entry. Regeneration replaces only artifacts carrying byre's generated

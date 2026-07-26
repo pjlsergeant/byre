@@ -56,7 +56,7 @@ func realInstallDeps() (installDeps, error) {
 }
 
 // InstallApp materializes the deliver app (ADR 0021): the "Byre Deliver"
-// droplet + "Deliver to Byre" Quick Action on macOS, the .desktop entry on
+// drag-target app + "Deliver to Byre" Quick Action on macOS, the .desktop entry on
 // Linux. Idempotent regeneration of byre's OWN artifacts: an existing
 // artifact is only replaced when it carries the generated marker — a
 // same-named thing byre didn't write is refused, not clobbered.
@@ -83,7 +83,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	if err := os.MkdirAll(appDir, 0o755); err != nil {
 		return err
 	}
-	source := dropletSource(d.exe, box)
+	source := deliverAppSource(d.exe, box)
 
 	// Regenerate only what byre wrote: the shipped source inside the bundle
 	// is the marker. A same-named app WITHOUT it — or one whose state can't
@@ -116,7 +116,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return fmt.Errorf("checking %s: %w", svcPath, err)
 	}
 
-	srcDir, err := os.MkdirTemp("", "byre-droplet-")
+	srcDir, err := os.MkdirTemp("", "byre-deliver-app-")
 	if err != nil {
 		return err
 	}

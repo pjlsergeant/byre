@@ -184,7 +184,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	ctxRoot, err := hostopen.OpenDirRootNoFollow(paths.ContextDir)
 	if err != nil {
 		if errors.Is(err, hostopen.ErrSymlinkRoot) {
-			return "", fmt.Errorf("build context %s is a symlink, not a directory — refusing to stage through it (a self-edit agent may have planted it); remove it and rebuild", paths.ContextDir)
+			return "", fmt.Errorf("build context %s is no longer the directory byre checked — a symlink or a swapped dir (a self-edit agent may have planted it); remove it and rebuild", paths.ContextDir)
 		}
 		return "", err
 	}

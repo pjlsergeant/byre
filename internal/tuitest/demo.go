@@ -10,8 +10,10 @@ package tuitest
 // The pipeline's one hard-won discipline (prototyped 2026-07-17): ending a
 // recording by killing the tmux server leaves "[server exited]" as the final
 // frame, which breaks the poster-frame rule (P11: poster = the intended final
-// screen). EndCast trims trailing events back to the last output event
-// containing a sentinel the scenario knows is painted on that screen.
+// screen). EndCast trims trailing events back to the FIRST output event
+// containing a sentinel the scenario knows is painted on that screen --
+// first, not last: see trimCastTail for the authoring rule and why any
+// later occurrence is footage to drop.
 //
 // Multi-scene demos record each scene as its own session/cast (each ending
 // clean at its sentinel) and concatenate with a scene break — so a mid-demo
@@ -114,8 +116,10 @@ func (s *Session) TypeHuman(text string) {
 
 // EndCast stops the recording and trims its tail: kills the tmux server (the
 // attached spectator exits with it, ending the rec), then drops every event
-// after the last output event containing sentinel — a string the scenario
-// knows is painted on the intended final screen. Returns the cast path.
+// after the FIRST output event containing sentinel — a string the scenario
+// knows is painted on the intended final screen (trimCastTail owns the
+// first-not-last rule and the sentinel-authoring guidance). Returns the
+// cast path.
 func (s *Session) EndCast(sentinel string) string {
 	s.t.Helper()
 	if s.rec == nil {

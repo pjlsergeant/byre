@@ -73,7 +73,7 @@ type statusInfo struct {
 	EngineErr         string   // why the engine/container state is unknown, if applicable
 	SkillErr          string   // why skills couldn't be resolved, if applicable
 	SelfEdit          string   // host store path when --self-edit is active, else ""
-	Proposal          string   // note about a committed <project>/byre.config, if any
+	PresetNote        string   // note about a committed repo-side preset (byre.preset; legacy byre.config name accepted through its window)
 	Cat               *packages.Catalog
 }
 
@@ -160,7 +160,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	}
 	// Preset drift states: passive visibility of a repo-shipped preset, states
 	// 1 (not applied) and 3 (diverged); the steady state stays silent.
-	info.Proposal = presetNote(projectDir, paths)
+	info.PresetNote = presetNote(projectDir, paths)
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
 	// skill, its .claude state volume, skill mounts) are shown, not just the
 	// config-level view. Best-effort: a resolution error is surfaced, not fatal.
@@ -352,8 +352,8 @@ func renderStatus(w io.Writer, s statusInfo) {
 		// Root-first, the project config last: the merge order.
 		row("Extends", strings.Join(s.Chain, " -> ")+" -> project")
 	}
-	if s.Proposal != "" {
-		row("Preset", s.Proposal)
+	if s.PresetNote != "" {
+		row("Preset", s.PresetNote)
 	}
 	if s.EngineErr != "" {
 		row("Engine", s.Engine+"  (not found: "+s.EngineErr+")")

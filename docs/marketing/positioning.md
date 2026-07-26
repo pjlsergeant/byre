@@ -15,8 +15,8 @@
 For **developers who already run coding agents daily and want full autonomy
 without handing the agent their machine**, byre is **the local-first,
 Docker-native project harness for autonomous coding agents**: one command puts
-Claude Code, Codex, or Gemini in a throwaway, project-scoped container that
-sees the repo and what you explicitly grant — nothing else. Unlike
+Claude Code, Codex, Gemini, Grok, or OpenCode in a throwaway,
+project-scoped container that sees the repo and what you explicitly grant — nothing else. Unlike
 account-backed sandbox products, agents' built-in host sandboxes, or
 hand-authored devcontainers, byre needs **no account, no cloud, and no
 authoring** — and everything it does is a generated file you can read.
@@ -32,8 +32,9 @@ environment are correctly out of scope.
 
 - **Formal / repo description:** *Run an AI coding agent in a throwaway,
   project-scoped container — no account, no cloud, just your Docker.*
-- **Elevator (~40 words):** *byre puts Claude Code, Codex, or Gemini in a
-  throwaway container that sees one project and what you explicitly grant —
+- **Elevator (~40 words):** *byre puts Claude Code, Codex, Gemini, Grok,
+  or OpenCode in a throwaway container that sees one project and what you
+  explicitly grant —
   not your home dir, keys, or the rest of your machine. One command in.
   Local Docker/Podman, no account, MIT, free forever.*
 - **The framing fact (use everywhere it fits):** Anthropic's own sandboxing
@@ -101,7 +102,7 @@ Full sources at the end.
 | Definition you can read | ✔ generated Dockerfile | partial (templates yes; runtime is product machinery) | n/a | ✔ — because you wrote it |
 | Per-project agent auth & state | ✔ named volumes; `reset` / `rehome` | no per-project story | shared host state | DIY |
 | Engines | Docker & Podman | own runtime | none needed | Docker |
-| Maturity | **young (v1.0 tagged 2026-07)** | new (late 2025), Docker Inc. behind it | shipped inside the agents | industry spec, mature ecosystem |
+| Maturity | **young (first stable tag 2026-07)** | new (late 2025), Docker Inc. behind it | shipped inside the agents | industry spec, mature ecosystem |
 | Price / license | MIT, free forever | CLI free; org governance needs Docker Business ($24/user/mo); proprietary | free with the agent | open spec, MIT CLI |
 
 ¹ Claude Code `/sandbox` (Seatbelt / bubblewrap + sandbox-runtime) and Codex

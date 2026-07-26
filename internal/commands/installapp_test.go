@@ -22,7 +22,7 @@ var (
 var errFake = fmt.Errorf("tool exploded")
 
 func TestDropletSourceBakesPathAndBox(t *testing.T) {
-	src := dropletSource("/Users/p/my tools/byre", "proj-abc")
+	src := deliverAppSource("/Users/p/my tools/byre", "proj-abc")
 	for _, want := range []string{
 		`property byrePath : "/Users/p/my tools/byre"`,
 		"--box 'proj-abc'",
@@ -47,13 +47,13 @@ func TestDropletSourceBakesPathAndBox(t *testing.T) {
 }
 
 func TestDropletSourceNoBox(t *testing.T) {
-	if src := dropletSource("/usr/local/bin/byre", ""); strings.Contains(src, "--box") {
+	if src := deliverAppSource("/usr/local/bin/byre", ""); strings.Contains(src, "--box") {
 		t.Fatal("no --box should be baked when none was given")
 	}
 }
 
 func TestDropletSourceEscapesQuotes(t *testing.T) {
-	src := dropletSource(`/odd/pa"th/byre`, "")
+	src := deliverAppSource(`/odd/pa"th/byre`, "")
 	if !strings.Contains(src, `property byrePath : "/odd/pa\"th/byre"`) {
 		t.Fatalf("byre path not AppleScript-escaped:\n%s", src)
 	}
@@ -351,7 +351,7 @@ func TestInstallDarwinRegenerationLeavesNoRemnants(t *testing.T) {
 func TestGeneratedArtifactsWidenPATH(t *testing.T) {
 	// Field-found: Finder's sparse PATH hid Docker Desktop from byre —
 	// both launchers must export the widened PATH to byre's children.
-	src := dropletSource("/usr/local/bin/byre", "")
+	src := deliverAppSource("/usr/local/bin/byre", "")
 	if !strings.Contains(src, `PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin\" `) {
 		t.Fatalf("droplet lacks the PATH prefix:\n%s", src)
 	}

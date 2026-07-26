@@ -84,8 +84,9 @@ env var NAMES the server consumes (`env = ["GITHUB_TOKEN"]`) -- never
 values; the user supplies those via `env_from_host`/`[env]`, and status
 marks each name provided or not. A remote server that wants static-token
 auth takes `headers = { Authorization = "Bearer ${TOKEN}" }` -- the
-`${NAME}` refs expand from the box env at launch (claude natively, codex
-via its wrapper), so the token itself never enters the declaration. The
+`${NAME}` refs expand from the box env at launch (natively or via the
+agent skill's wrapper -- expansion parity is part of vouching
+`mcp = "inject"`), so the token itself never enters the declaration. The
 whole url (userinfo and query string included), a local command's argv,
 and any literal header fragment bake into the image like an `[env]`
 literal -- byre never refuses what you put there, so keep secrets out
@@ -94,9 +95,9 @@ egress (`mcp:<name>`) automatically; declare extra hosts (an OAuth
 authorize endpoint) in the block's own `egress`. Users can drop one of
 your servers without disabling the whole skill via `!name` in their
 config's mcp list. The declared set bakes to `/etc/byre/mcp.json`;
-delivery into the agent session is the agent skill's job (claude and
-codex inject it), so a toolkit skill declares servers and stays
-agent-agnostic.
+delivery into the agent session is the agent skill's job (any agent
+that vouches `mcp = "inject"` in its skill.toml), so a toolkit skill
+declares servers and stays agent-agnostic.
 
 A skill can also ship **Claude Skills** (Anthropic's agent-skill format:
 a directory whose root holds a `SKILL.md`) with `[[claude_skills]]`

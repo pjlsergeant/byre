@@ -1,4 +1,4 @@
-// Command byre runs an AI coding agent in a throwaway, project-scoped container.
+// Command byre runs an AI coding agent in a throwaway, project-scoped box.
 package main
 
 import (
@@ -17,7 +17,12 @@ import (
 
 // app is the set of command implementations the CLI dispatches to. A struct
 // (not direct calls) so tests can pin the flag->function wiring with
-// recorders instead of executing real commands.
+// recorders instead of executing real commands. Its BOUNDARY: the original
+// command set below rides the seam; the newer verb families (skill,
+// template, preset, layer, mcp, claude-skill, context) bind commands.*
+// directly and are wiring-tested through cobra execution instead -- a new
+// command may pick either side, but this comment is the map of which is
+// which.
 type app struct {
 	dockerfile    func(s commands.Streams, dir string) error
 	dockerrun     func(s commands.Streams, dir string) error
@@ -111,8 +116,8 @@ func maxArgsU(n int, usage string) cobra.PositionalArgs {
 func newRootCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "byre",
-		Short: "Run an AI coding agent in a throwaway, project-scoped container.",
-		Long: `byre — run an AI coding agent in a throwaway, project-scoped container.
+		Short: "Run an AI coding agent in a throwaway, project-scoped box.",
+		Long: `byre — run an AI coding agent in a throwaway, project-scoped box.
 
 Run byre in the project directory you want to develop.`,
 		// byre owns error printing and the exit-code contract (usage = 2,
@@ -214,8 +219,8 @@ func developCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var sharedAuth bool
 	c := &cobra.Command{
 		Use:   "develop",
-		Short: "Set up and run the project container in the foreground.",
-		Long: `Set up (generate + build the image) and run the project container in the
+		Short: "Set up and run the project box in the foreground.",
+		Long: `Set up (generate + build the image) and run the project box in the
 foreground. First run onboards the project (creates its host-side config).`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -296,7 +301,7 @@ func statusCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var selfEdit bool
 	c := &cobra.Command{
 		Use:   "status",
-		Short: "Show resolved config, mounts, skills, container state.",
+		Short: "Show resolved config, mounts, skills, session state.",
 		Long: `Show the resolved view of this project: agent, engine, mounts, ports, volumes,
 skill grants, and whether a session is running.`,
 		Args: noArgsU,
@@ -313,7 +318,7 @@ func shellCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "shell",
 		Short: "Open a shell (as the dev user) in the running session.",
-		Long: `Open an interactive shell in this project's running container, as the dev
+		Long: `Open an interactive shell in this project's running box, as the dev
 user — for agent logins, running tests, poking around. Needs a session
 started by 'byre develop'.
 

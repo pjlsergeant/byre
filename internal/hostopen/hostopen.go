@@ -25,10 +25,12 @@ import (
 // errors.Is; everyone else just propagates.
 var ErrNotRegular = errors.New("not a regular file")
 
-// ErrSymlinkRoot reports that OpenDirRootNoFollow found a symlink where the
-// caller had classified a directory — the path was swapped after the check.
-// Callers with their own contract language rewrap it via errors.Is.
-var ErrSymlinkRoot = errors.New("replaced by a symlink after it was checked as a directory (refusing to follow it)")
+// ErrSymlinkRoot reports that OpenDirRootNoFollow could not anchor on the
+// directory the caller classified: the name now resolves to a symlink, or
+// the open landed on a different real directory than the one checked (both
+// arms of the identity guard below). Callers with their own contract
+// language rewrap it via errors.Is.
+var ErrSymlinkRoot = errors.New("no longer the directory that was checked -- swapped for a symlink or another dir (refusing to anchor there)")
 
 // OpenRegular opens path for reading and returns the file with its fstat
 // info. follow states whether a symlink AT path is followed — true when the

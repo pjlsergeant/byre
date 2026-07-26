@@ -2,9 +2,10 @@
 
 byre is a young, single-maintainer project that I use all day, every
 day. Issues and ideas are welcome; responses may take time. Two things
-make this repo unusual, and both shape how to contribute well: it is documented deeply enough that an agent can
-answer most questions about it, and its changes move through written
-design (the ADRs) rather than drive-by patches.
+make this repo unusual, and both shape how to contribute well: it is
+documented deeply enough that an agent can answer most questions about
+it, and its changes move through written design (the ADRs) rather than
+drive-by patches.
 
 ## Think you've found a bug?
 

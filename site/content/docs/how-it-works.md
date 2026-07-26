@@ -53,7 +53,7 @@ to `dev` before anything runs.
 - `byre ejectfirewall` -- the firewall's outside-the-box step, as a
   standalone script.
 
-Those four commands are also the exit: byre either generates the build
+Those commands are also the exit: byre either generates the build
 or isn't involved, so the day you stop wanting it, the files are yours
 and [you leave](/docs/how-do-i/recovery/#stop-using-byre) with a working
 Dockerfile. The deeper design -- block ordering, the chassis, engine

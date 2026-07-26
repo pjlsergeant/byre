@@ -31,11 +31,12 @@ import (
 // Quick Action reported "no running byre boxes" with a box plainly running.
 const launchPATH = `PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" `
 
-// dropletSource is the AppleScript for the "Byre Deliver" droplet. The byre
+// deliverAppSource is the AppleScript for the "Byre Deliver" app (the drag
+// target half of the deliver app -- GLOSSARY). The byre
 // path is baked at generation time (Finder launches carry a sparse PATH);
 // well-known locations are fallbacks, and byre-not-found is reported via
 // notification — a Dock launch has no terminal to print to.
-func dropletSource(byrePath, box string) string {
+func deliverAppSource(byrePath, box string) string {
 	extra := ""
 	if box != "" {
 		extra = " --box " + gen.ShellQuote(box)

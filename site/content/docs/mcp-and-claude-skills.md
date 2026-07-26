@@ -56,7 +56,7 @@ A Claude Skill is a directory with a `SKILL.md` at its root. Declare it
 once and it loads in every session as `/tdd-loop` -- no per-box setup,
 no copying into the project. `--global` shares it across projects;
 `byre claude-skill list` shows the effective set with the same
-attribution as MCP. Skills you build *inside* the box win over
+attribution as MCP. Claude Skills you build *inside* the box win over
 byre-delivered ones of the same name -- your working copy shadows the
 declaration while you iterate on it.
 
@@ -65,7 +65,7 @@ declaration while you iterate on it.
 Both ride the config cascade, so the right scope is one decision: this
 project, your global defaults, or a shared
 [layer](/docs/how-do-i/toolkit/#share-one-config-baseline-across-many-projects).
-Skills you enable can ship their own declarations, and you can switch
-any single one off without disabling the skill. The precise wiring
+byre skills you enable can ship their own declarations, and you can
+switch any single one off without disabling the skill. The precise wiring
 contract -- field shapes, header templating, closure semantics -- is in
 the [packaging reference](/docs/packaging-reference/#mcp-and-claude-skills-wiring).
