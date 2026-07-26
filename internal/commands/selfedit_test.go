@@ -268,3 +268,35 @@ func TestReportSelfEditChanges(t *testing.T) {
 		}
 	})
 }
+
+// An unreadable SUBDIRECTORY hides its children from the walk; without a
+// completeness field, files inside read as deleted -- and unreadable at
+// both snapshots, changes there vanish silently (the review reproduced
+// both). The mirror watch set (exitSnapshot) already carried this
+// discipline; this pins the self-edit half: absence claims are suppressed
+// and the incompleteness is said out loud.
+func TestReportSelfEditIncompleteWalkInventsNothing(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("chmod 000 does not bar root")
+	}
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "context")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "notes.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := report(t, dir, func() {
+		if err := os.Chmod(sub, 0); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) })
+	if strings.Contains(out, "deleted:") {
+		t.Errorf("children of an unreadable subdir must not read as deleted:\n%s", out)
+	}
+	if !strings.Contains(out, "could not be enumerated") {
+		t.Errorf("an incomplete enumeration must be said out loud:\n%s", out)
+	}
+}

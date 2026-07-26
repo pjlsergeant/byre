@@ -39,6 +39,14 @@ type storeSnapshot struct {
 	// The diff against such a snapshot is meaningless, so the report degrades to
 	// a notice rather than inventing mass additions or deletions.
 	unreadable bool
+	// walkComplete is false when the walk hit any error: an unreadable
+	// SUBDIRECTORY hides its children, so a file present in the other
+	// snapshot would read as deleted (or, unreadable both sides, its
+	// changes would go unreported silently). The mirror watch set
+	// (exitSnapshot) carries five completeness fields against exactly this
+	// class; this side had none, and the review reproduced the invented
+	// deletion. An incomplete side suppresses added/deleted claims.
+	walkComplete bool
 }
 
 // snapshotStore reads the store through a no-follow contained root
@@ -47,18 +55,27 @@ type storeSnapshot struct {
 // hang nor OOM the host byre process taking this snapshot. Every read is
 // bounded; a refusal degrades that one entry, never the whole report.
 func snapshotStore(dir string) storeSnapshot {
-	s := storeSnapshot{sigs: map[string]string{}}
+	s := storeSnapshot{sigs: map[string]string{}, walkComplete: true}
 	root, err := hostopen.OpenDirRootNoFollow(dir)
 	if err != nil {
 		s.unreadable = true
+		s.walkComplete = false
 		return s
 	}
 	defer root.Close()
 	// Enumerate THROUGH the root (never by re-walking the pathname), so the
 	// opens below and this walk cannot observe two different directories.
 	fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil // an unreadable entry just sits out the comparison
+		if err != nil {
+			// The entry sits out the comparison -- but an error here can be
+			// an unreadable DIRECTORY whose children are now invisible, so
+			// the snapshot stops claiming completeness: without this, those
+			// children read as deletions against the other side.
+			s.walkComplete = false
+			return nil
+		}
+		if d.IsDir() {
+			return nil
 		}
 		s.sigs[p] = fileSig(root, p, d)
 		return nil
@@ -128,19 +145,33 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 		fmt.Fprintln(w, "🛑 self-edit: the project store could not be read to report changes (it may have been replaced during the session)")
 		return
 	}
+	// An incomplete walk on either side makes absence ambiguous: a file
+	// missing from that side may be deleted OR merely un-enumerated (an
+	// unreadable subdirectory hides its children). Presence-based claims
+	// (changed) stay; absence-based ones (added/deleted) are suppressed
+	// and the incompleteness is said out loud -- this is a --self-edit
+	// session, the loudest consent moment there is.
+	complete := before.walkComplete && after.walkComplete
 	var added, changed, deleted []string
 	for rel, sig := range after.sigs {
 		switch bsig, ok := before.sigs[rel]; {
 		case !ok:
-			added = append(added, rel)
+			if complete {
+				added = append(added, rel)
+			}
 		case bsig != sig:
 			changed = append(changed, rel)
 		}
 	}
-	for rel := range before.sigs {
-		if _, ok := after.sigs[rel]; !ok {
-			deleted = append(deleted, rel)
+	if complete {
+		for rel := range before.sigs {
+			if _, ok := after.sigs[rel]; !ok {
+				deleted = append(deleted, rel)
+			}
 		}
+	}
+	if !complete {
+		fmt.Fprintln(w, "🛑 self-edit: parts of the project store could not be enumerated — additions and deletions there cannot be reported")
 	}
 	if len(added)+len(changed)+len(deleted) == 0 {
 		return
@@ -157,7 +188,9 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 	// FIFO or device reads as a change, never a false "(deleted)".
 	bSig, bHas := before.sigs[config.ProjectConfigName]
 	aSig, aHas := after.sigs[config.ProjectConfigName]
-	if bHas != aHas || bSig != aSig {
+	// Same absence discipline as the lists: presence on one side only is a
+	// (deleted)/(created) claim, and an incomplete enumeration can't back it.
+	if (complete && bHas != aHas) || (bHas && aHas && bSig != aSig) {
 		fmt.Fprintln(w, "   byre.config (applies on the next develop):")
 		switch {
 		case !aHas:
