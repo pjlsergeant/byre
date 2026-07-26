@@ -127,7 +127,9 @@ exceptions noted inline.
   (names, never values), `headers` templates (`${NAME}`) expand at
   launch, `egress` adds hosts beyond the URL when the firewall is on.
 - `[[claude_skills]]` -- a Claude Skill: `name` + `path` to a host
-  directory whose root holds `SKILL.md`.
+  directory whose root holds `SKILL.md`. (A skill.toml contribution
+  declares `from` -- a directory relative to the skill -- instead of
+  `path`; `from` is not config vocabulary.)
 - `[[context]]` -- standing agent instructions: `name` + inline `text`
   or a host `file` (`~/…` or absolute, read at bake). Injected into the
   agent's instructions at launch, after skill context (see

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -996,16 +997,36 @@ func TestAssembleChassisContextWithoutSkillContext(t *testing.T) {
 // and its allowlisted pin both silently omitted extends, egress,
 // claude_skills, and context).
 func TestConfigReferenceCoversEveryKey(t *testing.T) {
-	rt := reflect.TypeOf(config.Config{})
-	for i := 0; i < rt.NumField(); i++ {
-		tag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]
-		if tag == "" || tag == "-" {
-			continue
+	var walk func(rt reflect.Type, seen map[reflect.Type]bool)
+	walk = func(rt reflect.Type, seen map[reflect.Type]bool) {
+		if seen[rt] {
+			return
 		}
-		if !strings.Contains(configRefDoc, "`"+tag+"`") && !strings.Contains(configRefDoc, "[["+tag+"]]") && !strings.Contains(configRefDoc, "["+tag+"]") {
-			t.Errorf("config key %q missing from the baked config reference (regenerate after documenting it on the site page: go run ./cmd/byre config-reference-doc > internal/build/config-reference.md)", tag)
+		seen[rt] = true
+		for i := 0; i < rt.NumField(); i++ {
+			f := rt.Field(i)
+			tag := strings.Split(f.Tag.Get("toml"), ",")[0]
+			if tag == "" || tag == "-" {
+				continue
+			}
+			// A key counts as documented when it appears as a word inside
+			// any backticked span -- keys render as `key`, `[key]`,
+			// `[[key]]`, `key = value`, or `{ key, other }` alike.
+			if !regexp.MustCompile("`[^`\n]*\\b" + regexp.QuoteMeta(tag) + "\\b[^`\n]*`").MatchString(configRefDoc) {
+				t.Errorf("config key %q missing from the baked config reference (regenerate after documenting it on the site page: go run ./cmd/byre config-reference-doc > internal/build/config-reference.md)", tag)
+			}
+			// Recurse into nested TOML shapes (a mount's fields, an [[mcp]]
+			// block's) so a new nested option can't ship undocumented either.
+			ft := f.Type
+			for ft.Kind() == reflect.Slice || ft.Kind() == reflect.Map || ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				walk(ft, seen)
+			}
 		}
 	}
+	walk(reflect.TypeOf(config.Config{}), map[reflect.Type]bool{})
 }
 
 // TestConfigReferenceDerivedFromSite pins the checked-in derived file to the

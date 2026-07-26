@@ -34,16 +34,19 @@ func StripSiteReference(src []byte) ([]byte, error) {
 	if bytes.Contains(src, []byte("{{<")) || bytes.Contains(src, []byte("{{%")) {
 		return nil, fmt.Errorf("site reference contains a Hugo shortcode; teach StripSiteReference about it before baking")
 	}
-	body := src
-	// Front-matter: the block between the leading `---` pair.
-	if bytes.HasPrefix(body, []byte("---\n")) {
-		rest := body[4:]
-		end := bytes.Index(rest, []byte("\n---\n"))
-		if end < 0 {
-			return nil, fmt.Errorf("site reference front-matter never closes")
-		}
-		body = rest[end+5:]
+	// Front-matter: the block between the leading `---` pair. Required, not
+	// optional: this strips ONE known site artifact, and a source that lost
+	// its opening delimiter (or grew a BOM) should fail regeneration loudly,
+	// not bake half-stripped metadata.
+	if !bytes.HasPrefix(src, []byte("---\n")) {
+		return nil, fmt.Errorf("site reference does not open with front-matter; is this the right file?")
 	}
+	rest := src[4:]
+	end := bytes.Index(rest, []byte("\n---\n"))
+	if end < 0 {
+		return nil, fmt.Errorf("site reference front-matter never closes")
+	}
+	body := rest[end+5:]
 	body = siteLinkRe.ReplaceAll(body, []byte("$1 (https://getbyre.com$2)"))
 	head := "# byre configuration reference\n\n" +
 		"The complete config vocabulary, as published at\n" +
