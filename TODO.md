@@ -40,7 +40,7 @@ the rationale lives.
 
 Disciplines and tripwires, not tasks.
 
-- **Status/marketing lockstep (P9 -- sweep this list, not memory):** the
+- **Status/marketing lockstep (PLACEMENT.md P9 -- sweep this list, not memory):** the
   surfaces carrying real byre output, re-verified when that output changes:
   - `byre status` block (status.go): README "Quickstart",
     site/content/docs/quickstart.md -- identical blocks.
@@ -49,7 +49,7 @@ Disciplines and tripwires, not tasks.
   - install commands: README hero + "Install" (brew, blessed), site
     landing hero (brew), site/content/docs/install.md (all routes).
   - How-do-I tldrs: README index and site cookbook are verbatim-identical
-    per entry (P6); grep "tldr:" in both when a recipe changes.
+    per entry (PLACEMENT.md P6); grep "tldr:" in both when a recipe changes.
   - commands table: generated -- TestCommandsPagePinsSiteFile enforces,
     regenerate with `go run ./cmd/byre commands-page`.
   - demo casts: PARKED, none published (see the Site item). Scenario

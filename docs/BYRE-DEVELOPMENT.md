@@ -345,7 +345,7 @@ House rules where they DIVERGE from the assertion tier above:
   intended frame the terminal may keep moving (an error line, a
   full-screen repaint that paints the sentinel again), and that footage
   is what the trim drops. Never ship a cast ending on tmux's
-  server-exited frame (the poster IS the final frame — P11).
+  server-exited frame (the poster IS the final frame — PLACEMENT.md P11).
 - A scene that must end at an off-camera boundary (develop stopping at
   the engine boundary) records as its own cast; `WriteDemo` concatenates
   scenes with a clear-screen break. The cut is a visible scene change,

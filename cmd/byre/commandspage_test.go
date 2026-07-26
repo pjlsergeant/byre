@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// TestCommandsPagePinsSiteFile is P10's tripwire: the checked-in site page
+// TestCommandsPagePinsSiteFile is PLACEMENT.md P10's tripwire: the checked-in site page
 // must be exactly what the command tree renders. When it fails, regenerate:
 //
 //	go run ./cmd/byre commands-page > site/content/docs/commands.md

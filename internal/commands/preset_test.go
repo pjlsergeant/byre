@@ -379,7 +379,7 @@ func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
 }
 
 // Inspect must mutate NOTHING in the store -- no mirror regen (its "Nothing
-// written" line is a promise, codex P1).
+// written" line is a promise).
 func TestPresetInspectMutatesNothing(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")

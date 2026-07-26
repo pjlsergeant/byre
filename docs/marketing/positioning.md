@@ -159,72 +159,10 @@ must know which job it's doing; a page doing both does neither.
 
 ### Placement principles
 
-**P1. Conversion copy may be adapted; operational fact has one home.**
-The two converting surfaces face different arrival moments, so each may
-carry its own rendering of the pitch. Operational content -- how to
-actually drive byre -- is written once, in its canonical home; every
-other surface gets a summary plus a link, never a second copy.
-
-**P2. Canonical homes, by content type.** Conversion copy: `README.md`,
-steered by this file (the landing adapts from it). Operational docs:
-`site/content/docs/` (this repo). Deep reference (architecture, skill
-authoring, credential mechanics): repo `docs/` -- the site links to
-these on GitHub, never mirrors them. Point-in-time rationale:
-`docs/adr/`. (The header's canonicality rule encodes this split.)
-
-**P3. The README keeps the whole trial path.** A GitHub visitor must be
-able to evaluate, install, and reach a first `byre develop` without
-leaving the repo: pitch, contract, one blessed install command (brew),
-the quickstart one-liner, the status artifact. Trim depth and breadth,
-never the trial path.
-
-**P4. The repo is read by agents as a first-class audience.** The
-ask-your-agent prompt points at the repo, and `site/content/` lives in
-it -- the agent reads the site sources and `docs/` anyway. This is what
-makes P3's aggressive trim safe: the README is sized for the human skim.
-
-**P5. Duplicate only the stable.** A fact appears on two surfaces only
-when it changes rarely: the H1 pitch, the blessed install command, the
-develop one-liner, the How-do-I tldrs. Volatile content lives only in
-its canonical home. (The boxed/not-boxed contract left this list when
-the README's copy became a summary-plus-link; whats-boxed.md is its one
-home.)
-
-**P6. A README summary is a different genre, not an excerpt -- and
-shared text is verbatim or absent.** README summaries are written for
-the evaluator (*that* the capability exists, *why* it matters). Where a
-line belongs on both surfaces it is duplicated character for character
--- the paraphrase is the rot vector. Enforcement:
-`TestHowDoITldrsMatchSite` pins the How-do-I index's (question, tldr)
-pairs verbatim against the cookbook.
-
-**P7. Media lives site-side.** The README carries the logo and text
-artifacts only; screencasts and visual flavor are the site's. The
-README's console blocks stay *hand-curated* -- they are P6 summaries of
-output, not transcripts; deriving them from captures would put them in
-the wrong genre.
-
-**P8. Depth links down, never sideways.** README → site `/docs/` → repo
-`docs/`. A repo doc earns a site page only when its audience flips from
-contributor to user (first flip: the security model to
-`/docs/security-model/`; repo SECURITY.md keeps the reporting policy).
-
-**P9. Pinned artifacts are inventoried.** Every surface showing real
-byre output is a lockstep liability; the status/marketing tripwire in
-`TODO.md` enumerates them so a sweep checks a list, not memory.
-
-**P10. The build generates from the binary, never from `docs/`.** No
-bulk `docs/` → site pipeline: repo docs are the wrong genre, and P8's
-audience flip is a per-doc editorial call. Generation from code does
-pay: `/docs/commands/` renders from the cobra tree (hidden
-`byre commands-page`; `TestCommandsPagePinsSiteFile` fails when stale),
-so a new command cannot ship without its line.
-
-**P11. Show the surface, don't describe it.** Where a site page teaches
-an interactive surface, a demo cast is the page's opening artifact --
-one demo per page/section, doing that page's job; every embed's poster
-frame is the final screen; where the cast shows the interaction, the
-prose states outcomes instead of narrating keystrokes.
+Moved to `docs/PLACEMENT.md` (settled reference; the numbering is
+unchanged, so `PLACEMENT.md Pn` cites resolve). Two departures were
+recorded at extraction: P5's stable-duplication list dropped the
+boxed/not-boxed contract, and P2's self-references now name this file.
 
 ### Publish-time asciinema demos (PARKED)
 
@@ -243,7 +181,7 @@ the deliver picker) -- CI never holds agent credentials, so the
 develop-into-Claude hero clip stays a deliberately-recorded artifact
 (made on the VM with the same verbs, committed as a `.cast`, refreshed
 around releases). A flaky demo breaks publishes; the flakes-twice rule
-applies. Placement (P11 applied):
+applies. Placement (PLACEMENT.md P11 applied):
 
 | Where | Demo |
 |---|---|
@@ -281,9 +219,9 @@ The bar for a cookbook entry: a question a real user has, a one-or-two
 line tldr, a shipped feature behind it. Entries group by the reader's
 situation (configuring the box; daily workflow; skills & templates;
 lifecycle & recovery). The README index carries the show-off subset
-only (P6); the rest are cookbook-only, found by question when needed.
+only (PLACEMENT.md P6); the rest are cookbook-only, found by question when needed.
 The closing entry is always last in both index and cookbook: **"…do
-something not listed here?"** -- point your agent at the repo (P4 as a
+something not listed here?"** -- point your agent at the repo (PLACEMENT.md P4 as a
 user-facing feature; the long tail of the cookbook nobody has to
 write). Entries that fail the bar stay unwritten -- e.g. recipes that
 would advertise a gap ("free disk space"), bless an anti-pattern

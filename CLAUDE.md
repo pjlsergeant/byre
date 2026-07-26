@@ -14,6 +14,7 @@ docs: `README.md`.
 for prose, docs, and user-facing strings; vocabulary only, never behavior. When
 another doc disagrees with it on naming, one of them is wrong -- reconcile.
 **Design principles live in `docs/PRINCIPLES.md`** (standing commitments);
+**doc/site placement rules in `docs/PLACEMENT.md`** (cited as `PLACEMENT.md Pn`);
 **point-in-time decisions live in `docs/adr/`** and cite principles as
 rationale. Litmus: could it be "superseded by ADR-NNNN"? ADR. Would changing
 it re-litigate the project? Principle.

@@ -1207,7 +1207,7 @@ func TestAtomicWriteRequiresParentDir(t *testing.T) {
 // seed_prefs is an ordinary tri-state scalar (ADR 0045): an explicit later
 // value — true OR false — wins, unset inherits. The old `base || over` merge
 // made an inherited opt-in impossible to turn off, a decode-representation
-// gap the docs mislabeled as deliberate (P7).
+// gap the docs mislabeled as deliberate (PRINCIPLES.md §7).
 func TestMergeSeedPrefsTriState(t *testing.T) {
 	on, off := boolPtr(true), boolPtr(false)
 	if got := Merge(Config{SeedPrefs: on}, Config{}); !got.SeedPrefsEnabled() {

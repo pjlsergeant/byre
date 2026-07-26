@@ -117,7 +117,7 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 }
 
 // A file the editor can't parse is refused with a remedy naming the config
-// UI (P6: no error sends the user into the file) — never a guessed write.
+// UI (PRINCIPLES.md §6: no error sends the user into the file) — never a guessed write.
 func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "skills = [\"unclosed\n")

@@ -209,10 +209,10 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 			m.status = r.text + " is still inherited — remove again to turn it off here"
 		}
 		// Deleting an OVERRIDE re-inherits the lower layer's entry — that's
-		// the cascade working, but "delete" must not read as "gone" (grok
-		// review 2026-07-15; mounts/env/mcp share the shape). Env has no
-		// Remove action (inherited vars can't be unset from this layer), so
-		// its note must not advertise one (grok verify round).
+		// the cascade working, but "delete" must not read as "gone"
+		// (mounts/env/mcp share the shape). Env has no Remove action
+		// (inherited vars can't be unset from this layer), so its note
+		// must not advertise one.
 		if r.kind == rowOverride && r.source != "" {
 			if m.listField == fEnv {
 				m.status = "override removed — the " + r.source + " value is back in effect (an inherited var can't be unset from this layer)"
@@ -1434,8 +1434,8 @@ func (m model) viewItem() string {
 	}
 	// The stored prose, read-only: the editing path is ^e, but READING the
 	// standing instructions must not require launching a second program
-	// (P4 — the maintainer's call, 2026-07-25: the $EDITOR ruling was about
-	// not building a worse text editor, never about hiding the text).
+	// (PRINCIPLES.md §4; the $EDITOR ruling was about not building a worse
+	// text editor, never about hiding the text).
 	if m.listField == fContext && m.itemMode == 0 && strings.TrimSpace(m.itemProse) != "" {
 		b.WriteString("\n" + proseBlock(m.itemProse, "^e to view and edit", m.width))
 	}

@@ -9,7 +9,7 @@ package tuitest
 //
 // The pipeline's one hard-won discipline (prototyped 2026-07-17): ending a
 // recording by killing the tmux server leaves "[server exited]" as the final
-// frame, which breaks the poster-frame rule (P11: poster = the intended final
+// frame, which breaks the poster-frame rule (PLACEMENT.md P11: poster = the intended final
 // screen). EndCast trims trailing events back to the FIRST output event
 // containing a sentinel the scenario knows is painted on that screen --
 // first, not last: see trimCastTail for the authoring rule and why any
@@ -316,7 +316,7 @@ func sanitizeHeader(header string) (string, error) {
 }
 
 // castDuration sums event intervals — the demo's playing time, which the
-// site's player uses to poster the final frame (P11).
+// site's player uses to poster the final frame (PLACEMENT.md P11).
 func castDuration(events []castEvent) float64 {
 	var d float64
 	for _, e := range events {

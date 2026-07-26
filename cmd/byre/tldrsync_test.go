@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestHowDoITldrsMatchSite is P6's enforcement arm for the "How do I...?"
+// TestHowDoITldrsMatchSite is PLACEMENT.md P6's enforcement arm for the "How do I...?"
 // index: the README keeps a SUBSET of the cookbook's entries (the
 // show-off slots), each question plus its tldr VERBATIM. Character-for-
 // character identity is the rot control -- a paraphrase drifts silently,

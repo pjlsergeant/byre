@@ -735,7 +735,7 @@ func TestStatusSiblingQueryFailureIsReported(t *testing.T) {
 // verdict keyed off the context vouch (ADR 0046) — inject names the baked
 // path; an adapter-less agent degrades honestly; no agent / unresolved
 // skills degrade too. Status must never assert a delivery byre can't stand
-// behind (P4).
+// behind (PRINCIPLES.md §4).
 func TestRenderStatusContextDelivery(t *testing.T) {
 	decls := []config.ContextDecl{
 		{Name: "house-rules", Text: "Run the linter.\nNever force-push.\n"},
