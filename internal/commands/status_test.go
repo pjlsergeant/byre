@@ -730,3 +730,53 @@ func TestStatusSiblingQueryFailureIsReported(t *testing.T) {
 		t.Fatalf("Worktrees row must report the failed sibling query, got %q", got)
 	}
 }
+
+// Standing instructions render as attributed wiring rows with the delivery
+// verdict keyed off the context vouch (ADR 0046) — inject names the baked
+// path; an adapter-less agent degrades honestly; no agent / unresolved
+// skills degrade too. Status must never assert a delivery byre can't stand
+// behind (P4).
+func TestRenderStatusContextDelivery(t *testing.T) {
+	decls := []config.ContextDecl{
+		{Name: "house-rules", Text: "Run the linter.\nNever force-push.\n"},
+		{Name: "conventions", File: "~/notes/conv.md"},
+	}
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject", Contexts: decls})
+	out := buf.String()
+	if !strings.Contains(out, `house-rules  "Run the linter."  (+1 more lines)`) {
+		t.Errorf("inline row wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "conventions  (file: ~/notes/conv.md)") {
+		t.Errorf("file row wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "the agent session receives the text (injected by the agent command from /etc/byre/agent-context.md)") {
+		t.Errorf("inject verdict wrong:\n%s", out)
+	}
+
+	buf.Reset()
+	renderStatus(&buf, statusInfo{Agent: "byre/some-agent", Contexts: decls})
+	if out := buf.String(); !strings.Contains(out, "NOT delivered: agent skill byre/some-agent has no context adapter") ||
+		!strings.Contains(out, "/etc/byre/agent-context.md") {
+		t.Errorf("adapter-less degradation missing:\n%s", out)
+	}
+
+	buf.Reset()
+	renderStatus(&buf, statusInfo{Contexts: decls})
+	if out := buf.String(); !strings.Contains(out, "no agent selected") {
+		t.Errorf("agent-less degradation missing:\n%s", out)
+	}
+
+	buf.Reset()
+	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject", Contexts: decls, SkillErr: "broken skill"})
+	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
+		t.Errorf("unresolved degradation missing:\n%s", out)
+	}
+
+	// No declarations = no Instructions rows, no verdict.
+	buf.Reset()
+	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject"})
+	if out := buf.String(); strings.Contains(out, "Instructions") {
+		t.Errorf("empty set must render nothing:\n%s", out)
+	}
+}

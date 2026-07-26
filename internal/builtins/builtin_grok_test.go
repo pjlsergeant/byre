@@ -34,8 +34,8 @@ func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
 	if !res.AgentContextInjects() {
 		t.Errorf("grok must vouch context injection (ADR 0046)")
 	}
-	if !strings.Contains(res.AgentCommand(), "--append-system-prompt") {
-		t.Errorf("grok command must inject the baked context, got %q", res.AgentCommand())
+	if !strings.Contains(res.AgentCommand(), "byre-grok-launch") {
+		t.Errorf("grok command must ride the injection wrapper, got %q", res.AgentCommand())
 	}
 	egress := strings.Join(res.Egress(), " ")
 	for _, h := range []string{"cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"} {

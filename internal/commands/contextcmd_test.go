@@ -138,3 +138,21 @@ func TestContextList(t *testing.T) {
 		t.Fatalf("file line wrong:\n%s", got)
 	}
 }
+
+// `byre context list` ends with the delivery verdict — the same renderer
+// status uses, so the two surfaces cannot drift. With the bundled claude
+// agent selected the vouch resolves to inject.
+func TestContextListShowsDeliveryVerdict(t *testing.T) {
+	dir, projPath, _, s, _ := mcpTestProject(t)
+	out := s.Out.(*bytes.Buffer)
+	mustWriteFile(t, projPath, []byte("agent = \"claude\"\n"), 0o644)
+	if err := ContextAdd(s, dir, false, "house-rules", "Run the linter.\n", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := ContextList(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "injected by the agent command from /etc/byre/agent-context.md") {
+		t.Fatalf("delivery verdict missing:\n%s", got)
+	}
+}

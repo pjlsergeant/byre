@@ -56,14 +56,18 @@ fi
 # channel — not delivered for opencode, recorded in the ADR. When the box (or
 # a user) has ALREADY set OPENCODE_CONFIG_CONTENT, byre's content deep-merges
 # ON TOP: mcp servers win per-name (the precedence opencode itself gives this
-# env layer), instructions UNION.
+# env layer), instructions UNION. A user's non-array `instructions` (a bare
+# string some configs use) coerces to a one-element array rather than
+# bricking the launch on a jq type error (grok review find, probed); any
+# other wrong type is dropped — opencode itself would refuse it.
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 base=${OPENCODE_CONFIG_CONTENT:-'{}'}
 printf '%s' "$base" | jq empty 2>/dev/null || base='{}'
 OPENCODE_CONFIG_CONTENT=$(printf '%s' "$base" \
   | jq -c --argjson mcp "$byre_mcp" --arg ctx "$CTX" '
       . * {mcp: ((.mcp // {}) * $mcp)}
-      | .instructions = ((.instructions // []) + (if ((.instructions // []) | index($ctx)) then [] else [$ctx] end))
+      | ((.instructions // []) | if type == "string" then [.] elif type != "array" then [] else . end) as $ins
+      | .instructions = ($ins + (if ($ins | index($ctx)) then [] else [$ctx] end))
       | if .mcp == {} then del(.mcp) else . end')
 export OPENCODE_CONFIG_CONTENT
 

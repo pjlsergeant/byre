@@ -132,9 +132,9 @@ func ContextRemove(s Streams, projectDir string, global bool, name string) error
 	return removeNamedDecl(s, projectDir, global, contextVerbs, name)
 }
 
-// ContextList implements `byre context list`: the resolved declared set —
-// config-only vocabulary, so no skill union and no delivery verdicts, just
-// each snippet's identity and source.
+// ContextList implements `byre context list`: the resolved declared set
+// (config-only vocabulary, so no skill union) — each snippet's identity and
+// source, plus the delivery verdict status also renders (ADR 0046).
 func ContextList(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {

@@ -314,3 +314,137 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 		t.Fatalf("instructions must carry the baked context path: %v", got.Instructions)
 	}
 }
+
+// The grok launch adapter injects baked context + session additions as ONE
+// --append-system-prompt argv element, and caps the value under Linux's
+// per-argument exec limit (~128 KiB) with a loud disclosure instead of
+// killing the exec (grok review find, probed: MAX_ARG_STRLEN binds well
+// under byre's 1 MiB context budget).
+func TestGrokLaunchWrapperInjectsAndCaps(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash unavailable")
+	}
+	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
+	argvFile := filepath.Join(dir, "argv")
+	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "grok"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(env ...string) []string {
+		t.Helper()
+		cmd := exec.Command("bash", filepath.Join("skills", "grok", "grok-launch.sh"), "--always-approve")
+		cmd.Env = append(append([]string{}, os.Environ()...), append(env, "PATH="+dir+":"+os.Getenv("PATH"))...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("wrapper failed: %v\n%s", err, out)
+		}
+		raw, err := os.ReadFile(argvFile)
+		if err != nil {
+			t.Fatalf("stub grok never ran: %v", err)
+		}
+		return strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+	}
+
+	// Baked + session as one argv element, session leading-separated.
+	got := run("BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=\n\nsession note")
+	if len(got) != 3 || got[0] != "--append-system-prompt" || got[1] != "test context\n\nsession note" || got[2] != "--always-approve" {
+		t.Fatalf("argv = %q", got)
+	}
+
+	// A context past the cap truncates WITH the disclosure, and still execs.
+	big := filepath.Join(dir, "big.md")
+	if err := os.WriteFile(big, []byte(strings.Repeat("x", 150_000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got = run("BYRE_AGENT_CONTEXT="+big, "BYRE_SESSION_CONTEXT=")
+	if len(got) != 3 {
+		t.Fatalf("argv = %d elements", len(got))
+	}
+	if len(got[1]) > 101_000 || !strings.Contains(got[1], "truncated at this agent's argv limit") {
+		t.Fatalf("cap/disclosure wrong: len=%d tail=%q", len(got[1]), got[1][len(got[1])-120:])
+	}
+
+	// Nothing to inject: plain exec.
+	missing := filepath.Join(dir, "absent.md")
+	got = run("BYRE_AGENT_CONTEXT="+missing, "BYRE_SESSION_CONTEXT=")
+	if len(got) != 1 || got[0] != "--always-approve" {
+		t.Fatalf("empty context must exec plain: %q", got)
+	}
+}
+
+// The codex wrapper shares the argv cap (same MAX_ARG_STRLEN exposure).
+func TestCodexLaunchWrapperCapsContext(t *testing.T) {
+	for _, bin := range []string{"bash", "jq"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s unavailable", bin)
+		}
+	}
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mcpPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(mcpPath, config.MCPConfigJSON(nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	big := filepath.Join(dir, "big.md")
+	if err := os.WriteFile(big, []byte(strings.Repeat("x", 150_000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "--flag")
+	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+big, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wrapper failed: %v\n%s", err, out)
+	}
+	raw, _ := os.ReadFile(argvFile)
+	args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+	if len(args) != 3 || args[0] != "-c" {
+		t.Fatalf("argv = %q", args)
+	}
+	if len(args[1]) > 101_100 || !strings.Contains(args[1], "truncated at this agent's argv limit") {
+		t.Fatalf("cap/disclosure wrong: len=%d", len(args[1]))
+	}
+}
+
+// A user's non-array `instructions` (bare string) coerces instead of
+// bricking the launch on a jq type error (grok review find, probed).
+func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
+	for _, bin := range []string{"bash", "jq"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s unavailable", bin)
+		}
+	}
+	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
+	envFile := filepath.Join(dir, "env")
+	stub := "#!/bin/sh\nprintf '%s' \"$OPENCODE_CONFIG_CONTENT\" > " + envFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mcpPath := filepath.Join(dir, "mcp.json")
+	if err := os.WriteFile(mcpPath, config.MCPConfigJSON(nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
+	cmd.Env = append(os.Environ(),
+		"BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=",
+		"PATH="+dir+":"+os.Getenv("PATH"),
+		`OPENCODE_CONFIG_CONTENT={"instructions":"/single.md"}`,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wrapper must not brick on a string instructions value: %v\n%s", err, out)
+	}
+	raw, _ := os.ReadFile(envFile)
+	var got struct {
+		Instructions []string `json:"instructions"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, raw)
+	}
+	if strings.Join(got.Instructions, " ") != "/single.md "+ctxPath {
+		t.Fatalf("string must coerce to a one-element array, byre appended: %v", got.Instructions)
+	}
+}

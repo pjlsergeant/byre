@@ -5,12 +5,14 @@
 # the host UID/GID and sets USER dev, so PID 1 here is already the runtime user).
 # There is no root phase and no gosu drop: /home/dev and the named volumes are
 # born owned by the baked UID at build time, so nothing needs re-owning. The
-# launcher just places git identity + agent context, runs first-run hooks, and
-# execs the agent — all as the same user.
+# launcher just places git identity, exports the per-session context var,
+# runs first-run hooks, and execs the agent — all as the same user. Agent
+# context is INJECTED by the agent command (ADR 0046); the launcher writes no
+# agent file.
 set -euo pipefail
 
-# The dev user's home is baked at build time (skills.DevHome); not an env knob —
-# a run-time override would sidestep the context_target containment guarantee.
+# The dev user's home is baked at build time (skills.DevHome); not an env
+# knob — the chassis paths are constants, not configuration.
 export HOME=/home/dev
 
 # Launch gate — a network-posture skill (e.g. firewall) bakes a gate file whose

@@ -43,7 +43,7 @@ apt = ["curl", "ca-certificates"]
 # a fresh box (guarded by auth.json), so grok works without hunting for a
 # shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
 # grok-bundled bridges $GROK_HOME/bundled to the image tree (see its header).
-files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login", "grok-bundled.sh" = "/etc/byre/firstrun.d/grok-bundled" }
+files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login", "grok-bundled.sh" = "/etc/byre/firstrun.d/grok-bundled", "grok-launch.sh" = "/usr/local/bin/byre-grok-launch" }
 dockerfile = [
   "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://x.ai/cli/install.sh | bash'",
   # grok installs its BINARY into ~/.grok (downloads/ holds the file, bin/
@@ -81,12 +81,13 @@ egress = ["cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"]
 egress_offered = ["x.ai"]
 
 [agent]
-# --append-system-prompt (alias of --rules) APPENDS the baked agent context
-# plus the launcher's per-session additions to grok's default system prompt
-# (source-verified: PagerArgs rules -> <human_rules> block appended after the
-# default prompt; NOT re-applied on `--resume` of a persisted session — byre
-# launches are fresh sessions, so the caveat is inert here).
-command = "grok --always-approve --append-system-prompt \"$(cat /etc/byre/agent-context.md)$BYRE_SESSION_CONTEXT\""
+# The wrapper injects the baked agent context + per-session additions via
+# --append-system-prompt (alias of --rules; appended, <human_rules> block;
+# NOT re-applied on `--resume` — byre launches are fresh sessions, inert
+# here), argv-capped with a loud disclosure: Linux limits one exec argument
+# to ~128 KiB, under byre's 1 MiB context budget, and a legal-but-large
+# context must degrade, not kill the exec.
+command = "byre-grok-launch --always-approve"
 state = ".grok"
 # context = "inject": the command's --append-system-prompt carries the baked
 # context; byre writes NOTHING into $GROK_HOME — its AGENTS.md is the user's
