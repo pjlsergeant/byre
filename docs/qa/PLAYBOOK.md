@@ -100,6 +100,35 @@ cwd-owned, B: other project), added 2026-07-22 (grab shipped post-1.1.0).
 4. Missing box path → "no such path in the box: <path>", rc=1.
 5. TEARDOWN: rm boxes, rm the landed files.
 
+## Journey: standing instructions ([[context]])
+
+Added 2026-07-26 with the finding-fix batch (feature shipped 2026-07-25).
+No engine needed until step 5.
+
+1. `byre context add lint --text "Always run gofmt."` → "added" + the
+   applies-next-develop note. Bare `add lint` with EDITOR exiting
+   unchanged → "context lint unchanged." rc=0. Empty editor on a NEW
+   name → "no text written — nothing added" (no remove hint); on an
+   EXISTING name → the remove hint, rc=1 both.
+2. Same name at two layers (`--global` then project) → `context list`
+   attributes: `lint  "…"  (project — overrides default)`; a
+   project-only snippet shows `(project)`. `context remove` of an
+   inherited-only name → closure written (`"!name"`), list shows the
+   shadow row `name  — removed by project  (was default)`.
+3. `add notes --file <missing>` → accepted WITH the ⚠ does-not-exist
+   warning; the next develop fails loudly naming context + file.
+4. Size tiers (develop-time, both forms): ≥100 KiB note, ≥500 KiB ⚠,
+   ≥1 MiB 🛑 suggesting a skill — develop PROCEEDS through all three; a
+   >16 MiB file refuses with "not agent-memory-sized" (fstat-judged; a
+   sparse file stages it cheaply).
+5. develop (agent none suffices): /etc/byre/agent-context.md carries the
+   merged prose, cascade order (layer before project), after byre's own
+   and the skills' context.
+6. TUI: `byre config` → Instructions → rows attributed `(layer:x)`;
+   `d` on an inherited row → "removed here" + Restore action; item
+   editor `^e` prose round-trip returns with the edited text shown.
+7. TEARDOWN: rm box + store.
+
 ## Journey: config UI, Claude Skills + dirty flag
 
 1. `byre config` in a project → main form renders; `▸` cursor moves.

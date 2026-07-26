@@ -229,7 +229,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			skipped = nil
 		}
 		recordSessionEngine(s.Err, paths, r.Engine(), skipped)
-		if berr := buildImage(r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
+		if berr := buildImageWarn(s.Err, r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
 			return berr
 		}
 		// Seed fresh state volumes that declare a config-level seed, using the
@@ -365,7 +365,14 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 // — the host user's ids on the rootful path, the generic keep-id ids under
 // rootless Podman (ADR 0032).
 func buildImage(r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
-	if _, err := build.Assemble(paths, cfg, res); err != nil {
+	return buildImageWarn(io.Discard, r, paths, cfg, res, image, noCache, ident)
+}
+
+// buildImageWarn is buildImage with the operator's stderr attached, so
+// assemble-time disclosures (the [[context]] prose size tiers) reach the
+// user on the paths a human watches (develop, rebuild).
+func buildImageWarn(warn io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
+	if _, err := build.AssembleWarn(paths, cfg, res, warn); err != nil {
 		return err
 	}
 	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache, uidBuildArgs(ident))

@@ -54,6 +54,6 @@ func rebuild(w io.Writer, r imageRunner, paths project.Paths, cfg config.Config,
 			return err
 		}
 		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)
-		return buildImage(r, paths, cfg, res, image, true, ident)
+		return buildImageWarn(w, r, paths, cfg, res, image, true, ident)
 	})
 }

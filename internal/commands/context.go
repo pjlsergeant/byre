@@ -82,13 +82,13 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 		if err != nil {
 			return err
 		}
-		seed := ""
+		seed, existing := "", false
 		for _, cd := range cur.Contexts {
 			if cd.Name == name {
 				if cd.File != "" {
 					return fmt.Errorf("context add: %q is file-backed (%s) — edit that file, or pass --text/--file to change the declaration", name, cd.File)
 				}
-				seed = cd.Text
+				seed, existing = cd.Text, true
 			}
 		}
 		edited, err := editProse(seed)
@@ -96,7 +96,20 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 			return err
 		}
 		if strings.TrimSpace(edited) == "" {
-			return fmt.Errorf("context add: no text written (remove the declaration with: byre context remove %s)", name)
+			// The remove hint only makes sense when there IS a declaration to
+			// remove — for a new name, "remove it" would itself fail (QA
+			// finding 2026-07-25).
+			if existing {
+				return fmt.Errorf("context add: no text written (remove the declaration with: byre context remove %s)", name)
+			}
+			return fmt.Errorf("context add: no text written — nothing added")
+		}
+		if existing && edited == seed {
+			// The editor round-trip changed nothing; saying "updated … joins
+			// at the next develop" for it would claim a write that didn't
+			// happen (the configui ^q class, QA finding 2026-07-25).
+			fmt.Fprintf(s.Err, "byre: context %s unchanged.\n", name)
+			return nil
 		}
 		text = edited
 	}
@@ -117,6 +130,18 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 	if err := addNamedDecl(s, projectDir, global, contextVerbs, name, cd); err != nil {
 		return err
 	}
+	if file != "" {
+		// Accepting a not-yet-existing file is right (it can be created
+		// before the next develop) — accepting it SILENTLY is not: the
+		// Claude Skills screen warns for the identical shape, and the
+		// failure otherwise surfaces only at develop (QA finding 2026-07-25).
+		expanded, xerr := expandHostPath(file)
+		if xerr == nil {
+			if _, serr := os.Stat(expanded); serr != nil {
+				fmt.Fprintf(s.Err, "byre: ⚠ %s does not exist yet — the next develop will fail until it does (accepted anyway; create it before then).\n", file)
+			}
+		}
+	}
 	fmt.Fprintln(s.Err, "byre: the text joins the agent's memory at the next develop (rebuild).")
 	return nil
 }
@@ -131,9 +156,12 @@ func ContextRemove(s Streams, projectDir string, global bool, name string) error
 	return removeNamedDecl(s, projectDir, global, contextVerbs, name)
 }
 
-// ContextList implements `byre context list`: the resolved declared set —
-// config-only vocabulary, so no skill union and no delivery verdicts, just
-// each snippet's identity and source.
+// ContextList implements `byre context list`: the resolved set, each snippet
+// attributed to the layer that speaks it, PLUS the cascade's shadows —
+// overridden lower declarations and closures (Pete's ruling, 2026-07-26:
+// the moment an operator runs list is usually "where did my snippet go?",
+// and the confusing cases are precisely the shadowed ones). Config-only
+// vocabulary, so no skill union.
 func ContextList(s Streams, projectDir string) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
@@ -148,14 +176,75 @@ func ContextList(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Contexts) == 0 {
+	// Attribution probes; nil degrades every row to unattributed (the layers
+	// are display sugar — the resolved set above is the truth).
+	srcs, _ := config.ContextSources(projectDir)
+	if len(cfg.Contexts) == 0 && len(contextShadowLines(cfg, srcs)) == 0 {
 		fmt.Fprintln(s.Out, "no standing instructions declared  (add one: byre context add <name>)")
 		return nil
 	}
 	for _, cd := range cfg.Contexts {
-		fmt.Fprintln(s.Out, contextLine(cd))
+		fmt.Fprintln(s.Out, contextLine(cd)+contextAttribution(srcs, cd.Name))
+	}
+	for _, line := range contextShadowLines(cfg, srcs) {
+		fmt.Fprintln(s.Out, line)
 	}
 	return nil
+}
+
+// contextDeclarers returns the labels of every raw layer declaring name
+// (non-marker), in merge order — last is the winner.
+func contextDeclarers(srcs []config.SourceLayer, name string) []string {
+	var out []string
+	for _, sl := range srcs {
+		for _, cd := range sl.Cfg.Contexts {
+			if cd.Name == name {
+				out = append(out, sl.Label)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// contextAttribution renders an effective row's source tag: the winning
+// layer, plus what it overrides when a lower layer also spoke.
+func contextAttribution(srcs []config.SourceLayer, name string) string {
+	decl := contextDeclarers(srcs, name)
+	switch len(decl) {
+	case 0:
+		return ""
+	case 1:
+		return "  (" + decl[0] + ")"
+	default:
+		return fmt.Sprintf("  (%s — overrides %s)", decl[len(decl)-1], strings.Join(decl[:len(decl)-1], ", "))
+	}
+}
+
+// contextShadowLines renders what is NOT shipping and why: `!name` closures
+// (attributed to the layer holding the marker, naming what they removed) —
+// including stale markers that match nothing, which stay visible rather
+// than silently inert (config, never invisible).
+func contextShadowLines(cfg config.Config, srcs []config.SourceLayer) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, sl := range srcs {
+		for _, cd := range sl.Cfg.Contexts {
+			name, ok := strings.CutPrefix(cd.Name, "!")
+			if !ok || seen[name] {
+				continue
+			}
+			seen[name] = true
+			was := contextDeclarers(srcs, name)
+			switch {
+			case len(was) > 0:
+				out = append(out, fmt.Sprintf("%s  — removed by %s  (was %s)", name, sl.Label, strings.Join(was, ", ")))
+			default:
+				out = append(out, fmt.Sprintf("%s  — removed by %s  (nothing below declares it)", name, sl.Label))
+			}
+		}
+	}
+	return out
 }
 
 // contextLine renders one declaration for list: name plus its source — a

@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -254,16 +255,70 @@ func TestAssembleConfigContextRefusesEscapingProjectSymlink(t *testing.T) {
 	}
 }
 
-// The skill-context size cap applies to config context files too.
-func TestAssembleConfigContextFileCap(t *testing.T) {
+// Prose is never capped (Pete's ruling 2026-07-26) — the size tiers
+// disclose instead, identically for file and inline sources, and only the
+// technical read ceiling (fstat-judged, far above the tiers) refuses.
+func TestAssembleConfigContextSizeTiers(t *testing.T) {
 	paths := bootstrapped(t)
 	big := filepath.Join(t.TempDir(), "big.md")
-	if err := os.WriteFile(big, make([]byte, skills.MaxContextBytes+1), 0o644); err != nil {
+	if err := os.WriteFile(big, make([]byte, contextShoutBytes+1), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "big", File: big}}}
-	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("err = %v; want the cap enforced", err)
+	var warn bytes.Buffer
+	if _, err := AssembleWarn(paths, cfg, skills.Resolved{}, &warn); err != nil {
+		t.Fatalf("a 1 MiB file must WARN, not refuse: %v", err)
+	}
+	if !strings.Contains(warn.String(), "🛑 context big") || !strings.Contains(warn.String(), "skill") {
+		t.Fatalf("loudest tier missing or skill not suggested: %s", warn.String())
+	}
+
+	// Inline prose gets the identical tier — form must not change outcome.
+	warn.Reset()
+	cfg = config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "talky", Text: strings.Repeat("a", contextWarnBytes+1)}}}
+	if _, err := AssembleWarn(paths, cfg, skills.Resolved{}, &warn); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(warn.String(), "⚠ context talky") {
+		t.Fatalf("inline prose missed its tier: %s", warn.String())
+	}
+
+	// The read ceiling refuses without reading (a sparse file keeps the test
+	// cheap: fstat sees the size, the data is never materialized).
+	huge := filepath.Join(t.TempDir(), "huge.md")
+	f, err := os.Create(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(contextReadCeiling + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	cfg = config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "huge", File: huge}}}
+	if _, err := Assemble(paths, cfg, skills.Resolved{}); err == nil || !strings.Contains(err.Error(), "not agent-memory-sized") {
+		t.Fatalf("err = %v; want the read ceiling refusal", err)
+	}
+}
+
+// warnContextSize tier boundaries, pinned exactly once.
+func TestWarnContextSizeTiers(t *testing.T) {
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{
+		{contextNoteBytes - 1, ""},
+		{contextNoteBytes, "byre: context x:"},
+		{contextWarnBytes, "⚠ context x"},
+		{contextShoutBytes, "🛑 context x"},
+	} {
+		var b bytes.Buffer
+		warnContextSize(&b, "x", tc.n)
+		if tc.want == "" && b.Len() != 0 {
+			t.Errorf("n=%d: unexpected note %q", tc.n, b.String())
+		}
+		if tc.want != "" && !strings.Contains(b.String(), tc.want) {
+			t.Errorf("n=%d: note %q missing %q", tc.n, b.String(), tc.want)
+		}
 	}
 }
 
