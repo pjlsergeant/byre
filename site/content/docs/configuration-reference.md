@@ -94,7 +94,11 @@ exceptions noted inline.
 - `[env]` -- literal env vars. **Baked into the image**: `docker
   history` shows them and they outlive `byre reset`, so never put
   secrets here -- credentials belong to the agents' own login flows (or
-  `env_from_host` for runtime values).
+  `env_from_host` for runtime values). The `BYRE_` prefix is reserved
+  (those variables parameterize byre's own launch machinery) and
+  refused here; to override one deliberately use
+  `run_args = ["-e", "BYRE_X=..."]`, which `byre status` shows verbatim
+  while degrading the claims it affects.
 - `[files]` -- host paths copied into the image, read-only.
 - `dockerfile_pre` / `dockerfile_post` -- raw Dockerfile lines, emitted
   before / after the core block. The build-time raw block, and the

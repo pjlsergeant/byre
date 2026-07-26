@@ -117,6 +117,11 @@ Implications:
   never grants beyond the current box.
 - The mechanism's scope is not the decision's scope: a machine-scoped
   volume does not make opting in machine-scoped.
+- Consent to applied content is consent to its RENDERED grants -- which
+  holds only while the review's rendering is complete: anything
+  grant-shaped renders with the same weight whichever table carries it
+  (ADR 0050). A capability the apply review can't name isn't consented,
+  the same way a grant status can't name isn't done (P4).
 
 ## 6. The editor is the interface
 
