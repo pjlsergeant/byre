@@ -63,7 +63,7 @@ type AgentContrib struct {
 	// (chassis facts, skill snippets, [[context]] standing instructions —
 	// /etc/byre/agent-context.md, plus the launcher's per-session additions
 	// in $BYRE_SESSION_CONTEXT): "inject" means the agent command itself
-	// consumes them (--append-system-prompt-file + a second append
+	// consumes them (claude: --append-system-prompt-file + a second append
 	// for the env var) — the skill author VOUCHES the command does so, the
 	// MCP/claude_skills pattern (ADR 0046). Absent means no adapter: the
 	// context still bakes, and status reports declared-but-not-delivered
@@ -92,7 +92,7 @@ type AgentContrib struct {
 	MCP string `toml:"mcp"`
 	// ClaudeSkills is the same vouch for byre's declared Claude Skill set:
 	// "inject" means the agent command consumes the baked
-	// /etc/byre/claude-skills tree (--add-dir — the skills load bare,
+	// /etc/byre/claude-skills tree (claude: --add-dir — the skills load bare,
 	// as /name). The vouch is THAT the agent consumes the contract, not how;
 	// the mechanism lives in the command string. Absent means no adapter:
 	// the set still bakes, and status reports declared-but-not-delivered

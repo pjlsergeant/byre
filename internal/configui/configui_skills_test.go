@@ -55,7 +55,7 @@ func TestSkillsMultiSelect(t *testing.T) {
 		t.Fatalf("locked primary agent must not be added to skills: %v", m.skills)
 	}
 
-	// A non-primary agent skill can be enabled as a plain skill.
+	// A non-primary agent skill (codex) can be enabled as a plain skill.
 	m.skillCur = entryIdx(m, "codex")
 	mm, _ = m.updateSkills(key(" "))
 	m = mm.(model)

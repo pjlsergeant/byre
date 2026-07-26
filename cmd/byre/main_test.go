@@ -150,6 +150,54 @@ func TestRunDispatch(t *testing.T) {
 
 // TestRunUsageErrors pins that parse failures come back as usageError (exit 2
 // in main) without dispatching any command.
+// The strict tier (CLAUDE.md): an arity rejection must name the RULE that
+// fired, not merely produce some usageError. These sixteen commands used
+// cobra's validators, which exited 1 with "accepts 1 arg(s), received 0" --
+// so a wrong or typo'd usage string, or a different rule rejecting first,
+// would be invisible to a presence-only check.
+func TestArityUsageErrorsNameTheShape(t *testing.T) {
+	cases := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"skill", "inspect"}, "usage: byre skill inspect <id|uri>"},
+		{[]string{"skill", "inspect", "a", "b"}, "usage: byre skill inspect <id|uri>"},
+		{[]string{"skill", "pack"}, "usage: byre skill pack <name>"},
+		{[]string{"skill", "fork", "one"}, "usage: byre skill fork <id> <new-id>"},
+		{[]string{"skill", "init"}, "usage: byre skill init <name>"},
+		{[]string{"skill", "validate", "a", "b"}, "usage: byre skill validate [name]"},
+		{[]string{"skill", "install"}, "usage: byre skill install <manifest-uri>"},
+		{[]string{"skill", "uninstall"}, "usage: byre skill uninstall <id>"},
+		{[]string{"template", "inspect"}, "usage: byre template inspect <id|uri>"},
+		{[]string{"template", "pack"}, "usage: byre template pack <name>"},
+		{[]string{"template", "fork", "one"}, "usage: byre template fork <id> <new-id>"},
+		{[]string{"template", "init"}, "usage: byre template init <name>"},
+		{[]string{"template", "validate", "a", "b"}, "usage: byre template validate [name]"},
+		{[]string{"template", "install"}, "usage: byre template install <manifest-uri>"},
+		{[]string{"template", "uninstall"}, "usage: byre template uninstall <id>"},
+		{[]string{"preset", "apply", "a", "b"}, "usage: byre preset apply [<uri>|<path>]"},
+		{[]string{"preset", "inspect", "a", "b"}, "usage: byre preset inspect [<uri>|<path>]"},
+		{[]string{"layer", "new"}, "usage: byre layer new <name>"},
+		{[]string{"layer", "validate", "a", "b"}, "usage: byre layer validate [name]"},
+	}
+	for _, tc := range cases {
+		calls := map[string]string{}
+		s, _ := testStreams()
+		err := run(recorderApp(calls), tc.argv, "/proj", s)
+		var uerr usageError
+		if !errors.As(err, &uerr) {
+			t.Errorf("%v: expected usageError (exit 2), got %v", tc.argv, err)
+			continue
+		}
+		if got := string(uerr); !strings.Contains(got, tc.want) {
+			t.Errorf("%v: usage error = %q, want it to name %q", tc.argv, got, tc.want)
+		}
+		if len(calls) != 0 {
+			t.Errorf("%v: usage error must not dispatch, got %v", tc.argv, calls)
+		}
+	}
+}
+
 func TestRunUsageErrors(t *testing.T) {
 	cases := [][]string{
 		{},                                    // no command
@@ -171,29 +219,6 @@ func TestRunUsageErrors(t *testing.T) {
 		{"deliver", "--boxes", "x.txt"},                 // boxes takes no paths
 		{"deliver", "--boxes", "--tar", "-"},            // one remote mode at a time
 
-		// Arity on the package/layer verbs. These used cobra's own validators,
-		// which return plain errors -- so they exited 1 with "byre: accepts 1
-		// arg(s), received 0" instead of byre's contractual 2 with a usage
-		// line, and TestRunUsageErrors covered none of them.
-		{"skill", "inspect"},                     // missing id
-		{"skill", "inspect", "a", "b"},           // extra operand
-		{"skill", "pack"},                        // missing name
-		{"skill", "fork", "one"},                 // fork needs two
-		{"skill", "init"},                        // missing name
-		{"skill", "validate", "a", "b"},          // at most one
-		{"skill", "install"},                     // missing manifest uri
-		{"skill", "uninstall"},                   // missing id
-		{"template", "inspect"},                  // missing id
-		{"template", "pack"},                     // missing name
-		{"template", "fork", "one"},              // fork needs two
-		{"template", "init"},                     // missing name
-		{"template", "validate", "a", "b"},       // at most one
-		{"template", "install"},                  // missing manifest uri
-		{"template", "uninstall"},                // missing id
-		{"preset", "apply", "a", "b"},            // at most one
-		{"preset", "inspect", "a", "b"},          // at most one
-		{"layer", "new"},                         // missing name
-		{"layer", "validate", "a", "b"},          // at most one
 		{"deliver", "--boxes", "--box", "x"},     // boxes answers, never selects
 		{"deliver", "--tar"},                     // tar requires '-'
 		{"deliver", "--tar", "x.txt"},            // the archive arrives on stdin only

@@ -952,9 +952,9 @@ func portLine(p config.Port) string {
 // spaced arg reads as it round-trips.
 // claudeSkillLine renders one Claude Skill declaration: name plus whichever
 // source spelling its home carries (a config path or a skill-relative from).
-// claudeSkillDirNote is the live legibility check on a declared host dir
-// : the editor accepted a nonexistent path
-// silently, deferring the failure to the next develop. skills.
+// claudeSkillDirNote is the live legibility check on a declared host dir:
+// the editor accepted a nonexistent path silently, deferring the failure to
+// the next develop. skills.
 // ValidateClaudeSkillDir — the exact check the bake runs — decides WHETHER
 // the build would fail (so editor and develop can never disagree); the label
 // here only classifies it briefly. Warn-only, never a gate: the path may be
