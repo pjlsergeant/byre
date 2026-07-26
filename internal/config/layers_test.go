@@ -126,11 +126,18 @@ func TestLayerFileBansTemplateKey(t *testing.T) {
 
 // A distributable template may not pull in machine-local layers.
 func TestTemplateBansExtendsKey(t *testing.T) {
-	if _, err := ParseTemplateBody([]byte("extends = \"torn\"\n")); err == nil {
-		t.Fatal("extends in template.config must be a validation error")
-	}
-	if _, err := ParseTemplateBody([]byte("extends = \"\"\n")); err == nil {
-		t.Fatal("even an empty extends key in template.config must be a validation error")
+	// Banned by presence, empty or not. Naming the rule matters here: a dozen
+	// other template rules would also reject a body, and the sibling
+	// TestLayerFileBansTemplateKey has always pinned its fragment.
+	const want = "extends is not allowed in template.config"
+	for _, body := range []string{"extends = \"torn\"\n", "extends = \"\"\n"} {
+		_, err := ParseTemplateBody([]byte(body))
+		if err == nil {
+			t.Fatalf("%q: want the extends rule to fire", body)
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: wrong rule fired: %v, want it to name %q", body, err, want)
+		}
 	}
 }
 
@@ -199,10 +206,27 @@ func TestValidateLayerNameGrammar(t *testing.T) {
 			t.Errorf("ValidateLayerName(%q): unexpected error %v", n, err)
 		}
 	}
-	bad := []string{"", "none", "Torn", "torn/frontend", "../evil", ".hidden", "-lead", "has space", "!torn"}
-	for _, n := range bad {
-		if err := ValidateLayerName(n); err == nil {
+	// Each bad name names the rule that rejects it, so a shape failure cannot
+	// silently stand in for the reserved-name or empty check.
+	bad := map[string]string{
+		"":              "layer name is empty",
+		"none":          "is reserved",
+		"Torn":          "want lowercase",
+		"torn/frontend": "want lowercase",
+		"../evil":       "want lowercase",
+		".hidden":       "want lowercase",
+		"-lead":         "want lowercase",
+		"has space":     "want lowercase",
+		"!torn":         "want lowercase",
+	}
+	for n, want := range bad {
+		err := ValidateLayerName(n)
+		if err == nil {
 			t.Errorf("ValidateLayerName(%q): expected error", n)
+			continue
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ValidateLayerName(%q) = %v, want it to name %q", n, err, want)
 		}
 	}
 }
@@ -212,12 +236,16 @@ func TestValidateLayerNameGrammar(t *testing.T) {
 func TestExtendsValidation(t *testing.T) {
 	if err := (Config{Extends: "../evil"}).ValidateLayer(); err == nil {
 		t.Error("bad extends name must fail ValidateLayer")
+	} else if !strings.Contains(err.Error(), "extends: layer name") {
+		t.Errorf("wrong rule fired for a bad extends name: %v", err)
 	}
 	if err := (Config{Extends: "torn"}).ValidateLayer(); err != nil {
 		t.Errorf("good extends rejected by ValidateLayer: %v", err)
 	}
 	if err := (Config{Extends: "torn"}).Validate(); err == nil {
 		t.Error("extends surviving to a resolved config must fail Validate")
+	} else if !strings.Contains(err.Error(), "only meaningful in a cascade layer") {
+		t.Errorf("wrong rule fired for a resolved extends: %v", err)
 	}
 }
 

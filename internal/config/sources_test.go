@@ -62,9 +62,15 @@ func TestSourcesDefaultLayerRemedy(t *testing.T) {
 func TestSourcesValidation(t *testing.T) {
 	if err := (Config{Sources: map[string]SourceHint{"x/y": {URI: " "}}}).ValidateLayer(); err == nil {
 		t.Fatal("empty uri must fail validation")
+	} else if !strings.Contains(err.Error(), "uri is required") {
+		// A whitespace-only uri is TRIMMED to empty, so the required-uri rule
+		// fires, not the whitespace one.
+		t.Errorf("wrong rule fired for a blank uri: %v", err)
 	}
 	if err := (Config{Sources: map[string]SourceHint{"x/y": {URI: "https://x", Digest: "8fe3"}}}).ValidateLayer(); err == nil {
 		t.Fatal("digest without sha256: prefix must fail validation")
+	} else if !strings.Contains(err.Error(), "digest must be sha256:") {
+		t.Errorf("wrong rule fired for a bad digest: %v", err)
 	}
 	if err := (Config{Sources: map[string]SourceHint{"x/y": {URI: "https://x", Digest: "sha256:8fe3000000000000000000000000000000000000000000000000000000000000"}}}).ValidateLayer(); err != nil {
 		t.Fatal(err)

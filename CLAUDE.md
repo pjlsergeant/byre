@@ -116,7 +116,14 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
   commands-page pin) stay byte-exact, commented as contracts. A rejection
   or output test asserts the RULE fired — a stable identifying fragment
   plus the offending value/remedy — never full sentences; `err == nil`
-  alone under-asserts (the wrong rule keeps it green). Prose asserted in
+  alone under-asserts (the wrong rule keeps it green). **Two tiers**: a
+  grammar, shape, or arity rejection MUST name the rule that fired, because
+  a dozen rules can reject the same input and the wrong one keeps the test
+  green. A *containment* refusal (an escaping symlink, a forged worktree
+  pointer, a FIFO where a file was named) may assert the refusal plus the
+  unchanged victim and stop there — refusal IS the contract, the message is
+  incidental, and pinning it couples a security test to wording. Do not
+  "improve" the containment tests by adding fragments. Prose asserted in
   3+ tests gets an exported const/func the product prints and tests
   reference (e.g. `onboard.SharedAuthPrompt`), so wording changes in one
   place — presence is the assertion, prose is not.

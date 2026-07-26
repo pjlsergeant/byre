@@ -41,15 +41,27 @@ func TestDetectAutoFallsBackToPodman(t *testing.T) {
 	}
 }
 
+// Detect fails three distinct ways -- nothing on PATH, the named engine
+// missing, an unknown setting -- and each test names which one, or the wrong
+// rule keeps it green.
 func TestDetectAutoNoEngine(t *testing.T) {
-	if _, err := Detect("auto", fakeLook()); err == nil {
+	_, err := Detect("auto", fakeLook())
+	if err == nil {
 		t.Fatal("expected error when no engine present")
+	}
+	if !strings.Contains(err.Error(), "no container engine found on PATH") {
+		t.Errorf("wrong rule fired: %v", err)
 	}
 }
 
 func TestDetectExplicitMissing(t *testing.T) {
-	if _, err := Detect("docker", fakeLook("podman")); err == nil {
+	_, err := Detect("docker", fakeLook("podman"))
+	if err == nil {
 		t.Fatal("expected error when explicit engine missing")
+	}
+	// Must name the OFFENDING engine, and must not be the unknown-setting rule.
+	if !strings.Contains(err.Error(), `engine "docker" not found on PATH`) {
+		t.Errorf("wrong rule fired: %v", err)
 	}
 }
 
@@ -64,9 +76,14 @@ func TestDetectExplicitFound(t *testing.T) {
 }
 
 func TestDetectUnknown(t *testing.T) {
+	// fakeLook("containerd") makes it present on PATH, so a not-found rejection
+	// here would be the wrong rule -- the setting itself is what's unknown.
 	_, err := Detect("containerd", fakeLook("containerd"))
 	if err == nil {
 		t.Fatal("expected error for unknown engine setting")
+	}
+	if !strings.Contains(err.Error(), `unknown engine "containerd"`) {
+		t.Errorf("wrong rule fired: %v", err)
 	}
 }
 

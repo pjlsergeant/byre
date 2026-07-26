@@ -252,8 +252,12 @@ func TestRehomeRefusesMalformedID(t *testing.T) {
 func TestRehomeSameIDErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, p.ID, engines(&fakeRunner{}), 1000, 1000); err == nil {
+	err := rehome(s, p, p.ID, engines(&fakeRunner{}), 1000, 1000)
+	if err == nil {
 		t.Fatal("expected error rehoming to the same id")
+	}
+	if !strings.Contains(err.Error(), "already homed here") {
+		t.Errorf("wrong rule fired: %v", err)
 	}
 }
 
@@ -261,8 +265,12 @@ func TestRehomeNoImageErrors(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{"byre-oldid-cache": true}} // no images
 	s, _, _ := testStreams("", false)
-	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err == nil {
+	err := rehome(s, p, "oldid", engines(f), 1000, 1000)
+	if err == nil {
 		t.Fatal("expected error when no image exists for the copy")
+	}
+	if !strings.Contains(err.Error(), "no byre image exists to run the volume copy") {
+		t.Errorf("wrong rule fired: %v", err)
 	}
 }
 
