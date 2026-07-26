@@ -230,17 +230,27 @@ func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeStat
 		return st
 	}
 	for _, sl := range srcs {
+		// Two passes per layer, matching mergeNamedDecls: declarations apply
+		// first, closures second, so a layer holding both `x` and `!x` (legal
+		// — markers dodge duplicate tracking) ends CLOSED whatever the TOML
+		// order (codex review round 2).
 		for _, cd := range sl.Cfg.Contexts {
-			if name, ok := strings.CutPrefix(cd.Name, "!"); ok {
-				st := get(name)
-				st.closedBy = sl.Label
-				st.wasAt = append([]string(nil), st.openIn...)
-				st.openIn = nil
+			if strings.HasPrefix(cd.Name, "!") {
 				continue
 			}
 			st := get(cd.Name)
 			st.openIn = append(st.openIn, sl.Label)
 			st.closedBy, st.wasAt = "", nil // a higher declaration re-opens
+		}
+		for _, cd := range sl.Cfg.Contexts {
+			name, ok := strings.CutPrefix(cd.Name, "!")
+			if !ok {
+				continue
+			}
+			st := get(name)
+			st.closedBy = sl.Label
+			st.wasAt = append([]string(nil), st.openIn...)
+			st.openIn = nil
 		}
 	}
 	return states, order

@@ -295,3 +295,25 @@ func TestContextListSpentClosureNeitherShadowsNorOverrides(t *testing.T) {
 		t.Errorf("final closure must attribute closer and victim:\n%s", got)
 	}
 }
+
+// Within ONE layer, declarations apply before closures whatever the TOML
+// order (mergeNamedDecls's split) — a layer carrying both `x` and `!x`
+// ships nothing, and list must say so (codex review round 2).
+func TestContextListSameLayerClosureWins(t *testing.T) {
+	dir, projPath, defaultCfg, s, _ := mcpTestProject(t)
+	out := s.Out.(*bytes.Buffer)
+	mustWriteFile(t, defaultCfg, []byte("[[context]]\nname = \"x\"\ntext = \"global x\"\n"), 0o644)
+	// Marker FIRST, declaration second: sequential replay would end open.
+	mustWriteFile(t, projPath, []byte("[[context]]\nname = \"!x\"\n\n[[context]]\nname = \"x\"\ntext = \"same layer\"\n"), 0o644)
+	if err := ContextList(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "x  — removed by project") {
+		t.Errorf("same-layer closure must win regardless of order:\n%s", got)
+	}
+	// Resolution agrees (probed live): nothing ships, so no effective row.
+	if strings.Contains(got, `"same layer"`) || strings.Contains(got, `"global x"`) {
+		t.Errorf("no effective row may render beside the shadow:\n%s", got)
+	}
+}
