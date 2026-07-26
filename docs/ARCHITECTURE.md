@@ -476,7 +476,7 @@ add|remove|list` is the CLI sugar; the config UI has the editor screen.
 ### Standing instructions
 
 `[[context]]` blocks declare **standing agent instructions** -- prose the
-operator wants in the agent's memory in every box the declaring layer
+operator wants in front of the agent in every box the declaring layer
 reaches (ADR 0043). The cascade is the scoping: `default.config` reaches
 every box on the machine, a template or named layer its stack, the
 project config one project. Config-only vocabulary (no skill.toml twin --

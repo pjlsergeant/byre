@@ -58,11 +58,6 @@ without the installs fails loudly at develop with those exact commands.
 this repo's own `skills/inttest/skill.toml` — so run the apply from the repo
 root; see `docs/BYRE-DEVELOPMENT.md`.)
 
-> The `moarcode/` dir is the **legacy bootstrap harness** (gitignored, not part
-> of byre) used to develop byre before it could host itself. If you are running
-> inside the moarcode container, follow `moarcode/CLAUDE.md`. It is being retired
-> in favor of the self-hosted box above.
-
 ## Workflow
 
 - **Autonomy.** Keep going through the work; don't stop to ask "should I
@@ -71,8 +66,7 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
   green refactor). Small, well-described commits.
 - **Code review (mandatory after a feature/fix).** Run `byre-codereview`
   yourself, read every finding, fix or consciously defer each, then re-run with
-  `byre-codereview --continue "..."`. Stop when clean. (In the legacy moarcode
-  box the equivalent is `moarcode/codereview.sh`.)
+  `byre-codereview --continue "..."`. Stop when clean.
 - **Green before commit:** `gofmt` + `go vet` + `go test ./...` clean.
 - **Docs sweep (part of shipping, not a follow-up).** When a change alters
   behavior a settled doc describes, update the doc in the same unit of

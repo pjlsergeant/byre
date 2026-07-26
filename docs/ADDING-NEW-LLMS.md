@@ -3,7 +3,7 @@
 A playbook for the exercise first run on Grok (2026-07-16, ADR 0036):
 take an agent CLI whose source we have, answer the credential-mechanics
 gates from that source, and build or repair its skills on the evidence.
-The next candidates are Codex, Gemini, and OpenCode. This doc is METHOD
+This doc is METHOD
 and accumulated hints; current per-agent facts and gate status live in
 `docs/AGENT-CREDENTIAL-MECHANICS.md` and `TODO.md` -- don't duplicate
 status here, it rots.
@@ -173,23 +173,8 @@ The gate checklist -- what to answer for ANY agent CLI:
   -- which needs `~/.ssh` to exist); verify the tests RAN rather than
   skipped (count RUN/PASS lines, don't trust a fast `ok`).
 
-## The three next up (pointers only)
+## What's next
 
-Status and facts live in TODO.md and AGENT-CREDENTIAL-MECHANICS; what
-the source pass should target:
-
-- **Codex**: shared auth already works in the field -- the pass is
-  CONFIRMATION, not design: cite the in-place write and the
-  benign-concurrent-refresh claims to file:line, and note anything a
-  newer version changed under us.
-- **Gemini**: rotation answered 2026-07-16 from Google's primary docs
-  (installed-app refresh tokens are NON-rotating -- sharing is safe);
-  the `oauth_creds.json` write path and the dialog-fork hazard are
-  source-answered in the mechanics doc. Remaining: the live two-box
-  OAuth field check.
-- **OpenCode**: answered 2026-07-16/17 -- in-place auth-store writes
-  (plus an upstream torn-read hazard, deferred), `OPENCODE_AUTH_CONTENT`
-  is static injection (no refresh write-back), MCP config deep-MERGES
-  (ADR 0033; `mcp = "inject"` vouched + live-verified 2026-07-17), and
-  shared auth is vouched for API-key logins (two-box gate passed
-  2026-07-17). See docs/AGENT-CREDENTIAL-MECHANICS.md.
+Which agents still need a pass, and what each pass should target, lives in
+TODO.md and docs/AGENT-CREDENTIAL-MECHANICS.md (the rule at the top of this
+file: method here, status there).

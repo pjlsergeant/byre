@@ -3,7 +3,7 @@
 Decided 2026-07-14/15; the design was walked back once mid-flight, see
 "The registrar that wasn't" below. byre gains an `[[mcp]]` vocabulary for
 wiring Model Context Protocol servers into a box. Declarations are
-**configuration, not grants**; the canonical declared set bakes to
+**wiring, not grants**; the canonical declared set bakes to
 `/etc/byre/mcp.json` in **every** image; adapters are **injection-only** —
 claude via `--mcp-config`, codex via a skill-owned wrapper deriving `-c`
 overrides — and byre never writes an agent's MCP state, ever.

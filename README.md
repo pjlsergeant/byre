@@ -6,7 +6,7 @@
 
 Run `byre develop` in a project, worktree, or scratch directory, and byre creates a local container -- the box -- around it. Your favourite tools and creature comforts come with you, but the rest of the host stays out of reach.
 
-MIT licensed | local | single binary | no lock-in | for Linux and macOS
+MIT licensed | open source | local | single binary | no lock-in | for Linux and macOS
 
 **📖 Full documentation: [getbyre.com/docs](https://getbyre.com/docs/)** -- [quickstart](https://getbyre.com/docs/quickstart/) · [cookbook](https://getbyre.com/docs/how-do-i/) · [security model](https://getbyre.com/docs/security-model/)
 
@@ -15,7 +15,8 @@ $ brew install --cask pjlsergeant/tap/byre   # (see below for Linux)
 $ cd ~/my-project
 $ byre develop
 
-  byre: ~/my-project -> /workspace (rw) · extra host mounts: none · network: open
+  byre: exposure: /workspace rw · 10 env vars
+  byre: network open
   ╭──────────────────────────────────╮
   │ ✻ Claude Code                    │
   │   /workspace                     │

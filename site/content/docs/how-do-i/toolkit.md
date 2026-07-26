@@ -43,16 +43,11 @@ tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
 (the **Extends** section of `byre config`).
 
-A **named layer** is a config file at `~/.byre/layers/<name>/layer.config`
-that any project (or another layer -- chains work) pulls in with
-`extends`. It slots between the template and the project in the cascade
-and carries everything a config can except `template` -- skills, egress,
-env, mounts, the lot. It's live: edit the layer once and every extending
-project picks it up on its next develop. Layers aren't packages -- no
-versions, no installing; to share one, send the file. `byre status` shows
-the chain, and every inherited setting is attributed to its layer in
-`byre config`. See
-[ADR 0035](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0035-named-layers-and-extends.md).
+A **named layer** is a config file any project (or another layer --
+chains work) pulls in with `extends`; it slots between the template and
+the project in the cascade, and it's live -- edit the layer once and
+every extending project picks it up on its next develop. Full semantics:
+[named layers](/docs/configuration-reference/#named-layers).
 
 ## Ship a recommended box config with my project?
 

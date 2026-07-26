@@ -645,8 +645,8 @@ func contextCmd(dir string, s commands.Streams) *cobra.Command {
 		Short: "Add or update standing instructions in the project config (or --global defaults).",
 		Long: `Write a [[context]] declaration into this project's host-side config
 (add-or-update by name; a matching "!name" closure is re-opened). The prose
-joins the agent's memory after any enabled skills' context, whatever agent
-the box runs. With neither --text nor --file, your $EDITOR opens on the
+joins the baked agent context after any enabled skills' snippets and is
+injected into the agent's session at launch, whatever agent the box runs. With neither --text nor --file, your $EDITOR opens on the
 current text (the git-commit shape). Applies on the next develop.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {

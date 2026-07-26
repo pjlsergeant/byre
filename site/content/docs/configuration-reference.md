@@ -167,9 +167,11 @@ packages -- no versions, no installing; to share one, send the file.
 Every inherited setting is attributed to its layer in `byre config`, and
 `byre status` shows the chain. Layer files sit outside `--self-edit`'s
 writable set, so a boxed agent can never edit a file that propagates
-into other boxes. Manage with `byre layer new / list / validate`.
+into other boxes. Manage with `byre layer new / list / validate`; the
+design record is
+[ADR 0035](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0035-named-layers-and-extends.md).
 
-## Escape-hatch symmetry
+## Raw-block symmetry
 
 Build side: `base`, `apt`, `npm_global`, `[files]`, `[env]`, then
 `dockerfile_pre`/`dockerfile_post` for the rest. Runtime side:

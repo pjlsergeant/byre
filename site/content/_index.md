@@ -13,7 +13,8 @@ $ brew install --cask pjlsergeant/tap/byre
 $ cd ~/my-project
 $ byre develop
 
-  byre: ~/my-project -> /workspace (rw) · extra host mounts: none · network: open
+  byre: exposure: /workspace rw · 10 env vars
+  byre: network open
   ╭──────────────────────────────────╮
   │ ✻ Claude Code                    │
   │   /workspace                     │

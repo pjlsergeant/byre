@@ -2,7 +2,7 @@
 
 byre builds its own `docker run` flags first and appends the raw
 `run_args` block last, so a raw flag can override byre's own (`--user`,
-`--network`, even `--rm`). That is the point of the escape hatch, per
+`--network`, even `--rm`). That is the point of the raw block, per
 PRINCIPLES.md #1 and #3 -- the risk is the author's. The single exception:
 byre re-asserts the `byre.project`/`byre.workdir` identity labels *after*
 `run_args`, because lifecycle and `byre status` must always find the
