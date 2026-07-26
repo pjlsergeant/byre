@@ -8,7 +8,9 @@ package commands
 // effective set is exactly the resolved config's.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,8 +139,13 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 		// failure otherwise surfaces only at develop (QA finding 2026-07-25).
 		expanded, xerr := expandHostPath(file)
 		if xerr == nil {
-			if _, serr := os.Stat(expanded); serr != nil {
+			switch _, serr := os.Stat(expanded); {
+			case errors.Is(serr, fs.ErrNotExist):
 				fmt.Fprintf(s.Err, "byre: ⚠ %s does not exist yet — the next develop will fail until it does (accepted anyway; create it before then).\n", file)
+			case serr != nil:
+				// Permission, loop, I/O — a different problem than absence
+				// deserves a different diagnosis (codex review).
+				fmt.Fprintf(s.Err, "byre: ⚠ %s is not readable right now (%v) — the next develop will fail until it is (accepted anyway).\n", file, serr)
 			}
 		}
 	}
@@ -176,72 +183,100 @@ func ContextList(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	// Attribution probes; nil degrades every row to unattributed (the layers
-	// are display sugar — the resolved set above is the truth).
+	// Attribution probes; a failed load degrades every row to unattributed
+	// (the layers are display sugar — the resolved set above is the truth).
 	srcs, _ := config.ContextSources(projectDir)
-	if len(cfg.Contexts) == 0 && len(contextShadowLines(cfg, srcs)) == 0 {
+	states, order := replayContextCascade(srcs)
+	shadows := contextShadowLines(states, order)
+	if len(cfg.Contexts) == 0 && len(shadows) == 0 {
 		fmt.Fprintln(s.Out, "no standing instructions declared  (add one: byre context add <name>)")
 		return nil
 	}
 	for _, cd := range cfg.Contexts {
-		fmt.Fprintln(s.Out, contextLine(cd)+contextAttribution(srcs, cd.Name))
+		fmt.Fprintln(s.Out, contextLine(cd)+contextAttribution(states, cd.Name))
 	}
-	for _, line := range contextShadowLines(cfg, srcs) {
+	for _, line := range shadows {
 		fmt.Fprintln(s.Out, line)
 	}
 	return nil
 }
 
-// contextDeclarers returns the labels of every raw layer declaring name
-// (non-marker), in merge order — last is the winner.
-func contextDeclarers(srcs []config.SourceLayer, name string) []string {
-	var out []string
+// ctxCascadeState is one name's fate after replaying the raw cascade in
+// merge order — the same fold mergeNamedDecls performs, tracked per layer
+// label so list can attribute it. A declaration opens (consuming any
+// closure below it); a `!name` marker closes, remembering exactly what it
+// shadowed AT THAT POINT (later re-adds are re-openings, not victims).
+// First-seen scans get this wrong in both directions (codex review of the
+// first cut): a closure followed by a re-add is SPENT and must not render
+// as removed, and an override across a spent closure does not override the
+// layers the closure already consumed.
+type ctxCascadeState struct {
+	openIn   []string // labels currently contributing, lowest first (last = winner)
+	closedBy string   // non-empty: currently closed, by this layer
+	wasAt    []string // what closedBy shadowed when it closed
+}
+
+// replayContextCascade folds the raw layers name by name.
+func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeState, []string) {
+	states := map[string]*ctxCascadeState{}
+	var order []string
+	get := func(name string) *ctxCascadeState {
+		st, ok := states[name]
+		if !ok {
+			st = &ctxCascadeState{}
+			states[name] = st
+			order = append(order, name)
+		}
+		return st
+	}
 	for _, sl := range srcs {
 		for _, cd := range sl.Cfg.Contexts {
-			if cd.Name == name {
-				out = append(out, sl.Label)
-				break
+			if name, ok := strings.CutPrefix(cd.Name, "!"); ok {
+				st := get(name)
+				st.closedBy = sl.Label
+				st.wasAt = append([]string(nil), st.openIn...)
+				st.openIn = nil
+				continue
 			}
+			st := get(cd.Name)
+			st.openIn = append(st.openIn, sl.Label)
+			st.closedBy, st.wasAt = "", nil // a higher declaration re-opens
 		}
 	}
-	return out
+	return states, order
 }
 
 // contextAttribution renders an effective row's source tag: the winning
-// layer, plus what it overrides when a lower layer also spoke.
-func contextAttribution(srcs []config.SourceLayer, name string) string {
-	decl := contextDeclarers(srcs, name)
-	switch len(decl) {
-	case 0:
+// layer, plus what it overrides when lower layers still contribute (a
+// declaration re-opening a spent closure overrides nothing — the closure
+// already consumed what sat below it).
+func contextAttribution(states map[string]*ctxCascadeState, name string) string {
+	st := states[name]
+	if st == nil || len(st.openIn) == 0 {
 		return ""
-	case 1:
-		return "  (" + decl[0] + ")"
-	default:
-		return fmt.Sprintf("  (%s — overrides %s)", decl[len(decl)-1], strings.Join(decl[:len(decl)-1], ", "))
 	}
+	winner, under := st.openIn[len(st.openIn)-1], st.openIn[:len(st.openIn)-1]
+	if len(under) == 0 {
+		return "  (" + winner + ")"
+	}
+	return fmt.Sprintf("  (%s — overrides %s)", winner, strings.Join(under, ", "))
 }
 
-// contextShadowLines renders what is NOT shipping and why: `!name` closures
-// (attributed to the layer holding the marker, naming what they removed) —
-// including stale markers that match nothing, which stay visible rather
-// than silently inert (config, never invisible).
-func contextShadowLines(cfg config.Config, srcs []config.SourceLayer) []string {
+// contextShadowLines renders what is NOT shipping and why: names whose
+// FINAL cascade state is closed — attributed to the closing layer, naming
+// what it removed — including stale markers that match nothing, which stay
+// visible rather than silently inert (config, never invisible).
+func contextShadowLines(states map[string]*ctxCascadeState, order []string) []string {
 	var out []string
-	seen := map[string]bool{}
-	for _, sl := range srcs {
-		for _, cd := range sl.Cfg.Contexts {
-			name, ok := strings.CutPrefix(cd.Name, "!")
-			if !ok || seen[name] {
-				continue
-			}
-			seen[name] = true
-			was := contextDeclarers(srcs, name)
-			switch {
-			case len(was) > 0:
-				out = append(out, fmt.Sprintf("%s  — removed by %s  (was %s)", name, sl.Label, strings.Join(was, ", ")))
-			default:
-				out = append(out, fmt.Sprintf("%s  — removed by %s  (nothing below declares it)", name, sl.Label))
-			}
+	for _, name := range order {
+		st := states[name]
+		if st.closedBy == "" {
+			continue
+		}
+		if len(st.wasAt) > 0 {
+			out = append(out, fmt.Sprintf("%s  — removed by %s  (was %s)", name, st.closedBy, strings.Join(st.wasAt, ", ")))
+		} else {
+			out = append(out, fmt.Sprintf("%s  — removed by %s  (nothing below declares it)", name, st.closedBy))
 		}
 	}
 	return out

@@ -252,3 +252,46 @@ text = "global house"
 		t.Errorf("an overridden lower text must not render as effective:\n%s", got)
 	}
 }
+
+// A closure a HIGHER layer re-opens is SPENT: it must not render as a
+// shadow, and the re-opening declaration overrides nothing (the closure
+// already consumed what sat below it). A first-seen scan got both wrong
+// (codex review 2026-07-26): default→x, layer→!x, project→x showed a
+// removed-row AND "overrides default" simultaneously with the shipping row.
+func TestContextListSpentClosureNeitherShadowsNorOverrides(t *testing.T) {
+	dir, projPath, defaultCfg, s, _ := mcpTestProject(t)
+	out := s.Out.(*bytes.Buffer)
+	home := filepath.Dir(defaultCfg)
+	mustWriteFile(t, defaultCfg, []byte("[[context]]\nname = \"x\"\ntext = \"global x\"\n"), 0o644)
+	if err := os.MkdirAll(filepath.Join(home, "layers", "l1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWriteFile(t, filepath.Join(home, "layers", "l1", "layer.config"),
+		[]byte("[[context]]\nname = \"!x\"\n"), 0o644)
+	mustWriteFile(t, projPath, []byte("extends = \"l1\"\n\n[[context]]\nname = \"x\"\ntext = \"project x again\"\n"), 0o644)
+
+	if err := ContextList(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `x  "project x again"  (project)`) {
+		t.Errorf("re-opened row must attribute to project alone:\n%s", got)
+	}
+	if strings.Contains(got, "overrides") {
+		t.Errorf("a re-open across a spent closure overrides nothing:\n%s", got)
+	}
+	if strings.Contains(got, "removed by") {
+		t.Errorf("a spent closure must not render as a shadow:\n%s", got)
+	}
+
+	// And when the closure is the FINAL word (project drops its re-add), the
+	// shadow names the closing layer and what it consumed.
+	out.Reset()
+	mustWriteFile(t, projPath, []byte("extends = \"l1\"\n"), 0o644)
+	if err := ContextList(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "x  — removed by layer:l1  (was default)") {
+		t.Errorf("final closure must attribute closer and victim:\n%s", got)
+	}
+}
