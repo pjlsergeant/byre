@@ -630,6 +630,36 @@ func TestValidateLayerRejectsEmptyMarkers(t *testing.T) {
 	}
 }
 
+// The BYRE_ prefix is reserved vocabulary in [env]: those variables
+// parameterize the chassis scripts, so a config key there would switch
+// byre's machinery while status claims stay green. Both validation modes
+// must refuse (the editor saves layers, preset apply validates resolved),
+// the message must name the rule, the offending key, and the run_args
+// remedy. Ordinary keys and skill env (ValidateContent) stay untouched.
+func TestValidateRejectsReservedEnvNamespace(t *testing.T) {
+	cfg := Config{Env: map[string]string{"BYRE_LAUNCH_GATE_FILE": "/dev/null"}}
+	for mode, validate := range map[string]func() error{
+		"layer": cfg.ValidateLayer, "resolved": cfg.Validate,
+	} {
+		err := validate()
+		if err == nil {
+			t.Fatalf("%s: reserved BYRE_ env key must be rejected", mode)
+		}
+		for _, want := range []string{"BYRE_LAUNCH_GATE_FILE", "byre's runtime vocabulary", `run_args = ["-e", "BYRE_LAUNCH_GATE_FILE=<value>"]`} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: rejection must carry %q, got: %v", mode, want, err)
+			}
+		}
+	}
+	ordinary := Config{Env: map[string]string{"MY_BYRE_THING": "x", "FOO": "y"}}
+	if err := ordinary.ValidateLayer(); err != nil {
+		t.Errorf("non-reserved env keys must stay legal, got %v", err)
+	}
+	if err := ValidateContent("", nil, nil, map[string]string{"BYRE_ENVD_DIR": "/x"}); err != nil {
+		t.Errorf("skill env rides ValidateContent and is NOT subject to the reservation (trusted machinery), got %v", err)
+	}
+}
+
 func TestValidatePorts(t *testing.T) {
 	ok := Config{Ports: []Port{{Container: 8080, Host: 8080, Interface: "127.0.0.1"}, {Container: 3000}}}
 	if err := ok.Validate(); err != nil {

@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -1013,6 +1014,21 @@ func (c Config) validateScalarsCommon(apt, npm, egress, offered []string, extend
 	// where their build blocks are resolved (see internal/skills).
 	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
 		return err
+	}
+
+	// The BYRE_ prefix is byre's runtime vocabulary: every such variable
+	// parameterizes the generated launcher/profile scripts (the launch-gate
+	// file, the context dir, the announced egress, ...), so an [env] key here
+	// would switch byre's own machinery while every status claim stays green.
+	// Reserved as VOCABULARY, never as capability: the deliberate override
+	// rides run_args, the tier whose claims already degrade (the dockerfile=
+	// precedent, ADR 0014). Config-side only -- a skill's [runtime].env is
+	// trusted machinery and stays accepted (rendered, with the claims it
+	// touches degraded).
+	for _, k := range slices.Sorted(maps.Keys(c.Env)) {
+		if strings.HasPrefix(k, "BYRE_") {
+			return fmt.Errorf("env key %s: the BYRE_ namespace is byre's runtime vocabulary and can't be set in [env]\nto override it deliberately: run_args = [\"-e\", \"%s=<value>\"]\n(byre status will show the raw flag and degrade the claims it affects)", k, k)
+		}
 	}
 
 	for k, src := range c.EnvFromHost {
