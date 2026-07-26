@@ -42,6 +42,11 @@ type listRow struct {
 	disabled bool     // mounts only: present but switched off — no bind
 	idx      int      // index into the local slice, or -1
 	vals     []string // inherited raw values, for prefilling an override editor
+	// closed: a LOWER layer's '!' closure subtracts this entry after the
+	// union, or the row IS a closure marker. Effectiveness is its own
+	// property, never inferred from kind -- the row keeps its kind (menu
+	// semantics) but tallies as a closed door, not a live grant.
+	closed bool
 }
 
 // fieldRows builds the effective rows for a list field: inherited entries in
@@ -195,7 +200,7 @@ func (m model) namedDeclRows(f namedDeclField) []listRow {
 				continue
 			}
 			if lowerClosedBy(it.name) {
-				rows = append(rows, listRow{kind: rowSkill, text: it.line, source: "skill:" + sk + " — closed by '!" + it.name + "'"})
+				rows = append(rows, listRow{kind: rowSkill, closed: true, text: it.line, source: "skill:" + sk + " — closed by '!" + it.name + "'"})
 				continue
 			}
 			// Closable (ident set): "Remove in this project" writes the closure.
@@ -211,7 +216,9 @@ func (m model) namedDeclRows(f namedDeclField) []listRow {
 		if !lowerClosureUsed[c] {
 			c := c
 			src := m.lowerSource(func(cf config.Config) bool { return f.lowerHas(cf, "!"+c) })
-			rows = append(rows, listRow{kind: rowSkill, text: "!" + c, source: src})
+			// A closure marker is a subtraction, never a grant: closed
+			// keeps it out of the effective/fromSkills tallies.
+			rows = append(rows, listRow{kind: rowSkill, closed: true, text: "!" + c, source: src})
 		}
 	}
 	return rows
@@ -434,8 +441,10 @@ func (m model) egressRows() []listRow {
 			if c, ok := lowerClosureFor(hp); ok {
 				// Closed by a lower layer's closure: nothing in THIS file to
 				// act on, so the row stays the menu-less rowSkill kind and
-				// the attribution carries the truth.
-				rows = append(rows, listRow{kind: rowSkill, text: hp, source: "skill:" + sk + " — closed by '!" + c + "'"})
+				// the attribution carries the truth. closed keeps it out of
+				// the effective/exposure tallies -- a closed door is not a
+				// live grant (ADR 0018's "must agree with the launch tally").
+				rows = append(rows, listRow{kind: rowSkill, closed: true, text: hp, source: "skill:" + sk + " — closed by '!" + c + "'"})
 				continue
 			}
 			rows = append(rows, listRow{kind: rowSkill, text: hp, source: "skill:" + sk})
@@ -467,7 +476,8 @@ func (m model) egressRows() []listRow {
 		}
 		c := c
 		src := m.lowerSource(func(cf config.Config) bool { return slices.Contains(cf.Egress, "!"+c) })
-		rows = append(rows, listRow{kind: rowSkill, text: "!" + c, source: src})
+		// Subtraction, not a grant -- see the closed field's comment.
+		rows = append(rows, listRow{kind: rowSkill, closed: true, text: "!" + c, source: src})
 	}
 
 	// Offered doors (ADR 0020): declared-but-closed entries from lower layers,
@@ -813,6 +823,9 @@ func (m model) effectiveSkills() []string {
 func (m model) exposureNow() config.Exposure {
 	var e config.Exposure
 	for _, r := range m.fieldRows(fMounts) {
+		if r.closed {
+			continue
+		}
 		switch r.kind {
 		case rowLocal, rowOverride, rowInherited, rowSkill:
 			if r.disabled {
@@ -852,6 +865,9 @@ func (m model) exposureNow() config.Exposure {
 	if config.PostureEnforcesAllowlist(e.Posture) {
 		seen := map[string]bool{}
 		for _, r := range m.fieldRows(fEgress) {
+			if r.closed {
+				continue // a closed door is not an enforced allowlist entry
+			}
 			switch r.kind {
 			case rowLocal, rowOverride, rowInherited, rowSkill:
 				if host, port, err := config.ParseEgress(r.text); err == nil {
@@ -896,6 +912,11 @@ func (m model) exposureNow() config.Exposure {
 // state.
 func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 	for _, r := range rows {
+		// Effectiveness is the closed field's, not the kind's: a skill row a
+		// lower layer closed renders (attributed) but tallies as no grant.
+		if r.closed {
+			continue
+		}
 		switch r.kind {
 		case rowLocal, rowOverride:
 			effective++

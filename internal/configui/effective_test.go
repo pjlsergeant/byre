@@ -619,6 +619,29 @@ func TestEgressClosureRows(t *testing.T) {
 		if r.kind != rowSkill || !strings.Contains(r.source, "closed by '!statsig.example.com'") {
 			t.Errorf("skill row closed by a lower closure should say so, menu-less: %+v", r)
 		}
+		if !r.closed {
+			t.Errorf("lower-closed skill row must carry closed=true: %+v", r)
+		}
+	})
+	// WHO closed a door must not change whether it counts: a lower layer's
+	// closure and this file's own marker land in different row kinds
+	// (menu-less vs restorable), but the effective tally and the enforced
+	// allowlist count must agree -- the review reproduced them disagreeing
+	// (closed-by-lower kept rowSkill kind and kept counting as a grant).
+	t.Run("closed doors tally identically regardless of closing layer", func(t *testing.T) {
+		lower := base()
+		lower.inh.Default.Egress = []string{"!statsig.example.com"}
+		local := base()
+		local.egress = []string{"!statsig.example.com"}
+		lEff, _, lSk, _ := rowCounts(lower.fieldRows(fEgress))
+		oEff, _, oSk, _ := rowCounts(local.fieldRows(fEgress))
+		if lEff != oEff || lSk != oSk {
+			t.Errorf("tally depends on which layer closed: lower(eff=%d,skill=%d) vs local(eff=%d,skill=%d)", lEff, lSk, oEff, oSk)
+		}
+		if lower.exposureNow().Egress != local.exposureNow().Egress {
+			t.Errorf("exposure egress count depends on which layer closed: %d vs %d",
+				lower.exposureNow().Egress, local.exposureNow().Egress)
+		}
 	})
 	t.Run("local plain entry re-opens a lower closure", func(t *testing.T) {
 		m := base()
