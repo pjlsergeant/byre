@@ -16,8 +16,9 @@ import (
 // runnable (osacompile assembles the .app from Apple's signed applet stub;
 // Automator and desktop launchers read their files as-is). Nothing prebuilt
 // ever crosses a machine boundary, which is why no signing certificate or
-// notarization is ever involved; install ad-hoc codesigns the bundle
-// (`codesign --sign -`) as Apple Silicon belt-and-braces.
+// notarization is ever involved. Install ad-hoc codesigns the bundle
+// (`codesign --sign -`) because writing the script and icons into it
+// invalidates the signature osacompile's applet stub carried.
 //
 // This file holds the pure generators; install.go-side wiring writes them.
 

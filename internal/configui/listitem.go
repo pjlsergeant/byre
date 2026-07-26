@@ -729,10 +729,10 @@ func suggestTarget(host string) string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		if rel, err := filepath.Rel(home, exp); err == nil &&
 			rel != "." && !strings.HasPrefix(rel, "..") {
-			return "/home/dev/" + filepath.ToSlash(rel)
+			return skills.DevHome + "/" + filepath.ToSlash(rel)
 		}
 	}
-	return "/home/dev/" + base
+	return skills.DevHome + "/" + base
 }
 
 func expandTilde(p string) string {

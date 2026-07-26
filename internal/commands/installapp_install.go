@@ -143,7 +143,10 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	} else {
 		fmt.Fprintf(s.Err, "byre: warning: icon skipped (%v)\n", err)
 	}
-	// Ad-hoc signature: no certificate involved; Apple Silicon belt-and-braces.
+	// Overwriting the resources above invalidated the signature the applet stub
+	// arrived with (osacompile assembles from Apple's signed stub). Re-sign ad-hoc
+	// -- no certificate involved -- so macOS is not asked to launch a bundle whose
+	// signature is present but broken, which is worse off than an unsigned one.
 	if err := d.run("codesign", "--force", "--deep", "--sign", "-", staged); err != nil {
 		fmt.Fprintf(s.Err, "byre: warning: ad-hoc codesign failed (%v) — the app usually still runs; if macOS refuses it, this is why\n", err)
 	}

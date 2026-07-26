@@ -810,8 +810,9 @@ on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021 and
 readable host artifacts whose only job is invoking `byre deliver`: an
 AppleScript app assembled by the OS's own `osacompile` (source
 shipped inside the bundle; nothing prebuilt crosses a machine boundary,
-so no signing certificate is involved — ad-hoc codesign runs as Apple
-Silicon belt-and-braces), a Finder Quick Action, and a Linux `.desktop`
+so no signing certificate is involved — the ad-hoc codesign repairs the
+signature that writing byre's script and icons into the applet stub
+invalidates), a Finder Quick Action, and a Linux `.desktop`
 entry. Regeneration replaces only artifacts carrying byre's generated
 marker; a same-named file byre didn't write is refused.
 
