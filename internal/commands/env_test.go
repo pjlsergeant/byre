@@ -6,36 +6,52 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
-// addEnvFromHost precedence (ADR 0026): disabled keys and unknown schemes set
-// nothing, and an explicit [env] KEY beats the passthrough.
-func TestAddEnvFromHostPrecedence(t *testing.T) {
+// resolveHostEnv precedence (ADR 0026), now carried as explicit outcomes:
+// disabled and empty sources deliver nothing, an explicit [env] KEY beats
+// the passthrough -- and every consumer reads THESE states, so the runtime
+// application below can't diverge from what a status row would say.
+func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 	t.Setenv("BYRE_TEST_HOSTVAL", "from-host")
 	cfg := config.Config{
 		Env: map[string]string{"GIT_AUTHOR_NAME": "Handmade"},
 		EnvFromHost: map[string]string{
 			"GIT_AUTHOR_NAME": "git:user.name",           // explicit env wins
 			"DISABLED":        "",                        // disabled: nothing
-			"WEIRD":           "future:scheme",           // belt to validation's suspender
+			"WEIRD":           "future:scheme",           // validation refused it upstream; resolves empty
 			"PASSED":          "env:BYRE_TEST_HOSTVAL",   // host var passes through
 			"ABSENT":          "env:BYRE_TEST_NO_SUCH_V", // unset host var: nothing
 		},
 	}
+	results := resolveHostEnv(cfg)
+	states := map[string]hostEnvState{}
+	for _, r := range results {
+		states[r.Key] = r.State
+	}
+	want := map[string]hostEnvState{
+		"GIT_AUTHOR_NAME": hostEnvOverridden,
+		"DISABLED":        hostEnvDisabled,
+		"WEIRD":           hostEnvEmpty,
+		"PASSED":          hostEnvDelivered,
+		"ABSENT":          hostEnvEmpty,
+	}
+	for k, w := range want {
+		if states[k] != w {
+			t.Errorf("state[%s] = %v, want %v", k, states[k], w)
+		}
+	}
+
 	env := map[string]string{}
-	addEnvFromHost(env, cfg)
-	if _, ok := env["GIT_AUTHOR_NAME"]; ok {
-		t.Fatalf("explicit [env] key must beat the passthrough: %v", env)
+	addEnvFromHost(env, results)
+	if len(env) != 1 || env["PASSED"] != "from-host" {
+		t.Errorf("only the delivered result may set runtime env, got %v", env)
 	}
-	if _, ok := env["DISABLED"]; ok {
-		t.Fatalf("disabled source must set nothing: %v", env)
+
+	provided := providedEnv(cfg, results)
+	if !provided["GIT_AUTHOR_NAME"] || !provided["PASSED"] {
+		t.Errorf("provided must include [env] literals and delivered passthrough: %v", provided)
 	}
-	if _, ok := env["WEIRD"]; ok {
-		t.Fatalf("unknown scheme must set nothing: %v", env)
-	}
-	if env["PASSED"] != "from-host" {
-		t.Fatalf("env: source must pass the host value through: %v", env)
-	}
-	if _, ok := env["ABSENT"]; ok {
-		t.Fatalf("unset host var must set nothing: %v", env)
+	if provided["ABSENT"] || provided["WEIRD"] || provided["DISABLED"] {
+		t.Errorf("an undelivered source must NOT annotate as provided: %v", provided)
 	}
 }
 

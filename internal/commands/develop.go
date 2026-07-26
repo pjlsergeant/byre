@@ -153,7 +153,10 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to grant itself full access to your host on the next run.")
 		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
 	}
-	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident)
+	// One host-env resolution feeds the runtime env, the exposure tally,
+	// and (in status) the row -- render-from-effect, no re-derivation.
+	hostEnv := resolveHostEnv(rv.cfg)
+	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
 	if err != nil {
 		return err
 	}
@@ -282,7 +285,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// warning above is consciously pre-create: it guards a decision, not a
 	// session.) The config UI renders the same tally (config.Exposure owns the
 	// words); `byre status` is the detailed, attributed view.
-	exp := exposureOf(rv, selfEdit)
+	exp := exposureOf(rv, selfEdit, hostEnv)
 	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
 	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
 	// Containment holes (e.g. docker-host): loud standing grant, at least
@@ -533,7 +536,7 @@ func signalName(n int) string {
 // banner already announces the arrangement. Caps and skill run_args are
 // also consciously out of the count's scope (mounts/ports/env/network):
 // status's Skill grants rows carry that attribution.
-func exposureOf(rv resolved, selfEdit bool) config.Exposure {
+func exposureOf(rv resolved, selfEdit bool, hostEnv []hostEnvResult) config.Exposure {
 	envKeys := map[string]bool{}
 	for k := range rv.cfg.Env {
 		envKeys[k] = true
@@ -541,9 +544,11 @@ func exposureOf(rv resolved, selfEdit bool) config.Exposure {
 	for k := range rv.skills.Env() {
 		envKeys[k] = true
 	}
-	for k, src := range rv.cfg.EnvFromHost {
-		if src != "" {
-			envKeys[k] = true
+	// Delivered only: a source that resolved empty put nothing in the box,
+	// and the tally counts what crossed, not what was configured to try.
+	for _, r := range hostEnv {
+		if r.State == hostEnvDelivered {
+			envKeys[r.Key] = true
 		}
 	}
 	e := config.Exposure{

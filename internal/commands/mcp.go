@@ -116,19 +116,13 @@ func MCPList(s Streams, projectDir string) error {
 		func(info *statusInfo, cfg config.Config) {
 			info.EgressClosed = cfg.EgressClosed
 			info.MCPClosed = cfg.MCPClosed
-			info.EnvProvided = map[string]bool{}
 			// Error structurally nil: empty Resolved + config.Load already
 			// refused config-internal duplicate names (see the same call in
 			// status.go).
 			info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
-			for k := range cfg.Env {
-				info.EnvProvided[k] = true
-			}
-			for k, src := range cfg.EnvFromHost {
-				if src != "" {
-					info.EnvProvided[k] = true
-				}
-			}
+			// Same shared resolution status/develop use: "provided" means
+			// delivered, never configured-and-hoped (render-from-effect).
+			info.EnvProvided = providedEnv(cfg, resolveHostEnv(cfg))
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.MCPs = rv.mcps

@@ -32,8 +32,8 @@ type statusInfo struct {
 	Binds           []config.Mount
 	Ports           []config.Port
 	Volumes         []config.Volume
-	Grants          []skills.Grant    // per-skill runtime grants (attribution)
-	EnvFromHost     map[string]string // resolved host-value passthrough (KEY -> source, ADR 0026)
+	Grants          []skills.Grant  // per-skill runtime grants (attribution)
+	HostEnv         []hostEnvResult // resolved host-value passthrough, source AND outcome (ADR 0026)
 	RunArgs         []string
 	BuildRaw        []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
 	NetPosture      string               // a skill's declared network posture ("" = default open)
@@ -140,7 +140,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		ClaudeSkillsClosed: cfg.ClaudeSkillsClosed,
 		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs:     len(cfg.RunArgs) > 0,
-		EnvFromHost:        cfg.EnvFromHost,
+		HostEnv:            resolveHostEnv(cfg),
 		Cat:                cat,
 	}
 	// Config-declared MCPs stay visible even when skills fail to resolve (the
@@ -155,16 +155,8 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// Standing instructions are config-only (no skill union): the resolved
 	// set IS the declared set.
 	info.Contexts = cfg.Contexts
-	info.EnvProvided = map[string]bool{}
-	for k := range cfg.Env {
-		info.EnvProvided[k] = true
-	}
+	info.EnvProvided = providedEnv(cfg, info.HostEnv)
 	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
-	for k, src := range cfg.EnvFromHost {
-		if src != "" {
-			info.EnvProvided[k] = true
-		}
-	}
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
 	}
@@ -297,24 +289,26 @@ func pkgLine(cat *packages.Catalog, name string) string {
 	return fmt.Sprintf("%-24s %s", id, ent.ProvenanceLabel())
 }
 
-// hostEnvRow renders the live env_from_host entries deterministically
-// (sorted; disabled "" entries omitted), or "" when there are none.
-func hostEnvRow(m map[string]string) string {
-	var keys []string
-	for k, src := range m {
-		if src != "" {
-			keys = append(keys, k)
+// hostEnvRow renders the live env_from_host entries with their OUTCOME --
+// the row reads from the same resolution the runtime applied, so it can
+// only describe what actually crossed. Disabled entries are omitted;
+// configured-but-undelivered ones say so instead of posing as grants.
+func hostEnvRow(hostEnv []hostEnvResult) string {
+	var parts []string
+	for _, r := range hostEnv {
+		switch r.State {
+		case hostEnvDelivered:
+			parts = append(parts, r.Key+" <- "+r.Source)
+		case hostEnvEmpty:
+			parts = append(parts, r.Key+" <- "+r.Source+" (NOT passed — source resolved empty)")
+		case hostEnvOverridden:
+			parts = append(parts, r.Key+" (passthrough overridden by [env] "+r.Key+")")
 		}
 	}
-	if len(keys) == 0 {
+	if len(parts) == 0 {
 		return ""
 	}
-	sort.Strings(keys)
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = k + " <- " + m[k]
-	}
-	return strings.Join(parts, ", ") + "  (host values passed in; env_from_host)"
+	return strings.Join(parts, ", ") + "  (host values; env_from_host)"
 }
 
 // siblingNames renders the OTHER live sessions of the project (fam minus
@@ -583,7 +577,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// host->box data channel, attributed source by source — the shipped git
 	// identity included (byre's own defaults get no invisibility pass).
 	// Disable with `KEY = ""` under env_from_host in any config layer.
-	if hostEnv := hostEnvRow(s.EnvFromHost); hostEnv != "" {
+	if hostEnv := hostEnvRow(s.HostEnv); hostEnv != "" {
 		row("Host env", hostEnv)
 	}
 

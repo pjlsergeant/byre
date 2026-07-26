@@ -43,7 +43,7 @@ func TestIntegrationDeliverTransport(t *testing.T) {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
-	params, err := runParams(p, rv, image, false, false, ident)
+	params, err := runParams(p, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func startTestBox(t *testing.T, r *runner.Runner, p project.Paths, proj string, 
 	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
-	params, err := runParams(p, rv, image, false, false, ident)
+	params, err := runParams(p, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,7 +630,7 @@ func TestIntegrationDeliverRemoteLoop(t *testing.T) {
 	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
-	params, err := runParams(p, rv, image, false, false, ident)
+	params, err := runParams(p, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

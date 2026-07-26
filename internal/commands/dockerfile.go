@@ -88,7 +88,7 @@ func DockerRun(s Streams, projectDir string) error {
 	}
 	engine, ident := resolveEngineIdentity(rv.cfg)
 	image := imageTag(paths.ID, ident.UID, ident.GID)
-	params, err := runParams(paths, rv, image, false, s.TTY, ident)
+	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg))
 	if err != nil {
 		return err
 	}

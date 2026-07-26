@@ -237,11 +237,11 @@ ANTHROPIC_API_KEY = "env-skip-login-hook"
 		t.Fatalf("test projects collided on ID %q", pA.ID)
 	}
 
-	paramsA, err := runParams(pA, rvA, imageA, false, false, ident)
+	paramsA, err := runParams(pA, rvA, imageA, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsB, err := runParams(pB, rvB, imageB, false, false, ident)
+	paramsB, err := runParams(pB, rvB, imageB, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

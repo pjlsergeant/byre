@@ -2,27 +2,88 @@ package commands
 
 import (
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
-// addEnvFromHost applies the resolved env_from_host passthrough (ADR 0026):
-// each entry's host-side source value lands in env unless the source is
-// disabled (""), the host has no value, or an explicit [env] KEY exists in
-// the config — an explicit value in any layer beats the passthrough default.
-func addEnvFromHost(env map[string]string, cfg config.Config) {
-	for k, src := range cfg.EnvFromHost {
-		if src == "" {
-			continue
+// hostEnvState is the outcome of resolving one env_from_host entry. Four
+// states, not a boolean: a caller holding only "present" is invited to
+// reconstruct the precedence rules itself and get them wrong -- the exact
+// class of divergence resolveHostEnv exists to end.
+type hostEnvState int
+
+const (
+	hostEnvDisabled   hostEnvState = iota // source is "" -- a layer switched the key off
+	hostEnvOverridden                     // an explicit [env] KEY beats the passthrough (ADR 0026)
+	hostEnvEmpty                          // the host source resolved to nothing -- NOT passed
+	hostEnvDelivered                      // the value below reaches the box
+)
+
+// hostEnvResult is one entry's resolution: source and outcome together.
+type hostEnvResult struct {
+	Key    string
+	Source string
+	Value  string // set only when State == hostEnvDelivered
+	State  hostEnvState
+}
+
+// resolveHostEnv resolves every env_from_host entry ONCE, deterministically
+// ordered. Every consumer -- runtime env assembly, the status row, the
+// provided-env annotations, the exposure tally -- reads THIS result, so
+// "delivered" can only ever mean one thing: status renders the effect the
+// runner applies, never its own re-derivation of the intent (the
+// render-from-effect rule; the empty-git-identity lie was the 2026-07
+// review's headline finding).
+func resolveHostEnv(cfg config.Config) []hostEnvResult {
+	keys := make([]string, 0, len(cfg.EnvFromHost))
+	for k := range cfg.EnvFromHost {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]hostEnvResult, 0, len(keys))
+	for _, k := range keys {
+		r := hostEnvResult{Key: k, Source: cfg.EnvFromHost[k]}
+		if _, explicit := cfg.Env[k]; r.Source == "" {
+			r.State = hostEnvDisabled
+		} else if explicit {
+			r.State = hostEnvOverridden
+		} else if v := hostSourceValue(r.Source); v != "" {
+			r.Value, r.State = v, hostEnvDelivered
+		} else {
+			r.State = hostEnvEmpty
 		}
-		if _, explicit := cfg.Env[k]; explicit {
-			continue
-		}
-		if v := hostSourceValue(src); v != "" {
-			env[k] = v
+		out = append(out, r)
+	}
+	return out
+}
+
+// addEnvFromHost applies the passthrough (ADR 0026): only a delivered
+// result sets anything.
+func addEnvFromHost(env map[string]string, hostEnv []hostEnvResult) {
+	for _, r := range hostEnv {
+		if r.State == hostEnvDelivered {
+			env[r.Key] = r.Value
 		}
 	}
+}
+
+// providedEnv is the one builder of the "env keys this box actually
+// supplies" set (MCP consumes-X annotations): config literals, plus
+// DELIVERED host passthrough -- a configured source that resolved empty
+// supplies nothing and must not annotate as if it did.
+func providedEnv(cfg config.Config, hostEnv []hostEnvResult) map[string]bool {
+	provided := map[string]bool{}
+	for k := range cfg.Env {
+		provided[k] = true
+	}
+	for _, r := range hostEnv {
+		if r.State == hostEnvDelivered {
+			provided[r.Key] = true
+		}
+	}
+	return provided
 }
 
 // hostSourceValue reads one env_from_host source on the host. Unknown schemes

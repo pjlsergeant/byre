@@ -252,6 +252,36 @@ func TestRenderStatusEnvAndReservedOverrides(t *testing.T) {
 	}
 }
 
+// The Host env row reads outcomes, not intentions: a source that resolved
+// empty says NOT passed instead of posing as a delivered grant (the
+// review's headline finding -- an empty host git identity rendered as
+// `<- git:user.email` while nothing reached the box).
+func TestRenderStatusHostEnvOutcomes(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent: "claude",
+		HostEnv: []hostEnvResult{
+			{Key: "GIT_AUTHOR_EMAIL", Source: "git:user.email", State: hostEnvEmpty},
+			{Key: "TERM", Source: "env:TERM", Value: "xterm", State: hostEnvDelivered},
+			{Key: "TZ", Source: "tz:", State: hostEnvDisabled},
+			{Key: "GIT_AUTHOR_NAME", Source: "git:user.name", State: hostEnvOverridden},
+		},
+	})
+	out := buf.String()
+	if !strings.Contains(out, "GIT_AUTHOR_EMAIL <- git:user.email (NOT passed — source resolved empty)") {
+		t.Errorf("empty source must render as not passed:\n%s", out)
+	}
+	if !strings.Contains(out, "TERM <- env:TERM") {
+		t.Errorf("delivered source renders plainly:\n%s", out)
+	}
+	if strings.Contains(out, "TZ <-") {
+		t.Errorf("disabled source must be omitted:\n%s", out)
+	}
+	if !strings.Contains(out, "GIT_AUTHOR_NAME (passthrough overridden by [env] GIT_AUTHOR_NAME)") {
+		t.Errorf("override must be named:\n%s", out)
+	}
+}
+
 // Without reserved overrides the new rows stay absent and the delivery
 // claims assert normally -- the hedges are override-gated, not ambient.
 func TestRenderStatusNoReservedOverrideNoHedge(t *testing.T) {

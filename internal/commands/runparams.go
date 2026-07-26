@@ -17,7 +17,7 @@ import (
 // to this project. The image already bakes the identity's UID/GID (the
 // container runs as that user), so BYRE_UID/BYRE_GID are set at runtime only so
 // `byre shell` and deliver can read them back and exec as the dev user.
-func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty bool, ident runner.Identity) (runner.RunParams, error) {
+func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty bool, ident runner.Identity, hostEnv []hostEnvResult) (runner.RunParams, error) {
 	// BYRE_UID/GID: the box's IN-CONTAINER dev identity (shell/deliver exec as
 	// it) — the host user's ids on the rootful path, the generic keep-id ids
 	// under rootless Podman, where the userns maps them back to the host user.
@@ -33,7 +33,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 	for k, v := range rv.skills.Env() { // skill runtime env
 		env[k] = v
 	}
-	addEnvFromHost(env, rv.cfg) // host passthrough beats skill env for its keys; explicit [env] beats it
+	addEnvFromHost(env, hostEnv) // host passthrough beats skill env for its keys; explicit [env] beats it
 	// Under an allowlist posture, hand the box the enforced allowlist so its
 	// launcher can announce it in agent memory (the firewall context points
 	// there — legibility runs inward). Same resolvedEgress string the netns

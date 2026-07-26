@@ -161,7 +161,7 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	params, err := runParams(p, rv, image, false, false, ident)
+	params, err := runParams(p, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,11 +254,11 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 		t.Fatalf("project B image failed to build: %v", err)
 	}
 
-	paramsA, err := runParams(pA, rv, imageA, false, false, ident)
+	paramsA, err := runParams(pA, rv, imageA, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsB, err := runParams(pB, rv, imageB, false, false, ident)
+	paramsB, err := runParams(pB, rv, imageB, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 		t.Fatalf("generic-uid image failed to build: %v", err)
 	}
 
-	params, err := runParams(p, rv, image, false, false, ident)
+	params, err := runParams(p, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

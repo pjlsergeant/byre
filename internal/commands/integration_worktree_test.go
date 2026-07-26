@@ -93,11 +93,11 @@ func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
-	paramsMain, err := runParams(pMain, rv, image, false, false, ident)
+	paramsMain, err := runParams(pMain, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	paramsWt, err := runParams(pWt, rv, image, false, false, ident)
+	paramsWt, err := runParams(pWt, rv, image, false, false, ident, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
