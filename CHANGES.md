@@ -2,6 +2,28 @@
 
 ## unreleased
 
+- **Sessions end by pointing out what changed where you can't see it.**
+  Most of what an agent writes lands in your diff, where reviewing it is
+  already your job. A few places don't: the git admin directory is
+  outside the working tree, and `.env` files are usually ignored. So a
+  session that touched one now ends with a note --
+
+  ```
+  ⚠ we thought you should know -- a few things changed during this run
+    (byre checks a handful of places, not everything):
+     .git/config: core.hookspath is set to .husky/_
+     .git/hooks/pre-commit was added -- your git runs this, on your machine
+     .env: added NODE_OPTIONS
+  ```
+
+  Silent when nothing worth saying changed, which is nearly always:
+  ordinary config churn (`git remote add`, `push -u` writing
+  `branch.*.remote`) says nothing, and only keys that put a program on
+  your host's path of execution speak up. `.env` keys are named, never
+  their values. A worktree session covers the main tree's git directory
+  too, since that is the one it shares. It is a notice, not a scan --
+  a quiet exit is not a clean bill of health, and byre is not a security
+  product (ADR 0047).
 - **The security contract now says what a writable project actually
   means.** `/workspace` being read-write was described as "an agent can
   exfiltrate the project it's working on" -- a confidentiality bound, and

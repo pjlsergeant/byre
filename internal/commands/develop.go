@@ -271,6 +271,10 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	if selfEdit {
 		store = snapshotStore(paths.Dir)
 	}
+	// Same timing, same reason, for the places the HOST runs code from (ADR
+	// 0047): after byre's own setup, so the exit report shows the session's
+	// changes rather than byre's staging.
+	watch := snapshotExit(paths)
 
 	// Every real session opens by showing the walls going up: the terse
 	// exposure lines. Printed only once the container exists — a launch that
@@ -306,13 +310,28 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	if netnsWait != nil {
 		netnsWait()
 	}
+	// Has the observation window actually closed? A StartAttach error is not
+	// the same as a session ending: attach can fail with the container still
+	// RUNNING, and reporting then would snapshot mid-session, call itself a
+	// session-end report while the agent is still working, and only afterwards
+	// tell the user a live session exists. Settle liveness first, once, and
+	// reuse the answer for the refusal below.
+	var live []string
+	if runErr != nil {
+		if l, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil {
+			live = l
+		}
+	}
 	// The session is over (runErr may just be the agent's own exit status):
-	// show what a self-edit agent changed before the exit paths below return.
-	if selfEdit {
-		reportSelfEditChanges(s.Err, paths.Dir, store)
+	// show what changed before the exit paths below return.
+	if len(live) == 0 {
+		if selfEdit {
+			reportSelfEditChanges(s.Err, paths.Dir, store)
+		}
+		reportExit(s.Err, watch, snapshotExit(paths))
 	}
 	if runErr != nil {
-		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
+		if len(live) > 0 {
 			reportRunning(s.Err, r.Engine(), live)
 			return ExitError{Code: ExitRefused} // refused, session already live
 		}

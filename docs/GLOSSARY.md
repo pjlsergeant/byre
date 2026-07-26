@@ -24,6 +24,15 @@ noun itself.
 One foreground run of a project's box (one `byre develop`, one container).
 Single-session per project directory; parallelism comes from worktrees.
 
+**Exit report**:
+What byre prints when a session ends: changes it noticed in the small,
+fixed set of places the HOST runs code from (git config's exec-relevant
+keys, the hooks directory, `config.worktree`, `.env*`), plus -- under
+`--self-edit` only -- a diff of the project store. Deliberately partial
+and says so; it is a notice, never containment (ADR 0047).
+_Avoid_: "review" (taken: the preset grant-adoption review), "audit",
+"scan" -- all three claim coverage the report does not have.
+
 **Agent**:
 The AI coding CLI (Claude, Codex, Gemini, Grok, OpenCode) that runs inside the
 box. byre is not an agent; it runs one.

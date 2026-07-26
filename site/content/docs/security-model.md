@@ -131,7 +131,10 @@ build scripts usually do show. Git's configuration is also more than one
 file: `include.path` and `includeIf` can pull in others. The practical
 rule is that a tree an agent has worked in is its output rather than
 your code, and running anything out of it -- `git` included -- runs what
-it wrote.
+it wrote. When a session ends byre mentions changes it noticed in a few
+of those places, in the register of "we thought you should know"; it
+checks a handful of spots, not everything, and a quiet exit is not a
+clean bill of health.
 
 **`--self-edit` is transitive trust of the agent with your host.** A
 self-edit agent authors the next develop's config -- mounts, run args,
