@@ -30,7 +30,7 @@ them -- that drift is the docs' main rot vector (the 2026-07-16 audit
 found seven such claims, all left by ship waves days earlier).
 
 Also before tagging: run the field-QA playbook against the release
-candidate -- the journey recipes in `docs/qa/PLAYBOOK.md`, driven on the
+candidate -- the journey recipes in `docs/QA-PLAYBOOK.md`, driven on the
 sacrificial inttest VM. Report-only, NEVER a gate: findings go to the
 playbook's findings section and harden into deterministic tuitest
 regression tests afterwards.

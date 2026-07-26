@@ -76,7 +76,7 @@ plan to get to any time soon:
   2026-07-17; opencode's two gates closed same day via the agent-contract
   tier). Two live checks, each needing Pete + a real login host-side; each
   flips `companion_for` -> `shared_auth_for` in the skill's skill.toml on
-  pass. Runbooks: docs/qa/PLAYBOOK.md, "shared-auth field gates" journey.
+  pass. Runbooks: docs/QA-PLAYBOOK.md, "shared-auth field gates" journey.
 
 - [ ] (M) **Private-https package fetch.** `skill install` has no auth story
   for private hosts (deferred from ADR 0029); design tokens/netrc/redirect

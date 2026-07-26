@@ -4,10 +4,10 @@ The standing journey suite for the release-time field-QA pass (see
 RELEASING.md): per journey, the keystroke recipe, the screens to expect,
 and what pass means. Each QA pass EXECUTES this playbook and EXTENDS it;
 exploratory probing happens at the edges and graduates in here once
-repeatable. Findings go to the "Open findings" section at the bottom of
-this file, never fixed mid-pass; they leave it by being dispatched into
-fixes + regression tests. Pass reports themselves are not kept here --
-this file holds the procedure; git history holds the reports.
+repeatable. Findings are never fixed mid-pass: they go to TODO.md, and
+leave it by being dispatched into fixes plus regression tests, which the
+recipes here then assert. This file holds the procedure only -- pass
+reports and dispatched findings live in git history and TODO.md.
 
 Recipes assume the sacrificial inttest VM, a fresh
 `BYRE_HOME=$HOME/<qa>/home`, and the tmux vocabulary from
@@ -84,8 +84,8 @@ project).
 
 ## Journey: grab flows
 
-deliver's mirror; exit codes per DELIVER.md. Two boxes running (A:
-cwd-owned, B: other project), added 2026-07-22 (grab shipped post-1.1.0).
+deliver's mirror; exit codes per DELIVER.md. Needs two boxes running (A:
+cwd-owned, B: other project).
 
 1. Plant a file in A's box (`docker exec … sh -c 'printf x > /workspace/out.txt'`);
    `byre grab /workspace/out.txt` from A's workdir → lands in the cwd,
@@ -102,7 +102,6 @@ cwd-owned, B: other project), added 2026-07-22 (grab shipped post-1.1.0).
 
 ## Journey: standing instructions ([[context]])
 
-Added 2026-07-26 with the finding-fix batch (feature shipped 2026-07-25).
 No engine needed until step 5.
 
 1. `byre context add lint --text "Always run gofmt."` → "added" + the
@@ -131,7 +130,7 @@ No engine needed until step 5.
 
 ## Journey: exit report
 
-Added 2026-07-26 with the feature (ADR 0047). The report names changes in
+The report names changes in
 the places the HOST runs code from that `git diff` cannot show you. Its
 survival condition is SILENCE, so the quiet leg matters more than the
 loud one.
@@ -398,17 +397,6 @@ source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
    `grok-shared-auth/grok-auth-broker.sh`) — and confirm the backend
    accepts the refreshed pair end to end.
 
-## To graduate (confirmed green in past passes, no recipe yet)
-
-Write a recipe when a future pass covers one of these: host mounts +
-store-edit apt; deliver of a directory; self-edit round-trip + its half of the
-exit report (the FILE half now has its own journey above; self-edit's
-store diff, and its project-only store mount, still do not); skill fork; rehome
-after `mv`; rebuild; docker-host containment-hole loudness;
-forget --force (and invalid-config recovery through it); three-level
-named-layer composition and project precedence; live layer-cycle
-detection/recovery; canonical identity through a symlinked project path.
-
 ## Harness lessons (carry between passes)
 
 - Never pipe the measured command when capturing an exit code, and never
@@ -458,34 +446,3 @@ detection/recovery; canonical identity through a symlinked project path.
 - The opencode shared-auth firstrun gate re-runs on EVERY launch until a
   login exists, so a loginless box must be skipped past the gate before
   probing agent env.
-
-## Open findings
-
-Report-only pass findings awaiting dispatch — live bug reports and
-design questions are handled in-session and tracked in TODO.md when
-parked, not here. Dispatched findings are removed (fix + regression
-test; the recipes above assert fixed behavior); git history keeps the
-reports.
-
-- **Worktree create double-prints two messages** (found 2026-07-19; NOT
-  reproduced 2026-07-22 — both the git-less failure and the "populated"
-  line printed exactly once on the v1.2.0 pass; watch one more pass,
-  then drop): the git-less-image failure ("creating the worktree in the
-  box failed: exit status 1") and the success line ("populated the
-  worktree checkout inside the box.") each printed twice per run.
-  Legibility only.
-- **Wizard abort leaves an enrolled husk** (found 2026-07-18, note;
-  reconfirmed 2026-07-22):
-  Ctrl-C at the template prompt leaves `projects/<id>/` holding path
-  record + context dir, no config. Same class as the consciously-accepted
-  reset/forget abort-enrollment stance (2026-07-17); recorded so the
-  next pass doesn't re-discover it.
-
-- **`none` template has no git, so git-dependent legs pass vacuously**
-  (2026-07-26, exit-report pass). The first quiet leg "passed" because
-  every git command in the box died `command not found` — nothing
-  changed, so nothing was reported, for entirely the wrong reason. Any
-  journey that drives git IN the box must add `apt = ["git"]` to the
-  STORE config first (the worktree journey already says so; the
-  exit-report journey now does too). Recorded because a vacuous pass is
-  worse than a failure: it is green.

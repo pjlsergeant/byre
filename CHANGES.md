@@ -398,7 +398,7 @@
   `<engine> stop <id>`), and the reset/forget refusals name the stop
   command for the unreachable case.
 
-- **Field-QA fixes from the grok explore pass** (`docs/qa/PLAYBOOK.md`):
+- **Field-QA fixes from the grok explore pass** (`docs/QA-PLAYBOOK.md`):
   the firewall and firewall-open skills' apt lists gain
   `ca-certificates` — Debian's curl doesn't pull the trust store, so the
   skills' own diagnostic curl arrived broken on bare bases
@@ -443,7 +443,7 @@
   typo'd `i` at the shared-auth offer used to read as a silent decline.
 
 - **Field-QA legibility fixes** (from the pass-2 report,
-  `docs/qa/PLAYBOOK.md`): a box killed out from under a session says so
+  `docs/QA-PLAYBOOK.md`): a box killed out from under a session says so
   (`exit status 137 (SIGKILL — the box was killed …)`) instead of the
   bare number; `byre deliver` names a worktree box by its own workdir id
   instead of the shared project id; `byre status` lists sibling worktree
