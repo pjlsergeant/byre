@@ -26,6 +26,14 @@
   once as an invalid entry and once as a stale marker. It is now a plain
   entry everywhere, which validation rejects loudly, and the resolver and
   the preview agree.
+- **Renamed in help text and the config UI.** `byre ejectfirewall` now calls
+  what it prints the **netns helper** rather than "the firewall sidecar" -- the
+  glossary's name for it, and the accurate one (it is a run-to-completion
+  container sharing only the box's network namespace, not a long-running
+  companion). "Sidecar" is reserved for the service sidecars on the project
+  TODO, so the two stopped colliding. The config UI's agent field is labelled
+  **Agent**, matching `byre status`, the config key, and the glossary; it read
+  "Pri. Agent", an abbreviation that saved nothing.
 - **Fixed:** a delivered filename containing a newline is now quoted on the
   clipboard. The payload is newline-delimited, so an unquoted one read as
   two separate delivered paths.
