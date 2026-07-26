@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -527,4 +528,66 @@ func TestExitReportPartialHooksWalkIsNotDeletion(t *testing.T) {
 	if strings.Contains(got, "was removed") {
 		t.Errorf("a partial hooks walk must not report removals, got:\n%s", got)
 	}
+}
+
+// The enumeration bounds (siblings of maxHooksEntries -- the review measured
+// develop wedging linearly on planted worktrees/ entries because only the
+// hooks walk had a cap): past the bound, each listing degrades WHOLE through
+// its completeness flag, so nothing half-compared reads as deleted.
+func TestExitSnapshotEnumerationBounds(t *testing.T) {
+	t.Run("worktrees listing over the cap degrades whole", func(t *testing.T) {
+		gitDir := t.TempDir()
+		wt := filepath.Join(gitDir, "worktrees")
+		for i := 0; i <= maxWorktreeConfigs; i++ {
+			if err := os.MkdirAll(filepath.Join(wt, fmt.Sprintf("w%03d", i)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		fixed, listing, listed := gitConfigFiles(gitDir)
+		if listed || listing != nil {
+			t.Errorf("over-cap listing must degrade whole (listed=false, nil): listed=%v n=%d", listed, len(listing))
+		}
+		if len(fixed) != 2 {
+			t.Errorf("the fixed files are never bounded away: %v", fixed)
+		}
+	})
+	t.Run("env listing over the cap degrades whole", func(t *testing.T) {
+		dir := t.TempDir()
+		for i := 0; i <= maxEnvFiles; i++ {
+			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf(".env.%03d", i)), []byte("A=1\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if files, ok := envFiles(dir); ok || files != nil {
+			t.Errorf("over-cap env listing must degrade whole: ok=%v n=%d", ok, len(files))
+		}
+	})
+	t.Run("probe budget exhaustion marks unreadable, never deleted", func(t *testing.T) {
+		paths, dir := exitRepo(t)
+		// The admin dir shape is what gitConfigFiles lists -- fabricated
+		// directly, no commit needed.
+		wt := filepath.Join(dir, ".git", "worktrees", "w1")
+		if err := os.MkdirAll(wt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wt, "config.worktree"), []byte("[core]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		old := gitConfigProbeBudget
+		gitConfigProbeBudget = -time.Second // every listing probe lands over budget
+		defer func() { gitConfigProbeBudget = old }()
+		s := snapshotExit(paths)
+		var sawUnreadable bool
+		for f := range s.unreadable {
+			if strings.Contains(f, "worktrees") {
+				sawUnreadable = true
+			}
+		}
+		if !sawUnreadable {
+			t.Errorf("over-budget listing files must mark unreadable: %+v", s.unreadable)
+		}
+		if len(s.config) == 0 {
+			t.Errorf("the fixed config files must still be probed under a spent budget")
+		}
+	})
 }

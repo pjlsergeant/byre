@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -41,6 +42,21 @@ const maxEnvFileBytes = 1 << 20 // 1 MiB
 // directory: byre reports the redirect either way (it is an exec-relevant key),
 // so truncating the walk costs nothing that matters.
 const maxHooksEntries = 500
+
+// maxWorktreeConfigs bounds the worktrees/ listing (each entry costs a git
+// subprocess probe) and maxEnvFiles the .env* listing (bounded reads, but a
+// count a box can inflate). Real repos hold a handful of each; past the
+// bound the listing degrades whole through its completeness flag.
+const maxWorktreeConfigs = 100
+const maxEnvFiles = 200
+
+// gitConfigProbeBudget caps the CUMULATIVE time the listing-derived config
+// probes may take per snapshot. Each probe is individually time-capped
+// (gitProbe), but the count is agent-controlled: planted FIFOs at 5s each
+// wedged develop linearly before the box started (the review measured it).
+// Past the budget, the remaining files mark unreadable -- present-or-can't-
+// tell, never invented deletions. A var so tests can exercise the branch.
+var gitConfigProbeBudget = 10 * time.Second
 
 // execRelevantConfig reports whether a git config key can put a program on the
 // host's path of execution. It is RANKING, not gating: its job is to keep the
@@ -204,13 +220,29 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		for _, cfg := range listedCfgs {
 			s.configFromListing[exitDisplay(paths, cfg)] = true
 		}
-		for _, cfg := range append(append([]string{}, fixedCfgs...), listedCfgs...) {
+		for _, cfg := range fixedCfgs {
 			if kv, ok := readGitConfig(cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
 			} else if !confirmedAbsent(cfg) {
 				// Present, or byre cannot tell. Either way it is not a
 				// confirmed deletion -- a transient git probe failure is the
 				// motivating case, and an unstattable parent is the other.
+				s.unreadable[exitDisplay(paths, cfg)] = true
+			}
+		}
+		// Listing-derived probes ride a cumulative budget (the count is
+		// agent-controlled; see gitConfigProbeBudget). Over budget, the rest
+		// mark unreadable -- they sit out the comparison, they don't read as
+		// deleted. The fixed files above are never budgeted away.
+		budgetEnd := time.Now().Add(gitConfigProbeBudget)
+		for _, cfg := range listedCfgs {
+			if time.Now().After(budgetEnd) {
+				s.unreadable[exitDisplay(paths, cfg)] = true
+				continue
+			}
+			if kv, ok := readGitConfig(cfg); ok {
+				s.config[exitDisplay(paths, cfg)] = kv
+			} else if !confirmedAbsent(cfg) {
 				s.unreadable[exitDisplay(paths, cfg)] = true
 			}
 		}
@@ -283,6 +315,16 @@ func gitConfigFiles(gitDir string) (fixed, fromListing []string, listed bool) {
 		if e.IsDir() {
 			fromListing = append(fromListing, filepath.Join(gitDir, "worktrees", e.Name(), "config.worktree"))
 		}
+	}
+	// The listing is agent-plantable and each entry costs a subprocess probe.
+	// Past the bound, the whole listing degrades through the SAME channel a
+	// failed ReadDir uses (configListed=false suppresses listing-file
+	// comparisons; the fixed files' primary signal survives) -- half a
+	// listing would invent deletions for the unprobed half. Sibling bound to
+	// maxHooksEntries; the review measured develop wedging linearly on
+	// planted entries because only the hooks walk had one.
+	if len(fromListing) > maxWorktreeConfigs {
+		return fixed, nil, false
 	}
 	return fixed, fromListing, true
 }
@@ -415,6 +457,12 @@ func envFiles(workDir string) ([]string, bool) {
 		if n := e.Name(); n == ".env" || strings.HasPrefix(n, ".env.") {
 			out = append(out, filepath.Join(workDir, n))
 		}
+	}
+	// A box can mint .env.* names freely; past the bound the listing
+	// degrades whole (envListed=false -- known-incomplete, so nothing
+	// reads as deleted), the same shape as the worktrees/ cap.
+	if len(out) > maxEnvFiles {
+		return nil, false
 	}
 	sort.Strings(out)
 	return out, true
