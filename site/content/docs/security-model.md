@@ -22,10 +22,13 @@ deliberate ("not your nanny" -- the box is locked against the agent, not
 against you). byre's standing promise is legibility, not gates:
 `byre status` always tells you what the box can reach.
 
-byre is meant to contain over-eager, reckless, or misbehaving agents --
-including one acting on hostile instructions it read somewhere -- up to
-the strength of a container. It is not built to resist a dedicated
-attacker with kernel exploits.
+byre is built for over-eager, reckless, or misbehaving agents -- the
+ordinary case, where the agent isn't trying to do anything to you.
+Against an actively malicious agent, including one acting on hostile
+instructions it read somewhere, byre takes some simple precautions; that
+is all it offers. This isn't a security product. It is not built to
+resist an agent deliberately working to get out, or a dedicated attacker
+with kernel exploits.
 
 ## The contract
 
@@ -111,6 +114,24 @@ resolver this can bite seconds after launch, not just mid-session. The
 failure direction is always closed: rotation can cost you reachability,
 never containment. A session restart re-resolves; for an endpoint with
 a stable address, granting the IP directly sidesteps the race.
+
+**What comes out of the box may be executable.** The project is not just
+data; it is a directory your host tools run code from. An agent with the
+project mount can leave behind a git hook, a git config that names a
+program (`core.hooksPath`, `credential.helper`, `core.sshCommand`,
+`core.fsmonitor`, a `filter.*` or `diff.*` helper), an `.envrc` that
+direnv evaluates when you `cd` into the project, an `.env` whose values
+steer a later process, an editor task, or a build script -- and your
+next ordinary command on the host runs it, as you. The firewall skill
+does not help here: this rides the filesystem, not the wire. Neither
+does reading the diff, for some of it -- the git admin directory sits
+outside the working tree and never shows in `git status` or `git diff`,
+and ignored files are normally omitted as well, while editor tasks and
+build scripts usually do show. Git's configuration is also more than one
+file: `include.path` and `includeIf` can pull in others. The practical
+rule is that a tree an agent has worked in is its output rather than
+your code, and running anything out of it -- `git` included -- runs what
+it wrote.
 
 **`--self-edit` is transitive trust of the agent with your host.** A
 self-edit agent authors the next develop's config -- mounts, run args,

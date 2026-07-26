@@ -1,5 +1,27 @@
 # Changes
 
+## unreleased
+
+- **The security contract now says what a writable project actually
+  means.** `/workspace` being read-write was described as "an agent can
+  exfiltrate the project it's working on" -- a confidentiality bound, and
+  the wrong one. The project is a directory your host tools *run code
+  from*: an agent can leave a git hook, or a git config naming a program
+  (`core.hooksPath`, `credential.helper`, `core.sshCommand`, a `filter.*`
+  helper), and your next ordinary host-side `git` runs it, as you. Some
+  of that never appears in `git diff` -- the git admin directory is
+  outside the working tree. The firewall skill does not help; this rides
+  the filesystem, not the wire. ARCHITECTURE's contract and the security
+  model's sharp facts now say so, and ADR 0047 records the decision:
+  byre states the channel and points out what it notices, and gates
+  nothing.
+- **The threat model stops over-promising.** It said byre "is meant to
+  contain ... agents ... up to the strength of a container". byre is
+  *built for* over-eager, reckless or misbehaving agents; against an
+  actively malicious one it takes some simple precautions and claims
+  nothing more. It isn't a security product, and the page says that in
+  the threat model now rather than only between the lines.
+
 ## v1.3.0 -- 2026-07-26
 
 - **Standing agent instructions.** Tell your agent "always run the

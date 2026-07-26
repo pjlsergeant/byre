@@ -47,9 +47,14 @@ more:
   as an explicit `env_from_host` grant, ADR 0026/0031.)
 - **Not isolated -- by design:** the **network** (open by default, see
   below) and the **mounted project itself** (`/workspace` is read-write so
-  the agent can edit and commit your code). An agent with both can
-  exfiltrate the project it's working on. byre never promised otherwise;
-  the box protects *everything else*, not the code you handed it.
+  the agent can edit and commit your code). With the network too, an agent
+  can exfiltrate the project it's working on. The mount alone is enough
+  for something else: the project is a directory your host tools execute,
+  so an agent can leave code behind -- git hooks, git config -- that runs
+  on your machine later, as you, and some of it never appears in `git
+  diff`. The box keeps the agent out of host state you didn't grant it,
+  for as long as the box is running; it does not make what the agent
+  leaves in the project safe for your host to run afterwards.
 - **Opt-in holes:** anything that widens the boundary is a grant you
   choose, not a default -- a host-socket mount, extra host mounts, ports.
   byre makes every grant legible via `byre status` (PRINCIPLES.md #4); it

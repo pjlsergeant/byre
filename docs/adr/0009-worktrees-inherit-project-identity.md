@@ -119,6 +119,11 @@ interim host-side hardening of the add (emptied `core.hooksPath` under
 `--no-checkout`) was built and superseded the next day by the in-box
 design; git history keeps it.
 
+> This reasoning covers byre's OWN git. It does not cover the human's:
+> the tree stays on disk after the box exits, and their next host-side
+> `git` runs whatever the agent left in it. ADR 0047 takes that up, and
+> explains why a REPORT is not the allowlist rejected here.
+
 ## Toplevel is derived structurally, not via `git rev-parse` (2026-07-22)
 
 The one remaining host-side git call for the toplevel probe
