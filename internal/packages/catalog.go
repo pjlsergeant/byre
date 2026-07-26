@@ -678,13 +678,21 @@ func (c *Catalog) ListProblemRows(kind Kind) []*Entry {
 // ListSkills returns loadable skill IDs (and aliases for bundled) for pickers.
 // Prefer alias when present so UIs keep writing friendly bare names.
 func (c *Catalog) ListSkills() []string {
-	return c.listNames(KindSkill, false)
+	var out []string
+	for _, ent := range c.ListLoadable(KindSkill) {
+		if ent.Alias != "" {
+			out = append(out, ent.Alias)
+		} else {
+			out = append(out, ent.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
-// ListAgentSkills returns IDs of loadable skills that provide an [agent]
-// command. The agent check is done by the skills package (needs full parse);
-// this returns all loadable skill IDs for the caller to filter, OR we accept
-// a keep callback. For now return all loadable skills -- caller filters.
+// ListLoadable returns the entries of a kind that can actually be loaded:
+// bundled, local, and installed. Provenance is the whole filter -- callers that
+// need the [agent] check do it in the skills package, which has the full parse.
 func (c *Catalog) ListLoadable(kind Kind) []*Entry {
 	var out []*Entry
 	for _, ent := range c.List(kind) {
@@ -693,19 +701,6 @@ func (c *Catalog) ListLoadable(kind Kind) []*Entry {
 			out = append(out, ent)
 		}
 	}
-	return out
-}
-
-func (c *Catalog) listNames(kind Kind, canonical bool) []string {
-	var out []string
-	for _, ent := range c.ListLoadable(kind) {
-		if !canonical && ent.Alias != "" {
-			out = append(out, ent.Alias)
-		} else {
-			out = append(out, ent.ID)
-		}
-	}
-	sort.Strings(out)
 	return out
 }
 

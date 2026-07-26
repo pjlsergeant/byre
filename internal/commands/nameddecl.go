@@ -224,9 +224,6 @@ func declStillEffective[T any](cur config.Config, v declVerbs[T], name string) (
 	if err != nil {
 		return false, err
 	}
-	if cat == nil {
-		return false, fmt.Errorf("catalog unavailable")
-	}
 	effective, err := config.ResolveProposed(cur)
 	if err != nil {
 		return false, err

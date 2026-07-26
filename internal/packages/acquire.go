@@ -37,7 +37,7 @@ func Acquire(f *Fetcher, uri string, kind Kind, compatVer string, stage2 func([]
 	if !ok {
 		return nil, fmt.Errorf("manifest has no [package] block -- not a distributable package (run `byre %s pack` on the source)", kind)
 	}
-	if err := RequiredManifestFields(m, true); err != nil {
+	if err := RequiredManifestFields(m); err != nil {
 		return nil, err
 	}
 	if err := ValidateID(m.ID, false); err != nil {

@@ -85,11 +85,8 @@ func isDevelCompat(v string) bool {
 
 // RequiredManifestFields reports whether a package that claims to be
 // installed/bundled has the required fields (id, version, kind, package_api,
-// requires_byre). Local packages may omit them.
-func RequiredManifestFields(m Manifest, require bool) error {
-	if !require {
-		return nil
-	}
+// requires_byre). Local packages may omit them -- they do not reach this check.
+func RequiredManifestFields(m Manifest) error {
 	var missing []string
 	if m.ID == "" {
 		missing = append(missing, "id")

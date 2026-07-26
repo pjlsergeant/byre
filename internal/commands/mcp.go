@@ -71,7 +71,8 @@ func MCPAdd(s Streams, projectDir string, global bool, name string, rest, env, e
 	}
 	switch {
 	case len(rest) == 0:
-		// The cobra layer enforces arity; kept for direct callers.
+		// MCPAdd is exported: the cobra layer's arity check covers the CLI, not
+		// a direct caller. Refuse rather than write an entry with no command.
 		return fmt.Errorf("mcp add: need a url or a command (put a local command after --)")
 	case len(rest) == 1 && (strings.HasPrefix(rest[0], "https://") || strings.HasPrefix(rest[0], "http://")):
 		m.URL = rest[0]

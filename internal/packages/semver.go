@@ -30,7 +30,7 @@ func MatchConstraint(version, constraint string) (bool, error) {
 	}
 	cmp := compareSemver(have, want)
 	switch op {
-	case ">=", "":
+	case ">=":
 		return cmp >= 0, nil
 	case ">":
 		return cmp > 0, nil
@@ -77,7 +77,7 @@ func parseSemver(s string) ([3]int, error) {
 		s = s[:i]
 	}
 	parts := strings.Split(s, ".")
-	if len(parts) < 1 || len(parts) > 3 {
+	if len(parts) > 3 {
 		return out, fmt.Errorf("want MAJOR[.MINOR[.PATCH]], got %q", s)
 	}
 	for i, p := range parts {
