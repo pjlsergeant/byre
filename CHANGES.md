@@ -1,6 +1,6 @@
 # Changes
 
-## unreleased
+## v1.3.0 -- 2026-07-26
 
 - **Standing agent instructions.** Tell your agent "always run the
   linter" once, at the scope you mean it: `byre context add
@@ -8,7 +8,13 @@
   reaches every box on the machine, plain just this project; a named
   layer covers a stack. The **Instructions** section of `byre config`
   is the same feature with effective-view rows attributing each
-  snippet to its layer, and `byre context list|remove` round it out.
+  snippet to its layer, and `byre context list|remove` round it out —
+  list answers "where did my snippet go?": every row names the layer
+  that speaks it, overrides name what they override, and removed
+  snippets show who removed them and what was lost. Prose size is
+  never capped — escalating disclosures instead (and agents whose
+  injection channel is a command-line argument truncate very large
+  text near 100 KiB, disclosed in-session).
   The prose is injected into the agent's own instruction channel at
   launch — Claude's appended system prompt, codex's developer
   instructions, grok's session rules, gemini's context memory,
@@ -36,6 +42,12 @@
   `seed_prefs = false` in a later layer now wins over an inherited
   `true`, like every other scalar — previously a silent no-op the docs
   described as deliberate. ADR 0045.
+
+- **Field-QA fixes.** `byre status --box` no longer duplicates a row;
+  the config editor's save/quit reports stop claiming writes that
+  didn't happen (and never claim "unchanged" when they can't know);
+  `byre context add --file` warns up front when the file doesn't exist
+  yet instead of failing at the next develop.
 
 ## v1.2.0 -- 2026-07-22
 
