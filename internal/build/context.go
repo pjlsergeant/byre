@@ -410,17 +410,13 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 	return out, jobs, nil
 }
 
-// planSkillBlocks maps each skill's build block onto the generator's, filling
-// its COPY map (staged-context-path -> image dest) for files the skill ships
-// under "skills/<skill>/<rel>", and returns the copy jobs. Sources were
-// already validated for containment by skills.Resolve; this writes nothing.
 // provenanceRank orders skill blocks by volatility class for layer-cache
 // locality (ADR 0041): bundled skills change only with the byre binary,
 // installed packages change on install events, local packages are
 // working-tree-editable. Emitting stable-before-volatile means editing an
 // installed skill no longer re-runs every bundled installer behind it.
 // Unknown provenances (legacy/conflict/invalid never reach build; resolve
-// rejects them) sort last, defensively.
+// rejects them) sort last.
 func provenanceRank(p packages.Provenance) int {
 	switch p {
 	case packages.ProvBundled:
@@ -434,6 +430,10 @@ func provenanceRank(p packages.Provenance) int {
 	}
 }
 
+// planSkillBlocks maps each skill's build block onto the generator's, filling
+// its COPY map (staged-context-path -> image dest) for files the skill ships
+// under "skills/<skill>/<rel>", and returns the copy jobs. Sources were
+// already validated for containment by skills.Resolve; this writes nothing.
 func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, error) {
 	if len(blocks) == 0 {
 		return nil, nil, nil

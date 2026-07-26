@@ -51,11 +51,6 @@ type ContextDecl struct {
 	File string `toml:"file,omitempty"`
 }
 
-// declNameRe is the context name grammar -- the MCP shape, for the same
-// reasons: the name is a merge identity and an attribution label; keeping
-// one grammar across the named-declaration genus keeps the closure spelling
-// (`!name`) unambiguous everywhere.
-
 // ValidContextName reports whether s satisfies the context name grammar --
 // for callers (the context verbs) validating a bare name with no
 // declaration around it.

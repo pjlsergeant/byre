@@ -84,7 +84,6 @@ func (m model) viewText() string {
 		helpLine("^s", "accept + save", "esc", "cancel"))
 }
 
-// splitLines parses one item per line, dropping blanks/whitespace.
 // nonEmptyLines splits a textarea value into trimmed, non-blank lines -- the
 // item form of a multi-line field. NOT a structural line split: blank lines and
 // leading whitespace are dropped, so it must never be used on content whose

@@ -107,10 +107,11 @@ func findLegacyDirs(home string, bundled fs.FS) []string {
 			}
 			if protected[e.Name()] {
 				// Confirm it looks like a package (has primary file).
-				prim := "skill.toml"
+				kind := KindSkill
 				if sub == "templates" {
-					prim = "template.config"
+					kind = KindTemplate
 				}
+				prim := PrimaryName(kind)
 				if _, err := os.Stat(filepath.Join(home, sub, e.Name(), prim)); err == nil {
 					out = append(out, filepath.Join(sub, e.Name()))
 				}

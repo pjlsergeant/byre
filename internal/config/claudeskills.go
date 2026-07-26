@@ -44,16 +44,12 @@ type ClaudeSkill struct {
 	From string `toml:"from,omitempty"`
 }
 
-// declNameRe is the Claude Skill name grammar — the same shape as MCP
-// names, for the same reasons: the name becomes a directory name in the baked
-// tree, the agent's /name invocation, and an attribution label on status
-// rows. It must also equal the SKILL.md frontmatter name (Anthropic's format
-// requires the frontmatter name to match its directory), which the bake-time
-// validation enforces.
-
-// ValidClaudeSkillName reports whether s satisfies the name grammar — for
-// callers (the claude-skill verbs) validating a bare name with no declaration
-// around it.
+// ValidClaudeSkillName reports whether s satisfies the name grammar
+// (declNameRe, shared across the genus) — for callers (the claude-skill
+// verbs) validating a bare name with no declaration around it. The name must
+// also equal the SKILL.md frontmatter name (Anthropic's format requires the
+// frontmatter name to match its directory), which bake-time validation
+// enforces.
 func ValidClaudeSkillName(s string) bool { return declNameRe.MatchString(s) }
 
 // ValidateClaudeSkill checks one declaration's own shape (not its disk

@@ -13,9 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -101,40 +99,19 @@ func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) e
 // set, rendered by the SAME functions status uses, so this view can never
 // tell a different story.
 func ClaudeSkillList(s Streams, projectDir string) error {
-	paths, err := project.Resolve(projectDir)
-	if err != nil {
-		return err
-	}
-	// Read-only, but collision-checked like status: never render another
-	// project's declared set as this one's.
-	if err := paths.ValidateExisting(); err != nil {
-		return err
-	}
-	cfg, err := config.Load(projectDir)
-	if err != nil {
-		return err
-	}
-	info := statusInfo{
-		Agent:              cfg.Agent,
-		ClaudeSkillsClosed: cfg.ClaudeSkillsClosed,
-	}
-	info.ClaudeSkills, _ = skills.ClaudeSkillSet(cfg, skills.Resolved{})
-	if serr := builtins.EnsureStoreOut(paths.Home, s.Err); serr != nil {
-		info.SkillErr = serr.Error()
-	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
-		info.SkillErr = "catalog unavailable"
-	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
-		info.SkillErr = rerr.Error()
-	} else {
-		rv := combine(cfg, res)
-		if verr := rv.validate(); verr != nil {
-			info.SkillErr = verr.Error()
-		} else {
+	info, err := listDeclInfo(s, projectDir,
+		func(info *statusInfo, cfg config.Config) {
+			info.ClaudeSkillsClosed = cfg.ClaudeSkillsClosed
+			info.ClaudeSkills, _ = skills.ClaudeSkillSet(cfg, skills.Resolved{})
+		},
+		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.ClaudeSkills = rv.claudeSkills
 			if res.Agent != nil {
 				info.AgentClaudeSkills = res.Agent.ClaudeSkills
 			}
-		}
+		})
+	if err != nil {
+		return err
 	}
 
 	if len(info.ClaudeSkills) == 0 && len(info.ClaudeSkillsClosed) == 0 {
@@ -154,7 +131,10 @@ func ClaudeSkillList(s Streams, projectDir string) error {
 }
 
 // expandClaudeSkillPath expands a leading ~ for the disk-side checks; the
-// stored declaration keeps the user's spelling.
+// stored declaration keeps the user's spelling. NOT expandHostPath: that
+// helper also rejects commas and demands an absolute path because its output
+// lands in a docker --mount value — a Claude Skill dir is staged into the
+// build context, never mounted, so those constraints don't apply here.
 func expandClaudeSkillPath(p string) (string, error) {
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		home, err := os.UserHomeDir()

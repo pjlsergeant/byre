@@ -215,17 +215,10 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 			if rerr != nil && line == "" {
 				return "", false, rerr
 			}
-			switch strings.ToLower(strings.TrimSpace(line)) {
-			case "y", "yes":
-				return c, true, nil
-			case "n", "no":
-				return "", false, nil
-			case "":
-				if prefYes {
-					return c, true, nil
-				}
-				return "", false, nil
-			case "i":
+			// `i` is this prompt's one extra key; everything else takes the
+			// shared y/n reading (ClassifyAnswer), so this prompt can never
+			// drift from the others' classification.
+			if strings.ToLower(strings.TrimSpace(line)) == "i" {
 				prov := ""
 				if label != "" {
 					prov = " (" + label + ")"
@@ -247,6 +240,18 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
   opts any box in by itself.
 
 `, c, prov, agent, vol, agent, c, agent)
+				continue
+			}
+			switch ClassifyAnswer(line) {
+			case AnswerYes:
+				return c, true, nil
+			case AnswerNo:
+				return "", false, nil
+			case AnswerDefault:
+				if prefYes {
+					return c, true, nil
+				}
+				return "", false, nil
 			default:
 				// Unrecognized input reprompts — an `i` typo used to read as
 				// a silent decline. EOF terminates via the empty

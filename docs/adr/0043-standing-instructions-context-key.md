@@ -8,10 +8,10 @@ semantics, and editor story here remain current.
 
 Decided 2026-07-24. byre gains a `[[context]]` config vocabulary for
 **standing agent instructions** -- prose the operator wants in the agent's
-memory in every box a declaring layer reaches. A declaration is `name` plus
-inline `text` or a host `file`; the merged prose joins the baked agent
-context after the skills' snippets and reaches the agent through the
-existing `context_target` pipe. No new scoping machinery: **the cascade is
+standing instructions in every box a declaring layer reaches. A declaration
+is `name` plus inline `text` or a host `file`; the merged prose joins the
+baked agent context after the skills' snippets (delivery at decision time
+rode `context_target`; today it is injected, ADR 0046). No new scoping machinery: **the cascade is
 the scoping** -- `default.config` is machine-global, a template or named
 layer is per-stack, the project config is per-project.
 
@@ -25,7 +25,7 @@ policed, only read safely).
 ## The problem
 
 The delivery pipe for prose already existed -- a skill's `[context]` table
-concatenates into the agent's memory file (`context_target`) -- but the
+concatenated into the agent's memory file (`context_target`, since retired) -- but the
 only way for an OPERATOR to say "always run the linter" machine-wide was
 to dress one paragraph up as a package: `skill init`, a dir under
 `~/.byre/skills/`, an enable in every scope. Legitimate ("opinions live in
@@ -44,8 +44,9 @@ boxed agent's reach -- with one explicit exception: a `--self-edit`
 session mounts the project's own store config read-write, so the agent
 can then edit the PROJECT layer's declarations (that grant is the
 feature); the global default and named layers stay outside every box.
-It is also agent-neutral, because it rides whatever `context_target`
-the selected agent skill declares.
+It is also agent-neutral: at decision time it rode whatever
+`context_target` the selected agent skill declared; today the same
+neutrality comes from each agent's injection adapter (ADR 0046).
 
 **Genus, with one home.** The key joins the named-declaration genus
 (`[[mcp]]`, `[[claude_skills]]`; nameddecl.go): layers replace by name,

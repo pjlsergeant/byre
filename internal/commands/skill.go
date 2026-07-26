@@ -437,12 +437,7 @@ func pkgFork(s Streams, kind packages.Kind, id, newID string) error {
 		return fmt.Errorf("package %q already exists in the catalog", newID)
 	}
 
-	sub := "skills"
-	prim := "skill.toml"
-	if kind == packages.KindTemplate {
-		sub = "templates"
-		prim = "template.config"
-	}
+	sub, prim := packages.StoreSubdir(kind), packages.PrimaryName(kind)
 	destDir := filepath.Join(home, sub, filepath.FromSlash(newID))
 	if _, err := os.Stat(destDir); err == nil {
 		return fmt.Errorf("%s already exists", destDir)
@@ -607,10 +602,9 @@ func pkgInit(s Streams, kind packages.Kind, name string) error {
 	if packages.Owner(name) == "byre" {
 		return fmt.Errorf("byre/* is reserved for bundled packages")
 	}
-	sub, prim := "skills", "skill.toml"
+	sub, prim := packages.StoreSubdir(kind), packages.PrimaryName(kind)
 	example := skillInitExample(name)
 	if kind == packages.KindTemplate {
-		sub, prim = "templates", "template.config"
 		example = templateInitExample(name)
 	}
 	dir := filepath.Join(home, sub, filepath.FromSlash(name))

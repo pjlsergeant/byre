@@ -363,7 +363,7 @@ that, and when no clipboard path exists byre says so — the printed path is
 always the contract.
 
 'byre deliver --install-app' installs the DELIVER APP instead: a generated
-"Byre Deliver" drag target (macOS: a Dock/Finder droplet plus a right-click
+"Byre Deliver" drag target (macOS: a Dock/Finder drop target plus a right-click
 "Deliver to Byre" Quick Action; Linux: a .desktop launcher). Drop files on
 it, or open it plain to deliver the clipboard; outcomes arrive as
 notifications. Re-run it after moving byre; --box bakes a fixed target in.`,

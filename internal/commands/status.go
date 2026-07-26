@@ -303,8 +303,6 @@ func hostEnvRow(m map[string]string) string {
 	return strings.Join(parts, ", ") + "  (host values passed in; env_from_host)"
 }
 
-// renderStatus writes the flat, scannable "what can this thing touch?" block.
-// Raw run_args are shown verbatim and flagged as not introspected by byre.
 // siblingNames renders the OTHER live sessions of the project (fam minus
 // mine) as "workdir-id (short-id)" — the bare container id said "something
 // else is running" without saying WHICH worktree. The
@@ -330,6 +328,8 @@ func siblingNames(r interface {
 	return names
 }
 
+// renderStatus writes the flat, scannable "what can this thing touch?" block.
+// Raw run_args are shown verbatim and flagged as not introspected by byre.
 func renderStatus(w io.Writer, s statusInfo) {
 	row := func(label, val string) {
 		head := ""

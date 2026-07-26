@@ -718,8 +718,6 @@ func topLevelKeys(body []byte) (map[string]bool, error) {
 	return present, nil
 }
 
-// loadFile decodes one TOML layer. A missing file is an empty layer; an unknown
-// key is an error (catches typos in a config that would otherwise be ignored).
 // ParseFile parses a single byre.config file (no cascade), for inspecting a
 // candidate config before it is applied. A missing file yields a zero Config.
 func ParseFile(path string) (Config, error) {
@@ -839,8 +837,8 @@ func Merge(base, over Config) Config {
 	out.Files = mergeMap(base.Files, over.Files)
 
 	// Structured named lists: union keyed by identity, with `!name` removal.
-	out.Mounts = mergeMounts(base.Mounts, over.Mounts)
-	out.Volumes = mergeVolumes(base.Volumes, over.Volumes)
+	out.Mounts = mergeByIdentity(base.Mounts, over.Mounts, func(m Mount) string { return m.Target })
+	out.Volumes = mergeByIdentity(base.Volumes, over.Volumes, func(v Volume) string { return v.Name })
 	out.Ports = mergePorts(base.Ports, over.Ports)
 	// MCP declarations replace by name; `!name` closures survive the merge
 	// (MCPClosed) so they can subtract skill-declared servers post-union.
@@ -932,7 +930,7 @@ func CutRemoval(id string) (name string, ok bool) {
 	return id[1:], true
 }
 
-// validateScalars checks the layer-safe scalar/content fields — those valid or
+// validateScalarsLayer checks the layer-safe scalar/content fields — those valid or
 // invalid on their own, independent of the cascade. Shared by Validate and
 // ValidateLayer; layer mode exempts `!name` removal markers in the package
 // lists from the content allowlists (packageRe rejects a leading '!', which is
@@ -1550,24 +1548,27 @@ func mergeMap(base, over map[string]string) map[string]string {
 	return out
 }
 
-// mergeMounts replaces by target, remove-then-append: a replacement takes the
-// REPLACING layer's position, not the replaced entry's slot. Same genus rule as
-// mergeNamedDecls, for the same reason -- list order is where cascade precedence
-// shows, and mount order is observable (status renders it, and it is --mount
-// argv order, which decides what a nested target sees).
-func mergeMounts(base, over []Mount) []Mount {
-	out := append([]Mount{}, base...)
+// mergeByIdentity replaces by the id key, remove-then-append: a replacement
+// takes the REPLACING layer's position, not the replaced entry's slot. Same
+// genus rule as mergeNamedDecls, for the same reason -- list order is where
+// cascade precedence shows, and mount/volume order is observable (status
+// renders it, and mount order is --mount argv order, which decides what a
+// nested target sees). One body for mounts and volumes: this is the exact
+// algorithm whose position fix once landed on the mergeNamedDecls copy and
+// not here -- one spelling ends that class.
+func mergeByIdentity[T any](base, over []T, id func(T) string) []T {
+	out := append([]T{}, base...)
 	var removals []string
-	for _, m := range over {
-		if name, ok := CutRemoval(m.Target); ok {
+	for _, v := range over {
+		if name, ok := CutRemoval(id(v)); ok {
 			removals = append(removals, name)
 			continue
 		}
-		out = filter(out, func(o Mount) bool { return o.Target != m.Target })
-		out = append(out, m)
+		out = filter(out, func(o T) bool { return id(o) != id(v) })
+		out = append(out, v)
 	}
 	for _, rm := range removals {
-		out = filter(out, func(m Mount) bool { return m.Target != rm })
+		out = filter(out, func(v T) bool { return id(v) != rm })
 	}
 	return out
 }
@@ -1601,24 +1602,6 @@ func mergePorts(base, over []Port) []Port {
 	}
 	for _, rm := range removals {
 		out = filter(out, func(p Port) bool { return p.Container != rm })
-	}
-	return out
-}
-
-// mergeVolumes replaces by name, remove-then-append -- see mergeMounts.
-func mergeVolumes(base, over []Volume) []Volume {
-	out := append([]Volume{}, base...)
-	var removals []string
-	for _, v := range over {
-		if name, ok := CutRemoval(v.Name); ok {
-			removals = append(removals, name)
-			continue
-		}
-		out = filter(out, func(o Volume) bool { return o.Name != v.Name })
-		out = append(out, v)
-	}
-	for _, rm := range removals {
-		out = filter(out, func(v Volume) bool { return v.Name != rm })
 	}
 	return out
 }

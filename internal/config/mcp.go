@@ -102,11 +102,6 @@ func egressHostForm(hostname string) string {
 	return hostname
 }
 
-// declNameRe is the MCP name grammar. Deliberately tighter than most: the
-// name becomes a JSON key in the baked mcp.json and an attribution label
-// (mcp:<name>) on status rows. No underscores, so a declared name can never
-// carry the reserved `byre__` prefix (ADR 0033).
-
 // ValidMCPName reports whether s satisfies the MCP name grammar — for
 // callers (the mcp verbs) that validate a bare name with no declaration
 // around it. Single owner: the grammar lives in declNameRe alone.

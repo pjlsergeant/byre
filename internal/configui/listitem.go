@@ -522,7 +522,7 @@ func (m model) itemFocusables() int {
 	return n
 }
 
-// focusedInput maps the control index to an input index, or -1 when the
+// itemInputIndex maps the control index to an input index, or -1 when the
 // picker holds focus. With itemModeFirst the picker is control 0 and the
 // inputs shift up one.
 func (m model) itemInputIndex() int {
@@ -946,12 +946,6 @@ func portLine(p config.Port) string {
 	return fmt.Sprintf("%s:%d -> %d", iface, host, p.Container)
 }
 
-// mcpLine renders one [[mcp]] declaration for rows and the dirty signature:
-// the same local/remote vocabulary status prints, plus the carried env names.
-// The command renders in the argv form the editor parses (joinArgv), so a
-// spaced arg reads as it round-trips.
-// claudeSkillLine renders one Claude Skill declaration: name plus whichever
-// source spelling its home carries (a config path or a skill-relative from).
 // claudeSkillDirNote is the live legibility check on a declared host dir:
 // the editor accepted a nonexistent path silently, deferring the failure to
 // the next develop. skills.ValidateClaudeSkillDir — the exact check the bake
@@ -981,6 +975,8 @@ func claudeSkillDirNote(name, path string) string {
 	return "SKILL.md invalid or name mismatch — build will fail"
 }
 
+// claudeSkillLine renders one Claude Skill declaration: name plus whichever
+// source spelling its home carries (a config path or a skill-relative from).
 func claudeSkillLine(cs config.ClaudeSkill) string {
 	src := cs.Path
 	if src == "" {
@@ -1030,6 +1026,10 @@ func (m model) onProseEditorClosed(err error) model {
 	return m
 }
 
+// mcpLine renders one [[mcp]] declaration for rows and the dirty signature:
+// the same local/remote vocabulary status prints, plus the carried env names.
+// The command renders in the argv form the editor parses (joinArgv), so a
+// spaced arg reads as it round-trips.
 func mcpLine(mc config.MCP) string {
 	var b strings.Builder
 	if mc.Remote() {
@@ -1224,8 +1224,6 @@ func rowAnnotation(r listRow) string {
 	return ""
 }
 
-// viewMenu renders the per-row action menu: the row, where it's set, and the
-// actions it supports -- terse labels, accelerator keys beside them.
 // proseBlock renders stored instruction text read-only: soft-wrapped to the
 // available width, gutter-marked, capped, with a tail count naming the way
 // to the rest. Shared by the item editor and the row menu — reading the
@@ -1336,6 +1334,8 @@ func wrapLine(src string, w int) []string {
 	return out
 }
 
+// viewMenu renders the per-row action menu: the row, where it's set, and the
+// actions it supports -- terse labels, accelerator keys beside them.
 func (m model) viewMenu() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.menuRow.text))

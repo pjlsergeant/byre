@@ -12,9 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -114,47 +112,25 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 // by the SAME functions status uses (mcpStatusLine/mcpDeliveryLine), so
 // this view can never tell a different story.
 func MCPList(s Streams, projectDir string) error {
-	paths, err := project.Resolve(projectDir)
-	if err != nil {
-		return err
-	}
-	// Read-only, but collision-checked like status: never render another
-	// project's declared set as this one's.
-	if err := paths.ValidateExisting(); err != nil {
-		return err
-	}
-	cfg, err := config.Load(projectDir)
-	if err != nil {
-		return err
-	}
-	info := statusInfo{
-		Agent:        cfg.Agent,
-		EgressClosed: cfg.EgressClosed,
-		MCPClosed:    cfg.MCPClosed,
-		EnvProvided:  map[string]bool{},
-	}
-	// Error structurally nil: empty Resolved + config.Load already refused
-	// config-internal duplicate names (see the same call in status.go).
-	info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
-	for k := range cfg.Env {
-		info.EnvProvided[k] = true
-	}
-	for k, src := range cfg.EnvFromHost {
-		if src != "" {
-			info.EnvProvided[k] = true
-		}
-	}
-	if serr := builtins.EnsureStoreOut(paths.Home, s.Err); serr != nil {
-		info.SkillErr = serr.Error()
-	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
-		info.SkillErr = "catalog unavailable"
-	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
-		info.SkillErr = rerr.Error()
-	} else {
-		rv := combine(cfg, res)
-		if verr := rv.validate(); verr != nil {
-			info.SkillErr = verr.Error()
-		} else {
+	info, err := listDeclInfo(s, projectDir,
+		func(info *statusInfo, cfg config.Config) {
+			info.EgressClosed = cfg.EgressClosed
+			info.MCPClosed = cfg.MCPClosed
+			info.EnvProvided = map[string]bool{}
+			// Error structurally nil: empty Resolved + config.Load already
+			// refused config-internal duplicate names (see the same call in
+			// status.go).
+			info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
+			for k := range cfg.Env {
+				info.EnvProvided[k] = true
+			}
+			for k, src := range cfg.EnvFromHost {
+				if src != "" {
+					info.EnvProvided[k] = true
+				}
+			}
+		},
+		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.MCPs = rv.mcps
 			info.NetPosture, info.NetPostureSkill = res.NetworkPosture()
 			if res.Agent != nil {
@@ -163,7 +139,9 @@ func MCPList(s Streams, projectDir string) error {
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
 			}
-		}
+		})
+	if err != nil {
+		return err
 	}
 
 	if len(info.MCPs) == 0 && len(info.MCPClosed) == 0 {

@@ -1,7 +1,7 @@
 package commands
 
 // The named-declaration genus's layer-edit lifecycle, shared by the `byre
-// mcp` and `byre claude-skill` verbs: both edit ONE cascade layer (the
+// mcp`, `byre claude-skill`, and `byre context` verbs: each edits ONE cascade layer (the
 // project store config, or with global the machine default.config) through
 // the same parse/validate/atomic-write path as the interactive editor, with
 // the same closure-smart remove contract. Each verb keeps its own CLI-edge
@@ -232,4 +232,43 @@ func declStillEffective[T any](cur config.Config, v declVerbs[T], name string) (
 		return false, err
 	}
 	return v.effectiveHas(effective, res, name)
+}
+
+// listDeclInfo is the shared prelude of the `mcp list` / `claude-skill list`
+// renderers: resolve the project (collision-checked like status -- never
+// render another project's declared set as this one's), load the config, and
+// resolve skills, every failure past config-load DEGRADING into
+// info.SkillErr rather than erroring -- the same posture status takes.
+// fromCfg seeds the config-only view (used verbatim when skills can't
+// resolve); fromResolved overlays the full effective view.
+func listDeclInfo(s Streams, projectDir string, fromCfg func(*statusInfo, config.Config), fromResolved func(*statusInfo, resolved, skills.Resolved)) (statusInfo, error) {
+	info := statusInfo{}
+	paths, err := project.Resolve(projectDir)
+	if err != nil {
+		return info, err
+	}
+	if err := paths.ValidateExisting(); err != nil {
+		return info, err
+	}
+	cfg, err := config.Load(projectDir)
+	if err != nil {
+		return info, err
+	}
+	info.Agent = cfg.Agent
+	fromCfg(&info, cfg)
+	if serr := builtins.EnsureStoreOut(paths.Home, s.Err); serr != nil {
+		info.SkillErr = serr.Error()
+	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
+		info.SkillErr = "catalog unavailable"
+	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
+		info.SkillErr = rerr.Error()
+	} else {
+		rv := combine(cfg, res)
+		if verr := rv.validate(); verr != nil {
+			info.SkillErr = verr.Error()
+		} else {
+			fromResolved(&info, rv, res)
+		}
+	}
+	return info, nil
 }

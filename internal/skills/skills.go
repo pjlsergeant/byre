@@ -1189,7 +1189,6 @@ func validateOneLiner(s string) error {
 	return nil
 }
 
-// sortedKeys returns a map's keys in sorted order, for deterministic iteration.
 // envValue looks up the env value skill `skill` set for key k (for conflict
 // error messages).
 func envValue(sks []Skill, skill, k string) string {

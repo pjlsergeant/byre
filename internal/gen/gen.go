@@ -304,19 +304,6 @@ func Dockerfile(in Input) string {
 	b.WriteString("\n# --- image PATH capture (login shells restore from this; see byre-env.sh) ---\n")
 	b.WriteString("RUN mkdir -p /etc/byre && printf '%s\\n' \"$PATH\" > /etc/byre/image-path\n")
 
-	// Strip any HEALTHCHECK — inherited from the base image or introduced by a
-	// raw block (skill Dockerfile lines, dockerfile_post; a pasted service
-	// fragment is enough). The engine runs healthcheck commands in the
-	// container's netns independently of our ENTRYPOINT, so a probe could do
-	// network I/O before a network-posture skill's launch gate lands
-	// (fail-open window); byre boxes are interactive sessions, not
-	// health-monitored services, so we never want one regardless. The tail is
-	// the ONE place this works (last HEALTHCHECK wins) and the one place it's
-	// needed — healthchecks never execute during build steps, so no earlier
-	// copy is required (a second instruction would only draw buildkit's
-	// MultipleInstructionsDisallowed warning). Same tail posture as
-	// USER/ENTRYPOINT below: chassis-owned instructions come last so no raw
-	// block can override them.
 	// Security guard: re-assert byre's own copy of the security-critical files
 	// AFTER the project block (and any dockerfile_post), so a project `files`
 	// entry or raw build line targeting these paths cannot leave its content in
@@ -339,6 +326,19 @@ func Dockerfile(in Input) string {
 		}
 	}
 
+	// Strip any HEALTHCHECK — inherited from the base image or introduced by a
+	// raw block (skill Dockerfile lines, dockerfile_post; a pasted service
+	// fragment is enough). The engine runs healthcheck commands in the
+	// container's netns independently of our ENTRYPOINT, so a probe could do
+	// network I/O before a network-posture skill's launch gate lands
+	// (fail-open window); byre boxes are interactive sessions, not
+	// health-monitored services, so we never want one regardless. The tail is
+	// the ONE place this works (last HEALTHCHECK wins) and the one place it's
+	// needed — healthchecks never execute during build steps, so no earlier
+	// copy is required (a second instruction would only draw buildkit's
+	// MultipleInstructionsDisallowed warning). Same tail posture as
+	// USER/ENTRYPOINT below: chassis-owned instructions come last so no raw
+	// block can override them.
 	b.WriteString("\nHEALTHCHECK NONE\n")
 
 	// Drop to the baked dev user for the runtime container. This comes after every

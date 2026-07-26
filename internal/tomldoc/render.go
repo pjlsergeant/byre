@@ -12,10 +12,10 @@ import (
 )
 
 // String renders a TOML string value. Prose -- anything with a newline --
-// comes out as a multiline literal string (”'), the shape the format
+// comes out as a multiline literal string ('''), the shape the format
 // designed for it: no escape processing, so backslashes in code snippets
 // survive verbatim and the file stays human-readable. Text a literal string
-// cannot carry (a ”' run, control characters, a trailing quote hugging the
+// cannot carry (a ''' run, control characters, a trailing quote hugging the
 // delimiter) falls back to the escaped basic string.
 func String(s string) string {
 	if strings.Contains(s, "\n") && literalSafe(s) {
@@ -29,7 +29,7 @@ func String(s string) string {
 }
 
 // literalSafe reports whether s can ride a multiline literal string
-// unescaped: no ”' run, no quote adjacent to the delimiters, and no control
+// unescaped: no ''' run, no quote adjacent to the delimiters, and no control
 // characters beyond newline and tab.
 func literalSafe(s string) bool {
 	if strings.Contains(s, "'''") {

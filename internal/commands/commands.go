@@ -5,7 +5,7 @@
 // assembly), naming.go (ids, labels, volume/image names), engine.go (engine
 // selection), runnerif.go (the engine interfaces), lock.go, env.go, ui.go.
 //
-// The flat layout below — ~25 files, no subpackages — is deliberate, and it
+// The flat layout below — dozens of files, no subpackages — is deliberate, and it
 // looks like a smell every time someone new reads it. It has been evaluated on
 // its merits and rejected more than once; a finding that says "split this
 // package" is re-raising a settled question, not surfacing new information.

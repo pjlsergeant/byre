@@ -55,7 +55,7 @@ func Acquire(f *Fetcher, uri string, kind Kind, compatVer string, stage2 func([]
 	if err := CheckCompatibility(m, compatVer); err != nil {
 		return nil, err
 	}
-	primary := primaryFor(kind)
+	primary := PrimaryName(kind)
 	files, err := ParseManifestFiles(manifest)
 	if err != nil {
 		return nil, err

@@ -139,10 +139,9 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 	for _, kind := range []struct {
 		sub  string
 		kind Kind
-		prim string
 	}{
-		{"skills", KindSkill, "skill.toml"},
-		{"templates", KindTemplate, "template.config"},
+		{"skills", KindSkill},
+		{"templates", KindTemplate},
 	} {
 		entries, err := fs.ReadDir(bundled, kind.sub)
 		if err != nil {
@@ -165,7 +164,7 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 			}
 			id := BundledID(bare)
 			sub := filepath.ToSlash(filepath.Join(kind.sub, bare))
-			primaryPath := filepath.ToSlash(filepath.Join(sub, kind.prim))
+			primaryPath := filepath.ToSlash(filepath.Join(sub, PrimaryName(kind.kind)))
 			raw, err := fs.ReadFile(bundled, primaryPath)
 			if err != nil {
 				c.addProblem(id, kind.kind, ProvInvalid, "bundled primary missing: "+err.Error(), "")
@@ -198,7 +197,7 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 				Description: m.Description,
 				FS:          bundled,
 				Sub:         sub,
-				Primary:     kind.prim,
+				Primary:     PrimaryName(kind.kind),
 				Manifest:    m,
 			}
 			c.protected[bare] = "bundled as " + id
@@ -235,7 +234,7 @@ func (c *Catalog) loadInstalled() error {
 				fmt.Sprintf("index kind %q: want skill or template", row.Kind), "")
 			continue
 		}
-		prim := primaryFor(kind)
+		prim := PrimaryName(kind)
 		// Installed IDs must be qualified and can never be byre/*.
 		if err := ValidateID(id, false); err != nil {
 			c.addProblem(id, kind, ProvInvalid, err.Error(), "")
@@ -317,10 +316,7 @@ func peekDescription(raw []byte) string {
 }
 
 func (c *Catalog) loadLocal(root string, kind Kind) error {
-	prim := "skill.toml"
-	if kind == KindTemplate {
-		prim = "template.config"
-	}
+	prim := PrimaryName(kind)
 	// Two-level walk: root/<name>/prim or root/<owner>/<name>/prim.
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -537,7 +533,7 @@ func (c *Catalog) addProblem(id string, kind Kind, prov Provenance, reason, dir 
 			Provenance: prov,
 			Reason:     reason,
 			Dir:        dir,
-			Primary:    primaryFor(kind),
+			Primary:    PrimaryName(kind),
 		}
 		return
 	}
@@ -547,15 +543,28 @@ func (c *Catalog) addProblem(id string, kind Kind, prov Provenance, reason, dir 
 		Provenance: prov,
 		Reason:     reason,
 		Dir:        dir,
-		Primary:    primaryFor(kind),
+		Primary:    PrimaryName(kind),
 	}
 }
 
-func primaryFor(kind Kind) string {
+// PrimaryName is the primary-file name for a package kind: skill.toml for a
+// skill, template.config for a template. The ONE spelling of the kind->file
+// mapping -- open-coded copies of this pair are where the skill/template
+// parallel paths drift.
+func PrimaryName(kind Kind) string {
 	if kind == KindTemplate {
 		return "template.config"
 	}
 	return "skill.toml"
+}
+
+// StoreSubdir is the store subdirectory for a package kind: skills/ or
+// templates/. Same single-spelling rule as PrimaryName.
+func StoreSubdir(kind Kind) string {
+	if kind == KindTemplate {
+		return "templates"
+	}
+	return "skills"
 }
 
 func (c *Catalog) rebuildOrder() {
