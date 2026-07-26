@@ -20,8 +20,8 @@ import (
 //
 // The project mount is the one grant every box has, and the project is a
 // directory host tools execute: a git hook, a git config naming a program, an
-// env file steering a later process. The human's next ordinary host-side git
-// runs whatever the agent left. Most of what an agent writes lands in the diff,
+// env file steering a later process. A host-side git that reaches one of those
+// runs it, as the user. Most of what an agent writes lands in the diff,
 // where reviewing it is already the user's job -- these places do not, so byre
 // points them out.
 //
@@ -66,6 +66,13 @@ func execRelevantConfig(key, value string) bool {
 	if strings.HasPrefix(key, "alias.") {
 		return strings.HasPrefix(strings.TrimSpace(value), "!")
 	}
+	// git-lfs writes filter.lfs.{clean,smudge,process} on `git lfs install`,
+	// in every LFS repo, as ordinary setup. Ranking it would break the silence
+	// this function exists to protect -- and LFS also installs hooks, which DO
+	// speak, so the session is not silent about it either way.
+	if strings.HasPrefix(key, "filter.lfs.") {
+		return false
+	}
 	// Subsectioned forms: filter.<name>.smudge, diff.<name>.textconv,
 	// credential.<url>.helper, url.<name>.insteadof, includeif.<cond>.path.
 	for _, suffix := range []string{
@@ -83,6 +90,23 @@ func execRelevantConfig(key, value string) bool {
 			strings.HasPrefix(key, "includeif."):
 			return true
 		}
+	}
+	return false
+}
+
+// configValueShown reports whether a git config value is safe to echo.
+//
+// Path-like destinations are the whole point of the message -- "core.hooksPath
+// is now .husky/_" tells you where your hooks come from, and a path is not a
+// secret. Command- and helper-shaped values are a different matter: a
+// `credential.helper` or a `!` alias is a shell snippet that routinely embeds a
+// token, and `url.<...>.insteadOf` carries userinfo. Those get NAMED, never
+// quoted -- the same rule `.env` follows, for the same reason: the terminal,
+// scrollback and any captured log are all downstream of this line.
+func configValueShown(key string) bool {
+	switch key {
+	case "core.hookspath", "init.templatedir":
+		return true
 	}
 	return false
 }
@@ -130,9 +154,7 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		// (core.hookspath is exec-relevant) but never traversed: the target can
 		// be $HOME or /tmp, and walking an arbitrary host directory is a cost
 		// and a privacy problem byre has no business taking on.
-		if p, ok := containedHooksPath(paths, gitDir); ok {
-			hooksDirs = append(hooksDirs, p)
-		}
+		hooksDirs = append(hooksDirs, containedHooksPaths(paths, gitConfigFiles(gitDir))...)
 		for _, dir := range hooksDirs {
 			snapshotHooks(s.hooks, paths, dir)
 		}
@@ -210,29 +232,43 @@ func readGitConfig(path string) (map[string]string, bool) {
 	return kv, true
 }
 
-// containedHooksPath resolves core.hooksPath and returns it only when it stays
-// inside a tree byre already reaches (the worktree, or the main checkout).
-// Relative values resolve against the working tree root, which for a linked
-// worktree is the WORKTREE -- not the main tree and not the git dir.
-func containedHooksPath(paths project.Paths, gitDir string) (string, bool) {
-	out, err := gitProbe("config", "--file", filepath.Join(gitDir, "config"), "--get", "core.hooksPath")
-	if err != nil {
-		return "", false
-	}
-	raw := strings.TrimSpace(string(out))
-	if raw == "" {
-		return "", false
-	}
-	p := raw
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(paths.WorkDir, p)
-	}
-	for _, root := range []string{paths.WorkDir, paths.Canonical} {
-		if root != "" && inTreeByIdentity(root, p) {
-			return filepath.Clean(p), true
+// containedHooksPaths resolves core.hooksPath from EVERY watched config file --
+// `config.worktree` can set it as readily as `config`, and watching the keys
+// there while resolving the target only from `config` would be a lopsided
+// half-fix. Over-collecting is harmless: an extra directory just gets watched.
+//
+// A target is returned only when it stays inside a tree byre already reaches
+// (the worktree, or the main checkout). Relative values resolve against the
+// working tree root, which for a linked worktree is the WORKTREE -- not the
+// main tree and not the git dir.
+func containedHooksPaths(paths project.Paths, configFiles []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, cfg := range configFiles {
+		raw, err := gitProbe("config", "--file", cfg, "--get", "core.hooksPath")
+		if err != nil {
+			continue
+		}
+		p := strings.TrimSpace(string(raw))
+		if p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(paths.WorkDir, p)
+		}
+		p = filepath.Clean(p)
+		if seen[p] {
+			continue
+		}
+		for _, root := range []string{paths.WorkDir, paths.Canonical} {
+			if root != "" && inTreeByIdentity(root, p) {
+				seen[p] = true
+				out = append(out, p)
+				break
+			}
 		}
 	}
-	return "", false
+	return out
 }
 
 // snapshotHooks records a signature per file under dir. Enumeration rides a
@@ -336,14 +372,9 @@ func exitDisplay(paths project.Paths, p string) string {
 // makes the same choice for the store, for the same reason.
 func reportExit(w io.Writer, before, after exitSnapshot) {
 	var lines []string
-
-	for _, l := range diffKeyed(before.config, after.config, execRelevantConfig) {
-		lines = append(lines, l)
-	}
+	lines = append(lines, diffConfig(before.config, after.config)...)
 	lines = append(lines, diffHooks(before.hooks, after.hooks)...)
-	for _, l := range diffKeyed(before.env, after.env, nil) {
-		lines = append(lines, l)
-	}
+	lines = append(lines, diffEnv(before.env, after.env)...)
 	if len(lines) == 0 {
 		return
 	}
@@ -377,68 +408,98 @@ func diffHooks(before, after map[string]string) []string {
 	return out
 }
 
-// diffKeyed reports per-file key changes. `speaks` filters which keys are worth
-// mentioning (exec-relevant ones for git config); nil means every key speaks,
-// which is what env files do -- naming the key that moved turns a bare "this
-// file changed" into something the reader can actually judge.
-//
-// VALUES ARE NEVER PRINTED for env files. They hold secrets, and a value echoed
-// here would land in the terminal, in scrollback, and in any captured log --
-// an exposure byre would have created. Git config values ARE shown, because the
-// whole point of naming core.hooksPath is saying where it now points, and git
-// config is not where secrets live (credential.helper names a helper, it does
-// not hold the credential).
-func diffKeyed(before, after map[string]map[string]string, speaks func(k, v string) bool) []string {
+// diffConfig names the exec-relevant git config keys that moved. Ranking keeps
+// the message rare (see execRelevantConfig); configValueShown keeps it from
+// echoing anything secret-shaped.
+func diffConfig(before, after map[string]map[string]string) []string {
 	var out []string
+	say := func(file, key, verb, value string) {
+		if configValueShown(key) && value != "" {
+			out = append(out, fmt.Sprintf("%s: %s %s %s", file, key, verb, value))
+			return
+		}
+		out = append(out, fmt.Sprintf("%s: %s %s", file, key, verb))
+	}
 	for file, akv := range after {
 		bkv := before[file]
-		var added, changed, removed []string
 		for k, av := range akv {
 			bv, had := bkv[k]
-			if had && bv == av {
-				continue
-			}
-			if speaks != nil && !speaks(k, av) {
-				continue
-			}
-			if speaks != nil {
-				// Exec-relevant: say where it now points, that's the point.
-				if had {
-					out = append(out, fmt.Sprintf("%s: %s is now %s", file, k, av))
-				} else {
-					out = append(out, fmt.Sprintf("%s: %s is set to %s", file, k, av))
-				}
+			if (had && bv == av) || !execRelevantConfig(k, av) {
 				continue
 			}
 			if had {
-				changed = append(changed, k)
+				say(file, k, "is now", av)
 			} else {
-				added = append(added, k)
+				say(file, k, "is set to", av)
 			}
 		}
 		for k, bv := range bkv {
-			if _, still := akv[k]; still {
-				continue
+			if _, still := akv[k]; !still && execRelevantConfig(k, bv) {
+				say(file, k, "was removed", "")
 			}
-			if speaks != nil {
-				if speaks(k, bv) {
-					out = append(out, fmt.Sprintf("%s: %s was removed", file, k))
-				}
-				continue
-			}
-			removed = append(removed, k)
 		}
-		// Key NAMES only -- never a value. See the doc comment.
-		for _, g := range []struct {
-			verb string
-			keys []string
-		}{{"added", added}, {"changed", changed}, {"removed", removed}} {
-			if len(g.keys) == 0 {
+	}
+	// A watched config file that disappeared takes its keys with it -- the same
+	// user-visible event as clearing them one by one, and a normal thing for an
+	// agent to do. Iterating `after` alone would miss it entirely.
+	for file, bkv := range before {
+		if _, still := after[file]; still {
+			continue
+		}
+		for k, bv := range bkv {
+			if execRelevantConfig(k, bv) {
+				say(file, k, "went away with the file", "")
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// diffEnv names every env key that moved. Every key speaks -- naming the key
+// turns a bare "this file changed" into something the reader can judge -- but
+// NO VALUE is ever printed. Env files hold secrets, and a value echoed here
+// would land in the terminal, in scrollback, and in any captured log: an
+// exposure byre would have created. Names only, and a test pins it.
+func diffEnv(before, after map[string]map[string]string) []string {
+	var out []string
+	emit := func(file string, groups [3][]string) {
+		for i, verb := range [3]string{"added", "changed", "removed"} {
+			if len(groups[i]) == 0 {
 				continue
 			}
-			sort.Strings(g.keys)
-			out = append(out, fmt.Sprintf("%s: %s %s", file, g.verb, strings.Join(g.keys, ", ")))
+			sort.Strings(groups[i])
+			out = append(out, fmt.Sprintf("%s: %s %s", file, verb, strings.Join(groups[i], ", ")))
 		}
+	}
+	for file, akv := range after {
+		bkv := before[file]
+		var g [3][]string
+		for k, av := range akv {
+			switch bv, had := bkv[k]; {
+			case !had:
+				g[0] = append(g[0], k)
+			case bv != av:
+				g[1] = append(g[1], k)
+			}
+		}
+		for k := range bkv {
+			if _, still := akv[k]; !still {
+				g[2] = append(g[2], k)
+			}
+		}
+		emit(file, g)
+	}
+	// Deleted outright: every key it held is gone (see diffConfig).
+	for file, bkv := range before {
+		if _, still := after[file]; still {
+			continue
+		}
+		var g [3][]string
+		for k := range bkv {
+			g[2] = append(g[2], k)
+		}
+		emit(file, g)
 	}
 	sort.Strings(out)
 	return out

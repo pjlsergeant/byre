@@ -18,10 +18,13 @@ project directory is a set of files the host executes. An agent that
 writes `.git/hooks/pre-commit`, or a git config naming a program
 (`core.hooksPath`, `credential.helper`, `core.sshCommand`,
 `core.fsmonitor`, a `filter.*` or `diff.*` helper, `init.templateDir`,
-a `!`-prefixed alias), gets its code run by the human's next ordinary
-host-side `git` -- as them, with their keys and their machine. No
-container escape is involved; the container's strength never enters
-into it.
+a `!`-prefixed alias), gets its code run the next time the human runs a
+host-side command that reaches it -- a commit, a checkout, a fetch, an
+`init`, depending on what was planted -- as them, with their keys and
+their machine. Not necessarily the very next command, and not certain;
+what is certain is that ordinary use of the repository is the trigger,
+and no container escape is involved. The container's strength never
+enters into it.
 
 Three properties make it worth acting on rather than shrugging at:
 

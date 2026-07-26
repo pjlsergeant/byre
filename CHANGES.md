@@ -30,7 +30,8 @@
   the wrong one. The project is a directory your host tools *run code
   from*: an agent can leave a git hook, or a git config naming a program
   (`core.hooksPath`, `credential.helper`, `core.sshCommand`, a `filter.*`
-  helper), and your next ordinary host-side `git` runs it, as you. Some
+  helper), and a later host-side `git` that reaches it runs it, as you.
+  Some
   of that never appears in `git diff` -- the git admin directory is
   outside the working tree. The firewall skill does not help; this rides
   the filesystem, not the wire. ARCHITECTURE's contract and the security

@@ -317,14 +317,20 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// tell the user a live session exists. Settle liveness first, once, and
 	// reuse the answer for the refusal below.
 	var live []string
+	liveUnknown := false
 	if runErr != nil {
-		if l, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil {
+		if l, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr != nil {
+			// Couldn't tell. Not knowing is not the same as knowing it ended:
+			// treating a failed query as "no container" would put the premature
+			// report straight back (codex review).
+			liveUnknown = true
+		} else {
 			live = l
 		}
 	}
 	// The session is over (runErr may just be the agent's own exit status):
 	// show what changed before the exit paths below return.
-	if len(live) == 0 {
+	if len(live) == 0 && !liveUnknown {
 		if selfEdit {
 			reportSelfEditChanges(s.Err, paths.Dir, store)
 		}
