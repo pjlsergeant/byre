@@ -686,13 +686,15 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   volumes, raw blocks verbatim-but-flagged, session state.
 
                       Project id:   repo-abc123
-                      Agent:        claude
+                      Agent:        byre/claude
+                      Template:     byre/go                 bundled 0.2.0
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
                       Network:      open
                       Ports:        none
                       Host mounts:  none
-                      Skills:       claude, pjlsergeant/devlog
+                      Skills:       byre/claude             bundled 0.2.0
+                                    pjlsergeant/devlog      installed 1.0.0
                       State vols:   .claude
                       Cache vols:   none
                       Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values passed in; env_from_host)

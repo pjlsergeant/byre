@@ -292,7 +292,7 @@ func IsUnreachable(err error) bool {
 func firstLine(err error) string {
 	s := err.Error()
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i] + " …"
+		s = strings.TrimSpace(s[:i]) + " …"
 	}
 	return s
 }

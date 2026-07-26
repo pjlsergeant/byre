@@ -117,7 +117,14 @@ func ValidMCPName(s string) bool { return declNameRe.MatchString(s) }
 // servers are held to the same bar.
 func ValidateMCP(m MCP) error {
 	if !declNameRe.MatchString(m.Name) {
-		return fmt.Errorf("mcp name %q: must be lowercase [a-z0-9-], starting with a letter or digit (max 64 chars)", m.Name)
+		// Echo at most 64 runes of the rejected input: the message renders in
+		// the config UI's error line, and an unbounded echo (a stray paste)
+		// turns it into a wall.
+		name := []rune(m.Name)
+		if len(name) > 64 {
+			name = append(name[:64], '…')
+		}
+		return fmt.Errorf("mcp name %q: must be lowercase [a-z0-9-], starting with a letter or digit (max 64 chars)", string(name))
 	}
 	switch {
 	case len(m.Command) > 0 && m.URL != "":

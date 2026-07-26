@@ -50,7 +50,7 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 		return fmt.Errorf("--remote-byre only applies to an ssh:// delivery")
 	}
 	sources, err := deliverSources(s, opts, paths, hostClipboardReader())
-	if err != nil || sources == nil { // cancel arrives as ExitError{1}; nil sources guards the impossible
+	if err != nil { // cancel arrives as ExitError{1}
 		deliverNotify(s, nil, err)
 		return err
 	}

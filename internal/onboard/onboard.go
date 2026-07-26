@@ -242,7 +242,7 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
       (delete it there to undo). No other project changes.
   n — this box keeps its own separate %s login (log in inside the box).
       Writes nothing, anywhere.
-  Afterwards, "Save these as your default?" only changes which answer is
+  Afterwards, "Save these as your default for new projects?" only changes which answer is
   pre-selected at the NEXT project's question — saving never
   opts any box in by itself.
 

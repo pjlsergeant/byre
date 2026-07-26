@@ -37,7 +37,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 			}
 			if err := s.SeedLiteral(name, v.Seed.Path, v.Seed.Literal, image, ident); err != nil {
 				if rmErr := s.VolumeRemove(name); rmErr != nil {
-					return fmt.Errorf("literal-seeding %s failed (%w); rollback of %s also failed (%v)", v.Name, err, name, rmErr)
+					return fmt.Errorf("literal-seeding %s failed (%w); rollback of volume %s also failed (%v) — remove it manually before retrying", v.Name, err, name, rmErr)
 				}
 				return fmt.Errorf("literal-seeding %s: %w", v.Name, err)
 			}
