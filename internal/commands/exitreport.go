@@ -142,6 +142,10 @@ type exitSnapshot struct {
 	hooks  map[string]string            // display path -> content signature
 	config map[string]map[string]string // display path -> git config key -> value
 	env    map[string]map[string]string // display path -> env key -> value
+	// envListed records that the project root was successfully enumerated. A
+	// failed enumeration is not an empty project: without this, every .env
+	// byre had seen would read as deleted (codex).
+	envListed bool
 	// unreadable marks a watched file that EXISTS but could not be read or
 	// parsed (a transient git probe failure, an oversize .env, a planted
 	// special file). Without it, absence from the maps is indistinguishable
@@ -177,6 +181,10 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		for _, cfg := range gitConfigFiles(gitDir) {
 			if kv, ok := readGitConfig(cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
+			} else if exists(cfg) {
+				// Present but unread -- a transient git probe failure is the
+				// motivating case. Absent from both maps would read as deletion.
+				s.unreadable[exitDisplay(paths, cfg)] = true
 			}
 		}
 		hooksDirs := []string{filepath.Join(gitDir, "hooks")}
@@ -193,7 +201,9 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		}
 	}
 
-	for _, f := range envFiles(paths.WorkDir) {
+	files, listed := envFiles(paths.WorkDir)
+	s.envListed = listed
+	for _, f := range files {
 		if kv, ok := readEnvKeys(f); ok {
 			s.env[exitDisplay(paths, f)] = kv
 		} else {
@@ -332,10 +342,10 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) {
 // not. `.envrc` is deliberately absent -- direnv already gates it (its allow
 // record is a hash of path AND content, so an edited .envrc re-blocks until
 // `direnv allow` runs), and duplicating that would add noise, not safety.
-func envFiles(workDir string) []string {
+func envFiles(workDir string) ([]string, bool) {
 	entries, err := os.ReadDir(workDir)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var out []string
 	for _, e := range entries {
@@ -347,7 +357,7 @@ func envFiles(workDir string) []string {
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, true
 }
 
 // readEnvKeys extracts key names and values from a KEY=value file. Values are
@@ -469,6 +479,12 @@ func diffConfig(before, after exitSnapshot) []string {
 		out = append(out, fmt.Sprintf("%s: %s %s", file, redactKeyUserinfo(key), suffix))
 	}
 	for file, akv := range after.config {
+		// Unreadable on EITHER side means byre has no basis for a comparison:
+		// an unreadable BEFORE would otherwise report every key as newly set
+		// (codex). Say nothing rather than invent a change.
+		if before.unreadable[file] || after.unreadable[file] {
+			continue
+		}
 		bkv := before.config[file]
 		for k, av := range akv {
 			bv, had := bkv[k]
@@ -488,7 +504,7 @@ func diffConfig(before, after exitSnapshot) []string {
 	// GONE: a file byre could not read this time is still there, and saying its
 	// keys vanished would be a lie byre invented (codex).
 	for file, bkv := range before.config {
-		if _, still := after.config[file]; still || after.unreadable[file] {
+		if _, still := after.config[file]; still || after.unreadable[file] || before.unreadable[file] {
 			continue
 		}
 		for k, bv := range bkv {
@@ -507,6 +523,10 @@ func diffConfig(before, after exitSnapshot) []string {
 // would land in the terminal, in scrollback, and in any captured log: an
 // exposure byre would have created. Names only, and a test pins it.
 func diffEnv(before, after exitSnapshot) []string {
+	// An unenumerable project root is not an empty one.
+	if !before.envListed || !after.envListed {
+		return nil
+	}
 	var out []string
 	emit := func(file string, groups [3][]string) {
 		for i, verb := range [3]string{"added", "changed", "removed"} {
@@ -518,6 +538,9 @@ func diffEnv(before, after exitSnapshot) []string {
 		}
 	}
 	for file, akv := range after.env {
+		if before.unreadable[file] || after.unreadable[file] {
+			continue
+		}
 		bkv := before.env[file]
 		var g [3][]string
 		for k, av := range akv {
@@ -537,7 +560,7 @@ func diffEnv(before, after exitSnapshot) []string {
 	}
 	// Deleted outright -- and only when really gone, not merely unreadable.
 	for file, bkv := range before.env {
-		if _, still := after.env[file]; still || after.unreadable[file] {
+		if _, still := after.env[file]; still || after.unreadable[file] || before.unreadable[file] {
 			continue
 		}
 		var g [3][]string

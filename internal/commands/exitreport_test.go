@@ -453,3 +453,39 @@ func TestExitReportUnreadableIsNotDeletion(t *testing.T) {
 		t.Errorf("an unreadable file must not be reported as deleted, got:\n%s", got)
 	}
 }
+
+// An unreadable git config is the motivating case for the unreadable/deleted
+// distinction (a transient git probe failure), and it was the one the first
+// attempt left unwired -- the helper was written and never called. Chmod 000
+// makes the file present and unreadable.
+func TestExitReportUnreadableConfigIsNotDeletion(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads regardless of mode")
+	}
+	paths, dir := exitRepo(t)
+	cfg := filepath.Join(dir, ".git", "config")
+	gitIn(t, dir, "config", "core.hooksPath", ".husky")
+
+	got := exitReport(t, paths, func() { mustChmod(t, cfg, 0o000) })
+	t.Cleanup(func() { _ = os.Chmod(cfg, 0o644) })
+
+	if strings.Contains(got, "went away") {
+		t.Errorf("an unreadable config must not be reported as deleted, got:\n%s", got)
+	}
+}
+
+// The mirror case: unreadable BEFORE, readable after. Without a both-sides
+// guard every key reads as newly set, which is a change byre invented (codex).
+func TestExitReportUnreadableBeforeInventsNothing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads regardless of mode")
+	}
+	paths, dir := exitRepo(t)
+	env := filepath.Join(dir, ".env")
+	mustWriteFile(t, env, []byte("API_TOKEN=y\n"), 0o000)
+
+	got := exitReport(t, paths, func() { mustChmod(t, env, 0o644) })
+	if strings.Contains(got, "API_TOKEN") {
+		t.Errorf("a file unreadable at session start must not report its keys as added, got:\n%s", got)
+	}
+}
