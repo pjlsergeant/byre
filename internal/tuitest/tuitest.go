@@ -318,25 +318,67 @@ func (s *Session) dead() (bool, int) {
 	return true, status
 }
 
-// WaitFor polls until the pane contains substr. A dead process without the
-// match fails immediately with the final screen and exit status — never a
-// blind timeout. Returns the matching screen.
-func (s *Session) WaitFor(substr string) string {
-	s.t.Helper()
-	deadline := time.Now().Add(waitDefault)
+// scanOutcome is scanUntil's verdict.
+type scanOutcome int
+
+const (
+	scanFound   scanOutcome = iota
+	scanDied                // process exited and the settle window closed without a match
+	scanTimeout             // deadline passed with the process still alive
+)
+
+// scanUntil is WaitFor's loop with its probes injected — capture reads the
+// pane, dead reads the exit-status file, sleep paces the polls. Injection
+// exists because the one subtle branch is untestable against real tmux: the
+// status file can land BEFORE tmux renders the process's final pty writes,
+// so on observed death the scan RE-captures for settleFor before ruling the
+// text absent (the CI integration flake, 2026-07-19 and 2026-07-25:
+// deliver's engine error painted right as the process exited, and ruling on
+// the pre-death capture misreported it). The settle only rescues bytes
+// written BEFORE exit and rendered late — tmux drops pty writes from
+// survivors of a dead pane (verified live), which is fine: a single process
+// can't write after exiting. Only the genuine-failure path pays the wait.
+func scanUntil(capture func() string, dead func() (bool, int), substr string,
+	deadline time.Time, settleFor time.Duration, sleep func(time.Duration)) (string, scanOutcome, int) {
 	for {
-		screen := s.CaptureNow()
+		screen := capture()
 		if strings.Contains(screen, substr) {
-			return screen
+			return screen, scanFound, 0
 		}
-		if dead, status := s.dead(); dead {
-			s.t.Fatalf("process exited (status %d) without %q on screen:\n%s", status, substr, screen)
+		if isDead, status := dead(); isDead {
+			settle := time.Now().Add(settleFor)
+			for {
+				screen = capture()
+				if strings.Contains(screen, substr) {
+					return screen, scanFound, 0
+				}
+				if time.Now().After(settle) {
+					return screen, scanDied, status
+				}
+				sleep(pollEvery)
+			}
 		}
 		if time.Now().After(deadline) {
-			s.t.Fatalf("timeout waiting for %q; final screen:\n%s", substr, screen)
+			return screen, scanTimeout, 0
 		}
-		time.Sleep(pollEvery)
+		sleep(pollEvery)
 	}
+}
+
+// WaitFor polls until the pane contains substr. A dead process without the
+// match fails with the final screen and exit status — never a blind
+// timeout. Returns the matching screen.
+func (s *Session) WaitFor(substr string) string {
+	s.t.Helper()
+	screen, outcome, status := scanUntil(s.CaptureNow, s.dead, substr,
+		time.Now().Add(waitDefault), 2*time.Second, time.Sleep)
+	switch outcome {
+	case scanDied:
+		s.t.Fatalf("process exited (status %d) without %q on screen:\n%s", status, substr, screen)
+	case scanTimeout:
+		s.t.Fatalf("timeout waiting for %q; final screen:\n%s", substr, screen)
+	}
+	return screen
 }
 
 // WaitForAfter is WaitFor with transition semantics: if substr was already
