@@ -57,11 +57,23 @@ type AgentContrib struct {
 	// Resolve requires the skill to contribute it (credentials must persist),
 	// and seed_prefs seeds into it.
 	State string `toml:"state"`
-	// ContextTarget is the in-image path where THIS agent reads project memory
-	// (e.g. claude -> /home/dev/.claude/CLAUDE.md). When set, the launcher places
-	// the concatenated skill [context] there at runtime so it reaches the agent.
-	// Must be absolute; it typically lives in the agent's state volume (which is
-	// only mounted at runtime, hence launcher-time placement, not a build COPY).
+	// Context is how THIS agent's session receives the baked agent context
+	// (chassis facts, skill snippets, [[context]] standing instructions —
+	// /etc/byre/agent-context.md, plus the launcher's per-session additions
+	// in $BYRE_SESSION_CONTEXT): "inject" means the agent command itself
+	// consumes them (claude: --append-system-prompt-file + a second append
+	// for the env var) — the skill author VOUCHES the command does so, the
+	// MCP/claude_skills pattern (ADR 0046). Absent means no adapter: the
+	// context still bakes, and status reports declared-but-not-delivered
+	// with the path. byre NEVER writes an agent-owned file to deliver
+	// prose — the retired context_target mechanism rewrote the agent's own
+	// memory file every launch, expropriating a file that belongs to the
+	// user (or the agent), and ADR 0046 buried it.
+	Context string `toml:"context"`
+	// ContextTarget is the RETIRED delivery key (pre-ADR 0046 skills
+	// declared where byre should write the agent's memory file). Parsed so
+	// an installed skill from that era still loads; its value is ignored —
+	// context is injected or not delivered, never written into agent state.
 	ContextTarget string `toml:"context_target"`
 	// Prefs declares the curated, non-secret pref files (theme, keybindings) the
 	// user may opt to seed from the host into a fresh state volume (config
@@ -576,13 +588,12 @@ func (r Resolved) AgentState() string {
 	return r.Agent.State
 }
 
-// AgentContextTarget is where the selected agent reads project memory; the
-// launcher places Context there at runtime. "" if no agent declares one.
-func (r Resolved) AgentContextTarget() string {
-	if r.Agent == nil {
-		return ""
-	}
-	return r.Agent.ContextTarget
+// AgentContextInjects reports whether the selected agent's command consumes
+// the baked agent context (the [agent] context = "inject" vouch, ADR 0046).
+// byre never writes an agent-owned file to deliver prose; an agent without
+// the vouch simply doesn't receive it, and status says so.
+func (r Resolved) AgentContextInjects() bool {
+	return r.Agent != nil && r.Agent.Context == "inject"
 }
 
 // AgentPrefs is the selected agent's curated seedable prefs (nil if none). The
@@ -1096,6 +1107,11 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 			default:
 				return Resolved{}, fmt.Errorf("skill %q: [agent] claude_skills %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.ClaudeSkills)
 			}
+			switch f.Agent.Context {
+			case "", "inject":
+			default:
+				return Resolved{}, fmt.Errorf("skill %q: [agent] context %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.Context)
+			}
 		}
 
 		if name == cfg.Agent {
@@ -1106,11 +1122,6 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 			// contribute it — otherwise credentials won't persist.
 			if f.Agent.State != "" && !hasStateVolume(f.Volumes, f.Agent.State) {
 				return Resolved{}, fmt.Errorf("agent %q: [agent].state %q is not a state volume contributed by the skill", name, f.Agent.State)
-			}
-			if t := f.Agent.ContextTarget; t != "" {
-				if err := validateContextTarget(t); err != nil {
-					return Resolved{}, fmt.Errorf("agent %q: [agent].context_target %q: %w", name, t, err)
-				}
 			}
 			if p := f.Agent.Prefs; p != nil {
 				if err := validatePrefs(p, f.Agent.State); err != nil {
@@ -1130,23 +1141,8 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 
 // DevHome is the in-box agent home. The generated image bakes the dev user
 // with this home (see internal/gen's core block and launcher — they spell it
-// literally in shell/Dockerfile text, pinned by gen's golden test), and
-// context_target must stay within it so a skill can't use the launcher's
-// context placement to write arbitrary container paths (e.g. /workspace,
-// /etc/passwd).
+// literally in shell/Dockerfile text, pinned by gen's golden test).
 const DevHome = "/home/dev"
-
-// validateContextTarget requires an absolute path contained within DevHome.
-func validateContextTarget(t string) error {
-	if !filepath.IsAbs(t) {
-		return fmt.Errorf("must be an absolute path")
-	}
-	rel, err := filepath.Rel(DevHome, filepath.Clean(t))
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("must be a file strictly within %s", DevHome)
-	}
-	return nil
-}
 
 // validatePrefs checks an [agent.prefs] block: it must declare a host source
 // dir and at least one file, the agent must have a state volume for the prefs to

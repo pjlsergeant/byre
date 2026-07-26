@@ -187,13 +187,13 @@ func TestResolveSkillFilesRejectsEscape(t *testing.T) {
 	}
 }
 
-func TestResolveAgentContextTarget(t *testing.T) {
+func TestResolveAgentContextVouch(t *testing.T) {
 	dir := t.TempDir()
 	const toml = `
 [agent]
-command = "fake --go"
+command = "fake --go --append-things"
 state = ".fake"
-context_target = "/home/dev/.fake/MEM.md"
+context = "inject"
 [context]
 text = "workflow rules"
 [[volumes]]
@@ -206,65 +206,54 @@ target = "/home/dev/.fake"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.AgentContextTarget() != "/home/dev/.fake/MEM.md" {
-		t.Errorf("context target not resolved: %q", res.AgentContextTarget())
+	if !res.AgentContextInjects() {
+		t.Errorf("context vouch not resolved")
 	}
 	if res.Context() != "workflow rules" {
 		t.Errorf("context not resolved: %q", res.Context())
 	}
 }
 
-func TestResolveAgentContextTargetMustBeAbsolute(t *testing.T) {
+func TestResolveAgentContextVouchClosedSet(t *testing.T) {
 	dir := t.TempDir()
 	const toml = `
 [agent]
 command = "fake --go"
 state = ".fake"
-context_target = "rel/MEM.md"
+context = "write-my-files-please"
 [[volumes]]
 name = ".fake"
 role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "must be an absolute path") {
-		t.Fatalf("expected rejection of non-absolute context_target, got %v", err)
+	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "context") {
+		t.Fatalf("expected rejection of an unknown context vouch, got %v", err)
 	}
 }
 
-func TestResolveContextTargetMustBeWithinHome(t *testing.T) {
+// The RETIRED context_target key still parses (an installed pre-ADR-0046
+// agent skill must load), but confers nothing: no injection vouch, no
+// validation, no writes.
+func TestRetiredContextTargetToleratedInert(t *testing.T) {
 	dir := t.TempDir()
 	const toml = `
 [agent]
 command = "fake --go"
 state = ".fake"
-context_target = "/etc/passwd"
+context_target = "/home/dev/.fake/MEM.md"
 [[volumes]]
 name = ".fake"
 role = "state"
 target = "/home/dev/.fake"
 `
 	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "strictly within") {
-		t.Fatalf("expected rejection of context_target outside /home/dev, got %v", err)
+	res, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir))
+	if err != nil {
+		t.Fatalf("retired key must not fail the load: %v", err)
 	}
-}
-
-func TestResolveContextTargetRejectsHomeItself(t *testing.T) {
-	dir := t.TempDir()
-	const toml = `
-[agent]
-command = "fake --go"
-state = ".fake"
-context_target = "/home/dev"
-[[volumes]]
-name = ".fake"
-role = "state"
-target = "/home/dev/.fake"
-`
-	writeSkill(t, dir, "fake", toml, nil)
-	if _, err := Resolve(config.Config{Agent: "fake"}, catFor(t, dir)); err == nil || !strings.Contains(err.Error(), "strictly within") {
-		t.Fatalf("expected rejection of context_target == /home/dev (not a file), got %v", err)
+	if res.AgentContextInjects() {
+		t.Fatal("a retired target is not an injection vouch")
 	}
 }
 

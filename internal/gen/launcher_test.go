@@ -466,17 +466,21 @@ func runLauncherCompose(t *testing.T, ctxDir, gateFile string, extraEnv ...strin
 	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(dir, "memory", "CLAUDE.md")
-	if err := os.WriteFile(filepath.Join(ctxDir, "agent-context-target"), []byte(target+"\n"), 0o644); err != nil {
+	// The "agent": a stub that records what the launcher exported as the
+	// per-session context (ADR 0046 — the launcher writes no memory file;
+	// injection is the agent command's business).
+	sessionFile := filepath.Join(dir, "session")
+	dump := filepath.Join(dir, "dump.sh")
+	if err := os.WriteFile(dump, []byte("#!/bin/sh\nprintf '%s' \"${BYRE_SESSION_CONTEXT-<<UNSET>>}\" > "+sessionFile+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var env []string
 	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "BYRE_EGRESS=") {
+		if !strings.HasPrefix(e, "BYRE_EGRESS=") && !strings.HasPrefix(e, "BYRE_SESSION_CONTEXT=") {
 			env = append(env, e)
 		}
 	}
-	cmd := exec.Command("bash", script, "true")
+	cmd := exec.Command("bash", script, dump)
 	cmd.Env = append(append(env,
 		"BYRE_CONTEXT_DIR="+ctxDir,
 		"BYRE_LAUNCH_GATE_FILE="+gateFile,
@@ -493,11 +497,11 @@ func runLauncherCompose(t *testing.T, ctxDir, gateFile string, extraEnv ...strin
 		}
 		code = ee.ExitCode()
 	}
-	mem, rerr := os.ReadFile(target)
+	sess, rerr := os.ReadFile(sessionFile)
 	if rerr != nil {
 		return code, string(out), ""
 	}
-	return code, string(out), string(mem)
+	return code, string(out), string(sess)
 }
 
 // gateWithListener writes a gate file whose port has a live listener, so the
@@ -536,7 +540,7 @@ func TestLauncherAnnouncesEgressAllowlist(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate := gateWithListener(t, t.TempDir())
-	code, out, mem := runLauncherCompose(t, ctxDir, gate,
+	code, out, sess := runLauncherCompose(t, ctxDir, gate,
 		"BYRE_EGRESS=api.example.com:443 github.com:22")
 	if code != 0 {
 		t.Fatalf("launcher exit %d\n%s", code, out)
@@ -546,32 +550,37 @@ func TestLauncherAnnouncesEgressAllowlist(t *testing.T) {
 		"api.example.com:443, github.com:22",
 		"Anything not listed is closed",
 	} {
-		if !strings.Contains(mem, want) {
-			t.Errorf("memory missing %q:\n%s", want, mem)
+		if !strings.Contains(sess, want) {
+			t.Errorf("session context missing %q:\n%s", want, sess)
 		}
 	}
-	if strings.Index(mem, "skill opinions") > strings.Index(mem, "egress allowlist") {
-		t.Errorf("allowlist should follow the baked context:\n%s", mem)
+	// The var leads with a blank line so adapters can concatenate it straight
+	// onto the baked context.
+	if !strings.HasPrefix(sess, "\n\n") {
+		t.Errorf("session context must lead with its separator:\n%q", sess)
+	}
+	// The launcher writes NO file: the baked context is the agent command's
+	// injection, never a placement.
+	if strings.Contains(sess, "skill opinions") {
+		t.Errorf("baked context leaked into the session var:\n%s", sess)
 	}
 }
 
 // No gate file = no wall was requested: BYRE_EGRESS alone must not make the
-// launcher claim one. The baked context still lands.
+// launcher claim one — and with nothing dynamic, the session context is
+// EMPTY (exported, so an injecting command's reference never trips unbound).
 func TestLauncherNoEgressSectionWithoutGate(t *testing.T) {
 	ctxDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(ctxDir, "agent-context.md"), []byte("skill opinions"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, out, mem := runLauncherCompose(t, ctxDir, filepath.Join(t.TempDir(), "no-gate"),
+	code, out, sess := runLauncherCompose(t, ctxDir, filepath.Join(t.TempDir(), "no-gate"),
 		"BYRE_EGRESS=api.example.com:443")
 	if code != 0 {
 		t.Fatalf("launcher exit %d\n%s", code, out)
 	}
-	if !strings.Contains(mem, "skill opinions") {
-		t.Fatalf("baked context not placed:\n%s", mem)
-	}
-	if strings.Contains(mem, "egress allowlist") {
-		t.Errorf("no wall, yet the launcher announced one:\n%s", mem)
+	if sess != "" {
+		t.Errorf("no wall and no self-edit: session context must be exported EMPTY, got %q", sess)
 	}
 }
 
@@ -585,19 +594,19 @@ func TestLauncherEgressEmptyAndAbsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate := gateWithListener(t, t.TempDir())
-	code, out, mem := runLauncherCompose(t, ctxDir, gate, "BYRE_EGRESS=")
+	code, out, sess := runLauncherCompose(t, ctxDir, gate, "BYRE_EGRESS=")
 	if code != 0 {
 		t.Fatalf("launcher exit %d\n%s", code, out)
 	}
-	if !strings.Contains(mem, "EMPTY") {
-		t.Errorf("empty allowlist should be announced as EMPTY:\n%s", mem)
+	if !strings.Contains(sess, "EMPTY") {
+		t.Errorf("empty allowlist should be announced as EMPTY:\n%s", sess)
 	}
 
-	code, out, mem = runLauncherCompose(t, ctxDir, gate)
+	code, out, sess = runLauncherCompose(t, ctxDir, gate)
 	if code != 0 {
 		t.Fatalf("launcher exit %d\n%s", code, out)
 	}
-	if strings.Contains(mem, "egress allowlist") {
-		t.Errorf("no BYRE_EGRESS handed over, yet a list was announced:\n%s", mem)
+	if strings.Contains(sess, "egress allowlist") {
+		t.Errorf("no BYRE_EGRESS handed over, yet a list was announced:\n%s", sess)
 	}
 }

@@ -1,8 +1,8 @@
 #!/bin/bash
-# byre's codex MCP adapter (ADR 0033): derive per-invocation `-c` overrides
-# from the canonical /etc/byre/mcp.json and exec codex. Pure injection — no
-# state writes, exact per-session convergence by construction, same contract
-# as the claude skill's --mcp-config flag.
+# byre's codex launch adapter: derive per-invocation `-c` overrides from the
+# canonical /etc/byre/mcp.json (ADR 0033) and the baked agent context (ADR
+# 0046), then exec codex. Pure injection — no state writes, exact per-session
+# convergence by construction, same contract as the claude skill's flags.
 #
 # Field mapping (live-verified on codex 0.144.3, 2026-07-15):
 #   stdio:  mcp_servers.<name>.command / .args
@@ -68,6 +68,23 @@ if [ -r "$MCP" ]; then
       )
     end
   ' "$MCP")
+fi
+
+# Agent context (ADR 0046): the baked file plus the launcher's per-session
+# additions (BYRE_SESSION_CONTEXT arrives with its own leading separator, or
+# empty/unset), injected as `developer_instructions` — codex emits it as a
+# SEPARATE developer-role message, appended; base_instructions and AGENTS.md
+# discovery untouched (source-verified: config_toml.rs developer_instructions,
+# session/mod.rs developer_sections). The multi-line value fails TOML parse
+# inside -c and falls back to a literal string by design (config_override.rs).
+# byre writes NOTHING into $CODEX_HOME: its AGENTS.md is the user's file (the
+# retired context_target rewrote it every launch).
+CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
+ctx_text=""
+[ -r "$CTX" ] && ctx_text="$(cat "$CTX")"
+ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
+if [ -n "$ctx_text" ]; then
+  flags+=(-c "developer_instructions=$ctx_text")
 fi
 
 # ${flags[@]+...}: bash < 4.4 (macOS's 3.2 included, where the unit test

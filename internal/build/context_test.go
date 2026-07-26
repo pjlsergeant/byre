@@ -845,12 +845,10 @@ func TestAssembleWritesAgentContextTarget(t *testing.T) {
 	if err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22.\n\nworkflow rules" {
 		t.Fatalf("context file wrong: %q err=%v", ctx, err)
 	}
-	tgt, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextTargetName))
-	if err != nil || string(tgt) != "/home/dev/.claude/CLAUDE.md\n" {
-		t.Fatalf("target file wrong: %q err=%v", tgt, err)
-	}
-	if !strings.Contains(df, "COPY "+gen.AgentContextTargetName+" /etc/byre/"+gen.AgentContextTargetName) {
-		t.Errorf("Dockerfile missing context-target COPY:\n%s", df)
+	// No placement pointer bakes anywhere: delivery is the agent command's
+	// injection (ADR 0046), never a byre write into agent state.
+	if strings.Contains(df, "agent-context-target") {
+		t.Errorf("retired context-target artifact in the Dockerfile:\n%s", df)
 	}
 }
 
@@ -903,7 +901,7 @@ func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	// Target set, no skill context: the target + self-edit note are baked, and
 	// the context file still exists — the chassis paragraph (the /inbox fact)
 	// rides every box even with no skill contributing context.
-	res := skills.Resolved{Agent: &skills.AgentContrib{ContextTarget: "/home/dev/.claude/CLAUDE.md"}}
+	res := skills.Resolved{Agent: &skills.AgentContrib{Command: "claude", Context: "inject"}}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
 		t.Fatal(err)
@@ -911,11 +909,8 @@ func TestAssembleContextTargetWithoutSkillContext(t *testing.T) {
 	if ctx, err := os.ReadFile(filepath.Join(paths.ContextDir, gen.AgentContextName)); err != nil || string(ctx) != chassisContext+"\n\nBox base image: node:22." {
 		t.Errorf("agent-context.md should carry exactly the chassis + base paragraphs without skill context: %q %v", ctx, err)
 	}
-	if _, err := os.Stat(filepath.Join(paths.ContextDir, gen.AgentContextTargetName)); err != nil {
-		t.Errorf("target file should be written when the agent declares a target: %v", err)
-	}
 	if _, err := os.Stat(filepath.Join(paths.ContextDir, gen.SelfEditDocName)); err != nil {
-		t.Errorf("self-edit doc should be written when the agent declares a target: %v", err)
+		t.Errorf("self-edit doc should be written whenever an agent launches: %v", err)
 	}
 	if !strings.Contains(df, "COPY "+gen.SelfEditDocName+" /etc/byre/"+gen.SelfEditDocName) {
 		t.Errorf("Dockerfile missing self-edit COPY:\n%s", df)
@@ -991,12 +986,12 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	withAgent := skills.Resolved{
 		Skills: []skills.Skill{{Name: "claude", Context: "rules"}},
-		Agent:  &skills.AgentContrib{Command: "claude", ContextTarget: "/home/dev/.claude/CLAUDE.md"},
+		Agent:  &skills.AgentContrib{Command: "claude", Context: "inject"},
 	}
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, withAgent); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.SelfEditDocName} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); err != nil {
 			t.Fatalf("%s not written with an agent: %v", name, err)
 		}
@@ -1007,7 +1002,7 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+	for _, name := range []string{gen.AgentCmdName, gen.SelfEditDocName, "agent-context-target"} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); !os.IsNotExist(err) {
 			t.Errorf("stale %s survived an agent-less re-assemble: %v", name, err)
 		}

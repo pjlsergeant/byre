@@ -54,6 +54,10 @@ type statusInfo struct {
 	ClaudeSkills       []skills.ClaudeSkillDecl
 	ClaudeSkillsClosed []string
 	AgentClaudeSkills  string
+	// AgentContext is the selected agent's context vouch (ADR 0046);
+	// Contexts is the resolved [[context]] declaration set.
+	AgentContext string
+	Contexts     []config.ContextDecl
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments      []skills.ContainmentDecl
@@ -136,6 +140,9 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
 	// Same config-only degradation for the declared Claude Skill set.
 	info.ClaudeSkills, _ = skills.ClaudeSkillSet(cfg, skills.Resolved{})
+	// Standing instructions are config-only (no skill union): the resolved
+	// set IS the declared set.
+	info.Contexts = cfg.Contexts
 	info.EnvProvided = map[string]bool{}
 	for k := range cfg.Env {
 		info.EnvProvided[k] = true
@@ -196,6 +203,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			if res.Agent != nil {
 				info.AgentMCP = res.Agent.MCP
 				info.AgentClaudeSkills = res.Agent.ClaudeSkills
+				info.AgentContext = res.Agent.Context
 			}
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
@@ -542,6 +550,21 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row(label, "!"+c+"  (config — removed from the declared set)")
 	}
 
+	// Standing instructions ([[context]]): wiring, not grants (ADR 0043) —
+	// one row per declaration plus the delivery verdict, the MCP shape. The
+	// PROSE renders in the config editor, not here; status answers "what is
+	// wired, and does it reach the agent?".
+	for i, cd := range s.Contexts {
+		label := "Instructions"
+		if i > 0 {
+			label = ""
+		}
+		row(label, contextLine(cd))
+	}
+	if len(s.Contexts) > 0 {
+		row("", contextDeliveryLine(s))
+	}
+
 	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate
 	// host->box data channel, attributed source by source — the shipped git
 	// identity included (byre's own defaults get no invisibility pass).
@@ -722,6 +745,25 @@ func claudeSkillsDeliveryLine(s statusInfo) string {
 		return fmt.Sprintf("-> the agent session receives: %s  (via %s; a same-name skill in the agent's own state shadows byre's)", list, gen.ClaudeSkillsPath)
 	default:
 		return fmt.Sprintf("-> NOT delivered: agent skill %s has no claude-skills adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.ClaudeSkillsPath)
+	}
+}
+
+// contextDeliveryLine is the delivery verdict under the standing
+// instructions, keyed off the selected agent's context vouch (ADR 0046 — the
+// mcpDeliveryLine shape). byre never writes an agent-owned file to deliver
+// prose: without the vouch the text simply doesn't reach the session, and
+// this row says so instead of letting the declaration imply delivery.
+func contextDeliveryLine(s statusInfo) string {
+	const baked = "/etc/byre/" + gen.AgentContextName
+	switch {
+	case s.SkillErr != "":
+		return "-> delivery unknown (skills unresolved); the text bakes to " + baked
+	case s.Agent == "":
+		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
+	case s.AgentContext == "inject":
+		return "-> the agent session receives the text (injected by the agent command from " + baked + ")"
+	default:
+		return fmt.Sprintf("-> NOT delivered: agent skill %s has no context adapter — the text bakes to %s; wire it into the agent yourself", s.Agent, baked)
 	}
 }
 

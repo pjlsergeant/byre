@@ -50,9 +50,11 @@ type Input struct {
 	Skills       []SkillBlock // per-skill build blocks, in order
 	AgentCmd     bool         // emit COPY of the agent launch script
 	AgentContext bool         // emit COPY of the concatenated agent context
-	// AgentContextTarget, when set alongside AgentContext, emits the baked target
-	// path file so the launcher knows where to place the context at runtime.
-	AgentContextTarget bool
+	// SelfEditDoc emits the --self-edit note the launcher folds into the
+	// per-session context (BYRE_SESSION_CONTEXT) when that grant is present.
+	// Rides any agent command — context delivery itself is the agent
+	// command's injection, never a byre write into agent state (ADR 0046).
+	SelfEditDoc bool
 	// VolumeDirs are named-volume mount points to pre-create in the image owned by
 	// the baked UID/GID, so a fresh Docker named volume initializes with that
 	// ownership (else a root-owned mount point leaves the unprivileged agent unable
@@ -89,10 +91,9 @@ type SkillBlock struct {
 
 // Context-baked paths the launcher reads at runtime.
 const (
-	AgentCmdName           = "agent-cmd"
-	AgentContextName       = "agent-context.md"
-	AgentContextTargetName = "agent-context-target"
-	SelfEditDocName        = "self-edit.md"
+	AgentCmdName     = "agent-cmd"
+	AgentContextName = "agent-context.md"
+	SelfEditDocName  = "self-edit.md"
 )
 
 // MCPConfigName is the build-context filename of the canonical declared MCP
@@ -243,7 +244,7 @@ func Dockerfile(in Input) string {
 
 	// Agent files are project/agent-specific, so they go after the constant
 	// core block (and after skills), keeping them out of the shared path.
-	if in.AgentCmd || in.AgentContext || in.AgentContextTarget {
+	if in.AgentCmd || in.AgentContext || in.SelfEditDoc {
 		b.WriteString("\n# --- agent ---\n")
 		if in.AgentCmd {
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", AgentCmdName, AgentCmdName)
@@ -252,9 +253,9 @@ func Dockerfile(in Input) string {
 		if in.AgentContext {
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", AgentContextName, AgentContextName)
 		}
-		if in.AgentContextTarget {
-			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", AgentContextTargetName, AgentContextTargetName)
-			// The launcher appends this to the agent's memory only under --self-edit.
+		if in.SelfEditDoc {
+			// The launcher folds this into BYRE_SESSION_CONTEXT only when the
+			// self-edit mount is actually present.
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", SelfEditDocName, SelfEditDocName)
 		}
 	}

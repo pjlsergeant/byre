@@ -90,66 +90,70 @@ if [ -f "$WS/.git" ]; then
   fi
 fi
 
-# Place skill/agent context where the agent reads it. The target (e.g.
-# /home/dev/.claude/CLAUDE.md) usually lives in a state volume that's only mounted
-# now, at runtime — so this can't be a build-time COPY. Best-effort: a failure
-# here must never block the launch. The dir override is a test seam (the gate
-# precedent): the launcher tests compose against a temp dir instead of the
-# suite box's real /etc/byre.
+# Per-session agent context — the DYNAMIC additions only: the egress
+# allowlist this box actually enforces, and the --self-edit note when that
+# grant is present. Exported as BYRE_SESSION_CONTEXT for the agent command
+# to inject alongside the BAKED /etc/byre/agent-context.md (claude:
+# --append-system-prompt-file for the baked file, --append-system-prompt for
+# this var). byre never writes an agent-owned file to deliver prose (ADR
+# 0046) — the retired context_target placement rewrote the agent's own
+# memory file every launch, expropriating a file that was never byre's.
+# Always exported (possibly empty), so an injecting command's
+# "$BYRE_SESSION_CONTEXT" reference is safe unconditionally. Best-effort
+# throughout: a failure composing informational text must never block the
+# launch.
 CTX_DIR="${BYRE_CONTEXT_DIR:-/etc/byre}"
-if [ -s "$CTX_DIR/agent-context-target" ]; then
-  CTX_TARGET="$(cat "$CTX_DIR/agent-context-target")"
-  if [ -n "$CTX_TARGET" ]; then
-    # The agent's memory = skill [context], plus a --self-edit note when that grant
-    # is actually present. The real signal is the project's byre.config mounted rw
-    # at /home/dev/.byre-self (what --self-edit does) — NOT a spoofable env var.
-    # We only TOUCH the memory file when we have something to place, so a run with
-    # neither context nor self-edit leaves a persisted memory file untouched.
-    # A symlink a prior agent run may have planted can't redirect the write: rm -f
-    # drops it so we write a fresh regular file. Best-effort: never block launch.
-    sh -c '
-      t="$1"; etc="$2"; gate="$3"
-      have_ctx=; [ -f "$etc/agent-context.md" ] && have_ctx=1
-      # self-edit grant = the store actually bind-mounted READ-WRITE at
-      # /home/dev/.byre-self (what --self-edit does). Check /proc/mounts for an rw
-      # mount at that target — not mere file existence (a baked files/ entry) nor a
-      # read-only bind. (Deliberately rw-mounting something else at byre own internal
-      # self-edit path is a self-granted, status-visible choice; the note is only
-      # informational either way.)
-      have_se=
-      grep -Eq " /home/dev/\.byre-self [^ ]+ rw[, ]" /proc/mounts && [ -f "$etc/self-edit.md" ] && have_se=1
-      # Egress announcement: the wall is up (a posture skill baked the gate we
-      # already waited on) AND byre handed us the enforced allowlist — the same
-      # BYRE_EGRESS string the netns helper applied, so what we announce IS what
-      # is enforced. Informational only, hence an env var is fine here: a user
-      # setting it lies to their own agent (footgun doctrine), and the agent can
-      # edit its memory file anyway.
-      have_eg=; [ -s "$gate" ] && [ -n "${BYRE_EGRESS+set}" ] && have_eg=1
-      [ -n "$have_ctx" ] || [ -n "$have_se" ] || [ -n "$have_eg" ] || exit 0
-      mkdir -p "$(dirname "$t")" || exit 0
-      rm -f "$t"
-      wrote=
-      [ -n "$have_ctx" ] && cat "$etc/agent-context.md" > "$t" && wrote=1
-      if [ -n "$have_eg" ]; then
-        [ -n "$wrote" ] && printf "\n\n" >> "$t"
-        {
-          printf "## This session\047s egress allowlist\n\n"
-          if [ -n "$BYRE_EGRESS" ]; then
-            printf "%s\n\n" "$(printf "%s" "$BYRE_EGRESS" | sed "s/ /, /g")"
-            printf "Anything not listed is closed. The list was resolved when this session\nstarted; a restart re-reads the config.\n"
-          else
-            printf "The allowlist is EMPTY: every outbound connection is closed. A restart\nre-reads the config.\n"
-          fi
-        } >> "$t" && wrote=1
-      fi
-      if [ -n "$have_se" ]; then
-        [ -n "$wrote" ] && printf "\n\n" >> "$t"
-        cat "$etc/self-edit.md" >> "$t" && wrote=1
-      fi
-      [ -n "$wrote" ] || rm -f "$t"
-    ' _ "$CTX_TARGET" "$CTX_DIR" "$GATE_FILE"
+BYRE_SESSION_CONTEXT=""
+append_session_ctx() {
+  [ -n "$1" ] || return 0
+  if [ -n "$BYRE_SESSION_CONTEXT" ]; then
+    BYRE_SESSION_CONTEXT="${BYRE_SESSION_CONTEXT}
+
+$1"
+  else
+    BYRE_SESSION_CONTEXT="$1"
   fi
-fi 2>/dev/null || true
+}
+# Egress announcement: the wall is up (a posture skill baked the gate we
+# already waited on) AND byre handed us the enforced allowlist — the same
+# BYRE_EGRESS string the netns helper applied, so what we announce IS what
+# is enforced. Informational only, hence an env var is fine here: a user
+# setting it lies to their own agent (footgun doctrine).
+if [ -s "$GATE_FILE" ] && [ -n "${BYRE_EGRESS+set}" ]; then
+  if [ -n "$BYRE_EGRESS" ]; then
+    eg_list="$(printf "%s" "$BYRE_EGRESS" | sed "s/ /, /g" 2>/dev/null || true)"
+    append_session_ctx "## This session's egress allowlist
+
+${eg_list}
+
+Anything not listed is closed. The list was resolved when this session
+started; a restart re-reads the config."
+  else
+    append_session_ctx "## This session's egress allowlist
+
+The allowlist is EMPTY: every outbound connection is closed. A restart
+re-reads the config."
+  fi
+fi
+# self-edit grant = the store actually bind-mounted READ-WRITE at
+# /home/dev/.byre-self (what --self-edit does). Check /proc/mounts for an rw
+# mount at that target — not mere file existence (a baked files/ entry) nor a
+# read-only bind. (Deliberately rw-mounting something else at byre'"'"'s own
+# internal self-edit path is a self-granted, status-visible choice; the note
+# is only informational either way.)
+if grep -Eq " /home/dev/\.byre-self [^ ]+ rw[, ]" /proc/mounts 2>/dev/null && [ -f "$CTX_DIR/self-edit.md" ]; then
+  append_session_ctx "$(cat "$CTX_DIR/self-edit.md" 2>/dev/null || true)"
+fi
+# Exported with a LEADING blank line when non-empty, so an adapter can
+# concatenate baked+session directly ("$(cat agent-context.md)$BYRE_SESSION_CONTEXT")
+# without separator logic of its own; a standalone append (claude's second
+# flag) tolerates the leading newlines.
+if [ -n "$BYRE_SESSION_CONTEXT" ]; then
+  BYRE_SESSION_CONTEXT="
+
+$BYRE_SESSION_CONTEXT"
+fi
+export BYRE_SESSION_CONTEXT
 
 # First-run hooks — agent skills drop scripts here. They run as the dev user
 # (the launcher is unprivileged), so a hook does its own user-level setup directly

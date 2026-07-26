@@ -24,6 +24,11 @@ dockerfile = [
   # Clear any install residue from ~/.gemini (the .gemini state-volume mount
   # point) so a fresh volume starts clean; gemini recreates it at runtime/login.
   "RUN rm -rf /home/dev/.gemini",
+  # The context dir --include-directories points at: one GEMINI.md symlinked
+  # to the baked agent context (dangling until the core block's later COPY
+  # lands — fine, Docker allows it; gemini reads through the symlink at
+  # runtime). A dedicated dir so no other baked file matches memory discovery.
+  "RUN mkdir -p /etc/byre/context && ln -s /etc/byre/agent-context.md /etc/byre/context/GEMINI.md",
 ]
 
 [runtime]
@@ -49,11 +54,20 @@ egress = ["generativelanguage.googleapis.com", "cloudcode-pa.googleapis.com", "o
 
 [agent]
 # Verify the non-interactive/autonomy flag for gemini-cli.
-command = "gemini --yolo"
+# --include-directories adds byre's context dir to gemini's workspace, whose
+# memory discovery picks up the GEMINI.md there — a SYMLINK to the baked
+# /etc/byre/agent-context.md (the [build] line below; gemini has no
+# append-a-file flag, its context.fileName setting is filename-only, and the
+# include-dirs list CONCATs with the user's own — source-verified,
+# memoryDiscovery/settingsSchema). Trust-gated memory is already forced open
+# by GEMINI_CLI_TRUST_WORKSPACE above. byre writes NOTHING into ~/.gemini:
+# its GEMINI.md is the user's file (the retired context_target rewrote it
+# every launch, ADR 0046). Per-session additions ($BYRE_SESSION_CONTEXT)
+# don't ride this file-based channel — not delivered for gemini, recorded in
+# the ADR.
+command = "gemini --yolo --include-directories /etc/byre/context"
 state = ".gemini"
-# Gemini reads global guidance from ~/.gemini/GEMINI.md. byre places skill
-# [context] here at runtime. HOST-VERIFY the path/filename gemini actually reads.
-context_target = "/home/dev/.gemini/GEMINI.md"
+context = "inject"
 
 # No creds seeding: gemini's login is a rotating OAuth token; copying it invites
 # a refresh collision. Log in inside the box (the .gemini state volume persists).

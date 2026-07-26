@@ -73,14 +73,13 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 		Skills:       genSkills,
 		AgentCmd:     res.AgentCommand() != "",
 		AgentContext: true, // the chassis paragraph makes context non-empty on every box
-		// Bake the target (and the self-edit note) whenever the agent declares
-		// where it reads memory — even with no skill context — so the launcher can
-		// still place a --self-edit note there.
-		AgentContextTarget: res.AgentContextTarget() != "",
-		VolumeDirs:         volumeDirs(cfg.Volumes, res.Volumes()),
-		DockerfilePre:      cfg.DockerfilePre,
-		DockerfilePost:     cfg.DockerfilePost,
-		Guard:              planGuard(genSkills, res),
+		// The self-edit note rides any agent: the launcher folds it into the
+		// per-session context (BYRE_SESSION_CONTEXT) when the grant is live.
+		SelfEditDoc:    res.AgentCommand() != "",
+		VolumeDirs:     volumeDirs(cfg.Volumes, res.Volumes()),
+		DockerfilePre:  cfg.DockerfilePre,
+		DockerfilePost: cfg.DockerfilePost,
+		Guard:          planGuard(genSkills, res),
 	}
 	return in, append(append(fileJobs, skillJobs...), claudeSkillJobs...), nil
 }
@@ -200,7 +199,9 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	// Same for the conditional context files: each is written only when its
 	// condition holds, so a condition that turned false since the last build
 	// (agent removed, context emptied) would otherwise leave a stale file behind.
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.AgentContextTargetName, gen.SelfEditDocName} {
+	// "agent-context-target" is the RETIRED placement pointer (pre-ADR 0046
+	// stores may still carry one) — removed like the live conditional files.
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, "agent-context-target", gen.SelfEditDocName} {
 		if err := ctxRoot.Remove(name); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
@@ -290,12 +291,10 @@ func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (stri
 	if err := ctxRoot.WriteFile(gen.AgentContextName, []byte(ctx), 0o644); err != nil {
 		return "", err
 	}
-	if target := res.AgentContextTarget(); target != "" {
-		if err := ctxRoot.WriteFile(gen.AgentContextTargetName, []byte(target+"\n"), 0o644); err != nil {
-			return "", err
-		}
-		// The --self-edit note the launcher appends to the agent's memory when the
-		// self-edit mount (this project's store at /home/dev/.byre-self) is present.
+	if res.AgentCommand() != "" {
+		// The --self-edit note the launcher folds into the per-session context
+		// (BYRE_SESSION_CONTEXT) when the self-edit mount (this project's store
+		// at /home/dev/.byre-self) is present.
 		if err := ctxRoot.WriteFile(gen.SelfEditDocName, []byte(selfEditDoc), 0o644); err != nil {
 			return "", err
 		}

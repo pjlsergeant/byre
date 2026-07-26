@@ -11,6 +11,18 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
+// writeTestContext lays down a small known agent-context file and returns
+// its path — every wrapper invocation points BYRE_AGENT_CONTEXT at it so the
+// suite box's REAL /etc/byre/agent-context.md never leaks into assertions.
+func writeTestContext(t *testing.T, dir string) string {
+	t.Helper()
+	p := filepath.Join(dir, "agent-context.md")
+	if err := os.WriteFile(p, []byte("test context\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 // The codex MCP adapter is a shell wrapper deriving `-c` overrides from the
 // canonical mcp.json. This drives the REAL script against the REAL
 // renderer's output (the two halves of the contract), with a stub codex
@@ -24,6 +36,7 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
 
 	// A stub codex that records its argv, one per line.
 	argvFile := filepath.Join(dir, "argv")
@@ -51,6 +64,8 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 	cmd := exec.Command("bash", script, "--dangerously-bypass-approvals-and-sandbox")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath,
+		"BYRE_AGENT_CONTEXT="+ctxPath,
+		"BYRE_SESSION_CONTEXT=\n\nsession note", // launcher exports it leading-separated
 		"PATH="+dir+":"+os.Getenv("PATH"),
 		"PROXY_TOKEN=sekrit", "API_KEY=alsosekrit", "TENANT=corp",
 	)
@@ -71,6 +86,8 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 		"-c", `mcp_servers.proxied.bearer_token_env_var="PROXY_TOKEN"`,
 		"-c", `mcp_servers.proxied.env_http_headers={"X-Api-Key" = "API_KEY"}`,
 		"-c", `mcp_servers.proxied.http_headers={"X-Tenant" = "acme-corp", "X-Unset" = "keep-${NEVER_SET_VAR}"}`,
+		// One argv element; the line-per-arg stub splits its newlines.
+		"-c", "developer_instructions=test context", "", "session note",
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
@@ -96,6 +113,7 @@ func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
 	// A stub opencode that records OPENCODE_CONFIG_CONTENT (empty marker if unset).
 	envFile := filepath.Join(dir, "env")
 	stub := "#!/bin/sh\nprintf '%s' \"${OPENCODE_CONFIG_CONTENT-<<UNSET>>}\" > " + envFile + "\n"
@@ -119,6 +137,8 @@ func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
 	cmd := exec.Command("bash", script, "--auto")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath,
+		"BYRE_AGENT_CONTEXT="+ctxPath,
+		"BYRE_SESSION_CONTEXT=",
 		"PATH="+dir+":"+os.Getenv("PATH"),
 		"OPENCODE_CONFIG_CONTENT=", // unset in the box; the wrapper starts from {}
 		"PROXY_TOKEN=sekrit", "TENANT=corp",
@@ -137,6 +157,7 @@ func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
 			URL     string            `json:"url"`
 			Headers map[string]string `json:"headers"`
 		} `json:"mcp"`
+		Instructions []string `json:"instructions"`
 	}
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("OPENCODE_CONFIG_CONTENT is not valid JSON: %v\n%s", err, raw)
@@ -160,6 +181,9 @@ func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
 	if got.MCP["linear"].Type != "remote" {
 		t.Fatalf("linear: want remote, got %q", got.MCP["linear"].Type)
 	}
+	if len(got.Instructions) != 1 || got.Instructions[0] != ctxPath {
+		t.Fatalf("instructions must carry the baked context path: %v", got.Instructions)
+	}
 }
 
 // A pre-existing OPENCODE_CONFIG_CONTENT is preserved and byre's servers
@@ -171,6 +195,7 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
 	envFile := filepath.Join(dir, "env")
 	stub := "#!/bin/sh\nprintf '%s' \"$OPENCODE_CONFIG_CONTENT\" > " + envFile + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(stub), 0o755); err != nil {
@@ -184,15 +209,18 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 	}
 	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
 	cmd.Env = append(os.Environ(),
-		"BYRE_MCP_CONFIG="+mcpPath, "PATH="+dir+":"+os.Getenv("PATH"),
-		`OPENCODE_CONFIG_CONTENT={"theme":"nord","mcp":{"user-srv":{"type":"local","command":["mine"]}}}`,
+		"BYRE_MCP_CONFIG="+mcpPath,
+		"BYRE_AGENT_CONTEXT="+ctxPath,
+		"BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"),
+		`OPENCODE_CONFIG_CONTENT={"theme":"nord","instructions":["/home/me/mine.md"],"mcp":{"user-srv":{"type":"local","command":["mine"]}}}`,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed: %v\n%s", err, out)
 	}
 	var got struct {
-		Theme string                    `json:"theme"`
-		MCP   map[string]map[string]any `json:"mcp"`
+		Theme        string                    `json:"theme"`
+		MCP          map[string]map[string]any `json:"mcp"`
+		Instructions []string                  `json:"instructions"`
 	}
 	raw, _ := os.ReadFile(envFile)
 	if err := json.Unmarshal(raw, &got); err != nil {
@@ -207,10 +235,14 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 	if _, ok := got.MCP["github"]; !ok {
 		t.Fatalf("byre's injected server must be present: %v", got.MCP)
 	}
+	if strings.Join(got.Instructions, " ") != "/home/me/mine.md "+ctxPath {
+		t.Fatalf("instructions must UNION (user's first, byre's appended): %v", got.Instructions)
+	}
 }
 
-// The empty declared set must exec codex with the passthrough args ONLY —
-// zero -c flags (and no bash unbound-variable trip on the empty array).
+// The empty declared MCP set must add zero mcp -c flags (and no bash
+// unbound-variable trip on the empty array); the context injection is
+// UNCONDITIONAL (the baked file always exists), so exactly one -c remains.
 func TestCodexMCPLaunchWrapperEmptySet(t *testing.T) {
 	for _, bin := range []string{"bash", "jq"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -218,6 +250,7 @@ func TestCodexMCPLaunchWrapperEmptySet(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
 	argvFile := filepath.Join(dir, "argv")
 	stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argvFile + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte(stub), 0o755); err != nil {
@@ -228,20 +261,19 @@ func TestCodexMCPLaunchWrapperEmptySet(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "--flag")
-	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "PATH="+dir+":"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed on the empty set: %v\n%s", err, out)
 	}
 	argv, _ := os.ReadFile(argvFile)
-	if strings.TrimRight(string(argv), "\n") != "--flag" {
-		t.Fatalf("empty set must pass through args only: %q", argv)
+	if got := strings.TrimRight(string(argv), "\n"); got != "-c\ndeveloper_instructions=test context\n--flag" {
+		t.Fatalf("empty MCP set: want context -c + passthrough only, got %q", got)
 	}
 }
 
-// The empty declared set must exec opencode WITHOUT setting
-// OPENCODE_CONFIG_CONTENT — a no-MCP box stays byte-identical to plain
-// opencode (the codex "zero flags" contract), and a pre-existing value is left
-// untouched when there is nothing to inject.
+// The empty declared MCP set contributes no `mcp` key — but the context
+// injection is UNCONDITIONAL (ADR 0046), so OPENCODE_CONFIG_CONTENT is now
+// always set, carrying exactly the instructions entry.
 func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 	for _, bin := range []string{"bash", "jq"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -249,6 +281,7 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
+	ctxPath := writeTestContext(t, dir)
 	envFile := filepath.Join(dir, "env")
 	stub := "#!/bin/sh\nprintf '%s' \"${OPENCODE_CONFIG_CONTENT-<<UNSET>>}\" > " + envFile + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte(stub), 0o755); err != nil {
@@ -259,12 +292,22 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
-	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "PATH="+dir+":"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed on the empty set: %v\n%s", err, out)
 	}
 	raw, _ := os.ReadFile(envFile)
-	if string(raw) != "<<UNSET>>" {
-		t.Fatalf("empty set must leave OPENCODE_CONFIG_CONTENT unset, got %q", raw)
+	var got struct {
+		MCP          map[string]any `json:"mcp"`
+		Instructions []string       `json:"instructions"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, raw)
+	}
+	if got.MCP != nil {
+		t.Fatalf("empty MCP set must not emit an mcp key: %s", raw)
+	}
+	if len(got.Instructions) != 1 || got.Instructions[0] != ctxPath {
+		t.Fatalf("instructions must carry the baked context path: %v", got.Instructions)
 	}
 }

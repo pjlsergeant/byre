@@ -95,9 +95,13 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 			t.Errorf("missing shipped file %q; shipped: %v", want, shipped)
 		}
 	}
-	// Workflow context reaches Claude's memory file.
-	if res.AgentContextTarget() != "/home/dev/.claude/CLAUDE.md" {
-		t.Errorf("context target wrong: %q", res.AgentContextTarget())
+	// Workflow context is INJECTED (ADR 0046) — never written into Claude's
+	// own memory file.
+	if !res.AgentContextInjects() {
+		t.Errorf("claude must vouch context injection")
+	}
+	if !strings.Contains(res.AgentCommand(), "--append-system-prompt-file /etc/byre/agent-context.md") {
+		t.Errorf("claude command must inject the baked context: %q", res.AgentCommand())
 	}
 }
 

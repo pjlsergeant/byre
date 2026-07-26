@@ -1,9 +1,11 @@
 #!/bin/bash
-# byre's opencode MCP adapter (ADR 0033): build an OPENCODE_CONFIG_CONTENT from
-# the canonical /etc/byre/mcp.json and exec opencode. opencode deep-MERGES
-# OPENCODE_CONFIG_CONTENT over global + project config (source-verified,
-# config.ts load order, 1.18.3), so injected servers COMPOSE with the user's
-# own config and never replace it. Pure injection — no state writes, exact
+# byre's opencode launch adapter: build an OPENCODE_CONFIG_CONTENT carrying
+# the canonical /etc/byre/mcp.json servers (ADR 0033) and the baked agent
+# context as an `instructions` entry (ADR 0046), then exec opencode. opencode
+# deep-MERGES OPENCODE_CONFIG_CONTENT over global + project config and
+# CONCATENATES instructions arrays (source-verified, config.ts
+# mergeConfigConcatArrays), so injected content COMPOSES with the user's own
+# config and never replaces it. Pure injection — no state writes, exact
 # per-session convergence by construction, same contract as the codex adapter.
 #
 # Schema (opencode core v1 config/mcp.ts): the top-level `mcp` map, keyed by
@@ -45,18 +47,24 @@ if [ -r "$MCP" ]; then
   ' "$MCP")
 fi
 
-# Only inject when there is at least one server. An empty `mcp` map would merge
-# harmlessly, but skipping keeps a no-MCP box byte-identical to plain opencode
-# (the codex "empty set = zero flags" contract). When the box (or a user) has
-# ALREADY set OPENCODE_CONFIG_CONTENT, deep-merge byre's servers ON TOP so the
-# injection is additive rather than clobbering — byre keys win per-name, the
-# same precedence opencode itself gives this env layer.
-if [ "$(printf '%s' "$byre_mcp" | jq -r 'length')" != "0" ]; then
-  base=${OPENCODE_CONFIG_CONTENT:-'{}'}
-  printf '%s' "$base" | jq empty 2>/dev/null || base='{}'
-  OPENCODE_CONFIG_CONTENT=$(printf '%s' "$base" \
-    | jq -c --argjson mcp "$byre_mcp" '. * {mcp: ((.mcp // {}) * $mcp)}')
-  export OPENCODE_CONFIG_CONTENT
-fi
+# Agent context (ADR 0046): the baked file rides opencode's `instructions`
+# config key — entries APPEND to the system context ("Instructions from:
+# <path>" blocks) and instruction arrays CONCAT across layers, so the user's
+# own instructions survive. A missing file is a silent no-op in opencode
+# (fs.glob include:"file"), but the bake makes the file unconditional.
+# Per-session additions ($BYRE_SESSION_CONTEXT) don't ride this file-path
+# channel — not delivered for opencode, recorded in the ADR. When the box (or
+# a user) has ALREADY set OPENCODE_CONFIG_CONTENT, byre's content deep-merges
+# ON TOP: mcp servers win per-name (the precedence opencode itself gives this
+# env layer), instructions UNION.
+CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
+base=${OPENCODE_CONFIG_CONTENT:-'{}'}
+printf '%s' "$base" | jq empty 2>/dev/null || base='{}'
+OPENCODE_CONFIG_CONTENT=$(printf '%s' "$base" \
+  | jq -c --argjson mcp "$byre_mcp" --arg ctx "$CTX" '
+      . * {mcp: ((.mcp // {}) * $mcp)}
+      | .instructions = (((.instructions // []) + [$ctx]) | unique)
+      | if .mcp == {} then del(.mcp) else . end')
+export OPENCODE_CONFIG_CONTENT
 
 exec opencode "$@"

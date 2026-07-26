@@ -73,18 +73,25 @@ egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.an
 # convergence. Known boundaries: a same-name skill the in-box agent authored
 # into ~/.claude/skills (personal scope) shadows the delivered one — box state
 # wins, byre doesn't clobber it; attach shells don't carry the flag.
-command = "claude --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json --add-dir /etc/byre/claude-skills"
+command = "claude --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json --add-dir /etc/byre/claude-skills --append-system-prompt-file /etc/byre/agent-context.md --append-system-prompt \"$BYRE_SESSION_CONTEXT\""
 # mcp = "inject" is the author's vouch that the command above consumes the
 # baked file; status keys delivery reporting off it.
 mcp = "inject"
 # claude_skills = "inject" is the same vouch for the baked Claude Skill tree.
 claude_skills = "inject"
+# context = "inject" is the same vouch for the agent context (ADR 0046):
+# --append-system-prompt-file carries the BAKED /etc/byre/agent-context.md
+# (chassis facts, skill snippets, [[context]] standing instructions;
+# flag+both-together verified on 2.1.220) and the second --append-system-prompt
+# carries the launcher's per-session additions ($BYRE_SESSION_CONTEXT: the
+# enforced egress allowlist, the --self-edit note; always exported, possibly
+# empty, so the reference is safe unconditionally). byre writes NOTHING into
+# ~/.claude: the user-memory CLAUDE.md is the USER'S file (the retired
+# context_target rewrote it every launch — expropriation, ADR 0046 buried
+# it), and both the repo's /workspace/CLAUDE.md and the user's own memory
+# now reach the session untouched, on top of the injected prompt.
+context = "inject"
 state = ".claude"
-# Where Claude reads user memory: $CLAUDE_CONFIG_DIR/CLAUDE.md. byre places the
-# concatenated skill [context] here at runtime (the .claude volume is only mounted
-# then), so skills can deliver workflow context to the agent. Additive: a project
-# CLAUDE.md in /workspace is still read on top of this.
-context_target = "/home/dev/.claude/CLAUDE.md"
 
 # Curated non-secret prefs the user may opt to seed into a fresh .claude volume
 # with `seed_prefs = true` (one-time, only on a fresh volume). ONLY files that
@@ -93,7 +100,8 @@ context_target = "/home/dev/.claude/CLAUDE.md"
 #   - themes/          — custom color themes only.
 # DELIBERATELY EXCLUDED: settings.json (mixes theme with env/apiKeyHelper/hooks/
 # permissions/MCP — can hide credentials) and ~/.claude.json (OAuth + MCP tokens
-# + trust state). CLAUDE.md is delivered via context_target above, not seeded.
+# + trust state). CLAUDE.md is the USER'S file — byre neither seeds nor
+# writes it (context is injected, ADR 0046).
 [agent.prefs]
 from = "~/.claude"
 files = ["keybindings.json", "themes"]

@@ -230,13 +230,17 @@ func TestDockerfileGuardReassertsAfterProjectFiles(t *testing.T) {
 	}
 }
 
-func TestDockerfileAgentContextTarget(t *testing.T) {
-	out := Dockerfile(Input{Base: "node:22", AgentContext: true, AgentContextTarget: true})
+func TestDockerfileAgentContextAndSelfEditDoc(t *testing.T) {
+	out := Dockerfile(Input{Base: "node:22", AgentContext: true, SelfEditDoc: true})
 	if !strings.Contains(out, "COPY "+AgentContextName+" /etc/byre/"+AgentContextName) {
 		t.Errorf("agent context COPY missing:\n%s", out)
 	}
-	if !strings.Contains(out, "COPY "+AgentContextTargetName+" /etc/byre/"+AgentContextTargetName) {
-		t.Errorf("agent context-target COPY missing:\n%s", out)
+	if !strings.Contains(out, "COPY "+SelfEditDocName+" /etc/byre/"+SelfEditDocName) {
+		t.Errorf("self-edit doc COPY missing:\n%s", out)
+	}
+	// The retired placement pointer never bakes (ADR 0046).
+	if strings.Contains(out, "agent-context-target") {
+		t.Errorf("retired context-target COPY present:\n%s", out)
 	}
 }
 

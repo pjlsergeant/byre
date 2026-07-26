@@ -81,15 +81,20 @@ egress = ["cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"]
 egress_offered = ["x.ai"]
 
 [agent]
-command = "grok --always-approve"
+# --append-system-prompt (alias of --rules) APPENDS the baked agent context
+# plus the launcher's per-session additions to grok's default system prompt
+# (source-verified: PagerArgs rules -> <human_rules> block appended after the
+# default prompt; NOT re-applied on `--resume` of a persisted session — byre
+# launches are fresh sessions, so the caveat is inert here).
+command = "grok --always-approve --append-system-prompt \"$(cat /etc/byre/agent-context.md)$BYRE_SESSION_CONTEXT\""
 state = ".grok"
-# Grok reads global agent rules from $GROK_HOME/AGENTS.md and appends them to
-# the system prompt (VERIFIED in-box 2026-07-09 via a codeword probe). byre
-# places the concatenated skill [context] here at runtime. Additive: project
-# rules files (AGENTS.md/CLAUDE.md/... from repo root down to cwd) are read on
-# top of this. CAP: grok truncates each rules file at 10,000 characters with a
-# warning — keep skill [context] lean when grok is the agent.
-context_target = "/home/dev/.grok-home/AGENTS.md"
+# context = "inject": the command's --append-system-prompt carries the baked
+# context; byre writes NOTHING into $GROK_HOME — its AGENTS.md is the user's
+# rules file (the retired context_target rewrote it every launch, ADR 0046).
+# Project rules files (AGENTS.md/CLAUDE.md/... repo root down to cwd) still
+# load natively on top. Note grok's 10,000-char per-rules-file cap does NOT
+# apply to --append-system-prompt text.
+context = "inject"
 
 # No prefs seeding: grok's config.toml mixes prefs with credential-capable
 # fields ([custom_endpoints] api_key), so it fails the PrefsSpec vouch

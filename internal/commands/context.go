@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/editorcmd"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -117,7 +118,7 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 	if err := addNamedDecl(s, projectDir, global, contextVerbs, name, cd); err != nil {
 		return err
 	}
-	fmt.Fprintln(s.Err, "byre: the text joins the agent's memory at the next develop (rebuild).")
+	fmt.Fprintln(s.Err, "byre: the text is injected into the agent's instructions at the next develop (rebuild).")
 	return nil
 }
 
@@ -155,6 +156,19 @@ func ContextList(s Streams, projectDir string) error {
 	for _, cd := range cfg.Contexts {
 		fmt.Fprintln(s.Out, contextLine(cd))
 	}
+	// The delivery verdict, by the SAME renderer status uses (the
+	// claude-skill list precedent: two surfaces, one story).
+	info := statusInfo{Agent: cfg.Agent, Contexts: cfg.Contexts}
+	if serr := builtins.EnsureStoreOut(paths.Home, s.Err); serr != nil {
+		info.SkillErr = serr.Error()
+	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
+		info.SkillErr = "catalog unavailable"
+	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
+		info.SkillErr = rerr.Error()
+	} else if res.Agent != nil {
+		info.AgentContext = res.Agent.Context
+	}
+	fmt.Fprintln(s.Out, contextDeliveryLine(info))
 	return nil
 }
 

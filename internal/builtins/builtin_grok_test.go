@@ -31,8 +31,11 @@ func TestGrokSkillPinsLoadBearingFacts(t *testing.T) {
 	if !strings.Contains(res.AgentCommand(), "--always-approve") {
 		t.Errorf("grok autonomy flag missing from launch command %q", res.AgentCommand())
 	}
-	if got := res.AgentContextTarget(); got != "/home/dev/.grok-home/AGENTS.md" {
-		t.Errorf("context target must be AGENTS.md inside GROK_HOME, got %q", got)
+	if !res.AgentContextInjects() {
+		t.Errorf("grok must vouch context injection (ADR 0046)")
+	}
+	if !strings.Contains(res.AgentCommand(), "--append-system-prompt") {
+		t.Errorf("grok command must inject the baked context, got %q", res.AgentCommand())
 	}
 	egress := strings.Join(res.Egress(), " ")
 	for _, h := range []string{"cli-chat-proxy.grok.com", "auth.x.ai", "accounts.x.ai"} {

@@ -37,8 +37,8 @@ func TestOpencodeSkillPinsLoadBearingFacts(t *testing.T) {
 	if res.Agent.MCP != "inject" {
 		t.Errorf("opencode mcp vouch = %q, want inject (live-verified 2026-07-17)", res.Agent.MCP)
 	}
-	if got := res.AgentContextTarget(); got != "/home/dev/.config/opencode/AGENTS.md" {
-		t.Errorf("context target must be AGENTS.md in the XDG config dir, got %q", got)
+	if !res.AgentContextInjects() {
+		t.Errorf("opencode must vouch context injection (ADR 0046)")
 	}
 	egress := strings.Join(res.Egress(), " ")
 	for _, h := range []string{"models.dev", "api.anthropic.com", "console.anthropic.com", "claude.ai"} {

@@ -99,17 +99,19 @@ egress_offered = ["opencode.ai"]
 # (binary-source-verified -- grok's silent-death failure mode does not
 # apply).
 command = "byre-opencode-mcp-launch --auto"
-# The wrapper is byre's opencode MCP adapter: it builds OPENCODE_CONFIG_CONTENT
-# from /etc/byre/mcp.json (baked in every image) and execs opencode with the
-# passthrough args — pure injection, no state writes (ADR 0033).
+# The wrapper is byre's opencode launch adapter: it builds
+# OPENCODE_CONFIG_CONTENT from /etc/byre/mcp.json (baked in every image, ADR
+# 0033) and the baked agent context (an `instructions` entry — opencode
+# APPENDS instruction files to the system context and CONCATs the arrays
+# across config layers, ADR 0046), then execs opencode with the passthrough
+# args — pure injection, no state writes. byre writes NOTHING into
+# ~/.config/opencode: its AGENTS.md is the user's file (the retired
+# context_target rewrote it every launch). Per-session additions
+# ($BYRE_SESSION_CONTEXT) don't ride this file-path channel — not delivered
+# for opencode, recorded in the ADR.
 mcp = "inject"
+context = "inject"
 state = ".opencode"
-# OpenCode reads global agent rules from <config-dir>/AGENTS.md, i.e.
-# ~/.config/opencode/AGENTS.md (binary-source-verified; project AGENTS.md
-# files from repo root down are read on top). byre places the concatenated
-# skill [context] here at runtime. The config dir is image-side (not a
-# volume) -- fine, the launcher rewrites the file every launch.
-context_target = "/home/dev/.config/opencode/AGENTS.md"
 
 # No prefs seeding: opencode's config (opencode.json) mixes prefs with
 # credential-capable provider blocks (apiKey fields), so it fails the
