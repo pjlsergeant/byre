@@ -366,8 +366,8 @@ func TestExitReportWorktreeNamesTheMainTree(t *testing.T) {
 	}
 	// It must not read as a path inside the worktree's own checkout. Checked
 	// per LINE: the banner means the whole report never starts with ".git/",
-	// so a whole-output prefix check can never fail
-	// this assertion was vacuous).
+	// so a whole-output prefix check can never fail -- that assertion was
+	// vacuous.
 	for _, line := range strings.Split(got, "\n") {
 		if strings.HasPrefix(strings.TrimLeft(line, " "), ".git/") {
 			t.Errorf("main-tree path rendered as worktree-relative:\n%s", got)

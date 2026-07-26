@@ -329,8 +329,8 @@ func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
 // AnswerClass is the one shared reading of a line typed at a yes/no prompt.
 // Every interactive y/N prompt in byre classifies the same way: an explicit
 // yes or no, an empty accept-the-default, and everything else REPROMPTS —
-// unrecognized input never silently lands on either side ("banana"
-// at the shared-auth offer used to read as a decline).
+// unrecognized input never silently lands on either side: typing "banana" at
+// the shared-auth offer used to read as a decline.
 type AnswerClass int
 
 const (

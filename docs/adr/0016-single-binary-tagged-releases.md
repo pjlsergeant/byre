@@ -16,6 +16,11 @@ cross-compile, tar, checksum, upload, cask — with no byre opinion in it
 build tooling); the parts with judgment in them (what a version means,
 when brew publishes) live in config we own.
 
+> **Since v1.3.1:** the ldflags symbol is now
+> `github.com/pjlsergeant/byre/internal/version.Version`. `main.version` was a
+> second stamp for the same value and was dropped -- two stamps can disagree.
+> The decision below is unchanged; only the symbol moved.
+
 Version identity has three sources and they must agree. Release binaries
 carry the tag via `-ldflags -X main.version`; the stamp is deliberately
 v-prefixed (`v{{ .Version }}`) so it's byte-identical to what a

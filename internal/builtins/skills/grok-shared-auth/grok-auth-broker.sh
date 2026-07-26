@@ -48,8 +48,9 @@ EPCACHE="$BASE/token_endpoint"
 # loop adds up to 60s jitter, so anything above 360 keeps us ahead of every
 # grok-initiated call. Never emit a token with less than MIN_EMIT left: a
 # token under grok's 300s buffer is already "expired" the moment grok stores
-# it, and emitting one just thrashes the refresh loop -- failing instead lets grok's own 300s failure TTL pace the
-# retries while its in-memory token keeps the session alive.
+# it, and emitting one just thrashes the refresh loop -- failing instead lets
+# grok's own 300s failure TTL pace the retries while its in-memory token keeps
+# the session alive.
 MARGIN=420
 MIN_EMIT=360
 # A store pair rotated within this many seconds is almost always a sibling
@@ -59,7 +60,7 @@ MIN_EMIT=360
 # then the window self-expires and the next call force-refreshes.
 SIBLING_FRESH=60
 
-# GROK_AUTH_EXPIRED=1 accompanies every 5s-budget refresh invocation
+# GROK_AUTH_EXPIRED=1 accompanies every 5s-budget refresh invocation (grok
 # sets it whenever it considers the stored token expired — occasionally that
 # includes the patient login path, where the tight budget is merely
 # conservative); scale every wait to the least-patient caller that can carry

@@ -100,9 +100,8 @@ func TestMCPLayerMarkersAndDuplicates(t *testing.T) {
 	}
 
 	// A marker carrying other fields is a mistyped real server. Headers is
-	// asserted separately: it was the one field the extras check missed
-	// — a headers-only "closure" validated clean and silently dropped the
-	// headers.
+	// asserted separately: it was the one field the extras check missed, and a
+	// headers-only "closure" validated clean and silently dropped the headers.
 	c2 := Config{MCPs: []MCP{{Name: "!github", URL: "https://h/m"}}}
 	if err := c2.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "closure marker takes only a name") {
 		t.Fatalf("marker with fields: %v", err)
@@ -234,8 +233,7 @@ func TestMCPAcceptsBasicAuthURL(t *testing.T) {
 	}
 }
 
-// IPv6 url hosts are supported end-to-end via the bracket grammar
-// found the original refusal; Pete pulled the real fix into the arc): the
+// IPv6 url hosts are supported end-to-end via the bracket grammar: the
 // implied endpoint comes back bracketed + canonicalized, so downstream
 // "%s:%d" compositions re-parse and the firewall's v6 rules apply.
 func TestMCPAcceptsIPv6URLHosts(t *testing.T) {
