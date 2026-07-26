@@ -170,18 +170,42 @@ func TestRunUsageErrors(t *testing.T) {
 		{"deliver", "--install-app", "--proto", "1"},    // remote flags never mix with install-app
 		{"deliver", "--boxes", "x.txt"},                 // boxes takes no paths
 		{"deliver", "--boxes", "--tar", "-"},            // one remote mode at a time
-		{"deliver", "--boxes", "--box", "x"},            // boxes answers, never selects
-		{"deliver", "--tar"},                            // tar requires '-'
-		{"deliver", "--tar", "x.txt"},                   // the archive arrives on stdin only
-		{"deliver", "--tar", "--name", "n", "-"},        // names ride the archive
-		{"grab"},                                        // the box path is required
-		{"grab", "a", "b", "c"},                         // at most one destination
-		{"grab", "--bogus", "a"},                        // unknown flag
-		{"skill"},                                       // missing subcommand
-		{"skill", "bogus"},                              // unknown subcommand
-		{"rehome", "old", "extra"},                      // extra operand (bare rehome is valid: it lists candidates)
-		{"version", "extra"},                            // operands after a no-arg command
-		{"--version", "extra"},                          // the alias gets the same operand check
+
+		// Arity on the package/layer verbs. These used cobra's own validators,
+		// which return plain errors -- so they exited 1 with "byre: accepts 1
+		// arg(s), received 0" instead of byre's contractual 2 with a usage
+		// line, and TestRunUsageErrors covered none of them.
+		{"skill", "inspect"},                     // missing id
+		{"skill", "inspect", "a", "b"},           // extra operand
+		{"skill", "pack"},                        // missing name
+		{"skill", "fork", "one"},                 // fork needs two
+		{"skill", "init"},                        // missing name
+		{"skill", "validate", "a", "b"},          // at most one
+		{"skill", "install"},                     // missing manifest uri
+		{"skill", "uninstall"},                   // missing id
+		{"template", "inspect"},                  // missing id
+		{"template", "pack"},                     // missing name
+		{"template", "fork", "one"},              // fork needs two
+		{"template", "init"},                     // missing name
+		{"template", "validate", "a", "b"},       // at most one
+		{"template", "install"},                  // missing manifest uri
+		{"template", "uninstall"},                // missing id
+		{"preset", "apply", "a", "b"},            // at most one
+		{"preset", "inspect", "a", "b"},          // at most one
+		{"layer", "new"},                         // missing name
+		{"layer", "validate", "a", "b"},          // at most one
+		{"deliver", "--boxes", "--box", "x"},     // boxes answers, never selects
+		{"deliver", "--tar"},                     // tar requires '-'
+		{"deliver", "--tar", "x.txt"},            // the archive arrives on stdin only
+		{"deliver", "--tar", "--name", "n", "-"}, // names ride the archive
+		{"grab"},                                 // the box path is required
+		{"grab", "a", "b", "c"},                  // at most one destination
+		{"grab", "--bogus", "a"},                 // unknown flag
+		{"skill"},                                // missing subcommand
+		{"skill", "bogus"},                       // unknown subcommand
+		{"rehome", "old", "extra"},               // extra operand (bare rehome is valid: it lists candidates)
+		{"version", "extra"},                     // operands after a no-arg command
+		{"--version", "extra"},                   // the alias gets the same operand check
 	}
 	for _, argv := range cases {
 		calls := map[string]string{}

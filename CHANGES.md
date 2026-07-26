@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Usage errors on the package and layer verbs now exit 2, like every other
+  usage error.** Sixteen commands (`skill`/`template` inspect, pack, fork,
+  init, validate, install, uninstall; `preset apply`/`inspect`; `layer
+  new`/`validate`) used cobra's own arity validators, so a missing or extra
+  argument exited **1** with `byre: accepts 1 arg(s), received 0` -- which
+  reads as byre failing internally, names neither the command nor the
+  argument, and offers no remedy. They now exit 2 with the usage line:
+  `usage: byre skill fork <id> <new-id>`.
+
 - **A replaced mount or volume now takes the replacing layer's position.**
   Previously it stayed in the slot the *base* entry occupied, so a later
   layer's mount could be ordered before entries it never replaced. The

@@ -82,6 +82,29 @@ func noArgsU(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// exactArgsU / maxArgsU are cobra's arity validators returning byre usage
+// errors, so main exits 2 with a usage line naming the shape. cobra's own
+// validators return plain errors, which main reports as byre failures at exit 1
+// -- the very hazard noArgsU exists for, walked into by every arity-checking
+// command until now. usage is the full command shape, without a leading "byre".
+func exactArgsU(n int, usage string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) != n {
+			return usageError("usage: byre " + usage)
+		}
+		return nil
+	}
+}
+
+func maxArgsU(n int, usage string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) > n {
+			return usageError("usage: byre " + usage)
+		}
+		return nil
+	}
+}
+
 // newRootCmd builds the byre command tree wired to a's implementations.
 // Built fresh per invocation: flag state lives in the closures, and tests
 // exercise the real tree with recorder apps.
@@ -683,7 +706,7 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 		&cobra.Command{
 			Use:   "inspect <id|uri>",
 			Short: "Show skill package metadata and grants (URIs fetch without installing).",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "skill inspect <id|uri>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInspect(s, args[0]) },
 		},
 		installCmd(s, "skill", commands.SkillInstall),
@@ -691,25 +714,25 @@ func skillCmd(a app, s commands.Streams) *cobra.Command {
 		&cobra.Command{
 			Use:   "pack <name>",
 			Short: "Emit the distribution manifest for a local skill.",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "skill pack <name>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillPack(s, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "fork <id> <new-id>",
 			Short: "Fork an immutable skill into a local editable package.",
-			Args:  cobra.ExactArgs(2),
+			Args:  exactArgsU(2, "skill fork <id> <new-id>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillFork(s, args[0], args[1]) },
 		},
 		&cobra.Command{
 			Use:   "init <name>",
 			Short: "Scaffold a new local skill package.",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "skill init <name>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillInit(s, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "validate [name]",
 			Short: "Two-stage parse and resolve-check a skill (or all).",
-			Args:  cobra.MaximumNArgs(1),
+			Args:  maxArgsU(1, "skill validate [name]"),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				name := ""
 				if len(args) == 1 {
@@ -750,7 +773,7 @@ func presetCmd(dir string, s commands.Streams) *cobra.Command {
 		&cobra.Command{
 			Use:   "apply [<uri>|<path>]",
 			Short: "Chauffeur missing installs, review the composed box, write byre.config.",
-			Args:  cobra.MaximumNArgs(1),
+			Args:  maxArgsU(1, "preset apply [<uri>|<path>]"),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return commands.PresetApply(s, dir, optArg(args))
 			},
@@ -758,7 +781,7 @@ func presetCmd(dir string, s commands.Streams) *cobra.Command {
 		&cobra.Command{
 			Use:   "inspect [<uri>|<path>]",
 			Short: "The apply review without the write (read-only).",
-			Args:  cobra.MaximumNArgs(1),
+			Args:  maxArgsU(1, "preset inspect [<uri>|<path>]"),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return commands.PresetInspect(s, dir, optArg(args))
 			},
@@ -776,7 +799,7 @@ func installCmd(s commands.Streams, noun string, fn func(commands.Streams, strin
 	c := &cobra.Command{
 		Use:   "install <manifest-uri>",
 		Short: "Fetch, verify, and snapshot a " + noun + " package (grants nothing until enabled).",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgsU(1, noun+" install <manifest-uri>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fn(s, args[0], digest, yes)
 		},
@@ -791,7 +814,7 @@ func uninstallCmd(s commands.Streams, noun string, fn func(commands.Streams, str
 	c := &cobra.Command{
 		Use:   "uninstall <id>",
 		Short: "Remove an installed " + noun + " package (referencing boxes are listed first).",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgsU(1, noun+" uninstall <id>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fn(s, args[0], yes)
 		},
@@ -819,7 +842,7 @@ func templateCmd(s commands.Streams) *cobra.Command {
 		&cobra.Command{
 			Use:   "inspect <id|uri>",
 			Short: "Show template package metadata (URIs fetch without installing).",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "template inspect <id|uri>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInspect(s, args[0]) },
 		},
 		installCmd(s, "template", commands.TemplateInstall),
@@ -827,25 +850,25 @@ func templateCmd(s commands.Streams) *cobra.Command {
 		&cobra.Command{
 			Use:   "pack <name>",
 			Short: "Emit the distribution manifest for a local template.",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "template pack <name>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplatePack(s, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "fork <id> <new-id>",
 			Short: "Fork an immutable template into a local editable package.",
-			Args:  cobra.ExactArgs(2),
+			Args:  exactArgsU(2, "template fork <id> <new-id>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateFork(s, args[0], args[1]) },
 		},
 		&cobra.Command{
 			Use:   "init <name>",
 			Short: "Scaffold a new local template package.",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "template init <name>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.TemplateInit(s, args[0]) },
 		},
 		&cobra.Command{
 			Use:   "validate [name]",
 			Short: "Two-stage parse a template (or all).",
-			Args:  cobra.MaximumNArgs(1),
+			Args:  maxArgsU(1, "template validate [name]"),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				name := ""
 				if len(args) == 1 {
@@ -876,7 +899,7 @@ not packages: distribution is sending someone the file.`,
 		&cobra.Command{
 			Use:   "new <name>",
 			Short: "Scaffold a named layer.",
-			Args:  cobra.ExactArgs(1),
+			Args:  exactArgsU(1, "layer new <name>"),
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.LayerNew(s, args[0]) },
 		},
 		&cobra.Command{
@@ -888,7 +911,7 @@ not packages: distribution is sending someone the file.`,
 		&cobra.Command{
 			Use:   "validate [name]",
 			Short: "Parse a layer and walk its extends chain (or all).",
-			Args:  cobra.MaximumNArgs(1),
+			Args:  maxArgsU(1, "layer validate [name]"),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				name := ""
 				if len(args) == 1 {
