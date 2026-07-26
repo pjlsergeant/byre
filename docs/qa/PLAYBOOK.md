@@ -129,6 +129,48 @@ No engine needed until step 5.
    editor `^e` prose round-trip returns with the edited text shown.
 7. TEARDOWN: rm box + store.
 
+## Journey: exit report
+
+Added 2026-07-26 with the feature (ADR 0047). The report names changes in
+the places the HOST runs code from that `git diff` cannot show you. Its
+survival condition is SILENCE, so the quiet leg matters more than the
+loud one.
+
+PREREQ: the box image must carry git (`apt = ["git"]` in the STORE
+config) -- the `none` template has none, and a git-less box makes every
+leg vacuous rather than failing (observed: a whole leg passed for the
+wrong reason). Fresh git repo with a commit and a `.env`.
+
+1. **Quiet leg (the one that matters).** In-box: commit some work,
+   `git config remote.origin.url …`, `git config branch.main.remote …`,
+   `git config filter.lfs.smudge "git-lfs smudge -- %f"`. Exit.
+   PASS = NO report at all. Any output here is the wallpaper failure the
+   ranking exists to prevent.
+2. **Hooks.** In-box `date > .git/hooks/pre-commit; chmod +x` → exit.
+   Expect `⚠ we thought you should know …` + `(byre checks a handful of
+   places, not everything)` then
+   `.git/hooks/pre-commit was added -- your git runs this, on your machine`.
+   Append to it next session → `changed`, same suffix.
+3. **Config, value shown vs withheld.** `git config core.hooksPath
+   .husky/_` → `core.hookspath is set to .husky/_` (path-like: the
+   destination IS the message). `git config credential.helper
+   XhelperSECRETX` → `credential.helper was set` and the value must NOT
+   appear -- and the verb must not dangle ("is set to" with nothing
+   after it).
+4. **Key userinfo redaction.** `git config
+   url.https://tok3nSECRET@example.com/.insteadOf git@example.com:` →
+   `url.https://<redacted>@example.com/.insteadof was set`. The token
+   string must be absent from the pane. (Secrets live in the KEY for
+   this shape; disable bash history expansion with `set +H` first or
+   `!`-bearing values die as "event not found".)
+5. **Env keys, names only.** Rewrite `.env` changing one key and adding
+   another → `.env: added NODE_OPTIONS` / `.env: changed DATABASE_URL`.
+   No VALUE may appear anywhere in the pane. `.envrc` is NOT watched
+   (direnv gates it itself) -- writing one must stay silent.
+6. **Nonzero exit still reports.** With something changed, `exit 3` →
+   the report still prints AND develop propagates rc=3.
+7. TEARDOWN: rm box + project volumes + image; rm the QA project.
+
 ## Journey: config UI, Claude Skills + dirty flag
 
 1. `byre config` in a project → main form renders; `▸` cursor moves.
@@ -359,8 +401,9 @@ source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
 ## To graduate (confirmed green in past passes, no recipe yet)
 
 Write a recipe when a future pass covers one of these: host mounts +
-store-edit apt; deliver of a directory; self-edit round-trip + exit
-report (and self-edit's project-only store mount); skill fork; rehome
+store-edit apt; deliver of a directory; self-edit round-trip + its half of the
+exit report (the FILE half now has its own journey above; self-edit's
+store diff, and its project-only store mount, still do not); skill fork; rehome
 after `mv`; rebuild; docker-host containment-hole loudness;
 forget --force (and invalid-config recovery through it); three-level
 named-layer composition and project precedence; live layer-cycle
@@ -437,3 +480,12 @@ reports.
   record + context dir, no config. Same class as the consciously-accepted
   reset/forget abort-enrollment stance (2026-07-17); recorded so the
   next pass doesn't re-discover it.
+
+- **`none` template has no git, so git-dependent legs pass vacuously**
+  (2026-07-26, exit-report pass). The first quiet leg "passed" because
+  every git command in the box died `command not found` — nothing
+  changed, so nothing was reported, for entirely the wrong reason. Any
+  journey that drives git IN the box must add `apt = ["git"]` to the
+  STORE config first (the worktree journey already says so; the
+  exit-report journey now does too). Recorded because a vacuous pass is
+  worse than a failure: it is green.
