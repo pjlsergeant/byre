@@ -104,9 +104,13 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		// The USER named a symlink — following it is their explicit choice.
-		// Route dirs (skipped, as everywhere — also kills cycles) and reject
-		// non-files up front; the actual open (deliverTopFile, follow=true) is
-		// still nonblocking + fd-stat'd so a symlink to a FIFO can't hang.
+		// Dirs are routed out here (skipped, as everywhere — also kills
+		// cycles). Non-files are NOT checked here: the open itself
+		// (deliverTopFile, follow=true) is nonblocking + fd-stat'd, so a
+		// symlink to a FIFO can neither hang nor be delivered, and it skips
+		// with a note. Checking here too would be the same rule at two layers.
+		// The remote leg (planPath) does check up front, because its plan is
+		// built before any open happens.
 		target, err := os.Stat(src)
 		if err != nil {
 			return "", fmt.Errorf("delivering %s: broken symlink: %w", src, err)
