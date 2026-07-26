@@ -32,10 +32,10 @@ with kernel exploits.
 
 ## The contract
 
-- **Boxed:** your host filesystem, environment, and credentials. The
-  agent sees the project folder, plus exactly what you mount, pass, or
-  enable -- nothing else. byre reads no host credentials and copies
-  none. Agent logins happen inside the box; the one exception is the
+- **Boxed** ([what's boxed](/docs/whats-boxed/) is the one-breath
+  version): the agent sees the project folder, plus exactly what you
+  mount, pass, or enable -- nothing else. byre reads no host credentials
+  and copies none. Agent logins happen inside the box; the one exception is the
   optional shared-auth token for Claude
   ([ADR 0017](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0017-shared-agent-identity.md)),
   which you mint yourself with `claude setup-token` -- wherever suits
@@ -43,7 +43,7 @@ with kernel exploits.
   ambient inheritance.
 - **Not boxed, by design:** the network (open by default; the
   default-deny firewall skill closes it to a derived allowlist) and the
-  project itself (mounted read-write -- editing it is the agent's job).
+  project tree, which stays read-write because editing it is the job.
 - **A container is not a microVM.** The box shares your kernel. If your
   requirement is "the agent must never share a kernel with my machine",
   use a microVM product or a separate physical box.

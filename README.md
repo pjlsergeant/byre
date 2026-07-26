@@ -48,7 +48,7 @@ When you need more, the `byre config` TUI can mount additional host folders, ins
 
 ## Install
 
-**⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work. All the major planned features have been added, so the interface should be pretty stable at this point.**
+byre is a young project -- read the [maturity note](https://getbyre.com/docs/install/) before you lean on it.
 
 byre is a single Go binary:
 
@@ -108,21 +108,13 @@ tools installed, your agent launching, nothing to set up.
 
 ## What's boxed, what isn't
 
-- **Boxed:** your host filesystem, environment, and credentials. The agent
-  sees only what you mount or pass.
-- **Not boxed, by design:** the network (open by default -- enable the
-  default-deny firewall skill to close it) and the project itself (mounted
-  read-write -- it's the agent's job to edit it).
-- **Not a security product:** a container is not a microVM. If you need
-  the strongest isolation story, use one. byre is meant to protect you from over-eager and reckless agents, not from state-sponsored malware.
-- **Not your nanny:** the box is locked against the *agent*, not against
-  you. Every protection is one config edit away from off, and skills can
-  widen the box as far as you like -- you can hang yourself with skills,
-  and that's intentional. byre's promise is that `byre status` always
-  tells you where the rope is.
-
-The full [security model](https://getbyre.com/docs/security-model/):
-the threat model, the contract, and the sharp facts.
+Your host filesystem, environment, and credentials are boxed -- the agent
+sees the project plus exactly what you grant. The network and the project
+tree are open by design, and byre is deliberately neither a security
+product nor your nanny. The contract in full:
+[what's boxed, what isn't](https://getbyre.com/docs/whats-boxed/); the
+threat model and sharp facts:
+[security model](https://getbyre.com/docs/security-model/).
 
 ## Configuration
 

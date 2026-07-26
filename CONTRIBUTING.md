@@ -61,5 +61,24 @@ The conventions, for humans and their agents alike:
   feature is an opinion about how a box should behave, it is probably
   a skill. Dependencies are added on demonstrated merit.
 
+Settled positions a reviewer will be tempted to flag -- each is
+deliberate, with its reason on file:
+
+- **`internal/commands` is one flat package.** It is a thin adapter
+  layer whose private substrate refactors freely BECAUSE it is
+  unexported; the package comment carries the reasoning.
+- **Doc comments that look like they restate the signature mostly
+  don't.** Measured, not assumed: nearly all carry a constraint in the
+  redundant-looking words ("a DEEP copy", "in enable order"); the
+  survivors are Go's exported-symbol convention.
+- **`docs/AGENT-CREDENTIAL-MECHANICS.md` keeps its empirical correction
+  log.** Hard-won field records, corrections in place; it is a lab
+  notebook by design, not an unedited draft.
+- **Per-package test helpers are duplicated on purpose.** Small
+  unexported helpers beat a shared test-util package.
+- **Long cobra `Long` texts are not bloat.** They render the site's
+  commands page via a byte pin -- one source, two surfaces; trimming
+  the help trims the docs.
+
 `docs/BYRE-DEVELOPMENT.md` describes the dev environment, including how
 byre develops itself in its own box.

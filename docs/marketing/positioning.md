@@ -184,9 +184,11 @@ it -- the agent reads the site sources and `docs/` anyway. This is what
 makes P3's aggressive trim safe: the README is sized for the human skim.
 
 **P5. Duplicate only the stable.** A fact appears on two surfaces only
-when it changes rarely: the boxed/not-boxed contract, the H1 pitch, the
-blessed install command, the develop one-liner, the How-do-I tldrs.
-Volatile content lives only in its canonical home.
+when it changes rarely: the H1 pitch, the blessed install command, the
+develop one-liner, the How-do-I tldrs. Volatile content lives only in
+its canonical home. (The boxed/not-boxed contract left this list when
+the README's copy became a summary-plus-link; whats-boxed.md is its one
+home.)
 
 **P6. A README summary is a different genre, not an excerpt -- and
 shared text is verbatim or absent.** README summaries are written for

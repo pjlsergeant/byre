@@ -5,11 +5,8 @@
 // assembly), naming.go (ids, labels, volume/image names), engine.go (engine
 // selection), runnerif.go (the engine interfaces), lock.go, env.go, ui.go.
 //
-// The flat layout below — dozens of files, no subpackages — is deliberate, and it
-// looks like a smell every time someone new reads it. It has been evaluated on
-// its merits and rejected more than once; a finding that says "split this
-// package" is re-raising a settled question, not surfacing new information.
-// The reasoning: commands is byre's thin ADAPTER layer. Domain logic lives in
+// The flat layout below — dozens of files, no subpackages — is deliberate:
+// commands is byre's thin ADAPTER layer. Domain logic lives in
 // domain packages (config, skills, packages, gen, ...); a commands file holds
 // Streams-glue only. Every command rides one unexported substrate (resolve.go,
 // runparams.go, naming.go, engine.go, lock.go, ui.go) that refactors freely
