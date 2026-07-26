@@ -16,17 +16,31 @@ CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 ctx_text=""
 [ -r "$CTX" ] && ctx_text="$(cat "$CTX")"
 
-# 100000 BYTES (wc -c, not ${#} — that counts characters, and multi-byte
-# prose under 100k chars can still blow the ~131072-byte per-string limit;
-# grok review round 2). Only the BAKED part is capped; the per-session
-# additions (small: egress list, self-edit note) always append after the
-# disclosure, so they are never silently dropped.
-if [ "$(printf '%s' "$ctx_text" | wc -c)" -gt 100000 ]; then
-  ctx_text="$(printf '%s' "$ctx_text" | head -c 100000)
+# Whole-argument byte budget: 100000 (headroom under the ~131072 per-string
+# exec limit). The SESSION additions have priority (operational: the
+# enforced allowlist, the self-edit note) and in the absurd corner where
+# they alone bust the budget they truncate too — never a dead exec; the
+# baked text gets the remaining budget, truncated to a VALID UTF-8 prefix
+# (a raw head -c can split a codepoint; iconv -c drops the orphan bytes)
+# with a disclosure pointing at the baked file the agent can read in-box.
+utf8_prefix() { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; }
+budget=100000
+session="${BYRE_SESSION_CONTEXT:-}"
+sbytes=$(printf '%s' "$session" | wc -c)
+if [ "$sbytes" -gt "$budget" ]; then
+  session="$(printf '%s' "$session" | head -c "$budget" | utf8_prefix)
+
+[byre: session context truncated at this agent's argv limit]"
+  sbytes=$(printf '%s' "$session" | wc -c)
+fi
+bbudget=$((budget - sbytes))
+[ "$bbudget" -lt 0 ] && bbudget=0
+if [ "$(printf '%s' "$ctx_text" | wc -c)" -gt "$bbudget" ]; then
+  ctx_text="$(printf '%s' "$ctx_text" | head -c "$bbudget" | utf8_prefix)
 
 [byre: instructions truncated at this agent's argv limit — full text: $CTX]"
 fi
-ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
+ctx_text="${ctx_text}${session}"
 
 if [ -n "$ctx_text" ]; then
   exec grok --append-system-prompt "$ctx_text" "$@"

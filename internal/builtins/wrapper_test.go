@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/pjlsergeant/byre/internal/config"
 )
@@ -489,6 +490,30 @@ func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 	if !strings.HasSuffix(args[1], "session survives") {
 		t.Fatalf("session additions must survive truncation, tail = %q", args[1][len(args[1])-80:])
 	}
+	// The truncation lands on a codepoint boundary (codex review: a raw
+	// head -c splits UTF-8 and hands the CLI an invalid string).
+	if !utf8.ValidString(args[1]) {
+		t.Fatalf("truncated prompt is not valid UTF-8")
+	}
+
+	// Absurd corner: a session larger than the whole budget truncates too —
+	// degrade, never a dead exec — and the total stays under the wire limit.
+	cmd = exec.Command("bash", filepath.Join("skills", "grok", "grok-launch.sh"), "--always-approve")
+	cmd.Env = append(os.Environ(),
+		"BYRE_AGENT_CONTEXT="+big,
+		"BYRE_SESSION_CONTEXT=\n\n"+strings.Repeat("s", 120_000),
+		"PATH="+dir+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("wrapper failed on oversized session: %v\n%s", err, out)
+	}
+	raw, _ = os.ReadFile(argvFile)
+	args = strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+	if len(args[1]) > 103_000 {
+		t.Fatalf("oversized session busted the budget: %d bytes", len(args[1]))
+	}
+	if !strings.Contains(args[1], "session context truncated") {
+		t.Fatalf("session truncation must disclose itself")
+	}
 }
 
 // The grok skill must chmod its wrapper: bundled extraction writes 0644, and
@@ -544,5 +569,8 @@ func TestCodexLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 	}
 	if !strings.Contains(args[1], "truncated at this agent's argv limit") || !strings.HasSuffix(args[1], "session survives") {
 		t.Fatalf("disclosure/session wrong, tail = %q", args[1][len(args[1])-80:])
+	}
+	if !utf8.ValidString(args[1]) {
+		t.Fatalf("truncated prompt is not valid UTF-8")
 	}
 }

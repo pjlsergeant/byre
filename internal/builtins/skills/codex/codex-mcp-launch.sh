@@ -83,18 +83,33 @@ CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 ctx_text=""
 [ -r "$CTX" ] && ctx_text="$(cat "$CTX")"
 # The value rides ONE argv string; Linux caps a single exec argument at
-# MAX_ARG_STRLEN (~128 KiB), under byre's 1 MiB context budget. A
-# legal-but-large context must DEGRADE loudly, not kill the exec (grok
-# review find, probed 2026-07-26): cap in BYTES (wc -c, not ${#} — that
-# counts characters and multi-byte prose slips past; round 2) with a
-# disclosure pointing at the baked file. Only the BAKED part is capped; the
-# per-session additions (small) always append after, never silently dropped.
-if [ "$(printf '%s' "$ctx_text" | wc -c)" -gt 100000 ]; then
-  ctx_text="$(printf '%s' "$ctx_text" | head -c 100000)
+# MAX_ARG_STRLEN (~128 KiB), under byre's 1 MiB context budget — a
+# legal-but-large context must DEGRADE loudly, not kill the exec.
+# Whole-argument byte budget: 100000 (headroom under the ~131072 per-string
+# exec limit). The SESSION additions have priority (operational: the
+# enforced allowlist, the self-edit note) and in the absurd corner where
+# they alone bust the budget they truncate too — never a dead exec; the
+# baked text gets the remaining budget, truncated to a VALID UTF-8 prefix
+# (a raw head -c can split a codepoint; iconv -c drops the orphan bytes)
+# with a disclosure pointing at the baked file the agent can read in-box.
+utf8_prefix() { iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || cat; }
+budget=100000
+session="${BYRE_SESSION_CONTEXT:-}"
+sbytes=$(printf '%s' "$session" | wc -c)
+if [ "$sbytes" -gt "$budget" ]; then
+  session="$(printf '%s' "$session" | head -c "$budget" | utf8_prefix)
+
+[byre: session context truncated at this agent's argv limit]"
+  sbytes=$(printf '%s' "$session" | wc -c)
+fi
+bbudget=$((budget - sbytes))
+[ "$bbudget" -lt 0 ] && bbudget=0
+if [ "$(printf '%s' "$ctx_text" | wc -c)" -gt "$bbudget" ]; then
+  ctx_text="$(printf '%s' "$ctx_text" | head -c "$bbudget" | utf8_prefix)
 
 [byre: instructions truncated at this agent's argv limit — full text: $CTX]"
 fi
-ctx_text="${ctx_text}${BYRE_SESSION_CONTEXT:-}"
+ctx_text="${ctx_text}${session}"
 if [ -n "$ctx_text" ]; then
   flags+=(-c "developer_instructions=$ctx_text")
 fi
