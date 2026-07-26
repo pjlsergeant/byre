@@ -45,7 +45,7 @@ this index:
 - P2: core ships generic mechanism only; every opinion (agent, policy, endpoints) lives in a skill [no arm]
 - P3: raw blocks are first-class and never parsed -- shown verbatim, posture claims degrade [no arm]
 - P4: every grant is legible: status names it or the claim degrades; a grant status can't name isn't done [no arm]
-- P5: consent lives at the scope of its effect; pickers never write keys with teeth [no arm]
+- P5: consent lives at the scope of its effect; keys with teeth are never written at a scope the user didn't answer for [no arm]
 - P6: `byre config` reaches every config feature; hand-editing is a defended right, not the interface [no arm]
 - P7: a dependency gap ends owned-around, replaced, or accepted on the record -- never passed off as design [no arm]
 
@@ -99,4 +99,4 @@ this index:
 - 0046: context reaches agents by injection vouched per skill; byre never writes an agent-owned file [arm: TestDockerfileAgentContextAndSelfEditDoc]
 - 0047: the project mount can plant host-run code: byre exit-reports noticed changes, never gates [arm: TestExitReportGitConfig]
 - 0048: the four accretion guardrails are standing commitments in PRINCIPLES.md, unnumbered under the principles [no arm]
-- 0049: compat paths get two minors or 90 days from replacement, warn, then are removed whole with a remedy [no arm]
+- 0049: compat paths warn for two minors or 90 days from replacement -- whichever is longer -- then are removed whole with a remedy [no arm]
