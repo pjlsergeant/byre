@@ -39,8 +39,9 @@ That's it. The workflow runs the tests, then goreleaser cross-compiles
 linux/darwin × amd64/arm64, writes checksummed `tar.gz` archives, and
 publishes a GitHub Release with a changelog from the commit messages.
 
-Version stamping: release binaries carry the tag via
-`-ldflags -X main.version`; `go install ...@vX.Y.Z` builds report the same
+Version stamping: release binaries carry the tag via `-ldflags -X
+github.com/pjlsergeant/byre/internal/version.Version`; `go install
+...@vX.Y.Z` builds report the same
 string from Go's module build info; other builds report what build info
 recorded (a pseudo-version, or `(devel)` plus the VCS revision when there
 is no version at all). `byre version` (or `byre --version`) prints it.

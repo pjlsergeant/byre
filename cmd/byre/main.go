@@ -15,11 +15,6 @@ import (
 	byreversion "github.com/pjlsergeant/byre/internal/version"
 )
 
-// version is stamped by release builds for backwards-compatible ldflags
-// (-X main.version=vX.Y.Z). Prefer -X github.com/pjlsergeant/byre/internal/version.Version
-// going forward; both are honored.
-var version string
-
 // app is the set of command implementations the CLI dispatches to. A struct
 // (not direct calls) so tests can pin the flag->function wiring with
 // recorders instead of executing real commands.
@@ -992,10 +987,6 @@ build info — a module or pseudo-version, or (devel) when nothing was.`,
 }
 
 func printVersion(s commands.Streams) error {
-	// Propagate legacy main.version stamp into the shared package once.
-	if version != "" && byreversion.Version == "" {
-		byreversion.Version = version
-	}
 	_, err := fmt.Fprintln(s.Out, "byre "+byreversion.String())
 	return err
 }
