@@ -99,4 +99,4 @@ this index:
 - 0046: context reaches agents by injection vouched per skill; byre never writes an agent-owned file [arm: TestDockerfileAgentContextAndSelfEditDoc]
 - 0047: the project mount can plant host-run code: byre exit-reports noticed changes, never gates [arm: TestExitReportGitConfig]
 - 0048: the four accretion guardrails are standing commitments in PRINCIPLES.md, unnumbered under the principles [no arm]
-- 0049: compat paths warn for two minors or 90 days from replacement -- whichever is longer -- then are removed whole with a remedy [no arm]
+- 0049: a compat path lives two minors or 90 days from replacement, whichever is longer; the last supported release warns, then it is removed whole with a remedy [no arm]
