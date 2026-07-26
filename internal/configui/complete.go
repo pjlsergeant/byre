@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/editorcmd"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // ---- $EDITOR shell-out -----------------------------------------------------
@@ -48,7 +48,7 @@ func (m model) onEditorClosed(err error) model {
 	// Absence is only ever fs.ErrNotExist: any OTHER read error (permissions,
 	// I/O) proves nothing about a write landing, so it sets none of the flags
 	// — the ParseFile below fails on the same unreadable file and surfaces it.
-	raw, rerr := os.ReadFile(m.filePath)
+	raw, rerr := hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 	created := rerr == nil && errors.Is(m.preEditorErr, fs.ErrNotExist)
 	changed := rerr == nil && m.preEditorErr == nil && !bytes.Equal(raw, m.preEditorRaw)
 	deleted := errors.Is(rerr, fs.ErrNotExist) && m.preEditorErr == nil
@@ -90,7 +90,7 @@ func (m model) reportSaved() bool {
 	// file and left it unreadable sets no mutation flag (onEditorClosed can't
 	// prove the write), and a shortcut on savedOnce reported that session
 	// "unchanged".
-	raw, err := os.ReadFile(m.filePath)
+	raw, err := hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 	switch {
 	case err == nil && m.openErr == nil:
 		return !bytes.Equal(raw, m.openRaw)
@@ -157,7 +157,7 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
-	if err := Save(m.filePath, cfg); err != nil {
+	if err := Save(m.filePath, m.followFile, cfg); err != nil {
 		m.errMsg = err.Error()
 		m.status = ""
 		return m

@@ -129,7 +129,9 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	// present is an abort, not "no config": replacing a file we could not
 	// show the user is exactly the unseen overwrite this flow forbids.
 	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
-	reviewedStore, reviewedStoreErr := os.ReadFile(storePath)
+	// paths.Dir is the store dir the --self-edit mount exposes: fd-judged,
+	// no-follow, bounded (the hostopen rule) -- same trust class as loadFile.
+	reviewedStore, reviewedStoreErr := hostopen.ReadFileBounded(storePath, false, config.MaxConfigBytes)
 	if reviewedStoreErr != nil && !os.IsNotExist(reviewedStoreErr) {
 		return fmt.Errorf(errReviewDiffRead, reviewedStoreErr)
 	}
@@ -162,7 +164,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		// config, not whatever landed since (config editor, --self-edit,
 		// another byre process). Any read failure here -- including a config
 		// that appeared or vanished -- aborts.
-		curStore, curErr := os.ReadFile(storePath)
+		curStore, curErr := hostopen.ReadFileBounded(storePath, false, config.MaxConfigBytes)
 		if curErr != nil && !os.IsNotExist(curErr) {
 			return fmt.Errorf("cannot re-read this project's byre.config under the lock: %w", curErr)
 		}
@@ -212,7 +214,7 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	if err != nil {
 		return err
 	}
-	inspStore, inspErr := os.ReadFile(filepath.Join(paths.Dir, config.ProjectConfigName))
+	inspStore, inspErr := hostopen.ReadFileBounded(filepath.Join(paths.Dir, config.ProjectConfigName), false, config.MaxConfigBytes)
 	if inspErr != nil && !os.IsNotExist(inspErr) {
 		// Only absence means "no current config" -- a permission or I/O
 		// failure must not silently omit the promised diff.
@@ -408,7 +410,7 @@ func presetState(projectDir string, paths project.Paths) (state string, legacyNa
 		}
 		legacyName = true
 	}
-	rec, err := os.ReadFile(filepath.Join(paths.Dir, appliedRecord))
+	rec, err := hostopen.ReadFileBounded(filepath.Join(paths.Dir, appliedRecord), false, config.MaxConfigBytes)
 	if err != nil {
 		return "unapplied", legacyName
 	}

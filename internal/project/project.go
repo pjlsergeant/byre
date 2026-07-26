@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -272,11 +273,17 @@ func (p Paths) Recorded() (bool, error) {
 	return p.checkRecord()
 }
 
+// recordReadLimit bounds the path-record read: a path plus newline, with
+// three orders of magnitude of slack.
+const recordReadLimit = 1 << 20
+
 // checkRecord reads the path record if present and errors on an id collision
 // (a record naming a different canonical path). recorded reports whether a
 // valid record already exists; a missing record is not an error.
 func (p Paths) checkRecord() (recorded bool, err error) {
-	existing, err := os.ReadFile(p.PathRecord)
+	// The store project dir is what --self-edit mounts: fd-judged, no-follow,
+	// bounded, so a planted FIFO/symlink can't hang or redirect this check.
+	existing, err := hostopen.ReadFileBounded(p.PathRecord, false, recordReadLimit)
 	switch {
 	case err == nil:
 		// Trim only the record's trailing newline — Unix paths may legitimately

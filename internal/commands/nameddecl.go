@@ -39,33 +39,36 @@ type declVerbs[T any] struct {
 // still fails loudly up front, and a no-op remove on a never-seen project
 // leaves no ~/.byre/projects/<id>); for the global layer it's a plain
 // MkdirAll of home.
-func declLayerPath(projectDir string, global bool) (path, label string, prepare func() error, err error) {
+func declLayerPath(projectDir string, global bool) (path, label string, follow bool, prepare func() error, err error) {
 	home, err := project.Home()
 	if err != nil {
-		return "", "", nil, err
+		return "", "", false, nil, err
 	}
 	if global {
 		// Not a store — no enrollment semantics — but AtomicWrite no longer
 		// creates directories, so a fresh machine's first `--global` verb
 		// must be able to create ~/.byre itself when its write lands.
-		return filepath.Join(home, "default.config"), "global config",
+		// follow=true: default.config is host-owned (never inside any box
+		// mount) and a dotfiles symlink there is the user's own arrangement.
+		return filepath.Join(home, "default.config"), "global config", true,
 			func() error { return os.MkdirAll(home, 0o755) }, nil
 	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", false, nil, err
 	}
 	if err := paths.ValidateExisting(); err != nil {
-		return "", "", nil, err
+		return "", "", false, nil, err
 	}
-	return filepath.Join(paths.Dir, config.ProjectConfigName), "project config", paths.Bootstrap, nil
+	// follow=false: the store project dir is what --self-edit mounts.
+	return filepath.Join(paths.Dir, config.ProjectConfigName), "project config", false, paths.Bootstrap, nil
 }
 
 // saveDeclLayer validates and writes an edited layer. Validate runs before
 // the enrolling prepare (mirrors the config editor's ordering): a save the
 // validator would refuse must not enroll. Save re-runs the same check on the
 // way to disk; the duplication buys the ordering.
-func saveDeclLayer(path string, cur config.Config, prepare func() error) error {
+func saveDeclLayer(path string, follow bool, cur config.Config, prepare func() error) error {
 	if err := cur.ValidateLayer(); err != nil {
 		return err
 	}
@@ -74,7 +77,7 @@ func saveDeclLayer(path string, cur config.Config, prepare func() error) error {
 			return err
 		}
 	}
-	return configui.Save(path, cur)
+	return configui.Save(path, follow, cur)
 }
 
 // addNamedDecl add-or-updates a declaration in the target layer (the agent
@@ -82,7 +85,7 @@ func saveDeclLayer(path string, cur config.Config, prepare func() error) error {
 // matching `!name` closure, and prints the shared outcome messages. The
 // caller prints any vocabulary-specific guidance after.
 func addNamedDecl[T any](s Streams, projectDir string, global bool, v declVerbs[T], name string, decl T) error {
-	path, label, prepare, err := declLayerPath(projectDir, global)
+	path, label, follow, prepare, err := declLayerPath(projectDir, global)
 	if err != nil {
 		return err
 	}
@@ -111,7 +114,7 @@ func addNamedDecl[T any](s Streams, projectDir string, global bool, v declVerbs[
 		kept = append(kept, decl)
 	}
 	*list = kept
-	if err := saveDeclLayer(path, cur, prepare); err != nil {
+	if err := saveDeclLayer(path, follow, cur, prepare); err != nil {
 		return err
 	}
 
@@ -144,7 +147,7 @@ func addNamedDecl[T any](s Streams, projectDir string, global bool, v declVerbs[
 // every project's skills, so it reports what it did and leaves closures to
 // an explicit remove in the affected project (or a hand edit).
 func removeNamedDecl[T any](s Streams, projectDir string, global bool, v declVerbs[T], name string) error {
-	path, label, prepare, err := declLayerPath(projectDir, global)
+	path, label, follow, prepare, err := declLayerPath(projectDir, global)
 	if err != nil {
 		return err
 	}
@@ -187,7 +190,7 @@ func removeNamedDecl[T any](s Streams, projectDir string, global bool, v declVer
 		}
 		return fmt.Errorf("%s %s: not declared in the %s and not effective from below — nothing to remove", v.kind, name, label)
 	}
-	if err := saveDeclLayer(path, cur, prepare); err != nil {
+	if err := saveDeclLayer(path, follow, cur, prepare); err != nil {
 		return err
 	}
 

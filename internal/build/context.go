@@ -838,7 +838,7 @@ func copyPath(src string, dstRoot *os.Root, dst string) error {
 	// Reopen the top-level file with O_NOFOLLOW|O_NONBLOCK and trust the fd's
 	// stat, so a swap to a symlink or FIFO between the Lstat above and here is
 	// rejected rather than followed or blocked on.
-	in, err := os.OpenFile(src, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	in, _, err := hostopen.OpenRegular(src, false)
 	if err != nil {
 		return err
 	}

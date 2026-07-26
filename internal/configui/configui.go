@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
@@ -25,11 +26,15 @@ const managedHeader = "# Managed by `byre config`.\n\n"
 // ValidateLayer, NOT the resolved Validate: this file is one cascade layer,
 // so `!name` removal entries are legal here and cross-layer collisions
 // aren't its concern.
-func Save(path string, cfg config.Config) error {
+// follow states the target's trust class: false for the project-store
+// config (the one file --self-edit mounts into a box), true for host-owned
+// homes (default.config, named layers), where a dotfiles symlink is the
+// user's own arrangement.
+func Save(path string, follow bool, cfg config.Config) error {
 	if err := cfg.ValidateLayer(); err != nil {
 		return err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := hostopen.ReadFileBounded(path, follow, config.MaxConfigBytes)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err

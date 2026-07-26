@@ -28,7 +28,7 @@ func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 		Mounts:  []config.Mount{{Host: "~/d", Target: "/d", Mode: "rw"}},
 		RunArgs: []string{"--privileged"}, // raw field, must round-trip untouched
 	}
-	if err := Save(path, in); err != nil {
+	if err := Save(path, false, in); err != nil {
 		t.Fatal(err)
 	}
 	back, err := config.ParseFile(path)
@@ -71,7 +71,7 @@ func TestSaveAcceptsRemovalEntries(t *testing.T) {
 		Volumes: []config.Volume{{Name: "!creds"}},             // remove an inherited volume
 		Mounts:  []config.Mount{{Target: "!/inherited/mount"}}, // remove an inherited mount
 	}
-	if err := Save(path, cfg); err != nil {
+	if err := Save(path, false, cfg); err != nil {
 		t.Fatalf("Save rejected a valid removal-entry layer: %v", err)
 	}
 	back, err := config.ParseFile(path)
@@ -97,7 +97,7 @@ func TestSavePreservesHandComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Base = "node:22" // one edit
-	if err := Save(path, cfg); err != nil {
+	if err := Save(path, false, cfg); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
@@ -270,7 +270,7 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "default.config")
-			if err := Save(path, config.Config{Base: "node:22", SharedAuth: tc.pref}); err != nil {
+			if err := Save(path, false, config.Config{Base: "node:22", SharedAuth: tc.pref}); err != nil {
 				t.Fatal(err)
 			}
 			back, err := config.ParseFile(path)
@@ -286,7 +286,7 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 
 	// An empty preference stays omitted -- no shared_auth key materializes.
 	path := filepath.Join(t.TempDir(), "byre.config")
-	if err := Save(path, config.Config{Base: "node:22"}); err != nil {
+	if err := Save(path, false, config.Config{Base: "node:22"}); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
@@ -361,7 +361,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 			}
 			// Overlay the sample onto the file's parsed content, then Save.
 			merged := config.Merge(base, cfg)
-			if err := Save(path, merged); err != nil {
+			if err := Save(path, false, merged); err != nil {
 				t.Fatalf("save: %v", err)
 			}
 			back, err := config.ParseFile(path)
@@ -400,7 +400,7 @@ func TestSaveClearsDottedSpelledMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Env = nil
-	if err := Save(path, cfg); err != nil {
+	if err := Save(path, false, cfg); err != nil {
 		t.Fatal(err)
 	}
 	back, err := config.ParseFile(path)
@@ -428,7 +428,7 @@ func TestSaveIsDeterministicForMaps(t *testing.T) {
 	}
 	render := func() string {
 		path := filepath.Join(t.TempDir(), "byre.config")
-		if err := Save(path, cfg); err != nil {
+		if err := Save(path, false, cfg); err != nil {
 			t.Fatal(err)
 		}
 		b, err := os.ReadFile(path)
@@ -473,7 +473,7 @@ func TestSaveSourcesSpellings(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg.Sources = hint("https://new")
-			if err := Save(path, cfg); err != nil {
+			if err := Save(path, false, cfg); err != nil {
 				t.Fatalf("update: %v", err)
 			}
 			back, err := config.ParseFile(path)
@@ -492,14 +492,14 @@ func TestSaveSourcesSpellings(t *testing.T) {
 			// Second update exercises the house shape the first write left.
 			cfg2, _ := config.ParseFile(path)
 			cfg2.Sources = hint("https://third")
-			if err := Save(path, cfg2); err != nil {
+			if err := Save(path, false, cfg2); err != nil {
 				t.Fatalf("second update: %v", err)
 			}
 
 			// Clear.
 			cfg3, _ := config.ParseFile(path)
 			cfg3.Sources = nil
-			if err := Save(path, cfg3); err != nil {
+			if err := Save(path, false, cfg3); err != nil {
 				t.Fatalf("clear: %v", err)
 			}
 			back, err = config.ParseFile(path)
@@ -523,10 +523,10 @@ func TestSaveSharedAuthSecondWrite(t *testing.T) {
 	pick := func(c string) config.Config {
 		return config.Config{Base: "node:22", SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": c}}}
 	}
-	if err := Save(path, pick("first")); err != nil {
+	if err := Save(path, false, pick("first")); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(path, pick("second")); err != nil {
+	if err := Save(path, false, pick("second")); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
 	back, err := config.ParseFile(path)
@@ -577,7 +577,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("update-one", func(t *testing.T) {
 		path, cfg := setup(t)
 		cfg.Sources["a/tool"] = config.SourceHint{URI: "https://a2"}
-		if err := Save(path, cfg); err != nil {
+		if err := Save(path, false, cfg); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, map[string]string{"a/tool": "https://a2", "b/tool": "https://b"})
@@ -585,7 +585,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("delete-one", func(t *testing.T) {
 		path, cfg := setup(t)
 		delete(cfg.Sources, "a/tool")
-		if err := Save(path, cfg); err != nil {
+		if err := Save(path, false, cfg); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, map[string]string{"b/tool": "https://b"})
@@ -593,7 +593,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("add-beside", func(t *testing.T) {
 		path, cfg := setup(t)
 		cfg.Sources["c/tool"] = config.SourceHint{URI: "https://c"}
-		if err := Save(path, cfg); err != nil {
+		if err := Save(path, false, cfg); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, map[string]string{"a/tool": "https://a", "b/tool": "https://b", "c/tool": "https://c"})
@@ -601,7 +601,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("clear-all", func(t *testing.T) {
 		path, cfg := setup(t)
 		cfg.Sources = nil
-		if err := Save(path, cfg); err != nil {
+		if err := Save(path, false, cfg); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, nil)

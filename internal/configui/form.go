@@ -5,7 +5,6 @@ package configui
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -71,6 +71,10 @@ const (
 // byre.config, the global default.config, or a named layer's layer.config.
 // The layer target is the project form minus the template picker (shape
 // selection has one owner, the project config) and minus project volumes.
+// followForTarget maps an editor target to its symlink trust class (see
+// Save): only the project-store config is reachable from inside a box.
+func followForTarget(t Target) bool { return t != TargetProject }
+
 type Target int
 
 const (
@@ -151,10 +155,11 @@ type model struct {
 	sections []section   // rendered groups (Grants / Build / Advanced)
 	order    []fieldID   // flattened focus order across all sections
 
-	ti        textinput.Model // base image editor
-	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
-	wtSibling bool            // fWorktreeSibling checkbox: worktrees beside the repo
-	target    Target          // which kind of file this session edits
+	ti         textinput.Model // base image editor
+	wtBase     textinput.Model // worktree base-path editor (fWorktreeBase)
+	wtSibling  bool            // fWorktreeSibling checkbox: worktrees beside the repo
+	target     Target          // which kind of file this session edits
+	followFile bool            // followForTarget(target), fixed at open
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
@@ -252,7 +257,7 @@ type model struct {
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
 	// Snapshot the on-disk bytes as OPENED, so reportSaved (Run's saved
 	// return) can judge an $EDITOR-only session by NET content against them.
-	openRaw, openErr := os.ReadFile(filePath)
+	openRaw, openErr := hostopen.ReadFileBounded(filePath, followForTarget(target), config.MaxConfigBytes)
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Focus()
@@ -324,6 +329,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		ti:           ti,
 		wtBase:       wtBase,
 		target:       target,
+		followFile:   followForTarget(target),
 		ta:           ta,
 		width:        80,
 		volPendClear: -1,
@@ -509,7 +515,7 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Snapshot the on-disk state so onEditorClosed can tell a real
 		// $EDITOR write from a look-and-quit — savedOnce must track writes
 		// that actually landed, not editor round-trips.
-		m.preEditorRaw, m.preEditorErr = os.ReadFile(m.filePath)
+		m.preEditorRaw, m.preEditorErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 		m.errMsg = ""
 		return m, openEditor(m.filePath)
 	case "up", "shift+tab":

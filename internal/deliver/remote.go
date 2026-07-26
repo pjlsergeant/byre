@@ -478,17 +478,12 @@ func (p *packPlan) writeTo(w io.Writer, m *sendMeter) error {
 			// arg swapped to an escaping symlink or a FIFO after planning can
 			// neither exfiltrate nor block. Spools are byre's own regular temp
 			// files, so no-follow is a no-op for them.
-			flag := os.O_RDONLY | syscall.O_NONBLOCK
-			if !e.follow {
-				flag |= syscall.O_NOFOLLOW
-			}
-			f, err := os.OpenFile(e.path, flag, 0)
+			f, _, err := hostopen.OpenRegular(e.path, e.follow)
 			if err != nil {
+				if errors.Is(err, hostopen.ErrNotRegular) {
+					return fmt.Errorf("delivering %s: not a regular file", e.name)
+				}
 				return err
-			}
-			if st, serr := f.Stat(); serr != nil || !st.Mode().IsRegular() {
-				f.Close()
-				return fmt.Errorf("delivering %s: not a regular file", e.name)
 			}
 			content = f
 		}

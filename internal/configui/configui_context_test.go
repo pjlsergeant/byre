@@ -98,7 +98,7 @@ func TestContextItemProseEditorRoundTrip(t *testing.T) {
 
 	// And the whole thing lands in the file via Save, as multiline prose.
 	out := m.assemble()
-	if err := Save(m.filePath, out); err != nil {
+	if err := Save(m.filePath, false, out); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(m.filePath)

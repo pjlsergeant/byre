@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 )
@@ -199,7 +200,9 @@ func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bo
 	}
 	for _, name := range []string{config.ProjectConfigName, appliedRecord} {
 		src := filepath.Join(oldDir, name)
-		content, rerr := os.ReadFile(src)
+		// Old and new store project dirs are both --self-edit-mountable:
+		// fd-judged, no-follow, bounded, like every paths.Dir read.
+		content, rerr := hostopen.ReadFileBounded(src, false, config.MaxConfigBytes)
 		if rerr != nil {
 			if os.IsNotExist(rerr) {
 				continue
@@ -208,7 +211,7 @@ func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bo
 		}
 		found = true
 		dst := filepath.Join(paths.Dir, name)
-		existing, derr := os.ReadFile(dst)
+		existing, derr := hostopen.ReadFileBounded(dst, false, config.MaxConfigBytes)
 		switch {
 		case derr == nil && bytes.Equal(existing, content):
 			// Already identical at the new id — nothing to do.
@@ -386,7 +389,7 @@ func rehomeCandidates(paths project.Paths) (cands []rehomeCandidate, total int, 
 			continue
 		}
 		dir := filepath.Join(paths.Home, "projects", id)
-		rec, rerr := os.ReadFile(filepath.Join(dir, "path"))
+		rec, rerr := hostopen.ReadFileBounded(filepath.Join(dir, "path"), false, config.MaxConfigBytes)
 		if rerr != nil {
 			// No readable path record — half-bootstrapped or foreign; it can't
 			// be shown as "moved from" anywhere, so don't offer it.

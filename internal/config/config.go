@@ -1614,6 +1614,12 @@ func appendAll(base, over []string) []string {
 	return append(out, over...)
 }
 
+// MaxConfigBytes bounds every host-side read of a byre config-family file
+// (byre.config, default.config, layer files, preset records): far above any
+// real config, small enough that a planted device node or grown file fails
+// fast instead of ballooning the process.
+const MaxConfigBytes = 1 << 20
+
 // ExpandTilde expands a leading "~" or "~/" against the current user's home.
 // Only the tilde SPELLING is shared here; every caller owns its own
 // post-conditions -- absoluteness, cleaning, comma rules, or degrading --

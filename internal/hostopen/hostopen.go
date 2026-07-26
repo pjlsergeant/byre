@@ -15,6 +15,7 @@ package hostopen
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -120,6 +121,31 @@ func OpenDirRootNoFollow(dir string) (*os.Root, error) {
 		return nil, fmt.Errorf("%s: %w", dir, ErrSymlinkRoot)
 	}
 	return croot, nil
+}
+
+// ReadFileBounded opens path per OpenRegular (fd-judged; follow per the
+// caller's trust ruling) and reads at most limit bytes. Overflow fails
+// loudly -- an oversize file is never truncated and parsed, because a
+// silently-partial config is worse than a refused one. The fstat gate is
+// advisory (the size can move after the stat); the limited read is what
+// actually bounds allocation, and the post-read check catches growth.
+func ReadFileBounded(path string, follow bool, limit int64) ([]byte, error) {
+	f, fi, err := OpenRegular(path, follow)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if fi.Size() > limit {
+		return nil, fmt.Errorf("%s is %d bytes (limit %d)", path, fi.Size(), limit)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("%s exceeds the %d byte limit", path, limit)
+	}
+	return b, nil
 }
 
 // finishOpen is the judgment half: fstat the descriptor, require a regular
