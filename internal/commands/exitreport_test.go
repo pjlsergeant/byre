@@ -511,3 +511,24 @@ func TestExitReportUnstattableParentIsNotDeletion(t *testing.T) {
 		t.Errorf("nothing is knowable through an unstattable .git; got:\n%s", got)
 	}
 }
+
+// A hooks directory whose SUBDIRECTORY is unreadable yields a partial map. Read
+// as complete, the hidden entries report as removed -- the invented deletion
+// again, one level down (codex, round 6).
+func TestExitReportPartialHooksWalkIsNotDeletion(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads regardless of mode")
+	}
+	paths, dir := exitRepo(t)
+	gitIn(t, dir, "config", "core.hooksPath", ".husky")
+	nested := filepath.Join(dir, ".husky", "_")
+	mustMkdirAll(t, nested, 0o755)
+	mustWriteFile(t, filepath.Join(nested, "pre-commit"), []byte("#!/bin/sh\n"), 0o755)
+
+	got := exitReport(t, paths, func() { mustChmod(t, nested, 0o000) })
+	t.Cleanup(func() { _ = os.Chmod(nested, 0o755) })
+
+	if strings.Contains(got, "was removed") {
+		t.Errorf("a partial hooks walk must not report removals, got:\n%s", got)
+	}
+}

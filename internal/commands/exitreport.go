@@ -199,12 +199,12 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		// worktree's and each linked worktree's admin dir. `git config
 		// --worktree core.hooksPath ...` opens the whole channel without ever
 		// touching `config`.
-		cfgFiles, listed := gitConfigFiles(gitDir)
+		fixedCfgs, listedCfgs, listed := gitConfigFiles(gitDir)
 		s.configListed = listed
-		for i, cfg := range cfgFiles {
-			if i >= 2 { // beyond the two always-known common-dir files
-				s.configFromListing[exitDisplay(paths, cfg)] = true
-			}
+		for _, cfg := range listedCfgs {
+			s.configFromListing[exitDisplay(paths, cfg)] = true
+		}
+		for _, cfg := range append(append([]string{}, fixedCfgs...), listedCfgs...) {
 			if kv, ok := readGitConfig(cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
 			} else if !confirmedAbsent(cfg) {
@@ -265,8 +265,11 @@ func commonGitDirOf(paths project.Paths) string {
 // gitConfigFiles lists the config files that can carry exec-capable keys for
 // this repository: the common config, the main worktree's config.worktree, and
 // each linked worktree's. Missing files are simply absent from the snapshot.
-func gitConfigFiles(gitDir string) ([]string, bool) {
-	files := []string{
+// Returns the always-knowable common-dir files separately from the ones only
+// the worktrees/ listing can reveal, so the caller never has to infer which is
+// which from position (a reorder would silently mis-tag them -- grok).
+func gitConfigFiles(gitDir string) (fixed, fromListing []string, listed bool) {
+	fixed = []string{
 		filepath.Join(gitDir, "config"),
 		filepath.Join(gitDir, "config.worktree"),
 	}
@@ -274,14 +277,14 @@ func gitConfigFiles(gitDir string) ([]string, bool) {
 	if err != nil {
 		// No worktrees/ at all is the ordinary case and perfectly known; any
 		// other error means byre cannot see the linked worktrees' configs.
-		return files, errors.Is(err, fs.ErrNotExist)
+		return fixed, nil, errors.Is(err, fs.ErrNotExist)
 	}
 	for _, e := range entries {
 		if e.IsDir() {
-			files = append(files, filepath.Join(gitDir, "worktrees", e.Name(), "config.worktree"))
+			fromListing = append(fromListing, filepath.Join(gitDir, "worktrees", e.Name(), "config.worktree"))
 		}
 	}
-	return files, true
+	return fixed, fromListing, true
 }
 
 // readGitConfig reads one config file's key/value pairs using git's OWN parser
@@ -369,8 +372,17 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) bool
 	}
 	defer root.Close()
 	n := 0
-	fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	complete := true
+	werr := fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// An unreadable subdirectory hides entries. Continuing produces a
+			// PARTIAL map, and a partial map read as complete reports the
+			// hidden hooks as removed -- the same invented deletion, one level
+			// down (codex).
+			complete = false
+			return nil
+		}
+		if d.IsDir() {
 			return nil
 		}
 		if n >= maxHooksEntries {
@@ -380,7 +392,9 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) bool
 		into[exitDisplay(paths, filepath.Join(dir, p))] = fileSig(root, p, d)
 		return nil
 	})
-	return true
+	// Truncation at maxHooksEntries is deliberate and known; a walk error is
+	// not. fs.SkipAll is not reported as an error by WalkDir.
+	return complete && werr == nil
 }
 
 // envFiles lists .env and .env.* in the project root. Literal names, never a
