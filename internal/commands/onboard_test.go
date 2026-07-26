@@ -468,7 +468,7 @@ func TestOnboardSaveDefaultWriteFailureLeavesProjectUnonboarded(t *testing.T) {
 	// atomic write (a temp file in home) fails, while byre.config (in the
 	// project's store subdir) stays writable — exactly the wedge that would
 	// strand a half-onboarded project.
-	if err := builtins.EnsureStore(p.Home); err != nil {
+	if err := builtins.EnsureStoreOut(p.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(p.Home, 0o555); err != nil {

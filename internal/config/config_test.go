@@ -687,11 +687,11 @@ func TestListTemplates(t *testing.T) {
 	}
 }
 
+func boolPtr(b bool) *bool { return &b }
+
 // sampleConfig sets EVERY Config field to a non-zero sample. The merge growth
 // guard reflects over Config and fails if a field is left zero here, so adding
 // a field to Config forces adding it both here and to Merge.
-func boolPtr(b bool) *bool { return &b }
-
 func sampleConfig() Config {
 	return Config{
 		Engine:             "podman",

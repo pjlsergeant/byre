@@ -10,6 +10,29 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
+// bindHostByTarget maps bind target -> host path (first match wins; binds
+// are unique by target under normal validation).
+func bindHostByTarget(binds []runner.BindMount) map[string]string {
+	byTarget := map[string]string{}
+	for _, b := range binds {
+		if _, ok := byTarget[b.Target]; !ok {
+			byTarget[b.Target] = b.Host
+		}
+	}
+	return byTarget
+}
+
+// sortSockGroups orders sock_groups declarations by skill then path, so the
+// warnings both appliers print come out in a stable order.
+func sortSockGroups(sgs []skills.SockGroup) {
+	sort.SliceStable(sgs, func(i, j int) bool {
+		if sgs[i].Skill != sgs[j].Skill {
+			return sgs[i].Skill < sgs[j].Skill
+		}
+		return sgs[i].Path < sgs[j].Path
+	})
+}
+
 // applySockGroups probes each skill-declared sock_groups path engine-side and
 // injects numeric --group-add gids into params. Failures are attributed to the
 // skill and never silently skipped (the box still launches; the engine is the
@@ -23,14 +46,8 @@ func applySockGroups(r sessionRunner, w io.Writer, image string, params *runner.
 	if len(sgs) == 0 {
 		return nil
 	}
-	// Bind target -> host path (first match wins; binds are unique by target
-	// under normal validation).
-	byTarget := map[string]string{}
-	for _, b := range params.Binds {
-		if _, ok := byTarget[b.Target]; !ok {
-			byTarget[b.Target] = b.Host
-		}
-	}
+	byTarget := bindHostByTarget(params.Binds)
+	sortSockGroups(sgs)
 	seenGid := map[int]bool{}
 	gids := map[string]int{} // path -> gid
 	for _, sg := range sgs {
@@ -74,19 +91,8 @@ func warnSockSources(r sessionRunner, w io.Writer, params runner.RunParams, res 
 	if desktop {
 		return // host stat is not authoritative under Desktop
 	}
-	byTarget := map[string]string{}
-	for _, b := range params.Binds {
-		if _, ok := byTarget[b.Target]; !ok {
-			byTarget[b.Target] = b.Host
-		}
-	}
-	// Stable order by skill then path.
-	sort.SliceStable(sgs, func(i, j int) bool {
-		if sgs[i].Skill != sgs[j].Skill {
-			return sgs[i].Skill < sgs[j].Skill
-		}
-		return sgs[i].Path < sgs[j].Path
-	})
+	byTarget := bindHostByTarget(params.Binds)
+	sortSockGroups(sgs)
 	for _, sg := range sgs {
 		host, ok := byTarget[sg.Path]
 		if !ok {

@@ -75,9 +75,11 @@ func acquire(path string, nonblock bool) (*Lock, error) {
 	}
 }
 
-// Release drops the lock.
+// Release drops the lock. A second Release is a no-op by contract: every
+// acquisition path returns a held lock or an error, so the only repeat
+// caller is a defer running after an explicit Release.
 func (l *Lock) Release() error {
-	if l == nil || l.f == nil {
+	if l.f == nil {
 		return nil
 	}
 	ferr := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)

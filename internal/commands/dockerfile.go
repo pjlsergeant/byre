@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/config"
 	"io"
 	"os"
 	"strings"
@@ -85,17 +86,7 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	// Best-effort engine name for the leading token; fall back to the configured
-	// value (or docker) so this stays informational when no engine is installed.
-	// The identity follows the engine (keep-id under rootless Podman) so the
-	// printed argv matches what develop would run — host identity when no
-	// engine is reachable.
-	engine := orDefault(rv.cfg.Engine, "docker")
-	ident := hostIdentity()
-	if eng, derr := runner.Detect(rv.cfg.Engine, nil); derr == nil {
-		engine = string(eng)
-		ident = engineIdentity(runner.New(eng), os.Getuid(), os.Getgid())
-	}
+	engine, ident := resolveEngineIdentity(rv.cfg)
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	params, err := runParams(paths, rv, image, false, s.TTY, ident)
 	if err != nil {
@@ -110,6 +101,22 @@ func DockerRun(s Streams, projectDir string) error {
 		fmt.Fprintln(s.Err, "byre: note — this project runs a firewall byre applies at launch; started with just this command, the box fails closed at its launch gate (~30s). `byre ejectfirewall` prints the netns helper to run alongside it.")
 	}
 	return nil
+}
+
+// resolveEngineIdentity yields the best-effort engine name and matching
+// identity for an informational render: fall back to the configured engine
+// (or docker) so the output stays useful with no engine installed, and let
+// the identity follow the engine (keep-id under rootless Podman) so the
+// printed argv matches what develop would run -- host identity when no
+// engine is reachable.
+func resolveEngineIdentity(cfg config.Config) (string, runner.Identity) {
+	engine := orDefault(cfg.Engine, "docker")
+	ident := hostIdentity()
+	if eng, derr := runner.Detect(cfg.Engine, nil); derr == nil {
+		engine = string(eng)
+		ident = engineIdentity(runner.New(eng), os.Getuid(), os.Getgid())
+	}
+	return engine, ident
 }
 
 // EjectFirewall implements `byre ejectfirewall`: print, as a standalone shell
@@ -133,12 +140,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 	if len(hooks) == 0 {
 		return fmt.Errorf("no netns hooks (firewall) enabled for this project — nothing to eject")
 	}
-	engine := orDefault(rv.cfg.Engine, "docker")
-	ident := hostIdentity()
-	if eng, derr := runner.Detect(rv.cfg.Engine, nil); derr == nil {
-		engine = string(eng)
-		ident = engineIdentity(runner.New(eng), os.Getuid(), os.Getgid())
-	}
+	engine, ident := resolveEngineIdentity(rv.cfg)
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 
 	var b strings.Builder

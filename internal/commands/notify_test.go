@@ -34,7 +34,7 @@ func stubRunOut(t *testing.T) *[]string {
 
 func TestNotifyDarwinEscapesAppleScript(t *testing.T) {
 	calls := stubRunOut(t)
-	notify("darwin", "byre deliver", `path "with" quotes \ and slash`, false)
+	notify("darwin", `path "with" quotes \ and slash`, false)
 	if len(*calls) != 1 {
 		t.Fatalf("calls = %v", *calls)
 	}
@@ -49,12 +49,12 @@ func TestNotifyDarwinIsAnAutoDismissingDialog(t *testing.T) {
 	// permission-gated and showed NOTHING on a successful Quick Action.
 	// Success = dialog that gives up; failure = sticky dialog.
 	calls := stubRunOut(t)
-	notify("darwin", "t", "ok", false)
+	notify("darwin", "ok", false)
 	if got := (*calls)[0]; !strings.Contains(got, "display dialog") || !strings.Contains(got, "giving up after 5") ||
 		!strings.Contains(got, "closes itself") {
 		t.Fatalf("success should auto-dismiss AND say so: %q", got)
 	}
-	notify("darwin", "t", "bad", true)
+	notify("darwin", "bad", true)
 	if got := (*calls)[1]; !strings.Contains(got, "display dialog") || strings.Contains(got, "giving up") ||
 		strings.Contains(got, "closes itself") || !strings.Contains(got, "icon caution") {
 		t.Fatalf("failure should be sticky and not claim to close: %q", got)
@@ -74,7 +74,7 @@ func TestNotifyDarwinFallsBackToBanner(t *testing.T) {
 		}
 		return nil, nil
 	}
-	notify("darwin", "t", "b", false)
+	notify("darwin", "b", false)
 	if len(calls) != 2 || !strings.Contains(calls[1], "display notification") {
 		t.Fatalf("no banner fallback: %v", calls)
 	}
@@ -83,7 +83,7 @@ func TestNotifyDarwinFallsBackToBanner(t *testing.T) {
 func TestNotifyLinuxUsesNotifySend(t *testing.T) {
 	stubClipTools(t, "notify-send") // lookup succeeds
 	calls := stubRunOut(t)
-	notify("linux", "byre deliver", "/inbox/a.png", false)
+	notify("linux", "/inbox/a.png", false)
 	if len(*calls) != 1 || !strings.HasPrefix((*calls)[0], "notify-send ") {
 		t.Fatalf("calls = %v", *calls)
 	}
@@ -92,7 +92,7 @@ func TestNotifyLinuxUsesNotifySend(t *testing.T) {
 func TestNotifyLinuxSilentWithoutTool(t *testing.T) {
 	stubClipTools(t) // nothing available
 	calls := stubRunOut(t)
-	notify("linux", "t", "b", true)
+	notify("linux", "b", true)
 	if len(*calls) != 0 {
 		t.Fatalf("should not exec anything: %v", *calls)
 	}

@@ -1,6 +1,7 @@
 package builtins
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestBundledClaudeInEmbed(t *testing.T) {
-	b, err := fs.ReadFile(FS(), "skills/claude/skill.toml")
+	b, err := fs.ReadFile(fsys, "skills/claude/skill.toml")
 	if err != nil {
 		t.Fatalf("claude skill not in embed: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	if err := paths.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureStore(paths.Home); err != nil {
+	if err := EnsureStoreOut(paths.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, cat := testCat(t)
@@ -195,7 +196,7 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	df, err := build.Assemble(paths, cfg, res)
+	df, err := build.AssembleWarn(paths, cfg, res, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

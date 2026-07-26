@@ -132,7 +132,7 @@ func TestIntegrationGeneratedImageBuildsAndRuns(t *testing.T) {
 func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 	r := requireEngineRunner(t)
 	p, proj := testPaths(t)
-	if err := builtins.EnsureStore(p.Home); err != nil {
+	if err := builtins.EnsureStoreOut(p.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	cat, err := builtins.LoadCatalogRaw(p.Home)
@@ -228,7 +228,7 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	if pA.ID == pB.ID {
 		t.Fatalf("test projects collided on ID %q", pA.ID)
 	}
-	if err := builtins.EnsureStore(pA.Home); err != nil {
+	if err := builtins.EnsureStoreOut(pA.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	cat, err := builtins.LoadCatalogRaw(pA.Home)
@@ -324,7 +324,7 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 	}
 
 	p, proj := testPaths(t)
-	if err := builtins.EnsureStore(p.Home); err != nil {
+	if err := builtins.EnsureStoreOut(p.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	cat, err := builtins.LoadCatalogRaw(p.Home)

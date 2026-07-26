@@ -6,11 +6,9 @@ import (
 )
 
 func TestSemverDevel(t *testing.T) {
-	// go test applies no ldflags, so Version is already "" here -- the old
-	// version of this test set it to "" and then re-ran the identical
-	// predicate, asserting the same thing twice. What matters is the contract:
-	// a paren form must map to a constraint-parseable semver, not merely to
-	// "something that doesn't start with '('".
+	// go test applies no ldflags, so Version is already "" here. The
+	// contract that matters: a paren form must map to a constraint-parseable
+	// semver, not merely to "something that doesn't start with '('".
 	old := Version
 	Version = ""
 	t.Cleanup(func() { Version = old })

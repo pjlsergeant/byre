@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/packages"
-	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -20,7 +19,7 @@ func TestSkillBlocksOrderByProvenance(t *testing.T) {
 		{Name: "inst-b", Provenance: packages.ProvInstalled},
 		{Name: "bund-b", Provenance: packages.ProvBundled},
 	}
-	out, jobs, err := planSkillBlocks(project.Paths{}, blocks)
+	out, jobs, err := planSkillBlocks(blocks)
 	if err != nil {
 		t.Fatal(err)
 	}

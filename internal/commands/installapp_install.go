@@ -23,6 +23,12 @@ type installDeps struct {
 	run  func(name string, args ...string) error
 }
 
+// errNotByreGenerated refuses to overwrite an install-app artifact byre
+// cannot recognize as its own: the user's file, the user's call.
+func errNotByreGenerated(path string) error {
+	return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", path)
+}
+
 func realInstallDeps() (installDeps, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -88,7 +94,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	case err == nil:
 		appExists = true
 		if prev, err := os.ReadFile(marker); err != nil || !strings.Contains(string(prev), generatedMarker) {
-			return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", appPath)
+			return errNotByreGenerated(appPath)
 		}
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", appPath, err)
@@ -104,7 +110,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	switch _, err := os.Stat(svcPath); {
 	case err == nil:
 		if prev, err := os.ReadFile(wflowPath); err != nil || !strings.Contains(string(prev), generatedMarker) {
-			return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", svcPath)
+			return errNotByreGenerated(svcPath)
 		}
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", svcPath, err)
@@ -207,7 +213,7 @@ func installLinux(s Streams, box string, d installDeps) error {
 	switch prev, err := os.ReadFile(entryPath); {
 	case err == nil:
 		if !strings.Contains(string(prev), generatedMarker) {
-			return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", entryPath)
+			return errNotByreGenerated(entryPath)
 		}
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", entryPath, err)

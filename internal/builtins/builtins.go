@@ -9,7 +9,6 @@ package builtins
 import (
 	"embed"
 	"io"
-	"io/fs"
 	"sync"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -37,23 +36,12 @@ func stage2Hooks() packages.Stage2Hooks {
 	}
 }
 
-// FS returns the embedded bundled packages filesystem. Top-level entries are
-// "skills" and "templates". Callers must not assume anything under
-// ~/.byre/skills is a bundled package -- those are local only.
-func FS() fs.FS { return fsys }
-
-// EnsureStore prepares the store at home: bundled mirror + legacy notices.
-// notices, when non-nil, receives human-facing lines (mirror regen, LEGACY).
-// Strict paths (develop, resolve) should pass nil and surface errors; soft
-// paths (status) may log notices to stderr.
-func EnsureStore(home string) error {
-	return EnsureStoreOut(home, nil)
-}
-
-// EnsureStoreOut is EnsureStore with an optional notice writer.
-// The mirror stamp uses version.String() (human-facing); catalog compat
-// uses version.Semver() separately via LoadCatalog. Notices print once
-// per process (first non-nil writer wins).
+// EnsureStoreOut prepares the store at home: bundled mirror + legacy notices.
+// notices, when non-nil, receives human-facing lines (mirror regen, LEGACY) --
+// they print once per process, first non-nil writer wins. Strict paths
+// (develop, resolve) pass nil and surface errors; soft paths (status) may
+// log notices to stderr. The mirror stamp uses version.String()
+// (human-facing); catalog compat uses version.Semver() via LoadCatalog.
 func EnsureStoreOut(home string, notices io.Writer) error {
 	return packages.EnsureStore(home, fsys, version.String(), ensureNotices(notices))
 }

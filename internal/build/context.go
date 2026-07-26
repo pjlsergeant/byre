@@ -53,14 +53,14 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 	}
 	// Skills can ship files from their own dir into the image: map each skill's
 	// build block to the generator's, filling its COPY map, and record the jobs.
-	genSkills, skillJobs, err := planSkillBlocks(paths, res.BuildBlocks())
+	genSkills, skillJobs, err := planSkillBlocks(res.BuildBlocks())
 	if err != nil {
 		return gen.Input{}, nil, err
 	}
 	// The declared Claude Skill set: validate each source dir as a Claude
 	// Skill and stage it under the canonical context tree (the COPY itself is
 	// unconditional — gen always emits it, Assemble always creates the tree).
-	claudeSkillJobs, err := planClaudeSkills(paths, cfg, res)
+	claudeSkillJobs, err := planClaudeSkills(cfg, res)
 	if err != nil {
 		return gen.Input{}, nil, err
 	}
@@ -147,15 +147,10 @@ func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string
 	return gen.Dockerfile(in), nil
 }
 
-// Assemble writes the build context (Dockerfile + launcher + agent files + any
-// `files`) and returns the generated Dockerfile text. Operator-facing notes
-// (the context prose size tiers) are discarded; develop calls AssembleWarn.
-func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
-	return AssembleWarn(paths, cfg, res, io.Discard)
-}
-
-// AssembleWarn is Assemble with the operator's stderr attached: size-tier
-// notes about [[context]] prose land on warn as the context is staged.
+// AssembleWarn writes the build context (Dockerfile + launcher + agent files
+// + any `files`) and returns the generated Dockerfile text, with the
+// operator's stderr attached: size-tier notes about [[context]] prose land on
+// warn as the context is staged. Callers with no operator pass io.Discard.
 func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, warn io.Writer) (string, error) {
 	// Every mutation below is staged through a descriptor confined to the REAL
 	// context dir, so a `develop --self-edit` agent that swapped context/ (or an
@@ -440,7 +435,7 @@ func provenanceRank(p packages.Provenance) int {
 // its COPY map (staged-context-path -> image dest) for files the skill ships
 // under "skills/<skill>/<rel>", and returns the copy jobs. Sources were
 // already validated for containment by skills.Resolve; this writes nothing.
-func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, error) {
+func planSkillBlocks(blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, error) {
 	if len(blocks) == 0 {
 		return nil, nil, nil
 	}
@@ -484,7 +479,7 @@ func planSkillBlocks(paths project.Paths, blocks []skills.BuildBlock) ([]gen.Ski
 // config declaration's `path` expands here (`~`-anchored or absolute — config
 // vocabulary is deliberately wider than the project-relative `files` key, see
 // config/claudeskills.go). Staging itself rejects symlinks (copyPath).
-func planClaudeSkills(paths project.Paths, cfg config.Config, res skills.Resolved) ([]fileCopy, error) {
+func planClaudeSkills(cfg config.Config, res skills.Resolved) ([]fileCopy, error) {
 	set, err := skills.ClaudeSkillSet(cfg, res)
 	if err != nil {
 		return nil, err
@@ -635,12 +630,9 @@ func readBoundedHostFile(agentRoot, path string) ([]byte, error) {
 // expandHome expands a leading ~ against the current user's home and requires
 // the result to be absolute (the shape config validation promised).
 func expandHome(p string) (string, error) {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		p = home + strings.TrimPrefix(p, "~")
+	p, err := config.ExpandTilde(p)
+	if err != nil {
+		return "", err
 	}
 	if !filepath.IsAbs(p) {
 		return "", fmt.Errorf("path must be absolute or ~/…: %q", p)

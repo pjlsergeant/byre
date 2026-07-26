@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/gen"
 )
 
 // sshExec is deliver.SSHExec backed by the real ssh CLI. The remote command
@@ -42,7 +43,7 @@ func sshExec(t deliver.SSHTarget, remoteArgv []string, stdin io.Reader, stdout, 
 func shellQuoteJoin(argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, a := range argv {
-		quoted[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		quoted[i] = gen.ShellQuote(a)
 	}
 	return strings.Join(quoted, " ")
 }

@@ -50,7 +50,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// already ran EnsureStoreOut so a second noticed call would double-print
 	// LEGACY lines. Standalone paths without a prior notice still
 	// prepare the store; they just skip the human lines here.
-	if err := builtins.EnsureStore(paths.Home); err != nil {
+	if err := builtins.EnsureStoreOut(paths.Home, nil); err != nil {
 		return err
 	}
 	cat, err := builtins.LoadCatalogRaw(paths.Home)

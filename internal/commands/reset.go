@@ -74,17 +74,17 @@ func liveSession(r sessionRunner, id string) ([]string, error) {
 // instead of launching against the state the caller is about to delete.
 func clearSessionMarkers(w io.Writer, r sessionRunner, id string) error {
 	if live, err := liveSession(r, id); err != nil {
-		return fmt.Errorf("checking for a running session: %w", err)
+		return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
 	} else if len(live) > 0 {
-		return fmt.Errorf("a session started for this project (%s); aborting", shortID(live[0]))
+		return fmt.Errorf("a session started for this project (%s, %s); aborting", shortID(live[0]), r.Engine())
 	}
 	all, err := r.ContainersByLabel(labelKey + "=" + id)
 	if err != nil {
-		return fmt.Errorf("checking for session containers: %w", err)
+		return fmt.Errorf("checking for session containers (%s): %w", r.Engine(), err)
 	}
 	for _, c := range all {
 		if rerr := r.ContainerRemove(c); rerr != nil {
-			return fmt.Errorf("a session appears to be starting for this project (container %s could not be removed: %v); aborting", shortID(c), rerr)
+			return fmt.Errorf("a session appears to be starting for this project (container %s on %s could not be removed: %v); aborting", shortID(c), r.Engine(), rerr)
 		}
 		fmt.Fprintf(w, "byre: removed pre-start container %s (its develop will fail to launch)\n", shortID(c))
 	}

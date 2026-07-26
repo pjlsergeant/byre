@@ -735,11 +735,12 @@ func suggestTarget(host string) string {
 	return skills.DevHome + "/" + base
 }
 
+// expandTilde degrades on failure (returns p unchanged): this is the TUI's
+// display/completion path, where a missing home means fewer suggestions, not
+// an error.
 func expandTilde(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home + strings.TrimPrefix(p, "~")
-		}
+	if exp, err := config.ExpandTilde(p); err == nil {
+		return exp
 	}
 	return p
 }

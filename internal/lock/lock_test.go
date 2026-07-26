@@ -96,10 +96,3 @@ func TestAcquireNeverReturnsAnUnlinkedInode(t *testing.T) {
 		t.Fatal("waiter never acquired")
 	}
 }
-
-func TestReleaseNilSafe(t *testing.T) {
-	var l *Lock
-	if err := l.Release(); err != nil {
-		t.Fatalf("Release on nil lock: %v", err)
-	}
-}

@@ -154,9 +154,9 @@ func TestResolveRejectsContainmentTooLong(t *testing.T) {
 	}
 }
 
-// env_docs (consumed-env guidance): declarations resolve into sorted,
-// attributed EnvDoc rows; keys are held to the env-key grammar and guidance
-// to the one-liner shape, with empty guidance refused.
+// env_docs (consumed-env guidance): declarations survive resolution on each
+// skill's Runtime.EnvDocs map -- the surface status and the config UI read --
+// attributed per skill, with two skills documenting one var both retained.
 func TestResolveEnvDocs(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "gem", `[runtime.env_docs]
@@ -170,15 +170,15 @@ GEMINI_API_KEY = "also consumed here"
 	if err != nil {
 		t.Fatal(err)
 	}
-	docs := res.EnvDocs()
-	if len(docs) != 3 {
-		t.Fatalf("EnvDocs = %+v", docs)
+	byName := map[string]map[string]string{}
+	for _, sk := range res.Skills {
+		byName[sk.Name] = sk.File.Runtime.EnvDocs
 	}
-	// Sorted by var name then skill — two skills documenting one var is fine.
-	if docs[0].Name != "GEMINI_API_KEY" || docs[0].Skill != "gem" ||
-		docs[1].Name != "GEMINI_API_KEY" || docs[1].Skill != "other" ||
-		docs[2].Name != "ZED_TOKEN" || !strings.Contains(docs[2].Text, "optional") {
-		t.Fatalf("EnvDocs order/content: %+v", docs)
+	if len(byName["gem"]) != 2 || !strings.Contains(byName["gem"]["ZED_TOKEN"], "optional") {
+		t.Fatalf("gem env_docs = %+v", byName["gem"])
+	}
+	if byName["other"]["GEMINI_API_KEY"] != "also consumed here" {
+		t.Fatalf("both skills documenting one var must be retained: %+v", byName["other"])
 	}
 }
 

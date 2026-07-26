@@ -31,7 +31,7 @@ import (
 func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 	r := requireEngineRunner(t)
 	pMain, proj := testPaths(t)
-	if err := builtins.EnsureStore(pMain.Home); err != nil {
+	if err := builtins.EnsureStoreOut(pMain.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 

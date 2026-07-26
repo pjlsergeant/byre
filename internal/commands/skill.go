@@ -693,7 +693,7 @@ func pkgValidate(s Streams, kind packages.Kind, name string) error {
 		// Validate every loadable package of this kind.
 		var n int
 		for _, ent := range cat.ListLoadable(kind) {
-			if err := validateOne(s, cat, ent); err != nil {
+			if err := validateOne(cat, ent); err != nil {
 				return err
 			}
 			n++
@@ -708,15 +708,14 @@ func pkgValidate(s Streams, kind packages.Kind, name string) error {
 	if ent.Kind != kind {
 		return fmt.Errorf("package %q is a %s", ent.ID, ent.Kind)
 	}
-	if err := validateOne(s, cat, ent); err != nil {
+	if err := validateOne(cat, ent); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: %s ok\n", ent.ID)
 	return nil
 }
 
-func validateOne(s Streams, cat *packages.Catalog, ent *packages.Entry) error {
-	_ = s
+func validateOne(cat *packages.Catalog, ent *packages.Entry) error {
 	if ent.Kind == packages.KindSkill {
 		_, err := skills.Load(cat, ent.ID)
 		return err

@@ -9,7 +9,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -136,12 +135,5 @@ func ClaudeSkillList(s Streams, projectDir string) error {
 // lands in a docker --mount value — a Claude Skill dir is staged into the
 // build context, never mounted, so those constraints don't apply here.
 func expandClaudeSkillPath(p string) (string, error) {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		p = home + strings.TrimPrefix(p, "~")
-	}
-	return p, nil
+	return config.ExpandTilde(p)
 }

@@ -98,8 +98,8 @@ ipt6() { ip6tables -w "$@"; }
 # namespace HAS non-loopback IPv6 interfaces (read straight from /proc — no
 # iproute2 in the image) and ip6tables is broken, skipping would leave the
 # ENTIRE v6 side policy-ACCEPT under a deny-by-default claim: die instead,
-# the gate stays shut. (Ported from firewall-open.sh's guard, review
-# 2026-07-14; link-local-only counts — fe80 reaches the local segment.)
+# the gate stays shut. (Same guard as firewall-open.sh;
+# link-local-only counts — fe80 reaches the local segment.)
 ip6_ok=
 if ip6tables -w -L OUTPUT >/dev/null 2>&1; then
   ip6_ok=1

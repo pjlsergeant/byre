@@ -332,8 +332,8 @@ func TestUnreadableIdentityNotBlamedOnUIDFilter(t *testing.T) {
 }
 
 func TestBoxNoMatchNamesUnusableSessions(t *testing.T) {
-	// Round-2 residual: --box aimed at a box whose identity is unreadable
-	// must not claim nothing matched without mentioning the unusable session.
+	// --box aimed at a box whose identity is unreadable must not claim
+	// nothing matched without mentioning the unusable session.
 	eng := box("docker", "aaa")
 	eng.envErr = fmt.Errorf("inspect broke")
 	cfg, _, _ := testConfig(eng)

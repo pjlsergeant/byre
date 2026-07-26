@@ -16,8 +16,9 @@ command -v grok >/dev/null 2>&1 || exit 0
 export GROK_HOME="${GROK_HOME:-/home/dev/.grok-home}"
 cred="$GROK_HOME/auth.json"
 # A symlinked credential never counts — drop it so a clean re-login writes a
-# fresh regular file a planted link can't redirect. This also heals boxes the
-# retired grok-shared-auth skill damaged (ADR 0023): its link into the
+# fresh regular file a planted link can't redirect. This also heals boxes
+# damaged by grok-shared-auth's retired v1 file-sharing (ADR 0023; the skill
+# itself lives on as the v2 broker, ADR 0036): its link into the
 # identity volume now points at a dead credential, and grok's refresh
 # rotation means the shared file can never come back — remove it and log in
 # per box. (The ADR 0017 carve-out that kept identity-volume links is gone

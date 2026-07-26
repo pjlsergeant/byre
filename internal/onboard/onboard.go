@@ -139,7 +139,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 		}
 	}
 	if wantSaveNews {
-		save, err = askYesNo(out, r, "Save these as your default for new projects?")
+		save, err = askYesNoDefault(out, r, "Save these as your default for new projects?", false)
 		if err != nil {
 			return Choice{}, err
 		}
@@ -325,10 +325,6 @@ func ask(out io.Writer, r *bufio.Reader, label string, options []string, def str
 		}
 		fmt.Fprintf(out, "  %q is not one of: %s\n", ans, strings.Join(options, " "))
 	}
-}
-
-func askYesNo(out io.Writer, r *bufio.Reader, label string) (bool, error) {
-	return askYesNoDefault(out, r, label, false)
 }
 
 // AnswerClass is the one shared reading of a line typed at a yes/no prompt.

@@ -202,9 +202,7 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 			}
 			c.protected[bare] = "bundled as " + id
 			c.aliases[bare] = id
-			if err := c.put(ent); err != nil {
-				return err
-			}
+			c.put(ent)
 		}
 	}
 	return nil
@@ -292,9 +290,7 @@ func (c *Catalog) loadInstalled() error {
 			Digest:      row.Digest,
 			SourceURI:   row.URI,
 		}
-		if err := c.put(ent); err != nil {
-			return err
-		}
+		c.put(ent)
 	}
 	return nil
 }
@@ -451,7 +447,8 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		Primary:     prim,
 		Manifest:    m,
 	}
-	return c.put(ent)
+	c.put(ent)
+	return nil
 }
 
 // looksLikeAgent reports whether a skill primary declares an [agent] table
@@ -484,7 +481,7 @@ func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason,
 	}
 }
 
-func (c *Catalog) put(ent *Entry) error {
+func (c *Catalog) put(ent *Entry) {
 	if prev, ok := c.byID[ent.ID]; ok {
 		// Scoped conflict: replace both with conflict rows. A third or
 		// later claimant joins the existing row's claimant list -- the reason
@@ -502,10 +499,9 @@ func (c *Catalog) put(ent *Entry) error {
 		ent.Reason = reason
 		// Only one row in byID; the list surface shows the conflict once.
 		c.byID[ent.ID] = prev
-		return nil
+		return
 	}
 	c.byID[ent.ID] = ent
-	return nil
 }
 
 func locationOf(e *Entry) string {
@@ -621,7 +617,7 @@ func (c *Catalog) ResolveName(name string) (*Entry, error) {
 		ent, ok = c.byID[name]
 	}
 	if !ok {
-		return nil, missingErr(canon, c)
+		return nil, missingErr(canon)
 	}
 	switch ent.Provenance {
 	case ProvInvalid:
@@ -634,7 +630,7 @@ func (c *Catalog) ResolveName(name string) (*Entry, error) {
 	return ent, nil
 }
 
-func missingErr(id string, c *Catalog) error {
+func missingErr(id string) error {
 	bare := BareName(id)
 	if tomb := RetiredTombstone(bare); tomb != "" && (IsBare(id) || Owner(id) == "byre") {
 		return fmt.Errorf("package %q not found: %s", id, tomb)

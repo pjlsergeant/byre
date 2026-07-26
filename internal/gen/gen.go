@@ -289,7 +289,7 @@ func Dockerfile(in Input) string {
 		b.WriteString("\n# --- volume mount points (owned by the baked uid) ---\n")
 		quoted := make([]string, len(dirs))
 		for i, d := range dirs {
-			quoted[i] = shellQuote(d) // these land in a shell RUN; quote to prevent injection
+			quoted[i] = ShellQuote(d) // these land in a shell RUN; quote to prevent injection
 		}
 		joined := strings.Join(quoted, " ")
 		fmt.Fprintf(&b, "RUN mkdir -p %s && chown \"${BYRE_UID}:${BYRE_GID}\" %s\n", joined, joined)
@@ -329,7 +329,7 @@ func Dockerfile(in Input) string {
 	for _, g := range in.Guard {
 		b.WriteString(CopyLine(g.Staged, g.Dest) + "\n")
 		if g.Exec {
-			fmt.Fprintf(&b, "RUN chmod +x %s\n", shellQuote(g.Dest))
+			fmt.Fprintf(&b, "RUN chmod +x %s\n", ShellQuote(g.Dest))
 		}
 	}
 
@@ -393,10 +393,12 @@ func CopyLine(stagedPath, dest string) string {
 	return fmt.Sprintf("COPY %q %q", stagedPath, dest)
 }
 
-// shellQuote single-quotes s for safe interpolation into a shell command (a
-// Dockerfile RUN), neutralizing spaces and metacharacters. An embedded single
-// quote is closed, escaped, and reopened.
-func shellQuote(s string) string {
+// ShellQuote single-quotes s for safe interpolation into a POSIX shell
+// command, neutralizing spaces and metacharacters. An embedded single quote
+// is closed, escaped, and reopened. The one owner of this rule: gen RUN
+// lines, the install-app launcher command, and the ssh remote argv all
+// quote through it.
+func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
@@ -441,7 +443,7 @@ func writeNpm(b *strings.Builder, pkgs []string) {
 func joinQuoted(items []string) string {
 	quoted := make([]string, len(items))
 	for i, it := range items {
-		quoted[i] = shellQuote(it)
+		quoted[i] = ShellQuote(it)
 	}
 	return strings.Join(quoted, " ")
 }

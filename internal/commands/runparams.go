@@ -249,12 +249,9 @@ func underTree(workDir, p string) bool {
 // retargeted `link`. byre defines a mount/seed source as its
 // cleaned spelling; the check and the mount then agree by construction.
 func expandHostPath(p string) (string, error) {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		p = home + strings.TrimPrefix(p, "~")
+	p, err := config.ExpandTilde(p)
+	if err != nil {
+		return "", err
 	}
 	if !filepath.IsAbs(p) {
 		return "", fmt.Errorf("mount host path must be absolute: %q", p)

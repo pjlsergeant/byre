@@ -6,6 +6,7 @@ package configui
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -1143,22 +1144,17 @@ func (m model) subFooterNote() string {
 	return ""
 }
 
-func contains(opts []string, v string) bool {
-	for _, o := range opts {
-		if o == v {
-			return true
-		}
-	}
-	return false
-}
+func contains(opts []string, v string) bool { return slices.Contains(opts, v) }
 
+// indexOf maps a missing value to option 0 rather than -1: the callers all
+// feed a select cursor, and every current value is preserved as an option
+// before lookup, so a miss (a future regression) lands on a safe row instead
+// of an out-of-range cursor.
 func indexOf(opts []string, v string) int {
-	for i, o := range opts {
-		if o == v {
-			return i
-		}
+	if i := slices.Index(opts, v); i >= 0 {
+		return i
 	}
-	return 0 // unreachable once the value is preserved as an option; safe default
+	return 0
 }
 
 func keyArrow(dir int) tea.KeyType {

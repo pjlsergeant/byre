@@ -509,9 +509,8 @@ func TestOfferSharedAuthForeignProvenanceOnQuestionLine(t *testing.T) {
 	}
 }
 
-// offerSharedAuth is the single-claimant call shape, kept here because only
-// these tests want it -- it used to sit in the package as an exported wrapper
-// whose comment claimed a flag path that never existed.
+// offerSharedAuth is the single-claimant call shape, kept test-side because
+// only these tests want it; production always supplies the full offer.
 func offerSharedAuth(out io.Writer, r *bufio.Reader, agent, companion string, prefYes bool) (bool, error) {
 	_, yes, err := OfferSharedAuthChoice(out, r, agent, SharedAuthOffer{
 		Claimants: []string{companion},

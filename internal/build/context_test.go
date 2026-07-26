@@ -33,6 +33,12 @@ func bootstrapped(t *testing.T) project.Paths {
 	return paths
 }
 
+// Assemble is the test-side shorthand for AssembleWarn with no operator
+// attached; production callers always thread a real warn writer.
+func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+	return AssembleWarn(paths, cfg, res, io.Discard)
+}
+
 func TestAssembleWritesDockerfileAndLauncher(t *testing.T) {
 	paths := bootstrapped(t)
 
@@ -1113,7 +1119,7 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, withAgent); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.SelfEditDocName} {
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.SelfEditDocName, gen.ConfigRefName} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); err != nil {
 			t.Fatalf("%s not written with an agent: %v", name, err)
 		}
@@ -1124,7 +1130,7 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.SelfEditDocName, "agent-context-target"} {
+	for _, name := range []string{gen.AgentCmdName, gen.SelfEditDocName, gen.ConfigRefName, "agent-context-target"} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); !os.IsNotExist(err) {
 			t.Errorf("stale %s survived an agent-less re-assemble: %v", name, err)
 		}

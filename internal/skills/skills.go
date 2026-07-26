@@ -451,34 +451,6 @@ func (r Resolved) Containments() []ContainmentDecl {
 	return out
 }
 
-// EnvDoc is one skill's declared consumed-env guidance line (see
-// Runtime.EnvDocs): the skill reads Name at runtime; Text says how to supply
-// it. Attributed to the skill for suggestion rendering.
-type EnvDoc struct {
-	Skill string
-	Name  string
-	Text  string
-}
-
-// EnvDocs lists every enabled skill's env_docs declarations, sorted by var
-// name then skill, for stable rendering. Several skills documenting the same
-// var is fine — docs don't conflict; all rows are returned.
-func (r Resolved) EnvDocs() []EnvDoc {
-	var out []EnvDoc
-	for _, sk := range r.Skills {
-		for _, k := range slices.Sorted(maps.Keys(sk.File.Runtime.EnvDocs)) {
-			out = append(out, EnvDoc{Skill: sk.Name, Name: k, Text: sk.File.Runtime.EnvDocs[k]})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Name != out[j].Name {
-			return out[i].Name < out[j].Name
-		}
-		return out[i].Skill < out[j].Skill
-	})
-	return out
-}
-
 // NetnsHook is one skill's declared netns-init entrypoint (see
 // Runtime.NetnsInit), attributed to the skill for error messages and status.
 type NetnsHook struct {

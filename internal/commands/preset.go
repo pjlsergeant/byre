@@ -39,6 +39,10 @@ type missingRef struct {
 // PresetApply implements `byre preset apply [<uri>|<path>]`: fetch and
 // validate the preset, chauffeur installs for missing packages (each its own
 // consent; declining any is allowed), recompute, review, confirm, write.
+// errReviewDiffRead is the shared spelling for both preset paths that need
+// the stored config to build a review diff.
+const errReviewDiffRead = "cannot read this project's byre.config for the review diff: %w"
+
 func PresetApply(s Streams, projectDir, arg string) error {
 	// Non-TTY apply refuses -- the review is the point.
 	if !s.TTY {
@@ -127,7 +131,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	reviewedStore, reviewedStoreErr := os.ReadFile(storePath)
 	if reviewedStoreErr != nil && !os.IsNotExist(reviewedStoreErr) {
-		return fmt.Errorf("cannot read this project's byre.config for the review diff: %w", reviewedStoreErr)
+		return fmt.Errorf(errReviewDiffRead, reviewedStoreErr)
 	}
 	hasStore := reviewedStoreErr == nil
 	renderPresetReview(s, paths, preset, content, still, "Apply", reviewedStore, hasStore)
@@ -212,7 +216,7 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	if inspErr != nil && !os.IsNotExist(inspErr) {
 		// Only absence means "no current config" -- a permission or I/O
 		// failure must not silently omit the promised diff.
-		return fmt.Errorf("cannot read this project's byre.config for the review diff: %w", inspErr)
+		return fmt.Errorf(errReviewDiffRead, inspErr)
 	}
 	renderPresetReview(s, paths, preset, content, missing, "Inspect", inspStore, inspErr == nil)
 	// Reports and exact commands, never prompts: a third party's document

@@ -25,6 +25,10 @@ func guiSession(goos string, getenv func(string) string) bool {
 	return getenv("DISPLAY") != "" || getenv("WAYLAND_DISPLAY") != ""
 }
 
+// notifyTitle is the one title this channel ever shows: only deliver has a
+// graphical launch path.
+const notifyTitle = "byre deliver"
+
 // notify shows one outcome. Best-effort by design. On macOS this is a
 // DIALOG, not a notification banner: `display notification` from a bare
 // osascript is permission-gated (and silently no-ops ungranted —
@@ -33,7 +37,7 @@ func guiSession(goos string, getenv func(string) string) bool {
 // auto-dismiss ("giving up after"); failures stay until acknowledged. If
 // dialogs are refused in some context (-1713 no-user-interaction), the
 // banner is still attempted as a fallback.
-func notify(goos string, title, body string, sticky bool) {
+func notify(goos string, body string, sticky bool) {
 	switch goos {
 	case "darwin":
 		esc := func(s string) string { // AppleScript string literal escaping
@@ -52,14 +56,20 @@ func notify(goos string, title, body string, sticky bool) {
 			bodyEsc += `\n\n(this window closes itself)`
 		}
 		script := fmt.Sprintf(`display dialog "%s" with title "%s" buttons {"OK"} default button 1 with icon %s%s`,
-			bodyEsc, esc(title), icon, dismiss)
+			bodyEsc, esc(notifyTitle), icon, dismiss)
 		if _, err := clipRunOut("osascript", "-e", script); err != nil {
-			banner := fmt.Sprintf(`display notification "%s" with title "%s"`, esc(body), esc(title))
+			banner := fmt.Sprintf(`display notification "%s" with title "%s"`, esc(body), esc(notifyTitle))
 			_, _ = clipRunOut("osascript", "-e", banner)
 		}
 	default:
 		if _, err := clipLookPath("notify-send"); err == nil {
-			_, _ = clipRunOut("notify-send", title, body)
+			// -u critical keeps a failure on screen until acknowledged --
+			// the linux spelling of the macOS sticky dialog.
+			urgency := "normal"
+			if sticky {
+				urgency = "critical"
+			}
+			_, _ = clipRunOut("notify-send", "-u", urgency, notifyTitle, body)
 		}
 	}
 }
@@ -70,14 +80,13 @@ func deliverNotify(s Streams, landed []string, err error) {
 	if s.TTY || !guiSession(runtime.GOOS, os.Getenv) {
 		return
 	}
-	title := "byre deliver"
 	switch {
 	case err != nil && len(landed) == 0:
-		notify(runtime.GOOS, title, firstNotifyLine(err.Error()), true)
+		notify(runtime.GOOS, firstNotifyLine(err.Error()), true)
 	case err != nil:
-		notify(runtime.GOOS, title, fmt.Sprintf("%s — but %s", notifySummary(landed), firstNotifyLine(err.Error())), true)
+		notify(runtime.GOOS, fmt.Sprintf("%s — but %s", notifySummary(landed), firstNotifyLine(err.Error())), true)
 	case len(landed) > 0:
-		notify(runtime.GOOS, title, notifySummary(landed)+" — path copied to the clipboard", false)
+		notify(runtime.GOOS, notifySummary(landed)+" — path copied to the clipboard", false)
 	}
 }
 

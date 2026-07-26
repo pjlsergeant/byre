@@ -1614,6 +1614,22 @@ func appendAll(base, over []string) []string {
 	return append(out, over...)
 }
 
+// ExpandTilde expands a leading "~" or "~/" against the current user's home.
+// Only the tilde SPELLING is shared here; every caller owns its own
+// post-conditions -- absoluteness, cleaning, comma rules, or degrading --
+// because those differ by design across the mount, staging, and display
+// paths that expand config-declared host paths.
+func ExpandTilde(p string) (string, error) {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return home + strings.TrimPrefix(p, "~"), nil
+	}
+	return p, nil
+}
+
 func filter[T any](s []T, keep func(T) bool) []T {
 	out := s[:0:0]
 	for _, x := range s {

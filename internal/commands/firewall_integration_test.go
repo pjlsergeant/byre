@@ -39,7 +39,7 @@ import (
 func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]string, runner.Identity) {
 	t.Helper()
 	p, _ := testPaths(t)
-	if err := builtins.EnsureStore(p.Home); err != nil {
+	if err := builtins.EnsureStoreOut(p.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	cat, err := builtins.LoadCatalogRaw(p.Home)
@@ -301,7 +301,7 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]string, runner.Identity) {
 	t.Helper()
 	p, _ := testPaths(t)
-	if err := builtins.EnsureStore(p.Home); err != nil {
+	if err := builtins.EnsureStoreOut(p.Home, nil); err != nil {
 		t.Fatal(err)
 	}
 	cat, err := builtins.LoadCatalogRaw(p.Home)

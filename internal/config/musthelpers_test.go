@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Fixture helpers: setup failures abort the test at the fixture line instead
-// of letting it run against a tree it never built.
+// Package-local fixture helpers (see commands/musthelpers_test.go for the
+// rationale; per-package copies are the idiom, a shared test package is not).
 
 func mustWriteFile(t *testing.T, path string, data []byte, mode os.FileMode) {
 	t.Helper()

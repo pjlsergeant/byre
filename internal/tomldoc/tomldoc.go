@@ -97,11 +97,11 @@ func (d *Doc) reindex() error {
 		case unstable.Comment:
 			exprs = append(exprs, expr{kind: e.Kind, table: table, span: d.rawSpan(e.Raw)})
 		case unstable.Table, unstable.ArrayTable:
-			path, hdr := d.headerPathAndSpan(p, e)
+			path, hdr := d.headerPathAndSpan(e)
 			table = path
 			exprs = append(exprs, expr{kind: e.Kind, table: path, span: hdr})
 		case unstable.KeyValue:
-			ex, err := d.keyValueExpr(p, e, table)
+			ex, err := d.keyValueExpr(e, table)
 			if err != nil {
 				return err
 			}
@@ -122,7 +122,7 @@ func (d *Doc) rawSpan(r unstable.Range) span {
 // headerPathAndSpan derives a [table] / [[table]] expression's key path and
 // its header-line span. The parser reports no Raw range for header
 // expressions, so the span is the full line containing the header keys.
-func (d *Doc) headerPathAndSpan(p *unstable.Parser, e *unstable.Node) ([]string, span) {
+func (d *Doc) headerPathAndSpan(e *unstable.Node) ([]string, span) {
 	var path []string
 	lo, hi := -1, -1
 	for it := e.Key(); it.Next(); {
@@ -143,7 +143,7 @@ func (d *Doc) headerPathAndSpan(p *unstable.Parser, e *unstable.Node) ([]string,
 // under the current table) and the value span. The parser reports no Raw for
 // container values (arrays, inline tables), so the value span is anchored
 // from after the '=' to the expression's end.
-func (d *Doc) keyValueExpr(p *unstable.Parser, e *unstable.Node, table []string) (expr, error) {
+func (d *Doc) keyValueExpr(e *unstable.Node, table []string) (expr, error) {
 	whole := d.rawSpan(e.Raw)
 	var key []string
 	keyEnd := -1

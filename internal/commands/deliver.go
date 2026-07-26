@@ -17,6 +17,10 @@ import (
 // from cwd). The mechanics live in internal/deliver; this file wires the host
 // side in: installed engines, the label vocabulary, workdir ids for the
 // cascade's ancestor walk, the caller's identity, and the input-source modes.
+// deliverCancelled is the one spelling of the paste-beat abort line; the
+// grab side prints its own noun ("nothing grabbed").
+const deliverCancelled = "byre: cancelled — nothing delivered"
+
 func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error {
 	// The protocol handshake runs before ANYTHING else — a skewed remote
 	// invocation must fail before discovery, listings, or payload (ADR 0037).
@@ -79,7 +83,7 @@ func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, so
 	}
 	landed, err := deliver.RunRemote(cfg, opts, target, sources, sshExec, s.TTY)
 	if deliver.IsCancelled(err) {
-		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+		fmt.Fprintln(s.Err, deliverCancelled)
 		return landed, ExitError{Code: 1}
 	}
 	return landed, err
@@ -112,7 +116,7 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 		case err != nil:
 			return nil, err
 		case action == beatCancelled:
-			fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+			fmt.Fprintln(s.Err, deliverCancelled)
 			return nil, ExitError{Code: 1}
 		case action == beatText:
 			if len(text) == 0 {
@@ -274,7 +278,7 @@ func deliverTar(s Streams, dir string, opts deliver.Options) error {
 	}
 	if _, err := deliver.RunTar(cfg, opts, s.In); err != nil {
 		if deliver.IsCancelled(err) {
-			fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+			fmt.Fprintln(s.Err, deliverCancelled)
 			return ExitError{Code: 1}
 		}
 		return err
@@ -289,7 +293,7 @@ func deliverWith(s Streams, dir string, opts deliver.Options, sources []deliver.
 	}
 	landed, err := deliver.RunSources(cfg, opts, sources)
 	if deliver.IsCancelled(err) {
-		fmt.Fprintln(s.Err, "byre: cancelled — nothing delivered")
+		fmt.Fprintln(s.Err, deliverCancelled)
 		return landed, ExitError{Code: 1}
 	}
 	return landed, err

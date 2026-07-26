@@ -25,8 +25,7 @@ func String() string {
 }
 
 // resolve is String's priority chain with its inputs injected, so the ordering
-// can be tested without a real build. cmd/byre used to carry a second copy of
-// this chain for exactly that reason.
+// can be tested without a real build.
 func resolve(stamped string, bi *debug.BuildInfo) string {
 	if stamped != "" {
 		return stamped
