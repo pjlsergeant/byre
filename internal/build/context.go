@@ -244,7 +244,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 		if err := ctxRoot.MkdirAll(filepath.Dir(j.staged), 0o755); err != nil {
 			return "", err
 		}
-		if err := stageCopy(ctxRoot, agentWritableRoots(paths, cfg), j); err != nil {
+		if err := stageCopy(ctxRoot, agentWritableRoots(paths, cfg, res), j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
 	}
@@ -310,7 +310,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	// The operator's standing instructions ([[context]] declarations) speak
 	// last: cascade order after the skills' opinions — the voice closest to
 	// the user closes the file.
-	cc, err := configContext(warn, agentWritableRoots(paths, cfg), cfg.Contexts)
+	cc, err := configContext(warn, agentWritableRoots(paths, cfg, res), cfg.Contexts)
 	if err != nil {
 		return "", err
 	}
@@ -741,12 +741,16 @@ func stageCopy(dstRoot *os.Root, agentRoots []string, j fileCopy) error {
 // Ordering matters: the most specific root wins, so a path inside a rw mount
 // nested under the project anchors at the mount. Read-only mounts are absent
 // deliberately -- the box cannot shape them.
-func agentWritableRoots(paths project.Paths, cfg config.Config) []string {
+func agentWritableRoots(paths project.Paths, cfg config.Config, res skills.Resolved) []string {
 	roots := []string{paths.WorkDir}
 	if paths.CommonGitDirHost != "" {
 		roots = append(roots, paths.CommonGitDirHost)
 	}
-	for _, m := range cfg.Mounts {
+	// The COMBINED mount set: a skill's rw mount is bound into the box just
+	// like a config one, so it is equally shapeable. Classifying cfg.Mounts
+	// alone would leave a whole class outside the predicate -- which is the
+	// same partial-definition mistake this predicate exists to end.
+	for _, m := range append(append([]config.Mount{}, cfg.Mounts...), res.Mounts()...) {
 		if m.Disabled || m.Mode != "rw" {
 			continue
 		}

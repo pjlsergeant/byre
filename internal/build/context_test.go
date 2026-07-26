@@ -1372,12 +1372,17 @@ func TestAgentWritableRootsCoverShapeableTrees(t *testing.T) {
 		{Host: ro, Target: "/ro", Mode: "ro"},
 		{Host: t.TempDir(), Target: "/off", Mode: "rw", Disabled: true},
 	}}
-	roots := agentWritableRoots(paths, cfg)
+	skillRW := t.TempDir()
+	var sf skills.File
+	sf.Runtime.Mounts = []config.Mount{{Host: skillRW, Target: "/s", Mode: "rw"}}
+	res := skills.Resolved{Skills: []skills.Skill{{Name: "sk", File: sf}}}
+	roots := agentWritableRoots(paths, cfg, res)
 
 	for _, c := range []struct{ path, wantRoot string }{
 		{filepath.Join(work, "a.md"), work},
 		{filepath.Join(gitDir, "config"), gitDir},
-		{filepath.Join(rw, "x.md"), rw}, // innermost wins over work
+		{filepath.Join(rw, "x.md"), rw},           // innermost wins over work
+		{filepath.Join(skillRW, "x.md"), skillRW}, // a SKILL's rw mount is equally shapeable
 	} {
 		root, _, ok := anchorAgentWritable(roots, c.path)
 		if !ok || root != c.wantRoot {

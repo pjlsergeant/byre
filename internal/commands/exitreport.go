@@ -428,14 +428,20 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) bool
 			return nil
 		}
 		if n >= maxHooksEntries {
+			// Truncated: the snapshot no longer sees the whole directory,
+			// and walk order is lexical -- a later snapshot with an earlier
+			// name captures a DIFFERENT window, so comparing two truncated
+			// maps as complete reports present files as removed. Degrade
+			// like every other capped enumeration here.
+			complete = false
 			return fs.SkipAll
 		}
 		n++
 		into[exitDisplay(paths, filepath.Join(dir, p))] = fileSig(root, p, d)
 		return nil
 	})
-	// Truncation at maxHooksEntries is deliberate and known; a walk error is
-	// not. fs.SkipAll is not reported as an error by WalkDir.
+	// Truncation and walk errors both clear complete (fs.SkipAll is not
+	// reported as an error by WalkDir, so the cap sets it directly).
 	return complete && werr == nil
 }
 

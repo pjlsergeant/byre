@@ -591,3 +591,24 @@ func TestExitSnapshotEnumerationBounds(t *testing.T) {
 		}
 	})
 }
+
+// The hooks cap must degrade like every other capped enumeration here: walk
+// order is lexical, so two truncated snapshots see DIFFERENT windows and
+// comparing them as complete reports present files as removed (codex, on the
+// sibling-bound sweep -- the original bound broke the very rule its siblings
+// were added to follow).
+func TestSnapshotHooksCapClearsCompleteness(t *testing.T) {
+	paths, dir := exitRepo(t)
+	hooks := filepath.Join(dir, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i <= maxHooksEntries; i++ {
+		if err := os.WriteFile(filepath.Join(hooks, fmt.Sprintf("h%04d", i)), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := snapshotExit(paths); s.hooksWalked {
+		t.Errorf("a truncated hooks walk must clear hooksWalked (%d entries captured)", len(s.hooks))
+	}
+}
