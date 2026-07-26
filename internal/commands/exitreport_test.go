@@ -504,7 +504,10 @@ func TestExitReportUnstattableParentIsNotDeletion(t *testing.T) {
 	got := exitReport(t, paths, func() { mustChmod(t, gitDir, 0o000) })
 	t.Cleanup(func() { _ = os.Chmod(gitDir, 0o755) })
 
-	if strings.Contains(got, "went away") {
-		t.Errorf("an unstattable config must not be reported as deleted, got:\n%s", got)
+	// Not just the config wording: an unstattable .git also makes the hooks
+	// walk fail, and git's own ~13 stock *.sample hooks would otherwise all be
+	// reported as torn out. Nothing is knowable here, so nothing may be said.
+	if got != "" {
+		t.Errorf("nothing is knowable through an unstattable .git; got:\n%s", got)
 	}
 }

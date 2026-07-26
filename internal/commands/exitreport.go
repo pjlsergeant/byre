@@ -146,6 +146,17 @@ type exitSnapshot struct {
 	hooks  map[string]string            // display path -> content signature
 	config map[string]map[string]string // display path -> git config key -> value
 	env    map[string]map[string]string // display path -> env key -> value
+	// hooksWalked records that every hooks directory byre meant to look at was
+	// actually walkable. Without it an unstattable .git makes the hooks map
+	// empty, and diffHooks reports git's own stock *.sample hooks as removed --
+	// the same invented-deletion bug as the config side, on the other half of
+	// the watch set (grok).
+	hooksWalked bool
+	// configFromListing marks config files that exist only because the
+	// worktrees/ listing found them. When that listing failed on either side
+	// they cannot be compared -- but the common config always can, so the
+	// primary signal is never suppressed along with them (codex, grok).
+	configFromListing map[string]bool
 	// configListed records that the git admin dir's worktrees/ enumeration
 	// succeeded. A failed listing hides linked-worktree config files, which
 	// would then read as deleted (codex).
@@ -173,10 +184,12 @@ type exitSnapshot struct {
 // the comparison.
 func snapshotExit(paths project.Paths) exitSnapshot {
 	s := exitSnapshot{
-		hooks:      map[string]string{},
-		config:     map[string]map[string]string{},
-		env:        map[string]map[string]string{},
-		unreadable: map[string]bool{},
+		hooks:             map[string]string{},
+		config:            map[string]map[string]string{},
+		env:               map[string]map[string]string{},
+		unreadable:        map[string]bool{},
+		configFromListing: map[string]bool{},
+		hooksWalked:       true,
 	}
 
 	gitDir := commonGitDirOf(paths)
@@ -188,7 +201,10 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		// touching `config`.
 		cfgFiles, listed := gitConfigFiles(gitDir)
 		s.configListed = listed
-		for _, cfg := range cfgFiles {
+		for i, cfg := range cfgFiles {
+			if i >= 2 { // beyond the two always-known common-dir files
+				s.configFromListing[exitDisplay(paths, cfg)] = true
+			}
 			if kv, ok := readGitConfig(cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
 			} else if !confirmedAbsent(cfg) {
@@ -208,7 +224,9 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 			hooksDirs = append(hooksDirs, p)
 		}
 		for _, dir := range hooksDirs {
-			snapshotHooks(s.hooks, paths, dir)
+			if !snapshotHooks(s.hooks, paths, dir) {
+				s.hooksWalked = false
+			}
 		}
 	}
 
@@ -341,10 +359,13 @@ func confirmedAbsent(p string) bool {
 // snapshotHooks records a signature per file under dir. Enumeration rides a
 // contained, no-follow root so the walk cannot be steered outside the directory
 // that was selected, and stops at maxHooksEntries.
-func snapshotHooks(into map[string]string, paths project.Paths, dir string) {
+// Returns false when byre could not tell what is in dir -- a swapped symlink,
+// an unstattable parent. A directory that simply is not there is known, not
+// unknown, and reports true.
+func snapshotHooks(into map[string]string, paths project.Paths, dir string) bool {
 	root, err := hostopen.OpenDirRootNoFollow(dir)
 	if err != nil {
-		return // no hooks dir, or it was swapped for a symlink: sit it out
+		return confirmedAbsent(dir)
 	}
 	defer root.Close()
 	n := 0
@@ -359,6 +380,7 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) {
 		into[exitDisplay(paths, filepath.Join(dir, p))] = fileSig(root, p, d)
 		return nil
 	})
+	return true
 }
 
 // envFiles lists .env and .env.* in the project root. Literal names, never a
@@ -440,7 +462,7 @@ func exitDisplay(paths project.Paths, p string) string {
 func reportExit(w io.Writer, before, after exitSnapshot) {
 	var lines []string
 	lines = append(lines, diffConfig(before, after)...)
-	lines = append(lines, diffHooks(before.hooks, after.hooks)...)
+	lines = append(lines, diffHooks(before, after)...)
 	lines = append(lines, diffEnv(before, after)...)
 	if len(lines) == 0 {
 		return
@@ -456,18 +478,24 @@ func reportExit(w io.Writer, before, after exitSnapshot) {
 // filtering: almost nothing ordinary writes here, and when something does it is
 // usually a real hook installer (husky, pre-commit, lefthook, git-lfs) that the
 // user genuinely wants to know ran.
-func diffHooks(before, after map[string]string) []string {
+func diffHooks(before, after exitSnapshot) []string {
+	// Neither side may be guessed at: an unwalkable hooks dir is not an empty
+	// one, and saying git's own sample hooks were "removed" is a change byre
+	// invented (grok).
+	if !before.hooksWalked || !after.hooksWalked {
+		return nil
+	}
 	var out []string
-	for p, sig := range after {
-		switch b, ok := before[p]; {
+	for p, sig := range after.hooks {
+		switch b, ok := before.hooks[p]; {
 		case !ok:
 			out = append(out, fmt.Sprintf("%s was added -- your git runs this, on your machine", p))
 		case b != sig:
 			out = append(out, fmt.Sprintf("%s changed -- your git runs this, on your machine", p))
 		}
 	}
-	for p := range before {
-		if _, ok := after[p]; !ok {
+	for p := range before.hooks {
+		if _, ok := after.hooks[p]; !ok {
 			out = append(out, fmt.Sprintf("%s was removed", p))
 		}
 	}
@@ -509,6 +537,13 @@ func diffConfig(before, after exitSnapshot) []string {
 		if before.unreadable[file] || after.unreadable[file] {
 			continue
 		}
+		// A file only one enumeration could see cannot be compared: treating a
+		// newly VISIBLE worktree config as newly SET is the addition-side
+		// mirror of the deletion bug (codex, grok).
+		if (before.configFromListing[file] || after.configFromListing[file]) &&
+			(!before.configListed || !after.configListed) {
+			continue
+		}
 		bkv := before.config[file]
 		for k, av := range akv {
 			bv, had := bkv[k]
@@ -523,10 +558,6 @@ func diffConfig(before, after exitSnapshot) []string {
 			}
 		}
 	}
-	if !before.configListed || !after.configListed {
-		sort.Strings(out)
-		return out // cannot enumerate the config set: never claim a file vanished
-	}
 	// A watched config file that disappeared takes its keys with it -- the same
 	// user-visible event as clearing them one by one. Only when it is really
 	// GONE: a file byre could not read this time is still there, and saying its
@@ -534,6 +565,9 @@ func diffConfig(before, after exitSnapshot) []string {
 	for file, bkv := range before.config {
 		if _, still := after.config[file]; still || after.unreadable[file] || before.unreadable[file] {
 			continue
+		}
+		if before.configFromListing[file] && (!before.configListed || !after.configListed) {
+			continue // never seen by both enumerations; absence proves nothing
 		}
 		for k, bv := range bkv {
 			if execRelevantConfig(k, bv) {
