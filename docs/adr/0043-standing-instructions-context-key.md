@@ -1,5 +1,11 @@
 # Standing instructions are config: the [[context]] key
 
+DELIVERY MECHANICS SUPERSEDED by ADR 0046: context
+now reaches every agent by injection through its own vendor channel;
+`context_target` (referenced below as the delivery pipe) is retired —
+byre never writes an agent-owned file. The vocabulary, scoping, merge
+semantics, and editor story here remain current.
+
 Decided 2026-07-24. byre gains a `[[context]]` config vocabulary for
 **standing agent instructions** -- prose the operator wants in the agent's
 memory in every box a declaring layer reaches. A declaration is `name` plus

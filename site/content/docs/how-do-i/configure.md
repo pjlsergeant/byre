@@ -152,17 +152,38 @@ tldr: `byre context add house-rules` opens your $EDITOR -- `--global`
 for every box on the machine, plain for just this project; also the
 **Instructions** section of `byre config`.
 
-Write the prose, save, quit -- the git-commit shape. The text joins the
-agent's own memory (Claude's `CLAUDE.md`, Codex's `AGENTS.md`) at the
-next develop, after any enabled skills' context and additive with
-whatever the project tree carries -- whichever agent the box runs. The
-scope is the layer you write: `--global` reaches every box on the
-machine, a named layer (`byre config --layer <name>`, **Instructions**)
-reaches its stack, the project config just that project. A later
-layer's same-name entry replaces an inherited one, and the
-**Instructions** screen's "Remove in this project" (or
-`byre context remove <name>`) switches one off; `byre context list`
-shows what's in effect.
+Write the prose, save, quit -- the git-commit shape. The scope is the
+layer you write: `--global` reaches every box on the machine, a named
+layer (`byre config --layer <name>`, **Instructions**) reaches its
+stack, the project config just that project. A later layer's same-name
+entry replaces an inherited one, and the **Instructions** screen's
+"Remove in this project" (or `byre context remove <name>`) switches one
+off; `byre context list` shows what's in effect and whether it's
+delivered.
+
+**How it reaches the agent.** At build time byre composes one text --
+byre's own box facts, each enabled skill's guidance, then your
+instructions -- and bakes it into the image at
+`/etc/byre/agent-context.md`. At launch, the agent's own command
+*injects* that text into the session through the agent's native
+mechanism:
+
+| Agent | Mechanism |
+|---|---|
+| Claude | `--append-system-prompt-file` (appended to the system prompt) |
+| Codex | `developer_instructions` config (a developer-role message) |
+| Grok | `--append-system-prompt` (session rules) |
+| Gemini | a byre-owned context directory in its memory discovery |
+| OpenCode | an `instructions` entry in its injected config |
+
+Every mechanism *appends* -- the agent's built-in behavior and anything
+the project or you set up natively stay intact. byre never writes into
+the agent's own files: your `~/.claude/CLAUDE.md` (and every agent's
+equivalent) is yours, inside the box as outside, and the repo's own
+`CLAUDE.md`/`AGENTS.md` load exactly as the agent normally loads them,
+on top. An agent without an injection mechanism simply doesn't receive
+the text -- `byre status` and `byre context list` say so plainly rather
+than pretending.
 
 Long documents can stay your own file: `byre context add conventions
 --file ~/notes/agent-conventions.md` reads it at each rebuild

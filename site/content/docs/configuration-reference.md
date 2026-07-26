@@ -131,9 +131,10 @@ exceptions noted inline.
 - `[[claude_skills]]` -- a Claude Skill: `name` + `path` to a host
   directory whose root holds `SKILL.md`.
 - `[[context]]` -- standing agent instructions: `name` + inline `text`
-  or a host `file` (`~/…` or absolute, read at bake). Joins the agent's
-  memory file after skill context; layers replace by `name`, `!name`
-  removes.
+  or a host `file` (`~/…` or absolute, read at bake). Injected into the
+  agent's instructions at launch, after skill context (see
+  [how instructions reach the agent](/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box));
+  layers replace by `name`, `!name` removes.
 
 **Preferences** (picker-owned; never a grant)
 

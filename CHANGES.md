@@ -9,11 +9,18 @@
   layer covers a stack. The **Instructions** section of `byre config`
   is the same feature with effective-view rows attributing each
   snippet to its layer, and `byre context list|remove` round it out.
-  The prose lands in the agent's memory file after any enabled skills'
-  context, whatever agent the box runs. Config lives host-side, so the
-  boxed agent can't rewrite its own standing orders (short of a
-  `--self-edit` session's explicit grant over the project layer). The
-  context-only-skill recipe is superseded for operator prose. ADR 0043.
+  The prose is injected into the agent's own instruction channel at
+  launch — Claude's appended system prompt, codex's developer
+  instructions, grok's session rules, gemini's context memory,
+  opencode's instructions config — whatever agent the box runs, after
+  any enabled skills' context. byre writes NOTHING into the agent's
+  own files: your `~/.claude/CLAUDE.md` (and every agent's equivalent)
+  belongs to you again, inside the box and out — the old mechanism
+  rewrote it on every launch, and anything you'd put there yourself
+  was lost. Config lives host-side, so the boxed agent can't rewrite
+  its own standing orders (short of a `--self-edit` session's explicit
+  grant over the project layer). The context-only-skill recipe is
+  superseded for operator prose. ADR 0043, ADR 0046.
 
 - **Saves preserve your files.** `byre config`, the `byre
   mcp|claude-skill|context` verbs, and the onboarding picker now edit

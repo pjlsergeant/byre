@@ -371,12 +371,22 @@ How a selected agent's session receives the baked Claude Skill tree —
 injection only (`[agent] claude_skills = "inject"`, the author's vouch);
 byre never writes an agent's skill state. Mechanics: ADR 0039.
 
+**Context adapter**:
+How a selected agent's session receives the baked agent context —
+injection only (`[agent] context = "inject"`, the author's vouch; each
+agent's own vendor channel, ADR 0046); byre never writes an agent-owned
+file to deliver prose, and an adapter-less agent degrades honestly
+(declared-but-NOT-delivered).
+_Avoid_: context_target (the retired write-into-agent-state mechanism
+ADR 0046 buried)
+
 **Standing instructions (`[[context]]`)**:
-The operator's prose for the agent's memory, declared in config layers
-(ADR 0043) -- the cascade is the scoping (default.config =
+The operator's prose for the agent's instructions, declared in config
+layers (ADR 0043) -- the cascade is the scoping (default.config =
 machine-global, template/named layer = per-stack, project config = one
 project). Inline `text` or a host `file`; joins the baked agent context
-after the skill snippets and rides the agent's `context_target` pipe.
+after the skill snippets and is INJECTED by the agent command (the
+context adapter, ADR 0046).
 One of three prose voices: the skill author's (skill.toml `[context]`),
 the project's (in-tree agent memory, e.g. a repo `CLAUDE.md`), the
 operator's (this key -- host-side, out of the box's reach short of a
