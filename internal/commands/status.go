@@ -60,6 +60,12 @@ type statusInfo struct {
 	// BYRE_ namespace: accepted (trusted machinery) but rendered, with
 	// the claims each can skew degraded -- see reservedEnvClaims.
 	SkillReservedEnv []skills.ReservedEnvSet
+	// ArtifactShadows marks byre-baked artifact paths (mcp.json, the agent
+	// context file, the claude-skills dir) that a project `files` entry
+	// overwrites. Those artifacts are emitted BEFORE the project block and
+	// are NOT tail-guarded, so the files entry wins in the image -- the
+	// delivery claims built on them must stop asserting.
+	ArtifactShadows map[string]bool
 	// ClaudeSkills is the effective declared Claude Skill set — wiring, not
 	// grants, zero exposure contribution (claudeskills.go); the closed/vouch
 	// fields mirror the MCP trio.
@@ -141,6 +147,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs:     len(cfg.RunArgs) > 0,
 		HostEnv:            resolveHostEnv(cfg),
+		ArtifactShadows:    artifactShadows(cfg),
 		Cat:                cat,
 	}
 	// Config-declared MCPs stay visible even when skills fail to resolve (the
@@ -731,6 +738,8 @@ func mcpDeliveryLine(s statusInfo) string {
 		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.MCPConfigPath
 	case s.Agent == "":
 		return "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"
+	case s.ArtifactShadows[gen.MCPConfigPath]:
+		return "-> delivery not warranted: a project files entry overwrites " + gen.MCPConfigPath + " (baked before the project block; your file wins)"
 	case reservedEnvTouches(s, "MCP delivery"):
 		return "-> delivery not warranted: a skill sets byre's MCP controls (see Reserved env)"
 	case s.AgentMCP == "inject":
@@ -770,6 +779,8 @@ func claudeSkillsDeliveryLine(s statusInfo) string {
 		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.ClaudeSkillsPath
 	case s.Agent == "":
 		return "-> no agent selected; declared set bakes to " + gen.ClaudeSkillsPath + " for anything that wants it"
+	case s.ArtifactShadows[gen.ClaudeSkillsPath]:
+		return "-> delivery not warranted: a project files entry overwrites " + gen.ClaudeSkillsPath + " (baked before the project block; your file wins)"
 	case s.AgentClaudeSkills == "inject":
 		return fmt.Sprintf("-> the agent session receives: %s  (via %s; a same-name skill in the agent's own state shadows byre's)", list, gen.ClaudeSkillsPath)
 	default:
@@ -789,6 +800,8 @@ func contextDeliveryLine(s statusInfo) string {
 		return "-> delivery unknown (skills unresolved); the text bakes to " + baked
 	case s.Agent == "":
 		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
+	case s.ArtifactShadows["/etc/byre/"+gen.AgentContextName]:
+		return "-> delivery not warranted: a project files entry overwrites " + baked + " (baked before the project block; your file wins)"
 	case reservedEnvTouches(s, "context delivery"):
 		return "-> delivery not warranted: a skill sets byre's context controls (see Reserved env)"
 	case s.AgentContext == "inject":
@@ -975,13 +988,43 @@ func reservedEnvClaims(key string) []string {
 		return []string{"context delivery"}
 	case "BYRE_MCP_CONFIG":
 		return []string{"MCP delivery"}
-	case "BYRE_WORKSPACE_DIR", "BYRE_ENVD_DIR", "BYRE_FIRSTRUN_DIR",
+	case "BYRE_ENVD_DIR", "BYRE_FIRSTRUN_DIR":
+		// Both run after the gate wait (no network reach) but before the
+		// agent execs, and env.d is SOURCED -- a redirected dir can rewrite
+		// the delivery vars the agent command consumes, so both delivery
+		// claims degrade with it (the review's sibling-controls finding).
+		return []string{"context delivery", "MCP delivery", "launch"}
+	case "BYRE_WORKSPACE_DIR",
 		"BYRE_IMAGE_PATH_FILE", "BYRE_ASSUME_TTY", "BYRE_GEMINI_DIR",
 		"BYRE_IDENTITY_BASE", "BYRE_UID", "BYRE_GID", "BYRE_PROJECT", "BYRE_WORKTREE":
 		return []string{"launch"}
 	default:
 		return []string{"network", "launch"}
 	}
+}
+
+// artifactShadows reports the byre-baked artifact paths a project `files`
+// entry overwrites. These are emitted before the project block and NOT
+// re-asserted by the build tail (deliberately: they are wiring, not the
+// security guard's charge), so the files entry WINS -- and any delivery
+// claim reading from them would describe an artifact the box never sees.
+// Same dest + dir-form matching warnGuardCollisions uses.
+func artifactShadows(cfg config.Config) map[string]bool {
+	artifacts := []string{gen.MCPConfigPath, "/etc/byre/" + gen.AgentContextName, gen.ClaudeSkillsPath}
+	hits := map[string]bool{}
+	mark := func(p string) {
+		c := path.Clean(p)
+		for _, a := range artifacts {
+			if c == a || strings.HasPrefix(c, a+"/") {
+				hits[a] = true
+			}
+		}
+	}
+	for src, dest := range cfg.Files {
+		mark(dest)
+		mark(path.Join(dest, path.Base(src)))
+	}
+	return hits
 }
 
 // reservedEnvTouches reports whether any skill-set reserved variable can

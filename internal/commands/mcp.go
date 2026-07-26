@@ -123,6 +123,7 @@ func MCPList(s Streams, projectDir string) error {
 			// Same shared resolution status/develop use: "provided" means
 			// delivered, never configured-and-hoped (render-from-effect).
 			info.EnvProvided = providedEnv(cfg, resolveHostEnv(cfg))
+			info.ArtifactShadows = artifactShadows(cfg)
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.MCPs = rv.mcps
@@ -133,6 +134,9 @@ func MCPList(s Streams, projectDir string) error {
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
 			}
+			// Same story as status: a reserved override or a shadowed
+			// artifact degrades THIS surface's delivery verdict too.
+			info.SkillReservedEnv = res.ReservedEnv()
 		})
 	if err != nil {
 		return err

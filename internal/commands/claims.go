@@ -41,8 +41,9 @@ var claimSurface = map[string]claimClass{
 	"NpmGlobal":    inert("build input: same standing as Apt"),
 	"Env": rendered("the Env row (keys); reserved BYRE_* refused at validation, BYRE_EGRESS " +
 		"re-asserted at run so no key skews what the box is told byre enforces"),
-	"EnvFromHost":  rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden)"),
-	"Files":        rendered("guard-collision warnings when an entry covers a security path (warnGuardCollisions); otherwise build input"),
+	"EnvFromHost": rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden)"),
+	"Files": rendered("guard-collision warnings when an entry covers a security path (warnGuardCollisions); " +
+		"artifact shadows (mcp.json, agent context, claude-skills) degrade their delivery lines; otherwise build input"),
 	"Skills":       rendered("the Skills row and every attributed grant, egress, posture, and containment row"),
 	"Mounts":       rendered("bind rows; a mount over a guarded path degrades the network claim (GuardMountShadow)"),
 	"Volumes":      rendered("volume rows (state/cache/machine split)"),

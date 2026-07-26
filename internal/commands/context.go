@@ -202,15 +202,20 @@ func ContextList(s Streams, projectDir string) error {
 	}
 	// The delivery verdict, by the SAME renderer status uses (the
 	// claude-skill list precedent: two surfaces, one story).
-	info := statusInfo{Agent: cfg.Agent, Contexts: cfg.Contexts}
+	info := statusInfo{Agent: cfg.Agent, Contexts: cfg.Contexts, ArtifactShadows: artifactShadows(cfg)}
 	if serr := builtins.EnsureStoreOut(paths.Home, s.Err); serr != nil {
 		info.SkillErr = serr.Error()
 	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
 		info.SkillErr = "catalog unavailable"
 	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
 		info.SkillErr = rerr.Error()
-	} else if res.Agent != nil {
-		info.AgentContext = res.Agent.Context
+	} else {
+		// Same story as status: reserved overrides degrade this surface's
+		// delivery verdict too, not just byre status's.
+		info.SkillReservedEnv = res.ReservedEnv()
+		if res.Agent != nil {
+			info.AgentContext = res.Agent.Context
+		}
 	}
 	fmt.Fprintln(s.Out, contextDeliveryLine(info))
 	return nil

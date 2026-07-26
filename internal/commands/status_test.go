@@ -282,6 +282,53 @@ func TestRenderStatusHostEnvOutcomes(t *testing.T) {
 	}
 }
 
+// Byre's baked artifacts (mcp.json, the agent context file, the
+// claude-skills dir) are emitted BEFORE the project block and are not
+// tail-guarded, so a project files entry overwrites them in the image --
+// every delivery claim reading from one must stop asserting (review
+// finding: the registry's Files entry originally overstated coverage).
+func TestRenderStatusArtifactShadowsDegradeDelivery(t *testing.T) {
+	var buf strings.Builder
+	renderStatus(&buf, statusInfo{
+		Agent:             "claude",
+		AgentMCP:          "inject",
+		AgentContext:      "inject",
+		AgentClaudeSkills: "inject",
+		MCPs:              []skills.MCPDecl{{Skill: "cfg", MCP: config.MCP{Name: "ctx7", URL: "https://x/mcp"}}},
+		Contexts:          []config.ContextDecl{{Name: "ops", Text: "x"}},
+		ClaudeSkills:      []skills.ClaudeSkillDecl{{Skill: skills.ClaudeSkillsFromConfig, CS: config.ClaudeSkill{Name: "s", Path: "p"}}},
+		ArtifactShadows: map[string]bool{
+			gen.MCPConfigPath:                   true,
+			"/etc/byre/" + gen.AgentContextName: true,
+			gen.ClaudeSkillsPath:                true,
+		},
+	})
+	out := buf.String()
+	if strings.Count(out, "a project files entry overwrites") != 3 {
+		t.Errorf("all three artifact-backed delivery lines must degrade:\n%s", out)
+	}
+	if strings.Contains(out, "the agent session receives") || strings.Contains(out, "injects the baked text") {
+		t.Errorf("no delivery line may keep asserting over a shadowed artifact:\n%s", out)
+	}
+}
+
+// artifactShadows matches the destination Docker actually writes: the
+// file form, the dir form (dest dir + source basename), and anything
+// landing inside the claude-skills dir.
+func TestArtifactShadowsMatching(t *testing.T) {
+	hits := artifactShadows(config.Config{Files: map[string]string{
+		"mcp.json":  "/etc/byre/",                         // dir form -> /etc/byre/mcp.json
+		"SKILL.md":  gen.ClaudeSkillsPath + "/x/SKILL.md", // inside the skills dir
+		"README.md": "/workspace/doc/README.md",           // innocent
+	}})
+	if !hits[gen.MCPConfigPath] || !hits[gen.ClaudeSkillsPath] {
+		t.Errorf("expected mcp.json (dir form) and claude-skills (subpath) hits: %v", hits)
+	}
+	if len(hits) != 2 {
+		t.Errorf("innocent files must not hit: %v", hits)
+	}
+}
+
 // Without reserved overrides the new rows stay absent and the delivery
 // claims assert normally -- the hedges are override-gated, not ambient.
 func TestRenderStatusNoReservedOverrideNoHedge(t *testing.T) {
