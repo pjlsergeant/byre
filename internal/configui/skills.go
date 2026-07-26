@@ -66,7 +66,7 @@ func (m model) skillEntries() []skillEntry {
 	for _, a := range m.agents {
 		agentSet[a] = true
 	}
-	primary := fromNone(m.agentOpts[m.agentSel])
+	primary := config.FromNone(m.agentOpts[m.agentSel])
 	// In the --global editor the agent picker is an onboarding FAVOURITE —
 	// it enables nothing anywhere — so there is no primary agent to lock on:
 	// a "[x] (primary agent)" row would claim a machine-wide enable that
@@ -254,13 +254,18 @@ func (m model) updateSkills(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // removeString drops the first occurrence of v from s (preserving order).
+// removeString returns s without v. Non-mutating (the caller's backing array is
+// left alone) and removes every match -- the same contract the config and
+// onboard copies have. It used to splice in place and stop at the first match,
+// which made one name mean two things depending on the package.
 func removeString(s []string, v string) []string {
-	for i, x := range s {
-		if x == v {
-			return append(s[:i], s[i+1:]...)
+	out := s[:0:0]
+	for _, x := range s {
+		if x != v {
+			out = append(out, x)
 		}
 	}
-	return s
+	return out
 }
 
 func (m model) viewSkills() string {
@@ -354,8 +359,6 @@ func pickerOpts(discovered []string, current string) []string {
 }
 
 // orNone/fromNone delegate to the shared sentinel vocabulary in config.
-func orNone(v string) string   { return config.OrNone(v) }
-func fromNone(v string) string { return config.FromNone(v) }
 
 func orDefault(v, def string) string {
 	if v == "" {

@@ -29,7 +29,6 @@ package config
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -52,21 +51,20 @@ type ContextDecl struct {
 	File string `toml:"file,omitempty"`
 }
 
-// contextNameRe is the context name grammar -- the MCP shape, for the same
+// declNameRe is the context name grammar -- the MCP shape, for the same
 // reasons: the name is a merge identity and an attribution label; keeping
 // one grammar across the named-declaration genus keeps the closure spelling
 // (`!name`) unambiguous everywhere.
-var contextNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // ValidContextName reports whether s satisfies the context name grammar --
 // for callers (the context verbs) validating a bare name with no
 // declaration around it.
-func ValidContextName(s string) bool { return contextNameRe.MatchString(s) }
+func ValidContextName(s string) bool { return declNameRe.MatchString(s) }
 
 // ValidateContextDecl checks one declaration's own shape (not its file's
 // content or existence -- that's the bake-time read in build.Assemble).
 func ValidateContextDecl(cd ContextDecl) error {
-	if !contextNameRe.MatchString(cd.Name) {
+	if !declNameRe.MatchString(cd.Name) {
 		// Echo at most 64 runes of the rejected input (the claude-skill
 		// stance): the message renders in an error line, and an unbounded
 		// echo turns it into a wall.
@@ -108,7 +106,7 @@ var contextDeclOps = namedDeclOps[ContextDecl]{
 	label:        "context",
 	markerNoun:   "a real declaration",
 	nameNoun:     "context name",
-	nameRe:       contextNameRe,
+	nameRe:       declNameRe,
 	name:         func(cd ContextDecl) string { return cd.Name },
 	markerExtras: func(cd ContextDecl) bool { return cd.Text != "" || cd.File != "" },
 	validate:     ValidateContextDecl,

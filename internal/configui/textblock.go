@@ -85,7 +85,11 @@ func (m model) viewText() string {
 }
 
 // splitLines parses one item per line, dropping blanks/whitespace.
-func splitLines(s string) []string {
+// nonEmptyLines splits a textarea value into trimmed, non-blank lines -- the
+// item form of a multi-line field. NOT a structural line split: blank lines and
+// leading whitespace are dropped, so it must never be used on content whose
+// shape matters (a diff, a file body).
+func nonEmptyLines(s string) []string {
 	var out []string
 	for _, ln := range strings.Split(s, "\n") {
 		if t := strings.TrimSpace(ln); t != "" {

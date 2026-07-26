@@ -27,7 +27,6 @@ package config
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -45,18 +44,17 @@ type ClaudeSkill struct {
 	From string `toml:"from,omitempty"`
 }
 
-// claudeSkillNameRe is the Claude Skill name grammar — the same shape as MCP
+// declNameRe is the Claude Skill name grammar — the same shape as MCP
 // names, for the same reasons: the name becomes a directory name in the baked
 // tree, the agent's /name invocation, and an attribution label on status
 // rows. It must also equal the SKILL.md frontmatter name (Anthropic's format
 // requires the frontmatter name to match its directory), which the bake-time
 // validation enforces.
-var claudeSkillNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // ValidClaudeSkillName reports whether s satisfies the name grammar — for
 // callers (the claude-skill verbs) validating a bare name with no declaration
 // around it.
-func ValidClaudeSkillName(s string) bool { return claudeSkillNameRe.MatchString(s) }
+func ValidClaudeSkillName(s string) bool { return declNameRe.MatchString(s) }
 
 // ValidateClaudeSkill checks one declaration's own shape (not its disk
 // content — that's the bake-time check, skills.ValidateClaudeSkillDir).
@@ -64,7 +62,7 @@ func ValidClaudeSkillName(s string) bool { return claudeSkillNameRe.MatchString(
 // config declaration declares `path`; each home's other key is refused so a
 // misplaced declaration fails at the file that holds it.
 func ValidateClaudeSkill(cs ClaudeSkill, fromSkill bool) error {
-	if !claudeSkillNameRe.MatchString(cs.Name) {
+	if !declNameRe.MatchString(cs.Name) {
 		// Echo at most 64 runes of the rejected input: the message renders in
 		// the config UI's error line, and an unbounded echo (a stray paste)
 		// turns it into a wall.
@@ -107,7 +105,7 @@ var claudeSkillDeclOps = namedDeclOps[ClaudeSkill]{
 	label:        "claude skill",
 	markerNoun:   "a real declaration",
 	nameNoun:     "claude skill name",
-	nameRe:       claudeSkillNameRe,
+	nameRe:       declNameRe,
 	name:         func(cs ClaudeSkill) string { return cs.Name },
 	markerExtras: func(cs ClaudeSkill) bool { return cs.Path != "" || cs.From != "" },
 	validate:     func(cs ClaudeSkill) error { return ValidateClaudeSkill(cs, false) },

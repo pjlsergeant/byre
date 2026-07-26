@@ -189,10 +189,10 @@ func (m model) assemble() config.Config {
 	// layer editors); the global editor round-trips it via m.base untouched
 	// (the resolver refuses it there — never silently drop what a hand wrote).
 	if m.target != TargetGlobal {
-		out.Extends = fromNone(m.extOpts[m.extSel])
+		out.Extends = config.FromNone(m.extOpts[m.extSel])
 	}
-	out.Template = fromNone(m.tmplOpts[m.tmplSel])
-	out.Agent = fromNone(m.agentOpts[m.agentSel])
+	out.Template = config.FromNone(m.tmplOpts[m.tmplSel])
+	out.Agent = config.FromNone(m.agentOpts[m.agentSel])
 	out.Engine = fromAuto(m.engineOpts[m.engineSel])
 	out.Apt = nilIfEmpty(m.apt)
 	if len(m.env) == 0 {
@@ -232,7 +232,7 @@ func (m model) assemble() config.Config {
 	// that enables nothing, so a skills entry naming it is the user's real
 	// (and only) way to enable that skill machine-wide — stripping it made
 	// the choice silently impossible (audit finding).
-	primaryAgent := fromNone(m.agentOpts[m.agentSel])
+	primaryAgent := config.FromNone(m.agentOpts[m.agentSel])
 	if m.target == TargetGlobal {
 		primaryAgent = ""
 	}
@@ -257,7 +257,7 @@ func rawSlice(text string, orig []string) []string {
 	if text == strings.Join(orig, "\n") {
 		return orig
 	}
-	return splitLines(text)
+	return nonEmptyLines(text)
 }
 
 func nilIfEmpty(s []string) []string {

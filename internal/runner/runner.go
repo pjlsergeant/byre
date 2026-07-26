@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -400,7 +402,7 @@ func netnsInitArgs(image, container, entrypoint string, env map[string]string, j
 	if joinUserns {
 		args = appendUserns(args, "container:"+container)
 	}
-	for _, k := range sortedKeys(env) {
+	for _, k := range slices.Sorted(maps.Keys(env)) {
 		args = append(args, "-e", k+"="+env[k])
 	}
 	return append(args, image)

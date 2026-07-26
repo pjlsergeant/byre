@@ -99,11 +99,11 @@ func SharedAuthPrompt(agent string) string {
 func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, sharedAuthFor func(agent string) SharedAuthOffer) (Choice, error) {
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
-	tmpl, err := ask(out, r, "Template", withNone(templates), orNone(tmplFav.Effective))
+	tmpl, err := ask(out, r, "Template", withNone(templates), config.OrNone(tmplFav.Effective))
 	if err != nil {
 		return Choice{}, err
 	}
-	agent, err := ask(out, r, "Agent", withNone(agents), orNone(agentFav.Effective))
+	agent, err := ask(out, r, "Agent", withNone(agents), config.OrNone(agentFav.Effective))
 	if err != nil {
 		return Choice{}, err
 	}
@@ -114,12 +114,12 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	prefPick := ""
 	hadOffer := false
 	if sharedAuthFor != nil {
-		offer := sharedAuthFor(fromNone(agent))
+		offer := sharedAuthFor(config.FromNone(agent))
 		if len(offer.Claimants) > 0 {
 			hadOffer = true
 			prefWouldYes = offer.PrefYes || offer.PrefPick != ""
 			prefPick = offer.PrefPick
-			companion, sharedAuth, err = OfferSharedAuthChoice(out, r, fromNone(agent), offer)
+			companion, sharedAuth, err = OfferSharedAuthChoice(out, r, config.FromNone(agent), offer)
 			if err != nil {
 				return Choice{}, err
 			}
@@ -129,7 +129,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	// offering to save it would be noise (and the save a no-op). Only ask when
 	// saving would change the stored state.
 	save := false
-	wantSaveNews := fromNone(tmpl) != tmplFav.Stored || fromNone(agent) != agentFav.Stored
+	wantSaveNews := config.FromNone(tmpl) != tmplFav.Stored || config.FromNone(agent) != agentFav.Stored
 	if hadOffer {
 		if sharedAuth != prefWouldYes {
 			wantSaveNews = true
@@ -146,8 +146,8 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 	}
 
 	return Choice{
-		Template:            fromNone(tmpl),
-		Agent:               fromNone(agent),
+		Template:            config.FromNone(tmpl),
+		Agent:               config.FromNone(agent),
 		SaveDefault:         save,
 		SharedAuthCompanion: companion,
 		SharedAuth:          sharedAuth,
@@ -159,11 +159,11 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 // option and pre-selecting def (the favourite). Returns "" for none. Used when a
 // --template/--agent flag fixes one axis and the other still needs choosing.
 func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def string) (string, error) {
-	v, err := ask(out, r, label, withNone(options), orNone(def))
+	v, err := ask(out, r, label, withNone(options), config.OrNone(def))
 	if err != nil {
 		return "", err
 	}
-	return fromNone(v), nil
+	return config.FromNone(v), nil
 }
 
 // OfferSharedAuthChoice runs the shared-auth offer: single claimant keeps
@@ -386,6 +386,3 @@ func askYesNoDefault(out io.Writer, r *bufio.Reader, label string, def bool) (bo
 func withNone(opts []string) []string {
 	return append(append([]string{}, opts...), noneOption)
 }
-
-func orNone(v string) string   { return config.OrNone(v) }
-func fromNone(v string) string { return config.FromNone(v) }

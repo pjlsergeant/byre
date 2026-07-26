@@ -5,6 +5,7 @@
 package configui
 
 import (
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -605,7 +606,7 @@ func (m model) envRows() []listRow {
 	}
 	var rows []listRow
 	lowerEnv := m.lowerNow().Env
-	for _, k := range sortedKeys(lowerEnv) {
+	for _, k := range slices.Sorted(maps.Keys(lowerEnv)) {
 		k := k
 		src := m.lowerSource(func(c config.Config) bool { _, ok := c.Env[k]; return ok })
 		if i, ok := localIdx[k]; ok {
@@ -621,7 +622,7 @@ func (m model) envRows() []listRow {
 	}
 	for _, sk := range m.effectiveSkills() {
 		env := m.inh.Skills[sk].Env
-		for _, k := range sortedKeys(env) {
+		for _, k := range slices.Sorted(maps.Keys(env)) {
 			rows = append(rows, listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk})
 		}
 	}
@@ -629,7 +630,7 @@ func (m model) envRows() []listRow {
 	// lands in the box's env, so it must be visible wherever env is
 	// inspected — byre's own shipped git-identity defaults included.
 	hostEnv := m.hostEnvNow()
-	for _, k := range sortedKeys(hostEnv) {
+	for _, k := range slices.Sorted(maps.Keys(hostEnv)) {
 		rows = append(rows, listRow{kind: rowHostEnv, text: k + " <- host " + hostEnv[k], source: "env_from_host"})
 	}
 	// Skill-documented consumed vars (env_docs): a dim suggestion row per
@@ -650,7 +651,7 @@ func (m model) envRows() []listRow {
 	}
 	for _, sk := range m.effectiveSkills() {
 		docs := m.inh.Skills[sk].EnvDocs
-		for _, k := range sortedKeys(docs) {
+		for _, k := range slices.Sorted(maps.Keys(docs)) {
 			if !provided[k] {
 				rows = append(rows, listRow{kind: rowEnvDoc, text: k, ident: k, source: "skill:" + sk, vals: []string{docs[k]}})
 			}
@@ -884,8 +885,8 @@ func (m model) exposureNow() config.Exposure {
 		}
 	}
 	lower := m.lowerNow()
-	e.RawRunArgs = len(splitLines(m.textValue(fRunArgs)))+len(lower.RunArgs) > 0
-	e.RawBuild = len(splitLines(m.textValue(fDockerfilePre)))+len(splitLines(m.textValue(fDockerfilePost)))+
+	e.RawRunArgs = len(nonEmptyLines(m.textValue(fRunArgs)))+len(lower.RunArgs) > 0
+	e.RawBuild = len(nonEmptyLines(m.textValue(fDockerfilePre)))+len(nonEmptyLines(m.textValue(fDockerfilePost)))+
 		len(lower.DockerfilePre)+len(lower.DockerfilePost) > 0
 	return e
 }
@@ -934,15 +935,6 @@ func hasPortKey(ps []config.Port, key string) bool {
 		}
 	}
 	return false
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // portKey is a port's effective identity (interface:host:container), matching

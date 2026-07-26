@@ -94,7 +94,7 @@ func (m model) lowerNow() config.Config {
 		return config.Config{}
 	}
 	lower := m.inh.Default
-	if t := fromNone(m.tmplOpts[m.tmplSel]); t != "" {
+	if t := config.FromNone(m.tmplOpts[m.tmplSel]); t != "" {
 		lower = config.Merge(lower, m.inh.Templates[t])
 	}
 	for _, nl := range m.chainNow() {
@@ -109,7 +109,7 @@ func (m model) extendsNow() string {
 	if len(m.extOpts) == 0 {
 		return ""
 	}
-	return fromNone(m.extOpts[m.extSel])
+	return config.FromNone(m.extOpts[m.extSel])
 }
 
 // chainNow is the named-layer chain under the CURRENTLY selected extends
@@ -159,7 +159,7 @@ func (m model) lowerSource(has func(config.Config) bool) string {
 			return "layer:" + chain[i].Name
 		}
 	}
-	if t := fromNone(m.tmplOpts[m.tmplSel]); t != "" && has(m.inh.Templates[t]) {
+	if t := config.FromNone(m.tmplOpts[m.tmplSel]); t != "" && has(m.inh.Templates[t]) {
 		return "template:" + t
 	}
 	if has(m.inh.Default) {

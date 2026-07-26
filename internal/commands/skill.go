@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -234,10 +235,10 @@ func printSkillContributions(w io.Writer, f skills.File) {
 			fmt.Fprintf(w, "    header: %s: %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(m.Headers[k]))
 		}
 	}
-	for _, k := range sortedMapKeys(rt.Env) {
+	for _, k := range slices.Sorted(maps.Keys(rt.Env)) {
 		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.Env[k]))
 	}
-	for _, k := range sortedMapKeys(rt.EnvDocs) {
+	for _, k := range slices.Sorted(maps.Keys(rt.EnvDocs)) {
 		fmt.Fprintf(w, "  env consumed: %s -- %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.EnvDocs[k]))
 	}
 	if f.CompanionFor != "" {
@@ -261,7 +262,7 @@ func printSkillContributions(w io.Writer, f skills.File) {
 		fmt.Fprintf(w, "  build: %s\n", strings.Join(buildParts, ", "))
 	}
 	if n := len(f.Build.Files); n > 0 {
-		names := sortedMapKeys(f.Build.Files)
+		names := slices.Sorted(maps.Keys(f.Build.Files))
 		shown := names
 		if len(shown) > 8 {
 			shown = append(shown[:8], "...")
@@ -357,17 +358,17 @@ func printTemplateShape(w io.Writer, raw []byte) {
 		iface, host := config.PortEffective(p)
 		fmt.Fprintf(w, "  port: %s:%d -> container %d\n", packages.EscapeTerminal(iface), host, p.Container)
 	}
-	for _, k := range sortedMapKeys(cfg.Env) {
+	for _, k := range slices.Sorted(maps.Keys(cfg.Env)) {
 		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.Env[k]))
 	}
-	for _, k := range sortedMapKeys(cfg.EnvFromHost) {
+	for _, k := range slices.Sorted(maps.Keys(cfg.EnvFromHost)) {
 		fmt.Fprintf(w, "  env_from_host: %s <- %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.EnvFromHost[k]))
 	}
 	if n := len(cfg.RunArgs); n > 0 {
 		fmt.Fprintf(w, "  run_args: %d (raw docker flags)\n", n)
 	}
 	if n := len(cfg.Files); n > 0 {
-		names := sortedMapKeys(cfg.Files)
+		names := slices.Sorted(maps.Keys(cfg.Files))
 		shown := names
 		if len(shown) > 8 {
 			shown = append(shown[:8], "...")
@@ -392,15 +393,6 @@ func listLine(key, val string) string {
 		return fmt.Sprintf("removes %s: %s", key, packages.EscapeTerminal(name))
 	}
 	return fmt.Sprintf("%s: %s", key, packages.EscapeTerminal(val))
-}
-
-func sortedMapKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // SkillFork copies an immutable skill into the local store under newID.

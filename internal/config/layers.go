@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -37,11 +36,6 @@ func LayerPath(home, name string) string {
 	return filepath.Join(LayersDir(home), name, LayerConfigName)
 }
 
-// layerNameRe is the package-ID segment grammar: layers aren't packages, but
-// their names live in the same mental namespace (extends values, dir names),
-// so they follow the same shape. Single segment only — no owner/name.
-var layerNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-
 // ValidateLayerName checks a layer name against the grammar. It is also the
 // path-traversal gate: every LayerPath caller runs it first, so a name can
 // never carry a separator or "..".
@@ -52,7 +46,7 @@ func ValidateLayerName(name string) error {
 	if name == NoneLabel {
 		return fmt.Errorf("layer name %q is reserved (config sentinel)", name)
 	}
-	if !layerNameRe.MatchString(name) {
+	if !declNameRe.MatchString(name) {
 		return fmt.Errorf("layer name %q: want lowercase [a-z0-9-], starting alphanumeric, max 64 chars", name)
 	}
 	return nil

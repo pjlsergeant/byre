@@ -20,9 +20,11 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -100,22 +102,21 @@ func egressHostForm(hostname string) string {
 	return hostname
 }
 
-// mcpNameRe is the MCP name grammar. Deliberately tighter than most: the
+// declNameRe is the MCP name grammar. Deliberately tighter than most: the
 // name becomes a JSON key in the baked mcp.json and an attribution label
 // (mcp:<name>) on status rows. No underscores, so a declared name can never
 // carry the reserved `byre__` prefix (ADR 0033).
-var mcpNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // ValidMCPName reports whether s satisfies the MCP name grammar — for
 // callers (the mcp verbs) that validate a bare name with no declaration
-// around it. Single owner: the grammar lives in mcpNameRe alone.
-func ValidMCPName(s string) bool { return mcpNameRe.MatchString(s) }
+// around it. Single owner: the grammar lives in declNameRe alone.
+func ValidMCPName(s string) bool { return declNameRe.MatchString(s) }
 
 // ValidateMCP checks one declaration's own shape. Shared by the config
 // validators and skills.Resolve — config-declared and skill-declared
 // servers are held to the same bar.
 func ValidateMCP(m MCP) error {
-	if !mcpNameRe.MatchString(m.Name) {
+	if !declNameRe.MatchString(m.Name) {
 		return fmt.Errorf("mcp name %q: must be lowercase [a-z0-9-], starting with a letter or digit (max 64 chars)", m.Name)
 	}
 	switch {
@@ -178,7 +179,7 @@ func ValidateMCP(m MCP) error {
 		return fmt.Errorf("mcp %s: headers are for remote (url) servers — a local stdio server has no HTTP request to carry them", m.Name)
 	}
 	lowerSeen := map[string]string{}
-	for _, k := range sortedHeaderKeys(m.Headers) {
+	for _, k := range slices.Sorted(maps.Keys(m.Headers)) {
 		if !headerNameRe.MatchString(k) {
 			return fmt.Errorf("mcp %s: header name %q: not a valid HTTP header name", m.Name, k)
 		}
@@ -211,7 +212,7 @@ var headerEnvRefRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 func (m MCP) HeaderEnvRefs() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, k := range sortedHeaderKeys(m.Headers) {
+	for _, k := range slices.Sorted(maps.Keys(m.Headers)) {
 		for _, match := range headerEnvRefRe.FindAllStringSubmatch(m.Headers[k], -1) {
 			if !seen[match[1]] {
 				seen[match[1]] = true
@@ -247,16 +248,7 @@ func (m MCP) ConsumedEnv() []string {
 
 // HeaderNames lists the declared header names, sorted — display surfaces
 // print names, not values (a value may carry a user's literal secret).
-func (m MCP) HeaderNames() []string { return sortedHeaderKeys(m.Headers) }
-
-func sortedHeaderKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+func (m MCP) HeaderNames() []string { return slices.Sorted(maps.Keys(m.Headers)) }
 
 // mcpPrintable rejects control characters and (for a one-token field)
 // whitespace-only content: command elements and URLs are printed verbatim on
@@ -276,7 +268,7 @@ var mcpDeclOps = namedDeclOps[MCP]{
 	label:      "mcp",
 	markerNoun: "a real server",
 	nameNoun:   "server name",
-	nameRe:     mcpNameRe,
+	nameRe:     declNameRe,
 	name:       func(m MCP) string { return m.Name },
 	markerExtras: func(m MCP) bool {
 		return len(m.Command) > 0 || m.URL != "" || len(m.Env) > 0 || len(m.Egress) > 0 || len(m.Headers) > 0

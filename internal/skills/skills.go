@@ -13,9 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -464,7 +466,7 @@ type EnvDoc struct {
 func (r Resolved) EnvDocs() []EnvDoc {
 	var out []EnvDoc
 	for _, sk := range r.Skills {
-		for _, k := range sortedKeys(sk.File.Runtime.EnvDocs) {
+		for _, k := range slices.Sorted(maps.Keys(sk.File.Runtime.EnvDocs)) {
 			out = append(out, EnvDoc{Skill: sk.Name, Name: k, Text: sk.File.Runtime.EnvDocs[k]})
 		}
 	}
@@ -932,7 +934,7 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		// dir (reject escapes) and require absolute destinations. Sorted by source
 		// for deterministic build-context staging and COPY emission.
 		dir := sk.dir
-		for _, src := range sortedKeys(f.Build.Files) {
+		for _, src := range slices.Sorted(maps.Keys(f.Build.Files)) {
 			dest := f.Build.Files[src]
 			if !filepath.IsAbs(dest) {
 				return Resolved{}, fmt.Errorf("skill %q: file destination %q must be an absolute image path", name, dest)
@@ -1059,7 +1061,7 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		if err := config.ValidateContent("", nil, nil, f.Runtime.EnvDocs); err != nil {
 			return Resolved{}, fmt.Errorf("skill %q: env_docs: %w", name, err)
 		}
-		for _, k := range sortedKeys(f.Runtime.EnvDocs) {
+		for _, k := range slices.Sorted(maps.Keys(f.Runtime.EnvDocs)) {
 			g := f.Runtime.EnvDocs[k]
 			if g == "" {
 				return Resolved{}, fmt.Errorf("skill %q: env_docs %s: guidance must not be empty", name, k)
@@ -1072,7 +1074,7 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		// Cross-skill env conflicts: a differing value for the same key would be
 		// resolved by enable order — refuse instead. The same value twice is
 		// harmless (order-independent) and allowed.
-		for _, k := range sortedKeys(f.Runtime.Env) {
+		for _, k := range slices.Sorted(maps.Keys(f.Runtime.Env)) {
 			if other, ok := envSetBy[k]; ok && other != name {
 				if prev := envValue(res.Skills, other, k); prev != f.Runtime.Env[k] {
 					return Resolved{}, fmt.Errorf("skills %q and %q both set env %s to different values; disable one or align them", other, name, k)
@@ -1188,15 +1190,6 @@ func validateOneLiner(s string) error {
 }
 
 // sortedKeys returns a map's keys in sorted order, for deterministic iteration.
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // envValue looks up the env value skill `skill` set for key k (for conflict
 // error messages).
 func envValue(sks []Skill, skill, k string) string {

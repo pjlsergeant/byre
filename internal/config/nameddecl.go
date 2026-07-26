@@ -17,6 +17,16 @@ import (
 	"slices"
 )
 
+// declNameRe is the name grammar for the whole named-declaration genus, and
+// for layer names, which live in the same mental namespace. It was five
+// identical copies: a widening in one would have been invisible in the other
+// four, which is the opposite of the single-spelling guarantee the genus rests
+// on. Deliberately tighter than a package ID: no underscores, so a declared
+// name can never carry the reserved `byre__` prefix (ADR 0033), and no dots or
+// slashes, so a name is unambiguous as a JSON key, an attribution label
+// (mcp:<name>), a directory name, and a `!name` closure.
+var declNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
 // namedDeclOps describes one named-declaration vocabulary to the shared
 // machinery: how to read a declaration's name, its name grammar, and the
 // vocabulary-specific words its shared error messages print.

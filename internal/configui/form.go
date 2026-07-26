@@ -358,14 +358,14 @@ func (m model) loadConfig(cfg config.Config) model {
 	// just by opening the editor. Cycling away skips disabled rows (and can't
 	// come back) — changing off a broken value is deliberate, keeping it isn't
 	// a choice the editor makes for you.
-	m.tmplSel = indexOf(m.tmplOpts, orNone(cfg.Template))
-	m.agentSel = indexOf(m.agentOpts, orNone(cfg.Agent))
+	m.tmplSel = indexOf(m.tmplOpts, config.OrNone(cfg.Template))
+	m.agentSel = indexOf(m.agentOpts, config.OrNone(cfg.Agent))
 	m.engineSel = indexOf(m.engineOpts, orDefault(cfg.Engine, "auto"))
 	// The EXTENDS picker: loadable layers plus, like every picker, the stored
 	// value even when it isn't offerable (a dangling extends must survive an
 	// unrelated open-and-save, and fail loudly at develop instead).
 	m.extOpts = pickerOpts(m.inh.LayerNames, cfg.Extends)
-	m.extSel = indexOf(m.extOpts, orNone(cfg.Extends))
+	m.extSel = indexOf(m.extOpts, config.OrNone(cfg.Extends))
 	m.apt = append([]string{}, cfg.Apt...)
 	m.env = envItems(cfg.Env)
 	m.mounts = append([]config.Mount{}, cfg.Mounts...)
@@ -937,7 +937,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		}
 		return s
 	case fRunArgs, fDockerfilePre, fDockerfilePost:
-		n := len(splitLines(m.textValue(f)))
+		n := len(nonEmptyLines(m.textValue(f)))
 		s := dimStyle.Render("(none)")
 		if n == 1 {
 			s = "1 line"

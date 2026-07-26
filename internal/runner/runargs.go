@@ -2,6 +2,8 @@ package runner
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 )
@@ -80,7 +82,7 @@ func RunArgs(p RunParams) []string {
 		args = append(args, "--name", p.Name)
 	}
 
-	for _, k := range sortedKeys(p.Env) {
+	for _, k := range slices.Sorted(maps.Keys(p.Env)) {
 		args = append(args, "-e", k+"="+p.Env[k])
 	}
 
@@ -137,15 +139,6 @@ func RunArgs(p RunParams) []string {
 // documented behavior nothing produced.
 func portSpec(p PortPublish) string {
 	return fmt.Sprintf("%s:%d:%d", p.Interface, p.Host, p.Container)
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func sortedInts(in []int) []int {
