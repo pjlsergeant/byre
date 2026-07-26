@@ -317,3 +317,18 @@ func TestContextListSameLayerClosureWins(t *testing.T) {
 		t.Errorf("no effective row may render beside the shadow:\n%s", got)
 	}
 }
+
+// Duplicate `!x` markers in one layer are layer-valid; the second must not
+// erase the first's victim attribution (codex review round 3).
+func TestContextListDuplicateClosureKeepsVictim(t *testing.T) {
+	dir, projPath, defaultCfg, s, _ := mcpTestProject(t)
+	out := s.Out.(*bytes.Buffer)
+	mustWriteFile(t, defaultCfg, []byte("[[context]]\nname = \"x\"\ntext = \"global x\"\n"), 0o644)
+	mustWriteFile(t, projPath, []byte("[[context]]\nname = \"!x\"\n\n[[context]]\nname = \"!x\"\n"), 0o644)
+	if err := ContextList(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "x  — removed by project  (was default)") {
+		t.Errorf("duplicate marker erased the victim:\n%s", got)
+	}
+}

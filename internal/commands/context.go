@@ -242,11 +242,17 @@ func replayContextCascade(srcs []config.SourceLayer) (map[string]*ctxCascadeStat
 			st.openIn = append(st.openIn, sl.Label)
 			st.closedBy, st.wasAt = "", nil // a higher declaration re-opens
 		}
+		closedHere := map[string]bool{}
 		for _, cd := range sl.Cfg.Contexts {
 			name, ok := strings.CutPrefix(cd.Name, "!")
-			if !ok {
+			if !ok || closedHere[name] {
+				// Duplicate markers are layer-valid (markers dodge duplicate
+				// tracking); replaying the second would overwrite wasAt with
+				// the now-empty openIn and misreport the victim as "nothing
+				// below" (codex review round 3).
 				continue
 			}
+			closedHere[name] = true
 			st := get(name)
 			st.closedBy = sl.Label
 			st.wasAt = append([]string(nil), st.openIn...)
