@@ -297,7 +297,7 @@ func (m model) startOverride(r listRow) model {
 		// have" is one keypress and any change is deliberate.
 		scheme, arg := hostEnvScheme(r.vals[1])
 		next.itemMode = scheme
-		next.inputLabels = []string{"Key", hostEnvArgLabel(scheme)}
+		next = next.syncHostEnvLabel()
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(arg)
 		return next
@@ -430,7 +430,11 @@ func (m model) startItem(idx int) model {
 		m.itemModeLabel = "Source"
 		m.itemModeFirst = true
 		m.inputLabels = []string{"Key", hostEnvArgLabel(m.itemMode)}
-		m.inputs = []textinput.Model{newInput(key), newInput(arg)}
+		argIn := newInput(arg)
+		argIn.Placeholder = hostEnvArgHint(m.itemMode)
+		m.inputs = []textinput.Model{newInput(key), argIn}
+		m.focusItem(0)
+		m.mode = modeItem
 		return m
 	}
 	switch m.listField {
@@ -1460,6 +1464,11 @@ func setIn(r listRow) string {
 		return "this file, overriding " + r.source
 	case rowInherited, rowSkill:
 		return r.source
+	case rowHostEnv:
+		if r.idx >= 0 {
+			return "this file"
+		}
+		return r.source
 	case rowRemoved:
 		if r.source == "" {
 			return "this file — removed by its own marker"
@@ -1485,7 +1494,13 @@ func (m model) viewItem() string {
 	if m.editIndex < 0 {
 		verb = "Add"
 	}
-	fmt.Fprintf(&b, "%s\n\n", m.crumb(verb+" "+itemTitle(m.listField)))
+	title := itemTitle(m.listField)
+	if m.itemHostEnv {
+		// [env] literals and passthroughs share the Env screen; "Add Env var"
+		// over a scheme picker names the wrong thing.
+		title = "host passthrough"
+	}
+	fmt.Fprintf(&b, "%s\n\n", m.crumb(verb+" "+title))
 
 	// Label column sized to the widest label this form shows, so optional/
 	// required annotations don't push the colons out of line.
@@ -1669,8 +1684,9 @@ func (m model) commitHostEnv(orig model) model {
 // a host variable name, or nothing at all -- so a fixed label would be wrong
 // for three of the five options.
 func (m model) syncHostEnvLabel() model {
-	if m.itemHostEnv && len(m.inputLabels) == 2 {
+	if m.itemHostEnv && len(m.inputLabels) == 2 && len(m.inputs) == 2 {
 		m.inputLabels = []string{m.inputLabels[0], hostEnvArgLabel(m.itemMode)}
+		m.inputs[1].Placeholder = hostEnvArgHint(m.itemMode)
 	}
 	return m
 }

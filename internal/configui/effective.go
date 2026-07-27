@@ -697,8 +697,12 @@ func (m model) envRows() []listRow {
 			continue
 		}
 		from := m.lowerSource(func(c config.Config) bool { _, ok := c.EnvFromHost[k]; return ok })
-		if from == "" {
-			from = "byre" // the shipped CoreEnvFromHost layer
+		if from == "" || from == "inherited" {
+			// CoreEnvFromHost is a real cascade layer merged UNDER
+			// default.config, so it is not in any chain lowerSource walks --
+			// and "inherited" would leave the user with no idea who to argue
+			// with about the six keys byre ships.
+			from = "byre (shipped default)"
 		}
 		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}})
 	}

@@ -45,13 +45,42 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// modeSkills: Mounts → Skills is nine rows down (Ports, Egress, Env,
-	// Base, Template, Agent, Engine, Packages, Skills).
-	keys := make([]string, 9)
+	// The env_from_host scheme picker, reached from the Env screen (three
+	// rows down from Mounts). Walked because it is the one item editor whose
+	// picker renders FIRST and rewrites a label as it moves -- the paint a
+	// model test cannot prove. byre ships six passthrough keys, so a fresh
+	// config always has a row to open.
+	e = s.Keys("Down", "Down", "Down", "Enter")
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("Enter")
+	s.WaitForAfter(e, "Override here")
+	e = s.Keys("Enter")
+	s.WaitForAfter(e, "host passthrough")
+	e = s.Keys("Right")
+	s.WaitForAfter(e, "host variable")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "$EDITOR")
+
+	// Baked files: six rows down from Env vars (Base, Template, Agent,
+	// Engine, Packages, Baked files). A list field with its own item editor,
+	// like mounts above.
+	keys := make([]string, 6)
 	for i := range keys {
 		keys[i] = "Down"
 	}
 	e = s.Keys(append(keys, "Enter")...)
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("a")
+	s.WaitForAfter(e, "Add Baked file")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "$EDITOR")
+
+	// modeSkills: one more row down.
+	e = s.Keys("Down", "Enter")
 	s.WaitForAfter(e, "space toggle")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")

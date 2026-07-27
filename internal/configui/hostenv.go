@@ -26,21 +26,36 @@ const (
 
 var hostEnvSchemes = []string{"inherit", "git:", "env:", "tz:", "disabled"}
 
-// hostEnvArgLabel is the second input's label for a scheme. tz: takes no
-// argument and disabled takes none either; the label says so rather than
-// leaving an input that does nothing.
+// hostEnvArgLabel is the second input's label for a scheme. Deliberately
+// SHORT and near-uniform in width: the label column is sized from the longest
+// label, so a scheme-dependent sentence here made the whole form jump
+// sideways on every ←/→ (seen on a real pty -- the widths ranged 30 to 49).
+// The guidance moved to the placeholder, which lives inside the input and
+// costs no column width.
 func hostEnvArgLabel(scheme int) string {
 	switch scheme {
 	case schemeGit:
-		return "git config key (e.g. user.name)"
+		return "git config key"
 	case schemeEnv:
-		return "host variable name (e.g. TERM)"
-	case schemeTZ:
-		return "no argument — the host's timezone"
-	case schemeDisabled:
-		return "no argument — the key is passed through to nothing"
+		return "host variable"
 	}
-	return "no argument — the value comes from the cascade"
+	return "(no argument)"
+}
+
+// hostEnvArgHint is the placeholder for the argument input: an example where
+// there is one to give, and what the scheme does where there is not.
+func hostEnvArgHint(scheme int) string {
+	switch scheme {
+	case schemeGit:
+		return "user.name"
+	case schemeEnv:
+		return "TERM"
+	case schemeTZ:
+		return "the host's timezone"
+	case schemeDisabled:
+		return "the key is passed through to nothing"
+	}
+	return "the value comes from the cascade"
 }
 
 // hostEnvScheme decodes a stored source into (scheme, argument). "" is the
