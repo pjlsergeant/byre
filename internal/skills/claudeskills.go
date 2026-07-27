@@ -96,7 +96,7 @@ const (
 // would refuse them anyway, less legibly). Runs for both homes at bake, and
 // for `byre claude-skill add` before it writes a declaration.
 func ValidateClaudeSkillDir(dir, name string) error {
-	info, err := hostopen.PlainStat(dir, hostopen.Unreviewed)
+	info, err := hostopen.PlainStat(dir, hostopen.UserNamed)
 	if err != nil {
 		return fmt.Errorf("claude skill %s: %w", name, err)
 	}
@@ -166,7 +166,7 @@ func claudeSkillFrontmatter(path string) (name, desc string, err error) {
 	// Lstat before reading: a FIFO named SKILL.md would block os.ReadFile
 	// indefinitely, and a symlinked SKILL.md must be rejected before being
 	// followed, not after (the walk's checks run later than this read).
-	fi, err := hostopen.PlainLstat(path, hostopen.Unreviewed)
+	fi, err := hostopen.StatNoFollow(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", fmt.Errorf("no SKILL.md at the directory root — a claude skill is a directory whose root holds one")

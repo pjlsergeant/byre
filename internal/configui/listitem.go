@@ -975,12 +975,12 @@ func claudeSkillDirNote(name, path string) string {
 	if skills.ValidateClaudeSkillDir(dir, strings.ToLower(strings.TrimSpace(name))) == nil {
 		return ""
 	}
-	if fi, err := hostopen.PlainStat(dir, hostopen.Unreviewed); err != nil {
+	if fi, err := hostopen.PlainStat(dir, hostopen.UserNamed); err != nil {
 		return "path missing — build will fail"
 	} else if !fi.IsDir() {
 		return "not a directory — build will fail"
 	}
-	if _, err := hostopen.PlainStat(filepath.Join(dir, "SKILL.md"), hostopen.Unreviewed); err != nil {
+	if _, err := hostopen.PlainStat(filepath.Join(dir, "SKILL.md"), hostopen.UserNamed); err != nil {
 		return "no SKILL.md — build will fail"
 	}
 	return "SKILL.md invalid or name mismatch — build will fail"

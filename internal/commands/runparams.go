@@ -190,7 +190,7 @@ func checkContainedHostSource(host, workDir string) error {
 // degrade to the lexical judgment -- develop is about to fail on the
 // workspace bind anyway.
 func inTreeByIdentity(workDir, p string) bool {
-	wd, err := hostopen.PlainStat(workDir, hostopen.Unreviewed)
+	wd, err := hostopen.PlainStat(workDir, hostopen.UserNamed)
 	if err != nil {
 		return underTree(workDir, p)
 	}

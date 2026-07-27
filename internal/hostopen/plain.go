@@ -66,6 +66,21 @@ const (
 	// The user is not the threat model (P1).
 	HostUserOwned Reason = "host-user-owned"
 
+	// UserNamed: the user named this path -- a seed source in their config, a
+	// `byre grab` destination on their command line, a claude-skill directory
+	// -- and it MAY resolve inside the agent-writable project tree, because
+	// checkContainedHostSource deliberately permits an in-tree source. That is
+	// the user's own footgun and byre does not nanny it (P1): byre performs
+	// the one check that bounds an ESCALATION -- an in-tree source resolving
+	// OUT of the tree is refused, since mounting or seeding it would complete
+	// an exfiltration the config never named -- and then trusts the choice.
+	//
+	// Distinct from HostUserOwned on purpose. That constant promises the path
+	// is beyond any box's reach; this one does not, and collapsing them would
+	// bury the ruling inside a name that used to mean something stronger.
+	// `rg UserNamed` is the set of call sites resting on it.
+	UserNamed Reason = "user-named"
+
 	// SubprocessConsumer: the path is agent-influenced, but what ultimately
 	// opens it is a SUBPROCESS that resolves the path itself (git, the
 	// engine CLI). Anchoring here would buy nothing -- byre never opens it,

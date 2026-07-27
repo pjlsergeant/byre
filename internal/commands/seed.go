@@ -55,7 +55,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 		}
 		// A missing seed source is not an error: start the volume empty so the
 		// agent authenticates on first launch (docker auto-creates it on run).
-		if _, serr := hostopen.PlainStat(host, hostopen.Unreviewed); serr != nil {
+		if _, serr := hostopen.PlainStat(host, hostopen.UserNamed); serr != nil {
 			if os.IsNotExist(serr) {
 				fmt.Fprintf(log, "byre: seed source %s not found; %s starts empty\n", host, v.Name)
 				continue
@@ -104,7 +104,7 @@ func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentS
 	if err := checkContainedHostSource(host, paths.WorkDir); err != nil {
 		return err
 	}
-	if _, serr := hostopen.PlainStat(host, hostopen.Unreviewed); serr != nil {
+	if _, serr := hostopen.PlainStat(host, hostopen.UserNamed); serr != nil {
 		if os.IsNotExist(serr) {
 			fmt.Fprintf(log, "byre: prefs source %s not found; %s starts without seeded prefs\n", host, agentState)
 			return nil
