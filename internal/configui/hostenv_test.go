@@ -500,3 +500,64 @@ func TestEnvSkillEnvDoesNotShadowPassthrough(t *testing.T) {
 		t.Errorf("annotation = %q, want no override claim: nothing overrode it", ann)
 	}
 }
+
+// Disabled and shadowed at once. resolveHostEnv tests the empty source
+// BEFORE the [env] override, so a key that is both resolves disabled, not
+// overridden -- and the row must not claim "[env]" overrode something that
+// was already switched off. The two flags are independent fields, so nothing
+// but this ordering keeps them from both being set.
+func TestEnvDisabledOutranksShadowedOnOnePassthrough(t *testing.T) {
+	cfg := config.Config{
+		Env:         map[string]string{"TZ": "UTC"},
+		EnvFromHost: map[string]string{"TZ": ""},
+	}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+
+	r, ok := hostEnvRow(m, "TZ")
+	if !ok {
+		t.Fatal("expected a TZ passthrough row")
+	}
+	if !r.disabled {
+		t.Error("an empty source is disabled, whatever else is set")
+	}
+	if r.closed {
+		t.Error("disabled outranks shadowed: resolveHostEnv never reaches the override arm for an empty source")
+	}
+	if ann := rowAnnotation(r); strings.Contains(ann, "overridden") {
+		t.Errorf("annotation = %q, want no override claim on a switched-off key", ann)
+	}
+}
+
+// A skill's env_docs suggestion appears only while NOTHING supplies the
+// variable. A disabled passthrough supplies nothing, so it must not retire
+// the suggestion -- keeping disabled keys in the effective map (which the
+// rows need) silently made every one of them look like a provider.
+func TestEnvDisabledPassthroughDoesNotRetireASkillSuggestion(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"tool": {EnvDocs: map[string]string{"TOOL_TOKEN": "what the tool reads"}},
+	}}
+	cfg := config.Config{Skills: []string{"tool"}, EnvFromHost: map[string]string{"TOOL_TOKEN": ""}}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"tool"}, nil, inh, nil, TargetProject)
+	m.listField = fEnv
+
+	var sawDoc bool
+	for _, r := range m.fieldRows(fEnv) {
+		if r.kind == rowEnvDoc && r.ident == "TOOL_TOKEN" {
+			sawDoc = true
+		}
+	}
+	if !sawDoc {
+		t.Error("a disabled passthrough provides nothing, so the skill's suggestion must still show")
+	}
+
+	// The live case is the control: once it actually carries a scheme, the
+	// suggestion has done its job and goes.
+	live := newModel("t", "/tmp/x", config.Config{Skills: []string{"tool"}, EnvFromHost: map[string]string{"TOOL_TOKEN": "env:TOOL_TOKEN"}}, nil, nil, []string{"tool"}, nil, inh, nil, TargetProject)
+	live.listField = fEnv
+	for _, r := range live.fieldRows(fEnv) {
+		if r.kind == rowEnvDoc && r.ident == "TOOL_TOKEN" {
+			t.Error("a live passthrough provides the var, so the suggestion must retire")
+		}
+	}
+}

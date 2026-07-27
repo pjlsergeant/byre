@@ -750,8 +750,14 @@ func (m model) envRows() []listRow {
 		// hostEnvLine renders it "KEY <- disabled", the menu still reaches it
 		// (Edit re-picks a scheme, Delete drops back to the cascade), and the
 		// tallies skip it. A disabled mount reads the same way.
+		// Disabled OUTRANKS shadowed, because resolveHostEnv tests the empty
+		// source before the [env] override: a key that is both switched off
+		// and shadowed resolves hostEnvDisabled, not hostEnvOverridden. Left
+		// to itself `closed` would annotate that row "overridden by [env],
+		// not passed" -- a claim about a key nothing had to override.
+		off := hostEnv[k] == ""
 		if i, ok := localHostIdx[k]; ok {
-			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k, closed: shadowed[k], disabled: m.hostEnv[i].Value == ""})
+			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k, closed: shadowed[k] && !off, disabled: off})
 			continue
 		}
 		from := m.lowerSource(func(c config.Config) bool { _, ok := c.EnvFromHost[k]; return ok })
@@ -762,7 +768,7 @@ func (m model) envRows() []listRow {
 			// with about the six keys byre ships.
 			from = "byre default"
 		}
-		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}, closed: shadowed[k], disabled: hostEnv[k] == ""})
+		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}, closed: shadowed[k] && !off, disabled: off})
 	}
 	// Skill-documented consumed vars (env_docs): a dim suggestion row per
 	// declared var NOTHING above provides — once any layer, skill, or the
@@ -777,7 +783,14 @@ func (m model) envRows() []listRow {
 			}
 		}
 	}
-	for k := range hostEnv {
+	for k, src := range hostEnv {
+		// A switched-off passthrough supplies nothing, so it cannot retire a
+		// skill's env_docs suggestion -- the suggestion's whole condition is
+		// that NOTHING provides the variable. hostEnvNow keeps disabled keys
+		// now (the rows need them); this consumer wants only the live ones.
+		if src == "" {
+			continue
+		}
 		provided[k] = true
 	}
 	for _, sk := range m.effectiveSkills() {
