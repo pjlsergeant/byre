@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -210,6 +211,28 @@ name = "!closed-one"
 	}
 	if !strings.Contains(got, "!closed-one") {
 		t.Errorf("closures must list: %s", got)
+	}
+
+	// The shadow arm, pinned on THIS surface and not only on status: the
+	// renderer is shared but the field it reads is populated per caller, so
+	// only a per-surface pin catches a caller that stops populating it.
+	if err := os.WriteFile(projPath, []byte(`
+agent = "claude"
+[files]
+"mine.json" = "`+gen.MCPConfigPath+`"
+
+[[mcp]]
+name = "github"
+command = ["gh-mcp"]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := MCPList(s, dir); err != nil {
+		t.Fatalf("shadowed list: %v", err)
+	}
+	if !strings.Contains(out.String(), "delivery not warranted") {
+		t.Errorf("a files entry overwriting %s must stop the delivery claim:\n%s", gen.MCPConfigPath, out.String())
 	}
 
 	// Empty set: a pointer, not silence.

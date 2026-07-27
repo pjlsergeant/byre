@@ -109,8 +109,10 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 }
 
 // MCPList implements `byre mcp list`: the effective declared set, rendered
-// by the SAME functions status uses (mcpStatusLine/mcpDeliveryLine), so
-// this view can never tell a different story.
+// by the SAME functions status uses (mcpStatusLine/mcpDeliveryLine).
+// Sharing the renderer is only half of telling one story -- its degradation
+// arms read statusInfo fields, so every one they consult has to be
+// populated here too, or the arm silently never fires.
 func MCPList(s Streams, projectDir string) error {
 	info, err := listDeclInfo(s, projectDir,
 		func(info *statusInfo, cfg config.Config) {

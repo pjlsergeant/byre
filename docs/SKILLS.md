@@ -82,7 +82,9 @@ there can read them.
 Note the asymmetry, which is easy to trip over: a USER's config has a
 `[files]` key with the same name and a different root. Theirs resolves
 against the project and exists to stage a repo file into the build so
-their own `dockerfile_pre`/`dockerfile_post` can read it; yours resolves
+their own `dockerfile_post` can read it (project files land in the
+project block, after `dockerfile_pre` has already been emitted -- the
+COPY-before-raw property above is yours, not theirs); yours resolves
 against your package and delivers its payload. A user cannot override
 what your skill bakes in -- the config editor shows your files on a
 read-only **Skill files** screen, attributed to you, and the way to

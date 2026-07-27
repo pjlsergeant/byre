@@ -136,7 +136,9 @@ per-worktree directory on the VM, so concurrent sessions don't collide.
 Unset, the VM address falls back across `host.docker.internal` (Docker
 Desktop) and `host.containers.internal` (podman), both egress-granted by
 the skill; native-Linux docker provides neither name, so set
-`BYRE_INTTEST_VM = "172.17.0.1"` there -- the docker bridge gateway, which
+`BYRE_INTTEST_VM` to `172.17.0.1` there (via `run_args`, as above -- the
+`BYRE_` namespace is refused in both config channels) -- the docker
+bridge gateway, which
 the Lima template binds via the guest sshd's second port (the host's own
 address cannot work: Lima's builtin forward is loopback-only). Assumes
 docker's default bridge; a custom `bip` moves the gateway, so adjust both

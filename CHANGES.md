@@ -37,7 +37,7 @@
   drops back to the cascade. Separately, `[files]` was invisible in the editor
   and now has two screens, because it is two things sharing a key name:
   **Build files** (ADVANCED, beside the raw Dockerfile blocks) stages a
-  project file so a `dockerfile_pre`/`post` line can read it, and **Skill
+  project file so a `dockerfile_post` line can read it, and **Skill
   files** is a read-only view of what your skills bake into the image,
   attributed -- fork a skill to change one. Non-obvious screens now carry a
   one-line explainer under their title.
