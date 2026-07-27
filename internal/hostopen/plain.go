@@ -34,6 +34,16 @@ import (
 // Raw os.* calls are refused outside this package by
 // TestHostOpenConformance.
 
+// REACH FOR A PRIMITIVE BEFORE REACHING FOR A REASON. A Reason says "this
+// plain call happens to be fine HERE"; a primitive in this package makes the
+// safe behaviour unavoidable for every future caller too. Most exemptions
+// are a primitive nobody has written yet: if the honest justification is
+// "we never need to follow a symlink at this path", that belongs in a
+// function signature, not in an argument at one call site. A Reason is the
+// right answer only where the safe behaviour genuinely cannot be expressed
+// -- a device byre means to open, a subprocess that resolves the path
+// itself, a directory the user named and owns.
+//
 // Reason is the category under which a plain stdlib call is claimed safe.
 // A closed set on purpose: `rg StoreOwned` answers "show me everything
 // resting on that argument", and a NEW kind of excuse means adding a
