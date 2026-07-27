@@ -185,7 +185,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		if !ok {
 			// Enumeration output is agent input: a record naming a path outside
 			// the grabbed directory is ignored loudly, never landed.
-			fmt.Fprintf(cfg.Err, "byre: ignoring enumerated %q (outside %s)\n", packages.EscapeTerminal(rec.path), phys)
+			fmt.Fprintf(cfg.Err, "byre: ignoring enumerated %q (outside %s)\n", packages.EscapeTerminal(rec.path), packages.EscapeTerminal(phys))
 			failed++
 			continue
 		}
@@ -194,7 +194,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		}
 		clean, renamed, ok := sanitizeGrabRel(rel)
 		if !ok {
-			fmt.Fprintf(cfg.Err, "byre: skipping %s/%s (unusable name)\n", phys, packages.EscapeTerminal(rel))
+			fmt.Fprintf(cfg.Err, "byre: skipping %s/%s (unusable name)\n", packages.EscapeTerminal(phys), packages.EscapeTerminal(rel))
 			failed++
 			continue
 		}
@@ -204,7 +204,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		switch rec.tag {
 		case 'd':
 			if err := tree.mkdirAll(clean); err != nil {
-				fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", packages.EscapeTerminal(clean), err)
+				fmt.Fprintf(cfg.Err, "byre: creating %s: %s\n", packages.EscapeTerminal(clean), packages.EscapeTerminal(err.Error()))
 				failed++
 			}
 		case 'f':
@@ -214,7 +214,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 			// covers a directory born between the two passes.
 			if d := dirOf(clean); d != "" {
 				if err := tree.mkdirAll(d); err != nil {
-					fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", packages.EscapeTerminal(d), err)
+					fmt.Fprintf(cfg.Err, "byre: creating %s: %s\n", packages.EscapeTerminal(d), packages.EscapeTerminal(err.Error()))
 					failed++
 					continue
 				}
@@ -224,7 +224,10 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 					"sh", "-c", catScript, "byre-grab", boxFile)
 			})
 			if err != nil {
-				fmt.Fprintf(cfg.Err, "byre: grabbing %s: %v\n", packages.EscapeTerminal(boxFile), err)
+				// The ERROR text carries the box path back verbatim (the engine echoes
+				// what it was asked for), so escaping the name alone left the same
+				// bytes reaching the terminal by another route.
+				fmt.Fprintf(cfg.Err, "byre: grabbing %s: %s\n", packages.EscapeTerminal(boxFile), packages.EscapeTerminal(err.Error()))
 				failed++
 				continue
 			}

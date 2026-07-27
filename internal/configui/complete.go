@@ -162,7 +162,7 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
-	if err := m.write(cfg, m.forceSave); err != nil {
+	if err := (&m).write(cfg, m.forceSave); err != nil {
 		if errors.Is(err, ErrDrift) {
 			// Don't lose the session's work: arm the overwrite prompt and
 			// leave every edit on screen. Answering y re-saves with force.
@@ -177,11 +177,6 @@ func (m model) save() model {
 	}
 	m.confirmOverwrite = false
 	m.forceSave = false
-	// The write IS the new drift baseline: a second ctrl+s must not read its
-	// own first write as another session's change. reportSaved's opening
-	// snapshot (openRaw) stays untouched -- it answers a different question,
-	// whether the file NET-changed across the whole session.
-	m.saveBase, m.saveBaseErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 	m.errMsg = ""
 	m.savedSig = m.sig()
 	m.savedOnce = true
@@ -195,9 +190,19 @@ func (m model) save() model {
 // store's setup lock, for the target that concurrent worktree sessions
 // share). No guard -- the global and layer editors -- writes directly; the
 // drift check still applies, it is just not serialized.
-func (m model) write(cfg config.Config, force bool) error {
+// The new baseline is captured INSIDE the guard, immediately after the write
+// that established it. Re-reading after the lock releases reopens the very
+// hole drift detection closes: another session's write can land in the gap,
+// become this session's baseline, and the NEXT save then sees no drift and
+// reconciles over it silently (grok, on the round after the open-time
+// dual-read fix -- the same bound, one call site over).
+func (m *model) write(cfg config.Config, force bool) error {
 	do := func() error {
-		return Save(m.filePath, m.followFile, cfg, m.saveBase, m.saveBaseErr, force)
+		if err := Save(m.filePath, m.followFile, cfg, m.saveBase, m.saveBaseErr, force); err != nil {
+			return err
+		}
+		m.saveBase, m.saveBaseErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
+		return nil
 	}
 	if m.guard == nil {
 		return do()

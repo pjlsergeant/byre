@@ -582,10 +582,28 @@ func TestGrabRefusesOversizeControlReply(t *testing.T) {
 func TestGrabEscapesBoxDerivedNamesInReport(t *testing.T) {
 	eng := grabBox()
 	eng.boxdirs = append(eng.boxdirs, "/workspace/out/sub")
-	eng.enumOut = "f /workspace/out/\x1b]0;pwned\x07evil.txt\n"
+	// NUL-framed: tag\0path\0, the shape recordSink parses. A newline-
+	// separated fixture is out of frame and yields NO records, which would
+	// make this assertion vacuous.
+	eng.enumOut = "f\x00/workspace/out/\x1b]0;pwned\x07evil.txt\x00"
 	cfg, _, errw := testConfig(eng)
 	_, _ = RunGrab(cfg, Options{}, "out", t.TempDir())
 	if strings.Contains(errw.String(), "\x1b") {
 		t.Errorf("a box-derived name must not carry raw escapes into the report:\n%q", errw.String())
+	}
+}
+
+// The classify reply's resolved PHYSICAL path is box-derived too -- it is
+// literally the box's answer, `d <path>` -- and it reaches the same report
+// lines. Escaping the enumerated names while printing this one raw is the
+// sibling gap the escaping fix was supposed to close.
+func TestGrabEscapesTheClassifyResolvedPath(t *testing.T) {
+	eng := grabBox()
+	eng.classifyOut = "d /workspace/\x1b]0;pwned\x07out"
+	eng.enumOut = "f\x00/elsewhere/escapee.txt\x00" // outside phys: takes the ignoring-enumerated line
+	cfg, _, errw := testConfig(eng)
+	_, _ = RunGrab(cfg, Options{}, "out", t.TempDir())
+	if strings.Contains(errw.String(), "\x1b") {
+		t.Errorf("the classify-resolved path must not carry raw escapes into the report:\n%q", errw.String())
 	}
 }

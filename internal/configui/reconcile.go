@@ -368,19 +368,30 @@ func reconcilePorts(doc *tomldoc.Doc, cur, want []config.Port) error {
 				}
 			}
 		}
-		// Everything else takes the lowest unclaimed occupied slot, and is
-		// rewritten there; leftovers append.
-		for i := range wants {
-			if target[i] >= 0 {
-				continue
-			}
-			for j := range have {
-				if !claimed[j] {
+		// Then a CHANGED entry takes a slot of its own class -- a binding
+		// rewrites a binding's block, a marker a marker's. Without this,
+		// dropping the marker while editing the binding in one save let the
+		// edited binding claim the marker's block and delete the original
+		// binding's, so the surviving entry lost its comment to a block it
+		// never occupied (grok: the custody bug one user action past the one
+		// the previous round fixed). Only then do leftovers fill, and
+		// anything still unplaced appends.
+		claim := func(sameClass bool) {
+			for i, w := range wants {
+				if target[i] >= 0 {
+					continue
+				}
+				for j, h := range have {
+					if claimed[j] || (sameClass && h.Remove != w.Remove) {
+						continue
+					}
 					claimed[j], target[i] = true, j
 					break
 				}
 			}
 		}
+		claim(true)
+		claim(false)
 		for i, w := range wants {
 			if j := target[i]; j >= 0 {
 				if reflect.DeepEqual(have[j], w) {

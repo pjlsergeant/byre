@@ -699,3 +699,39 @@ func TestEditorReloadIsNotDrift(t *testing.T) {
 		t.Errorf("save after reload errored: %s", m.errMsg)
 	}
 }
+
+// The baseline a save establishes must be captured under the SAME lock that
+// wrote it. Re-reading after the lock releases lets another session's write
+// land in the gap, become this session's baseline, and the next save then
+// sees no drift and reconciles over it silently -- the hole this whole
+// mechanism exists to close, one save later.
+func TestSecondSaveStillDetectsAnotherSessionsWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("base = \"debian\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{Base: "debian"}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+	// The guard stands in for the project lock, and writes the interloper's
+	// bytes the instant the lock is released -- the exact race window.
+	m.guard = func(write func() error) error {
+		err := write()
+		_ = os.WriteFile(path, []byte("base = \"debian\"\negress = [\"api.example.com\"]\n"), 0o644)
+		return err
+	}
+
+	m.ti.SetValue("ubuntu")
+	m = m.save()
+	if m.errMsg != "" || m.confirmOverwrite {
+		t.Fatalf("first save should land: err=%q confirm=%v", m.errMsg, m.confirmOverwrite)
+	}
+
+	m.ti.SetValue("alpine")
+	m = m.save()
+	if !m.confirmOverwrite {
+		t.Error("the SECOND save must still see the other session's write as drift")
+	}
+	if raw, _ := os.ReadFile(path); !strings.Contains(string(raw), "api.example.com") {
+		t.Errorf("nothing may be written over it before the answer:\n%s", raw)
+	}
+}

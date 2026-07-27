@@ -916,3 +916,48 @@ func TestSavePortRemovalKeepsTheSurvivingBlocksComment(t *testing.T) {
 		t.Errorf("wrong ports after removal: %+v", back.Ports)
 	}
 }
+
+// Custody one user action further: drop the marker AND edit the binding in
+// one save. Neither block exact-matches, so slot assignment decides which
+// comment lives -- and a changed entry must take a slot of its own CLASS,
+// or the edited binding claims the marker's block and the original
+// binding's comment is deleted with a block it never occupied.
+func TestSavePortMarkerDropWithEditKeepsTheBindingsComment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	initial := "# marker's note\n[[ports]]\ncontainer = 5432\nremove = true\n\n# binding's note\n[[ports]]\ncontainer = 5432\nhost = 15432\n"
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want config.Config
+	for _, p := range cur.Ports {
+		if !p.Remove {
+			p.Host = 15433 // edited in the same save
+			want.Ports = append(want.Ports, p)
+		}
+	}
+	if err := Save(path, false, want, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "# binding's note") {
+		t.Errorf("the surviving (edited) block must keep its own comment:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "# marker's note") {
+		t.Errorf("the removed marker's comment must go with it:\n%s", raw)
+	}
+	back, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Ports) != 1 || back.Ports[0].Host != 15433 {
+		t.Errorf("wrong ports after drop+edit: %+v", back.Ports)
+	}
+}
