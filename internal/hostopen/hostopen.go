@@ -123,6 +123,39 @@ func OpenDirRootNoFollow(dir string) (*os.Root, error) {
 	return croot, nil
 }
 
+// OpenLockFile opens the advisory-lock file at path, creating it if absent,
+// and refuses to follow a symlink standing at the name. A lock file is byre's
+// own bookkeeping, living in a directory a --self-edit box can write: it is
+// never legitimately a symlink, and a FIFO planted at the name would hang a
+// plain open forever with the lock still unheld. Neither refusal is a
+// judgement worth re-making per call site, so both ride the signature.
+//
+// The returned FileInfo is the descriptor's own — hand it to SameFileAt after
+// locking rather than stat'ing the path a second time, so the "am I still
+// holding what this name means?" question is asked of one inode byre obtained
+// safely, not of two independent lookups.
+func OpenLockFile(path string) (*os.File, os.FileInfo, error) {
+	return finishOpen(os.OpenFile(path,
+		os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0o644))
+}
+
+// SameFileAt reports whether path still names the inode described by fi,
+// WITHOUT following a symlink at the final component — a name that now holds
+// a symlink is by definition not the file that was opened with O_NOFOLLOW.
+// A missing path answers false rather than erroring: "gone" and "replaced"
+// are the same answer to the caller's question, and only a lookup that fails
+// for some other reason is worth propagating.
+func SameFileAt(path string, fi os.FileInfo) (bool, error) {
+	cur, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return os.SameFile(fi, cur), nil
+}
+
 // ReadFileBounded opens path per OpenRegular (fd-judged; follow per the
 // caller's trust ruling) and reads at most limit bytes. Overflow fails
 // loudly -- an oversize file is never truncated and parsed, because a

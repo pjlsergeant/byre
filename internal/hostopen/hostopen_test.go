@@ -254,3 +254,98 @@ func TestOpenDirRootNoFollowIdentityGuard(t *testing.T) {
 		t.Error("the same directory must compare identical, or the guard refuses every legitimate anchor")
 	}
 }
+
+func TestOpenLockFileRefusesASymlinkedName(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("host secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(dir, "lock")
+	if err := os.Symlink(victim, lockPath); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	f, _, err := OpenLockFile(lockPath)
+	if err == nil {
+		f.Close()
+		t.Fatal("a symlinked lock name must be refused")
+	}
+	// Refusal is the contract; so is the victim being untouched. A follow
+	// here would have opened it O_RDWR.
+	got, rerr := os.ReadFile(victim)
+	if rerr != nil || string(got) != "host secret" {
+		t.Fatalf("victim = %q, %v; want unchanged", got, rerr)
+	}
+}
+
+func TestOpenLockFileRefusesAFIFOWithoutHanging(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "lock")
+	if err := syscall.Mkfifo(p, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	f, _, err := OpenLockFile(p)
+	if err == nil {
+		f.Close()
+		t.Fatal("a FIFO at the lock name must be refused")
+	}
+}
+
+func TestOpenLockFileCreatesAndReports(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "lock")
+	f, fi, err := OpenLockFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	// The FileInfo must describe the descriptor byre holds, which is what
+	// makes the SameFileAt re-check meaningful.
+	onDisk, err := os.Lstat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(fi, onDisk) {
+		t.Fatal("returned FileInfo does not describe the opened file")
+	}
+}
+
+func TestSameFileAt(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f")
+	f, fi, err := OpenLockFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if ok, err := SameFileAt(p, fi); err != nil || !ok {
+		t.Fatalf("unchanged: ok=%v err=%v, want true", ok, err)
+	}
+
+	// Unlinked entirely: gone answers false, not an error — the caller's
+	// question is "is this still mine", and "no" is a complete answer.
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := SameFileAt(p, fi); err != nil || ok {
+		t.Fatalf("removed: ok=%v err=%v, want false, nil", ok, err)
+	}
+
+	// A symlink pointing AT the very inode we hold still answers false: the
+	// name is the symlink, not the file, and the lock is held on the file.
+	// Following here would report "still mine" for a name that a later
+	// O_NOFOLLOW open must refuse.
+	if err := os.WriteFile(p, []byte("y"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held, err := os.Lstat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(p, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if ok, err := SameFileAt(link, held); err != nil || ok {
+		t.Fatalf("symlink to the held inode: ok=%v err=%v, want false, nil", ok, err)
+	}
+}

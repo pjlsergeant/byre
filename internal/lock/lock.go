@@ -40,7 +40,7 @@ func TryAcquire(path string) (l *Lock, ok bool, err error) {
 
 func acquire(path string, nonblock bool) (*Lock, error) {
 	for {
-		f, err := hostopen.PlainOpenFile(path, os.O_CREATE|os.O_RDWR, 0o644, hostopen.Unreviewed)
+		f, locked, err := hostopen.OpenLockFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -61,19 +61,15 @@ func acquire(path string, nonblock bool) (*Lock, error) {
 		// file. If the whole store dir is gone the reopen fails ENOENT and
 		// the caller hears it loudly — operating on a deleted store must not
 		// proceed silently.
-		locked, serr := f.Stat()
+		same, serr := hostopen.SameFileAt(path, locked)
 		if serr != nil {
 			f.Close()
 			return nil, serr
 		}
-		current, serr := hostopen.PlainStat(path, hostopen.Unreviewed)
-		if serr == nil && os.SameFile(locked, current) {
+		if same {
 			return &Lock{f: f}, nil
 		}
 		f.Close()
-		if serr != nil && !os.IsNotExist(serr) {
-			return nil, serr
-		}
 	}
 }
 
