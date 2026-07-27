@@ -983,10 +983,12 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		if m.skipQuestions {
 			box = "[x]"
 		}
-		s := box + " configure new projects from these answers without asking"
-		if m.skipQuestions {
-			s += dimStyle.Render("  (includes shared credentials where you picked a companion)")
-		}
+		// The credentials clause is UNCONDITIONAL. It used to appear only once
+		// the box was ticked, so the consequence that matters was invisible at
+		// the moment of deciding -- the reader saw "without asking" and had to
+		// opt in to learn what would stop being asked.
+		s := box + " configure new projects from these answers without asking" +
+			dimStyle.Render("  (including the shared-credentials answer, which grants)")
 		if focused {
 			s = focusStyle.Render(s)
 		}

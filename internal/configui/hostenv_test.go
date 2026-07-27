@@ -595,3 +595,59 @@ func TestEnvFieldSummaryAgreesWithExposure(t *testing.T) {
 		})
 	}
 }
+
+// ADR 0025's second suppression discloses AT the switch, because it acts on
+// projects that do not exist yet. The consequence that matters -- the
+// shared-credentials answer is one of the ones that stops being asked, and
+// answering it grants -- must be readable BEFORE the box is ticked. It used
+// to appear only once it was, so the reader had to opt in to learn what they
+// were opting into.
+func TestSkipQuestionsCheckboxDisclosesCredentialsUnticked(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+	if m.skipQuestions {
+		t.Fatal("fixture must start unticked")
+	}
+	unticked := m.renderValue(fSkipQuestions, false)
+	if !strings.Contains(unticked, "[ ]") {
+		t.Fatalf("expected an unticked box, got %q", unticked)
+	}
+	if !strings.Contains(strings.ToLower(unticked), "credential") {
+		t.Errorf("the unticked checkbox must name what stops being asked: %q", unticked)
+	}
+
+	m.skipQuestions = true
+	if ticked := m.renderValue(fSkipQuestions, false); !strings.Contains(strings.ToLower(ticked), "credential") {
+		t.Errorf("the disclosure must survive ticking too: %q", ticked)
+	}
+}
+
+// The other suppression: a vouched shared-auth companion sitting in
+// default.config stops onboarding offering it at all. Legitimate (an "n"
+// could not have removed it) and invisible, so the Skills screen says so
+// where the switch is -- and only in the GLOBAL editor, since the same skill
+// in a project file grants that box and suppresses no question.
+func TestGlobalSkillsScreenDisclosesSharedAuthSuppression(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"claude-shared-auth": {SharedAuthFor: "claude"},
+		"firewall":           {},
+	}}
+	cfg := config.Config{Skills: []string{"claude-shared-auth", "firewall"}}
+	opts := []string{"claude-shared-auth", "firewall"}
+
+	g := newModel("t", "/tmp/x", cfg, nil, nil, opts, nil, inh, nil, TargetGlobal)
+	view := g.viewSkills()
+	if !strings.Contains(view, "no longer asked about shared credentials") {
+		t.Errorf("the global Skills screen must disclose the suppression:\n%s", view)
+	}
+
+	// Not in a project file: there it is an ordinary grant on one box.
+	p := newModel("t", "/tmp/x", cfg, nil, nil, opts, nil, inh, nil, TargetProject)
+	if pv := p.viewSkills(); strings.Contains(pv, "no longer asked about shared credentials") {
+		t.Errorf("a project file suppresses no question; the note must not appear:\n%s", pv)
+	}
+
+	// And not for a skill that isn't a vouched companion.
+	if strings.Count(view, "no longer asked about shared credentials") != 1 {
+		t.Errorf("only the vouched companion earns the note:\n%s", view)
+	}
+}

@@ -93,14 +93,21 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		if !s.TTY {
 			return nil
 		}
-		// defaults.skip_questions: the user has said, by hand at machine
-		// scope, that new projects take their stored answers without being
-		// asked. Honour it -- including the shared-auth pick, which GRANTS
-		// (the companion goes into the new project's config): the key IS the
-		// standing consent for that, and P5's machine-wide grants are
-		// hand-made rule is satisfied by it being hand-made. What P5 forbids
-		// is a REMEMBERED answer becoming a silent default; this is neither
-		// remembered nor silent -- byre says what it did.
+		// defaults.skip_questions: a standing instruction, set at machine
+		// scope, that new projects take their stored answers unasked. Honour
+		// it -- including the shared-auth pick, which GRANTS (the companion
+		// goes into the new project's config). ADR 0025 records this as its
+		// SECOND suppression, alongside the companion already sitting in
+		// default.config's skills.
+		//
+		// It does not meet the first suppression's bar (skip only a question
+		// whose answer could not matter), so it is allowed on a different
+		// one: an explicit standing instruction, and never silent -- develop
+		// says what it configured and which companion it enabled. NOT
+		// hand-written, whatever an earlier version of this comment claimed:
+		// the usual way to set it is a checkbox in `byre config --global`,
+		// which is why that checkbox names the credential consequence before
+		// it is ticked rather than after.
 		if skipQuestions(paths.Home) {
 			companion := ""
 			if defA != "" && onboard.SharedAuthPreference(paths.Home, defA) {

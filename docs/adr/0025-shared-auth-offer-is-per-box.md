@@ -47,12 +47,36 @@ The mechanics:
 - **Prefill is not auto-grant.** A `[Y/n, i for info]` offer accepts on Enter or
   an explicit y; unrecognized input never lands on the granting side,
   whatever the default.
-- **One suppression only**: the companion already in `default.config`'s
-  `skills` — a hand-made (or `byre config --global`) machine-wide
-  grant. Then the cascade covers every box regardless of any per-box
-  answer, and asking would imply an "n" that does nothing. That grant
-  path remains legitimate and remains the user's to make by hand; the
-  picker never makes it.
+- **Two suppressions, on different grounds.** The first: the companion
+  already in `default.config`'s `skills` — a hand-made (or `byre config
+  --global`) machine-wide grant. Then the cascade covers every box
+  regardless of any per-box answer, and asking would imply an "n" that
+  does nothing. That grant path remains legitimate and remains the
+  user's to make by hand; the picker never makes it.
+
+  The second (amended 2026-07-27): `defaults.skip_questions`, which
+  configures a new project from the stored answers unasked — the
+  shared-auth pick included, and that pick GRANTS. It does not meet the
+  first's bar, and the distinction is worth keeping sharp: the first
+  suppresses a question whose answer could not have mattered; this one
+  suppresses a question whose answer very much does, and assumes yes.
+  It stands on a different ground — an explicit standing instruction at
+  machine scope is not what P5 forbids (a REMEMBERED answer quietly
+  becoming a default) — and it is never silent: develop states what it
+  configured and which companion it enabled. Weighed as low-stakes on
+  the merits too: shared credentials are what nearly every user wants
+  nearly always, and the failure mode is a login shared one project
+  earlier than expected, not a capability the user did not choose.
+
+  **The mitigation is disclosure, and it is load-bearing**, because
+  both suppressions act on projects that do not exist yet. Neither is
+  hand-written in practice: both are switches in `byre config --global`.
+  So each states its consequence AT the switch — the `skip_questions`
+  checkbox names the credential answer among what it will stop asking
+  (before it is ticked, not after), and enabling a vouched companion on
+  the Skills screen says new projects get it and stop being asked. A
+  third suppression, if one is ever added, owes the same disclosure in
+  the same place.
 - **`shared_auth_declined` is vestigial.** v0.1.7 wrote it; under the
   favourite model a "no" needs no record (the default is already No).
   The key stays decodable (strict parsing; v0.1.7 configs must still

@@ -325,6 +325,17 @@ func (m model) viewSkills() string {
 		// enabling the skill in the GRANTS-adjacent skills view never hides
 		// the warranty disclaimer.
 		if e.on() && e.disabled == "" {
+			// A vouched shared-auth companion enabled in THIS file is the one
+			// suppression ADR 0025 allows: onboarding stops offering it,
+			// because the cascade already grants it and an "n" would do
+			// nothing. That is a defensible rule and an invisible one -- the
+			// effect lands on projects that do not exist yet, so the place to
+			// say it is where the switch is thrown. Global editor only: in a
+			// project or layer file this skill grants the box it is in, and
+			// suppresses no question.
+			if m.target == TargetGlobal && m.inh.Skills[e.name].SharedAuthFor != "" {
+				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      → every new project gets this, and is no longer asked about shared credentials"))
+			}
 			if c := m.inh.Skills[e.name].Containment; c != "" {
 				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      🛑 "+c))
 			}

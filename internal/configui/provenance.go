@@ -51,6 +51,14 @@ type SkillRuntime struct {
 	// child of its agent's row so the pairing is visible at the point of
 	// enablement, gate-pending or not.
 	CompanionFor string
+	// SharedAuthFor names the agent this skill is the VOUCHED shared-auth
+	// companion for ("" = not one) -- shared_auth_for, not the pairing
+	// CompanionFor also carries. Distinct because only this one is offered
+	// at onboarding, and so only this one's presence in default.config
+	// SUPPRESSES that offer (ADR 0025): the global editor discloses that
+	// where the skill is enabled, since the effect lands on projects that do
+	// not exist yet.
+	SharedAuthFor string
 	// Provenance is the package provenance (bundled/local/installed/...) for
 	// dim-row labels; empty when unknown.
 	Provenance string
