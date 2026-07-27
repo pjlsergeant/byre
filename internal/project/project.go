@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -214,8 +215,8 @@ func Resolve(projectDir string) (Paths, error) {
 // hash collision and Bootstrap returns an error rather than silently reusing
 // another project's image and volumes.
 //
-// The claim is atomic: the record is staged as a temp file and published
-// with os.Link, which refuses an existing name — so two concurrent FIRST
+// The claim is atomic: the record is published exclusively (a link that
+// refuses an existing name) — so two concurrent FIRST
 // enrollments whose paths collide on one id cannot both pass the fence (a
 // check-then-WriteFile here let both through, and the short id hash is
 // documented safe precisely because collisions fail loudly before any state
@@ -234,20 +235,8 @@ func (p Paths) Bootstrap() error {
 	if err != nil || recorded {
 		return err
 	}
-	tmp, err := hostopen.PlainCreateTemp(p.Dir, ".path-*", hostopen.Unreviewed)
-	if err != nil {
-		return err
-	}
-	defer hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
-	if _, err := tmp.WriteString(p.Canonical + "\n"); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := hostopen.PlainLink(tmp.Name(), p.PathRecord, hostopen.Unreviewed); err != nil {
-		if errors.Is(err, os.ErrExist) {
+	if err := hostopen.PublishFileExclusive(p.PathRecord, p.Canonical+"\n", 0o600); err != nil {
+		if errors.Is(err, fs.ErrExist) {
 			_, cerr := p.checkRecord()
 			return cerr
 		}

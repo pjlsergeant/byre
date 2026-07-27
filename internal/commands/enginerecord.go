@@ -80,31 +80,15 @@ func knownEngine(name string) bool {
 // they stay in the record, so every later develop re-checks and re-discloses
 // them until one finds the engine reachable and empty -- an inconclusive
 // check must never launder the record into silence.
-// Temp+rename: rename(2) replaces the destination's final component without
-// following it, so a symlink a --self-edit agent planted at the record name
-// can't redirect the write onto another host file. Failure degrades loudly,
-// never blocks: the next develop simply re-checks every engine.
+// The record lands via hostopen.PublishFile because a --self-edit box can
+// write this directory. Failure degrades loudly, never blocks: the next
+// develop simply re-checks every engine.
 func recordSessionEngine(w io.Writer, paths project.Paths, eng runner.Engine, unresolved []string) {
 	line := string(eng)
 	for _, u := range unresolved {
 		line += " unresolved=" + u
 	}
-	err := func() error {
-		tmp, err := hostopen.PlainCreateTemp(paths.Dir, ".engine-*", hostopen.Unreviewed)
-		if err != nil {
-			return err
-		}
-		defer hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
-		if _, err := tmp.WriteString(line + "\n"); err != nil {
-			tmp.Close()
-			return err
-		}
-		if err := tmp.Close(); err != nil {
-			return err
-		}
-		return hostopen.PlainRename(tmp.Name(), engineRecordPath(paths), hostopen.Unreviewed)
-	}()
-	if err != nil {
+	if err := hostopen.PublishFile(engineRecordPath(paths), line+"\n", 0o600); err != nil {
 		fmt.Fprintf(w, "byre: couldn't record the session engine (%v) — the next develop will re-check every installed engine\n", err)
 	}
 }

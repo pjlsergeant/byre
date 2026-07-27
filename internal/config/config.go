@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net"
 	"os"
@@ -1826,23 +1827,11 @@ func FromNone(v string) string {
 // store a concurrent `byre forget` deleted WITHOUT its record — a
 // half-enrollment the id-collision check cannot see.
 func AtomicWrite(path, content string) error {
-	dir := filepath.Dir(path)
-	tmp, err := hostopen.PlainCreateTemp(dir, ".byre-write-*", hostopen.Unreviewed)
-	if err != nil {
-		if os.IsNotExist(err) {
+	if err := hostopen.PublishFile(path, content, 0o600); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("writing %s: parent directory is missing (deleted concurrently?): %w", path, err)
 		}
 		return err
 	}
-	tmpName := tmp.Name()
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		hostopen.PlainRemove(tmpName, hostopen.ByreCreated)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		hostopen.PlainRemove(tmpName, hostopen.ByreCreated)
-		return err
-	}
-	return hostopen.PlainRename(tmpName, path, hostopen.Unreviewed)
+	return nil
 }
