@@ -74,12 +74,14 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 - **Code review (mandatory after a feature/fix).** Run `byre-codereview`
   yourself, read every finding, fix or consciously defer each, then re-run with
   `byre-codereview --continue "..."`. Stop when clean.
-- **Substantial work gets TWO reviewers, not one reviewer twice.** After the
-  first reviewer is clean, run the other (`--reviewer grok` when codex went
-  first, and the reverse) with an explicit "you are a second opinion, here
-  is what the first already found" framing, so it hunts fresh ground instead
-  of re-deriving. `--continue` deepens one perspective; it does not add
-  another. Type specimen, 2026-07-28: codex ran five rounds on a batch and
+- **Substantial work gets TWO reviewers, not one reviewer twice.** Run the
+  other one too (`--reviewer grok` when codex is the default, and the
+  reverse), and run it INDEPENDENTLY: no briefing on what the first found.
+  Neither reviewer is told the other's findings, so agreement between them
+  is evidence rather than an echo, and a shared blind spot shows up as a
+  gap in both. Concurrent is fine, and cheaper in wall-clock than waiting
+  for the first to come back clean. `--continue` deepens one perspective; it
+  does not add another. Type specimen, 2026-07-28: codex ran five rounds on a batch and
   called it clean; grok then found three real defects it had never seen,
   two of them the sibling-bound class — including a concurrency hole that
   protected the first save and not the next one.
