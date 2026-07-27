@@ -434,12 +434,15 @@ func scalarSel(opts []string, current, sentinel string) int {
 	return indexOf(opts, current)
 }
 
-// fromScalar maps a selected row back to what gets WRITTEN: inherit writes
-// nothing, and the sentinel writes itself only when an inherit row exists to
-// be distinguished from -- with nothing below, the sentinel and absent mean
-// the same, and byre keeps writing absent so an ordinary save doesn't churn
-// the file.
-func fromScalar(opts []string, sel int, sentinel string) string {
+// fromScalar maps a selected row back to what gets WRITTEN. Inherit writes
+// nothing. The sentinel writes ITSELF when there is an inherit row to be
+// told apart from, or when the file already SAID the sentinel -- onboarding
+// records both axes explicitly for exactly this reason ("none" must win over
+// a template's choice if one is added later), so dropping it on save would
+// destroy a deliberate answer. Otherwise the sentinel writes absent: with
+// nothing below and nothing written, the two mean the same and an ordinary
+// save must not churn the file.
+func fromScalar(opts []string, sel int, sentinel string, storedSentinel bool) string {
 	if sel < 0 || sel >= len(opts) {
 		return ""
 	}
@@ -448,7 +451,7 @@ func fromScalar(opts []string, sel int, sentinel string) string {
 	case isInheritRow(v):
 		return ""
 	case v == sentinel:
-		if hasInheritRow(opts) {
+		if hasInheritRow(opts) || storedSentinel {
 			return sentinel
 		}
 		return ""

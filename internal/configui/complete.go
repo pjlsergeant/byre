@@ -61,6 +61,11 @@ func (m model) onEditorClosed(err error) model {
 		return m
 	}
 	m = m.loadConfig(cfg)
+	// The $EDITOR edit came through byre's OWN ctrl+e flow and is now the
+	// model's state: it is not another session's drift, so it becomes the
+	// save baseline. Without this the next ctrl+s prompted to overwrite the
+	// user's own accepted edit.
+	m.saveBase, m.saveBaseErr = raw, rerr
 	m.errMsg = ""
 	m.status = "Reloaded from file"
 	if deleted {
@@ -172,9 +177,11 @@ func (m model) save() model {
 	}
 	m.confirmOverwrite = false
 	m.forceSave = false
-	// The write IS the new baseline: a second ctrl+s must not read its own
-	// first write as another session's drift.
-	m.openRaw, m.openErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
+	// The write IS the new drift baseline: a second ctrl+s must not read its
+	// own first write as another session's change. reportSaved's opening
+	// snapshot (openRaw) stays untouched -- it answers a different question,
+	// whether the file NET-changed across the whole session.
+	m.saveBase, m.saveBaseErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 	m.errMsg = ""
 	m.savedSig = m.sig()
 	m.savedOnce = true
@@ -190,7 +197,7 @@ func (m model) save() model {
 // drift check still applies, it is just not serialized.
 func (m model) write(cfg config.Config, force bool) error {
 	do := func() error {
-		return Save(m.filePath, m.followFile, cfg, m.openRaw, m.openErr, force)
+		return Save(m.filePath, m.followFile, cfg, m.saveBase, m.saveBaseErr, force)
 	}
 	if m.guard == nil {
 		return do()
@@ -218,9 +225,9 @@ func (m model) assemble() config.Config {
 	if m.target != TargetGlobal {
 		out.Extends = config.FromNone(m.extOpts[m.extSel])
 	}
-	out.Template = fromScalar(m.tmplOpts, m.tmplSel, noneOption)
-	out.Agent = fromScalar(m.agentOpts, m.agentSel, noneOption)
-	out.Engine = fromScalar(m.engineOpts, m.engineSel, "auto")
+	out.Template = fromScalar(m.tmplOpts, m.tmplSel, noneOption, m.tmplStored)
+	out.Agent = fromScalar(m.agentOpts, m.agentSel, noneOption, m.agentStored)
+	out.Engine = fromScalar(m.engineOpts, m.engineSel, "auto", m.engineStored)
 	out.Apt = nilIfEmpty(m.apt)
 	if len(m.env) == 0 {
 		out.Env = nil

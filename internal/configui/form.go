@@ -171,8 +171,12 @@ type model struct {
 	// selecting inherit means the EFFECTIVE value is the inherited one, and
 	// every reader of "what is selected" needs that, not the row text.
 	tmplInherit, agentInherit, engineInherit string
-	extOpts                                  []string // EXTENDS picker (named layers + none)
-	extSel                                   int
+	// Whether the FILE said the sentinel literally (`agent = "none"`,
+	// `engine = "auto"`). Onboarding writes both axes explicitly so an
+	// explicit no beats a later template; a save must give that back.
+	tmplStored, agentStored, engineStored bool
+	extOpts                               []string // EXTENDS picker (named layers + none)
+	extSel                                int
 
 	// Structured working state for the list fields.
 	apt          []string
@@ -265,6 +269,12 @@ type model struct {
 	// the file), anything else cancels. Rare enough not to deserve a merge.
 	confirmOverwrite bool
 	forceSave        bool
+	// saveBase is the drift baseline: the file as this session last KNEW it
+	// (at open, after a ctrl+e reload, or after its own write). Distinct from
+	// openRaw, which stays pinned at open time to answer reportSaved's
+	// net-change question.
+	saveBase    []byte
+	saveBaseErr error
 	// guard wraps each write in the caller's lock (nil = write directly).
 	guard func(func() error) error
 }
@@ -350,6 +360,8 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		volPendClear: -1,
 		openRaw:      openRaw,
 		openErr:      openErr,
+		saveBase:     openRaw, // drift baseline starts at open, then tracks
+		saveBaseErr:  openErr,
 	}
 	return m.loadConfig(cfg)
 }
@@ -368,19 +380,19 @@ func (m model) loadConfig(cfg config.Config) model {
 	// Template first, and its selection with it: the agent/engine inherit rows
 	// consult the selected template as part of the lower cascade.
 	tmplLower, tmplSrc := m.lowerScalar(func(c config.Config) string { return c.Template }, false)
-	m.tmplInherit = tmplLower
+	m.tmplInherit, m.tmplStored = tmplLower, cfg.Template == noneOption
 	m.tmplOpts = scalarOpts(m.templates, cfg.Template, tmplLower, tmplSrc, noneOption, false)
 	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
 	m.tmplSel = scalarSel(m.tmplOpts, cfg.Template, noneOption)
 
 	agentLower, agentSrc := m.lowerScalar(func(c config.Config) string { return c.Agent }, true)
-	m.agentInherit = agentLower
+	m.agentInherit, m.agentStored = agentLower, cfg.Agent == noneOption
 	m.agentOpts = scalarOpts(m.agents, cfg.Agent, agentLower, agentSrc, noneOption, false)
 	// Problem rows appear in pickers disabled-with-reason.
 	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
 
 	engineLower, engineSrc := m.lowerScalar(func(c config.Config) string { return c.Engine }, true)
-	m.engineInherit = engineLower
+	m.engineInherit, m.engineStored = engineLower, cfg.Engine == "auto"
 	m.engineOpts = scalarOpts([]string{"docker", "podman"}, cfg.Engine, engineLower, engineSrc, "auto", true)
 	if cfg.Engine != "" && cfg.Engine != "auto" && !contains(m.engineOpts, cfg.Engine) {
 		m.engineOpts = append(m.engineOpts, cfg.Engine)

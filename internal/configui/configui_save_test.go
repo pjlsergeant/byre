@@ -794,7 +794,7 @@ func TestSaveAllowsUnchangedAndConsistentAbsence(t *testing.T) {
 func TestSavePreservesPortRemoveMarkerBesideBinding(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "byre.config")
-	initial := "[[ports]]\ncontainer = 5432\nremove = true\n\n[[ports]]\ncontainer = 5432\nhost = 15432\n"
+	initial := "# keep me: the marker's own note\n[[ports]]\ncontainer = 5432\nremove = true\n\n[[ports]]\ncontainer = 5432\nhost = 15432\n\n# and this one, on an unrelated port\n[[ports]]\ncontainer = 8080\nhost = 8080\n"
 	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -802,15 +802,15 @@ func TestSavePreservesPortRemoveMarkerBesideBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cur.Ports) != 2 {
-		t.Fatalf("fixture should parse two port blocks, got %+v", cur.Ports)
+	if len(cur.Ports) != 3 {
+		t.Fatalf("fixture should parse three port blocks, got %+v", cur.Ports)
 	}
 	// An EDIT, not a zero-edit save: reconcileBlocks short-circuits on
 	// DeepEqual, so only a changed set exercises the identity collision that
 	// destroyed the marker.
 	edited := config.Config{Ports: append([]config.Port{}, cur.Ports...)}
 	for i := range edited.Ports {
-		if !edited.Ports[i].Remove {
+		if !edited.Ports[i].Remove && edited.Ports[i].Container == 5432 {
 			edited.Ports[i].Host = 15433
 		}
 	}
@@ -821,8 +821,8 @@ func TestSavePreservesPortRemoveMarkerBesideBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(back.Ports) != 2 {
-		t.Fatalf("both port blocks must survive a save, got %+v", back.Ports)
+	if len(back.Ports) != 3 {
+		t.Fatalf("every port block must survive a save, got %+v", back.Ports)
 	}
 	var marker, binding bool
 	for _, p := range back.Ports {
@@ -835,5 +835,39 @@ func TestSavePreservesPortRemoveMarkerBesideBinding(t *testing.T) {
 	}
 	if !marker || !binding {
 		t.Errorf("marker=%v binding=%v — a save must not collapse them: %+v", marker, binding, back.Ports)
+	}
+	// ADR 0044: bytes outside the edited construct survive. A rewrite of the
+	// whole ports construct would satisfy the parse assertions above and
+	// still take every port block's comments with it.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# keep me: the marker's own note", "# and this one, on an unrelated port"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("comment lost by the save: %q\n%s", want, raw)
+		}
+	}
+}
+
+// Onboarding records BOTH axes explicitly, sentinel included, because
+// `agent = "none"` must beat a template's choice if one is added later. The
+// editor must give that answer back: with nothing inherited the sentinel and
+// absence mean the same thing TODAY, but deleting a key the user's config
+// deliberately states is the round-trip destruction this work exists to end.
+func TestScalarPickersPreserveAStoredSentinelWithNothingBelow(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{Template: config.NoneLabel, Agent: config.NoneLabel},
+		[]string{"go"}, []string{"claude"}, nil, nil, Inherited{}, nil, TargetProject)
+	if hasInheritRow(m.agentOpts) {
+		t.Fatalf("nothing below means no inherit row: %v", m.agentOpts)
+	}
+	got := m.assemble()
+	if got.Agent != config.NoneLabel || got.Template != config.NoneLabel {
+		t.Errorf("a stored sentinel must survive a zero-edit save: agent=%q template=%q", got.Agent, got.Template)
+	}
+	// A config that never said it still writes absent -- no churn.
+	m2 := newModel("t", "/tmp/x", config.Config{}, []string{"go"}, []string{"claude"}, nil, nil, Inherited{}, nil, TargetProject)
+	if got := m2.assemble(); got.Agent != "" || got.Template != "" {
+		t.Errorf("an unstated sentinel must stay unstated: agent=%q template=%q", got.Agent, got.Template)
 	}
 }

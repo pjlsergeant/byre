@@ -103,7 +103,12 @@ func (d *Doc) AppendArrayTable(name string, body string) error {
 // comes out in house shape; its glued comments above are kept. False when no
 // block matches.
 func (d *Doc) ReplaceArrayTable(name, matchKey, matchValue, body string) (bool, error) {
-	hdr := d.matchArrayTable(name, matchKey, matchValue)
+	return d.ReplaceArrayTableNth(name, matchKey, matchValue, 0, body)
+}
+
+// ReplaceArrayTableNth is ReplaceArrayTable on the skip-th matching block.
+func (d *Doc) ReplaceArrayTableNth(name, matchKey, matchValue string, skip int, body string) (bool, error) {
+	hdr := d.matchArrayTableNth(name, matchKey, matchValue, skip)
 	if hdr < 0 {
 		return false, nil
 	}
@@ -115,7 +120,12 @@ func (d *Doc) ReplaceArrayTable(name, matchKey, matchValue, body string) (bool, 
 // RemoveArrayTable removes the [[name]] block whose matchKey equals
 // matchValue, glued comments above included. False when no block matches.
 func (d *Doc) RemoveArrayTable(name, matchKey, matchValue string) (bool, error) {
-	hdr := d.matchArrayTable(name, matchKey, matchValue)
+	return d.RemoveArrayTableNth(name, matchKey, matchValue, 0)
+}
+
+// RemoveArrayTableNth is RemoveArrayTable on the skip-th matching block.
+func (d *Doc) RemoveArrayTableNth(name, matchKey, matchValue string, skip int) (bool, error) {
+	hdr := d.matchArrayTableNth(name, matchKey, matchValue, skip)
 	if hdr < 0 {
 		return false, nil
 	}
@@ -219,6 +229,17 @@ func (d *Doc) lastArrayTable(name string) int {
 // is that subtable's, not the block's identity -- and a descendant header
 // doesn't end the candidate block (it's block content, see blockEnd).
 func (d *Doc) matchArrayTable(name, matchKey, matchValue string) int {
+	return d.matchArrayTableNth(name, matchKey, matchValue, 0)
+}
+
+// matchArrayTableNth is matchArrayTable with an OCCURRENCE index: skip is how
+// many matching blocks to pass over first. Identity keys are unique in every
+// vocabulary but one -- a layer may hold both a `remove = true` marker and a
+// binding for the same `[[ports]]` container port -- and there both blocks
+// answer to one selector. Position within the matching set tells them apart
+// without a second selector key, so a caller can replace exactly the block it
+// means and leave its neighbour's bytes and comments alone (ADR 0044).
+func (d *Doc) matchArrayTableNth(name, matchKey, matchValue string, skip int) int {
 	want := []string{name}
 	hdr := -1
 	for i, e := range d.exprs {
@@ -234,7 +255,11 @@ func (d *Doc) matchArrayTable(name, matchKey, matchValue string) int {
 			}
 		case unstable.KeyValue:
 			if hdr >= 0 && eq(e.table, want) && len(e.key) == 1 && e.key[0] == matchKey && e.strValue == matchValue {
-				return hdr
+				if skip == 0 {
+					return hdr
+				}
+				skip--
+				hdr = -1 // this block is spent; don't match it twice
 			}
 		}
 	}

@@ -670,3 +670,32 @@ func TestDriftArmsOverwritePromptAndKeepsEdits(t *testing.T) {
 		t.Errorf("overwrite is wholesale:\n%s", raw)
 	}
 }
+
+// A ctrl+e round-trip goes through byre's OWN flow and is accepted into the
+// model, so the next ctrl+s must not report it as another session's drift and
+// demand an overwrite answer.
+func TestEditorReloadIsNotDrift(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("base = \"debian\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{Base: "debian"}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+
+	// $EDITOR changes the file; byre reloads it.
+	if err := os.WriteFile(path, []byte("base = \"debian\"\napt = [\"jq\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m = m.onEditorClosed(nil)
+	if m.errMsg != "" {
+		t.Fatalf("reload failed: %s", m.errMsg)
+	}
+
+	m = m.save()
+	if m.confirmOverwrite {
+		t.Error("a save after byre's own ctrl+e reload must not prompt to overwrite")
+	}
+	if m.errMsg != "" {
+		t.Errorf("save after reload errored: %s", m.errMsg)
+	}
+}
