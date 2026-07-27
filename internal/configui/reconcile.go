@@ -122,8 +122,7 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 		func(v config.Volume) string { return v.Name }, renderVolume); err != nil {
 		return err
 	}
-	if err := reconcileBlocks(doc, "ports", cur.Ports, want.Ports,
-		func(p config.Port) string { return fmt.Sprintf("%d", p.Container) }, renderPort); err != nil {
+	if err := reconcilePorts(doc, cur.Ports, want.Ports); err != nil {
 		return err
 	}
 	if err := reconcileBlocks(doc, "mcp", cur.MCPs, want.MCPs,
@@ -303,6 +302,71 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 // after its kin, a dropped one is removed with its glued comments. An inline
 // `key = [ {...} ]` spelling of the whole list is one construct and is
 // normalized to blocks when anything in the list changes.
+// reconcilePorts is reconcileBlocks for ports, plus the one shape ports have
+// that no other vocabulary does: a layer may legally hold BOTH a
+// `remove = true` marker and a binding for the same container port (drop the
+// inherited one, publish mine -- pinned by
+// config.TestValidateLayerPortRemoveNoCollision). Identity is the container
+// port everywhere else, and the DOC-level match is the container value too,
+// so both blocks answer to one selector: a save replaced the marker block
+// with the binding and destroyed the marker (or the reverse). There is no
+// second key to select on without generalizing tomldoc's matcher, so the
+// ambiguous case rewrites the whole construct instead -- deterministic, at
+// the cost of re-rendering those blocks in house shape.
+func reconcilePorts(doc *tomldoc.Doc, cur, want []config.Port) error {
+	id := func(p config.Port) string { return fmt.Sprintf("%d", p.Container) }
+	if !portsAmbiguous(cur) && !portsAmbiguous(want) {
+		return reconcileBlocks(doc, "ports", cur, want, id, renderPort)
+	}
+	if reflect.DeepEqual(cur, want) {
+		return nil
+	}
+	if doc.HasKey(nil, "ports") { // inline-array spelling: rewrite whole construct
+		if err := doc.RemoveKey(nil, "ports"); err != nil {
+			return err
+		}
+	}
+	// Remove every existing block (repeatedly per container: duplicates share
+	// the selector, and each call takes the first match), then re-append the
+	// wanted set in order.
+	for _, c := range cur {
+		for {
+			removed, err := doc.RemoveArrayTable("ports", "container", id(c))
+			if err != nil {
+				return err
+			}
+			if !removed {
+				break
+			}
+		}
+	}
+	for _, w := range want {
+		if err := doc.AppendArrayTable("ports", renderPort(w)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// portsAmbiguous reports a container port carrying both a removal marker and
+// a binding in one layer -- the shape whose two blocks share a doc selector.
+func portsAmbiguous(ports []config.Port) bool {
+	marker, binding := map[int]bool{}, map[int]bool{}
+	for _, p := range ports {
+		if p.Remove {
+			marker[p.Container] = true
+		} else {
+			binding[p.Container] = true
+		}
+	}
+	for c := range marker {
+		if binding[c] {
+			return true
+		}
+	}
+	return false
+}
+
 func reconcileBlocks[T any](doc *tomldoc.Doc, name string, cur, want []T, id func(T) string, render func(T) string) error {
 	if reflect.DeepEqual(cur, want) {
 		return nil

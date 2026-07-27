@@ -786,3 +786,54 @@ func TestSaveAllowsUnchangedAndConsistentAbsence(t *testing.T) {
 		t.Fatalf("absent at open and still absent must save: %v", err)
 	}
 }
+
+// A layer may legally hold both a `remove = true` marker and a binding for
+// the same container port (drop the inherited one, publish mine). The editor
+// keyed port blocks on the container port alone, so the two blocks were one
+// identity and a save destroyed the binding.
+func TestSavePreservesPortRemoveMarkerBesideBinding(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	initial := "[[ports]]\ncontainer = 5432\nremove = true\n\n[[ports]]\ncontainer = 5432\nhost = 15432\n"
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cur.Ports) != 2 {
+		t.Fatalf("fixture should parse two port blocks, got %+v", cur.Ports)
+	}
+	// An EDIT, not a zero-edit save: reconcileBlocks short-circuits on
+	// DeepEqual, so only a changed set exercises the identity collision that
+	// destroyed the marker.
+	edited := config.Config{Ports: append([]config.Port{}, cur.Ports...)}
+	for i := range edited.Ports {
+		if !edited.Ports[i].Remove {
+			edited.Ports[i].Host = 15433
+		}
+	}
+	if err := Save(path, false, edited, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	back, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Ports) != 2 {
+		t.Fatalf("both port blocks must survive a save, got %+v", back.Ports)
+	}
+	var marker, binding bool
+	for _, p := range back.Ports {
+		if p.Container == 5432 && p.Remove {
+			marker = true
+		}
+		if p.Container == 5432 && p.Host == 15433 {
+			binding = true
+		}
+	}
+	if !marker || !binding {
+		t.Errorf("marker=%v binding=%v — a save must not collapse them: %+v", marker, binding, back.Ports)
+	}
+}

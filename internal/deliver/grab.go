@@ -6,7 +6,15 @@ import (
 	"io"
 	"path"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/packages"
 )
+
+// maxControlReplyBytes bounds the classification reply -- a control channel
+// whose entire vocabulary is "f" or "d <path>". A box path can be long, so
+// this is generous; it exists to stop an unbounded reply, not to police
+// length.
+const maxControlReplyBytes = 64 << 10
 
 // grab.go is `byre grab <box-path> [<host-path>]`: deliver's mirror. The same
 // machine-scoped discovery picks a box; a small POSIX-sh script classifies the
@@ -79,6 +87,14 @@ func RunGrab(cfg Config, opts Options, boxPath, hostPath string) ([]string, erro
 		"sh", "-c", classifyScript, "byre-grab", abs)
 	if err != nil {
 		return nil, fmt.Errorf("grabbing %s: %w", abs, err)
+	}
+	// This reply is a CONTROL channel, not the payload: its whole vocabulary
+	// is "f" or "d <path>". The package's "stdout is the payload, uncapped"
+	// rule is about the content streams (grabFile/grabDir); a box answering a
+	// classification question with megabytes is the exact shape the stderr cap
+	// exists for, so the same reasoning applies verbatim here.
+	if len(out) > maxControlReplyBytes {
+		return nil, fmt.Errorf("grabbing %s: the box's classification reply exceeded %d bytes — refusing to parse it", abs, maxControlReplyBytes)
 	}
 	switch {
 	case out == "f":
@@ -169,7 +185,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		if !ok {
 			// Enumeration output is agent input: a record naming a path outside
 			// the grabbed directory is ignored loudly, never landed.
-			fmt.Fprintf(cfg.Err, "byre: ignoring enumerated %q (outside %s)\n", rec.path, phys)
+			fmt.Fprintf(cfg.Err, "byre: ignoring enumerated %q (outside %s)\n", packages.EscapeTerminal(rec.path), phys)
 			failed++
 			continue
 		}
@@ -178,17 +194,17 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		}
 		clean, renamed, ok := sanitizeGrabRel(rel)
 		if !ok {
-			fmt.Fprintf(cfg.Err, "byre: skipping %s/%s (unusable name)\n", phys, rel)
+			fmt.Fprintf(cfg.Err, "byre: skipping %s/%s (unusable name)\n", phys, packages.EscapeTerminal(rel))
 			failed++
 			continue
 		}
 		if renamed {
-			fmt.Fprintf(cfg.Err, "byre: renamed %q (control characters) → %q\n", rel, clean)
+			fmt.Fprintf(cfg.Err, "byre: renamed %q (control characters) → %q\n", packages.EscapeTerminal(rel), packages.EscapeTerminal(clean))
 		}
 		switch rec.tag {
 		case 'd':
 			if err := tree.mkdirAll(clean); err != nil {
-				fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", clean, err)
+				fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", packages.EscapeTerminal(clean), err)
 				failed++
 			}
 		case 'f':
@@ -198,7 +214,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 			// covers a directory born between the two passes.
 			if d := dirOf(clean); d != "" {
 				if err := tree.mkdirAll(d); err != nil {
-					fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", d, err)
+					fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", packages.EscapeTerminal(d), err)
 					failed++
 					continue
 				}
@@ -208,14 +224,14 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 					"sh", "-c", catScript, "byre-grab", boxFile)
 			})
 			if err != nil {
-				fmt.Fprintf(cfg.Err, "byre: grabbing %s: %v\n", boxFile, err)
+				fmt.Fprintf(cfg.Err, "byre: grabbing %s: %v\n", packages.EscapeTerminal(boxFile), err)
 				failed++
 				continue
 			}
 			okFiles++
 			nbytes += size
 		case 'o':
-			fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", rec.path)
+			fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", packages.EscapeTerminal(rec.path))
 		}
 	}
 	if sink.truncated {

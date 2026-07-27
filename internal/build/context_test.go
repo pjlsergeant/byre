@@ -1395,3 +1395,28 @@ func TestAgentWritableRootsCoverShapeableTrees(t *testing.T) {
 		}
 	}
 }
+
+// Two TOML keys can clean to one source path, collapsing to a single staged
+// entry whose survivor is map-iteration order -- reproduced across renders as
+// a 7/33 split. That breaks gen's byte-identical output (ADR 0001) and drops
+// a declared build input. Refuse, naming both spellings.
+func TestPlanFilesRejectsDuplicateSources(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths := project.Paths{WorkDir: dir, Canonical: dir}
+	_, _, err := planFiles(paths, map[string]string{"seed.txt": "/opt/A", "./seed.txt": "/opt/B"})
+	if err == nil {
+		t.Fatal("two spellings of one source must be refused")
+	}
+	for _, want := range []string{"seed.txt", "./seed.txt", "same source file"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the rule and both spellings, missing %q: %v", want, err)
+		}
+	}
+	// One spelling each stays legal.
+	if _, _, err := planFiles(paths, map[string]string{"seed.txt": "/opt/A"}); err != nil {
+		t.Errorf("a single source must still plan: %v", err)
+	}
+}

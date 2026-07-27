@@ -561,3 +561,31 @@ func TestEnumerateScript(t *testing.T) {
 		}
 	}
 }
+
+// The classification reply is a CONTROL channel -- its whole vocabulary is
+// "f" or "d <path>" -- not the payload stream the package's uncapped-stdout
+// rule is about. An unbounded reply is exactly the shape the stderr cap
+// exists for, so it is refused rather than parsed.
+func TestGrabRefusesOversizeControlReply(t *testing.T) {
+	eng := grabBox()
+	eng.classifyOut = "d " + strings.Repeat("x", maxControlReplyBytes)
+	cfg, _, _ := testConfig(eng)
+	_, err := RunGrab(cfg, Options{}, "out/report.pdf", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("an oversize control reply must be refused, got %v", err)
+	}
+}
+
+// Box-derived names reach the terminal through the report, and the terminal
+// is the product: a name carrying escape sequences must be neutralized, not
+// replayed into the user's scrollback.
+func TestGrabEscapesBoxDerivedNamesInReport(t *testing.T) {
+	eng := grabBox()
+	eng.boxdirs = append(eng.boxdirs, "/workspace/out/sub")
+	eng.enumOut = "f /workspace/out/\x1b]0;pwned\x07evil.txt\n"
+	cfg, _, errw := testConfig(eng)
+	_, _ = RunGrab(cfg, Options{}, "out", t.TempDir())
+	if strings.Contains(errw.String(), "\x1b") {
+		t.Errorf("a box-derived name must not carry raw escapes into the report:\n%q", errw.String())
+	}
+}

@@ -622,8 +622,17 @@ func canonicalizeLayer(cat *packages.Catalog, c *Config) {
 	if c.Agent != "" && c.Agent != NoneLabel {
 		c.Agent = cat.ExpandAlias(c.Agent)
 	}
-	for i, s := range c.Skills {
-		c.Skills[i] = cat.ExpandAlias(s)
+	// Copy before writing: Config travels BY VALUE through resolution, but a
+	// slice header shares its backing array with the caller's config -- so
+	// expanding in place mutated the caller's own Skills, and a
+	// resolve-then-save path (`byre mcp remove`) persisted alias expansions
+	// nobody asked for.
+	if len(c.Skills) > 0 {
+		expanded := make([]string, len(c.Skills))
+		for i, s := range c.Skills {
+			expanded[i] = cat.ExpandAlias(s)
+		}
+		c.Skills = expanded
 	}
 	// [sources] keys are package references too.
 	if len(c.Sources) > 0 {

@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -646,5 +647,28 @@ func TestPresetApplyDerivedPathRefusesSymlink(t *testing.T) {
 	s2, _, _ := testStreams("y\n", true)
 	if err := PresetApply(s2, proj, filepath.Join(proj, PresetName)); err != nil {
 		t.Errorf("an explicitly named path must still follow the symlink: %v", err)
+	}
+}
+
+// Config travels by value through resolution, but a slice header shares its
+// backing array with the caller's: expanding package aliases in place wrote
+// through to the CALLER's Skills, so a resolve-then-save path (`byre mcp
+// remove` resolves, then saves the layer) persisted alias expansions the user
+// never asked for. Needs the bundled catalog, where "claude" really does
+// expand to "byre/claude".
+func TestResolveDoesNotMutateCallerSkills(t *testing.T) {
+	onboardPaths(t)
+	proj := config.Config{Skills: []string{"claude"}}
+	before := append([]string{}, proj.Skills...)
+
+	resolved, err := config.ResolveProposed(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved.Skills) == 0 || resolved.Skills[0] == before[0] {
+		t.Fatalf("this test needs a real expansion to be meaningful, got %v", resolved.Skills)
+	}
+	if !slices.Equal(proj.Skills, before) {
+		t.Errorf("resolution must not write through to the caller's slice: %v became %v", before, proj.Skills)
 	}
 }

@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -417,7 +419,16 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 	}
 	out := make(map[string]string, len(files))
 	var jobs []fileCopy
-	for src, dest := range files {
+	// Two TOML keys can name ONE source: "seed.txt" and "./seed.txt" clean to
+	// the same relative path, so they collapse to one staged entry and one
+	// destination -- and which survives is map-iteration order, i.e. random
+	// per process. That breaks gen's byte-identical Dockerfile (ADR 0001's
+	// cache sharing rests on it) and silently drops a declared build input.
+	// Refuse, naming both spellings; the file set is walked in sorted key
+	// order so the refusal itself is deterministic too.
+	claimed := map[string]string{}
+	for _, src := range slices.Sorted(maps.Keys(files)) {
+		dest := files[src]
 		if !filepath.IsAbs(dest) {
 			return nil, nil, fmt.Errorf("files: destination %q must be an absolute path in the image", dest)
 		}
@@ -425,6 +436,10 @@ func planFiles(paths project.Paths, files map[string]string) (map[string]string,
 		if err != nil {
 			return nil, nil, fmt.Errorf("files: %w", err)
 		}
+		if prev, dup := claimed[rel]; dup {
+			return nil, nil, fmt.Errorf("files: %q and %q name the same source file (%s) -- two spellings of one path; keep one", prev, src, rel)
+		}
+		claimed[rel] = src
 		// staged is relative to the build-context root (ctxRoot in Assemble),
 		// so every destination write is confined beneath the real context dir.
 		staged := filepath.Join("files", rel)

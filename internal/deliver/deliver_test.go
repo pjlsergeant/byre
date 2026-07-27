@@ -35,12 +35,13 @@ type fakeEngine struct {
 	callerScoped bool // rootless engine: every visible session is the caller's
 
 	// The simulated box filesystem grab reads (grab tests).
-	boxfs    map[string]string // box file path -> content
-	boxdirs  []string          // box directory paths
-	boxOther []string          // box paths that are neither (symlinks, FIFOs)
-	enumOut  string            // overrides enumerateScript output (hostile-output tests)
-	enumErr  error             // enumerateScript exec error (partial-walk tests)
-	catErr   error             // catScript exec error
+	boxfs       map[string]string // box file path -> content
+	boxdirs     []string          // box directory paths
+	boxOther    []string          // box paths that are neither (symlinks, FIFOs)
+	enumOut     string            // overrides enumerateScript output (hostile-output tests)
+	classifyOut string            // overrides classifyScript output (control-channel tests)
+	enumErr     error             // enumerateScript exec error (partial-walk tests)
+	catErr      error             // catScript exec error
 }
 
 func (f *fakeEngine) Name() string { return f.name }
@@ -80,6 +81,9 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 	args := argv[4:] // after the $0 tag
 	switch {
 	case strings.Contains(script, "pwd -P"): // classifyScript: abs path
+		if f.classifyOut != "" {
+			return f.classifyOut, nil
+		}
 		p := args[0]
 		for _, d := range f.boxdirs {
 			if d == p {
