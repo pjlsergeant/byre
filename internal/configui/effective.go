@@ -732,7 +732,7 @@ func (m model) envRows() []listRow {
 			// default.config, so it is not in any chain lowerSource walks --
 			// and "inherited" would leave the user with no idea who to argue
 			// with about the six keys byre ships.
-			from = "byre (shipped default)"
+			from = "byre default"
 		}
 		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}})
 	}

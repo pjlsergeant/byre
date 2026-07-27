@@ -1251,8 +1251,8 @@ func (m model) viewList() string {
 	// Before the rows, not after: this says what the screen IS, and a reader
 	// who learns that at the bottom has already spent the list wondering
 	// which of these they were meant to act on.
-	if isReadOnlyField(m.listField) {
-		b.WriteString(dimStyle.Render("  read-only — a skill's payload is the skill's; fork the skill to change it") + "\n\n")
+	if ex := fieldExplain(m.listField); ex != "" {
+		b.WriteString(dimStyle.Render("  "+ex) + "\n\n")
 	}
 	rows := m.fieldRows(m.listField)
 	if len(rows) == 0 {

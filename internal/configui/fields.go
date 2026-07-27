@@ -31,6 +31,11 @@ type fieldInfo struct {
 	// no add row, no row menu. Skill files is the case -- a skill's payload
 	// is the skill's, and the way to change it is to fork the skill.
 	readOnly bool
+	// explain is one line under the screen's title saying what the screen IS.
+	// Only where the label alone does not carry it: "Ports" and "Packages"
+	// need no gloss, "Build files" is meaningless without one. Kept short --
+	// it shares a line budget with the rows.
+	explain string
 }
 
 var fieldInfos = map[fieldID]fieldInfo{
@@ -44,15 +49,22 @@ var fieldInfos = map[fieldID]fieldInfo{
 	// Dockerfile line can read it. Skill files is a package's payload going
 	// into the image -- read-only, and the screen exists to answer "where did
 	// this come from", not to edit anything.
-	fFiles:           {label: "Build files", kind: kindList, item: "Build file", noun: "file"},
-	fSkillFiles:      {label: "Skill files", kind: kindList, item: "Skill file", noun: "file", readOnly: true},
-	fEnv:             {label: "Env vars", kind: kindList, item: "Env var", noun: "var"},
-	fEgress:          {label: "Egress", kind: kindList, item: "Egress host", noun: "host"},
-	fMounts:          {label: "Extra mounts", kind: kindList, item: "Extra mount", noun: "mount"},
-	fPorts:           {label: "Ports", kind: kindList, item: "Port", noun: "port"},
-	fMCP:             {label: "MCP servers", kind: kindList, item: "MCP server", noun: "server"},
-	fClaudeSkills:    {label: "Claude Skills", kind: kindList, item: "Claude Skill", noun: "skill"},
-	fContext:         {label: "Instructions", kind: kindList, item: "Standing instructions", noun: "snippet"},
+	fFiles: {label: "Build files", kind: kindList, item: "Build file", noun: "file",
+		explain: "stages a project file into the build, so a Dockerfile line can read it"},
+	fSkillFiles: {label: "Skill files", kind: kindList, item: "Skill file", noun: "file", readOnly: true,
+		explain: "read-only — what your skills bake into the image; fork a skill to change it"},
+	fEnv: {label: "Env vars", kind: kindList, item: "Env var", noun: "var",
+		explain: "variables in the box: a literal value, or one passed through from the host"},
+	fEgress: {label: "Egress", kind: kindList, item: "Egress host", noun: "host",
+		explain: "hosts this box may reach when a firewall skill is on"},
+	fMounts: {label: "Extra mounts", kind: kindList, item: "Extra mount", noun: "mount"},
+	fPorts:  {label: "Ports", kind: kindList, item: "Port", noun: "port"},
+	fMCP: {label: "MCP servers", kind: kindList, item: "MCP server", noun: "server",
+		explain: "servers the agent may call — declarations, not grants"},
+	fClaudeSkills: {label: "Claude Skills", kind: kindList, item: "Claude Skill", noun: "skill",
+		explain: "skill directories staged into the box for Claude to load"},
+	fContext: {label: "Instructions", kind: kindList, item: "Standing instructions", noun: "snippet",
+		explain: "standing instructions folded into the agent's context at every launch"},
 	fVolumes:         {label: "Volumes"},
 	fRunArgs:         {label: "Run args", kind: kindText, tomlKey: "run_args"},
 	fDockerfilePre:   {label: "Dockerfile before", kind: kindText, tomlKey: "dockerfile_pre"},
@@ -97,3 +109,7 @@ func fieldNoun(f fieldID, n int) string {
 
 // isReadOnlyField reports whether a list screen refuses edits outright.
 func isReadOnlyField(f fieldID) bool { return fieldInfos[f].readOnly }
+
+// fieldExplain is the one-line gloss under a list screen's title ("" = the
+// label speaks for itself).
+func fieldExplain(f fieldID) string { return fieldInfos[f].explain }
