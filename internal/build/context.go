@@ -200,7 +200,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	// different surface but the same class; a rebuild concurrent with a live
 	// self-edit session is where it applies.
 	ctxName := filepath.Base(paths.ContextDir)
-	storeRoot, err := os.OpenRoot(paths.Dir)
+	storeRoot, err := hostopen.PlainOpenRoot(paths.Dir, hostopen.Unreviewed)
 	if err != nil {
 		return "", err
 	}
@@ -639,7 +639,7 @@ func readBoundedHostFile(agentRoots []string, path string) ([]byte, error) {
 	var f *os.File
 	var fi os.FileInfo
 	if agentRoot, rel, ok := anchorAgentWritable(agentRoots, path); ok {
-		root, err := os.OpenRoot(agentRoot)
+		root, err := hostopen.PlainOpenRoot(agentRoot, hostopen.MountPoint)
 		if err != nil {
 			return nil, err
 		}
@@ -729,7 +729,7 @@ func stageCopy(dstRoot *os.Root, agentRoots []string, j fileCopy) error {
 	if root == "" {
 		return copyPath(j.src, dstRoot, j.staged, j.budget)
 	}
-	r, err := os.OpenRoot(root)
+	r, err := hostopen.PlainOpenRoot(root, hostopen.MountPoint)
 	if err != nil {
 		return err
 	}

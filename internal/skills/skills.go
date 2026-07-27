@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -827,7 +826,7 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 		// resolves against the directory that was actually opened, and the
 		// descriptor is judged (regular file only) so a FIFO or device
 		// fails the load instead of wedging develop.
-		root, rerr := os.OpenRoot(dir)
+		root, rerr := hostopen.PlainOpenRoot(dir, hostopen.StoreOwned)
 		if rerr != nil {
 			return Skill{}, fmt.Errorf("skill %q context: %w", ent.ID, rerr)
 		}

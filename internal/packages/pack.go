@@ -3,9 +3,10 @@ package packages
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"sort"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // Pack emits the distribution manifest for a LOCAL package: the primary
@@ -50,7 +51,7 @@ func Pack(ent *Entry) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("declared id %q does not match catalog id %q", m.ID, ent.ID)
 	}
 
-	entries, err := enumeratePayloads(os.DirFS(ent.Dir), ent.Primary)
+	entries, err := enumeratePayloads(hostopen.PlainDirFS(ent.Dir, hostopen.StoreOwned), ent.Primary)
 	if err != nil {
 		return nil, "", err
 	}

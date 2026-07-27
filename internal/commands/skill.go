@@ -500,7 +500,7 @@ func copyDir(src, dst string) error {
 	// shape pack accepts later). One budget across the copy, aligned with
 	// install's payload budget, so a growing or enormous file fails loudly
 	// instead of exhausting memory.
-	root, err := os.OpenRoot(src)
+	root, err := hostopen.PlainOpenRoot(src, hostopen.StoreOwned)
 	if err != nil {
 		return err
 	}

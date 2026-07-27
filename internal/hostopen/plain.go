@@ -84,6 +84,22 @@ const (
 	// to one question is what a missing word looks like.
 	IdentityChecked Reason = "identity-checked"
 
+	// ProcessTemp: a name byre minted in the SYSTEM temp dir -- os.CreateTemp
+	// with O_EXCL, or os.MkdirTemp at 0700. The directory is shared and byre
+	// does not own it, so ByreCreated would be a lie; but the name is
+	// unguessable and the create is exclusive, so no other party chose what
+	// byre opened. Distinct from HostUserOwned: the user did not name this
+	// path either.
+	ProcessTemp Reason = "process-temp"
+
+	// MountPoint: the path's final component is a BIND-MOUNT SOURCE. A box
+	// can shape everything under it, but it cannot rename the mount point
+	// itself from inside -- so the ROUTE is closed at exactly the component
+	// a plain os.OpenRoot would follow. Anchoring at such a root and
+	// resolving every interior component through it (os.Root's openat) is
+	// the correct pattern, not a gap.
+	MountPoint Reason = "mount-point"
+
 	// Unreviewed means NOBODY HAS CHECKED the three routes for this path.
 	// It is not a disposition -- it is a marker for work not yet done, kept
 	// so a sweep can be honest instead of dressing unexamined calls up as
@@ -143,6 +159,18 @@ func PlainCreateTemp(dir, pattern string, _ Reason) (*os.File, error) {
 func PlainMkdirTemp(dir, pattern string, _ Reason) (string, error) {
 	return os.MkdirTemp(dir, pattern)
 }
+
+// PlainOpenRoot anchors a directory WITHOUT the no-follow check on the final
+// component -- plain os.OpenRoot follows a swapped leaf, which is exactly why
+// OpenDirRootNoFollow exists. Use that instead wherever the leaf is
+// agent-shapeable; this wrapper is for roots whose final component cannot be
+// swapped (a bind-mount point, a byre-owned store dir).
+func PlainOpenRoot(name string, _ Reason) (*os.Root, error) { return os.OpenRoot(name) }
+
+// PlainDirFS opens a directory as an fs.FS. Every read through it resolves by
+// pathname under that directory, so the same three questions apply to it as
+// to an open.
+func PlainDirFS(dir string, _ Reason) fs.FS { return os.DirFS(dir) }
 
 // PlainLink hard-links oldname to newname. Both ends must qualify under the
 // one Reason; byre only ever links a temp it just created onto a destination

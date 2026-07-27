@@ -571,7 +571,7 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// input: write the draft to a temp file, suspend to $EDITOR, and
 		// editorClosedMsg routes back here via prosePath (form.go).
 		if m.listField == fContext && m.itemMode == 0 {
-			f, err := hostopen.PlainCreateTemp("", "byre-context-*.md", hostopen.ByreCreated)
+			f, err := hostopen.PlainCreateTemp("", "byre-context-*.md", hostopen.ProcessTemp)
 			if err != nil {
 				m.itemErr = err.Error()
 				return m, nil

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -168,7 +167,7 @@ func (f *Fetcher) fetchPayloadFile(src *Source, rel string, limit int64) ([]byte
 	// window. Type is judged on the open descriptor (hostopen), and the
 	// read is capped by the remaining budget so growth after the stat can't
 	// bypass it.
-	root, err := os.OpenRoot(src.baseDir)
+	root, err := hostopen.PlainOpenRoot(src.baseDir, hostopen.HostUserOwned)
 	if err != nil {
 		return nil, err
 	}

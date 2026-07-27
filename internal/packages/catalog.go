@@ -732,7 +732,7 @@ func readPrimaryBounded(path string) ([]byte, error) {
 // payloads. For disk packages this is os.DirFS(Dir); for bundled, a sub-FS.
 func (e *Entry) OpenRoot() (fs.FS, error) {
 	if e.Dir != "" {
-		return os.DirFS(e.Dir), nil
+		return hostopen.PlainDirFS(e.Dir, hostopen.StoreOwned), nil
 	}
 	if e.FS != nil {
 		sub, err := fs.Sub(e.FS, e.Sub)

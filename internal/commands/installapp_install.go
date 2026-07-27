@@ -118,7 +118,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return fmt.Errorf("checking %s: %w", svcPath, err)
 	}
 
-	srcDir, err := hostopen.PlainMkdirTemp("", "byre-deliver-app-", hostopen.ByreCreated)
+	srcDir, err := hostopen.PlainMkdirTemp("", "byre-deliver-app-", hostopen.ProcessTemp)
 	if err != nil {
 		return err
 	}
@@ -139,14 +139,14 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return fmt.Errorf("assembling the app (osacompile): %w", err)
 	}
 	// Ship the readable source in the bundle — the artifact stays inspectable.
-	if err := hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", "droplet.applescript"), []byte(source), 0o644, hostopen.ByreCreated); err != nil {
-		_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
+	if err := hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", "droplet.applescript"), []byte(source), 0o644, hostopen.HostUserOwned); err != nil {
+		_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 		return err
 	}
 	// Icon: overwrite the stub's droplet/applet icns with ours.
 	if icns, err := packICNS(deliverIconPNG); err == nil {
 		for _, name := range []string{"droplet.icns", "applet.icns"} {
-			_ = hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", name), icns, 0o644, hostopen.ByreCreated)
+			_ = hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", name), icns, 0o644, hostopen.HostUserOwned)
 		}
 	} else {
 		fmt.Fprintf(s.Err, "byre: warning: icon skipped (%v)\n", err)
@@ -165,11 +165,11 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		backup := filepath.Join(appDir, ".Byre Deliver.previous.app")
 		_ = hostopen.PlainRemoveAll(backup, hostopen.HostUserOwned)
 		if err := hostopen.PlainRename(appPath, backup, hostopen.HostUserOwned); err != nil {
-			_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
+			_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 			return fmt.Errorf("setting the old app aside: %w", err)
 		}
 		if err := hostopen.PlainRename(staged, appPath, hostopen.HostUserOwned); err != nil {
-			_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
+			_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 			if rerr := hostopen.PlainRename(backup, appPath, hostopen.HostUserOwned); rerr != nil {
 				// The one truly bad outcome: say exactly where the working
 				// app still lives instead of claiming a restore that failed.
@@ -181,7 +181,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 			fmt.Fprintf(s.Err, "byre: warning: could not remove the old app's backup at %s (%v) — delete it yourself\n", backup, err)
 		}
 	} else if err := hostopen.PlainRename(staged, appPath, hostopen.HostUserOwned); err != nil {
-		_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
+		_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 		return fmt.Errorf("installing the assembled app: %w", err)
 	}
 	_ = d.run("touch", appPath) // nudge Finder's icon cache

@@ -56,6 +56,12 @@ var watchedCallees = map[string]bool{
 	// name-minting creators: the NAME is byre's, but the DIRECTORY it lands
 	// in may not be, so they answer the same three questions as the rest.
 	"CreateTemp": true, "MkdirTemp": true,
+	// directory ENTRY POINTS. Plain os.OpenRoot follows a swapped final
+	// component -- OpenDirRootNoFollow exists for exactly that -- and every
+	// read through an os.DirFS resolves by pathname underneath it. Anchoring
+	// is what these are for, so an unwatched one is the worst kind of gap:
+	// it looks like containment.
+	"OpenRoot": true, "DirFS": true,
 }
 
 func TestHostOpenConformance(t *testing.T) {
