@@ -105,20 +105,42 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   # The gated engine suite (BYRE_DOCKER_TESTS=1) against the runner's real
-  # Docker. A separate job so the fast unit signal stays fast; release.yml's
+  # engines. A separate job so the fast unit signal stays fast; release.yml's
   # workflow_call pulls this in too, so a release can't ship without it.
   # Interactive iteration on these tests happens on the sacrificial inttest
-  # VM (wip/byre-inttest.yaml); CI is the authoritative gate.
+  # VM (docs/BYRE-DEVELOPMENT.md); CI is the authoritative gate.
+  #
+  # BOTH engines, because byre supports both and only one of them was ever
+  # gated: podman differs where it matters most (rootless --userns=keep-id id
+  # mapping, ADR 0008) and a break there was previously found only by someone
+  # running BYRE_TEST_ENGINE=podman by hand. fail-fast is off so a podman
+  # failure still leaves the docker verdict readable.
   integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: docker
+            timeout: 20m
+          # Podman is several times slower than docker for the same suite, so
+          # it gets its own budget rather than the docker leg's.
+          - engine: podman
+            timeout: 45m
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      - name: install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
+      # uidmap provides newuidmap/newgidmap, which rootless podman needs to
+      # map the invoking user into the box.
+      - name: install tmux and the engine
+        run: sudo apt-get update && sudo apt-get install -y tmux podman uidmap
+      - name: engine version
+        run: ${{ matrix.engine }} --version
       # BYRE_SSH_LOOP_TESTS stays unset here: the runner has no sshd, and
       # those tests edit ~/.ssh — they ride the sacrificial inttest VM.
-      - name: gated integration tests
-        run: BYRE_DOCKER_TESTS=1 BYRE_TUI_TESTS=1 go test ./... -run Integration -v -timeout 20m
+      # BYRE_TEST_ENGINE is explicit on both legs: auto-detect prefers docker,
+      # so without it the podman leg would silently re-run the docker one.
+      - name: gated integration tests (${{ matrix.engine }})
+        run: BYRE_DOCKER_TESTS=1 BYRE_TUI_TESTS=1 BYRE_TEST_ENGINE=${{ matrix.engine }} go test ./... -run Integration -v -timeout ${{ matrix.timeout }}
