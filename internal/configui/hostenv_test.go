@@ -561,3 +561,37 @@ func TestEnvDisabledPassthroughDoesNotRetireASkillSuggestion(t *testing.T) {
 		}
 	}
 }
+
+// The field summary and the exposure line must not disagree about how many
+// variables a box gets. They count differently by construction -- one walks
+// rows, the other distinct keys -- so a key named by two layers double-counted
+// in the first. Live on any gemini project: the skill sets TERM and byre
+// ships a TERM passthrough, which read "7 vars" beside an exposure of 6 once
+// the passthrough stopped being (wrongly) marked dead.
+func TestEnvFieldSummaryAgreesWithExposure(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"gemini": {Env: map[string]string{"TERM": "xterm-256color"}},
+	}}
+	for _, tc := range []struct {
+		name string
+		cfg  config.Config
+	}{
+		{"skill restates a passthrough", config.Config{Skills: []string{"gemini"}}},
+		{"skill restates an [env] literal", config.Config{Skills: []string{"gemini"}, Env: map[string]string{"TERM": "dumb"}}},
+		{"passthrough shadowed by a literal", config.Config{Env: map[string]string{"TZ": "UTC"}}},
+		{"a disabled passthrough", config.Config{EnvFromHost: map[string]string{"TZ": ""}}},
+		{"a pinned passthrough", config.Config{EnvFromHost: map[string]string{"MINE": "env:MINE"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newModel("t", "/tmp/x", tc.cfg, nil, nil, []string{"gemini"}, nil, inh, nil, TargetProject)
+			m.listField = fEnv
+			eff, inherited, fromSkills := m.envCounts()
+			if got := m.exposureNow().Env; got != eff {
+				t.Errorf("field summary says %d vars, exposure line says %d -- one variable, two tallies", eff, got)
+			}
+			if inherited+fromSkills > eff {
+				t.Errorf("shares (%d inherited + %d from skills) exceed the total %d", inherited, fromSkills, eff)
+			}
+		})
+	}
+}

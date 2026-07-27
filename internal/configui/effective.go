@@ -35,12 +35,17 @@ const (
 // field's LOCAL backing slice (the entry or marker this layer owns); -1 for
 // rows this layer doesn't own (inherited, skill).
 type listRow struct {
-	kind     rowKind
-	text     string   // display form of the value
-	ident    string   // removal identity: package, env key, mount target, container port
-	source   string   // "default", "template:go", "skill:x"; "" for pure local
-	also     bool     // local entry duplicating an inherited one (union dedups)
-	disabled bool     // mounts only: present but switched off — no bind
+	kind   rowKind
+	text   string // display form of the value
+	ident  string // removal identity: package, env key, mount target, container port
+	source string // "default", "template:go", "skill:x"; "" for pure local
+	also   bool   // local entry duplicating an inherited one (union dedups)
+	// disabled: present but switched off, and so granting nothing -- a mount
+	// with no bind, or an env_from_host passthrough with an empty source. The
+	// row stays visible and actionable (that is the point: an entry with no
+	// row cannot be switched back on), and every tally skips it. Distinct
+	// from closed: nothing overrode this, it was turned off.
+	disabled bool
 	idx      int      // index into the local slice, or -1
 	vals     []string // inherited raw values, for prefilling an override editor
 	// closed: a LOWER layer's '!' closure subtracts this entry after the
@@ -946,6 +951,72 @@ func (m model) effectiveSkills() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// envCounts tallies the Env screen by distinct KEY rather than by row: one
+// variable in the box is one count, however many layers name it. rowCounts
+// cannot do this -- it is per-row and field-agnostic -- and the two summaries
+// have to agree, because exposureNow's Env counts keys and develop's launch
+// line counts the same way.
+//
+// [env]-vs-passthrough collisions need no dedupe here: the losing passthrough
+// row is already closed, so it never reaches the tally. Skill env is the
+// collision that does, in both directions -- a skill restating an [env] key,
+// and (since skill env stopped shadowing) a skill restating a passthrough.
+// Ranked by the precedence runParams applies: an [env] literal beats the
+// passthrough, which beats the skill's own value.
+func (m model) envCounts() (effective, inherited, fromSkills int) {
+	rank := func(k rowKind) int {
+		switch k {
+		case rowLocal, rowOverride:
+			return 4
+		case rowInherited:
+			return 3
+		case rowHostEnv:
+			return 2
+		case rowSkill:
+			return 1
+		}
+		return 0
+	}
+	best := map[string]listRow{}
+	for _, r := range m.fieldRows(fEnv) {
+		if r.closed || r.disabled {
+			continue
+		}
+		var key string
+		switch r.kind {
+		case rowLocal, rowOverride, rowInherited, rowSkill:
+			k, _, ok := strings.Cut(r.text, "=")
+			if !ok {
+				continue
+			}
+			key = k
+		case rowHostEnv:
+			key = r.ident
+		default:
+			continue
+		}
+		if cur, ok := best[key]; !ok || rank(r.kind) > rank(cur.kind) {
+			best[key] = r
+		}
+	}
+	for _, r := range best {
+		effective++
+		switch r.kind {
+		case rowInherited:
+			inherited++
+		case rowSkill:
+			fromSkills++
+		case rowHostEnv:
+			// A passthrough this file did not pin comes from below it --
+			// byre's core layer at the deepest.
+			if r.idx < 0 {
+				inherited++
+			}
+		}
+	}
+	return
 }
 
 // exposureNow tallies the effective GRANTS rows into the shared one-line

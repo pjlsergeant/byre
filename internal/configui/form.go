@@ -1072,6 +1072,12 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		// List fields count EFFECTIVE state, like the Skills summary: what the
 		// box actually gets, with the inherited/skill share dimmed beside it.
 		eff, inherited, fromSkills, offered := rowCounts(m.fieldRows(f))
+		if f == fEnv {
+			// Env is counted by distinct key, not by row, so this summary and
+			// the exposure line cannot disagree about one variable named by
+			// two layers. Offered has no meaning for env and stays as-is.
+			eff, inherited, fromSkills = m.envCounts()
+		}
 		s := dimStyle.Render("(none)")
 		if eff > 0 {
 			s = fmt.Sprintf("%d %s", eff, fieldNoun(f, eff))
