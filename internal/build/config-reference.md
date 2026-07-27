@@ -77,7 +77,10 @@ exceptions noted inline.
   `KEY = "git:config.key"` (from `git config`), `KEY = "tz:"` (your
   timezone), `KEY = ""` (disable an inherited entry). Values resolve at
   launch and are never baked into the image. Git identity, `TERM`, and
-  `TZ` pass through by default.
+  `TZ` pass through by default. The `BYRE_` prefix is reserved and
+  refused here too -- a passthrough lands in the box's environment
+  exactly as an `[env]` literal does, so the same reservation applies;
+  the deliberate-override route is the `run_args` one below.
 - `egress` -- firewall allowlist extensions, `"host[:port]"` (port
   defaults to 443); `"!host[:port]"` closes a door, even a
   skill-declared one. Only meaningful with a network-posture skill
@@ -93,13 +96,14 @@ exceptions noted inline.
   secrets here -- credentials belong to the agents' own login flows (or
   `env_from_host` for runtime values). The `BYRE_` prefix is reserved
   (those variables parameterize byre's own launch machinery) and
-  refused here; to override one deliberately use
+  refused in both user channels, here and in `[env_from_host]`; to
+  override one deliberately use
   `run_args = ["-e", "BYRE_X=..."]`, which `byre status` shows verbatim
   while degrading the claims it affects.
 - `[files]` -- stages a project file into the build, so a
-  `dockerfile_pre` / `dockerfile_post` line can use it. The build context
-  holds nothing of your project otherwise, so this is what makes the
-  standard dependency-caching pattern possible:
+  `dockerfile_post` line can use it. The build context holds nothing of
+  your project otherwise, so this is what makes the standard
+  dependency-caching pattern possible:
 
   ```toml
   files = { "requirements.txt" = "/tmp/requirements.txt" }
@@ -107,8 +111,10 @@ exceptions noted inline.
   ```
 
   The install then happens once per build and is cached in the image,
-  rather than at every launch. Files are COPY'd BEFORE the raw lines, so
-  a `RUN` can read them. Sources are **project-relative** (`planFiles`
+  rather than at every launch. Files are COPY'd in the project block,
+  after `dockerfile_pre` and before `dockerfile_post` -- so a
+  `dockerfile_post` `RUN` can read them and a `dockerfile_pre` one
+  cannot. Sources are **project-relative** (`planFiles`
   refuses an absolute path, a `..` escape, and a symlink out of the
   tree); the destination is an absolute path in the image, and what
   lands there is read-only. It is NOT a way to pull a file in from

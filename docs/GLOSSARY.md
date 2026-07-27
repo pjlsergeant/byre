@@ -352,8 +352,10 @@ each live entry a grant. Sources are a closed scheme set --
 `git:<config-key>`, `env:<HOST_VAR>` (absent host var sets nothing),
 `tz:` (the host timezone: TZ var if set, else the `/etc/localtime`
 symlink's IANA name), and `""` to disable a lower layer's key. byre's
-core layer ships git identity, TERM, and TZ (ADR 0026/0031). A literal
-value belongs in `[env]`; it is config, not a grant.
+core layer ships git identity, TERM, and TZ (ADR 0026/0031). The `BYRE_`
+namespace is refused here as it is in `[env]` (ADR 0050 tier 1): the
+scheme set limits what a passthrough can SPELL, not what it can reach.
+A literal value belongs in `[env]`; it is config, not a grant.
 
 **Env docs (`env_docs`)**:
 A skill's declared consumed-env guidance (`[runtime.env_docs]`,
