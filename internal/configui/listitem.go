@@ -33,7 +33,15 @@ import (
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.fieldRows(m.listField)
 	addRow := len(rows) // index of the "+ add" pseudo-row
-	if cur, ok := cursorMove(msg.String(), m.listCur, addRow+1); ok {
+	// A read-only screen renders no add row, so it must not be reachable
+	// either: without this the cursor walks one past the last row onto a
+	// slot that paints nothing, which is the same paint-vs-state desync
+	// this batch already paid for twice.
+	reach := addRow + 1
+	if isReadOnlyField(m.listField) {
+		reach = addRow
+	}
+	if cur, ok := cursorMove(msg.String(), m.listCur, reach); ok {
 		m.listCur = cur
 		m.status = ""
 		return m, nil
@@ -377,10 +385,11 @@ func deadEndNote(f fieldID, r listRow) string {
 }
 
 func (m *model) deleteItem(f fieldID, i int) {
-	// A passthrough delete removes this file's PIN, which re-inherits rather
-	// than turning the key off -- the same thing the picker's Inherit option
-	// does. Turning it off is the Disabled scheme, which is a value, not an
-	// absence.
+	// A passthrough delete removes this file's PIN, so the cascade's own
+	// value applies again. It does NOT turn the key off: that is the
+	// picker's `disabled` scheme, which writes KEY = "" -- a value, not an
+	// absence. Delete is the only un-pin route (the picker has no `inherit`
+	// option, because Delete already means exactly that on every list field).
 	if m.itemHostEnv {
 		m.hostEnv = append(m.hostEnv[:i], m.hostEnv[i+1:]...)
 		return

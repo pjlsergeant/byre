@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
@@ -269,5 +271,30 @@ func TestEnvFailedConversionKeepsTheOriginalRow(t *testing.T) {
 	}
 	if v := got.assemble().EnvFromHost["FOO"]; v != "env:FOO" {
 		t.Fatalf("EnvFromHost[FOO] = %q, want the passthrough untouched", v)
+	}
+}
+
+// A read-only screen paints no add row, so the cursor must not reach one:
+// walking past the last row onto a slot that renders nothing is the same
+// paint-vs-state desync this batch has already paid for.
+func TestReadOnlyScreenCursorCannotLeaveTheRows(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"firewall": {Files: map[string]string{"firewall.sh": "/usr/local/bin/byre-firewall"}},
+	}}
+	m := newModel("t", "/tmp/x", config.Config{Skills: []string{"firewall"}}, nil, nil, []string{"firewall"}, nil, inh, nil, TargetProject)
+	m.listField = fSkillFiles
+	n := len(m.fieldRows(fSkillFiles))
+	if n == 0 {
+		t.Fatal("fixture produced no skill rows")
+	}
+	// Exactly n presses from row 0: with the add slot reachable that lands
+	// ON it; without, it wraps back to the first row. (n+5 presses would
+	// wrap either way and prove nothing -- checked by mutation.)
+	for i := 0; i < n; i++ {
+		next, _ := m.updateList(tea.KeyMsg{Type: tea.KeyDown})
+		m = next.(model)
+	}
+	if m.listCur >= n {
+		t.Fatalf("listCur = %d with %d rows -- the cursor reached the add slot a read-only screen does not paint", m.listCur, n)
 	}
 }

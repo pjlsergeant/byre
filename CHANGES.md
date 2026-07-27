@@ -44,7 +44,9 @@
   under `/workspace` is masked by the project mount, one under a state
   volume's mountpoint by the volume. `docs/SKILLS.md` documents the other half
   -- a skill's `[build].files` resolves against the SKILL's directory, not the
-  project.
+  project. `[files]` shapes are also checked at config-load now rather than
+  only at build: an absolute source or a relative destination was always
+  refused, just later and with a build-time error.
 
 - **Plain filesystem calls are banned outside `internal/hostopen`, and byre's
   own records stopped following symlinks planted at their names.** Every one
