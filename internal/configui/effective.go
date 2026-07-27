@@ -59,6 +59,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.aptRows()
 	case fEnv:
 		return m.envRows()
+	case fFiles:
+		return m.filesRows()
 	case fMounts:
 		return m.mountRows()
 	case fPorts:
@@ -609,6 +611,48 @@ func (m model) aptRows() []listRow {
 	return rows
 }
 
+// filesRows renders [files] the way every other cascade list renders: what
+// this file sets, what it inherits, and what a skill contributed -- with the
+// source named. That last part is most of the value here: files is
+// overwhelmingly a skill's key (every builtin agent skill ships its payload
+// through it), so the question a reader actually has is "what is going into
+// my image and who put it there", which was previously unanswerable in the
+// editor because the key had no rows at all.
+func (m model) filesRows() []listRow {
+	localIdx := map[string]int{}
+	for i, kv := range m.files {
+		localIdx[kv.Key] = i
+	}
+	var rows []listRow
+	lower := m.lowerNow().Files
+	for _, src := range slices.Sorted(maps.Keys(lower)) {
+		src := src
+		from := m.lowerSource(func(c config.Config) bool { _, ok := c.Files[src]; return ok })
+		if i, ok := localIdx[src]; ok {
+			rows = append(rows, listRow{kind: rowOverride, text: fileLine(m.files[i]), source: from, idx: i})
+		} else {
+			rows = append(rows, listRow{kind: rowInherited, text: fileLine(kvItem{src, lower[src]}), source: from, vals: []string{src, lower[src]}})
+		}
+	}
+	for i, kv := range m.files {
+		if _, inherited := lower[kv.Key]; !inherited {
+			rows = append(rows, listRow{kind: rowLocal, text: fileLine(kv), idx: i})
+		}
+	}
+	for _, sk := range m.effectiveSkills() {
+		fs := m.inh.Skills[sk].Files
+		for _, src := range slices.Sorted(maps.Keys(fs)) {
+			rows = append(rows, listRow{kind: rowSkill, text: fileLine(kvItem{src, fs[src]}), source: "skill:" + sk})
+		}
+	}
+	return rows
+}
+
+// fileLine renders one baked file. The arrow reads left-to-right as the copy
+// it is -- project source into image destination -- and matches the direction
+// mount rows already use.
+func fileLine(kv kvItem) string { return kv.Key + " → " + kv.Value }
+
 func (m model) envRows() []listRow {
 	localIdx := map[string]int{}
 	for i, kv := range m.env {
@@ -806,7 +850,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0 || len(rt.ClaudeSkills) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0 || len(rt.ClaudeSkills) > 0 || len(rt.Files) > 0) {
 			out = append(out, e.name)
 		}
 	}

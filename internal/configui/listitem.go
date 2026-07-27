@@ -139,7 +139,7 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		return []menuChoice{{"Edit", "e", actEdit}, {"Delete", "d", actDelete}}
 	case rowInherited:
 		switch f {
-		case fEnv:
+		case fEnv, fFiles:
 			return []menuChoice{{"Override here", "e", actOverride}}
 		case fMounts, fMCP, fClaudeSkills, fContext:
 			return []menuChoice{
@@ -282,7 +282,7 @@ func (m *model) removeHere(r listRow) {
 func (m model) startOverride(r listRow) model {
 	next := m.startItem(-1)
 	switch m.listField {
-	case fEnv:
+	case fEnv, fFiles:
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 	case fMounts:
@@ -360,6 +360,8 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.apt = append(m.apt[:i], m.apt[i+1:]...)
 	case fEnv:
 		m.env = append(m.env[:i], m.env[i+1:]...)
+	case fFiles:
+		m.files = append(m.files[:i], m.files[i+1:]...)
 	case fMounts:
 		m.mounts = append(m.mounts[:i], m.mounts[i+1:]...)
 	case fPorts:
@@ -479,6 +481,15 @@ func (m model) startItem(idx int) model {
 			k, val = m.env[idx].Key, m.env[idx].Value
 		}
 		m.inputs = []textinput.Model{newInput(k), newInput(val)}
+	case fFiles:
+		// The labels carry the two rules planFiles enforces at build time, so
+		// a refusal is not the first place a user learns them.
+		m.inputLabels = []string{"Source (in project)", "Destination (absolute, in image)"}
+		src, dest := "", ""
+		if idx >= 0 {
+			src, dest = m.files[idx].Key, m.files[idx].Value
+		}
+		m.inputs = []textinput.Model{newInput(src), newInput(dest)}
 	case fMounts:
 		m.inputLabels = []string{"Host path", "Target (in box)"}
 		host, target := "", ""
@@ -874,6 +885,31 @@ func (m model) commitItem() model {
 			}
 		}
 		m.env = putAt(m.env, m.editIndex, kvItem{Key: k, Value: m.inputs[1].Value()})
+	case fFiles:
+		src := strings.TrimSpace(m.inputs[0].Value())
+		dest := strings.TrimSpace(m.inputs[1].Value())
+		if src == "" || dest == "" {
+			m.itemErr = "source and destination are both required"
+			return m
+		}
+		// Shapes belong to config, not here: this calls the same validator
+		// ValidateLayer runs, so the editor cannot drift from what a layer
+		// will accept (the composition rule above).
+		if err := config.ValidateFiles(map[string]string{src: dest}); err != nil {
+			m.itemErr = err.Error()
+			return m
+		}
+		// files is a map on disk, so two rows sharing a source would silently
+		// collapse on save -- and planFiles refuses two spellings of one
+		// source outright, since which survives would be map-iteration order.
+		clean := filepath.Clean(src)
+		for i, kv := range m.files {
+			if i != m.editIndex && filepath.Clean(kv.Key) == clean {
+				m.itemErr = "duplicate source " + src
+				return m
+			}
+		}
+		m.files = putAt(m.files, m.editIndex, kvItem{Key: src, Value: dest})
 	case fMounts:
 		host := strings.TrimSpace(m.inputs[0].Value())
 		target := strings.TrimSpace(m.inputs[1].Value())

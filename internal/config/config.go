@@ -1085,6 +1085,10 @@ func (c Config) validateScalarsCommon(apt, egress, offered []string, extends fun
 		}
 	}
 
+	if err := ValidateFiles(c.Files); err != nil {
+		return err
+	}
+
 	// Skill names have no config-side grammar (they resolve against the store's
 	// skill dirs at develop time, which fails loudly on a bad name) — but an
 	// entry with no identity would merge into a silent no-op instead: "" names
@@ -1756,6 +1760,28 @@ func CoreEnvFromHost() map[string]string {
 		"TERM":                "env:TERM",
 		"TZ":                  "tz:",
 	}
+}
+
+// ValidateFiles checks the two [files] shape rules that need no filesystem:
+// a source is PROJECT-RELATIVE and a destination is ABSOLUTE in the image.
+// They previously lived only in build's planFiles, so a config carrying a
+// nonsense entry parsed happily and failed at build -- long after the editor
+// that wrote it could have said so. This is the syntactic subset; planFiles
+// still owns what needs the project on disk (escape refusal, and two
+// spellings of one source colliding).
+func ValidateFiles(files map[string]string) error {
+	for _, src := range slices.Sorted(maps.Keys(files)) {
+		if strings.TrimSpace(src) == "" {
+			return fmt.Errorf("files: a source path is empty")
+		}
+		if filepath.IsAbs(src) {
+			return fmt.Errorf("files: source %q must be project-relative, not an absolute host path", src)
+		}
+		if dest := files[src]; !filepath.IsAbs(dest) {
+			return fmt.Errorf("files: destination %q for source %q must be an absolute path in the image", dest, src)
+		}
+	}
+	return nil
 }
 
 // gitConfigKeyRe bounds a git config key to section.name shapes; the value is

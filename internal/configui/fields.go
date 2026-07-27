@@ -30,11 +30,17 @@ type fieldInfo struct {
 }
 
 var fieldInfos = map[fieldID]fieldInfo{
-	fBase:            {label: "Base image"},
-	fTemplate:        {label: "Template"},
-	fAgent:           {label: "Agent"},
-	fEngine:          {label: "Engine"},
-	fApt:             {label: "Packages", kind: kindList, item: "Package", noun: "package"},
+	fBase:     {label: "Base image"},
+	fTemplate: {label: "Template"},
+	fAgent:    {label: "Agent"},
+	fEngine:   {label: "Engine"},
+	fApt:      {label: "Packages", kind: kindList, item: "Package", noun: "package"},
+	// "Baked" is the glossary's word for image-time content, and the label
+	// is where the copy semantics have to land: sitting in BUILD next to
+	// Packages, "Baked files" says frozen-into-the-image without a help
+	// string. "Files" would read as a sibling of Extra mounts, which is
+	// exactly the wrong intuition (that one is live, this one is a copy).
+	fFiles:           {label: "Baked files", kind: kindList, item: "Baked file", noun: "file"},
 	fEnv:             {label: "Env vars", kind: kindList, item: "Env var", noun: "var"},
 	fEgress:          {label: "Egress", kind: kindList, item: "Egress host", noun: "host"},
 	fMounts:          {label: "Extra mounts", kind: kindList, item: "Extra mount", noun: "mount"},

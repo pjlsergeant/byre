@@ -53,6 +53,7 @@ const (
 	fAgent
 	fEngine
 	fApt
+	fFiles // [files] project-relative sources copied into the image (read-only there)
 	fEnv
 	fEgress
 	fMounts
@@ -185,6 +186,7 @@ type model struct {
 	// Structured working state for the list fields.
 	apt          []string
 	env          []kvItem
+	files        []kvItem // [files]: project-relative source -> absolute in-image destination
 	mounts       []config.Mount
 	ports        []config.Port
 	egress       []string             // firewall-allowlist extensions, host[:port] (ADR 0019)
@@ -320,7 +322,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
+		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fFiles, fSkills, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
 	case TargetGlobal:
@@ -332,7 +334,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
-			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fFiles, fSkills, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
@@ -347,7 +349,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
 			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fFiles, fSkills, fMCP, fClaudeSkills, fContext}},
 		}
 	}
 	// The chain pointer: project configs and layers may name a parent layer;
@@ -433,6 +435,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.extSel = indexOf(m.extOpts, config.OrNone(cfg.Extends))
 	m.apt = append([]string{}, cfg.Apt...)
 	m.env = envItems(cfg.Env)
+	m.files = envItems(cfg.Files)
 	m.mounts = append([]config.Mount{}, cfg.Mounts...)
 	m.ports = append([]config.Port{}, cfg.Ports...)
 	m.egress = append([]string{}, cfg.Egress...)

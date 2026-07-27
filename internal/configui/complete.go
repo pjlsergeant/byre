@@ -244,6 +244,15 @@ func (m model) assemble() config.Config {
 		}
 		out.Env = env
 	}
+	if len(m.files) == 0 {
+		out.Files = nil
+	} else {
+		files := make(map[string]string, len(m.files))
+		for _, kv := range m.files {
+			files[kv.Key] = kv.Value // last wins on a duplicate source
+		}
+		out.Files = files
+	}
 	out.Mounts = append([]config.Mount{}, m.mounts...)
 	if len(out.Mounts) == 0 {
 		out.Mounts = nil
@@ -317,6 +326,9 @@ func (m model) sig() string {
 	}
 	for _, kv := range m.env {
 		parts = append(parts, "env:"+kv.Key+"="+kv.Value)
+	}
+	for _, kv := range m.files {
+		parts = append(parts, "file:"+kv.Key+"="+kv.Value)
 	}
 	for _, mt := range m.mounts {
 		parts = append(parts, "mnt:"+mountLine(mt))

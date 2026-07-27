@@ -130,6 +130,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 			rt := configui.SkillRuntime{
 				Mounts:       sk.File.Runtime.Mounts,
 				Env:          sk.File.Runtime.Env,
+				Files:        sk.File.Build.Files,
 				EnvDocs:      sk.File.Runtime.EnvDocs,
 				Egress:       sk.File.Runtime.Egress,
 				Offered:      sk.File.Runtime.EgressOffered,
