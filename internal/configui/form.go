@@ -319,7 +319,19 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 
 	// Grants lead (security-weighty: what the box can reach), then Build, then the
 	// Advanced escape hatches. Volumes sits in Advanced, and only when engine-backed.
-	advanced := []fieldID{fRunArgs, fDockerfilePre, fDockerfilePost}
+	// [files] sits with the raw Dockerfile blocks, not in BUILD, because it is
+	// only useful in relation to them: the build context holds nothing of the
+	// project except what files stages, so `RUN pip install -r ...` has
+	// nothing to read until this puts it there (gen COPYs files BEFORE the raw
+	// lines for exactly that reason). Listed before them, in the order the
+	// user thinks: stage the file, then run against it.
+	//
+	// Not in BUILD on purpose. Overriding a skill's payload from a project
+	// config is not a workflow byre encourages -- fork the skill -- so the
+	// editable half is an advanced build-input mechanism, and the skill rows
+	// on that screen are there to be READ (and to warn about a destination
+	// collision), not acted on.
+	advanced := []fieldID{fRunArgs, fFiles, fDockerfilePre, fDockerfilePost}
 	if vols != nil {
 		advanced = append(advanced, fVolumes)
 	}
@@ -327,7 +339,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fFiles, fSkills, fMCP, fClaudeSkills, fContext}},
+		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
 	case TargetGlobal:
@@ -339,7 +351,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
-			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fFiles, fSkills, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
@@ -354,7 +366,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
 			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fFiles, fSkills, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fMCP, fClaudeSkills, fContext}},
 		}
 	}
 	// The chain pointer: project configs and layers may name a parent layer;

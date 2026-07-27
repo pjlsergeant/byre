@@ -65,24 +65,13 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// Baked files: six rows down from Env vars (Base, Template, Agent,
-	// Engine, Packages, Baked files). A list field with its own item editor,
-	// like mounts above.
+	// modeSkills: Env vars → Skills is six rows down (Base, Template, Agent,
+	// Engine, Packages, Skills).
 	keys := make([]string, 6)
 	for i := range keys {
 		keys[i] = "Down"
 	}
 	e = s.Keys(append(keys, "Enter")...)
-	s.WaitForAfter(e, "a add")
-	e = s.Keys("a")
-	s.WaitForAfter(e, "Add Baked file")
-	e = s.Keys("Escape")
-	s.WaitForAfter(e, "a add")
-	e = s.Keys("Escape")
-	s.WaitForAfter(e, "$EDITOR")
-
-	// modeSkills: one more row down.
-	e = s.Keys("Down", "Enter")
 	s.WaitForAfter(e, "space toggle")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
@@ -91,6 +80,17 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	// Skills, Instructions, Extends, Run args).
 	e = s.Keys("Down", "Down", "Down", "Down", "Down", "Enter")
 	s.WaitForAfter(e, "accept + save")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "$EDITOR")
+
+	// Baked files: one past Run args, in ADVANCED with the raw Dockerfile
+	// blocks it feeds. A list field with its own item editor, like mounts.
+	e = s.Keys("Down", "Enter")
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("a")
+	s.WaitForAfter(e, "Add Baked file")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "a add")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
