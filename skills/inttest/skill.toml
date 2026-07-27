@@ -1,6 +1,6 @@
 [package]
 id = "pjlsergeant/inttest"
-version = "1.0.1"
+version = "1.0.2"
 kind = "skill"
 package_api = 1
 requires_byre = ">=0.4.0"
@@ -15,9 +15,9 @@ files = { "byre-inttest" = "/usr/local/bin/byre-inttest", "byre-inttest.yaml" = 
 # under both engines' spellings of "the host": Docker Desktop's and podman's.
 # Same functional endpoint, so both are granted; the wrapper tries them in
 # order. The DinD runner's addresses (its bridge IP:22, or the host gateway's
-# published 60022) are NOT granted here -- like any BYRE_INTTEST_VM override
-# (which rides run_args; the BYRE_ namespace is refused in both config
-# channels), they need their own egress grant in the box config.
+# published 60022) are NOT granted here -- like any INTTEST_VM override
+# (plain [env]; the names are prefix-free so no BYRE_ refusal applies),
+# they need their own egress grant in the box config.
 egress = ["host.docker.internal:60022", "host.containers.internal:60022"]
 env_docs = { INTTEST_USER = "ssh user on the inttest runner; both runners name it after the HOST user (Lima by convention, the DinD build via --build-arg INTTEST_USER=$USER) -- pass it through with env_from_host = { INTTEST_USER = \"env:USER\" }" }
 
@@ -34,18 +34,18 @@ file = "context.md"
 [[package.files]]
 src = "byre-inttest"
 dest = "byre-inttest"
-sha256 = "e71435c71b37ba66135766bc5f0a4eb07e4a21ca5653d4a98ebfe2f6678490b1"
+sha256 = "75f138752873b091e1a3d3af9f4bd1a72f67d03b959b3776ffb58e5befbe5f22"
 executable = true
 
 [[package.files]]
 src = "byre-inttest.yaml"
 dest = "byre-inttest.yaml"
-sha256 = "c9801e104df544d800738ccd6f4f6cf2625a00de32714ce559039f5e60b5de52"
+sha256 = "3a02af2a83f947738611ba99e472ba33f5205c73906c306663477293bcef3401"
 
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "0cd92e930b5645ae75742f87385ccbd2b3ce6e185aebcc0006ab0d86f197ef97"
+sha256 = "48d238783fceff9c1f2a0e87c693861658359756bd3076716762f948f65e254a"
 
 [[package.files]]
 src = "dind/Dockerfile"

@@ -11,14 +11,14 @@
 #   byre-inttest ./internal/runner/ -run Integration -v
 #   BYRE_TEST_ENGINE=podman byre-inttest            # pin the engine (VM has both)
 #
-# Config (env). The BYRE_-prefixed three are refused in [env] and
-# env_from_host alike (ADR 0050 reserves the namespace), so they ride
-# run_args: run_args = ["-e", "BYRE_INTTEST_VM=..."]. INTTEST_USER is
-# prefix-free and takes the normal passthrough.
+# Config (env). All four names are prefix-free -- the BYRE_ namespace is
+# byre's own (ADR 0050), and a skill's variables were squatting in it -- so
+# every one rides plain [env] or env_from_host, no run_args needed. The old
+# BYRE_INTTEST_* spellings are still read as a fallback, with a rename note.
 #   INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
 #                      user after the HOST user, so pass it through:
 #                      env_from_host = { INTTEST_USER = "env:USER" }
-#   BYRE_INTTEST_VM    VM address. Unset, the wrapper tries the engines'
+#   INTTEST_VM    VM address. Unset, the wrapper tries the engines'
 #                      host names in order: host.docker.internal (Docker
 #                      Desktop), host.containers.internal (podman) -- both
 #                      carry egress grants. Native-Linux docker provides
@@ -27,24 +27,39 @@
 #                      it -- the host's own address cannot work, Lima's
 #                      builtin forward is loopback-only). Grant that egress
 #                      yourself on a firewalled box.
-#   BYRE_INTTEST_PORT  ssh port (default 60022, fixed by the Lima template)
-#   BYRE_INTTEST_KEY   private key (default: the machine-volume path below)
+#   INTTEST_PORT  ssh port (default 60022, fixed by the Lima template)
+#   INTTEST_KEY   private key (default: the machine-volume path below)
 set -eu
 
-KEY="${BYRE_INTTEST_KEY:-/home/dev/.byre-identity/inttest/byre-inttest}"
-VM_USER="${INTTEST_USER:-}"
-VM_PORT="${BYRE_INTTEST_PORT:-60022}"
+# Old-spelling fallback: a box config written before the rename still works,
+# and says so once. New name wins when both are set.
+legacy_note=""
+for pair in VM PORT KEY; do
+  old_var="BYRE_INTTEST_${pair}"
+  new_var="INTTEST_${pair}"
+  if [ -z "$(eval "printf %s \"\${${new_var}:-}\"")" ] && [ -n "$(eval "printf %s \"\${${old_var}:-}\"")" ]; then
+    eval "${new_var}=\"\${${old_var}}\""
+    legacy_note="${legacy_note} ${old_var}"
+  fi
+done
+if [ -n "$legacy_note" ]; then
+  echo "byre-inttest: note --${legacy_note} is the old spelling; the variable is now prefix-free (INTTEST_*), settable in plain [env]." >&2
+fi
 
-# An explicit BYRE_INTTEST_VM is used verbatim; otherwise take the first of
+KEY="${INTTEST_KEY:-/home/dev/.byre-identity/inttest/byre-inttest}"
+VM_USER="${INTTEST_USER:-}"
+VM_PORT="${INTTEST_PORT:-60022}"
+
+# An explicit INTTEST_VM is used verbatim; otherwise take the first of
 # the engines' host names that resolves here.
-VM_HOST="${BYRE_INTTEST_VM:-}"
+VM_HOST="${INTTEST_VM:-}"
 if [ -z "$VM_HOST" ]; then
   for cand in host.docker.internal host.containers.internal; do
     if getent hosts "$cand" >/dev/null 2>&1; then VM_HOST="$cand"; break; fi
   done
   if [ -z "$VM_HOST" ]; then
     echo "byre-inttest: neither host.docker.internal nor host.containers.internal resolves in this box." >&2
-    echo "Native-Linux docker provides neither name: set BYRE_INTTEST_VM to the docker bridge" >&2
+    echo "Native-Linux docker provides neither name: set INTTEST_VM to the docker bridge" >&2
     echo "gateway -- 172.17.0.1 with docker's default bridge -- which the Lima template binds" >&2
     echo "(the host's own address does NOT work: Lima's builtin forward is loopback-only)." >&2
     echo "Grant that endpoint's egress yourself on a firewalled box." >&2

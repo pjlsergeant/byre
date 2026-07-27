@@ -10,15 +10,15 @@ by design: its entire contents are a synced repo copy and image caches.
 The runner is a **Lima VM** where the host can nest VMs, and a **privileged
 DinD container** where it can't (see below). The wrapper's transport is the
 same either way -- but the CONFIG is not: address, port and egress all differ
-per runner. Check `BYRE_INTTEST_VM` / `BYRE_INTTEST_PORT` before assuming the
+per runner. Check `INTTEST_VM` / `INTTEST_PORT` before assuming the
 Lima defaults apply.
 
-Those two, and `BYRE_INTTEST_KEY`, still carry the `BYRE_` prefix, which is
-refused in BOTH user config channels (`[env]` and `env_from_host`, ADR 0050).
-Set them through `run_args` -- the deliberate-override route the refusal
-names -- e.g.
-`run_args = ["-e", "BYRE_INTTEST_VM=172.17.0.1"]`. Only `INTTEST_USER` is
-prefix-free and rides `env_from_host` as the wrapper's own error text says.
+All four variables are prefix-free (`INTTEST_USER/_VM/_PORT/_KEY`), so they
+ride plain `[env]` or `env_from_host` -- e.g. `[env]`
+`INTTEST_VM = "172.17.0.1"`. The old `BYRE_INTTEST_*` spellings are still
+read as a fallback (the wrapper notes the rename); a config still CARRYING
+one in `[env]` fails at load, since that namespace is byre's (ADR 0050) --
+rename the key, drop the prefix.
 
 Habits:
 
@@ -38,7 +38,7 @@ Habits:
   Where the runner is DinD, a connect TIMEOUT is usually the container's
   bridge IP having drifted (they are assignment-ordered): ask for
   `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
-  byre-inttest` and update `BYRE_INTTEST_VM`.
+  byre-inttest` and update `INTTEST_VM`.
 - Don't pipe the wrapper through `tail`/`head`: the pipe takes the exit
   status and a RED suite reports success. Redirect to a file, read that.
 
@@ -62,11 +62,11 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   egress grants. Native-Linux docker provides neither name, and the host's
   own address does NOT work either -- Lima's builtin forward binds host
   loopback only. The template binds a second forward on the docker bridge
-  gateway for exactly this: set `BYRE_INTTEST_VM` to `172.17.0.1` (port stays
+  gateway for exactly this: set `INTTEST_VM` to `172.17.0.1` (port stays
   60022; grant that endpoint's egress yourself on a firewalled box -- the
   skill's grants name only the two defaults). That address assumes docker's
   DEFAULT bridge: a custom `bip` moves the gateway, so adjust the template's
-  `hostIP` and `BYRE_INTTEST_VM` together. Newer Lima versions bind the
+  `hostIP` and `INTTEST_VM` together. Newer Lima versions bind the
   builtin forward wider than loopback, so the template's bridge forward can
   warn `bind: address already in use` at start -- harmless either way: the
   endpoint is served, by one listener or the other (verified 2026-07-21,
@@ -78,10 +78,10 @@ to use. The runner is a privileged Docker-in-Docker container instead
 (`skills/inttest/dind/`), reachable from this box at its bridge IP. The
 wrapper's transport is unchanged; its CONFIG is not:
 
-- `BYRE_INTTEST_PORT` = `22` -- the container's own sshd port. The wrapper
+- `INTTEST_PORT` = `22` -- the container's own sshd port. The wrapper
   still defaults to `60022`, which is Lima's forwarded port and also the
   DinD container's HOST publish mapping (`-p 60022:22`) -- neither applies
-  when reaching the container directly. Setting only `BYRE_INTTEST_VM`
+  when reaching the container directly. Setting only `INTTEST_VM`
   leaves the port wrong and ssh fails.
 - `egress = ["<bridge-ip>:22"]` in the config if the box's network is
   closed. The skill grants only `host.docker.internal:60022` /
@@ -111,4 +111,4 @@ setups where Lima re-seeds cloud-init per start, EVERY restart regenerates
 it. Clear the stale entry in the box with
 `ssh-keygen -R '[<address>]:<port>'` -- with the defaults,
 `ssh-keygen -R '[host.docker.internal]:60022'` (substitute your
-`BYRE_INTTEST_VM`/`BYRE_INTTEST_PORT` overrides if you set them).
+`INTTEST_VM`/`INTTEST_PORT` overrides if you set them).

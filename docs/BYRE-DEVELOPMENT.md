@@ -136,14 +136,14 @@ per-worktree directory on the VM, so concurrent sessions don't collide.
 Unset, the VM address falls back across `host.docker.internal` (Docker
 Desktop) and `host.containers.internal` (podman), both egress-granted by
 the skill; native-Linux docker provides neither name, so set
-`BYRE_INTTEST_VM` to `172.17.0.1` there --
-`run_args = ["-e", "BYRE_INTTEST_VM=172.17.0.1"]`, since the `BYRE_`
-namespace is refused in both config channels -- the docker
-bridge gateway, which
+`INTTEST_VM = "172.17.0.1"` in `[env]` -- the names are prefix-free
+since the rename (the old BYRE_ spellings hard-fail at load in [env];
+the wrapper still reads them from the environment with a note) -- the
+docker bridge gateway, which
 the Lima template binds via the guest sshd's second port (the host's own
 address cannot work: Lima's builtin forward is loopback-only). Assumes
 docker's default bridge; a custom `bip` moves the gateway, so adjust both
-the template's `hostIP` and `BYRE_INTTEST_VM`. Grant that egress yourself
+the template's `hostIP` and `INTTEST_VM`. Grant that egress yourself
 on a firewalled box.
 
 **The agent-contract tier** (`BYRE_AGENT_TESTS=1`, its own gate on top of
@@ -234,14 +234,9 @@ egress = ["172.17.0.4:22"]
 # Lima's forwarded port, which is also this container's host publish mapping
 # (-p 60022:22) -- so setting only the address leaves the port wrong.
 #
-# These two ride run_args, NOT [env]: the wrapper still spells them with the
-# BYRE_ prefix, and that namespace is refused in both user config channels
-# ([env] and env_from_host, ADR 0050). run_args is the deliberate-override
-# route the refusal names, and `byre status` shows it verbatim.
-run_args = [
-  "-e", "BYRE_INTTEST_VM=172.17.0.4",   # the container's bridge IP
-  "-e", "BYRE_INTTEST_PORT=22",
-]
+[env]
+  INTTEST_VM = "172.17.0.4"   # the container's bridge IP
+  INTTEST_PORT = "22"
 ```
 
 That IP is assignment-ordered, so a recreate or reboot can shuffle it and
