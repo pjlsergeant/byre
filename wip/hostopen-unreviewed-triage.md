@@ -30,32 +30,40 @@ caller. Most exemptions are a primitive nobody has written yet.
 
 ## The groups
 
-**A -- the lock (2 sites, `internal/lock/lock.go`).** `OpenFile` +
-the post-flock re-check `Stat`. Primitive: `OpenLockFile(path)` doing
-`O_CREATE|O_RDWR|O_NOFOLLOW`, fd-judged. The re-check gets better than
-no-follow: fstat the descriptor already held, so no pathname is resolved
-twice at all. This was the headline example in the whole `--self-edit`
-argument and it needs no ruling.
+**A -- the lock (2 sites, `internal/lock/lock.go`). DONE (`49f533b7`).**
+`hostopen.OpenLockFile` (`O_CREATE|O_RDWR|O_NOFOLLOW|O_NONBLOCK`, fd-judged)
+and `hostopen.SameFileAt` for the post-flock re-check. The re-check turned out
+to be the sharper bug: it resolved the pathname a DIFFERENT way than the open
+did (`os.Stat` where the open now refuses to follow), so a symlink planted in
+the window read as "still mine".
 
 **B -- atomic publish (7 sites: `config.go` x2, `enginerecord.go` x2,
-`project.go` x3).** All the same shape: `CreateTemp` in a directory, write,
-then `Rename`/`Link` onto the destination. These are byre's own records;
-nobody symlinks them. One primitive that publishes through a root anchored at
-the destination directory removes all seven.
+`project.go` x2). DONE (`d8fe8045`).** `hostopen.PublishFile` /
+`PublishFileExclusive`. The window each site left open was that `CreateTemp`
+and `Rename`/`Link` resolved the destination directory SEPARATELY; the
+primitive opens it once and does both through that descriptor. (The
+`project.go` third site was `MkdirAll`, not a publish -- it belongs to D.)
 
-**C -- existence probes on byre-owned records (9 sites: `rehome.go` x4,
-`refscan.go` x2, `reset.go`, `onboard.go`, `preset.go`'s applied marker).**
-"Does this record exist" never needs to follow. `ExistsNoFollow(path)` takes
-them. CAREFUL: this does NOT extend to config-family files -- a user
-symlinking `~/.byre/default.config` out of a dotfiles repo is a supported
-arrangement, and `ParseFile` already carries an explicit follow flag for it.
+**C -- existence probes (9 sites: `rehome.go` x3, `refscan.go`, `reset.go`,
+`onboard.go`, `preset.go` x4). DONE (`80c4ecf7`).** `hostopen.ExistsNoFollow`
+/ `StatNoFollow`. Most were `os.Stat`, which resolves the leaf -- byre asking
+about its own record and being answered about the link's target.
+`ExistsNoFollow` keeps "provably nothing here" and "could not look" apart,
+because two callers act on absence. NOT swept, as warned: the config family
+(following is `ParseFile`'s explicit trust argument), and `rehome.go`'s probe
+of a recorded project path, where following is the whole question -- a project
+reached through a symlinked path still lives there.
 
-**D -- probes on the agent tree (13 sites: `preset.go` x3, `exitreport.go`
-x4, `forget.go` x4, `build/context.go` x2).** These are ALREADY no-follow.
-The exposure is not the leaf, it is that the PARENT is agent-shapeable, so
-the primitive is an anchored probe (`LstatIn(root, rel)`,
-`ReadDirIn(root, rel)`), not a no-follow flag. Bigger and more delicate than
-A-C; do it deliberately, not as a sweep.
+**D -- probes on the agent tree (13 sites: `exitreport.go` x4, `forget.go`
+x4, `build/context.go` x2, `refscan.go`'s ReadDir, `rehome.go`'s and
+`project.go`'s `MkdirAll`).** The Lstat ones are ALREADY no-follow: the
+exposure is not the leaf, it is that the PARENT is agent-shapeable, so the
+primitive is an anchored probe (`LstatIn(root, rel)`, `ReadDirIn(root, rel)`),
+not a no-follow flag. The two `MkdirAll`s want a third shape: create byre's
+own tail of a path without following a component byre created, while the
+user-owned head (a symlinked `~/.byre` is a legitimate arrangement) still
+resolves. Bigger and more delicate than A-C; do it deliberately, not as a
+sweep.
 
 **E -- user-named paths that may be in-tree (9 sites: `grabhost.go` x2,
 `configui/listitem.go` x2, `seed.go` x2, `skills/claudeskills.go` x2,
@@ -68,5 +76,6 @@ resolves inside an agent-writable root, plain when it does not).
 
 ## Order
 
-A, B, C first -- 18 sites, three primitives, no doctrine attached. Then D.
-E waits for Pete.
+A, B, C are done: 18 sites, five primitives, no doctrine attached -- exactly
+as predicted, none of them needed a ruling. 22 remain. Next is D. E waits for
+Pete.
