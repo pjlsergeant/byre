@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 )
 
 // writeTestClaudeSkill lays down a minimal well-formed Claude Skill dir and
@@ -165,5 +166,32 @@ func TestClaudeSkillListRendersEffectiveSet(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "no agent selected") {
 		t.Errorf("agentless delivery line missing: %s", out.String())
+	}
+}
+
+// A project [files] entry that overwrites the staged Claude Skills dir must
+// stop THIS surface asserting delivery, exactly as it stops `byre status`.
+// The shared renderer's shadow arm can only fire if the caller populated
+// ArtifactShadows, so the sibling list commands each need their own pin: a
+// surface that forgets tells the story status denies.
+func TestClaudeSkillListShadowedArtifactStopsDeliveryClaim(t *testing.T) {
+	dir, projPath, _, s, _ := mcpTestProject(t)
+	src := writeTestClaudeSkill(t, "tdd-loop")
+	out := s.Out.(interface{ String() string })
+
+	cfg := "agent = \"claude\"\n" +
+		"[files]\n" +
+		"\"mine.md\" = \"" + gen.ClaudeSkillsPath + "\"\n" +
+		"[[claude_skills]]\n" +
+		"name = \"tdd-loop\"\n" +
+		"path = \"" + src + "\"\n"
+	if err := os.WriteFile(projPath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClaudeSkillList(s, dir); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !strings.Contains(out.String(), "delivery not warranted") {
+		t.Errorf("a files entry overwriting %s must stop the delivery claim:\n%s", gen.ClaudeSkillsPath, out.String())
 	}
 }

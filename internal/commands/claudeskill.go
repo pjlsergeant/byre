@@ -95,13 +95,20 @@ func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) e
 }
 
 // ClaudeSkillList implements `byre claude-skill list`: the effective declared
-// set, rendered by the SAME functions status uses, so this view can never
-// tell a different story.
+// set, rendered by the SAME functions status uses. Sharing the renderer is
+// only half of telling the same story -- the renderer's degradation arms read
+// statusInfo fields, so a surface that leaves one unpopulated silently skips
+// the arm that field guards.
 func ClaudeSkillList(s Streams, projectDir string) error {
 	info, err := listDeclInfo(s, projectDir,
 		func(info *statusInfo, cfg config.Config) {
 			info.ClaudeSkillsClosed = cfg.ClaudeSkillsClosed
 			info.ClaudeSkills, _ = skills.ClaudeSkillSet(cfg, skills.Resolved{})
+			// Same story as status and mcp list: a project files entry
+			// overwriting the staged dir means the delivery line must stop
+			// asserting. Without this the shared renderer's shadow arm can
+			// never fire HERE, and this surface tells the story status denies.
+			info.ArtifactShadows = artifactShadows(cfg)
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.ClaudeSkills = rv.claudeSkills
