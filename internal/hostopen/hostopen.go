@@ -93,24 +93,40 @@ func OpenDirRootNoFollow(dir string) (*os.Root, error) {
 		return nil, err
 	}
 	defer proot.Close() // the child root below holds its own descriptor
-	// Reject a symlinked final component outright: an escaping one is refused
-	// by OpenRoot anyway, but an in-root one would be silently followed, and
-	// every caller classified dir as a real directory before coming here.
-	li, err := proot.Lstat(base)
+	return openChildNoFollow(proot, base, dir)
+}
+
+// openChildNoFollow descends ONE component of parent and returns a root
+// anchored on it, refusing a symlink there — both the one already standing at
+// the name and the one swapped in behind the check. display names the
+// directory the way the caller's user knows it, for the error.
+//
+// Both guards are load-bearing and neither replaces the other:
+//
+//   - Lstat first, because an ESCAPING symlink is refused by OpenRoot anyway
+//     but an in-root one would be silently followed (os.Root emulates a chroot
+//     and resolves a contained terminal symlink), and every caller classified
+//     this as a real directory before arriving.
+//   - Identity after, because the Lstat→open window is real: name swapped to a
+//     contained symlink, or a different real directory renamed onto it, and
+//     the open lands on an inode the Lstat never saw. Verified against this Go
+//     toolchain, not assumed.
+//
+// It lives here as one function because it was retyped once and the retyped
+// copy dropped the identity half -- exactly the silent-inheritance this
+// package exists to stop. Every no-follow descent goes through here.
+func openChildNoFollow(parent *os.Root, name, display string) (*os.Root, error) {
+	li, err := parent.Lstat(name)
 	if err != nil {
 		return nil, err
 	}
 	if li.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%s: %w", dir, ErrSymlinkRoot)
+		return nil, fmt.Errorf("%s: %w", display, ErrSymlinkRoot)
 	}
-	croot, err := proot.OpenRoot(base)
+	croot, err := parent.OpenRoot(name)
 	if err != nil {
 		return nil, err
 	}
-	// Identity guard for the Lstat→open window: the open must have landed on
-	// the very directory the Lstat classified. If not, base was swapped
-	// mid-flight (a contained symlink OpenRoot followed, or a different real
-	// dir renamed onto base) — refuse rather than anchor the walk elsewhere.
 	ci, err := croot.Stat(".")
 	if err != nil {
 		croot.Close()
@@ -118,7 +134,7 @@ func OpenDirRootNoFollow(dir string) (*os.Root, error) {
 	}
 	if !os.SameFile(li, ci) {
 		croot.Close()
-		return nil, fmt.Errorf("%s: %w", dir, ErrSymlinkRoot)
+		return nil, fmt.Errorf("%s: %w", display, ErrSymlinkRoot)
 	}
 	return croot, nil
 }

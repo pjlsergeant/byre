@@ -77,6 +77,14 @@ func publishInto(root *os.Root, dir, name, content string, perm fs.FileMode, exc
 		tmp.Close()
 		return err
 	}
+	// fchmod on the descriptor byre holds, so perm means perm: the create
+	// above went through umask, and a caller asking for 0644 under a 0077
+	// umask would otherwise get 0600 and no error. No pathname is resolved,
+	// so there is nothing here to swap.
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}

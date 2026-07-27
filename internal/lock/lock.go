@@ -17,8 +17,17 @@ import (
 
 // Lock is a held advisory file lock.
 type Lock struct {
-	f *os.File
+	f  *os.File
+	fi os.FileInfo
 }
+
+// Held describes the INODE this lock is held on, as the descriptor itself
+// reports it. flock is per-inode, so a caller that goes on to MUTATE the
+// locked directory needs this: the name it locked can be renamed away and
+// replaced underneath it, and acting on the name would then act on a store
+// belonging to whoever created the replacement, with this process's lock
+// protecting the old one. Compare before you delete.
+func (l *Lock) Held() os.FileInfo { return l.fi }
 
 // Acquire blocks until the lock at path is held.
 func Acquire(path string) (*Lock, error) {
@@ -67,7 +76,7 @@ func acquire(path string, nonblock bool) (*Lock, error) {
 			return nil, serr
 		}
 		if same {
-			return &Lock{f: f}, nil
+			return &Lock{f: f, fi: locked}, nil
 		}
 		f.Close()
 	}

@@ -113,16 +113,13 @@ func MkdirAllIn(parent, rel string, perm fs.FileMode) error {
 		if err := cur.Mkdir(comp, perm); err != nil && !errors.Is(err, fs.ErrExist) {
 			return err
 		}
-		// Mkdir returning EEXIST says the name is taken, not that a directory
-		// is there. Judge it before descending.
-		fi, err := cur.Lstat(comp)
-		if err != nil {
-			return err
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s under %s: %w", comp, parent, ErrSymlinkRoot)
-		}
-		next, err := cur.OpenRoot(comp)
+		// Mkdir returning EEXIST says the NAME is taken, not that a directory
+		// is there -- so the descent judges the component rather than trusting
+		// the create. openChildNoFollow owns both halves of that judgment (the
+		// symlink already standing there, and the one swapped in behind the
+		// check); a hand-rolled descent here dropped the second, which is why
+		// there is now exactly one implementation.
+		next, err := openChildNoFollow(cur, comp, filepath.Join(parent, rel))
 		if err != nil {
 			return err
 		}

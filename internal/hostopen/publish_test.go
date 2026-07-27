@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -186,5 +187,25 @@ func TestPublishThroughASymlinkedDirectory(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(real, "record"))
 	if err != nil || string(got) != "x\n" {
 		t.Fatalf("content = %q, %v; want it landed in the real directory", got, err)
+	}
+}
+
+func TestPublishFileHonoursPermUnderAHostileUmask(t *testing.T) {
+	// The create goes through umask, so a caller asking for 0644 would
+	// silently get 0600 and no error. Callers that need a mode (the AGENTS.md
+	// guide) previously chmod'd explicitly; the primitive owes them the same.
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+
+	p := filepath.Join(t.TempDir(), "guide")
+	if err := PublishFile(p, "x\n", 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o644 {
+		t.Fatalf("mode = %04o, want 0644", got)
 	}
 }

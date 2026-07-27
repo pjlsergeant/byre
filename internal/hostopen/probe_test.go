@@ -161,3 +161,47 @@ func TestMkdirAllInFollowsASymlinkedParent(t *testing.T) {
 		t.Fatalf("landed in the real directory? %v", err)
 	}
 }
+
+// A CONTAINED symlink -- one pointing inside the root -- is the case os.Root
+// resolves happily, so it is the one a descent has to refuse for itself. The
+// other half of the guard (the identity check, for a name swapped in the
+// Lstat->open window) is not reachable without a seam; its predicate is
+// pinned by TestOpenDirRootNoFollowIdentityGuard, and MkdirAllIn inherits it
+// by going through this same function rather than a second copy.
+func TestOpenChildNoFollowRefusesAContainedSymlink(t *testing.T) {
+	base := t.TempDir()
+	parent := filepath.Join(base, "parent")
+	if err := os.MkdirAll(filepath.Join(parent, "target"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("target", filepath.Join(parent, "child")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	root, err := os.OpenRoot(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if r, err := openChildNoFollow(root, "child", filepath.Join(parent, "child")); err == nil {
+		r.Close()
+		t.Fatal("a contained symlink must be refused, not resolved")
+	}
+}
+
+func TestMkdirAllInRefusesAContainedSymlinkComponent(t *testing.T) {
+	base := t.TempDir()
+	parent := filepath.Join(base, "byre")
+	if err := os.MkdirAll(filepath.Join(parent, "projects", "target"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Contained, so os.Root resolves it: only the descent's own check refuses.
+	if err := os.Symlink("target", filepath.Join(parent, "projects", "proj-abc123")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if err := MkdirAllIn(parent, filepath.Join("projects", "proj-abc123", "context"), 0o755); err == nil {
+		t.Fatal("a contained symlink at a store component must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(parent, "projects", "target", "context")); err == nil {
+		t.Fatal("created through the contained symlink")
+	}
+}

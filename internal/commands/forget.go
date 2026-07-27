@@ -227,10 +227,34 @@ func removeEmptiedStore(dir string) error {
 	if !ok {
 		return fmt.Errorf("not removing %s: a concurrent byre is using it (its contents were already deleted)", dir)
 	}
-	// Both removals go through anchored roots for the same reason the clear
-	// above does: the lock file is unlinked from the verified store directory,
-	// and the store directory itself from its verified parent.
-	rmErr := removeIn(dir, "lock")
+	// Bind the unlink to the inode the flock is actually held on. flock is
+	// per-inode and everything below acts on NAMES, so a store renamed away
+	// and replaced between the acquire and here would have the REPLACEMENT's
+	// lock file unlinked while this process's lock still protected the old
+	// one -- splitting the mutex it exists to hold. This closes only that
+	// sliver; what protects a repopulated store's CONTENTS is the
+	// non-recursive removal below, which fails rather than taking them with
+	// it. Refusing costs nothing either way: the caller warns, and a leftover
+	// store is a candidate-list wart, not lost state.
+	root, err := hostopen.OpenDirRootNoFollow(dir)
+	if err != nil {
+		l.Release()
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	held, herr := root.Lstat("lock")
+	if herr != nil || !os.SameFile(held, l.Held()) {
+		root.Close()
+		l.Release()
+		if herr != nil && os.IsNotExist(herr) {
+			return nil // already gone
+		}
+		return fmt.Errorf("not removing %s: it was replaced since its lock was taken (a concurrent byre re-created it)", dir)
+	}
+	rmErr := root.Remove("lock")
+	root.Close()
 	dirErr := removeIn(filepath.Dir(dir), filepath.Base(dir))
 	relErr := l.Release()
 	if rmErr != nil && !os.IsNotExist(rmErr) {

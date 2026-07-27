@@ -90,20 +90,7 @@ func writeIndex(home string, idx map[string]IndexEntry) error {
 		fmt.Fprintf(&b, "uri = %q\n", e.URI)
 		fmt.Fprintf(&b, "installed_at = %q\n", e.InstalledAt)
 	}
-	tmp, err := hostopen.PlainCreateTemp(packagesDir(home), ".index-*", hostopen.StoreOwned)
-	if err != nil {
-		return err
-	}
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		tmp.Close()
-		hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
-		return err
-	}
-	return hostopen.PlainRename(tmp.Name(), indexPath(home), hostopen.ByreCreated)
+	return hostopen.PublishFile(indexPath(home), b.String(), 0o600)
 }
 
 // WithStoreLock ensures the packages dir, takes the store-global lock,

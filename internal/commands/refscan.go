@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,7 +18,7 @@ import (
 type refHit struct {
 	Where   string // human location: "project my-app" / "default.config"
 	Path    string
-	Guarded bool // unparsable config counted as a hit (the guarded path)
+	Guarded bool // config (or directory listing) byre could not read, counted as a hit
 }
 
 // scanReferences is the conservative reference extractor: syntactic
@@ -51,9 +53,21 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	// Every entry is a candidate -- no IsDir filter, so symlinked dirs
 	// (which resolution follows) are scanned too; check's stat skips
 	// entries with no config file under them.
-	subdirs := func(dir string) []string {
-		entries, err := hostopen.ReadDirNoFollow(dir)
+	//
+	// The listing FOLLOWS, mirroring resolution (LoadExtendsChain), and it
+	// must: a scan that refused a symlinked layers/ or projects/ where
+	// resolution loads through it would report no references for configs that
+	// are live, and under-reporting is exactly what lets an uninstall break a
+	// running box. A directory that cannot be listed is likewise not "no
+	// references" -- it is "cannot prove there are none", which is the guarded
+	// hit this whole scanner is built around. Only a genuinely absent
+	// directory is silence.
+	subdirs := func(where, dir string) []string {
+		entries, err := hostopen.PlainReadDir(dir, hostopen.StoreOwned)
 		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				hits = append(hits, refHit{Where: where, Path: dir, Guarded: true})
+			}
 			return nil
 		}
 		names := make([]string, 0, len(entries))
@@ -65,7 +79,7 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	}
 
 	check("default.config", filepath.Join(home, "default.config"))
-	for _, n := range subdirs(config.LayersDir(home)) {
+	for _, n := range subdirs("layers", config.LayersDir(home)) {
 		// Resolution refuses invalid and reserved (bundled-shadowing) names
 		// outright — a squatter dir under such a name is never loaded into
 		// any cascade (LoadExtendsChain), so a reference or parse failure
@@ -76,7 +90,7 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 		}
 		check("layer "+n, filepath.Join(config.LayersDir(home), n, config.LayerConfigName))
 	}
-	for _, n := range subdirs(filepath.Join(home, "projects")) {
+	for _, n := range subdirs("projects", filepath.Join(home, "projects")) {
 		check("project "+n, filepath.Join(home, "projects", n, "byre.config"))
 	}
 	return hits
@@ -111,7 +125,7 @@ func renderRefHits(hits []refHit) string {
 	var b strings.Builder
 	for _, h := range hits {
 		if h.Guarded {
-			fmt.Fprintf(&b, "  %s  (could not parse %s -- counted as a reference)\n", h.Where, h.Path)
+			fmt.Fprintf(&b, "  %s  (could not read %s -- counted as a reference)\n", h.Where, h.Path)
 		} else {
 			fmt.Fprintf(&b, "  %s\n", h.Where)
 		}

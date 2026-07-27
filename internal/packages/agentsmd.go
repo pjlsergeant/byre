@@ -67,22 +67,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 			}
 		}
 	}
-	tmp, err := hostopen.PlainCreateTemp(home, ".agents-md-*", hostopen.StoreOwned)
-	if err != nil {
-		return fmt.Errorf("agents guide: %w", err)
-	}
-	defer hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
-	if _, err := tmp.WriteString(agentsMD); err != nil {
-		tmp.Close()
-		return fmt.Errorf("agents guide: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("agents guide: %w", err)
-	}
-	if err := hostopen.PlainChmod(tmp.Name(), 0o644, hostopen.ByreCreated); err != nil {
-		return fmt.Errorf("agents guide: %w", err)
-	}
-	if err := hostopen.PlainRename(tmp.Name(), path, hostopen.ByreCreated); err != nil {
+	if err := hostopen.PublishFile(path, agentsMD, 0o644); err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
 	if out != nil {
