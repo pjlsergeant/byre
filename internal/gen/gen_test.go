@@ -272,3 +272,27 @@ func TestAptNpmPackagesAreShellQuoted(t *testing.T) {
 		t.Errorf("npm packages should be shell-quoted:\n%s", out)
 	}
 }
+
+// writeEnv's emit loop never executed in any test: the golden fixture uses an
+// empty Env map, so deleting the sort left the suite green while the
+// Dockerfile's byte-stability (ADR 0001's cache sharing) quietly died. Env
+// keys arrive from a Go map, whose iteration order is randomized per process.
+func TestWriteEnvEmitsSortedAndQuoted(t *testing.T) {
+	env := map[string]string{"ZED": "z", "ALPHA": "a", "MID": "with \"quotes\" and \\slash"}
+	var first string
+	for i := 0; i < 20; i++ { // map order is randomized per RANGE, so repeat
+		var b strings.Builder
+		writeEnv(&b, env)
+		if i == 0 {
+			first = b.String()
+			continue
+		}
+		if b.String() != first {
+			t.Fatalf("writeEnv is not byte-stable across map iterations:\n%q\nvs\n%q", first, b.String())
+		}
+	}
+	want := "ENV ALPHA=\"a\"\nENV MID=\"with \\\"quotes\\\" and \\\\slash\"\nENV ZED=\"z\"\n"
+	if first != want {
+		t.Errorf("writeEnv output:\n%q\nwant:\n%q", first, want)
+	}
+}

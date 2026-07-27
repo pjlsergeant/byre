@@ -47,6 +47,19 @@ jobs:
       - name: go vet
         if: ${{ matrix.go-version-file }}
         run: go vet ./...
+      # byre SHIPS ~2,100 lines of shell -- the launcher, the profile shim,
+      # every skill's hooks -- into images users run, and nothing parsed it.
+      # A syntax error there surfaces as a broken box, not a failed build.
+      # `bash -n` is the floor (parse only, no execution, no lint opinions);
+      # anything stronger is a separate decision.
+      - name: shell syntax
+        if: ${{ matrix.go-version-file }}
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            bash -n "$f" || { echo "bash -n failed: $f" >&2; fail=1; }
+          done < <(git ls-files '*.sh')
+          exit $fail
       # tmux: the TUI test tier (internal/tuitest) drives the built byre
       # binary in a private tmux server. The gate set without tmux FAILS
       # (tuitest.Require) — an install regression must not silently skip

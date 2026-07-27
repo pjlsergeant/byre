@@ -610,3 +610,54 @@ func TestLauncherEgressEmptyAndAbsent(t *testing.T) {
 		t.Errorf("no BYRE_EGRESS handed over, yet a list was announced:\n%s", sess)
 	}
 }
+
+// ADR 0011's claim is POSITIONAL: the gate waits above the firstrun hooks, so
+// nothing the box runs at launch executes before the network posture is in
+// place. Every existing test asserts the gate's exit code and message; none
+// pins the ordering, and runLauncher deliberately points the hook dirs at
+// nonexistent paths -- so an edit moving the gate below the hook loop stayed
+// green while silently letting hooks run unwalled.
+func TestLauncherGateWaitsAboveFirstrunHooks(t *testing.T) {
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "launch-gate")
+	if err := os.WriteFile(gate, []byte("59999"), 0o644); err != nil { // nobody listens
+		t.Fatal(err)
+	}
+	firstrun := filepath.Join(dir, "firstrun.d")
+	envd := filepath.Join(dir, "env.d")
+	for _, d := range []string{firstrun, envd} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ranMarker := filepath.Join(dir, "hook-ran")
+	if err := os.WriteFile(filepath.Join(firstrun, "10-marker"), []byte("#!/bin/sh\ntouch "+ranMarker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envMarker := filepath.Join(dir, "envhook-ran")
+	if err := os.WriteFile(filepath.Join(envd, "10-marker.sh"), []byte("touch "+envMarker+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", script, "true")
+	cmd.Env = append(os.Environ(),
+		"BYRE_LAUNCH_GATE_FILE="+gate,
+		"BYRE_LAUNCH_GATE_TIMEOUT=1",
+		"BYRE_FIRSTRUN_DIR="+firstrun,
+		"BYRE_ENVD_DIR="+envd,
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("the launcher must fail closed when the gate never opens:\n%s", out)
+	}
+	if _, statErr := os.Stat(ranMarker); statErr == nil {
+		t.Errorf("a firstrun hook RAN before the gate opened — the gate must wait above the hook loop (ADR 0011)\n%s", out)
+	}
+	if _, statErr := os.Stat(envMarker); statErr == nil {
+		t.Errorf("an env.d hook was sourced before the gate opened — same ordering claim\n%s", out)
+	}
+}

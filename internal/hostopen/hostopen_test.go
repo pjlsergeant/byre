@@ -2,8 +2,10 @@ package hostopen
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -149,3 +151,106 @@ func TestOpenDirRootNoFollowRefusesSwappedSymlink(t *testing.T) {
 // its sibling in internal/build (openDirRootNoFollow → copyPath) already is.
 // The deterministic halves ARE pinned: the pre-existing-symlink rejection above
 // (Lstat guard) and the mid-delivery swap tests in internal/deliver.
+
+// ReadFileBounded is the config cascade's and the project-identity fence's
+// reader, at 14 production call sites -- and every one of its refusal
+// branches was uncovered. The guarantee under test is the stated one: an
+// oversize file is REFUSED, never truncated and handed to a parser (a
+// truncated TOML file can parse cleanly and mean something else).
+func TestReadFileBoundedRefusalBranches(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("within the limit reads whole", func(t *testing.T) {
+		p := filepath.Join(dir, "small")
+		if err := os.WriteFile(p, []byte("hello"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		b, err := ReadFileBounded(p, false, 5)
+		if err != nil || string(b) != "hello" {
+			t.Fatalf("a file exactly at the limit must read whole: %q %v", b, err)
+		}
+	})
+
+	t.Run("oversize refuses rather than truncating", func(t *testing.T) {
+		p := filepath.Join(dir, "big")
+		if err := os.WriteFile(p, []byte("0123456789"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		b, err := ReadFileBounded(p, false, 4)
+		if err == nil {
+			t.Fatalf("an oversize file must be refused, got %q", b)
+		}
+		if b != nil {
+			t.Errorf("a refusal must return no bytes at all, got %q", b)
+		}
+		if !strings.Contains(err.Error(), "limit") {
+			t.Errorf("the refusal must name the bound: %v", err)
+		}
+	})
+
+	t.Run("a FIFO is refused, not blocked on", func(t *testing.T) {
+		p := filepath.Join(dir, "fifo")
+		if err := syscall.Mkfifo(p, 0o644); err != nil {
+			t.Skipf("mkfifo unavailable: %v", err)
+		}
+		if _, err := ReadFileBounded(p, false, 1<<20); !errors.Is(err, ErrNotRegular) {
+			t.Errorf("a FIFO must be refused as not-regular, got %v", err)
+		}
+	})
+
+	t.Run("absent surfaces as fs.ErrNotExist", func(t *testing.T) {
+		if _, err := ReadFileBounded(filepath.Join(dir, "nope"), false, 16); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("callers distinguish absence from failure: %v", err)
+		}
+	})
+}
+
+// The identity guard closes the Lstat-to-open window: the open must have
+// landed on the very directory the Lstat classified. Deleting it left the
+// suite green, so this pins it directly -- a real directory swapped for
+// ANOTHER real directory between the two calls passes every symlink check
+// and only SameFile catches it.
+func TestOpenDirRootNoFollowIdentityGuard(t *testing.T) {
+	base := t.TempDir()
+	real1 := filepath.Join(base, "a")
+	real2 := filepath.Join(base, "b")
+	for _, d := range []string{real1, real2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Marker files so a wrongly-anchored root is identifiable.
+	if err := os.WriteFile(filepath.Join(real2, "impostor"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := OpenDirRootNoFollow(real1)
+	if err != nil {
+		t.Fatalf("anchoring a plain real directory must work: %v", err)
+	}
+	defer root.Close()
+	if _, err := root.Stat("impostor"); err == nil {
+		t.Fatal("anchored the wrong directory entirely")
+	}
+
+	// The guard's own predicate: two DIFFERENT real directories must never
+	// compare identical, which is what makes the mid-flight swap detectable.
+	li, err := os.Lstat(real1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ci, err := os.Stat(real2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(li, ci) {
+		t.Error("distinct directories compared identical — the identity guard cannot detect a swap")
+	}
+	same, err := os.Stat(real1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(li, same) {
+		t.Error("the same directory must compare identical, or the guard refuses every legitimate anchor")
+	}
+}
