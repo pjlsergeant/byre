@@ -163,8 +163,13 @@ type model struct {
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
-	extOpts                         []string // EXTENDS picker (named layers + none)
-	extSel                          int
+	// The value each picker's inherit row stands for ("" = no inherit row).
+	// Kept beside the options rather than parsed back out of the row label:
+	// selecting inherit means the EFFECTIVE value is the inherited one, and
+	// every reader of "what is selected" needs that, not the row text.
+	tmplInherit, agentInherit, engineInherit string
+	extOpts                                  []string // EXTENDS picker (named layers + none)
+	extSel                                   int
 
 	// Structured working state for the list fields.
 	apt          []string
@@ -350,13 +355,24 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 func (m model) loadConfig(cfg config.Config) model {
 	m.base = cfg
 	m.ti.SetValue(cfg.Base)
-	m.tmplOpts = pickerOpts(m.templates, cfg.Template)
-	m.agentOpts = pickerOpts(m.agents, cfg.Agent)
-	// Problem rows appear in pickers disabled-with-reason.
+	// Template first, and its selection with it: the agent/engine inherit rows
+	// consult the selected template as part of the lower cascade.
+	tmplLower, tmplSrc := m.lowerScalar(func(c config.Config) string { return c.Template }, false)
+	m.tmplInherit = tmplLower
+	m.tmplOpts = scalarOpts(m.templates, cfg.Template, tmplLower, tmplSrc, noneOption, false)
 	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
+	m.tmplSel = scalarSel(m.tmplOpts, cfg.Template, noneOption)
+
+	agentLower, agentSrc := m.lowerScalar(func(c config.Config) string { return c.Agent }, true)
+	m.agentInherit = agentLower
+	m.agentOpts = scalarOpts(m.agents, cfg.Agent, agentLower, agentSrc, noneOption, false)
+	// Problem rows appear in pickers disabled-with-reason.
 	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
-	m.engineOpts = []string{"auto", "docker", "podman"}
-	if cfg.Engine != "" && !contains(m.engineOpts, cfg.Engine) {
+
+	engineLower, engineSrc := m.lowerScalar(func(c config.Config) string { return c.Engine }, true)
+	m.engineInherit = engineLower
+	m.engineOpts = scalarOpts([]string{"docker", "podman"}, cfg.Engine, engineLower, engineSrc, "auto", true)
+	if cfg.Engine != "" && cfg.Engine != "auto" && !contains(m.engineOpts, cfg.Engine) {
 		m.engineOpts = append(m.engineOpts, cfg.Engine)
 	}
 	// The initial selection stays on the stored value EVEN when it is a
@@ -365,9 +381,8 @@ func (m model) loadConfig(cfg config.Config) model {
 	// just by opening the editor. Cycling away skips disabled rows (and can't
 	// come back) — changing off a broken value is deliberate, keeping it isn't
 	// a choice the editor makes for you.
-	m.tmplSel = indexOf(m.tmplOpts, config.OrNone(cfg.Template))
-	m.agentSel = indexOf(m.agentOpts, config.OrNone(cfg.Agent))
-	m.engineSel = indexOf(m.engineOpts, orDefault(cfg.Engine, "auto"))
+	m.agentSel = scalarSel(m.agentOpts, cfg.Agent, noneOption)
+	m.engineSel = scalarSel(m.engineOpts, cfg.Engine, "auto")
 	// The EXTENDS picker: loadable layers plus, like every picker, the stored
 	// value even when it isn't offerable (a dangling extends must survive an
 	// unrelated open-and-save, and fail loudly at develop instead).

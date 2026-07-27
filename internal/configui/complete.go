@@ -191,9 +191,9 @@ func (m model) assemble() config.Config {
 	if m.target != TargetGlobal {
 		out.Extends = config.FromNone(m.extOpts[m.extSel])
 	}
-	out.Template = config.FromNone(m.tmplOpts[m.tmplSel])
-	out.Agent = config.FromNone(m.agentOpts[m.agentSel])
-	out.Engine = fromAuto(m.engineOpts[m.engineSel])
+	out.Template = fromScalar(m.tmplOpts, m.tmplSel, noneOption)
+	out.Agent = fromScalar(m.agentOpts, m.agentSel, noneOption)
+	out.Engine = fromScalar(m.engineOpts, m.engineSel, "auto")
 	out.Apt = nilIfEmpty(m.apt)
 	if len(m.env) == 0 {
 		out.Env = nil
@@ -232,7 +232,7 @@ func (m model) assemble() config.Config {
 	// that enables nothing, so a skills entry naming it is the user's real
 	// (and only) way to enable that skill machine-wide — stripping it made
 	// the choice silently impossible.
-	primaryAgent := config.FromNone(m.agentOpts[m.agentSel])
+	primaryAgent := m.agentNow()
 	if m.target == TargetGlobal {
 		primaryAgent = ""
 	}

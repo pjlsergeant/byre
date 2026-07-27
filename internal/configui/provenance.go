@@ -94,13 +94,57 @@ func (m model) lowerNow() config.Config {
 		return config.Config{}
 	}
 	lower := m.inh.Default
-	if t := config.FromNone(m.tmplOpts[m.tmplSel]); t != "" {
+	if t := m.templateNow(); t != "" {
 		lower = config.Merge(lower, m.inh.Templates[t])
 	}
 	for _, nl := range m.chainNow() {
 		lower = config.Merge(lower, nl.Config)
 	}
 	return lower
+}
+
+// lowerScalar reports what the cascade BELOW this file provides for one
+// scalar field, and where it comes from -- the inherit row's content. The
+// selected template counts as lower for agent/engine (a template may set
+// them); for the template field itself it must not, or the row would report
+// the very selection it describes.
+func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool) (value, source string) {
+	if !m.inh.HasLower {
+		return "", ""
+	}
+	lower := m.inh.Default
+	if includeTemplate {
+		// templateNow, not the raw row: with the template picker on its own
+		// inherit row the effective template is the inherited one, and an
+		// agent it sets is genuinely below this file.
+		if t := m.templateNow(); t != "" {
+			lower = config.Merge(lower, m.inh.Templates[t])
+		}
+	}
+	for _, nl := range m.chainNow() {
+		lower = config.Merge(lower, nl.Config)
+	}
+	v := config.FromNone(get(lower))
+	if v == "" {
+		return "", ""
+	}
+	return v, m.lowerSource(func(c config.Config) bool { return config.FromNone(get(c)) == v })
+}
+
+// templateNow, agentNow and engineNow are the EFFECTIVE selections: an
+// inherit row stands for the value it names, the sentinel row means off.
+// Readers that ask "what is in effect" use these; only the writer
+// (fromScalar) cares about the difference between inheriting and saying so.
+func (m model) templateNow() string {
+	return effectiveScalar(m.tmplOpts, m.tmplSel, m.tmplInherit, noneOption)
+}
+
+func (m model) agentNow() string {
+	return effectiveScalar(m.agentOpts, m.agentSel, m.agentInherit, noneOption)
+}
+
+func (m model) engineNow() string {
+	return effectiveScalar(m.engineOpts, m.engineSel, m.engineInherit, "auto")
 }
 
 // extendsNow is the currently selected parent layer ("" = none). The picker
@@ -159,7 +203,7 @@ func (m model) lowerSource(has func(config.Config) bool) string {
 			return "layer:" + chain[i].Name
 		}
 	}
-	if t := config.FromNone(m.tmplOpts[m.tmplSel]); t != "" && has(m.inh.Templates[t]) {
+	if t := m.templateNow(); t != "" && has(m.inh.Templates[t]) {
 		return "template:" + t
 	}
 	if has(m.inh.Default) {

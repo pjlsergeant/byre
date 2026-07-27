@@ -952,3 +952,88 @@ func TestExposureNowRawConfigDegradesPosture(t *testing.T) {
 		t.Errorf("degraded posture must say so: %q", e.NetworkLine())
 	}
 }
+
+// The off-switch and absence are DIFFERENT states, and the editor must be able
+// to tell them apart, set either, and round-trip both. `agent = "none"` beats a
+// lower layer's agent in the merge; absence inherits it. Rendering both through
+// one picker row let a zero-edit save delete the sentinel and silently hand an
+// agentless project the layer's agent.
+func TestScalarPickersDistinguishInheritFromOff(t *testing.T) {
+	base := func(cfg config.Config) model {
+		m := effectiveModel()
+		m.inh.Default.Agent = "claude"
+		m.agents = []string{"claude", "codex"}
+		return m.loadConfig(cfg)
+	}
+
+	t.Run("absent selects inherit and writes nothing", func(t *testing.T) {
+		m := base(config.Config{})
+		if !isInheritRow(m.agentOpts[m.agentSel]) {
+			t.Fatalf("absent agent must select the inherit row, got %q in %v", m.agentOpts[m.agentSel], m.agentOpts)
+		}
+		if !strings.Contains(m.agentOpts[m.agentSel], "claude") {
+			t.Errorf("the inherit row must name the inherited value: %q", m.agentOpts[m.agentSel])
+		}
+		if got := m.assemble().Agent; got != "" {
+			t.Errorf("inherit must write nothing, got %q", got)
+		}
+		if m.agentNow() != "claude" {
+			t.Errorf("the EFFECTIVE agent under inherit is the inherited one, got %q", m.agentNow())
+		}
+	})
+
+	t.Run("explicit none survives a zero-edit save", func(t *testing.T) {
+		m := base(config.Config{Agent: config.NoneLabel})
+		if m.agentOpts[m.agentSel] != noneOption {
+			t.Fatalf("agent=none must select the none row, got %q", m.agentOpts[m.agentSel])
+		}
+		if got := m.assemble().Agent; got != config.NoneLabel {
+			t.Errorf("a zero-edit save must preserve the off-switch, got %q (this is the reported data loss)", got)
+		}
+		if m.agentNow() != "" {
+			t.Errorf("the EFFECTIVE agent under none is empty, got %q", m.agentNow())
+		}
+	})
+
+	t.Run("choosing none over an inherited agent writes the sentinel", func(t *testing.T) {
+		m := base(config.Config{})
+		m.agentSel = indexOf(m.agentOpts, noneOption)
+		if got := m.assemble().Agent; got != config.NoneLabel {
+			t.Errorf("turning the agent off against a lower layer must write %q, got %q", config.NoneLabel, got)
+		}
+	})
+
+	// With nothing below, absence and the sentinel mean the same thing, so the
+	// picker offers no inherit row and byre keeps writing absent -- an ordinary
+	// save must not start churning files with a redundant key.
+	t.Run("no lower value means no inherit row and no churn", func(t *testing.T) {
+		m := effectiveModel()
+		m.inh.HasLower = false
+		m.agents = []string{"claude"}
+		m = m.loadConfig(config.Config{})
+		if hasInheritRow(m.agentOpts) {
+			t.Errorf("no lower agent must mean no inherit row: %v", m.agentOpts)
+		}
+		m.agentSel = indexOf(m.agentOpts, noneOption)
+		if got := m.assemble().Agent; got != "" {
+			t.Errorf("with nothing below, the none row still writes absent, got %q", got)
+		}
+	})
+
+	// engine carries the same shape with "auto" as its sentinel.
+	t.Run("engine auto is an off-switch against an inherited engine", func(t *testing.T) {
+		m := effectiveModel()
+		m.inh.Default.Engine = "podman"
+		m = m.loadConfig(config.Config{})
+		if !isInheritRow(m.engineOpts[m.engineSel]) {
+			t.Fatalf("absent engine must select inherit, got %q in %v", m.engineOpts[m.engineSel], m.engineOpts)
+		}
+		if m.engineOpts[0] != "auto" {
+			t.Errorf("the engine picker keeps auto first: %v", m.engineOpts)
+		}
+		m.engineSel = indexOf(m.engineOpts, "auto")
+		if got := m.assemble().Engine; got != "auto" {
+			t.Errorf("choosing auto against an inherited engine must write it, got %q", got)
+		}
+	})
+}

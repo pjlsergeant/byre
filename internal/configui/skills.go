@@ -66,7 +66,7 @@ func (m model) skillEntries() []skillEntry {
 	for _, a := range m.agents {
 		agentSet[a] = true
 	}
-	primary := config.FromNone(m.agentOpts[m.agentSel])
+	primary := m.agentNow()
 	// In the --global editor the agent picker is an onboarding FAVOURITE —
 	// it enables nothing anywhere — so there is no primary agent to lock on:
 	// a "[x] (primary agent)" row would claim a machine-wide enable that
@@ -357,6 +357,105 @@ func pickerOpts(discovered []string, current string) []string {
 	return append(opts, noneOption)
 }
 
+// Scalar pickers distinguish two states an absent key cannot tell apart on
+// its own: INHERIT (say nothing, take what the cascade below provides) and
+// the explicit off-switch (`agent = "none"`, `engine = "auto"`), which is a
+// value that BEATS the lower layer in the merge. Rendering both through one
+// row is what let a zero-edit save delete an off-switch and silently hand an
+// agentless project the layer's agent.
+//
+// The inherit row appears ONLY when a lower layer actually provides a value.
+// With nothing below, absence and the sentinel are genuinely the same thing,
+// so the picker doesn't grow a choice that means nothing -- and the file byre
+// writes is unchanged from before (the sentinel row keeps mapping to absent).
+const inheritPrefix = "(inherit — "
+
+func inheritRow(value, source string) string {
+	return inheritPrefix + value + ", from " + source + ")"
+}
+
+func isInheritRow(s string) bool { return strings.HasPrefix(s, inheritPrefix) }
+
+func hasInheritRow(opts []string) bool {
+	return indexOfInherit(opts) >= 0
+}
+
+func indexOfInherit(opts []string) int {
+	for i, o := range opts {
+		if isInheritRow(o) {
+			return i
+		}
+	}
+	return -1
+}
+
+// scalarOpts is pickerOpts plus the inherit row, for the fields that carry an
+// off-switch sentinel. lowerValue is what the cascade below provides ("" =
+// nothing below, so no inherit row); lowerSource attributes it.
+// sentinelFirst keeps each picker's historical row order (engine leads with
+// "auto"; template/agent end with "none"); the inherit row is inserted
+// adjacent to the sentinel, since that is the row it exists to be told apart
+// from.
+func scalarOpts(discovered []string, current, lowerValue, lowerSource, sentinel string, sentinelFirst bool) []string {
+	var opts []string
+	if sentinelFirst {
+		opts = append(opts, sentinel)
+		if lowerValue != "" {
+			opts = append(opts, inheritRow(lowerValue, lowerSource))
+		}
+	}
+	for _, d := range discovered {
+		if d != sentinel {
+			opts = append(opts, d)
+		}
+	}
+	if current != "" && current != sentinel && !contains(opts, current) {
+		opts = append(opts, current)
+	}
+	if !sentinelFirst {
+		if lowerValue != "" {
+			opts = append(opts, inheritRow(lowerValue, lowerSource))
+		}
+		opts = append(opts, sentinel)
+	}
+	return opts
+}
+
+// scalarSel picks the row for a stored value: the sentinel selects the
+// sentinel row, absent selects inherit where one exists, anything else
+// selects itself.
+func scalarSel(opts []string, current, sentinel string) int {
+	if current == "" {
+		if i := indexOfInherit(opts); i >= 0 {
+			return i
+		}
+		return indexOf(opts, sentinel)
+	}
+	return indexOf(opts, current)
+}
+
+// fromScalar maps a selected row back to what gets WRITTEN: inherit writes
+// nothing, and the sentinel writes itself only when an inherit row exists to
+// be distinguished from -- with nothing below, the sentinel and absent mean
+// the same, and byre keeps writing absent so an ordinary save doesn't churn
+// the file.
+func fromScalar(opts []string, sel int, sentinel string) string {
+	if sel < 0 || sel >= len(opts) {
+		return ""
+	}
+	v := opts[sel]
+	switch {
+	case isInheritRow(v):
+		return ""
+	case v == sentinel:
+		if hasInheritRow(opts) {
+			return sentinel
+		}
+		return ""
+	}
+	return v
+}
+
 func orDefault(v, def string) string {
 	if v == "" {
 		return def
@@ -364,10 +463,20 @@ func orDefault(v, def string) string {
 	return v
 }
 
-// fromAuto maps the "auto" engine selection back to "" so it's omitted from the
-// written config (auto is the default).
-func fromAuto(v string) string {
-	if v == "auto" {
+// effectiveScalar is what a picker's SELECTION means for resolution: the
+// inherit row stands for the value it names (that is what the box gets), the
+// sentinel means off, anything else is itself. Distinct from fromScalar,
+// which is what gets WRITTEN -- inherit writes nothing precisely so the
+// value it stands for keeps coming from below.
+func effectiveScalar(opts []string, sel int, inherit, sentinel string) string {
+	if sel < 0 || sel >= len(opts) {
+		return ""
+	}
+	v := opts[sel]
+	switch {
+	case isInheritRow(v):
+		return inherit
+	case v == sentinel:
 		return ""
 	}
 	return v
