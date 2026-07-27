@@ -27,7 +27,7 @@ const (
 	rowStaleMarker                // a removal marker matching nothing inherited
 	rowSkill                      // skill-contributed; read-only here
 	rowOffered                    // a declared-but-closed egress door (ADR 0020)
-	rowHostEnv                    // env_from_host passthrough (ADR 0026); read-only here
+	rowHostEnv                    // env_from_host passthrough (ADR 0026); editable via the Source picker
 	rowEnvDoc                     // a skill-documented consumed var nothing provides; suggestion only
 )
 

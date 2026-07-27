@@ -35,27 +35,12 @@ Delete-on-absorb: cut a line when it ships or is ruled out for good.
 
 ## Absences (tests and mechanisms)
 
-- **`capBuffer`, the anti-OOM stderr cap, has zero tests** (`runner.go:604`),
-  despite a comment stating its security purpose. *(Fable.)*
-- **The hostopen conformance walk covers reads only** -- `watchedCallees` is
-  `{ReadFile, Open, OpenFile}`, so writes (the class that produced a real bug)
-  and probes (45 `os.Stat`, 11 `os.Lstat`, 14 `os.ReadDir`) are unguarded; and
-  the allowlist is keyed `file + callee`, so a new unreviewed call in an
-  already-listed file rides the existing entry. *(Opus.)*
 - **No fuzz tests, no `testdata/`.** Obvious targets: `config.Parse`, and a
   `tomldoc` Load→edit→Bytes→Parse round-trip, since every config write rides
   go-toml's *unstable* parser (ADR 0044). *(Opus.)*
-- **No podman leg in CI** despite README's first-class claim and ADR 0032's
-  podman-specific machinery; **no Claude leg in the agent canary** -- the
-  flagship agent, installed unpinned via `curl | bash`, is the one whose upstream
-  drift nothing catches. *(Opus.)*
-- **`firewall.sh`'s deny probe is IPv4-only** (`1.1.1.1 8.8.8.8 9.9.9.9`) while
-  `firewall-open.sh` -- the *weaker*, hygiene-only posture -- has an explicit v6
-  arm reasoning that "an IPv6-only closure must not go unverified". The
-  containment posture is less self-verified than the hygiene one, and ADR 0010
-  reads as covering both families. *(Opus.)*
-- **No top-level panic recovery in `cmd/byre`** -- a panic reaches the user as a
-  raw Go stack, off-brand for a legibility-first tool. *(Opus.)*
+- **No Claude leg in the agent canary** -- the flagship agent, installed
+  unpinned via `curl | bash`, is the one whose upstream drift nothing catches.
+  The matrix runs Opencode, Codex, Gemini and Grok. *(Opus.)*
 - **`--self-edit` in a worktree under-warns**: it mounts the *project* store
   shared by the main tree and every sibling (ADR 0009); the escalation banner
   never says so, though `reportSelfEditChanges` already reasons about the

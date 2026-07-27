@@ -22,7 +22,9 @@ while hand-rolling our own dispatch was consistency with nothing.
 ## What byre keeps (deliberately, cobra doesn't do these by default)
 
 - **The exit-code contract**: usage errors = 2, byre failures = 1,
-  agent/container exit codes pass through silently (`ExitError`).
+  a byre crash = 70 (a panic exits 2 by default, which is byre's usage
+  code -- indistinguishable from a bad flag to anything reading the
+  status), agent/container exit codes pass through silently (`ExitError`).
   cobra's own error printing and usage-dumping are silenced; flag-parse
   failures are wrapped into `usageError` via `FlagErrorFunc`, and all
   positional-arg validators are byre's own (cobra's built-ins return

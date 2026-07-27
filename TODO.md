@@ -18,11 +18,11 @@ the rationale lives.
 ## Open
 
 - [ ] (XS) **Retire legacy `byre.config` preset name at window end** (ADR 0049
-  #2): refuse with the rename remedy; release-time call.
+  #3): refuse with the rename remedy; release-time call.
 - [ ] (XS) **Schedule archive-legacy machinery removal at window end**
-  (ADR 0049 #3): collapse to RetiredNames tombstones.
+  (ADR 0049 #4): collapse to RetiredNames tombstones.
 - [ ] (S) **shared_auth array-shape retirement: build the warning channel first**
-  (ADR 0049 #1). No parse-time warning channel exists; the array shape is also
+  (ADR 0049 #2). No parse-time warning channel exists; the array shape is also
   round-tripped by EncodeTOMLLine. Warn one release, then drop both arms.
 - [ ] (M) **config.CatalogLoader silent nil-fallback** (ADR 0049 residue): an
   entrypoint that skips builtins gets a bundled-less catalog silently; the

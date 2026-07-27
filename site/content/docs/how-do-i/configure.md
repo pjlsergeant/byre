@@ -93,8 +93,9 @@ louder choice. Every published port shows in `byre status`.
 
 ## Pass env vars into the box?
 
-tldr: `[env]` for plain config values -- never secrets -- and
-`[env_from_host]` to pass host values at runtime.
+tldr: the **Env vars** section of `byre config` -- `[env]` for plain
+config values, never secrets, and `[env_from_host]` to pass host values
+at runtime.
 
 `[env]` literals are **baked into the image**: `docker history` shows
 them and they outlive `byre reset`, so they're for configuration, not
@@ -103,6 +104,13 @@ grant: `KEY = "env:HOST_VAR"` passes a host env var at launch,
 `"git:user.email"` reads git config, `"tz:"` passes your timezone --
 values resolve at launch and never land in a layer. Git identity,
 `TERM`, and `TZ` already pass through by default.
+
+Both live on one screen, because they answer one question -- where does
+this variable's value come from. The **Source** picker on a row switches
+between them, moving the entry rather than leaving a twin behind. One
+namespace is refused in both: `BYRE_`, which parameterizes byre's own
+launch machinery; to set one deliberately use
+`run_args = ["-e", "BYRE_X=..."]`.
 
 ## Use my API key instead of an agent login?
 

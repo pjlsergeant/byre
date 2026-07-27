@@ -698,7 +698,7 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                                     pjlsergeant/devlog      installed 1.0.0
                       State vols:   .claude
                       Cache vols:   none
-                      Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values passed in; env_from_host)
+                      Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values; env_from_host)
                       Raw run args: --cap-add=SYS_PTRACE   (passed through; not introspected)
                       Container:    not running
 

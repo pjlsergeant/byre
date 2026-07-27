@@ -23,7 +23,7 @@ type SkillRuntime struct {
 	// Files are the skill's [build].files: skill-relative source -> absolute
 	// image destination. Read-only here (a skill's payload is the skill's),
 	// but VISIBLE, because "what is going into my image and who put it
-	// there" is the question the Baked files screen exists to answer -- and
+	// there" is the question the Skill files screen exists to answer -- and
 	// files is overwhelmingly a skill's key.
 	Files  map[string]string
 	Egress []string // functional endpoints, open with enablement (ADR 0019/0020)

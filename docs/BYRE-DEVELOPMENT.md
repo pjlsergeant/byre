@@ -230,9 +230,15 @@ egress = ["172.17.0.4:22"]
 # The container's sshd listens on 22. The wrapper still DEFAULTS to 60022 --
 # Lima's forwarded port, which is also this container's host publish mapping
 # (-p 60022:22) -- so setting only the address leaves the port wrong.
-[env]
-  BYRE_INTTEST_VM = "172.17.0.4"   # the container's bridge IP
-  BYRE_INTTEST_PORT = "22"
+#
+# These two ride run_args, NOT [env]: the wrapper still spells them with the
+# BYRE_ prefix, and that namespace is refused in both user config channels
+# ([env] and env_from_host, ADR 0050). run_args is the deliberate-override
+# route the refusal names, and `byre status` shows it verbatim.
+run_args = [
+  "-e", "BYRE_INTTEST_VM=172.17.0.4",   # the container's bridge IP
+  "-e", "BYRE_INTTEST_PORT=22",
+]
 ```
 
 That IP is assignment-ordered, so a recreate or reboot can shuffle it and

@@ -2,7 +2,7 @@
 
 **Status: KEPT, re-runnable.** This is the brief given verbatim to all four
 reviewers (codex, grok, Opus 5, Fable 5). Results: `review-findings.md` (the
-bugs) and `philosophical-problems.md` (the doctrine criticism). Kept because
+bugs) and the doctrine criticism, since absorbed into ADR 0050. Kept because
 re-running it against a later tree is the natural way to check whether the
 structural criticism was addressed or just papered over.
 
