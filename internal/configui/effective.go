@@ -725,6 +725,17 @@ func (m model) envRows() []listRow {
 	// showing it, which on a screen whose whole question is "where does this
 	// value come from" answered with two rows for one name and no hint that
 	// one of them does nothing.
+	// Only an [env] LITERAL shadows, at any layer -- that is the whole of
+	// resolveHostEnv's override rule. A skill's [runtime].env does NOT: the
+	// runner writes skill env first and lets addEnvFromHost overwrite it, so
+	// a passthrough colliding with a skill key is the LIVE one. Counting
+	// skill env here said the opposite on the one screen whose question is
+	// where a value comes from, and hid an active host->box grant behind a
+	// row marked dead (gemini's TERM against byre's shipped TERM passthrough
+	// is the live case; it is also the only skill/core collision that
+	// exists, and the passthrough winning is what makes it right -- the skill
+	// hardcodes xterm-256color to escape docker's TERM=xterm default, and the
+	// host's real value beats a guess).
 	shadowed := map[string]bool{}
 	for _, kv := range m.env {
 		shadowed[kv.Key] = true
@@ -732,16 +743,15 @@ func (m model) envRows() []listRow {
 	for k := range lowerEnv {
 		shadowed[k] = true
 	}
-	for _, sk := range m.effectiveSkills() {
-		for k := range m.inh.Skills[sk].Env {
-			shadowed[k] = true
-		}
-	}
 	hostEnv := m.hostEnvNow()
 	for _, k := range slices.Sorted(maps.Keys(hostEnv)) {
 		k := k
+		// disabled: switched off HERE or by a lower layer. The row stays --
+		// hostEnvLine renders it "KEY <- disabled", the menu still reaches it
+		// (Edit re-picks a scheme, Delete drops back to the cascade), and the
+		// tallies skip it. A disabled mount reads the same way.
 		if i, ok := localHostIdx[k]; ok {
-			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k, closed: shadowed[k]})
+			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k, closed: shadowed[k], disabled: m.hostEnv[i].Value == ""})
 			continue
 		}
 		from := m.lowerSource(func(c config.Config) bool { _, ok := c.EnvFromHost[k]; return ok })
@@ -752,7 +762,7 @@ func (m model) envRows() []listRow {
 			// with about the six keys byre ships.
 			from = "byre default"
 		}
-		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}, closed: shadowed[k]})
+		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}, closed: shadowed[k], disabled: hostEnv[k] == ""})
 	}
 	// Skill-documented consumed vars (env_docs): a dim suggestion row per
 	// declared var NOTHING above provides — once any layer, skill, or the
@@ -962,7 +972,13 @@ func (m model) exposureNow() config.Exposure {
 			envKeys[k] = true
 		}
 	}
-	for k := range m.hostEnvNow() {
+	for k, src := range m.hostEnvNow() {
+		// "" is switched off: it reaches no box, so it is not a variable in
+		// one. byre status omits it for the same reason, and these two
+		// tallies have to agree.
+		if src == "" {
+			continue
+		}
 		envKeys[k] = true
 	}
 	e.Env = len(envKeys)
@@ -1038,10 +1054,19 @@ func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 			effective++
 			fromSkills++
 		case rowHostEnv:
-			// Host passthrough is effective env inherited from below this
-			// file (byre's core layer at the deepest).
+			// A switched-off passthrough grants nothing, so it is shown but
+			// never counted. Otherwise it is effective env, and inherited
+			// only when this file did not set it -- idx >= 0 is the same
+			// discriminator the row's own "(set here)" annotation uses, and
+			// counting a local pin as inherited made the summary read
+			// "6 vars (6 inherited)" with one of them set here.
+			if r.disabled {
+				break
+			}
 			effective++
-			inherited++
+			if r.idx < 0 {
+				inherited++
+			}
 		case rowOffered:
 			offered++
 		}

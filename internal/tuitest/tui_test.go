@@ -128,3 +128,53 @@ func TestIntegrationTUIBeatPasteDeliversText(t *testing.T) {
 		t.Fatalf("paste path took the cancel branch:\n%s", final)
 	}
 }
+
+// A passthrough added through the Source picker must appear ON THE SCREEN
+// that added it, before any save. This is the pty tier because the model
+// tier cannot fail it: the model DID hold the new key -- m.hostEnv had it,
+// the save wrote it -- while the rows were built from the config as loaded,
+// so the row never painted and neither count moved. Only a test that reads
+// the pane can tell "the state is right" from "the user can see it".
+//
+// The screen's own duplicate check is what made the silence loud in the
+// field: a second add of the same key answers "duplicate key" while naming
+// something the list does not contain.
+func TestIntegrationTUIAddedPassthroughAppearsOnScreen(t *testing.T) {
+	Require(t)
+	_, env := storeEnv(t)
+	s := Start(t, Opts{Env: env, Dir: t.TempDir()}, Binary(t), "config")
+
+	s.WaitFor("GRANTS")
+	// Env vars is three below the first GRANTS field (Mounts, Ports, Egress).
+	e := s.Keys("Down", "Down", "Down", "Enter")
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("a")
+	s.WaitForAfter(e, "Add Env var")
+
+	// Focus lands on Key. Reach the Source picker with Up, then walk it to
+	// env: (value -> git: -> env:); ←/→ inside an input would move the
+	// cursor instead, which is why the walk starts by leaving the field.
+	s.Type("QA_NEW")
+	e = s.Keys("Up", "Right", "Right")
+	s.WaitForAfter(e, "host variable")
+	// Down twice (Source -> Key -> argument) and name a host variable. The
+	// row beside "host variable" is a dim PLACEHOLDER, not a value: accepting
+	// without typing here is refused, correctly, as an invalid env var name.
+	s.Keys("Down", "Down")
+	e = s.Type("HOME")
+	s.WaitForAfter(e, "HOME") // typed text is async; accept only once painted
+	e = s.Keys("Enter")
+
+	// The assertion has to be a string only the LIST can show. "QA_NEW"
+	// alone is on the editor too (its Key field), so waiting for it would
+	// pass without the row ever painting -- which is the whole bug.
+	s.WaitForAfter(e, "QA_NEW <- host env:HOME")
+
+	s.Keys("Escape")
+	form := s.WaitFor("$EDITOR")
+	// The form's summary counts it too: byre ships six passthroughs, so a
+	// seventh is the proof the tally reads the live edit and not the file.
+	if !strings.Contains(form, "7 vars") {
+		t.Fatalf("form summary did not count the added passthrough:\n%s", form)
+	}
+}

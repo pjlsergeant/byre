@@ -348,3 +348,155 @@ func TestEnvShadowedPassthroughIsMarkedAndNotCounted(t *testing.T) {
 		t.Errorf("effective = %d with a shadowed passthrough, want %d (the dead row must not add to it)", withShadow, wantSame+1)
 	}
 }
+
+// hostEnvRow finds one passthrough row by key.
+func hostEnvRow(m model, key string) (listRow, bool) {
+	for _, r := range m.fieldRows(fEnv) {
+		if r.kind == rowHostEnv && r.ident == key {
+			return r, true
+		}
+	}
+	return listRow{}, false
+}
+
+// The screen renders the LIVE edit list, not the file as opened. A key added
+// through the Source picker used to be written by the save and shown by
+// nothing: no row, no change in either count, and a second add of the same
+// key answered "duplicate key" while naming something the screen did not
+// contain. Every other list field already read its live slice.
+func TestEnvAddedPassthroughRendersBeforeSave(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+	before, _, _, _ := rowCounts(m.fieldRows(fEnv))
+	beforeExposure := m.exposureNow().Env
+
+	// What the item editor does on accept: append to the live slice.
+	m.hostEnv = append(m.hostEnv, kvItem{Key: "QA_NEW", Value: "env:HOME"})
+
+	r, ok := hostEnvRow(m, "QA_NEW")
+	if !ok {
+		t.Fatal("a passthrough added in this session must have a row before any save")
+	}
+	if r.idx < 0 {
+		t.Errorf("idx = %d, want an index into the live slice so Edit/Delete reach it", r.idx)
+	}
+	if !strings.Contains(r.text, "env:HOME") {
+		t.Errorf("row text = %q, want the scheme it was given", r.text)
+	}
+	if after, _, _, _ := rowCounts(m.fieldRows(fEnv)); after != before+1 {
+		t.Errorf("effective = %d after adding a passthrough, want %d", after, before+1)
+	}
+	if after := m.exposureNow().Env; after != beforeExposure+1 {
+		t.Errorf("exposure Env = %d after adding a passthrough, want %d", after, beforeExposure+1)
+	}
+}
+
+// Disabling a passthrough writes KEY = "". The row must SURVIVE that, in the
+// session and after a reload: a key with no row has no menu, so the only way
+// back was hand-editing the TOML -- the dead end the Source picker was built
+// to remove. Shown but not counted, exactly as a disabled mount is.
+func TestEnvDisabledPassthroughStaysVisibleAndUncounted(t *testing.T) {
+	// As reloaded from a file that already carries the off-switch.
+	cfg := config.Config{EnvFromHost: map[string]string{"TZ": "", "TERM": "env:TERM"}}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+
+	r, ok := hostEnvRow(m, "TZ")
+	if !ok {
+		t.Fatal("a disabled passthrough must still have a row after reload, or nothing can re-enable it")
+	}
+	if !r.disabled {
+		t.Error("the row must carry the disabled flag, so the tallies can skip it")
+	}
+	if !strings.Contains(r.text, "disabled") {
+		t.Errorf("row text = %q, want it to say the key is switched off", r.text)
+	}
+	// Actionable: idx >= 0 is what rowChoices keys off for Edit/Delete.
+	if r.idx < 0 {
+		t.Errorf("idx = %d, want the row to reach the menu that re-enables it", r.idx)
+	}
+	if r.closed {
+		t.Error("disabled is not shadowed -- closed would annotate it 'overridden by [env]', which nothing did")
+	}
+
+	// Counted by neither summary: it grants nothing, and byre status omits it.
+	// Measured as a delta against the shipped core set, which every model
+	// carries, so the numbers don't move when byre changes what it ships.
+	base := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	base.listField = fEnv
+	baseEff, _, _, _ := rowCounts(base.fieldRows(fEnv))
+	eff, _, _, _ := rowCounts(m.fieldRows(fEnv))
+	if eff != baseEff-1 {
+		t.Errorf("effective = %d, want %d: disabling one of the shipped keys must drop exactly one grant", eff, baseEff-1)
+	}
+	if got, want := m.exposureNow().Env, base.exposureNow().Env-1; got != want {
+		t.Errorf("exposure Env = %d, want %d", got, want)
+	}
+
+	// The other half: switched off by a LOWER layer rather than here. This is
+	// the case the merge-side filter governs -- a local off-switch survives on
+	// the live-overlay path regardless of it, so testing only the local one
+	// asserts nothing about the filter. "Override here" is the way back, and
+	// it needs a row to hang off.
+	lower := Inherited{HasLower: true, Default: config.Config{EnvFromHost: map[string]string{"TZ": ""}}}
+	lm := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, lower, nil, TargetProject)
+	lm.listField = fEnv
+	lr, ok := hostEnvRow(lm, "TZ")
+	if !ok {
+		t.Fatal("a passthrough a lower layer disabled must still have a row -- otherwise nothing can override it back on")
+	}
+	if !lr.disabled {
+		t.Error("the inherited-disabled row must carry the disabled flag")
+	}
+	if lr.idx >= 0 {
+		t.Errorf("idx = %d, want -1: this file does not set it, so the menu offers Override here", lr.idx)
+	}
+	if lEff, _, _, _ := rowCounts(lm.fieldRows(fEnv)); lEff != baseEff-1 {
+		t.Errorf("effective = %d, want %d: a lower layer's off-switch removes a grant", lEff, baseEff-1)
+	}
+}
+
+// The summary's "(N inherited)" is about where a row came FROM. A passthrough
+// this file pins is not inherited, and idx >= 0 is the same discriminator the
+// row's own "(set here)" annotation uses -- they disagreed, so a screen
+// showing one row "set here" summarized it as "6 vars (6 inherited)".
+func TestEnvLocalPassthroughIsNotCountedInherited(t *testing.T) {
+	base := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	base.listField = fEnv
+	baseEff, baseInherited, _, _ := rowCounts(base.fieldRows(fEnv))
+
+	m := newModel("t", "/tmp/x", config.Config{EnvFromHost: map[string]string{"MINE": "env:MINE"}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+	eff, inherited, _, _ := rowCounts(m.fieldRows(fEnv))
+	if eff != baseEff+1 {
+		t.Errorf("effective = %d, want %d: the pinned key is a grant", eff, baseEff+1)
+	}
+	if inherited != baseInherited {
+		t.Errorf("inherited = %d, want %d: a key THIS file sets is not inherited, however many are", inherited, baseInherited)
+	}
+}
+
+// A skill's [runtime].env does NOT shadow a passthrough: the runner writes
+// skill env first and addEnvFromHost overwrites it, so the passthrough is the
+// value the box gets. Marking it dead hid a live host->box grant on the one
+// screen whose question is where a value comes from. gemini's TERM against
+// byre's shipped TERM passthrough is the real instance.
+func TestEnvSkillEnvDoesNotShadowPassthrough(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"gemini": {Env: map[string]string{"TERM": "xterm-256color"}},
+	}}
+	cfg := config.Config{Skills: []string{"gemini"}, EnvFromHost: map[string]string{"TERM": "env:TERM"}}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"gemini"}, nil, inh, nil, TargetProject)
+	m.listField = fEnv
+
+	r, ok := hostEnvRow(m, "TERM")
+	if !ok {
+		t.Fatal("expected a TERM passthrough row")
+	}
+	if r.closed {
+		t.Error("a skill setting the same key must not mark the passthrough dead -- the passthrough wins at runtime")
+	}
+	if ann := rowAnnotation(r); strings.Contains(ann, "overridden") {
+		t.Errorf("annotation = %q, want no override claim: nothing overrode it", ann)
+	}
+}

@@ -184,16 +184,30 @@ func (m model) chainNow() []config.NamedLayer {
 
 // hostEnvNow is the effective env_from_host view at this editor: byre's core
 // layer (the shipped git identity) under the lower layers under this file's
-// own entries, disabled ("") keys dropped. Read-only in the UI — the rows
-// exist so the passthrough is never invisible where env is inspected;
-// changing it is a hand edit (`env_from_host` in this file).
+// own entries.
+//
+// This file's entries come from m.hostEnv, the LIVE edit list -- not m.base,
+// the config as loaded. The screen is editable (the Source picker), so a view
+// built from the loaded file cannot show what the user just did: an added key
+// produced no row and moved no count while the save wrote it anyway. Every
+// other list field already reads its live slice; this one was written when
+// the rows were read-only and never revisited.
+//
+// A disabled key ("" -- switched off by this file or a lower layer) is KEPT,
+// with its empty value, because callers want different things: the rows must
+// show it (invisible means unreachable -- no row, no menu, no way back
+// without hand-editing the TOML), and the exposure tally must not count it (a
+// switched-off passthrough grants nothing). Callers apply their own
+// predicate; the shape mirrors a disabled mount, which is likewise shown and
+// separately tallied.
 func (m model) hostEnvNow() map[string]string {
-	merged := config.Merge(config.Merge(config.Config{EnvFromHost: config.CoreEnvFromHost()}, m.lowerNow()), m.base).EnvFromHost
+	merged := config.Merge(config.Config{EnvFromHost: config.CoreEnvFromHost()}, m.lowerNow()).EnvFromHost
 	out := map[string]string{}
 	for k, v := range merged {
-		if v != "" {
-			out[k] = v
-		}
+		out[k] = v
+	}
+	for _, kv := range m.hostEnv {
+		out[kv.Key] = kv.Value
 	}
 	return out
 }
