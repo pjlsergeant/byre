@@ -227,15 +227,20 @@ func removeEmptiedStore(dir string) error {
 	if !ok {
 		return fmt.Errorf("not removing %s: a concurrent byre is using it (its contents were already deleted)", dir)
 	}
-	// Bind the unlink to the inode the flock is actually held on. flock is
-	// per-inode and everything below acts on NAMES, so a store renamed away
-	// and replaced between the acquire and here would have the REPLACEMENT's
-	// lock file unlinked while this process's lock still protected the old
-	// one -- splitting the mutex it exists to hold. This closes only that
-	// sliver; what protects a repopulated store's CONTENTS is the
-	// non-recursive removal below, which fails rather than taking them with
-	// it. Refusing costs nothing either way: the caller warns, and a leftover
-	// store is a candidate-list wart, not lost state.
+	// Check the lock name against the inode the flock is actually held on.
+	// flock is per-inode and everything here acts on NAMES, so a store
+	// renamed away and replaced between the acquire and now would have the
+	// REPLACEMENT's lock file unlinked while this process's lock still
+	// protected the old one -- splitting the mutex it exists to hold.
+	//
+	// It is a check-then-unlink, not an atomic bind, and cannot be otherwise:
+	// there is no unlink-this-descriptor. A same-directory swap in the two
+	// syscalls between them still removes a name rather than an inode. What
+	// this rules out is the common shape (whole store replaced); what
+	// protects a repopulated store's CONTENTS is the non-recursive removal
+	// below, which fails rather than taking them with it. Refusing costs
+	// nothing either way: the caller warns, and a leftover store is a
+	// candidate-list wart, not lost state.
 	root, err := hostopen.OpenDirRootNoFollow(dir)
 	if err != nil {
 		l.Release()
@@ -244,16 +249,25 @@ func removeEmptiedStore(dir string) error {
 		}
 		return err
 	}
+	var rmErr error
 	held, herr := root.Lstat("lock")
-	if herr != nil || !os.SameFile(held, l.Held()) {
+	switch {
+	case herr != nil && os.IsNotExist(herr):
+		// The lock NAME is gone though the flock is still held -- unlink does
+		// not need the lock, and a --self-edit box can do it. There is simply
+		// nothing to unlink; the store dir below still wants removing, and
+		// bailing here would strand it as a permanent rehome candidate.
+	case herr != nil:
 		root.Close()
 		l.Release()
-		if herr != nil && os.IsNotExist(herr) {
-			return nil // already gone
-		}
+		return herr
+	case !os.SameFile(held, l.Held()):
+		root.Close()
+		l.Release()
 		return fmt.Errorf("not removing %s: it was replaced since its lock was taken (a concurrent byre re-created it)", dir)
+	default:
+		rmErr = root.Remove("lock")
 	}
-	rmErr := root.Remove("lock")
 	root.Close()
 	dirErr := removeIn(filepath.Dir(dir), filepath.Base(dir))
 	relErr := l.Release()

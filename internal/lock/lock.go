@@ -91,7 +91,7 @@ func (l *Lock) Release() error {
 	}
 	ferr := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
 	cerr := l.f.Close()
-	l.f = nil
+	l.f, l.fi = nil, nil // Held() describes a lock this process HOLDS
 	if ferr != nil {
 		return fmt.Errorf("unlock: %w", ferr)
 	}

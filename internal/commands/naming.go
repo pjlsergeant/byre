@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -143,7 +144,15 @@ func projectVolumes(r volumeRunner, home, id string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	others := knownProjectIDs(home)
+	// A failure here must NOT come back as "no other projects": that is the
+	// answer that makes claimedByLongerID stop excluding anyone, so every
+	// prefix-matching volume reads as this project's and forget deletes
+	// another project's state. Ownership is a claim byre either establishes
+	// or declines to make.
+	others, err := knownProjectIDs(home)
+	if err != nil {
+		return nil, err
+	}
 	var owned []string
 	for _, v := range vols {
 		// Machine-scoped volumes (byre-machine-u<uid>-...) are never a
@@ -161,10 +170,15 @@ func projectVolumes(r volumeRunner, home, id string) ([]string, error) {
 }
 
 // knownProjectIDs lists the ids byre has a ~/.byre/projects/<id>/ dir for.
-func knownProjectIDs(home string) []string {
+// No store at all is an empty list; anything else is an error, because the
+// caller uses this to decide what NOT to delete.
+func knownProjectIDs(home string) ([]string, error) {
 	entries, err := hostopen.PlainReadDir(filepath.Join(home, "projects"), hostopen.StoreOwned)
 	if err != nil {
-		return nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	var ids []string
 	for _, e := range entries {
@@ -172,7 +186,7 @@ func knownProjectIDs(home string) []string {
 			ids = append(ids, e.Name())
 		}
 	}
-	return ids
+	return ids, nil
 }
 
 // claimedByLongerID reports whether vol belongs to a different, more-specific

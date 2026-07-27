@@ -115,3 +115,22 @@ func TestRemoveEmptiedStoreLeavesARepopulatedStoreAlone(t *testing.T) {
 		t.Fatalf("the repopulated store's contents were deleted: %v", err)
 	}
 }
+
+// A store carrying no lock file is still removed. (The related case -- the
+// lock NAME unlinked while the flock is still HELD, which needs no lock and a
+// --self-edit box can do -- is a true race: TryAcquire re-creates the name, so
+// nothing in-process can reach that branch without a seam. It is handled in
+// removeEmptiedStore because bailing there would strand an emptied store as a
+// permanent rehome candidate, but this test does not reach it.)
+func TestRemoveEmptiedStoreRemovesADirWithNoLockFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "store")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeEmptiedStore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dir); err == nil {
+		t.Fatal("the emptied store survived and is now a permanent rehome candidate")
+	}
+}
