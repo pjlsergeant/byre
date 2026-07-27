@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v1.4.0 -- 2026-07-28
 
 - **BREAKING: `npm_global` is removed.** It assumed node/npm in the image and
   named one ecosystem in core config, which no other package key does. A
