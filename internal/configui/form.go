@@ -323,9 +323,11 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// [files] sits with the raw Dockerfile blocks, not in BUILD, because it is
 	// only useful in relation to them: the build context holds nothing of the
 	// project except what files stages, so `RUN pip install -r ...` has
-	// nothing to read until this puts it there (gen COPYs files BEFORE the raw
-	// lines for exactly that reason). Listed before them, in the order the
-	// user thinks: stage the file, then run against it.
+	// nothing to read until this puts it there (gen COPYs project files in
+	// the project block, after dockerfile_pre and before dockerfile_post --
+	// so it is a POST line that can read one; the COPY-before-raw property
+	// belongs to skill files). Listed before them, in the order the user
+	// thinks: stage the file, then run against it.
 	//
 	// Not in BUILD on purpose. Overriding a skill's payload from a project
 	// config is not a workflow byre encourages -- fork the skill -- so the

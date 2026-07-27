@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 )
 
 func TestContextAddInlineAndUpdate(t *testing.T) {
@@ -348,5 +349,18 @@ func TestContextListShowsDeliveryVerdict(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "the agent command injects the baked text (/etc/byre/agent-context.md") {
 		t.Fatalf("delivery verdict missing:\n%s", got)
+	}
+
+	// The shadow arm on THIS surface. The renderer is shared with status but
+	// the field it reads is populated per caller, so only a per-surface pin
+	// catches a caller that stops populating it -- which is exactly how
+	// claude-skill list came to assert a delivery status denied.
+	mustWriteFile(t, projPath, []byte("agent = \"claude\"\n[files]\n\"mine.md\" = \"/etc/byre/"+gen.AgentContextName+"\"\n\n[[context]]\nname = \"house-rules\"\ntext = \"Run the linter.\\n\"\n"), 0o644)
+	out.Reset()
+	if err := ContextList(s, dir); err != nil {
+		t.Fatalf("shadowed list: %v", err)
+	}
+	if !strings.Contains(out.String(), "delivery not warranted") {
+		t.Errorf("a files entry overwriting the baked context must stop the delivery claim:\n%s", out.String())
 	}
 }

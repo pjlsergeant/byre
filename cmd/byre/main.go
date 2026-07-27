@@ -123,7 +123,8 @@ func newRootCmd(a app, dir string, s commands.Streams) *cobra.Command {
 
 Run byre in the project directory you want to develop.`,
 		// byre owns error printing and the exit-code contract (usage = 2,
-		// byre failure = 1, crash = 70, agent/refusal codes passed through):
+		// byre failure = 1, main-goroutine panic = 70, agent/refusal codes
+		// passed through):
 		// cobra must neither print errors nor dump usage after them.
 		SilenceUsage:  true,
 		SilenceErrors: true,
