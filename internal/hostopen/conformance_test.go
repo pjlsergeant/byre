@@ -44,7 +44,19 @@ import (
 // window, staging's classify-then-open): "unsolicited probes degrade, never
 // block" is about AVAILABILITY and buys nothing for INTEGRITY, which is what
 // anchoring gives.
-var watchedCallees = map[string]bool{"ReadFile": true, "Open": true, "OpenFile": true}
+var watchedCallees = map[string]bool{
+	// reads
+	"ReadFile": true, "Open": true, "OpenFile": true,
+	// writes
+	"WriteFile": true, "Create": true, "Remove": true, "RemoveAll": true,
+	"Rename": true, "Mkdir": true, "MkdirAll": true, "Symlink": true,
+	"Link": true, "Chmod": true, "Chown": true, "Truncate": true,
+	// probes
+	"Stat": true, "Lstat": true, "ReadDir": true, "Readlink": true,
+	// name-minting creators: the NAME is byre's, but the DIRECTORY it lands
+	// in may not be, so they answer the same three questions as the rest.
+	"CreateTemp": true, "MkdirTemp": true,
+}
 
 func TestHostOpenConformance(t *testing.T) {
 	root := "../.."

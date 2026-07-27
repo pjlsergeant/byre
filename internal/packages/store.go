@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -146,7 +145,7 @@ func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 		dst := filepath.Join(dstDir, parts[1])
 		// If destination exists, unique-ify.
 		if _, err := hostopen.PlainStat(dst, hostopen.StoreOwned); err == nil {
-			tmp, terr := os.MkdirTemp(dstDir, parts[1]+".")
+			tmp, terr := hostopen.PlainMkdirTemp(dstDir, parts[1]+".", hostopen.StoreOwned)
 			if terr != nil {
 				return moved, fmt.Errorf("archive %s: %w", rel, terr)
 			}
@@ -166,7 +165,7 @@ func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 func writeMirror(home string, bundled fs.FS, byreVer string) error {
 	root := filepath.Join(home, "bundled")
 	// Replace the whole tree so deleted bundled packages disappear.
-	tmp, err := os.MkdirTemp(home, ".bundled-new-")
+	tmp, err := hostopen.PlainMkdirTemp(home, ".bundled-new-", hostopen.StoreOwned)
 	if err != nil {
 		return err
 	}

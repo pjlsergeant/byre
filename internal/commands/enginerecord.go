@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -91,7 +90,7 @@ func recordSessionEngine(w io.Writer, paths project.Paths, eng runner.Engine, un
 		line += " unresolved=" + u
 	}
 	err := func() error {
-		tmp, err := os.CreateTemp(paths.Dir, ".engine-*")
+		tmp, err := hostopen.PlainCreateTemp(paths.Dir, ".engine-*", hostopen.Unreviewed)
 		if err != nil {
 			return err
 		}

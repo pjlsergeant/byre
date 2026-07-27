@@ -234,7 +234,7 @@ func (p Paths) Bootstrap() error {
 	if err != nil || recorded {
 		return err
 	}
-	tmp, err := os.CreateTemp(p.Dir, ".path-*")
+	tmp, err := hostopen.PlainCreateTemp(p.Dir, ".path-*", hostopen.Unreviewed)
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func (p Paths) Bootstrap() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Link(tmp.Name(), p.PathRecord); err != nil {
+	if err := hostopen.PlainLink(tmp.Name(), p.PathRecord, hostopen.Unreviewed); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			_, cerr := p.checkRecord()
 			return cerr

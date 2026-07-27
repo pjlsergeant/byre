@@ -118,7 +118,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return fmt.Errorf("checking %s: %w", svcPath, err)
 	}
 
-	srcDir, err := os.MkdirTemp("", "byre-deliver-app-")
+	srcDir, err := hostopen.PlainMkdirTemp("", "byre-deliver-app-", hostopen.ByreCreated)
 	if err != nil {
 		return err
 	}

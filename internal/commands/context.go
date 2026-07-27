@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -45,7 +44,7 @@ var contextVerbs = declVerbs[config.ContextDecl]{
 // opens an editor rather than demanding prose on a command line. The launch
 // rides the shared shell-semantics launcher (editorcmd). Swapped in tests.
 var editProse = func(seed string) (string, error) {
-	f, err := os.CreateTemp("", "byre-context-*.md")
+	f, err := hostopen.PlainCreateTemp("", "byre-context-*.md", hostopen.ByreCreated)
 	if err != nil {
 		return "", err
 	}

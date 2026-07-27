@@ -42,7 +42,7 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 	// race with a concurrent first-run) — and an interrupted write can never
 	// leave a partial byre.config, whose mere existence marks the project as
 	// onboarded and blocks a re-run.
-	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".byre-onboard-*")
+	tmp, err := hostopen.PlainCreateTemp(filepath.Dir(destPath), ".byre-onboard-*", hostopen.StoreOwned)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 	// The file keeps CreateTemp's private 0600 — the same mode every other
 	// byre config writer (config.AtomicWrite) produces, and byre.config is
 	// read only by byre as this user.
-	if err := os.Link(tmpName, destPath); err != nil {
+	if err := hostopen.PlainLink(tmpName, destPath, hostopen.StoreOwned); err != nil {
 		if os.IsExist(err) {
 			return fmt.Errorf("%s already exists; not overwriting", destPath)
 		}

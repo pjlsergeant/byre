@@ -67,7 +67,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 			}
 		}
 	}
-	tmp, err := os.CreateTemp(home, ".agents-md-*")
+	tmp, err := hostopen.PlainCreateTemp(home, ".agents-md-*", hostopen.StoreOwned)
 	if err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
@@ -100,7 +100,7 @@ func reserveBakName(path string) (string, error) {
 	if _, err := hostopen.PlainLstat(bak, hostopen.StoreOwned); os.IsNotExist(err) {
 		return bak, nil
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".bak-*")
+	f, err := hostopen.PlainCreateTemp(filepath.Dir(path), filepath.Base(path)+".bak-*", hostopen.StoreOwned)
 	if err != nil {
 		return "", err
 	}

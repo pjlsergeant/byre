@@ -429,7 +429,7 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 	if err := hostopen.PlainMkdirAll(parent, 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
-	stage, err := os.MkdirTemp(parent, ".fork-stage-*")
+	stage, err := hostopen.PlainMkdirTemp(parent, ".fork-stage-*", hostopen.StoreOwned)
 	if err != nil {
 		return err
 	}

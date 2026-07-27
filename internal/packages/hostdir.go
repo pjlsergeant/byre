@@ -93,7 +93,7 @@ func hostDirBase() (string, error) {
 		return hostDirRoot, nil
 	}
 	reapStaleEmbedRoots()
-	root, err := os.MkdirTemp("", fmt.Sprintf("byre-embed-%d-", os.Getpid()))
+	root, err := hostopen.PlainMkdirTemp("", fmt.Sprintf("byre-embed-%d-", os.Getpid()), hostopen.ByreCreated)
 	if err != nil {
 		return "", err
 	}

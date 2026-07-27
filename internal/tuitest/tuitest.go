@@ -64,7 +64,7 @@ func Binary(t *testing.T) string {
 	t.Helper()
 	binOnce.Do(func() {
 		reapStaleBinDirs()
-		dir, err := os.MkdirTemp("", fmt.Sprintf("byre-tuitest-bin-%d-", os.Getpid()))
+		dir, err := hostopen.PlainMkdirTemp("", fmt.Sprintf("byre-tuitest-bin-%d-", os.Getpid()), hostopen.TestHarness)
 		if err != nil {
 			binErr = err
 			return

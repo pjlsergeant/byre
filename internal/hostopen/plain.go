@@ -130,3 +130,21 @@ func PlainMkdirAll(path string, perm fs.FileMode, _ Reason) error { return os.Mk
 func PlainRename(oldpath, newpath string, _ Reason) error { return os.Rename(oldpath, newpath) }
 
 func PlainChmod(name string, mode fs.FileMode, _ Reason) error { return os.Chmod(name, mode) }
+
+// The name-minting creators. byre picks the NAME, so the STRING route is
+// closed by construction -- but the DIRECTORY the name lands in may still be
+// agent-writable (a project store under --self-edit), which leaves the ROUTE
+// live. They take a Reason for that reason.
+
+func PlainCreateTemp(dir, pattern string, _ Reason) (*os.File, error) {
+	return os.CreateTemp(dir, pattern)
+}
+
+func PlainMkdirTemp(dir, pattern string, _ Reason) (string, error) {
+	return os.MkdirTemp(dir, pattern)
+}
+
+// PlainLink hard-links oldname to newname. Both ends must qualify under the
+// one Reason; byre only ever links a temp it just created onto a destination
+// in the same directory (the atomic no-clobber publish).
+func PlainLink(oldname, newname string, _ Reason) error { return os.Link(oldname, newname) }

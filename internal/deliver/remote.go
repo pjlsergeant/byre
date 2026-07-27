@@ -310,7 +310,7 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 			plan.entries = append(plan.entries, packEntry{name: claim(src.Name), data: src.Data, size: int64(len(src.Data))})
 			plan.bytes += int64(len(src.Data))
 		case src.Reader != nil:
-			f, err := os.CreateTemp("", "byre-deliver-spool-*")
+			f, err := hostopen.PlainCreateTemp("", "byre-deliver-spool-*", hostopen.ByreCreated)
 			if err != nil {
 				return plan, cleanup, fmt.Errorf("spooling %s: %w", src.label(), err)
 			}

@@ -90,7 +90,7 @@ func writeIndex(home string, idx map[string]IndexEntry) error {
 		fmt.Fprintf(&b, "uri = %q\n", e.URI)
 		fmt.Fprintf(&b, "installed_at = %q\n", e.InstalledAt)
 	}
-	tmp, err := os.CreateTemp(packagesDir(home), ".index-*")
+	tmp, err := hostopen.PlainCreateTemp(packagesDir(home), ".index-*", hostopen.StoreOwned)
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func LandSnapshot(home string, s Snapshot) error {
 		needWrite = true
 	}
 	if needWrite {
-		stage, err := os.MkdirTemp(packagesDir(home), ".stage-")
+		stage, err := hostopen.PlainMkdirTemp(packagesDir(home), ".stage-", hostopen.StoreOwned)
 		if err != nil {
 			return err
 		}

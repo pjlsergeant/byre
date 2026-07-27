@@ -1827,7 +1827,7 @@ func FromNone(v string) string {
 // half-enrollment the id-collision check cannot see.
 func AtomicWrite(path, content string) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".byre-write-*")
+	tmp, err := hostopen.PlainCreateTemp(dir, ".byre-write-*", hostopen.Unreviewed)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("writing %s: parent directory is missing (deleted concurrently?): %w", path, err)

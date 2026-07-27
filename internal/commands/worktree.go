@@ -230,7 +230,7 @@ func worktreeCommonGitDir(paths project.Paths) (target, host string, err error) 
 		return paths.CommonGitDir, paths.CommonGitDirHost, nil
 	}
 	gd := filepath.Join(paths.Canonical, ".git")
-	info, lerr := hostopen.PlainLstat(gd, hostopen.IdentityChecked)
+	info, lerr := hostopen.PlainLstat(gd, hostopen.SubprocessConsumer)
 	if lerr != nil {
 		return "", "", fmt.Errorf("cannot read the repo git dir %q for mounting: %w", gd, lerr)
 	}
@@ -338,7 +338,7 @@ func gitToplevel(dir string) (string, bool) {
 		return "", false
 	}
 	for {
-		fi, err := hostopen.PlainLstat(filepath.Join(abs, ".git"), hostopen.IdentityChecked)
+		fi, err := hostopen.PlainLstat(filepath.Join(abs, ".git"), hostopen.SubprocessConsumer)
 		if err == nil {
 			switch {
 			case fi.Mode()&os.ModeSymlink != 0:
