@@ -28,7 +28,7 @@ func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 		Mounts:  []config.Mount{{Host: "~/d", Target: "/d", Mode: "rw"}},
 		RunArgs: []string{"--privileged"}, // raw field, must round-trip untouched
 	}
-	if err := Save(path, false, in); err != nil {
+	if err := Save(path, false, in, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	back, err := config.ParseFile(path, true)
@@ -71,7 +71,7 @@ func TestSaveAcceptsRemovalEntries(t *testing.T) {
 		Volumes: []config.Volume{{Name: "!creds"}},             // remove an inherited volume
 		Mounts:  []config.Mount{{Target: "!/inherited/mount"}}, // remove an inherited mount
 	}
-	if err := Save(path, false, cfg); err != nil {
+	if err := Save(path, false, cfg, nil, nil, true); err != nil {
 		t.Fatalf("Save rejected a valid removal-entry layer: %v", err)
 	}
 	back, err := config.ParseFile(path, true)
@@ -97,7 +97,7 @@ func TestSavePreservesHandComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Base = "node:22" // one edit
-	if err := Save(path, false, cfg); err != nil {
+	if err := Save(path, false, cfg, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
@@ -270,7 +270,7 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "default.config")
-			if err := Save(path, false, config.Config{Base: "node:22", SharedAuth: tc.pref}); err != nil {
+			if err := Save(path, false, config.Config{Base: "node:22", SharedAuth: tc.pref}, nil, nil, true); err != nil {
 				t.Fatal(err)
 			}
 			back, err := config.ParseFile(path, true)
@@ -286,7 +286,7 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 
 	// An empty preference stays omitted -- no shared_auth key materializes.
 	path := filepath.Join(t.TempDir(), "byre.config")
-	if err := Save(path, false, config.Config{Base: "node:22"}); err != nil {
+	if err := Save(path, false, config.Config{Base: "node:22"}, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
@@ -361,7 +361,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 			}
 			// Overlay the sample onto the file's parsed content, then Save.
 			merged := config.Merge(base, cfg)
-			if err := Save(path, false, merged); err != nil {
+			if err := Save(path, false, merged, nil, nil, true); err != nil {
 				t.Fatalf("save: %v", err)
 			}
 			back, err := config.ParseFile(path, true)
@@ -400,7 +400,7 @@ func TestSaveClearsDottedSpelledMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Env = nil
-	if err := Save(path, false, cfg); err != nil {
+	if err := Save(path, false, cfg, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	back, err := config.ParseFile(path, true)
@@ -428,7 +428,7 @@ func TestSaveIsDeterministicForMaps(t *testing.T) {
 	}
 	render := func() string {
 		path := filepath.Join(t.TempDir(), "byre.config")
-		if err := Save(path, false, cfg); err != nil {
+		if err := Save(path, false, cfg, nil, nil, true); err != nil {
 			t.Fatal(err)
 		}
 		b, err := os.ReadFile(path)
@@ -473,7 +473,7 @@ func TestSaveSourcesSpellings(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg.Sources = hint("https://new")
-			if err := Save(path, false, cfg); err != nil {
+			if err := Save(path, false, cfg, nil, nil, true); err != nil {
 				t.Fatalf("update: %v", err)
 			}
 			back, err := config.ParseFile(path, true)
@@ -492,14 +492,14 @@ func TestSaveSourcesSpellings(t *testing.T) {
 			// Second update exercises the house shape the first write left.
 			cfg2, _ := config.ParseFile(path, true)
 			cfg2.Sources = hint("https://third")
-			if err := Save(path, false, cfg2); err != nil {
+			if err := Save(path, false, cfg2, nil, nil, true); err != nil {
 				t.Fatalf("second update: %v", err)
 			}
 
 			// Clear.
 			cfg3, _ := config.ParseFile(path, true)
 			cfg3.Sources = nil
-			if err := Save(path, false, cfg3); err != nil {
+			if err := Save(path, false, cfg3, nil, nil, true); err != nil {
 				t.Fatalf("clear: %v", err)
 			}
 			back, err = config.ParseFile(path, true)
@@ -523,10 +523,10 @@ func TestSaveSharedAuthSecondWrite(t *testing.T) {
 	pick := func(c string) config.Config {
 		return config.Config{Base: "node:22", SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": c}}}
 	}
-	if err := Save(path, false, pick("first")); err != nil {
+	if err := Save(path, false, pick("first"), nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(path, false, pick("second")); err != nil {
+	if err := Save(path, false, pick("second"), nil, nil, true); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
 	back, err := config.ParseFile(path, true)
@@ -577,7 +577,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("update-one", func(t *testing.T) {
 		path, cfg := setup(t)
 		cfg.Sources["a/tool"] = config.SourceHint{URI: "https://a2"}
-		if err := Save(path, false, cfg); err != nil {
+		if err := Save(path, false, cfg, nil, nil, true); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, map[string]string{"a/tool": "https://a2", "b/tool": "https://b"})
@@ -585,7 +585,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("delete-one", func(t *testing.T) {
 		path, cfg := setup(t)
 		delete(cfg.Sources, "a/tool")
-		if err := Save(path, false, cfg); err != nil {
+		if err := Save(path, false, cfg, nil, nil, true); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, map[string]string{"b/tool": "https://b"})
@@ -593,7 +593,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("add-beside", func(t *testing.T) {
 		path, cfg := setup(t)
 		cfg.Sources["c/tool"] = config.SourceHint{URI: "https://c"}
-		if err := Save(path, false, cfg); err != nil {
+		if err := Save(path, false, cfg, nil, nil, true); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, map[string]string{"a/tool": "https://a", "b/tool": "https://b", "c/tool": "https://c"})
@@ -601,7 +601,7 @@ func TestSaveSourcesMultiSubtable(t *testing.T) {
 	t.Run("clear-all", func(t *testing.T) {
 		path, cfg := setup(t)
 		cfg.Sources = nil
-		if err := Save(path, false, cfg); err != nil {
+		if err := Save(path, false, cfg, nil, nil, true); err != nil {
 			t.Fatal(err)
 		}
 		check(t, path, nil)
@@ -722,5 +722,67 @@ func TestReportSavedUnreadableQuitEndpointReportsWritten(t *testing.T) {
 	// …but quit must still report written, never "config unchanged."
 	if !m.reportSaved() {
 		t.Fatal("readable→unreadable across the session must report written")
+	}
+}
+
+// Concurrent worktree sessions share one project store, so two editors open
+// on the same config is ordinary. The editor's desired config is built on
+// what it READ at open, so a key another session added since is absent from
+// it -- writing would reconcile that key away. Save refuses instead, and only
+// force (the y answer to the overwrite prompt) writes through.
+func TestSaveRefusesDriftAndForceOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("base = \"debian\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	openRaw, openErr := os.ReadFile(path)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+
+	// Another session lands a grant-bearing change while this editor is open.
+	if err := os.WriteFile(path, []byte("base = \"debian\"\negress = [\"api.example.com\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	desired := config.Config{Base: "ubuntu"} // what our editor would write
+	if err := Save(path, false, desired, openRaw, openErr, false); !errors.Is(err, ErrDrift) {
+		t.Fatalf("a moved file must refuse with ErrDrift, got %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if !strings.Contains(string(after), "api.example.com") {
+		t.Errorf("the refused save must leave the other session's change intact:\n%s", after)
+	}
+
+	if err := Save(path, false, desired, openRaw, openErr, true); err != nil {
+		t.Fatalf("force must write through: %v", err)
+	}
+	forced, _ := os.ReadFile(path)
+	if !strings.Contains(string(forced), "ubuntu") {
+		t.Errorf("force must write this session's config:\n%s", forced)
+	}
+	if strings.Contains(string(forced), "api.example.com") {
+		t.Errorf("overwrite is wholesale by ruling -- the other session's key does not survive:\n%s", forced)
+	}
+}
+
+// An unchanged file saves normally, and a file absent at open and still
+// absent saves normally too (absence on both sides is not drift).
+func TestSaveAllowsUnchangedAndConsistentAbsence(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("base = \"debian\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	openRaw, _ := os.ReadFile(path)
+	if err := Save(path, false, config.Config{Base: "ubuntu"}, openRaw, nil, false); err != nil {
+		t.Fatalf("an unchanged file must save: %v", err)
+	}
+
+	fresh := filepath.Join(dir, "new.config")
+	_, absErr := os.ReadFile(fresh)
+	if err := Save(fresh, false, config.Config{Base: "ubuntu"}, nil, absErr, false); err != nil {
+		t.Fatalf("absent at open and still absent must save: %v", err)
 	}
 }

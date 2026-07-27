@@ -155,7 +155,8 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 
 	var path, title string
 	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
-	var prepare func() error      // deferred store setup, run by the UI before its first write
+	var prepare func() error // deferred store setup, run by the UI before its first write
+	var lockFile string      // the project store's setup lock ("" = no shared contender)
 	switch target {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
@@ -187,6 +188,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 			return verr
 		}
 		prepare = paths.Bootstrap
+		lockFile = paths.LockFile
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
 		vols = newVolumeAdmin(paths, projectDir, prepare) // nil if the engine/config won't resolve
@@ -201,7 +203,15 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare)
+	// Writes ride the project's setup lock: worktree sessions share one
+	// store, so two editors saving at once is an ordinary shape, not a race
+	// nobody hits. Global and layer targets have no such shared contender and
+	// pass no guard -- the drift check still applies, unserialized.
+	var guard func(func() error) error
+	if lockFile != "" {
+		guard = func(write func() error) error { return withSetupLock(s.Err, lockFile, write) }
+	}
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare, guard)
 	if err != nil {
 		return err
 	}

@@ -157,11 +157,24 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
-	if err := Save(m.filePath, m.followFile, cfg); err != nil {
+	if err := m.write(cfg, m.forceSave); err != nil {
+		if errors.Is(err, ErrDrift) {
+			// Don't lose the session's work: arm the overwrite prompt and
+			// leave every edit on screen. Answering y re-saves with force.
+			m.confirmOverwrite = true
+			m.errMsg = ""
+			m.status = ""
+			return m
+		}
 		m.errMsg = err.Error()
 		m.status = ""
 		return m
 	}
+	m.confirmOverwrite = false
+	m.forceSave = false
+	// The write IS the new baseline: a second ctrl+s must not read its own
+	// first write as another session's drift.
+	m.openRaw, m.openErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 	m.errMsg = ""
 	m.savedSig = m.sig()
 	m.savedOnce = true
@@ -169,6 +182,20 @@ func (m model) save() model {
 	m.status = savedStatus
 	m.confirmQuit = false
 	return m
+}
+
+// write runs Save inside whatever lock the caller supplied (the project
+// store's setup lock, for the target that concurrent worktree sessions
+// share). No guard -- the global and layer editors -- writes directly; the
+// drift check still applies, it is just not serialized.
+func (m model) write(cfg config.Config, force bool) error {
+	do := func() error {
+		return Save(m.filePath, m.followFile, cfg, m.openRaw, m.openErr, force)
+	}
+	if m.guard == nil {
+		return do()
+	}
+	return m.guard(do)
 }
 
 // assemble builds a config from the working state onto a copy of the original,

@@ -5,6 +5,8 @@
 package configui
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 
@@ -30,11 +32,27 @@ const managedHeader = "# Managed by `byre config`.\n\n"
 // config (the one file --self-edit mounts into a box), true for host-owned
 // homes (default.config, named layers), where a dotfiles symlink is the
 // user's own arrangement.
-func Save(path string, follow bool, cfg config.Config) error {
+// ErrDrift reports that the file changed on disk since the editor opened it.
+// The editor's desired config is built on the config it READ at open, so a
+// key another session added since is not in it -- writing would reconcile
+// that key away. Concurrent worktree sessions share one project store, so
+// this is reachable in ordinary use, not a theoretical race.
+var ErrDrift = errors.New("the config file changed on disk since this editor opened it")
+
+// Save writes cfg, preserving everything it does not structure. openRaw and
+// openErr are the file as the editor first read it: unless force is set, a
+// disk state that no longer matches them aborts with ErrDrift instead of
+// overwriting. Callers hold whatever lock the target deserves around this
+// (the project store's setup lock) -- Save itself knows nothing about
+// project layout.
+func Save(path string, follow bool, cfg config.Config, openRaw []byte, openErr error, force bool) error {
 	if err := cfg.ValidateLayer(); err != nil {
 		return err
 	}
 	raw, err := hostopen.ReadFileBounded(path, follow, config.MaxConfigBytes)
+	if !force && !sameFileState(raw, err, openRaw, openErr) {
+		return ErrDrift
+	}
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -56,4 +74,19 @@ func Save(path string, follow bool, cfg config.Config) error {
 		return err
 	}
 	return config.AtomicWrite(path, string(doc.Bytes()))
+}
+
+// sameFileState compares two (bytes, error) reads of the same path. Absent on
+// both sides counts as unchanged; any read failure other than absence is
+// treated as drift -- byre cannot establish the file is what it was, and
+// "unchanged" is only ever claimed on positive evidence (reportSaved's rule).
+func sameFileState(a []byte, aErr error, b []byte, bErr error) bool {
+	switch {
+	case aErr == nil && bErr == nil:
+		return bytes.Equal(a, b)
+	case os.IsNotExist(aErr) && os.IsNotExist(bErr):
+		return true
+	default:
+		return false
+	}
 }

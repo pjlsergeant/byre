@@ -31,9 +31,12 @@ import (
 // happen — an explicit save or the $EDITOR round-trip — so the caller can defer
 // creating the target's directory until the user actually commits: opening the
 // editor and quitting must leave no trace.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error) (bool, error) {
+// guard, when non-nil, wraps every write in the caller's lock -- the project
+// store's setup lock, which is what concurrent worktree sessions contend on.
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error, guard func(func() error) error) (bool, error) {
 	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
 	m.prepare = prepare
+	m.guard = guard
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -257,6 +260,13 @@ type model struct {
 	errMsg      string
 	status      string
 	confirmQuit bool
+	// confirmOverwrite is armed when a save hit ErrDrift: the file moved
+	// under this session. y overwrites wholesale (the user's buffer becomes
+	// the file), anything else cancels. Rare enough not to deserve a merge.
+	confirmOverwrite bool
+	forceSave        bool
+	// guard wraps each write in the caller's lock (nil = write directly).
+	guard func(func() error) error
 }
 
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
@@ -505,6 +515,17 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Quit
+	}
+	if m.confirmOverwrite {
+		switch key {
+		case "y", "Y":
+			m.forceSave = true
+			return m.save(), nil
+		default:
+			m.confirmOverwrite = false
+			m.status = "Not saved — the file on disk was left as it is"
+			return m, nil
+		}
 	}
 	m.confirmQuit = false
 	switch key {
@@ -841,6 +862,8 @@ func (m model) viewForm() string {
 
 	b.WriteString("\n")
 	switch {
+	case m.confirmOverwrite:
+		b.WriteString(errStyle.Render("● This file changed on disk since you opened it — overwrite it with what's on screen? (y/N)"))
 	case m.confirmQuit:
 		b.WriteString(errStyle.Render("● Unsaved changes — press esc/^q/^c again to discard, or ctrl+s to save"))
 	case m.errMsg != "":

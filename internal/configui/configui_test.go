@@ -621,3 +621,52 @@ func TestErrorLinesWrapNotTruncate(t *testing.T) {
 		t.Fatalf("zero-width render lost the message: %q", got)
 	}
 }
+
+// The model side of drift: a save that hits ErrDrift must arm the overwrite
+// prompt and keep every edit on screen (nothing lost), y overwrites, anything
+// else cancels without writing.
+func TestDriftArmsOverwritePromptAndKeepsEdits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("base = \"debian\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{Base: "debian"}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+	m.ti.SetValue("ubuntu") // an unsaved edit that must survive the refusal
+
+	if err := os.WriteFile(path, []byte("base = \"debian\"\napt = [\"jq\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m = m.save()
+	if !m.confirmOverwrite {
+		t.Fatalf("a drifted save must arm the overwrite prompt (errMsg=%q)", m.errMsg)
+	}
+	if m.ti.Value() != "ubuntu" {
+		t.Errorf("the session's edits must stay on screen, got %q", m.ti.Value())
+	}
+	if raw, _ := os.ReadFile(path); !strings.Contains(string(raw), "jq") {
+		t.Errorf("nothing may be written before the answer:\n%s", raw)
+	}
+
+	// n cancels: still no write, prompt cleared.
+	mm, _ := m.updateForm(key("n"))
+	m2 := mm.(model)
+	if m2.confirmOverwrite {
+		t.Errorf("a non-y answer must clear the prompt")
+	}
+	if raw, _ := os.ReadFile(path); !strings.Contains(string(raw), "jq") {
+		t.Errorf("cancelling must leave the file alone:\n%s", raw)
+	}
+
+	// y overwrites wholesale.
+	mm, _ = m.updateForm(key("y"))
+	m3 := mm.(model)
+	if m3.confirmOverwrite || m3.errMsg != "" {
+		t.Fatalf("y must complete the save: confirm=%v err=%q", m3.confirmOverwrite, m3.errMsg)
+	}
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), "ubuntu") || strings.Contains(string(raw), "jq") {
+		t.Errorf("overwrite is wholesale:\n%s", raw)
+	}
+}

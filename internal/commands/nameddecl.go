@@ -77,7 +77,11 @@ func saveDeclLayer(path string, follow bool, cur config.Config, prepare func() e
 			return err
 		}
 	}
-	return configui.Save(path, follow, cur)
+	// force: this is a single-shot read-modify-write from the CLI verb, not
+	// an interactive session with a long window -- there is no open-time
+	// baseline to compare against, and the behavior is unchanged from before
+	// the editor gained drift detection.
+	return configui.Save(path, follow, cur, nil, nil, true)
 }
 
 // addNamedDecl add-or-updates a declaration in the target layer (the agent
