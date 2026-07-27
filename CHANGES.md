@@ -17,6 +17,17 @@
   files** is a read-only view of what your skills bake into the image,
   attributed -- fork a skill to change one. Non-obvious screens now carry a
   one-line explainer under their title.
+- **The `BYRE_` namespace is now refused in `env_from_host` too, as it already
+  was in `[env]`.** Those variables parameterize byre's own launch machinery
+  (the launch gate, the announced egress), so passing one through would switch
+  byre's machinery while `byre status` kept asserting over it -- the hole
+  ADR 0050 closed for `[env]`, on the channel that had no editor path when it
+  was written. To set one deliberately, `run_args = ["-e", "BYRE_X=..."]`,
+  which status shows verbatim while degrading the claims it affects. If you
+  have a `BYRE_`-prefixed key in `env_from_host`, it now fails at config load
+  with that spelling in the message: byre's own `inttest` skill had one, and
+  it is renamed to `INTTEST_USER` (a skill's variable was squatting in byre's
+  vocabulary -- update `byre.preset` and re-apply the skill).
 - **A byre crash no longer looks like a usage error to a script.** Go exits a
   panic with 2, which is byre's usage code, so every crash was
   indistinguishable from a bad flag to anything reading the exit status --

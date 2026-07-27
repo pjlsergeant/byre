@@ -125,7 +125,7 @@ chmod 600 /home/dev/.byre-identity/inttest/byre-inttest
 ```
 
 The key lands on a **machine-scoped volume**, so every box on the machine
-shares it. The ssh user rides `env_from_host = { BYRE_INTTEST_USER =
+shares it. The ssh user rides `env_from_host = { INTTEST_USER =
 "env:USER" }` in the preset (Lima names the VM user after the host user).
 
 **Use, from any box:** `byre-inttest` runs the full gated suite (the

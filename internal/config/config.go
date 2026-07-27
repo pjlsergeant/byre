@@ -1080,6 +1080,21 @@ func (c Config) validateScalarsCommon(apt, egress, offered []string, extends fun
 		if !envKeyRe.MatchString(k) {
 			return fmt.Errorf("env_from_host key %q: not a valid environment variable name", k)
 		}
+		// The same reservation [env] carries, on the other user-facing channel
+		// into the box's environment (ADR 0050 tier 1). The scheme set limits
+		// the SPELLING -- a passthrough can only carry a host var, a git
+		// config key, or the timezone -- but not the EFFECT: BYRE_EGRESS
+		// pulled from the host lands in the chassis scripts' environment
+		// exactly as a literal would, and status keeps asserting
+		// deny-by-default over it. Tier 1 said the user channel is refused;
+		// this one simply had no editor path when that was written.
+		//
+		// Not narrowed to the chassis knobs: skills read BYRE_ vars too
+		// (firewall.sh reads BYRE_EGRESS) and skills are user-installable, so
+		// no enumeration byre can build is complete. The prefix is.
+		if strings.HasPrefix(k, "BYRE_") {
+			return fmt.Errorf("env_from_host key %s: the BYRE_ namespace is byre's runtime vocabulary and can't be passed through\nto override one deliberately: run_args = [\"-e\", \"%s=<value>\"]\n(byre status will show the raw flag and degrade the claims it affects)", k, k)
+		}
 		if err := validateHostSource(src); err != nil {
 			return fmt.Errorf("env_from_host %s: %w", k, err)
 		}

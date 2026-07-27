@@ -47,9 +47,9 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   /home/dev/.byre-identity/inttest/byre-inttest`. That directory is a
   machine-scoped volume: every box on this machine shares it, so this
   happens once, not per box.
-- **The ssh user:** `BYRE_INTTEST_USER` must be set (Lima names the VM user
+- **The ssh user:** `INTTEST_USER` must be set (Lima names the VM user
   after the host user). byre's own preset passes it through with
-  `env_from_host = { BYRE_INTTEST_USER = "env:USER" }`.
+  `env_from_host = { INTTEST_USER = "env:USER" }`.
 - **The VM address:** unset, the wrapper tries `host.docker.internal`
   (Docker Desktop) then `host.containers.internal` (podman); both carry
   egress grants. Native-Linux docker provides neither name, and the host's

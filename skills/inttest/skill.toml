@@ -18,7 +18,7 @@ files = { "byre-inttest" = "/usr/local/bin/byre-inttest", "byre-inttest.yaml" = 
 # published 60022) are NOT granted here -- like any BYRE_INTTEST_VM override,
 # they need their own egress grant in the box config.
 egress = ["host.docker.internal:60022", "host.containers.internal:60022"]
-env_docs = { BYRE_INTTEST_USER = "ssh user on the inttest runner; both runners name it after the HOST user (Lima by convention, the DinD build via --build-arg INTTEST_USER=$USER) -- pass it through with env_from_host = { BYRE_INTTEST_USER = \"env:USER\" }" }
+env_docs = { INTTEST_USER = "ssh user on the inttest runner; both runners name it after the HOST user (Lima by convention, the DinD build via --build-arg INTTEST_USER=$USER) -- pass it through with env_from_host = { INTTEST_USER = \"env:USER\" }" }
 
 [[volumes]]
 name = "inttest"
@@ -33,7 +33,7 @@ file = "context.md"
 [[package.files]]
 src = "byre-inttest"
 dest = "byre-inttest"
-sha256 = "0649add0625a2c56001ba69b9aa01d6ac9e6bddef074489e7a87dd762d12aeb5"
+sha256 = "9d794ae26db4f5271ea274bd210a3156396ffef4a4c24b4db914a0900decf61e"
 executable = true
 
 [[package.files]]
@@ -44,7 +44,7 @@ sha256 = "c9801e104df544d800738ccd6f4f6cf2625a00de32714ce559039f5e60b5de52"
 [[package.files]]
 src = "context.md"
 dest = "context.md"
-sha256 = "5899fc0ca2a3869cdb00e3324aec6449fa0bcebfdbce18e7511c8687a5a4b23d"
+sha256 = "0f64e37cd49d5afcc5532e5f8d227171323ca3ca28cd2ea92e1e71b13e49f7ba"
 
 [[package.files]]
 src = "dind/Dockerfile"

@@ -1367,3 +1367,31 @@ func TestRemovedNpmGlobalRefusesWithItsRemedy(t *testing.T) {
 		t.Errorf("a removed key is not an unknown key: %v", err)
 	}
 }
+
+// ADR 0050 tier 1 refused the BYRE_ namespace on the USER channel into the
+// box's environment. env_from_host is the other one, and it had no editor
+// path when that was written -- the config UI now makes it a first-class
+// write, so the reservation has to hold there too. The scheme set limits the
+// spelling, never the effect: a passthrough of BYRE_EGRESS lands in the
+// chassis scripts' environment exactly as a literal would.
+func TestValidateRejectsReservedNamespaceInEnvFromHost(t *testing.T) {
+	cfg := Config{EnvFromHost: map[string]string{"BYRE_EGRESS": "env:BYRE_EGRESS"}}
+	for mode, validate := range map[string]func() error{
+		"layer": cfg.ValidateLayer, "resolved": cfg.Validate,
+	} {
+		err := validate()
+		if err == nil {
+			t.Fatalf("%s: a reserved BYRE_ passthrough must be rejected", mode)
+		}
+		for _, want := range []string{"BYRE_EGRESS", "byre's runtime vocabulary", `run_args = ["-e", "BYRE_EGRESS=<value>"]`} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: rejection must carry %q, got: %v", mode, want, err)
+			}
+		}
+	}
+	// A name that merely CONTAINS the prefix is ordinary, same as [env].
+	ok := Config{EnvFromHost: map[string]string{"MY_BYRE_THING": "env:FOO", "TERM": "env:TERM"}}
+	if err := ok.ValidateLayer(); err != nil {
+		t.Errorf("non-reserved passthrough keys must stay legal, got %v", err)
+	}
+}

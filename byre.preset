@@ -21,7 +21,7 @@ skills = ["codex", "pjlsergeant/codereview", "pjlsergeant/devlog", "grok", "pjls
 
 # The inttest VM's ssh user: Lima names it after the HOST user, so pass it
 # through (the pjlsergeant/inttest skill's wrapper consumes it).
-env_from_host = { BYRE_INTTEST_USER = "env:USER" }
+env_from_host = { INTTEST_USER = "env:USER" }
 
 # The golang images pin GOTOOLCHAIN=local; auto lets `go install` fetch a newer
 # toolchain instead of hard-failing when a tool needs one.

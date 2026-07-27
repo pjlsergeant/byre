@@ -12,9 +12,9 @@
 #   BYRE_TEST_ENGINE=podman byre-inttest            # pin the engine (VM has both)
 #
 # Config (env):
-#   BYRE_INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
+#   INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
 #                      user after the HOST user, so pass it through:
-#                      env_from_host = { BYRE_INTTEST_USER = "env:USER" }
+#                      env_from_host = { INTTEST_USER = "env:USER" }
 #   BYRE_INTTEST_VM    VM address. Unset, the wrapper tries the engines'
 #                      host names in order: host.docker.internal (Docker
 #                      Desktop), host.containers.internal (podman) -- both
@@ -29,7 +29,7 @@
 set -eu
 
 KEY="${BYRE_INTTEST_KEY:-/home/dev/.byre-identity/inttest/byre-inttest}"
-VM_USER="${BYRE_INTTEST_USER:-}"
+VM_USER="${INTTEST_USER:-}"
 VM_PORT="${BYRE_INTTEST_PORT:-60022}"
 
 # An explicit BYRE_INTTEST_VM is used verbatim; otherwise take the first of
@@ -50,9 +50,9 @@ if [ -z "$VM_HOST" ]; then
 fi
 
 if [ -z "$VM_USER" ]; then
-  echo "byre-inttest: BYRE_INTTEST_USER is not set (the VM's ssh user)." >&2
+  echo "byre-inttest: INTTEST_USER is not set (the VM's ssh user)." >&2
   echo "Lima names the VM user after the HOST user; pass it through in byre.config:" >&2
-  echo '  env_from_host = { BYRE_INTTEST_USER = "env:USER" }' >&2
+  echo '  env_from_host = { INTTEST_USER = "env:USER" }' >&2
   exit 1
 fi
 if [ ! -f "$KEY" ]; then
