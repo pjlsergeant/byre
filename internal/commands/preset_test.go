@@ -617,3 +617,34 @@ func TestPresetStateHostilepresetFileDegrades(t *testing.T) {
 		t.Fatalf("state = %q, want unapplied for a symlinked preset", state)
 	}
 }
+
+// Consent tracks who chose the path. With no argument byre DERIVED the path
+// from the cwd, so a symlinked byre.preset is refused exactly as the passive
+// drift probe refuses it -- otherwise status's "run byre preset apply to
+// review it" note steered the user into the one flow that followed the link.
+// Naming the path explicitly is what makes it followable.
+func TestPresetApplyDerivedPathRefusesSymlink(t *testing.T) {
+	_, proj := onboardPaths(t)
+	target := filepath.Join(t.TempDir(), "elsewhere.toml")
+	if err := os.WriteFile(target, []byte("agent = \"codex\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(proj, PresetName)); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	s, _, _ := testStreams("y\n", true)
+	err := PresetApply(s, proj, "")
+	if err == nil {
+		t.Fatal("a cwd-derived symlinked preset must be refused")
+	}
+	if !strings.Contains(err.Error(), "will not follow") || !strings.Contains(err.Error(), "byre preset apply "+filepath.Join(proj, PresetName)) {
+		t.Errorf("the refusal must name the rule and the explicit-path remedy, got: %v", err)
+	}
+
+	// Named explicitly, the same file is followed: the user chose it.
+	s2, _, _ := testStreams("y\n", true)
+	if err := PresetApply(s2, proj, filepath.Join(proj, PresetName)); err != nil {
+		t.Errorf("an explicitly named path must still follow the symlink: %v", err)
+	}
+}

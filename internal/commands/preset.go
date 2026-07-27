@@ -238,19 +238,21 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 // bounds.
 func readPreset(projectDir, arg string) (content []byte, source string, legacyName bool, err error) {
 	if arg == "" {
-		// Conventional discovery still rides the hardened fetcher below --
-		// a cloned repo's preset is third-party input and gets the same
-		// 256KiB bound as an explicit source.
+		// Conventional discovery: byre DERIVED this path from the cwd, so
+		// nobody named it, and it gets the passive probe's no-follow read
+		// rather than the fetcher's follow. Following here contradicted the
+		// drift probe -- which refuses a symlinked byre.preset and then
+		// prints "run byre preset apply to review it", steering the user
+		// into the one flow that would follow the link. An explicit path
+		// argument below still follows: there the user really did name it.
 		p := filepath.Join(projectDir, PresetName)
-		if _, statErr := os.Stat(p); statErr == nil {
-			var f packages.Fetcher
-			b, _, err := f.FetchManifest(p)
+		if _, statErr := os.Lstat(p); statErr == nil {
+			b, err := readPresetDerived(p)
 			return b, p, false, err
 		}
 		legacy := filepath.Join(projectDir, config.ProjectConfigName)
-		if _, statErr := os.Stat(legacy); statErr == nil {
-			var f packages.Fetcher
-			b, _, err := f.FetchManifest(legacy)
+		if _, statErr := os.Lstat(legacy); statErr == nil {
+			b, err := readPresetDerived(legacy)
 			return b, legacy, true, err
 		}
 		return nil, "", false, fmt.Errorf("no %s here (and no legacy %s); pass a path or URI", PresetName, config.ProjectConfigName)
@@ -268,6 +270,24 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 		return nil, "", false, err
 	}
 	return b, arg, filepath.Base(arg) == config.ProjectConfigName, nil
+}
+
+// readPresetDerived reads a preset byre found ITSELF (no path argument),
+// under the same no-follow bound the passive probe uses. A symlink gets the
+// explicit remedy rather than a bare refusal: naming the path is exactly
+// what turns this into a followable source.
+func readPresetDerived(p string) ([]byte, error) {
+	b, err := readPresetBounded(p)
+	if err == nil {
+		return b, nil
+	}
+	// Classify for the MESSAGE only -- the refusal itself is the no-follow
+	// open above, which holds whatever this Lstat says. A symlink surfaces as
+	// ELOOP rather than ErrNotRegular, so the errno is not the thing to read.
+	if fi, lerr := os.Lstat(p); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular()) {
+		return nil, fmt.Errorf("%s is not a regular file (a symlink, FIFO, or device) -- byre found this path itself, so it will not follow it; to use it anyway, name it: byre preset apply %s", p, p)
+	}
+	return nil, err
 }
 
 // parsePreset strict-parses preset bytes as one config layer. A preset is a

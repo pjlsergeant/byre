@@ -155,8 +155,8 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 
 	var path, title string
 	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
-	var prepare func() error // deferred store setup, run by the UI before its first write
-	var lockFile string      // the project store's setup lock ("" = no shared contender)
+	var prepare func() error      // deferred store setup, run by the UI before its first write
+	var lockFile string           // the project store's setup lock ("" = no shared contender)
 	switch target {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
