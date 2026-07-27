@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/hostopen"
@@ -36,8 +37,21 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	var hits []refHit
 	check := func(where, path string) {
 		st, err := hostopen.StatNoFollow(path)
-		if err != nil || st.IsDir() {
-			return // no config here = provably no reference
+		switch {
+		case err == nil && st.IsDir():
+			return // a directory is not a config: provably no reference
+		case errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
+			// Both are PROOFS of absence: nothing at the name, or a
+			// non-directory on the way to it (a stray plain file in layers/
+			// has no layer.config beneath it and cannot acquire one).
+			return
+		case err != nil:
+			// Anything else (EACCES, a broken route, an I/O error) is not
+			// proof of absence, and this scanner's whole contract is that
+			// only a PROOF earns silence -- the same rule the directory
+			// listing below follows.
+			hits = append(hits, refHit{Where: where, Path: path, Guarded: true})
+			return
 		}
 		// The walk covers store project configs a --self-edit box can shape:
 		// no-follow, and an unreadable config degrades to a Guarded hit below.
