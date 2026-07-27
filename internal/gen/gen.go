@@ -313,8 +313,11 @@ func Dockerfile(in Input) string {
 
 	// Security guard: re-assert byre's own copy of the security-critical files
 	// AFTER the project block (and any dockerfile_post), so a project `files`
-	// entry or raw build line targeting these paths cannot leave its content in
-	// the final image. Same posture as the USER/ENTRYPOINT/HEALTHCHECK tail
+	// entry targeting these paths cannot leave its content in the final image.
+	// SCOPE, measured not assumed (ADR 0011): this defeats a `files` clobber,
+	// NOT the raw tier -- a raw line can re-point the path with a symlink and
+	// COPY writes through it. Raw blocks are covered by claim degradation
+	// instead (P3), never by this guard. Same posture as the USER/ENTRYPOINT/HEALTHCHECK tail
 	// below: byre forces its security-critical instructions last wherever it
 	// controls the order. Without this the ENTRYPOINT *pointer* is tail-protected
 	// but its *content* — the launcher, and the launch gate it enforces — sits in

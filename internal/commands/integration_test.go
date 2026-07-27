@@ -9,6 +9,7 @@ package commands
 // image runs. Expect several minutes on a cold cache (debian pull + apt).
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -494,4 +495,61 @@ name = "!dropped"
 	if string(out2) != "{\n  \"mcpServers\": {}\n}\n" {
 		t.Fatalf("empty-set bake = %q", out2)
 	}
+}
+
+// ADR 0011 used to claim the security guard's tail re-COPY defeated a `files`
+// clobber "or raw build line" of the launch gate. Measured against a real
+// engine (2026-07-28), the raw half is false: a raw line need not WRITE the
+// guarded path, it can re-point it, and COPY writes THROUGH the destination
+// symlink -- the gate stays a symlink to /dev/null, is empty, and the
+// launcher's `[ -s ]` test skips the wait.
+//
+// This pins what byre actually promises for that case, which is P3's answer
+// rather than the guard's: byre never parses inside a raw block, so a raw
+// block DEGRADES every posture claim it could undermine. The engine's
+// symlink behavior is deliberately not asserted -- byre does not control it,
+// and the disclosure holds whichever way it goes.
+func TestIntegrationRawLineRepointingTheGateIsDisclosed(t *testing.T) {
+	r := requireEngineRunner(t)
+	p, proj := testPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte(`
+skills = ["firewall"]
+dockerfile_post = ["RUN rm -f `+gen.LaunchGatePath+` && ln -s /dev/null `+gen.LaunchGatePath+`"]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := testIdentity(t, r)
+	image := imageTag(p.ID, ident.UID, ident.GID)
+	t.Cleanup(func() { _ = r.ImageRemove(image) })
+	if err := buildImageWarn(io.Discard, r, p, rv.cfg, rv.skills, image, false, ident); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	// Whatever the engine did to the gate, the claim must not stand unhedged.
+	var buf bytes.Buffer
+	renderStatus(&buf, statusInfo{
+		NetPosture:      "deny-by-default",
+		NetPostureSkill: "firewall",
+		BuildRaw:        rv.cfg.DockerfilePost,
+	})
+	if !strings.Contains(buf.String(), "not guaranteed") {
+		t.Fatalf("a raw build line must degrade the network claim:\n%s", buf.String())
+	}
+
+	// Recorded, not asserted: which way this engine went. ADR 0011 carries
+	// the measurement; a future engine that stops following the symlink does
+	// not make byre's promise wrong, so this must never fail the suite.
+	out, err := exec.Command(string(r.Engine()), "run", "--rm",
+		"--entrypoint", "stat", image, "-c", "%F", gen.LaunchGatePath).CombinedOutput()
+	if err != nil {
+		t.Logf("stat %s: %v\n%s", gen.LaunchGatePath, err, out)
+		return
+	}
+	t.Logf("%s after a re-pointing raw line: %s (guard covers `files` clobbers only -- ADR 0011)",
+		gen.LaunchGatePath, strings.TrimSpace(string(out)))
 }

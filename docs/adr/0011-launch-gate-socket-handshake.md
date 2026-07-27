@@ -34,5 +34,17 @@ Consequences:
   emptied gate would make it skip the wait and launch open. The gate file
   (and the netns script, and the launcher itself) are therefore re-COPY'd
   by the **security guard** at the Dockerfile tail, after the project
-  block, so a project `files` entry or raw build line targeting those paths
-  can't leave its own content there (see ARCHITECTURE, "security guard").
+  block, so a project `files` entry targeting those paths can't leave its
+  own content there (see ARCHITECTURE, "security guard").
+- **The guard covers `files` clobbers, NOT the raw tier**, and this was
+  measured rather than assumed (2026-07-28, docker/buildkit): a raw line
+  need not WRITE the guarded path to beat the re-COPY, it can re-point it
+  (`RUN rm -f /etc/byre/launch-gate && ln -s /dev/null /etc/byre/launch-gate`),
+  and `COPY` then writes THROUGH the destination symlink -- the gate stays
+  a symlink to `/dev/null`, is empty, and the launcher's `[ -s ]` test
+  skips the wait. The earlier "or raw build line" wording claimed a
+  guarantee the guard does not have. The raw tier is covered the way P3
+  says it is -- byre never parses inside a raw block, it degrades every
+  posture claim a raw block could undermine (`networkLine`'s BuildRaw
+  arm) -- so the DISCLOSURE holds either way; only the guard's charter
+  narrows. Pinned by TestIntegrationRawLineRepointingTheGateIsDisclosed.

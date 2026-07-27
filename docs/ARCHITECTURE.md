@@ -175,7 +175,7 @@ The **security guard** re-COPYs byre's own copy of the security-critical
 files -- the launcher (the ENTRYPOINT's content), and, when a network-posture
 skill is enabled, its launch gate and netns enforcement script -- *after* the
 project block. Those files are installed early (core/skill blocks), so without
-this a project `files` entry or raw build line targeting their paths would be a
+this a project `files` entry targeting their paths would be a
 later COPY and win in the built image: a one-line clobber could empty the launch
 gate or stub the firewall while `byre status` still read deny-by-default. Same
 posture as the `USER`/`ENTRYPOINT`/`HEALTHCHECK NONE` tail: byre forces its
