@@ -191,6 +191,37 @@ if [ -n "$deny_probe" ]; then
 else
   log "warning: could not pick a non-allowlisted deny probe; skipping the drop check"
 fi
+# The same check for v6, which the v4 probe cannot stand in for: the two
+# sides are separate rule sets and one can be broken while the other holds.
+#
+# It is conditional on a GLOBAL v6 address (scope 00 in /proc/net/if_inet6)
+# for a reason that matters: ip6_ok only says ip6tables WORKS, not that this
+# netns can route v6 at all — and a probe that cannot leave is
+# indistinguishable from one that was blocked. Running it unconditionally
+# would manufacture a passing verification out of a v4-only network, which is
+# a worse lie than not probing. Where it cannot run, say so.
+v6_verified=
+if [ -n "$ip6_ok" ] && [ -r /proc/net/if_inet6 ] &&
+  awk '$4 == "00" { found = 1 } END { exit !found }' /proc/net/if_inet6; then
+  deny6_probe=""
+  for cand in 2606:4700:4700::1111 2001:4860:4860::8888 2620:fe::fe; do
+    clash=
+    for r in "${v6rules[@]+"${v6rules[@]}"}"; do
+      read -r ip port <<<"$r"
+      [ "$ip" = "$cand" ] && [ "$port" = "443" ] && { clash=1; break; }
+    done
+    [ -z "$clash" ] && { deny6_probe="$cand"; break; }
+  done
+  if [ -n "$deny6_probe" ]; then
+    if timeout 3 bash -c "exec 3<>/dev/tcp/$deny6_probe/443" 2>/dev/null; then
+      die "IPv6 deny probe reached [$deny6_probe]:443 — the v6 rules are not effective"
+    fi
+    v6_verified=1
+  fi
+fi
+if [ -n "$ip6_ok" ] && [ -z "$v6_verified" ]; then
+  log "note: IPv6 rules applied but NOT probe-verified (no global IPv6 address to probe from) — the drop check above covers IPv4 only"
+fi
 # The allow probe is availability, not security: warn only (a flaky edge must
 # not brick the launch — the deny posture still holds). Skipped for a
 # deliberately empty allowlist (no host to probe).
