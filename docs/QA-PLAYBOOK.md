@@ -363,6 +363,69 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
    not the planted file — and the deny-by-default banner still holds.
 3. TEARDOWN: remove the entry + rm box.
 
+## Journey: config UI, env_from_host scheme picker
+
+1. Project config `agent = "none"` (byre ships six passthroughs, so the
+   screen always has rows). `byre config` → ↓↓↓ Enter. Expect the explainer
+   above the rows, six `KEY <- host <scheme>  (byre default)` rows, and the
+   exposure line matching the row count.
+2. Enter on a row → `Set in: byre default` + `Override here`. Enter → the
+   picker renders FIRST with the row's current scheme highlighted (prove
+   with `capture-pane -e`, not plain text) and the argument label matching.
+3. ←/→ across all five schemes: the label column must not change width, and
+   the argument's placeholder explains schemes that take no argument. From
+   `[disabled]` one more → wraps to `[value]`.
+4. Scheme `value` on a key that is also a passthrough → an `[env]` literal
+   row PLUS the passthrough row annotated `(… — overridden by [env], not
+   passed)`; the counts must not move (one key, one grant — the field
+   summary counts distinct keys, and must equal the exposure line).
+5. Add a NEW key with scheme `env:` → the row appears and both counts rise
+   BEFORE any save. (2026-07-27: it did neither; the entry was written to
+   disk invisibly and a second add answered `✗ duplicate key`.)
+6. Set an inherited key to `disabled` → the row reads `KEY <- disabled`,
+   drops out of both counts; save, quit, reopen → the key is still visible
+   and re-enableable from the screen. (2026-07-27: the row vanished
+   entirely, TUI-unreachable.)
+7. Rude keys — `BAD KEY`, `1STARTS_WITH_DIGIT`, `ünïcödé`, `K=EQUALS`,
+   `BYRE_EGRESS` — each rejected naming the rule that fired; `git:` with
+   `user name with spaces` rejected as an invalid git config key.
+8. TEARDOWN: none (discard).
+
+## Journey: config UI, Build files
+
+1. `byre config` → ADVANCED → Build files. Expect the one-line explainer
+   above the rows and `+ add Build files`.
+2. Refusals, each naming its rule: absolute source; relative destination;
+   empty source; empty destination; whitespace-only source; a duplicate
+   source already listed; `../../../etc/shadow` → "escapes the project dir"
+   (2026-07-27: the editor accepted it and the build refused later — editor
+   and `byre dockerfile` must agree).
+3. A source that does not exist: live note `⚠ source not in the project —
+   build will fail (accepted anyway…)`, the Claude Skills affordance. Row
+   accepted; `byre dockerfile` then refuses naming the entry and the remedy
+   ("create it, or remove the entry"), never a raw lstat error.
+4. Valid entry + a real file → `byre develop` (agent none, template none) →
+   the file is at the destination in the box, and `byre dockerfile` shows
+   `COPY files/<src> <dest>` before the guard block.
+5. Destination `/usr/local/bin/byre-launch` with `skills = ["firewall"]` →
+   the clobber note on stderr and the guard block re-COPYing the launcher
+   at the tail (see the security-guard journey).
+6. TEARDOWN: rm box + image; delete the entries.
+
+## Probe: hostile config strings
+
+Load a config whose values carry TOML `\r` and `\u001b` escapes in `[env]`,
+`[files]` and mount targets (literal control bytes never parse; the escape
+form is the live path), then read every config-UI screen with
+`capture-pane | cat -v` and `capture-pane -e`. No value may move the
+cursor, overwrite a row, or emit SGR that outlives its own row; the
+printable payload text must survive, stripped, on its own row. (2026-07-27:
+`\r` forged a row and hid the real one; an SGR escape ended byre's styling
+mid-row. `byre status` was unaffected — key names only, grammar-refused.)
+Residual, deliberate: the item editor's prefill and the raw-block textarea
+render through bubbletea widgets and do not strip — editing surfaces show
+the raw truth.
+
 ## Journey: Volumes screen scope grouping
 
 With at least one project volume and one machine identity volume
@@ -446,3 +509,26 @@ source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
 - The opencode shared-auth firstrun gate re-runs on EVERY launch until a
   login exists, so a loginless box must be skipped past the gate before
   probing agent env.
+- A bare `byre-inttest` can report a green gate it did not run: go test
+  replays CACHED package results, including the docker-touching ones
+  (`internal/runner (cached)` on a suite that builds boxes). For a release
+  gate always pass `-count=1`, and prove the tier fired at least once per
+  pass with `-v`: count `=== RUN` and require zero `SKIP` (a missing
+  `BYRE_DOCKER_TESTS`/`BYRE_TUI_TESTS` skips silently and still prints
+  `ok`).
+- Driving `vi` through `^e`: `o` on a COMMENT line inherits vim's comment
+  leader, so an intended invalid-key edit lands as `# packages = [...]` --
+  valid config, and the UI correctly says "Reloaded from file". A journey
+  step expecting the error banner then passes for the wrong reason.
+  Position on a non-comment line first (`:N`, then `o`), and always `cat`
+  the file to confirm the edit you think you made.
+- `byre: wrote <path>` on `^q` after a `^e` edit is NOT a spurious save:
+  reportSaved compares open-time and quit-time BYTES, so a lasting external
+  edit reports written and a net-identical round trip reports unchanged.
+  The "config unchanged" step in the `^e` journey holds only because its
+  round-trip is net-identical -- don't file the other case as a bug.
+- After a Ctrl-C the tmux wrapper's `; echo $? > file` never runs, so "rc
+  file still empty" proves nothing about whether the process died. Judge
+  death by `tmux list-panes -F '#{pane_dead}'` and a `pgrep`, not by the
+  status file -- and re-test a "the first Ctrl-C was ignored" impression
+  before reporting it (one did not reproduce, 2026-07-27).
