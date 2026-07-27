@@ -283,6 +283,19 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// Snapshot the on-disk bytes as OPENED, so reportSaved (Run's saved
 	// return) can judge an $EDITOR-only session by NET content against them.
 	openRaw, openErr := hostopen.ReadFileBounded(filePath, followForTarget(target), config.MaxConfigBytes)
+	// The model's STATE and its drift baseline must come from ONE read. The
+	// caller parsed the file too (it fails early on a broken one), but between
+	// its parse and this read another session can land a write: the form would
+	// then hold the old config while the baseline recorded the new bytes, and
+	// a save would see no drift and revert that session silently -- the exact
+	// hole drift detection exists to close. Re-parsing the bytes just read
+	// closes it; a byte slice that no longer parses (or a failed read) falls
+	// back to the caller's already-validated config.
+	if openErr == nil {
+		if reparsed, perr := config.Parse(openRaw); perr == nil {
+			cfg = reparsed
+		}
+	}
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Focus()

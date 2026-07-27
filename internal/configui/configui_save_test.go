@@ -871,3 +871,48 @@ func TestScalarPickersPreserveAStoredSentinelWithNothingBelow(t *testing.T) {
 		t.Errorf("an unstated sentinel must stay unstated: agent=%q template=%q", got.Agent, got.Template)
 	}
 }
+
+// Custody, not just semantics: dropping the marker from [marker, binding]
+// must delete the MARKER's block and leave the binding's bytes -- and its
+// comment -- untouched. Assigning occurrences by position alone rewrote
+// occurrence 0 into the binding and deleted occurrence 1, which parses
+// identically while swapping which comment survives (ADR 0044).
+func TestSavePortRemovalKeepsTheSurvivingBlocksComment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	initial := "# marker's note\n[[ports]]\ncontainer = 5432\nremove = true\n\n# binding's note\n[[ports]]\ncontainer = 5432\nhost = 15432\n"
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Drop the marker, keep the binding exactly as it was.
+	var want config.Config
+	for _, p := range cur.Ports {
+		if !p.Remove {
+			want.Ports = append(want.Ports, p)
+		}
+	}
+	if err := Save(path, false, want, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "# binding's note") {
+		t.Errorf("the surviving block must keep its own comment:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "# marker's note") {
+		t.Errorf("the removed block's comment must go with it:\n%s", raw)
+	}
+	back, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Ports) != 1 || back.Ports[0].Remove || back.Ports[0].Host != 15432 {
+		t.Errorf("wrong ports after removal: %+v", back.Ports)
+	}
+}

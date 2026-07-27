@@ -18,6 +18,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"sort"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/tomldoc"
@@ -327,7 +328,6 @@ func reconcilePorts(doc *tomldoc.Doc, cur, want []config.Port) error {
 		}
 		cur = nil
 	}
-	// Group both sides by container, preserving file order within each group.
 	group := func(ports []config.Port) map[string][]config.Port {
 		by := map[string][]config.Port{}
 		for _, p := range ports {
@@ -337,38 +337,75 @@ func reconcilePorts(doc *tomldoc.Doc, cur, want []config.Port) error {
 	}
 	curBy, wantBy := group(cur), group(want)
 
-	// Replace or append, per container, per occurrence.
-	for _, w := range want {
-		k := id(w)
-		n := 0
-		for _, prev := range wantBy[k] {
-			if reflect.DeepEqual(prev, w) {
-				break
-			}
-			n++
-		}
-		existing := curBy[k]
-		if n < len(existing) {
-			if reflect.DeepEqual(existing[n], w) {
-				continue
-			}
-			replaced, err := doc.ReplaceArrayTableNth("ports", "container", k, n, renderPort(w))
-			if err != nil {
-				return err
-			}
-			if replaced {
-				continue
-			}
-		}
-		if err := doc.AppendArrayTable("ports", renderPort(w)); err != nil {
-			return err
+	keys := make([]string, 0, len(curBy)+len(wantBy))
+	for k := range curBy {
+		keys = append(keys, k)
+	}
+	for k := range wantBy {
+		if _, seen := curBy[k]; !seen {
+			keys = append(keys, k)
 		}
 	}
-	// Drop surplus occurrences, highest index first so earlier indices stay
-	// valid as blocks disappear.
-	for k, existing := range curBy {
-		for n := len(existing) - 1; n >= len(wantBy[k]); n-- {
-			if _, err := doc.RemoveArrayTableNth("ports", "container", k, n); err != nil {
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		have, wants := curBy[k], wantBy[k]
+		claimed := make([]bool, len(have)) // which existing occurrences are spoken for
+		target := make([]int, len(wants))  // want index -> occurrence, or -1 to append
+		for i := range target {
+			target[i] = -1
+		}
+		// UNCHANGED entries claim their own block first. Position alone would
+		// reassign them: dropping the marker from [marker, binding] would
+		// rewrite occurrence 0 into the binding and delete occurrence 1 --
+		// parsed semantics right, custody backwards, since the deleted block
+		// takes the surviving entry's comments with it (ADR 0044).
+		for i, w := range wants {
+			for j, h := range have {
+				if !claimed[j] && reflect.DeepEqual(h, w) {
+					claimed[j], target[i] = true, j
+					break
+				}
+			}
+		}
+		// Everything else takes the lowest unclaimed occupied slot, and is
+		// rewritten there; leftovers append.
+		for i := range wants {
+			if target[i] >= 0 {
+				continue
+			}
+			for j := range have {
+				if !claimed[j] {
+					claimed[j], target[i] = true, j
+					break
+				}
+			}
+		}
+		for i, w := range wants {
+			if j := target[i]; j >= 0 {
+				if reflect.DeepEqual(have[j], w) {
+					continue // untouched: its bytes and comments stay as written
+				}
+				replaced, err := doc.ReplaceArrayTableNth("ports", "container", k, j, renderPort(w))
+				if err != nil {
+					return err
+				}
+				if replaced {
+					continue
+				}
+			}
+			if err := doc.AppendArrayTable("ports", renderPort(w)); err != nil {
+				return err
+			}
+		}
+		// Unclaimed occurrences go, highest index first so the lower indices
+		// stay valid as blocks disappear. Replacements above already ran, so
+		// every index here still refers to the block it did at entry.
+		for j := len(have) - 1; j >= 0; j-- {
+			if claimed[j] {
+				continue
+			}
+			if _, err := doc.RemoveArrayTableNth("ports", "container", k, j); err != nil {
 				return err
 			}
 		}
