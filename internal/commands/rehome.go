@@ -195,7 +195,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 // behind (deleting it then would destroy the only copy).
 func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bool, err error) {
 	safe = true
-	if _, e := hostopen.PlainStat(filepath.Join(oldDir, "path"), hostopen.Unreviewed); e == nil {
+	if ok, _ := hostopen.ExistsNoFollow(filepath.Join(oldDir, "path")); ok {
 		found = true
 	}
 	for _, name := range []string{config.ProjectConfigName, appliedRecord} {
@@ -397,7 +397,10 @@ func rehomeCandidates(paths project.Paths) (cands []rehomeCandidate, total int, 
 		}
 		total++
 		was := strings.TrimSuffix(string(rec), "\n")
-		_, serr := hostopen.PlainStat(was, hostopen.Unreviewed)
+		// Following IS the question: `was` is the user's own project
+		// directory, and one reached through a symlinked path still lives
+		// there. A no-follow probe would report every such project as moved.
+		_, serr := hostopen.PlainStat(was, hostopen.HostUserOwned)
 		if serr == nil {
 			continue // path still exists: that project still lives there
 		}
@@ -421,7 +424,7 @@ func lastUsed(projectDir string) time.Time {
 		filepath.Join(projectDir, "context", "Dockerfile.generated"),
 		filepath.Join(projectDir, "path"),
 	} {
-		if fi, err := hostopen.PlainStat(f, hostopen.Unreviewed); err == nil && fi.ModTime().After(t) {
+		if fi, err := hostopen.StatNoFollow(f); err == nil && fi.ModTime().After(t) {
 			t = fi.ModTime()
 		}
 	}

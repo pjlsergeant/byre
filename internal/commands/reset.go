@@ -54,7 +54,7 @@ func neverEnrolled(paths project.Paths) (bool, error) {
 	if err != nil || recorded {
 		return false, err
 	}
-	if _, serr := hostopen.PlainStat(paths.Dir, hostopen.Unreviewed); os.IsNotExist(serr) {
+	if ok, serr := hostopen.ExistsNoFollow(paths.Dir); !ok && serr == nil {
 		return true, nil
 	}
 	return false, nil

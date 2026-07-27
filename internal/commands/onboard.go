@@ -43,7 +43,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// the (rw-mounted) project can't define its own sandbox.
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 
-	if _, err := hostopen.PlainStat(cfgPath, hostopen.Unreviewed); err == nil {
+	if ok, _ := hostopen.ExistsNoFollow(cfgPath); ok {
 		// Already configured. --template/--agent only configure a NEW project, so
 		// don't silently ignore them on an existing one — point at the file.
 		if anyFlag {

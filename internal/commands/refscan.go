@@ -33,7 +33,7 @@ type refHit struct {
 func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	var hits []refHit
 	check := func(where, path string) {
-		st, err := hostopen.PlainStat(path, hostopen.Unreviewed)
+		st, err := hostopen.StatNoFollow(path)
 		if err != nil || st.IsDir() {
 			return // no config here = provably no reference
 		}

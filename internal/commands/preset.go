@@ -246,12 +246,12 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 		// into the one flow that would follow the link. An explicit path
 		// argument below still follows: there the user really did name it.
 		p := filepath.Join(projectDir, PresetName)
-		if _, statErr := hostopen.PlainLstat(p, hostopen.Unreviewed); statErr == nil {
+		if ok, _ := hostopen.ExistsNoFollow(p); ok {
 			b, err := readPresetDerived(p)
 			return b, p, false, err
 		}
 		legacy := filepath.Join(projectDir, config.ProjectConfigName)
-		if _, statErr := hostopen.PlainLstat(legacy, hostopen.Unreviewed); statErr == nil {
+		if ok, _ := hostopen.ExistsNoFollow(legacy); ok {
 			b, err := readPresetDerived(legacy)
 			return b, legacy, true, err
 		}
@@ -284,7 +284,7 @@ func readPresetDerived(p string) ([]byte, error) {
 	// Classify for the MESSAGE only -- the refusal itself is the no-follow
 	// open above, which holds whatever this Lstat says. A symlink surfaces as
 	// ELOOP rather than ErrNotRegular, so the errno is not the thing to read.
-	if fi, lerr := hostopen.PlainLstat(p, hostopen.Unreviewed); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular()) {
+	if fi, lerr := hostopen.StatNoFollow(p); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular()) {
 		return nil, fmt.Errorf("%s is not a regular file (a symlink, FIFO, or device) -- byre found this path itself, so it will not follow it; to use it anyway, name it: byre preset apply %s", p, p)
 	}
 	return nil, err
@@ -447,7 +447,7 @@ func presetState(projectDir string, paths project.Paths) (state string, legacyNa
 // the same bound -- but an existing marker still proves an application
 // happened, so the honest state is diverged, not never-applied.
 func stateSansContent(paths project.Paths) string {
-	if _, err := hostopen.PlainStat(filepath.Join(paths.Dir, appliedRecord), hostopen.Unreviewed); err == nil {
+	if ok, _ := hostopen.ExistsNoFollow(filepath.Join(paths.Dir, appliedRecord)); ok {
 		return "diverged"
 	}
 	return "unapplied"
