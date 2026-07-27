@@ -1781,9 +1781,10 @@ func CoreEnvFromHost() map[string]string {
 // a source is PROJECT-RELATIVE and a destination is ABSOLUTE in the image.
 // They previously lived only in build's planFiles, so a config carrying a
 // nonsense entry parsed happily and failed at build -- long after the editor
-// that wrote it could have said so. This is the syntactic subset; planFiles
-// still owns what needs the project on disk (escape refusal, and two
-// spellings of one source colliding).
+// that wrote it could have said so. The ..-prefix escape refusal rides here
+// too: also pure grammar. This is the syntactic subset; planFiles still owns
+// what needs the project on disk (the symlinked escape, and two spellings of
+// one source colliding).
 func ValidateFiles(files map[string]string) error {
 	for _, src := range slices.Sorted(maps.Keys(files)) {
 		if strings.TrimSpace(src) == "" {
@@ -1791,6 +1792,14 @@ func ValidateFiles(files map[string]string) error {
 		}
 		if filepath.IsAbs(src) {
 			return fmt.Errorf("files: source %q must be project-relative, not an absolute host path", src)
+		}
+		// The ..-prefix half of planFiles' escape refusal is pure path
+		// grammar -- no filesystem needed -- so it belongs here with the
+		// other shape rules, where the editor can refuse it at the point of
+		// typing instead of the build failing later. The symlink half stays
+		// build-side: only the disk can answer it.
+		if clean := filepath.Clean(src); clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("files: source %q escapes the project dir", src)
 		}
 		if dest := files[src]; !filepath.IsAbs(dest) {
 			return fmt.Errorf("files: destination %q for source %q must be an absolute path in the image", dest, src)

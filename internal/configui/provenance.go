@@ -98,6 +98,11 @@ type Inherited struct {
 	// Catalog is optional; when set, skill/template rows can show provenance
 	// and disable INVALID/conflict/LEGACY entries.
 	Catalog *packages.Catalog
+	// ProjectDir is the project tree [build].files sources resolve against
+	// ("" for the global and layer editors, where there is no project and a
+	// probe would answer about the wrong tree). Display-only legibility: the
+	// Build files editor's missing-source note, never a gate.
+	ProjectDir string
 }
 
 // lowerNow is the lower-layer resolved config

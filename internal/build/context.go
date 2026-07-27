@@ -700,6 +700,13 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 	}
 	real, err = filepath.EvalSymlinks(filepath.Join(realDir, clean))
 	if err != nil {
+		// A missing source is overwhelmingly the real cause here, and the
+		// raw lstat error named neither the entry nor a way out -- the
+		// editor warns at declaration time, and the build failure owes the
+		// same legibility to configs written by hand.
+		if os.IsNotExist(err) {
+			return "", "", fmt.Errorf("source %q is not in the project (create it, or remove the entry)", src)
+		}
 		return "", "", err
 	}
 	within, err := filepath.Rel(realDir, real)

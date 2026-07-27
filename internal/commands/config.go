@@ -33,6 +33,22 @@ func chainContains(layers map[string]config.Config, from, needle string) bool {
 	return false
 }
 
+// displayPath abbreviates p with a leading ~ when it lives under the user's
+// home directory, and otherwise returns it verbatim -- never a spelling the
+// path does not have. Display-only; degrade on a missing home (no user.Current
+// in a stripped container is survivable, a wrong path in a title is a lie).
+func displayPath(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	rel, err := filepath.Rel(home, p)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return p
+	}
+	return "~/" + filepath.ToSlash(rel)
+}
+
 // skillOpts is ListSkills minus unofferable stubs (see the call site).
 func skillOpts(cat *packages.Catalog) []string {
 	var out []string
@@ -163,7 +179,12 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	switch target {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
-		title = "byre global config  (~/.byre/default.config)"
+		// The title names the REAL file, tilde-abbreviated only when it
+		// truly lives under the user's home: a hardcoded "~/.byre" under a
+		// BYRE_HOME override put the wrong path in the title, five lines
+		// above a footer showing the right one (store notices already follow
+		// this rule; the QA playbook pins it for them).
+		title = "byre global config  (" + displayPath(path) + ")"
 		// Not a store — no enrollment semantics — but AtomicWrite no longer
 		// creates directories, and quitting an unsaved editor should leave no
 		// fresh ~/.byre behind either: create home only when a write lands.
@@ -178,6 +199,10 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		if perr != nil {
 			return perr
 		}
+		// Canonical, not WorkDir: planFiles stages sources against Canonical,
+		// and the editor's missing-source note must ask the same tree the
+		// build will.
+		inh.ProjectDir = paths.Canonical
 		// Fail the id-collision check loudly before the editor opens, but defer
 		// the enrolling Bootstrap to write time: opening the editor on a project
 		// byre has never seen and quitting without saving must leave no

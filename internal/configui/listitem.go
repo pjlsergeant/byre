@@ -1049,6 +1049,26 @@ func portLine(p config.Port) string {
 	return fmt.Sprintf("%s:%d -> %d", iface, host, p.Container)
 }
 
+// filesSourceNote is the Build files editor's live missing-source check --
+// the claudeSkillDirNote shape on the [build].files vocabulary. Warn-only,
+// never a gate; empty or shape-invalid sources return "" (the required-field
+// and ValidateFiles checks own those), and so does an editor with no project
+// dir to resolve against.
+func filesSourceNote(projectDir, src string) string {
+	s := strings.TrimSpace(src)
+	if projectDir == "" || s == "" || filepath.IsAbs(s) {
+		return ""
+	}
+	clean := filepath.Clean(s)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "" // the escape refusal owns this shape
+	}
+	if _, err := hostopen.PlainStat(filepath.Join(projectDir, clean), hostopen.UserNamed); err != nil {
+		return "source not in the project — build will fail"
+	}
+	return ""
+}
+
 // claudeSkillDirNote is the live legibility check on a declared host dir:
 // the editor accepted a nonexistent path silently, deferring the failure to
 // the next develop. skills.ValidateClaudeSkillDir — the exact check the bake
@@ -1656,6 +1676,17 @@ func (m model) itemNotes() []string {
 			notes = append(notes, "⚠ "+n+" (accepted anyway — the dir can be created later)")
 		}
 		return notes
+	}
+	if m.listField == fFiles {
+		// Same affordance the Claude Skills editor has: a source that is not
+		// on disk is accepted (it can be created before the next develop) but
+		// never silently -- deferring the failure to the build hands the user
+		// a raw lstat error long after the editor could have said so. "" for
+		// the global/layer editors: no project, so no tree to ask.
+		if n := filesSourceNote(m.inh.ProjectDir, m.inputs[0].Value()); n != "" {
+			return []string{"⚠ " + n + " (accepted anyway — the file can be created later)"}
+		}
+		return nil
 	}
 	if m.listField == fContext {
 		notes := nameNotes(m.inputs[0].Value(), config.ValidContextName)

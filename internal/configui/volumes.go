@@ -207,10 +207,21 @@ func (m model) viewVolumes() string {
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.volCur, line))
 	}
-	// Description of the highlighted volume.
+	// Description of the highlighted volume. Wrapped, not clipped: the
+	// frame-wide clip ends a long line in "…", and on this string the part
+	// past the ellipsis was the consequence ("clearing = logging out
+	// everywhere") -- exactly what the reader is deciding with, one row above
+	// the c-clear action it warns about.
 	if m.volCur < len(m.volList) {
 		if d := volDescription(m.volList[m.volCur]); d != "" {
-			b.WriteString("\n" + dimStyle.Render(d) + "\n")
+			b.WriteString("\n")
+			w := m.width
+			if w <= 0 {
+				w = 80
+			}
+			for _, l := range wrapLine(d, w) {
+				b.WriteString(dimStyle.Render(l) + "\n")
+			}
 		}
 	}
 

@@ -735,3 +735,42 @@ func TestSecondSaveStillDetectsAnotherSessionsWrite(t *testing.T) {
 		t.Errorf("nothing may be written over it before the answer:\n%s", raw)
 	}
 }
+
+// At 10 rows the old fallback (bodyMax < 4 → return unclipped) handed the
+// terminal a frame taller than itself, and the terminal dropped the TOP rows:
+// title and ▸ cursor gone, silently, while the cursor kept moving (2026-07-27
+// QA measured the cliff: 11 rows clipped fine, 10 did not). A tall footer now
+// gives up its topmost rows -- the tail keeps the key help and the confirm
+// banners -- before clipping is ever abandoned.
+func TestClipHeightShortTerminalStillFollowsTheCursor(t *testing.T) {
+	var lines []string
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("row %d", i))
+	}
+	lines[20] = "▸ focused row"
+	// A footer tall enough that pinning it whole leaves bodyMax < 4 at
+	// height 10: separator + six pinned rows.
+	lines[23] = ""
+	for i := 24; i < 30; i++ {
+		lines[i] = fmt.Sprintf("footer %d", i)
+	}
+	lines[29] = "esc back · ^q quit"
+	frame := strings.Join(lines, "\n")
+
+	got := clipHeight(frame, 10)
+	if !strings.Contains(got, "▸ focused row") {
+		t.Fatalf("the cursor row must survive a 10-row terminal:\n%s", got)
+	}
+	if !strings.Contains(got, "esc back · ^q quit") {
+		t.Fatalf("the footer's last row (key help) must stay pinned:\n%s", got)
+	}
+	if n := strings.Count(got, "\n") + 1; n > 9 {
+		t.Fatalf("frame must fit 10 rows (9 usable): got %d lines", n)
+	}
+
+	// The genuinely-absurd fallback survives below that.
+	tiny := clipHeight(frame, 4)
+	if tiny != frame {
+		t.Fatalf("a 4-row terminal is the terminal's problem, not a clip target")
+	}
+}

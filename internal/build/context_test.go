@@ -1419,3 +1419,23 @@ func TestPlanFilesRejectsDuplicateSources(t *testing.T) {
 		t.Errorf("a single source must still plan: %v", err)
 	}
 }
+
+// A missing source used to fail as the raw lstat error -- no entry named, no
+// way out. The editor now warns at declaration time, and the build failure
+// owes hand-written configs the same legibility.
+func TestPlanFilesMissingSourceNamesEntryAndRemedy(t *testing.T) {
+	dir := t.TempDir()
+	paths := project.Paths{WorkDir: dir, Canonical: dir}
+	_, _, err := planFiles(paths, map[string]string{"not-yet.txt": "/opt/x"})
+	if err == nil {
+		t.Fatal("a missing source must refuse")
+	}
+	for _, want := range []string{"not-yet.txt", "not in the project", "remove the entry"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the entry and a remedy, missing %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "lstat") {
+		t.Errorf("the raw stat error must not surface: %v", err)
+	}
+}

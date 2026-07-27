@@ -165,3 +165,26 @@ func TestVolumesClearFlow(t *testing.T) {
 		t.Fatalf("clearing an absent volume should be refused: pend=%d err=%q", m.volPendClear, m.volErr)
 	}
 }
+
+// The machine-volume description WRAPS at the terminal width rather than
+// riding the frame clip, because on this string the clipped tail was the
+// consequence -- "clearing = logging out everywhere" -- directly above the
+// c-clear action it exists to warn about (2026-07-27 QA: at 100 cols the
+// explainer ended "affects every proje…").
+func TestVolumesDescriptionWrapsInsteadOfLosingItsTail(t *testing.T) {
+	fv := &fakeVols{vols: []VolumeStatus{
+		{Name: "claude-identity", Role: "state", Target: "/x", Exists: true, Machine: true, Engine: "docker"},
+	}}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, fv, TargetProject)
+	m = m.openVolumes()
+	m.width = 100
+	out := m.viewVolumes()
+	if !strings.Contains(out, "logging out everywhere") {
+		t.Fatalf("the consequence clause must survive a 100-col width:\n%s", out)
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "machine-scoped") && strings.Contains(l, "logging out everywhere") {
+			t.Fatalf("description did not wrap (one line carries it all, so the clip would eat the tail):\n%s", l)
+		}
+	}
+}

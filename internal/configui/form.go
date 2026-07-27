@@ -811,8 +811,23 @@ func clipHeight(s string, height int) string {
 	}
 	pin := len(lines) - footerStart(lines)
 	bodyMax := max - pin
+	if bodyMax < 4 && pin > 1 && max >= 5 {
+		// A tall footer must not disable clipping wholesale. Pinning the
+		// whole footer left bodyMax < 4 at 10 rows, so the frame went out
+		// unclipped and the terminal dropped the TOP rows -- title, ▸ cursor
+		// and all, silently; the cursor kept moving but nothing on screen
+		// said so ("absurd height" turned out to start at 10, a real split
+		// pane). Give up footer rows instead, topmost first -- the tail is
+		// what carries the key help and the confirm banners -- until the
+		// body can follow the cursor again.
+		pin = max - 4
+		if pin < 1 {
+			pin = 1
+		}
+		bodyMax = max - pin
+	}
 	if bodyMax < 4 {
-		return s // unknown or absurd height: let the terminal cope
+		return s // genuinely absurd (a handful of rows): let the terminal cope
 	}
 	tail := lines[len(lines)-pin:]
 	body := lines[:len(lines)-pin]

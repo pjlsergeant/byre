@@ -1,6 +1,8 @@
 package configui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -77,6 +79,12 @@ func splitFilesModel(t *testing.T) model {
 func TestFilesItemEditorRefusesShapesConfigRefuses(t *testing.T) {
 	for _, tc := range []struct{ name, src, dest, want string }{
 		{"absolute source", "/etc/passwd", "/opt/x", "project-relative"},
+		// The ..-prefix half of the escape refusal is path grammar, so the
+		// editor refuses it at the point of typing; the symlink half still
+		// needs the disk and stays at build (2026-07-27 QA: the editor
+		// accepted ../../../etc/shadow and the build refused it later).
+		{"escaping source", "../../../etc/shadow", "/opt/leak", "escapes the project dir"},
+		{"dot-dot exactly", "..", "/opt/leak", "escapes the project dir"},
 		{"relative destination", "./seed", "opt/seed", "absolute path in the image"},
 		{"empty source", "", "/opt/seed", "required"},
 		{"empty destination", "./seed", "", "required"},
@@ -167,5 +175,32 @@ func TestFilesRowsRenderAWholeDirectorySourceLegibly(t *testing.T) {
 	}
 	if !strings.Contains(got, "whole skill directory") || !strings.Contains(got, "/etc/byre/acme-bundle") {
 		t.Fatalf("row = %q, want it to name the whole skill directory and the destination", got)
+	}
+}
+
+// The Build files editor warns on a source that is not on disk -- the same
+// affordance the Claude Skills editor has, on the same terms: accepted
+// anyway (the file can be created before the next develop), but never
+// silently, because the deferred failure was a raw lstat error at build.
+func TestFilesEditorNotesAMissingSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "real.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesSourceNote(dir, "not-yet.txt"); !strings.Contains(got, "build will fail") {
+		t.Errorf("missing source must note the deferred failure, got %q", got)
+	}
+	if got := filesSourceNote(dir, "real.txt"); got != "" {
+		t.Errorf("an existing source must stay silent, got %q", got)
+	}
+	// No project to ask: the global/layer editors resolve against no tree,
+	// so a probe would answer about the wrong one. Silence, not a guess.
+	if got := filesSourceNote("", "not-yet.txt"); got != "" {
+		t.Errorf("no project dir must mean no note, got %q", got)
+	}
+	// Shapes other rules own stay theirs: the escape refusal and the
+	// absolute-source refusal already name what fired.
+	if got := filesSourceNote(dir, "../outside.txt"); got != "" {
+		t.Errorf("an escaping source is the escape rule's, got %q", got)
 	}
 }
