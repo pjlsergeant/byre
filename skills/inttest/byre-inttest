@@ -11,7 +11,10 @@
 #   byre-inttest ./internal/runner/ -run Integration -v
 #   BYRE_TEST_ENGINE=podman byre-inttest            # pin the engine (VM has both)
 #
-# Config (env):
+# Config (env). The BYRE_-prefixed three are refused in [env] and
+# env_from_host alike (ADR 0050 reserves the namespace), so they ride
+# run_args: run_args = ["-e", "BYRE_INTTEST_VM=..."]. INTTEST_USER is
+# prefix-free and takes the normal passthrough.
 #   INTTEST_USER  ssh user on the VM. No default -- Lima names the VM
 #                      user after the HOST user, so pass it through:
 #                      env_from_host = { INTTEST_USER = "env:USER" }

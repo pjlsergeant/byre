@@ -13,6 +13,13 @@ same either way -- but the CONFIG is not: address, port and egress all differ
 per runner. Check `BYRE_INTTEST_VM` / `BYRE_INTTEST_PORT` before assuming the
 Lima defaults apply.
 
+Those two, and `BYRE_INTTEST_KEY`, still carry the `BYRE_` prefix, which is
+refused in BOTH user config channels (`[env]` and `env_from_host`, ADR 0050).
+Set them through `run_args` -- the deliberate-override route the refusal
+names -- e.g.
+`run_args = ["-e", "BYRE_INTTEST_VM=172.17.0.1"]`. Only `INTTEST_USER` is
+prefix-free and rides `env_from_host` as the wrapper's own error text says.
+
 Habits:
 
 - After changing production code, run `byre-inttest` (defaults to
@@ -55,7 +62,7 @@ Setup, once per machine (the wrapper prints these remedies when they apply):
   egress grants. Native-Linux docker provides neither name, and the host's
   own address does NOT work either -- Lima's builtin forward binds host
   loopback only. The template binds a second forward on the docker bridge
-  gateway for exactly this: set `BYRE_INTTEST_VM = "172.17.0.1"` (port stays
+  gateway for exactly this: set `BYRE_INTTEST_VM` to `172.17.0.1` (port stays
   60022; grant that endpoint's egress yourself on a firewalled box -- the
   skill's grants name only the two defaults). That address assumes docker's
   DEFAULT bridge: a custom `bip` moves the gateway, so adjust the template's
@@ -71,7 +78,7 @@ to use. The runner is a privileged Docker-in-Docker container instead
 (`skills/inttest/dind/`), reachable from this box at its bridge IP. The
 wrapper's transport is unchanged; its CONFIG is not:
 
-- `BYRE_INTTEST_PORT = "22"` -- the container's own sshd port. The wrapper
+- `BYRE_INTTEST_PORT` = `22` -- the container's own sshd port. The wrapper
   still defaults to `60022`, which is Lima's forwarded port and also the
   DinD container's HOST publish mapping (`-p 60022:22`) -- neither applies
   when reaching the container directly. Setting only `BYRE_INTTEST_VM`
