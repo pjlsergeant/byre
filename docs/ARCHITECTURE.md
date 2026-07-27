@@ -83,7 +83,11 @@ a box's posture to deny-by-default egress with an allowlist. How it works:
    root + `NET_ADMIN`, targeted by a per-invocation nonce label. It
    resolves the egress allowlist, installs port-scoped per-IP ACCEPT
    rules plus a default-DROP OUTPUT policy (v4 + v6), and self-verifies
-   with a deny probe (ADR 0010).
+   with a deny probe (ADR 0010). The probe covers v4 always and v6 where
+   the netns has a global v6 address to probe from -- otherwise a probe
+   that cannot leave would be indistinguishable from one that was
+   blocked, so the helper reports the v6 side as applied-but-unverified
+   rather than counting it.
 3. The helper listens once on loopback; the launcher's poll-connect
    succeeds and the agent execs behind the wall. Any failure -- helper
    death, DNS failure, `docker restart` recreating the netns -- means no

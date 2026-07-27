@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+- **`byre config` gains two screens, and `env_from_host` stops being a
+  read-only dead end.** The passthrough rows (byre ships six -- your git
+  identity, `TERM`, `TZ`) used to tell you to go hand-edit the TOML; they are
+  now editable in place. `[env]` literals and host passthroughs share one
+  **Source** picker -- `[value] [git:] [env:] [tz:] [disabled]` -- because
+  they answer one question, "where does this variable's value come from", and
+  switching it MOVES an entry between the two rather than leaving a twin
+  behind. Inherited rows say where they came from; Delete on one you set here
+  drops back to the cascade. Separately, `[files]` was invisible in the editor
+  and now has two screens, because it is two things sharing a key name:
+  **Build files** (ADVANCED, beside the raw Dockerfile blocks) stages a
+  project file so a `dockerfile_pre`/`post` line can read it, and **Skill
+  files** is a read-only view of what your skills bake into the image,
+  attributed -- fork a skill to change one. Non-obvious screens now carry a
+  one-line explainer under their title.
+- **A byre crash no longer looks like a usage error to a script.** Go exits a
+  panic with 2, which is byre's usage code, so every crash was
+  indistinguishable from a bad flag to anything reading the exit status --
+  against DELIVER.md's promise that byre's exit codes are script-trustworthy.
+  A crash now exits **70**, printing the panic and its stack unchanged plus a
+  line saying it is byre's bug, not yours. (Main-goroutine panics only.)
+- **The firewall stops letting its IPv4 check vouch for IPv6.** The post-start
+  verification that egress is really blocked only ever probed v4, while the
+  completion line claimed deny-by-default outright -- and the two families are
+  separate rule sets, either of which can be broken while the other holds. It
+  now probes v6 too where the box has a global v6 address, and where it
+  cannot, says the v6 side was applied but not verified rather than letting
+  silence imply otherwise.
+- **`--self-edit` in a git worktree now says the store is the REPO's.** A
+  worktree looks disposable, which is exactly the wrong intuition: worktrees
+  inherit the repo's identity, so configuration the agent rewrites there
+  governs the main worktree and every sibling's next launch.
+- **Docs: `[files]` stops advertising something byre refuses.** The dotfiles
+  how-to said a template's `[files]` could bake `~/.config/starship.toml` into
+  the image. It cannot -- sources are project-relative, and an absolute path,
+  a `..` escape and a symlink out of the tree are all refused. Mounting is the
+  answer there. The configuration reference now leads with what `[files]` is
+  actually for (staging a project file so a raw Dockerfile line can read it,
+  with the dependency-caching example) and names the two traps: a destination
+  under `/workspace` is masked by the project mount, one under a state
+  volume's mountpoint by the volume. `docs/SKILLS.md` documents the other half
+  -- a skill's `[build].files` resolves against the SKILL's directory, not the
+  project.
+
 - **Plain filesystem calls are banned outside `internal/hostopen`, and byre's
   own records stopped following symlinks planted at their names.** Every one
   of ~220 host-side filesystem calls now either rides hostopen or names, at
