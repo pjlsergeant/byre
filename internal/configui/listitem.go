@@ -1248,6 +1248,12 @@ func splitArgv(s string) ([]string, error) {
 func (m model) viewList() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", m.crumb(fieldLabel(m.listField)))
+	// Before the rows, not after: this says what the screen IS, and a reader
+	// who learns that at the bottom has already spent the list wondering
+	// which of these they were meant to act on.
+	if isReadOnlyField(m.listField) {
+		b.WriteString(dimStyle.Render("  read-only — a skill's payload is the skill's; fork the skill to change it") + "\n\n")
+	}
 	rows := m.fieldRows(m.listField)
 	if len(rows) == 0 {
 		// Newline OUTSIDE the Render: lipgloss pads multi-line renders to
@@ -1278,11 +1284,9 @@ func (m model) viewList() string {
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.listCur, line))
 	}
+	// No add row: there is nothing on this screen for a user to write, and
+	// the header above already said why.
 	if isReadOnlyField(m.listField) {
-		// No add row: there is nothing on this screen for a user to write.
-		// Say so, rather than leave them hunting for the action that is
-		// missing -- and say where the change actually goes.
-		b.WriteString("\n" + dimStyle.Render("  read-only — a skill's payload is the skill's; fork the skill to change it") + "\n")
 		if note := m.subFooterNote(); note != "" {
 			b.WriteString("\n" + note)
 		}
