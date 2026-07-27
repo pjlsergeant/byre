@@ -28,7 +28,7 @@ Layers merge in that order -- defaults, template, the `extends` chain
 - **Lists union.** `skills`, `apt`, `mounts` and friends accumulate
   across layers.
 - **A later layer can remove an inherited entry:** `"!name"` for named
-  lists (skills, apt, npm_global, volumes; mounts by target), and
+  lists (skills, apt, volumes; mounts by target), and
   `remove = true` for ports (keyed by container port). `!host` entries
   in `egress` are closures: they subtract from the final derived
   allowlist, skill-declared endpoints included.
@@ -90,7 +90,6 @@ exceptions noted inline.
 **Build** (baked into the image)
 
 - `apt` -- packages to install.
-- `npm_global` -- extra global npm tools.
 - `[env]` -- literal env vars. **Baked into the image**: `docker
   history` shows them and they outlive `byre reset`, so never put
   secrets here -- credentials belong to the agents' own login flows (or
@@ -181,7 +180,7 @@ design record is
 
 ## Raw-block symmetry
 
-Build side: `base`, `apt`, `npm_global`, `[files]`, `[env]`, then
+Build side: `base`, `apt`, `[files]`, `[env]`, then
 `dockerfile_pre`/`dockerfile_post` for the rest. Runtime side:
 `[[mounts]]`, `[[volumes]]`, `[env_from_host]`, then `run_args` for the
 rest. There is deliberately no full-Dockerfile opt-out -- if you want to

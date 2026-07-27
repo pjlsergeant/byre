@@ -923,9 +923,8 @@ func TestAssembleIgnoresRetiredContextTarget(t *testing.T) {
 func TestAssembleContextListsConfigProvisions(t *testing.T) {
 	paths := bootstrapped(t)
 	cfg := config.Config{
-		Base:      "node:22",
-		Apt:       []string{"ripgrep", "jq"},
-		NpmGlobal: []string{"typescript"},
+		Base: "node:22",
+		Apt:  []string{"ripgrep", "jq"},
 	}
 	res := skills.Resolved{Skills: []skills.Skill{{Name: "claude", Context: "be concise"}}}
 	if _, err := Assemble(paths, cfg, res); err != nil {
@@ -936,7 +935,7 @@ func TestAssembleContextListsConfigProvisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(ctx)
-	for _, want := range []string{"Box base image: node:22.", "ripgrep, jq (apt)", "typescript (npm -g)"} {
+	for _, want := range []string{"Box base image: node:22.", "ripgrep, jq (apt)"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("context missing provisioned entry %q:\n%s", want, s)
 		}

@@ -48,7 +48,7 @@ func TestDockerHostSkillResolves(t *testing.T) {
 			block = b
 		}
 	}
-	gb := gen.SkillBlock{Name: block.Name, Apt: block.Apt, NpmGlobal: block.NpmGlobal}
+	gb := gen.SkillBlock{Name: block.Name, Apt: block.Apt}
 	for _, sf := range block.Files {
 		if gb.Files == nil {
 			gb.Files = map[string]string{}

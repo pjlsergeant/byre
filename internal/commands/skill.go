@@ -239,9 +239,6 @@ func printSkillContributions(w io.Writer, f skills.File) {
 	if n := len(f.Build.Apt); n > 0 {
 		buildParts = append(buildParts, fmt.Sprintf("%d apt", n))
 	}
-	if n := len(f.Build.NpmGlobal); n > 0 {
-		buildParts = append(buildParts, fmt.Sprintf("%d npm_global", n))
-	}
 	if n := len(f.Build.Dockerfile); n > 0 {
 		buildParts = append(buildParts, fmt.Sprintf("%d dockerfile lines", n))
 	}
@@ -294,9 +291,6 @@ func printTemplateShape(w io.Writer, raw []byte) {
 	// removals, never as grants — the trust surface must agree with the merge.
 	for _, a := range cfg.Apt {
 		fmt.Fprintf(w, "  %s\n", listLine("apt", a))
-	}
-	for _, a := range cfg.NpmGlobal {
-		fmt.Fprintf(w, "  %s\n", listLine("npm_global", a))
 	}
 	for _, e := range cfg.EgressOffered {
 		fmt.Fprintf(w, "  %s\n", listLine("egress_offered", e))

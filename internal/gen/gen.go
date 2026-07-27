@@ -46,7 +46,6 @@ type Input struct {
 	Env          map[string]string
 	Files        map[string]string // src -> dest
 	Apt          []string
-	NpmGlobal    []string
 	Skills       []SkillBlock // per-skill build blocks, in order
 	AgentCmd     bool         // emit COPY of the agent launch script
 	AgentContext bool         // emit COPY of the concatenated agent context
@@ -84,7 +83,6 @@ type GuardFile struct {
 type SkillBlock struct {
 	Name       string
 	Apt        []string
-	NpmGlobal  []string
 	Files      map[string]string // staged-context-path -> image dest (COPY'd before raw lines)
 	Dockerfile []string          // raw lines
 }
@@ -229,8 +227,7 @@ func Dockerfile(in Input) string {
 	// that order while moving the only layers with a network dependency on
 	// mutable external state (apt-get update) where payload and raw-line
 	// churn can't invalidate them. One RUN per skill keeps cache granularity
-	// and attribution. npm_global stays in the block: node/npm may be
-	// provided by an earlier skill's raw lines.
+	// and attribution.
 	b.WriteString("\n# --- skill apt (hoisted; see ADR 0042) ---\n")
 	for _, s := range in.Skills {
 		if len(s.Apt) == 0 {
@@ -243,7 +240,6 @@ func Dockerfile(in Input) string {
 	b.WriteString("\n# --- skills ---\n")
 	for _, s := range in.Skills {
 		fmt.Fprintf(&b, "# skill: %s\n", s.Name)
-		writeNpm(&b, s.NpmGlobal)
 		writeFiles(&b, s.Files) // COPY before raw lines so a RUN can use the file
 		writeRaw(&b, s.Dockerfile)
 	}
@@ -300,7 +296,6 @@ func Dockerfile(in Input) string {
 	writeEnv(&b, in.Env)
 	writeFiles(&b, in.Files)
 	writeApt(&b, in.Apt)
-	writeNpm(&b, in.NpmGlobal)
 	writeRaw(&b, in.DockerfilePost)
 
 	// Capture the image's effective PATH for login shells. Debian's
@@ -423,7 +418,7 @@ func sortedUnique(s []string) []string {
 	return out
 }
 
-// writeApt / writeNpm shell-quote every package name: upstream validation
+// writeApt shell-quotes every package name: upstream validation
 // (config.ValidateContent) already allowlists the charset, but this layer
 // interpolates into shell and should not depend on a check two packages away.
 func writeApt(b *strings.Builder, pkgs []string) {
@@ -433,13 +428,6 @@ func writeApt(b *strings.Builder, pkgs []string) {
 	fmt.Fprintf(b, "RUN apt-get update \\\n"+
 		" && apt-get install -y --no-install-recommends %s \\\n"+
 		" && rm -rf /var/lib/apt/lists/*\n", joinQuoted(pkgs))
-}
-
-func writeNpm(b *strings.Builder, pkgs []string) {
-	if len(pkgs) == 0 {
-		return
-	}
-	fmt.Fprintf(b, "RUN npm install -g %s\n", joinQuoted(pkgs))
 }
 
 // joinQuoted shell-quotes each element and joins with spaces.

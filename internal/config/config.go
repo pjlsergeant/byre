@@ -90,6 +90,18 @@ func (h SourceHint) InstallHint(kind string) string {
 // not an upgrade gate). Values say what the key was, for this table's
 // readers — the packages.RetiredNames of config vocabulary. Sunset the
 // ENTRY, too, once no supported upgrade path can still carry the key.
+// refusedConfigKeys is the table of top-level keys byre REMOVED and refuses
+// loudly, with the remedy in the message (ADR 0049: "the removal release
+// ships the refusal with a recovery remedy"). Distinct from
+// retiredConfigKeys, which tolerates-and-ignores: a key whose machinery is
+// gone but whose absence silently CHANGES THE BOX must not slip past
+// unnoticed -- a config asking for packages that no longer install is worth
+// thirty seconds of the user's attention, not a quiet difference in what
+// they get.
+var refusedConfigKeys = map[string]string{
+	"npm_global": "npm_global is removed. It assumed node/npm in the image and named one ecosystem in core config; use a raw build line instead:\n  dockerfile_pre = [\"RUN npm install -g <pkg>\"]",
+}
+
 var retiredConfigKeys = map[string]string{
 	// v0.1.7's machine-wide shared-auth decline record (ADR 0025); nothing
 	// has read it since the offer's default became No.
@@ -127,8 +139,9 @@ var (
 	envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	// packageRe covers real apt and npm package specs — scoped names (@scope/pkg),
 	// version pins (pkg=1.2.3, pkg@1.2.3), and semver-ish markers (~^) — while
-	// excluding whitespace and every shell metacharacter, since apt/npm_global
-	// entries are joined into a `RUN apt-get install`/`npm install -g` shell line.
+	// excluding whitespace and every shell metacharacter, since apt entries
+	// (and a skill's npm packages) are joined into a `RUN apt-get install` /
+	// `npm install -g` shell line.
 	packageRe = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9@/._+:=~^-]*$`)
 )
 
@@ -355,9 +368,8 @@ type Config struct {
 	// cascade; banned in template.config (templates reference no packages).
 	Sources map[string]SourceHint `toml:"sources,omitempty"`
 
-	Apt       []string          `toml:"apt,omitempty"`
-	NpmGlobal []string          `toml:"npm_global,omitempty"`
-	Env       map[string]string `toml:"env,omitempty"`
+	Apt []string          `toml:"apt,omitempty"`
+	Env map[string]string `toml:"env,omitempty"`
 	// EnvFromHost passes named HOST values into the box's runtime env — the
 	// one deliberate host→box data channel, and a Grant (preset apply's grant
 	// review flags additions beyond the shipped defaults; status attributes
@@ -787,6 +799,11 @@ func Parse(content []byte) (Config, error) {
 		}
 		real = append(real, strings.Join(k, "."))
 	}
+	for _, k := range real {
+		if remedy := refusedConfigKeys[k]; remedy != "" {
+			return Config{}, fmt.Errorf("%s", remedy)
+		}
+	}
 	if len(real) > 0 {
 		// Two causes, and byre cannot tell them apart: a typo, or a config a
 		// NEWER byre wrote (strict decode points one direction -- ADR 0049's
@@ -844,7 +861,6 @@ func Merge(base, over Config) Config {
 	// packages too: packageRe has never admitted a leading '!', so no real
 	// package collides with the marker.
 	out.Apt = mergeStrings(base.Apt, over.Apt)
-	out.NpmGlobal = mergeStrings(base.NpmGlobal, over.NpmGlobal)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
 	// SharedAuth is picker state and is stripped from resolved configs; a
 	// last-wins merge keeps Parse+Merge of hand-edited layers well-defined.
@@ -920,7 +936,7 @@ func ValidateContent(base string, apt, npm []string, env map[string]string) erro
 	}
 	for _, p := range npm {
 		if !packageRe.MatchString(p) {
-			return fmt.Errorf("npm_global package %q: not a valid package spec", p)
+			return fmt.Errorf("npm package %q: not a valid package spec", p)
 		}
 	}
 	for k := range env {
@@ -984,7 +1000,6 @@ func (c Config) validateScalarsLayer() error {
 	}
 	return c.validateScalarsCommon(
 		filter(c.Apt, func(s string) bool { return !IsRemoval(s) }),
-		filter(c.NpmGlobal, func(s string) bool { return !IsRemoval(s) }),
 		egress,
 		filter(c.EgressOffered, func(s string) bool { return !IsRemoval(s) }),
 		func() error {
@@ -1001,7 +1016,7 @@ func (c Config) validateScalarsLayer() error {
 // '!'), and `extends` must not survive resolution — same stance as every
 // other resolved-config marker.
 func (c Config) validateScalarsResolved() error {
-	return c.validateScalarsCommon(c.Apt, c.NpmGlobal, c.Egress, c.EgressOffered,
+	return c.validateScalarsCommon(c.Apt, c.Egress, c.EgressOffered,
 		func() error { return fmt.Errorf("extends: only meaningful in a cascade layer") })
 }
 
@@ -1011,7 +1026,7 @@ func (c Config) validateScalarsResolved() error {
 // before content). The layer/resolved duality exists because one Config type
 // currently carries both lifecycles; if that ever splits into distinct types,
 // these entry points become their methods.
-func (c Config) validateScalarsCommon(apt, npm, egress, offered []string, extends func() error) error {
+func (c Config) validateScalarsCommon(apt, egress, offered []string, extends func() error) error {
 	switch c.Engine {
 	case "", "auto", "docker", "podman":
 	default:
@@ -1027,7 +1042,7 @@ func (c Config) validateScalarsCommon(apt, npm, egress, offered []string, extend
 	// Anti-injection allowlists for the typed fields byre interpolates into
 	// generated Dockerfile/shell. Skills' own apt/npm/env are held to the same bar
 	// where their build blocks are resolved (see internal/skills).
-	if err := ValidateContent(c.Base, apt, npm, c.Env); err != nil {
+	if err := ValidateContent(c.Base, apt, nil, c.Env); err != nil {
 		return err
 	}
 

@@ -141,7 +141,6 @@ type File struct {
 	SharedAuthFor string `toml:"shared_auth_for"`
 	Build         struct {
 		Apt        []string          `toml:"apt"`
-		NpmGlobal  []string          `toml:"npm_global"`
 		Dockerfile []string          `toml:"dockerfile"` // raw build lines
 		Files      map[string]string `toml:"files"`      // skill-relative src -> absolute image dest
 	} `toml:"build"`
@@ -242,7 +241,7 @@ func IsStub(f File) bool {
 	rt := f.Runtime
 	return f.Agent == nil &&
 		f.CompanionFor == "" && f.SharedAuthFor == "" &&
-		len(f.Build.Apt) == 0 && len(f.Build.NpmGlobal) == 0 &&
+		len(f.Build.Apt) == 0 &&
 		len(f.Build.Dockerfile) == 0 && len(f.Build.Files) == 0 &&
 		len(rt.Env) == 0 && len(rt.EnvDocs) == 0 && len(rt.RunArgs) == 0 && len(rt.Caps) == 0 &&
 		len(rt.Mounts) == 0 && rt.NetworkPosture == "" && rt.NetnsInit == "" &&
@@ -302,7 +301,6 @@ type SkillFile struct {
 type BuildBlock struct {
 	Name       string
 	Apt        []string
-	NpmGlobal  []string
 	Dockerfile []string    // raw lines
 	Files      []SkillFile // files this skill ships into the image
 	// Provenance rides along so build can order blocks by volatility class
@@ -337,7 +335,6 @@ func (r Resolved) BuildBlocks() []BuildBlock {
 		blocks = append(blocks, BuildBlock{
 			Name:       sk.Name,
 			Apt:        sk.File.Build.Apt,
-			NpmGlobal:  sk.File.Build.NpmGlobal,
 			Dockerfile: sk.File.Build.Dockerfile,
 			Files:      sk.Files,
 			Provenance: sk.Provenance,
@@ -745,11 +742,27 @@ func decodeSkillFile(body []byte) (File, error) {
 			for i, de := range strict.Errors {
 				keys[i] = strings.Join(de.Key(), ".")
 			}
+			// A REMOVED key gets its remedy, not a bare unknown-key list: the
+			// author wrote something byre used to support, and "unknown" reads
+			// as a typo they cannot find.
+			for _, k := range keys {
+				if remedy := removedSkillKeys[k]; remedy != "" {
+					return File{}, fmt.Errorf("%s", remedy)
+				}
+			}
 			return File{}, fmt.Errorf("unknown key(s) in skill.toml: [%s]", strings.Join(keys, " "))
 		}
 		return File{}, err
 	}
 	return f, nil
+}
+
+// removedSkillKeys maps a skill.toml key byre REMOVED to its remedy. Same
+// stance as config's refusedConfigKeys: loud, with the replacement spelled
+// out, because a silently-ignored build key changes what the image contains
+// without saying so.
+var removedSkillKeys = map[string]string{
+	"build.npm_global": "skill.toml: [build] npm_global is removed. It assumed node/npm in the image and named one ecosystem in byre's vocabulary; use a raw build line instead:\n  [build]\n  dockerfile = [\"RUN npm install -g <pkg>\"]",
 }
 
 // validatePairing refuses a manifest declaring both pairing keys: the
@@ -923,7 +936,7 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		// legible data: `apt` holds package names, and the escape hatch for
 		// arbitrary commands is the explicit raw block. Env values are only ever
 		// emitted %q-quoted, so only keys are checked (via ValidateContent).
-		if err := config.ValidateContent("", f.Build.Apt, f.Build.NpmGlobal, f.Runtime.Env); err != nil {
+		if err := config.ValidateContent("", f.Build.Apt, nil, f.Runtime.Env); err != nil {
 			return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
 		}
 

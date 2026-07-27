@@ -43,7 +43,7 @@ resolve.
 
 **Cascade semantics.** Completing the off-switches:
 
-- `apt` (and `npm_global`) gain `!name` removal, the same marker skills,
+- `apt` (and `npm_global`, removed 2026-07-28) gain `!name` removal, the same marker skills,
   mounts, and volumes already use. Unambiguous: `packageRe` has never
   admitted a leading `!`, so no real package collides with the marker.
 - `ports` gain removal via a field -- `remove = true` on an entry, keyed

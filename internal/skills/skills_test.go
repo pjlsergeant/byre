@@ -66,7 +66,7 @@ text = "sample context"
 
 const fakeAgentSkill = `
 [build]
-npm_global = ["@fake/agent-cli"]
+dockerfile = ["RUN npm install -g @fake/agent-cli"]
 
 [agent]
 command = "fake-agent --yolo"
@@ -344,6 +344,21 @@ func TestReservedEnvListsOnlyByreNamespace(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("ReservedEnv[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// The skill half of the same removal: a skill.toml declaring [build]
+// npm_global gets the remedy, not a bare unknown-key list, which would read
+// as a typo the author cannot find.
+func TestRemovedSkillNpmGlobalRefusesWithItsRemedy(t *testing.T) {
+	_, err := ParsePrimaryBytes([]byte("[package]\nid = \"x\"\nkind = \"skill\"\n\n[build]\nnpm_global = [\"prettier\"]\n"))
+	if err == nil {
+		t.Fatal("a removed skill.toml key must be refused")
+	}
+	for _, want := range []string{"npm_global is removed", "dockerfile"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the rule and the remedy, missing %q: %v", want, err)
 		}
 	}
 }

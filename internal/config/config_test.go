@@ -541,8 +541,6 @@ func TestValidateContent(t *testing.T) {
 		"base space":       {Config{Base: "debian AS x"}, "not a valid image reference"},
 		"apt shell":        {Config{Apt: []string{"git; curl evil | sh"}}, "not a valid package name"},
 		"apt space":        {Config{Apt: []string{"git curl"}}, "not a valid package name"},
-		"npm shell":        {Config{NpmGlobal: []string{"pkg && evil"}}, "not a valid package spec"},
-		"npm redirect":     {Config{NpmGlobal: []string{"pkg@>1 x"}}, "not a valid package spec"},
 		"env key space":    {Config{Env: map[string]string{"A B": "v"}}, "not a valid environment variable name"},
 		"env key newline":  {Config{Env: map[string]string{"A\nENV X": "v"}}, "not a valid environment variable name"},
 		"env key leading$": {Config{Env: map[string]string{"1A": "v"}}, "not a valid environment variable name"},
@@ -554,10 +552,9 @@ func TestValidateContent(t *testing.T) {
 	}
 	// Legitimate specs must still pass.
 	ok := Config{
-		Base:      "registry.example.com:5000/org/img@sha256:abc",
-		Apt:       []string{"git", "build-essential", "libssl-dev", "python3=3.11.2"},
-		NpmGlobal: []string{"@anthropic-ai/claude-code", "typescript", "pnpm@8.15.0"},
-		Env:       map[string]string{"NODE_ENV": "production", "_FOO": "1"},
+		Base: "registry.example.com:5000/org/img@sha256:abc",
+		Apt:  []string{"git", "build-essential", "libssl-dev", "python3=3.11.2"},
+		Env:  map[string]string{"NODE_ENV": "production", "_FOO": "1"},
 	}
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("valid content rejected: %v", err)
@@ -618,7 +615,6 @@ func TestValidateLayerRejectsEmptyMarkers(t *testing.T) {
 		wantErr string
 	}{
 		{Config{Apt: []string{"!"}}, "not a valid package name"},
-		{Config{NpmGlobal: []string{"!"}}, "not a valid package spec"},
 		{Config{Egress: []string{"!"}}, "not a valid host[:port]"},
 		{Config{EgressOffered: []string{"!"}}, "not a valid host[:port]"},
 		{Config{Mounts: []Mount{{Target: "!"}}}, "host path is required"},
@@ -737,7 +733,6 @@ func sampleConfig() Config {
 		SeedPrefs:          boolPtr(true),
 		WorktreeBase:       "sibling",
 		Apt:                []string{"jq"},
-		NpmGlobal:          []string{"typescript"},
 		Env:                map[string]string{"K": "v"},
 		Files:              map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:             []string{"devloop"},
@@ -873,10 +868,6 @@ func TestMergeAptNpmRemoval(t *testing.T) {
 	if want := []string{"ripgrep", "jq"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("apt removal: got %v want %v", got, want)
 	}
-	got = Merge(Config{NpmGlobal: []string{"prettier"}}, Config{NpmGlobal: []string{"!prettier"}}).NpmGlobal
-	if len(got) != 0 {
-		t.Errorf("npm_global removal: got %v want empty", got)
-	}
 }
 
 func TestMergePortsRemove(t *testing.T) {
@@ -913,7 +904,7 @@ func TestMergePortsRemoveAfterAdditions(t *testing.T) {
 }
 
 func TestValidateLayerAcceptsPackageMarkers(t *testing.T) {
-	c := Config{Apt: []string{"!htop"}, NpmGlobal: []string{"!prettier"}}
+	c := Config{Apt: []string{"!htop"}}
 	if err := c.ValidateLayer(); err != nil {
 		t.Errorf("layer with package removal markers should validate: %v", err)
 	}
@@ -1352,5 +1343,26 @@ func TestLoadFollowsSymlinkedDefaultConfig(t *testing.T) {
 	}
 	if cfg.Base != "debian:bookworm" {
 		t.Errorf("symlinked default.config must be read: base = %q", cfg.Base)
+	}
+}
+
+// npm_global was REMOVED (2026-07-28), and a removal refuses loudly with its
+// remedy rather than tolerating-and-ignoring: a config asking for packages
+// that no longer install would otherwise change what the box contains with
+// nothing said. Distinct from retiredConfigKeys, which is the silent arm for
+// keys whose absence changes nothing.
+func TestRemovedNpmGlobalRefusesWithItsRemedy(t *testing.T) {
+	_, err := Parse([]byte("npm_global = [\"prettier\"]\n"))
+	if err == nil {
+		t.Fatal("a removed key must be refused, not ignored")
+	}
+	for _, want := range []string{"npm_global is removed", "dockerfile_pre"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the rule and the remedy, missing %q: %v", want, err)
+		}
+	}
+	// It must NOT be mistaken for a typo or a newer-byre config.
+	if strings.Contains(err.Error(), "newer byre") {
+		t.Errorf("a removed key is not an unknown key: %v", err)
 	}
 }

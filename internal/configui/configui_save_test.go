@@ -46,7 +46,7 @@ func TestSaveRoundTripsAndPreservesRawFields(t *testing.T) {
 	}
 	// omitempty keeps unset fields out of the file (no noise)
 	b, _ := os.ReadFile(path)
-	if strings.Contains(string(b), "npm_global") || strings.Contains(string(b), "files") {
+	if strings.Contains(string(b), "dockerfile_pre") || strings.Contains(string(b), "files") {
 		t.Errorf("unset fields should be omitted:\n%s", b)
 	}
 	if !strings.Contains(string(b), "Managed by `byre config`") {
@@ -317,7 +317,6 @@ func TestReconcileCoversEveryField(t *testing.T) {
 		"shared_auth":     {SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}},
 		"sources":         {Sources: map[string]config.SourceHint{"acme/tool": {URI: "https://x", Digest: ""}}},
 		"apt":             {Apt: []string{"jq"}},
-		"npm_global":      {NpmGlobal: []string{"prettier"}},
 		"env":             {Env: map[string]string{"FOO": "bar"}},
 		"env_from_host":   {EnvFromHost: map[string]string{"TERM": "env:TERM"}},
 		"files":           {Files: map[string]string{"./seed": "/opt/seed"}},
@@ -350,9 +349,9 @@ func TestReconcileCoversEveryField(t *testing.T) {
 	for tag, cfg := range samples {
 		t.Run(tag, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "byre.config")
-			orig := "# hand comment survives\nnpm_global = [\"left-alone\"]\n"
-			if tag == "npm_global" {
-				orig = "# hand comment survives\napt = [\"left-alone\"]\n"
+			orig := "# hand comment survives\napt = [\"left-alone\"]\n"
+			if tag == "apt" {
+				orig = "# hand comment survives\nengine = \"podman\"\n"
 			}
 			mustWriteFile(t, path, []byte(orig), 0o644)
 			base, err := config.ParseFile(path, true)

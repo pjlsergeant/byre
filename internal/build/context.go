@@ -98,7 +98,6 @@ func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (ge
 		Env:          cfg.Env,
 		Files:        genFiles,
 		Apt:          cfg.Apt,
-		NpmGlobal:    cfg.NpmGlobal,
 		Skills:       genSkills,
 		AgentCmd:     res.AgentCommand() != "",
 		AgentContext: true, // the chassis paragraph makes context non-empty on every box
@@ -352,7 +351,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 const chassisContext = "Files the user delivers from the host land in /inbox, owned by you. The inbox is ephemeral (it dies with the container) — treat it as a hand-off point, not storage."
 
 // provisionedContext tells the agent what the CONFIG put in the box. Skills
-// document their own tools via [context]; a plain `apt`/`npm_global` entry
+// document their own tools via [context]; a plain `apt` entry
 // otherwise leaves no in-box trace, and the agent should not have to discover
 // provisioned tools by probing (legibility runs inward too). One sentence,
 // emitted only when the config actually provisions something. Raw dockerfile
@@ -362,9 +361,6 @@ func provisionedContext(cfg config.Config) string {
 	var parts []string
 	if len(cfg.Apt) > 0 {
 		parts = append(parts, strings.Join(cfg.Apt, ", ")+" (apt)")
-	}
-	if len(cfg.NpmGlobal) > 0 {
-		parts = append(parts, strings.Join(cfg.NpmGlobal, ", ")+" (npm -g)")
 	}
 	if len(parts) == 0 {
 		return ""
@@ -492,7 +488,7 @@ func planSkillBlocks(blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, 
 	out := make([]gen.SkillBlock, 0, len(blocks))
 	var jobs []fileCopy
 	for _, b := range blocks {
-		gb := gen.SkillBlock{Name: b.Name, Apt: b.Apt, NpmGlobal: b.NpmGlobal, Dockerfile: b.Dockerfile}
+		gb := gen.SkillBlock{Name: b.Name, Apt: b.Apt, Dockerfile: b.Dockerfile}
 		for _, sf := range b.Files {
 			ctxRel := filepath.ToSlash(filepath.Join("skills", b.Name, sf.Rel))
 			// staged is relative to the build-context root; ctxRoot (an os.Root)

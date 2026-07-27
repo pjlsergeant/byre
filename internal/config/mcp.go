@@ -37,7 +37,7 @@ type MCP struct {
 	Name string `toml:"name"`
 	// Command is the stdio server's argv ([0] = binary). Pure wiring: the
 	// binary itself arrives via the existing build machinery (a skill's
-	// build block, apt, npm_global) — byre installs nothing from an [[mcp]].
+	// build block, apt) — byre installs nothing from an [[mcp]].
 	Command []string `toml:"command,omitempty"`
 	// URL is the remote server's endpoint. Its host is an IMPLIED egress
 	// entry — attributed mcp:<name>, closable like any other (a `!host`

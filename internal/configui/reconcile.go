@@ -82,7 +82,6 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 		cur, want []string
 	}{
 		{"apt", cur.Apt, want.Apt},
-		{"npm_global", cur.NpmGlobal, want.NpmGlobal},
 		{"skills", cur.Skills, want.Skills},
 		{"egress", cur.Egress, want.Egress},
 		{"egress_offered", cur.EgressOffered, want.EgressOffered},

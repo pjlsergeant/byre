@@ -167,9 +167,7 @@ between the core block and the skill blocks. Within a block apt already ran
 before the skill's own COPYs and raw lines, so no declarative apt list can
 depend on a raw line; hoisting preserves that order while putting the only
 skill layers with a network dependency on mutable external state (`apt-get
-update`) where payload and raw-line churn can't invalidate them. `npm_global`
-stays in the block -- node/npm may be provided by an earlier skill's raw
-lines.
+update`) where payload and raw-line churn can't invalidate them.
 
 The **security guard** re-COPYs byre's own copy of the security-critical
 files -- the launcher (the ENTRYPOINT's content), and, when a network-posture
@@ -296,7 +294,7 @@ on the next develop), every other file listed as added/changed/deleted.
 - **Lists union** -- `skills`, `mounts`, etc. accumulate across layers.
 - **Removal markers** -- a later layer drops something an earlier layer
   added: `!name` where the entry's identity is a string (skills, apt,
-  npm_global, volumes, mounts by target), `remove = true` where it's
+  volumes, mounts by target), `remove = true` where it's
   structured (ports, keyed by container port alone). ADR 0018. Env has
   no unset (override the value instead); raw blocks are unnamed lines:
   append-only union, no per-line removal.
@@ -310,7 +308,6 @@ agent       = "claude"                        # which agent skill launches: clau
 seed_prefs  = true                            # one-time curated prefs seed (ADR 0013); off by default
 base        = "node:22"
 apt         = ["build-essential"]
-npm_global  = ["prettier"]                    # extra global tools (the agent skill installs the agent)
 env         = { FOO = "bar" }                 # literals, baked into the image (not a grant)
 files       = { "./seed" = "/opt/..." }       # copied into image, read-only
 skills      = ["pjlsergeant/devlog", "firewall"]  # bundled names bare; installed qualified
@@ -341,7 +338,7 @@ Raw blocks are symmetric across both layers byre controls
 
 | layer   | nice primitives                             | raw block                           |
 |---------|---------------------------------------------|-------------------------------------|
-| build   | `base`, `apt`, `npm_global`, `files`, `env` | `dockerfile_pre`, `dockerfile_post` |
+| build   | `base`, `apt`, `files`, `env` | `dockerfile_pre`, `dockerfile_post` |
 | runtime | `mounts`, `volumes`, `env`                  | `run_args`                          |
 
 byre never parses inside a raw block -- `byre status` shows raw blocks
@@ -379,7 +376,6 @@ agent skill):
 ```toml
 # ~/.byre/skills/claude/skill.toml
 [build]
-npm_global = ["@anthropic-ai/claude-code"]      # install the CLI
 
 [agent]                                          # marks this as an agent skill
 command = "claude --dangerously-skip-permissions"   # what the launcher execs
@@ -617,7 +613,7 @@ Runtime constants:
   hooks as the user (agent login flows live here), then exec the
   selected agent's command in autonomous mode. The agent command
   itself INJECTS the baked agent context (the chassis facts, the base
-  image, a one-line inventory of config-provisioned `apt`/`npm_global`
+  image, a one-line inventory of config-provisioned `apt`
   packages when any exist -- the agent shouldn't discover tools by
   probing -- then skill snippets in enable order, then the operator's
   `[[context]]` declarations in cascade order) plus the session var,

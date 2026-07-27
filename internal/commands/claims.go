@@ -38,7 +38,6 @@ var claimSurface = map[string]claimClass{
 	"SharedAuth":   inert("picker-owned preference over future ANSWERS (ADR 0025); stripped by resolution, never a grant"),
 	"Sources":      inert("acquisition hints, never auto-fetched (ADR 0029); their only surface is remedy text"),
 	"Apt":          inert("build input: package contents of the box, not a grant claim; anti-injection grammar at validation"),
-	"NpmGlobal":    inert("build input: same standing as Apt"),
 	"Env": rendered("the Env row (keys); reserved BYRE_* refused at validation, BYRE_EGRESS " +
 		"re-asserted at run so no key skews what the box is told byre enforces"),
 	"EnvFromHost": rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden)"),

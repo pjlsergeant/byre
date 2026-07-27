@@ -32,9 +32,13 @@ layer), keep the `# skill:` attribution meaningful, and cost only duplicate
 Enable order remains the agent-facing order everywhere; only image layers
 move (same posture as ADR 0041). The hoisted section reuses the blocks'
 provenance order -- gen emits both passes from the same sorted slice, so
-determinism holds. `npm_global` stays in the block: unlike apt (always
-present in the Debian-derived chassis), node/npm may be provided by an
-earlier skill's raw lines, so hoisting it could break a real dependency.
+determinism holds. (`npm_global` stayed in the block for a reason that is now
+historical -- unlike apt, always present in the Debian-derived chassis, node
+and npm may be provided by an earlier skill's raw lines, so hoisting it could
+break a real dependency. The key itself was REMOVED on 2026-07-28: nothing
+byre shipped used it, and naming one ecosystem in byre's vocabulary sat badly
+with P2. Raw `dockerfile` lines carry those installs now, in the block, where
+the same ordering argument still applies.)
 The project block's apt is untouched -- project volatility belongs in the
 project tail.
 
@@ -51,7 +55,7 @@ its own raw lines, where the repo setup already lives.
 
 - **One merged apt RUN**: any skill's package change would re-run every
   skill's packages, and attribution blurs into one anonymous layer.
-- **Hoisting npm_global too**: breaks the earlier-skill-provides-node case
+- **Hoisting npm_global too** (moot since its removal): breaks the earlier-skill-provides-node case
   (above); apt has no analogous provider.
 - **Hoisting payload COPYs**: still deferred, as in ADR 0041 -- the pain
   observed (repeated `apt-get update` on skill churn, 2026-07-20) was
