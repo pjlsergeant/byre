@@ -70,6 +70,24 @@ bundled/installed content). `byre skill validate` runs the full strict
 parse; broken local packages also show as INVALID rows in `list` with
 the reason.
 
+A skill ships payload files into the image with `[build].files` --
+`"<source>" = "/absolute/image/path"`, e.g. `files = { "firewall.sh" =
+"/usr/local/bin/byre-firewall" }`. **Sources resolve against the SKILL's
+own directory**, not the project: `..` escapes and symlinks pointing out
+of the skill dir are refused, and `"."` is legal and means the whole
+skill directory (how a package that ships a tree stages it). They are
+COPY'd before the skill's raw `[build].dockerfile` lines, so a `RUN`
+there can read them.
+
+Note the asymmetry, which is easy to trip over: a USER's config has a
+`[files]` key with the same name and a different root. Theirs resolves
+against the project and exists to stage a repo file into the build so
+their own `dockerfile_pre`/`dockerfile_post` can read it; yours resolves
+against your package and delivers its payload. A user cannot override
+what your skill bakes in -- the config editor shows your files on a
+read-only **Skill files** screen, attributed to you, and the way to
+change them is `byre skill fork`.
+
 A skill that reads env vars it doesn't set (an API key, a feature
 toggle) can document them in `[runtime.env_docs]` -- `NAME = "one-line
 guidance"` per var. Pure documentation: nothing validates or warns, but
