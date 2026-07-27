@@ -242,3 +242,32 @@ func TestHostEnvRefusesWhatConfigRefuses(t *testing.T) {
 		t.Fatal("accepted an invalid environment variable name")
 	}
 }
+
+// A conversion that collides must leave the working state UNTOUCHED. It used
+// to remove the entry from the map it was leaving before checking the
+// destination, so a refused conversion reported "duplicate" and had already
+// deleted the row it was converting -- escape, and the deletion survived to
+// be saved.
+func TestEnvFailedConversionKeepsTheOriginalRow(t *testing.T) {
+	cfg := config.Config{
+		Env:         map[string]string{"FOO": "literal"},
+		EnvFromHost: map[string]string{"FOO": "env:FOO"},
+	}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+	m.itemHostEnv = false
+	m = m.startItem(0) // the [env] literal
+	m.itemMode = schemeEnv
+	m.inputs[1].SetValue("FOO")
+
+	got := m.commitItem()
+	if got.itemErr == "" {
+		t.Fatal("converting onto an occupied key must be refused")
+	}
+	if v := got.assemble().Env["FOO"]; v != "literal" {
+		t.Fatalf("Env[FOO] = %q after a refused conversion, want the literal intact", v)
+	}
+	if v := got.assemble().EnvFromHost["FOO"]; v != "env:FOO" {
+		t.Fatalf("EnvFromHost[FOO] = %q, want the passthrough untouched", v)
+	}
+}

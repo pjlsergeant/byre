@@ -213,14 +213,25 @@ if [ -n "$ip6_ok" ] && [ -r /proc/net/if_inet6 ] &&
     [ -z "$clash" ] && { deny6_probe="$cand"; break; }
   done
   if [ -n "$deny6_probe" ]; then
-    if timeout 3 bash -c "exec 3<>/dev/tcp/$deny6_probe/443" 2>/dev/null; then
+    # The EXIT CODE is what separates a real verification from a vacuous one.
+    # A DROP silently discards the SYN, so the connect hangs and timeout kills
+    # it (124). An immediate failure (ENETUNREACH: a global address but no
+    # route to the public internet) also "fails to connect" and would look
+    # identical to a block -- it proves nothing, because the packet never
+    # reached the OUTPUT policy. Only the timeout earns v6_verified.
+    rc=0
+    timeout 3 bash -c "exec 3<>/dev/tcp/$deny6_probe/443" 2>/dev/null || rc=$?
+    if [ "$rc" -eq 0 ]; then
       die "IPv6 deny probe reached [$deny6_probe]:443 — the v6 rules are not effective"
     fi
-    v6_verified=1
+    # A plain `if`, not `[ ... ] && v6_verified=1`: this script runs under
+    # set -e and fails CLOSED, so the one construct whose exit status could
+    # abort a launch is not the place to lean on AND-list semantics.
+    if [ "$rc" -eq 124 ]; then v6_verified=1; fi
   fi
 fi
 if [ -n "$ip6_ok" ] && [ -z "$v6_verified" ]; then
-  log "note: IPv6 rules applied but NOT probe-verified (no global IPv6 address to probe from) — the drop check above covers IPv4 only"
+  log "note: IPv6 rules applied but NOT probe-verified (no global IPv6 address, or no route to reach a probe from one) — the drop check above covers IPv4 only"
 fi
 # The allow probe is availability, not security: warn only (a flaky edge must
 # not brick the launch — the deny posture still holds). Skipped for a

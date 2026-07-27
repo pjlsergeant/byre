@@ -1677,37 +1677,42 @@ func (m model) itemNotes() []string {
 func (m model) commitEnvRow(orig model) model {
 	key := strings.TrimSpace(m.inputs[0].Value())
 	if key == "" {
-		m.itemErr = "key is required"
-		return m
+		orig.itemErr = "key is required"
+		return orig
 	}
-	wasPassthrough := m.itemHostEnv
 	now := isPassthrough(m.itemMode)
+	// moving: the picker changed which MAP this row belongs in, so the entry
+	// leaves one and joins the other.
+	moving := m.editIndex >= 0 && m.itemHostEnv != now
 
-	// Leaving the map it was in: drop the old entry first, so a converted row
-	// does not survive on both screens.
-	if m.editIndex >= 0 && wasPassthrough != now {
-		if wasPassthrough {
+	// Every refusal returns ORIG, and the duplicate check runs BEFORE the
+	// entry is removed from the map it is leaving. Checking after the removal
+	// meant a conversion onto an occupied key reported "duplicate" while
+	// having already deleted the row it was converting -- escape, and the
+	// deletion was still in the working state to be saved.
+	dest := m.env
+	if now {
+		dest = m.hostEnv
+	}
+	skip := -1
+	if m.editIndex >= 0 && !moving {
+		skip = m.editIndex
+	}
+	for i, kv := range dest {
+		if i != skip && kv.Key == key {
+			orig.itemErr = "duplicate key " + key
+			return orig
+		}
+	}
+
+	if moving {
+		if m.itemHostEnv {
 			m.hostEnv = append(append([]kvItem{}, m.hostEnv[:m.editIndex]...), m.hostEnv[m.editIndex+1:]...)
 		} else {
 			m.env = append(append([]kvItem{}, m.env[:m.editIndex]...), m.env[m.editIndex+1:]...)
 		}
 		m.editIndex = -1
 	}
-
-	// Both maps collapse duplicate keys on save, so the editor owns the
-	// duplicate check -- assemble() would silently drop one before
-	// ValidateLayer could see it.
-	target := m.env
-	if now {
-		target = m.hostEnv
-	}
-	for i, kv := range target {
-		if i != m.editIndex && kv.Key == key {
-			m.itemErr = "duplicate key " + key
-			return m
-		}
-	}
-
 	if now {
 		m.hostEnv = putAt(m.hostEnv, m.editIndex, kvItem{Key: key, Value: hostEnvSource(m.itemMode, m.inputs[1].Value())})
 	} else {
