@@ -4,7 +4,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -121,8 +123,8 @@ func newRootCmd(a app, dir string, s commands.Streams) *cobra.Command {
 
 Run byre in the project directory you want to develop.`,
 		// byre owns error printing and the exit-code contract (usage = 2,
-		// byre failure = 1, agent/refusal codes passed through): cobra must
-		// neither print errors nor dump usage after them.
+		// byre failure = 1, crash = 70, agent/refusal codes passed through):
+		// cobra must neither print errors nor dump usage after them.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// ArbitraryArgs so unknown commands reach RunE (instead of cobra's
@@ -988,7 +990,36 @@ func printVersion(s commands.Streams) error {
 	return err
 }
 
+// exitPanic is the status a byre CRASH exits with. It exists because Go's
+// runtime exits a panic with 2, and 2 is byre's usage-error code -- so an
+// unhandled panic is indistinguishable from "you typed the flags wrong" to
+// the scripts DELIVER.md promises trustworthy exit codes to. byre already
+// takes trouble in the other direction (fatal propagates an ExitError bare so
+// a container's own status is not misreported as a byre bug); this is the
+// same care pointed at the inverse case. 1 (byre error), 2 (usage) and 3
+// (ExitRefused) are taken, so this is sysexits' EX_SOFTWARE.
+//
+// Covers panics on the MAIN goroutine only -- a recover cannot reach another
+// goroutine's panic, which still ends the process at 2. That is a smaller
+// hole than the one this closes, not an argument against closing it.
+const exitPanic = 70
+
+// panicReport writes the crash report. It HIDES NOTHING: the stack the
+// recover captured is re-printed verbatim, because a panic is a bug and the
+// trace is the bug report. All this adds is a line saying whose fault it is.
+// Separate from the exit so it can be tested without ending the process.
+func panicReport(w io.Writer, r any, stack []byte) {
+	fmt.Fprintf(w, "\nbyre: CRASHED — this is a bug in byre, not something you did.\nPlease report it with everything below: https://github.com/pjlsergeant/byre/issues\n\npanic: %v\n\n", r)
+	w.Write(stack)
+}
+
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			panicReport(os.Stderr, r, debug.Stack())
+			os.Exit(exitPanic)
+		}
+	}()
 	dir, err := os.Getwd()
 	if err != nil {
 		fatal(err)

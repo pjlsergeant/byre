@@ -831,3 +831,42 @@ func TestResolvedEgressUnionsMCPImplied(t *testing.T) {
 		t.Errorf("resolvedEgress = %v, want %v", got, want)
 	}
 }
+
+// A worktree LOOKS disposable, which is exactly the wrong intuition for
+// self-edit: worktrees inherit the repo's identity (ADR 0009), so the store
+// the agent gets read-write governs the main worktree and every sibling too.
+// The plain warning names a path and stops, which reads as "this worktree's
+// store" unless the sharing is said out loud.
+func TestDevelopSelfEditWarnsThatAWorktreeStoreIsTheReposStore(t *testing.T) {
+	// Only the flag is flipped: Canonical stays the bootstrapped path, since
+	// develop re-checks the store's path record against it.
+	p, _ := testPaths(t)
+	p.IsWorktree = true
+
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+		t.Fatal(err)
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "REPO's") {
+		t.Errorf("worktree self-edit does not say the store is the repo's:\n%s", got)
+	}
+	if !strings.Contains(got, p.Canonical) {
+		t.Errorf("worktree self-edit does not name the main worktree it is shared with:\n%s", got)
+	}
+}
+
+// ...and a plain project must NOT carry the sharing line: there is nothing to
+// share it with, and a warning that fires everywhere teaches nothing.
+func TestDevelopSelfEditSharingLineIsWorktreeOnly(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr.String(), "REPO's") {
+		t.Errorf("a plain project should not claim its store is shared:\n%s", stderr.String())
+	}
+}

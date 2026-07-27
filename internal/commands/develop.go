@@ -152,6 +152,13 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	if selfEdit {
 		fmt.Fprintln(s.Err, "🛑 self-edit is on. A malicious or incompetent agent can change the configuration to grant itself full access to your host on the next run.")
 		fmt.Fprintf(s.Err, "   read-write mount: %s\n", paths.Dir)
+		// A worktree looks disposable, and that is exactly the wrong intuition
+		// here: worktrees INHERIT the repo's identity (ADR 0009), so this store
+		// is the repo's, not this worktree's. Config the agent rewrites here
+		// governs the main worktree and every sibling worktree's next launch.
+		if paths.IsWorktree {
+			fmt.Fprintf(s.Err, "   this store is the REPO's, shared with %s and every other worktree of it — not scoped to this worktree.\n", paths.Canonical)
+		}
 	}
 	// One host-env resolution feeds the runtime env, the exposure tally,
 	// and (in status) the row -- render-from-effect, no re-derivation.
