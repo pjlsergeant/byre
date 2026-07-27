@@ -76,19 +76,27 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// modeText: Skills → Run args is five more (MCP servers, Claude
+	// Skill files: one past Skills, read-only -- its own screen because "what
+	// did my skills bake in" is a different question from "what am I staging
+	// for the build".
+	e = s.Keys("Down", "Enter")
+	s.WaitForAfter(e, "read-only")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "$EDITOR")
+
+	// modeText: Skill files → Run args is five more (MCP servers, Claude
 	// Skills, Instructions, Extends, Run args).
 	e = s.Keys("Down", "Down", "Down", "Down", "Down", "Enter")
 	s.WaitForAfter(e, "accept + save")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// Baked files: one past Run args, in ADVANCED with the raw Dockerfile
+	// Build files: one past Run args, in ADVANCED with the raw Dockerfile
 	// blocks it feeds. A list field with its own item editor, like mounts.
 	e = s.Keys("Down", "Enter")
 	s.WaitForAfter(e, "a add")
 	e = s.Keys("a")
-	s.WaitForAfter(e, "Add Baked file")
+	s.WaitForAfter(e, "Add Build file")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "a add")
 	e = s.Keys("Escape")

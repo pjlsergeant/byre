@@ -46,10 +46,18 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		return m.save(), nil // global save-in-place; feedback via subFooterNote
 	case "a":
+		if isReadOnlyField(m.listField) {
+			m.status = readOnlyFieldNote()
+			return m, nil
+		}
 		m.itemHostEnv = false
 		return m.startItem(-1), nil
 	case "enter":
 		if m.listCur == addRow {
+			if isReadOnlyField(m.listField) {
+				m.status = readOnlyFieldNote()
+				return m, nil
+			}
 			m.itemHostEnv = false
 			return m.startItem(-1), nil
 		}
@@ -1257,7 +1265,7 @@ func (m model) viewList() string {
 	// user wrote every line of it.
 	skillHeaderShown := false
 	for i, r := range rows {
-		if r.kind == rowSkill && !skillHeaderShown {
+		if r.kind == rowSkill && !skillHeaderShown && !isReadOnlyField(m.listField) {
 			skillHeaderShown = true
 			b.WriteString("\n" + dimStyle.Render("  — from skills —") + "\n")
 		}
@@ -1270,6 +1278,18 @@ func (m model) viewList() string {
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.listCur, line))
 	}
+	if isReadOnlyField(m.listField) {
+		// No add row: there is nothing on this screen for a user to write.
+		// Say so, rather than leave them hunting for the action that is
+		// missing -- and say where the change actually goes.
+		b.WriteString("\n" + dimStyle.Render("  read-only — a skill's payload is the skill's; fork the skill to change it") + "\n")
+		if note := m.subFooterNote(); note != "" {
+			b.WriteString("\n" + note)
+		}
+		b.WriteString("\n" + helpLine("↑/↓", "move", "^s", "save", "esc", "back"))
+		return b.String()
+	}
+
 	// The "+ add" row.
 	addLine := "+ add " + fieldLabel(m.listField)
 	if m.listCur == len(rows) {
@@ -1710,4 +1730,10 @@ func (m model) syncHostEnvLabel() model {
 		m.inputs[1].Placeholder = hostEnvArgHint(m.itemMode)
 	}
 	return m
+}
+
+// readOnlyFieldNote answers a keypress a read-only screen cannot honor, with
+// the route that does work rather than a bare refusal.
+func readOnlyFieldNote() string {
+	return "read-only — a skill's payload is the skill's; fork the skill (byre skill fork <id> <new-id>) to change what it bakes in"
 }

@@ -7,11 +7,60 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
-// The Baked files screen exists to answer "what is going into my image and
-// who put it there". files is overwhelmingly a SKILL's key -- every builtin
-// agent skill ships its payload through it -- so a screen that showed only
-// the user's own entries would miss most of the answer.
-func TestFilesRowsAttributeEverySource(t *testing.T) {
+// Build files and Skill files are two screens because they answer two
+// questions. Build files is what THIS config stages for the build; a skill's
+// payload must not appear there, or a list that is almost entirely package
+// files reads as though the user wrote it.
+func TestBuildFilesShowsOnlyThisConfigsStaging(t *testing.T) {
+	m := splitFilesModel(t)
+	for _, r := range m.fieldRows(fFiles) {
+		if r.kind == rowSkill {
+			t.Fatalf("a skill payload leaked onto Build files: %+v", r)
+		}
+	}
+	rows := m.fieldRows(fFiles)
+	if len(rows) != 1 || !strings.Contains(rows[0].text, "./mine → /opt/mine") {
+		t.Fatalf("rows = %+v, want just this config's own entry", rows)
+	}
+}
+
+// Skill files is the discovery screen: every row attributed, nothing else.
+func TestSkillFilesShowsOnlySkillPayloadsWithAttribution(t *testing.T) {
+	m := splitFilesModel(t)
+	rows := m.fieldRows(fSkillFiles)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v, want one skill row", rows)
+	}
+	r := rows[0]
+	if r.kind != rowSkill {
+		t.Errorf("kind = %v, want rowSkill", r.kind)
+	}
+	if r.source != "skill:firewall" {
+		t.Errorf("source = %q, want skill:firewall -- the screen exists to say where it came from", r.source)
+	}
+	if !strings.Contains(r.text, "/usr/local/bin/byre-firewall") {
+		t.Errorf("text = %q, want the payload destination", r.text)
+	}
+}
+
+// Read-only means no add affordance and no route to one.
+func TestSkillFilesIsReadOnly(t *testing.T) {
+	if !isReadOnlyField(fSkillFiles) {
+		t.Fatal("Skill files must be read-only")
+	}
+	if isReadOnlyField(fFiles) {
+		t.Fatal("Build files must stay editable")
+	}
+	m := splitFilesModel(t)
+	for _, r := range m.fieldRows(fSkillFiles) {
+		if got := m.rowChoices(fSkillFiles, r); len(got) != 0 {
+			t.Fatalf("a skill payload row offers actions: %+v", got)
+		}
+	}
+}
+
+func splitFilesModel(t *testing.T) model {
+	t.Helper()
 	inh := Inherited{Skills: map[string]SkillRuntime{
 		"firewall": {Files: map[string]string{"firewall.sh": "/usr/local/bin/byre-firewall"}},
 	}}
@@ -19,30 +68,7 @@ func TestFilesRowsAttributeEverySource(t *testing.T) {
 		Files:  map[string]string{"./mine": "/opt/mine"},
 		Skills: []string{"firewall"},
 	}
-	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"firewall"}, nil, inh, nil, TargetProject)
-	rows := m.fieldRows(fFiles)
-
-	var local, skill int
-	for _, r := range rows {
-		switch r.kind {
-		case rowLocal:
-			local++
-			if !strings.Contains(r.text, "./mine → /opt/mine") {
-				t.Errorf("local row text = %q, want the source → destination copy", r.text)
-			}
-		case rowSkill:
-			skill++
-			if r.source != "skill:firewall" {
-				t.Errorf("skill row source = %q, want skill:firewall", r.source)
-			}
-			if !strings.Contains(r.text, "/usr/local/bin/byre-firewall") {
-				t.Errorf("skill row text = %q, want the payload destination", r.text)
-			}
-		}
-	}
-	if local != 1 || skill != 1 {
-		t.Fatalf("rows = %+v; want one local and one skill row", rows)
-	}
+	return newModel("t", "/tmp/x", cfg, nil, nil, []string{"firewall"}, nil, inh, nil, TargetProject)
 }
 
 // The two shape rules belong to config, not the editor: commitItem calls the
@@ -131,7 +157,7 @@ func TestFilesRowsRenderAWholeDirectorySourceLegibly(t *testing.T) {
 	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"acme/bundle"}, nil, inh, nil, TargetProject)
 
 	var got string
-	for _, r := range m.fieldRows(fFiles) {
+	for _, r := range m.fieldRows(fSkillFiles) {
 		if r.kind == rowSkill {
 			got = r.text
 		}

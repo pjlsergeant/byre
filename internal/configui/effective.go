@@ -62,6 +62,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.envRows()
 	case fFiles:
 		return m.filesRows()
+	case fSkillFiles:
+		return m.skillFilesRows()
 	case fMounts:
 		return m.mountRows()
 	case fPorts:
@@ -612,13 +614,9 @@ func (m model) aptRows() []listRow {
 	return rows
 }
 
-// filesRows renders [files] the way every other cascade list renders: what
-// this file sets, what it inherits, and what a skill contributed -- with the
-// source named. That last part is most of the value here: files is
-// overwhelmingly a skill's key (every builtin agent skill ships its payload
-// through it), so the question a reader actually has is "what is going into
-// my image and who put it there", which was previously unanswerable in the
-// editor because the key had no rows at all.
+// filesRows renders THIS config's [files]: what it stages for the build, and
+// what it inherits from a lower layer. Skill payloads are deliberately absent
+// -- they are a different question with their own screen (skillFilesRows).
 func (m model) filesRows() []listRow {
 	localIdx := map[string]int{}
 	for i, kv := range m.files {
@@ -640,6 +638,16 @@ func (m model) filesRows() []listRow {
 			rows = append(rows, listRow{kind: rowLocal, text: fileLine(kv, false), idx: i})
 		}
 	}
+	return rows
+}
+
+// skillFilesRows is the read-only half: what the enabled skills bake into the
+// image. Its own screen because it is a different question from Build files
+// -- "where did this come from", not "what am I staging for the build" -- and
+// one screen answering both read as though the user had written every line of
+// a list that is almost entirely package payloads.
+func (m model) skillFilesRows() []listRow {
+	var rows []listRow
 	for _, sk := range m.effectiveSkills() {
 		fs := m.inh.Skills[sk].Files
 		for _, src := range slices.Sorted(maps.Keys(fs)) {

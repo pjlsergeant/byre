@@ -27,6 +27,10 @@ type fieldInfo struct {
 	// 2026-07-08).
 	item string
 	noun string // summary noun, singular ("3 packages", "1 host")
+	// readOnly marks a screen that exists to ANSWER a question, not to edit:
+	// no add row, no row menu. Skill files is the case -- a skill's payload
+	// is the skill's, and the way to change it is to fork the skill.
+	readOnly bool
 }
 
 var fieldInfos = map[fieldID]fieldInfo{
@@ -35,12 +39,13 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fAgent:    {label: "Agent"},
 	fEngine:   {label: "Engine"},
 	fApt:      {label: "Packages", kind: kindList, item: "Package", noun: "package"},
-	// "Baked" is the glossary's word for image-time content, and the label
-	// is where the copy semantics have to land: sitting in BUILD next to
-	// Packages, "Baked files" says frozen-into-the-image without a help
-	// string. "Files" would read as a sibling of Extra mounts, which is
-	// exactly the wrong intuition (that one is live, this one is a copy).
-	fFiles:           {label: "Baked files", kind: kindList, item: "Baked file", noun: "file"},
+	// Two screens, because they are two things that happen to share a TOML
+	// key. Build files is a build INPUT: a project file staged so a raw
+	// Dockerfile line can read it. Skill files is a package's payload going
+	// into the image -- read-only, and the screen exists to answer "where did
+	// this come from", not to edit anything.
+	fFiles:           {label: "Build files", kind: kindList, item: "Build file", noun: "file"},
+	fSkillFiles:      {label: "Skill files", kind: kindList, item: "Skill file", noun: "file", readOnly: true},
 	fEnv:             {label: "Env vars", kind: kindList, item: "Env var", noun: "var"},
 	fEgress:          {label: "Egress", kind: kindList, item: "Egress host", noun: "host"},
 	fMounts:          {label: "Extra mounts", kind: kindList, item: "Extra mount", noun: "mount"},
@@ -89,3 +94,6 @@ func fieldNoun(f fieldID, n int) string {
 	}
 	return noun
 }
+
+// isReadOnlyField reports whether a list screen refuses edits outright.
+func isReadOnlyField(f fieldID) bool { return fieldInfos[f].readOnly }
