@@ -888,6 +888,10 @@ func footerStart(lines []string) int {
 // long messages off mid-word at the pane edge — and error messages echo
 // user input, so their length is unbounded.
 func (m model) errLine(msg string) string {
+	// Error messages echo user input, so they get the same data-vs-terminal
+	// strip the list rows do -- before the style wrap, and unbounded input is
+	// exactly where a smuggled control sequence would ride.
+	msg = packages.EscapeTerminal(msg)
 	if m.width > 0 {
 		return errTextStyle.Render(ansi.Wrap("✗ "+msg, m.width, ""))
 	}
@@ -914,7 +918,7 @@ func clipLines(s string, width int) string {
 
 func (m model) viewForm() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.title))
+	fmt.Fprintf(&b, "%s\n", focusStyle.Render(packages.EscapeTerminal(m.title)))
 	// The one-line total-exposure summary: what the box actually gets across
 	// all layers + skills, in the same words develop prints at launch.
 	fmt.Fprintf(&b, "%s\n\n", dimStyle.Render("exposure: "+m.exposureNow().Line()))
@@ -954,7 +958,7 @@ func (m model) viewForm() string {
 	}
 	b.WriteString("\n")
 
-	b.WriteString("\n" + dimStyle.Render("Saves to: "+m.filePath))
+	b.WriteString("\n" + dimStyle.Render("Saves to: "+packages.EscapeTerminal(m.filePath)))
 	b.WriteString("\n" + helpLine("↑↓", "move", "←→", "change", "↵", "open", "^s", "save", "^e", "$EDITOR", "^q", "quit"))
 	return b.String()
 }
@@ -1089,11 +1093,15 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		// List fields count EFFECTIVE state, like the Skills summary: what the
 		// box actually gets, with the inherited/skill share dimmed beside it.
 		eff, inherited, fromSkills, offered := rowCounts(m.fieldRows(f))
-		if f == fEnv {
-			// Env is counted by distinct key, not by row, so this summary and
-			// the exposure line cannot disagree about one variable named by
-			// two layers. Offered has no meaning for env and stays as-is.
+		// Env and Egress count by IDENTITY (distinct key; normalized door),
+		// not by row, so these summaries and the exposure line cannot
+		// disagree about one thing named by two layers. Offered keeps
+		// rowCounts' number either way (egress doors declared-but-closed).
+		switch f {
+		case fEnv:
 			eff, inherited, fromSkills = m.envCounts()
+		case fEgress:
+			eff, inherited, fromSkills = m.egressCounts()
 		}
 		s := dimStyle.Render("(none)")
 		if eff > 0 {
@@ -1250,7 +1258,7 @@ func cursorLine(selected bool, line string) string {
 // title (which file this edits) — orientation two screens deep, the same job
 // the form's "Saves to:" line does on the root screen.
 func (m model) crumb(screen string) string {
-	return focusStyle.Render(screen) + dimStyle.Render("  ·  "+m.title)
+	return focusStyle.Render(screen) + dimStyle.Render("  ·  "+packages.EscapeTerminal(m.title))
 }
 
 // helpLine renders the footer key help from key/verb pairs: keys at normal

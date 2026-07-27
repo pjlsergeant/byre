@@ -564,9 +564,13 @@ first-run picker then asks, at every box's onboarding, whether to opt
 that box in -- yes puts the companion in the project's `byre.config`
 `skills`, the only grant the answer makes. Save-as-default stores the
 answer as a favourite (the picker-owned `shared_auth` list) that
-prefills the next box's offer; the offer is skipped only when the
-companion is already hand-granted machine-wide in `default.config`
-`skills`, a key the picker never writes (ADR 0025). Gemini (two-box
+prefills the next box's offer; the offer is skipped under exactly two
+suppressions (ADR 0025): the companion already granted machine-wide in
+`default.config` `skills` (a key the picker never writes -- the answer
+could not matter), or `defaults.skip_questions`, the standing
+instruction to configure new projects from the stored answers unasked
+(which DOES apply the grant, and says so at the switch and at develop
+time). Gemini (two-box
 OAuth check pending) and grok (broker rollover gate pending, ADR 0036)
 deliberately don't declare it yet; opencode's gate passed 2026-07-17
 and it now does. The gate-pending pair still declare `companion_for` --

@@ -596,6 +596,36 @@ func TestEnvFieldSummaryAgreesWithExposure(t *testing.T) {
 	}
 }
 
+// The share labels attribute a colliding key to the contributor that WINS in
+// the box, and the winner is not cascade order: [env] bakes as image ENV,
+// skill env rides -e, and the engine's -e overrides ENV. So TERM set by both
+// gemini and an [env] literal is gemini's at runtime, and the summary must
+// say "from skills" -- the first version of the rank put [env] on top by
+// cascade instinct, and one of two reviewers endorsed the same instinct while
+// the other checked the engine.
+func TestEnvShareAttributionFollowsRuntimeWinner(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"gemini": {Env: map[string]string{"TERM": "xterm-256color"}},
+	}}
+
+	// skill vs [env]: -e beats baked ENV, so the skill's row is the winner.
+	m := newModel("t", "/tmp/x", config.Config{Skills: []string{"gemini"}, Env: map[string]string{"TERM": "dumb"}}, nil, nil, []string{"gemini"}, nil, inh, nil, TargetProject)
+	m.listField = fEnv
+	_, _, fromSkills := m.envCounts()
+	if fromSkills != 1 {
+		t.Errorf("fromSkills = %d, want 1: the skill's -e value is what the box gets for TERM", fromSkills)
+	}
+
+	// skill vs delivered passthrough: addEnvFromHost writes after skill env,
+	// so the passthrough wins and the key is NOT a skill share.
+	p := newModel("t", "/tmp/x", config.Config{Skills: []string{"gemini"}}, nil, nil, []string{"gemini"}, nil, inh, nil, TargetProject)
+	p.listField = fEnv
+	_, _, pSkills := p.envCounts()
+	if pSkills != 0 {
+		t.Errorf("fromSkills = %d, want 0: the delivered TERM passthrough beats the skill's value", pSkills)
+	}
+}
+
 // ADR 0025's second suppression discloses AT the switch, because it acts on
 // projects that do not exist yet. The consequence that matters -- the
 // shared-credentials answer is one of the ones that stops being asked, and
@@ -692,5 +722,44 @@ func TestListRowsNeverLeakControlSequences(t *testing.T) {
 		// The payload TEXT survives (stripped, inert, on SPOOF's own row) --
 		// only the control character that made it a separate row is gone.
 		t.Errorf("stripping must keep the printable payload:\n%q", view)
+	}
+
+	// The action menu re-paints the selected row, so the value neutralized in
+	// the list must not come back to life on Enter (the funnel's closest
+	// sibling; the strip originally stopped one screen short).
+	for _, r := range m.fieldRows(fEnv) {
+		if r.ident == "" && !strings.Contains(r.text, "SPOOF") {
+			continue
+		}
+		m.menuRow = r
+		if menu := m.viewMenu(); strings.ContainsAny(menu, "\r") {
+			t.Errorf("menu view carries a raw CR for row %q:\n%q", r.text, menu)
+		}
+	}
+}
+
+// Egress's sibling of the env agreement rule: the field summary counts
+// NORMALIZED doors, exactly as the exposure line and the launch tally do --
+// "github.com" restated by a skill as "github.com:443" is one door, and it
+// read as two in the summary while the exposure line said one. A door the
+// user's own layer opens attributes to them, never "from skills", however
+// many skills restate it (doors union; there is no runtime winner).
+func TestEgressFieldSummaryAgreesWithExposure(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"fw": {Egress: []string{"github.com:443"}, Posture: "deny-by-default"},
+	}}
+	cfg := config.Config{Skills: []string{"fw"}, Egress: []string{"github.com"}}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"fw"}, nil, inh, nil, TargetProject)
+	m.listField = fEgress
+
+	eff, _, fromSkills := m.egressCounts()
+	if got := m.exposureNow().Egress; got != eff {
+		t.Errorf("field summary says %d doors, exposure line says %d -- one door, two tallies", eff, got)
+	}
+	if eff != 1 {
+		t.Errorf("effective = %d, want 1: two spellings of one door", eff)
+	}
+	if fromSkills != 0 {
+		t.Errorf("fromSkills = %d, want 0: the user's own layer opens this door", fromSkills)
 	}
 }

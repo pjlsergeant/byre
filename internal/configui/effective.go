@@ -963,18 +963,26 @@ func (m model) effectiveSkills() []string {
 // row is already closed, so it never reaches the tally. Skill env is the
 // collision that does, in both directions -- a skill restating an [env] key,
 // and (since skill env stopped shadowing) a skill restating a passthrough.
-// Ranked by the precedence runParams applies: an [env] literal beats the
-// passthrough, which beats the skill's own value.
+//
+// The rank picks which contributor the share labels attribute a key to, and
+// it follows who actually WINS in the box, which is not config-cascade
+// order: [env] bakes as image ENV (gen.writeEnv), skill env and the
+// delivered passthrough ride `-e` (runParams), and the engine's -e
+// overrides image ENV. So a delivered passthrough beats skill env (written
+// after it in the -e map), and skill env beats a baked [env] literal. An
+// [env] literal still beats the PASSTHROUGH -- not by value but by blocking
+// its delivery (resolveHostEnv) -- which needs no rank arm here: the losing
+// passthrough row arrives closed and is excluded above. First review of
+// this function ranked [env] on top by cascade instinct; the -e-over-ENV
+// fact is the correction.
 func (m model) envCounts() (effective, inherited, fromSkills int) {
 	rank := func(k rowKind) int {
 		switch k {
-		case rowLocal, rowOverride:
-			return 4
-		case rowInherited:
-			return 3
 		case rowHostEnv:
-			return 2
+			return 3
 		case rowSkill:
+			return 2
+		case rowLocal, rowOverride, rowInherited:
 			return 1
 		}
 		return 0
@@ -1014,6 +1022,58 @@ func (m model) envCounts() (effective, inherited, fromSkills int) {
 			if r.idx < 0 {
 				inherited++
 			}
+		}
+	}
+	return
+}
+
+// egressCounts tallies the Egress screen by distinct NORMALIZED door rather
+// than by row: "github.com" and "github.com:443" are one enforced door, which
+// is exactly how the exposure line and the launch tally (resolvedEgress)
+// count -- so a spelling restated by a skill must not read as two doors in
+// the field summary and one everywhere else (the envCounts sibling; found by
+// review hunting envCounts' peers). Unlike env there is no runtime winner to
+// attribute a shared door to -- doors union -- so the share label follows
+// who the door is YOURS through: a door the user's own layer opens is never
+// "from skills", however many skills restate it.
+func (m model) egressCounts() (effective, inherited, fromSkills int) {
+	rank := func(k rowKind) int {
+		switch k {
+		case rowLocal, rowOverride:
+			return 3
+		case rowInherited:
+			return 2
+		case rowSkill:
+			return 1
+		}
+		return 0
+	}
+	best := map[string]listRow{}
+	for _, r := range m.fieldRows(fEgress) {
+		if r.closed || r.disabled {
+			continue
+		}
+		switch r.kind {
+		case rowLocal, rowOverride, rowInherited, rowSkill:
+		default:
+			continue
+		}
+		host, port, err := config.ParseEgress(r.text)
+		if err != nil {
+			continue
+		}
+		door := host + ":" + strconv.Itoa(port)
+		if cur, ok := best[door]; !ok || rank(r.kind) > rank(cur.kind) {
+			best[door] = r
+		}
+	}
+	for _, r := range best {
+		effective++
+		switch r.kind {
+		case rowInherited:
+			inherited++
+		case rowSkill:
+			fromSkills++
 		}
 	}
 	return

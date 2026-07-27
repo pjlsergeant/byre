@@ -317,7 +317,9 @@ func (m model) viewSkills() string {
 			line += dimStyle.Render("  (removes an inherited skill)")
 		}
 		if d := m.skillDescs[e.name]; d != "" {
-			line += dimStyle.Render("  — " + d)
+			// A description is manifest text -- local and installed skills
+			// are untrusted input on this box -- so it is data here too.
+			line += dimStyle.Render("  — " + packages.EscapeTerminal(d))
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.skillCur, line))
 		// Containment hole: same skill-owned one-liner as status and preset
@@ -337,7 +339,7 @@ func (m model) viewSkills() string {
 				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      → every new project gets this, and is no longer asked about shared credentials"))
 			}
 			if c := m.inh.Skills[e.name].Containment; c != "" {
-				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      🛑 "+c))
+				fmt.Fprintf(&b, "%s\n", dimStyle.Render("      🛑 "+packages.EscapeTerminal(c)))
 			}
 		}
 	}

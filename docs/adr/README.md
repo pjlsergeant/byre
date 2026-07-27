@@ -86,7 +86,7 @@ this index:
 - 0022: the CLI rides cobra but keeps byre's exit-code contract: usage errors exit 2 and never dispatch [arm: TestRunUsageErrors]
 - 0023: grok-shared-auth v1 (symlink-shared auth.json) is retired; a symlinked auth.json never counts (superseded in part by 0036) [arm: TestGrokLoginHookHealsRetiredSymlink]
 - 0024: onboarding offers shared auth only when a companion vouches shared_auth_for (partly superseded by 0025) [arm: TestSharedAuthCompanion]
-- 0025: the shared-auth offer is per box: yes writes only this project's byre.config; saved answers only prefill, except under the two suppressions, which disclose at the switch [arm: TestOnboardSharedAuthDeclineRecordsNothingAndReasks, TestSkipQuestionsCheckboxDisclosesCredentialsUnticked]
+- 0025: the shared-auth offer is per box: yes writes only this project's byre.config; saved answers only prefill, except under the two suppressions, which disclose at the switch [arm: TestOnboardSharedAuthDeclineRecordsNothingAndReasks, TestSkipQuestionsCheckboxDisclosesCredentialsUnticked, TestGlobalSkillsScreenDisclosesSharedAuthSuppression]
 - 0026: host values cross only via env_from_host entries (attributed grants); git identity is the core layer [arm: TestResolveHostEnvPrecedenceAndStates]
 - 0027: a containment hole gets its own loud 🛑 line; existing status rows stay undegraded (warranty model) [arm: TestRenderStatusContainmentAndSockGroups]
 - 0028: env.d hooks may only export env -- anything that runs, prompts, or mutates belongs in firstrun.d [arm: TestClaudeSharedAuthEnvHookExportsOnly]

@@ -255,9 +255,9 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		// must not advertise one.
 		if r.kind == rowOverride && r.source != "" {
 			if m.listField == fEnv {
-				m.status = "override removed — the " + r.source + " value is back in effect (an inherited var can't be unset from this layer)"
+				m.status = "override removed — the " + packages.EscapeTerminal(r.source) + " value is back in effect (an inherited var can't be unset from this layer)"
 			} else {
-				m.status = "override removed — the " + r.source + " entry is back in effect; use its Remove action to turn it off here"
+				m.status = "override removed — the " + packages.EscapeTerminal(r.source) + " entry is back in effect; use its Remove action to turn it off here"
 			}
 		}
 	case actRemoveHere:
@@ -272,9 +272,9 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		// undo it (delete the entry here), and how one project opts back out.
 		switch m.target {
 		case TargetGlobal:
-			m.status = r.ident + " opened for every project on this machine (entry in default.config; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
+			m.status = packages.EscapeTerminal(r.ident) + " opened for every project on this machine (entry in default.config; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
 		case TargetLayer:
-			m.status = r.ident + " opened for every project extending this layer (entry in this layer file; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
+			m.status = packages.EscapeTerminal(r.ident) + " opened for every project extending this layer (entry in this layer file; delete it here to close, or \"Remove in this project\" in a project's editor to opt one box out)"
 		}
 	}
 	if n := len(m.fieldRows(m.listField)); m.listCur > n {
@@ -1309,7 +1309,7 @@ func (m model) viewList() string {
 		}
 		// Row text and annotation are DATA on this screen, and data does not
 		// get to drive the terminal: a config value carrying \r or an SGR
-		// escape (TOML  -- literal control bytes never parse) could
+		// escape (via TOML's \uXXXX form -- literal control bytes never parse) could
 		// overwrite its own row with a forged one, or terminate byre's
 		// styling mid-line. The grants screens are where the user audits what
 		// the agent wrote, so what is painted must be what is stored. Escaped
@@ -1415,8 +1415,14 @@ func proseBlock(text, more string, width int) string {
 		w = 1
 	}
 	var lines []string
+	// Prose is data: standing instructions are exactly what a self-edit
+	// agent writes, so the reader strips control sequences like every other
+	// display surface. Display-only (^e edits the stored text, not this) and
+	// PER LINE, after the split and the tab expansion -- newlines and tabs
+	// are structure in a multiline surface, and a whole-text strip ate them
+	// (caught by the tail-count test, not by me).
 	for _, src := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		lines = append(lines, wrapLine(expandTabs(src), w)...)
+		lines = append(lines, wrapLine(packages.EscapeTerminal(expandTabs(src)), w)...)
 	}
 	const proseview = 12
 	shown := lines
@@ -1511,7 +1517,10 @@ func wrapLine(src string, w int) []string {
 // actions it supports -- terse labels, accelerator keys beside them.
 func (m model) viewMenu() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", focusStyle.Render(m.menuRow.text))
+	// The menu re-paints the selected row, so it is the list funnel's closest
+	// sibling: the same value neutralized there must not come back to life on
+	// Enter (review catch -- the strip stopped one screen short).
+	fmt.Fprintf(&b, "%s\n", focusStyle.Render(packages.EscapeTerminal(m.menuRow.text)))
 	b.WriteString(dimStyle.Render("Set in: "+setIn(m.menuRow)) + "\n\n")
 	// An INHERITED instructions row is readable right here, in full — the
 	// user can't edit another layer's snippet from this file, but seeing

@@ -33,22 +33,6 @@ func chainContains(layers map[string]config.Config, from, needle string) bool {
 	return false
 }
 
-// displayPath abbreviates p with a leading ~ when it lives under the user's
-// home directory, and otherwise returns it verbatim -- never a spelling the
-// path does not have. Display-only; degrade on a missing home (no user.Current
-// in a stripped container is survivable, a wrong path in a title is a lie).
-func displayPath(p string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return p
-	}
-	rel, err := filepath.Rel(home, p)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return p
-	}
-	return "~/" + filepath.ToSlash(rel)
-}
-
 // skillOpts is ListSkills minus unofferable stubs (see the call site).
 func skillOpts(cat *packages.Catalog) []string {
 	var out []string
@@ -184,7 +168,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		// BYRE_HOME override put the wrong path in the title, five lines
 		// above a footer showing the right one (store notices already follow
 		// this rule; the QA playbook pins it for them).
-		title = "byre global config  (" + displayPath(path) + ")"
+		title = "byre global config  (" + packages.DisplayPath(path) + ")"
 		// Not a store — no enrollment semantics — but AtomicWrite no longer
 		// creates directories, and quitting an unsaved editor should leave no
 		// fresh ~/.byre behind either: create home only when a write lands.

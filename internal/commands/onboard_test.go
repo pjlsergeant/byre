@@ -485,8 +485,10 @@ func TestOnboardSaveDefaultWriteFailureLeavesProjectUnonboarded(t *testing.T) {
 	}
 }
 
-// defaults.skip_questions: the user has said, by hand at machine scope, that
-// new projects take their stored answers unasked. Onboarding must honour it
+// defaults.skip_questions: a standing machine-scope instruction (usually the
+// global editor's checkbox, which is why the checkbox names the credential
+// consequence before it is ticked) that new projects take their stored
+// answers unasked. Onboarding must honour it
 // WITHOUT prompting -- including the shared-auth pick, which grants (the
 // companion lands in the new project's skills) -- and must say out loud that
 // it did, so a box configured without a question is never a silent one.
