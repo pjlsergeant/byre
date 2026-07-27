@@ -412,19 +412,22 @@ func (m model) startItem(idx int) model {
 	m.itemModeOpts = nil
 	m.itemModeLabel = ""
 	m.itemModeFirst = false
-	if m.itemHostEnv {
-		// Scheme first, because it decides what the argument even means (the
-		// mcp Kind picker's shape). Inherit is an option so a local pin can
-		// come back OFF from the editor -- without it the only way back to
-		// the cascade is a hand edit.
-		key, src := "", ""
+	if m.listField == fEnv {
+		// One picker for the whole screen: an [env] literal and an
+		// env_from_host passthrough answer the same question ("where does
+		// this variable's value come from"), and asking it once is what makes
+		// ADDING a passthrough possible -- the add key previously built a
+		// literal editor and nothing else.
+		key, arg := "", ""
+		m.itemMode = schemeValue
 		if idx >= 0 {
-			key, src = m.hostEnv[idx].Key, m.hostEnv[idx].Value
-			m.itemMode, _ = hostEnvScheme(src)
-		} else {
-			m.itemMode = schemeInherit
+			if m.itemHostEnv {
+				key = m.hostEnv[idx].Key
+				m.itemMode, arg = hostEnvScheme(m.hostEnv[idx].Value)
+			} else {
+				key, arg = m.env[idx].Key, m.env[idx].Value
+			}
 		}
-		_, arg := hostEnvScheme(src)
 		m.itemHasMode = true
 		m.itemModeOpts = hostEnvSchemes
 		m.itemModeLabel = "Source"
@@ -433,7 +436,9 @@ func (m model) startItem(idx int) model {
 		argIn := newInput(arg)
 		argIn.Placeholder = hostEnvArgHint(m.itemMode)
 		m.inputs = []textinput.Model{newInput(key), argIn}
-		m.focusItem(0)
+		// Focus the KEY, not the picker: `value` is the common answer, so the
+		// old flow (type key, tab, type value, enter) must not grow a step.
+		m.focusItem(1)
 		m.mode = modeItem
 		return m
 	}
@@ -521,13 +526,6 @@ func (m model) startItem(idx int) model {
 		m.itemHasMode = true
 		m.itemModeOpts = []string{"inline text", "host file"}
 		m.itemModeLabel = "Source"
-	case fEnv:
-		m.inputLabels = []string{"Key", "Value"}
-		k, val := "", ""
-		if idx >= 0 {
-			k, val = m.env[idx].Key, m.env[idx].Value
-		}
-		m.inputs = []textinput.Model{newInput(k), newInput(val)}
 	case fFiles:
 		// The labels carry the two rules planFiles enforces at build time, so
 		// a refusal is not the first place a user learns them.
@@ -842,8 +840,8 @@ func longestCommonPrefix(ss []string) string {
 // fEgress's ParseEgress.)
 func (m model) commitItem() model {
 	orig := m
-	if m.itemHostEnv {
-		return m.commitHostEnv(orig)
+	if m.listField == fEnv {
+		return m.commitEnvRow(orig)
 	}
 	switch m.listField {
 	case fApt:
@@ -923,18 +921,6 @@ func (m model) commitItem() model {
 			return m
 		}
 		m.claudeSkills = putAt(m.claudeSkills, m.editIndex, cs)
-	case fEnv:
-		k := strings.TrimSpace(m.inputs[0].Value())
-		// Key shape is the layer check's job. Duplicates are the editor's: env is
-		// a map on disk, so two rows with the same key would silently collapse in
-		// assemble() before ValidateLayer could reject them.
-		for i, kv := range m.env {
-			if i != m.editIndex && kv.Key == k {
-				m.itemErr = "duplicate key " + k
-				return m
-			}
-		}
-		m.env = putAt(m.env, m.editIndex, kvItem{Key: k, Value: m.inputs[1].Value()})
 	case fFiles:
 		src := strings.TrimSpace(m.inputs[0].Value())
 		dest := strings.TrimSpace(m.inputs[1].Value())
@@ -1261,7 +1247,20 @@ func (m model) viewList() string {
 		// that indented whatever printed next (field-report 2026-07-17).
 		b.WriteString(dimStyle.Render("  (none yet)") + "\n")
 	}
+	// Skill contributions get their own heading. They are already LAST in
+	// cascade order on every screen, so this is decoration, not a reordering
+	// -- and it stays out of the rows slice on purpose: the cursor indexes
+	// that slice, so a header row would shift every selection by one.
+	//
+	// It matters most where a skill dominates the screen: baked files are
+	// overwhelmingly skill payloads, and an unheaded list reads as though the
+	// user wrote every line of it.
+	skillHeaderShown := false
 	for i, r := range rows {
+		if r.kind == rowSkill && !skillHeaderShown {
+			skillHeaderShown = true
+			b.WriteString("\n" + dimStyle.Render("  — from skills —") + "\n")
+		}
 		line := r.text
 		if r.kind == rowRemoved || r.kind == rowStaleMarker || r.kind == rowOffered || r.kind == rowEnvDoc {
 			line = dimStyle.Render(line)
@@ -1305,6 +1304,14 @@ func rowAnnotation(r listRow) string {
 	case rowStaleMarker:
 		return "  (removes nothing — stale marker)"
 	case rowSkill:
+		return "  (" + r.source + ")"
+	case rowHostEnv:
+		// Without this the six keys byre ships rendered bare, which on a
+		// screen where every OTHER row carries its provenance reads as "you
+		// set this here". idx >= 0 is the only case that actually is local.
+		if r.idx >= 0 {
+			return "  (set here)"
+		}
 		return "  (" + r.source + ")"
 	case rowOffered:
 		if r.source == "" {
@@ -1494,13 +1501,11 @@ func (m model) viewItem() string {
 	if m.editIndex < 0 {
 		verb = "Add"
 	}
-	title := itemTitle(m.listField)
-	if m.itemHostEnv {
-		// [env] literals and passthroughs share the Env screen; "Add Env var"
-		// over a scheme picker names the wrong thing.
-		title = "host passthrough"
-	}
-	fmt.Fprintf(&b, "%s\n\n", m.crumb(verb+" "+title))
+	// One title for both kinds on the Env screen: a passthrough IS an
+	// environment variable, and the Source picker directly below says where
+	// its value comes from. A kind-dependent title would restate the picker
+	// and go stale the moment the picker moved.
+	fmt.Fprintf(&b, "%s\n\n", m.crumb(verb+" "+itemTitle(m.listField)))
 
 	// Label column sized to the widest label this form shows, so optional/
 	// required annotations don't push the colons out of line.
@@ -1637,39 +1642,55 @@ func (m model) itemNotes() []string {
 	return notes
 }
 
-// commitHostEnv writes an env_from_host pick back into the working state.
+// commitEnvRow writes an Env-screen entry back into the working state. The
+// picker decides WHICH map it lands in, so switching a row from `value` to a
+// scheme (or back) moves it between [env] and env_from_host rather than
+// leaving a stale twin in the one it came from.
 //
-// Inherit is the option with teeth: it means NO local entry, so it removes
-// the pin rather than writing a value. Writing something for "inherit" is
-// exactly the bug the onboarding picker shipped once (an explicit agent =
-// "none" where the user meant "don't decide here"), and the cascade cannot
-// tell an explicit restatement from a deliberate pin afterwards.
-func (m model) commitHostEnv(orig model) model {
+// Removing an entry entirely is Delete on the row, not an option here: that
+// is what Delete means on every list field, and a second spelling of it would
+// be a concept this screen does not need.
+func (m model) commitEnvRow(orig model) model {
 	key := strings.TrimSpace(m.inputs[0].Value())
 	if key == "" {
 		m.itemErr = "key is required"
 		return m
 	}
-	if m.itemMode == schemeInherit {
-		if m.editIndex >= 0 {
+	wasPassthrough := m.itemHostEnv
+	now := isPassthrough(m.itemMode)
+
+	// Leaving the map it was in: drop the old entry first, so a converted row
+	// does not survive on both screens.
+	if m.editIndex >= 0 && wasPassthrough != now {
+		if wasPassthrough {
 			m.hostEnv = append(append([]kvItem{}, m.hostEnv[:m.editIndex]...), m.hostEnv[m.editIndex+1:]...)
+		} else {
+			m.env = append(append([]kvItem{}, m.env[:m.editIndex]...), m.env[m.editIndex+1:]...)
 		}
-		m.itemErr = ""
-		m.mode = modeList
-		return m
+		m.editIndex = -1
 	}
-	src := hostEnvSource(m.itemMode, m.inputs[1].Value())
-	// env_from_host is a map on disk: two rows sharing a key would collapse
-	// silently on save, the same hazard [env] guards against.
-	for i, kv := range m.hostEnv {
+
+	// Both maps collapse duplicate keys on save, so the editor owns the
+	// duplicate check -- assemble() would silently drop one before
+	// ValidateLayer could see it.
+	target := m.env
+	if now {
+		target = m.hostEnv
+	}
+	for i, kv := range target {
 		if i != m.editIndex && kv.Key == key {
 			m.itemErr = "duplicate key " + key
 			return m
 		}
 	}
-	m.hostEnv = putAt(m.hostEnv, m.editIndex, kvItem{Key: key, Value: src})
-	// The same validator Save runs -- grammar (envKeyRe) and the closed
-	// scheme set (validateHostSource) both belong to config, not here.
+
+	if now {
+		m.hostEnv = putAt(m.hostEnv, m.editIndex, kvItem{Key: key, Value: hostEnvSource(m.itemMode, m.inputs[1].Value())})
+	} else {
+		m.env = putAt(m.env, m.editIndex, kvItem{Key: key, Value: m.inputs[1].Value()})
+	}
+	// The same validator Save runs: key grammar, the closed scheme set, and
+	// the BYRE_ namespace rule all belong to config, not here.
 	if err := m.assemble().ValidateLayer(); err != nil {
 		orig.itemErr = err.Error()
 		return orig
@@ -1684,7 +1705,7 @@ func (m model) commitHostEnv(orig model) model {
 // a host variable name, or nothing at all -- so a fixed label would be wrong
 // for three of the five options.
 func (m model) syncHostEnvLabel() model {
-	if m.itemHostEnv && len(m.inputLabels) == 2 && len(m.inputs) == 2 {
+	if m.listField == fEnv && len(m.inputLabels) == 2 && len(m.inputs) == 2 {
 		m.inputLabels = []string{m.inputLabels[0], hostEnvArgLabel(m.itemMode)}
 		m.inputs[1].Placeholder = hostEnvArgHint(m.itemMode)
 	}

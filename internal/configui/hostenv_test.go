@@ -17,6 +17,7 @@ func hostEnvModel(t *testing.T, local map[string]string) model {
 // literals and passthroughs share one screen.
 func openHostEnvRow(t *testing.T, m model, key string) model {
 	t.Helper()
+	m.listField = fEnv
 	for _, r := range m.fieldRows(fEnv) {
 		if r.kind == rowHostEnv && r.ident == key {
 			m.itemHostEnv = true
@@ -49,26 +50,92 @@ func TestHostEnvRowsAreActionable(t *testing.T) {
 	}
 }
 
-// The Inherit option is why the picker has five entries and not four: without
-// it there is no way to UN-pin a key from the editor, only a hand edit.
-func TestHostEnvInheritRemovesTheLocalPin(t *testing.T) {
+// Un-pinning is Delete on the row -- the same thing Delete means on every
+// other list field -- not a sixth picker option. Without SOME path back, a
+// user who pinned a key could only undo it by hand-editing the TOML.
+func TestHostEnvDeleteRemovesTheLocalPin(t *testing.T) {
 	m := hostEnvModel(t, map[string]string{"GIT_AUTHOR_NAME": "git:committer.name"})
-	m = openHostEnvRow(t, m, "GIT_AUTHOR_NAME")
-	if m.itemMode != schemeGit {
-		t.Fatalf("editor opened on scheme %d, want the pinned git scheme", m.itemMode)
+	m.listField = fEnv
+	var pinned listRow
+	for _, r := range m.fieldRows(fEnv) {
+		if r.kind == rowHostEnv && r.ident == "GIT_AUTHOR_NAME" {
+			pinned = r
+		}
 	}
-	m.itemMode = schemeInherit
+	if pinned.idx < 0 {
+		t.Fatal("a key set in this file should carry a local index")
+	}
+	var hasDelete bool
+	for _, c := range m.rowChoices(fEnv, pinned) {
+		if c.act == actDelete {
+			hasDelete = true
+		}
+	}
+	if !hasDelete {
+		t.Fatal("a pinned passthrough offers no Delete, so there is no way to un-pin")
+	}
+
+	m.itemHostEnv = true
+	m.deleteItem(fEnv, pinned.idx)
+	if len(m.hostEnv) != 0 {
+		t.Fatalf("hostEnv = %+v, want the pin removed", m.hostEnv)
+	}
+	// Un-pinning must write NOTHING, not an explicit restatement: the cascade
+	// cannot tell a restatement from a deliberate pin afterwards.
+	if m.assemble().EnvFromHost != nil {
+		t.Fatalf("EnvFromHost = %+v, want nothing written", m.assemble().EnvFromHost)
+	}
+}
+
+// The Env screen asks ONE question -- where does this value come from -- so
+// adding a passthrough is a picker move, not a different screen. Before this,
+// the add key built a literal editor and there was no way to add one at all.
+func TestEnvAddCanCreateAPassthrough(t *testing.T) {
+	m := hostEnvModel(t, nil)
+	m.listField = fEnv
+	m.itemHostEnv = false
+	m = m.startItem(-1)
+	if !m.itemHasMode {
+		t.Fatal("the Env add editor has no source picker")
+	}
+	if m.itemMode != schemeValue {
+		t.Fatalf("add opened on mode %d, want value (the common answer)", m.itemMode)
+	}
+	m.itemMode = schemeEnv
+	m.inputs[0].SetValue("EDITOR")
+	m.inputs[1].SetValue("EDITOR")
 	got := m.commitItem()
 	if got.itemErr != "" {
-		t.Fatalf("inherit refused: %s", got.itemErr)
+		t.Fatalf("adding a passthrough refused: %s", got.itemErr)
 	}
-	if len(got.hostEnv) != 0 {
-		t.Fatalf("hostEnv = %+v, want the pin removed", got.hostEnv)
+	if v := got.assemble().EnvFromHost["EDITOR"]; v != "env:EDITOR" {
+		t.Fatalf("EnvFromHost[EDITOR] = %q, want env:EDITOR", v)
 	}
-	// Removing the pin must not write an explicit value -- the cascade cannot
-	// tell a restatement from a deliberate pin afterwards.
-	if got.assemble().EnvFromHost != nil {
-		t.Fatalf("EnvFromHost = %+v, want nothing written", got.assemble().EnvFromHost)
+	if _, isLiteral := got.assemble().Env["EDITOR"]; isLiteral {
+		t.Fatal("a passthrough also landed in [env]")
+	}
+}
+
+// Switching the picker MOVES the entry rather than leaving a twin behind.
+func TestEnvSwitchingSourceMovesTheEntry(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{Env: map[string]string{"TERM": "xterm"}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+	m.itemHostEnv = false
+	m = m.startItem(0) // the [env] literal
+	if m.itemMode != schemeValue {
+		t.Fatalf("editing a literal opened on mode %d, want value", m.itemMode)
+	}
+	m.itemMode = schemeEnv
+	m.inputs[1].SetValue("TERM")
+	got := m.commitItem()
+	if got.itemErr != "" {
+		t.Fatalf("conversion refused: %s", got.itemErr)
+	}
+	if _, still := got.assemble().Env["TERM"]; still {
+		t.Fatal("the literal survived in [env] after being converted")
+	}
+	if v := got.assemble().EnvFromHost["TERM"]; v != "env:TERM" {
+		t.Fatalf("EnvFromHost[TERM] = %q, want env:TERM", v)
 	}
 }
 
@@ -94,6 +161,7 @@ func TestHostEnvInheritedKeysAreOnlyWrittenThroughAnExplicitDoor(t *testing.T) {
 	}
 
 	// Taking that door pins it -- that is what the door says.
+	m.listField = fEnv
 	m.itemHostEnv = true
 	pinned := m.startOverride(inherited).commitItem()
 	if pinned.itemErr != "" {
@@ -165,7 +233,7 @@ func TestHostEnvArgLabelFollowsTheScheme(t *testing.T) {
 // config owns the grammar; the editor calls the same validator Save runs.
 func TestHostEnvRefusesWhatConfigRefuses(t *testing.T) {
 	m := hostEnvModel(t, nil)
-	m.itemHostEnv = true
+	m.listField = fEnv
 	m = m.startItem(-1)
 	m.itemMode = schemeGit
 	m.inputs[0].SetValue("not a valid name!")

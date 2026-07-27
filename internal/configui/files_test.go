@@ -119,3 +119,27 @@ func filesModel(t *testing.T, files map[string]string) model {
 	t.Helper()
 	return newModel("t", "/tmp/x", config.Config{Files: files}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 }
+
+// "." is a legal source meaning the WHOLE directory, and packages that ship a
+// tree use it. Rendered raw it produced rows like ". → /etc/byre/x", which
+// tells a reader nothing about what is being copied.
+func TestFilesRowsRenderAWholeDirectorySourceLegibly(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"acme/bundle": {Files: map[string]string{".": "/etc/byre/acme-bundle"}},
+	}}
+	cfg := config.Config{Skills: []string{"acme/bundle"}}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"acme/bundle"}, nil, inh, nil, TargetProject)
+
+	var got string
+	for _, r := range m.fieldRows(fFiles) {
+		if r.kind == rowSkill {
+			got = r.text
+		}
+	}
+	if strings.HasPrefix(got, ". ") {
+		t.Fatalf("row = %q, want the bare dot spelled out", got)
+	}
+	if !strings.Contains(got, "whole skill directory") || !strings.Contains(got, "/etc/byre/acme-bundle") {
+		t.Fatalf("row = %q, want it to name the whole skill directory and the destination", got)
+	}
+}

@@ -11,20 +11,30 @@ import "strings"
 // free-text source a user could fill with a literal that would only be
 // refused at save.
 
-// The picker options, in order. Inherit is FIRST and is not a scheme: it is
-// the absence of a local entry, and it exists so a user can UN-pin. Without
-// it there is no way back to the cascade from the editor once a key has been
-// set locally -- only a hand edit, which is the answer P0 says byre does not
-// give.
+// The picker options, in order. `value` is FIRST and is not an
+// env_from_host scheme at all -- it is an [env] literal. The two live on one
+// screen because they answer ONE question, "where does this variable's value
+// come from", and splitting that question across two editors is what left no
+// way to ADD a passthrough at all: the screen's add key only ever built a
+// literal.
+//
+// There is deliberately no "inherit" option. Un-pinning is Delete on the row,
+// which is what Delete means on every other list field (drop this layer's
+// entry, re-inherit the one below) -- a second spelling of it in the picker
+// would be a concept the screen does not need.
 const (
-	schemeInherit = iota
+	schemeValue = iota
 	schemeGit
 	schemeEnv
 	schemeTZ
 	schemeDisabled
 )
 
-var hostEnvSchemes = []string{"inherit", "git:", "env:", "tz:", "disabled"}
+var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled"}
+
+// isPassthrough reports whether a scheme writes env_from_host rather than an
+// [env] literal.
+func isPassthrough(scheme int) bool { return scheme != schemeValue }
 
 // hostEnvArgLabel is the second input's label for a scheme. Deliberately
 // SHORT and near-uniform in width: the label column is sized from the longest
@@ -34,6 +44,8 @@ var hostEnvSchemes = []string{"inherit", "git:", "env:", "tz:", "disabled"}
 // costs no column width.
 func hostEnvArgLabel(scheme int) string {
 	switch scheme {
+	case schemeValue:
+		return "Value"
 	case schemeGit:
 		return "git config key"
 	case schemeEnv:
@@ -46,6 +58,8 @@ func hostEnvArgLabel(scheme int) string {
 // there is one to give, and what the scheme does where there is not.
 func hostEnvArgHint(scheme int) string {
 	switch scheme {
+	case schemeValue:
+		return "" // a literal explains itself
 	case schemeGit:
 		return "user.name"
 	case schemeEnv:
@@ -66,6 +80,7 @@ func hostEnvScheme(src string) (int, string) {
 	switch {
 	case src == "":
 		return schemeDisabled, ""
+	//nolint:gocritic // the ordered switch reads as the grammar it decodes
 	case src == "tz:":
 		return schemeTZ, ""
 	case strings.HasPrefix(src, "git:"):

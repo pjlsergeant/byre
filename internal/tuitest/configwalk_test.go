@@ -55,8 +55,10 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Enter")
 	s.WaitForAfter(e, "Override here")
 	e = s.Keys("Enter")
-	s.WaitForAfter(e, "host passthrough")
-	e = s.Keys("Right")
+	s.WaitForAfter(e, "Source")
+	// Focus lands on Key (the common path types straight into it), so reach
+	// the picker before driving it -- ←/→ in an input moves the cursor.
+	e = s.Keys("Up", "Right")
 	s.WaitForAfter(e, "host variable")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "a add")

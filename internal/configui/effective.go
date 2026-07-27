@@ -6,6 +6,7 @@ package configui
 
 import (
 	"maps"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -629,29 +630,50 @@ func (m model) filesRows() []listRow {
 		src := src
 		from := m.lowerSource(func(c config.Config) bool { _, ok := c.Files[src]; return ok })
 		if i, ok := localIdx[src]; ok {
-			rows = append(rows, listRow{kind: rowOverride, text: fileLine(m.files[i]), source: from, idx: i})
+			rows = append(rows, listRow{kind: rowOverride, text: fileLine(m.files[i], false), source: from, idx: i})
 		} else {
-			rows = append(rows, listRow{kind: rowInherited, text: fileLine(kvItem{src, lower[src]}), source: from, vals: []string{src, lower[src]}})
+			rows = append(rows, listRow{kind: rowInherited, text: fileLine(kvItem{src, lower[src]}, false), source: from, vals: []string{src, lower[src]}})
 		}
 	}
 	for i, kv := range m.files {
 		if _, inherited := lower[kv.Key]; !inherited {
-			rows = append(rows, listRow{kind: rowLocal, text: fileLine(kv), idx: i})
+			rows = append(rows, listRow{kind: rowLocal, text: fileLine(kv, false), idx: i})
 		}
 	}
 	for _, sk := range m.effectiveSkills() {
 		fs := m.inh.Skills[sk].Files
 		for _, src := range slices.Sorted(maps.Keys(fs)) {
-			rows = append(rows, listRow{kind: rowSkill, text: fileLine(kvItem{src, fs[src]}), source: "skill:" + sk})
+			rows = append(rows, listRow{kind: rowSkill, text: fileLine(kvItem{src, fs[src]}, true), source: "skill:" + sk})
 		}
 	}
 	return rows
 }
 
 // fileLine renders one baked file. The arrow reads left-to-right as the copy
-// it is -- project source into image destination -- and matches the direction
-// mount rows already use.
-func fileLine(kv kvItem) string { return kv.Key + " → " + kv.Value }
+// it is -- source into image destination -- and matches the direction mount
+// rows already use.
+//
+// fromSkill changes what the SOURCE means, which is the whole reason this
+// takes a flag: a local entry's source is project-relative, a skill's is
+// relative to the skill's own directory.
+func fileLine(kv kvItem, fromSkill bool) string {
+	return fileSource(kv.Key, fromSkill) + " → " + kv.Value
+}
+
+// fileSource renders a source for a human. "." is a legal source meaning the
+// WHOLE directory -- skillRelPath permits it, and packages that ship a tree
+// (a claude-skills bundle) use it -- but a row reading ". → /etc/byre/x" says
+// nothing at all to a reader, which is how it looked when this screen first
+// shipped.
+func fileSource(src string, fromSkill bool) string {
+	if filepath.Clean(src) != "." {
+		return src
+	}
+	if fromSkill {
+		return "(the whole skill directory)"
+	}
+	return "(the whole project directory)"
+}
 
 func (m model) envRows() []listRow {
 	localIdx := map[string]int{}
