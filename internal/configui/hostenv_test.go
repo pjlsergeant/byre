@@ -651,3 +651,46 @@ func TestGlobalSkillsScreenDisclosesSharedAuthSuppression(t *testing.T) {
 		t.Errorf("only the vouched companion earns the note:\n%s", view)
 	}
 }
+
+// Config values are DATA on the list screens, and data does not get to drive
+// the terminal. A value smuggling \r overwrote its own row with a forged one
+// (the real key vanished, a key that exists nowhere appeared); an SGR escape
+// terminated byre's styling mid-row. Literal control bytes never parse --
+// TOML's \uXXXX escapes are the live path -- and the fix is display-only:
+// r.vals prefills the editor and must stay raw or a save writes back a
+// mangled value. Found by the 2026-07-27 exploratory pass with capture-pane.
+func TestListRowsNeverLeakControlSequences(t *testing.T) {
+	cfg := config.Config{
+		Env: map[string]string{
+			"SPOOF": "x\r  FAKE_ROW=totally-real",
+			"EVIL":  "\x1b[31mRED\x1b[0m done",
+		},
+		Files: map[string]string{"a.txt": "/opt/\x1b[7mreverse\x1b[0m"},
+	}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+
+	for _, f := range []fieldID{fEnv, fFiles} {
+		m.listField = f
+		view := m.viewList()
+		if strings.ContainsAny(view, "\r") {
+			t.Errorf("%v view carries a raw CR -- a value can overwrite its own row:\n%q", f, view)
+		}
+		// byre's own dim/cursor styling is legitimate SGR, so the assertion
+		// is not "no escapes": it is that the VALUES' payloads survive only
+		// stripped. The reverse-video code rode inside the files value.
+		if strings.Contains(view, "[7mreverse") {
+			t.Errorf("%v view carries the value's own SGR sequence:\n%q", f, view)
+		}
+	}
+
+	m.listField = fEnv
+	view := m.viewList()
+	if !strings.Contains(view, "SPOOF") {
+		t.Errorf("the real key must render:\n%q", view)
+	}
+	if !strings.Contains(view, "FAKE_ROW=totally-real") {
+		// The payload TEXT survives (stripped, inert, on SPOOF's own row) --
+		// only the control character that made it a separate row is gone.
+		t.Errorf("stripping must keep the printable payload:\n%q", view)
+	}
+}

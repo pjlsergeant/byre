@@ -25,6 +25,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -243,7 +244,9 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 	case actDelete:
 		m.deleteItem(m.listField, r.idx)
 		if r.also {
-			m.status = r.text + " is still inherited — remove again to turn it off here"
+			// Same data-vs-terminal rule as the row paint: the echoed value
+			// rides the status line, so it is escaped there too.
+			m.status = packages.EscapeTerminal(r.text) + " is still inherited — remove again to turn it off here"
 		}
 		// Deleting an OVERRIDE re-inherits the lower layer's entry — that's
 		// the cascade working, but "delete" must not read as "gone"
@@ -1284,11 +1287,20 @@ func (m model) viewList() string {
 			skillHeaderShown = true
 			b.WriteString("\n" + dimStyle.Render("  — from skills —") + "\n")
 		}
-		line := r.text
+		// Row text and annotation are DATA on this screen, and data does not
+		// get to drive the terminal: a config value carrying \r or an SGR
+		// escape (TOML  -- literal control bytes never parse) could
+		// overwrite its own row with a forged one, or terminate byre's
+		// styling mid-line. The grants screens are where the user audits what
+		// the agent wrote, so what is painted must be what is stored. Escaped
+		// BEFORE byre's own styling wraps it -- after, the same strip would
+		// eat the dim codes -- and display-only: r.vals prefills the editor
+		// and must stay raw, or a save would write back a mangled value.
+		line := packages.EscapeTerminal(r.text)
 		if r.kind == rowRemoved || r.kind == rowStaleMarker || r.kind == rowOffered || r.kind == rowEnvDoc {
 			line = dimStyle.Render(line)
 		}
-		if ann := rowAnnotation(r); ann != "" {
+		if ann := packages.EscapeTerminal(rowAnnotation(r)); ann != "" {
 			line += dimStyle.Render(ann)
 		}
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.listCur, line))
