@@ -64,3 +64,26 @@ func TestStoredSharedAuthPrefersTheSectionOverTheLegacySpelling(t *testing.T) {
 		t.Errorf("the legacy spelling must still be read, got %q", got)
 	}
 }
+
+// A config can carry BOTH homes -- hand-edited, or mid-migration. Picking
+// one wholesale drops the other's agents, and the next write then clones the
+// winner and deletes the loser, losing a preference the user set. Union per
+// agent; canonical wins only where they actually collide.
+func TestStoredSharedAuthUnionsBothHomes(t *testing.T) {
+	both := Config{
+		SharedAuthLegacy: SharedAuthPref{Yes: []string{"codex"}, Pick: map[string]string{"gemini": "old-companion"}},
+		Defaults: Defaults{SharedAuth: SharedAuthPref{
+			Pick: map[string]string{"claude": "claude-shared-auth", "gemini": "new-companion"},
+		}},
+	}
+	got := both.StoredSharedAuth()
+	if got.CompanionPick("claude") != "claude-shared-auth" {
+		t.Errorf("the canonical home's agent must survive: %+v", got)
+	}
+	if got.CompanionPick("gemini") != "new-companion" {
+		t.Errorf("canonical must win a genuine collision: %+v", got)
+	}
+	if !got.HasYes("codex") {
+		t.Errorf("an agent only the legacy home knows must NOT be lost: %+v", got)
+	}
+}

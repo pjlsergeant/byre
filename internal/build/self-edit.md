@@ -14,7 +14,7 @@ key vocabulary and the cascade's merge rules — the same reference published
 at getbyre.com, baked here so it's readable offline. The short version: need
 a **package** → add it to `apt`; need a **custom build step** → a `RUN ...`
 line in `dockerfile_pre`/`dockerfile_post`; `!name` removes an inherited
-list entry (`apt` and `npm_global` included).
+list entry (`apt` included).
 
 This file layers over `~/.byre/default.config`, the template, and any
 `extends` chain — scalars override, lists union. A repo can ship the same

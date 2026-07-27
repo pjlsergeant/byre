@@ -969,3 +969,43 @@ func TestSavePortMarkerDropWithEditKeepsTheBindingsComment(t *testing.T) {
 		t.Errorf("wrong ports after drop+edit: %+v", back.Ports)
 	}
 }
+
+// "Migrated on the next write" has to be true of ANY write, not only one
+// that changes the preference: keying the migration on a changed value left
+// an unrelated global edit with the old top-level spelling intact, and both
+// homes coexisting indefinitely.
+func TestSaveMigratesLegacySharedAuthOnAnUnrelatedEdit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "default.config")
+	if err := os.WriteFile(path, []byte("shared_auth = { claude = \"claude-shared-auth\" }\nbase = \"debian\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := config.ParseFile(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Change something else entirely; the preference is untouched.
+	want := cur
+	want.Base = "ubuntu"
+	if err := Save(path, true, want, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := strings.Index(string(raw), "[defaults]")
+	if sec < 0 {
+		t.Fatalf("an unrelated write must still migrate the preference:\n%s", raw)
+	}
+	if strings.Contains(string(raw)[:sec], "shared_auth") {
+		t.Errorf("the legacy spelling must not survive beside its new home:\n%s", raw)
+	}
+	back, err := config.ParseFile(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.StoredSharedAuth().CompanionPick("claude") != "claude-shared-auth" {
+		t.Errorf("the preference itself must survive the move: %+v", back.StoredSharedAuth())
+	}
+}

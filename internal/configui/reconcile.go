@@ -64,7 +64,12 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 	// [defaults]: picker state. shared_auth is a canonical inline value; a
 	// table-form spelling (or the pre-2026-07-28 top-level one) is
 	// normalized only when the preference actually changed.
-	if !cur.StoredSharedAuth().Equal(want.StoredSharedAuth()) {
+	// The legacy construct's PRESENCE triggers canonicalization, not just a
+	// changed value: an ordinary edit whose effective preference is
+	// unchanged still has to move it, or "migrated on the next write" is
+	// false and the two homes coexist indefinitely (codex).
+	legacyPresent := !cur.SharedAuthLegacy.Empty()
+	if legacyPresent || !cur.StoredSharedAuth().Equal(want.StoredSharedAuth()) {
 		if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
 			return err
 		}

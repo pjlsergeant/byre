@@ -35,10 +35,59 @@ type Defaults struct {
 // onboarding wrote before 2026-07-28. One accessor so no reader has to know
 // there are two homes.
 func (c Config) StoredSharedAuth() SharedAuthPref {
-	if !c.Defaults.SharedAuth.Empty() {
-		return c.Defaults.SharedAuth
+	// UNION, not either-or: a config can carry both homes (hand-edited, or
+	// mid-migration), and picking one wholesale silently drops the other's
+	// agents -- the next write then clones the winner and deletes the loser,
+	// losing a preference the user set. Canonical wins per AGENT, which is
+	// the only granularity at which the two can actually conflict.
+	return c.SharedAuthLegacy.mergedWith(c.Defaults.SharedAuth)
+}
+
+// mergedWith overlays o on s per agent: o's pick or yes-inclination replaces
+// s's for the same agent, and agents only s knows survive.
+func (s SharedAuthPref) mergedWith(o SharedAuthPref) SharedAuthPref {
+	if o.Empty() {
+		return s.Clone()
 	}
-	return c.SharedAuthLegacy
+	if s.Empty() {
+		return o.Clone()
+	}
+	out := s.Clone()
+	for agent, companion := range o.Pick {
+		if out.Pick == nil {
+			out.Pick = map[string]string{}
+		}
+		out.Pick[agent] = companion
+		out.Yes = removeStringPref(out.Yes, agent) // a pick supersedes a bare yes
+	}
+	for _, agent := range o.Yes {
+		if _, picked := out.Pick[agent]; picked {
+			continue
+		}
+		if !containsPref(out.Yes, agent) {
+			out.Yes = append(out.Yes, agent)
+		}
+	}
+	return out
+}
+
+func containsPref(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+func removeStringPref(list []string, v string) []string {
+	out := list[:0:0]
+	for _, s := range list {
+		if s != v {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Empty reports whether the section carries nothing.

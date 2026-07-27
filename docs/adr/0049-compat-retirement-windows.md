@@ -24,18 +24,28 @@ remedies).
 
 ## The live inventory
 
-1. **Array-shaped `shared_auth`** (`internal/config/sharedauth.go`
+1. **Top-level `shared_auth`** (`internal/config/config.go`'s
+   `SharedAuthLegacy` accepts the pre-2026-07-28 spelling beside the
+   canonical `[defaults].shared_auth`). Onboarding itself wrote this key
+   into users' `default.config`, so refusing it would break upgrades for
+   byre's own doing. Every write migrates it -- the editor canonicalizes on
+   the presence of the construct, not only on a changed value -- so the
+   window is about configs never saved since. Removal: after two minors or
+   90 days from the 2026-07-28 replacement, whichever is longer; the last
+   supported release warns, then the field and its union in
+   `StoredSharedAuth` go together.
+2. **Array-shaped `shared_auth`** (`internal/config/sharedauth.go`
    accepts both the legacy array and the table shape).
    **Blocker, recorded so it isn't lost: removal needs a warning
    release first, and no parse-time warning channel exists today** --
    the array shape is also round-tripped by `EncodeTOMLLine`. Sequence:
    build the warning channel (or piggyback on develop-time notices),
    warn one release, then drop the array arm of the parser and encoder.
-2. **Repo-root `byre.config` as a legacy preset name** (accepted beside
+3. **Repo-root `byre.config` as a legacy preset name** (accepted beside
    `byre.preset`). The in-product rename note IS the warning; removal
    is a release-time decision at the end of its window -- refuse with
    the rename remedy.
-3. **Legacy materialized-package machinery** (`ProvLegacy` rows,
+4. **Legacy materialized-package machinery** (`ProvLegacy` rows,
    `skill archive-legacy`, store-setup detection). User-facing recovery
    for pre-ADR-0029 stores; keep until the end of its window, then
    collapse to tombstones only (`RetiredNames` protection stays --
