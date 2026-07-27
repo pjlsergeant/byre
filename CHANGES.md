@@ -2,6 +2,13 @@
 
 ## v1.4.0 -- 2026-07-28
 
+- **The gemini skill installs Node from nodejs.org, not NodeSource.** On
+  2026-07-27 `deb.nodesource.com/setup_22.x` began answering 403 -- with the
+  apt repos behind it -- which broke every gemini box build (the agent canary
+  caught it on the first push that could have seen it). Node 22 now comes
+  from nodejs.org's own `latest-v22.x` dist channel, checksum-verified
+  against `SHASUMS256.txt` before it is unpacked, on both arches.
+
 - **BREAKING: `npm_global` is removed.** It assumed node/npm in the image and
   named one ecosystem in core config, which no other package key does. A
   config (or a skill manifest's `[build] npm_global`) carrying the key now
