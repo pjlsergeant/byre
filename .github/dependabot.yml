@@ -1,10 +1,24 @@
 # Keeps the SHA-pinned actions in ci.yml/release.yml fresh: Dependabot
 # understands SHA pins natively, bumps the hash, and keeps the version
-# comment alongside in sync. Actions only, deliberately — Go module bumps
-# are done by hand, and govulncheck (CI) covers the known-vuln case.
+# comment alongside in sync.
+#
+# Go modules ride the same schedule, grouped into ONE monthly PR. govulncheck
+# (CI) covers the known-vuln half; nothing covered the MAINTENANCE half, so a
+# dependency could sit years stale with no signal at all -- which is how three
+# TUI majors accumulated unnoticed until an outside review counted them. One
+# batched PR a month is a signal you can close unread; a stream of per-module
+# PRs is the noise this file was originally narrowed to avoid.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      go-modules:
+        patterns:
+          - "*"

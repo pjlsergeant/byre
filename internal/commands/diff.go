@@ -12,6 +12,14 @@ import "github.com/akedrou/textdiff"
 // own context" ruling was falsified by exactly that case, 2026-07-10.)
 // Empty when before and after are byte-identical; a final-newline-only edit
 // shows as an explicit "\ No newline at end of file" hunk.
+//
+// On the dependency: akedrou/textdiff is a single-author pre-1.0 module, and
+// it stays. One call, a pure function over two strings -- no network, no
+// filesystem, no process -- so the blast radius of it going wrong is a
+// wrongly-rendered diff, not a compromise; and the content it renders is
+// byre's own config files, shown to a human who is about to answer a
+// consent prompt about them. If it were ever abandoned, the vendored gopls
+// differ it came from is the replacement.
 func unifiedDiff(fromLabel, toLabel, before, after string) []string {
 	return splitLines(textdiff.Unified(fromLabel, toLabel, before, after))
 }
