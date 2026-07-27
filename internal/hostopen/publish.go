@@ -54,16 +54,23 @@ func publish(path, content string, perm fs.FileMode, exclusive bool) error {
 		return err
 	}
 	defer root.Close()
+	return publishInto(root, dir, name, content, perm, exclusive)
+}
 
+// publishInto is publish with the destination directory already anchored, so
+// a test can open the root, move the directory out from under it, and reach
+// the detached-publish path deterministically instead of racing for it.
+func publishInto(root *os.Root, dir, name, content string, perm fs.FileMode, exclusive bool) error {
 	tmp, tmpName, err := createTempIn(root, perm)
 	if err != nil {
 		return err
 	}
-	// Best-effort, and deliberately so. After a Rename the staged name is
-	// already gone and this is a no-op; only the exclusive form can orphan
-	// anything, and its one caller publishes into byre's own store. Failing a
-	// publish that SUCCEEDED because a stray .byre-publish-* could not be
-	// tidied would trade a cosmetic leftover for a spurious error.
+	// Best-effort, and deliberately so. A successful Rename has already
+	// consumed the staged name; what can survive is an error path whose
+	// cleanup ALSO failed, a killed process, or a successful exclusive Link
+	// (which leaves the staging name as a second link to the record). Only
+	// that last case is a publish that SUCCEEDED, and reporting it failed
+	// over an untidied .byre-publish-* would be the worse trade.
 	defer func() { _ = root.Remove(tmpName) }()
 
 	if _, err := tmp.WriteString(content); err != nil {
@@ -74,9 +81,47 @@ func publish(path, content string, perm fs.FileMode, exclusive bool) error {
 		return err
 	}
 	if exclusive {
-		return root.Link(tmpName, name)
+		err = root.Link(tmpName, name)
+	} else {
+		err = root.Rename(tmpName, name)
 	}
-	return root.Rename(tmpName, name)
+	if err != nil {
+		return err
+	}
+	return confirmSameDir(root, dir)
+}
+
+// confirmSameDir re-asserts that dir still NAMES the directory the publish
+// landed in. Anchoring buys the two operations one descriptor, but a
+// descriptor outlives the name: a directory renamed away between the open and
+// the publish still accepts the write, into an inode nothing can reach by the
+// name the caller asked about. Without this, byre.Bootstrap reports a
+// successful enrollment whose path record does not exist -- and a concurrent
+// `byre forget` or `byre rehome` renames exactly that directory, with no agent
+// involved, at a moment when Bootstrap cannot hold the setup lock because the
+// lock file lives inside the directory it is creating.
+//
+// It follows symlinks, because os.OpenRoot did: two calls answering the same
+// question about one name must resolve it the same way, or the second quietly
+// contradicts the first (a project reached through a symlinked path would
+// otherwise fail every publish).
+//
+// This check races too. It can only turn a silently-detached success into an
+// honest failure, never the reverse -- and a false failure costs nothing here,
+// since Bootstrap's loser path re-checks the record anyway.
+func confirmSameDir(root *os.Root, dir string) error {
+	opened, err := root.Stat(".")
+	if err != nil {
+		return err
+	}
+	live, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("published into %s, which no longer resolves: %w", dir, err)
+	}
+	if !os.SameFile(opened, live) {
+		return fmt.Errorf("%s was replaced while byre was publishing into it -- the write landed in the directory that used to be there", dir)
+	}
+	return nil
 }
 
 // createTempIn mints an unguessable name under root and creates it O_EXCL, so

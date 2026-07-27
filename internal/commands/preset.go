@@ -447,7 +447,12 @@ func presetState(projectDir string, paths project.Paths) (state string, legacyNa
 // the same bound -- but an existing marker still proves an application
 // happened, so the honest state is diverged, not never-applied.
 func stateSansContent(paths project.Paths) string {
-	if ok, _ := hostopen.ExistsNoFollow(filepath.Join(paths.Dir, appliedRecord)); ok {
+	// Only a PROVABLE absence earns "unapplied": that word claims the preset
+	// was never applied here, and a probe that merely could not look has not
+	// established it. Both states print a passive note, so degrading to
+	// "diverged" costs the user nothing and asserts nothing false.
+	ok, err := hostopen.ExistsNoFollow(filepath.Join(paths.Dir, appliedRecord))
+	if ok || err != nil {
 		return "diverged"
 	}
 	return "unapplied"

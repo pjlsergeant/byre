@@ -1,7 +1,9 @@
 package onboard
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,8 +17,8 @@ import (
 // WriteProjectConfig writes a byre.config (the host-side store path) from the
 // chosen template/agent (omitting either if empty) and any skills the picker
 // enabled for this box — today only the shared-auth companion when its offer
-// (ADR 0025) was answered yes. It refuses to overwrite an existing config and
-// creates the parent dir if needed.
+// (ADR 0025) was answered yes. It refuses to overwrite an existing config,
+// and never creates the parent dir (see below).
 func WriteProjectConfig(destPath, template, agent string, skills []string) error {
 	var b strings.Builder
 	b.WriteString("# Created by byre.\n")
@@ -36,30 +38,16 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 	// No MkdirAll: the store dir and its path record are created together by
 	// Bootstrap (develop runs it before onboarding); re-creating the dir here
 	// would resurrect a store a concurrent forget deleted, without its
-	// record. A vanished dir fails the CreateTemp below loudly instead.
-	// Sibling temp file, then link(2) into place: the link fails if destPath
-	// exists, keeping the refuse-to-overwrite guarantee atomic (no Stat/Write
-	// race with a concurrent first-run) — and an interrupted write can never
-	// leave a partial byre.config, whose mere existence marks the project as
-	// onboarded and blocks a re-run.
-	tmp, err := hostopen.PlainCreateTemp(filepath.Dir(destPath), ".byre-onboard-*", hostopen.StoreOwned)
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer hostopen.PlainRemove(tmpName, hostopen.ByreCreated)
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	// The file keeps CreateTemp's private 0600 — the same mode every other
-	// byre config writer (config.AtomicWrite) produces, and byre.config is
-	// read only by byre as this user.
-	if err := hostopen.PlainLink(tmpName, destPath, hostopen.StoreOwned); err != nil {
-		if os.IsExist(err) {
+	// record. A vanished dir fails the publish below loudly instead.
+	//
+	// The exclusive publish is what keeps refuse-to-overwrite atomic: the
+	// link fails if destPath exists, so there is no Stat/Write race with a
+	// concurrent first-run, and an interrupted write can never leave a
+	// partial byre.config — whose mere existence marks the project onboarded
+	// and blocks a re-run. 0600 matches every other byre config writer;
+	// byre.config is read only by byre, as this user.
+	if err := hostopen.PublishFileExclusive(destPath, b.String(), 0o600); err != nil {
+		if errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("%s already exists; not overwriting", destPath)
 		}
 		return err

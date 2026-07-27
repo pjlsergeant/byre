@@ -123,3 +123,68 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 		t.Fatalf("directory holds %v, want only %q", names, want)
 	}
 }
+
+func TestPublishRefusesWhenTheDirectoryWasRenamedAway(t *testing.T) {
+	// The window anchoring opens: os.Root holds a DESCRIPTOR, so a directory
+	// renamed away mid-publish still accepts the write -- into an inode
+	// nothing can reach by the name the caller asked about. Reaching it
+	// deterministically is why publishInto takes an already-open root.
+	for _, exclusive := range []bool{false, true} {
+		name := "rename"
+		if exclusive {
+			name = "link"
+		}
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			dir := filepath.Join(base, "store")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+
+			// Whoever else is running (a concurrent byre forget/rehome) moves
+			// the store aside and a fresh one appears at the same spelling.
+			if err := os.Rename(dir, filepath.Join(base, "store.bak")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := publishInto(root, dir, "record", "x\n", 0o600, exclusive); err == nil {
+				t.Fatal("publishing into a detached directory must not report success")
+			}
+			// The live path is what the caller asked about, and it has no record.
+			if _, err := os.Lstat(filepath.Join(dir, "record")); err == nil {
+				t.Fatal("a record appeared at the live path, so the premise is wrong")
+			}
+		})
+	}
+}
+
+func TestPublishThroughASymlinkedDirectory(t *testing.T) {
+	// os.OpenRoot follows, so the post-publish re-assert must follow too: a
+	// project or store reached through a symlinked path is an ordinary setup,
+	// and comparing a followed open against an unfollowed lookup would fail
+	// every publish into one.
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if err := PublishFile(filepath.Join(link, "record"), "x\n", 0o600); err != nil {
+		t.Fatalf("publishing through a symlinked directory: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(real, "record"))
+	if err != nil || string(got) != "x\n" {
+		t.Fatalf("content = %q, %v; want it landed in the real directory", got, err)
+	}
+}
