@@ -149,9 +149,23 @@ exceptions noted inline.
   files into a fresh state volume.
 - `worktree_base` -- where `byre worktree` creates worktrees:
   `"sibling"` or a host path; unset refuses with instructions.
-- `shared_auth` -- the first-run picker's remembered favourite. A
-  preference about future *answers*, stripped from every resolved
-  config.
+- `[defaults]` -- the picker-owned section: state about how the NEXT
+  onboarding runs, never anything a box receives. Stripped whole from
+  every resolved config.
+  - `shared_auth` -- the first-run picker's remembered favourite: a
+    preference about future *answers*. (Before 2026-07-28 this was a
+    top-level key; the old spelling is still read and is migrated here
+    on the next write.)
+  - `skip_questions` -- configure new projects from your stored answers
+    without prompting. Includes the shared-auth pick, which *grants*
+    (the companion skill goes into the new project), so this key is the
+    standing consent for that; `byre develop` says out loud when it
+    acted on it.
+
+  Template and agent "defaults" are deliberately NOT here: they are the
+  plain `template` and `agent` keys in `default.config`, real cascade
+  values that apply to every project. The picker pre-selects them
+  because they *are* the inherited value.
 
 ## Presets: `byre.preset`
 

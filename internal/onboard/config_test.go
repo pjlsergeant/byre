@@ -40,7 +40,7 @@ func TestSaveSharedAuthDefaultYesCreatesFileAndList(t *testing.T) {
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
 		t.Fatal(err)
 	}
-	got := parsedDefault(t, home).SharedAuth
+	got := parsedDefault(t, home).StoredSharedAuth()
 	if !got.HasYes("claude") {
 		t.Fatalf("shared_auth = %+v", got)
 	}
@@ -57,7 +57,7 @@ func TestSaveSharedAuthDefaultPickQualifiedAgent(t *testing.T) {
 	if err := SaveSharedAuthDefaultPick(home, "acme/agent", "acme/agent-shared-auth", true); err != nil {
 		t.Fatal(err)
 	}
-	got := parsedDefault(t, home).SharedAuth
+	got := parsedDefault(t, home).StoredSharedAuth()
 	if pick := got.CompanionPick("acme/agent"); pick != "acme/agent-shared-auth" {
 		t.Fatalf("saved pick round-trip: got %q", pick)
 	}
@@ -84,8 +84,8 @@ func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {
 	if !slices.Equal(cfg.Skills, []string{"devloop"}) {
 		t.Fatalf("saving a preference must not write skills: %v", cfg.Skills)
 	}
-	if !cfg.SharedAuth.HasYes("claude") {
-		t.Fatalf("shared_auth = %+v", cfg.SharedAuth)
+	if !cfg.StoredSharedAuth().HasYes("claude") {
+		t.Fatalf("shared_auth = %+v", cfg.StoredSharedAuth())
 	}
 }
 
@@ -97,7 +97,7 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if got := parsedDefault(t, home).SharedAuth; !got.HasYes("codex") || got.HasYes("claude") {
+	if got := parsedDefault(t, home).StoredSharedAuth(); !got.HasYes("codex") || got.HasYes("claude") {
 		t.Fatalf("shared_auth = %+v", got)
 	}
 	if err := SaveSharedAuthDefaultPick(home, "codex", "", false); err != nil {
@@ -133,10 +133,13 @@ func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 // A hand-formatted multi-line shared_auth list was a shape the old one-line
 // rewriter refused; the style-preserving editor (ADR 0044) handles it — the
 // whole construct is rewritten canonically because the edit targets it, and
-// surrounding content survives.
+// surrounding content survives. Since 2026-07-28 the rewrite also MIGRATES:
+// the value lands under [defaults] and the old top-level key goes, taking
+// any comment glued to it (that is what glued means) — content that is not
+// part of the migrated construct is untouched.
 func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	home := t.TempDir()
-	writeDefault(t, home, "# keep me\nshared_auth = [\n  \"codex\",\n]\nbase = \"node:22\"\n")
+	writeDefault(t, home, "# keep me\nbase = \"node:22\"\n\nshared_auth = [\n  \"codex\",\n]\n")
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
 		t.Fatal(err)
 	}
@@ -144,12 +147,21 @@ func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	if !strings.Contains(got, "# keep me") || !strings.Contains(got, "base = \"node:22\"") {
 		t.Fatalf("surrounding content must survive:\n%s", got)
 	}
+	// Position, not presence: both homes spell the key the same, so the
+	// migration is proved by every occurrence sitting UNDER [defaults].
+	sec := strings.Index(got, "[defaults]")
+	if sec < 0 {
+		t.Fatalf("the preference must land under [defaults]:\n%s", got)
+	}
+	if strings.Contains(got[:sec], "shared_auth") {
+		t.Errorf("the top-level spelling must be migrated away, not left beside its new home:\n%s", got)
+	}
 	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.SharedAuth.HasYes("codex") || !cfg.SharedAuth.HasYes("claude") {
-		t.Fatalf("both answers must be stored: %+v", cfg.SharedAuth)
+	if !cfg.StoredSharedAuth().HasYes("codex") || !cfg.StoredSharedAuth().HasYes("claude") {
+		t.Fatalf("both answers must be stored: %+v", cfg.StoredSharedAuth())
 	}
 }
 

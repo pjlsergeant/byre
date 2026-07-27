@@ -26,6 +26,16 @@ import (
 // non-TTY partially-flagged run errors instead of guessing the open axis from
 // a favourite — favourites answer prompts, they don't consent for a new
 // project, and there is no prompt to answer on a pipe.
+// skipQuestions reads the machine-scoped picker preference. A missing or
+// unparsable default.config reads as false: never skip on a guess.
+func skipQuestions(home string) bool {
+	cfg, err := config.ParseFile(filepath.Join(home, "default.config"), true)
+	if err != nil {
+		return false
+	}
+	return cfg.Defaults.SkipQuestions
+}
+
 func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string, flagSharedAuth *bool) error {
 	anyFlag := flagTemplate != "" || flagAgent != "" || flagSharedAuth != nil
 
@@ -82,6 +92,25 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if !anyFlag {
 		if !s.TTY {
 			return nil
+		}
+		// defaults.skip_questions: the user has said, by hand at machine
+		// scope, that new projects take their stored answers without being
+		// asked. Honour it -- including the shared-auth pick, which GRANTS
+		// (the companion goes into the new project's config): the key IS the
+		// standing consent for that, and P5's machine-wide grants are
+		// hand-made rule is satisfied by it being hand-made. What P5 forbids
+		// is a REMEMBERED answer becoming a silent default; this is neither
+		// remembered nor silent -- byre says what it did.
+		if skipQuestions(paths.Home) {
+			companion := ""
+			if defA != "" && onboard.SharedAuthPreference(paths.Home, defA) {
+				companion = onboard.SharedAuthPick(paths.Home, defA)
+			}
+			fmt.Fprintln(s.Err, "byre: configuring from your defaults without asking (defaults.skip_questions in ~/.byre/default.config).")
+			if companion != "" {
+				fmt.Fprintf(s.Err, "byre: shared credentials enabled for %s via %s — your stored answer.\n", defA, companion)
+			}
+			return writeAndReport(s.Err, cfgPath, defT, defA, optedSkills(companion, companion != ""))
 		}
 		choice, err := onboard.Pick(s.Err, in, templates, agents,
 			onboard.Favourite{Stored: rawT, Effective: defT},

@@ -8,6 +8,42 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 )
 
+// Defaults is the picker-owned section: state about how the NEXT onboarding
+// behaves, never anything a box receives. Cascade-inert by construction --
+// resolveWith strips the whole section, so no member of it can ever acquire
+// teeth by accident.
+type Defaults struct {
+	// SharedAuth is the shared-auth favourite (ADR 0025): a preference over
+	// future ANSWERS. Dual-shape decode: legacy array ["claude"] =
+	// yes-inclination with no companion pick; table
+	// { claude = "claude-shared-auth" } = agent -> companion pick.
+	SharedAuth SharedAuthPref `toml:"shared_auth,omitempty"`
+	// SkipQuestions turns onboarding's picker off: a new project is
+	// configured from the stored answers -- template, agent, and the
+	// shared-auth pick -- without prompting. The shared-auth pick GRANTS
+	// (it writes the companion skill into the new project), so this key is
+	// the standing consent for that: hand-set, at machine scope, in the one
+	// file P5 blesses for hand-made machine-wide grants. Not a remembered
+	// answer becoming a silent default (the 2026-07-12 episode P5 exists
+	// for) -- an explicit standing instruction, and develop says out loud
+	// when it acted on one.
+	SkipQuestions bool `toml:"skip_questions,omitempty"`
+}
+
+// StoredSharedAuth is the effective shared-auth preference: the [defaults]
+// section when it carries one, else the legacy top-level spelling
+// onboarding wrote before 2026-07-28. One accessor so no reader has to know
+// there are two homes.
+func (c Config) StoredSharedAuth() SharedAuthPref {
+	if !c.Defaults.SharedAuth.Empty() {
+		return c.Defaults.SharedAuth
+	}
+	return c.SharedAuthLegacy
+}
+
+// Empty reports whether the section carries nothing.
+func (d Defaults) Empty() bool { return d.SharedAuth.Empty() && !d.SkipQuestions }
+
 // SharedAuthPref is the dual-shape shared_auth favourite (ADR 0025):
 //
 //	shared_auth = ["claude"]                          # legacy: yes, no pick

@@ -271,8 +271,8 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.SharedAuth.HasYes("claude") {
-		t.Fatalf("a saved yes must store the preference, shared_auth = %+v", cfg.SharedAuth)
+	if !cfg.StoredSharedAuth().HasYes("claude") {
+		t.Fatalf("a saved yes must store the preference, shared_auth = %+v", cfg.StoredSharedAuth())
 	}
 	if len(cfg.Skills) != 0 {
 		t.Fatalf("the picker must NEVER write default.config's skills: %v", cfg.Skills)
@@ -325,8 +325,8 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.SharedAuth.Empty() {
-		t.Fatalf("a saved no must remove the preference, shared_auth = %+v", cfg.SharedAuth)
+	if !cfg.StoredSharedAuth().Empty() {
+		t.Fatalf("a saved no must remove the preference, shared_auth = %+v", cfg.StoredSharedAuth())
 	}
 	// And the box itself was not opted in.
 	pcfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
@@ -403,8 +403,8 @@ func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SharedAuth.CompanionPick("claude") != "claude-shared-auth" {
-		t.Fatalf("stored pick must survive a no-offer save, got %+v", got.SharedAuth)
+	if got.StoredSharedAuth().CompanionPick("claude") != "claude-shared-auth" {
+		t.Fatalf("stored pick must survive a no-offer save, got %+v", got.StoredSharedAuth())
 	}
 }
 
@@ -482,5 +482,54 @@ func TestOnboardSaveDefaultWriteFailureLeavesProjectUnonboarded(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
 		t.Fatalf("byre.config must not exist after an aborted onboarding (it would never re-run): %v", err)
+	}
+}
+
+// defaults.skip_questions: the user has said, by hand at machine scope, that
+// new projects take their stored answers unasked. Onboarding must honour it
+// WITHOUT prompting -- including the shared-auth pick, which grants (the
+// companion lands in the new project's skills) -- and must say out loud that
+// it did, so a box configured without a question is never a silent one.
+func TestOnboardSkipQuestionsUsesStoredAnswersAndSaysSo(t *testing.T) {
+	p, proj := onboardPaths(t)
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"template = \"go\"\nagent = \"claude\"\n\n[defaults]\nshared_auth = { claude = \"claude-shared-auth\" }\nskip_questions = true\n"), 0o644)
+
+	// No input at all: a prompt would block or consume nothing and misconfigure.
+	s, _, errBuf := testStreams("", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	if strings.Contains(out, onboard.SharedAuthPrompt("claude")) {
+		t.Errorf("skip_questions must not ask the shared-auth question:\n%s", out)
+	}
+	for _, want := range []string{"without asking", "skip_questions", "shared credentials enabled"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("acting on skip_questions must be said out loud, missing %q:\n%s", want, out)
+		}
+	}
+	got, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Template != "go" || got.Agent != "claude" {
+		t.Errorf("stored answers must configure the project: %+v", got)
+	}
+	if !slices.Contains(got.Skills, "claude-shared-auth") {
+		t.Errorf("the stored shared-auth pick must be applied: %+v", got.Skills)
+	}
+}
+
+// Without the key, nothing changes: the picker still runs.
+func TestOnboardWithoutSkipQuestionsStillAsks(t *testing.T) {
+	p, proj := onboardPaths(t)
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte("template = \"go\"\nagent = \"claude\"\n"), 0o644)
+	s, _, errBuf := testStreams("\n\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "without asking") {
+		t.Errorf("no skip_questions means the picker runs:\n%s", errBuf.String())
 	}
 }

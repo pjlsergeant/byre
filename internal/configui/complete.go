@@ -218,6 +218,7 @@ func (m model) assemble() config.Config {
 	// worktree_base is only editable in the global editor; elsewhere it round-trips
 	// via m.base untouched. Sibling checkbox wins; else the base path; else unset.
 	if m.target == TargetGlobal {
+		out.Defaults.SkipQuestions = m.skipQuestions
 		if m.wtSibling {
 			out.WorktreeBase = "sibling"
 		} else {

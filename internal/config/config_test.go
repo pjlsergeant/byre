@@ -736,7 +736,8 @@ func sampleConfig() Config {
 		Env:                map[string]string{"K": "v"},
 		Files:              map[string]string{"a.txt": "/opt/a.txt"},
 		Skills:             []string{"devloop"},
-		SharedAuth:         SharedAuthPref{Yes: []string{"claude"}},
+		SharedAuthLegacy:   SharedAuthPref{Yes: []string{"claude"}},
+		Defaults:           Defaults{SharedAuth: SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}, SkipQuestions: true},
 		Sources:            map[string]SourceHint{"pete/x": {URI: "https://example.test/x/skill.toml", Digest: "sha256:ab", From: "project config"}},
 		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
 		Egress:             []string{"grafana.com"},
@@ -1110,8 +1111,8 @@ func TestSharedAuthKeysNeverResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.SharedAuth.Empty() {
-		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %+v", cfg.SharedAuth)
+	if !cfg.StoredSharedAuth().Empty() {
+		t.Fatalf("project-layer shared_auth must be stripped from the resolved config, got %+v", cfg.StoredSharedAuth())
 	}
 }
 

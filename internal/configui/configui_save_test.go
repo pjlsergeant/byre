@@ -270,7 +270,7 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "default.config")
-			if err := Save(path, false, config.Config{Base: "node:22", SharedAuth: tc.pref}, nil, nil, true); err != nil {
+			if err := Save(path, false, config.Config{Base: "node:22", Defaults: config.Defaults{SharedAuth: tc.pref}}, nil, nil, true); err != nil {
 				t.Fatal(err)
 			}
 			back, err := config.ParseFile(path, true)
@@ -278,8 +278,8 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 				raw, _ := os.ReadFile(path)
 				t.Fatalf("re-parse of saved config failed (the brick):\n%v\n%s", err, raw)
 			}
-			if !reflect.DeepEqual(back.SharedAuth.Pick, tc.want.Pick) || !reflect.DeepEqual(back.SharedAuth.Yes, tc.want.Yes) {
-				t.Fatalf("round-trip: got %+v want %+v", back.SharedAuth, tc.want)
+			if !reflect.DeepEqual(back.StoredSharedAuth().Pick, tc.want.Pick) || !reflect.DeepEqual(back.StoredSharedAuth().Yes, tc.want.Yes) {
+				t.Fatalf("round-trip: got %+v want %+v", back.StoredSharedAuth(), tc.want)
 			}
 		})
 	}
@@ -314,7 +314,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 		"extends":         {Extends: "torn"},
 		"seed_prefs":      {SeedPrefs: boolPtr(true)},
 		"worktree_base":   {WorktreeBase: "sibling"},
-		"shared_auth":     {SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}},
+		"defaults":        {Defaults: config.Defaults{SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}}},
 		"sources":         {Sources: map[string]config.SourceHint{"acme/tool": {URI: "https://x", Digest: ""}}},
 		"apt":             {Apt: []string{"jq"}},
 		"env":             {Env: map[string]string{"FOO": "bar"}},
@@ -334,6 +334,15 @@ func TestReconcileCoversEveryField(t *testing.T) {
 		"run_args":        {RunArgs: []string{"--cpus=2"}},
 	}
 
+	// migrationOnly names fields a save deliberately does NOT round-trip: a
+	// compat spelling whose whole job is to be read once and rewritten in
+	// its new home. Round-tripping one would defeat the migration, so the
+	// guard needs the exemption stated rather than the field silently
+	// missing from the samples.
+	migrationOnly := map[string]string{
+		"shared_auth": "pre-2026-07-28 top-level spelling; a save migrates it into [defaults] (ADR 0025/0049)",
+	}
+
 	// Reflection guard: every toml-tagged Config field needs a sample.
 	rt := reflect.TypeOf(config.Config{})
 	for i := 0; i < rt.NumField(); i++ {
@@ -341,7 +350,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 		if tag == "" || tag == "-" {
 			continue
 		}
-		if _, ok := samples[tag]; !ok {
+		if _, ok := samples[tag]; !ok && migrationOnly[tag] == "" {
 			t.Errorf("Config.%s (toml %q) has no reconcile sample — give it one (and handle it in reconcile)", rt.Field(i).Name, tag)
 		}
 	}
@@ -520,7 +529,7 @@ func TestSaveSourcesSpellings(t *testing.T) {
 func TestSaveSharedAuthSecondWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "default.config")
 	pick := func(c string) config.Config {
-		return config.Config{Base: "node:22", SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": c}}}
+		return config.Config{Base: "node:22", Defaults: config.Defaults{SharedAuth: config.SharedAuthPref{Pick: map[string]string{"claude": c}}}}
 	}
 	if err := Save(path, false, pick("first"), nil, nil, true); err != nil {
 		t.Fatal(err)
@@ -532,8 +541,8 @@ func TestSaveSharedAuthSecondWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.SharedAuth.CompanionPick("claude") != "second" {
-		t.Fatalf("pick = %+v", back.SharedAuth)
+	if back.StoredSharedAuth().CompanionPick("claude") != "second" {
+		t.Fatalf("pick = %+v", back.StoredSharedAuth())
 	}
 }
 

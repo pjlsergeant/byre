@@ -61,17 +61,30 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 		}
 	}
 
-	// shared_auth: canonical inline value; a table-form spelling is
+	// [defaults]: picker state. shared_auth is a canonical inline value; a
+	// table-form spelling (or the pre-2026-07-28 top-level one) is
 	// normalized only when the preference actually changed.
-	if !cur.SharedAuth.Equal(want.SharedAuth) {
+	if !cur.StoredSharedAuth().Equal(want.StoredSharedAuth()) {
 		if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
 			return err
 		}
-		if want.SharedAuth.Empty() {
-			if err := doc.RemoveKey(nil, "shared_auth"); err != nil {
+		if err := doc.RemoveKey(nil, "shared_auth"); err != nil {
+			return err
+		}
+		if want.StoredSharedAuth().Empty() {
+			if err := doc.RemoveKey([]string{"defaults"}, "shared_auth"); err != nil {
 				return err
 			}
-		} else if err := doc.SetKey(nil, "shared_auth", want.SharedAuth.EncodeTOMLValue()); err != nil {
+		} else if err := doc.SetKey([]string{"defaults"}, "shared_auth", want.StoredSharedAuth().EncodeTOMLValue()); err != nil {
+			return err
+		}
+	}
+	if cur.Defaults.SkipQuestions != want.Defaults.SkipQuestions {
+		if want.Defaults.SkipQuestions {
+			if err := doc.SetKey([]string{"defaults"}, "skip_questions", tomldoc.Bool(true)); err != nil {
+				return err
+			}
+		} else if err := doc.RemoveKey([]string{"defaults"}, "skip_questions"); err != nil {
 			return err
 		}
 	}

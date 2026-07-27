@@ -44,8 +44,8 @@ func TestSharedAuthTableShapeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.SharedAuth.CompanionPick("claude") != "claude-shared-auth" {
-		t.Fatalf("pick = %+v", cfg.SharedAuth)
+	if cfg.StoredSharedAuth().CompanionPick("claude") != "claude-shared-auth" {
+		t.Fatalf("pick = %+v", cfg.StoredSharedAuth())
 	}
 	// Decline + save removes the entry.
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", false); err != nil {
@@ -55,8 +55,8 @@ func TestSharedAuthTableShapeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.SharedAuth.Empty() {
-		t.Fatalf("decline should remove entry: %+v", cfg.SharedAuth)
+	if !cfg.StoredSharedAuth().Empty() {
+		t.Fatalf("decline should remove entry: %+v", cfg.StoredSharedAuth())
 	}
 }
 

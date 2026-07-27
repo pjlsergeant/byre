@@ -29,7 +29,9 @@ func TestFieldInfosCoverEveryField(t *testing.T) {
 			t.Errorf("%s: raw text field with no TOML key hint", info.label)
 		}
 	}
-	if len(fieldInfos) != int(fExtends)+1 {
-		t.Errorf("fieldInfos has %d rows for %d fieldIDs — a row names a nonexistent field", len(fieldInfos), int(fExtends)+1)
+	// fSkipQuestions is the last fieldID; the count tracks it, so adding a
+	// field without its row (or a row without its field) fails here.
+	if len(fieldInfos) != int(fSkipQuestions)+1 {
+		t.Errorf("fieldInfos has %d rows for %d fieldIDs — a row names a nonexistent field", len(fieldInfos), int(fSkipQuestions)+1)
 	}
 }

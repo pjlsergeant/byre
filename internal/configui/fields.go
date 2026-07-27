@@ -50,6 +50,7 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fWorktreeSibling: {label: "Worktree loc"},
 	fWorktreeBase:    {label: "Base path"},
 	fExtends:         {label: "Extends"},
+	fSkipQuestions:   {label: "Skip questions"},
 }
 
 // fieldLabel is the display name (not the raw TOML key); the underlying key

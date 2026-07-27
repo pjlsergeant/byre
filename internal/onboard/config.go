@@ -136,7 +136,7 @@ func SharedAuthPreference(home, agent string) bool {
 	if err != nil {
 		return false
 	}
-	return cfg.SharedAuth.HasYes(agent)
+	return cfg.StoredSharedAuth().HasYes(agent)
 }
 
 // SharedAuthPick returns the saved companion pick for agent, or "" when the
@@ -146,7 +146,7 @@ func SharedAuthPick(home, agent string) string {
 	if err != nil {
 		return ""
 	}
-	return cfg.SharedAuth.CompanionPick(agent)
+	return cfg.StoredSharedAuth().CompanionPick(agent)
 }
 
 // SaveSharedAuthDefaultPick records the shared-auth answer as agent's saved
@@ -169,7 +169,7 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w — fix it (byre config --global opens it), then answer again", path, err)
 	}
-	want := cfg.SharedAuth.Clone()
+	want := cfg.StoredSharedAuth().Clone()
 	if yes {
 		if companion != "" {
 			if want.Pick == nil {
@@ -196,7 +196,7 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 		}
 	}
 	// No-op when the stored preference already matches.
-	if want.Equal(cfg.SharedAuth) {
+	if want.Equal(cfg.StoredSharedAuth()) {
 		return nil
 	}
 
@@ -204,22 +204,27 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	if err != nil {
 		return err
 	}
-	// Canonical inline value; a hand-written [shared_auth] table spelling is
-	// one construct, normalized only now that the preference itself changed.
+	// Canonical inline value under [defaults]; a hand-written [shared_auth]
+	// table spelling is one construct, normalized only now that the
+	// preference itself changed. The pre-2026-07-28 TOP-LEVEL spelling is
+	// migrated away here rather than left to rot in two homes.
 	if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
 		return err
 	}
+	if err := doc.RemoveKey(nil, "shared_auth"); err != nil {
+		return err
+	}
 	if want.Empty() {
-		err = doc.RemoveKey(nil, "shared_auth")
+		err = doc.RemoveKey([]string{"defaults"}, "shared_auth")
 	} else {
-		err = doc.SetKey(nil, "shared_auth", want.EncodeTOMLValue())
+		err = doc.SetKey([]string{"defaults"}, "shared_auth", want.EncodeTOMLValue())
 	}
 	if err != nil {
 		return err
 	}
 	// Verify the edit SEMANTICALLY before it lands.
 	check, perr := config.Parse(doc.Bytes())
-	if perr != nil || !check.SharedAuth.Equal(want) {
+	if perr != nil || !check.StoredSharedAuth().Equal(want) {
 		return fmt.Errorf("could not update %s (edit did not verify) — answer again via byre config --global", path)
 	}
 	if err := config.AtomicWrite(path, string(doc.Bytes())); err != nil {

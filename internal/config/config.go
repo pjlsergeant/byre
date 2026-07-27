@@ -352,13 +352,20 @@ type Config struct {
 	// checkout lands. Edited via `byre config` (the WORKTREES section).
 	WorktreeBase string `toml:"worktree_base,omitempty"`
 
-	// SharedAuth is the picker-owned shared-auth favourite (ADR 0025):
-	// a preference over future ANSWERS, never a grant. Dual-shape decode:
-	// legacy array ["claude"] = yes-inclination with no companion pick; table
-	// { claude = "claude-shared-auth" } = agent -> companion pick that
-	// prefills the multi-claim picker. resolveWith strips it from every
-	// resolved config; only onboarding reads or writes it.
-	SharedAuth SharedAuthPref `toml:"shared_auth,omitempty"`
+	// Defaults is picker-owned state: preferences about how the NEXT
+	// onboarding runs, never configuration of a box. The whole section is
+	// stripped from every resolved config -- one structural rule, rather
+	// than the per-key strip shared_auth used to need. Template and agent
+	// "defaults" are deliberately NOT here: they are the plain `template`
+	// and `agent` keys, real cascade values that apply to every project,
+	// and the picker pre-selects them because they ARE the inherited value.
+	Defaults Defaults `toml:"defaults,omitempty"`
+
+	// SharedAuthLegacy is the pre-2026-07-28 top-level spelling, which
+	// onboarding itself wrote into users' default.config. Read so an
+	// upgrade keeps working; migrated into Defaults on the next write.
+	// Compat path with a window -- ADR 0049's inventory.
+	SharedAuthLegacy SharedAuthPref `toml:"shared_auth,omitempty"`
 
 	// Sources are acquisition hints for package references: package
 	// id -> where to install it from. Hints are NEVER auto-fetched --
@@ -614,7 +621,8 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// onboarding reads it straight from default.config, nothing else may.
 	// (shared_auth_declined is gone entirely: a tolerated retired key,
 	// dropped at parse.)
-	resolved.SharedAuth = SharedAuthPref{}
+	resolved.Defaults = Defaults{}
+	resolved.SharedAuthLegacy = SharedAuthPref{}
 	if err := resolved.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -862,10 +870,16 @@ func Merge(base, over Config) Config {
 	// package collides with the marker.
 	out.Apt = mergeStrings(base.Apt, over.Apt)
 	out.Skills = mergeStrings(base.Skills, over.Skills)
-	// SharedAuth is picker state and is stripped from resolved configs; a
+	// Picker state, stripped from resolved configs; a
 	// last-wins merge keeps Parse+Merge of hand-edited layers well-defined.
-	if !over.SharedAuth.Empty() {
-		out.SharedAuth = over.SharedAuth.Clone()
+	if !over.SharedAuthLegacy.Empty() {
+		out.SharedAuthLegacy = over.SharedAuthLegacy.Clone()
+	}
+	if !over.Defaults.SharedAuth.Empty() {
+		out.Defaults.SharedAuth = over.Defaults.SharedAuth.Clone()
+	}
+	if over.Defaults.SkipQuestions {
+		out.Defaults.SkipQuestions = true
 	}
 	out.Egress, out.EgressClosed = mergeEgress(base, over)
 	// Offered egress keeps the plain-list idiom: it is never enforced, so a

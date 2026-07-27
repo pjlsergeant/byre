@@ -16,10 +16,51 @@ func TestEncodeTOMLValueQuotesQualifiedPickKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("emitted line %q must parse: %v", line, err)
 	}
-	if got := cfg.SharedAuth.CompanionPick("acme/agent"); got != "acme/agent-shared-auth" {
+	if got := cfg.StoredSharedAuth().CompanionPick("acme/agent"); got != "acme/agent-shared-auth" {
 		t.Fatalf("acme/agent pick round-trip: got %q", got)
 	}
-	if got := cfg.SharedAuth.CompanionPick("claude"); got != "claude-shared-auth" {
+	if got := cfg.StoredSharedAuth().CompanionPick("claude"); got != "claude-shared-auth" {
 		t.Fatalf("claude pick round-trip: got %q", got)
+	}
+}
+
+// [defaults] is picker state and must never reach a box: the whole section
+// is stripped by resolution, so no member of it can acquire teeth by
+// accident — the structural version of the per-key strip shared_auth used
+// to need.
+func TestDefaultsSectionIsStrippedFromResolvedConfigs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	proj := Config{
+		Defaults: Defaults{
+			SharedAuth:    SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}},
+			SkipQuestions: true,
+		},
+		SharedAuthLegacy: SharedAuthPref{Yes: []string{"codex"}},
+	}
+	got, err := ResolveProposed(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Defaults.Empty() {
+		t.Errorf("[defaults] must not survive resolution: %+v", got.Defaults)
+	}
+	if !got.SharedAuthLegacy.Empty() {
+		t.Errorf("the legacy spelling must not survive resolution either: %+v", got.SharedAuthLegacy)
+	}
+}
+
+// One accessor, two homes: the section wins, the pre-2026-07-28 top-level
+// spelling is the fallback so an upgrade keeps working.
+func TestStoredSharedAuthPrefersTheSectionOverTheLegacySpelling(t *testing.T) {
+	both := Config{
+		Defaults:         Defaults{SharedAuth: SharedAuthPref{Pick: map[string]string{"claude": "new"}}},
+		SharedAuthLegacy: SharedAuthPref{Pick: map[string]string{"claude": "old"}},
+	}
+	if got := both.StoredSharedAuth().CompanionPick("claude"); got != "new" {
+		t.Errorf("the section must win, got %q", got)
+	}
+	legacyOnly := Config{SharedAuthLegacy: SharedAuthPref{Pick: map[string]string{"claude": "old"}}}
+	if got := legacyOnly.StoredSharedAuth().CompanionPick("claude"); got != "old" {
+		t.Errorf("the legacy spelling must still be read, got %q", got)
 	}
 }

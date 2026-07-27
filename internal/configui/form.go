@@ -68,6 +68,7 @@ const (
 	fWorktreeSibling // checkbox: worktrees beside the repo
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
+	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
 )
 
 // Target says which kind of file this editor session edits: a project's
@@ -158,11 +159,14 @@ type model struct {
 	sections []section   // rendered groups (Grants / Build / Advanced)
 	order    []fieldID   // flattened focus order across all sections
 
-	ti         textinput.Model // base image editor
-	wtBase     textinput.Model // worktree base-path editor (fWorktreeBase)
-	wtSibling  bool            // fWorktreeSibling checkbox: worktrees beside the repo
-	target     Target          // which kind of file this session edits
-	followFile bool            // followForTarget(target), fixed at open
+	ti        textinput.Model // base image editor
+	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
+	wtSibling bool            // fWorktreeSibling checkbox: worktrees beside the repo
+	// skipQuestions is [defaults].skip_questions: onboarding configures a new
+	// project from the stored answers instead of asking.
+	skipQuestions bool
+	target        Target // which kind of file this session edits
+	followFile    bool   // followForTarget(target), fixed at open
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
@@ -333,6 +337,10 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
 			{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}},
+			// [defaults]: picker state. Template and Agent are NOT here on
+			// purpose -- they are real cascade keys above, which is exactly
+			// what a reader of a one-member section wants told.
+			{"DEFAULTS — picker state; Template and Agent above are real config, not just prefill", []fieldID{fSkipQuestions}},
 		}
 	case TargetLayer:
 		// A layer carries the full vocabulary EXCEPT template (shape selection
@@ -435,6 +443,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.runArgs = strings.Join(cfg.RunArgs, "\n")
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
 	m.dfPost = strings.Join(cfg.DockerfilePost, "\n")
+	m.skipQuestions = cfg.Defaults.SkipQuestions
 	// worktree_base is a 3-state choice: "sibling" (checkbox on), a path (checkbox
 	// off, path set), or unset (checkbox off, path empty -> byre worktree refuses).
 	switch v := strings.TrimSpace(cfg.WorktreeBase); v {
@@ -615,6 +624,8 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openText(f), textarea.Blink
 		case f == fWorktreeSibling:
 			m.wtSibling = !m.wtSibling
+		case f == fSkipQuestions:
+			m.skipQuestions = !m.skipQuestions
 		}
 		return m, nil
 	}
@@ -647,6 +658,8 @@ func (m *model) cycle(dir int) {
 	switch m.field() {
 	case fWorktreeSibling:
 		m.wtSibling = !m.wtSibling
+	case fSkipQuestions:
+		m.skipQuestions = !m.skipQuestions
 	case fTemplate:
 		m.tmplSel = m.skipDisabled(m.tmplOpts, wrap(m.tmplSel+dir, len(m.tmplOpts)), dir)
 	case fExtends:
@@ -941,6 +954,19 @@ func (m model) renderValue(f fieldID, focused bool) string {
 			return v
 		}
 		return dimStyle.Render("(defaults to " + gen.DefaultBase + ")")
+	case fSkipQuestions:
+		box := "[ ]"
+		if m.skipQuestions {
+			box = "[x]"
+		}
+		s := box + " configure new projects from these answers without asking"
+		if m.skipQuestions {
+			s += dimStyle.Render("  (includes shared credentials where you picked a companion)")
+		}
+		if focused {
+			s = focusStyle.Render(s)
+		}
+		return s
 	case fWorktreeSibling:
 		box := "[ ]"
 		if m.wtSibling {

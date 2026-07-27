@@ -35,9 +35,11 @@ var claimSurface = map[string]claimClass{
 	"Extends":      rendered("the Extends chain row (read off the raw layer; resolution consumes the key)"),
 	"SeedPrefs":    inert("one-time copy of the skill-curated, structurally secret-free pref allowlist into a FRESH volume (ADR 0013); no standing grant"),
 	"WorktreeBase": inert("host-side workflow preference (where worktree checkouts land); not part of the box"),
-	"SharedAuth":   inert("picker-owned preference over future ANSWERS (ADR 0025); stripped by resolution, never a grant"),
-	"Sources":      inert("acquisition hints, never auto-fetched (ADR 0029); their only surface is remedy text"),
-	"Apt":          inert("build input: package contents of the box, not a grant claim; anti-injection grammar at validation"),
+	"Defaults": inert("picker-owned section: state about how the NEXT onboarding runs. Stripped whole by resolution, so no member can acquire teeth. " +
+		"skip_questions changes whether byre ASKS, and develop says out loud when it acted on it; the shared-auth pick it applies lands as a skills entry, which renders like any other"),
+	"SharedAuthLegacy": inert("the pre-2026-07-28 top-level shared_auth spelling; read for upgrades, migrated into [defaults] on the next write"),
+	"Sources":          inert("acquisition hints, never auto-fetched (ADR 0029); their only surface is remedy text"),
+	"Apt":              inert("build input: package contents of the box, not a grant claim; anti-injection grammar at validation"),
 	"Env": rendered("the Env row (keys); reserved BYRE_* refused at validation, BYRE_EGRESS " +
 		"re-asserted at run so no key skews what the box is told byre enforces"),
 	"EnvFromHost": rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden)"),
