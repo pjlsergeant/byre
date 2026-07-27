@@ -49,9 +49,11 @@
   was written. To set one deliberately, `run_args = ["-e", "BYRE_X=..."]`,
   which status shows verbatim while degrading the claims it affects. If you
   have a `BYRE_`-prefixed key in `env_from_host`, it now fails at config load
-  with that spelling in the message: byre's own `inttest` skill had one, and
-  it is renamed to `INTTEST_USER` (a skill's variable was squatting in byre's
-  vocabulary -- update `byre.preset` and re-apply the skill).
+  with that spelling in the message: byre's own `inttest` skill had four, all
+  renamed prefix-free (`INTTEST_USER/_VM/_PORT/_KEY` -- a skill's variables
+  were squatting in byre's vocabulary; the wrapper still reads the old
+  spellings from the environment with a rename note). Update `byre.preset`
+  and re-install the skill.
 - **A byre crash no longer looks like a usage error to a script.** Go exits a
   panic with 2, which is byre's usage code, so every crash was
   indistinguishable from a bad flag to anything reading the exit status --
