@@ -763,3 +763,23 @@ func TestEgressFieldSummaryAgreesWithExposure(t *testing.T) {
 		t.Errorf("fromSkills = %d, want 0: the user's own layer opens this door", fromSkills)
 	}
 }
+
+// errLine strips control sequences PER LINE: validation remedies are
+// deliberately multiline (the BYRE_ refusal carries its run_args remedy on
+// its own line), and a whole-message strip ate the newlines and ran remedy
+// into refusal ("[env]to override" -- caught by review, after the identical
+// trap was fixed in proseBlock without being generalized).
+func TestErrLineKeepsDeliberateNewlinesAndStripsControls(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.width = 200
+	got := m.errLine("refused in [env]\nto override: run_args\x1b[31m")
+	if strings.Contains(got, "[env]to") {
+		t.Errorf("refusal and remedy ran together -- the newline was eaten: %q", got)
+	}
+	if !strings.Contains(got, "\n") {
+		t.Errorf("the remedy's own line must survive (wrap may pad it): %q", got)
+	}
+	if strings.Contains(got, "[31m") {
+		t.Errorf("the smuggled SGR must not: %q", got)
+	}
+}

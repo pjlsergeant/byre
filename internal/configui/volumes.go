@@ -8,6 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // VolumeAdmin lets the editor show a project's volumes and clear them ad hoc.
@@ -196,7 +198,7 @@ func (m model) viewVolumes() string {
 		// State is padded too ("empty" is 5 cells, "present" 7 — pad works
 		// through the ANSI styling), or the engine suffix and shared/orphan
 		// annotations drift on mixed-state rows.
-		line := pad(v.Name, nameW) + "  " + pad(cell(v.Role), roleW) + "  " + pad(cell(v.Target), targetW) + "  " + pad(state, len("present"))
+		line := pad(packages.EscapeTerminal(v.Name), nameW) + "  " + pad(cell(v.Role), roleW) + "  " + pad(packages.EscapeTerminal(cell(v.Target)), targetW) + "  " + pad(state, len("present"))
 		if multiEngine {
 			line += " [" + v.Engine + "]"
 		}
@@ -229,7 +231,7 @@ func (m model) viewVolumes() string {
 	switch {
 	case m.volPendClear >= 0:
 		pend := m.volList[m.volPendClear]
-		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", pend.Name)
+		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", packages.EscapeTerminal(pend.Name))
 		if pend.Machine {
 			msg += "\nShared by ALL your projects — clearing it affects every one (a shared agent login logs out everywhere)."
 		}

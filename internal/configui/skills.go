@@ -295,16 +295,18 @@ func (m model) viewSkills() string {
 		} else if e.on() {
 			box = "[x]"
 		}
-		line := box + " " + e.name
+		// Name, provenance label and disabled reason are catalog/manifest
+		// text -- the same trust class as the description below.
+		line := box + " " + packages.EscapeTerminal(e.name)
 		if e.child {
 			line = "  └ " + line
 		}
 		if e.provLabel != "" {
-			line += dimStyle.Render("  " + e.provLabel)
+			line += dimStyle.Render("  " + packages.EscapeTerminal(e.provLabel))
 		}
 		switch {
 		case e.disabled != "":
-			line += dimStyle.Render("  (" + e.disabled + ")")
+			line += dimStyle.Render("  (" + packages.EscapeTerminal(e.disabled) + ")")
 		case e.locked && e.removedHere:
 			line += dimStyle.Render("  (primary agent — stale !" + e.name + " marker, toggle to clear)")
 		case e.locked:

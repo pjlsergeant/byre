@@ -43,7 +43,7 @@ for pair in VM PORT KEY; do
   fi
 done
 if [ -n "$legacy_note" ]; then
-  echo "byre-inttest: note --${legacy_note} is the old spelling; the variable is now prefix-free (INTTEST_*), settable in plain [env]." >&2
+  echo "byre-inttest: note --${legacy_note} -- old spelling; the variables are prefix-free now (INTTEST_*), settable in plain [env]." >&2
 fi
 
 KEY="${INTTEST_KEY:-/home/dev/.byre-identity/inttest/byre-inttest}"

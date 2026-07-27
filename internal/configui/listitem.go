@@ -1521,7 +1521,7 @@ func (m model) viewMenu() string {
 	// sibling: the same value neutralized there must not come back to life on
 	// Enter (review catch -- the strip stopped one screen short).
 	fmt.Fprintf(&b, "%s\n", focusStyle.Render(packages.EscapeTerminal(m.menuRow.text)))
-	b.WriteString(dimStyle.Render("Set in: "+setIn(m.menuRow)) + "\n\n")
+	b.WriteString(dimStyle.Render("Set in: "+packages.EscapeTerminal(setIn(m.menuRow))) + "\n\n")
 	// An INHERITED instructions row is readable right here, in full — the
 	// user can't edit another layer's snippet from this file, but seeing
 	// what their agent will be told never requires leaving the screen.
@@ -1533,7 +1533,7 @@ func (m model) viewMenu() string {
 		fmt.Fprintf(&b, "%s\n", cursorLine(i == m.menuCur, c.label+dimStyle.Render("  "+c.key)))
 	}
 	if m.listField == fEnv && m.menuRow.kind == rowInherited {
-		b.WriteString("\n" + dimStyle.Render("(can't unset from this layer — edit the "+m.menuRow.source+" config to remove)"))
+		b.WriteString("\n" + dimStyle.Render("(can't unset from this layer — edit the "+packages.EscapeTerminal(m.menuRow.source)+" config to remove)"))
 	}
 	if note := m.subFooterNote(); note != "" {
 		b.WriteString("\n" + note)

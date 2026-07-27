@@ -890,8 +890,17 @@ func footerStart(lines []string) int {
 func (m model) errLine(msg string) string {
 	// Error messages echo user input, so they get the same data-vs-terminal
 	// strip the list rows do -- before the style wrap, and unbounded input is
-	// exactly where a smuggled control sequence would ride.
-	msg = packages.EscapeTerminal(msg)
+	// exactly where a smuggled control sequence would ride. PER LINE, like
+	// proseBlock: validation remedies are deliberately multiline (the BYRE_
+	// refusal carries its run_args remedy on its own line), and a whole-text
+	// strip ate the newlines and ran remedy into refusal -- the same trap as
+	// proseBlock's first version, generalized only after a reviewer caught it
+	// again.
+	lines := strings.Split(msg, "\n")
+	for i, l := range lines {
+		lines[i] = packages.EscapeTerminal(l)
+	}
+	msg = strings.Join(lines, "\n")
 	if m.width > 0 {
 		return errTextStyle.Render(ansi.Wrap("✗ "+msg, m.width, ""))
 	}
@@ -1274,6 +1283,10 @@ func helpLine(pairs ...string) string {
 // statusNote renders a transient status line: the save confirmation gets its
 // own green (the state the eye checks most often), everything else stays dim.
 func statusNote(s string) string {
+	// The paint funnel for every m.status assignment -- statuses echo row
+	// values and provenance, and stripping HERE covers the sites a
+	// per-assignment sweep kept missing (two rounds running).
+	s = packages.EscapeTerminal(s)
 	if s == savedStatus {
 		return okStyle.Render(s)
 	}
