@@ -6,6 +6,39 @@ it follows from; if changing an idea would mean re-litigating the project
 rather than superseding one decision, it belongs here. Vocabulary for these
 concepts is pinned in `docs/GLOSSARY.md`.
 
+## 0. The TUI is the gold
+
+**Without the TUI, byre is a fusty and dull one-of-many sandbox.** Putting
+an agent in a container is table stakes -- several tools do it, and the
+Dockerfile byre generates is not what anyone stays for. What byre has that
+they do not is the surface over it: a screen that shows effective state
+across the cascade, names every grant, and lets you change any of it in
+place. That is the differentiator, and it is therefore the product.
+
+Numbered 0 because it is prior to the rest: it says what byre IS, and
+several principles below are consequences of it.
+
+Implications:
+
+- **"Expert vocabulary -- hand-edit it" is never an available answer.** A
+  config key without a widget is not an unmet checkbox, it is a place where
+  byre stops being byre and hands you a text editor -- which is exactly the
+  fusty one-of-many it would otherwise be. P6 is this principle applied to
+  config vocabulary; this is the reason behind it.
+- **Editor defects carry the weight of engine defects.** A screen that
+  misreports effective state, destroys a key on save, or cannot express an
+  off-switch is a product bug of the same class as a wrong Dockerfile --
+  not a polish item to be scheduled after the "real" work.
+- **Investment in the TUI is not gold-plating.** The TUI test tier (ADR
+  0038) and the demo casts exist because this surface has to keep working
+  and has to be SHOWN -- it is the thing that sells byre, so the demos are
+  product, not decoration. The proportionality rule that governs
+  corner-case machinery does not license skimping here.
+- **The editor never becomes the only way, either.** Hand-editing stays a
+  defended right (P1) and every file stays a plain, diffable TOML the
+  user owns; this principle raises the editor to first class, it does not
+  demote the file.
+
 ## 1. The footgun doctrine
 
 **byre's threat model is the agent, never the user.** A footgun is harm a
@@ -127,7 +160,8 @@ Implications:
 
 **`byre config` is how configuration is edited -- for every config
 feature, always. The TOML files are byre's storage format, not its user
-interface.** No recipe, prompt, error remedy, or doc may require or
+interface.** (P0 is why: the TUI is what byre has that a plain sandbox
+does not.) No recipe, prompt, error remedy, or doc may require or
 expect a user to open a config file in a text editor; a config
 vocabulary that can only be reached by hand-editing is not done, the
 same way a grant `byre status` can't name is not done (P4). Hand-editing

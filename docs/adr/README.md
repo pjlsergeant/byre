@@ -51,6 +51,7 @@ this index:
 
 ## Principles
 
+- P0: the TUI is the differentiator, so a config key without a widget is a hole in the product [no arm]
 - P1: threat model is the agent, never the user -- degrade claims on user choices, never refuse [no arm]
 - P2: core ships generic mechanism only; every opinion (agent, policy, endpoints) lives in a skill [no arm]
 - P3: raw blocks are first-class and never parsed -- shown verbatim, posture claims degrade [no arm]
@@ -78,7 +79,7 @@ this index:
 - 0015: mounts are disabled via a disabled=true field, never a mode value; the entry stays, emits no bind [arm: TestRunParamsSkipsDisabledMounts]
 - 0016: one static binary per platform on v-tags; version = stamped tag > buildinfo > (devel), never faked [arm: TestResolve]
 - 0017: shared agent login rides an opt-in companion skill plus a machine-scoped uid-qualified volume [arm: TestIntegrationMachineVolumeSharedAcrossProjects]
-- 0018: show effective state, edit only the open layer; !name removal for apt/npm, remove=true for ports [arm: TestMergeAptNpmRemoval]
+- 0018: show effective state, edit only the open layer; !name removal for apt, remove=true for ports [arm: TestMergeAptNpmRemoval]
 - 0019: user egress rides the `egress` config key (union, !removal); enforcement stays the firewall skill [arm: TestResolvedEgressUnionsConfigKey]
 - 0020: only a skill's own functional egress auto-opens; convenience endpoints ship closed in egress_offered [arm: TestFirewallComposesAgentEgress]
 - 0021: deliver is machine-scoped discovery, exec-streamed into root-parented /inbox, atomic no-clobber writes [arm: TestIntegrationDeliverTransport]

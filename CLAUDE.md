@@ -13,6 +13,12 @@ docs: `README.md`.
 `CONTEXT.md`, renamed -- treat it as that skill's glossary file). It is binding
 for prose, docs, and user-facing strings; vocabulary only, never behavior. When
 another doc disagrees with it on naming, one of them is wrong -- reconcile.
+**The TUI is the gold (PRINCIPLES.md P0).** Without it byre is a fusty
+one-of-many sandbox -- containerising an agent is table stakes; the screen
+over it is the differentiator. So: a config key without a widget is a hole in
+the product, not a deferred nicety; a TUI bug ranks with an engine bug; the
+demo casts are product, not decoration; and "expert vocabulary, hand-edit it"
+is not an answer byre gives.
 **Design principles live in `docs/PRINCIPLES.md`** (standing commitments);
 **doc/site placement rules in `docs/PLACEMENT.md`** (cited as `PLACEMENT.md Pn`);
 **point-in-time decisions live in `docs/adr/`** and cite principles as
