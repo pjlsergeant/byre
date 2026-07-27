@@ -52,7 +52,7 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	// (which resolution follows) are scanned too; check's stat skips
 	// entries with no config file under them.
 	subdirs := func(dir string) []string {
-		entries, err := hostopen.PlainReadDir(dir, hostopen.Unreviewed)
+		entries, err := hostopen.ReadDirNoFollow(dir)
 		if err != nil {
 			return nil
 		}

@@ -286,7 +286,7 @@ func commonGitDirOf(paths project.Paths) string {
 	// directory. A `.git` file (submodule) or a missing one just means there is
 	// no admin dir here to watch -- degrade, never guess.
 	dir := filepath.Join(paths.WorkDir, ".git")
-	fi, err := hostopen.PlainLstat(dir, hostopen.Unreviewed)
+	fi, err := hostopen.StatNoFollow(dir)
 	if err != nil || !fi.IsDir() {
 		return ""
 	}
@@ -304,7 +304,7 @@ func gitConfigFiles(gitDir string) (fixed, fromListing []string, listed bool) {
 		filepath.Join(gitDir, "config"),
 		filepath.Join(gitDir, "config.worktree"),
 	}
-	entries, err := hostopen.PlainReadDir(filepath.Join(gitDir, "worktrees"), hostopen.Unreviewed)
+	entries, err := hostopen.ReadDirNoFollow(filepath.Join(gitDir, "worktrees"))
 	if err != nil {
 		// No worktrees/ at all is the ordinary case and perfectly known; any
 		// other error means byre cannot see the linked worktrees' configs.
@@ -396,7 +396,7 @@ func containedHooksPath(paths project.Paths) (string, bool) {
 // reintroduced the bug it exists to prevent. Never follows a final
 // symlink and opens nothing.
 func confirmedAbsent(p string) bool {
-	_, err := hostopen.PlainLstat(p, hostopen.Unreviewed)
+	_, err := hostopen.StatNoFollow(p)
 	return errors.Is(err, fs.ErrNotExist)
 }
 
@@ -450,7 +450,7 @@ func snapshotHooks(into map[string]string, paths project.Paths, dir string) bool
 // record is a hash of path AND content, so an edited .envrc re-blocks until
 // `direnv allow` runs), and duplicating that would add noise, not safety.
 func envFiles(workDir string) ([]string, bool) {
-	entries, err := hostopen.PlainReadDir(workDir, hostopen.Unreviewed)
+	entries, err := hostopen.ReadDirNoFollow(workDir)
 	if err != nil {
 		return nil, false
 	}

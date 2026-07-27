@@ -7,17 +7,23 @@
   of ~220 host-side filesystem calls now either rides hostopen or names, at
   the call site, the closed-set reason it is safe without it -- so a new call
   can no longer inherit an old call's reasoning, and `rg` audits the lot. The
-  first sweep through that inventory closed four real windows, all of them in
-  paths a `--self-edit` box can write: the setup lock refused to follow a
-  symlink at its name and re-checks the locked inode the same way it opened
-  it; byre's records (project config, path record, session-engine record)
-  stage and publish through ONE directory descriptor rather than resolving
-  the directory twice; and existence probes describe the record byre asked
-  about rather than whatever a link there points at. What a user might
-  notice: a **symlink** standing where byre keeps its own lock or records is
-  now refused or replaced instead of followed. Symlinked config files are
-  deliberately untouched -- a dotfiles-managed `~/.byre/default.config` keeps
-  working exactly as before.
+  sweep through that inventory reviewed all 40 unexamined calls and left
+  none, closing several real windows in paths a `--self-edit` box can write:
+  the setup lock refuses to follow a symlink at its name and re-checks the
+  locked inode the same way it opened it; byre's records (project config,
+  path record, session-engine record) stage and publish through ONE directory
+  descriptor rather than resolving the directory twice, and refuse to report
+  success if that directory was moved out from under them mid-write;
+  existence probes describe the record byre asked about rather than whatever
+  a link there points at; and **`byre forget` will no longer empty a
+  directory it was pointed at through a symlink** -- its store clear now
+  enumerates and deletes through one verified descriptor, so a store dir
+  replaced with a link is refused outright instead of having the link's
+  target emptied. What a user might notice: a **symlink** standing where byre
+  keeps its own lock, records, or store directory is now refused or replaced
+  instead of followed. Symlinked config files are deliberately untouched -- a
+  dotfiles-managed `~/.byre/default.config` keeps working exactly as before,
+  as does a `~/.byre` symlinked out of a dotfiles repo.
 - **Config-family reads are fd-judged and bounded; a planted FIFO or symlink
   refuses instead of hanging.** Every host-side read of a path a box can
   shape (the store project `byre.config` a `--self-edit` box mounts, the

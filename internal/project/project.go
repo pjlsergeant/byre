@@ -228,7 +228,11 @@ func Resolve(projectDir string) (Paths, error) {
 // file lives inside the directory created here — so the fence cannot ride
 // that lock instead.
 func (p Paths) Bootstrap() error {
-	if err := hostopen.PlainMkdirAll(p.ContextDir, 0o755, hostopen.Unreviewed); err != nil {
+	// ~/.byre/projects is the head byre does not own (a user may symlink
+	// ~/.byre); <id>/context is the tail byre creates for itself, where a
+	// symlink would mean byre's own store directory replaced -- and every
+	// later write into it, config included, redirected.
+	if err := hostopen.MkdirAllIn(p.Home, filepath.Join("projects", p.ID, filepath.Base(p.ContextDir)), 0o755); err != nil {
 		return err
 	}
 	recorded, err := p.checkRecord()

@@ -67,3 +67,97 @@ func TestStatNoFollowDescribesTheLinkNotItsTarget(t *testing.T) {
 		t.Fatalf("mode = %s, want a symlink and not a directory", fi.Mode())
 	}
 }
+
+func TestReadDirNoFollowRefusesASymlinkedDirectory(t *testing.T) {
+	base := t.TempDir()
+	victim := filepath.Join(base, "victim")
+	if err := os.Mkdir(victim, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(victim, "secret"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := filepath.Join(base, "store")
+	if err := os.Symlink(victim, store); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if _, err := ReadDirNoFollow(store); err == nil {
+		t.Fatal("listing through a symlinked directory must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(victim, "secret")); err != nil {
+		t.Fatalf("victim contents changed: %v", err)
+	}
+}
+
+func TestReadDirNoFollowListsARealDirectory(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"a", "b"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ents, err := ReadDirNoFollow(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 2 || ents[0].Name() != "a" || ents[1].Name() != "b" {
+		t.Fatalf("entries = %v, want a and b", ents)
+	}
+}
+
+func TestMkdirAllInCreatesTheTailAndIsIdempotent(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "byre", "projects")
+	if err := MkdirAllIn(parent, filepath.Join("projects", "proj-abc123", "context"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(parent, "projects", "proj-abc123", "context"))
+	if err != nil || !fi.IsDir() {
+		t.Fatalf("context dir: %v", err)
+	}
+	// Bootstrap runs on every develop, not only the first.
+	if err := MkdirAllIn(parent, filepath.Join("projects", "proj-abc123", "context"), 0o755); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+}
+
+func TestMkdirAllInRefusesASymlinkedTailComponent(t *testing.T) {
+	base := t.TempDir()
+	parent := filepath.Join(base, "byre")
+	if err := os.MkdirAll(filepath.Join(parent, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := filepath.Join(base, "elsewhere")
+	if err := os.Mkdir(elsewhere, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// byre's own store directory, replaced with a link out of the store.
+	if err := os.Symlink(elsewhere, filepath.Join(parent, "projects", "proj-abc123")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if err := MkdirAllIn(parent, filepath.Join("projects", "proj-abc123", "context"), 0o755); err == nil {
+		t.Fatal("a symlinked store component must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(elsewhere, "context")); err == nil {
+		t.Fatal("created a directory through the symlink")
+	}
+}
+
+func TestMkdirAllInFollowsASymlinkedParent(t *testing.T) {
+	// The head is the user's: ~/.byre symlinked out of a dotfiles repo or onto
+	// another disk is a supported arrangement and must keep working.
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if err := MkdirAllIn(link, "proj-abc123", 0o755); err != nil {
+		t.Fatalf("symlinked parent must still work: %v", err)
+	}
+	if fi, err := os.Stat(filepath.Join(real, "proj-abc123")); err != nil || !fi.IsDir() {
+		t.Fatalf("landed in the real directory? %v", err)
+	}
+}

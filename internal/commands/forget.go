@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -172,19 +173,32 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 // caller holds it). Running this under the setup lock is the point: a
 // develop queued on that lock can't interleave its own store writes with the
 // deletion.
+//
+// The listing AND the removals ride one anchored, no-follow root. This is the
+// most destructive loop byre has: enumerate a directory, delete what is in it.
+// By pathname, a store dir a --self-edit box had replaced with a symlink would
+// be listed through the link and then have the link's TARGET emptied, one
+// RemoveAll at a time -- byre deleting the user's files on the agent's say-so.
+// Anchoring refuses the swapped directory outright, and every removal resolves
+// through the descriptor that was verified rather than through the name.
 func clearStoreContents(dir string) error {
-	entries, err := hostopen.PlainReadDir(dir, hostopen.Unreviewed)
+	root, err := hostopen.OpenDirRootNoFollow(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
+	defer root.Close()
+	entries, err := fs.ReadDir(root.FS(), ".")
+	if err != nil {
+		return err
+	}
 	for _, e := range entries {
 		if e.Name() == "lock" {
 			continue
 		}
-		if rerr := hostopen.PlainRemoveAll(filepath.Join(dir, e.Name()), hostopen.Unreviewed); rerr != nil {
+		if rerr := root.RemoveAll(e.Name()); rerr != nil {
 			return rerr
 		}
 	}
@@ -213,8 +227,11 @@ func removeEmptiedStore(dir string) error {
 	if !ok {
 		return fmt.Errorf("not removing %s: a concurrent byre is using it (its contents were already deleted)", dir)
 	}
-	rmErr := hostopen.PlainRemove(lockPath, hostopen.Unreviewed)
-	dirErr := hostopen.PlainRemove(dir, hostopen.Unreviewed)
+	// Both removals go through anchored roots for the same reason the clear
+	// above does: the lock file is unlinked from the verified store directory,
+	// and the store directory itself from its verified parent.
+	rmErr := removeIn(dir, "lock")
+	dirErr := removeIn(filepath.Dir(dir), filepath.Base(dir))
 	relErr := l.Release()
 	if rmErr != nil && !os.IsNotExist(rmErr) {
 		return fmt.Errorf("removing %s: %w", lockPath, rmErr)
@@ -223,4 +240,16 @@ func removeEmptiedStore(dir string) error {
 		return fmt.Errorf("removing %s: %w (recreated by a concurrent byre? its contents were already deleted)", dir, dirErr)
 	}
 	return relErr
+}
+
+// removeIn unlinks one name from a directory anchored no-follow, so a swapped
+// ancestor cannot redirect the removal. A missing directory means the name is
+// missing too, which is what the caller's IsNotExist branches already handle.
+func removeIn(dir, name string) error {
+	root, err := hostopen.OpenDirRootNoFollow(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Remove(name)
 }

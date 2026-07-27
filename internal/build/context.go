@@ -200,7 +200,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	// different surface but the same class; a rebuild concurrent with a live
 	// self-edit session is where it applies.
 	ctxName := filepath.Base(paths.ContextDir)
-	storeRoot, err := hostopen.PlainOpenRoot(paths.Dir, hostopen.Unreviewed)
+	storeRoot, err := hostopen.OpenDirRootNoFollow(paths.Dir)
 	if err != nil {
 		return "", err
 	}
@@ -895,7 +895,7 @@ func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, to
 // swap to a FIFO returns instead of hanging and is rejected rather than staged.
 // This mirrors internal/deliver/transport.go.
 func copyPath(src string, dstRoot *os.Root, dst string, b *copyBudget) error {
-	info, err := hostopen.PlainLstat(src, hostopen.Unreviewed)
+	info, err := hostopen.StatNoFollow(src)
 	if err != nil {
 		return err
 	}

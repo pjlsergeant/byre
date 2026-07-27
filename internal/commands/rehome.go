@@ -65,7 +65,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 	// migration), with the live-session checks re-evaluated inside.
 	oldDir := filepath.Join(paths.Home, "projects", oldID)
 	oldLock := filepath.Join(oldDir, "lock")
-	if err := hostopen.PlainMkdirAll(filepath.Dir(oldLock), 0o755, hostopen.Unreviewed); err != nil {
+	if err := hostopen.MkdirAllIn(paths.Home, filepath.Join("projects", oldID), 0o755); err != nil {
 		return err
 	}
 	// Set under the locks, acted on after: the old store dir holds the lock
