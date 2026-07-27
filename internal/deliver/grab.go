@@ -246,7 +246,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		failed++
 	}
 	if enumErr != nil {
-		fmt.Fprintf(cfg.Err, "byre: enumerating %s in the box failed partway (%v) — the grab may be incomplete\n", abs, firstLine(enumErr))
+		fmt.Fprintf(cfg.Err, "byre: enumerating %s in the box failed partway (%s) — the grab may be incomplete\n", abs, packages.EscapeTerminal(firstLine(enumErr)))
 		failed++
 	}
 	landed := tree.path

@@ -391,6 +391,13 @@ func reconcilePorts(doc *tomldoc.Doc, cur, want []config.Port) error {
 			}
 		}
 		claim(true)
+		// Accepted residual: with only the OTHER class on disk, or with a
+		// hand-authored layer holding two blocks of the SAME class for one
+		// container, this cross-class fill can hand a comment to a block its
+		// entry never occupied. The marker+binding pair is the shape the
+		// editor and ADR 0018 produce, and it is complete above; finer
+		// identity than (container, remove) would be machinery for a config
+		// no byre surface writes.
 		claim(false)
 		for i, w := range wants {
 			if j := target[i]; j >= 0 {
