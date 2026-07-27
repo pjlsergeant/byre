@@ -2,12 +2,12 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -33,7 +33,7 @@ type refHit struct {
 func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	var hits []refHit
 	check := func(where, path string) {
-		st, err := os.Stat(path)
+		st, err := hostopen.PlainStat(path, hostopen.Unreviewed)
 		if err != nil || st.IsDir() {
 			return // no config here = provably no reference
 		}
@@ -52,7 +52,7 @@ func scanReferences(home string, cat *packages.Catalog, id string) []refHit {
 	// (which resolution follows) are scanned too; check's stat skips
 	// entries with no config file under them.
 	subdirs := func(dir string) []string {
-		entries, err := os.ReadDir(dir)
+		entries, err := hostopen.PlainReadDir(dir, hostopen.Unreviewed)
 		if err != nil {
 			return nil
 		}

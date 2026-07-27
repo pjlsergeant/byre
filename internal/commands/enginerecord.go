@@ -95,7 +95,7 @@ func recordSessionEngine(w io.Writer, paths project.Paths, eng runner.Engine, un
 		if err != nil {
 			return err
 		}
-		defer os.Remove(tmp.Name())
+		defer hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
 		if _, err := tmp.WriteString(line + "\n"); err != nil {
 			tmp.Close()
 			return err
@@ -103,7 +103,7 @@ func recordSessionEngine(w io.Writer, paths project.Paths, eng runner.Engine, un
 		if err := tmp.Close(); err != nil {
 			return err
 		}
-		return os.Rename(tmp.Name(), engineRecordPath(paths))
+		return hostopen.PlainRename(tmp.Name(), engineRecordPath(paths), hostopen.Unreviewed)
 	}()
 	if err != nil {
 		fmt.Fprintf(w, "byre: couldn't record the session engine (%v) — the next develop will re-check every installed engine\n", err)

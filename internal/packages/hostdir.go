@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // hostDirCache keeps extracted bundled package trees for the process lifetime
@@ -40,7 +42,7 @@ func (e *Entry) HostDir() (string, error) {
 	hostDirMu.Lock()
 	defer hostDirMu.Unlock()
 	if d, ok := hostDirCache[key]; ok {
-		if _, err := os.Stat(d); err == nil {
+		if _, err := hostopen.PlainStat(d, hostopen.ByreCreated); err == nil {
 			return d, nil
 		}
 	}
@@ -51,12 +53,12 @@ func (e *Entry) HostDir() (string, error) {
 	// Sub-dir per package under the shared root; ids are [a-z0-9-] with one
 	// owner slash, flattened. The counter disambiguates version re-extracts.
 	root := filepath.Join(base, fmt.Sprintf("%d-%s", len(hostDirCache), strings.ReplaceAll(BareName(e.ID), "/", "-")))
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(root, 0o755, hostopen.ByreCreated); err != nil {
 		return "", err
 	}
 	sub, err := fs.Sub(e.FS, e.Sub)
 	if err != nil {
-		os.RemoveAll(root)
+		hostopen.PlainRemoveAll(root, hostopen.ByreCreated)
 		return "", err
 	}
 	err = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, werr error) error {
@@ -65,19 +67,19 @@ func (e *Entry) HostDir() (string, error) {
 		}
 		out := filepath.Join(root, p)
 		if d.IsDir() {
-			return os.MkdirAll(out, 0o755)
+			return hostopen.PlainMkdirAll(out, 0o755, hostopen.ByreCreated)
 		}
 		b, rerr := fs.ReadFile(sub, p)
 		if rerr != nil {
 			return rerr
 		}
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		if err := hostopen.PlainMkdirAll(filepath.Dir(out), 0o755, hostopen.ByreCreated); err != nil {
 			return err
 		}
-		return os.WriteFile(out, b, 0o644)
+		return hostopen.PlainWriteFile(out, b, 0o644, hostopen.ByreCreated)
 	})
 	if err != nil {
-		os.RemoveAll(root)
+		hostopen.PlainRemoveAll(root, hostopen.ByreCreated)
 		return "", err
 	}
 	hostDirCache[key] = root
@@ -106,7 +108,7 @@ func CleanupHostDirs() {
 	hostDirMu.Lock()
 	defer hostDirMu.Unlock()
 	if hostDirRoot != "" {
-		os.RemoveAll(hostDirRoot)
+		hostopen.PlainRemoveAll(hostDirRoot, hostopen.ByreCreated)
 		hostDirRoot = ""
 		hostDirCache = map[string]string{}
 	}
@@ -120,7 +122,7 @@ func CleanupHostDirs() {
 // age instead: older than a day is no live CLI invocation. Same discipline
 // as tuitest's build-dir reap.
 func reapStaleEmbedRoots() {
-	entries, err := os.ReadDir(os.TempDir())
+	entries, err := hostopen.PlainReadDir(os.TempDir(), hostopen.HostUserOwned)
 	if err != nil {
 		return
 	}
@@ -135,7 +137,7 @@ func reapStaleEmbedRoots() {
 		if !hasPid || perr != nil || pid <= 0 {
 			// Legacy layout: age-gated best-effort cleanup.
 			if info, ierr := e.Info(); ierr == nil && time.Since(info.ModTime()) > 24*time.Hour {
-				os.RemoveAll(full)
+				hostopen.PlainRemoveAll(full, hostopen.ByreCreated)
 			}
 			continue
 		}
@@ -144,7 +146,7 @@ func reapStaleEmbedRoots() {
 			// (hostDirBase's early return), so a same-pid dir is residue
 			// from a dead pid-reused incarnation — a liveness probe would
 			// misread it as ours. Remove unconditionally, like tuitest.
-			os.RemoveAll(full)
+			hostopen.PlainRemoveAll(full, hostopen.ByreCreated)
 			continue
 		}
 		proc, ferr := os.FindProcess(pid)
@@ -155,6 +157,6 @@ func reapStaleEmbedRoots() {
 		if !errors.Is(serr, os.ErrProcessDone) && !errors.Is(serr, syscall.ESRCH) {
 			continue // running, or not provably dead — keep
 		}
-		os.RemoveAll(full)
+		hostopen.PlainRemoveAll(full, hostopen.ByreCreated)
 	}
 }

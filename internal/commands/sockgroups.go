@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -98,7 +99,7 @@ func warnSockSources(r sessionRunner, w io.Writer, params runner.RunParams, res 
 		if !ok {
 			continue
 		}
-		fi, err := os.Stat(host)
+		fi, err := hostopen.PlainStat(host, hostopen.HostUserOwned)
 		if err != nil {
 			if os.IsNotExist(err) {
 				fmt.Fprintf(w, "byre: warning: skill %q mounts %q but the host source is missing (Docker not running? Podman-only host?) -- launching anyway; the engine is the authority\n", sg.Skill, host)

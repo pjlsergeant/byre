@@ -314,7 +314,7 @@ func peekDescription(raw []byte) string {
 func (c *Catalog) loadLocal(root string, kind Kind) error {
 	prim := PrimaryName(kind)
 	// Two-level walk: root/<name>/prim or root/<owner>/<name>/prim.
-	entries, err := os.ReadDir(root)
+	entries, err := hostopen.PlainReadDir(root, hostopen.StoreOwned)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -327,7 +327,7 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 		}
 		// Skip backup / non-package dirs.
 		level1 := filepath.Join(root, e.Name())
-		if _, err := os.Stat(filepath.Join(level1, prim)); err == nil {
+		if _, err := hostopen.PlainStat(filepath.Join(level1, prim), hostopen.StoreOwned); err == nil {
 			// Package root at level 1 (bare id).
 			if err := c.ingestLocal(e.Name(), level1, kind, prim); err != nil {
 				return err
@@ -335,7 +335,7 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 			continue
 		}
 		// Maybe owner/name nesting.
-		sub, err := os.ReadDir(level1)
+		sub, err := hostopen.PlainReadDir(level1, hostopen.StoreOwned)
 		if err != nil {
 			continue
 		}
@@ -344,7 +344,7 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 				continue
 			}
 			level2 := filepath.Join(level1, s.Name())
-			if _, err := os.Stat(filepath.Join(level2, prim)); err == nil {
+			if _, err := hostopen.PlainStat(filepath.Join(level2, prim), hostopen.StoreOwned); err == nil {
 				id := e.Name() + "/" + s.Name()
 				if err := c.ingestLocal(id, level2, kind, prim); err != nil {
 					return err

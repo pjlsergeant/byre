@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
@@ -46,7 +47,7 @@ func WriteProjectConfig(destPath, template, agent string, skills []string) error
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer hostopen.PlainRemove(tmpName, hostopen.ByreCreated)
 	if _, err := tmp.WriteString(b.String()); err != nil {
 		tmp.Close()
 		return err
@@ -74,7 +75,7 @@ func SaveDefault(home, template, agent string) error {
 	// default.config lives directly in home, which is not a project store —
 	// creating it carries no enrollment semantics (AtomicWrite itself never
 	// creates directories).
-	if err := os.MkdirAll(home, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	path := filepath.Join(home, "default.config")
@@ -157,7 +158,7 @@ func SharedAuthPick(home, agent string) string {
 // Surgical, idempotent, and refused when the file can't be parsed.
 func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	// Same as SaveDefault: home is not a store; creating it enrolls nothing.
-	if err := os.MkdirAll(home, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	path := filepath.Join(home, "default.config")
@@ -250,7 +251,7 @@ const defaultConfigStub = "# byre default.config — your favourites for new pro
 // readDefaultConfig returns ~/.byre/default.config's content, or the stub for
 // a file that doesn't exist (or is empty) yet.
 func readDefaultConfig(home string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(home, "default.config"))
+	b, err := hostopen.PlainReadFile(filepath.Join(home, "default.config"), hostopen.StoreOwned)
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}

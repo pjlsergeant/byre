@@ -149,8 +149,8 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// so it has no path to an external .git to hardlink (and hardlinks can't
 	// cross filesystems); recorded so it isn't re-raised.
 	structCommon := filepath.Dir(filepath.Dir(gitDir))
-	sc, scErr := os.Stat(structCommon)
-	cc, ccErr := os.Stat(common)
+	sc, scErr := hostopen.PlainStat(structCommon, hostopen.IdentityChecked)
+	cc, ccErr := hostopen.PlainStat(common, hostopen.IdentityChecked)
 	if scErr != nil || ccErr != nil || !os.SameFile(sc, cc) {
 		return worktreeInfo{}, false, fmt.Errorf(
 			"%s has inconsistent git worktree metadata: commondir points at %q, "+
@@ -176,7 +176,7 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 				"run `git worktree repair`", dir, err)
 	}
 	back := strings.TrimRight(string(backData), "\r\n")
-	bp, bpErr := os.Stat(back)
+	bp, bpErr := hostopen.PlainStat(back, hostopen.IdentityChecked)
 	// Compare against gitInfo — the inode we OPENED and read — not a fresh
 	// os.Stat(gitPath), so a mid-check .git swap cannot satisfy this.
 	if bpErr != nil || !os.SameFile(bp, gitInfo) {
@@ -223,7 +223,7 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// function. hostCommon is symlink-free, so this Stat re-walks no mutable
 	// component; what remains after it is only the byre-wide post-return
 	// pathname residual documented above.
-	hc, hcErr := os.Stat(hostCommon)
+	hc, hcErr := hostopen.PlainStat(hostCommon, hostopen.IdentityChecked)
 	if hcErr != nil || !os.SameFile(sc, hc) {
 		return worktreeInfo{}, false, fmt.Errorf(
 			"%s: common git dir %q changed while resolving it for mounting — refusing to mount", dir, structCommon)

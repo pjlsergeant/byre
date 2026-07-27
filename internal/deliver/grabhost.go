@@ -48,7 +48,7 @@ type destination struct {
 // and its parent must already exist (no mkdir -p surprises from a typo).
 func resolveDest(hostPath, boxBase string) (*destination, error) {
 	var dir, base string
-	st, err := os.Stat(hostPath)
+	st, err := hostopen.PlainStat(hostPath, hostopen.Unreviewed)
 	switch {
 	case err == nil && st.IsDir():
 		dir, base = hostPath, boxBase
@@ -59,7 +59,7 @@ func resolveDest(hostPath, boxBase string) (*destination, error) {
 			return nil, fmt.Errorf("destination %s: no such directory", hostPath)
 		}
 		parent := filepath.Dir(hostPath)
-		pst, perr := os.Stat(parent)
+		pst, perr := hostopen.PlainStat(parent, hostopen.Unreviewed)
 		if perr != nil {
 			return nil, fmt.Errorf("destination %s: %w", hostPath, perr)
 		}

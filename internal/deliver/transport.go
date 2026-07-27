@@ -98,7 +98,7 @@ mkdir -p "$1"
 // deliverPath delivers one source argument and returns the landed top-level
 // in-box path ("" when the source was skipped, e.g. a FIFO).
 func deliverPath(cfg Config, sess Session, src string) (string, error) {
-	info, err := os.Lstat(src)
+	info, err := hostopen.PlainLstat(src, hostopen.HostUserOwned)
 	if err != nil {
 		return "", fmt.Errorf("delivering %s: %w", src, err)
 	}
@@ -111,7 +111,7 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 		// with a note. Checking here too would be the same rule at two layers.
 		// The remote leg (planPath) does check up front, because its plan is
 		// built before any open happens.
-		target, err := os.Stat(src)
+		target, err := hostopen.PlainStat(src, hostopen.HostUserOwned)
 		if err != nil {
 			return "", fmt.Errorf("delivering %s: broken symlink: %w", src, err)
 		}

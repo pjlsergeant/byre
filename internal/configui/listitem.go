@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -577,12 +578,12 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if _, err := f.WriteString(m.itemProse); err != nil {
 				f.Close()
-				os.Remove(f.Name())
+				hostopen.PlainRemove(f.Name(), hostopen.ByreCreated)
 				m.itemErr = err.Error()
 				return m, nil
 			}
 			if err := f.Close(); err != nil {
-				os.Remove(f.Name())
+				hostopen.PlainRemove(f.Name(), hostopen.ByreCreated)
 				m.itemErr = err.Error()
 				return m, nil
 			}
@@ -693,7 +694,7 @@ func completeHostPath(val string) string {
 	} else {
 		dir, prefix = filepath.Dir(exp), filepath.Base(exp)
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := hostopen.PlainReadDir(dir, hostopen.HostUserOwned)
 	if err != nil {
 		return ""
 	}
@@ -974,12 +975,12 @@ func claudeSkillDirNote(name, path string) string {
 	if skills.ValidateClaudeSkillDir(dir, strings.ToLower(strings.TrimSpace(name))) == nil {
 		return ""
 	}
-	if fi, err := os.Stat(dir); err != nil {
+	if fi, err := hostopen.PlainStat(dir, hostopen.Unreviewed); err != nil {
 		return "path missing — build will fail"
 	} else if !fi.IsDir() {
 		return "not a directory — build will fail"
 	}
-	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+	if _, err := hostopen.PlainStat(filepath.Join(dir, "SKILL.md"), hostopen.Unreviewed); err != nil {
 		return "no SKILL.md — build will fail"
 	}
 	return "SKILL.md invalid or name mismatch — build will fail"
@@ -1021,12 +1022,12 @@ func contextDeclLine(cd config.ContextDecl) string {
 func (m model) onProseEditorClosed(err error) model {
 	path := m.prosePath
 	m.prosePath = ""
-	defer os.Remove(path)
+	defer hostopen.PlainRemove(path, hostopen.ByreCreated)
 	if err != nil {
 		m.itemErr = "$EDITOR: " + err.Error()
 		return m
 	}
-	b, rerr := os.ReadFile(path)
+	b, rerr := hostopen.PlainReadFile(path, hostopen.ByreCreated)
 	if rerr != nil {
 		m.itemErr = rerr.Error()
 		return m

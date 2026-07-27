@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // generatedMarker is the phrase every generated artifact carries; only
@@ -80,7 +82,7 @@ func installApp(s Streams, box string, d installDeps) error {
 func installDarwin(s Streams, box string, d installDeps) error {
 	appDir := filepath.Join(d.home, "Applications")
 	appPath := filepath.Join(appDir, "Byre Deliver.app")
-	if err := os.MkdirAll(appDir, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(appDir, 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
 	source := deliverAppSource(d.exe, box)
@@ -90,10 +92,10 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// even be established — is refused, never clobbered.
 	marker := filepath.Join(appPath, "Contents", "Resources", "droplet.applescript")
 	appExists := false
-	switch _, err := os.Stat(appPath); {
+	switch _, err := hostopen.PlainStat(appPath, hostopen.HostUserOwned); {
 	case err == nil:
 		appExists = true
-		if prev, err := os.ReadFile(marker); err != nil || !strings.Contains(string(prev), generatedMarker) {
+		if prev, err := hostopen.PlainReadFile(marker, hostopen.HostUserOwned); err != nil || !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(appPath)
 		}
 	case !os.IsNotExist(err):
@@ -107,9 +109,9 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// making the error unreliable to interpret and the retry misleading).
 	svcPath := filepath.Join(d.home, "Library", "Services", "Deliver to Byre.workflow")
 	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")
-	switch _, err := os.Stat(svcPath); {
+	switch _, err := hostopen.PlainStat(svcPath, hostopen.HostUserOwned); {
 	case err == nil:
-		if prev, err := os.ReadFile(wflowPath); err != nil || !strings.Contains(string(prev), generatedMarker) {
+		if prev, err := hostopen.PlainReadFile(wflowPath, hostopen.HostUserOwned); err != nil || !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(svcPath)
 		}
 	case !os.IsNotExist(err):
@@ -120,31 +122,31 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(srcDir)
+	defer hostopen.PlainRemoveAll(srcDir, hostopen.ByreCreated)
 	srcPath := filepath.Join(srcDir, "droplet.applescript")
-	if err := os.WriteFile(srcPath, []byte(source), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(srcPath, []byte(source), 0o644, hostopen.ByreCreated); err != nil {
 		return err
 	}
 	// Assemble into a STAGED bundle first: a broken osacompile, bad disk, or
 	// malformed source must never destroy the working app already installed.
 	// Same parent dir, so the final swap is one rename.
 	staged := filepath.Join(appDir, ".Byre Deliver.staged.app")
-	_ = os.RemoveAll(staged)
+	_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 	// osacompile assembles the bundle from Apple's signed applet stub — the
 	// whole "compile": no toolchain, no network, milliseconds (ADR 0021).
 	if err := d.run("osacompile", "-o", staged, srcPath); err != nil {
-		_ = os.RemoveAll(staged)
+		_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 		return fmt.Errorf("assembling the app (osacompile): %w", err)
 	}
 	// Ship the readable source in the bundle — the artifact stays inspectable.
-	if err := os.WriteFile(filepath.Join(staged, "Contents", "Resources", "droplet.applescript"), []byte(source), 0o644); err != nil {
-		_ = os.RemoveAll(staged)
+	if err := hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", "droplet.applescript"), []byte(source), 0o644, hostopen.ByreCreated); err != nil {
+		_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
 		return err
 	}
 	// Icon: overwrite the stub's droplet/applet icns with ours.
 	if icns, err := packICNS(deliverIconPNG); err == nil {
 		for _, name := range []string{"droplet.icns", "applet.icns"} {
-			_ = os.WriteFile(filepath.Join(staged, "Contents", "Resources", name), icns, 0o644)
+			_ = hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", name), icns, 0o644, hostopen.ByreCreated)
 		}
 	} else {
 		fmt.Fprintf(s.Err, "byre: warning: icon skipped (%v)\n", err)
@@ -161,25 +163,25 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// NEITHER bundle installed.
 	if appExists {
 		backup := filepath.Join(appDir, ".Byre Deliver.previous.app")
-		_ = os.RemoveAll(backup)
-		if err := os.Rename(appPath, backup); err != nil {
-			_ = os.RemoveAll(staged)
+		_ = hostopen.PlainRemoveAll(backup, hostopen.HostUserOwned)
+		if err := hostopen.PlainRename(appPath, backup, hostopen.HostUserOwned); err != nil {
+			_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
 			return fmt.Errorf("setting the old app aside: %w", err)
 		}
-		if err := os.Rename(staged, appPath); err != nil {
-			_ = os.RemoveAll(staged)
-			if rerr := os.Rename(backup, appPath); rerr != nil {
+		if err := hostopen.PlainRename(staged, appPath, hostopen.HostUserOwned); err != nil {
+			_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
+			if rerr := hostopen.PlainRename(backup, appPath, hostopen.HostUserOwned); rerr != nil {
 				// The one truly bad outcome: say exactly where the working
 				// app still lives instead of claiming a restore that failed.
 				return fmt.Errorf("installing the assembled app failed (%v) AND restoring the old one failed (%v) — your previous app is intact at %s; rename it back by hand", err, rerr, backup)
 			}
 			return fmt.Errorf("installing the assembled app (old app restored): %w", err)
 		}
-		if err := os.RemoveAll(backup); err != nil {
+		if err := hostopen.PlainRemoveAll(backup, hostopen.HostUserOwned); err != nil {
 			fmt.Fprintf(s.Err, "byre: warning: could not remove the old app's backup at %s (%v) — delete it yourself\n", backup, err)
 		}
-	} else if err := os.Rename(staged, appPath); err != nil {
-		_ = os.RemoveAll(staged)
+	} else if err := hostopen.PlainRename(staged, appPath, hostopen.HostUserOwned); err != nil {
+		_ = hostopen.PlainRemoveAll(staged, hostopen.ByreCreated)
 		return fmt.Errorf("installing the assembled app: %w", err)
 	}
 	_ = d.run("touch", appPath) // nudge Finder's icon cache
@@ -190,13 +192,13 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// preflighted above, before the app was touched; regeneration is gated
 	// on the explicit generated marker there.
 	info, wflow := quickActionFiles(d.exe, box)
-	if err := os.MkdirAll(filepath.Join(svcPath, "Contents"), 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(filepath.Join(svcPath, "Contents"), 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(svcPath, "Contents", "Info.plist"), []byte(info), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(filepath.Join(svcPath, "Contents", "Info.plist"), []byte(info), 0o644, hostopen.HostUserOwned); err != nil {
 		return err
 	}
-	if err := os.WriteFile(wflowPath, []byte(wflow), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(wflowPath, []byte(wflow), 0o644, hostopen.HostUserOwned); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Out, "%s\n", svcPath)
@@ -210,7 +212,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 func installLinux(s Streams, box string, d installDeps) error {
 	appsDir := filepath.Join(d.home, ".local", "share", "applications")
 	entryPath := filepath.Join(appsDir, "byre-deliver.desktop")
-	switch prev, err := os.ReadFile(entryPath); {
+	switch prev, err := hostopen.PlainReadFile(entryPath, hostopen.HostUserOwned); {
 	case err == nil:
 		if !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(entryPath)
@@ -218,10 +220,10 @@ func installLinux(s Streams, box string, d installDeps) error {
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", entryPath, err)
 	}
-	if err := os.MkdirAll(appsDir, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(appsDir, 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
-	if err := os.WriteFile(entryPath, []byte(desktopEntry(d.exe, box)), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(entryPath, []byte(desktopEntry(d.exe, box)), 0o644, hostopen.HostUserOwned); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Out, "%s\n", entryPath)
@@ -230,9 +232,9 @@ func installLinux(s Streams, box string, d installDeps) error {
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(deliverIconPNG)); err == nil {
 		iconDir := filepath.Join(d.home, ".local", "share", "icons", "hicolor",
 			fmt.Sprintf("%dx%d", cfg.Width, cfg.Height), "apps")
-		if err := os.MkdirAll(iconDir, 0o755); err == nil {
+		if err := hostopen.PlainMkdirAll(iconDir, 0o755, hostopen.HostUserOwned); err == nil {
 			iconPath := filepath.Join(iconDir, "byre-deliver.png")
-			if err := os.WriteFile(iconPath, deliverIconPNG, 0o644); err == nil {
+			if err := hostopen.PlainWriteFile(iconPath, deliverIconPNG, 0o644, hostopen.HostUserOwned); err == nil {
 				fmt.Fprintf(s.Out, "%s\n", iconPath)
 			}
 		}

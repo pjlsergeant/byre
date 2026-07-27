@@ -11,12 +11,12 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/configui"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -51,7 +51,7 @@ func declLayerPath(projectDir string, global bool) (path, label string, follow b
 		// follow=true: default.config is host-owned (never inside any box
 		// mount) and a dotfiles symlink there is the user's own arrangement.
 		return filepath.Join(home, "default.config"), "global config", true,
-			func() error { return os.MkdirAll(home, 0o755) }, nil
+			func() error { return hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned) }, nil
 	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {

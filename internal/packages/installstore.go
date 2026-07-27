@@ -10,6 +10,7 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/lock"
 )
 
@@ -49,7 +50,7 @@ func SnapshotDir(home, digest string) string {
 // must die here, before any entry is exposed, never at a deletion site.
 func ReadIndex(home string) (map[string]IndexEntry, error) {
 	var f indexFile
-	b, err := os.ReadFile(indexPath(home))
+	b, err := hostopen.PlainReadFile(indexPath(home), hostopen.StoreOwned)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return map[string]IndexEntry{}, nil
@@ -95,28 +96,28 @@ func writeIndex(home string, idx map[string]IndexEntry) error {
 	}
 	if _, err := tmp.WriteString(b.String()); err != nil {
 		tmp.Close()
-		os.Remove(tmp.Name())
+		hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
+		hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
 		return err
 	}
-	return os.Rename(tmp.Name(), indexPath(home))
+	return hostopen.PlainRename(tmp.Name(), indexPath(home), hostopen.ByreCreated)
 }
 
 // WithStoreLock ensures the packages dir, takes the store-global lock,
 // sweeps orphans, and runs fn.
 func WithStoreLock(home string, fn func() error) error {
 	dir := packagesDir(home)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(dir, 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	// Self-ignoring store: installed snapshots are reproducible
 	// artifacts, not source.
 	gi := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(gi); os.IsNotExist(err) {
-		_ = os.WriteFile(gi, []byte("*\n"), 0o644)
+	if _, err := hostopen.PlainStat(gi, hostopen.StoreOwned); os.IsNotExist(err) {
+		_ = hostopen.PlainWriteFile(gi, []byte("*\n"), 0o644, hostopen.StoreOwned)
 	}
 	l, err := lock.Acquire(filepath.Join(dir, ".lock"))
 	if err != nil {
@@ -141,18 +142,18 @@ func sweepOrphans(home string) {
 	for _, e := range idx {
 		live[e.Digest] = true
 	}
-	entries, err := os.ReadDir(packagesDir(home))
+	entries, err := hostopen.PlainReadDir(packagesDir(home), hostopen.StoreOwned)
 	if err != nil {
 		return
 	}
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, ".stage-") || strings.HasPrefix(name, ".index-") {
-			_ = os.RemoveAll(filepath.Join(packagesDir(home), name))
+			_ = hostopen.PlainRemoveAll(filepath.Join(packagesDir(home), name), hostopen.StoreOwned)
 			continue
 		}
 		if e.IsDir() && digestDirRe.MatchString(name) && !live[name] {
-			_ = os.RemoveAll(filepath.Join(packagesDir(home), name))
+			_ = hostopen.PlainRemoveAll(filepath.Join(packagesDir(home), name), hostopen.StoreOwned)
 		}
 	}
 }
@@ -214,7 +215,7 @@ func LandSnapshot(home string, s Snapshot) error {
 	}
 	final := SnapshotDir(home, s.Digest)
 	needWrite := false
-	switch _, err := os.Stat(final); {
+	switch _, err := hostopen.PlainStat(final, hostopen.StoreOwned); {
 	case err == nil:
 		// Same digest already on disk: content-addressed, nothing to write --
 		// unless the caller is repairing a snapshot it knows is broken, in
@@ -222,7 +223,7 @@ func LandSnapshot(home string, s Snapshot) error {
 		// between the remove and the rename leaves the same broken state the
 		// repair was fixing; the reinstall remedy still applies.)
 		if s.Repair {
-			if err := os.RemoveAll(final); err != nil {
+			if err := hostopen.PlainRemoveAll(final, hostopen.StoreOwned); err != nil {
 				return err
 			}
 			needWrite = true
@@ -240,24 +241,24 @@ func LandSnapshot(home string, s Snapshot) error {
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(stage)
-		if err := os.WriteFile(filepath.Join(stage, s.Primary), s.Manifest, 0o644); err != nil {
+		defer hostopen.PlainRemoveAll(stage, hostopen.ByreCreated)
+		if err := hostopen.PlainWriteFile(filepath.Join(stage, s.Primary), s.Manifest, 0o644, hostopen.ByreCreated); err != nil {
 			return err
 		}
 		for dest, content := range s.Files {
 			p := filepath.Join(stage, filepath.FromSlash(dest))
-			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			if err := hostopen.PlainMkdirAll(filepath.Dir(p), 0o755, hostopen.ByreCreated); err != nil {
 				return err
 			}
 			mode := os.FileMode(0o644)
 			if s.Exec[dest] {
 				mode = 0o755
 			}
-			if err := os.WriteFile(p, content, mode); err != nil {
+			if err := hostopen.PlainWriteFile(p, content, mode, hostopen.ByreCreated); err != nil {
 				return err
 			}
 		}
-		if err := os.Rename(stage, final); err != nil {
+		if err := hostopen.PlainRename(stage, final, hostopen.StoreOwned); err != nil {
 			return err
 		}
 	}
@@ -285,7 +286,7 @@ func removeSnapshot(home, digest string) {
 	if !digestDirRe.MatchString(digest) {
 		return
 	}
-	_ = os.RemoveAll(SnapshotDir(home, digest))
+	_ = hostopen.PlainRemoveAll(SnapshotDir(home, digest), hostopen.StoreOwned)
 }
 
 // RemoveInstalled drops an id from the index and deletes its snapshot when no

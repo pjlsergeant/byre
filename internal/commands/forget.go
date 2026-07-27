@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -172,7 +173,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 // develop queued on that lock can't interleave its own store writes with the
 // deletion.
 func clearStoreContents(dir string) error {
-	entries, err := os.ReadDir(dir)
+	entries, err := hostopen.PlainReadDir(dir, hostopen.Unreviewed)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -183,7 +184,7 @@ func clearStoreContents(dir string) error {
 		if e.Name() == "lock" {
 			continue
 		}
-		if rerr := os.RemoveAll(filepath.Join(dir, e.Name())); rerr != nil {
+		if rerr := hostopen.PlainRemoveAll(filepath.Join(dir, e.Name()), hostopen.Unreviewed); rerr != nil {
 			return rerr
 		}
 	}
@@ -212,8 +213,8 @@ func removeEmptiedStore(dir string) error {
 	if !ok {
 		return fmt.Errorf("not removing %s: a concurrent byre is using it (its contents were already deleted)", dir)
 	}
-	rmErr := os.Remove(lockPath)
-	dirErr := os.Remove(dir)
+	rmErr := hostopen.PlainRemove(lockPath, hostopen.Unreviewed)
+	dirErr := hostopen.PlainRemove(dir, hostopen.Unreviewed)
 	relErr := l.Release()
 	if rmErr != nil && !os.IsNotExist(rmErr) {
 		return fmt.Errorf("removing %s: %w", lockPath, rmErr)

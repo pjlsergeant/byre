@@ -410,7 +410,7 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 
 	sub, prim := packages.StoreSubdir(kind), packages.PrimaryName(kind)
 	destDir := filepath.Join(home, sub, filepath.FromSlash(newID))
-	if _, err := os.Stat(destDir); err == nil {
+	if _, err := hostopen.PlainStat(destDir, hostopen.StoreOwned); err == nil {
 		return fmt.Errorf("%s already exists", destDir)
 	}
 
@@ -426,14 +426,14 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 	// rewrite, carrying the SOURCE package's identity under the fork's
 	// path. The stage dir is removed on every failure path.
 	parent := filepath.Dir(destDir)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(parent, 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	stage, err := os.MkdirTemp(parent, ".fork-stage-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(stage) // no-op once the publish rename succeeds
+	defer hostopen.PlainRemoveAll(stage, hostopen.ByreCreated) // no-op once the publish rename succeeds
 	if err := copyDir(hostSrc, stage); err != nil {
 		return err
 	}
@@ -441,7 +441,7 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 	// Provenance comment at the top of the primary file — rewritten in
 	// staging, so a published fork always carries the fork's identity.
 	primPath := filepath.Join(stage, prim)
-	body, err := os.ReadFile(primPath)
+	body, err := hostopen.PlainReadFile(primPath, hostopen.ByreCreated)
 	if err != nil {
 		return err
 	}
@@ -452,12 +452,12 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 		"# Forked from %s@%s\n# Informational only: byre never reads this for resolution, updates, or trust.\n\n[package]\nid = %q\nkind = %q\n\n",
 		src.ID, src.Version, newID, kind,
 	)
-	if err := os.WriteFile(primPath, append([]byte(header), body...), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(primPath, append([]byte(header), body...), 0o644, hostopen.ByreCreated); err != nil {
 		return err
 	}
 	// Publish. Rename refuses an existing destination directory, so a
 	// concurrent fork that won the race is not replaced.
-	if err := os.Rename(stage, destDir); err != nil {
+	if err := hostopen.PlainRename(stage, destDir, hostopen.StoreOwned); err != nil {
 		return fmt.Errorf("publishing the fork: %w", err)
 	}
 
@@ -512,7 +512,7 @@ func copyDir(src, dst string) error {
 		}
 		out := filepath.Join(dst, filepath.FromSlash(rel))
 		if d.IsDir() {
-			return os.MkdirAll(out, 0o755)
+			return hostopen.PlainMkdirAll(out, 0o755, hostopen.ByreCreated)
 		}
 		var fh *os.File
 		var fi os.FileInfo
@@ -535,10 +535,10 @@ func copyDir(src, dst string) error {
 		if remaining < 0 {
 			return fmt.Errorf("fork exceeds the %d-byte budget", packages.MaxPayloadTotal)
 		}
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		if err := hostopen.PlainMkdirAll(filepath.Dir(out), 0o755, hostopen.ByreCreated); err != nil {
 			return err
 		}
-		return os.WriteFile(out, b, fi.Mode().Perm())
+		return hostopen.PlainWriteFile(out, b, fi.Mode().Perm(), hostopen.ByreCreated)
 	})
 }
 
@@ -569,14 +569,14 @@ func PackageInit(s Streams, kind packages.Kind, name string) error {
 		example = templateInitExample(name)
 	}
 	dir := filepath.Join(home, sub, filepath.FromSlash(name))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(dir, 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	path := filepath.Join(dir, prim)
-	if _, err := os.Stat(path); err == nil {
+	if _, err := hostopen.PlainStat(path, hostopen.StoreOwned); err == nil {
 		return fmt.Errorf("%s already exists", path)
 	}
-	if err := os.WriteFile(path, []byte(example), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(path, []byte(example), 0o644, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: created %s\n", path)

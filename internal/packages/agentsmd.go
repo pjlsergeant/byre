@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // agentsMD is the byre-owned guide landed at ~/.byre/AGENTS.md for coding
@@ -37,8 +39,8 @@ var agentsMDTitle = agentsMD[:strings.IndexByte(agentsMD, '\n')+1]
 // rather than following it into some unrelated target file.
 func ensureAgentsMD(home string, out io.Writer) error {
 	path := filepath.Join(home, "AGENTS.md")
-	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() {
-		cur, rerr := os.ReadFile(path)
+	if fi, err := hostopen.PlainLstat(path, hostopen.StoreOwned); err == nil && fi.Mode().IsRegular() {
+		cur, rerr := hostopen.PlainReadFile(path, hostopen.StoreOwned)
 		if rerr == nil && bytes.Equal(cur, []byte(agentsMD)) {
 			return nil
 		}
@@ -51,10 +53,10 @@ func ensureAgentsMD(home string, out io.Writer) error {
 		if rerr != nil || !bytes.HasPrefix(cur, []byte(agentsMDTitle)) {
 			bak, berr := reserveBakName(path)
 			if berr == nil {
-				if berr = os.Rename(path, bak); berr != nil && bak != path+".bak" {
+				if berr = hostopen.PlainRename(path, bak, hostopen.StoreOwned); berr != nil && bak != path+".bak" {
 					// Drop the empty .bak-* placeholder CreateTemp made;
 					// the plain .bak branch created nothing to clean up.
-					_ = os.Remove(bak)
+					_ = hostopen.PlainRemove(bak, hostopen.ByreCreated)
 				}
 			}
 			if berr != nil {
@@ -69,7 +71,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
 	if _, err := tmp.WriteString(agentsMD); err != nil {
 		tmp.Close()
 		return fmt.Errorf("agents guide: %w", err)
@@ -77,10 +79,10 @@ func ensureAgentsMD(home string, out io.Writer) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+	if err := hostopen.PlainChmod(tmp.Name(), 0o644, hostopen.ByreCreated); err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err := hostopen.PlainRename(tmp.Name(), path, hostopen.ByreCreated); err != nil {
 		return fmt.Errorf("agents guide: %w", err)
 	}
 	if out != nil {
@@ -95,7 +97,7 @@ func ensureAgentsMD(home string, out io.Writer) error {
 // clobbered.
 func reserveBakName(path string) (string, error) {
 	bak := path + ".bak"
-	if _, err := os.Lstat(bak); os.IsNotExist(err) {
+	if _, err := hostopen.PlainLstat(bak, hostopen.StoreOwned); os.IsNotExist(err) {
 		return bak, nil
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".bak-*")

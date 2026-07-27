@@ -29,6 +29,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // RequireDemo gates a demo-recording test: skip without BYRE_DEMO_REC=1, fail
@@ -137,7 +139,7 @@ func (s *Session) EndCast(sentinel string) string {
 		s.t.Fatal("timeout waiting for asciinema to finish writing the cast")
 	}
 	s.rec = nil
-	raw, err := os.ReadFile(s.castPath)
+	raw, err := hostopen.PlainReadFile(s.castPath, hostopen.TestHarness)
 	if err != nil {
 		s.t.Fatalf("reading the recorded cast: %v", err)
 	}
@@ -152,7 +154,7 @@ func (s *Session) EndCast(sentinel string) string {
 		s.t.Fatal(err)
 	}
 	events = append(events, castEvent{2, "o", ""})
-	if err := os.WriteFile(s.castPath, []byte(renderCast(header, events)), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(s.castPath, []byte(renderCast(header, events)), 0o644, hostopen.TestHarness); err != nil {
 		s.t.Fatal(err)
 	}
 	return s.castPath
@@ -364,7 +366,7 @@ func WriteDemo(t *testing.T, slug string, scenes ...string) {
 	t.Helper()
 	raws := make([]string, len(scenes))
 	for i, p := range scenes {
-		b, err := os.ReadFile(p)
+		b, err := hostopen.PlainReadFile(p, hostopen.TestHarness)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -379,13 +381,13 @@ func WriteDemo(t *testing.T, slug string, scenes ...string) {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(root, "site", "static", "casts")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(dir, 0o755, hostopen.TestHarness); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, slug+".cast"), []byte(cast), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(filepath.Join(dir, slug+".cast"), []byte(cast), 0o644, hostopen.TestHarness); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, slug+".json"), []byte(meta), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(filepath.Join(dir, slug+".json"), []byte(meta), 0o644, hostopen.TestHarness); err != nil {
 		t.Fatal(err)
 	}
 	_, events, _ := parseCast(cast)

@@ -18,6 +18,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/editorcmd"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -49,7 +50,7 @@ var editProse = func(seed string) (string, error) {
 		return "", err
 	}
 	path := f.Name()
-	defer os.Remove(path)
+	defer hostopen.PlainRemove(path, hostopen.ByreCreated)
 	if _, err := f.WriteString(seed); err != nil {
 		f.Close()
 		return "", err
@@ -61,7 +62,7 @@ var editProse = func(seed string) (string, error) {
 	if err := editorcmd.Command(editor, path).Run(); err != nil {
 		return "", fmt.Errorf("%s: %w", editor, err)
 	}
-	b, err := os.ReadFile(path)
+	b, err := hostopen.PlainReadFile(path, hostopen.ByreCreated)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +141,7 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 		// failure otherwise surfaces only at develop (QA finding 2026-07-25).
 		expanded, xerr := expandHostPath(file)
 		if xerr == nil {
-			switch _, serr := os.Stat(expanded); {
+			switch _, serr := hostopen.PlainStat(expanded, hostopen.HostUserOwned); {
 			case errors.Is(serr, fs.ErrNotExist):
 				fmt.Fprintf(s.Err, "byre: ⚠ %s does not exist yet — the next develop will fail until it does (accepted anyway; create it before then).\n", file)
 			case serr != nil:

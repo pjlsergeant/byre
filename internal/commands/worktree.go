@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 )
@@ -75,7 +76,7 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	// mid-create can leave either without the other). Both probes DEGRADE on
 	// refusal — an unanswerable probe falls back to the plain behavior, and the
 	// in-box add fails loudly on a stale registration anyway.
-	if _, lerr := os.Lstat(target); lerr == nil {
+	if _, lerr := hostopen.PlainLstat(target, hostopen.HostUserOwned); lerr == nil {
 		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
 			return fmt.Errorf("%s is already a registered worktree of this repo — continue with `byre develop` there, "+
 				"or remove it first: git -C %s worktree remove --force %s", target, paths.Canonical, target)
@@ -140,10 +141,10 @@ func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, 
 	// may remove the dir knowing it is this invocation's own (a
 	// second create's cleanup must never unlink the first's live mount source,
 	// and its container must never race the first's registration).
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(filepath.Dir(target), 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
-	if err := os.Mkdir(target, 0o755); err != nil {
+	if err := hostopen.PlainMkdir(target, 0o755, hostopen.HostUserOwned); err != nil {
 		if os.IsExist(err) {
 			return fmt.Errorf("target path %s appeared while preparing the worktree — another `byre worktree` for it may be in flight; wait for it (or clear the path) and retry", target)
 		}
@@ -158,7 +159,7 @@ func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, 
 		// dir; never RemoveAll — partial state is diagnostically useful) so a
 		// retry isn't refused by the exists check. If a registration survived
 		// (create killed mid-remove), say so with the targeted remedy.
-		_ = os.Remove(target)
+		_ = hostopen.PlainRemove(target, hostopen.ByreCreated)
 		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
 			return fmt.Errorf("creating the worktree in the box failed, and it is still registered: %w\n"+
 				"remove it with `git -C %s worktree remove --force %s`, then retry", err, paths.Canonical, target)
@@ -229,7 +230,7 @@ func worktreeCommonGitDir(paths project.Paths) (target, host string, err error) 
 		return paths.CommonGitDir, paths.CommonGitDirHost, nil
 	}
 	gd := filepath.Join(paths.Canonical, ".git")
-	info, lerr := os.Lstat(gd)
+	info, lerr := hostopen.PlainLstat(gd, hostopen.IdentityChecked)
 	if lerr != nil {
 		return "", "", fmt.Errorf("cannot read the repo git dir %q for mounting: %w", gd, lerr)
 	}
@@ -337,7 +338,7 @@ func gitToplevel(dir string) (string, bool) {
 		return "", false
 	}
 	for {
-		fi, err := os.Lstat(filepath.Join(abs, ".git"))
+		fi, err := hostopen.PlainLstat(filepath.Join(abs, ".git"), hostopen.IdentityChecked)
 		if err == nil {
 			switch {
 			case fi.Mode()&os.ModeSymlink != 0:

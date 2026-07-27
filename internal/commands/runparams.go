@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 )
@@ -189,7 +190,7 @@ func checkContainedHostSource(host, workDir string) error {
 // degrade to the lexical judgment -- develop is about to fail on the
 // workspace bind anyway.
 func inTreeByIdentity(workDir, p string) bool {
-	wd, err := os.Stat(workDir)
+	wd, err := hostopen.PlainStat(workDir, hostopen.Unreviewed)
 	if err != nil {
 		return underTree(workDir, p)
 	}
@@ -217,7 +218,7 @@ func identityUnder(wd os.FileInfo, q string) bool {
 		return false
 	}
 	for cur := resolved; ; {
-		if fi, ferr := os.Stat(cur); ferr == nil && os.SameFile(wd, fi) {
+		if fi, ferr := hostopen.PlainStat(cur, hostopen.IdentityChecked); ferr == nil && os.SameFile(wd, fi) {
 			return true
 		}
 		parent := filepath.Dir(cur)

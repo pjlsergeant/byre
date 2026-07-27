@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -53,7 +54,7 @@ func neverEnrolled(paths project.Paths) (bool, error) {
 	if err != nil || recorded {
 		return false, err
 	}
-	if _, serr := os.Stat(paths.Dir); os.IsNotExist(serr) {
+	if _, serr := hostopen.PlainStat(paths.Dir, hostopen.Unreviewed); os.IsNotExist(serr) {
 		return true, nil
 	}
 	return false, nil

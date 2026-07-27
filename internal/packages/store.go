@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // Store stamp file: when its content matches the running byre version the
@@ -32,7 +34,7 @@ const stampName = "bundled/.byre-version"
 // out, when non-nil, receives human notices (mirror regen, legacy found).
 func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) error {
 	for _, sub := range []string{"skills", "templates", "bundled"} {
-		if err := os.MkdirAll(filepath.Join(home, sub), 0o755); err != nil {
+		if err := hostopen.PlainMkdirAll(filepath.Join(home, sub), 0o755, hostopen.StoreOwned); err != nil {
 			return err
 		}
 	}
@@ -40,7 +42,7 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		return err
 	}
 	stampPath := filepath.Join(home, stampName)
-	cur, _ := os.ReadFile(stampPath)
+	cur, _ := hostopen.PlainReadFile(stampPath, hostopen.StoreOwned)
 	// A nil bundled FS (tests, partial fixtures) has no mirror to write --
 	// same tolerance LoadCatalog extends.
 	needMirror := bundled != nil && strings.TrimSpace(string(cur)) != byreVer
@@ -48,10 +50,10 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		if err := writeMirror(home, bundled, byreVer); err != nil {
 			return fmt.Errorf("bundled mirror: %w", err)
 		}
-		if err := os.MkdirAll(filepath.Dir(stampPath), 0o755); err != nil {
+		if err := hostopen.PlainMkdirAll(filepath.Dir(stampPath), 0o755, hostopen.StoreOwned); err != nil {
 			return err
 		}
-		if err := os.WriteFile(stampPath, []byte(byreVer+"\n"), 0o644); err != nil {
+		if err := hostopen.PlainWriteFile(stampPath, []byte(byreVer+"\n"), 0o644, hostopen.StoreOwned); err != nil {
 			return err
 		}
 		if out != nil {
@@ -97,7 +99,7 @@ func findLegacyDirs(home string, bundled fs.FS) []string {
 	}
 	var out []string
 	for _, sub := range []string{"skills", "templates"} {
-		entries, err := os.ReadDir(filepath.Join(home, sub))
+		entries, err := hostopen.PlainReadDir(filepath.Join(home, sub), hostopen.StoreOwned)
 		if err != nil {
 			continue
 		}
@@ -112,7 +114,7 @@ func findLegacyDirs(home string, bundled fs.FS) []string {
 					kind = KindTemplate
 				}
 				prim := PrimaryName(kind)
-				if _, err := os.Stat(filepath.Join(home, sub, e.Name(), prim)); err == nil {
+				if _, err := hostopen.PlainStat(filepath.Join(home, sub, e.Name(), prim), hostopen.StoreOwned); err == nil {
 					out = append(out, filepath.Join(sub, e.Name()))
 				}
 			}
@@ -138,20 +140,20 @@ func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 		}
 		bakRoot := parts[0] + ".legacy"
 		dstDir := filepath.Join(home, bakRoot)
-		if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		if err := hostopen.PlainMkdirAll(dstDir, 0o755, hostopen.StoreOwned); err != nil {
 			return moved, err
 		}
 		dst := filepath.Join(dstDir, parts[1])
 		// If destination exists, unique-ify.
-		if _, err := os.Stat(dst); err == nil {
+		if _, err := hostopen.PlainStat(dst, hostopen.StoreOwned); err == nil {
 			tmp, terr := os.MkdirTemp(dstDir, parts[1]+".")
 			if terr != nil {
 				return moved, fmt.Errorf("archive %s: %w", rel, terr)
 			}
-			os.Remove(tmp) // MkdirTemp created a dir; we want the name for Rename
+			hostopen.PlainRemove(tmp, hostopen.ByreCreated) // MkdirTemp created a dir; we want the name for Rename
 			dst = tmp
 		}
-		if err := os.Rename(src, dst); err != nil {
+		if err := hostopen.PlainRename(src, dst, hostopen.StoreOwned); err != nil {
 			return moved, fmt.Errorf("archive %s: %w", rel, err)
 		}
 		moved = append(moved, rel+" -> "+filepath.Join(bakRoot, filepath.Base(dst)))
@@ -168,7 +170,7 @@ func writeMirror(home string, bundled fs.FS, byreVer string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmp)
+	defer hostopen.PlainRemoveAll(tmp, hostopen.ByreCreated)
 
 	readme := `# Bundled packages (display copy)
 
@@ -181,7 +183,7 @@ To modify a bundled package, fork it:
     byre skill fork <name> <your-id>
     byre template fork <name> <your-id>
 `
-	if err := os.WriteFile(filepath.Join(tmp, "README.md"), []byte(readme), 0o644); err != nil {
+	if err := hostopen.PlainWriteFile(filepath.Join(tmp, "README.md"), []byte(readme), 0o644, hostopen.ByreCreated); err != nil {
 		return err
 	}
 
@@ -194,7 +196,7 @@ To modify a bundled package, fork it:
 		}
 		out := filepath.Join(tmp, p)
 		if d.IsDir() {
-			return os.MkdirAll(out, 0o755)
+			return hostopen.PlainMkdirAll(out, 0o755, hostopen.ByreCreated)
 		}
 		b, err := fs.ReadFile(bundled, p)
 		if err != nil {
@@ -206,10 +208,10 @@ To modify a bundled package, fork it:
 		if base == "skill.toml" || base == "template.config" {
 			b = mirrorPrimary(p, b, byreVer)
 		}
-		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		if err := hostopen.PlainMkdirAll(filepath.Dir(out), 0o755, hostopen.ByreCreated); err != nil {
 			return err
 		}
-		return os.WriteFile(out, b, 0o644)
+		return hostopen.PlainWriteFile(out, b, 0o644, hostopen.ByreCreated)
 	})
 	if err != nil {
 		return err
@@ -217,17 +219,17 @@ To modify a bundled package, fork it:
 
 	// Atomic-ish swap: rename old aside, new in, drop old.
 	old := root + ".old"
-	_ = os.RemoveAll(old)
-	if _, err := os.Stat(root); err == nil {
-		if err := os.Rename(root, old); err != nil {
+	_ = hostopen.PlainRemoveAll(old, hostopen.StoreOwned)
+	if _, err := hostopen.PlainStat(root, hostopen.StoreOwned); err == nil {
+		if err := hostopen.PlainRename(root, old, hostopen.StoreOwned); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(tmp, root); err != nil {
-		_ = os.Rename(old, root) // best-effort restore
+	if err := hostopen.PlainRename(tmp, root, hostopen.StoreOwned); err != nil {
+		_ = hostopen.PlainRename(old, root, hostopen.StoreOwned) // best-effort restore
 		return err
 	}
-	_ = os.RemoveAll(old)
+	_ = hostopen.PlainRemoveAll(old, hostopen.StoreOwned)
 	return nil
 }
 

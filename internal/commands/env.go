@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // hostEnvState is the outcome of resolving one env_from_host entry. Four
@@ -123,7 +124,7 @@ func hostTimezone() string {
 	if tz := os.Getenv("TZ"); tz != "" {
 		return tz
 	}
-	target, err := os.Readlink("/etc/localtime")
+	target, err := hostopen.PlainReadlink("/etc/localtime", hostopen.HostUserOwned)
 	if err != nil {
 		return ""
 	}

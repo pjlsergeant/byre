@@ -895,7 +895,7 @@ func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, to
 // swap to a FIFO returns instead of hanging and is rejected rather than staged.
 // This mirrors internal/deliver/transport.go.
 func copyPath(src string, dstRoot *os.Root, dst string, b *copyBudget) error {
-	info, err := os.Lstat(src)
+	info, err := hostopen.PlainLstat(src, hostopen.Unreviewed)
 	if err != nil {
 		return err
 	}

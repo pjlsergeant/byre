@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -349,7 +349,7 @@ func grantLines(kind packages.Kind, raw []byte) map[string]bool {
 }
 
 func readSnapshotPrimary(home, digest, primary string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(packages.SnapshotDir(home, digest), primary))
+	return hostopen.PlainReadFile(filepath.Join(packages.SnapshotDir(home, digest), primary), hostopen.StoreOwned)
 }
 
 func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error {

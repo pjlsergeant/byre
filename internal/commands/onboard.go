@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/onboard"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -43,7 +43,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// the (rw-mounted) project can't define its own sandbox.
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 
-	if _, err := os.Stat(cfgPath); err == nil {
+	if _, err := hostopen.PlainStat(cfgPath, hostopen.Unreviewed); err == nil {
 		// Already configured. --template/--agent only configure a NEW project, so
 		// don't silently ignore them on an existing one — point at the file.
 		if anyFlag {

@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // Require gates a TUI test: skip without BYRE_TUI_TESTS=1, fail loudly when
@@ -95,7 +97,7 @@ func Binary(t *testing.T) string {
 // ErrProcessDone); any other probe result (e.g. EPERM: alive, different
 // user) keeps the dir.
 func reapStaleBinDirs() {
-	entries, err := os.ReadDir(os.TempDir())
+	entries, err := hostopen.PlainReadDir(os.TempDir(), hostopen.TestHarness)
 	if err != nil {
 		return
 	}
@@ -122,7 +124,7 @@ func reapStaleBinDirs() {
 				continue // running, or not provably dead — keep
 			}
 		}
-		os.RemoveAll(filepath.Join(os.TempDir(), e.Name()))
+		hostopen.PlainRemoveAll(filepath.Join(os.TempDir(), e.Name()), hostopen.TestHarness)
 	}
 }
 
@@ -133,7 +135,7 @@ func repoRoot() (string, error) {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		if _, err := hostopen.PlainStat(filepath.Join(dir, "go.mod"), hostopen.TestHarness); err == nil {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
@@ -304,7 +306,7 @@ func (s *Session) CaptureNow() string {
 // the wrapper's status file — see Start).
 func (s *Session) dead() (bool, int) {
 	s.t.Helper()
-	b, err := os.ReadFile(s.statusFile)
+	b, err := hostopen.PlainReadFile(s.statusFile, hostopen.TestHarness)
 	trimmed := strings.TrimSpace(string(b))
 	if err != nil || trimmed == "" {
 		// Absent, or caught between the shell's truncate and its write:

@@ -282,7 +282,7 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 	addRoot := func(r *os.Root) { roots = append(roots, r) }
 	cleanup = func() {
 		for _, s := range spools {
-			os.Remove(s)
+			hostopen.PlainRemove(s, hostopen.ByreCreated)
 		}
 		// Roots stay open through writeTo (which re-opens interior entries
 		// through them); the caller defers cleanup, so this runs after.
@@ -337,14 +337,14 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 // the build context gets from copyPath. A top-level symlink the user named is
 // their explicit choice and is followed.
 func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src string, addRoot func(*os.Root)) error {
-	info, err := os.Lstat(src)
+	info, err := hostopen.PlainLstat(src, hostopen.HostUserOwned)
 	if err != nil {
 		return fmt.Errorf("delivering %s: %w", src, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		// User named a symlink — follow it (follow=true); writeTo opens it
 		// nonblocking + fd-stat'd so a symlink to a FIFO can't hang.
-		target, err := os.Stat(src)
+		target, err := hostopen.PlainStat(src, hostopen.HostUserOwned)
 		if err != nil {
 			return fmt.Errorf("delivering %s: broken symlink: %w", src, err)
 		}

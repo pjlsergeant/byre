@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // The picker platform adapter (ADR 0021): when deliver's cascade lands on
@@ -90,7 +91,7 @@ func hostPicker(s Streams, verb string) func([]deliver.Session) (deliver.Session
 // stdin carries data. Nil when the process has none (cron, a detached
 // launch) — the capability probe the adapter order needs. Seam for tests.
 var openControllingTTY = func() *os.File {
-	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	f, err := hostopen.PlainOpenFile("/dev/tty", os.O_RDWR, 0, hostopen.Device)
 	if err != nil {
 		return nil
 	}

@@ -117,14 +117,21 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 ## Coding Conventions
 
 - Standard Go style; `gofmt` + `go vet` clean before every commit.
-- **Host-side reads of agent-writable paths ride `internal/hostopen`** —
-  never plain `os.Open`/`os.ReadFile`. Agent-writable = the project tree
-  (and anything a box can shape); a FIFO there hangs a plain open, a
-  device reads unbounded, a pathname re-check races. Unsolicited probes
-  (drift checks, env resolution) must DEGRADE on refusal, never block —
-  and subprocesses probing the project (git) get timeouts. Three external
-  reports found three misses of this pattern in one day (2026-07-18)
-  before it became this rule.
+- **Plain `os` filesystem calls are BANNED outside `internal/hostopen`** —
+  reads, writes and probes alike. Ask three questions of the path: can the
+  agent author the STRING, control a component of the ROUTE, or replace the
+  TARGET? Any yes and the call rides hostopen's real functions (O_NONBLOCK
+  so nothing hangs, type judged from the descriptor, bounded reads,
+  openat-anchored roots). All no, and you say so AT THE CALL SITE:
+  `hostopen.PlainStat(p, hostopen.StoreOwned)`. The Reason is a closed set
+  the compiler enforces and `rg` can audit; `hostopen.Unreviewed` is the
+  honest marker when nobody has checked, and is the backlog. Three external
+  reports found three misses in one day (2026-07-18) before this became a
+  rule; a table of exemptions replaced it and rotted (a new call could ride
+  an old entry), so the justification now lives with the code.
+  Unsolicited probes (drift checks, env resolution) must still DEGRADE on
+  refusal, never block — and subprocesses probing the project (git) get
+  timeouts.
 - Unit tests per package; Docker-touching logic is tested via injected runner
   interfaces (fakes). Gated integration tests (`BYRE_DOCKER_TESTS=1`) run
   host-side.

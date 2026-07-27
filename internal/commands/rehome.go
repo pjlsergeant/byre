@@ -65,7 +65,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 	// migration), with the live-session checks re-evaluated inside.
 	oldDir := filepath.Join(paths.Home, "projects", oldID)
 	oldLock := filepath.Join(oldDir, "lock")
-	if err := os.MkdirAll(filepath.Dir(oldLock), 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(filepath.Dir(oldLock), 0o755, hostopen.Unreviewed); err != nil {
 		return err
 	}
 	// Set under the locks, acted on after: the old store dir holds the lock
@@ -195,7 +195,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 // behind (deleting it then would destroy the only copy).
 func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bool, err error) {
 	safe = true
-	if _, e := os.Stat(filepath.Join(oldDir, "path")); e == nil {
+	if _, e := hostopen.PlainStat(filepath.Join(oldDir, "path"), hostopen.Unreviewed); e == nil {
 		found = true
 	}
 	for _, name := range []string{config.ProjectConfigName, appliedRecord} {
@@ -376,7 +376,7 @@ func RehomeCandidates(s Streams, projectDir string) error {
 // number of stored projects considered (excluding this directory's own id), so
 // the caller can distinguish "no store" from "nothing moved".
 func rehomeCandidates(paths project.Paths) (cands []rehomeCandidate, total int, err error) {
-	entries, err := os.ReadDir(filepath.Join(paths.Home, "projects"))
+	entries, err := hostopen.PlainReadDir(filepath.Join(paths.Home, "projects"), hostopen.StoreOwned)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, 0, nil
@@ -397,7 +397,7 @@ func rehomeCandidates(paths project.Paths) (cands []rehomeCandidate, total int, 
 		}
 		total++
 		was := strings.TrimSuffix(string(rec), "\n")
-		_, serr := os.Stat(was)
+		_, serr := hostopen.PlainStat(was, hostopen.Unreviewed)
 		if serr == nil {
 			continue // path still exists: that project still lives there
 		}
@@ -421,7 +421,7 @@ func lastUsed(projectDir string) time.Time {
 		filepath.Join(projectDir, "context", "Dockerfile.generated"),
 		filepath.Join(projectDir, "path"),
 	} {
-		if fi, err := os.Stat(f); err == nil && fi.ModTime().After(t) {
+		if fi, err := hostopen.PlainStat(f, hostopen.Unreviewed); err == nil && fi.ModTime().After(t) {
 			t = fi.ModTime()
 		}
 	}

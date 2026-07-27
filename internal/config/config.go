@@ -1837,12 +1837,12 @@ func AtomicWrite(path, content string) error {
 	tmpName := tmp.Name()
 	if _, err := tmp.WriteString(content); err != nil {
 		tmp.Close()
-		os.Remove(tmpName)
+		hostopen.PlainRemove(tmpName, hostopen.ByreCreated)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		hostopen.PlainRemove(tmpName, hostopen.ByreCreated)
 		return err
 	}
-	return os.Rename(tmpName, path)
+	return hostopen.PlainRename(tmpName, path, hostopen.Unreviewed)
 }

@@ -2,12 +2,12 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -44,10 +44,10 @@ func LayerNew(s Streams, name string) error {
 		return fmt.Errorf("layer name %q is reserved (%s); pick another name", name, reason)
 	}
 	path := config.LayerPath(home, name)
-	if _, err := os.Stat(path); err == nil {
+	if _, err := hostopen.PlainStat(path, hostopen.StoreOwned); err == nil {
 		return fmt.Errorf("%s already exists", path)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(filepath.Dir(path), 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
 	stub := fmt.Sprintf(`# Named layer %q: a user-authored cascade layer. Every project (or layer)

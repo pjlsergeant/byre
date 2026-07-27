@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -130,7 +131,7 @@ func LoadExtendsChain(home string, cat *packages.Catalog, leafExtends string) ([
 		seen[name] = true
 		walked = append(walked, name)
 		path := LayerPath(home, name)
-		raw, err := os.ReadFile(path)
+		raw, err := hostopen.PlainReadFile(path, hostopen.StoreOwned)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("layer %q not found — create %s", name, path)
 		}
@@ -171,7 +172,7 @@ type LayerInfo struct {
 // ListLayers scans home's layers dir, sorted by name (ReadDir order). A
 // missing dir is an empty list.
 func ListLayers(home string, cat *packages.Catalog) ([]LayerInfo, error) {
-	entries, err := os.ReadDir(LayersDir(home))
+	entries, err := hostopen.PlainReadDir(LayersDir(home), hostopen.StoreOwned)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -187,7 +188,7 @@ func ListLayers(home string, cat *packages.Catalog) ([]LayerInfo, error) {
 		li := LayerInfo{Name: name, Reason: layerProblem(home, cat, name)}
 		// The parent pointer, for display: best-effort even when the chain
 		// above is broken (the reason already says why).
-		if raw, err := os.ReadFile(LayerPath(home, name)); err == nil {
+		if raw, err := hostopen.PlainReadFile(LayerPath(home, name), hostopen.StoreOwned); err == nil {
 			if c, err := ParseLayerBody(raw); err == nil {
 				li.Extends = c.Extends
 			}
@@ -210,7 +211,7 @@ func LoadableLayers(home string, cat *packages.Catalog) (map[string]Config, erro
 		if li.Reason != "" {
 			continue
 		}
-		raw, err := os.ReadFile(LayerPath(home, li.Name))
+		raw, err := hostopen.PlainReadFile(LayerPath(home, li.Name), hostopen.StoreOwned)
 		if err != nil {
 			continue
 		}

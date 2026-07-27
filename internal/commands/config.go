@@ -11,6 +11,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/configui"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -77,7 +78,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		if err := config.ValidateLayerName(layer); err != nil {
 			return err
 		}
-		if _, err := os.Stat(config.LayerPath(home, layer)); err != nil {
+		if _, err := hostopen.PlainStat(config.LayerPath(home, layer), hostopen.StoreOwned); err != nil {
 			return fmt.Errorf("layer %q not found — create it first: byre layer new %s", layer, layer)
 		}
 		target = configui.TargetLayer
@@ -164,12 +165,12 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		// Not a store — no enrollment semantics — but AtomicWrite no longer
 		// creates directories, and quitting an unsaved editor should leave no
 		// fresh ~/.byre behind either: create home only when a write lands.
-		prepare = func() error { return os.MkdirAll(home, 0o755) }
+		prepare = func() error { return hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned) }
 	case configui.TargetLayer:
 		path = config.LayerPath(home, layer)
 		title = "byre layer config  (" + layer + ")"
 		layerDir := filepath.Dir(path)
-		prepare = func() error { return os.MkdirAll(layerDir, 0o755) }
+		prepare = func() error { return hostopen.PlainMkdirAll(layerDir, 0o755, hostopen.StoreOwned) }
 	default:
 		paths, perr := project.Resolve(projectDir)
 		if perr != nil {

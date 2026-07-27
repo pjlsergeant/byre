@@ -227,7 +227,7 @@ func Resolve(projectDir string) (Paths, error) {
 // file lives inside the directory created here — so the fence cannot ride
 // that lock instead.
 func (p Paths) Bootstrap() error {
-	if err := os.MkdirAll(p.ContextDir, 0o755); err != nil {
+	if err := hostopen.PlainMkdirAll(p.ContextDir, 0o755, hostopen.Unreviewed); err != nil {
 		return err
 	}
 	recorded, err := p.checkRecord()
@@ -238,7 +238,7 @@ func (p Paths) Bootstrap() error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer hostopen.PlainRemove(tmp.Name(), hostopen.ByreCreated)
 	if _, err := tmp.WriteString(p.Canonical + "\n"); err != nil {
 		tmp.Close()
 		return err

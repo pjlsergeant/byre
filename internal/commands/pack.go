@@ -2,10 +2,10 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/version"
@@ -75,7 +75,7 @@ func looksLikeURI(arg string) bool {
 	if strings.HasSuffix(arg, "skill.toml") || strings.HasSuffix(arg, "template.config") {
 		return true
 	}
-	if st, err := os.Stat(arg); err == nil && !st.IsDir() {
+	if st, err := hostopen.PlainStat(arg, hostopen.HostUserOwned); err == nil && !st.IsDir() {
 		return true
 	}
 	return false

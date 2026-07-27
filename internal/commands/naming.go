@@ -3,7 +3,6 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -162,7 +162,7 @@ func projectVolumes(r volumeRunner, home, id string) ([]string, error) {
 
 // knownProjectIDs lists the ids byre has a ~/.byre/projects/<id>/ dir for.
 func knownProjectIDs(home string) []string {
-	entries, err := os.ReadDir(filepath.Join(home, "projects"))
+	entries, err := hostopen.PlainReadDir(filepath.Join(home, "projects"), hostopen.StoreOwned)
 	if err != nil {
 		return nil
 	}

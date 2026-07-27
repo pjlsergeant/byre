@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -226,7 +227,7 @@ func pathExists(p string) bool {
 	if !filepath.IsAbs(p) {
 		return false
 	}
-	st, err := os.Stat(p)
+	st, err := hostopen.PlainStat(p, hostopen.HostUserOwned)
 	return err == nil && (st.Mode().IsRegular() || st.IsDir())
 }
 
