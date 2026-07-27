@@ -46,9 +46,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+s":
 		return m.save(), nil // global save-in-place; feedback via subFooterNote
 	case "a":
+		m.itemHostEnv = false
 		return m.startItem(-1), nil
 	case "enter":
 		if m.listCur == addRow {
+			m.itemHostEnv = false
 			return m.startItem(-1), nil
 		}
 		r := rows[m.listCur]
@@ -60,13 +62,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = skillRowNote(r)
 			return m, nil
 		}
-		if r.kind == rowHostEnv {
-			m.status = hostEnvRowNote()
-			return m, nil
-		}
 		if r.kind == rowEnvDoc {
 			// The obvious move on reading a suggestion is "set it": open the
-			// add editor with the key prefilled, cursor on the value.
+			// add editor with the key prefilled, cursor on the value. An
+			// env_docs suggestion is about [env], not the passthrough.
+			m.itemHostEnv = false
 			next := m.startItem(-1)
 			next.inputs[0].SetValue(r.ident)
 			next.focusItem(1)
@@ -149,6 +149,14 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		default: // apt, ports: no per-entry override, just the off-switch
 			return []menuChoice{{"Remove in this project", "d", actRemoveHere}}
 		}
+	case rowHostEnv:
+		// idx >= 0 means this file sets the key; anything else is inherited
+		// (a lower layer, or byre's shipped defaults) and gets the override
+		// door rather than a delete that would have nothing to delete.
+		if r.idx >= 0 {
+			return []menuChoice{{"Edit", "e", actEdit}, {"Delete", "d", actDelete}}
+		}
+		return []menuChoice{{"Override here", "e", actOverride}}
 	case rowRemoved:
 		return []menuChoice{{"Restore", "d", actRestore}}
 	case rowStaleMarker:
@@ -208,6 +216,9 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // every action is a single legible change to the open file (ADR 0018).
 func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 	m.status = ""
+	// [env] literals and env_from_host passthroughs share the Env screen, so
+	// the row -- not the field -- decides which item editor opens.
+	m.itemHostEnv = r.kind == rowHostEnv
 	switch act {
 	case actEdit:
 		return m.startItem(r.idx), nil
@@ -281,6 +292,16 @@ func (m *model) removeHere(r listRow) {
 // target -- Merge's replace rules do the shadowing).
 func (m model) startOverride(r listRow) model {
 	next := m.startItem(-1)
+	if m.itemHostEnv {
+		// Prefilled with what is being overridden, so "pin what I already
+		// have" is one keypress and any change is deliberate.
+		scheme, arg := hostEnvScheme(r.vals[1])
+		next.itemMode = scheme
+		next.inputLabels = []string{"Key", hostEnvArgLabel(scheme)}
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(arg)
+		return next
+	}
 	switch m.listField {
 	case fEnv, fFiles:
 		next.inputs[0].SetValue(r.vals[0])
@@ -333,10 +354,6 @@ func skillRowNote(r listRow) string {
 
 // hostEnvRowNote points at the two hand edits that change the passthrough
 // (ADR 0026): disabling the key, or shadowing it with an explicit env value.
-func hostEnvRowNote() string {
-	return "host passthrough — set KEY = \"\" under env_from_host in this file to disable, or an [env] KEY to override"
-}
-
 // deadEndNote explains a keypress the cascade can't honor for this row.
 func deadEndNote(f fieldID, r listRow) string {
 	if f == fEnv && r.kind == rowInherited {
@@ -345,9 +362,6 @@ func deadEndNote(f fieldID, r listRow) string {
 	if r.kind == rowSkill {
 		return skillRowNote(r)
 	}
-	if r.kind == rowHostEnv {
-		return hostEnvRowNote()
-	}
 	if r.kind == rowEnvDoc {
 		return "a suggestion from " + r.source + " — press enter to set it here"
 	}
@@ -355,6 +369,14 @@ func deadEndNote(f fieldID, r listRow) string {
 }
 
 func (m *model) deleteItem(f fieldID, i int) {
+	// A passthrough delete removes this file's PIN, which re-inherits rather
+	// than turning the key off -- the same thing the picker's Inherit option
+	// does. Turning it off is the Disabled scheme, which is a value, not an
+	// absence.
+	if m.itemHostEnv {
+		m.hostEnv = append(m.hostEnv[:i], m.hostEnv[i+1:]...)
+		return
+	}
 	switch f {
 	case fApt:
 		m.apt = append(m.apt[:i], m.apt[i+1:]...)
@@ -390,6 +412,27 @@ func (m model) startItem(idx int) model {
 	m.itemModeOpts = nil
 	m.itemModeLabel = ""
 	m.itemModeFirst = false
+	if m.itemHostEnv {
+		// Scheme first, because it decides what the argument even means (the
+		// mcp Kind picker's shape). Inherit is an option so a local pin can
+		// come back OFF from the editor -- without it the only way back to
+		// the cascade is a hand edit.
+		key, src := "", ""
+		if idx >= 0 {
+			key, src = m.hostEnv[idx].Key, m.hostEnv[idx].Value
+			m.itemMode, _ = hostEnvScheme(src)
+		} else {
+			m.itemMode = schemeInherit
+		}
+		_, arg := hostEnvScheme(src)
+		m.itemHasMode = true
+		m.itemModeOpts = hostEnvSchemes
+		m.itemModeLabel = "Source"
+		m.itemModeFirst = true
+		m.inputLabels = []string{"Key", hostEnvArgLabel(m.itemMode)}
+		m.inputs = []textinput.Model{newInput(key), newInput(arg)}
+		return m
+	}
 	switch m.listField {
 	case fApt:
 		m.inputLabels = []string{"Package"}
@@ -619,12 +662,12 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "left":
 		if m.onModePicker() {
 			m.itemMode = wrap(m.itemMode-1, len(m.itemModeOpts))
-			return m, nil
+			return m.syncHostEnvLabel(), nil
 		}
 	case "right":
 		if m.onModePicker() {
 			m.itemMode = wrap(m.itemMode+1, len(m.itemModeOpts))
-			return m, nil
+			return m.syncHostEnvLabel(), nil
 		}
 		// At the end of an input with a live suggestion, → accepts it (host-path
 		// completion or the derived target); otherwise it's a normal cursor move.
@@ -795,6 +838,9 @@ func longestCommonPrefix(ss []string) string {
 // fEgress's ParseEgress.)
 func (m model) commitItem() model {
 	orig := m
+	if m.itemHostEnv {
+		return m.commitHostEnv(orig)
+	}
 	switch m.listField {
 	case fApt:
 		pkg := strings.TrimSpace(m.inputs[0].Value())
@@ -1574,4 +1620,57 @@ func (m model) itemNotes() []string {
 			"local servers reach nothing a firewall doesn't allow: declare their hosts in extra egress")
 	}
 	return notes
+}
+
+// commitHostEnv writes an env_from_host pick back into the working state.
+//
+// Inherit is the option with teeth: it means NO local entry, so it removes
+// the pin rather than writing a value. Writing something for "inherit" is
+// exactly the bug the onboarding picker shipped once (an explicit agent =
+// "none" where the user meant "don't decide here"), and the cascade cannot
+// tell an explicit restatement from a deliberate pin afterwards.
+func (m model) commitHostEnv(orig model) model {
+	key := strings.TrimSpace(m.inputs[0].Value())
+	if key == "" {
+		m.itemErr = "key is required"
+		return m
+	}
+	if m.itemMode == schemeInherit {
+		if m.editIndex >= 0 {
+			m.hostEnv = append(append([]kvItem{}, m.hostEnv[:m.editIndex]...), m.hostEnv[m.editIndex+1:]...)
+		}
+		m.itemErr = ""
+		m.mode = modeList
+		return m
+	}
+	src := hostEnvSource(m.itemMode, m.inputs[1].Value())
+	// env_from_host is a map on disk: two rows sharing a key would collapse
+	// silently on save, the same hazard [env] guards against.
+	for i, kv := range m.hostEnv {
+		if i != m.editIndex && kv.Key == key {
+			m.itemErr = "duplicate key " + key
+			return m
+		}
+	}
+	m.hostEnv = putAt(m.hostEnv, m.editIndex, kvItem{Key: key, Value: src})
+	// The same validator Save runs -- grammar (envKeyRe) and the closed
+	// scheme set (validateHostSource) both belong to config, not here.
+	if err := m.assemble().ValidateLayer(); err != nil {
+		orig.itemErr = err.Error()
+		return orig
+	}
+	m.itemErr = ""
+	m.mode = modeList
+	return m
+}
+
+// syncHostEnvLabel keeps the argument input's label matching the selected
+// scheme. The picker decides what the second field MEANS -- a git config key,
+// a host variable name, or nothing at all -- so a fixed label would be wrong
+// for three of the five options.
+func (m model) syncHostEnvLabel() model {
+	if m.itemHostEnv && len(m.inputLabels) == 2 {
+		m.inputLabels = []string{m.inputLabels[0], hostEnvArgLabel(m.itemMode)}
+	}
+	return m
 }

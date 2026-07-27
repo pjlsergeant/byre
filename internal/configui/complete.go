@@ -244,6 +244,15 @@ func (m model) assemble() config.Config {
 		}
 		out.Env = env
 	}
+	if len(m.hostEnv) == 0 {
+		out.EnvFromHost = nil
+	} else {
+		he := make(map[string]string, len(m.hostEnv))
+		for _, kv := range m.hostEnv {
+			he[kv.Key] = kv.Value
+		}
+		out.EnvFromHost = he
+	}
 	if len(m.files) == 0 {
 		out.Files = nil
 	} else {
@@ -329,6 +338,9 @@ func (m model) sig() string {
 	}
 	for _, kv := range m.files {
 		parts = append(parts, "file:"+kv.Key+"="+kv.Value)
+	}
+	for _, kv := range m.hostEnv {
+		parts = append(parts, "hostenv:"+kv.Key+"="+kv.Value)
 	}
 	for _, mt := range m.mounts {
 		parts = append(parts, "mnt:"+mountLine(mt))

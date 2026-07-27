@@ -187,6 +187,7 @@ type model struct {
 	apt          []string
 	env          []kvItem
 	files        []kvItem // [files]: project-relative source -> absolute in-image destination
+	hostEnv      []kvItem // [env_from_host]: key -> scheme source ("" = disabled here)
 	mounts       []config.Mount
 	ports        []config.Port
 	egress       []string             // firewall-allowlist extensions, host[:port] (ADR 0019)
@@ -254,10 +255,14 @@ type model struct {
 	textField fieldID
 
 	// modeItem
-	inputs        []textinput.Model
-	inputLabels   []string
-	itemFocus     int      // control index; inputMap below says what it means
-	itemHasMode   bool     // the editor carries a segmented picker
+	inputs      []textinput.Model
+	inputLabels []string
+	itemFocus   int  // control index; inputMap below says what it means
+	itemHasMode bool // the editor carries a segmented picker
+	// itemHostEnv routes the Env screen's item editor to the env_from_host
+	// widget: both kinds of row live on that screen, so listField alone
+	// cannot say which one is open.
+	itemHostEnv   bool
 	itemMode      int      // selected picker option
 	itemModeOpts  []string // picker options (mounts: ro/rw/disabled; mcp: local/remote)
 	itemModeLabel string   // picker row label ("Mode", "Kind")
@@ -436,6 +441,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.apt = append([]string{}, cfg.Apt...)
 	m.env = envItems(cfg.Env)
 	m.files = envItems(cfg.Files)
+	m.hostEnv = envItems(cfg.EnvFromHost)
 	m.mounts = append([]config.Mount{}, cfg.Mounts...)
 	m.ports = append([]config.Port{}, cfg.Ports...)
 	m.egress = append([]string{}, cfg.Egress...)

@@ -680,12 +680,27 @@ func (m model) envRows() []listRow {
 			rows = append(rows, listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk})
 		}
 	}
-	// The env_from_host passthrough (ADR 0026), read-only with its source: it
-	// lands in the box's env, so it must be visible wherever env is
-	// inspected — byre's own shipped git-identity defaults included.
+	// The env_from_host passthrough (ADR 0026). It lands in the box's env, so
+	// it belongs wherever env is inspected — byre's own shipped git-identity
+	// defaults included — and it is EDITABLE here: a key set in this file
+	// carries an idx and gets Edit/Delete, an inherited one gets Override,
+	// and the picker's Inherit option is how a local pin comes back off.
+	localHostIdx := map[string]int{}
+	for i, kv := range m.hostEnv {
+		localHostIdx[kv.Key] = i
+	}
 	hostEnv := m.hostEnvNow()
 	for _, k := range slices.Sorted(maps.Keys(hostEnv)) {
-		rows = append(rows, listRow{kind: rowHostEnv, text: k + " <- host " + hostEnv[k], source: "env_from_host"})
+		k := k
+		if i, ok := localHostIdx[k]; ok {
+			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k})
+			continue
+		}
+		from := m.lowerSource(func(c config.Config) bool { _, ok := c.EnvFromHost[k]; return ok })
+		if from == "" {
+			from = "byre" // the shipped CoreEnvFromHost layer
+		}
+		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}})
 	}
 	// Skill-documented consumed vars (env_docs): a dim suggestion row per
 	// declared var NOTHING above provides — once any layer, skill, or the
