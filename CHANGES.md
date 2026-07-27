@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **BREAKING: `npm_global` is removed.** It assumed node/npm in the image and
+  named one ecosystem in core config, which no other package key does. A
+  config (or a skill manifest's `[build] npm_global`) carrying the key now
+  **fails at load** rather than ignoring it -- a build key that silently
+  stopped installing would change what your image contains without saying so.
+  The replacement is a raw build line, which the refusal spells out:
+  `dockerfile_pre = ["RUN npm install -g <pkg>"]` (skills: `[build]`
+  `dockerfile = [...]`).
+- **`[defaults]` is a real config section, and onboarding's questions have an
+  off switch.** The picker's saved answers (the shared-auth favourite) used to
+  live at the top level; they now have a home of their own, stripped from the
+  cascade by construction so nothing in it can acquire teeth. New in it:
+  `skip_questions = true`, which configures a new project from your stored
+  answers -- template, agent, and the shared-auth pick -- without asking.
+  That pick GRANTS (the companion skill goes into the new project's config),
+  so the key is the standing consent for it: hand-set, at machine scope, and
+  develop says out loud when it acted on one. The old top-level spelling is
+  still read.
+- **Two configs that used to build now refuse, both loudly.** Two `[files]`
+  entries naming the same source by different spellings (`./x` and `x`) is
+  refused as "two spellings of one path; keep one" -- previously one silently
+  won. And the configuration editor now refuses to save over a file that
+  changed underneath it, offering the overwrite rather than reverting another
+  session's work silently.
 - **`byre config` gains two screens, and `env_from_host` stops being a
   read-only dead end.** The passthrough rows (byre ships six -- your git
   identity, `TERM`, `TZ`) used to tell you to go hand-edit the TOML; they are
