@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -107,6 +106,9 @@ func TestPublishFileRefusesANonFileName(t *testing.T) {
 	}
 }
 
+// assertOnlyEntry is how the tests see staged-file cleanup: a leftover temp
+// shows up as an extra directory entry, so "only the record is here" and "no
+// temp was orphaned" are the same assertion.
 func assertOnlyEntry(t *testing.T, dir, want string) {
 	t.Helper()
 	ents, err := os.ReadDir(dir)
@@ -119,8 +121,5 @@ func assertOnlyEntry(t *testing.T, dir, want string) {
 	}
 	if len(names) != 1 || names[0] != want {
 		t.Fatalf("directory holds %v, want only %q", names, want)
-	}
-	if strings.HasPrefix(names[0], ".byre-publish-") {
-		t.Fatalf("staged file %q was left behind", names[0])
 	}
 }

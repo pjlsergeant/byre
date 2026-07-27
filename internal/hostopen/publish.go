@@ -59,10 +59,12 @@ func publish(path, content string, perm fs.FileMode, exclusive bool) error {
 	if err != nil {
 		return err
 	}
-	// After a successful Rename the staged name is gone and this is a no-op;
-	// after a successful Link it is the cleanup that keeps the directory from
-	// filling with published-and-orphaned temps.
-	defer root.Remove(tmpName)
+	// Best-effort, and deliberately so. After a Rename the staged name is
+	// already gone and this is a no-op; only the exclusive form can orphan
+	// anything, and its one caller publishes into byre's own store. Failing a
+	// publish that SUCCEEDED because a stray .byre-publish-* could not be
+	// tidied would trade a cosmetic leftover for a spurious error.
+	defer func() { _ = root.Remove(tmpName) }()
 
 	if _, err := tmp.WriteString(content); err != nil {
 		tmp.Close()
