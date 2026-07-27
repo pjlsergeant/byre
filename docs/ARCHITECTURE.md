@@ -660,8 +660,9 @@ commands page is generated from the command tree; the reference below
 covers the ones with architectural weight rather than every verb.
 **No command mutates config behind your back** -- config *content*
 changes only where you asked for the write: files you edit, the `byre
-config` editor, `byre mcp add`/`remove`, `byre preset apply` (after its
-review), and onboarding's initial write. `rehome` and `forget` move or
+config` editor, the declaration verbs (`byre mcp add`/`remove`,
+`byre claude-skill add`/`remove`, `byre context add`/`remove`),
+`byre preset apply` (after its review), and onboarding's initial write. `rehome` and `forget` move or
 delete the store wholesale, never editing what's inside; everything
 else -- `develop` and friends included -- only reads it and acts.
 
@@ -729,6 +730,8 @@ byre mcp ...      add / remove / list -- declare MCP servers in the project
                   config (wiring, not a grant; ADR 0033).
 byre claude-skill ...  add / remove / list -- declare Claude Skills in the
                   project config (wiring, not a grant; ADR 0039).
+byre context ...  add / remove / list -- declare standing-instruction
+                  snippets in the project config (ADR 0043/0046).
 
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox -- locally, or through another machine

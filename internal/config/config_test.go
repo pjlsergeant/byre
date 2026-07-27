@@ -262,7 +262,10 @@ func TestDockerfileKeyRejectedLoudly(t *testing.T) {
 	t.Setenv("BYRE_HOME", t.TempDir())
 	proj := t.TempDir()
 	writeProjectCfg(t, proj, "dockerfile = \"Dockerfile\"\n")
-	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), "unknown key") {
+	// The message names BOTH causes byre cannot distinguish: a typo, and a
+	// config a newer byre wrote (strict decode has no forward direction).
+	if _, err := Load(proj); err == nil || !strings.Contains(err.Error(), "unknown key") ||
+		!strings.Contains(err.Error(), "newer byre") {
 		t.Fatalf("dockerfile key must fail loudly as unknown, got: %v", err)
 	}
 }

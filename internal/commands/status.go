@@ -921,6 +921,21 @@ func warnGuardCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
 	for _, dest := range hits {
 		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, a byre-managed security path; byre re-asserts its own copy at the build tail, so your file does not take effect there.\n", dest)
 	}
+	// The baked ARTIFACTS (mcp.json, the agent context file, the claude-skills
+	// tree) are the opposite case: they are emitted BEFORE the project block
+	// and deliberately NOT tail-guarded -- they are wiring, not the security
+	// guard's charge -- so here YOUR file wins and byre's does not take
+	// effect. A warn, not a guard (status also degrades the delivery claims
+	// these artifacts back).
+	shadowed := artifactShadows(cfg)
+	shadows := make([]string, 0, len(shadowed))
+	for a := range shadowed {
+		shadows = append(shadows, a)
+	}
+	sort.Strings(shadows)
+	for _, dest := range shadows {
+		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, which byre bakes BEFORE the project block: your file wins, and what byre delivers there is no longer what it reports.\n", dest)
+	}
 }
 
 // covers reports whether a mount/volume target covers guarded: it equals the

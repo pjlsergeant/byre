@@ -913,3 +913,24 @@ func TestRenderStatusContextDelivery(t *testing.T) {
 		t.Errorf("empty set must render nothing:\n%s", out)
 	}
 }
+
+// The baked artifacts are emitted BEFORE the project block and are
+// deliberately not tail-guarded (they are wiring, not the security guard's
+// charge), so a `files` entry targeting one WINS -- the opposite direction
+// from a guarded path, and the note must say so rather than reusing the
+// guard's wording.
+func TestWarnGuardCollisionsNotesArtifactShadows(t *testing.T) {
+	var b strings.Builder
+	warnGuardCollisions(&b, config.Config{Files: map[string]string{
+		"mcp.json": "/etc/byre/",
+	}}, skills.Resolved{})
+	out := b.String()
+	if !strings.Contains(out, gen.MCPConfigPath) || !strings.Contains(out, "your file wins") {
+		t.Errorf("a files entry over a baked artifact must warn that YOUR file wins:\n%s", out)
+	}
+	var clean strings.Builder
+	warnGuardCollisions(&clean, config.Config{Files: map[string]string{"notes.md": "/workspace/doc/notes.md"}}, skills.Resolved{})
+	if clean.String() != "" {
+		t.Errorf("an innocent files entry must warn nothing:\n%s", clean.String())
+	}
+}

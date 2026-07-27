@@ -788,7 +788,13 @@ func Parse(content []byte) (Config, error) {
 		real = append(real, strings.Join(k, "."))
 	}
 	if len(real) > 0 {
-		return Config{}, fmt.Errorf("unknown key(s): [%s]", strings.Join(real, " "))
+		// Two causes, and byre cannot tell them apart: a typo, or a config a
+		// NEWER byre wrote (strict decode points one direction -- ADR 0049's
+		// windows handle old keys meeting new binaries, not the reverse).
+		// Naming both beats naming neither; a format stamp that could
+		// distinguish them was considered and consciously not built, since
+		// this already fails loudly rather than guessing.
+		return Config{}, fmt.Errorf("unknown key(s): [%s] — a typo, or a config written by a newer byre (upgrade byre, or remove the key)", strings.Join(real, " "))
 	}
 	// Retired keys only: decode again leniently so their values drop.
 	var lenient Config
@@ -1650,10 +1656,18 @@ func appendAll(base, over []string) []string {
 	return append(out, over...)
 }
 
-// MaxConfigBytes bounds every host-side read of a byre config-family file
-// (byre.config, default.config, layer files, preset records): far above any
-// real config, small enough that a planted device node or grown file fails
-// fast instead of ballooning the process.
+// MaxConfigBytes bounds the hostopen-mediated reads of byre config-family
+// files (byre.config, default.config, preset records): far above any real
+// config, small enough that a planted device node or grown file fails fast
+// instead of ballooning the process.
+//
+// Scope, stated because the comment used to overclaim it: the named-layer
+// reads in layers.go use a plain os.ReadFile and are NOT bounded by this.
+// They read ~/.byre/layers/, which is host-side store -- not agent-writable,
+// so the FIFO/device class this bound exists for cannot be planted there by
+// a box. The exception is a --self-edit session, which mounts the store rw:
+// that grant is already documented as transitive host trust, and is not
+// re-litigated per read.
 const MaxConfigBytes = 1 << 20
 
 // ExpandTilde expands a leading "~" or "~/" against the current user's home.

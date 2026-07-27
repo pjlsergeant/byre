@@ -7,8 +7,8 @@ description: the byre config editor -- widen or narrow the box in seconds
 <!-- demo-placeholder: config-tui-walk -->
 
 **`byre config`** opens an interactive editor in your terminal. It's
-keyboard-driven (arrows to move, Enter to edit, Esc to back out, `q` to
-leave), works over SSH, and edits take effect on your next
+keyboard-driven (arrows to move, Enter to edit, Esc to back out; Esc from
+the form leaves), works over SSH, and edits take effect on your next
 `byre develop` -- relaunch and resume where you left off.
 
 The editor shows one screen, organized the way `byre status` reports:
@@ -30,9 +30,11 @@ The editor shows one screen, organized the way `byre status` reports:
   (prose opens in your `$EDITOR`; inherited snippets are readable in
   full, attributed to their layer). Adding a postgres client is: arrow
   to Packages, type the name, done -- it installs on the next develop.
-- **Onboarding favourites.** The template/agent/shared-login answers
-  the first-run picker will pre-select next time. Preferences, never
-  grants -- they apply nothing to any box.
+- **Onboarding favourites.** The template and agent answers the
+  first-run picker will pre-select next time. Preferences, never
+  grants -- they apply nothing to any box. (`shared_auth` is a
+  favourite too, but has no editor surface today: it is written by
+  onboarding and read by the next box.)
 - **Volumes.** The box's named volumes across every engine, including
   clearing one deliberately (the only way byre ever deletes a
   machine-wide volume).

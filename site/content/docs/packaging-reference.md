@@ -7,9 +7,12 @@ params:
 ---
 
 The precise contract behind
-[skills & templates](/docs/skills-and-templates/). The full authoring
-spec (every `skill.toml` field) is
-[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md).
+[skills & templates](/docs/skills-and-templates/). For authoring:
+[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md)
+covers installing, publishing, and the packaging workflow; the per-field
+`skill.toml` vocabulary -- including `[runtime]`, `[agent]`,
+`companion_for` and `[[context]]` -- lives in
+[docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md).
 
 ## Provenance
 

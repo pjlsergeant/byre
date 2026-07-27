@@ -37,7 +37,9 @@ Consequences / accepted holes (documented, not closed in v1):
   v2 candidate: filtering resolver).
 - The allowlist is an IP snapshot at apply time; a CDN rotating IPs
   mid-session fails **closed**, not open. Re-applying is cheap.
-- Rootful engines only in v1 (same stance as ADR 0008).
+- Rootful engines only in v1 (same stance as ADR 0008). **Superseded by
+  ADR 0032**: rootless Podman is first-class, running the generic 1000:1000
+  image under `--userns=keep-id`.
 - Status honesty rules: skill contributions never degrade the posture
   claim (enabling a skill is trusting it), but project-level raw escape
   hatches do -- `run_args` or `dockerfile_*` present prints

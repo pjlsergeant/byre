@@ -99,7 +99,9 @@ exceptions noted inline.
   refused here; to override one deliberately use
   `run_args = ["-e", "BYRE_X=..."]`, which `byre status` shows verbatim
   while degrading the claims it affects.
-- `[files]` -- host paths copied into the image, read-only.
+- `[files]` -- files copied into the image, read-only. Sources are
+  **project-relative** (`planFiles` refuses an absolute path); the
+  destination is an absolute path in the image.
 - `dockerfile_pre` / `dockerfile_post` -- raw Dockerfile lines, emitted
   before / after the core block. The build-time raw block, and the
   honest place for project setup that should happen once per build
