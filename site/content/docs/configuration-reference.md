@@ -98,9 +98,26 @@ exceptions noted inline.
   refused here; to override one deliberately use
   `run_args = ["-e", "BYRE_X=..."]`, which `byre status` shows verbatim
   while degrading the claims it affects.
-- `[files]` -- files copied into the image, read-only. Sources are
-  **project-relative** (`planFiles` refuses an absolute path); the
-  destination is an absolute path in the image.
+- `[files]` -- stages a project file into the build, so a
+  `dockerfile_pre` / `dockerfile_post` line can use it. The build context
+  holds nothing of your project otherwise, so this is what makes the
+  standard dependency-caching pattern possible:
+
+  ```toml
+  files = { "requirements.txt" = "/tmp/requirements.txt" }
+  dockerfile_post = ["RUN pip install -r /tmp/requirements.txt"]
+  ```
+
+  The install then happens once per build and is cached in the image,
+  rather than at every launch. Files are COPY'd BEFORE the raw lines, so
+  a `RUN` can read them. Sources are **project-relative** (`planFiles`
+  refuses an absolute path, a `..` escape, and a symlink out of the
+  tree); the destination is an absolute path in the image, and what
+  lands there is read-only. It is NOT a way to pull a file in from
+  outside the repo -- that is a mount, or a seeded volume. Note that a
+  destination under `/workspace` is masked by the project bind mount at
+  runtime, and one under a state volume's mountpoint (like `~/.claude`)
+  by the volume.
 - `dockerfile_pre` / `dockerfile_post` -- raw Dockerfile lines, emitted
   before / after the core block. The build-time raw block, and the
   honest place for project setup that should happen once per build

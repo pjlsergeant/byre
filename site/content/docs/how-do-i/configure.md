@@ -142,10 +142,13 @@ agent looks.
 
 A home-relative host path (`~/.config/starship.toml`) suggests the
 matching `/home/dev/...` target automatically. Symlinks into a dotfiles
-repo work -- byre reads through them. For dotfiles that should be baked
-in rather than live-mounted, a template's `[files]` copies them into
-the image (one caveat: files baked under a state volume's mountpoint,
-like `~/.claude`, are masked by the volume at runtime).
+repo work -- byre reads through them.
+
+Mounting is the whole answer here: `[files]` cannot do this. Its sources
+are project-relative and `planFiles` refuses an absolute path, a `..`
+escape, and a symlink out of the tree, so a config can never name a file
+in your home directory. To bake a dotfile in rather than mount it, the
+file has to live in the project.
 
 ## Give my agent standing instructions in every box?
 
