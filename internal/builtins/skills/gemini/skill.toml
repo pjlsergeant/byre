@@ -5,9 +5,15 @@
 # flag and the auth flow (GEMINI_API_KEY env or an OAuth login).
 #
 # Unlike claude/codex, gemini-cli is an npm package, so this skill brings Node.
-# Debian's apt node is too old for gemini-cli, so it installs Node 22 via
-# NodeSource, then `npm install -g` (global, on PATH). Config/credentials live in
-# a per-project .gemini state volume. No seed.
+# Debian's apt node is too old for gemini-cli, so it installs Node 22 from
+# nodejs.org's own dist tarballs (checksum-verified, both arches), then
+# `npm install -g` (global, on PATH). NOT NodeSource: their setup_22.x script
+# and the node_2x.x apt repos behind it went 403 on 2026-07-27 (the agent
+# canary caught it; the still-served setup_lts.x configures a repo that also
+# 403s), and a vendor whose convenience layer can vanish under a running
+# installer is not a build input -- nodejs.org is the canonical source with
+# one less party in the chain. Config/credentials live in a per-project
+# .gemini state volume. No seed.
 
 # The visible description must carry the DRAFT status above: the picker is the
 # point of choice, and a finished-sounding line over an unverified autonomy
@@ -17,9 +23,17 @@ description = "The Gemini CLI agent; login persists per project. EXPERIMENTAL: a
 [build]
 # ripgrep: gemini's native search tool; without it every session warns
 # "Ripgrep is not available. Falling back to GrepTool." (field, 0.51.0).
-apt = ["curl", "ca-certificates", "ripgrep"]
+# xz-utils: the nodejs.org tarballs are .tar.xz; the base image may not
+# carry xz.
+apt = ["curl", "ca-certificates", "ripgrep", "xz-utils"]
 dockerfile = [
-  "RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*",
+  # Node 22 (gemini-cli needs >=20) from nodejs.org dist, pinned to the
+  # latest-v22.x channel: the filename is discovered from SHASUMS256.txt and
+  # the tarball verified against it, so a tampered or truncated download
+  # fails the build instead of shipping. --strip-components puts node/npm
+  # under /usr/local (bin, lib/node_modules), the standard layout npm -g
+  # expects.
+  "RUN arch=$(dpkg --print-architecture) && case \"$arch\" in amd64) narch=x64 ;; arm64) narch=arm64 ;; *) echo \"gemini skill: unsupported arch $arch\" >&2; exit 1 ;; esac && curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt && f=$(grep -o \"node-v22[0-9A-Za-z.-]*-linux-$narch.tar.xz\" /tmp/SHASUMS256.txt | head -1) && curl -fsSL \"https://nodejs.org/dist/latest-v22.x/$f\" -o \"/tmp/$f\" && (cd /tmp && grep \" $f$\" SHASUMS256.txt | sha256sum -c -) && tar -xJf \"/tmp/$f\" -C /usr/local --strip-components=1 && rm \"/tmp/$f\" /tmp/SHASUMS256.txt",
   "RUN npm install -g @google/gemini-cli",
   # Clear any install residue from ~/.gemini (the .gemini state-volume mount
   # point) so a fresh volume starts clean; gemini recreates it at runtime/login.
