@@ -18,6 +18,12 @@ builds:
     goarch:
       - amd64
       - arm64
+    # -trimpath strips the builder's filesystem paths from the binary: it
+    # keeps a build-machine layout out of what users receive, and it is the
+    # precondition for anyone ever rebuilding a release and comparing.
+    # Reproducibility itself is not claimed (ADR 0051).
+    flags:
+      - -trimpath
     # v-prefixed so `byre version` prints the same string a
     # `go install ...@vX.Y.Z` build reports from module build info.
     ldflags:

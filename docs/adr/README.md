@@ -111,3 +111,4 @@ this index:
 - 0048: the four accretion guardrails are standing commitments in PRINCIPLES.md, unnumbered under the principles [no arm]
 - 0049: a compat path lives two minors or 90 days from replacement, whichever is longer; the last supported release warns, then it is removed whole with a remedy [no arm]
 - 0050: every config field classifies against the claim surface; claims render from effect; BYRE_ is reserved vocabulary, never reserved capability [arm: TestEveryConfigFieldHasClaimClassification, TestChassisScriptKnobsRideReservedPrefix, TestValidateRejectsReservedEnvNamespace]
+- 0051: the release proves transport integrity, not authenticity -- accepted on the record; -trimpath yes, attestation deferred with a trigger [no arm]
