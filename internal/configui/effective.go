@@ -719,11 +719,29 @@ func (m model) envRows() []listRow {
 	for i, kv := range m.hostEnv {
 		localHostIdx[kv.Key] = i
 	}
+	// An explicit [env] KEY beats the passthrough (ADR 0026), so a key set
+	// both ways has a DEAD passthrough row. The same fact `byre status`
+	// already reports as hostEnvOverridden -- the editor was the surface not
+	// showing it, which on a screen whose whole question is "where does this
+	// value come from" answered with two rows for one name and no hint that
+	// one of them does nothing.
+	shadowed := map[string]bool{}
+	for _, kv := range m.env {
+		shadowed[kv.Key] = true
+	}
+	for k := range lowerEnv {
+		shadowed[k] = true
+	}
+	for _, sk := range m.effectiveSkills() {
+		for k := range m.inh.Skills[sk].Env {
+			shadowed[k] = true
+		}
+	}
 	hostEnv := m.hostEnvNow()
 	for _, k := range slices.Sorted(maps.Keys(hostEnv)) {
 		k := k
 		if i, ok := localHostIdx[k]; ok {
-			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k})
+			rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, m.hostEnv[i].Value), source: "env_from_host", idx: i, ident: k, closed: shadowed[k]})
 			continue
 		}
 		from := m.lowerSource(func(c config.Config) bool { _, ok := c.EnvFromHost[k]; return ok })
@@ -734,7 +752,7 @@ func (m model) envRows() []listRow {
 			// with about the six keys byre ships.
 			from = "byre default"
 		}
-		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}})
+		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}, closed: shadowed[k]})
 	}
 	// Skill-documented consumed vars (env_docs): a dim suggestion row per
 	// declared var NOTHING above provides — once any layer, skill, or the

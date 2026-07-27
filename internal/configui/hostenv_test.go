@@ -298,3 +298,53 @@ func TestReadOnlyScreenCursorCannotLeaveTheRows(t *testing.T) {
 		t.Fatalf("listCur = %d with %d rows -- the cursor reached the add slot a read-only screen does not paint", m.listCur, n)
 	}
 }
+
+// A key set BOTH ways is legal config, and the explicit [env] wins (ADR
+// 0026) -- so the passthrough row is dead. byre status already reported that
+// as hostEnvOverridden; the editor showed two rows for one name with no hint
+// which one did anything.
+func TestEnvShadowedPassthroughIsMarkedAndNotCounted(t *testing.T) {
+	cfg := config.Config{
+		Env:         map[string]string{"FOO": "literal"},
+		EnvFromHost: map[string]string{"FOO": "env:FOO", "BAR": "env:BAR"},
+	}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.listField = fEnv
+
+	var foo, bar listRow
+	for _, r := range m.fieldRows(fEnv) {
+		if r.kind == rowHostEnv {
+			switch r.ident {
+			case "FOO":
+				foo = r
+			case "BAR":
+				bar = r
+			}
+		}
+	}
+	if foo.ident == "" || bar.ident == "" {
+		t.Fatal("expected passthrough rows for both keys")
+	}
+	if !foo.closed {
+		t.Error("the shadowed passthrough must not count as effective")
+	}
+	if bar.closed {
+		t.Error("an unshadowed passthrough must stay effective")
+	}
+	if ann := rowAnnotation(foo); !strings.Contains(ann, "overridden by [env]") {
+		t.Errorf("shadowed annotation = %q, want it to say the passthrough is not passed", ann)
+	}
+	if ann := rowAnnotation(bar); strings.Contains(ann, "overridden") {
+		t.Errorf("unshadowed annotation = %q, want no override note", ann)
+	}
+
+	// The summary must not count a row that does nothing (ADR 0050: summaries
+	// count only rows marked effective).
+	withShadow, _, _, _ := rowCounts(m.fieldRows(fEnv))
+	clean := newModel("t", "/tmp/x", config.Config{EnvFromHost: map[string]string{"BAR": "env:BAR"}}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	clean.listField = fEnv
+	wantSame, _, _, _ := rowCounts(clean.fieldRows(fEnv))
+	if withShadow != wantSame+1 { // +1 for the [env] FOO literal row itself
+		t.Errorf("effective = %d with a shadowed passthrough, want %d (the dead row must not add to it)", withShadow, wantSame+1)
+	}
+}

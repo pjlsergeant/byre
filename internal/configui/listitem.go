@@ -1342,10 +1342,14 @@ func rowAnnotation(r listRow) string {
 		// Without this the six keys byre ships rendered bare, which on a
 		// screen where every OTHER row carries its provenance reads as "you
 		// set this here". idx >= 0 is the only case that actually is local.
+		who := r.source
 		if r.idx >= 0 {
-			return "  (set here)"
+			who = "set here"
 		}
-		return "  (" + r.source + ")"
+		if r.closed {
+			return "  (" + who + " — overridden by [env], not passed)"
+		}
+		return "  (" + who + ")"
 	case rowOffered:
 		if r.source == "" {
 			return "  (offered here — closed)"
