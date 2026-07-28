@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
-	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // Rebuild implements `byre rebuild`: regenerate the build context and rebuild
@@ -41,12 +39,12 @@ func Rebuild(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	return rebuild(s.Err, rr, paths, rv.cfg, rv.skills, ident)
+	return rebuild(s.Err, rr, paths, rv, ident)
 }
 
 // rebuild is Rebuild's engine-facing core, split out so it can run against a
 // fake engine. w gets the progress note (stderr in production).
-func rebuild(w io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, ident runner.Identity) error {
+func rebuild(w io.Writer, r imageRunner, paths project.Paths, rv resolved, ident runner.Identity) error {
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	return withSetupLock(w, paths.LockFile, func() error {
 		// Re-establish enrollment under the lock, same as develop: a concurrent
@@ -54,7 +52,14 @@ func rebuild(w io.Writer, r imageRunner, paths project.Paths, cfg config.Config,
 		if err := requireRecorded(paths); err != nil {
 			return err
 		}
+		// And, same as develop, the config the image is built from is read
+		// under the lock the editor's save takes: rebuild's pre-lock read only
+		// had to name the engine.
+		fresh, err := rv.refresh()
+		if err != nil {
+			return err
+		}
 		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)
-		return buildImageWarn(w, r, paths, cfg, res, image, true, ident)
+		return buildImageWarn(w, r, paths, fresh.cfg, fresh.skills, image, true, ident)
 	})
 }

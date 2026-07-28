@@ -84,13 +84,15 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err := checkMountPaths(paths); err != nil {
 		return err
 	}
+	// This read decides what has to happen BEFORE the setup lock: which engine
+	// to detect, which host tools to pin. What the lock guards -- the build,
+	// the seed, the container -- is read again under it (resolved.refresh),
+	// because the editor's save takes the same lock and may land while develop
+	// waits for it.
 	rv, err := resolve(paths, projectDir, s.Err)
 	if err != nil {
 		return err
 	}
-	warnNonDebianBase(s.Err, rv.cfg.Base)
-	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
-	warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
 	// One root set for every host tool this invocation spawns. The ENGINE is
 	// the hard case (decision: nothing safe can proceed on a shadowed engine),
 	// so a refusal here ends develop by name rather than degrading.
@@ -170,46 +172,14 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			fmt.Fprintf(s.Err, "   this store is the REPO's, shared with %s and every other worktree of it — not scoped to this worktree.\n", paths.Canonical)
 		}
 	}
-	// One host-env resolution feeds the runtime env, the exposure tally,
-	// and (in status) the row -- render-from-effect, no re-derivation.
-	hostEnv := resolveHostEnv(rv.cfg, rv.gitExe)
-	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
-	if err != nil {
-		return err
-	}
-	// Netns-hook plumbing is decided before the container exists: the
-	// per-invocation nonce label is the hooks' ownership proof (see naming.go)
-	// and must be on the CREATE argv below. Without a nonce (no randomness)
-	// the hooks are skipped and the launch gate fails the launch closed.
+	// Everything the config decides is read, derived and used inside the lock
+	// below. These carry the results back out to the launch: the netns hooks
+	// run alongside the attached session, and the exposure banner speaks for
+	// the box that was created.
+	var hostEnv []hostEnvResult
+	var hooks []skills.NetnsHook
 	var netnsLabel string
 	var netnsEnv map[string]string
-	hooks := rv.skills.NetnsInits()
-	if len(hooks) > 0 {
-		if nonce := runNonce(); nonce != "" {
-			netnsLabel = runKey + "=" + nonce
-			params.Labels = append(params.Labels, netnsLabel)
-			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
-			// union of every enabled skill's declared egress plus the config
-			// `egress` key (ADR 0019) — computed here, so it can't come from
-			// baked image ENV. Copy params.Env so keys added below don't leak
-			// into the box's own runtime env. (Under an allowlist posture the
-			// box ALSO carries BYRE_EGRESS — runParams set it there so the
-			// launcher announces the list in agent memory; same value, so the
-			// overwrite below is a no-op on that path.)
-			netnsEnv = make(map[string]string, len(params.Env)+1)
-			for k, v := range params.Env {
-				netnsEnv[k] = v
-			}
-			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
-			// The config's `!host[:port]` closures, as written (portless =
-			// every port). The deny-by-default helper never reads this (its
-			// allowlist above is already subtracted); the open-denylist
-			// helper drops exactly these.
-			netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
-		} else {
-			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
-		}
-	}
 
 	// Setup (generate + build + seed) AND container creation are serialized by
 	// the lock; the interactive session that follows is not (the lock is
@@ -227,6 +197,70 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// we waited; building now would resurrect a forgotten project.
 		if err := requireRecorded(paths); err != nil {
 			return err
+		}
+		// The authoritative read of the config cascade and the skill set. The
+		// editor's save takes THIS lock, so a save that landed while develop
+		// waited for it is the configuration that launches -- re-reading here
+		// doesn't merely detect that drift, it resolves it. rv is REPLACED, not
+		// shadowed: the build, the seed, the run params and (after the lock) the
+		// exposure banner and containment lines all describe the box that was
+		// actually created, never the one develop set out to create.
+		fresh, err := rv.refresh()
+		if err != nil {
+			return err
+		}
+		// The engine is the one thing this re-read cannot honor: the runner, the
+		// identity mode, the image tag and the ADR 0004 peer set were all fixed
+		// by the pre-lock detection, and re-detecting would re-probe the host
+		// from inside the lock. A save that names a DIFFERENT engine gets a
+		// refusal rather than a box on the engine the config just stopped
+		// naming. `auto` names whatever byre found, which is what is running.
+		if e := fresh.cfg.Engine; e != "" && e != "auto" && e != string(r.Engine()) {
+			return fmt.Errorf("the configured engine changed to %q while develop waited for the setup lock (this session resolved %s); nothing was built — re-run `byre develop`", e, r.Engine())
+		}
+		rv = fresh
+		// The build warnings speak for the config that is about to be built,
+		// which is this one.
+		warnNonDebianBase(s.Err, rv.cfg.Base)
+		warnGuardCollisions(s.Err, rv.cfg, rv.skills)
+		warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
+		// One host-env resolution feeds the runtime env, the exposure tally,
+		// and (in status) the row -- render-from-effect, no re-derivation.
+		hostEnv = resolveHostEnv(rv.cfg, rv.gitExe)
+		params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
+		if err != nil {
+			return err
+		}
+		// Netns-hook plumbing is decided before the container exists: the
+		// per-invocation nonce label is the hooks' ownership proof (see naming.go)
+		// and must be on the CREATE argv below. Without a nonce (no randomness)
+		// the hooks are skipped and the launch gate fails the launch closed.
+		hooks = rv.skills.NetnsInits()
+		if len(hooks) > 0 {
+			if nonce := runNonce(); nonce != "" {
+				netnsLabel = runKey + "=" + nonce
+				params.Labels = append(params.Labels, netnsLabel)
+				// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
+				// union of every enabled skill's declared egress plus the config
+				// `egress` key (ADR 0019) — computed here, so it can't come from
+				// baked image ENV. Copy params.Env so keys added below don't leak
+				// into the box's own runtime env. (Under an allowlist posture the
+				// box ALSO carries BYRE_EGRESS — runParams set it there so the
+				// launcher announces the list in agent memory; same value, so the
+				// overwrite below is a no-op on that path.)
+				netnsEnv = make(map[string]string, len(params.Env)+1)
+				for k, v := range params.Env {
+					netnsEnv[k] = v
+				}
+				netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
+				// The config's `!host[:port]` closures, as written (portless =
+				// every port). The deny-by-default helper never reads this (its
+				// allowlist above is already subtracted); the open-denylist
+				// helper drops exactly these.
+				netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
+			} else {
+				fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
+			}
 		}
 		// Single-session across an engine switch (ADR 0004): under the lock, refuse
 		// if a competing box exists on another installed engine. The per-worktree

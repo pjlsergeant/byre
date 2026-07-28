@@ -200,17 +200,21 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 	if err := paths.Bootstrap(); err != nil {
 		return "", runner.Identity{}, err
 	}
-	rv, err := resolve(paths, projectDir, s.Err)
-	if err != nil {
-		return "", runner.Identity{}, err
-	}
-	warnNonDebianBase(s.Err, rv.cfg.Base)
 	ident, err := resolveIdentity(s.Err, r)
 	if err != nil {
 		return "", runner.Identity{}, err
 	}
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+		// The only read this step needs is the one that feeds the build, so it
+		// happens here — under the lock the editor's save takes, and after any
+		// wait for it. Nothing outside the lock depends on the config: the
+		// engine is the caller's, and the image tag comes from the identity.
+		rv, err := resolve(paths, projectDir, s.Err)
+		if err != nil {
+			return err
+		}
+		warnNonDebianBase(s.Err, rv.cfg.Base)
 		return buildImageWarn(s.Err, r, paths, rv.cfg, rv.skills, image, false, ident)
 	}); err != nil {
 		return "", runner.Identity{}, err

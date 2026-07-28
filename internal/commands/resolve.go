@@ -44,6 +44,36 @@ type resolved struct {
 	// directly) means the git-backed probes degrade, which is the same shape
 	// a host with no git already produces.
 	gitExe string
+	// reread re-runs the very call that produced this view, so a setup writer
+	// can take its authoritative read INSIDE the setup lock (see refresh).
+	// Set by resolve(); nil in combine() (and thus in unit tests, which drive
+	// develop directly) means the view is used as it was handed over.
+	reread func() (resolved, error)
+}
+
+// refresh re-reads the project and returns the fresh view, carrying forward
+// the host-side pins the first pass established: the peer engines' runners,
+// the engines byre declined to run, and the pinned host git. Those come from
+// probing the HOST (what is installed, what PATH resolves to) rather than from
+// the project's files, so the setup lock neither guards them nor can change
+// them -- re-running them would spend host probes on an answer that cannot
+// have moved. Everything the config and the skill set decide comes from the
+// fresh read.
+//
+// A view with no reread (a hand-built one) is returned unchanged: there is no
+// second resolution path here, only the same resolve run again or nothing.
+func (rv resolved) refresh() (resolved, error) {
+	if rv.reread == nil {
+		return rv, nil
+	}
+	fresh, err := rv.reread()
+	if err != nil {
+		return resolved{}, err
+	}
+	fresh.otherEngines = rv.otherEngines
+	fresh.declinedEngines = rv.declinedEngines
+	fresh.gitExe = rv.gitExe
+	return fresh, nil
 }
 
 // combine forms the resolved view from a loaded config and its skills — the
@@ -152,5 +182,10 @@ func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolve
 	if err := rv.validate(); err != nil {
 		return resolved{}, err
 	}
+	// The view carries the means to take itself again: setup writers read the
+	// cascade once here to decide what precedes the lock (which engine, which
+	// prompts), then re-read under the lock, where a concurrent save is
+	// serialized against them.
+	rv.reread = func() (resolved, error) { return resolve(paths, projectDir, notices) }
 	return rv, nil
 }

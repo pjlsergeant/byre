@@ -506,3 +506,32 @@ func TestWorktreeCommonGitDirRefusesNonDirGit(t *testing.T) {
 		}
 	})
 }
+
+// The image `byre worktree` builds comes from the config read under the setup
+// lock, the same lock the editor's save takes: ensureProjectImage has no
+// pre-lock read to go stale, and a save landing while it waits is what gets
+// built.
+func TestEnsureProjectImageReadsTheConfigUnderTheSetupLock(t *testing.T) {
+	p, proj := testPaths(t)
+	writeStoreConfig(t, proj, "base = \"debian:bookworm\"\n")
+	f := &fakeRunner{}
+	str := discardStreams()
+	notice := lockWaitWriter(str.Err)
+	str.Err = notice
+	err := saveDuringLockWait(t, p, notice,
+		func() { writeStoreConfig(t, proj, "base = \"ubuntu:24.04\"\n") },
+		func() error {
+			_, _, err := ensureProjectImage(f, str, p, proj)
+			return err
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, rerr := os.ReadFile(p.Dockerfile)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if !strings.Contains(string(df), "FROM ubuntu:24.04") {
+		t.Errorf("the image was generated from a config read before the lock:\n%s", firstLine(string(df)))
+	}
+}

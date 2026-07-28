@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -635,12 +639,163 @@ func TestRebuildBuildsNoCache(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	var out bytes.Buffer
-	if err := rebuild(&out, f, p, config.Config{}, skills.Resolved{}, hostIdentity()); err != nil {
+	if err := rebuild(&out, f, p, combine(config.Config{}, skills.Resolved{}), hostIdentity()); err != nil {
 		t.Fatal(err)
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	if len(f.builds) != 1 || f.builds[0] != image+" nocache" {
 		t.Fatalf("expected one --no-cache build of %s, got %v", image, f.builds)
+	}
+}
+
+// lockWaitNotice wraps a command's stderr and signals when acquireNoisy's
+// "waiting for another byre setup" line appears -- the moment the command has
+// done everything that precedes the lock and is queued on it. Ordering a save
+// against a goroutine's mere START would be a race: the pre-lock read might
+// not have happened yet, and the test would pass on the wrong evidence.
+type lockWaitNotice struct {
+	w      io.Writer
+	once   sync.Once
+	waited chan struct{}
+}
+
+func lockWaitWriter(w io.Writer) *lockWaitNotice {
+	return &lockWaitNotice{w: w, waited: make(chan struct{})}
+}
+
+func (l *lockWaitNotice) Write(b []byte) (int, error) {
+	if bytes.Contains(b, []byte("waiting for another byre setup")) {
+		l.once.Do(func() { close(l.waited) })
+	}
+	return l.w.Write(b)
+}
+
+// saveDuringLockWait runs a setup writer against a save that lands while it is
+// WAITING for the setup lock -- the editor's ordering, since the editor's save
+// takes the same lock. The lock is taken first, the writer starts and queues on
+// it (notice.waited), save() writes the new config, and only then is the lock
+// released: everything the writer read before the lock predates the save, and
+// everything it reads under the lock follows it. Returns the writer's error.
+func saveDuringLockWait(t *testing.T, p project.Paths, notice *lockWaitNotice, save func(), write func() error) error {
+	t.Helper()
+	lk, err := lock.Acquire(p.LockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- write() }()
+	select {
+	case <-notice.waited:
+	case <-time.After(30 * time.Second):
+		t.Error("the setup writer never queued on the held lock")
+	}
+	save()
+	if err := lk.Release(); err != nil {
+		t.Fatal(err)
+	}
+	return <-done
+}
+
+// TestDevelopLaunchesTheConfigSavedUnderTheLock pins the save/launch ordering:
+// what launches is the configuration on disk when develop ACQUIRES the setup
+// lock, not the one it read on the way to it. A mount deleted by a save that
+// lands while develop waits must not be bound into the box, and the exposure
+// banner -- printed from the same post-lock resolution -- must not claim it.
+func TestDevelopLaunchesTheConfigSavedUnderTheLock(t *testing.T) {
+	p, proj := testPaths(t)
+	secrets := t.TempDir()
+	writeStoreConfig(t, proj, "[[mounts]]\nhost = \""+secrets+"\"\ntarget = \"/secrets\"\nmode = \"ro\"\n")
+
+	// develop's pre-lock read: the mount is there, so the test is not vacuous.
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rv.mounts) != 1 || rv.mounts[0].Host != secrets {
+		t.Fatalf("pre-lock resolution should carry the mount, got %+v", rv.mounts)
+	}
+
+	f := &fakeRunner{}
+	str, _, stderr := testStreams("", false)
+	notice := lockWaitWriter(str.Err)
+	str.Err = notice
+	err = saveDuringLockWait(t, p, notice,
+		func() { writeStoreConfig(t, proj, "") }, // the save: the mount is deleted
+		func() error { return develop(f, str, p, rv, false) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.creates) != 1 {
+		t.Fatalf("expected one container create, got %v", f.creates)
+	}
+	if argv := strings.Join(f.creates[0], " "); strings.Contains(argv, secrets) {
+		t.Errorf("the deleted mount reached the container argv: %s", argv)
+	}
+	if strings.Contains(stderr.String(), "host mount") {
+		t.Errorf("the exposure banner must describe the box that launched:\n%s", stderr.String())
+	}
+}
+
+// The engine is the one thing the post-lock read cannot honor -- the runner,
+// the identity mode and the image tag are already fixed by the pre-lock
+// detection -- so a save that names a DIFFERENT engine is refused by name
+// rather than launched on the engine the config just stopped naming.
+func TestDevelopRefusesAnEngineChangedUnderTheLock(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := combine(config.Config{}, skills.Resolved{})
+	rv.reread = func() (resolved, error) {
+		return combine(config.Config{Engine: "podman"}, skills.Resolved{}), nil
+	}
+	f := &fakeRunner{} // the detected engine: docker
+	err := develop(f, discardStreams(), p, rv, false)
+	if err == nil || !strings.Contains(err.Error(), "engine changed") || !strings.Contains(err.Error(), "podman") {
+		t.Fatalf("expected the engine-changed refusal naming podman, got %v", err)
+	}
+	if len(f.builds) != 0 || len(f.creates) != 0 {
+		t.Fatalf("the refusal must precede build/create: builds=%v creates=%v", f.builds, f.creates)
+	}
+}
+
+// `auto` is not a change: it names whatever byre found on PATH, which is the
+// engine already running this session.
+func TestDevelopAcceptsAutoEngineUnderTheLock(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := combine(config.Config{}, skills.Resolved{})
+	rv.reread = func() (resolved, error) {
+		return combine(config.Config{Engine: "auto"}, skills.Resolved{}), nil
+	}
+	f := &fakeRunner{}
+	if err := develop(f, discardStreams(), p, rv, false); err != nil {
+		t.Fatalf("`auto` must not be read as an engine switch: %v", err)
+	}
+	if len(f.creates) != 1 {
+		t.Fatalf("expected the session to launch, creates=%v", f.creates)
+	}
+}
+
+// rebuild's image comes from the config read under the lock too: its pre-lock
+// read only had to name the engine.
+func TestRebuildBuildsTheConfigSavedUnderTheLock(t *testing.T) {
+	p, proj := testPaths(t)
+	writeStoreConfig(t, proj, "base = \"debian:bookworm\"\n")
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	notice := lockWaitWriter(&out)
+	err = saveDuringLockWait(t, p, notice,
+		func() { writeStoreConfig(t, proj, "base = \"ubuntu:24.04\"\n") },
+		func() error { return rebuild(notice, &fakeRunner{}, p, rv, hostIdentity()) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, rerr := os.ReadFile(p.Dockerfile)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if !strings.Contains(string(df), "FROM ubuntu:24.04") {
+		t.Errorf("rebuild generated from the stale base:\n%s", firstLine(string(df)))
 	}
 }
 
