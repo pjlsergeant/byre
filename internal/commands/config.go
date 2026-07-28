@@ -51,6 +51,14 @@ func skillOpts(cat *packages.Catalog) []string {
 // ~/.byre/layers/<name>/layer.config. All byre-owned/host-side, so editing
 // them never touches the project tree.
 func Config(s Streams, projectDir string, global bool, layer string) error {
+	// A full-screen editor with no terminal has nothing to draw on and no
+	// way to take a keystroke; refusing here beats bubbletea's own failure,
+	// and beats a headless run appearing to succeed. P6 makes the editor the
+	// interface, so the refusal owes the script a route: the declaration
+	// verbs, and the file itself (P1's defended right).
+	if !s.TTY {
+		return fmt.Errorf("byre config is an interactive editor -- run it on a TTY. From a script: `byre mcp`, `byre context` and `byre claude-skill` add and remove those declarations, and the config file is plain TOML you can edit directly (`byre status` names the one this project reads)")
+	}
 	if global && layer != "" {
 		return fmt.Errorf("--global and --layer are different files; pick one")
 	}

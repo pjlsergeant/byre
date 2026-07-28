@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -691,5 +692,29 @@ func TestResolveDoesNotMutateCallerSkills(t *testing.T) {
 	}
 	if !slices.Equal(proj.Skills, before) {
 		t.Errorf("resolution must not write through to the caller's slice: %v became %v", before, proj.Skills)
+	}
+}
+
+// The config editor is a full-screen TUI, so a headless invocation has no
+// surface to draw on. It refuses, and the refusal carries the scripting
+// route -- P6 makes the editor the interface, which is a debt to a script,
+// not an excuse to leave one stuck. (preset apply's non-TTY refusal is the
+// precedent: same shape, same exit convention.)
+func TestConfigRefusesNonTTY(t *testing.T) {
+	_, proj := onboardPaths(t)
+	err := Config(discardStreams(), proj, false, "")
+	if err == nil {
+		t.Fatal("a headless config editor must refuse, not draw into a pipe")
+	}
+	for _, want := range []string{"TTY", "byre mcp", "byre context", "byre claude-skill"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal must carry %q, got: %v", want, err)
+		}
+	}
+	// Same convention as preset apply: an ordinary byre error, not an
+	// ExitError smuggling a process status.
+	var exitErr ExitError
+	if errors.As(err, &exitErr) {
+		t.Errorf("non-TTY refusal must not carry a process exit code, got %d", exitErr.Code)
 	}
 }

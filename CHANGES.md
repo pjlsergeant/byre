@@ -2,6 +2,15 @@
 
 ## unreleased
 
+- **`byre config` with no terminal says what to use instead.** It used to
+  reach past your redirected stdin for the controlling terminal and draw the
+  editor there, or fail with `could not open a new TTY` if there wasn't one.
+  It now refuses up front, like `byre preset apply` does, and names the
+  scripting route: `byre mcp`, `byre context`, `byre claude-skill`, or the
+  config file itself. **If you were driving the editor with stdin
+  redirected** (`byre config < /dev/null` from a script, in a terminal), that
+  stops working -- run it with a terminal on stdin.
+
 - **A config file byre refuses now says which line.** A syntax error in
   `byre.config` (or `default.config`, or a layer) got you the file's path and
   `toml: unexpected character U+000A at start of value` -- nothing about
