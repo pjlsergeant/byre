@@ -265,3 +265,39 @@ func TestGlobalEditorRendersEveryRowItOffers(t *testing.T) {
 		t.Error("moving the cursor through the global form must not dirty it")
 	}
 }
+
+// The project editor's focus order, pinned. internal/tuitest's config-screen
+// walker navigates it with FIXED Down-counts -- it drives a real pty and can
+// only count rows -- so a field inserted mid-form silently desyncs every hop
+// after it. That desync is invisible here and costs a whole runner cycle
+// there (found live 2026-07-28: two new BUILD rows, two broken hops and a
+// section that had scrolled off the pty).
+//
+// Changing this list is fine. Changing it WITHOUT re-deriving the counts in
+// internal/tuitest/configwalk_test.go is the bug: the walker's comments name
+// the rows each hop crosses, so they say what to re-count.
+func TestProjectEditorFocusOrder(t *testing.T) {
+	m := newModel("t", "/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	want := []string{
+		// GRANTS
+		"Extra mounts", "Ports", "Egress", "Env vars",
+		// BUILD
+		"Base image", "Template", "Agent", "Engine", "Seed prefs", "Packages",
+		"Skills", "Skill files", "Package sources", "MCP servers", "Claude Skills", "Instructions",
+		// EXTENDS
+		"Extends",
+		// ADVANCED
+		"Run args", "Build files", "Dockerfile before", "Dockerfile after", "Volumes",
+	}
+	got := fieldIDsToStrings(m.order)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("project editor focus order changed:\n got %v\nwant %v\n"+
+			"Re-derive the Down-counts in internal/tuitest/configwalk_test.go, then update this list.", got, want)
+	}
+	// With an engine the DATA row appends AFTER the declaration list, so every
+	// count above stays valid whether or not one is available.
+	withEngine := newModel("t", "/x", config.Config{}, nil, nil, nil, nil, Inherited{}, &fakeVols{}, TargetProject)
+	if got := fieldIDsToStrings(withEngine.order); !reflect.DeepEqual(got, append(append([]string{}, want...), "Volume data")) {
+		t.Errorf("the engine-backed row must append, not insert: %v", got)
+	}
+}
