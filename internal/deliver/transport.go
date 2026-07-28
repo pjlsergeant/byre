@@ -10,7 +10,19 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
+
+// reportf writes one line of delivery reporting to the user's terminal. Every
+// line names something byre did not author -- a host path the user passed, an
+// entry name from a walked directory, an error from the engine -- so the whole
+// formatted line prints as data: terminal control sequences are stripped, and
+// the funnel adds the framing newline so an embedded one cannot forge a second
+// report line. byre's own wording carries no control characters, so this costs
+// its messages nothing.
+func reportf(cfg Config, format string, args ...any) {
+	fmt.Fprintln(cfg.Err, packages.EscapeTerminal(fmt.Sprintf(format, args...)))
+}
 
 // The transport is one `exec -i` per delivered file, running a small POSIX-sh
 // script inside the box as the dev identity. The scripts take every variable
@@ -116,7 +128,7 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 			return "", fmt.Errorf("delivering %s: broken symlink: %w", src, err)
 		}
 		if target.IsDir() {
-			fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to a directory)\n", src)
+			reportf(cfg, "byre: skipping %s (symlink to a directory)", src)
 			return "", nil
 		}
 		return deliverTopFile(cfg, sess, src, true)
@@ -131,7 +143,7 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 	case info.IsDir():
 		return deliverDir(cfg, sess, src)
 	default:
-		fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", src)
+		reportf(cfg, "byre: skipping %s (not a regular file or directory)", src)
 		return "", nil
 	}
 }
@@ -146,7 +158,7 @@ func deliverPath(cfg Config, sess Session, src string) (string, error) {
 func deliverTopFile(cfg Config, sess Session, src string, follow bool) (string, error) {
 	f, _, err := hostopen.OpenRegular(src, follow)
 	if errors.Is(err, hostopen.ErrNotRegular) {
-		fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file)\n", src)
+		reportf(cfg, "byre: skipping %s (not a regular file)", src)
 		return "", nil
 	}
 	if err != nil {
@@ -162,7 +174,7 @@ func deliverStream(cfg Config, sess Session, content io.Reader, name, destDir st
 	if sanitized {
 		// The landing name was rewritten (control chars, or a path-shaped
 		// --name forced to a basename) — say so, never rename silently.
-		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", name, stem+ext)
+		reportf(cfg, "byre: renamed %q → %q", name, stem+ext)
 	}
 	args := []string{"sh", "-c", fileScript, "byre-deliver", destDir, stem, ext}
 	if interior {
@@ -190,7 +202,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	base := filepath.Base(src)
 	stem, ext, sanitized := splitName(base)
 	if sanitized {
-		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", base, stem+ext)
+		reportf(cfg, "byre: renamed %q → %q", base, stem+ext)
 	}
 	out, err := sess.Engine.ExecInput(sess.ID, sess.UID, sess.GID, strings.NewReader(""),
 		"sh", "-c", dirScript, "byre-deliver", stem, ext)
@@ -228,7 +240,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	walkErr := fs.WalkDir(hostRoot.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		p := filepath.Join(src, filepath.FromSlash(rel)) // display only — opens ride hostRoot
 		if err != nil {
-			fmt.Fprintf(cfg.Err, "byre: %s: %v\n", p, err)
+			reportf(cfg, "byre: %s: %v", p, err)
 			failed++
 			return nil
 		}
@@ -237,7 +249,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		}
 		dest, sanitized := sanitizeRel(rel)
 		if sanitized {
-			fmt.Fprintf(cfg.Err, "byre: renamed %q (control characters) → %q\n", rel, dest)
+			reportf(cfg, "byre: renamed %q (control characters) → %q", rel, dest)
 		}
 		destDir := root
 		if d := dirOf(dest); d != "" {
@@ -259,20 +271,20 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 			f, st, oerr := hostopen.OpenRegularIn(hostRoot, rel)
 			if errors.Is(oerr, hostopen.ErrNotRegular) {
 				if isLink {
-					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink to something other than a file)\n", p)
+					reportf(cfg, "byre: skipping %s (symlink to something other than a file)", p)
 					return
 				}
-				fmt.Fprintf(cfg.Err, "byre: delivering %s: not a regular file\n", p)
+				reportf(cfg, "byre: delivering %s: not a regular file", p)
 				files++
 				failed++
 				return
 			}
 			if oerr != nil {
 				if isLink {
-					fmt.Fprintf(cfg.Err, "byre: skipping %s (symlink outside the delivered directory, or broken)\n", p)
+					reportf(cfg, "byre: skipping %s (symlink outside the delivered directory, or broken)", p)
 					return
 				}
-				fmt.Fprintf(cfg.Err, "byre: delivering %s: %v\n", p, oerr)
+				reportf(cfg, "byre: delivering %s: %v", p, oerr)
 				files++
 				failed++
 				return
@@ -280,7 +292,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 			defer f.Close()
 			files++
 			if _, ferr := deliverStream(cfg, sess, f, filepath.Base(dest), destDir, true); ferr != nil {
-				fmt.Fprintf(cfg.Err, "byre: %v\n", ferr)
+				reportf(cfg, "byre: %v", ferr)
 				failed++
 				return
 			}
@@ -291,7 +303,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		case d.IsDir():
 			if _, derr := sess.Engine.ExecInput(sess.ID, sess.UID, sess.GID, strings.NewReader(""),
 				"sh", "-c", mkdirScript, "byre-deliver", root+"/"+dest); derr != nil {
-				fmt.Fprintf(cfg.Err, "byre: creating %s: %v\n", dest, derr)
+				reportf(cfg, "byre: creating %s: %v", dest, derr)
 				failed++
 				return filepath.SkipDir
 			}
@@ -306,7 +318,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 			// swap-safe containment.
 			deliverContained(true)
 		default:
-			fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", p)
+			reportf(cfg, "byre: skipping %s (not a regular file or directory)", p)
 		}
 		return nil
 	})
@@ -318,11 +330,11 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		// count carry the truth — the path alone never asserts completeness.
 		// `failed` counts ENTRIES (files and interior dirs both), so a
 		// dirs-only failure can't hide behind an "N of N files" line.
-		fmt.Fprintf(cfg.Err, "byre: delivered %s — %d of %d files, %s; %d %s failed\n",
+		reportf(cfg, "byre: delivered %s — %d of %d files, %s; %d %s failed",
 			root, okFiles, files, sizeString(bytes), failed, plural(failed, "entry", "entries"))
 		return root, fmt.Errorf("delivering %s/: %d entries failed", src, failed)
 	}
-	fmt.Fprintf(cfg.Err, "byre: delivered %s — %d files, %s\n", root, files, sizeString(bytes))
+	reportf(cfg, "byre: delivered %s — %d files, %s", root, files, sizeString(bytes))
 	return root, nil
 }
 
