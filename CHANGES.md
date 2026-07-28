@@ -6,9 +6,10 @@
   are no longer exempt.** byre re-asserts its launcher, launch gate and
   firewall script at the end of the build, but a bind or named volume is
   applied by the engine over the finished image, where byre has nothing left
-  to re-assert with -- a volume at `/etc/byre` hands the box an empty
-  directory where the launch gate should be, and the launcher reads no gate
-  as nothing to wait for. develop and `byre status` now say so in one loud
+  to re-assert with -- a volume at `/etc/byre` is filled once, when it is
+  created, and is the authority ever after, so the launch gate a later build
+  bakes never reaches the box, and the launcher reads no gate as nothing to
+  wait for. develop and `byre status` now say so in one loud
   Containment line per offending target, naming the project config or the
   skill that declared it, instead of one line per byre path plus a hedge on
   the Network row. Every other row keeps describing what byre built. A

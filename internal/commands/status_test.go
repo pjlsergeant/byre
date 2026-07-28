@@ -852,6 +852,35 @@ func TestStatusDisclosesShadowWhenSkillsUnresolved(t *testing.T) {
 	}
 }
 
+// A config+skills set that fails validation is one develop refuses, so no box
+// ever runs with those skill mounts: status keeps its config-only view there,
+// and the disclosure follows it -- the project's own shadow is named, nothing
+// is attributed to a skill.
+func TestStatusShadowKeepsConfigOnlyViewWhenValidationFails(t *testing.T) {
+	p, proj := testPaths(t)
+	// The volume name collides with the claude skill's own state volume, which
+	// resolve() refuses; the same entry is the shadow.
+	cfgText := "agent = \"byre/claude\"\n\n[[volumes]]\nname = \".claude\"\nrole = \"state\"\ntarget = \"/etc/byre\"\n"
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte(cfgText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, out, _ := testStreams("", false)
+	if err := Status(s, proj, false); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "unresolved") {
+		t.Fatalf("expected the combined set to fail validation:\n%s", got)
+	}
+	contain := strings.Join(statusRows(got)["Containment"], "\n")
+	if !strings.Contains(contain, gen.ByreDir+" ("+shadowFromConfig+")") {
+		t.Errorf("the config shadow must still be disclosed:\n%s", got)
+	}
+	if strings.Contains(contain, "(skill ") {
+		t.Errorf("no skill contribution is active in this state; none may be attributed:\n%s", contain)
+	}
+}
+
 // The disclosure renders in status's Containment register beside the
 // skill-declared holes, once per offending target, attributed.
 func TestRenderStatusManagedShadowDisclosure(t *testing.T) {

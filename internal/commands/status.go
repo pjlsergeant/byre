@@ -179,10 +179,12 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
 	// skill, its .claude state volume, skill mounts) are shown, not just the
 	// config-level view. Best-effort: a resolution error is surfaced, not fatal.
-	// Whatever the skills view turns out to be, the shadow disclosure below
-	// reads from this: an empty Resolved still carries /etc/byre and the
-	// launcher, so a project volume over byre's own paths is disclosed even
-	// when nothing else about the box can be resolved.
+	// The shadow disclosure below reads from this. It stays empty unless the
+	// combined set validated -- the config-only view every other row falls
+	// back to, since develop refuses a combination that failed validation and
+	// no box runs with those skill mounts -- and an empty Resolved still
+	// carries /etc/byre and the launcher, so a project volume over byre's own
+	// paths is disclosed whatever became of the skills.
 	var res skills.Resolved
 	if merr := storeErr; merr != nil {
 		info.SkillErr = merr.Error()
@@ -191,16 +193,16 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	} else if r, rerr := skills.Resolve(cfg, cat); rerr != nil {
 		info.SkillErr = rerr.Error()
 	} else {
-		res = r
 		// Validate the combined config+skills set the SAME way develop/dockerfile
 		// do (resolve()), BEFORE committing it to info. A skill can contribute a
 		// mount/volume that collides with a config one, or a duplicate volume name;
 		// develop rejects that, so status shouldn't present it as active. On
 		// failure, surface it and keep the config-only view. Best-effort, not fatal.
-		rv := combine(cfg, res)
+		rv := combine(cfg, r)
 		if verr := rv.validate(); verr != nil {
 			info.SkillErr = verr.Error()
 		} else {
+			res = r
 			info.Skills = res.Names()
 			info.Binds = rv.mounts
 			info.Volumes = rv.volumes
@@ -232,8 +234,8 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// A mount/volume over a byre-managed path replaces byre's own
 	// launcher/gate/artifact in the running box — disclosed once, beside the
 	// containment rows. Outside the skills branch on purpose: the config side
-	// is knowable whatever happened to resolution, and a skills view that
-	// resolved but failed validation still names its own mounts.
+	// is knowable whatever happened to resolution, and this line is now the
+	// only place a shadow is reported.
 	info.ManagedShadows = managedPathShadows(cfg, res)
 	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
 		info.Engine = orDefault(cfg.Engine, "auto")
@@ -1015,12 +1017,12 @@ type ManagedPathShadow struct {
 //
 // Such a target replaces byre's own file in the RUNNING box -- and unlike
 // `files`, which byre re-asserts at the build tail, byre has no re-assertion
-// over a runtime mount. E.g. `[[volumes]] target = "/etc/byre"`: the engine
-// fills a new named volume from the image once and the volume is authoritative
-// after that, so a launch gate a later build bakes never reaches the box, and
-// an emptied one stays emptied. The launcher's wait is gated on a non-empty
-// gate file, so no gate means no wait, and the next restart brings the netns up
-// unfirewalled. Skills are included: the trust a skill earns is over its own
+// over a runtime mount. E.g. `[[volumes]] target = "/etc/byre"`: a new volume
+// is filled once -- by the engine from the image, or by byre's own seeding
+// before the box ever mounts it -- and is authoritative after that, so a
+// launch gate a later build bakes never reaches the box, and an emptied one
+// stays emptied. The launcher's wait is gated on a non-empty gate file, so no
+// gate means no wait, and the next restart brings the netns up unfirewalled. Skills are included: the trust a skill earns is over its own
 // construction, and the build-tail re-assertion that backs the same trust for
 // `files` has no runtime twin.
 func managedPathShadows(cfg config.Config, res skills.Resolved) []ManagedPathShadow {

@@ -27,16 +27,16 @@ effect. There is no runtime equivalent. A bind or a named volume is applied by
 the engine over the built image, and byre has nothing that runs after it.
 
 The sharpest instance is `[[volumes]] target = "/etc/byre"`. What the box sees
-there is the volume's content, which is written once -- both engines copy the
-image directory into a NEW named volume on first use, and never again. From
-then on the volume is the authority: the box gets whatever it holds, which is
-what the image held when the volume was created, and a gate a later build
-bakes never arrives. The launcher's wait is `[ -s "$GATE_FILE" ]`, so an
-absent or emptied gate is not a failure it can see -- it reads "no gate, and
-nothing to wait for", and the next `docker restart` recreates the netns with
-no firewall in it and launches anyway, on a configuration whose Network row
-said deny-by-default. A bind mount over the same path skips even the initial
-copy.
+there is the volume's content, and a volume is filled once: an empty new one
+picks up the image directory when the engine first mounts it, a `seed`ed one
+is populated by byre before the box mounts it at all (so the image's copy
+never lands), and a bind mount of a host directory skips the question
+entirely. After that the volume is the authority -- the box gets whatever it
+holds, and a gate a later build bakes never arrives. The launcher's wait is
+`[ -s "$GATE_FILE" ]`, so an absent or emptied gate is not a failure it can
+see: it reads "no gate, nothing to wait for", and the next `docker restart`
+recreates the netns with no firewall in it and launches anyway, on a
+configuration whose Network row said deny-by-default.
 
 ## The decision
 
