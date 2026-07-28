@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -56,6 +58,93 @@ var clipRunOut = func(name string, args ...string) ([]byte, error) {
 	}
 	return out, nil
 }
+
+// A clipboard READ is bounded on both axes; the shared clipRunOut seam above
+// is not, because it also drives interactive dialogs (the session picker's
+// chooser), where the child is legitimately waiting on a human. A read is
+// never waiting on anyone: no pasteboard tool takes minutes to answer, and one
+// that never answers -- a compositor that stopped serving its own advertised
+// type -- would wedge `byre deliver` with nothing but ctrl-C to end it. The
+// size cap is the same shape: the payload is whatever is on the pasteboard,
+// and a runaway one must fail rather than become host memory.
+const (
+	clipReadTimeout = 2 * time.Minute
+	clipMaxOutput   = 64 << 20 // a large screenshot (hex-rendered on macOS, so ~2x the image)
+)
+
+// clipReadOut runs one clipboard-read tool under those bounds. Errors keep
+// clipRunOut's %w wrapping so exitCode can still reach the ExitError.
+var clipReadOut = func(name string, args ...string) ([]byte, error) {
+	return clipReadBounded(clipReadTimeout, clipMaxOutput, name, args...)
+}
+
+// clipReadBounded is clipReadOut's body with the bounds as parameters, so a
+// test can prove the deadline and the cap fire without waiting two minutes or
+// allocating 64 MiB.
+func clipReadBounded(timeout time.Duration, max int, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	// Same reason clipRunOut does it: none of these tools read the tty, and a
+	// child in the foreground process group makes the terminal title flap.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Stderr is capped, not saved by exec: Output() populates ExitError.Stderr
+	// but this reads stdout through a pipe, so the diagnostic has to be kept
+	// here (runner.capBuffer's shape -- bounded, never blocking the child).
+	var stderr capBuffer
+	stderr.max = 64 << 10
+	cmd.Stderr = &stderr
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	out, rerr := io.ReadAll(io.LimitReader(pipe, int64(max)+1))
+	if len(out) > max {
+		cancel() // stop the writer; a capped read never waits the child out
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("%s: clipboard content exceeds %d bytes", name, max)
+	}
+	werr := cmd.Wait()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%s: no answer within %s (gave up)", name, timeout)
+	}
+	if rerr != nil {
+		return nil, fmt.Errorf("%s: %w", name, rerr)
+	}
+	if werr != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%s (%s): %w", name, msg, werr)
+		}
+		return nil, fmt.Errorf("%s: %w", name, werr)
+	}
+	return out, nil
+}
+
+// capBuffer keeps at most max bytes but always reports a full write, so a
+// child writing past the cap is never blocked on its stderr pipe (it just
+// stops being recorded). The runner has the same type for the same reason;
+// duplicated rather than exported, since it is four lines and the two packages
+// share no other plumbing.
+type capBuffer struct {
+	b   bytes.Buffer
+	max int
+}
+
+func (c *capBuffer) Write(p []byte) (int, error) {
+	if room := c.max - c.b.Len(); room > 0 {
+		if len(p) > room {
+			c.b.Write(p[:room])
+		} else {
+			c.b.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (c *capBuffer) String() string { return c.b.String() }
 
 // exitCode digs the child's exit code out of a wrapped clipRunOut error
 // (-1 when there is none — a lookup or I/O failure, not a tool exit).
@@ -209,7 +298,7 @@ func parseFileRefs(raw string) []string {
 func darwinBackend() clipBackend {
 	return clipBackend{
 		listTypes: func() ([]string, error) {
-			out, err := clipRunOut("osascript", "-e", "clipboard info")
+			out, err := clipReadOut("osascript", "-e", "clipboard info")
 			if err != nil {
 				return nil, err
 			}
@@ -221,10 +310,10 @@ func darwinBackend() clipBackend {
 				// JXA + NSPasteboard: the one route that yields EVERY file of a
 				// multi-select Finder copy (AppleScript's furl coercion returns
 				// only the first).
-				return clipRunOut("osascript", "-l", "JavaScript", "-e", darwinFileRefsJXA)
+				return clipReadOut("osascript", "-l", "JavaScript", "-e", darwinFileRefsJXA)
 			case "image/png":
 				if _, err := clipLookPath("pngpaste"); err == nil {
-					return clipRunOut("pngpaste", "-")
+					return clipReadOut("pngpaste", "-")
 				}
 				return darwinClipData("PNGf")
 			case "image/jpeg":
@@ -234,7 +323,7 @@ func darwinBackend() clipBackend {
 			case "image/tiff":
 				return darwinClipData("TIFF")
 			case "text/plain":
-				return clipRunOut("pbpaste")
+				return clipReadOut("pbpaste")
 			}
 			return nil, fmt.Errorf("unsupported clipboard type %q", typ)
 		},
@@ -283,7 +372,7 @@ func parseDarwinClipInfo(info string) []string {
 // darwinClipData reads binary clipboard data via AppleScript's hex rendering:
 // `the clipboard as «class PNGf»` prints `«data PNGf6789...»`.
 func darwinClipData(class string) ([]byte, error) {
-	out, err := clipRunOut("osascript", "-e", "the clipboard as «class "+class+"»")
+	out, err := clipReadOut("osascript", "-e", "the clipboard as «class "+class+"»")
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +395,7 @@ func linuxBackend(getenv func(string) string) *clipBackend {
 		if _, err := clipLookPath("wl-paste"); err == nil {
 			return &clipBackend{
 				listTypes: func() ([]string, error) {
-					out, err := clipRunOut("wl-paste", "--list-types")
+					out, err := clipReadOut("wl-paste", "--list-types")
 					if err != nil {
 						return nil, err
 					}
@@ -314,9 +403,9 @@ func linuxBackend(getenv func(string) string) *clipBackend {
 				},
 				fetch: func(typ string) ([]byte, error) {
 					if typ == typeFileRefs {
-						return clipRunOut("wl-paste", "--type", "text/uri-list")
+						return clipReadOut("wl-paste", "--type", "text/uri-list")
 					}
-					return clipRunOut("wl-paste", "--type", typ)
+					return clipReadOut("wl-paste", "--type", typ)
 				},
 			}
 		}
@@ -325,7 +414,7 @@ func linuxBackend(getenv func(string) string) *clipBackend {
 		if _, err := clipLookPath("xclip"); err == nil {
 			return &clipBackend{
 				listTypes: func() ([]string, error) {
-					out, err := clipRunOut("xclip", "-selection", "clipboard", "-t", "TARGETS", "-o")
+					out, err := clipReadOut("xclip", "-selection", "clipboard", "-t", "TARGETS", "-o")
 					if err != nil {
 						return nil, err
 					}
@@ -333,12 +422,12 @@ func linuxBackend(getenv func(string) string) *clipBackend {
 				},
 				fetch: func(typ string) ([]byte, error) {
 					if typ == typeFileRefs {
-						return clipRunOut("xclip", "-selection", "clipboard", "-t", "text/uri-list", "-o")
+						return clipReadOut("xclip", "-selection", "clipboard", "-t", "text/uri-list", "-o")
 					}
 					if typ == "text/plain" {
-						return clipRunOut("xclip", "-selection", "clipboard", "-o")
+						return clipReadOut("xclip", "-selection", "clipboard", "-o")
 					}
-					return clipRunOut("xclip", "-selection", "clipboard", "-t", typ, "-o")
+					return clipReadOut("xclip", "-selection", "clipboard", "-t", typ, "-o")
 				},
 			}
 		}

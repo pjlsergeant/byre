@@ -3,6 +3,7 @@ package runner
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func indexOf(s []string, v string) int {
@@ -251,7 +252,7 @@ func TestProbeSockGroupArgs(t *testing.T) {
 
 func TestProbeSockGroupParsesGID(t *testing.T) {
 	r := New(Docker)
-	r.capture = func(name string, args ...string) (string, error) {
+	r.captureBounded = func(d time.Duration, name string, args ...string) (string, error) {
 		return "989\n", nil
 	}
 	gid, err := r.ProbeSockGroup("img", "/h", "/t", "")

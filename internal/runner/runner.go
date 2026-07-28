@@ -6,6 +6,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Engine is a supported container engine.
@@ -70,6 +72,13 @@ type Runner struct {
 	streamIn  func(stdin io.Reader, name string, args ...string) error
 	captureIn func(stdin io.Reader, name string, args ...string) (string, error)
 	streamOut func(stdout io.Writer, name string, args ...string) error
+	// captureBounded is capture with a wall-clock deadline, for the engine
+	// calls byre makes from a goroutine that has no other way out: the netns
+	// helper and the sock-group probe run CONTAINERS, and the network-mode
+	// inspect is what stands between the box and running unprotected. A wedged
+	// daemon leaves those waiting forever with the box already up; every other
+	// captured call is answered by a client that fails on its own.
+	captureBounded func(d time.Duration, name string, args ...string) (string, error)
 }
 
 // New returns a Runner for the given engine using real exec.
@@ -80,13 +89,26 @@ func New(e Engine) *Runner {
 		// os.Stdin for the interactive form, a nil Reader (== no stdin) for
 		// the captured one. Separate implementations drifted -- one grew a
 		// stderr cap the other never got.
-		stream:    func(name string, args ...string) error { return streamInExec(os.Stdin, name, args...) },
-		capture:   func(name string, args ...string) (string, error) { return captureInExec(nil, name, args...) },
-		streamIn:  streamInExec,
-		captureIn: captureInExec,
-		streamOut: streamOutExec,
+		stream:         func(name string, args ...string) error { return streamInExec(os.Stdin, name, args...) },
+		capture:        func(name string, args ...string) (string, error) { return captureInExec(nil, name, args...) },
+		streamIn:       streamInExec,
+		captureIn:      captureInExec,
+		streamOut:      streamOutExec,
+		captureBounded: captureBoundedExec,
 	}
 }
+
+// The wall-clock bounds on the three hang-prone engine calls. Sized to "the
+// engine is wedged", never to "this is slow": a container launch on a cold
+// machine, or a netns helper resolving a long allowlist over slow DNS, must
+// finish comfortably inside them. Passing one means byre stops waiting and
+// reports, which for the netns pair means the box fails CLOSED rather than
+// hanging with the agent parked at the launch gate.
+const (
+	netnsProbeTimeout = 2 * time.Minute  // an inspect: only a wedged daemon takes this
+	netnsInitTimeout  = 10 * time.Minute // runs a helper container: rules + DNS for the whole allowlist
+	sockProbeTimeout  = 5 * time.Minute  // runs a one-shot probe container against a local image
+)
 
 // Engine reports the engine this runner invokes.
 func (r *Runner) Engine() Engine { return r.engine }
@@ -271,7 +293,7 @@ func (r *Runner) ExecOutput(containerID string, uid, gid int, stdout io.Writer, 
 // container's network namespace (NetnsInit) use this to establish the
 // namespace is actually the container's own before touching it.
 func (r *Runner) NetworkMode(container string) (string, error) {
-	out, err := r.capture(string(r.engine), "inspect", "-f", "{{.HostConfig.NetworkMode}}", container)
+	out, err := r.captureBounded(netnsProbeTimeout, string(r.engine), "inspect", "-f", "{{.HostConfig.NetworkMode}}", container)
 	if err != nil {
 		return "", err
 	}
@@ -347,7 +369,7 @@ func execArgs(containerID string, uid, gid int, workdir string, env map[string]s
 // engine's stderr is folded into the error; on success the launch gate
 // opening is the signal, not text.
 func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error {
-	_, err := r.capture(string(r.engine), netnsInitArgs(image, container, entrypoint, env, joinUserns)...)
+	_, err := r.captureBounded(netnsInitTimeout, string(r.engine), netnsInitArgs(image, container, entrypoint, env, joinUserns)...)
 	return err
 }
 
@@ -361,7 +383,7 @@ func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]s
 // Returns the numeric gid; a probe failure is returned to the caller for
 // attributed warning -- never silently defaulted.
 func (r *Runner) ProbeSockGroup(image, hostPath, targetPath, userns string) (int, error) {
-	out, err := r.capture(string(r.engine), probeSockGroupArgs(image, hostPath, targetPath, userns)...)
+	out, err := r.captureBounded(sockProbeTimeout, string(r.engine), probeSockGroupArgs(image, hostPath, targetPath, userns)...)
 	if err != nil {
 		return 0, err
 	}
@@ -622,6 +644,31 @@ func streamOutExec(stdout io.Writer, name string, args ...string) error {
 		return err
 	}
 	return nil
+}
+
+// captureBoundedExec is captureInExec with a wall-clock deadline: the child is
+// killed when d expires and the timeout is reported as itself, not as a bare
+// "signal: killed". Only the calls whose failure mode is a HANG use it (see
+// Runner.captureBounded) -- the bound exists so byre's own goroutine can
+// report and fail closed instead of waiting forever with a box already
+// running. Generous by construction: these are container launches, so the
+// deadline is sized to "something is wrong", never to "this is slow".
+func captureBoundedExec(d time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	stderr := &capBuffer{max: 64 << 10}
+	cmd.Stderr = stderr
+	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return string(out), fmt.Errorf("%s: no answer within %s (gave up)", name, d)
+	}
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return string(out), fmt.Errorf("%s: %s", err, msg)
+		}
+	}
+	return string(out), err
 }
 
 // capBuffer is an io.Writer that keeps at most max bytes but always reports a

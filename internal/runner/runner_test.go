@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeLook returns a LookPath that "finds" only the named binaries.
@@ -158,5 +159,30 @@ func TestIsRootlessPodman(t *testing.T) {
 	}}
 	if _, err := r.IsRootlessPodman(); err == nil || len(err.Error()) > 200 {
 		t.Errorf("an oversized answer must be bounded in the error: %v", err)
+	}
+}
+
+// The bound is real: a child that never answers is killed and reported as a
+// timeout, not left holding byre's goroutine. The netns pair runs from a
+// goroutine racing a live box, so "waits forever" there means the agent parks
+// at the launch gate with nothing coming.
+func TestCaptureBoundedKillsAChildThatNeverAnswers(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("no sleep on PATH")
+	}
+	start := time.Now()
+	_, err := captureBoundedExec(50*time.Millisecond, "sleep", "60")
+	if err == nil {
+		t.Fatal("a child past the deadline must be an error, not a wait")
+	}
+	if !strings.Contains(err.Error(), "no answer within") {
+		t.Errorf("the timeout must report itself, not a bare kill signal: %v", err)
+	}
+	if el := time.Since(start); el > 30*time.Second {
+		t.Errorf("the deadline did not fire: waited %s", el)
+	}
+	// A child that answers in time is unaffected.
+	if out, err := captureBoundedExec(time.Minute, "sleep", "0"); err != nil || out != "" {
+		t.Errorf("a prompt child must pass through: %q %v", out, err)
 	}
 }

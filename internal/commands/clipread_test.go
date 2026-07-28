@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -181,5 +182,37 @@ func TestReadClipboardAllFetchesFailSurfacesFirstError(t *testing.T) {
 	_, err := readClipboard(cb, fixedNow, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A clipboard read is bounded on both axes. The unbounded seam beside it
+// drives interactive dialogs, where the child waits on a human; a read waits
+// on nobody, and a compositor that stops answering its own advertised type
+// would otherwise wedge `byre deliver` with no way out but ctrl-C.
+func TestClipReadOutIsBounded(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("no sleep on PATH")
+	}
+	start := time.Now()
+	_, err := clipReadBounded(50*time.Millisecond, clipMaxOutput, "sleep", "60")
+	if err == nil {
+		t.Fatal("a read past the deadline must be an error, not a wait")
+	}
+	if !strings.Contains(err.Error(), "no answer within") {
+		t.Errorf("the timeout must report itself: %v", err)
+	}
+	if el := time.Since(start); el > 30*time.Second {
+		t.Errorf("the deadline did not fire: waited %s", el)
+	}
+}
+
+// Output past the cap fails rather than becoming host memory.
+func TestClipReadOutCapsTheOutput(t *testing.T) {
+	if _, err := exec.LookPath("yes"); err != nil {
+		t.Skip("no yes on PATH")
+	}
+	_, err := clipReadBounded(time.Minute, 4096, "yes", strings.Repeat("x", 64))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("an unbounded pasteboard must fail, not fill memory: %v", err)
 	}
 }

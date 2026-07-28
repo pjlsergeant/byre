@@ -4,6 +4,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // argvRunner returns a Runner whose stream seam records the full argv
@@ -155,7 +156,7 @@ func TestSeedLiteralArgvAndStdin(t *testing.T) {
 
 func TestNetnsInitArgv(t *testing.T) {
 	var gotArgs []string
-	r := &Runner{engine: Docker, capture: func(name string, args ...string) (string, error) {
+	r := &Runner{engine: Docker, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
 		gotArgs = append([]string{name}, args...)
 		return "", nil
 	}}

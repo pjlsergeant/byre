@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIdentityUserns(t *testing.T) {
@@ -104,12 +105,18 @@ func TestKeepIDUsernsOnHelpers(t *testing.T) {
 	}
 
 	var capArgs []string
-	rc := &Runner{engine: Podman, streamIn: nil, capture: func(name string, args ...string) (string, error) {
-		capArgs = append([]string{name}, args...)
+	var capBound time.Duration
+	rc := &Runner{engine: Podman, streamIn: nil, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
+		capBound, capArgs = d, append([]string{name}, args...)
 		return "989\n", nil
 	}}
 	if _, err := rc.ProbeSockGroup("img", "/h", "/t", id.Userns()); err != nil {
 		t.Fatal(err)
+	}
+	// The probe runs a CONTAINER from a goroutine with no other way out: it
+	// goes through the bounded seam, or a wedged engine wedges byre.
+	if capBound <= 0 {
+		t.Error("ProbeSockGroup must run under a wall-clock bound")
 	}
 	if got := strings.Join(capArgs, " "); !strings.Contains(got, flag) {
 		t.Errorf("ProbeSockGroup argv missing keep-id userns: %q", got)
@@ -121,12 +128,16 @@ func TestKeepIDUsernsOnHelpers(t *testing.T) {
 // it only exists inside that owner.
 func TestNetnsInitJoinsBoxUserns(t *testing.T) {
 	var gotArgs []string
-	r := &Runner{engine: Podman, capture: func(name string, args ...string) (string, error) {
-		gotArgs = append([]string{name}, args...)
+	var bound time.Duration
+	r := &Runner{engine: Podman, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
+		bound, gotArgs = d, append([]string{name}, args...)
 		return "", nil
 	}}
 	if err := r.NetnsInit("img", "byre-box", "/fw", nil, true); err != nil {
 		t.Fatal(err)
+	}
+	if bound <= 0 {
+		t.Error("the netns helper must run under a wall-clock bound")
 	}
 	joined := strings.Join(gotArgs, " ")
 	if !strings.Contains(joined, "--userns=container:byre-box") {
