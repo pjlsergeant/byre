@@ -325,8 +325,12 @@ func TestRemotePartialDeliveryKeepsLandedPaths(t *testing.T) {
 		{stdout: "/inbox/a.txt\n/inbox/b.txt\n", err: &SSHExitError{Code: 1}},
 	}}
 	cfg, out, _ := remoteConfig()
-	src := writeTestFile(t, "f", "x")
-	landed, err := RunRemote(cfg, Options{Box: "abc"}, SSHTarget{Host: "far"}, PathSources([]string{src}), ssh.exec, false)
+	// Two sources for the two reported paths: the reader holds the remote to
+	// one landed path per top-level entry sent, so a fixture that reports more
+	// than it packed is testing the arity refusal, not partial delivery.
+	a := writeTestFile(t, "a.txt", "x")
+	b := writeTestFile(t, "b.txt", "y")
+	landed, err := RunRemote(cfg, Options{Box: "abc"}, SSHTarget{Host: "far"}, PathSources([]string{a, b}), ssh.exec, false)
 	if err == nil {
 		t.Fatal("no error for a failed delivery")
 	}

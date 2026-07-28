@@ -378,6 +378,14 @@ func splitName(name string) (stem, ext string, sanitized bool) {
 // the ONLY box-authored string on the porcelain stream, and an interior
 // newline in it forges a second landed path — one the ssh leg parses back as
 // real (parseLandedPaths) and the clipboard then carries.
+//
+// C0 and DEL only, deliberately: EscapeTerminal (the STDERR rule) also drops
+// the C1 block, but the framing rule here has to match the CLAIMING rule, and
+// sanitizeBase passes C1 through. A name carrying one lands with it, so
+// mapping it here would print a path that is not the path that landed —
+// silently wrong porcelain, which is worse than what it would buy. C1 cannot
+// forge a line either way. Excluding it is a sanitizeBase question, package-
+// wide, not this funnel's to decide alone.
 func landedPath(out string) string {
 	return grammarField(strings.TrimRight(out, "\r\n"))
 }

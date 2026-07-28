@@ -228,14 +228,59 @@ func TestLandedPathStdoutStaysFramed(t *testing.T) {
 		assertOnePorcelainLine(t, out.String())
 	})
 
-	// The remote leg reprints the far byre's stdout on THIS terminal, so the
-	// local rule -- not the far end's version of byre -- decides what lands
-	// there.
-	t.Run("remote reprint", func(t *testing.T) {
-		for _, p := range parseLandedPaths(forgedLanded) {
-			if strings.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-				t.Errorf("parseLandedPaths returned a control character in %q", p)
-			}
+}
+
+// The remote leg reprints the far byre's stdout on THIS terminal, and the far
+// end's version is not the local side's to assume. Cleaning each record is not
+// enough there: the split into records happens first, so a forged newline is
+// already a RECORD by the time anything is cleaned. These arms pin what the
+// reader enforces -- and, equally, the bound it does not exceed.
+func TestParseLandedPathsHoldsTheRemoteToTheLocalRule(t *testing.T) {
+	// A record count, not just clean strings: the forgery is the extra record.
+	t.Run("a forged newline does not become a second record", func(t *testing.T) {
+		got, err := parseLandedPaths(forgedLanded, 1)
+		if err == nil {
+			t.Fatalf("a forged reply parsed as %d records, want a refusal", len(got))
+		}
+		if got != nil {
+			t.Errorf("a refused stream still yielded %q -- none of it is quotable", got)
+		}
+		// The rule that fired names the offending record, not just "bad input".
+		if !strings.Contains(err.Error(), "not a top-level /inbox path") {
+			t.Errorf("the wrong rule fired: %v", err)
+		}
+	})
+
+	// Multi-line output is LEGITIMATE here -- N sources land N paths -- so the
+	// reader must not answer forgery with "one record only".
+	t.Run("an honest multi-source stream keeps every record", func(t *testing.T) {
+		got, err := parseLandedPaths("/inbox/a.txt\n/inbox/bug\n", 2)
+		if err != nil {
+			t.Fatalf("an honest two-path stream was refused: %v", err)
+		}
+		if len(got) != 2 {
+			t.Errorf("parsed %q, want both paths", got)
+		}
+	})
+
+	t.Run("more records than top-level entries is refused", func(t *testing.T) {
+		_, err := parseLandedPaths("/inbox/a.txt\n/inbox/forged\n", 1)
+		if err == nil {
+			t.Fatal("two records for one packed entry parsed clean, want a refusal")
+		}
+		if !strings.Contains(err.Error(), "2 paths for the 1 top-level entry") {
+			t.Errorf("the arity rule did not name the counts: %v", err)
+		}
+	})
+
+	// The documented residual, pinned so it stays a KNOWN bound rather than a
+	// forgotten one: an /inbox-shaped forgery that fits under the arity bound
+	// (a delivery where a real claim also failed) still reads as real. Closing
+	// it needs framing a path cannot forge -- a ProtoVersion, not a reader.
+	t.Run("an in-grammar forgery under the bound is accepted", func(t *testing.T) {
+		got, err := parseLandedPaths("/inbox/a.txt\n/inbox/forged\n", 2)
+		if err != nil || len(got) != 2 {
+			t.Fatalf("the residual moved: got %q, %v -- update the porcelain contract", got, err)
 		}
 	})
 }

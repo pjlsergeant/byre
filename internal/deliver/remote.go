@@ -138,8 +138,13 @@ func RunRemote(cfg Config, opts Options, target SSHTarget, sources []Source, ssh
 	meter.finish(sshErr == nil && packErr == nil)
 
 	// The paths that landed are real whatever else failed: print them, ship
-	// them to the clipboard, and only then report the failure.
-	landed := parseLandedPaths(remoteOut.String())
+	// them to the clipboard, and only then report the failure. Unless the
+	// stream itself broke the contract — then none of it is quotable, and the
+	// note here explains the empty stdout wherever the exit code comes from.
+	landed, streamErr := parseLandedPaths(remoteOut.String(), plan.tops)
+	if streamErr != nil {
+		reportf(cfg, "byre: %v", streamErr)
+	}
 	for _, p := range landed {
 		fmt.Fprintln(cfg.Out, p)
 	}
@@ -152,6 +157,11 @@ func RunRemote(cfg Config, opts Options, target SSHTarget, sources []Source, ssh
 	}
 	if sshErr != nil {
 		return landed, remoteFailure(sshErr, target, remoteByre, "delivery")
+	}
+	if streamErr != nil {
+		// Nothing else failed, so this is the failure — nonzero, because
+		// "nothing printed" must never exit 0. The detail is the note above.
+		return nil, fmt.Errorf("the remote's landed-path stream is not what the protocol promised (see the note above)")
 	}
 	return landed, nil
 }
@@ -234,21 +244,64 @@ func remoteFailure(err error, target SSHTarget, remoteByre, doing string) error 
 }
 
 // parseLandedPaths reads the remote deliver's stdout: landed in-box paths,
-// one per line (the same contract a local deliver prints).
-func parseLandedPaths(out string) []string {
+// one per line (the same contract a local deliver prints). tops is how many
+// top-level entries this delivery packed.
+//
+// The framing on this stream is NOT the local side's to trust. A byre with
+// landedPath never lets a box-authored newline reach the wire, but assuming
+// the far end is that byre is exactly the assumption a version handshake
+// exists to avoid — and the split into records happens BEFORE any sanitizing,
+// so against an older remote a forged newline has already become a second
+// record by the time the fragments are cleaned. Multi-line output is
+// legitimate here (N sources land N paths), so "one record" is not the rule.
+// What the local side can prove on its own is:
+//
+//   - ARITY: the remote claims at most one top-level path per top-level name
+//     this delivery packed. Claims can fail, so tops is an upper bound, never
+//     an equality.
+//   - GRAMMAR: every record is "/inbox/" plus exactly one path component —
+//     tar mode lands top-level claims there and nowhere else, so a forged
+//     record carrying report-line text or an interior path is not one.
+//
+// Neither rule is complete: a forgery that is /inbox-shaped AND fits under
+// the arity bound (a delivery where a real claim also failed) still passes.
+// Closing that needs framing a path cannot forge — a protocol change, so a
+// ProtoVersion — not a stricter reader. What these two do close is the whole
+// forged-REPORT-LINE class and every over-count.
+//
+// A stream that breaks either rule gets ParseBoxes' treatment: error rather
+// than guess. byre cannot tell which of N+1 records is the forgery, so it
+// quotes none of them.
+func parseLandedPaths(out string, tops int) ([]string, error) {
 	var landed []string
 	for _, line := range strings.Split(out, "\n") {
 		// landedPath strips only the CR of a CRLF frame, never the path's own
 		// trailing space (a filename may end in one; the split already took
-		// the LF), and maps control characters. The remote byre sanitized
-		// its own stdout, so this changes nothing for a remote speaking the
-		// protocol — it means the reprint on THIS terminal answers to the
-		// local rule rather than to the far end's version of byre.
-		if p := landedPath(line); p != "" {
-			landed = append(landed, p)
+		// the LF), and maps control characters — so the reprint on THIS
+		// terminal answers to the local rule, not the far end's version.
+		p := landedPath(line)
+		if p == "" {
+			continue
 		}
+		if !isInboxTop(p) {
+			return nil, fmt.Errorf("unexpected record in the landed-path stream (not a top-level /inbox path): %q", p)
+		}
+		landed = append(landed, p)
 	}
-	return landed
+	if len(landed) > tops {
+		return nil, fmt.Errorf("the landed-path stream reported %d paths for the %d top-level %s this delivery sent — refusing to quote any of them",
+			len(landed), tops, plural(tops, "entry", "entries"))
+	}
+	return landed, nil
+}
+
+// isInboxTop reports whether p is a top-level in-box landing: "/inbox/" plus
+// exactly one non-empty component. Deliver has no --to yet, so every claim a
+// tar delivery reports is one of these; when --to lands it changes the
+// grammar, which is what ProtoVersion is for.
+func isInboxTop(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/inbox/")
+	return ok && rest != "" && !strings.Contains(rest, "/")
 }
 
 // packPlan is a delivery's tar layout, statted and spooled up front so the
@@ -256,6 +309,11 @@ func parseLandedPaths(out string) []string {
 type packPlan struct {
 	entries []packEntry
 	bytes   int64 // content bytes (headers excluded — the meter's total)
+	// tops is how many top-level names the plan claims. The remote lands one
+	// path per top-level name, so this is the arity bound parseLandedPaths
+	// holds the reply to — the one thing about the far end's output the local
+	// side knows without believing anything the far end says.
+	tops int
 }
 
 // packEntry is one archive member. Exactly one of root+rel / path / data backs
@@ -301,6 +359,7 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 			n = fmt.Sprintf("%s-%d%s", stem, k, ext)
 		}
 		seen[n] = true
+		plan.tops++
 		return n
 	}
 	for _, src := range sources {

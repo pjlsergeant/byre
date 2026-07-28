@@ -38,6 +38,24 @@
 // So the invariant to preserve when adding a stdout write: whatever is
 // interpolated is either byre's own, the user's own, or has been through the
 // package's sanitizers — never a raw string the box authored.
+//
+// # The remote leg's residual
+//
+// Over ssh the landed-path stream crosses a version boundary: the local side
+// reprints what the REMOTE byre put on stdout. A remote with landedPath never
+// lets a box-authored newline reach the wire, but the local must not assume
+// the far end's version, and by the time a stream is split into records the
+// forgery is already a record. Legitimate multi-line output exists here (N
+// sources land N paths), so the reader cannot answer this with "one record".
+// It enforces the two things it can prove alone — an arity bound from the
+// top-level entries this delivery packed, and the /inbox top-level grammar
+// (parseLandedPaths) — and refuses the whole stream when either breaks.
+//
+// The residual, stated rather than papered over: against an OLDER remote byre
+// AND a box lying about where it landed things, a forged record that is
+// /inbox-shaped and fits under the arity bound still reads as real. Closing
+// that needs framing a path cannot forge — NUL records, say — which is a
+// grammar change and therefore a ProtoVersion, not a stricter reader.
 package deliver
 
 import (
