@@ -1134,3 +1134,39 @@ func TestWarnGuardCollisionsNotesArtifactShadows(t *testing.T) {
 		t.Errorf("an innocent files entry must warn nothing:\n%s", clean.String())
 	}
 }
+
+// An exclusive volume changes what a second worktree box does, so it is
+// marked where a reader scans the volume list -- and the Worktrees row stops
+// saying siblings share these volumes without qualification.
+func TestRenderStatusMarksExclusiveVolumes(t *testing.T) {
+	info := statusInfo{
+		Engine:    "docker",
+		Canonical: "/p",
+		Volumes: []config.Volume{
+			{Name: "ledger", Role: "state", Sharing: "exclusive"},
+			{Name: "node_modules", Role: "cache"},
+		},
+		Container:       "abcdef0123456789",
+		SiblingSessions: []string{"proj-wt1 (beef0123)"},
+	}
+	var b bytes.Buffer
+	renderStatusTest(&b, info)
+	out := b.String()
+
+	assertRow(t, out, "State vols", "ledger (exclusive)")
+	assertRow(t, out, "Cache vols", "node_modules")
+	wt := strings.Join(statusRows(out)["Worktrees"], " ")
+	if !strings.Contains(wt, "ledger exclusive") || !strings.Contains(wt, "refuses") {
+		t.Errorf("the Worktrees row must qualify the sharing claim, got %q", wt)
+	}
+
+	// Without an exclusive declaration nothing is marked and the row keeps
+	// its unqualified wording -- the claim is still true there.
+	info.Volumes = []config.Volume{{Name: "ledger", Role: "state"}}
+	var plain bytes.Buffer
+	renderStatusTest(&plain, info)
+	assertRow(t, plain.String(), "State vols", "ledger")
+	if got := strings.Join(statusRows(plain.String())["Worktrees"], " "); !strings.Contains(got, "(share these volumes)") {
+		t.Errorf("a shared-only project keeps the plain Worktrees row, got %q", got)
+	}
+}
