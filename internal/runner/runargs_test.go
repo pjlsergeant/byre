@@ -237,9 +237,12 @@ func TestRunArgsGroupAdds(t *testing.T) {
 }
 
 func TestProbeSockGroupArgs(t *testing.T) {
-	args := probeSockGroupArgs("byre-img", "/var/run/docker.sock", "/var/run/docker.sock", "")
+	args := probeSockGroupArgs("byre-sockprobe-cafe", "byre-img", "/var/run/docker.sock", "/var/run/docker.sock", "")
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
+		// --name is what makes the deadline mean something: a container byre
+		// cannot address is one it cannot stop.
+		"--name byre-sockprobe-cafe",
 		"run", "--rm", "--user", "0:0", "--entrypoint", "stat",
 		"type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock",
 		"byre-img", "-c", "%g", "/var/run/docker.sock",

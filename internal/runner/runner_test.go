@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -184,5 +185,96 @@ func TestCaptureBoundedKillsAChildThatNeverAnswers(t *testing.T) {
 	// A child that answers in time is unaffected.
 	if out, err := captureBoundedExec(time.Minute, "sleep", "0"); err != nil || out != "" {
 		t.Errorf("a prompt child must pass through: %q %v", out, err)
+	}
+}
+
+// A deadline kills the engine CLIENT; the container it started keeps running.
+// For the netns helper that is a fail-open window -- it still holds NET_ADMIN
+// over the box's netns and can still open the launch gate -- so byre names the
+// helper and kills it by name whenever the call fails.
+func TestHelperContainerIsNamedAndKilledOnFailure(t *testing.T) {
+	pinHelperName(t, "byre-netns-cafe")
+	for _, tc := range []struct {
+		name string
+		run  func(r *Runner) error
+		kind string
+	}{
+		{"netns", func(r *Runner) error {
+			return r.NetnsInit("img", "byre-box", "/fw", nil, false)
+		}, "netns"},
+		{"sockprobe", func(r *Runner) error {
+			_, err := r.ProbeSockGroup("img", "/h", "/t", "")
+			return err
+		}, "sockprobe"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls [][]string
+			r := &Runner{engine: Docker, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
+				calls = append(calls, append([]string{name}, args...))
+				if args[0] == "run" {
+					return "", errors.New("deadline")
+				}
+				return "", nil
+			}}
+			if err := tc.run(r); err == nil {
+				t.Fatal("the failure must reach the caller")
+			}
+			if len(calls) != 2 {
+				t.Fatalf("a failed helper must be cleaned up: calls=%v", calls)
+			}
+			if got := strings.Join(calls[0], " "); !strings.Contains(got, "--name byre-netns-cafe") {
+				t.Errorf("the helper must be named, or it cannot be stopped: %q", got)
+			}
+			if got := strings.Join(calls[1], " "); got != "docker kill byre-netns-cafe" {
+				t.Errorf("cleanup must kill the named helper: %q", got)
+			}
+		})
+	}
+
+	// A call that succeeds leaves nothing to clean up (--rm did it).
+	var calls int
+	r := &Runner{engine: Docker, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
+		calls++
+		return "989\n", nil
+	}}
+	if _, err := r.ProbeSockGroup("img", "/h", "/t", ""); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Errorf("a successful helper must not be killed: %d engine calls", calls)
+	}
+}
+
+// Without randomness there is no name, and without a name there is no way to
+// stop the container afterwards -- so byre does not start one. For the netns
+// hook the caller turns that into a stopped box.
+func TestHelperRefusesToStartWithoutACleanupHandle(t *testing.T) {
+	orig := helperName
+	helperName = func(kind string) (string, error) { return "", errors.New("no randomness") }
+	t.Cleanup(func() { helperName = orig })
+
+	called := false
+	r := &Runner{engine: Docker, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
+		called = true
+		return "", nil
+	}}
+	if err := r.NetnsInit("img", "byre-box", "/fw", nil, false); err == nil {
+		t.Fatal("no cleanup handle must refuse, not run blind")
+	}
+	if called {
+		t.Error("byre must not start a container it cannot later stop")
+	}
+}
+
+// The stdout cap is real: a child that floods it fails rather than becoming
+// byre's memory. These calls answer with an id, a mode or a gid.
+func TestCaptureBoundedCapsOutput(t *testing.T) {
+	if _, err := exec.LookPath("yes"); err != nil {
+		t.Skip("no yes on PATH")
+	}
+	// captureBoundedMax is 8 MiB; `yes` fills it in well under the bound.
+	_, err := captureBoundedExec(2*time.Minute, "yes", strings.Repeat("x", 4096))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("unbounded child output must fail, not fill memory: %v", err)
 	}
 }

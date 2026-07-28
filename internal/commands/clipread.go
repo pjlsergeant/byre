@@ -70,6 +70,9 @@ var clipRunOut = func(name string, args ...string) ([]byte, error) {
 const (
 	clipReadTimeout = 2 * time.Minute
 	clipMaxOutput   = 64 << 20 // a large screenshot (hex-rendered on macOS, so ~2x the image)
+	// clipWaitDelay is how long a killed read's output pipes may stay open
+	// before the wait gives up on them.
+	clipWaitDelay = 5 * time.Second
 )
 
 // clipReadOut runs one clipboard-read tool under those bounds. Errors keep
@@ -88,6 +91,20 @@ func clipReadBounded(timeout time.Duration, max int, name string, args ...string
 	// Same reason clipRunOut does it: none of these tools read the tty, and a
 	// child in the foreground process group makes the terminal title flap.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The group exists, so cancel it as a GROUP. CommandContext's default kills
+	// the direct child only, which leaves the descendants these tools spawn
+	// (osascript's helpers) alive and holding the stdout pipe -- the read below
+	// then blocks past the deadline that was supposed to end it. Negative pid
+	// is the whole process group.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	// And a second bound on the wait itself, for a descendant that outlives
+	// even the group kill (one that changed its own group).
+	cmd.WaitDelay = clipWaitDelay
 	// Stderr is capped, not saved by exec: Output() populates ExitError.Stderr
 	// but this reads stdout through a pipe, so the diagnostic has to be kept
 	// here (runner.capBuffer's shape -- bounded, never blocking the child).
@@ -102,12 +119,14 @@ func clipReadBounded(timeout time.Duration, max int, name string, args ...string
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	out, rerr := io.ReadAll(io.LimitReader(pipe, int64(max)+1))
-	if len(out) > max {
-		cancel() // stop the writer; a capped read never waits the child out
-		_ = cmd.Wait()
-		return nil, fmt.Errorf("%s: clipboard content exceeds %d bytes", name, max)
+	over := len(out) > max
+	if over {
+		cancel() // stop the writer (the whole group); a capped read never waits it out
 	}
 	werr := cmd.Wait()
+	if over {
+		return nil, fmt.Errorf("%s: clipboard content exceeds %d bytes", name, max)
+	}
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("%s: no answer within %s (gave up)", name, timeout)
 	}

@@ -216,3 +216,23 @@ func TestClipReadOutCapsTheOutput(t *testing.T) {
 		t.Fatalf("an unbounded pasteboard must fail, not fill memory: %v", err)
 	}
 }
+
+// The deadline must reach the whole process GROUP. CommandContext kills the
+// direct child only, so a descendant holding the stdout pipe keeps the read
+// blocked past the deadline that was supposed to end it -- exactly the wedge
+// the bound exists to prevent.
+func TestClipReadOutKillsTheWholeGroup(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH")
+	}
+	// The shell exits at once; the backgrounded sleep inherits stdout and would
+	// hold the pipe open for a minute.
+	start := time.Now()
+	_, err := clipReadBounded(150*time.Millisecond, clipMaxOutput, "sh", "-c", "sleep 60 & wait")
+	if err == nil {
+		t.Fatal("a read that outlives its deadline must be an error")
+	}
+	if el := time.Since(start); el > 30*time.Second {
+		t.Fatalf("the read waited on a descendant past the deadline: %s", el)
+	}
+}

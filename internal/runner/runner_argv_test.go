@@ -155,6 +155,7 @@ func TestSeedLiteralArgvAndStdin(t *testing.T) {
 }
 
 func TestNetnsInitArgv(t *testing.T) {
+	pinHelperName(t, "byre-netns-cafe")
 	var gotArgs []string
 	r := &Runner{engine: Docker, captureBounded: func(d time.Duration, name string, args ...string) (string, error) {
 		gotArgs = append([]string{name}, args...)
@@ -166,8 +167,9 @@ func TestNetnsInitArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	// -u 0:0 + --cap-add NET_ADMIN live HERE, on the throwaway helper joining
-	// the box's netns — never on the box itself. Env keys sorted.
-	want := "docker run --rm -u 0:0 --net container:byre-myproj --cap-add NET_ADMIN" +
+	// the box's netns — never on the box itself. Env keys sorted. --name is
+	// byre's handle for stopping the helper when the bound fires.
+	want := "docker run --rm --name byre-netns-cafe -u 0:0 --net container:byre-myproj --cap-add NET_ADMIN" +
 		" --entrypoint /usr/local/bin/byre-firewall -e A=1 -e BYRE_EGRESS=grafana.com:443 byre-img.v0"
 	if got := strings.Join(gotArgs, " "); got != want {
 		t.Fatalf("NetnsInit argv = %q, want %q", got, want)
@@ -247,4 +249,13 @@ func TestContainerLabelsNull(t *testing.T) {
 	if len(labels) != 0 {
 		t.Fatalf("ContainerLabels(null) = %v, want empty", labels)
 	}
+}
+
+// pinHelperName fixes the random helper container name so argv pins stay
+// byte-exact.
+func pinHelperName(t *testing.T, v string) {
+	t.Helper()
+	orig := helperName
+	helperName = func(string) (string, error) { return v, nil }
+	t.Cleanup(func() { helperName = orig })
 }

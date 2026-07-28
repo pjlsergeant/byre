@@ -7,6 +7,8 @@ package runner
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,7 +110,58 @@ const (
 	netnsProbeTimeout = 2 * time.Minute  // an inspect: only a wedged daemon takes this
 	netnsInitTimeout  = 10 * time.Minute // runs a helper container: rules + DNS for the whole allowlist
 	sockProbeTimeout  = 5 * time.Minute  // runs a one-shot probe container against a local image
+	// helperKillTimeout bounds the cleanup kill itself: it runs on a path that
+	// already failed, and a second wedge there would undo the first bound.
+	helperKillTimeout = 30 * time.Second
+	// waitDelay is how long a killed child's output pipes may stay open before
+	// the wait gives up on them (a descendant that inherited them).
+	waitDelay = 5 * time.Second
+	// captureBoundedMax caps a bounded call's stdout. These answer with a
+	// container id, a network mode or a gid; the cap is what keeps a child
+	// gone wrong from growing byre's memory instead of failing.
+	captureBoundedMax = 8 << 20
 )
+
+// helperName mints the --name byre gives a run-to-completion helper container.
+// A package var so tests can pin it; production always uses fresh randomness.
+//
+// The name exists for ONE reason: a deadline kills the engine CLIENT, not the
+// container it started. An unnamed helper is then unreachable — still running,
+// still holding CAP_NET_ADMIN over the box's netns, still able to finish its
+// rules and open the launch gate — while byre has already reported the hook
+// as failed. Named, byre can stop it.
+var helperName = func(kind string) (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// No name, no cleanup handle. byre does not start a container it
+		// cannot later stop, so the caller hears this instead (for the netns
+		// hook that means no hooks, which fails the launch closed).
+		return "", fmt.Errorf("no randomness to name the %s helper: %w", kind, err)
+	}
+	return "byre-" + kind + "-" + hex.EncodeToString(b), nil
+}
+
+// runHelperBounded runs a one-shot helper container under a wall-clock bound,
+// with the cleanup the bound needs to mean anything: argv is built around a
+// byre-minted --name, and ANY failure kills that container through the engine
+// before returning. Any failure, not just a timeout -- a client that died for
+// some other reason proves just as little about what the daemon is still
+// running, and `--rm` only fires once the container itself exits.
+func (r *Runner) runHelperBounded(d time.Duration, kind string, argv func(name string) []string) (string, error) {
+	name, err := helperName(kind)
+	if err != nil {
+		return "", err
+	}
+	out, cerr := r.captureBounded(d, string(r.engine), argv(name)...)
+	if cerr != nil {
+		// Best-effort: an already-exited container makes this a harmless
+		// error, and a kill that cannot land leaves the caller's own
+		// fail-closed handling as the backstop (which is why runNetnsInits
+		// stops the box rather than trusting this).
+		_, _ = r.captureBounded(helperKillTimeout, string(r.engine), "kill", name)
+	}
+	return out, cerr
+}
 
 // Engine reports the engine this runner invokes.
 func (r *Runner) Engine() Engine { return r.engine }
@@ -369,7 +422,9 @@ func execArgs(containerID string, uid, gid int, workdir string, env map[string]s
 // engine's stderr is folded into the error; on success the launch gate
 // opening is the signal, not text.
 func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error {
-	_, err := r.captureBounded(netnsInitTimeout, string(r.engine), netnsInitArgs(image, container, entrypoint, env, joinUserns)...)
+	_, err := r.runHelperBounded(netnsInitTimeout, "netns", func(name string) []string {
+		return netnsInitArgs(name, image, container, entrypoint, env, joinUserns)
+	})
 	return err
 }
 
@@ -383,7 +438,9 @@ func (r *Runner) NetnsInit(image, container, entrypoint string, env map[string]s
 // Returns the numeric gid; a probe failure is returned to the caller for
 // attributed warning -- never silently defaulted.
 func (r *Runner) ProbeSockGroup(image, hostPath, targetPath, userns string) (int, error) {
-	out, err := r.captureBounded(sockProbeTimeout, string(r.engine), probeSockGroupArgs(image, hostPath, targetPath, userns)...)
+	out, err := r.runHelperBounded(sockProbeTimeout, "sockprobe", func(name string) []string {
+		return probeSockGroupArgs(name, image, hostPath, targetPath, userns)
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -399,9 +456,10 @@ func (r *Runner) ProbeSockGroup(image, hostPath, targetPath, userns string) (int
 // --entrypoint bypasses the box launcher; --user 0 so the probe can read any
 // socket mode; the bind matches the box's own mount, and so does the userns
 // mapping (gid numbers are only comparable inside one mapping).
-func probeSockGroupArgs(image, hostPath, targetPath, userns string) []string {
+func probeSockGroupArgs(name, image, hostPath, targetPath, userns string) []string {
 	args := []string{
 		"run", "--rm",
+		"--name", name,
 		"--user", "0:0",
 		"--entrypoint", "stat",
 		"--mount", fmt.Sprintf("type=bind,source=%s,target=%s", hostPath, targetPath),
@@ -437,8 +495,9 @@ func (r *Runner) IsDockerDesktop() (bool, error) {
 // a fresh identical mapping: a netns is owned by the userns that created it,
 // and CAP_NET_ADMIN over it only exists inside that owner, so a sibling
 // namespace (even byte-identical) gets EPERM from iptables.
-func netnsInitArgs(image, container, entrypoint string, env map[string]string, joinUserns bool) []string {
+func netnsInitArgs(name, image, container, entrypoint string, env map[string]string, joinUserns bool) []string {
 	args := []string{"run", "--rm",
+		"--name", name,
 		"-u", "0:0",
 		"--net", "container:" + container,
 		"--cap-add", "NET_ADMIN",
@@ -657,13 +716,40 @@ func captureBoundedExec(d time.Duration, name string, args ...string) (string, e
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	// Killing the child is not enough to return: cmd.Wait blocks until every
+	// writer of the output pipes closes, and a DESCENDANT that inherited them
+	// (an engine client's own helper) keeps them open past its parent's death.
+	// WaitDelay is the deadline on that second wait -- without it the bound
+	// stops the child and byre goes on waiting anyway, which is the wedge the
+	// bound exists to prevent.
+	cmd.WaitDelay = waitDelay
 	stderr := &capBuffer{max: 64 << 10}
 	cmd.Stderr = stderr
-	out, err := cmd.Output()
-	if ctx.Err() != nil {
-		return string(out), fmt.Errorf("%s: no answer within %s (gave up)", name, d)
+	pipe, perr := cmd.StdoutPipe()
+	if perr != nil {
+		return "", perr
 	}
-	if err != nil {
+	if serr := cmd.Start(); serr != nil {
+		return "", serr
+	}
+	// Bounded like the stderr buffer, and for the same reason: these calls
+	// answer with an id, a mode string or a gid, so anything approaching the
+	// cap is a child gone wrong, and reading it whole would make byre's memory
+	// the child's to grow.
+	out, rerr := io.ReadAll(io.LimitReader(pipe, captureBoundedMax+1))
+	over := len(out) > captureBoundedMax
+	if over {
+		cancel() // stop the writer; a capped read never waits the child out
+	}
+	err := cmd.Wait()
+	switch {
+	case ctx.Err() != nil && !over:
+		return string(out), fmt.Errorf("%s: no answer within %s (gave up)", name, d)
+	case over:
+		return "", fmt.Errorf("%s: output exceeds %d bytes", name, captureBoundedMax)
+	case rerr != nil:
+		return string(out), rerr
+	case err != nil:
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			return string(out), fmt.Errorf("%s: %s", err, msg)
 		}

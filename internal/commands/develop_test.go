@@ -641,7 +641,12 @@ func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
 	}
 }
 
-func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
+// A hook error must STOP the box, not merely predict that the launch gate
+// stays shut. The prediction was sound only while an error meant the helper
+// had exited -- and it does not: a bound expiry kills the engine client, and
+// the helper is stopped by name best-effort, so a survivor can finish its
+// rules and open the gate itself. byre makes its fail-closed claim true.
+func TestDevelopNetnsInitFailureStopsTheBox(t *testing.T) {
 	p, _ := testPaths(t)
 	pinNonce(t, "feedface")
 	f := &fakeRunner{
@@ -654,6 +659,9 @@ func TestDevelopNetnsInitFailureWarnsFailClosed(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "failing closed") {
 		t.Errorf("hook failure must explain the fail-closed outcome: %s", stderr.String())
+	}
+	if len(f.stops) != 1 || f.stops[0] != "cafef00d1234" {
+		t.Errorf("a failed hook must stop the box, not trust the gate: stops=%v", f.stops)
 	}
 }
 
