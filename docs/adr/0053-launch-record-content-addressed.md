@@ -98,26 +98,39 @@ the label is the pointer, so nothing needs to be keyed by worktree.
 
 The reap is opportunistic and never load-bearing: under the same lock, after a
 successful create, byre lists the project's containers, collects the
-`byre.launch` labels they carry, and unlinks any record nothing points at. An
-engine that will not answer causes the reap to do nothing at all -- an
-unanswerable engine is not evidence that a record is stale. A record that
-survives costs a few hundred bytes.
+`byre.launch` labels they carry, and unlinks any record nothing points at.
 
-The scope is the configured engine, which is sound because develop refuses
-outright while a box for this worktree lives on another installed engine (ADR
-0004). The residual is an engine that check SKIPPED as unreachable: a box there
-can lose its record, and status then degrades honestly for it -- which is the
-outcome the whole design is built to make safe.
+**The live set spans every engine byre can see, not the configured one.** ADR
+0004 stops two boxes existing for one WORKTREE across engines; it says nothing
+about SIBLINGS, and worktrees of a project share this store (ADR 0009) while
+each may legitimately run on a different engine. Reaping from the configured
+engine's view alone lets a docker launch in worktree A unlink the record of
+worktree B's live podman box -- and B's status then reports a record "missing"
+for a box that is running, which is byre lying about the one thing this file
+exists to tell the truth about. develop already resolves that peer set for the
+ADR 0004 check, so this costs no new host probing.
+
+Every uncertainty ABANDONS the reap rather than narrowing the live set: an
+engine that will not answer, and an engine byre found but DECLINES to run
+(which may be holding a sibling right now, unqueryably). The two outcomes are
+not symmetric -- a record kept too long is litter, a record deleted too early
+is a live box byre can no longer describe.
 
 **A missing record degrades, never guesses.** Six states, each with its own
 sentence: no `byre.launch` label at all (a box from an older byre), a label
 whose record is gone, bytes that do not hash to their address, a record byre
-cannot parse, a schema from a newer byre, and verified. Only the last makes the
-box the subject; every other one qualifies the rows and says they describe the
-CURRENT CONFIG. The record carries `record = <n>`; decoding is lenient about
-unknown FIELDS (two byre versions share one store) and explicit about an
-unknown SCHEMA (liveness only) -- the packages index's stance, one step further
-on.
+cannot read or parse, a schema from a newer byre, and verified. Only the last
+makes the box the subject; every other one qualifies the rows and says they
+describe the CURRENT CONFIG.
+
+Only a PROVABLE absence counts as "gone". A non-regular file where the record
+should be, an oversize one, an unreadable mode, an I/O error -- those are byre
+unable to LOOK, and under `--self-edit` a box can arrange each of them
+deliberately, so folding them into "no longer in the store" would hand an agent
+a way to make status report a record deleted while it sits there. The record
+carries `record = <n>`; decoding is lenient about unknown FIELDS (two byre
+versions share one store) and explicit about an unknown SCHEMA (liveness only)
+-- the packages index's stance, one step further on.
 
 ### No generation counter
 
@@ -143,6 +156,29 @@ raw `run_args`, its raw build lines, its reserved `BYRE_` keys -- because a
 hedge computed from today's config would describe the wrong box, which is the
 failure being fixed. A skill set that has since stopped resolving does not
 blank the running box's posture claim; it appears as a next-launch change.
+
+**A delta line must be a real difference.** The section's only value is that
+every line in it is true, so a standing false row is worse than no section: it
+trains the reader to skip the one place byre says what changed. Four rules fall
+out, and each closed a defect a reviewer found:
+
+- both sides run through the SAME normalization the engine got. Host paths are
+  tilde-expanded and cleaned (`~/secrets` and `/home/pete/secrets` are one
+  mount, not a `-`/`+` pair), and ports through `config.PortEffective`.
+- both sides are the ENFORCED egress allowlist, not the declared union. Status
+  keeps a closed entry visible on its Egress rows, marked closed-by, which is
+  the point of `!host` reaching past the cascade -- diffing that against a
+  record reports every closed-but-declared endpoint as arriving next launch,
+  forever, on the ordinary claude-minus-statsig config. One function
+  (`egressAfterClosures`) now performs the subtraction for both the resolution
+  that feeds the record and the view that is compared to it.
+- an empty base is not "unchanged": it is byre's own default, and the image
+  built is a different image. Any inequality is a delta, with the default named
+  on whichever side is empty.
+- `run_args` compare as SLICES. Joining on a space is not injective, so a
+  joined compare calls `{"--label", "x=a b"}` and `{"--label x=a", "b"}` equal
+  -- reporting no change across an edit that changes what the engine is handed.
+  Rendered shell-quoted, so the line is unambiguous too.
 
 **With no box, nothing is relabelled.** The rows ARE the next launch and
 today's semantics stand.

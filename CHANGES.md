@@ -23,17 +23,25 @@
   `Container` row says so, an `Image` row names what it ran, and a **`Next
   launch`** section lists only what differs in your current config (`- Bind
   /home/pete/secrets -> /secrets  (ro)`, `+ Network deny-by-default`) --
-  absent entirely when nothing differs. With no box running, nothing
-  changes: the rows are the next launch, as before.
+  absent entirely when nothing differs. Every line in it is a real
+  difference: both sides are normalized the way the engine got them
+  (so `~/secrets` and `/home/you/secrets` are one mount, not a pair), egress
+  is compared after your `!host` closures rather than before, an empty
+  `base` is compared as byre's default rather than as "unchanged", and
+  `run_args` are compared as an argv rather than as a joined string. With no
+  box running, nothing changes: the rows are the next launch, as before.
 
   byre re-hashes the record rather than trusting it (under `--self-edit`
   the store is the box's to write), and every state it cannot use degrades
   with one qualifier instead of a guess: a box started by an older byre
   says it predates launch records, a deleted record says so, bytes that do
   not match their own address are refused and disclosed, and a record from
-  a newer byre gets liveness only. The record informs a human reading
-  status and drives no host action. Records are reaped opportunistically
-  when nothing points at them; failing to write one never blocks a launch.
+  a newer byre gets liveness only -- and only a record byre can PROVE is
+  absent reads as deleted; one it merely could not open says so instead.
+  The record informs a human reading status and drives no host action.
+  Records are reaped opportunistically when no container on any engine byre
+  can see points at them, and any engine it cannot query abandons the reap
+  rather than widening it; failing to write a record never blocks a launch.
   (ADR 0053)
 
 - **The config editor says when your changes take effect.** With a box
