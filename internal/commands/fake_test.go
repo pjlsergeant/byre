@@ -45,6 +45,8 @@ type fakeRunner struct {
 	envByID       map[string]map[string]string // per-id override, consulted before env
 	execEnv       map[string]string            // env map passed to the last Exec
 	labels        map[string]string            // ContainerLabels of any id
+	labelsByID    map[string]map[string]string // per-id override, consulted before labels
+	labelsErr     error                        // ContainerLabels failure (engine answered nothing)
 	execInputs    []string                     // ExecInput: "id uid:gid args <-stdin"
 
 	execOutputContent string     // what ExecOutput streams (grab tests)
@@ -124,6 +126,12 @@ func (f *fakeRunner) ContainerEnv(id string) (map[string]string, error) {
 }
 
 func (f *fakeRunner) ContainerLabels(id string) (map[string]string, error) {
+	if f.labelsErr != nil {
+		return nil, f.labelsErr
+	}
+	if l, ok := f.labelsByID[id]; ok {
+		return l, nil
+	}
 	return f.labels, nil
 }
 

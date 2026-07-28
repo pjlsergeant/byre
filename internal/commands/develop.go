@@ -271,6 +271,16 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if err != nil {
 			return err
 		}
+		// Single-WRITER, where the check above is single-SESSION. A volume may
+		// declare `sharing = "exclusive"`, and sibling worktrees mount the
+		// identical project-scoped volume set by construction (ADR 0009), so
+		// this asks the siblings' launch records what they are actually
+		// holding. Placed with the other gates -- before the engine record,
+		// the build and the seed -- so a refusal leaves the store exactly as
+		// it found it.
+		if err := refuseExclusiveVolumeHolders(s.Err, paths, os.Getuid(), rv.volumes, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines); err != nil {
+			return err
+		}
 		// Only after sole-session is established: a refusal above must leave the
 		// record pointing at the engine that still holds the session. An engine
 		// skipped as unreachable stays UNRESOLVED in the record -- but only when
