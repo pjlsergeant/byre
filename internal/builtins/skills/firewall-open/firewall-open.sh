@@ -19,6 +19,14 @@
 # This file is also baked into the box's image (inert there — no privileges
 # inside), which is what lets the helper reuse the box's own image.
 set -euo pipefail
+# No pathname expansion, anywhere below. The unquoted word-splits that read
+# BYRE_EGRESS_DENY and getent's answers are subject to globbing, and a
+# bracketed IPv6 closure ("[2001:db8::1]:443") IS a glob pattern: in a
+# directory holding a matching name it would expand into filenames and drop
+# whatever they resolve to instead of the host the user closed. The ejected
+# copy of this script takes its entries from a hand-edited file, so the input
+# is not byre's to vouch for. Nothing here wants a glob.
+set -f
 
 log() { echo "byre-firewall-open: $*" >&2; }
 die() { log "FATAL: $* — the launch gate stays shut; the box will exit (fail closed)."; exit 1; }

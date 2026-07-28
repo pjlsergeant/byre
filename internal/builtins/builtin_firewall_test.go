@@ -1,6 +1,8 @@
 package builtins
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -163,6 +165,47 @@ func TestFirewallComposesAgentEgress(t *testing.T) {
 	for _, a := range res.EgressAllows() {
 		if strings.Contains(a.Host, "anthropic") && a.Skill != "byre/claude" {
 			t.Errorf("anthropic egress attributed to %q, want byre/claude", a.Skill)
+		}
+	}
+}
+
+// Under deny-by-default the OUTPUT policy is DROP with per-(ip, port) TCP
+// accepts, so ICMP leaves for nothing: ping and traceroute time out for an
+// allowlisted host exactly as they do for a blocked one. Shipping them arms
+// the agent with a probe that cannot tell the two apart and reads a working
+// door as shut, so this skill's diagnostics are the port-scoped ones. The
+// firewall-open sibling keeps them: its policy stays ACCEPT.
+func TestFirewallShipsNoICMPDiagnostics(t *testing.T) {
+	_, cat := testCat(t)
+	fw, err := skills.Load(cat, "firewall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range fw.File.Build.Apt {
+		if p == "iputils-ping" || p == "traceroute" {
+			t.Errorf("the deny-by-default skill must not ship %q: ICMP is dropped to every destination, so it cannot diagnose the wall (apt = %v)", p, fw.File.Build.Apt)
+		}
+	}
+}
+
+// Both netns helpers word-split unquoted input -- the egress/denylist entries,
+// getent's answers, resolv.conf -- and a bracketed IPv6 entry
+// ("[2001:db8::1]:443") is a glob pattern, so pathname expansion can turn a
+// rule for a host into a rule for whatever files happen to sit in the CWD.
+// The assert is on the script text because the loops it protects cannot run
+// in a unit test (they need iptables, a netns, and the launch gate).
+func TestNetnsHelpersDisablePathnameExpansion(t *testing.T) {
+	_, cat := testCat(t)
+	for skill, script := range map[string]string{
+		"firewall":      "firewall.sh",
+		"firewall-open": "firewall-open.sh",
+	} {
+		b, err := os.ReadFile(filepath.Join(skillDir(t, cat, skill), script))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "\nset -f\n") {
+			t.Errorf("%s must disable globbing (set -f) before it word-splits its entries", script)
 		}
 	}
 }

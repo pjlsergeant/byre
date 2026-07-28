@@ -2,6 +2,17 @@
 
 ## unreleased
 
+- **The firewall skill stops telling the agent to diagnose the wall with
+  `ping`.** Under deny-by-default the rules accept TCP to allowlisted
+  (host, port) pairs and drop everything else, ICMP included -- so ping and
+  traceroute time out for an allowlisted host exactly as they do for a
+  blocked one, and an agent following the old instruction reported a working
+  door as shut. The box's context now teaches the port-scoped probes
+  (`curl`, `nc -vz host 443`, `telnet host 443`) and says why the ICMP tools
+  cannot answer the question; the two packages are no longer installed in a
+  deny-by-default box. `firewall-open` keeps them: its policy stays open, so
+  there they still tell you something.
+
 - **An agent exiting 125, 126 or 127 now gives byre that exit status, with
   no byre error banner.** Those three codes are what `docker run` reserves
   for its own failures, but a byre session is not a `docker run`: byre

@@ -28,7 +28,15 @@ the wall, not a network outage.
   and on a per-query resolver possibly seconds after launch. A session
   restart re-resolves. If an allowlisted host flaps or times out, report
   THIS as the likely cause rather than a network outage.
-- To diagnose the wall, this box has `ping`, `traceroute`, `dig`/`nslookup`,
-  `curl`, `telnet`, and `nc`: an allowlisted host answers, a blocked one
-  hangs/times out. Use them to tell "the wall is blocking this" apart from
-  "the service is down" before reporting a problem to the user.
+- To diagnose the wall, probe a PORT, not a host: `curl -sS https://host`,
+  `nc -vz host 443`, `telnet host 443`. The rules accept TCP to allowlisted
+  (host, port) pairs only, so an allowlisted host answers on its listed port
+  and hangs on every other one, and a blocked host hangs on all of them. Use
+  that to tell "the wall is blocking this" apart from "the service is down"
+  before reporting a problem to the user.
+- `ping` and `traceroute` are NOT installed, and would not help: ICMP is not
+  allowlistable here — the policy drops it to every destination, allowlisted
+  or not — so both would time out identically for an open door and a shut
+  one. `dig`/`nslookup` are installed, but answer a different question: DNS
+  resolves for all names, so a name resolving proves nothing about whether
+  you can connect to it.

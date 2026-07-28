@@ -39,10 +39,14 @@
 
 # apt: iptables (the rules) + netcat-openbsd (the launch-gate listener). The
 # rest are network DIAGNOSTICS — a firewalled box is exactly where you want to
-# SEE the wall: ping/traceroute an allowlisted host (works) vs a blocked one
-# (dropped), dig/nslookup to check name resolution, curl to test an HTTPS
-# endpoint. They're plain clients, still subject to the netns rules — they let
-# you inspect the boundary, they don't widen it. netcat-openbsd for `nc -l`
+# SEE the wall: curl/telnet/nc probe one host:port (an allowlisted pair
+# connects, anything else hangs), dig/nslookup check name resolution. They're
+# plain clients, still subject to the netns rules — they let you inspect the
+# boundary, they don't widen it. No ping/traceroute: the rules accept TCP per
+# (ip, port) under a DROP policy, so ICMP leaves for nothing — both tools time
+# out identically for an allowlisted host and a blocked one, and a diagnostic
+# that cannot tell those apart teaches the agent to report an open door as
+# shut. netcat-openbsd for `nc -l`
 # must stay the OpenBSD variant (the gate uses its `-l host port` form).
 # ca-certificates rides along because Debian's curl doesn't pull the trust
 # store (it isn't in curl's dependency chain at all — language templates get
@@ -53,7 +57,7 @@
 description = "Default-deny egress firewall; allowlist derived from enabled skills."
 
 [build]
-apt = ["iptables", "netcat-openbsd", "iputils-ping", "traceroute", "bind9-dnsutils", "curl", "ca-certificates", "telnet"]
+apt = ["iptables", "netcat-openbsd", "bind9-dnsutils", "curl", "ca-certificates", "telnet"]
 files = { "firewall.sh" = "/usr/local/bin/byre-firewall", "launch-gate" = "/etc/byre/launch-gate" }
 dockerfile = ["RUN chmod +x /usr/local/bin/byre-firewall"]
 
