@@ -3,8 +3,10 @@ package commands
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -336,7 +338,7 @@ func launchDegradeNote(st launchState) string {
 	case launchTampered:
 		return "launch record does NOT match its own address — the stored bytes hash to something else, so byre will not read them; the rows above describe the CURRENT CONFIG"
 	case launchUnreadable:
-		return "launch record unreadable — the rows above describe the CURRENT CONFIG, not this box"
+		return "launch record present but unreadable (byre could not look: not a regular file, oversize, or refused) — the rows above describe the CURRENT CONFIG, not this box"
 	case launchNewer:
 		return "launch record written by a NEWER byre (schema beyond this build) — byre reports liveness only for this box; the rows above describe the CURRENT CONFIG"
 	default:
@@ -362,7 +364,16 @@ func readLaunchRecord(paths project.Paths, labels map[string]string) (*launchRec
 	}
 	b, err := hostopen.ReadFileBounded(filepath.Join(launchesDir(paths), hash+".toml"), false, launchRecordLimit)
 	if err != nil {
-		return nil, launchMissing
+		// PROVABLE absence is the only failure that means "missing". Every
+		// other shape -- a FIFO where the record was, an oversize file, an
+		// unreadable mode, an I/O error -- is byre unable to LOOK, and under
+		// --self-edit a box can arrange each of them deliberately. Reporting
+		// those as "no longer in the store" would hand an agent a way to make
+		// status say the record was deleted when it is sitting right there.
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, launchMissing
+		}
+		return nil, launchUnreadable
 	}
 	sum := sha256.Sum256(b)
 	if hex.EncodeToString(sum[:]) != hash {
@@ -386,28 +397,42 @@ func readLaunchRecord(paths project.Paths, labels map[string]string) (*launchRec
 
 // reapLaunchRecords removes records no container of this project still points
 // at. Opportunistic and never load-bearing: it runs under the setup lock after
-// a create, every failure is swallowed, and a record that survives costs a few
-// hundred bytes. keep is this session's own hash, which the engine may not
-// have listed yet.
+// a create, every failure abandons the whole reap, and a record that survives
+// costs a few hundred bytes. keep is this session's own hash, which the engine
+// may not have listed yet.
 //
-// Scoped to the CONFIGURED engine's containers, which is sound because develop
-// refuses to proceed at all while a box for this worktree lives on another
-// engine (ADR 0004). The residual is the engine that check SKIPPED as
-// unreachable: a box there can lose its record, and status degrades honestly
-// for it -- the one outcome this whole file is built to make safe.
-func reapLaunchRecords(r sessionRunner, paths project.Paths, keep string) {
-	ids, err := r.ContainersByLabel(projectLabel(paths))
-	if err != nil {
-		return
+// engines must be EVERY engine byre can see, not the configured one. ADR 0004
+// stops two boxes existing for one WORKTREE across engines; it says nothing
+// about siblings, and worktrees of a project share this store (ADR 0009) while
+// each may legitimately run on a different engine. Reaping from the configured
+// engine's view alone would let a docker launch in worktree A unlink the
+// record of worktree B's live podman box, and B's status would then report a
+// record "missing" for a box that is running -- byre lying about the one thing
+// this file exists to tell the truth about.
+//
+// declined is the same asymmetry installedEngines draws: an engine byre found
+// and will not run may be holding a sibling right now, and byre cannot look.
+// Every uncertainty ABANDONS the reap rather than narrowing the live set,
+// because the two outcomes are not symmetric -- a record kept too long is
+// litter, a record deleted too early is a live box byre can no longer describe.
+func reapLaunchRecords(paths project.Paths, keep string, engines []sessionRunner, declined []declinedEngine) {
+	if len(declined) > 0 {
+		return // an engine byre cannot drive may be holding a sibling's box
 	}
 	live := map[string]bool{keep: true}
-	for _, id := range ids {
-		labels, lerr := r.ContainerLabels(id)
-		if lerr != nil {
+	for _, r := range engines {
+		ids, err := r.ContainersByLabel(projectLabel(paths))
+		if err != nil {
 			return // an unanswerable engine is not evidence that a record is stale
 		}
-		if h := labels[launchKey]; h != "" {
-			live[h] = true
+		for _, id := range ids {
+			labels, lerr := r.ContainerLabels(id)
+			if lerr != nil {
+				return
+			}
+			if h := labels[launchKey]; h != "" {
+				live[h] = true
+			}
 		}
 	}
 	dir := launchesDir(paths)

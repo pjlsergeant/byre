@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -139,6 +140,7 @@ func TestStatusRunningBoxWithoutARecordQualifiesTheRows(t *testing.T) {
 		{launchMissing, "no longer in the store"},
 		{launchTampered, "does NOT match its own address"},
 		{launchNewer, "NEWER byre"},
+		{launchUnreadable, "present but unreadable"},
 	} {
 		var b strings.Builder
 		renderStatusTest(&b, statusInfo{
@@ -267,6 +269,119 @@ func TestStatusConfigEnvSurvivesARecord(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(statusRows(out)["Box env"], " "), "GIT_AUTHOR_NAME") {
 		t.Errorf("Box env must list the keys the engine was handed, got %q", statusRows(out)["Box env"])
+	}
+}
+
+// deltaOf is the diff between one record and one config-derived view, for the
+// tests that pin a single dimension. Returns the rendered lines.
+func deltaOf(t *testing.T, rec *launchRecord, s statusInfo) []string {
+	t.Helper()
+	now, next := applyLaunchRecord(&s, rec, project.Paths{})
+	var out []string
+	for _, d := range diffLaunch(now, next) {
+		out = append(out, d.String())
+	}
+	return out
+}
+
+// The next-launch egress side must be the ENFORCED allowlist, the same last
+// step of the resolution that fed the record -- not status's declared union,
+// which deliberately keeps a closed entry visible (marked closed-by). Diffing
+// the two shapes reports every closed-but-declared endpoint as arriving at the
+// next launch, on every render, on the standard claude-minus-statsig config.
+func TestNextLaunchEgressSubtractsClosuresLikeTheRecordDid(t *testing.T) {
+	rec := &launchRecord{Record: 1, Network: launchNetwork{
+		Posture: "deny-by-default",
+		// What the netns helper enforced: statsig already subtracted.
+		Egress:     "api.anthropic.com:443",
+		EgressDeny: []string{"statsig.anthropic.com"},
+	}}
+	s := statusInfo{
+		Canonical: "/p", Container: "abc", Engine: "docker",
+		NetPosture: "deny-by-default",
+		// What status renders: the DECLARED union, statsig included.
+		Egress: []skills.EgressAllow{
+			{Skill: "claude", Host: "api.anthropic.com", Port: 443},
+			{Skill: "claude", Host: "statsig.anthropic.com", Port: 443},
+		},
+		EgressClosed: []string{"statsig.anthropic.com"},
+	}
+	for _, d := range deltaOf(t, rec, s) {
+		if strings.Contains(d, "statsig") {
+			t.Errorf("a closed endpoint is not arriving at the next launch: %q", d)
+		}
+	}
+	// The subtraction is real, not a suppression of the whole dimension: an
+	// endpoint the config genuinely adds still shows.
+	s.Egress = append(s.Egress, skills.EgressAllow{Skill: "config", Host: "github.com", Port: 443})
+	if got := deltaOf(t, rec, s); len(got) != 1 || !strings.Contains(got[0], "+ Egress github.com:443") {
+		t.Errorf("a real addition must still show: %v", got)
+	}
+}
+
+// A record holds tilde-EXPANDED cleaned absolutes because that is what the
+// engine got; a config mount is still spelled `~/qa-secrets`. Compared raw,
+// every tilde mount is a standing false pair.
+func TestNextLaunchBindsCompareThroughTheSameExpansion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	rec := &launchRecord{Record: 1, Binds: []launchBind{
+		{Host: "/p", Target: "/workspace", Mode: "rw"},
+		{Host: home + "/qa-secrets", Target: "/secrets", Mode: "ro"},
+	}}
+	s := statusInfo{Canonical: "/p", Container: "abc", Engine: "docker",
+		Binds: []config.Mount{{Host: "~/qa-secrets", Target: "/secrets", Mode: "ro"}}}
+	if got := deltaOf(t, rec, s); len(got) != 0 {
+		t.Errorf("the same mount in two spellings is not a difference: %v", got)
+	}
+	// A mount that genuinely moved still reports, in the expanded spelling
+	// both sides now share.
+	s.Binds = []config.Mount{{Host: "~/other", Target: "/secrets", Mode: "ro"}}
+	got := strings.Join(deltaOf(t, rec, s), "\n")
+	if !strings.Contains(got, "- Bind "+home+"/qa-secrets") || !strings.Contains(got, "+ Bind "+home+"/other") {
+		t.Errorf("a real move must report, expanded on both sides: %s", got)
+	}
+}
+
+// An empty base is not "unchanged" -- it is byre's own default, and the image
+// that gets built is a different image. The delta names the default rather
+// than printing a blank.
+func TestNextLaunchBaseClearedIsStillADelta(t *testing.T) {
+	rec := &launchRecord{Record: 1, Image: launchImage{Base: "golang:1.26-bookworm"}}
+	s := statusInfo{Canonical: "/p", Container: "abc", Engine: "docker", Base: ""}
+	got := strings.Join(deltaOf(t, rec, s), "\n")
+	if !strings.Contains(got, "~ Base golang:1.26-bookworm -> (default: "+gen.DefaultBase+")") {
+		t.Errorf("clearing the base must report, naming the default: %q", got)
+	}
+	// The reverse arm: adopting a base where the box ran on the default.
+	rec.Image.Base = ""
+	s.Base = "golang:1.26-bookworm"
+	got = strings.Join(deltaOf(t, rec, s), "\n")
+	if !strings.Contains(got, "~ Base (default: "+gen.DefaultBase+") -> golang:1.26-bookworm") {
+		t.Errorf("adopting a base must report, naming the default: %q", got)
+	}
+}
+
+// run_args are compared as SLICES. Joining on a space is not injective, so a
+// joined compare calls two different argvs equal and reports no change across
+// an edit that changes what the engine is handed.
+func TestNextLaunchRunArgsCompareAsArgvNotAsAJoinedString(t *testing.T) {
+	rec := &launchRecord{Record: 1, RunArgs: []string{"--label", "x=a b"}}
+	s := statusInfo{Canonical: "/p", Container: "abc", Engine: "docker",
+		RunArgs: []string{"--label x=a", "b"}} // same joined string, different argv
+	got := strings.Join(deltaOf(t, rec, s), "\n")
+	if !strings.Contains(got, "~ Raw run args") {
+		t.Fatalf("two argvs with the same joined spelling are still two argvs: %q", got)
+	}
+	// And the line itself has to distinguish them, or it reports a change the
+	// reader cannot see.
+	if !strings.Contains(got, "'x=a b'") {
+		t.Errorf("the delta must render an unambiguous argv: %q", got)
+	}
+	// Genuinely identical argvs are no delta.
+	s.RunArgs = []string{"--label", "x=a b"}
+	if d := deltaOf(t, rec, s); len(d) != 0 {
+		t.Errorf("identical argvs are not a difference: %v", d)
 	}
 }
 

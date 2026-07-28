@@ -323,7 +323,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// Records outlive their containers otherwise: this is the only moment
 		// byre holds the lock AND knows which containers of the project exist.
 		// Opportunistic by construction -- nothing here can fail the launch.
-		reapLaunchRecords(r, paths, launchHash)
+		// Every engine byre can see, not just this one: sibling worktrees share
+		// this store and may run on the other engine, and their records are not
+		// ours to delete. The peer set is the one develop already resolved for
+		// the ADR 0004 check, so this costs no new host probing.
+		reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
 		return nil
 	}); err != nil {
 		return err
@@ -688,15 +692,30 @@ func resolvedEgress(rv resolved) []string {
 	// Closures subtract LAST — after the skill union — which is what puts
 	// skill-declared entries in their reach (`claude` minus its statsig; the
 	// cascade merge already consumed any config entry a closure matched).
-	if len(rv.cfg.EgressClosed) > 0 {
-		kept := out[:0]
-		for _, hp := range out {
-			host, port, _ := config.ParseEgress(hp)
-			if _, closed := closedBy(rv.cfg.EgressClosed, host, port); !closed {
-				kept = append(kept, hp)
-			}
-		}
-		out = kept
+	return egressAfterClosures(out, rv.cfg.EgressClosed)
+}
+
+// egressAfterClosures subtracts the config's `!host[:port]` closures from a
+// deduped host:port list — the last step that turns a declared union into the
+// ENFORCED allowlist.
+//
+// Its own function because two surfaces must reach the same answer and had
+// drifted. What byre hands the netns helper (and records at launch) is this
+// list; status's Egress ROWS instead show the declared union with a closed
+// entry marked closed-by rather than removed, which is the whole point of
+// `!host` reaching past the cascade. The next-launch diff compares against a
+// record, so it needs the enforced form — and computing it a second time by
+// hand is exactly how two spellings of one rule stop agreeing.
+func egressAfterClosures(entries, closures []string) []string {
+	if len(closures) == 0 {
+		return entries
 	}
-	return out
+	kept := entries[:0]
+	for _, hp := range entries {
+		host, port, _ := config.ParseEgress(hp)
+		if _, closed := closedBy(closures, host, port); !closed {
+			kept = append(kept, hp)
+		}
+	}
+	return kept
 }

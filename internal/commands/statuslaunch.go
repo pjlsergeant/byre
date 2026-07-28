@@ -2,10 +2,11 @@ package commands
 
 import (
 	"fmt"
+	"slices"
 	"sort"
-	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -68,6 +69,14 @@ type exposureView struct {
 // nextLaunchViewOf snapshots the config-derived exposure BEFORE a record
 // replaces it. Base rides along because a changed base image is a real
 // next-launch difference and nothing else on the page reports it.
+//
+// The egress side runs through egressAfterClosures, the same LAST step of the
+// resolution that fed the record. Without it the two sides answer different
+// questions -- status's Egress rows are the declared union (a closed entry
+// still renders, marked closed-by, which is the point of `!host` reaching past
+// the cascade), while the record holds the ENFORCED allowlist. Diffing one
+// against the other reports every closed-but-declared endpoint as arriving at
+// the next launch, forever, on the standard claude-minus-statsig config.
 func nextLaunchViewOf(s statusInfo, base string) exposureView {
 	v := exposureView{
 		Binds:    s.Binds,
@@ -81,13 +90,15 @@ func nextLaunchViewOf(s statusInfo, base string) exposureView {
 		Base:     base,
 	}
 	seen := map[string]bool{}
+	var declared []string
 	for _, a := range s.Egress {
 		hp := fmt.Sprintf("%s:%d", a.Host, a.Port)
 		if !seen[hp] {
 			seen[hp] = true
-			v.Egress = append(v.Egress, hp)
+			declared = append(declared, hp)
 		}
 	}
+	v.Egress = egressAfterClosures(declared, s.EgressClosed)
 	sort.Strings(v.Egress)
 	return v
 }
@@ -197,8 +208,11 @@ func diffLaunch(now, next exposureView) []launchDelta {
 		out = append(out, launchDelta{Sign: sign, Text: fmt.Sprintf(format, args...)})
 	}
 
-	if now.Base != next.Base && next.Base != "" {
-		add("~", "Base %s -> %s  (rebuild required)", orDefault(now.Base, "(default)"), next.Base)
+	// Any inequality, including a base CLEARED back to byre's own default:
+	// empty does not mean "unchanged", it means gen.DefaultBase, and the image
+	// that gets built is a different image either way.
+	if now.Base != next.Base {
+		add("~", "Base %s -> %s  (rebuild required)", baseLabel(now.Base), baseLabel(next.Base))
 	}
 	diffSet(bindKeys(now.Binds), bindKeys(next.Binds), func(sign, text string) { add(sign, "Bind %s", text) })
 	if now.SelfEdit != next.SelfEdit {
@@ -226,13 +240,31 @@ func diffLaunch(now, next exposureView) []launchDelta {
 	diffSet(now.Closed, next.Closed, func(sign, text string) { add(sign, "Closed %s", text) })
 	diffSet(now.Skills, next.Skills, func(sign, text string) { add(sign, "Skill %s", text) })
 	// run_args are ORDERED and byre does not introspect them, so a set diff
-	// would lie about a reordering. One line either way, verbatim.
-	if strings.Join(now.RunArgs, " ") != strings.Join(next.RunArgs, " ") {
+	// would lie about a reordering. Compared as SLICES, not as a joined
+	// string: joining on a space is not injective, so {"--label", "x=a b"} and
+	// {"--label x=a", "b"} compare equal while being two different argvs --
+	// and byre would report no change across an edit that changes what the
+	// engine is handed. Rendered shell-quoted, the argv spelling `byre
+	// dockerrun` already prints, so the line is unambiguous too.
+	if !slices.Equal(now.RunArgs, next.RunArgs) {
 		add("~", "Raw run args %s -> %s  (passed through; not introspected)",
-			orDefault(strings.Join(now.RunArgs, " "), "(none)"),
-			orDefault(strings.Join(next.RunArgs, " "), "(none)"))
+			argvLabel(now.RunArgs), argvLabel(next.RunArgs))
 	}
 	return out
+}
+
+// baseLabel renders a base image for a delta line, naming byre's own default
+// rather than printing nothing where a value was cleared.
+func baseLabel(b string) string { return orDefault(b, "(default: "+gen.DefaultBase+")") }
+
+// argvLabel renders a raw argv unambiguously (the shell quoting `byre
+// dockerrun` prints), so a delta line cannot make two different argvs look
+// like one.
+func argvLabel(args []string) string {
+	if len(args) == 0 {
+		return "(none)"
+	}
+	return shellCommand(args)
 }
 
 // diffSet emits a "-" for every entry present now and gone next, then a "+"
@@ -267,13 +299,28 @@ func diffSet(now, next []string, emit func(sign, text string)) {
 // The key functions render one entry in the SAME words its status row uses, so
 // a delta line and the row it refers to are recognisably the same thing.
 
+// bindKeys renders one bind per mount, through the SAME host-path expansion
+// runParams applies before handing the engine a source. The record holds
+// tilde-expanded cleaned absolutes because that is what the engine got; a
+// config mount is still spelled `~/qa-secrets`. Compared raw, every
+// tilde-spelled mount is a standing `- /home/pete/qa-secrets` beside a `+
+// ~/qa-secrets` -- a difference that does not exist, on a page whose whole
+// job is saying what really differs.
+//
+// A path expandHostPath REFUSES (relative, a comma docker cannot express)
+// keeps its raw spelling: develop would reject it, so it is a next-launch
+// failure rather than a bind, and a status render must not swallow it.
 func bindKeys(ms []config.Mount) []string {
 	var out []string
 	for _, m := range ms {
 		if m.Disabled {
 			continue // a disabled mount produces no bind; the record has none either
 		}
-		out = append(out, fmt.Sprintf("%s -> %s  (%s)", m.Host, m.Target, orDefault(m.Mode, "ro")))
+		host := m.Host
+		if expanded, err := expandHostPath(host); err == nil {
+			host = expanded
+		}
+		out = append(out, fmt.Sprintf("%s -> %s  (%s)", host, m.Target, orDefault(m.Mode, "ro")))
 	}
 	return out
 }

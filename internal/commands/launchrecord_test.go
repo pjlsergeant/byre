@@ -47,7 +47,7 @@ func sampleLaunchRecord() launchRecord {
 			Posture:      "deny-by-default",
 			PostureSkill: "firewall",
 			Egress:       "api.anthropic.com:443 github.com:443",
-			EgressDeny:   []string{"!statsig.anthropic.com"},
+			EgressDeny:   []string{"statsig.anthropic.com"},
 			ReservedEnv:  []string{"skill:knobs BYRE_LAUNCH_GATE_FILE"},
 		},
 		Binds: []launchBind{
@@ -86,7 +86,7 @@ base = 'golang:1.26-bookworm'
 posture = 'deny-by-default'
 posture_skill = 'firewall'
 egress = 'api.anthropic.com:443 github.com:443'
-egress_deny = ['!statsig.anthropic.com']
+egress_deny = ['statsig.anthropic.com']
 reserved_env = ['skill:knobs BYRE_LAUNCH_GATE_FILE']
 
 [[binds]]
@@ -251,6 +251,45 @@ func TestLaunchRecordAbsentLabelDegradesHonestly(t *testing.T) {
 	}
 }
 
+// Only a PROVABLE absence is "missing". Every other read failure is byre
+// unable to LOOK, and under --self-edit a box can arrange each of these
+// deliberately -- so reporting them as "no longer in the store" would hand an
+// agent a way to make status say the record was deleted while it sits there.
+func TestLaunchRecordUnreadableIsNotReportedAsMissing(t *testing.T) {
+	p, _ := testPaths(t)
+	if err := hostopen.MkdirAllIn(p.Home, filepath.Join("projects", p.ID, "launches"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hash := strings.Repeat("c", 64)
+	path := filepath.Join(launchesDir(p), hash+".toml")
+
+	// A DIRECTORY where the record should be: OpenRegular judges the
+	// descriptor, so this is refused rather than read.
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if rec, st := readLaunchRecord(p, map[string]string{launchKey: hash}); rec != nil || st != launchUnreadable {
+		t.Fatalf("non-regular record: state = %v (rec %v), want launchUnreadable", st, rec)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	// An OVERSIZE record: refused, never truncated and parsed.
+	if err := os.WriteFile(path, make([]byte, launchRecordLimit+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rec, st := readLaunchRecord(p, map[string]string{launchKey: hash}); rec != nil || st != launchUnreadable {
+		t.Fatalf("oversize record: state = %v (rec %v), want launchUnreadable", st, rec)
+	}
+
+	// And the note says byre could not LOOK, not that the record is gone.
+	note := launchDegradeNote(launchUnreadable)
+	if !strings.Contains(note, "unreadable") || strings.Contains(note, "no longer in the store") {
+		t.Errorf("the unreadable note must not borrow the missing one, got %q", note)
+	}
+}
+
 // The record is what byre TOLD THE ENGINE: it is captured off the assembled
 // run params, so a mount that reached the argv reaches the record and nothing
 // that did not, does.
@@ -263,7 +302,7 @@ func TestLaunchRecordCapturesWhatTheEngineWasTold(t *testing.T) {
 		Mounts:       []config.Mount{{Host: "/tmp", Target: "/secrets", Mode: "ro"}},
 		Volumes:      []config.Volume{{Name: "state", Role: "state", Target: "/home/dev/.claude"}},
 		RunArgs:      []string{"--pids-limit", "512"},
-		EgressClosed: []string{"!statsig.anthropic.com"},
+		EgressClosed: []string{"statsig.anthropic.com"},
 	}, skills.Resolved{})
 	params, err := runParams(p, rv, "byre-img", false, false, runner.Identity{UID: 1000, GID: 1000}, nil)
 	if err != nil {
@@ -291,7 +330,7 @@ func TestLaunchRecordCapturesWhatTheEngineWasTold(t *testing.T) {
 	if strings.Join(rec.RunArgs, " ") != "--pids-limit 512" {
 		t.Errorf("run_args = %v (verbatim)", rec.RunArgs)
 	}
-	if len(rec.Network.EgressDeny) != 1 || rec.Network.EgressDeny[0] != "!statsig.anthropic.com" {
+	if len(rec.Network.EgressDeny) != 1 || rec.Network.EgressDeny[0] != "statsig.anthropic.com" {
 		t.Errorf("egress_deny = %v", rec.Network.EgressDeny)
 	}
 	// Env KEYS, never values — the exit report's rule, on every surface.
@@ -333,7 +372,7 @@ func TestReapLaunchRecordsKeepsLiveAndOwn(t *testing.T) {
 		allContainers: map[string][]string{projectLabel(p): {"sib1"}},
 		labels:        map[string]string{launchKey: siblingHash},
 	}
-	reapLaunchRecords(f, p, mine)
+	reapLaunchRecords(p, mine, []sessionRunner{f}, nil)
 
 	for _, h := range []string{mine, siblingHash} {
 		if _, err := hostopen.ReadFileBounded(filepath.Join(launchesDir(p), h+".toml"), false, launchRecordLimit); err != nil {
@@ -354,9 +393,68 @@ func TestReapLaunchRecordsKeepsEverythingWhenTheEngineWontAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := &fakeRunner{allErr: errors.New("daemon down")}
-	reapLaunchRecords(f, p, "")
+	reapLaunchRecords(p, "", []sessionRunner{f}, nil)
 	if _, err := hostopen.ReadFileBounded(filepath.Join(launchesDir(p), hash+".toml"), false, launchRecordLimit); err != nil {
 		t.Errorf("a record was reaped on an unanswerable engine: %v", err)
+	}
+}
+
+// The live set spans EVERY engine byre can see. ADR 0004 stops two boxes
+// existing for one WORKTREE across engines; it says nothing about siblings,
+// and worktrees of a project share this store (ADR 0009) while each may
+// legitimately run on a different engine. A docker launch in worktree A must
+// not unlink the record of worktree B's live podman box -- B's status would
+// then report a record "missing" for a box that is running.
+func TestReapLaunchRecordsKeepsASiblingOnAnotherEngine(t *testing.T) {
+	p, _ := testPaths(t)
+	mine, err := writeLaunchRecord(p, sampleLaunchRecord())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sibling := sampleLaunchRecord()
+	sibling.Workdir = "/home/pete/byre/wt"
+	siblingHash, err := writeLaunchRecord(p, sibling)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// docker holds only this session (not listed yet); podman holds the
+	// sibling worktree's live box.
+	docker := &fakeRunner{}
+	podman := &fakeRunner{
+		engine:        runner.Podman,
+		allContainers: map[string][]string{projectLabel(p): {"wt-box"}},
+		labels:        map[string]string{launchKey: siblingHash},
+	}
+	reapLaunchRecords(p, mine, []sessionRunner{docker, podman}, nil)
+
+	for _, h := range []string{mine, siblingHash} {
+		if _, err := hostopen.ReadFileBounded(filepath.Join(launchesDir(p), h+".toml"), false, launchRecordLimit); err != nil {
+			t.Errorf("record %s was reaped but a live box points at it: %v", h[:8], err)
+		}
+	}
+	// The peer engine is consulted, not assumed: with podman NOT in the set,
+	// the same call reaps the sibling — which is the bug this test pins.
+	reapLaunchRecords(p, mine, []sessionRunner{docker}, nil)
+	if _, err := hostopen.ReadFileBounded(filepath.Join(launchesDir(p), siblingHash+".toml"), false, launchRecordLimit); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("test is not exercising the peer set: sibling survived a docker-only reap (err=%v)", err)
+	}
+}
+
+// An engine byre found and will NOT run may be holding a sibling right now,
+// and byre cannot look. Uncertainty abandons the reap rather than narrowing
+// the live set: a record kept too long is litter, a record deleted too early
+// is a live box byre can no longer describe.
+func TestReapLaunchRecordsAbortsOverADeclinedEngine(t *testing.T) {
+	p, _ := testPaths(t)
+	stale, err := writeLaunchRecord(p, sampleLaunchRecord())
+	if err != nil {
+		t.Fatal(err)
+	}
+	docker := &fakeRunner{}
+	declined := []declinedEngine{{Engine: "podman", Err: errors.New("resolved out of a box-writable directory")}}
+	reapLaunchRecords(p, "", []sessionRunner{docker}, declined)
+	if _, err := hostopen.ReadFileBounded(filepath.Join(launchesDir(p), stale+".toml"), false, launchRecordLimit); err != nil {
+		t.Errorf("a declined engine must abandon the reap, not widen deletion: %v", err)
 	}
 }
 
@@ -402,6 +500,39 @@ func TestDevelopWritesTheLaunchRecordAndLabelsTheContainer(t *testing.T) {
 	}
 	if rec.Image.Digest == "" || rec.Image.Base != "golang:1.26-bookworm" {
 		t.Errorf("image record = %+v", rec.Image)
+	}
+}
+
+// Raw run_args can name any --label, including byre's own. RunArgs re-asserts
+// byre's labels AFTER the passthrough and the engine takes the last one, so a
+// forged byre.launch cannot point status at a record of the author's choosing.
+// Pinned here because only byre.project was pinned before, and this label is
+// the one that decides what the page describes.
+func TestLaunchLabelSurvivesASpoofingRunArg(t *testing.T) {
+	p, _ := testPaths(t)
+	forged := launchKey + "=" + strings.Repeat("f", 64)
+	f := &fakeRunner{}
+	s, _, _ := testStreams("", false)
+	rv := combine(config.Config{RunArgs: []string{"--label", forged}}, skills.Resolved{})
+	if err := develop(f, s, p, rv, false); err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	for i, a := range f.creates[0] {
+		if a == "--label" && i+1 < len(f.creates[0]) && strings.HasPrefix(f.creates[0][i+1], launchKey+"=") {
+			seen = append(seen, f.creates[0][i+1])
+		}
+	}
+	if len(seen) < 2 || seen[0] != forged {
+		t.Fatalf("test setup: the forged label must reach the argv first, got %v", seen)
+	}
+	// Last wins at the engine, and the last one is byre's.
+	last := strings.TrimPrefix(seen[len(seen)-1], launchKey+"=")
+	if last == strings.Repeat("f", 64) || !launchHashRe.MatchString(last) {
+		t.Fatalf("byre's own launch label must be re-asserted last, got %v", seen)
+	}
+	if _, st := readLaunchRecord(p, map[string]string{launchKey: last}); st != launchRecordOK {
+		t.Errorf("the surviving label must address a real record: %v", st)
 	}
 }
 
