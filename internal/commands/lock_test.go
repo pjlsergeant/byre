@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,6 +85,66 @@ func TestWithSetupLockNotesWhenWaiting(t *testing.T) {
 	wg.Wait()
 	if !ran.Load() {
 		t.Fatal("fn should run once the lock frees")
+	}
+}
+
+// TestWithTwoSetupLocksSurvivesOppositeOrders pins the reason withTwoSetupLocks
+// sorts its two paths: two concurrent rehomes naming the SAME pair of projects
+// in opposite orders. Each caller passes the pair the way its own command reads
+// it; the sort is what stops one holding the lock the other is waiting on, with
+// neither ever making progress. The rounds are there because a deadlock needs
+// the two acquisitions to interleave -- one pass could miss it by luck -- and
+// the deadline is there because the failure mode is a hang: without it a
+// regression would stall the suite until the whole run's timeout, reported as
+// a package that never finished rather than as this contract broken.
+func TestWithTwoSetupLocksSurvivesOppositeOrders(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "alpha.lock")
+	b := filepath.Join(dir, "omega.lock")
+
+	const rounds = 40
+	var inside atomic.Int32 // callers inside fn at once
+	var overlapped atomic.Bool
+	var failed atomic.Value // first error from either caller
+
+	var wg sync.WaitGroup
+	for _, pair := range [][2]string{{a, b}, {b, a}} {
+		wg.Add(1)
+		go func(first, second string) {
+			defer wg.Done()
+			for i := 0; i < rounds; i++ {
+				err := withTwoSetupLocks(io.Discard, first, second, func() error {
+					if inside.Add(1) != 1 {
+						overlapped.Store(true)
+					}
+					// Hold long enough that a rival reaches its own
+					// acquisition while this one is inside: without a real
+					// overlap window the exclusion check would pass on
+					// serialized-by-luck runs.
+					time.Sleep(time.Millisecond)
+					inside.Add(-1)
+					return nil
+				})
+				if err != nil {
+					failed.CompareAndSwap(nil, err)
+					return
+				}
+			}
+		}(pair[0], pair[1])
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("withTwoSetupLocks deadlocked: two callers naming %s and %s in opposite orders never both finished (the acquisition order is not stable)", a, b)
+	}
+	if err, ok := failed.Load().(error); ok {
+		t.Fatalf("contended withTwoSetupLocks: %v", err)
+	}
+	if overlapped.Load() {
+		t.Fatal("two callers ran fn at the same time: the pair of locks is not mutually exclusive")
 	}
 }
 
