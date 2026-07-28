@@ -104,6 +104,21 @@ well-behaved telemetry clients, trivially routed around by an agent that
 wants to. The network under it is still open, and this document treats
 it as such.
 
+**A mount over byre's own paths wins at runtime, and byre only tells
+you.** byre bakes its machinery into the image -- the launcher, the
+launch gate the firewall's fail-closed wait reads, and the delivery
+artifacts under `/etc/byre` -- and re-asserts the security-critical ones
+at the end of the build, so a `files` entry cannot quietly replace them.
+A bind mount or a named volume is different: the engine applies it over
+the finished image, and byre has nothing that runs afterwards. A volume
+at `/etc/byre` gives the box an empty directory where the gate should
+be; the launcher treats no gate as nothing to wait for, so the next
+`docker restart` brings the box up with its netns unfirewalled. `byre
+status` and `byre develop` disclose any mount or volume covering those
+paths -- the project's own and any a skill declares, named -- in the
+Containment register, and then run it: this is your configuration to
+make ([ADR 0052](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0052-runtime-mount-shadowing-one-disclosure.md)).
+
 **Concurrent sessions share a pathname race.** Every byre bind mount is
 handed to the engine as a pathname, not an inode-pinned handle -- the
 docker/podman CLI-to-daemon contract is a pathname, resolved in the

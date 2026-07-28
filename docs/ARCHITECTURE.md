@@ -185,6 +185,14 @@ security-critical instructions last wherever it controls the order. A `files`
 destination that collides with a guarded path draws a note at develop and
 `byre dockerfile` (byre's copy takes precedence; the override isn't silent).
 
+The guard reaches only the image. A **runtime** mount or volume over a
+byre-managed path -- the launcher, a netns hook, or anything under
+`/etc/byre` (the launch gate and the baked delivery artifacts) -- is applied
+by the engine over the finished image, where byre has nothing left to
+re-assert with. So that case is disclosed instead of guarded: one loud line
+at develop and in status's Containment register, covering the project's own
+mounts and any a skill declares, attributed (ADR 0052).
+
 The **core block precedes skills**: it's constant, so placing it ahead of
 the varying skill blocks keeps it cache-shared across all projects on a
 base, and it means the `dev` user and `gosu` exist when skills build --
