@@ -158,3 +158,56 @@ func TestFlowOwnedKeysAreShownReadOnlyNotHidden(t *testing.T) {
 		}
 	}
 }
+
+// The --global editor's own sections (ONBOARDING FAVOURITES, WORKTREES,
+// DEFAULTS) are historically untested as a shape: only the worktree checkbox
+// had coverage. Every row it puts on screen must render its label and a value,
+// and walking the whole focus order must not desync paint from state -- the
+// class of bug a row with no renderValue case produces silently.
+func TestGlobalEditorRendersEveryRowItOffers(t *testing.T) {
+	yes := true
+	cfg := config.Config{
+		Base:         "debian:bookworm",
+		WorktreeBase: "sibling",
+		SeedPrefs:    &yes,
+		Sources:      map[string]config.SourceHint{"acme/tool": {URI: "https://example.invalid/t.tgz"}},
+		Defaults: config.Defaults{
+			SkipQuestions: true,
+			SharedAuth:    config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}},
+		},
+	}
+	inh := Inherited{Skills: map[string]SkillRuntime{"claude-shared-auth": {SharedAuthFor: "claude"}}}
+	m := newModel("byre global config", "/x", cfg, []string{"go"}, []string{"claude"},
+		[]string{"claude-shared-auth"}, nil, inh, nil, TargetGlobal)
+	m.width, m.height = 200, 200 // the rows are the subject, not the clip
+
+	for _, want := range []string{
+		"ONBOARDING FAVOURITES", "WORKTREES", "DEFAULTS", "BUILD", "GRANTS", "ADVANCED",
+	} {
+		if !strings.Contains(m.View(), want) {
+			t.Errorf("the global form is missing its %s section:\n%s", want, m.View())
+		}
+	}
+	// Every row in the order renders a label AND a non-empty value, focused and
+	// not: a fieldID with no renderValue case paints a bare label instead.
+	for i, f := range m.order {
+		m.setFocus(i)
+		for _, focused := range []bool{false, true} {
+			got := m.renderValue(f, focused)
+			if strings.TrimSpace(got) == "" {
+				t.Errorf("%q renders no value (focused=%v) — a fieldID with no renderValue case", fieldLabel(f), focused)
+			}
+		}
+		if !strings.Contains(m.View(), fieldLabel(f)) {
+			t.Errorf("%q is in the focus order but not on screen", fieldLabel(f))
+		}
+	}
+	// Walking the whole order changes nothing: focus is not an edit.
+	before := m.sig()
+	for i := range m.order {
+		m.setFocus(i)
+	}
+	if m.sig() != before || m.dirty() {
+		t.Error("moving the cursor through the global form must not dirty it")
+	}
+}

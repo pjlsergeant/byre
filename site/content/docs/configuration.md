@@ -30,11 +30,16 @@ The editor shows one screen, organized the way `byre status` reports:
   (prose opens in your `$EDITOR`; inherited snippets are readable in
   full, attributed to their layer). Adding a postgres client is: arrow
   to Packages, type the name, done -- it installs on the next develop.
+  Also here: whether to seed the agent's curated prefs into a state
+  volume being created (three-state -- inherit, on, off), and a
+  read-only list of the `[sources]` install hints `byre preset apply`
+  recorded for the packages this config names.
 - **Onboarding favourites.** The template and agent answers the
   first-run picker will pre-select next time. Preferences, never
-  grants -- they apply nothing to any box. (`shared_auth` is a
-  favourite too, but has no editor surface today: it is written by
-  onboarding and read by the next box.)
+  grants -- they apply nothing to any box. `--global` also shows your
+  stored shared-credentials answer read-only, beside the checkbox that
+  decides whether new projects take it without asking -- and flags it if
+  the companion skill it names is no longer installed.
 - **Volumes.** The named volumes this config declares -- add, edit, and
   turn an inherited one off, with every skill's contribution shown
   read-only beside them.
