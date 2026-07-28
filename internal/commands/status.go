@@ -78,9 +78,12 @@ type statusInfo struct {
 	Contexts     []config.ContextDecl
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
-	Containments      []skills.ContainmentDecl
+	Containments []skills.ContainmentDecl
+	// ManagedShadows are the mount/volume targets covering a byre-managed
+	// path (ADR 0052): one blanket disclosure each, in the same Containment
+	// register, leaving every other row describing what byre built.
+	ManagedShadows    []ManagedPathShadow
 	ProjectRunArgs    bool     // the PROJECT's own raw run_args present (degrades the posture claim)
-	GuardMountShadow  bool     // a project mount/volume covers a security path (degrades the posture claim)
 	Container         string   // this dir's running container id, or "" if none
 	ContainerQueryErr string   // engine found but the container query failed — state is UNKNOWN, not absent
 	SiblingQueryErr   string   // sibling-session query failed while the own-session query worked
@@ -198,9 +201,10 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 			info.Grants = res.Grants()
 			info.RunArgs = append(append([]string{}, res.RunArgs()...), cfg.RunArgs...)
 			info.NetPosture, info.NetPostureSkill = res.NetworkPosture()
-			// A project mount/volume over a guarded path shadows byre's own
-			// launcher/gate/netns file at runtime — the network claim can't stand.
-			info.GuardMountShadow = len(guardMountVolumeHits(cfg, res)) > 0
+			// A mount/volume over a byre-managed path replaces byre's own
+			// launcher/gate/artifact in the running box — disclosed once,
+			// beside the containment rows.
+			info.ManagedShadows = managedPathShadows(cfg, res)
 			info.Egress = res.EgressAllows()
 			// The `egress` config key is the user's extension path (ADR 0019),
 			// so status must show those holes too — attributed to config, not a
@@ -386,15 +390,23 @@ func renderStatus(w io.Writer, s statusInfo) {
 	row("Network", networkLine(s))
 
 	// Containment: warranty disclaimer for skill-declared holes (e.g.
-	// docker-host). Other rows stay unqualified -- they describe what byre
-	// built and still hold for the box; this row disclaims the hole once.
-	// Multi-declarer: each skill gets its own attributed row.
-	for i, c := range s.Containments {
+	// docker-host) and for mounts/volumes over byre's own managed paths (ADR
+	// 0052). Other rows stay unqualified -- they describe what byre built;
+	// these rows disclaim, once each. Multi-declarer: every hole gets its own
+	// attributed row.
+	var containment []string
+	for _, c := range s.Containments {
+		containment = append(containment, fmt.Sprintf("🛑 HOLE -- %s  (skill: %s)", c.Text, c.Skill))
+	}
+	for _, sh := range s.ManagedShadows {
+		containment = append(containment, "🛑 "+ManagedPathShadowText(sh))
+	}
+	for i, line := range containment {
 		label := "Containment"
 		if i > 0 {
 			label = ""
 		}
-		row(label, fmt.Sprintf("🛑 HOLE -- %s  (skill: %s)", c.Text, c.Skill))
+		row(label, line)
 	}
 
 	// When an allowlist-enforcing posture is in effect, list the allowlist so
@@ -945,47 +957,105 @@ func covers(target, guarded string) bool {
 	return target == guarded || target == "/" || strings.HasPrefix(guarded, target+"/")
 }
 
-// guardMountVolumeHits returns the byre-managed security paths (launcher, launch
-// gate, netns script) that a PROJECT-config mount or volume target covers. A
-// typed mount/volume over such a path shadows byre's own file at RUNTIME --
-// unlike `files`, which byre re-asserts at the build tail, byre cannot re-assert
+// shadows reports whether a mount/volume target replaces any part of a
+// byre-managed root. Both directions count: a target that COVERS the root
+// hides everything under it (a volume at /etc/byre buries the launch gate),
+// and a target INSIDE the root replaces that one entry (a bind straight onto
+// the gate, or onto a baked artifact). Either way the box reads the mount,
+// not what byre built.
+func shadows(target, root string) bool {
+	return covers(target, root) || covers(root, target)
+}
+
+// managedRoots are the image paths byre owns for this project: the whole
+// /etc/byre directory -- the launch gate and every baked artifact live under
+// it, so this stays right for artifacts added later -- the launcher, and any
+// netns enforcement script a network-posture skill declares.
+func managedRoots(res skills.Resolved) []string {
+	roots := []string{gen.ByreDir, gen.LauncherPath}
+	for _, h := range res.NetnsInits() {
+		// Clean the hook path: skills.Resolve requires it absolute but not
+		// clean, so a target on its CANONICAL form (e.g. /usr/local/../usr/
+		// local/bin/fw -> /usr/local/bin/fw) must still match.
+		roots = append(roots, path.Clean(h.Path))
+	}
+	return roots
+}
+
+// shadowFromConfig attributes a shadowing mount/volume to the project config
+// rather than to a skill.
+const shadowFromConfig = "config"
+
+// ManagedPathShadow is one mount or volume target that covers a byre-managed
+// path, attributed to whoever declared it.
+type ManagedPathShadow struct {
+	Target string // cleaned mount/volume target
+	Source string // shadowFromConfig, or "skill <name>"
+}
+
+// managedPathShadows returns the mount/volume targets that cover a byre-managed
+// path, deduped by cleaned target: the project's own entries first, then the
+// enabled skills' in enable order.
+//
+// Such a target replaces byre's own file in the RUNNING box -- and unlike
+// `files`, which byre re-asserts at the build tail, byre has no re-assertion
 // over a runtime mount. E.g. a `[[volumes]] target = "/etc/byre"` seeds the
-// fresh volume with the launch gate, which the agent then owns and can delete; a
-// `docker restart` recreates the netns without the firewall and the empty gate
-// makes the launcher skip its wait (fail open). Only the project's own
-// mounts/volumes are checked; skill contributions are byre's trusted
-// construction (as with `files`).
-func guardMountVolumeHits(cfg config.Config, res skills.Resolved) []string {
-	guarded := guardedPaths(res)
+// fresh volume with the launch gate, which the agent then owns and can delete;
+// a `docker restart` recreates the netns without the firewall and the empty
+// gate makes the launcher skip its wait (fail open). Skills are included: the
+// trust a skill earns is over its own construction, and the build-tail
+// re-assertion that backs the same trust for `files` has no runtime twin.
+func managedPathShadows(cfg config.Config, res skills.Resolved) []ManagedPathShadow {
+	roots := managedRoots(res)
 	seen := map[string]bool{}
-	var hits []string
-	check := func(target string) {
-		for _, g := range guarded {
-			if covers(target, g) && !seen[g] {
-				seen[g] = true
-				hits = append(hits, g)
+	var out []ManagedPathShadow
+	add := func(target, source string) {
+		t := path.Clean(target)
+		if seen[t] {
+			return
+		}
+		for _, r := range roots {
+			if shadows(t, r) {
+				seen[t] = true
+				out = append(out, ManagedPathShadow{Target: t, Source: source})
+				return
 			}
 		}
 	}
 	for _, m := range cfg.Mounts {
 		if !m.Disabled {
-			check(m.Target)
+			add(m.Target, shadowFromConfig)
 		}
 	}
 	for _, v := range cfg.Volumes {
-		check(v.Target)
+		add(v.Target, shadowFromConfig)
 	}
-	sort.Strings(hits)
-	return hits
+	for _, sk := range res.Skills {
+		for _, m := range sk.File.Runtime.Mounts {
+			if !m.Disabled {
+				add(m.Target, "skill "+sk.Name)
+			}
+		}
+		for _, v := range sk.File.Volumes {
+			add(v.Target, "skill "+sk.Name)
+		}
+	}
+	return out
 }
 
-// warnGuardMountCollisions warns at develop when a project mount/volume covers a
-// security path. This is a real containment hole (byre can't re-assert over a
-// runtime mount), made legible per the footgun doctrine -- tell, don't refuse;
-// status degrades the network claim to match.
-func warnGuardMountCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
-	for _, g := range guardMountVolumeHits(cfg, res) {
-		fmt.Fprintf(w, "🛑 byre: a mount or volume covers %s, a byre-managed security path — it shadows byre's own file at runtime, so byre's containment (firewall / launch gate) is NOT guaranteed for this session.\n", g)
+// ManagedPathShadowText is the one blanket disclosure byre prints for a
+// shadowing mount/volume -- the Containment register (ADR 0052): factual,
+// loud, said once, never a per-claim hedge. Status and develop share the
+// wording; each adds its own 🛑 marker and prefix.
+func ManagedPathShadowText(sh ManagedPathShadow) string {
+	return fmt.Sprintf("a mount or volume covers %s (%s) — byre cannot re-assert over a runtime mount, so containment (firewall / launch gate) is NOT guaranteed for this session, and byre's MCP / instructions / Claude Skills claims describe what byre BUILT, not what this box sees.", sh.Target, sh.Source)
+}
+
+// warnManagedPathShadows warns at develop, once per shadowing target. A real
+// containment hole made legible per the footgun doctrine -- tell, don't refuse.
+func warnManagedPathShadows(w io.Writer, cfg config.Config, res skills.Resolved) {
+	for _, sh := range managedPathShadows(cfg, res) {
+		fmt.Fprintf(w, "🛑 byre: %s\n", ManagedPathShadowText(sh))
 	}
 }
 
@@ -1085,9 +1155,6 @@ func networkLine(s statusInfo) string {
 	}
 	if len(s.BuildRaw) > 0 {
 		raw = append(raw, "raw build lines")
-	}
-	if s.GuardMountShadow {
-		raw = append(raw, "a mount/volume over a security path")
 	}
 	if reservedEnvTouches(s, "network") {
 		raw = append(raw, "a skill setting byre's network controls")

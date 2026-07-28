@@ -109,7 +109,7 @@ const (
 // decisions.
 const (
 	MCPConfigName = "mcp.json"
-	MCPConfigPath = "/etc/byre/" + MCPConfigName
+	MCPConfigPath = ByreDir + "/" + MCPConfigName
 )
 
 // ClaudeSkillsDirName is the build-context directory of the canonical declared
@@ -121,7 +121,7 @@ const (
 // so the delivered skills load BARE (as /name), not plugin-namespaced.
 const (
 	ClaudeSkillsDirName = "claude-skills"
-	ClaudeSkillsPath    = "/etc/byre/" + ClaudeSkillsDirName
+	ClaudeSkillsPath    = ByreDir + "/" + ClaudeSkillsDirName
 )
 
 // DefaultBase is used when no base is configured (and no template supplies one).
@@ -132,11 +132,18 @@ const DefaultBase = "debian:bookworm"
 // reasons about it as a chassis-owned, re-asserted path.
 const LauncherPath = "/usr/local/bin/" + LauncherName
 
+// ByreDir is the image directory byre owns: the launch gate plus every baked
+// artifact (mcp.json, the agent context, the Claude Skill tree) lives under
+// it. Status reasons about the whole directory when judging what a runtime
+// mount or volume replaces, so an artifact added here later is covered
+// without a second edit.
+const ByreDir = "/etc/byre"
+
 // LaunchGatePath is the launch-gate file the launcher waits on (launcher.sh
 // hardcodes this default; a network-posture skill bakes the gate here). It's a
 // cross-component contract — the shell launcher, the firewall skill.toml, and
 // the security guard must agree on it — so it lives here as the Go-side anchor.
-const LaunchGatePath = "/etc/byre/launch-gate"
+const LaunchGatePath = ByreDir + "/launch-gate"
 
 // coreBlock is the chassis's build-time slice — core's constant contribution
 // to every generated Dockerfile. It installs gosu (a build-only helper —
