@@ -34,7 +34,7 @@ func lifecycleEngines(roots hostexec.Roots) ([]engineRunner, error) {
 			if errors.As(err, new(*runner.NotInstalledError)) {
 				continue // genuinely not here; nothing of this project can be on it
 			}
-			return nil, fmt.Errorf("byre cannot account for %s on this machine, and this command speaks in totals: %w", e, err)
+			return nil, fmt.Errorf("this command speaks in totals and byre cannot account for %s: %w", e, declinedEngine{Engine: e, Err: err})
 		}
 		out = append(out, runner.New(eng, exe))
 	}

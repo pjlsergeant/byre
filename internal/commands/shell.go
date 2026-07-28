@@ -32,25 +32,55 @@ func Shell(s Streams, projectDir string, skipUIDCheck bool) error {
 	return shell(s, projectDir, engines, os.Getuid(), skipUIDCheck)
 }
 
+// declinedEngine is an engine byre FOUND but will not drive. hostexec refusing
+// a binary the box can write is one way in; Go refusing a relative PATH entry
+// (exec.ErrDot, the refusal hostexec's own contract leans on) is another, and
+// a lookup can fail in ways nobody has enumerated.
+//
+// It is a struct rather than a *hostexec.ShadowError because the CALLERS never
+// cared which refusal it was. "byre could not establish what is on this
+// engine" is one state however it was reached, and it is never the same state
+// as "this engine is not on this machine" — the distinction runner's
+// NotInstalledError exists to carry. Typing the collection to one refusal made
+// every other refusal read as absence again, silently.
+type declinedEngine struct {
+	Engine string
+	Err    error
+}
+
+func (d declinedEngine) Unwrap() error { return d.Err }
+
+// Error is the disclosure line's body. A ShadowError already names the tool,
+// the resolved path, the root and the ten-second fix — better text than a
+// wrapper could add, so it stands alone. Every other refusal needs the engine
+// name attached, since exec's own errors name a path and not what byre was
+// looking for.
+func (d declinedEngine) Error() string {
+	var shadow *hostexec.ShadowError
+	if errors.As(d.Err, &shadow) {
+		return shadow.Error()
+	}
+	return fmt.Sprintf("byre can't run %s here: %v", d.Engine, d.Err)
+}
+
 // installedEngines returns a sessionRunner per installed engine, in shell's
-// probe order (docker, then podman), AND the engines byre found but declined
-// to run (hostexec refused a binary resolved out of a directory the box
-// writes).
+// probe order (docker, then podman), AND the engines byre found but will not
+// drive.
 //
 // The two are returned separately because they are not the same answer. An
 // absent engine holds no boxes and costs the caller nothing. A declined one
 // may be holding this project's live session right now, and byre cannot look
 // — so every caller that enumerates engines to make a statement about them
-// has to say so rather than quietly enumerate one fewer.
-func installedEngines(roots hostexec.Roots) ([]sessionRunner, []*hostexec.ShadowError) {
+// has to say so rather than quietly enumerate one fewer. Only
+// runner.NotInstalledError is absence; everything else is declined.
+func installedEngines(roots hostexec.Roots) ([]sessionRunner, []declinedEngine) {
 	var out []sessionRunner
-	var declined []*hostexec.ShadowError
+	var declined []declinedEngine
 	for _, e := range []string{"docker", "podman"} {
 		eng, exe, err := runner.Detect(e, hostexec.Looker(roots))
 		if err != nil {
-			var shadow *hostexec.ShadowError
-			if errors.As(err, &shadow) {
-				declined = append(declined, shadow)
+			if !errors.As(err, new(*runner.NotInstalledError)) {
+				declined = append(declined, declinedEngine{Engine: e, Err: err})
 			}
 			continue
 		}
@@ -63,7 +93,7 @@ func installedEngines(roots hostexec.Roots) ([]sessionRunner, []*hostexec.Shadow
 // engines develop must check for a competing session after an engine switch.
 // A declined engine is never "self" (develop's own engine resolved, or develop
 // already refused), so the declined list passes through whole.
-func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) ([]sessionRunner, []*hostexec.ShadowError) {
+func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) ([]sessionRunner, []declinedEngine) {
 	all, declined := installedEngines(roots)
 	var out []sessionRunner
 	for _, rr := range all {
@@ -79,7 +109,7 @@ func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) ([]session
 // engine record: unlike an installed-but-stopped engine (whose ambient note
 // the #4 ruling removed), a declined one is a finding about this machine right
 // now, and the user's ten-second fix is in the message.
-func noteDeclinedEngines(w io.Writer, declined []*hostexec.ShadowError, consequence string) {
+func noteDeclinedEngines(w io.Writer, declined []declinedEngine, consequence string) {
 	for _, d := range declined {
 		fmt.Fprintf(w, "byre: %v %s\n", d, consequence)
 	}

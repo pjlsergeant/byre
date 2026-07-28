@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,8 +67,52 @@ func TestInstalledEnginesReportsDeclinedSeparately(t *testing.T) {
 	if len(declined) != 1 {
 		t.Fatalf("declined = %v, want the shadowed docker", declined)
 	}
-	if declined[0].Name != "docker" || declined[0].Path != planted || declined[0].Root != tree {
-		t.Errorf("declined = %+v, want name=docker path=%s root=%s", declined[0], planted, tree)
+	if declined[0].Engine != "docker" {
+		t.Errorf("declined engine = %q, want docker", declined[0].Engine)
+	}
+	var shadow *hostexec.ShadowError
+	if !errors.As(declined[0].Err, &shadow) {
+		t.Fatalf("declined err = %v, want the *ShadowError to survive collection", declined[0].Err)
+	}
+	if shadow.Path != planted || shadow.Root != tree {
+		t.Errorf("shadow = %+v, want path=%s root=%s", shadow, planted, tree)
+	}
+}
+
+// hostexec is not the only thing that declines a binary: Go's own LookPath
+// refuses a RELATIVE PATH entry with exec.ErrDot, and that refusal is part of
+// what hostexec's contract leans on ("the absolute case is this package's").
+// It must reach the callers as declined, not as absent -- typing the
+// collection to one refusal made every other refusal read as absence again.
+func TestInstalledEnginesDeclinesRelativePathEntry(t *testing.T) {
+	dir := t.TempDir()
+	stubBin(t, dir, "docker")
+	t.Chdir(dir)
+	fakePATH(t, ".") // a relative entry: Go answers with ErrDot, never ErrNotFound
+
+	out, declined := installedEngines(hostexec.NewRoots(t.TempDir()))
+	if len(out) != 0 {
+		t.Fatalf("engines = %v, want none — a relative PATH entry is not runnable", out)
+	}
+	if len(declined) != 1 || declined[0].Engine != "docker" {
+		t.Fatalf("declined = %v, want the docker Go refused", declined)
+	}
+	if !errors.Is(declined[0].Err, exec.ErrDot) {
+		t.Errorf("declined err = %v, want exec.ErrDot", declined[0].Err)
+	}
+	// The disclosure has to name the ENGINE: exec's own error names a path and
+	// not what byre was looking for.
+	var out2 bytes.Buffer
+	noteDeclinedEngines(&out2, declined, "consequence.")
+	for _, want := range []string{"docker", "relative", "consequence."} {
+		if !strings.Contains(out2.String(), want) {
+			t.Errorf("disclosure missing %q: %s", want, out2.String())
+		}
+	}
+	// ...and the same refusal must fail the totals commands, not drop out.
+	if _, err := lifecycleEngines(hostexec.NewRoots(t.TempDir())); err == nil ||
+		!strings.Contains(err.Error(), "speaks in totals") {
+		t.Errorf("lifecycleEngines err = %v, want the totals refusal", err)
 	}
 }
 
@@ -78,7 +123,10 @@ func TestInstalledEnginesReportsDeclinedSeparately(t *testing.T) {
 func TestRefuseCrossEngineSessionSkipsAndDisclosesDeclined(t *testing.T) {
 	paths, _ := testPaths(t)
 	var out bytes.Buffer
-	declined := []*hostexec.ShadowError{{Name: "docker", Path: "/proj/.bin/docker", Root: "/proj"}}
+	declined := []declinedEngine{{
+		Engine: "docker",
+		Err:    &hostexec.ShadowError{Name: "docker", Path: "/proj/.bin/docker", Root: "/proj"},
+	}}
 
 	skipped, err := refuseCrossEngineSession(&out, nil, declined, "podman", paths)
 	if err != nil {
@@ -168,8 +216,17 @@ func TestDevelopDisclosesShadowedGitAndContinues(t *testing.T) {
 	s, _, errBuf := testStreams("", false)
 	// The engine stub fails every call, so develop gets past resolution and
 	// then stops at its first real engine query. What matters is that the
-	// disclosure was printed BEFORE that, not what ended the run.
-	_ = Develop(s, proj, "", "", nil, false)
+	// disclosure was printed BEFORE that, and that the declined git did not
+	// end the run itself.
+	err := Develop(s, proj, "", "", nil, false)
+
+	// CONTINUED, not refused: printing the line and then returning the git
+	// refusal would satisfy the text asserts below while gating a session on
+	// the thing the session-end report reads.
+	var shadow *hostexec.ShadowError
+	if errors.As(err, &shadow) && shadow.Name == "git" {
+		t.Fatalf("develop must degrade past a declined git, not refuse on it: %v", err)
+	}
 
 	got := errBuf.String()
 	for _, want := range []string{"declines to run git", planted, "skipped for this session"} {

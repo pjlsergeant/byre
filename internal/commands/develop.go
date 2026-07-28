@@ -485,7 +485,7 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 // uncertainty lands back in the engine record as unresolved and keeps being
 // re-checked -- an inconclusive check must never advance the record into
 // silence.
-func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []*hostexec.ShadowError, self runner.Engine, paths project.Paths) (skipped []string, err error) {
+func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []declinedEngine, self runner.Engine, paths project.Paths) (skipped []string, err error) {
 	// A DECLINED engine takes the unreachable arm's treatment, one step
 	// earlier: byre never got a runner for it, so it cannot be queried at all.
 	// Same shape and for the same reason -- refusing outright would brick
@@ -496,8 +496,8 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []*h
 	// "byre will not run a binary on this machine", which is worth saying
 	// whatever the record holds.
 	for _, d := range declined {
-		fmt.Fprintf(w, "byre: %v A competing session under %s can't be ruled out — single-session isn't guaranteed against it.\n", d, d.Name)
-		skipped = append(skipped, d.Name)
+		fmt.Fprintf(w, "byre: %v A competing session under %s can't be ruled out — single-session isn't guaranteed against it.\n", d, d.Engine)
+		skipped = append(skipped, d.Engine)
 	}
 	label := workdirLabel(paths)
 	for _, rr := range others {

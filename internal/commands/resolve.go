@@ -6,7 +6,6 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
@@ -33,12 +32,11 @@ type resolved struct {
 	// switch (ADR 0004). Set by Develop; nil in combine() (and thus in unit
 	// tests, which drive develop directly) means "no cross-engine check".
 	otherEngines []sessionRunner
-	// declinedEngines are the OTHER engines byre found but will not run
-	// (hostexec refused a binary the box can write). Distinct from
-	// otherEngines being short by one: these have to reach the single-session
-	// check as UNCHECKABLE, not as absent, or the engine record advances into
-	// a silence it hasn't earned. Set by Develop; nil elsewhere.
-	declinedEngines []*hostexec.ShadowError
+	// declinedEngines are the OTHER engines byre found but will not run.
+	// Distinct from otherEngines being short by one: these have to reach the
+	// single-session check as UNCHECKABLE, not as absent, or the engine record
+	// advances into a silence it hasn't earned. Set by Develop; nil elsewhere.
+	declinedEngines []declinedEngine
 	// gitExe is the host git this invocation runs (hostGit): an absolute path
 	// pinned for the process, or "" when there is none to run -- not
 	// installed, or resolved out of a directory the box writes. Set by

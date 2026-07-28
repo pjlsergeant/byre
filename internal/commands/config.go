@@ -271,18 +271,19 @@ type volumeAdmin struct {
 // open, so volumes added later (e.g. via $EDITOR) appear without restarting.
 //
 // w takes the one case where a missing section needs a reason: an engine byre
-// DECLINED to run. "No engine installed" explains itself and the row's absence
-// is unsurprising; a section that vanishes because a binary is being shadowed
-// would otherwise be a silent product hole (P0 -- the screen is the product).
+// found and DECLINED to run. "No engine installed" explains itself and the
+// row's absence is unsurprising; a section that vanishes because a binary is
+// shadowed, or sits behind a relative PATH entry, would otherwise be a silent
+// product hole (P0 -- the screen is the product).
 func newVolumeAdmin(w io.Writer, paths project.Paths, projectDir string, prepare func() error) configui.VolumeAdmin {
 	if _, err := resolve(paths, projectDir, nil); err != nil {
 		return nil
 	}
 	rs, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
-		var shadow *hostexec.ShadowError
-		if errors.As(err, &shadow) {
-			fmt.Fprintf(w, "byre: %v The editor's Volumes section is hidden — byre can't list or clear volumes it can't reach.\n", shadow)
+		var declined declinedEngine
+		if errors.As(err, &declined) {
+			fmt.Fprintf(w, "byre: %v The editor's Volumes section is hidden — byre can't list or clear volumes it can't reach.\n", declined)
 		}
 		return nil // no engine → can't list/clear; hide the section
 	}
