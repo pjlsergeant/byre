@@ -35,6 +35,10 @@ import (
 // the exposure fields describe, `launch` carries the record, and
 // `changes_on_next_launch` carries the diff -- the same content --full
 // renders, which is the rule this document is held to.
+// 2 (2026-07-29, same unreleased batch): each volume carries `sharing`,
+// beside the `(exclusive)` mark the page prints. Folded into 2 rather than
+// bumped: no release has published 2, so there is no consumer of the shape
+// without the key to migrate.
 const StatusDataVersion = 2
 
 type statusData struct {
@@ -183,6 +187,10 @@ type statusDataVolume struct {
 	Role   string `json:"role,omitempty"`
 	Target string `json:"target,omitempty"`
 	Scope  string `json:"scope"`
+	// Sharing is always written, like Scope: the text page marks an
+	// exclusive volume in its row, so a document that omitted the key would
+	// be the one place the two tiers described different boxes.
+	Sharing string `json:"sharing"`
 }
 
 type statusDataSkill struct {
@@ -333,7 +341,7 @@ func statusDataOf(s statusInfo) statusData {
 		if scope == "" {
 			scope = "project"
 		}
-		d.Volumes = append(d.Volumes, statusDataVolume{Name: v.Name, Role: v.Role, Target: v.Target, Scope: scope})
+		d.Volumes = append(d.Volumes, statusDataVolume{Name: v.Name, Role: v.Role, Target: v.Target, Scope: scope, Sharing: orDefault(v.Sharing, "shared")})
 	}
 	d.Skills = make([]statusDataSkill, 0, len(s.Skills))
 	for _, name := range s.Skills {

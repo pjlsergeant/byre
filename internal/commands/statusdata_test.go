@@ -245,3 +245,38 @@ func TestStatusDataMarksProvidedMCPEnv(t *testing.T) {
 		t.Errorf("source = %v, want config", m["source"])
 	}
 }
+
+// The page marks an exclusive volume in its row and the delta can name a
+// sharing change, so a document without the key would be the one place the
+// two tiers describe different boxes -- which is the rule this projection is
+// held to. Always written, like scope: absent-means-shared is a rule a reader
+// should not have to know.
+func TestStatusDataCarriesVolumeSharing(t *testing.T) {
+	got := decodeStatusData(t, statusInfo{
+		Engine: "docker",
+		Volumes: []config.Volume{
+			{Name: "ledger", Role: "state", Target: "/var/lib/ledger", Sharing: "exclusive"},
+			{Name: "deps", Role: "cache", Target: "/workspace/node_modules"},
+		},
+	})
+	vols, _ := got["volumes"].([]any)
+	if len(vols) != 2 {
+		t.Fatalf("volumes = %v", vols)
+	}
+	sharing := map[string]any{}
+	for _, v := range vols {
+		m, _ := v.(map[string]any)
+		name, _ := m["name"].(string)
+		s, ok := m["sharing"]
+		if !ok {
+			t.Fatalf("volume %q has no sharing key: %v", name, m)
+		}
+		sharing[name] = s
+	}
+	if sharing["ledger"] != "exclusive" {
+		t.Errorf("the single-writer declaration did not reach --data: %v", sharing)
+	}
+	if sharing["deps"] != "shared" {
+		t.Errorf("the default must be spelled out, not omitted: %v", sharing)
+	}
+}

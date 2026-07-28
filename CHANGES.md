@@ -29,9 +29,14 @@
   always been -- nothing byre ships declares otherwise, and the check does
   not even run unless something in your config does. The volumes editor
   gains a **Sharing** picker beside Role, `byre status` marks an exclusive
-  volume in its row and qualifies the Worktrees line, and the combination
-  with `scope = "machine"` is refused: byre can see this project's boxes,
-  not your other projects'. (ADR 0054)
+  volume in its row and qualifies the Worktrees line (that qualifier speaks
+  for the NEXT develop, so it follows your current config even while the
+  rows above describe a running box), and the combination with
+  `scope = "machine"` is refused: byre can see this project's boxes, not
+  your other projects'. `byre status --data` carries `sharing` on every
+  volume -- always spelled out, like `scope` -- folded into document
+  version 2 rather than bumping it, since no release has published 2.
+  (ADR 0054)
 
 - **`byre status` now describes the box that is RUNNING, not the one your
   config would launch next.** Until now status resolved the config as it is
