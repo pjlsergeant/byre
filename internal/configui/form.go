@@ -18,6 +18,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/onboard"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -73,6 +74,7 @@ const (
 	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
 	fSeedPrefs       // tri-state: seed_prefs (inherit / on / off), ADR 0045
 	fSources         // read-only view of [sources] acquisition hints
+	fSharedAuth      // read-only view of [defaults].shared_auth (the picker writes it)
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
 	// the ad-hoc clear. Separate from fVolumes because they answer different
 	// questions with different blast radii -- one edits a declaration in this
@@ -387,7 +389,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 			// [defaults]: picker state. Template and Agent are NOT here on
 			// purpose -- they are real cascade keys above, which is exactly
 			// what a reader of a one-member section wants told.
-			{"DEFAULTS — picker state; Template and Agent above are real config, not just prefill", []fieldID{fSkipQuestions}},
+			{"DEFAULTS — picker state; Template and Agent above are real config, not just prefill", []fieldID{fSkipQuestions, fSharedAuth}},
 		}
 	case TargetLayer:
 		// A layer carries the full vocabulary EXCEPT template (shape selection
@@ -1083,6 +1085,12 @@ func (m model) renderValue(f fieldID, focused bool) string {
 			s = focusStyle.Render(s)
 		}
 		return s
+	case fSharedAuth:
+		s := m.sharedAuthLine()
+		if focused {
+			s += dimStyle.Render("  (read-only — the first-run question writes this)")
+		}
+		return s
 	case fSeedPrefs:
 		s := renderSeg(seedPrefsOpts, m.seedPrefsSel, focused)
 		// The perishability is the whole shape of this feature and belongs
@@ -1401,6 +1409,74 @@ func keyArrow(dir int) tea.KeyType {
 		return tea.KeyLeft
 	}
 	return tea.KeyRight
+}
+
+// sharedAuthLine renders [defaults].shared_auth read-only: which companion
+// each agent's stored answer names, and -- the reason the row exists at all --
+// whether that name still matches a skill claiming the pairing. A stored pick
+// is a NAME, and this is the only surface a user can read one from without
+// opening the file; the next new project applies it (or, with skip_questions,
+// applies it unasked), so "this says claude-shared-auth and nothing here is
+// claude-shared-auth any more" must be visible before that happens.
+//
+// Read-only because the answer is a consent the picker takes, once, with the
+// machine-wide credential consequence stated. A picker row here would author
+// that consent from a screen that never asks the question.
+func (m model) sharedAuthLine() string {
+	pref := m.base.StoredSharedAuth()
+	if pref.Empty() {
+		return dimStyle.Render("(nothing stored — answered per box when a new project is set up)")
+	}
+	agents := make([]string, 0, len(pref.Pick)+len(pref.Yes))
+	for a := range pref.Pick {
+		agents = append(agents, a)
+	}
+	agents = append(agents, pref.Yes...)
+	sort.Strings(agents)
+
+	parts := make([]string, 0, len(agents))
+	for _, a := range agents {
+		pick := pref.CompanionPick(a)
+		if pick == "" {
+			// A legacy yes-inclination: an answer with no companion named, so
+			// there is nothing to check and nothing to apply unasked.
+			parts = append(parts, packages.EscapeTerminal(a)+" → yes"+dimStyle.Render(" (no companion recorded)"))
+			continue
+		}
+		row := packages.EscapeTerminal(a) + " → " + packages.EscapeTerminal(pick)
+		if !m.sharedAuthPickLive(a, pick) {
+			row += warnStyle.Render("  ⚠ " + onboard.StalePickNotice(packages.EscapeTerminal(pick)))
+		}
+		parts = append(parts, row)
+	}
+	return strings.Join(parts, dimStyle.Render(" · "))
+}
+
+// sharedAuthPickLive reports whether pick still names a skill vouching itself
+// as agent's shared-auth companion (shared_auth_for). Alias-expanded on every
+// side, because a stored pick and a declaration may spell the same package two
+// ways -- the same tolerance SharedAuthAlreadyOn extends, for the same reason.
+func (m model) sharedAuthPickLive(agent, pick string) bool {
+	if agent == "" || pick == "" {
+		return false
+	}
+	expand := func(s string) string {
+		if m.inh.Catalog == nil {
+			return s
+		}
+		return m.inh.Catalog.ExpandAlias(s)
+	}
+	want, wantPick := expand(agent), expand(pick)
+	for _, name := range m.skillOpts {
+		rt, ok := m.inh.Skills[name]
+		if !ok || rt.SharedAuthFor == "" || expand(rt.SharedAuthFor) != want {
+			continue
+		}
+		if name == pick || expand(name) == wantPick {
+			return true
+		}
+	}
+	return false
 }
 
 // boolWord renders an inherited tri-state value in the picker's own words, so

@@ -77,6 +77,7 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fExtends:         {label: "Extends"},
 	fSkipQuestions:   {label: "Skip questions"},
 	fSeedPrefs:       {label: "Seed prefs"},
+	fSharedAuth:      {label: "Shared creds"},
 	fSources: {label: "Package sources", kind: kindList, item: "Package source", noun: "hint", readOnly: true,
 		explain: "read-only — where a named package installs from; `byre preset apply` writes it"},
 }
