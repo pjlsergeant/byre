@@ -957,27 +957,35 @@ func covers(target, guarded string) bool {
 	return target == guarded || target == "/" || strings.HasPrefix(guarded, target+"/")
 }
 
-// shadows reports whether a mount/volume target replaces any part of a
-// byre-managed root. Both directions count: a target that COVERS the root
-// hides everything under it (a volume at /etc/byre buries the launch gate),
-// and a target INSIDE the root replaces that one entry (a bind straight onto
-// the gate, or onto a baked artifact). Either way the box reads the mount,
-// not what byre built.
-func shadows(target, root string) bool {
-	return covers(target, root) || covers(root, target)
+// managedRoot is one image path byre owns. Dir marks a directory byre owns
+// WHOLE, where a target INSIDE it replaces an entry byre baked there; a file
+// root can only be replaced by a target on it or above it, since the engine
+// refuses to create a bind underneath a regular file.
+type managedRoot struct {
+	Path string
+	Dir  bool
+}
+
+// shadows reports whether a mount/volume target replaces any part of this
+// root: the target equals it, or covers it (an ancestor mount buries
+// everything under it), or -- inside a directory byre owns whole -- lands on
+// one baked entry (a bind straight onto the launch gate). Either way the box
+// reads the mount, not what byre built.
+func (r managedRoot) shadows(target string) bool {
+	return covers(target, r.Path) || (r.Dir && covers(r.Path, target))
 }
 
 // managedRoots are the image paths byre owns for this project: the whole
 // /etc/byre directory -- the launch gate and every baked artifact live under
 // it, so this stays right for artifacts added later -- the launcher, and any
 // netns enforcement script a network-posture skill declares.
-func managedRoots(res skills.Resolved) []string {
-	roots := []string{gen.ByreDir, gen.LauncherPath}
+func managedRoots(res skills.Resolved) []managedRoot {
+	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}}
 	for _, h := range res.NetnsInits() {
 		// Clean the hook path: skills.Resolve requires it absolute but not
 		// clean, so a target on its CANONICAL form (e.g. /usr/local/../usr/
 		// local/bin/fw -> /usr/local/bin/fw) must still match.
-		roots = append(roots, path.Clean(h.Path))
+		roots = append(roots, managedRoot{Path: path.Clean(h.Path)})
 	}
 	return roots
 }
@@ -1015,7 +1023,7 @@ func managedPathShadows(cfg config.Config, res skills.Resolved) []ManagedPathSha
 			return
 		}
 		for _, r := range roots {
-			if shadows(t, r) {
+			if r.shadows(t) {
 				seen[t] = true
 				out = append(out, ManagedPathShadow{Target: t, Source: source})
 				return

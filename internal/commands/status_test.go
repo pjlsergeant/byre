@@ -759,6 +759,15 @@ func TestManagedPathShadows(t *testing.T) {
 	if _, ok := got["/opt/data"]; ok {
 		t.Errorf("a harmless mount target must not be reported: %v", got)
 	}
+
+	// A target BELOW a file root replaces nothing -- the engine refuses to
+	// create a bind underneath a regular file, so the box either runs with
+	// byre's launcher or does not run. Reporting it would be a loud, false
+	// containment line.
+	under := config.Config{Mounts: []config.Mount{{Host: "~/c", Target: gen.LauncherPath + "/cache", Mode: "rw"}}}
+	if h := managedPathShadows(under, res); len(h) != 0 {
+		t.Errorf("a target under a file root is not a shadow, got %v", h)
+	}
 	if _, ok := got[gen.MCPConfigPath]; ok {
 		t.Errorf("a disabled mount binds nothing and must not be reported: %v", got)
 	}
