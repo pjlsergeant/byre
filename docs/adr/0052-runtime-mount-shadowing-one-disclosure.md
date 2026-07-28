@@ -46,8 +46,12 @@ therefore gets what is mounted rather than what byre baked, and that whatever
 byre claims from that path -- the firewall's launch gate, the MCP /
 instructions / Claude Skills delivery -- describes byre's construction and not
 this box. It renders on `byre status` beside the skill-declared containment
-holes and as a 🛑 warning at develop, from one exported prose function so the
-two cannot drift.
+holes, as a 🛑 warning at develop, and as a containment-weight line in the
+preset-apply grant review -- from one exported prose function, so the three
+cannot drift. The review is included because consent is the point: a proposed
+`[[volumes]]` on `/etc/byre` read as a storage row would be answered before
+the disclosure ever appeared, and grant-shaped content renders with the same
+weight whichever table carries it (ADR 0050).
 
 The consequence is worded as the scope byre stops warranting rather than as a
 list of things that broke, because the two differ: a bind on `mcp.json` alone
@@ -108,13 +112,11 @@ tidied away.
   launcher, or a volume over `/etc/byre/claude-skills` intended to supply the
   skills, discloses exactly like a hostile one. Judging intent would mean
   introspecting mount contents -- the policing role byre refuses.
-- **The preset-apply grant review does not carry the line.** A preset whose
-  `[[volumes]]` targets `/etc/byre` renders there as an ordinary volume row,
-  and the disclosure arrives at the first develop instead of before the
-  adoption. Whether that clears ADR 0050's bar -- grant-shaped content renders
-  with the same weight whichever table carries it -- is open; the review knows
-  the proposed config but not the resolved netns hooks, so the check it could
-  run today is the `/etc/byre`-and-launcher subset.
+- **The apply review's fallback paths see less.** When the cascade or the
+  skills cannot be expanded, the review already says so and shows what it
+  has; the shadow check there runs against `/etc/byre` and the launcher only,
+  since a netns hook resolution never reached names nothing. The full check
+  runs on the ordinary path.
 - **Skills that legitimately want to place something under `/etc/byre` have no
   quiet path.** None does today (every builtin's targets are under
   `/home/dev` or the docker socket). If one arrives, the answer is a build

@@ -9,10 +9,10 @@
   to re-assert with -- a volume at `/etc/byre` is filled once, when it is
   created, and is the authority ever after, so the launch gate a later build
   bakes never reaches the box, and the launcher reads no gate as nothing to
-  wait for. develop and `byre status` now say so in one loud
-  Containment line per offending target, naming the project config or the
-  skill that declared it, instead of one line per byre path plus a hedge on
-  the Network row. Every other row keeps describing what byre built. A
+  wait for. develop, `byre status`, and the grant review a preset asks you to
+  approve now say so in one loud Containment line per offending target,
+  naming the project config or the skill that declared it, instead of one
+  line per byre path plus a hedge on the Network row. Every other row keeps describing what byre built. A
   skill's own mounts are checked now too: what made the same collision
   harmless for `files` was the build-tail re-assertion, not the skill's good
   name, and no builtin skill mounts anywhere near those paths.

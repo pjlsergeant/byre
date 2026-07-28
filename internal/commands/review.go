@@ -29,26 +29,44 @@ func effectiveReview(paths project.Paths, proposal config.Config) (config.Config
 	if err != nil {
 		grants := append(grantSummary(proposal), egressGrantLine(proposal.Egress, "", "", false)...)
 		grants = append(grants, mcpGrantLines(configMCPDecls(proposal.MCPs), nil)...)
-		return proposal, append(grants,
-			grantLine{Text: "could not expand the cascade (" + err.Error() + ") — grants shown are from the raw file only"})
+		grants = append(grants, shadowGrantLines(proposal, skills.Resolved{})...)
+		return proposal, sortGrantLines(append(grants,
+			grantLine{Text: "could not expand the cascade (" + err.Error() + ") — grants shown are from the raw file only"}))
 	}
 	grants := grantSummary(effective)
 	res, rerr := skills.Resolve(effective, cat)
 	if rerr != nil {
 		grants = append(grants, egressGrantLine(effective.Egress, "", "", false)...)
 		grants = append(grants, mcpGrantLines(configMCPDecls(effective.MCPs), nil)...)
-		return effective, append(grants,
-			grantLine{Text: "could not expand skills (" + rerr.Error() + ") — their grants are NOT shown"})
+		grants = append(grants, shadowGrantLines(effective, skills.Resolved{})...)
+		return effective, sortGrantLines(append(grants,
+			grantLine{Text: "could not expand skills (" + rerr.Error() + ") — their grants are NOT shown"}))
 	}
 	posture, postureSkill := res.NetworkPosture()
 	grants = append(grants, egressGrantLine(effective.Egress, posture, postureSkill, true)...)
 	grants = append(grants, skillGrantSummary(res)...)
+	grants = append(grants, shadowGrantLines(effective, res)...)
 	// The EFFECTIVE MCP set — skill contributions included, attributed —
 	// so a preset can't enable a skill whose wiring (and carried reach)
 	// goes undisclosed at confirm time.
 	mcps, merr := skills.MCPSet(effective, res)
 	grants = append(grants, mcpGrantLines(mcps, merr)...)
 	return effective, sortGrantLines(grants)
+}
+
+// shadowGrantLines renders the runtime-shadow disclosure (ADR 0052) at
+// containment weight. A proposed mount or volume over a byre-managed path
+// disclaims byre's own construction, so the review that asks for consent must
+// carry it as such -- as an ordinary volume row it reads like storage, and
+// the disclosure would arrive at the first develop, after the answer. The
+// fallback paths pass an empty Resolved: /etc/byre and the launcher are known
+// without skills, and a hook that resolution never reached names nothing.
+func shadowGrantLines(cfg config.Config, res skills.Resolved) []grantLine {
+	var out []grantLine
+	for _, sh := range managedPathShadows(cfg, res) {
+		out = append(out, grantLine{Text: ManagedPathShadowText(sh), Containment: true})
+	}
+	return out
 }
 
 // sortGrantLines puts containment holes first, then cross-project reach, then

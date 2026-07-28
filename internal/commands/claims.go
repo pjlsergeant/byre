@@ -47,7 +47,7 @@ var claimSurface = map[string]claimClass{
 		"artifact shadows (mcp.json, agent context, claude-skills) degrade their delivery lines; otherwise build input"),
 	"Skills": rendered("the Skills row and every attributed grant, egress, posture, and containment row"),
 	"Mounts": rendered("bind rows; a target covering a byre-managed path renders the blanket runtime-shadow " +
-		"disclosure in the Containment register (managedPathShadows, ADR 0052)"),
+		"disclosure in the Containment register, on status, develop and the apply review (managedPathShadows, ADR 0052)"),
 	"Volumes": rendered("volume rows (state/cache/machine split); a target covering a byre-managed path renders " +
 		"the same runtime-shadow disclosure as Mounts"),
 	"Ports":        rendered("port rows via portStatusLine -- the runtime's own normalization, so the row can't lie about defaults"),

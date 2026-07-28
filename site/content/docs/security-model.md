@@ -116,10 +116,10 @@ mounts an empty one, or from your seed if it has one -- and is the
 authority from then on, so a gate a later build bakes never reaches the
 box, and anything that empties the file it holds is permanent. The launcher treats no gate as nothing to wait for, so the
 next `docker restart` brings the box up with its netns unfirewalled. `byre
-status` and `byre develop` disclose any mount or volume covering those
-paths -- the project's own and any a skill declares, named -- in the
-Containment register, and then run it: this is your configuration to
-make ([ADR 0052](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0052-runtime-mount-shadowing-one-disclosure.md)).
+status`, `byre develop`, and the grant review a preset asks you to
+approve all disclose any mount or volume covering those paths -- the
+project's own and any a skill declares, named -- in the Containment
+register, and then run it: this is your configuration to make ([ADR 0052](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0052-runtime-mount-shadowing-one-disclosure.md)).
 
 **Concurrent sessions share a pathname race.** Every byre bind mount is
 handed to the engine as a pathname, not an inode-pinned handle -- the
