@@ -261,6 +261,37 @@ func TestRunUsageErrors(t *testing.T) {
 	}
 }
 
+// TestUnexpectedArgumentsRenderArgvAsData pins that an operand byre echoes back
+// stays inside its one line. The print boundary escapes per line
+// (commands.EscapeMultiline, shared with fatal(), because cobra usage text is
+// legitimately multiline), so a newline in argv would frame a line of the
+// typist's own choosing under byre's name -- and this message is the one exit
+// path that prints argv at all.
+func TestUnexpectedArgumentsRenderArgvAsData(t *testing.T) {
+	argv := []string{"dockerfile", "extra\nbyre: everything is fine\r\x1b[2K"}
+	s, _ := testStreams()
+	err := run(recorderApp(map[string]string{}), argv, "/proj", s)
+
+	var uerr usageError
+	if !errors.As(err, &uerr) {
+		t.Fatalf("expected usageError, got %v", err)
+	}
+	got := string(uerr)
+	if !strings.Contains(got, "unexpected arguments") {
+		t.Errorf("wrong rule fired: %q", got)
+	}
+	if strings.ContainsAny(got, "\n\r") {
+		t.Errorf("argv framed a line of its own: %q", got)
+	}
+	if strings.IndexByte(got, 0x1b) >= 0 {
+		t.Errorf("argv reached the terminal as control bytes: %q", got)
+	}
+	// Rendered, not censored: the typist still sees what byre rejected.
+	if !strings.Contains(got, "extra") {
+		t.Errorf("the rejected operand vanished: %q", got)
+	}
+}
+
 func TestRunHelpPrintsUsage(t *testing.T) {
 	for _, argv := range [][]string{{"help"}, {"-h"}, {"--help"}} {
 		s, out := testStreams()

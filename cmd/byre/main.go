@@ -84,7 +84,12 @@ func (e usageError) Error() string { return string(e) }
 // errors, which would be misreported as byre failures).
 func noArgsU(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return usageError(fmt.Sprintf("%s: unexpected arguments %v", cmd.CommandPath(), args))
+		// %q per operand, the shape the sibling arity errors already use: what
+		// the user typed is echoed back, so a newline in an operand would
+		// otherwise frame a second line of its own choosing under a message
+		// whose escape rule (EscapeMultiline, at the print) keeps newlines.
+		// Quoting renders it -- and any escape sequence -- visibly, on this line.
+		return usageError(fmt.Sprintf("%s: unexpected arguments %q", cmd.CommandPath(), args))
 	}
 	return nil
 }

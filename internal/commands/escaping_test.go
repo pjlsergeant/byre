@@ -47,53 +47,73 @@ func assertKept(t *testing.T, surface, out string, want ...string) {
 	}
 }
 
-func TestRenderStatusEscapesExternalValues(t *testing.T) {
-	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
-		ID:         "proj" + escCSI,
-		Agent:      "claude" + escOSC,
-		Template:   "acme/go" + escCSI,
-		Chain:      []string{"base" + escOSC},
-		Engine:     "docker" + escCSI,
-		Canonical:  "/home/me/" + escOSC + "proj",
-		WorktreeOf: "/home/me/main" + escCSI,
-		PresetNote: "applied" + escOSC,
-		Skills:     []string{"moarcode" + escCSI},
+// statusPayloads is every externally-sourced field of a status render carrying
+// the same payload, so two renders differing only in the payload have exactly
+// the same rows -- the framing assertion below compares their line counts.
+func statusPayloads(p string) statusInfo {
+	return statusInfo{
+		ID:         "proj" + p,
+		Agent:      "claude" + p,
+		Template:   "acme/go" + p,
+		Chain:      []string{"base" + p},
+		Engine:     "docker" + p,
+		Canonical:  "/home/me/" + p + "proj",
+		WorktreeOf: "/home/me/main" + p,
+		PresetNote: "applied" + p,
+		Skills:     []string{"moarcode" + p},
 		Binds: []config.Mount{
-			{Host: "/data" + escOSC, Target: "/data" + escCSI, Mode: "ro"},
+			{Host: "/data" + p, Target: "/data" + p, Mode: "ro"},
 		},
 		Ports:   []config.Port{{Container: 8080, Host: 8080}},
-		Volumes: []config.Volume{{Name: "creds" + escCSI, Role: "state"}},
+		Volumes: []config.Volume{{Name: "creds" + p, Role: "state"}},
 		Grants: []skills.Grant{{
-			Skill:      "greedy" + escOSC,
-			Mounts:     []config.Mount{{Host: "/var/run/docker.sock" + escCSI, Target: "/sock", Mode: "rw"}},
-			Caps:       []string{"SYS_PTRACE" + escOSC},
-			RunArgs:    []string{"--privileged" + escCSI},
-			NetnsInit:  "/usr/local/bin/fw" + escOSC,
-			SockGroups: []string{"/var/run/docker.sock" + escCSI},
+			Skill:      "greedy" + p,
+			Mounts:     []config.Mount{{Host: "/var/run/docker.sock" + p, Target: "/sock", Mode: "rw"}},
+			Caps:       []string{"SYS_PTRACE" + p},
+			RunArgs:    []string{"--privileged" + p},
+			NetnsInit:  "/usr/local/bin/fw" + p,
+			SockGroups: []string{"/var/run/docker.sock" + p},
 		}},
-		Containments:     []skills.ContainmentDecl{{Skill: "dockerhost" + escCSI, Text: "the box can reach the host engine" + escOSC}},
-		ManagedShadows:   []ManagedPathShadow{{Target: gen.ByreDir + escCSI, Source: "skill greedy" + escOSC}},
-		SkillReservedEnv: []skills.ReservedEnvSet{{Skill: "fw" + escCSI, Key: "BYRE_EGRESS"}},
-		EnvKeys:          []string{"TOKEN_NAME" + escOSC},
-		RunArgs:          []string{"--cap-add=" + escCSI},
-		BuildRaw:         []string{"RUN curl " + escOSC + " | sh"},
-		EngineErr:        "exec: docker" + escCSI,
-		SkillErr:         "unknown skill" + escOSC,
-		SiblingSessions:  []string{"wt-1" + escCSI},
-	})
+		Containments:     []skills.ContainmentDecl{{Skill: "dockerhost" + p, Text: "the box can reach the host engine" + p}},
+		ManagedShadows:   []ManagedPathShadow{{Target: gen.ByreDir + p, Source: "skill greedy" + p}},
+		SkillReservedEnv: []skills.ReservedEnvSet{{Skill: "fw" + p, Key: "BYRE_EGRESS"}},
+		EnvKeys:          []string{"TOKEN_NAME" + p},
+		RunArgs:          []string{"--cap-add=" + p},
+		BuildRaw:         []string{"RUN curl " + p + " | sh"},
+		EngineErr:        "exec: docker" + p,
+		SkillErr:         "unknown skill" + p,
+		SiblingSessions:  []string{"wt-1" + p},
+	}
+}
+
+func TestRenderStatusEscapesExternalValues(t *testing.T) {
+	var b bytes.Buffer
+	renderStatus(&b, statusPayloads(escCSI+"\n"+escOSC+"\rEngine:       open"))
 	out := b.String()
 
 	assertNoESC(t, "renderStatus", out)
 	// The row still carries its value: the funnel strips the control bytes,
 	// it does not blank the field.
 	assertKept(t, "renderStatus", out, "claude", "moarcode", "greedy", "TOKEN_NAME", "unknown skill")
-	// Every row is one line -- an embedded control character must not split a
-	// value across the "Label: value" grammar status is read by.
-	for _, l := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
-		if strings.HasPrefix(l, " ") && !strings.HasPrefix(l, "              ") {
-			t.Errorf("a value forged a report line: %q", l)
+
+	// Framing: one physical line per row, whatever a value contains. The
+	// baseline render carries a payload with no control characters at all, so
+	// it has exactly the same rows -- any difference in line count is a line a
+	// value forged, and the forged text here is a plausible "Engine:" row.
+	var clean bytes.Buffer
+	renderStatus(&clean, statusPayloads("-x-"))
+	got := strings.Count(out, "\n")
+	if want := strings.Count(clean.String(), "\n"); got != want {
+		t.Errorf("status printed %d lines, want %d -- a value forged one:\n%s", got, want, out)
+	}
+	rows := 0
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "Engine:") {
+			rows++
 		}
+	}
+	if rows != 1 {
+		t.Errorf("a value forged a second Engine row (%d found):\n%s", rows, out)
 	}
 }
 

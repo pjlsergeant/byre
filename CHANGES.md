@@ -2,6 +2,16 @@
 
 ## unreleased
 
+- **What byre reports back to you is rendered as data.** A path, a skill
+  name, a filename or a git config value byre did not write itself could
+  carry terminal escape sequences, and byre printed them straight through --
+  so a name chosen for the purpose could erase the line reporting it, rewrite
+  the lines above, or add lines of its own that read as byre's. `byre status`,
+  the end-of-session report, the self-edit report, `byre skill inspect` and
+  `byre deliver` now strip control sequences from everything they quote back
+  and hold each report to one line. The text still shows: these surfaces tell
+  you what is there, they just no longer let it type.
+
 - **Saving no longer breaks a config that spells a section inline.** If your
   file said `defaults = { skip_questions = true }` rather than a `[defaults]`
   block, `byre config` wrote a second `[defaults]` beside it -- the file it
