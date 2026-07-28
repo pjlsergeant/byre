@@ -116,13 +116,29 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		// which is why that checkbox names the credential consequence before
 		// it is ticked rather than after.
 		if skipQuestions(paths.Home) {
-			companion := ""
+			// The stored pick gets the SAME live-claimants check the offer
+			// applies (buildSharedAuthOffer's Claimants loop). Without it this
+			// path took a stored name on faith and wrote it into the new
+			// project's skills: a companion since uninstalled failed the next
+			// develop on an unknown skill, and a DIFFERENT package that took the
+			// id since got the machine-wide credential grant silently -- the
+			// stored answer consented to a skill, not to a name.
+			companion, stale := "", ""
 			if defA != "" && onboard.SharedAuthPreference(paths.Home, defA) {
-				companion = onboard.SharedAuthPick(paths.Home, defA)
+				if pick := onboard.SharedAuthPick(paths.Home, defA); pick != "" {
+					if sharedAuthClaimantLive(cat, defA, pick) {
+						companion = pick
+					} else {
+						stale = onboard.StalePickNotice(pick)
+					}
+				}
 			}
 			fmt.Fprintln(s.Err, "byre: configuring from your defaults without asking (defaults.skip_questions in ~/.byre/default.config).")
 			if companion != "" {
 				fmt.Fprintf(s.Err, "byre: shared credentials enabled for %s via %s — your stored answer.\n", defA, companion)
+			}
+			if stale != "" {
+				fmt.Fprintf(s.Err, "byre: %s — shared credentials NOT enabled for %s; run `byre config --global` or re-onboard a project to answer again.\n", stale, defA)
 			}
 			return writeAndReport(s.Err, cfgPath, defT, defA, optedSkills(companion, companion != ""))
 		}
@@ -213,10 +229,21 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	companion, sharedAuth := "", false
 	if flagSharedAuth != nil {
 		if *flagSharedAuth {
-			if companion = skills.SharedAuthCompanion(cat, a); companion == "" {
+			c, n := skills.SharedAuthCompanion(cat, a)
+			switch {
+			case n == 0:
 				return fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
+			case n > 1:
+				// Several claim the pairing and byre picks between rivals for
+				// nobody -- least of all for a credential grant. Name them, and
+				// name both routes out.
+				var names []string
+				for _, cl := range skills.SharedAuthClaimants(cat, a) {
+					names = append(names, cl.Name)
+				}
+				return fmt.Errorf("--shared-auth: %d skills claim to be %s's shared-auth companion (%s) — byre won't choose between them; disable all but one, or drop --shared-auth and pick at the prompt", n, config.OrNone(a), strings.Join(names, ", "))
 			}
-			sharedAuth = true
+			companion, sharedAuth = c, true
 		}
 	} else if s.TTY && !(tFixed && aFixed) {
 		offer := sharedAuthFor(a)
@@ -229,6 +256,26 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		}
 	}
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
+}
+
+// sharedAuthClaimantLive reports whether pick still names a skill that claims
+// to be agent's shared-auth companion. Both spellings count -- a pick is
+// stored in whatever form the picker offered, which is the alias where one
+// exists and the canonical id otherwise (SharedAuthAlreadyOn checks both for
+// the same reason).
+func sharedAuthClaimantLive(cat *packages.Catalog, agent, pick string) bool {
+	if pick == "" {
+		return false
+	}
+	for _, c := range skills.SharedAuthClaimants(cat, agent) {
+		if c.Name == pick {
+			return true
+		}
+		if ent, ok := cat.Lookup(c.Name); ok && ent.Alias == pick {
+			return true
+		}
+	}
+	return false
 }
 
 // buildSharedAuthOffer assembles the shared-auth offer for agent: live claimants with
@@ -287,7 +334,7 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 		}
 		if offer.PrefPick == "" {
 			// Saved pick missing/INVALID: no prefill + notice; leave store alone.
-			offer.StalePickNotice = fmt.Sprintf("your saved pick %q is no longer installed", pick)
+			offer.StalePickNotice = onboard.StalePickNotice(pick)
 			offer.PrefYes = false
 		}
 	}

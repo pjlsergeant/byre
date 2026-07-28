@@ -564,3 +564,105 @@ func TestOnboardWithoutSkipQuestionsStillAsks(t *testing.T) {
 		t.Errorf("no skip_questions means the picker runs:\n%s", errBuf.String())
 	}
 }
+
+// writeLocalSkill drops a loadable skill into the store's skills/ dir, so a
+// test can put a second claimant in front of the catalog.
+func writeLocalSkill(t *testing.T, home, name, body string) {
+	t.Helper()
+	dir := filepath.Join(home, "skills", name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte(body), 0o644)
+}
+
+// The stored shared-auth pick is a name, and a name is not a skill. The
+// skip_questions path used to write whatever was stored straight into the new
+// project's skills: an uninstalled companion failed the next develop on an
+// unknown skill, and a different package that had taken the id in the meantime
+// received the machine-wide credential grant with nobody asked. It gets the
+// same live-claimants check the interactive offer applies.
+func TestOnboardSkipQuestionsRefusesAStalePick(t *testing.T) {
+	p, proj := onboardPaths(t)
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"template = \"none\"\nagent = \"claude\"\n\n[defaults]\nshared_auth = { claude = \"gone-shared-auth\" }\nskip_questions = true\n"), 0o644)
+
+	s, _, errBuf := testStreams("", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 0 {
+		t.Fatalf("a pick nothing claims must not be applied: %+v", got.Skills)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, onboard.StalePickNotice("gone-shared-auth")) {
+		t.Errorf("the skipped grant must be disclosed:\n%s", out)
+	}
+	if !strings.Contains(out, "NOT enabled") {
+		t.Errorf("the disclosure must say what did not happen:\n%s", out)
+	}
+	// The stored preference is left alone: this path answers nothing.
+	def, err := config.ParseFile(filepath.Join(p.Home, "default.config"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def.StoredSharedAuth().CompanionPick("claude") != "gone-shared-auth" {
+		t.Errorf("a stale pick is reported, not rewritten: %+v", def.StoredSharedAuth())
+	}
+}
+
+// A live pick still applies -- the check filters, it does not disable.
+func TestOnboardSkipQuestionsAppliesALivePick(t *testing.T) {
+	p, proj := onboardPaths(t)
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"template = \"none\"\nagent = \"claude\"\n\n[defaults]\nshared_auth = { claude = \"claude-shared-auth\" }\nskip_questions = true\n"), 0o644)
+	s, _, errBuf := testStreams("", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(got.Skills, "claude-shared-auth") {
+		t.Fatalf("a live stored pick must still apply: %+v", got.Skills)
+	}
+	if strings.Contains(errBuf.String(), "no longer installed") {
+		t.Errorf("a live pick must not be reported stale:\n%s", errBuf.String())
+	}
+}
+
+// --shared-auth with SEVERAL claimants is an ambiguity byre refuses to
+// resolve, not an absence: reporting "no ready shared-auth companion skill"
+// sent the user to install a package they already had two of.
+func TestSharedAuthFlagTellsAmbiguityFromAbsence(t *testing.T) {
+	p, proj := onboardPaths(t)
+	writeLocalSkill(t, p.Home, "aa-auth", "shared_auth_for = \"claude\"\n")
+	yes := true
+	s, _, _ := testStreams("", true)
+	err := onboardIfNeeded(s, proj, p, "none", "claude", &yes)
+	if err == nil {
+		t.Fatal("two claimants must refuse --shared-auth")
+	}
+	if strings.Contains(err.Error(), "no ready shared-auth companion") {
+		t.Fatalf("an ambiguity reported as an absence: %v", err)
+	}
+	for _, want := range []string{"claim", "aa-auth", "claude-shared-auth"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the rivals, missing %q: %v", want, err)
+		}
+	}
+
+	// The absence case keeps its own message (grok's companion declares no
+	// shared_auth_for vouch).
+	p2, proj2 := onboardPaths(t)
+	s2, _, _ := testStreams("", true)
+	err = onboardIfNeeded(s2, proj2, p2, "none", "grok", &yes)
+	if err == nil || !strings.Contains(err.Error(), "no ready shared-auth companion") {
+		t.Fatalf("no claimant at all must still say so: %v", err)
+	}
+}

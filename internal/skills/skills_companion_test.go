@@ -21,14 +21,16 @@ func TestSharedAuthCompanion(t *testing.T) {
 	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
 	writeSkill(t, dir, "grok-shared-auth", "description = \"RETIRED — no shared_auth_for, so never offered\"\n", nil)
 
-	if got := SharedAuthCompanion(catFor(t, dir), "claude"); got != "claude-shared-auth" {
-		t.Fatalf("SharedAuthCompanion(claude) = %q, want claude-shared-auth", got)
+	if got, n := SharedAuthCompanion(catFor(t, dir), "claude"); got != "claude-shared-auth" || n != 1 {
+		t.Fatalf("SharedAuthCompanion(claude) = %q (%d claimants), want claude-shared-auth (1)", got, n)
 	}
-	if got := SharedAuthCompanion(catFor(t, dir), "grok"); got != "" {
-		t.Fatalf("an undeclared companion must not be offered, got %q", got)
+	// No claimant and several claimants are DIFFERENT answers: the count is
+	// what keeps a caller from reporting an ambiguity as an absence.
+	if got, n := SharedAuthCompanion(catFor(t, dir), "grok"); got != "" || n != 0 {
+		t.Fatalf("an undeclared companion must not be offered, got %q (%d claimants)", got, n)
 	}
-	if got := SharedAuthCompanion(catFor(t, dir), ""); got != "" {
-		t.Fatalf("no agent, no companion, got %q", got)
+	if got, n := SharedAuthCompanion(catFor(t, dir), ""); got != "" || n != 0 {
+		t.Fatalf("no agent, no companion, got %q (%d claimants)", got, n)
 	}
 }
 
@@ -49,7 +51,7 @@ func TestBuiltinSharedAuthDeclarations(t *testing.T) {
 		"grok":     "",                     // ~6h broker-rollover field gate pending (companion_for only; ADR 0036)
 		"opencode": "opencode-shared-auth", // vouched 2026-07-17: two-box API-key gate passed live (TestOpencodeSharedAuthLiveGate)
 	} {
-		if got := SharedAuthCompanion(cat, agent); got != want {
+		if got, _ := SharedAuthCompanion(cat, agent); got != want {
 			t.Errorf("SharedAuthCompanion(%s) = %q, want %q", agent, got, want)
 		}
 	}
@@ -116,8 +118,14 @@ func TestSharedAuthCompanionRefusesAmbiguity(t *testing.T) {
 	dir := testHome(t)
 	writeSkill(t, dir, "aa-auth", "shared_auth_for = \"claude\"\n", nil)
 	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
-	if got := SharedAuthCompanion(catFor(t, dir), "claude"); got != "" {
+	got, n := SharedAuthCompanion(catFor(t, dir), "claude")
+	if got != "" {
 		t.Fatalf("two declarers must yield no companion, got %q", got)
+	}
+	// ...and the caller must be able to tell that apart from nobody claiming,
+	// or the remedy it prints sends the user to install what they already have.
+	if n != 2 {
+		t.Fatalf("claimant count = %d, want 2", n)
 	}
 }
 

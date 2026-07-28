@@ -2,6 +2,20 @@
 
 ## unreleased
 
+- **A stored shared-credentials answer is checked against what is actually
+  installed before it is applied.** With `defaults.skip_questions` set, a new
+  project took the remembered companion skill on faith. If that skill had been
+  uninstalled since, the next `byre develop` failed on an unknown skill; if a
+  DIFFERENT package had taken the id in the meantime, it received the
+  machine-wide credential grant with nobody asked -- your stored answer
+  consented to a skill, not to a name. The name is now checked against the
+  skills that actually claim to be that agent's companion, exactly as the
+  interactive offer already did, and a pick that no longer matches is reported
+  and skipped rather than applied. Relatedly, `--shared-auth` with SEVERAL
+  installed companions said "no ready shared-auth companion skill" -- an
+  ambiguity reported as an absence, sending you to install a package you had
+  two of. It now names the rivals and both ways out.
+
 - **The firewall skill stops telling the agent to diagnose the wall with
   `ping`.** Under deny-by-default the rules accept TCP to allowlisted
   (host, port) pairs and drop everything else, ICMP included -- so ping and

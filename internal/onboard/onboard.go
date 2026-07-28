@@ -77,6 +77,16 @@ type SharedAuthOffer struct {
 	StalePickNotice string
 }
 
+// StalePickNotice is the ONE definition of what byre says about a stored
+// shared-auth pick that no live skill claims any more — a companion
+// uninstalled, renamed, or replaced by a different package taking its id.
+// Exported because three surfaces have to say the same thing about the same
+// fact: the interactive offer, the apply path that skips the offer
+// (defaults.skip_questions), and the config editor's read-only row.
+func StalePickNotice(pick string) string {
+	return fmt.Sprintf("your saved pick %q is no longer installed", pick)
+}
+
 // SharedAuthPrompt is the shared-auth offer's question line for agent — the
 // ONE definition of that prose. Exported for tests: they assert the offer
 // was (or wasn't) shown against the string the product actually prints, so

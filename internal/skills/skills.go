@@ -648,18 +648,23 @@ func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
 }
 
 // SharedAuthCompanion returns the single ready shared-auth companion for
-// agent, or "" when none or several claim (legacy single-claim helper). Prefer
-// SharedAuthClaimants + picker for multi-claim.
-func SharedAuthCompanion(cat *packages.Catalog, agent string) string {
+// agent, plus HOW MANY skills claim the pairing. A name comes back only for
+// exactly one claimant -- byre never picks between rival claimants -- but the
+// count is what tells "nobody offers this" apart from "several do": returning
+// only the name collapsed both into "", and `--shared-auth` reported an
+// ambiguity as "no ready companion skill", sending the user looking for a
+// package they already had two of. Prefer SharedAuthClaimants + picker where
+// an interactive choice is possible.
+func SharedAuthCompanion(cat *packages.Catalog, agent string) (companion string, claimants int) {
 	cs := SharedAuthClaimants(cat, agent)
 	if len(cs) != 1 {
-		return ""
+		return "", len(cs)
 	}
 	// Prefer display/alias form for writing into config.
 	if ent, ok := cat.Lookup(cs[0].Name); ok && ent.Alias != "" {
-		return ent.Alias
+		return ent.Alias, 1
 	}
-	return cs[0].Name
+	return cs[0].Name, 1
 }
 
 // ListAgentSkills returns display names of skills that provide an [agent]
