@@ -128,6 +128,7 @@ func runNetnsInits(r sessionRunner, warn io.Writer, label, image string, hooks [
 	for _, h := range hooks {
 		if err := r.NetnsInit(image, container, h.Path, env, joinUserns); err != nil {
 			fmt.Fprintf(warn, "byre: netns init (skill %q, %s) failed: %v\n", h.Skill, h.Path, err)
+			fmt.Fprintln(warn, "byre: the rules may be partly applied, and a helper byre could not confirm dead could still open the gate — so byre ends the session rather than leave that to chance.")
 			// STOP the box, don't merely predict that the gate stays shut. That
 			// prediction was only sound while an error meant the helper had
 			// exited -- and it doesn't: a bound expiry kills the engine CLIENT,

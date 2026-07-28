@@ -2,6 +2,17 @@
 
 ## unreleased
 
+- **A firewall hook that fails now ends the session, instead of trusting the
+  box to time out.** byre applies a netns skill's rules from a helper container
+  outside the box while the box waits at its launch gate; when that helper
+  failed, byre printed "the launch gate will not open" and left it there. That
+  was only true while a failure meant the helper had exited -- and byre now
+  bounds these calls, which kills the engine client, not the container it
+  started. A helper byre cannot confirm dead can still finish its rules and
+  open the gate itself, so byre stops the box instead of predicting an outcome
+  it no longer controls. The helper containers are also named now, and killed
+  by name when their call fails, so a bounded call cleans up after itself.
+
 - **Four things your config could hold that the editor could not show you.**
   `byre config` now has: a **Volumes** screen that declares, edits and turns
   off `[[volumes]]` entries -- with every skill's contribution listed
