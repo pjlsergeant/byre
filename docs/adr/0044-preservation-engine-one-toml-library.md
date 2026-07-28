@@ -77,8 +77,15 @@ Behavioral contract (grilled, each default approved):
   full-line comments glued immediately above (no blank line between).
 - Exotic-but-valid constructs are untouched until an edit TARGETS them;
   then that construct alone is rewritten in house shape (an interior
-  comment belongs to the construct).
+  comment belongs to the construct). An inline `defaults = { ... }` an
+  edit reaches INSIDE is such a construct: it becomes a `[defaults]`
+  block carrying its members, and emptying it removes it whole.
 - No-op saves leave the document byte-identical.
+- Every edit is re-read with the STRICT decoder before it is handed
+  back, and a failure restores the pre-edit bytes: the expression parser
+  accepts a key defined twice, so syntax alone would let a save write a
+  file no later command can load. The check is schema-agnostic -- a
+  document byre doesn't understand stays editable.
 
 Above the engine, `configui.Save` reconciles the desired Config against
 the file's parsed content -- an untouched field produces no edit at all.
