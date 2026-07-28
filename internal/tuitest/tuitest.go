@@ -79,12 +79,57 @@ func Binary(t *testing.T) string {
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err != nil {
 			binErr = fmt.Errorf("building byre: %v\n%s", err, out)
+			return
 		}
+		binErr = recordProductSources(root)
 	})
 	if binErr != nil {
 		t.Fatal(binErr)
 	}
 	return binPath
+}
+
+// recordProductSources opens every source file that goes into the built
+// binary, so Go's test cache keys this package's results on the PRODUCT.
+//
+// Nothing else does. The binary is built in a SUBPROCESS, so the import
+// graph carries no edge to it, and the blank imports in productdeps_test.go
+// are not enough on their own: `go test` keys a cached result on the test
+// binary's CONTENT, and the linker drops blank-imported code nothing
+// references — editing a configui screen leaves the test binary byte-
+// identical and the whole pty tier replays a cached pass (measured against
+// this repo: a changed `savedStatus` was still reported "(cached)"). What
+// `go test` does re-check is the content of every file the test process
+// OPENS inside the module root, which is an edge the import graph cannot
+// provide at all for cmd/byre — package main, and unimportable.
+//
+// The file list comes from `go list -deps`, so it is the build's own answer
+// rather than a hand-kept mirror of it. Files outside the module root
+// (the stdlib, module cache) are skipped: `go test` ignores them, and
+// hashing them on every later invocation is pure cost. Directories are
+// never opened here — a directory in the input list makes go test's hash
+// fail and drops the results out of the cache entirely, which would trade
+// this fix for "the tier never caches".
+func recordProductSources(root string) error {
+	const tmpl = `{{$d := .Dir}}{{range .GoFiles}}{{$d}}/{{.}}
+{{end}}{{range .EmbedFiles}}{{$d}}/{{.}}
+{{end}}`
+	cmd := exec.Command("go", "list", "-deps", "-f", tmpl, "./cmd/byre")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("listing the product's sources for the test-cache key: %v", err)
+	}
+	prefix := root + string(filepath.Separator)
+	for _, f := range strings.Split(string(out), "\n") {
+		if f == "" || !strings.HasPrefix(f, prefix) {
+			continue
+		}
+		// The build just succeeded, so every one of these is readable; the
+		// read is for the testlog, and its bytes are not wanted here.
+		_, _ = hostopen.PlainReadFile(f, hostopen.TestHarness)
+	}
+	return nil
 }
 
 // reapStaleBinDirs removes byre-tuitest-bin-<pid>-* dirs whose owning process
