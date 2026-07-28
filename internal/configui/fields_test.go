@@ -5,10 +5,11 @@ import "testing"
 // The growth guard for fieldInfos: a new fieldID missing its metadata row
 // would render a blank label, a blank crumb, and a kindScalar
 // misclassification SILENTLY (map zero value) — this makes it a test
-// failure instead. Relies on fExtends being the last fieldID; moving it
-// breaks this loop loudly.
+// failure instead. Bounded on the fCount sentinel, not on whichever field
+// happens to be last today: a hardcoded last field is exactly what an
+// appended one moves, and the guard then skips the new field silently.
 func TestFieldInfosCoverEveryField(t *testing.T) {
-	for f := fBase; f <= fExtends; f++ {
+	for f := fBase; f < fCount; f++ {
 		info, ok := fieldInfos[f]
 		if !ok {
 			t.Errorf("fieldID %d has no fieldInfos row — its label, kind, title, and noun all silently zero", f)
@@ -29,9 +30,9 @@ func TestFieldInfosCoverEveryField(t *testing.T) {
 			t.Errorf("%s: raw text field with no TOML key hint", info.label)
 		}
 	}
-	// fSkipQuestions is the last fieldID; the count tracks it, so adding a
-	// field without its row (or a row without its field) fails here.
-	if len(fieldInfos) != int(fSkipQuestions)+1 {
-		t.Errorf("fieldInfos has %d rows for %d fieldIDs — a row names a nonexistent field", len(fieldInfos), int(fSkipQuestions)+1)
+	// The loop above proves every fieldID has a row; the count proves no row
+	// names a fieldID that doesn't exist (a rename leaving the old row behind).
+	if len(fieldInfos) != int(fCount) {
+		t.Errorf("fieldInfos has %d rows for %d fieldIDs — a row names a nonexistent field", len(fieldInfos), int(fCount))
 	}
 }

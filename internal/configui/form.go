@@ -71,6 +71,12 @@ const (
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
 	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
+
+	// fCount bounds the enum and must stay last. The fieldInfos growth guard
+	// (fields_test.go) walks fBase..fCount-1 and counts against fCount, so a
+	// field declared BELOW this line is never checked for its metadata row and
+	// renders a blank label from the map's zero value.
+	fCount
 )
 
 // Target says which kind of file this editor session edits: a project's
