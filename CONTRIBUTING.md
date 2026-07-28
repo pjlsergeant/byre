@@ -61,13 +61,14 @@ The conventions, for humans and their agents alike:
   feature is an opinion about how a box should behave, it is probably
   a skill. Dependencies are added on demonstrated merit.
 
-Settled positions a reviewer will be tempted to flag -- each is
-deliberate, with its reason on file. These aren't taboo, they're
-pre-litigated: if you want to re-open one, steelman it first -- state
-the current position's strongest case in your own words, then say
-precisely where it fails. An objection that clears that bar gets
-engaged on the merits; one that doesn't was already answered by the
-reason each entry carries:
+## Settled positions
+
+Positions a reviewer will be tempted to flag -- each is deliberate,
+with its reason on file. These aren't taboo, they're pre-litigated: if
+you want to re-open one, steelman it first -- state the current
+position's strongest case in your own words, then say precisely where
+it fails. An objection that clears that bar gets engaged on the merits;
+one that doesn't was already answered by the reason each entry carries:
 
 - **`internal/commands` is one flat package.** It is a thin adapter
   layer whose private substrate refactors freely BECAUSE it is
@@ -88,6 +89,29 @@ reason each entry carries:
 - **Long cobra `Long` texts are not bloat.** They render the site's
   commands page via a byte pin -- one source, two surfaces; trimming
   the help trims the docs.
+- **"There are too many ADRs."** The count is a consequence of the
+  litmus in `CLAUDE.md`: a point-in-time decision goes to `docs/adr/`
+  precisely so it stops being re-litigated, and the alternative to a
+  written decision is not fewer decisions, it is unwritten ones. The
+  set is kept mechanical rather than ceremonial -- every index line in
+  `docs/adr/README.md` ends in an enforcement marker, the arms it names
+  resolve to real test functions (checked both ways for the ones only
+  CI's gated job runs), two guards fail on an ADR or principle with no
+  line and on a line naming neither, and every review of a change to
+  this repo states its result against the index. The objection's
+  strongest case is real: a new contributor faces a lot of reading, and
+  an index line can rot against the ADR it summarizes -- the 2026-07-28
+  whole-repo review found exactly that, a line for 0013 saying "never a
+  directory" where the ADR says "never a directory *copy*". It fails on
+  both counts. The index is the reading surface, not the corpus: one
+  line per decision, scanned in a minute, with the ADR itself read only
+  when a line bears on your change. And a rotten line is a bug the
+  index's own rule already names -- where a line and its ADR disagree,
+  the ADR wins and the line is wrong -- not an argument for having
+  fewer decisions on file. What that review kept finding was drift FROM
+  recorded decisions -- a public page still describing behavior an ADR
+  had already scoped, two ADRs whose sentences had grown to contradict
+  each other -- rather than decisions nobody needed.
 
 `docs/BYRE-DEVELOPMENT.md` describes the dev environment, including how
 byre develops itself in its own box.

@@ -60,8 +60,17 @@ var configFieldOwners = map[string][]fieldID{
 // decision; the map is where it is written down. An entry exempts the key
 // WHOLE -- the walk does not descend into it -- so the reason has to cover
 // whatever the key contains.
+//
+// The class is narrow, and P0 is why: a key with no reachable row is a hole
+// in the product, so the only thing that belongs here is a RETIRED or
+// migration-only spelling a current byre reads but never writes -- one whose
+// row would offer to edit a key byre is in the middle of removing. A LIVE key
+// never qualifies, however awkward its widget would be: read-only with its
+// owner named is the answer there (fSources, fSharedAuth), not absence. Each
+// entry names the retirement it rides, so the claim is checkable rather than
+// a place to park a key nobody wanted to build a screen for.
 var noWidgetKeys = map[string]string{
-	"shared_auth": "the pre-2026-07-28 top-level spelling: read once and migrated into [defaults] on the next write, so a row would offer to edit a key byre is removing (the [defaults] one has the row -- fSharedAuth)",
+	"shared_auth": "RETIRED SPELLING (ADR 0049's live inventory, item 1): the pre-2026-07-28 top-level key, read for upgrades and canonicalized into [defaults] by every save (reconcile migrates on the construct's presence, not just a changed value), so a row would offer to edit a key byre is removing -- the live spelling has the row, fSharedAuth",
 }
 
 // uiOnlyRows names rows that are not a config key at all, for the reverse

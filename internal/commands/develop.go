@@ -535,9 +535,11 @@ func signalName(n int) string {
 // — it's how every box works, not this box's exposure; env_from_host IS
 // counted: named host-value passthrough is a real grant, however it got
 // configured (the shipped git-identity defaults included). The network claim
-// mirrors status's networkLine honesty rules. --self-edit's rw store mount
-// gets its own named segment (like status's Self-edit row), not a bump of the
-// host-mount count. A worktree's same-path git binds are consciously NOT
+// consumes status's networkLine degradation inputs rather than restating
+// them: the banner and the Network row are two renderings of one claim, and
+// a set only one of them reads is a set they can drift on.
+// --self-edit's rw store mount gets its own named segment (like status's
+// Self-edit row), not a bump of the host-mount count. A worktree's same-path git binds are consciously NOT
 // counted: they're the project's own repo (ADR 0009 — worktrees inherit
 // project identity), status doesn't list them either, and the worktree
 // banner already announces the arrangement. Caps and skill run_args are
@@ -567,6 +569,11 @@ func exposureOf(rv resolved, selfEdit bool, hostEnv []hostEnvResult) config.Expo
 		Closed:     len(rv.cfg.EgressClosed),
 		RawRunArgs: len(rv.cfg.RunArgs) > 0,
 		RawBuild:   len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
+		// The third degradation input, from the predicate status's Network row
+		// consults over the same resolved set: a skill holding byre's own
+		// network knobs makes the posture claim describe a construction that
+		// is no longer in force (ADR 0050).
+		SkillNetControls: reservedEnvTouches(rv.skills.ReservedEnv(), "network"),
 	}
 	for _, m := range rv.mounts {
 		if m.Disabled {

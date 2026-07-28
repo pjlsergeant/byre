@@ -104,6 +104,27 @@ well-behaved telemetry clients, trivially routed around by an agent that
 wants to. The network under it is still open, and this document treats
 it as such.
 
+**An allowlisted host is a channel, not a permission.** The firewall
+grants *reachability of an endpoint*, never an intent: byre cannot see
+what travels over a door you opened, and does not try. Three shapes of
+this are worth naming, and they get one disclaimer rather than three.
+DNS still resolves under deny-by-default -- the rules allow port 53 to
+the nameservers the box actually uses, because a box that cannot resolve
+cannot work -- so data can be tunnelled out through your own resolver;
+that is a hole byre accepted in v1 and has not closed
+([ADR 0010](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0010-firewall-outside-the-box.md)),
+and a filtering resolver is the v2 candidate. An allowlisted CDN or
+platform host is an address that fronts many services and, on the ones
+that host user content, an upload endpoint; granting `443` to it grants
+everything reachable at that address on that port. And a skill whose
+*function* is a tunnel -- exposing a local port to the public internet --
+declares the endpoints it needs, and byre opens them, because a skill's
+own functional egress is exactly what auto-opens
+([ADR 0020](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0020-egress-doors-ship-closed.md)):
+enabling it is the grant. The firewall's job is that the list of open
+doors is short, derived from what you enabled, and legible in `byre
+status`. It is not that what goes through them is safe.
+
 **A mount over byre's own paths wins at runtime, and byre only tells
 you.** byre bakes its machinery into the image -- the launcher, the
 launch gate the firewall's fail-closed wait reads, and the delivery

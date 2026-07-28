@@ -46,4 +46,66 @@ Consequences / accepted holes (documented, not closed in v1):
   `deny-by-default (raw run_args present -- not guaranteed)`, and the
   full-Dockerfile opt-out printed `declared; custom Dockerfile -- byre
   didn't build the wall` (the opt-out was since removed -- ADR 0014).
-  Never an unqualified claim, never a refusal.
+  Never an unqualified claim, never a refusal. **Annotated below**: the
+  sentence about skill contributions is narrower than it reads.
+
+## Annotation, 2026-07-28: what "skill contributions never degrade" covers
+
+The bullet above is the sentence a later reader would cite to remove a
+degradation as a defect, and read alone it says more than it means. Two
+decisions since (ADR 0050, ADR 0052) have settled the cases it does not
+cover. The boundary is a TEST, not a field kind -- which config field a
+contribution rides decides nothing:
+
+- **A contribution byre built as asked never degrades the claim.**
+  Declared egress, a declared mount, an apt line: byre generated exactly
+  what the skill asked for, so the resulting box IS byre's construction
+  working. Enabling a skill is trusting it (P2), and the grant is
+  attributed on `byre status` rather than hedged into a claim.
+- **A contribution that DISPLACES byre's own machinery is disclosed,
+  whatever field it rides.** A skill's `[runtime].env` setting a reserved
+  `BYRE_` knob is one instance (ADR 0050 tier 2: accepted, attributed in
+  a `Reserved env` row, and every claim it can skew stops asserting); a
+  skill's `[[mounts]]`/`[[volumes]]` covering a byre-managed path is the
+  other, decided in ADR 0052 rather than re-derived here (one blanket
+  containment line, skills included and attributed). Neither reports
+  distrust of the skill. Both report that the construction byre's claim
+  describes is no longer the thing in force.
+- **What the box does THROUGH a granted channel is disclaimed once,
+  loudly, never degraded per claim.** A tunnel over an allowlisted 443,
+  data pushed down the DNS channel this ADR accepts above, anything done
+  through the docker socket: consequences of a grant, not defects in the
+  construction. `docs/DOCKER-HOST.md`'s warranty model is the rule --
+  byre warrants its own construction, so each status row keeps describing
+  what byre built and holds for the box. Which surface carries the
+  disclaimer depends on what the grant is: a hole THIS configuration
+  actually has -- a skill's declared containment, the docker socket among
+  them (ADR 0027), and a mount or volume over a byre-managed path (ADR
+  0052) -- gets a per-configuration Containment line on `byre status`,
+  develop and the apply review, disclaiming in one place including
+  consequences nobody has enumerated. (The reserved-env displacement in
+  the bullet above does NOT ride this line: it renders as its own
+  attributed `Reserved env` row and degrades the claims it names, per ADR
+  0050. Two displacement mechanisms, two vehicles.) A
+  residual of the CHANNEL itself -- DNS tunnelling, an allowlisted CDN
+  fronting many services, a skill whose function is a tunnel -- is true of
+  the mechanism for every configuration that enables it, so there is no
+  per-box fact for status to render: it is published on the user-facing
+  security-model page, where the doctrine index's residual rule puts it.
+
+**Why a `BYRE_` key degrades a NAMED claim while a mount gets a blanket
+line.** The two look like one event and are reported differently on
+purpose. A reserved env key NAMES the knob, so byre knows which claims it
+can skew and degrades exactly those (`BYRE_LAUNCH_GATE_FILE` -> the
+network claim, `BYRE_MCP_CONFIG` -> MCP delivery, an unrecognised knob
+conservatively). A mount covers a PATH, and byre knows a path is covered
+and nothing about what covers it -- naming the claims that broke would
+imply an enumeration byre does not have, so what it says is the scope it
+stops warranting, said the same way whichever path was hit (ADR 0052).
+
+**The DNS residual is published.** The tunnelling hole accepted above
+reaches users on the security-model page as "an allowlisted host is a
+channel, not a permission"
+(`site/content/docs/security-model.md`), which carries the CDN and
+tunnel-shaped-skill cases in the same disclaimer. The doctrine index's
+rule is why: a disclosure only contributors can find has not been made.

@@ -48,6 +48,13 @@ type Exposure struct {
 	// argv or Dockerfile text, so a declared posture is not guaranteed.
 	RawRunArgs bool
 	RawBuild   bool
+	// SkillNetControls: a skill sets one of byre's own BYRE_ network knobs
+	// (the launch gate, the announced egress), so the construction the
+	// posture claim describes is no longer the one in force — ADR 0050's
+	// tier 2, and the third of status's networkLine degradation inputs. The
+	// launch banner and status resolve it from the same reserved-env set;
+	// the config UI leaves it false, having no reserved-env surface at all.
+	SkillNetControls bool
 }
 
 // GrantsLine renders the count segments — "/workspace rw · self-edit rw ·
@@ -79,7 +86,8 @@ func (e Exposure) GrantsLine() string {
 
 // NetworkLine renders the network stance: "network open", or the declared
 // posture with its allowlist size — qualified, not asserted, when raw config
-// is present (the same degrade rule status applies). Under open-denylist the
+// or a skill on byre's own network knobs is present (status's networkLine
+// degrades on the same three inputs). Under open-denylist the
 // count that means anything is the closures': the network is open and the
 // allowlist unenforced, so its size would be noise dressed as a wall.
 func (e Exposure) NetworkLine() string {
@@ -100,6 +108,9 @@ func (e Exposure) NetworkLine() string {
 	}
 	if e.RawBuild {
 		raw = append(raw, "raw build lines")
+	}
+	if e.SkillNetControls {
+		raw = append(raw, "a skill setting byre's network controls")
 	}
 	if len(raw) > 0 {
 		s += "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"

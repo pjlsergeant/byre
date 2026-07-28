@@ -20,11 +20,33 @@ several principles below are consequences of it.
 
 Implications:
 
-- **"Expert vocabulary -- hand-edit it" is never an available answer.** A
-  config key without a widget is not an unmet checkbox, it is a place where
-  byre stops being byre and hands you a text editor -- which is exactly the
-  fusty one-of-many it would otherwise be. P6 is this principle applied to
-  config vocabulary; this is the reason behind it.
+- **"Expert vocabulary -- hand-edit it" is never an available answer.**
+  The rule has one shape: **a config key with no reachable row in the
+  editor is a hole in the product.** What that row must be follows from
+  who owns the key -- a key the EDITOR owns needs a widget that edits it;
+  a key a FLOW owns needs a read-only row naming that owner. No row at
+  all is not a third option: outside the one narrow exemption below -- a
+  spelling byre no longer writes -- it is the place where byre stops
+  being byre and hands you a text editor, exactly the fusty one-of-many
+  it would otherwise be. P6 is this principle applied to config
+  vocabulary; this is the reason behind it.
+- **A flow-owned key shows read-only -- never hidden.** Two keys are in
+  that class today: `[sources]`, which `byre preset apply` records as it
+  chauffeurs an install, and `defaults.shared_auth`, which the first-run
+  question answers with its machine-wide credential consequence stated
+  (P5). A widget there would author the value away from the flow that
+  gives it meaning, so the row shows the value and names the writer
+  instead -- the read-only "Skill files" screen is the shape.
+- **The only key that may have NO row is one no byre still writes.** The
+  exemption class is exactly the retired and migration-only spellings a
+  current byre reads but never authors -- today the pre-2026-07-28
+  top-level `shared_auth`, which every save canonicalizes into
+  `[defaults]` (ADR 0049's live inventory). Giving those a row would
+  offer to edit a key byre is in the middle of removing. **A live key
+  never qualifies**, and the exemption is not a place to put one: each
+  entry is named in the arm's own map with the retirement it rides, so
+  joining that map is a claim a reviewer can check and reject, not a way
+  for a hidden key to become doctrinally fine.
 - **Editor defects carry the weight of engine defects.** A screen that
   misreports effective state, destroys a key on save, or cannot express an
   off-switch is a product bug of the same class as a wrong Dockerfile --
@@ -123,6 +145,16 @@ Implications:
   never enforced by refusal (footgun doctrine).
 - New grant surfaces ship with their status/legibility story, not before:
   if `byre status` can't name it, it isn't done.
+- **Reported strings are data, never terminal control.** A value byre did
+  not author -- a config target, a skill manifest field, a filename an
+  agent left in the tree -- reaches the terminal escaped, or a report can
+  be made to render as something other than what byre wrote, including
+  overwriting lines already printed. This binds the surfaces whose job is
+  reporting: `byre status` and its develop-time warnings, the exit
+  report, the `--self-edit` review diff, `byre skill inspect`, deliver's
+  transport notes. The editor's input widgets are deliberately outside
+  it -- a prefilled textinput or textarea shows the stored bytes raw,
+  which is what an editing surface is for.
 - byre is not a policy engine; "grant", not "permission" (see the
   glossary).
 
@@ -159,21 +191,44 @@ Implications:
 ## 6. The editor is the interface
 
 **`byre config` is how configuration is edited -- for every config
-feature, always. The TOML files are byre's storage format, not its user
-interface.** (P0 is why: the TUI is what byre has that a plain sandbox
-does not.) No recipe, prompt, error remedy, or doc may require or
-expect a user to open a config file in a text editor; a config
-vocabulary that can only be reached by hand-editing is not done, the
-same way a grant `byre status` can't name is not done (P4). Hand-editing
-remains a defended *right* (P1: plain files, no lock-in, the editor and
-`vim` write the same file, held to the same validation) -- a right is
-not an interface.
+feature, always: every LIVE key is either editable there or shown
+read-only with its owning flow named (P0). The TOML files are byre's storage
+format, not its user interface.** (P0 is why: the TUI is what byre has
+that a plain sandbox does not.) No recipe, prompt, error remedy, or doc
+may require or expect a user to open a config file in a text editor; a
+config vocabulary that can only be reached by hand-editing is not done,
+the same way a grant `byre status` can't name is not done (P4).
+Hand-editing remains a defended *right* (P1: plain files, no lock-in,
+the editor and `vim` write the same file, held to the same validation)
+-- a right is not an interface.
+
+**Scope: P6 governs parseable config.** A file hand-edited into a state
+byre's parser refuses is outside it: `byre config` names the file and
+the parse failure and stops, rather than reconciling against a document
+it cannot read -- a save would have to guess what to preserve, and the
+guess would land on the rest of the user's file. There is no editor to
+be inside at that point: the refusal happens before the screen opens,
+so the refusal itself is the only surface left to carry the remedy, and
+what P6 asks of it is that it be precise enough to fix the file by hand.
+
+That boundary is honest only because byre cannot MOVE a file there:
+every structured save of a stored config file rides the one document
+engine, which re-decodes its own output and restores the previous bytes
+rather than turn a loadable file into one a later load would refuse
+(ADR 0044). byre's whole-file writes -- a reviewed preset applied, a new
+layer stub, a store copied to a new id -- write content byre already
+holds, never a splice into a file it has not read. `ctrl+e` is byre's
+own door out to `$EDITOR` mid-session, and that case IS inside the
+editor: the form is still open, so the reload reports the parse failure
+and points back at `ctrl+e` without discarding what is on screen.
 
 Implications:
 
 - A new config key ships with its editor story, in the same unit of
   work: a structured section or screen (plus CLI verbs where scripting
-  matters), not "edit the file".
+  matters), not "edit the file" -- and where the writer is a flow
+  rather than the editor, that story is a read-only row naming the
+  owner (P0), not an absence.
 - User docs speak editor-first. Raw TOML appears in the configuration
   *reference* (the format spec, needed for presets, layer sharing, and
   review) -- never as the instruction in a how-do-i recipe.

@@ -68,13 +68,13 @@ this index:
 
 ## Principles
 
-- P0: the TUI is the differentiator, so a config key without a widget is a hole in the product [no arm]
+- P0: the TUI is the differentiator, so a config key with no reachable editor row is a hole in the product -- a widget where the editor owns the key, a read-only row naming the owner where a flow does; the only exemptions are retired spellings no byre still writes, each named with its retirement [arm: TestEveryConfigKeyHasAReachableRow, TestFlowOwnedKeysAreShownReadOnlyNotHidden]
 - P1: threat model is the agent, never the user -- degrade claims on user choices, never refuse [no arm]
 - P2: core ships generic mechanism only; every opinion (agent, policy, endpoints) lives in a skill [no arm]
 - P3: raw blocks are first-class and never parsed -- shown verbatim, posture claims degrade [no arm]
-- P4: every grant is legible: status names it or the claim degrades; a grant status can't name isn't done [no arm]
+- P4: every grant is legible: status names it or the claim degrades; a grant status can't name isn't done; reporting surfaces render externally-sourced strings as data, never as terminal control [arm: TestRenderStatusEscapesExternalValues, TestStatusDevelopWarningsEscapeExternalValues, TestExitReportEscapesWatchedValues, TestSelfEditReportEscapesStoreContent, TestSkillInspectEscapesManifestValues, TestTransportReportsEscapeSourceNames]
 - P5: consent lives at the scope of its effect; keys with teeth are never written at a scope the user didn't answer for [no arm]
-- P6: `byre config` reaches every config feature; hand-editing is a defended right, not the interface [no arm]
+- P6: `byre config` reaches every config feature -- editable, or read-only with its owning flow named; it governs PARSEABLE config; hand-editing is a defended right, not the interface [no arm]
 - P7: a dependency gap ends owned-around, replaced, or accepted on the record -- never passed off as design [no arm]
 
 ## ADRs
@@ -88,7 +88,7 @@ this index:
 - 0007: never copy host agent credentials into a box; agents log in in-box, the state volume persists it [no arm]
 - 0008: host UID/GID bakes at image build (USER dev, uid-qualified tag); no runtime chown, no root after PID 1 [arm(gated): TestIntegrationLaunchPathAndOwnership]
 - 0009: worktrees inherit the main tree's project identity; mutating repo git runs in-box, never on the host [arm(gated): TestIntegrationConcurrentWorktreeSessions]
-- 0010: firewall rules enter via an external root+NET_ADMIN helper joining the netns; the box gains no caps [arm: TestNetnsInitArgv]
+- 0010: firewall rules enter via an external root+NET_ADMIN helper joining the netns; the box gains no caps; annotated -- a contribution that displaces byre's machinery is disclosed whatever field it rides (0050, 0052), granted-channel consequences are disclaimed once, and the DNS residual is published on the security-model page [arm: TestNetnsInitArgv]
 - 0011: the launcher gates on a loopback socket handshake and fails closed on timeout; never a state marker [arm: TestLauncherGateTimesOutClosed]
 - 0012: the firewall allowlist derives from enabled skills' declared egress, port-scoped (partly superseded by 0019, 0020) [arm: TestFirewallComposesAgentEgress]
 - 0013: seed_prefs copies only a skill-curated per-file allowlist of secret-free files, never a directory [arm: TestResolvePrefsRejectsWholeDir]

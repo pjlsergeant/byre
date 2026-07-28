@@ -105,8 +105,11 @@ endpoints (git hosting, apt, language registries) ship as
 `egress_offered` -- declared-but-closed doors the config UI opens with
 one press, writing the entry into the user's own config. Empty is legal
 -- a maximally-locked box. `byre status` prints the posture under
-honesty rules (skill contributions are trusted and attributed;
-project-level raw blocks degrade the claim -- ADR 0010) and shows the
+honesty rules (skill contributions are trusted and attributed, unless
+they DISPLACE byre's own machinery -- a reserved `BYRE_` knob degrades
+the claims it can skew, a mount over a byre-managed path gets a
+containment line; project-level raw blocks degrade the claim -- ADR
+0010's annotation, ADR 0050, ADR 0052) and shows the
 resolved allowlist as an Egress section attributed per source (each
 skill, and `config` for the key's entries), closures as `Closed:` rows.
 

@@ -346,6 +346,63 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 	}
 }
 
+// The launch banner and the status Network row are two renderings of ONE
+// posture claim, so they degrade on one resolved set (ADR 0050). Two things
+// are pinned, and the second is why the wanted values are spelled out rather
+// than read back from reservedEnvClaims: WHICH keys skew the network claim,
+// and that both surfaces reach that verdict. Computing the want from the
+// predicate would pin only that the two agree -- they would agree on a wrong
+// answer just as happily.
+//
+// What each row catches: re-classifying one of the four network controls
+// elsewhere fails here, and so does dropping a delivery or launch-only knob
+// from the map, since the unknown-key default degrades network and would
+// flip its false to true. What no assertion can catch is DELETING a network
+// control outright: the same conservative default then covers it. That is
+// the map's safety net working, and the reason this table pins the
+// deliberate answers rather than the fallback's.
+// Degradation is read as the hedge's stable fragment, not full wording:
+// the two surfaces may phrase it their own way.
+func TestLaunchBannerAndStatusDegradeOnOneReservedEnvSet(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		hedge bool
+	}{
+		{"BYRE_EGRESS", true},
+		{"BYRE_EGRESS_DENY", true},
+		{"BYRE_LAUNCH_GATE_FILE", true},
+		{"BYRE_LAUNCH_GATE_TIMEOUT", true},
+		{"BYRE_MCP_CONFIG", false},       // MCP delivery's knob, not the network's
+		{"BYRE_CONTEXT_DIR", false},      // context delivery's
+		{"BYRE_WORKSPACE_DIR", false},    // launch-only
+		{"BYRE_KNOB_FROM_A_LATER", true}, /* unknown: conservative */
+	} {
+		var sk skills.Skill
+		sk.Name = "posture"
+		sk.File.Runtime.NetworkPosture = "deny-by-default"
+		sk.File.Runtime.Env = map[string]string{tc.key: "/somewhere/else"}
+		res := skills.Resolved{Skills: []skills.Skill{sk}}
+
+		exp := exposureOf(combine(config.Config{}, res), false, nil)
+		if exp.SkillNetControls != tc.hedge {
+			t.Errorf("%s: the launch banner's degradation input = %v, want %v",
+				tc.key, exp.SkillNetControls, tc.hedge)
+		}
+		// The input has to reach the claim, not just sit in the tally.
+		if got := strings.Contains(exp.NetworkLine(), "not guaranteed"); got != tc.hedge {
+			t.Errorf("%s: launch banner qualified = %v, want %v: %s", tc.key, got, tc.hedge, exp.NetworkLine())
+		}
+		line := networkLine(statusInfo{
+			NetPosture:       "deny-by-default",
+			NetPostureSkill:  sk.Name,
+			SkillReservedEnv: res.ReservedEnv(),
+		})
+		if got := strings.Contains(line, "not guaranteed"); got != tc.hedge {
+			t.Errorf("%s: status Network row qualified = %v, want %v: %s", tc.key, got, tc.hedge, line)
+		}
+	}
+}
+
 func TestDevelopCreateRaceReportsRefusal(t *testing.T) {
 	p, _ := testPaths(t)
 	// Nothing live at the fast path, the create loses the container-name race,

@@ -72,7 +72,19 @@ the same validation. The two coexist safely: byre's saves edit only
 what you changed, so your comments, formatting, and hand-arranged
 layout survive every save byte-for-byte. That's a right byre defends, never a requirement
 it imposes: `byre config` is the interface, every config feature is
-editable there, and no recipe or error message will ever send you into
-the files. The complete vocabulary, the cascade's merge rules, presets,
+reachable there -- editable, or shown read-only with the flow that
+writes it named (the `[sources]` install hints `byre preset apply`
+records; your stored shared-credentials answer) -- and no recipe or
+error message will ever send you into the files.
+
+One exception, and it only arrives if you went into the files first: a
+config file hand-edited into something the TOML parser refuses. The
+editor will not reconcile against a document it cannot read -- it would
+have to guess what to preserve, and guess wrong about the rest of your
+file -- so it names the file and the parse error and leaves that repair
+to you. byre's own saves cannot turn a loadable file into an unloadable
+one; only a hand edit gets you here.
+
+The complete vocabulary, the cascade's merge rules, presets,
 and layers live in the
 [configuration reference](/docs/configuration-reference/).

@@ -779,7 +779,7 @@ func mcpDeliveryLine(s statusInfo) string {
 		return "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"
 	case s.ArtifactShadows[gen.MCPConfigPath]:
 		return "-> delivery not warranted: a project files entry overwrites " + gen.MCPConfigPath + " (baked before the project block; your file wins)"
-	case reservedEnvTouches(s, "MCP delivery"):
+	case reservedEnvTouches(s.SkillReservedEnv, "MCP delivery"):
 		return "-> delivery not warranted: a skill sets byre's MCP controls (see Reserved env)"
 	case s.AgentMCP == "inject":
 		return fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath)
@@ -841,7 +841,7 @@ func contextDeliveryLine(s statusInfo) string {
 		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
 	case s.ArtifactShadows["/etc/byre/"+gen.AgentContextName]:
 		return "-> delivery not warranted: a project files entry overwrites " + baked + " (baked before the project block; your file wins)"
-	case reservedEnvTouches(s, "context delivery"):
+	case reservedEnvTouches(s.SkillReservedEnv, "context delivery"):
 		return "-> delivery not warranted: a skill sets byre's context controls (see Reserved env)"
 	case s.AgentContext == "inject":
 		return "-> the agent command injects the baked text (" + baked + "; argument-channel agents truncate very large context, disclosed in-session)"
@@ -1159,9 +1159,12 @@ func artifactShadows(cfg config.Config) map[string]bool {
 }
 
 // reservedEnvTouches reports whether any skill-set reserved variable can
-// skew the named claim -- the hedge predicate the claim lines consult.
-func reservedEnvTouches(s statusInfo, claim string) bool {
-	for _, e := range s.SkillReservedEnv {
+// skew the named claim -- the hedge predicate the claim lines consult. It
+// takes the resolved set rather than a statusInfo so the launch banner's
+// tally (exposureOf) consults the same predicate over the same data: two
+// renderings of one claim, degrading on one input.
+func reservedEnvTouches(sets []skills.ReservedEnvSet, claim string) bool {
+	for _, e := range sets {
 		if slices.Contains(reservedEnvClaims(e.Key), claim) {
 			return true
 		}
@@ -1171,11 +1174,19 @@ func reservedEnvTouches(s statusInfo, claim string) bool {
 
 // networkLine renders the Network row. Default: "open". With a skill-declared
 // posture, the claim follows the footgun doctrine's honesty rules — status
-// only asserts unqualified what byre set up itself, and never blocks anything:
-//   - skill contributions never degrade the claim (enabling a skill IS
-//     trusting it; its grants are attributed separately);
+// only asserts unqualified what byre set up itself, and never blocks anything.
+// The boundary is what DISPLACES byre's construction, not which field a
+// contribution rides (ADR 0010's annotation):
+//   - a contribution byre built as asked does not degrade the claim (enabling
+//     a skill IS trusting it; its grants are attributed separately);
+//   - a skill holding byre's own network knobs does degrade it — the reserved
+//     BYRE_ env keys below, per ADR 0050 tier 2, because the construction this
+//     row describes is no longer the one in force;
 //   - the project's own raw escape hatches (run_args, dockerfile_pre/post)
 //     degrade it — byre can't audit arbitrary argv or Dockerfile text;
+//   - a mount or volume over a byre-managed path does NOT degrade this row: it
+//     gets one blanket containment disclosure instead, byre knowing a path is
+//     covered and nothing about what covers it (ADR 0052);
 //   - unresolved skills mean the posture is simply unknown.
 func networkLine(s statusInfo) string {
 	if s.SkillErr != "" {
@@ -1202,7 +1213,7 @@ func networkLine(s statusInfo) string {
 	if len(s.BuildRaw) > 0 {
 		raw = append(raw, "raw build lines")
 	}
-	if reservedEnvTouches(s, "network") {
+	if reservedEnvTouches(s.SkillReservedEnv, "network") {
 		raw = append(raw, "a skill setting byre's network controls")
 	}
 	if len(raw) > 0 {
