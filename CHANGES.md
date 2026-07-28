@@ -12,10 +12,11 @@
   wait for. develop, `byre status`, and the grant review a preset asks you to
   approve now say so in one loud Containment line per offending target,
   naming the project config or the skill that declared it, instead of one
-  line per byre path plus a hedge on the Network row. Every other row keeps describing what byre built. A
-  skill's own mounts are checked now too: what made the same collision
-  harmless for `files` was the build-tail re-assertion, not the skill's good
-  name, and no builtin skill mounts anywhere near those paths.
+  line per byre path plus a hedge on the Network row. Every other row keeps
+  describing what byre built. A skill's own mounts are checked now too: what
+  made the same collision harmless for `files` was the build-tail
+  re-assertion, not the skill's good name, and no builtin skill mounts
+  anywhere near those paths.
 
 ## v1.4.0 -- 2026-07-28
 
