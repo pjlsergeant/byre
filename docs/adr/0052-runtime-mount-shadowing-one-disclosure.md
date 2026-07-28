@@ -60,9 +60,10 @@ Detection is mount-centric: a target shadows if it overlaps a *managed root*
 -- `/etc/byre` as a whole, the launcher, and each declared netns hook. A
 target on a root, or above it, buries it. For `/etc/byre`, a target INSIDE it
 counts too, because each entry there is separately replaceable (a bind
-straight onto the launch gate). Under a file root nothing counts: the engine
-refuses to create a bind below a regular file, so that box does not run at
-all. Individual artifacts are deliberately not enumerated, so an artifact
+straight onto the launch gate). Under a file root nothing counts: a target
+below a regular file replaces nothing, there being no directory there to bind
+into -- the engine errors rather than starting a box whose launcher is
+shadowed. Individual artifacts are deliberately not enumerated, so an artifact
 baked under `/etc/byre` later is covered without a second edit.
 
 **Why not per-claim degradation** (what this replaces). Reporting a hit per
