@@ -111,7 +111,9 @@ func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) ([]session
 // now, and the user's ten-second fix is in the message.
 func noteDeclinedEngines(w io.Writer, declined []declinedEngine, consequence string) {
 	for _, d := range declined {
-		fmt.Fprintf(w, "byre: %v %s\n", d, consequence)
+		// d's text embeds the shadowed path (agent-authored under a
+		// box-writable root) or exec's own error -- data, not control.
+		dataf(w, "byre: %v %s\n", error(d), consequence)
 	}
 }
 

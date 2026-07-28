@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"maps"
@@ -277,7 +276,8 @@ func imageRecord(r imageRunner, w io.Writer, tag, base string) launchImage {
 	digest, err := r.ImageDigest(tag)
 	if err != nil {
 		img.DigestError = firstLine(err.Error())
-		fmt.Fprintf(w, "byre: couldn't read the image digest for the launch record (%v) — the record pins the tag only\n", img.DigestError)
+		// The engine's own stderr rides the error text -- data, not control.
+		dataf(w, "byre: couldn't read the image digest for the launch record (%s) — the record pins the tag only\n", img.DigestError)
 		return img
 	}
 	img.Digest = digest
@@ -478,7 +478,7 @@ func reapLaunchRecords(paths project.Paths, keep string, engines []sessionRunner
 func recordLaunch(w io.Writer, paths project.Paths, rec launchRecord) (label, hash string) {
 	h, err := writeLaunchRecord(paths, rec)
 	if err != nil {
-		fmt.Fprintf(w, "byre: couldn't write the launch record (%v) — `byre status` will describe the next launch, not this box\n", err)
+		dataf(w, "byre: couldn't write the launch record (%v) — `byre status` will describe the next launch, not this box\n", err)
 		return "", ""
 	}
 	return launchKey + "=" + h, h

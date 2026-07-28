@@ -109,7 +109,9 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	gitExe, disclosure := hostGitForSession(roots)
 	rv.gitExe = gitExe
 	if disclosure != "" {
-		fmt.Fprintln(s.Err, disclosure)
+		// The disclosure embeds the shadowed path -- a filename the agent
+		// authors under a box-writable root, which is the shadow precondition.
+		dataf(s.Err, "%s\n", disclosure)
 	}
 	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit)
 }
@@ -555,7 +557,7 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []de
 	// "byre will not run a binary on this machine", which is worth saying
 	// whatever the record holds.
 	for _, d := range declined {
-		fmt.Fprintf(w, "byre: %v A competing session under %s can't be ruled out — single-session isn't guaranteed against it.\n", d, d.Engine)
+		dataf(w, "byre: %v A competing session under %s can't be ruled out — single-session isn't guaranteed against it.\n", error(d), d.Engine)
 		skipped = append(skipped, d.Engine)
 	}
 	label := workdirLabel(paths)

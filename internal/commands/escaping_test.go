@@ -11,7 +11,9 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 	"github.com/pjlsergeant/byre/internal/testtools"
@@ -687,4 +689,42 @@ func TestExclusiveRefusalEscapesEngineAndLabelValues(t *testing.T) {
 	}
 	assertNoESC(t, "exclusive volume refusal (hostile engine error)", errBuf2.String())
 	assertKept(t, "exclusive volume refusal (hostile engine error)", errBuf2.String(), "unexpected daemon reply")
+}
+
+// The declined-engine and record-bookkeeping disclosures embed strings byre
+// did not author -- the shadowed path (a filename the agent writes under a
+// box-writable root, which is the shadow precondition) and the engine's own
+// stderr -- so they ride the dataf funnel like every other develop-time
+// warning. One arm per funnel entrance; the payload must survive as text
+// while the control bytes go.
+func TestDeclinedAndRecordDisclosuresEscapeExternalText(t *testing.T) {
+	hostile := &hostexec.ShadowError{
+		Name: "docker",
+		Path: "/proj/.bin/" + escCSI + "docker" + escOSC,
+		Root: "/proj",
+	}
+	d := declinedEngine{Engine: "docker", Err: hostile}
+	paths := project.Paths{}
+
+	var buf bytes.Buffer
+	noteDeclinedEngines(&buf, []declinedEngine{d}, "It is not in this listing.")
+	assertNoESC(t, "noteDeclinedEngines", buf.String())
+	assertKept(t, "noteDeclinedEngines", buf.String(), "/proj/.bin/", "docker")
+
+	buf.Reset()
+	if _, err := refuseCrossEngineSession(&buf, nil, []declinedEngine{d}, "podman", paths); err != nil {
+		t.Fatalf("declined-only refuseCrossEngineSession must not error: %v", err)
+	}
+	assertNoESC(t, "refuseCrossEngineSession declined arm", buf.String())
+	assertKept(t, "refuseCrossEngineSession declined arm", buf.String(), "can't be ruled out")
+
+	buf.Reset()
+	f := &fakeRunner{}
+	f.imageDigestErr = fmt.Errorf("inspect: %sdaemon said no%s", escCSI, escOSC)
+	img := imageRecord(f, &buf, "tag", "")
+	if img.Digest != "" {
+		t.Fatalf("digest must stay empty on an inspect failure, got %q", img.Digest)
+	}
+	assertNoESC(t, "imageRecord disclosure", buf.String())
+	assertKept(t, "imageRecord disclosure", buf.String(), "daemon said no", "pins the tag only")
 }
