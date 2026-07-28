@@ -249,27 +249,47 @@ func TestSelfEditReportEscapesStoreContent(t *testing.T) {
 	assertKept(t, "reportSelfEditChanges", out, `+agent = "`, "planted", ".sh")
 }
 
-// skillContributions renders the contribution block over a manifest whose
-// every displayed field carries the same payload -- inspect is the PRE-trust
-// surface, so every one of these strings is an author byre has not vouched
-// for.
+// skillContributions renders the contribution block over a manifest carrying
+// the same payload in every field the block prints as TEXT -- inspect is the
+// PRE-trust surface, so each of these strings is an author byre has not
+// vouched for. The block's remaining output is counts byre computes itself
+// (apt, dockerfile lines, the files total), which no manifest can author.
 func skillContributions(payload string) string {
 	var f skills.File
 	f.Agent = &skills.AgentContrib{Command: "run --wild" + payload, State: "state" + payload}
 	f.CompanionFor = "acme/agent" + payload
-	f.Volumes = []config.Volume{{Name: "creds" + payload, Role: "state", Target: "/home/dev/.acme" + payload}}
+	// companion_for and shared_auth_for are mutually exclusive to the PARSER,
+	// but the renderer prints whichever it is handed -- and this arm is about
+	// the renderer, so both rows are exercised in one pass.
+	f.SharedAuthFor = "acme/agent" + payload
+	f.Volumes = []config.Volume{{
+		Name: "creds" + payload, Role: "state" + payload,
+		Scope: "machine" + payload, Target: "/home/dev/.acme" + payload,
+	}}
+	// Remote and local MCPs are different branches printing different values,
+	// so the arm needs one of each -- the local one is the only place the
+	// server's argv reaches the terminal.
 	f.MCPs = []config.MCP{{
 		Name:    "gh" + payload,
 		URL:     "https://mcp.example" + payload,
 		Env:     []string{"GITHUB_TOKEN" + payload},
 		Egress:  []string{"auth.example" + payload + ":443"},
 		Headers: map[string]string{"Authorization" + payload: "Bearer ${TOKEN}" + payload},
+	}, {
+		Name:    "local" + payload,
+		Command: []string{"acme-mcp" + payload, "stdio" + payload},
 	}}
-	f.Runtime.Mounts = []config.Mount{{Host: "/var/run/docker.sock" + payload, Target: "/sock" + payload, Mode: "rw"}}
+	f.Runtime.Mounts = []config.Mount{{
+		Host: "/var/run/docker.sock" + payload, Target: "/sock" + payload,
+		Mode: "rw" + payload,
+	}}
 	f.Runtime.Caps = []string{"SYS_PTRACE" + payload}
 	f.Runtime.RunArgs = []string{"--privileged" + payload}
 	f.Runtime.NetnsInit = "/usr/local/bin/fw" + payload
+	f.Runtime.NetworkPosture = "deny-by-default" + payload
+	f.Runtime.SockGroups = []string{"/var/run/docker.sock" + payload}
 	f.Runtime.Egress = []string{"api.example" + payload + ":443"}
+	f.Runtime.EgressOffered = []string{"offered.example" + payload + ":443"}
 	f.Runtime.Env = map[string]string{"TOKEN_NAME" + payload: "value" + payload}
 	f.Runtime.EnvDocs = map[string]string{"NGROK" + payload: "get one at example.com" + payload}
 	f.Runtime.Containment = "reaches the host engine" + payload
@@ -287,7 +307,8 @@ func TestSkillInspectEscapesManifestValues(t *testing.T) {
 	out := skillContributions(escCSI + "\n  cap: SYS_ADMIN\r" + escOSC)
 
 	assertNoESC(t, "printSkillContributions", out)
-	assertKept(t, "printSkillContributions", out, "files: 2", "payload", "notes", "SYS_PTRACE", "Bearer")
+	assertKept(t, "printSkillContributions", out, "files: 2", "payload", "notes", "SYS_PTRACE",
+		"Bearer", "deny-by-default", "sock_groups", "egress_offered", "shared_auth_for", "acme-mcp")
 
 	// Framing: one physical line per contribution, whatever a manifest value
 	// contains. The clean render carries the same fields with a payload that
