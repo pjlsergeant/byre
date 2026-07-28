@@ -968,17 +968,23 @@ func stageRegularFromFD(in *os.File, dstRoot *os.Root, dst string, b *copyBudget
 	if err != nil {
 		return err
 	}
-	// The copy error first, then the close: a deferred Close on a write-mode
-	// file swallows the error the final write reports (ENOSPC on the context
-	// dir is the everyday one), and a short file would then be built into the
-	// image as if it were the whole thing.
-	cerr := copyExactly(o, in, fi.Size(), in.Name())
-	closeErr := o.Close()
+	return copyExactlyAndClose(o, in, fi.Size(), in.Name())
+}
+
+// copyExactlyAndClose is copyExactly plus the close of the destination, whose
+// error is reported in its own right: a write-mode Close is where a failed
+// final write surfaces (ENOSPC on the context dir is the everyday one), and a
+// deferred, dropped one leaves a short file in the context that the build then
+// bakes into the image as if it were whole. The copy's error wins when both
+// fail -- it is the earlier and more specific one.
+func copyExactlyAndClose(out io.WriteCloser, in io.Reader, size int64, name string) error {
+	cerr := copyExactly(out, in, size, name)
+	closeErr := out.Close()
 	if cerr != nil {
 		return cerr
 	}
 	if closeErr != nil {
-		return fmt.Errorf("%s: writing it into the build context: %w", in.Name(), closeErr)
+		return fmt.Errorf("%s: writing it into the build context: %w", name, closeErr)
 	}
 	return nil
 }

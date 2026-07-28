@@ -413,3 +413,28 @@ func TestRehomeCandidatesHonestMessagesAndUnverifiablePaths(t *testing.T) {
 		t.Fatalf("expected the none-moved message (the denied id still counts as stored):\n%s", out.String())
 	}
 }
+
+// The caller turns found=false into "nothing found for old id X; nothing to
+// migrate" -- a claim about a store, which a probe that could not look has not
+// earned. An unreadable old store aborts with the cause instead, and the found
+// claim degrades rather than asserting the absence.
+func TestMigrateStoreUnreadableOldStoreClaimsNoAbsence(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root traverses a 0000 directory")
+	}
+	p, _ := testPaths(t)
+	oldDir := mkOldStore(t, p.Home, "oldid", map[string]string{"byre.config": "agent = \"claude\"\n"})
+	if err := os.Chmod(oldDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(oldDir, 0o700) })
+
+	s, _, _ := testStreams("", false)
+	found, _, err := migrateStore(s, p, oldDir)
+	if !found {
+		t.Error("an unreadable old store must not read as nothing worth migrating")
+	}
+	if err == nil {
+		t.Error("a store that cannot be read must abort the migration, not proceed quietly")
+	}
+}

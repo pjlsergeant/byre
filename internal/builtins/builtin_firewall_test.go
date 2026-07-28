@@ -194,18 +194,32 @@ func TestFirewallShipsNoICMPDiagnostics(t *testing.T) {
 // rule for a host into a rule for whatever files happen to sit in the CWD.
 // The assert is on the script text because the loops it protects cannot run
 // in a unit test (they need iptables, a netns, and the launch gate).
+// ORDER is the assertion, not presence: a set -f anywhere in the file leaves
+// a split above it unprotected, and moving the entry loop is exactly the edit
+// that would do it.
 func TestNetnsHelpersDisablePathnameExpansion(t *testing.T) {
 	_, cat := testCat(t)
-	for skill, script := range map[string]string{
-		"firewall":      "firewall.sh",
-		"firewall-open": "firewall-open.sh",
+	for _, tc := range []struct{ skill, script, split string }{
+		{"firewall", "firewall.sh", `for e in $(echo "${BYRE_EGRESS`},
+		{"firewall-open", "firewall-open.sh", `for e in $(echo "${BYRE_EGRESS_DENY`},
 	} {
-		b, err := os.ReadFile(filepath.Join(skillDir(t, cat, skill), script))
+		b, err := os.ReadFile(filepath.Join(skillDir(t, cat, tc.skill), tc.script))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(b), "\nset -f\n") {
-			t.Errorf("%s must disable globbing (set -f) before it word-splits its entries", script)
+		body := string(b)
+		noglob := strings.Index(body, "\nset -f\n")
+		if noglob < 0 {
+			t.Errorf("%s must disable globbing (set -f) before it word-splits its entries", tc.script)
+			continue
+		}
+		split := strings.Index(body, tc.split)
+		if split < 0 {
+			t.Errorf("%s: no entry-splitting loop found (%q) -- the guard below has nothing to pin", tc.script, tc.split)
+			continue
+		}
+		if noglob > split {
+			t.Errorf("%s: set -f (offset %d) must come BEFORE the entry word-split (offset %d), or the split runs with globbing on", tc.script, noglob, split)
 		}
 	}
 }

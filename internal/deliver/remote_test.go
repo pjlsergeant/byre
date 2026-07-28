@@ -558,3 +558,49 @@ func TestSendMeterSilentWhenDisabledOrSmall(t *testing.T) {
 		t.Fatalf("disabled meter drew: %q", errw2.String())
 	}
 }
+
+// closeFailWriter accepts every write and fails only at Close -- the shape of
+// a write-mode file whose final write lands at close time (ENOSPC on the temp
+// filesystem the spool sits on).
+type closeFailWriter struct {
+	written  int
+	writeErr error
+	closeErr error
+}
+
+func (w *closeFailWriter) Write(p []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	w.written += len(p)
+	return len(p), nil
+}
+
+func (w *closeFailWriter) Close() error { return w.closeErr }
+
+// The spool's byte count becomes the tar header's size, so a dropped Close
+// error ships a short file under a count that says otherwise -- and the far
+// end reports THAT as "changed while being sent", blaming the source for
+// byre's own truncation. The close must refuse the delivery in its own words.
+func TestSpoolToReportsACloseFailure(t *testing.T) {
+	w := &closeFailWriter{closeErr: fmt.Errorf("no space left on device")}
+	n, err := spoolTo(w, strings.NewReader("some stdin bytes"))
+	if err == nil {
+		t.Fatalf("a spool whose close failed must not pass as complete (n=%d)", n)
+	}
+	if !strings.Contains(err.Error(), "closing the spool") || !strings.Contains(err.Error(), "no space left") {
+		t.Errorf("the close failure must be named as itself: %v", err)
+	}
+
+	// Both fail: the copy's error is the earlier and more specific one.
+	w2 := &closeFailWriter{writeErr: fmt.Errorf("stream broke"), closeErr: fmt.Errorf("no space left on device")}
+	if _, err := spoolTo(w2, strings.NewReader("some stdin bytes")); err == nil || !strings.Contains(err.Error(), "stream broke") {
+		t.Errorf("the copy error must win: %v", err)
+	}
+
+	// The clean path still reports the bytes the header needs.
+	w3 := &closeFailWriter{}
+	if n, err := spoolTo(w3, strings.NewReader("some stdin bytes")); err != nil || n != 16 {
+		t.Errorf("clean spool: n=%d err=%v, want 16 and no error", n, err)
+	}
+}

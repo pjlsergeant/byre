@@ -1439,3 +1439,44 @@ func TestPlanFilesMissingSourceNamesEntryAndRemedy(t *testing.T) {
 		t.Errorf("the raw stat error must not surface: %v", err)
 	}
 }
+
+// closeFailWriter accepts every write and fails only at Close -- the shape of
+// a write-mode file whose final write lands at close time (ENOSPC on the
+// context directory).
+type closeFailWriter struct {
+	io.Writer
+	closeErr error
+}
+
+func (w closeFailWriter) Close() error { return w.closeErr }
+
+// The staged file is what the build bakes into the image, so a Close reporting
+// a failed final write must fail the stage: dropped, a short file goes into
+// the image as if it were whole. The copy's error still wins when both fail.
+func TestCopyExactlyAndCloseReportsACloseFailure(t *testing.T) {
+	var buf strings.Builder
+	out := closeFailWriter{Writer: &buf, closeErr: errors.New("no space left on device")}
+	err := copyExactlyAndClose(out, strings.NewReader("0123456789"), 10, "src")
+	if err == nil {
+		t.Fatal("a stage whose close failed must not pass as complete")
+	}
+	if !strings.Contains(err.Error(), "no space left") || !strings.Contains(err.Error(), "src") {
+		t.Errorf("the close failure must be named as itself, against the file: %v", err)
+	}
+
+	// Both fail: the copy's refusal (a source that changed under it) is the
+	// earlier and more specific one.
+	out2 := closeFailWriter{Writer: io.Discard, closeErr: errors.New("no space left on device")}
+	if err := copyExactlyAndClose(out2, strings.NewReader("0123456789"), 6, "src"); err == nil || !strings.Contains(err.Error(), "changed while being staged") {
+		t.Errorf("the copy error must win: %v", err)
+	}
+
+	// The clean path stages the bytes and reports nothing.
+	var ok strings.Builder
+	if err := copyExactlyAndClose(closeFailWriter{Writer: &ok}, strings.NewReader("0123456789"), 10, "src"); err != nil {
+		t.Errorf("clean stage: %v", err)
+	}
+	if ok.String() != "0123456789" {
+		t.Errorf("staged bytes = %q", ok.String())
+	}
+}
