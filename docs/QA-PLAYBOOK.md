@@ -208,7 +208,8 @@ save-default).
    ctrl+q; claude's tmux-driven theme picker can wedge — if keys stop
    landing, `docker rm -f` the box (develop then reports the decoded
    `byre: exit status 137 (SIGKILL — the box was killed out from under
-   the session: …)`, rc 1 — deliberate, ≥125 = engine range).
+   the session: …)`, rc 1 — deliberate, ≥128 = the signal range byre
+   decodes; everything below it is the agent's own status).
 6. TEARDOWN: rm boxes + per-project volumes.
 
 ## Journey: seeded gemini — chooser must not appear

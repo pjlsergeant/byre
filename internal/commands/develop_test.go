@@ -385,15 +385,20 @@ func TestDevelopAgentExitCodePassesThrough(t *testing.T) {
 	}
 }
 
-func TestDevelopEngineFailureStaysByreError(t *testing.T) {
+// The 125-127 band docker RUN reserves is not reserved on the session path:
+// byre creates the container and attaches with `start`, which reports its own
+// engine-level failures as exit 1. So 126/127 there is the agent's shell
+// saying "not executable"/"not found" and passes through as its status --
+// swallowing it into a byre banner would report the agent's failure as byre's.
+func TestDevelopAgentReservedBandExitPassesThrough(t *testing.T) {
 	p, _ := testPaths(t)
-	// Docker reserves 125-127 for engine-level failures; with no session live at
-	// the re-check, that must surface as a byre error, not the agent's status.
-	f := &fakeRunner{runErr: exitError(t, 126)}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
-	var exitErr ExitError
-	if err == nil || errors.As(err, &exitErr) {
-		t.Fatalf("engine failure must stay an ordinary error, got %v", err)
+	for _, code := range []int{125, 126, 127} {
+		f := &fakeRunner{runErr: exitError(t, code)}
+		err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+		var exitErr ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != code {
+			t.Fatalf("exit %d must pass through as the agent's own status, got %v", code, err)
+		}
 	}
 }
 

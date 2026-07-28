@@ -356,19 +356,20 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// forceless rm can't kill a running session, and after a normal agent
 		// exit the container is already gone — both failures are ignorable.
 		_ = r.ContainerRemove(containerName(paths))
-		// Distinguish the agent/container's own exit from a byre failure: docker
-		// reserves 125-127 for engine-level failures (cannot run / not
-		// executable / not found), so only codes below that are passed through
-		// as the agent's own status (no byre error banner). Anything else —
-		// 125-127, a signal-terminated process (ExitCode() == -1), or a
-		// non-ExitError failure (e.g. the engine binary itself couldn't run) —
-		// stays a byre error. (`start` reports engine-level failures — e.g. the
-		// marker container removed by a concurrent reset — as exit 1 with the
-		// cause on stderr, so those pass through as an ordinary failed status.)
+		// Distinguish the agent/container's own exit from a byre failure. The
+		// 125-127 band docker RUN reserves for engine-level failures is not
+		// reserved on THIS path: the session is create + `start --attach`, and
+		// start reports an engine-level failure (the marker container removed
+		// by a concurrent reset, say) as exit 1 with the cause on stderr. So
+		// every code the engine hands back below 128 is the agent's own status
+		// and passes through unbannered — including 126 and 127, which an
+		// agent's own shell spends on "not executable" and "not found".
+		// A signal-terminated process (ExitCode() == -1) and a non-ExitError
+		// failure (the engine binary itself could not run) stay byre errors.
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			code := exitErr.ExitCode()
-			if code >= 0 && code < 125 {
+			if code >= 0 && code <= 127 {
 				return ExitError{Code: code}
 			}
 			// 128+n usually means the box died on signal n. The bare "exit
@@ -381,7 +382,6 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			// codes in the signal range (1-31 classic, through 64 for Linux
 			// realtime signals) decode tentatively, and codes beyond it
 			// can't be signals and stay undecoded.
-			// 125-127 stay untouched: the engine already printed its own cause.
 			if code == 128+9 {
 				return fmt.Errorf("exit status %d (SIGKILL — the box was killed out from under the session: removed externally, engine shutdown, or the kernel OOM killer)", code)
 			}

@@ -2,6 +2,17 @@
 
 ## unreleased
 
+- **An agent exiting 125, 126 or 127 now gives byre that exit status, with
+  no byre error banner.** Those three codes are what `docker run` reserves
+  for its own failures, but a byre session is not a `docker run`: byre
+  creates the container and attaches to it with `start`, which reports an
+  engine-level failure as exit 1 with the cause on stderr. So the band was
+  reserved against nothing, and an agent whose shell answered "command not
+  found" (127) had its own status swallowed and reported as a byre failure.
+  Accepted consequence: an engine that does spend one of those codes on the
+  attach itself will now be reported as the agent's exit -- the engine's own
+  message on stderr is what tells the two apart.
+
 - **What byre reports back to you is rendered as data.** A path, a skill
   name, a filename or a git config value byre did not write itself could
   carry terminal escape sequences, and byre printed them straight through --
