@@ -74,8 +74,13 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if err != nil {
 		return err
 	}
-	templates := config.ListTemplatesCatalog(cat)
-	agents := skills.ListAgentSkills(cat)
+	// ONE composer per axis, feeding the picker rows AND the sets that
+	// validate favourites and flags: two callers deriving the offered set
+	// differently is how a surface silently loses an arm.
+	tmplOpts := templateOptions(cat)
+	agentOpts := agentOptions(cat)
+	templates := onboard.Selectable(tmplOpts)
+	agents := onboard.Selectable(agentOpts)
 
 	// Drop stale favourites that no longer name a real template/agent, so
 	// accepting the default can't write an invalid byre.config.
@@ -142,7 +147,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			}
 			return writeAndReport(s.Err, cfgPath, defT, defA, optedSkills(companion, companion != ""))
 		}
-		choice, err := onboard.Pick(s.Err, in, templates, agents,
+		choice, err := onboard.Pick(s.Err, in, tmplOpts, agentOpts,
 			onboard.Favourite{Stored: rawT, Effective: defT},
 			onboard.Favourite{Stored: rawA, Effective: defA},
 			sharedAuthFor)
@@ -175,7 +180,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// before we prompt for the other axis.
 	t, tFixed := defT, false
 	if flagTemplate != "" {
-		v, err := resolveFlag(flagTemplate, defT, templates, "template")
+		v, err := resolveFlag(flagTemplate, defT, tmplOpts, "template")
 		if err != nil {
 			return err
 		}
@@ -183,7 +188,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	}
 	a, aFixed := defA, false
 	if flagAgent != "" {
-		v, err := resolveFlag(flagAgent, defA, agents, "agent")
+		v, err := resolveFlag(flagAgent, defA, agentOpts, "agent")
 		if err != nil {
 			return err
 		}
@@ -206,14 +211,14 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		fmt.Fprintln(s.Err, "byre: no byre.config — choosing the rest interactively (Enter accepts [default]).")
 	}
 	if !tFixed && s.TTY {
-		v, err := onboard.AskAxis(s.Err, in, "Template", templates, defT)
+		v, err := onboard.AskAxis(s.Err, in, "Template", tmplOpts, defT)
 		if err != nil {
 			return err
 		}
 		t = v
 	}
 	if !aFixed && s.TTY {
-		v, err := onboard.AskAxis(s.Err, in, "Agent", agents, defA)
+		v, err := onboard.AskAxis(s.Err, in, "Agent", agentOpts, defA)
 		if err != nil {
 			return err
 		}
@@ -256,6 +261,63 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		}
 	}
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
+}
+
+// agentOptions builds the first-run Agent rows: every selectable agent skill,
+// plus the catalog's broken ones shown disabled-with-reason. Same three
+// sources the config editor's agent picker reads (ListAgentSkills, the
+// catalog's problem rows, LooksLikeAgent), so a skill broken enough to vanish
+// from one surface cannot stay invisible on the other.
+//
+// MarkLoadFailures runs first: catalog ingest judges a primary's bytes, and a
+// skill can still fail its full load (mount shape, a context file that is
+// missing or oversized), which is exactly the case that used to leave first-run
+// showing a list with the user's agent silently absent.
+func agentOptions(cat *packages.Catalog) []onboard.Option {
+	if cat == nil {
+		return nil
+	}
+	skills.MarkLoadFailures(cat)
+	opts := onboard.Options(skills.ListAgentSkills(cat)...)
+	// Only rows whose primary declares an [agent] table belong in the agent
+	// picker -- a broken plain skill is not an agent someone was looking for.
+	return append(opts, problemOptions(cat, packages.KindSkill, true)...)
+}
+
+// templateOptions is the same for the Template axis. A template has no load
+// tier beyond stage 2, so the catalog's problem rows are the whole story.
+func templateOptions(cat *packages.Catalog) []onboard.Option {
+	if cat == nil {
+		return nil
+	}
+	opts := onboard.Options(config.ListTemplatesCatalog(cat)...)
+	return append(opts, problemOptions(cat, packages.KindTemplate, false)...)
+}
+
+// problemOptions turns the catalog's INVALID/conflict/LEGACY rows of a kind
+// into disabled picker rows. agentsOnly keeps the agent axis to rows whose
+// primary carries an [agent] table.
+func problemOptions(cat *packages.Catalog, kind packages.Kind, agentsOnly bool) []onboard.Option {
+	var out []onboard.Option
+	for _, ent := range cat.ListProblemRows(kind) {
+		if agentsOnly && !ent.LooksLikeAgent {
+			continue
+		}
+		name := ent.DisplayName()
+		if name == "" {
+			name = ent.ID
+		}
+		reason := ent.Reason
+		if reason == "" {
+			reason = string(ent.Provenance)
+		}
+		out = append(out, onboard.Option{
+			Name:     name,
+			Label:    ent.ProvenanceLabel(),
+			Disabled: reason,
+		})
+	}
+	return out
 }
 
 // offeredPickRow finds the DISPLAYED claimant row a stored pick names, under
@@ -370,18 +432,25 @@ func writeAndReport(w io.Writer, configPath, template, agent string, skills []st
 }
 
 // resolveFlag maps a flag value to a config value: "" (unspecified) → favourite;
-// "none" → "" (explicit none); a value in options → that value; otherwise error.
-func resolveFlag(flag, fav string, options []string, label string) (string, error) {
+// "none" → "" (explicit none); a selectable option → that value; otherwise
+// error. A flag naming a BROKEN package gets its reason rather than "unknown",
+// which would send the user looking for a typo in a name they spelled right.
+func resolveFlag(flag, fav string, options []onboard.Option, label string) (string, error) {
+	offered := onboard.Selectable(options)
 	switch {
 	case flag == "":
 		return fav, nil
 	case flag == "none":
 		return "", nil
-	case slices.Contains(options, flag):
+	case slices.Contains(offered, flag):
 		return flag, nil
-	default:
-		return "", fmt.Errorf("unknown %s %q; available: %s, none", label, flag, strings.Join(options, ", "))
 	}
+	for _, o := range options {
+		if o.Name == flag && o.Disabled != "" {
+			return "", fmt.Errorf("%s %q is unavailable: %s", label, flag, o.Disabled)
+		}
+	}
+	return "", fmt.Errorf("unknown %s %q; available: %s, none", label, flag, strings.Join(offered, ", "))
 }
 
 // keepIfIn returns v if it is empty or present in options, else "" (drops a

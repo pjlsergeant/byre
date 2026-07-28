@@ -565,6 +565,63 @@ func TestOnboardWithoutSkipQuestionsStillAsks(t *testing.T) {
 	}
 }
 
+// First-run onboarding shows a broken agent skill with its reason instead of
+// leaving it out. Both tiers of broken are covered, because they become
+// problem rows by different routes: badposture fails stage 2 at catalog
+// ingest, brokenmount parses and fails the FULL load (MarkLoadFailures). A
+// user whose agent is either one saw a picker with it simply absent.
+func TestOnboardShowsBrokenAgentsWithTheirReason(t *testing.T) {
+	p, proj := onboardPaths(t)
+	writeLocalSkill(t, p.Home, "brokenmount",
+		"description = \"b\"\n[agent]\ncommand = \"x\"\n\n[[runtime.mounts]]\nhost = \"/tmp\"\ntarget = \"relative\"\n")
+	writeLocalSkill(t, p.Home, "badposture",
+		"description = \"b\"\n[agent]\ncommand = \"x\"\n\n[runtime]\nnetwork_posture = \"Deny-Default\"\n")
+
+	// Template: none. Agent: try each broken row, then the working one.
+	// Shared auth: n. Save: n.
+	s, _, errBuf := testStreams("\nbrokenmount\nbadposture\nclaude\nn\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	for _, want := range []string{"brokenmount", "mount target", "badposture", "Deny-Default"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("first-run must list the broken agent and why, missing %q:\n%s", want, out)
+		}
+	}
+	// Selecting one reprompts with the reason rather than landing on it.
+	if n := strings.Count(out, "is unavailable:"); n != 2 {
+		t.Errorf("each attempt at a broken agent must repeat its reason (got %d):\n%s", n, out)
+	}
+	// And the healthy pick still lands.
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent != "claude" {
+		t.Fatalf("a working agent must still be selectable, got %q", cfg.Agent)
+	}
+}
+
+// The flag path reads the same rows: --agent naming a broken skill gets the
+// reason, not "unknown agent", which would send the user hunting a typo in a
+// name they spelled right.
+func TestOnboardAgentFlagNamingABrokenSkillSaysWhy(t *testing.T) {
+	p, proj := onboardPaths(t)
+	writeLocalSkill(t, p.Home, "badposture",
+		"description = \"b\"\n[agent]\ncommand = \"x\"\n\n[runtime]\nnetwork_posture = \"Deny-Default\"\n")
+	s, _, _ := testStreams("", false)
+	err := onboardIfNeeded(s, proj, p, "none", "badposture", nil)
+	if err == nil {
+		t.Fatal("a broken agent must not be accepted from a flag")
+	}
+	for _, want := range []string{"badposture", "unavailable", "network_posture"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the package and the reason, missing %q: %v", want, err)
+		}
+	}
+}
+
 // writeLocalSkill drops a loadable skill into the store's skills/ dir, so a
 // test can put a second claimant in front of the catalog.
 func writeLocalSkill(t *testing.T, home, name, body string) {

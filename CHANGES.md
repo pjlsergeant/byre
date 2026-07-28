@@ -43,6 +43,15 @@
   cannot move -- `byre skill validate` is a partial promise by construction,
   and `docs/SKILLS.md` now says so.
 
+- **First-run onboarding shows a broken agent instead of hiding it.** The
+  picker's Template and Agent lists were bare name lists, so a package byre
+  could not use was simply left out -- and if the missing one was the agent you
+  were looking for, first-run offered no explanation at all, just a list
+  without it. Broken packages are now listed above the prompt with the reason
+  byre refused them, not offered as choices, and typing one repeats the reason
+  rather than calling the name unknown. `--agent` / `--template` naming a
+  broken package answer the same way.
+
 - **A skill too broken to load is listed as broken instead of disappearing.**
   A skill whose `skill.toml` parses but whose full load fails -- a mount
   target that is not an absolute path, a `[context]` file that is missing or

@@ -7,9 +7,11 @@ package onboard
 import (
 	"bufio"
 	"fmt"
-	"github.com/pjlsergeant/byre/internal/config"
 	"io"
+	"slices"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/config"
 )
 
 // noneOption is the explicit "no template"/"no agent" choice (config owns the
@@ -34,6 +36,56 @@ type Choice struct {
 	// preference is only touched when it was: a save after a no-offer onboard
 	// must not delete a stored favourite for a question never asked.
 	SharedAuthOffered bool
+}
+
+// Option is one row in an axis picker (Template or Agent). Name is what the
+// user types; Label is provenance worth naming (empty for the unremarkable
+// bundled case); Disabled, when non-empty, is WHY the package cannot be
+// chosen -- an INVALID catalog row's reason.
+//
+// A disabled row is shown, not hidden: a broken package the user is looking
+// for is the one they most need an answer about, and dropping it silently
+// left first-run showing an agent list with their agent simply missing. It is
+// never selectable -- naming one reprompts with the reason, the same
+// never-land-on-either-side discipline ClassifyAnswer enforces for y/n.
+type Option struct {
+	Name     string
+	Label    string
+	Disabled string
+}
+
+// Options builds a plain selectable row set (no problems, no labels) -- for
+// callers with nothing but names.
+func Options(names ...string) []Option {
+	out := make([]Option, 0, len(names))
+	for _, n := range names {
+		out = append(out, Option{Name: n})
+	}
+	return out
+}
+
+// Selectable is the names a user may actually choose. Callers that validate a
+// favourite or a flag value read THIS, so the set the picker offers and the
+// set a flag accepts can never disagree.
+func Selectable(opts []Option) []string {
+	var out []string
+	for _, o := range opts {
+		if o.Disabled == "" {
+			out = append(out, o.Name)
+		}
+	}
+	return out
+}
+
+// disabledReason returns why name cannot be chosen ("" when it can, or when
+// the name is not a row at all).
+func disabledReason(opts []Option, name string) string {
+	for _, o := range opts {
+		if o.Name == name {
+			return o.Disabled
+		}
+	}
+	return ""
 }
 
 // Favourite is one axis's stored default. Stored is what default.config holds
@@ -106,7 +158,7 @@ func SharedAuthPrompt(agent string) string {
 // purpose: a caller asking more than one question MUST thread one shared
 // reader through them, or the first question's buffering eats the later
 // answers — the signature makes that invariant compile-enforced.
-func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, agentFav Favourite, sharedAuthFor func(agent string) SharedAuthOffer) (Choice, error) {
+func Pick(out io.Writer, r *bufio.Reader, templates, agents []Option, tmplFav, agentFav Favourite, sharedAuthFor func(agent string) SharedAuthOffer) (Choice, error) {
 	fmt.Fprintln(out, "No byre.config here — let's set one up (press Enter to accept [default]).")
 
 	tmpl, err := ask(out, r, "Template", withNone(templates), config.OrNone(tmplFav.Effective))
@@ -168,7 +220,7 @@ func Pick(out io.Writer, r *bufio.Reader, templates, agents []string, tmplFav, a
 // AskAxis prompts for a single axis (Template or Agent), offering a "none"
 // option and pre-selecting def (the favourite). Returns "" for none. Used when a
 // --template/--agent flag fixes one axis and the other still needs choosing.
-func AskAxis(out io.Writer, r *bufio.Reader, label string, options []string, def string) (string, error) {
+func AskAxis(out io.Writer, r *bufio.Reader, label string, options []Option, def string) (string, error) {
 	v, err := ask(out, r, label, withNone(options), config.OrNone(def))
 	if err != nil {
 		return "", err
@@ -316,10 +368,32 @@ func OfferSharedAuthChoice(out io.Writer, r *bufio.Reader, agent string, offer S
 }
 
 // ask prompts for one choice among options, pre-selecting def. An empty answer
-// accepts def; an invalid answer re-prompts.
-func ask(out io.Writer, r *bufio.Reader, label string, options []string, def string) (string, error) {
+// accepts def; an invalid answer re-prompts. Disabled rows print above the
+// prompt with their reason and are never in the offered set: byre says what is
+// broken and why, then asks only about what works.
+func ask(out io.Writer, r *bufio.Reader, label string, options []Option, def string) (string, error) {
+	// The broken rows go above the prompt under their axis's own heading --
+	// they print between two prompts, so an unheaded list reads as belonging
+	// to the question above it.
+	var broken []Option
+	for _, o := range options {
+		if o.Disabled != "" {
+			broken = append(broken, o)
+		}
+	}
+	if len(broken) > 0 {
+		fmt.Fprintf(out, "%s — %d unavailable, not offered below:\n", label, len(broken))
+		for _, o := range broken {
+			if o.Label != "" {
+				fmt.Fprintf(out, "  %s — %s: %s\n", o.Name, o.Label, o.Disabled)
+				continue
+			}
+			fmt.Fprintf(out, "  %s — %s\n", o.Name, o.Disabled)
+		}
+	}
+	offered := Selectable(options)
 	for {
-		fmt.Fprintf(out, "%s — %s [%s]: ", label, strings.Join(options, " "), def)
+		fmt.Fprintf(out, "%s — %s [%s]: ", label, strings.Join(offered, " "), def)
 		line, err := r.ReadString('\n')
 		if err != nil && line == "" {
 			return "", err
@@ -328,12 +402,16 @@ func ask(out io.Writer, r *bufio.Reader, label string, options []string, def str
 		if ans == "" {
 			return def, nil
 		}
-		for _, o := range options {
-			if ans == o {
-				return ans, nil
-			}
+		if d := disabledReason(options, ans); d != "" {
+			// Named a row byre listed as broken: repeat the reason rather than
+			// "not one of", which would read as a typo the user cannot find.
+			fmt.Fprintf(out, "  %q is unavailable: %s\n", ans, d)
+			continue
 		}
-		fmt.Fprintf(out, "  %q is not one of: %s\n", ans, strings.Join(options, " "))
+		if slices.Contains(offered, ans) {
+			return ans, nil
+		}
+		fmt.Fprintf(out, "  %q is not one of: %s\n", ans, strings.Join(offered, " "))
 	}
 }
 
@@ -394,6 +472,6 @@ func askYesNoDefault(out io.Writer, r *bufio.Reader, label string, def bool) (bo
 
 // The "none" sentinel vocabulary is config's (config.NoneLabel); these thin
 // wrappers keep the picker readable.
-func withNone(opts []string) []string {
-	return append(append([]string{}, opts...), noneOption)
+func withNone(opts []Option) []Option {
+	return append(append([]Option{}, opts...), Option{Name: noneOption})
 }

@@ -438,6 +438,9 @@ skill that parses but fails `loadEntry` is dropped from
 `ListSkills`/`ListAgentSkills` **and** is not a problem row (its catalog row is
 healthy), so it appears in neither the config UI's skills screen nor the
 onboarding agent picker. Absent, rather than listed-with-a-reason.
+(SHIPPED: Unit 5 closed the catalog and config-UI halves; Unit 11 closed the
+onboarding half -- the first-run picker took a bare `[]string` and had no row
+shape to be disabled in, so it needed its own contract change.)
 
 **Decision.**
 - Extract the **intra-skill** value checks into one function called by `Resolve`,

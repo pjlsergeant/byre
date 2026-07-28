@@ -18,7 +18,7 @@ func fav(v string) Favourite { return Favourite{Stored: v, Effective: v} }
 
 func TestPickAcceptsDefaultsOnEmpty(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\n\n")), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"), nil)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\n\n")), Options("go", "node"), Options("claude", "codex"), fav("go"), fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestPickAcceptsDefaultsOnEmpty(t *testing.T) {
 // same choice — no save offer.
 func TestPickRetypedDefaultsSkipSaveOffer(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("go\nclaude\n")), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"), nil)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("go\nclaude\n")), Options("go", "node"), Options("claude", "codex"), fav("go"), fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestPickRetypedDefaultsSkipSaveOffer(t *testing.T) {
 // scalars; the matching one is idempotent).
 func TestPickOneAxisDifferingStillOffers(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\ncodex\ny\n")), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"), nil)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\ncodex\ny\n")), Options("go", "node"), Options("claude", "codex"), fav("go"), fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestPickStaleFavouriteStillOffers(t *testing.T) {
 	var out bytes.Buffer
 	// Stored template "old" no longer exists; the picker presents none.
 	// The user accepts none + the existing agent, and answers y.
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\n")), []string{"go", "node"}, []string{"claude", "codex"},
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\n")), Options("go", "node"), Options("claude", "codex"),
 		Favourite{Stored: "old", Effective: ""}, fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestPickStaleFavouriteStillOffers(t *testing.T) {
 
 func TestPickChoosesAndSaves(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("node\ncodex\ny\n")), []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"), nil)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("node\ncodex\ny\n")), Options("go", "node"), Options("claude", "codex"), fav("go"), fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestPickChoosesAndSaves(t *testing.T) {
 func TestAskAxisPromptsOneAxis(t *testing.T) {
 	var out bytes.Buffer
 	// Empty input accepts the favourite.
-	v, err := AskAxis(&out, bufio.NewReader(strings.NewReader("\n")), "Template", []string{"go", "node"}, "node")
+	v, err := AskAxis(&out, bufio.NewReader(strings.NewReader("\n")), "Template", Options("go", "node"), "node")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestAskAxisPromptsOneAxis(t *testing.T) {
 		t.Fatalf("empty should accept favourite, got %q", v)
 	}
 	// Explicit "none" returns "".
-	v, err = AskAxis(&out, bufio.NewReader(strings.NewReader("none\n")), "Template", []string{"go", "node"}, "node")
+	v, err = AskAxis(&out, bufio.NewReader(strings.NewReader("none\n")), "Template", Options("go", "node"), "node")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestAskAxisPromptsOneAxis(t *testing.T) {
 
 func TestPickReprompsOnInvalid(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("rust\ngo\nclaude\n\n")), []string{"go"}, []string{"claude"}, fav("go"), fav("claude"), nil)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("rust\ngo\nclaude\n\n")), Options("go"), Options("claude"), fav("go"), fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,9 +129,58 @@ func TestPickReprompsOnInvalid(t *testing.T) {
 	}
 }
 
+// A broken package is LISTED with its reason and cannot be chosen. Before
+// this the picker took a bare name list, so a broken agent was simply absent
+// from first-run -- the user's own agent missing, with nothing said.
+func TestPickShowsDisabledRowsAndRefusesThem(t *testing.T) {
+	var out bytes.Buffer
+	agents := append(Options("claude"),
+		Option{Name: "brokenmount", Label: "INVALID", Disabled: `mount target "relative": must be an absolute path`},
+		Option{Name: "badposture", Disabled: `network_posture "Deny-Default": must match`},
+	)
+	// Try both broken rows, then accept the working one.
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\nbrokenmount\nbadposture\nclaude\n\n")),
+		Options("go"), agents, fav("go"), fav(""), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Agent != "claude" {
+		t.Fatalf("a working pick must still land, got %+v", c)
+	}
+	s := out.String()
+	// Listed with the reason, before the prompt.
+	for _, want := range []string{"brokenmount", "mount target", "badposture", "Deny-Default"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the broken rows and their reasons must be shown, missing %q:\n%s", want, s)
+		}
+	}
+	// A disabled row is never in the offered set.
+	if strings.Contains(s, "Agent — claude brokenmount") || strings.Contains(s, "badposture none") {
+		t.Errorf("a disabled row must not be offered as a choice:\n%s", s)
+	}
+	// Naming one reprompts WITH the reason -- never "unknown", which reads as
+	// a typo in a name the user spelled right.
+	if n := strings.Count(s, "is unavailable:"); n != 2 {
+		t.Errorf("each attempt at a disabled row must repeat its reason (got %d):\n%s", n, s)
+	}
+	if strings.Contains(s, `"brokenmount" is not one of`) {
+		t.Errorf("a broken row must not be reported as unknown:\n%s", s)
+	}
+}
+
+// Selectable is what favourite/flag validation reads, so it must agree with
+// what the picker offers: disabled rows are in neither.
+func TestSelectableExcludesDisabledRows(t *testing.T) {
+	opts := append(Options("claude"), Option{Name: "broken", Disabled: "why"})
+	got := Selectable(opts)
+	if len(got) != 1 || got[0] != "claude" {
+		t.Fatalf("Selectable = %v, want [claude]", got)
+	}
+}
+
 func TestPickNone(t *testing.T) {
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("none\nnone\n\n")), []string{"go"}, []string{"claude"}, fav(""), fav(""), nil)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("none\nnone\n\n")), Options("go"), Options("claude"), fav(""), fav(""), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +438,7 @@ func TestAskYesNoDefaultReprompts(t *testing.T) {
 func TestPromptsShareABufferedReader(t *testing.T) {
 	var out bytes.Buffer
 	in := bufio.NewReader(strings.NewReader("node\ncodex\nn\ny\n"))
-	c, err := Pick(&out, in, []string{"go", "node"}, []string{"claude", "codex"}, fav("go"), fav("claude"), nil)
+	c, err := Pick(&out, in, Options("go", "node"), Options("claude", "codex"), fav("go"), fav("claude"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +463,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 		return SharedAuthOffer{}
 	}
 	// Template none, agent codex, shared auth y, save-default n.
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\ncodex\ny\nn\n")), []string{"go"}, []string{"claude", "codex"}, fav(""), fav(""), companions)
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\ncodex\ny\nn\n")), Options("go"), Options("claude", "codex"), fav(""), fav(""), companions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +475,7 @@ func TestPickOffersSharedAuthBeforeSaveDefault(t *testing.T) {
 	}
 	// An agent without a companion gets no offer.
 	out.Reset()
-	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\nclaude\nn\n")), []string{"go"}, []string{"claude", "codex"}, fav(""), fav(""), companions)
+	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\nclaude\nn\n")), Options("go"), Options("claude", "codex"), fav(""), fav(""), companions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +504,7 @@ func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
 
 	// No stored preference, answer y: news — save question appears.
 	var out bytes.Buffer
-	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\ny\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companionsWithPref(false))
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\n\ny\ny\n")), Options("go"), Options("claude", "codex"), fav("go"), fav("codex"), companionsWithPref(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +515,7 @@ func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
 	// Stored yes-preference, Enter accepts it: everything matches stored
 	// state — no save question, and the input carries no answer for one.
 	out.Reset()
-	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\n\n\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companionsWithPref(true))
+	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\n\n\n")), Options("go"), Options("claude", "codex"), fav("go"), fav("codex"), companionsWithPref(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +525,7 @@ func TestPickSaveTriggerFollowsSharedAuthNews(t *testing.T) {
 
 	// Stored yes-preference, explicit n: news again.
 	out.Reset()
-	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\n\nn\nn\n")), []string{"go"}, []string{"claude", "codex"}, fav("go"), fav("codex"), companionsWithPref(true))
+	c, err = Pick(&out, bufio.NewReader(strings.NewReader("\n\nn\nn\n")), Options("go"), Options("claude", "codex"), fav("go"), fav("codex"), companionsWithPref(true))
 	if err != nil {
 		t.Fatal(err)
 	}
