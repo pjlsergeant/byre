@@ -168,6 +168,43 @@ func TestPickShowsDisabledRowsAndRefusesThem(t *testing.T) {
 	}
 }
 
+// The picker is a reporting surface, and every field of a row comes from
+// somewhere byre does not write -- a declared package id, a catalog reason
+// quoting a mount target out of somebody's skill.toml. None of it may reach
+// the terminal as control (P4).
+func TestPickRendersHostileRowsAsData(t *testing.T) {
+	var out bytes.Buffer
+	agents := append(Options("claude"), Option{
+		Name:     "ev\x1b[2Jil",
+		Label:    "INV\x1b]0;pwned\x07ALID",
+		Disabled: "mount target \x1b[31m\"relative\"\x1b[0m: must be an absolute path",
+	})
+	// Name it once (the reprompt reprints the reason), then take the real one.
+	c, err := Pick(&out, bufio.NewReader(strings.NewReader("\nev\x1b[2Jil\nclaude\n\n")),
+		Options("go"), agents, fav("go"), fav(""), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Agent != "claude" {
+		t.Fatalf("a working pick must still land, got %+v", c)
+	}
+	s := out.String()
+	if strings.ContainsRune(s, 0x1b) {
+		t.Errorf("no escape byte may reach the terminal from a row's fields:\n%q", s)
+	}
+	// Stripped of control, not of meaning: the reason still reads.
+	for _, want := range []string{"mount target", "must be an absolute path", "evil", "INVALID"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the row must still say what it says, missing %q:\n%s", want, s)
+		}
+	}
+	// Both print paths are covered: the listing above the prompt, and the
+	// reprompt that repeats the reason.
+	if !strings.Contains(s, "is unavailable:") {
+		t.Errorf("the reprompt path must also have run:\n%s", s)
+	}
+}
+
 // Selectable is what favourite/flag validation reads, so it must agree with
 // what the picker offers: disabled rows are in neither.
 func TestSelectableExcludesDisabledRows(t *testing.T) {

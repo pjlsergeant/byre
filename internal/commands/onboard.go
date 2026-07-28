@@ -278,10 +278,10 @@ func agentOptions(cat *packages.Catalog) []onboard.Option {
 		return nil
 	}
 	skills.MarkLoadFailures(cat)
-	opts := onboard.Options(skills.ListAgentSkills(cat)...)
+	names := skills.ListAgentSkills(cat)
 	// Only rows whose primary declares an [agent] table belong in the agent
 	// picker -- a broken plain skill is not an agent someone was looking for.
-	return append(opts, problemOptions(cat, packages.KindSkill, true)...)
+	return append(onboard.Options(names...), problemOptions(cat, packages.KindSkill, true, names)...)
 }
 
 // templateOptions is the same for the Template axis. A template has no load
@@ -290,14 +290,24 @@ func templateOptions(cat *packages.Catalog) []onboard.Option {
 	if cat == nil {
 		return nil
 	}
-	opts := onboard.Options(config.ListTemplatesCatalog(cat)...)
-	return append(opts, problemOptions(cat, packages.KindTemplate, false)...)
+	names := config.ListTemplatesCatalog(cat)
+	return append(onboard.Options(names...), problemOptions(cat, packages.KindTemplate, false, names)...)
 }
 
 // problemOptions turns the catalog's INVALID/conflict/LEGACY rows of a kind
 // into disabled picker rows. agentsOnly keeps the agent axis to rows whose
 // primary carries an [agent] table.
-func problemOptions(cat *packages.Catalog, kind packages.Kind, agentsOnly bool) []onboard.Option {
+//
+// A row whose name is ALREADY offered is skipped: a bundled package keeps its
+// bare alias while a broken claimant of the same name gets a scoped problem
+// row, so listing both prints "claude — unavailable" directly above a prompt
+// offering claude. Every store upgraded past a materialized bundled copy is in
+// exactly that state. configui's picker skips them for the same reason.
+func problemOptions(cat *packages.Catalog, kind packages.Kind, agentsOnly bool, offered []string) []onboard.Option {
+	seen := map[string]bool{}
+	for _, n := range offered {
+		seen[n] = true
+	}
 	var out []onboard.Option
 	for _, ent := range cat.ListProblemRows(kind) {
 		if agentsOnly && !ent.LooksLikeAgent {
@@ -307,6 +317,10 @@ func problemOptions(cat *packages.Catalog, kind packages.Kind, agentsOnly bool) 
 		if name == "" {
 			name = ent.ID
 		}
+		if seen[name] || seen[ent.ID] {
+			continue
+		}
+		seen[name] = true
 		reason := ent.Reason
 		if reason == "" {
 			reason = string(ent.Provenance)

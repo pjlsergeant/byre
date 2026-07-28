@@ -603,6 +603,37 @@ func TestOnboardShowsBrokenAgentsWithTheirReason(t *testing.T) {
 	}
 }
 
+// A problem row sharing a name with a package that IS offered must not be
+// listed: a bundled skill keeps its bare alias while a legacy materialized
+// copy of it gets a scoped problem row under the same display name, so
+// listing both would print "claude — unavailable" directly above a prompt
+// offering claude. Every store upgraded past a materialized bundled copy is
+// in exactly that state, which is what makes this the common case rather than
+// a corner.
+func TestOnboardDoesNotListAProblemRowThatIsAlsoOffered(t *testing.T) {
+	p, proj := onboardPaths(t)
+	// A materialized copy of the bundled claude: LEGACY row, display name
+	// "claude", and its primary declares [agent] so the agent axis sees it.
+	writeLocalSkill(t, p.Home, "claude", "description = \"old copy\"\n[agent]\ncommand = \"claude\"\n")
+
+	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
+	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	if strings.Contains(out, "unavailable") {
+		t.Errorf("nothing is unavailable here -- claude is offered:\n%s", out)
+	}
+	// And the name is still selectable: the healthy bundled package.
+	cfg, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent != "claude" {
+		t.Fatalf("the offered package of that name must still be pickable, got %q", cfg.Agent)
+	}
+}
+
 // The flag path reads the same rows: --agent naming a broken skill gets the
 // reason, not "unknown agent", which would send the user hunting a typo in a
 // name they spelled right.

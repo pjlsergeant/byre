@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // noneOption is the explicit "no template"/"no agent" choice (config owns the
@@ -73,6 +74,22 @@ func Selectable(opts []Option) []string {
 		if o.Disabled == "" {
 			out = append(out, o.Name)
 		}
+	}
+	return out
+}
+
+// shown renders one externally-authored string as DATA on the picker's
+// prompts. Every field of an Option arrives from somewhere byre does not
+// write -- a package's declared id, a catalog reason quoting a mount target,
+// a posture value, a path out of somebody's skill.toml -- and this is a
+// reporting surface, so none of it may reach the terminal as control (P4).
+// Display only: matching always compares the real value.
+func shown(s string) string { return packages.EscapeTerminal(s) }
+
+func shownAll(ss []string) []string {
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, shown(s))
 	}
 	return out
 }
@@ -384,16 +401,22 @@ func ask(out io.Writer, r *bufio.Reader, label string, options []Option, def str
 	if len(broken) > 0 {
 		fmt.Fprintf(out, "%s — %d unavailable, not offered below:\n", label, len(broken))
 		for _, o := range broken {
+			name, reason := shown(o.Name), shown(o.Disabled)
 			if o.Label != "" {
-				fmt.Fprintf(out, "  %s — %s: %s\n", o.Name, o.Label, o.Disabled)
+				fmt.Fprintf(out, "  %s — %s: %s\n", name, shown(o.Label), reason)
 				continue
 			}
-			fmt.Fprintf(out, "  %s — %s\n", o.Name, o.Disabled)
+			fmt.Fprintf(out, "  %s — %s\n", name, reason)
 		}
 	}
+	// Escape for DISPLAY only; matching below compares the real values. The
+	// default is a stored favourite -- a name out of default.config, byre's
+	// file but the user's bytes -- so it rides the same rule as the rest.
 	offered := Selectable(options)
+	offeredShown := strings.Join(shownAll(offered), " ")
+	defShown := shown(def)
 	for {
-		fmt.Fprintf(out, "%s — %s [%s]: ", label, strings.Join(offered, " "), def)
+		fmt.Fprintf(out, "%s — %s [%s]: ", label, offeredShown, defShown)
 		line, err := r.ReadString('\n')
 		if err != nil && line == "" {
 			return "", err
@@ -405,13 +428,13 @@ func ask(out io.Writer, r *bufio.Reader, label string, options []Option, def str
 		if d := disabledReason(options, ans); d != "" {
 			// Named a row byre listed as broken: repeat the reason rather than
 			// "not one of", which would read as a typo the user cannot find.
-			fmt.Fprintf(out, "  %q is unavailable: %s\n", ans, d)
+			fmt.Fprintf(out, "  %q is unavailable: %s\n", ans, shown(d))
 			continue
 		}
 		if slices.Contains(offered, ans) {
 			return ans, nil
 		}
-		fmt.Fprintf(out, "  %q is not one of: %s\n", ans, strings.Join(offered, " "))
+		fmt.Fprintf(out, "  %q is not one of: %s\n", ans, offeredShown)
 	}
 }
 
