@@ -37,6 +37,17 @@ and silently skipped otherwise. Releases must work from the first tag;
 the tap repo and its token are a later nicety, and a missing nicety must
 not fail the release that everything else depends on.
 
+> **Since 2026-07-28:** brew is no longer a nicety. PLACEMENT P3 makes
+> `brew install --cask pjlsergeant/tap/byre` the ONE blessed install
+> command the README and the site's install page carry, so a skipped
+> cask push now means the blessed command serves the previous version
+> while the release reports success. The skip stays non-fatal — the
+> reason above is unchanged, a release must not block on brew — but it
+> stopped being silent: `.github/workflows/release.yml` ends with a step
+> that raises a GitHub warning annotation and a run-summary note when
+> the token is absent. Silence was the part that outgrew the decision,
+> not the skip.
+
 Not decided here: any promise about version-number semantics (semver
 discipline pre-1.0), auto-update, or package-manager presence beyond the
 tap. Skill distribution is a separate concern (it later shipped as the

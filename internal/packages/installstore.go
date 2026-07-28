@@ -57,6 +57,14 @@ func ReadIndex(home string) (map[string]IndexEntry, error) {
 		}
 		return nil, err
 	}
+	// Lenient by intent -- no DisallowUnknownFields, unlike config's decode.
+	// This file is byre's own bookkeeping rather than the user's vocabulary,
+	// and two byre versions share one ~/.byre: strict here would make an
+	// index a newer byre wrote unreadable to an older one, taking every
+	// installed package with it. An unknown field is read as nothing, and
+	// writeIndex renders the known fields only, so a mutation by the older
+	// binary drops it -- the accepted price of one shared store, and the
+	// cheaper failure by far.
 	if err := toml.Unmarshal(b, &f); err != nil {
 		return nil, fmt.Errorf("%s: %w", indexPath(home), err)
 	}

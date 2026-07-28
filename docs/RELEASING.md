@@ -105,4 +105,7 @@ links the full set on the site's install page
   the `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret on `pjlsergeant/byre`
   (a fine-grained PAT, **Contents: read/write** on
   `pjlsergeant/homebrew-tap`); if the secret is ever absent the publish
-  step is skipped rather than failing the release.
+  step is skipped rather than failing the release -- and the release run
+  ends with a warning annotation and a run-summary note saying so, since
+  the blessed install command would otherwise keep serving the previous
+  version from a release that reported success.

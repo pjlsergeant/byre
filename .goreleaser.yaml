@@ -60,7 +60,10 @@ homebrew_casks:
     homepage: https://pjlsergeant.github.io/byre/
     description: Run an AI coding agent in a throwaway, project-scoped container
     # Until the tap repo + token exist the cask is only generated into
-    # dist/, never pushed — a release must not block on brew.
+    # dist/, never pushed — a release must not block on brew. The skip is
+    # non-fatal but no longer silent: release.yml's last step raises a
+    # GitHub warning when the token is missing, because brew is now the
+    # one blessed install command (ADR 0016's note).
     skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}false{{ else }}true{{ end }}'
     # The binary is unsigned/un-notarized; strip the quarantine bit so
     # Gatekeeper doesn't block it (goreleaser's documented recipe).

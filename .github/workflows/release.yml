@@ -32,3 +32,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Empty until the tap exists — see docs/RELEASING.md.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+      # goreleaser skips the cask push when that token is absent and exits
+      # 0, so the release reports success while `brew install --cask
+      # pjlsergeant/tap/byre` — the one install command the README and the
+      # install page bless (PLACEMENT P3) — still serves the previous
+      # version. The skip stays non-fatal (ADR 0016: a release must not
+      # block on brew); this is what stops it being silent.
+      - name: Warn when the Homebrew cask was not published
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -n "$HOMEBREW_TAP_GITHUB_TOKEN" ]; then exit 0; fi
+          msg="HOMEBREW_TAP_GITHUB_TOKEN is unset: the Homebrew cask was built into dist/ but NOT pushed to pjlsergeant/homebrew-tap. 'brew install --cask pjlsergeant/tap/byre' still installs the PREVIOUS version. See docs/RELEASING.md."
+          echo "::warning title=Homebrew cask not published::$msg"
+          { echo "> [!WARNING]"; echo "> $msg"; } >> "$GITHUB_STEP_SUMMARY"
