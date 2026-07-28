@@ -2,6 +2,32 @@
 
 ## unreleased
 
+- **A skill package is checked when byre gets it, not when you finally run
+  it.** `network_posture = "Deny-Default"` used to pass `byre skill validate`,
+  `pack`, `inspect`, `install` and `list` -- every command that looks at a
+  package -- and fail at the first `byre develop`, because the value rules
+  lived only in the resolver develop runs. Every rule byre can judge from ONE
+  manifest now runs wherever the manifest is judged: validate, install, and
+  the catalog scan. **Accepted consequence:** a package with a bad value that
+  installs today will start refusing to install, and one installed but never
+  enabled flips to INVALID on the next catalog scan -- with the reason, which
+  it never had before. This also couples installability to byre's vocabulary
+  version: a package using vocabulary a newer byre accepts now refuses on an
+  older one, where it used to install and fail later. Rules that are
+  properties of a SET (two skills declaring a network posture, colliding MCP
+  names, the agent naming an unenabled skill) still resolve at develop and
+  cannot move -- `byre skill validate` is a partial promise by construction,
+  and `docs/SKILLS.md` now says so.
+
+- **A skill too broken to load is listed as broken instead of disappearing.**
+  A skill whose `skill.toml` parses but whose full load fails -- a mount
+  target that is not an absolute path, a `[context]` file that is missing or
+  oversized -- was dropped from every list byre builds while its catalog row
+  still read healthy. It showed up in `byre skill list` as fine, in the config
+  editor's skills screen not at all, and in the agent picker not at all: if it
+  was your agent, the picker was simply empty. It is a problem row now, with
+  its reason, on all three surfaces.
+
 - **A firewall hook that fails now ends the session, instead of trusting the
   box to time out.** byre applies a netns skill's rules from a helper container
   outside the box while the box waits at its launch gate; when that helper

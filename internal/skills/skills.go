@@ -717,7 +717,10 @@ func ListAgentSkills(cat *packages.Catalog) []string {
 	})
 }
 
-// list returns sorted display names of loadable skills that satisfy keep.
+// list returns sorted display names of loadable skills that satisfy keep, and
+// demotes the ones that do not load at all to catalog problem rows (see
+// MarkLoadFailures -- the marking is the whole reason list and that pass are
+// one loop).
 func list(cat *packages.Catalog, keep func(Skill) bool) []string {
 	if cat == nil {
 		return nil
@@ -725,13 +728,29 @@ func list(cat *packages.Catalog, keep func(Skill) bool) []string {
 	var out []string
 	for _, ent := range cat.ListLoadable(packages.KindSkill) {
 		sk, err := loadEntry(ent)
-		if err != nil || !keep(sk) {
+		if err != nil {
+			// A skill whose primary parsed but whose full load fails is BROKEN,
+			// not absent: dropping it silently left the user a healthy catalog
+			// row, no picker entry, and nothing to read. The reason is the load
+			// error minus the identity the row already displays.
+			cat.MarkInvalid(ent, strings.TrimPrefix(err.Error(), fmt.Sprintf("skill %q: ", ent.ID)))
+			continue
+		}
+		if !keep(sk) {
 			continue
 		}
 		out = append(out, ent.DisplayName())
 	}
 	sort.Strings(out)
 	return out
+}
+
+// MarkLoadFailures demotes every catalog skill that fails a full load to an
+// INVALID problem row, for surfaces that read the catalog directly (`byre
+// skill list`) rather than through the skills package. The pickers get the
+// same marking as a side effect of listing.
+func MarkLoadFailures(cat *packages.Catalog) {
+	list(cat, func(Skill) bool { return false })
 }
 
 // Load reads and resolves a single skill by name (alias or canonical ID)
@@ -769,6 +788,13 @@ func ParsePrimaryBytes(raw []byte) (File, error) {
 		return File{}, err
 	}
 	if err := validatePairing(f); err != nil {
+		return File{}, err
+	}
+	// The intra-skill value rules, at the bytes boundary: install refuses a
+	// package whose values byre cannot run, and catalog ingest marks an
+	// installed one INVALID (ADR 0029's amendment), instead of both waiting
+	// for the develop that finally resolves it.
+	if err := validateValues(f); err != nil {
 		return File{}, err
 	}
 	return f, nil
@@ -825,6 +851,209 @@ func validatePairing(f File) error {
 	return nil
 }
 
+// validateValues is the ONE intra-skill value check: every rule byre can judge
+// from a single skill.toml alone, with no other skill and no resolved set in
+// view. Three paths reach it, which is the whole point -- develop (Resolve, via
+// loadEntry), `byre skill validate` (validateOne, via Load -> loadEntry), and
+// the bytes-only pair install and catalog ingest share (ParsePrimaryBytes).
+// While these rules lived in Resolve alone, `network_posture = "Deny-Default"`
+// passed validate, pack, inspect, install and list, then failed at the first
+// develop -- as late as byre can possibly say it.
+//
+// Set-dependent rules are deliberately NOT here, because they cannot be: one
+// posture and one netns_init per box, an env key two skills set differently,
+// MCP and Claude Skill names colliding across sources, the agent naming an
+// enabled skill. Those are properties of a SET, so they stay in Resolve, and
+// `byre skill validate` is a partial promise by construction (docs/SKILLS.md
+// states it).
+//
+// Errors return unprefixed; each caller wraps with the identity it holds
+// (`skill %q:` at load, the package id at install).
+func validateValues(f File) error {
+	// A skill's build content is interpolated into the same generated
+	// Dockerfile/shell as the project config, so hold its typed fields to the
+	// same allowlists — not as a trust boundary (a skill you enabled can run
+	// anything via a raw [build].dockerfile line), but so a typed field stays
+	// legible data: `apt` holds package names, and the escape hatch for
+	// arbitrary commands is the explicit raw block. Env values are only ever
+	// emitted %q-quoted, so only keys are checked (via ValidateContent).
+	if err := config.ValidateContent("", f.Build.Apt, nil, f.Runtime.Env); err != nil {
+		return err
+	}
+
+	// Files this skill ships into the image: absolute destinations, one source
+	// per destination, and sources that stay inside the skill dir. The symlink
+	// half of containment needs the directory on disk and stays in Resolve.
+	destBy := map[string]string{} // image dest -> the source that claimed it
+	for _, src := range slices.Sorted(maps.Keys(f.Build.Files)) {
+		dest := f.Build.Files[src]
+		if !filepath.IsAbs(dest) {
+			return fmt.Errorf("file destination %q must be an absolute image path", dest)
+		}
+		// Two sources for one destination: only one file can be there, and
+		// which one is map-iteration order at every consumer that keys by
+		// dest (planGuard's byDest, so a guarded launch gate or firewall
+		// script could be re-asserted from either). Silent shadowing of an
+		// authoring mistake, refused where the author can see it.
+		if prev, dup := destBy[dest]; dup {
+			return fmt.Errorf("build files %q and %q both install to %q; one destination, one source", prev, src, dest)
+		}
+		destBy[dest] = src
+		if err := relWithinSkill(src); err != nil {
+			return fmt.Errorf("build file: %w", err)
+		}
+	}
+
+	// network_posture is printed by status; hold it to a tight shape so a
+	// skill can't smuggle formatting/control text into the output.
+	if p := f.Runtime.NetworkPosture; p != "" && !postureRe.MatchString(p) {
+		return fmt.Errorf("network_posture %q: must match %s", p, postureRe)
+	}
+	// netns_init runs as root in the box's netns; require an absolute image
+	// path so it stays legible data (the script itself is skill-shipped).
+	if p := f.Runtime.NetnsInit; p != "" && !filepath.IsAbs(p) {
+		return fmt.Errorf("netns_init %q must be an absolute image path", p)
+	}
+	// egress entries feed a firewall allowlist and are passed to the netns
+	// helper as data; validate host[:port] shape up front so a typo fails
+	// loudly rather than silently dropping a host from the allowlist.
+	// Offered entries (ADR 0020) are held to the same grammar: they become
+	// real egress the moment a user opens one.
+	for _, e := range append(append([]string{}, f.Runtime.Egress...), f.Runtime.EgressOffered...) {
+		if _, _, err := parseEgress(e); err != nil {
+			return err
+		}
+	}
+
+	// MCP declarations: same shape bar as the config key (one validator,
+	// config.ValidateMCP). Markers are config vocabulary — a skill
+	// DECLARES servers, it doesn't subtract them — and the name grammar
+	// rejects '!' anyway. Intra-skill duplicates refuse here; duplicates
+	// across sources (config+skill, skill+skill) are MCPSet's hard reject.
+	mcpNames := map[string]bool{}
+	for _, m := range f.MCPs {
+		if err := config.ValidateMCP(m); err != nil {
+			return err
+		}
+		if mcpNames[m.Name] {
+			return fmt.Errorf("mcp %s declared twice", m.Name)
+		}
+		mcpNames[m.Name] = true
+	}
+
+	// Claude Skill contributions: shape-check the declaration (skill home
+	// spells its source `from`, and ValidateClaudeSkill's RelSafe is the
+	// lexical containment on it). Content validation (SKILL.md, frontmatter,
+	// bounds) is the bake's job, one owner for both homes. Intra-skill
+	// duplicates refuse here; duplicates across sources are ClaudeSkillSet's
+	// hard reject.
+	csNames := map[string]bool{}
+	for _, cs := range f.ClaudeSkills {
+		if err := config.ValidateClaudeSkill(cs, true); err != nil {
+			return err
+		}
+		if csNames[cs.Name] {
+			return fmt.Errorf("claude skill %s declared twice", cs.Name)
+		}
+		csNames[cs.Name] = true
+	}
+
+	// sock_groups: absolute paths that must also be active bind targets on
+	// this skill (the runner probes the bind and --group-adds the gid). A
+	// path with no matching mount would be a silent no-op — refuse.
+	targets := map[string]bool{}
+	for _, m := range f.Runtime.Mounts {
+		if !m.Disabled && m.Target != "" {
+			targets[m.Target] = true
+		}
+	}
+	for _, p := range f.Runtime.SockGroups {
+		if !filepath.IsAbs(p) {
+			return fmt.Errorf("sock_groups path %q must be absolute", p)
+		}
+		if !targets[p] {
+			return fmt.Errorf("sock_groups path %q must match an active mount target on the same skill", p)
+		}
+	}
+
+	// containment is printed on four surfaces; hold it to single-line /
+	// no-control-char / bounded length so a skill can't forge adjacent
+	// status rows.
+	if c := f.Runtime.Containment; c != "" {
+		if err := validateOneLiner(c); err != nil {
+			return fmt.Errorf("containment: %w", err)
+		}
+	}
+
+	// env_docs guidance is printed on the config UI env screen; keys are
+	// held to the env-key grammar and guidance to the containment shape
+	// (single line, no control chars, bounded). Empty guidance is refused:
+	// a suggestion row with nothing to say is a typo, not documentation.
+	if err := config.ValidateContent("", nil, nil, f.Runtime.EnvDocs); err != nil {
+		return fmt.Errorf("env_docs: %w", err)
+	}
+	for _, k := range slices.Sorted(maps.Keys(f.Runtime.EnvDocs)) {
+		g := f.Runtime.EnvDocs[k]
+		if g == "" {
+			return fmt.Errorf("env_docs %s: guidance must not be empty", k)
+		}
+		if err := validateOneLiner(g); err != nil {
+			return fmt.Errorf("env_docs %s: %w", k, err)
+		}
+	}
+
+	// [agent] adapters are closed sets — a typo'd value would silently degrade
+	// every box's MCP/context/skills delivery to "no adapter". Judged for any
+	// skill carrying an [agent] table, not only the selected agent: a manifest
+	// is right or wrong on its own terms, and the skill someone selects
+	// tomorrow should not be the first to say so.
+	if f.Agent != nil {
+		switch f.Agent.MCP {
+		case "", "inject":
+		default:
+			return fmt.Errorf("[agent] mcp %q invalid (want \"inject\", or omit it: no adapter)", f.Agent.MCP)
+		}
+		switch f.Agent.ClaudeSkills {
+		case "", "inject":
+		default:
+			return fmt.Errorf("[agent] claude_skills %q invalid (want \"inject\", or omit it: no adapter)", f.Agent.ClaudeSkills)
+		}
+		switch f.Agent.Context {
+		case "", "inject":
+		default:
+			return fmt.Errorf("[agent] context %q invalid (want \"inject\", or omit it: no adapter)", f.Agent.Context)
+		}
+		// A declared state volume the skill does not contribute means
+		// credentials silently fail to persist. The rule reads the skill's OWN
+		// [[volumes]], so it is intra-skill despite sitting under the agent
+		// selection until now.
+		if f.Agent.State != "" && !hasStateVolume(f.Volumes, f.Agent.State) {
+			return fmt.Errorf("[agent].state %q is not a state volume contributed by the skill", f.Agent.State)
+		}
+		if p := f.Agent.Prefs; p != nil {
+			if err := validatePrefs(p, f.Agent.State); err != nil {
+				return fmt.Errorf("[agent.prefs]: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+// relWithinSkill is the LEXICAL half of skill-relative containment: an absolute
+// path or a "../" escape is an authoring error judgable from the manifest
+// alone, so validate and install refuse it with no skill directory in hand.
+// skillRelPath adds the symlink half, which needs one.
+func relWithinSkill(rel string) error {
+	if filepath.IsAbs(rel) {
+		return fmt.Errorf("path must be relative to the skill dir: %q", rel)
+	}
+	clean := filepath.Clean(rel)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes the skill dir: %q", rel)
+	}
+	return nil
+}
+
 // loadEntry strict-parses a skill entry's primary file (stage 2 after the
 // catalog's stage-1 [package] check).
 func loadEntry(ent *packages.Entry) (Skill, error) {
@@ -859,6 +1088,12 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	// a redundancy that could drift, refused rather than resolved.
 	if perr := validatePairing(f); perr != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, perr)
+	}
+	// The intra-skill value rules. Bundled skills skip catalog stage 2, and
+	// nothing re-runs it on an entry already in the catalog, so load is where
+	// `byre skill validate` and develop both meet these rules.
+	if verr := validateValues(f); verr != nil {
+		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, verr)
 	}
 
 	dir, err := ent.HostDir()
@@ -903,13 +1138,10 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 // skillRelPath resolves a skill-relative file path, rejecting absolute paths,
 // lexical "../" escapes, and symlinks that point outside the skill directory.
 func skillRelPath(dir, rel string) (string, error) {
-	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("path must be relative to the skill dir: %q", rel)
+	if err := relWithinSkill(rel); err != nil {
+		return "", err
 	}
 	clean := filepath.Clean(rel)
-	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path escapes the skill dir: %q", rel)
-	}
 
 	// Resolve symlinks on both sides and confirm the target is still contained,
 	// so a symlink inside the bundle can't read an arbitrary host file.
@@ -928,12 +1160,17 @@ func skillRelPath(dir, rel string) (string, error) {
 	return realFull, nil
 }
 
-// Resolve loads and validates every enabled skill (the cfg.Skills list, plus
-// the cfg.Agent skill enabled implicitly). Names are expanded through the
-// catalog (aliases -> canonical IDs). The selected agent's skill must exist
-// and provide an [agent] command. Cross-skill env-key conflicts are an error:
-// two skills setting the SAME key to DIFFERENT values would otherwise resolve
-// by enable order — silent and surprising.
+// Resolve loads every enabled skill (the cfg.Skills list, plus the cfg.Agent
+// skill enabled implicitly) and checks what only the SET can answer. Names are
+// expanded through the catalog (aliases -> canonical IDs). The selected
+// agent's skill must exist and provide an [agent] command. Cross-skill env-key
+// conflicts are an error: two skills setting the SAME key to DIFFERENT values
+// would otherwise resolve by enable order — silent and surprising.
+//
+// Each skill's own values were judged at load (validateValues), which is what
+// lets validate and install refuse them too; the filesystem work that needs
+// the skill dir (resolving [build].files and Claude Skill sources through
+// symlinks) is here because it is resolution, not validation.
 func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 	if cat == nil {
 		return Resolved{}, fmt.Errorf("skills: no catalog")
@@ -975,166 +1212,52 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		name = sk.Name
 		f := sk.File
 
-		// A skill's build content is interpolated into the same generated
-		// Dockerfile/shell as the project config, so hold its typed fields to the
-		// same allowlists — not as a trust boundary (a skill you enabled can run
-		// anything via a raw [build].dockerfile line), but so a typed field stays
-		// legible data: `apt` holds package names, and the escape hatch for
-		// arbitrary commands is the explicit raw block. Env values are only ever
-		// emitted %q-quoted, so only keys are checked (via ValidateContent).
-		if err := config.ValidateContent("", f.Build.Apt, nil, f.Runtime.Env); err != nil {
-			return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
-		}
+		// Every intra-skill value rule already fired at load (validateValues).
+		// What is left here is what only a SET can answer.
 
-		// Files this skill ships into the image. Resolve sources within the skill
-		// dir (reject escapes) and require absolute destinations. Sorted by source
-		// for deterministic build-context staging and COPY emission.
+		// Files this skill ships into the image: resolve each source within the
+		// skill dir (the symlink half of the containment validateValues already
+		// judged lexically). Sorted by source for deterministic build-context
+		// staging and COPY emission.
 		dir := sk.dir
-		destBy := map[string]string{} // image dest -> the source that claimed it
 		for _, src := range slices.Sorted(maps.Keys(f.Build.Files)) {
-			dest := f.Build.Files[src]
-			if !filepath.IsAbs(dest) {
-				return Resolved{}, fmt.Errorf("skill %q: file destination %q must be an absolute image path", name, dest)
-			}
-			// Two sources for one destination: only one file can be there, and
-			// which one is map-iteration order at every consumer that keys by
-			// dest (planGuard's byDest, so a guarded launch gate or firewall
-			// script could be re-asserted from either). Silent shadowing of an
-			// authoring mistake, refused where the author can see it.
-			if prev, dup := destBy[dest]; dup {
-				return Resolved{}, fmt.Errorf("skill %q: build files %q and %q both install to %q; one destination, one source", name, prev, src, dest)
-			}
-			destBy[dest] = src
 			real, perr := skillRelPath(dir, src)
 			if perr != nil {
 				return Resolved{}, fmt.Errorf("skill %q: build file: %w", name, perr)
 			}
-			sk.Files = append(sk.Files, SkillFile{Src: real, Rel: filepath.Clean(src), Dest: dest})
+			sk.Files = append(sk.Files, SkillFile{Src: real, Rel: filepath.Clean(src), Dest: f.Build.Files[src]})
 		}
 
-		// network_posture is printed by status; hold it to a tight shape so a
-		// skill can't smuggle formatting/control text into the output, and
-		// reject two skills both claiming the network stance — there is one
-		// network, so one declared posture (unlike env, even equal duplicates
-		// are refused: each claims to have established the stance).
-		if p := f.Runtime.NetworkPosture; p != "" {
-			if !postureRe.MatchString(p) {
-				return Resolved{}, fmt.Errorf("skill %q: network_posture %q: must match %s", name, p, postureRe)
-			}
+		// One network, so one declared posture (unlike env, even equal
+		// duplicates are refused: each claims to have established the stance).
+		if f.Runtime.NetworkPosture != "" {
 			if postureBy != "" {
 				return Resolved{}, fmt.Errorf("skills %q and %q both declare a network_posture; disable one", postureBy, name)
 			}
 			postureBy = name
 		}
-		// netns_init runs as root in the box's netns; require an absolute image
-		// path so it stays legible data (the script itself is skill-shipped).
-		// And exactly ONE hook per box (mirroring the posture rule above): the
-		// launch gate is opened by the hook's own script when it finishes (see
-		// the firewall skill), so with two hooks the first would release the
-		// agent before the second ran — its setup silently unapplied. If
+		// Exactly ONE netns hook per box (mirroring the posture rule above):
+		// the launch gate is opened by the hook's own script when it finishes
+		// (see the firewall skill), so with two hooks the first would release
+		// the agent before the second ran — its setup silently unapplied. If
 		// multi-hook composition is ever wanted, gate signaling must first
 		// move into byre's orchestrator (opened only after EVERY hook
 		// succeeds); until then, refuse the ambiguity.
-		if p := f.Runtime.NetnsInit; p != "" {
-			if !filepath.IsAbs(p) {
-				return Resolved{}, fmt.Errorf("skill %q: netns_init %q must be an absolute image path", name, p)
-			}
+		if f.Runtime.NetnsInit != "" {
 			if netnsBy != "" {
 				return Resolved{}, fmt.Errorf("skills %q and %q both declare a netns_init; disable one", netnsBy, name)
 			}
 			netnsBy = name
 		}
-		// egress entries feed a firewall allowlist and are passed to the netns
-		// helper as data; validate host[:port] shape up front so a typo fails
-		// loudly rather than silently dropping a host from the allowlist.
-		// Offered entries (ADR 0020) are held to the same grammar: they become
-		// real egress the moment a user opens one.
-		for _, e := range append(append([]string{}, f.Runtime.Egress...), f.Runtime.EgressOffered...) {
-			if _, _, eerr := parseEgress(e); eerr != nil {
-				return Resolved{}, fmt.Errorf("skill %q: %w", name, eerr)
-			}
-		}
 
-		// MCP declarations: same shape bar as the config key (one validator,
-		// config.ValidateMCP). Markers are config vocabulary — a skill
-		// DECLARES servers, it doesn't subtract them — and the name grammar
-		// rejects '!' anyway. Intra-skill duplicates refuse here; duplicates
-		// across sources (config+skill, skill+skill) are MCPSet's hard reject.
-		mcpNames := map[string]bool{}
-		for _, m := range f.MCPs {
-			if err := config.ValidateMCP(m); err != nil {
-				return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
-			}
-			if mcpNames[m.Name] {
-				return Resolved{}, fmt.Errorf("skill %q: mcp %s declared twice", name, m.Name)
-			}
-			mcpNames[m.Name] = true
-		}
-
-		// Claude Skill contributions: shape-check the declaration (skill home
-		// spells its source `from`) and resolve the source dir within the
-		// skill dir, rejecting escapes — the same containment [build].files
-		// gets. Content validation (SKILL.md, frontmatter, bounds) is the
-		// bake's job, one owner for both homes. Intra-skill duplicates refuse
-		// here; duplicates across sources are ClaudeSkillSet's hard reject.
-		csNames := map[string]bool{}
+		// Claude Skill sources resolve against the skill dir, same split as
+		// [build].files above.
 		for _, cs := range f.ClaudeSkills {
-			if err := config.ValidateClaudeSkill(cs, true); err != nil {
-				return Resolved{}, fmt.Errorf("skill %q: %w", name, err)
-			}
-			if csNames[cs.Name] {
-				return Resolved{}, fmt.Errorf("skill %q: claude skill %s declared twice", name, cs.Name)
-			}
-			csNames[cs.Name] = true
 			src, perr := skillRelPath(dir, cs.From)
 			if perr != nil {
 				return Resolved{}, fmt.Errorf("skill %q: claude skill %s: %w", name, cs.Name, perr)
 			}
 			sk.ClaudeSkills = append(sk.ClaudeSkills, ClaudeSkillDecl{Skill: name, CS: cs, SrcDir: src})
-		}
-
-		// sock_groups: absolute paths that must also be active bind targets on
-		// this skill (the runner probes the bind and --group-adds the gid). A
-		// path with no matching mount would be a silent no-op — refuse.
-		targets := map[string]bool{}
-		for _, m := range f.Runtime.Mounts {
-			if !m.Disabled && m.Target != "" {
-				targets[m.Target] = true
-			}
-		}
-		for _, p := range f.Runtime.SockGroups {
-			if !filepath.IsAbs(p) {
-				return Resolved{}, fmt.Errorf("skill %q: sock_groups path %q must be absolute", name, p)
-			}
-			if !targets[p] {
-				return Resolved{}, fmt.Errorf("skill %q: sock_groups path %q must match an active mount target on the same skill", name, p)
-			}
-		}
-
-		// containment is printed on four surfaces; hold it to single-line /
-		// no-control-char / bounded length so a skill can't forge adjacent
-		// status rows. Multi-declarer is allowed (unlike network_posture).
-		if c := f.Runtime.Containment; c != "" {
-			if err := validateOneLiner(c); err != nil {
-				return Resolved{}, fmt.Errorf("skill %q: containment: %w", name, err)
-			}
-		}
-
-		// env_docs guidance is printed on the config UI env screen; keys are
-		// held to the env-key grammar and guidance to the containment shape
-		// (single line, no control chars, bounded). Empty guidance is refused:
-		// a suggestion row with nothing to say is a typo, not documentation.
-		if err := config.ValidateContent("", nil, nil, f.Runtime.EnvDocs); err != nil {
-			return Resolved{}, fmt.Errorf("skill %q: env_docs: %w", name, err)
-		}
-		for _, k := range slices.Sorted(maps.Keys(f.Runtime.EnvDocs)) {
-			g := f.Runtime.EnvDocs[k]
-			if g == "" {
-				return Resolved{}, fmt.Errorf("skill %q: env_docs %s: guidance must not be empty", name, k)
-			}
-			if err := validateOneLiner(g); err != nil {
-				return Resolved{}, fmt.Errorf("skill %q: env_docs %s: %w", name, k, err)
-			}
 		}
 
 		// Cross-skill env conflicts: a differing value for the same key would be
@@ -1152,41 +1275,11 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 
 		res.Skills = append(res.Skills, sk)
 
-		// [agent].mcp is a closed set — a typo'd adapter value would silently
-		// degrade every box's MCP delivery to "no adapter". Checked for every
-		// agent-capable skill, not just the selected one, so `skill validate`
-		// paths that load through Resolve fail loudly.
-		if f.Agent != nil {
-			switch f.Agent.MCP {
-			case "", "inject":
-			default:
-				return Resolved{}, fmt.Errorf("skill %q: [agent] mcp %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.MCP)
-			}
-			switch f.Agent.ClaudeSkills {
-			case "", "inject":
-			default:
-				return Resolved{}, fmt.Errorf("skill %q: [agent] claude_skills %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.ClaudeSkills)
-			}
-			switch f.Agent.Context {
-			case "", "inject":
-			default:
-				return Resolved{}, fmt.Errorf("skill %q: [agent] context %q invalid (want \"inject\", or omit it: no adapter)", name, f.Agent.Context)
-			}
-		}
-
+		// Which skill is the agent is a property of the config, not of any
+		// manifest: the [agent] block's own values were judged at load.
 		if name == cfg.Agent {
 			if f.Agent == nil || f.Agent.Command == "" {
 				return Resolved{}, fmt.Errorf("agent %q: skill has no [agent] command", name)
-			}
-			// If the agent declares a state volume, the skill must actually
-			// contribute it — otherwise credentials won't persist.
-			if f.Agent.State != "" && !hasStateVolume(f.Volumes, f.Agent.State) {
-				return Resolved{}, fmt.Errorf("agent %q: [agent].state %q is not a state volume contributed by the skill", name, f.Agent.State)
-			}
-			if p := f.Agent.Prefs; p != nil {
-				if err := validatePrefs(p, f.Agent.State); err != nil {
-					return Resolved{}, fmt.Errorf("agent %q: [agent.prefs]: %w", name, err)
-				}
 			}
 			res.Agent = f.Agent
 			agentFound = true

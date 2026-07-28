@@ -67,8 +67,20 @@ A local skill is a directory with a `skill.toml`; `byre skill init
 <name>` scaffolds one, and `byre skill fork <id> <new-id>` copies any
 immutable package into a local editable one (the only way to modify
 bundled/installed content). `byre skill validate` runs the full strict
-parse; broken local packages also show as INVALID rows in `list` with
-the reason.
+parse plus every value rule byre can judge from ONE manifest; broken
+local packages also show as INVALID rows in `list` with the reason, and
+install refuses a package that fails the same rules.
+
+**`validate` is a partial promise, structurally.** It judges a skill
+alone, and some of byre's rules are properties of a SET that only exists
+once a config selects one: two skills declaring a `network_posture` or a
+`netns_init`, two setting the same env key to different values, MCP or
+Claude Skill names colliding across skills and config, the `agent`
+scalar naming a skill that is not enabled. Those are checked when the
+cascade resolves -- at develop -- and no per-package command can check
+them earlier, because the other packages are not in view. A green
+`validate` says this manifest is sound, never that any particular box
+will come up.
 
 A skill ships payload files into the image with `[build].files` --
 `"<source>" = "/absolute/image/path"`, e.g. `files = { "firewall.sh" =
@@ -78,8 +90,9 @@ of the skill dir are refused, and `"."` is legal and means the whole
 skill directory (how a package that ships a tree stages it). They are
 COPY'd before the skill's raw `[build].dockerfile` lines, so a `RUN`
 there can read them. One destination takes one source: two entries
-installing to the same image path are refused at resolve, because only
-one of them can land there and which one would be map order.
+installing to the same image path are refused wherever the manifest is
+judged (validate, install, ingest, develop), because only one of them
+can land there and which one would be map order.
 
 Note the asymmetry, which is easy to trip over: a USER's config has a
 `[files]` key with the same name and a different root. Theirs resolves

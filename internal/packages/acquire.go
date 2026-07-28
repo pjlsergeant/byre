@@ -64,10 +64,12 @@ func Acquire(f *Fetcher, uri string, kind Kind, compatVer string, stage2 func([]
 		return nil, err
 	}
 	// Stage-2 strictness at the trust boundary: a package this byre cannot
-	// parse must not land as an "installed" snapshot that fails at enable.
+	// parse -- or whose values it cannot run -- must not land as an
+	// "installed" snapshot that fails at enable. What stage 2 judges is the
+	// caller's (skills owns the skill rules); the refusal is here.
 	if stage2 != nil {
 		if err := stage2(manifest); err != nil {
-			return nil, fmt.Errorf("package %q does not parse as a %s: %w", m.ID, kind, err)
+			return nil, fmt.Errorf("this byre cannot use package %q as a %s: %w", m.ID, kind, err)
 		}
 	}
 

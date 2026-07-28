@@ -465,6 +465,33 @@ func looksLikeAgent(raw []byte) bool {
 	return strings.Contains(string(raw), "[agent]")
 }
 
+// MarkInvalid demotes an already-ingested entry to an INVALID problem row.
+// Stage 2 judges a primary's bytes; a package can still fail the FULL load
+// that only its owning package can perform (a skill's mount shape, a context
+// file that is missing, oversized, or not a regular file), and a bundled
+// package skips stage 2 entirely. Without this the loader's only move was to
+// drop the entry, so a broken package went absent -- healthy in `list`, gone
+// from every picker -- rather than listed with its reason.
+//
+// The reason travels to the same surfaces an ingest-time refusal reaches, and
+// LooksLikeAgent is recomputed from the primary so a broken agent skill still
+// appears (disabled) in the agent picker. Idempotent, and never touches a row
+// that is already a problem.
+func (c *Catalog) MarkInvalid(ent *Entry, reason string) {
+	if ent == nil {
+		return
+	}
+	switch ent.Provenance {
+	case ProvInvalid, ProvConflict, ProvLegacy:
+		return
+	}
+	ent.Provenance = ProvInvalid
+	ent.Reason = reason
+	if raw, err := ent.ReadPrimary(); err == nil {
+		ent.LooksLikeAgent = looksLikeAgent(raw)
+	}
+}
+
 // addProblemAgent is addProblem with LooksLikeAgent set on the row.
 func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason, dir string, agent bool) {
 	c.addProblem(id, kind, prov, reason, dir)

@@ -59,7 +59,11 @@ passes every `requires_byre` constraint -- the check is compatibility,
 not security. Stage-2 strictness ALSO runs eagerly at catalog scan for
 local and installed packages (ruled 2026-07-13, amending the earlier
 use-time-only stance): a typo'd package shows INVALID in `list` instead
-of looking fine until enabled.
+of looking fine until enabled. Stage 2 is the strict parse **plus every
+value rule byre can judge from one manifest** (2026-07-28) -- the rules
+that used to run only when a config resolved the skill, so a package
+byre cannot run is refused at install and marked INVALID at scan rather
+than passing every command until the first develop.
 
 **Payloads and integrity.** Installed manifests carry an exhaustive
 `[[package.files]]` list (dest, src, sha256, exec bit) -- installation

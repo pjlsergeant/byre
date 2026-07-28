@@ -34,6 +34,13 @@ func PackageList(s Streams, kind packages.Kind) error {
 	if err != nil {
 		return err
 	}
+	if kind == packages.KindSkill {
+		// Full-load pass first: catalog ingest judges a primary's bytes, and a
+		// skill can still fail to load on its mount shape or its context file.
+		// Without this the listing calls such a skill healthy -- the one place
+		// a user goes to ask what is wrong with their packages.
+		skills.MarkLoadFailures(cat)
+	}
 	for _, ent := range cat.List(kind) {
 		id := packages.EscapeTerminal(ent.ID)
 		if ent.Alias != "" {
