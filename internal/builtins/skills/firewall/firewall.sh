@@ -137,7 +137,11 @@ if [ -n "$ip6_ok" ]; then
 fi
 
 # DNS: allow port 53 ONLY to the nameservers this box actually uses (from
-# /etc/resolv.conf), not to every host — an unscoped port-53 allow is a direct
+# /etc/resolv.conf). This helper joins the box's netns via --net container:X,
+# and the engine gives a joiner the target's resolv.conf verbatim — a custom
+# --dns on the target reads back identically from the joiner (probed
+# 2026-07-28, docker 29.6.2), so the file scoped here is the box's, not a
+# bridge default. Not to every host — an unscoped port-53 allow is a direct
 # exfil channel to any attacker-run resolver. The loopback resolver (Docker's
 # 127.0.0.11) is already covered above; an external resolver (host-network /
 # custom --dns) gets a scoped allow here. Resolving through YOUR nameserver is
