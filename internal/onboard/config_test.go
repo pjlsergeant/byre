@@ -165,6 +165,45 @@ func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	}
 }
 
+// The legacy top-level spelling migrates on the next write even when the
+// answer is UNCHANGED: presence is the trigger. Gated on a changed answer,
+// a user who keeps answering the same way keeps two homes for the preference
+// indefinitely -- and StoredSharedAuth then has to union them forever.
+func TestSaveSharedAuthDefaultMigratesLegacySpellingOnAnUnchangedAnswer(t *testing.T) {
+	home := t.TempDir()
+	writeDefault(t, home, "base = \"node:22\"\nshared_auth = [\"claude\"]\n")
+	// Same answer that is already stored: yes for claude, no companion.
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
+		t.Fatal(err)
+	}
+	got := readDefault(t, home)
+	sec := strings.Index(got, "[defaults]")
+	if sec < 0 {
+		t.Fatalf("the preference must land under [defaults]:\n%s", got)
+	}
+	if strings.Contains(got[:sec], "shared_auth") {
+		t.Errorf("the top-level spelling must be migrated away:\n%s", got)
+	}
+	cfg := parsedDefault(t, home)
+	if !cfg.SharedAuthLegacy.Empty() {
+		t.Errorf("the legacy home must be empty after the migration: %+v", cfg.SharedAuthLegacy)
+	}
+	if !cfg.StoredSharedAuth().HasYes("claude") {
+		t.Errorf("the preference itself must survive the migration: %+v", cfg.StoredSharedAuth())
+	}
+	if !strings.Contains(got, "base = \"node:22\"") {
+		t.Errorf("surrounding content must survive:\n%s", got)
+	}
+	// Migrated once, the next identical answer writes nothing.
+	before := readDefault(t, home)
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if after := readDefault(t, home); after != before {
+		t.Errorf("an unchanged answer with nothing left to migrate must not rewrite the file:\n%s", after)
+	}
+}
+
 func TestSharedAuthPreference(t *testing.T) {
 	home := t.TempDir()
 	if SharedAuthPreference(home, "claude") {

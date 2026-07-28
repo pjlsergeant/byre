@@ -184,8 +184,13 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 			}
 		}
 	}
-	// No-op when the stored preference already matches.
-	if want.Equal(cfg.StoredSharedAuth()) {
+	// No-op only when there is nothing to write AND nothing to move: the
+	// legacy spelling's PRESENCE triggers canonicalization, not just a changed
+	// answer. Gating the migration on a CHANGED answer instead leaves the two
+	// homes coexisting for as long as the user keeps answering the same way,
+	// which makes "migrated on the next write" false -- the rule configui's
+	// reconciler states.
+	if want.Equal(cfg.StoredSharedAuth()) && cfg.SharedAuthLegacy.Empty() {
 		return nil
 	}
 
@@ -194,9 +199,9 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 		return err
 	}
 	// Canonical inline value under [defaults]; a hand-written [shared_auth]
-	// table spelling is one construct, normalized only now that the
-	// preference itself changed. The pre-2026-07-28 TOP-LEVEL spelling is
-	// migrated away here rather than left to rot in two homes.
+	// table spelling is one construct, rewritten where it stands. The
+	// pre-2026-07-28 TOP-LEVEL spelling is migrated away here rather than
+	// left to rot in two homes.
 	if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
 		return err
 	}
