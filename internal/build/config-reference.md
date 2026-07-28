@@ -143,6 +143,9 @@ exceptions noted inline.
   deliberately, so two users on a shared box never silently share
   state. See Volumes & state (https://getbyre.com/docs/volumes-and-state/) for the
   user-side model.
+- `seed_prefs` -- one-time copy of the agent's curated non-secret pref
+  files into a fresh state volume. Three states, not two (inherit, on,
+  off), so a layer that turns it on can be turned back off downstream.
 - `run_args` -- raw `docker run` flags, appended after byre's own, so
   yours win. Cap resources (`--cpus`, `--memory`), change networking --
   anything the engine accepts. byre never parses inside it; posture
@@ -167,15 +170,19 @@ exceptions noted inline.
   how instructions reach the agent (https://getbyre.com/docs/how-do-i/configure/#give-my-agent-standing-instructions-in-every-box));
   layers replace by `name`, `!name` removes.
 
-**Preferences** (picker-owned; never a grant)
+**Host workflow**
 
-- `seed_prefs` -- one-time copy of the agent's curated non-secret pref
-  files into a fresh state volume.
 - `worktree_base` -- where `byre worktree` creates worktrees:
-  `"sibling"` or a host path; unset refuses with instructions.
-- `[defaults]` -- the picker-owned section: state about how the NEXT
-  onboarding runs, never anything a box receives. Stripped whole from
-  every resolved config.
+  `"sibling"` or a host path; unset refuses with instructions. A live
+  cascade value like any other, but it steers a host command rather
+  than the box, so `byre config --global` owns it and the project
+  editor leaves it out.
+
+**Onboarding state** (picker-owned; never a grant)
+
+- `[defaults]` -- state about how the NEXT onboarding runs, never
+  anything a box receives. The one section stripped whole from every
+  resolved config, so nothing under it can acquire teeth by accident.
   - `shared_auth` -- the first-run picker's remembered favourite: a
     preference about future *answers*. (Before 2026-07-28 this was a
     top-level key; the old spelling is still read and is migrated here
