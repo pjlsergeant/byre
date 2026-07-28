@@ -1155,3 +1155,21 @@ func TestEditorExposureFollowsTheLiveSkillToggle(t *testing.T) {
 		t.Errorf("enabling the skill must stop the claim asserting: %s", e.NetworkLine())
 	}
 }
+
+// A box already running for the project qualifies the headline WITHOUT
+// re-scoping it: the exposure line still describes the next launch (it
+// describes the config being edited, which is the only thing this editor can
+// change), and the note says when that launch is.
+func TestExposureHeadlineQualifiedByALiveBox(t *testing.T) {
+	m := effectiveModel()
+	base := m.viewForm()
+	if strings.Contains(base, "box running") {
+		t.Fatalf("no note without a live box:\n%s", base)
+	}
+	m.liveNote = "box running -- changes apply at next launch"
+	got := m.viewForm()
+	// The exposure line itself is untouched; the note rides after it.
+	if !strings.Contains(got, "exposure: 2 host mounts · 1 port · 8 env vars · network open · box running") {
+		t.Errorf("headline must keep its next-launch line and gain the note:\n%s", got)
+	}
+}

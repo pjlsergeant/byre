@@ -36,11 +36,15 @@ import (
 // editor and quitting must leave no trace.
 // guard, when non-nil, wraps every write in the caller's lock -- the project
 // store's setup lock, which is what concurrent worktree sessions contend on.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error, guard func(func() error) error, roots hostexec.Roots) (bool, error) {
+// liveNote (empty = none) qualifies the exposure headline when the caller
+// found a box already running for this project: the headline's NEXT-LAUNCH
+// semantics are unchanged, and the note labels them.
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error, guard func(func() error) error, roots hostexec.Roots, liveNote string) (bool, error) {
 	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
 	m.prepare = prepare
 	m.guard = guard
 	m.editorRoots = roots
+	m.liveNote = liveNote
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -326,6 +330,10 @@ type model struct {
 	// $EDITOR through. Zero value (a global or layer edit, which belongs to no
 	// project) means nothing to decline.
 	editorRoots hostexec.Roots
+	// liveNote qualifies the exposure headline when a box is already running
+	// for this project (the caller probes; this package never touches an
+	// engine). Empty = no note, which is also every global/layer edit.
+	liveNote string
 }
 
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
@@ -1007,8 +1015,14 @@ func (m model) viewForm() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", focusStyle.Render(packages.EscapeTerminal(m.title)))
 	// The one-line total-exposure summary: what the box actually gets across
-	// all layers + skills, in the same words develop prints at launch.
-	fmt.Fprintf(&b, "%s\n\n", dimStyle.Render("exposure: "+m.exposureNow().Line()))
+	// all layers + skills, in the same words develop prints at launch. It
+	// describes the NEXT launch throughout; the live-box note labels that,
+	// rather than re-scoping the line to a box this editor cannot change.
+	headline := "exposure: " + m.exposureNow().Line()
+	if m.liveNote != "" {
+		headline += " · " + m.liveNote
+	}
+	fmt.Fprintf(&b, "%s\n\n", dimStyle.Render(headline))
 
 	focusedField := m.field()
 	for _, s := range m.sections {

@@ -16,6 +16,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -175,6 +176,11 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
 	var prepare func() error      // deferred store setup, run by the UI before its first write
 	var lockFile string           // the project store's setup lock ("" = no shared contender)
+	// livePaths is the project whose session liveness qualifies the editor's
+	// exposure headline and its save report. Zero for --global/--layer: those
+	// files belong to no project, so there is no box for them to be about.
+	var livePaths project.Paths
+	var liveProject bool
 	switch target {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
@@ -217,6 +223,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		}
 		prepare = paths.Bootstrap
 		lockFile = paths.LockFile
+		livePaths, liveProject = paths, true
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
 		vols = newVolumeAdmin(s.Err, paths, projectDir, prepare) // nil if the engine/config won't resolve
@@ -239,7 +246,17 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	if lockFile != "" {
 		guard = func(write func() error) error { return withSetupLock(s.Err, lockFile, write) }
 	}
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare, guard, editorRoots)
+	// The editor's exposure headline keeps NEXT-LAUNCH semantics throughout --
+	// it describes the config being edited. This qualifier LABELS that, it does
+	// not re-scope it: with a box already running, "next launch" is a real
+	// later event rather than the thing about to happen. Probed once at open,
+	// and staleness is harmless in the one direction that matters -- if the box
+	// exits mid-session the "changes apply at next launch" half stays true.
+	var liveNote string
+	if liveProject && boxRunningForEdit(livePaths, cur) {
+		liveNote = EditorLiveBoxNote
+	}
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare, guard, editorRoots, liveNote)
 	if err != nil {
 		return err
 	}
@@ -247,8 +264,42 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		fmt.Fprintln(s.Err, "byre: config unchanged.")
 		return nil
 	}
+	// Re-probed rather than reused: this line is fresh at the moment it is
+	// actionable -- you just changed a grant and it has not taken effect yet --
+	// and a session that started or ended during the edit would make the
+	// open-time answer wrong here. An unreachable engine degrades to the plain
+	// message, silently.
+	if liveProject && boxRunningForEdit(livePaths, cur) {
+		fmt.Fprintf(s.Err, "byre: wrote %s — %s\n", path, EditorSaveLiveClause)
+		return nil
+	}
 	fmt.Fprintf(s.Err, "byre: wrote %s\n", path)
 	return nil
+}
+
+// EditorLiveBoxNote qualifies the config editor's exposure headline while a
+// box is running, and EditorSaveLiveClause qualifies the save report. Exported
+// because two packages print them and the tests assert their presence rather
+// than their wording -- so the sentences change in one place.
+const (
+	EditorLiveBoxNote    = "box running -- changes apply at next launch"
+	EditorSaveLiveClause = "a box is running; changes apply at the next develop."
+)
+
+// boxRunningForEdit probes whether a session is live for this worktree.
+//
+// An UNSOLICITED probe, held to status's own discipline: no engine, a declined
+// binary, a daemon that will not answer -- every failure degrades to false and
+// says nothing, because the user asked to edit a config, not to hear about
+// their engine. The claim it feeds is purely additive (a note appears), so the
+// worst a degraded probe costs is a note that would have been useful.
+func boxRunningForEdit(paths project.Paths, cfg config.Config) bool {
+	eng, exe, err := runner.Detect(cfg.Engine, hostexec.Looker(boxWritableRoots(paths)))
+	if err != nil {
+		return false
+	}
+	ids, err := runner.New(eng, exe).RunningContainersByLabel(workdirLabel(paths))
+	return err == nil && len(ids) > 0
 }
 
 // volumeAdmin is the engine-backed configui.VolumeAdmin for a project: it lists
