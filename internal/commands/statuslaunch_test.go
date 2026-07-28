@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 
@@ -386,6 +387,31 @@ func TestNextLaunchBaseSpellingTheDefaultIsNotADelta(t *testing.T) {
 	s.Base = "golang:1.26-bookworm"
 	if got := deltaOf(t, rec, s); len(got) != 1 {
 		t.Errorf("a real base change must still report: %v", got)
+	}
+}
+
+// The false-NEGATIVE twin: byre's own default can move across an upgrade, and
+// with both sides spelled "" a compare-time normalization answers with
+// TODAY's default on both -- no delta, while the running box is on the old
+// one and FROM really did change. The record holds the EFFECTIVE base for
+// exactly this: a recorded "" would mean "whatever DefaultBase meant on the
+// byre that wrote this", which is the re-derivation the record abolishes.
+func TestNextLaunchBaseSurvivesADefaultBaseChange(t *testing.T) {
+	// imageRecord is where a record's base is resolved; assert it resolves.
+	f := &fakeRunner{}
+	if img := imageRecord(f, io.Discard, "byre-img", ""); img.Base != gen.DefaultBase {
+		t.Fatalf("record base = %q, want the effective %q", img.Base, gen.DefaultBase)
+	}
+	if img := imageRecord(f, io.Discard, "byre-img", "golang:1.26-bookworm"); img.Base != "golang:1.26-bookworm" {
+		t.Fatalf("an explicit base must survive untouched, got %q", img.Base)
+	}
+	// A box recorded under an OLDER default, beside a config that still says
+	// nothing: the delta must fire, because FROM changes at the next build.
+	rec := &launchRecord{Record: 1, Image: launchImage{Base: "debian:bullseye"}} // the old default
+	s := statusInfo{Canonical: "/p", Container: "abc", Engine: "docker", Base: ""}
+	got := strings.Join(deltaOf(t, rec, s), "\n")
+	if !strings.Contains(got, "~ Base debian:bullseye -> (default: "+gen.DefaultBase+")") {
+		t.Errorf("a moved default must report against a recorded effective base: %q", got)
 	}
 }
 

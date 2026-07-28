@@ -283,6 +283,39 @@ func TestLaunchRecordUnreadableIsNotReportedAsMissing(t *testing.T) {
 		t.Fatalf("oversize record: state = %v (rec %v), want launchUnreadable", st, rec)
 	}
 
+	// PERMISSION DENIED: the file is right there and byre may not read it.
+	// (Root bypasses the mode, so the arm only means something unprivileged.)
+	if os.Geteuid() != 0 {
+		if err := os.Chmod(path, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		if rec, st := readLaunchRecord(p, map[string]string{launchKey: hash}); rec != nil || st != launchUnreadable {
+			t.Fatalf("unreadable mode: state = %v (rec %v), want launchUnreadable", st, rec)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	// A SYMLINK at the record name, pointing at a perfectly readable record.
+	// The read is O_NOFOLLOW (hostopen.OpenRegular with follow=false), so this
+	// is ELOOP -- not absence, and emphatically not the target's content: a
+	// box that can write this directory could otherwise aim byre's own record
+	// reader at any file the user can read.
+	decoy := filepath.Join(launchesDir(p), "decoy")
+	if err := os.WriteFile(decoy, []byte("record = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(decoy, path); err != nil {
+		t.Fatal(err)
+	}
+	if rec, st := readLaunchRecord(p, map[string]string{launchKey: hash}); rec != nil || st != launchUnreadable {
+		t.Fatalf("symlinked record: state = %v (rec %v), want launchUnreadable", st, rec)
+	}
+
 	// And the note says byre could not LOOK, not that the record is gone.
 	note := launchDegradeNote(launchUnreadable)
 	if !strings.Contains(note, "unreadable") || strings.Contains(note, "no longer in the store") {

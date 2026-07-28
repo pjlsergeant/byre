@@ -118,7 +118,9 @@ type launchRecord struct {
 
 // launchImage pins what the box RAN, which the tag alone cannot: `byre
 // rebuild` moves the tag while this container keeps the image it was created
-// from. Digest is the engine's own image id.
+// from. Digest is the engine's own image id; Base is the EFFECTIVE base (an
+// empty `base` key is resolved to gen.DefaultBase before it is written), so
+// the record stays self-contained if a later byre changes that default.
 type launchImage struct {
 	Tag    string `toml:"tag"`
 	Digest string `toml:"digest"`
@@ -253,7 +255,14 @@ func launchRecordOf(paths project.Paths, rv resolved, params runner.RunParams, e
 // and worth saying so when the inspect fails: an empty digest with a stated
 // reason is a fact, a plausible-looking hash byre did not obtain is not.
 func imageRecord(r imageRunner, w io.Writer, tag, base string) launchImage {
-	img := launchImage{Tag: tag, Base: base}
+	// The EFFECTIVE base, not the config spelling. An empty `base` key means
+	// gen.DefaultBase, and a record holding "" would mean "whatever
+	// DefaultBase meant on the byre that wrote this" -- a value only
+	// re-derivable by asking a LATER byre what its default is now, which is
+	// the exact re-derivation this file exists to abolish. Upgrade byre with
+	// a new default and every such record silently starts describing an image
+	// its box never ran. Resolved once, here, where the record is assembled.
+	img := launchImage{Tag: tag, Base: baseEffective(base)}
 	digest, err := r.ImageDigest(tag)
 	if err != nil {
 		img.DigestError = firstLine(err.Error())

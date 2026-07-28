@@ -216,6 +216,12 @@ func diffLaunch(now, next exposureView) []launchDelta {
 	// there is the standing-false-row failure this section's own rules
 	// forbid. An empty side still RENDERS as the default it stands for, so
 	// the line names what the box will actually be built from.
+	//
+	// The two normalizations cover different populations, not one twice.
+	// Records written from here on hold the effective base already
+	// (imageRecord resolves it), which is what survives a later byre changing
+	// its default; normalizing HERE is what keeps a record written before
+	// that -- holding a bare "" -- comparable at all.
 	if baseEffective(now.Base) != baseEffective(next.Base) {
 		add("~", "Base %s -> %s  (rebuild required)", baseLabel(now.Base), baseLabel(next.Base))
 	}
