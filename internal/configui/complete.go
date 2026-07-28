@@ -370,6 +370,10 @@ func (m model) sig() string {
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost)
 	parts = append(parts, fmt.Sprintf("wt:%v/%s", m.wtSibling, m.wtBase.Value()))
+	// Every checkbox assemble() writes has to sign, or its toggle is invisible
+	// to dirty(): esc quits without the discard confirm, ctrl+e reloads the
+	// file over the change, and the footer claims saved when nothing was.
+	parts = append(parts, fmt.Sprintf("skipq:%v", m.skipQuestions))
 	return strings.Join(parts, "\x00")
 }
 

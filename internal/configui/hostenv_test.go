@@ -651,6 +651,38 @@ func TestSkipQuestionsCheckboxDisclosesCredentialsUnticked(t *testing.T) {
 	}
 }
 
+// The checkbox is a savable field, so its toggle must reach sig(): a field
+// assemble() writes but sig() omits is silently lost -- esc quits with no
+// discard confirm, ctrl+e reloads the file over it, and the footer reports a
+// save that wrote nothing new.
+func TestSkipQuestionsToggleMarksTheFormDirty(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+	if m.dirty() {
+		t.Fatal("setup: a freshly-opened config must be clean")
+	}
+	m.setFocus(indexOfField(m.order, fSkipQuestions))
+	mm, _ := m.updateForm(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm.(model)
+	if !m.skipQuestions {
+		t.Fatal("setup: enter must tick the checkbox")
+	}
+	if !m.dirty() {
+		t.Error("ticking skip_questions must mark the form dirty")
+	}
+	if !m.assemble().Defaults.SkipQuestions {
+		t.Error("assemble must carry the ticked checkbox")
+	}
+}
+
+func indexOfField(order []fieldID, want fieldID) int {
+	for i, f := range order {
+		if f == want {
+			return i
+		}
+	}
+	return -1
+}
+
 // The other suppression: a vouched shared-auth companion sitting in
 // default.config stops onboarding offering it at all. Legitimate (an "n"
 // could not have removed it) and invisible, so the Skills screen says so
