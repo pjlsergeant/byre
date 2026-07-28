@@ -15,8 +15,10 @@ for prose, docs, and user-facing strings; vocabulary only, never behavior. When
 another doc disagrees with it on naming, one of them is wrong -- reconcile.
 **The TUI is the gold (PRINCIPLES.md P0).** Without it byre is a fusty
 one-of-many sandbox -- containerising an agent is table stakes; the screen
-over it is the differentiator. So: a config key without a widget is a hole in
-the product, not a deferred nicety; a TUI bug ranks with an engine bug; the
+over it is the differentiator. So: a config key with no reachable row in the
+editor is a hole in the product -- a widget where the editor owns the key, a
+read-only row naming the writer where a flow owns it -- not a deferred
+nicety; a TUI bug ranks with an engine bug; the
 demo casts are product, not decoration; and "expert vocabulary, hand-edit it"
 is not an answer byre gives.
 **Design principles live in `docs/PRINCIPLES.md`** (standing commitments);
