@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,9 +13,25 @@ import (
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
+// noWrapWidth is wide enough that no value wraps, so a row assertion
+// compares a row's WHOLE value against what the tier decided to say.
+// Wrapping is layout and has its own tests (statusrender_test.go).
+const noWrapWidth = 10000
+
+// renderStatusTest renders at the default tier unless a test names another.
+// Most rows read the same at both tiers; the ones that do not are the
+// truncation tests, and they say which tier they are asserting.
+func renderStatusTest(w io.Writer, s statusInfo, tier ...statusTier) {
+	t := tierDefault
+	if len(tier) > 0 {
+		t = tier[0]
+	}
+	renderStatus(w, s, t, noWrapWidth)
+}
+
 func TestRenderStatusFull(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
+	renderStatusTest(&b, statusInfo{
 		Agent:     "claude",
 		Engine:    "docker",
 		Canonical: "/home/me/proj",
@@ -52,8 +69,7 @@ func TestRenderStatusFull(t *testing.T) {
 }
 
 func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
-	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
+	info := statusInfo{
 		Engine:    "docker",
 		Canonical: "/p",
 		Skills:    []string{"shem"},
@@ -62,12 +78,27 @@ func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
 			Mounts: []config.Mount{{Host: "/var/run/x.sock", Target: "/run/x.sock", Mode: "rw"}},
 			Caps:   []string{"SYS_PTRACE"},
 		}},
-		BuildRaw: []string{"RUN echo hi"},
-	})
-	out := b.String()
+		BuildRaw: []string{"RUN echo hi", "RUN echo there"},
+	}
+	var full bytes.Buffer
+	renderStatusTest(&full, info, tierFull)
+	out := full.String()
+	// A grant is never folded by tier: it is the row the page exists for.
 	assertRow(t, out, "Skill grants", "shem: mounts /var/run/x.sock -> /run/x.sock (rw); +cap SYS_PTRACE")
 	assertRow(t, out, "Raw build", "RUN echo hi")
+	assertRow(t, out, "Raw build", "RUN echo there")
 	assertRow(t, out, "Raw build", "(raw build lines above are passed through; not introspected)")
+
+	// The default tier keeps the row and the caveat byre stands behind, and
+	// says how much it is not showing.
+	var def bytes.Buffer
+	renderStatusTest(&def, info)
+	dout := def.String()
+	assertRow(t, dout, "Skill grants", "shem: mounts /var/run/x.sock -> /run/x.sock (rw); +cap SYS_PTRACE")
+	assertRow(t, dout, "Raw build", "2 lines  (passed through, not introspected; "+FullHint+")")
+	if strings.Contains(dout, "RUN echo") {
+		t.Errorf("the default tier printed a raw build line:\n%s", dout)
+	}
 }
 
 // statusRows parses renderStatus's "Label:       value" rows into
@@ -111,7 +142,7 @@ func assertRow(t *testing.T, out, label, want string) {
 
 func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
+	renderStatusTest(&b, statusInfo{
 		Engine:    "auto",
 		Canonical: "/p",
 		EngineErr: "no container engine found on PATH",
@@ -127,7 +158,7 @@ func TestRenderStatusEmptyAndNoEngine(t *testing.T) {
 // plain running session keeps the plain line.
 func TestRenderStatusOrphanedContainer(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
+	renderStatusTest(&b, statusInfo{
 		Engine:    "docker",
 		Canonical: "/p",
 		Container: "deadbeefcafe4567",
@@ -140,7 +171,7 @@ func TestRenderStatusOrphanedContainer(t *testing.T) {
 		}
 	}
 	b.Reset()
-	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p", Container: "deadbeefcafe4567"})
+	renderStatusTest(&b, statusInfo{Engine: "docker", Canonical: "/p", Container: "deadbeefcafe4567"})
 	if strings.Contains(b.String(), "orphaned") {
 		t.Errorf("plain running session must not read as orphaned: %s", b.String())
 	}
@@ -148,7 +179,7 @@ func TestRenderStatusOrphanedContainer(t *testing.T) {
 
 func TestRenderStatusRootlessPodman(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{Engine: "podman", Canonical: "/p", Rootless: true})
+	renderStatusTest(&b, statusInfo{Engine: "podman", Canonical: "/p", Rootless: true})
 	out := b.String()
 	if !strings.Contains(out, "rootless") || !strings.Contains(out, "UNSUPPORTED") {
 		t.Errorf("rootless Podman not flagged on the Engine row: %s", out)
@@ -161,7 +192,7 @@ func TestRenderStatusRootlessPodman(t *testing.T) {
 // Bare "podman" would claim a settled question.
 func TestRenderStatusDisclosesAnInconclusiveRootlessProbe(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{Engine: "podman", Canonical: "/p", RootlessErr: "podman info gave no usable rootless answer (\"<no value>\")"})
+	renderStatusTest(&b, statusInfo{Engine: "podman", Canonical: "/p", RootlessErr: "podman info gave no usable rootless answer (\"<no value>\")"})
 	out := b.String()
 	if !strings.Contains(out, "could not tell") || !strings.Contains(out, "no usable rootless answer") {
 		t.Errorf("an inconclusive probe must be disclosed on the Engine row: %s", out)
@@ -213,7 +244,7 @@ func TestNetworkLine(t *testing.T) {
 
 func TestRenderStatusEgressSection(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:           "claude",
 		NetPosture:      "deny-by-default",
 		NetPostureSkill: "firewall",
@@ -245,7 +276,7 @@ func TestRenderStatusEgressSection(t *testing.T) {
 // affected claim lines themselves must stop asserting.
 func TestRenderStatusEnvAndReservedOverrides(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:            "claude",
 		AgentMCP:         "inject",
 		AgentContext:     "inject",
@@ -279,8 +310,7 @@ func TestRenderStatusEnvAndReservedOverrides(t *testing.T) {
 // review's headline finding -- an empty host git identity rendered as
 // `<- git:user.email` while nothing reached the box).
 func TestRenderStatusHostEnvOutcomes(t *testing.T) {
-	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	info := statusInfo{
 		Agent: "claude",
 		HostEnv: []hostEnvResult{
 			{Key: "GIT_AUTHOR_EMAIL", Source: "git:user.email", State: hostEnvEmpty},
@@ -288,7 +318,9 @@ func TestRenderStatusHostEnvOutcomes(t *testing.T) {
 			{Key: "TZ", Source: "tz:", State: hostEnvDisabled},
 			{Key: "GIT_AUTHOR_NAME", Source: "git:user.name", State: hostEnvOverridden},
 		},
-	})
+	}
+	var buf strings.Builder
+	renderStatusTest(&buf, info, tierFull)
 	out := buf.String()
 	if !strings.Contains(out, "GIT_AUTHOR_EMAIL <- git:user.email (NOT passed — source resolved empty)") {
 		t.Errorf("empty source must render as not passed:\n%s", out)
@@ -302,6 +334,20 @@ func TestRenderStatusHostEnvOutcomes(t *testing.T) {
 	if !strings.Contains(out, "GIT_AUTHOR_NAME (passthrough overridden by [env] GIT_AUTHOR_NAME)") {
 		t.Errorf("override must be named:\n%s", out)
 	}
+
+	// The default tier drops the SOURCES and keeps the keys, the count, and
+	// every outcome that is not a plain delivery -- a passthrough byre
+	// configured and did not deliver is a withdrawn claim, not a mechanism
+	// note, so folding it is the one thing this tier may not do.
+	var def strings.Builder
+	renderStatusTest(&def, info)
+	dout := def.String()
+	assertRow(t, dout, "Host env", "1 key from host: TERM; "+
+		"GIT_AUTHOR_EMAIL (NOT passed — source resolved empty); "+
+		"GIT_AUTHOR_NAME (passthrough overridden by [env] GIT_AUTHOR_NAME)  (env_from_host; --full for sources)")
+	if strings.Contains(dout, "env:TERM") {
+		t.Errorf("the default tier printed a passthrough source:\n%s", dout)
+	}
 }
 
 // Byre's baked artifacts (mcp.json, the agent context file, the
@@ -311,7 +357,7 @@ func TestRenderStatusHostEnvOutcomes(t *testing.T) {
 // finding: the registry's Files entry originally overstated coverage).
 func TestRenderStatusArtifactShadowsDegradeDelivery(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:             "claude",
 		AgentMCP:          "inject",
 		AgentContext:      "inject",
@@ -355,13 +401,13 @@ func TestArtifactShadowsMatching(t *testing.T) {
 // claims assert normally -- the hedges are override-gated, not ambient.
 func TestRenderStatusNoReservedOverrideNoHedge(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:           "claude",
 		AgentContext:    "inject",
 		NetPosture:      "deny-by-default",
 		NetPostureSkill: "firewall",
 		Contexts:        []config.ContextDecl{{Name: "ops", Text: "x"}},
-	})
+	}, tierFull)
 	out := buf.String()
 	if strings.Contains(out, "Reserved env") || strings.Contains(out, "Env:") {
 		t.Errorf("no reserved/env rows without content:\n%s", out)
@@ -375,7 +421,7 @@ func TestRenderStatusNoEgressWithoutPosture(t *testing.T) {
 	var buf strings.Builder
 	// Agent skills declare egress even with no firewall; without a posture in
 	// effect, status must NOT imply an allowlist is enforced.
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:  "claude",
 		Egress: []skills.EgressAllow{{Skill: "claude", Host: "api.anthropic.com", Port: 443}},
 	})
@@ -389,7 +435,7 @@ func TestRenderStatusConfigEgressShownUnenforced(t *testing.T) {
 	// The user's own `egress` config entries are latent grants: with no
 	// posture they still print, marked unenforced (ADR 0019) — while skill
 	// egress stays suppressed as noise on an open network.
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent: "claude",
 		Egress: []skills.EgressAllow{
 			{Skill: "claude", Host: "api.anthropic.com", Port: 443},
@@ -405,7 +451,7 @@ func TestRenderStatusConfigEgressShownUnenforced(t *testing.T) {
 	}
 	// With a posture, everything prints and nothing claims unenforced.
 	buf.Reset()
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:      "claude",
 		NetPosture: "deny-by-default",
 		Egress: []skills.EgressAllow{
@@ -422,7 +468,7 @@ func TestRenderStatusConfigEgressShownUnenforced(t *testing.T) {
 func TestRenderStatusClosures(t *testing.T) {
 	t.Run("deny-by-default: skill entry shown closed-by, not vanished", func(t *testing.T) {
 		var buf strings.Builder
-		renderStatus(&buf, statusInfo{
+		renderStatusTest(&buf, statusInfo{
 			Agent:           "claude",
 			NetPosture:      "deny-by-default",
 			NetPostureSkill: "firewall",
@@ -446,7 +492,7 @@ func TestRenderStatusClosures(t *testing.T) {
 	})
 	t.Run("open-denylist: allowlist suppressed, closures are the enforced list", func(t *testing.T) {
 		var buf strings.Builder
-		renderStatus(&buf, statusInfo{
+		renderStatusTest(&buf, statusInfo{
 			Agent:           "claude",
 			NetPosture:      "open-denylist",
 			NetPostureSkill: "firewall-open",
@@ -472,7 +518,7 @@ func TestRenderStatusClosures(t *testing.T) {
 	})
 	t.Run("no posture: closures print inert, not invisible", func(t *testing.T) {
 		var buf strings.Builder
-		renderStatus(&buf, statusInfo{
+		renderStatusTest(&buf, statusInfo{
 			Agent:        "claude",
 			EgressClosed: []string{"statsig.anthropic.com"},
 		})
@@ -500,7 +546,7 @@ func TestConfigEgressAttributed(t *testing.T) {
 
 func TestRenderStatusContainmentAndSockGroups(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
+	renderStatusTest(&b, statusInfo{
 		Engine:    "docker",
 		Canonical: "/p",
 		Skills:    []string{"docker-host"},
@@ -526,7 +572,7 @@ func TestRenderStatusContainmentAndSockGroups(t *testing.T) {
 
 func TestRenderStatusMultiContainment(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusInfo{
+	renderStatusTest(&b, statusInfo{
 		Engine:    "docker",
 		Canonical: "/p",
 		Containments: []skills.ContainmentDecl{
@@ -548,7 +594,7 @@ func TestRenderStatusMultiContainment(t *testing.T) {
 // rides the Egress section, attributed mcp:<name>).
 func TestRenderStatusMCPRows(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:    "byre/claude",
 		AgentMCP: "inject",
 		MCPs: []skills.MCPDecl{
@@ -556,7 +602,7 @@ func TestRenderStatusMCPRows(t *testing.T) {
 			{Skill: "pete/tools", MCP: config.MCP{Name: "linear", URL: "https://mcp.linear.app/mcp"}},
 		},
 		EnvProvided: map[string]bool{"GITHUB_TOKEN": true},
-	})
+	}, tierFull)
 	out := buf.String()
 	if !strings.Contains(out, "MCP servers:") {
 		t.Fatalf("MCP section missing:\n%s", out)
@@ -578,19 +624,19 @@ func TestRenderStatusMCPRows(t *testing.T) {
 func TestRenderStatusMCPDeliveryDegrades(t *testing.T) {
 	decl := []skills.MCPDecl{{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "github", Command: []string{"gh-mcp"}}}}
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{Agent: "byre/gemini", MCPs: decl})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/gemini", MCPs: decl})
 	if out := buf.String(); !strings.Contains(out, "NOT delivered: agent skill byre/gemini has no MCP adapter") ||
 		!strings.Contains(out, "/etc/byre/mcp.json") {
 		t.Errorf("registrar-less degradation missing:\n%s", out)
 	}
 	buf.Reset()
-	renderStatus(&buf, statusInfo{MCPs: decl})
+	renderStatusTest(&buf, statusInfo{MCPs: decl})
 	if out := buf.String(); !strings.Contains(out, "no agent selected") {
 		t.Errorf("agentless line missing:\n%s", out)
 	}
 	// Unresolved skills: delivery is unknown, never asserted.
 	buf.Reset()
-	renderStatus(&buf, statusInfo{Agent: "byre/claude", MCPs: decl, SkillErr: "boom"})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/claude", MCPs: decl, SkillErr: "boom"})
 	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
 		t.Errorf("unresolved delivery line missing:\n%s", out)
 	}
@@ -607,7 +653,7 @@ func TestRenderStatusMCPEndpointClosedAndUnknownOutbound(t *testing.T) {
 		{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "github", Command: []string{"gh-mcp"}}},
 	}
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent: "byre/claude", AgentMCP: "inject",
 		NetPosture: "deny-by-default", NetPostureSkill: "firewall",
 		EgressClosed: []string{"mcp.linear.app"},
@@ -624,7 +670,7 @@ func TestRenderStatusMCPEndpointClosedAndUnknownOutbound(t *testing.T) {
 	// Open-denylist: the closure IS enforced (dropped), so the claim stands;
 	// the unknown-outbound note does not (the network is open).
 	buf.Reset()
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent: "byre/claude", AgentMCP: "inject",
 		NetPosture: config.PostureOpenDenylist, NetPostureSkill: "firewall-open",
 		EgressClosed: []string{"mcp.linear.app"},
@@ -641,7 +687,7 @@ func TestRenderStatusMCPEndpointClosedAndUnknownOutbound(t *testing.T) {
 	// Open network: closures are inert — no non-operational claim, no
 	// unknown-outbound note.
 	buf.Reset()
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent: "byre/claude", AgentMCP: "inject",
 		EgressClosed: []string{"mcp.linear.app"},
 		MCPs:         mcps,
@@ -656,7 +702,7 @@ func TestRenderStatusMCPEndpointClosedAndUnknownOutbound(t *testing.T) {
 // set is byre's own construction, so the removal is always in effect.
 func TestRenderStatusMCPClosedRows(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{MCPClosed: []string{"telemetry"}})
+	renderStatusTest(&buf, statusInfo{MCPClosed: []string{"telemetry"}})
 	if out := buf.String(); !strings.Contains(out, "MCP closed:") ||
 		!strings.Contains(out, "!telemetry  (config — removed from the declared set)") {
 		t.Errorf("MCP closed row missing:\n%s", out)
@@ -669,7 +715,7 @@ func TestRenderStatusMCPClosedRows(t *testing.T) {
 // a later posture toggle arms.
 func TestRenderStatusMCPExtrasAlwaysOnRow(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent: "byre/claude", AgentMCP: "inject",
 		MCPs: []skills.MCPDecl{{Skill: skills.MCPFromConfig, MCP: config.MCP{
 			Name: "linear", URL: "https://mcp.linear.app/mcp", Egress: []string{"auth.linear.app"},
@@ -688,7 +734,7 @@ func TestRenderStatusMCPExtrasAlwaysOnRow(t *testing.T) {
 // source spelling, attribution, one delivery verdict — never grant rows.
 func TestRenderStatusClaudeSkillRows(t *testing.T) {
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		Agent:             "byre/claude",
 		AgentClaudeSkills: "inject",
 		ClaudeSkills: []skills.ClaudeSkillDecl{
@@ -696,7 +742,7 @@ func TestRenderStatusClaudeSkillRows(t *testing.T) {
 			{Skill: "pete/tools", CS: config.ClaudeSkill{Name: "review-loop", From: "cs/review-loop"}, SrcDir: "/resolved"},
 		},
 		ClaudeSkillsClosed: []string{"legacy-thing"},
-	})
+	}, tierFull)
 	out := buf.String()
 	if !strings.Contains(out, "Claude Skills:") {
 		t.Fatalf("Claude Skills section missing:\n%s", out)
@@ -720,18 +766,18 @@ func TestRenderStatusClaudeSkillRows(t *testing.T) {
 func TestRenderStatusClaudeSkillDeliveryDegrades(t *testing.T) {
 	decl := []skills.ClaudeSkillDecl{{Skill: skills.ClaudeSkillsFromConfig, CS: config.ClaudeSkill{Name: "tdd-loop", Path: "/x"}}}
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{Agent: "byre/gemini", ClaudeSkills: decl})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/gemini", ClaudeSkills: decl})
 	if out := buf.String(); !strings.Contains(out, "NOT delivered: agent skill byre/gemini has no claude-skills adapter") ||
 		!strings.Contains(out, "/etc/byre/claude-skills") {
 		t.Errorf("adapter-less degradation missing:\n%s", out)
 	}
 	buf.Reset()
-	renderStatus(&buf, statusInfo{ClaudeSkills: decl})
+	renderStatusTest(&buf, statusInfo{ClaudeSkills: decl})
 	if out := buf.String(); !strings.Contains(out, "no agent selected") {
 		t.Errorf("agentless line missing:\n%s", out)
 	}
 	buf.Reset()
-	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentClaudeSkills: "inject", ClaudeSkills: decl, SkillErr: "boom"})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/claude", AgentClaudeSkills: "inject", ClaudeSkills: decl, SkillErr: "boom"})
 	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
 		t.Errorf("unresolved must not assert delivery:\n%s", out)
 	}
@@ -856,7 +902,7 @@ func TestStatusDisclosesShadowWhenSkillsUnresolved(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, out, _ := testStreams("", false)
-	if err := Status(s, proj, false); err != nil {
+	if err := Status(s, proj, StatusOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
@@ -881,7 +927,7 @@ func TestStatusShadowKeepsConfigOnlyViewWhenValidationFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, out, _ := testStreams("", false)
-	if err := Status(s, proj, false); err != nil {
+	if err := Status(s, proj, StatusOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
@@ -901,7 +947,7 @@ func TestStatusShadowKeepsConfigOnlyViewWhenValidationFails(t *testing.T) {
 // skill-declared holes, once per offending target, attributed.
 func TestRenderStatusManagedShadowDisclosure(t *testing.T) {
 	var b strings.Builder
-	renderStatus(&b, statusInfo{
+	renderStatusTest(&b, statusInfo{
 		Canonical: "/p", NetPosture: "deny-by-default", NetPostureSkill: "firewall",
 		Containments: []skills.ContainmentDecl{{Skill: "docker-host", Text: "host daemon access"}},
 		ManagedShadows: []ManagedPathShadow{
@@ -997,7 +1043,7 @@ func TestWarnGuardCollisions(t *testing.T) {
 // them with a confident negative.
 func TestStatusContainerUnknownWhenEngineQueryFails(t *testing.T) {
 	var b strings.Builder
-	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p",
+	renderStatusTest(&b, statusInfo{Engine: "docker", Canonical: "/p",
 		ContainerQueryErr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"})
 	rows := statusRows(b.String())
 	if got := strings.Join(rows["Container"], " "); !strings.Contains(got, "unknown") || !strings.Contains(got, "Cannot connect") {
@@ -1010,7 +1056,7 @@ func TestStatusContainerUnknownWhenEngineQueryFails(t *testing.T) {
 
 func TestStatusSiblingQueryFailureIsReported(t *testing.T) {
 	var b strings.Builder
-	renderStatus(&b, statusInfo{Engine: "docker", Canonical: "/p",
+	renderStatusTest(&b, statusInfo{Engine: "docker", Canonical: "/p",
 		Container: "deadbeefcafe4567", SiblingQueryErr: "daemon timeout"})
 	rows := statusRows(b.String())
 	if got := strings.Join(rows["Worktrees"], " "); !strings.Contains(got, "unknown") || !strings.Contains(got, "daemon timeout") {
@@ -1029,7 +1075,7 @@ func TestRenderStatusContextDelivery(t *testing.T) {
 		{Name: "conventions", File: "~/notes/conv.md"},
 	}
 	var buf strings.Builder
-	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject", Contexts: decls})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject", Contexts: decls}, tierFull)
 	out := buf.String()
 	if !strings.Contains(out, `house-rules  "Run the linter."  (+1 more lines)`) {
 		t.Errorf("inline row wrong:\n%s", out)
@@ -1042,27 +1088,27 @@ func TestRenderStatusContextDelivery(t *testing.T) {
 	}
 
 	buf.Reset()
-	renderStatus(&buf, statusInfo{Agent: "byre/some-agent", Contexts: decls})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/some-agent", Contexts: decls})
 	if out := buf.String(); !strings.Contains(out, "NOT delivered: agent skill byre/some-agent has no context adapter") ||
 		!strings.Contains(out, "/etc/byre/agent-context.md") {
 		t.Errorf("adapter-less degradation missing:\n%s", out)
 	}
 
 	buf.Reset()
-	renderStatus(&buf, statusInfo{Contexts: decls})
+	renderStatusTest(&buf, statusInfo{Contexts: decls})
 	if out := buf.String(); !strings.Contains(out, "no agent selected") {
 		t.Errorf("agent-less degradation missing:\n%s", out)
 	}
 
 	buf.Reset()
-	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject", Contexts: decls, SkillErr: "broken skill"})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject", Contexts: decls, SkillErr: "broken skill"})
 	if out := buf.String(); !strings.Contains(out, "delivery unknown (skills unresolved)") {
 		t.Errorf("unresolved degradation missing:\n%s", out)
 	}
 
 	// No declarations = no Instructions rows, no verdict.
 	buf.Reset()
-	renderStatus(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject"})
+	renderStatusTest(&buf, statusInfo{Agent: "byre/claude", AgentContext: "inject"})
 	if out := buf.String(); strings.Contains(out, "Instructions") {
 		t.Errorf("empty set must render nothing:\n%s", out)
 	}

@@ -31,7 +31,7 @@ type app struct {
 	ejectfirewall func(s commands.Streams, dir string) error
 	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error
 	config        func(s commands.Streams, dir string, global bool, layer string) error
-	status        func(s commands.Streams, dir string, selfEdit bool) error
+	status        func(s commands.Streams, dir string, opts commands.StatusOptions) error
 	reset         func(s commands.Streams, dir string, force bool) error
 	forget        func(s commands.Streams, dir string, force bool) error
 	shell         func(s commands.Streams, dir string, skipUIDCheck bool) error
@@ -306,18 +306,32 @@ errors if no firewall (netns hook) is enabled.`,
 }
 
 func statusCmd(a app, dir string, s commands.Streams) *cobra.Command {
-	var selfEdit bool
+	var opts commands.StatusOptions
 	c := &cobra.Command{
 		Use:   "status",
 		Short: "Show resolved config, mounts, skills, session state.",
 		Long: `Show the resolved view of this project: agent, engine, mounts, ports, volumes,
-skill grants, and whether a session is running.`,
+skill grants, and whether a session is running.
+
+The default view shows every row — every grant, mount, volume, skill, port and
+reserved key — with long values cut down and each cut marked. --full shows the
+same page untruncated; --data prints the same content as JSON.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.status(s, dir, selfEdit)
+			// --data already carries everything --full does, so the pair is a
+			// misunderstanding of --data, not a combination to guess at. Checked
+			// here rather than with MarkFlagsMutuallyExclusive: cobra's group
+			// validation does not run through SetFlagErrorFunc, so it would exit
+			// 1 and break byre's usage-errors-are-2 contract.
+			if opts.Full && opts.Data {
+				return usageError("byre status: --full and --data are exclusive; --data already carries everything --full shows")
+			}
+			return a.status(s, dir, opts)
 		},
 	}
-	c.Flags().BoolVar(&selfEdit, "self-edit", false, "also show the grant 'develop --self-edit' would add")
+	c.Flags().BoolVar(&opts.SelfEdit, "self-edit", false, "also show the grant 'develop --self-edit' would add")
+	c.Flags().BoolVar(&opts.Full, "full", false, "show every value in full — no truncation")
+	c.Flags().BoolVar(&opts.Data, "data", false, "print the full view as JSON")
 	return c
 }
 

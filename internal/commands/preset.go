@@ -495,6 +495,15 @@ func readPresetBounded(p string) ([]byte, error) {
 // and 3 (state 2 is silent). Never a question: a third party's document
 // gets a report and an exact command, not a prompt.
 func presetNote(projectDir string, paths project.Paths) string {
+	full, _ := presetNotes(projectDir, paths)
+	return full
+}
+
+// presetNotes renders the note in two lengths. The short one is status's
+// default tier: same fact, same command, without the sentence explaining
+// what a preset is -- which every reader of this row past the first already
+// knows, and which crowds the exposure rows the page exists for.
+func presetNotes(projectDir string, paths project.Paths) (full, short string) {
 	state, legacyName := presetState(projectDir, paths)
 	name := PresetName
 	renameHint := ""
@@ -504,9 +513,11 @@ func presetNote(projectDir string, paths project.Paths) string {
 	}
 	switch state {
 	case "unapplied":
-		return fmt.Sprintf("this repo ships a %s%s (not applied); `byre preset apply` to review it", name, renameHint)
+		return fmt.Sprintf("this repo ships a %s%s (not applied); `byre preset apply` to review it", name, renameHint),
+			fmt.Sprintf("%s not applied  (`byre preset apply`)", name)
 	case "diverged":
-		return fmt.Sprintf("the repo's %s%s differs from the version you applied; `byre preset apply` to review the changes", name, renameHint)
+		return fmt.Sprintf("the repo's %s%s differs from the version you applied; `byre preset apply` to review the changes", name, renameHint),
+			fmt.Sprintf("%s differs from what you applied  (`byre preset apply`)", name)
 	}
-	return ""
+	return "", ""
 }

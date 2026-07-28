@@ -415,7 +415,7 @@ func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
 	}
 	s, _, _ := testStreams("", false)
 	for name, run := range map[string]func() error{
-		"status":            func() error { return Status(s, proj, false) },
+		"status":            func() error { return Status(s, proj, StatusOptions{}) },
 		"mcp list":          func() error { return MCPList(s, proj) },
 		"claude-skill list": func() error { return ClaudeSkillList(s, proj) },
 		"preset inspect":    func() error { return PresetInspect(s, proj, "") },

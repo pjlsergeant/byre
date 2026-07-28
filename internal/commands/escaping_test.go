@@ -91,7 +91,7 @@ func statusPayloads(p string) statusInfo {
 
 func TestRenderStatusEscapesExternalValues(t *testing.T) {
 	var b bytes.Buffer
-	renderStatus(&b, statusPayloads(escCSI+"\n"+escOSC+"\rEngine:       open"))
+	renderStatusTest(&b, statusPayloads(escCSI+"\n"+escOSC+"\rEngine:       open"))
 	out := b.String()
 
 	assertNoESC(t, "renderStatus", out)
@@ -104,7 +104,7 @@ func TestRenderStatusEscapesExternalValues(t *testing.T) {
 	// it has exactly the same rows -- any difference in line count is a line a
 	// value forged, and the forged text here is a plausible "Engine:" row.
 	var clean bytes.Buffer
-	renderStatus(&clean, statusPayloads("-x-"))
+	renderStatusTest(&clean, statusPayloads("-x-"))
 	got := strings.Count(out, "\n")
 	if want := strings.Count(clean.String(), "\n"); got != want {
 		t.Errorf("status printed %d lines, want %d -- a value forged one:\n%s", got, want, out)
@@ -118,6 +118,60 @@ func TestRenderStatusEscapesExternalValues(t *testing.T) {
 	if rows != 1 {
 		t.Errorf("a value forged a second Engine row (%d found):\n%s", rows, out)
 	}
+}
+
+// The same arm at a REAL terminal width, where the funnel wraps. Wrapping is
+// where a forged row would get its chance: a continuation line is byre's own
+// text placement, so the guarantee has to be that no line a value
+// contributes ever starts at column zero.
+func TestRenderStatusEscapesExternalValuesWhenWrapping(t *testing.T) {
+	forged := statusPayloads(escCSI + "\n" + escOSC + "\rEngine:       open")
+	var b bytes.Buffer
+	renderStatus(&b, forged, tierFull, 72)
+	out := b.String()
+
+	assertNoESC(t, "renderStatus (wrapped)", out)
+	assertKept(t, "renderStatus (wrapped)", out, "claude", "moarcode", "greedy")
+
+	// Every physical line either opens a row byre labeled, or is indented
+	// into the value column. A payload's text can only ever land in the
+	// second category.
+	var clean bytes.Buffer
+	renderStatus(&clean, statusPayloads("-x-"), tierFull, 72)
+	starts := func(s string) int {
+		n := 0
+		for _, l := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+			if l != "" && !strings.HasPrefix(l, " ") {
+				n++
+			}
+		}
+		return n
+	}
+	if got, want := starts(out), starts(clean.String()); got != want {
+		t.Errorf("wrapped render started %d rows, want %d -- a value forged one:\n%s", got, want, out)
+	}
+	rows := 0
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "Engine:") {
+			rows++
+		}
+	}
+	if rows != 1 {
+		t.Errorf("a wrapped value forged a second Engine row (%d found):\n%s", rows, out)
+	}
+}
+
+// --data reaches the same terminal. The JSON encoder is what holds the line
+// there -- it writes a control byte as \uXXXX rather than passing it through
+// -- so the contract is identical even though the mechanism is not.
+func TestStatusDataEscapesExternalValues(t *testing.T) {
+	var b bytes.Buffer
+	if err := writeStatusData(&b, statusPayloads(escCSI+"\n"+escOSC+"\rEngine: open")); err != nil {
+		t.Fatalf("writeStatusData: %v", err)
+	}
+	out := b.String()
+	assertNoESC(t, "status --data", out)
+	assertKept(t, "status --data", out, "claude", "moarcode", "greedy", "TOKEN_NAME")
 }
 
 func TestStatusDevelopWarningsEscapeExternalValues(t *testing.T) {

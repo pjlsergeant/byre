@@ -15,6 +15,7 @@
 package skills
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -57,32 +58,79 @@ func ReservedEnvOf(skill string, env map[string]string) []ReservedEnvSet {
 	return out
 }
 
-// ReservedEnvClaims names the claims one reserved BYRE_ variable can skew.
-// Unknown BYRE_* keys (a future chassis knob this map hasn't met)
-// conservatively skew ClaimNetwork -- the claim with the most riding on it --
-// plus ClaimLaunch. The chassis-knob inventory itself is pinned by gen's
+// reservedEnvKnobs is the chassis-knob inventory: every reserved variable
+// byre itself reads, mapped to the claims setting it can skew. A key absent
+// from this map is one byre has no knowledge of -- it wears byre's reserved
+// spelling and byre cannot say what it does -- which is what
+// ReservedEnvClaims and ReservedEnvNote below answer for, each in its own
+// register. The inventory is pinned against the scripts by gen's
 // TestChassisScriptKnobsRideReservedPrefix.
+var reservedEnvKnobs = map[string][]string{
+	"BYRE_EGRESS":              {ClaimNetwork},
+	"BYRE_EGRESS_DENY":         {ClaimNetwork},
+	"BYRE_LAUNCH_GATE_FILE":    {ClaimNetwork},
+	"BYRE_LAUNCH_GATE_TIMEOUT": {ClaimNetwork},
+
+	"BYRE_CONTEXT_DIR":     {ClaimContextDelivery},
+	"BYRE_AGENT_CONTEXT":   {ClaimContextDelivery},
+	"BYRE_SESSION_CONTEXT": {ClaimContextDelivery},
+
+	"BYRE_MCP_CONFIG": {ClaimMCPDelivery},
+
+	// Both run after the gate wait (no network reach) but before the agent
+	// execs, and env.d is SOURCED -- a redirected dir can rewrite the
+	// delivery vars the agent command consumes, so both delivery claims
+	// degrade with it (the review's sibling-controls finding).
+	"BYRE_ENVD_DIR":     {ClaimContextDelivery, ClaimMCPDelivery, ClaimLaunch},
+	"BYRE_FIRSTRUN_DIR": {ClaimContextDelivery, ClaimMCPDelivery, ClaimLaunch},
+
+	"BYRE_WORKSPACE_DIR":   {ClaimLaunch},
+	"BYRE_IMAGE_PATH_FILE": {ClaimLaunch},
+	"BYRE_ASSUME_TTY":      {ClaimLaunch},
+	"BYRE_GEMINI_DIR":      {ClaimLaunch},
+	"BYRE_IDENTITY_BASE":   {ClaimLaunch},
+	"BYRE_UID":             {ClaimLaunch},
+	"BYRE_GID":             {ClaimLaunch},
+	"BYRE_PROJECT":         {ClaimLaunch},
+	"BYRE_WORKTREE":        {ClaimLaunch},
+}
+
+// ReservedEnvClaims names the claims one reserved BYRE_ variable can skew.
+// A key byre does not recognize (a future chassis knob this inventory hasn't
+// met, or a skill's own variable wearing the prefix) conservatively skews
+// ClaimNetwork -- the claim with the most riding on it -- plus ClaimLaunch.
 func ReservedEnvClaims(key string) []string {
-	switch key {
-	case "BYRE_EGRESS", "BYRE_EGRESS_DENY", "BYRE_LAUNCH_GATE_FILE", "BYRE_LAUNCH_GATE_TIMEOUT":
-		return []string{ClaimNetwork}
-	case "BYRE_CONTEXT_DIR", "BYRE_AGENT_CONTEXT", "BYRE_SESSION_CONTEXT":
-		return []string{ClaimContextDelivery}
-	case "BYRE_MCP_CONFIG":
-		return []string{ClaimMCPDelivery}
-	case "BYRE_ENVD_DIR", "BYRE_FIRSTRUN_DIR":
-		// Both run after the gate wait (no network reach) but before the
-		// agent execs, and env.d is SOURCED -- a redirected dir can rewrite
-		// the delivery vars the agent command consumes, so both delivery
-		// claims degrade with it (the review's sibling-controls finding).
-		return []string{ClaimContextDelivery, ClaimMCPDelivery, ClaimLaunch}
-	case "BYRE_WORKSPACE_DIR",
-		"BYRE_IMAGE_PATH_FILE", "BYRE_ASSUME_TTY", "BYRE_GEMINI_DIR",
-		"BYRE_IDENTITY_BASE", "BYRE_UID", "BYRE_GID", "BYRE_PROJECT", "BYRE_WORKTREE":
-		return []string{ClaimLaunch}
-	default:
-		return []string{ClaimNetwork, ClaimLaunch}
+	if claims, ok := reservedEnvKnobs[key]; ok {
+		return claims
 	}
+	return []string{ClaimNetwork, ClaimLaunch}
+}
+
+// ReservedEnvKnown reports whether key is a chassis knob byre itself reads.
+// It is the honesty half of the conservative default: the DEGRADATION above
+// is the same either way, but what byre may SAY about the key is not.
+func ReservedEnvKnown(key string) bool {
+	_, ok := reservedEnvKnobs[key]
+	return ok
+}
+
+// ReservedEnvNote is the sentence every surface prints for a skill-set
+// reserved key -- status's row, and the config editor's Env row.
+//
+// The two registers are the point. For a knob byre reads, byre knows what
+// the skill took over and says so. For a key byre does not recognize it says
+// only what it can defend: the prefix is byre's, byre cannot tell what the
+// key does, and the claims are qualified for that reason. Announcing "byre
+// runtime control" over a key byre has never heard of claims knowledge byre
+// lacks -- a skill's own `BYRE_`-prefixed scratch path is not a control of
+// byre's, and a row saying it is, is wrong in effect while being right by
+// rule.
+func ReservedEnvNote(e ReservedEnvSet) string {
+	claims := strings.Join(ReservedEnvClaims(e.Key), " + ")
+	if ReservedEnvKnown(e.Key) {
+		return fmt.Sprintf("%s sets %s — byre runtime control; the %s claim(s) ride it", e.Skill, e.Key, claims)
+	}
+	return fmt.Sprintf("%s sets %s — not a control this byre recognizes; treated cautiously, so the %s claim(s) ride it", e.Skill, e.Key, claims)
 }
 
 // ReservedEnvTouches reports whether any skill-set reserved variable in sets

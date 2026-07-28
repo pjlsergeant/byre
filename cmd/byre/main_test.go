@@ -29,8 +29,9 @@ func recorderApp(calls map[string]string) app {
 		config: func(_ commands.Streams, dir string, global bool, layer string) error {
 			return note("config", dir+" "+boolStr(global)+" "+layer)
 		},
-		status: func(_ commands.Streams, dir string, selfEdit bool) error {
-			return note("status", dir+" "+boolStr(selfEdit))
+		status: func(_ commands.Streams, dir string, opts commands.StatusOptions) error {
+			return note("status", strings.Join([]string{dir,
+				boolStr(opts.SelfEdit), boolStr(opts.Full), boolStr(opts.Data)}, " "))
 		},
 		reset: func(_ commands.Streams, dir string, force bool) error {
 			return note("reset", dir+" "+boolStr(force))
@@ -99,8 +100,10 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"config"}, "config", "/proj false "},
 		{[]string{"config", "--global"}, "config", "/proj true "},
 		{[]string{"config", "--layer", "torn"}, "config", "/proj false torn"},
-		{[]string{"status"}, "status", "/proj false"},
-		{[]string{"status", "--self-edit"}, "status", "/proj true"},
+		{[]string{"status"}, "status", "/proj false false false"},
+		{[]string{"status", "--self-edit"}, "status", "/proj true false false"},
+		{[]string{"status", "--full"}, "status", "/proj false true false"},
+		{[]string{"status", "--data"}, "status", "/proj false false true"},
 		{[]string{"reset"}, "reset", "/proj false"},
 		{[]string{"reset", "--force"}, "reset", "/proj true"},
 		{[]string{"reset", "-y"}, "reset", "/proj true"},
@@ -219,7 +222,10 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"develop", "--bogus"}, ""},    // unknown flag
 		{[]string{"config", "--bogus"}, ""},     // unknown flag
 		{[]string{"status", "--bogus"}, ""},     // unknown flag
-		{[]string{"reset", "--bogus"}, ""},      // unknown flag
+		// --data already carries everything --full does; the pair is a
+		// misunderstanding of --data, not a combination to guess at.
+		{[]string{"status", "--full", "--data"}, "--full and --data are exclusive"},
+		{[]string{"reset", "--bogus"}, ""}, // unknown flag
 		{[]string{"worktree"}, "usage: byre worktree <name>"},
 		{[]string{"worktree", "--bogus"}, ""}, // unknown flag
 		{[]string{"worktree", "a", "b"}, `unexpected argument "b"`},

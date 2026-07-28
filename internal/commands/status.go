@@ -97,12 +97,33 @@ type statusInfo struct {
 	SkillErr          string   // why skills couldn't be resolved, if applicable
 	SelfEdit          string   // host store path when --self-edit is active, else ""
 	PresetNote        string   // note about a committed repo-side preset (byre.preset; legacy byre.config name accepted through its window)
+	PresetShort       string   // the same note, default-tier length
 	Cat               *packages.Catalog
 }
 
-// Status implements `byre status`. selfEdit mirrors `develop --self-edit` so the
-// grant it would add (rw ~/.byre) is announced here too.
-func Status(s Streams, projectDir string, selfEdit bool) error {
+// StatusOptions selects `byre status`'s output. SelfEdit mirrors
+// `develop --self-edit` so the grant it would add (rw ~/.byre) is announced
+// here too; Full and Data pick the tier (deliver.Options is the precedent for
+// carrying a command's flags as a struct rather than a widening argument
+// list).
+type StatusOptions struct {
+	SelfEdit bool
+	Full     bool
+	Data     bool
+}
+
+// tier is the render tier the flags select. --data carries everything --full
+// does, so it renders from the same tier.
+func (o StatusOptions) tier() statusTier {
+	if o.Full || o.Data {
+		return tierFull
+	}
+	return tierDefault
+}
+
+// Status implements `byre status`.
+func Status(s Streams, projectDir string, opts StatusOptions) error {
+	selfEdit := opts.SelfEdit
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -184,7 +205,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	}
 	// Preset drift states: passive visibility of a repo-shipped preset, states
 	// 1 (not applied) and 3 (diverged); the steady state stays silent.
-	info.PresetNote = presetNote(projectDir, paths)
+	info.PresetNote, info.PresetShort = presetNotes(projectDir, paths)
 	// Enrich with resolved skills so implicit/built-in contributions (the agent
 	// skill, its .claude state volume, skill mounts) are shown, not just the
 	// config-level view. Best-effort: a resolution error is surfaced, not fatal.
@@ -305,29 +326,53 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		}
 	}
 
-	renderStatus(s.Out, info)
+	if opts.Data {
+		return writeStatusData(s.Out, info)
+	}
+	renderStatus(s.Out, info, opts.tier(), statusWidth(s.Out))
 	return nil
 }
 
-// pkgLine formats "id  provenance" for status. Falls back to the bare
-// name when the catalog has no entry.
-func pkgLine(cat *packages.Catalog, name string) string {
+// pkgParts splits one package name into the id and provenance columns.
+// Falls back to the bare name when the catalog has no entry. The default
+// tier drops the acquisition digest -- the one part of a provenance label
+// that `--full` exists to show.
+func pkgParts(cat *packages.Catalog, name string, tier statusTier) (id, provenance string) {
 	if name == "" {
-		return "(none)"
+		return "(none)", ""
 	}
 	if cat == nil {
-		return name
+		return name, ""
 	}
 	ent, ok := cat.Lookup(name)
 	if !ok {
-		return name
+		return name, ""
 	}
-	id := ent.ID
-	if ent.Alias != "" && name == ent.Alias {
-		// Config wrote the friendly alias; status shows canonical + label.
-		id = ent.ID
+	if tier.full() {
+		return ent.ID, ent.ProvenanceLabel()
 	}
-	return fmt.Sprintf("%-24s %s", id, ent.ProvenanceLabel())
+	return ent.ID, ent.ProvenanceShort()
+}
+
+// pkgLines formats "id  provenance" for a SET of packages, the id column
+// sized to the widest id in that set -- so one long id widens the column
+// instead of overflowing a fixed one and pushing its own provenance out of
+// alignment with every row above it.
+func pkgLines(cat *packages.Catalog, names []string, tier statusTier) []string {
+	ids := make([]string, len(names))
+	provs := make([]string, len(names))
+	w := 0
+	for i, n := range names {
+		ids[i], provs[i] = pkgParts(cat, n, tier)
+		if l := displayLen(ids[i]); l > w {
+			w = l
+		}
+	}
+	out := make([]string, len(names))
+	for i := range names {
+		out[i] = pkgColumn(ids[i], provs[i], w+2)
+	}
+	return out
 }
 
 // hostEnvRow renders the live env_from_host entries with their OUTCOME --
@@ -350,6 +395,35 @@ func hostEnvRow(hostEnv []hostEnvResult) string {
 		return ""
 	}
 	return strings.Join(parts, ", ") + "  (host values; env_from_host)"
+}
+
+// hostEnvShortRow is the default tier's Host env value: the keys and their
+// count, with each key's SOURCE left to `--full`. An entry whose outcome is
+// not a plain delivery keeps its full note here -- a passthrough byre
+// configured and did not deliver is a claim byre has withdrawn, and the
+// default tier folds mechanism, never a withdrawal.
+func hostEnvShortRow(hostEnv []hostEnvResult) string {
+	var keys, notes []string
+	for _, r := range hostEnv {
+		switch r.State {
+		case hostEnvDelivered:
+			keys = append(keys, r.Key)
+		case hostEnvEmpty:
+			notes = append(notes, r.Key+" (NOT passed — source resolved empty)")
+		case hostEnvOverridden:
+			notes = append(notes, r.Key+" (passthrough overridden by [env] "+r.Key+")")
+		}
+	}
+	if len(keys) == 0 && len(notes) == 0 {
+		return ""
+	}
+	var parts []string
+	if len(keys) > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s from host: %s",
+			len(keys), plural(len(keys), "key", "keys"), strings.Join(keys, ", ")))
+	}
+	parts = append(parts, notes...)
+	return strings.Join(parts, "; ") + "  (env_from_host; --full for sources)"
 }
 
 // siblingNames renders the OTHER live sessions of the project (fam minus
@@ -377,21 +451,20 @@ func siblingNames(r interface {
 	return names
 }
 
-// renderStatus writes the flat, scannable "what can this thing touch?" block.
-// Raw run_args are shown verbatim and flagged as not introspected by byre.
-func renderStatus(w io.Writer, s statusInfo) {
-	// Every row is data -- config-authored paths, skill names, engine output --
-	// and status emits no ANSI of its own, so the strip lands here rather than
-	// at each of the sixty-odd call sites: a value carrying CSI/OSC bytes would
-	// otherwise repaint or exfiltrate from the very screen reporting it, and one
-	// unescaped call site is all it takes. Control characters go too, so a row
-	// stays one line: the "Label: value" grammar is what makes status scannable.
+// renderStatus writes the flat, scannable "what can this thing touch?" block
+// at the given tier and column budget. Raw run_args are shown verbatim and
+// flagged as not introspected by byre.
+func renderStatus(w io.Writer, s statusInfo, tier statusTier, width int) {
+	writeStatusRows(w, statusRowsOf(s, tier), width)
+}
+
+// statusRowsOf builds the page's rows -- label and value, before any layout.
+// Escaping, the label column and wrapping are writeStatusRows's business, so
+// what a tier SAYS is decided in one place and how it LOOKS in another.
+func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
+	var rows []statusRow
 	row := func(label, val string) {
-		head := ""
-		if label != "" {
-			head = packages.EscapeTerminal(label) + ":"
-		}
-		fmt.Fprintf(w, "%-13s %s\n", head, packages.EscapeTerminal(val))
+		rows = append(rows, statusRow{Label: label, Value: val})
 	}
 
 	if s.ID != "" {
@@ -399,7 +472,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	}
 	row("Agent", orDefault(s.Agent, "(none)"))
 	if s.Template != "" {
-		row("Template", pkgLine(s.Cat, s.Template))
+		row("Template", pkgLines(s.Cat, []string{s.Template}, tier)[0])
 	} else {
 		row("Template", "(none)")
 	}
@@ -407,8 +480,14 @@ func renderStatus(w io.Writer, s statusInfo) {
 		// Root-first, the project config last: the merge order.
 		row("Extends", strings.Join(s.Chain, " -> ")+" -> project")
 	}
-	if s.PresetNote != "" {
-		row("Preset", s.PresetNote)
+	// The preset note is a repo-shipped document byre noticed, not a grant:
+	// the default tier states the fact and the command, and leaves the
+	// sentence explaining what a preset is to `--full`.
+	if note := s.PresetNote; note != "" {
+		if !tier.full() && s.PresetShort != "" {
+			note = s.PresetShort
+		}
+		row("Preset", note)
 	}
 	if s.EngineErr != "" {
 		row("Engine", s.Engine+"  (not found: "+s.EngineErr+")")
@@ -546,12 +625,12 @@ func renderStatus(w io.Writer, s statusInfo) {
 		row("Skills", "none")
 	} else {
 		// One row per skill with provenance label.
-		for i, name := range s.Skills {
+		for i, line := range pkgLines(s.Cat, s.Skills, tier) {
 			label := "Skills"
 			if i > 0 {
 				label = ""
 			}
-			row(label, pkgLine(s.Cat, name))
+			row(label, line)
 		}
 	}
 
@@ -571,15 +650,16 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// These rows are config-application reporting: what's wired, from where,
 	// what env it consumes (and whether this box provides it), and why it
 	// won't work when byre can tell (endpoint closed, outbound unknown).
+	mcpDelivery := mcpDeliveryLine(s)
 	for i, d := range s.MCPs {
 		label := "MCP servers"
 		if i > 0 {
 			label = ""
 		}
-		row(label, mcpStatusLine(d, s))
+		row(label, mcpStatusLine(d, s)+mcpDelivery.mark(tier))
 	}
-	if len(s.MCPs) > 0 {
-		row("", mcpDeliveryLine(s))
+	if len(s.MCPs) > 0 && mcpDelivery.ownRow(tier) {
+		row("", mcpDelivery.Full)
 	}
 	// The `!name` MCP closures, one row each — configuration that must never
 	// be invisible (same stance as egress Closed rows). Unlike an egress
@@ -597,15 +677,16 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// configuration rows, zero exposure contribution. A skill is instructions
 	// plus support files; anything its scripts need at runtime is the
 	// contributing byre skill's ordinary attributed business.
+	csDelivery := claudeSkillsDeliveryLine(s)
 	for i, d := range s.ClaudeSkills {
 		label := "Claude Skills"
 		if i > 0 {
 			label = ""
 		}
-		row(label, claudeSkillStatusLine(d))
+		row(label, claudeSkillStatusLine(d)+csDelivery.mark(tier))
 	}
-	if len(s.ClaudeSkills) > 0 {
-		row("", claudeSkillsDeliveryLine(s))
+	if len(s.ClaudeSkills) > 0 && csDelivery.ownRow(tier) {
+		row("", csDelivery.Full)
 	}
 	for i, c := range s.ClaudeSkillsClosed {
 		label := "CS closed"
@@ -619,22 +700,40 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// one row per declaration plus the delivery verdict, the MCP shape. The
 	// PROSE renders in the config editor, not here; status answers "what is
 	// wired, and does it reach the agent?".
-	for i, cd := range s.Contexts {
-		label := "Instructions"
-		if i > 0 {
-			label = ""
+	ctxDelivery := contextDeliveryLine(s)
+	if tier.full() {
+		for i, cd := range s.Contexts {
+			label := "Instructions"
+			if i > 0 {
+				label = ""
+			}
+			row(label, contextLine(cd))
 		}
-		row(label, contextLine(cd))
+	} else if len(s.Contexts) > 0 {
+		// The default tier names the blocks and counts them; the PROSE is the
+		// one thing a status row never needed, and it is what made this row
+		// wrap through the middle of its own parenthetical.
+		names := make([]string, len(s.Contexts))
+		for i, cd := range s.Contexts {
+			names[i] = cd.Name
+		}
+		row("Instructions", fmt.Sprintf("%d %s: %s  (--full for the text)%s",
+			len(names), plural(len(names), "block", "blocks"),
+			strings.Join(names, ", "), ctxDelivery.mark(tier)))
 	}
-	if len(s.Contexts) > 0 {
-		row("", contextDeliveryLine(s))
+	if len(s.Contexts) > 0 && ctxDelivery.ownRow(tier) {
+		row("", ctxDelivery.Full)
 	}
 
 	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate
 	// host->box data channel, attributed source by source — the shipped git
 	// identity included (byre's own defaults get no invisibility pass).
 	// Disable with `KEY = ""` under env_from_host in any config layer.
-	if hostEnv := hostEnvRow(s.HostEnv); hostEnv != "" {
+	hostEnv := hostEnvShortRow(s.HostEnv)
+	if tier.full() {
+		hostEnv = hostEnvRow(s.HostEnv)
+	}
+	if hostEnv != "" {
 		row("Host env", hostEnv)
 	}
 
@@ -676,27 +775,36 @@ func renderStatus(w io.Writer, s statusInfo) {
 	// machinery, P2) but never silent -- each line names the skill, the
 	// key, and the claims that stop being warranted while it is set. The
 	// same key in config [env] is refused at validation instead.
+	//
+	// Never folded by tier: this is a claim degradation, and it is one line.
 	for i, e := range s.SkillReservedEnv {
 		label := "Reserved env"
 		if i > 0 {
 			label = ""
 		}
-		row(label, fmt.Sprintf("⚠ %s sets %s — byre runtime control; the %s claim(s) above ride it",
-			e.Skill, e.Key, strings.Join(skills.ReservedEnvClaims(e.Key), " + ")))
+		row(label, "⚠ "+skills.ReservedEnvNote(e))
 	}
 
 	if len(s.RunArgs) > 0 {
 		row("Raw run args", strings.Join(s.RunArgs, " ")+"   (passed through; not introspected)")
 	}
-	for i, l := range s.BuildRaw {
-		label := "Raw build"
-		if i > 0 {
-			label = ""
+	// Raw build lines are opaque Dockerfile text byre passes through: the
+	// default tier reports how many there are and that byre does not read
+	// them -- the caveat is the claim, the text is the detail.
+	if tier.full() {
+		for i, l := range s.BuildRaw {
+			label := "Raw build"
+			if i > 0 {
+				label = ""
+			}
+			row(label, l)
 		}
-		row(label, l)
-	}
-	if len(s.BuildRaw) > 0 {
-		row("", "(raw build lines above are passed through; not introspected)")
+		if len(s.BuildRaw) > 0 {
+			row("", "(raw build lines above are passed through; not introspected)")
+		}
+	} else if n := len(s.BuildRaw); n > 0 {
+		row("Raw build", fmt.Sprintf("%d %s  (passed through, not introspected; %s)",
+			n, plural(n, "line", "lines"), FullHint))
 	}
 
 	if s.EngineErr != "" {
@@ -716,6 +824,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 	} else if s.SiblingQueryErr != "" {
 		row("Worktrees", "sibling sessions unknown — the engine didn't answer: "+s.SiblingQueryErr)
 	}
+	return rows
 }
 
 // mcpStatusLine renders one declared MCP server: what it is, who declared
@@ -773,11 +882,39 @@ func mcpStatusLine(d skills.MCPDecl, s statusInfo) string {
 	return b.String() + "  (" + strings.Join(notes, "; ") + ")"
 }
 
+// deliveryVerdict is one delivery arrow, split into what a summary can fold
+// into the rows it qualifies and the full mechanism sentence.
+//
+// Short is empty when the verdict must keep its own row at every tier. That
+// is the rule the fold turns on: a verdict other than plain delivery is a
+// claim byre has stopped making, and the default tier folds mechanism, never
+// a withdrawal. The arrows accreted one honest sentence at a time until the
+// sum of them buried the exposure rows the page is for; folding the ones
+// that say "it works" is the editing answer to that.
+type deliveryVerdict struct {
+	Short string
+	Full  string
+}
+
+// mark is the suffix the qualified rows carry when the verdict folds into
+// them, and nothing when it keeps its own row.
+func (v deliveryVerdict) mark(tier statusTier) string {
+	if v.ownRow(tier) {
+		return ""
+	}
+	return "  — " + v.Short
+}
+
+// ownRow reports whether the verdict prints as its own arrow row.
+func (v deliveryVerdict) ownRow(tier statusTier) bool {
+	return tier.full() || v.Short == ""
+}
+
 // mcpDeliveryLine says how (whether) the declared set reaches the agent
 // session. Injection is static truth — deterministic from the image — so it
 // speaks plainly; an adapter-less agent gets the honest degradation: the
 // set is baked at a stable path, the wiring into that agent is the user's.
-func mcpDeliveryLine(s statusInfo) string {
+func mcpDeliveryLine(s statusInfo) deliveryVerdict {
 	names := make([]string, len(s.MCPs))
 	for i, d := range s.MCPs {
 		names[i] = d.MCP.Name
@@ -785,17 +922,20 @@ func mcpDeliveryLine(s statusInfo) string {
 	list := strings.Join(names, ", ")
 	switch {
 	case s.SkillErr != "":
-		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.MCPConfigPath
+		return deliveryVerdict{Full: "-> delivery unknown (skills unresolved); declared set bakes to " + gen.MCPConfigPath}
 	case s.Agent == "":
-		return "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"
+		return deliveryVerdict{Full: "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"}
 	case s.ArtifactShadows[gen.MCPConfigPath]:
-		return "-> delivery not warranted: a project files entry overwrites " + gen.MCPConfigPath + " (baked before the project block; your file wins)"
+		return deliveryVerdict{Full: "-> delivery not warranted: a project files entry overwrites " + gen.MCPConfigPath + " (baked before the project block; your file wins)"}
 	case skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimMCPDelivery):
-		return "-> delivery not warranted: a skill sets byre's MCP controls (see Reserved env)"
+		return deliveryVerdict{Full: "-> delivery not warranted: a skill sets byre's MCP controls (see Reserved env)"}
 	case s.AgentMCP == "inject":
-		return fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath)
+		return deliveryVerdict{
+			Short: "delivered",
+			Full:  fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath),
+		}
 	default:
-		return fmt.Sprintf("-> NOT delivered: agent skill %s has no MCP adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.MCPConfigPath)
+		return deliveryVerdict{Full: fmt.Sprintf("-> NOT delivered: agent skill %s has no MCP adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.MCPConfigPath)}
 	}
 }
 
@@ -818,7 +958,7 @@ func claudeSkillStatusLine(d skills.ClaudeSkillDecl) string {
 // shape). The shadowing boundary rides the delivered line: byre never touches
 // the agent's own ~/.claude/skills, so a same-name skill the in-box agent
 // authored there wins over the delivered one.
-func claudeSkillsDeliveryLine(s statusInfo) string {
+func claudeSkillsDeliveryLine(s statusInfo) deliveryVerdict {
 	names := make([]string, len(s.ClaudeSkills))
 	for i, d := range s.ClaudeSkills {
 		names[i] = "/" + d.CS.Name
@@ -826,15 +966,18 @@ func claudeSkillsDeliveryLine(s statusInfo) string {
 	list := strings.Join(names, ", ")
 	switch {
 	case s.SkillErr != "":
-		return "-> delivery unknown (skills unresolved); declared set bakes to " + gen.ClaudeSkillsPath
+		return deliveryVerdict{Full: "-> delivery unknown (skills unresolved); declared set bakes to " + gen.ClaudeSkillsPath}
 	case s.Agent == "":
-		return "-> no agent selected; declared set bakes to " + gen.ClaudeSkillsPath + " for anything that wants it"
+		return deliveryVerdict{Full: "-> no agent selected; declared set bakes to " + gen.ClaudeSkillsPath + " for anything that wants it"}
 	case s.ArtifactShadows[gen.ClaudeSkillsPath]:
-		return "-> delivery not warranted: a project files entry overwrites " + gen.ClaudeSkillsPath + " (baked before the project block; your file wins)"
+		return deliveryVerdict{Full: "-> delivery not warranted: a project files entry overwrites " + gen.ClaudeSkillsPath + " (baked before the project block; your file wins)"}
 	case s.AgentClaudeSkills == "inject":
-		return fmt.Sprintf("-> the agent session receives: %s  (via %s; a same-name skill in the agent's own state shadows byre's)", list, gen.ClaudeSkillsPath)
+		return deliveryVerdict{
+			Short: "delivered",
+			Full:  fmt.Sprintf("-> the agent session receives: %s  (via %s; a same-name skill in the agent's own state shadows byre's)", list, gen.ClaudeSkillsPath),
+		}
 	default:
-		return fmt.Sprintf("-> NOT delivered: agent skill %s has no claude-skills adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.ClaudeSkillsPath)
+		return deliveryVerdict{Full: fmt.Sprintf("-> NOT delivered: agent skill %s has no claude-skills adapter — the set bakes to %s; wire it into the agent yourself", s.Agent, gen.ClaudeSkillsPath)}
 	}
 }
 
@@ -843,21 +986,24 @@ func claudeSkillsDeliveryLine(s statusInfo) string {
 // mcpDeliveryLine shape). byre never writes an agent-owned file to deliver
 // prose: without the vouch the text simply doesn't reach the session, and
 // this row says so instead of letting the declaration imply delivery.
-func contextDeliveryLine(s statusInfo) string {
+func contextDeliveryLine(s statusInfo) deliveryVerdict {
 	const baked = "/etc/byre/" + gen.AgentContextName
 	switch {
 	case s.SkillErr != "":
-		return "-> delivery unknown (skills unresolved); the text bakes to " + baked
+		return deliveryVerdict{Full: "-> delivery unknown (skills unresolved); the text bakes to " + baked}
 	case s.Agent == "":
-		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
+		return deliveryVerdict{Full: "-> no agent selected; the text bakes to " + baked + " for anything that wants it"}
 	case s.ArtifactShadows["/etc/byre/"+gen.AgentContextName]:
-		return "-> delivery not warranted: a project files entry overwrites " + baked + " (baked before the project block; your file wins)"
+		return deliveryVerdict{Full: "-> delivery not warranted: a project files entry overwrites " + baked + " (baked before the project block; your file wins)"}
 	case skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimContextDelivery):
-		return "-> delivery not warranted: a skill sets byre's context controls (see Reserved env)"
+		return deliveryVerdict{Full: "-> delivery not warranted: a skill sets byre's context controls (see Reserved env)"}
 	case s.AgentContext == "inject":
-		return "-> the agent command injects the baked text (" + baked + "; argument-channel agents truncate very large context, disclosed in-session)"
+		return deliveryVerdict{
+			Short: "delivered",
+			Full:  "-> the agent command injects the baked text (" + baked + "; argument-channel agents truncate very large context, disclosed in-session)",
+		}
 	default:
-		return fmt.Sprintf("-> NOT delivered: agent skill %s has no context adapter — the text bakes to %s; wire it into the agent yourself", s.Agent, baked)
+		return deliveryVerdict{Full: fmt.Sprintf("-> NOT delivered: agent skill %s has no context adapter — the text bakes to %s; wire it into the agent yourself", s.Agent, baked)}
 	}
 }
 

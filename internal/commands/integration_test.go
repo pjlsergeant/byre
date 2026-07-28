@@ -532,7 +532,7 @@ dockerfile_post = ["RUN rm -f `+gen.LaunchGatePath+` && ln -s /dev/null `+gen.La
 
 	// Whatever the engine did to the gate, the claim must not stand unhedged.
 	var buf bytes.Buffer
-	renderStatus(&buf, statusInfo{
+	renderStatusTest(&buf, statusInfo{
 		NetPosture:      "deny-by-default",
 		NetPostureSkill: "firewall",
 		BuildRaw:        rv.cfg.DockerfilePost,

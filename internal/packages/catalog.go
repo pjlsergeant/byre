@@ -780,7 +780,14 @@ func (e *Entry) DisplayName() string {
 }
 
 // ProvenanceLabel is the short status/list label.
-func (e *Entry) ProvenanceLabel() string {
+func (e *Entry) ProvenanceLabel() string { return e.provenanceLabel(true) }
+
+// ProvenanceShort is ProvenanceLabel without the acquisition digest -- the
+// label for a surface that has a fuller tier to send the reader to. Only an
+// installed package carries a digest, so the two agree everywhere else.
+func (e *Entry) ProvenanceShort() string { return e.provenanceLabel(false) }
+
+func (e *Entry) provenanceLabel(digest bool) string {
 	switch e.Provenance {
 	case ProvBundled:
 		// Dev builds carry "(devel) <rev>" or a module pseudo-version --
@@ -800,7 +807,7 @@ func (e *Entry) ProvenanceLabel() string {
 		if e.Version != "" {
 			label += " " + e.Version
 		}
-		if len(e.Digest) >= 8 {
+		if digest && len(e.Digest) >= 8 {
 			label += " (sha256:" + e.Digest[:8] + "...)"
 		}
 		return label

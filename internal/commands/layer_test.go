@@ -142,11 +142,11 @@ func TestLayerValidate(t *testing.T) {
 
 func TestStatusRendersExtendsChain(t *testing.T) {
 	var plain, chained strings.Builder
-	renderStatus(&plain, statusInfo{ID: "x", Agent: "claude"})
+	renderStatusTest(&plain, statusInfo{ID: "x", Agent: "claude"})
 	if strings.Contains(plain.String(), "Extends") {
 		t.Errorf("no chain: no Extends row expected:\n%s", plain.String())
 	}
-	renderStatus(&chained, statusInfo{ID: "x", Agent: "claude", Chain: []string{"torn", "torn-frontend"}})
+	renderStatusTest(&chained, statusInfo{ID: "x", Agent: "claude", Chain: []string{"torn", "torn-frontend"}})
 	if !strings.Contains(chained.String(), "torn -> torn-frontend -> project") {
 		t.Errorf("Extends row should print the chain root-first:\n%s", chained.String())
 	}
@@ -172,7 +172,7 @@ func TestStatusPopulatesExtendsChain(t *testing.T) {
 	}
 
 	s, out, _ := testStreams("", false)
-	if err := Status(s, proj, false); err != nil {
+	if err := Status(s, proj, StatusOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "torn -> project") {
