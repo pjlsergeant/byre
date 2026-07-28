@@ -999,13 +999,17 @@ func hasVolumeName(vs []config.Volume, name string) bool {
 }
 
 // volumeVals flattens a declaration for the override editor's prefill, in the
-// item editor's order (name, target, role).
+// item editor's order (name, target, role, sharing).
 func volumeVals(v config.Volume) []string {
 	role := v.Role
 	if role == "" {
 		role = "state"
 	}
-	return []string{v.Name, v.Target, role}
+	sharing := v.Sharing
+	if sharing == "" {
+		sharing = "shared"
+	}
+	return []string{v.Name, v.Target, role, sharing}
 }
 
 func (m model) portRows() []listRow {

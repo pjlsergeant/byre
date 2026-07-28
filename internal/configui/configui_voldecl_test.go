@@ -302,3 +302,105 @@ func TestVolumeOverrideCarriesScopeAndSeed(t *testing.T) {
 		t.Errorf("a new volume must be project-scoped and unseeded: %+v", v)
 	}
 }
+
+// The Sharing picker is a real control, not a note: a config key with no
+// reachable row in the editor is a hole in the product (P0). It sits last, so
+// the item editor's existing focus order is unchanged up to it, and it writes
+// only the non-default answer.
+func TestVolumeSharingPickerWritesAndReads(t *testing.T) {
+	m := volDeclModel()
+	m.listField = fVolumes
+	add := m.startItem(-1)
+	// Name, Target, Role, Sharing -- the picker is the last control, and the
+	// walk to it is the geometry a pty test drives.
+	if got := add.itemFocusables(); got != 4 {
+		t.Fatalf("volume item editor controls = %d, want 4 (name, target, role, sharing)", got)
+	}
+	if add.mode2Control() != 3 {
+		t.Fatalf("the sharing picker must be the LAST control, got index %d", add.mode2Control())
+	}
+	add.inputs[0].SetValue("ledger")
+	add.inputs[1].SetValue("/var/lib/ledger")
+	add.itemFocus = add.mode2Control()
+	if !add.onMode2Picker() || add.onModePicker() {
+		t.Fatal("focus on the sharing picker must not also read as the role picker")
+	}
+	next, _ := add.updateItem(tea.KeyMsg{Type: tea.KeyRight})
+	add = next.(model)
+	if add.itemMode2 != 1 {
+		t.Fatalf("→ on the sharing picker did not move it: %d", add.itemMode2)
+	}
+	if notes := strings.Join(add.itemNotes(), "\n"); !strings.Contains(notes, "REFUSES") {
+		t.Errorf("choosing exclusive must say what it costs:\n%s", notes)
+	}
+	add = add.commitItem()
+	if add.itemErr != "" {
+		t.Fatalf("commit refused an exclusive volume: %s", add.itemErr)
+	}
+	out := add.assemble()
+	var got config.Volume
+	for _, v := range out.Volumes {
+		if v.Name == "ledger" {
+			got = v
+		}
+	}
+	if !got.Exclusive() {
+		t.Fatalf("the Sharing picker did not reach the declaration: %+v", got)
+	}
+	if err := out.ValidateLayer(); err != nil {
+		t.Fatalf("the editor wrote a volume the layer gate refuses: %v", err)
+	}
+
+	// Reopening the entry reads the declaration back, and the default answer
+	// writes no key at all -- `sharing = "shared"` in every block would be
+	// noise in a file people hand-edit.
+	back := add.startItem(len(add.volumes) - 1)
+	if back.itemMode2 != 1 {
+		t.Errorf("editing an exclusive volume must open with the picker on exclusive: %d", back.itemMode2)
+	}
+	back.itemMode2 = 0
+	back = back.commitItem()
+	for _, v := range back.assemble().Volumes {
+		if v.Name == "ledger" && v.Sharing != "" {
+			t.Errorf("the default answer must write no key: %q", v.Sharing)
+		}
+	}
+}
+
+// An exclusive declaration changes what starting a second worktree box does,
+// so the list row says so -- like the machine scope and the seed beside it.
+func TestVolumeRowFlagsExclusiveSharing(t *testing.T) {
+	line := volumeLine(config.Volume{Name: "ledger", Role: "state", Target: "/x", Sharing: "exclusive"})
+	if !strings.Contains(line, "exclusive") || !strings.Contains(line, "one live box") {
+		t.Errorf("an exclusive row must name the contract: %q", line)
+	}
+	if plain := volumeLine(config.Volume{Name: "deps", Role: "cache", Target: "/x"}); strings.Contains(plain, "exclusive") {
+		t.Errorf("a shared row must not claim a contract it does not have: %q", plain)
+	}
+}
+
+// Overriding an inherited exclusive volume opens the ADD editor: the sharing
+// contract must survive that, the way the scope and the seed do.
+func TestVolumeOverrideCarriesSharing(t *testing.T) {
+	inh := Inherited{
+		HasLower: true,
+		Default: config.Config{Volumes: []config.Volume{
+			{Name: "ledger", Role: "state", Target: "/var/lib/ledger", Sharing: "exclusive"},
+		}},
+	}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, inh, nil, TargetProject)
+	m.listField = fVolumes
+	row := rowByText(t, m.fieldRows(fVolumes), volumeLine(inh.Default.Volumes[0]))
+	next := m.startOverride(row)
+	if next.itemMode2 != 1 {
+		t.Fatalf("the override opened with sharing reset: %d", next.itemMode2)
+	}
+	next.inputs[1].SetValue("/var/lib/ledger2")
+	next = next.commitItem()
+	if next.itemErr != "" {
+		t.Fatalf("commit: %s", next.itemErr)
+	}
+	if v := next.assemble().Volumes[0]; !v.Exclusive() {
+		t.Errorf("the override dropped the single-writer contract: %+v", v)
+	}
+}

@@ -304,8 +304,16 @@ type model struct {
 	itemModeOpts  []string // picker options (mounts: ro/rw/disabled; mcp: local/remote)
 	itemModeLabel string   // picker row label ("Mode", "Kind")
 	itemModeFirst bool     // picker renders/focuses BEFORE the inputs (mcp: Kind drives the form)
-	editIndex     int      // -1 = adding a new item
-	itemErr       string
+	// The second segmented picker, always last: a form whose entry carries
+	// two independent closed vocabularies (volumes: role, and sharing) needs
+	// two controls, and folding them into one picker would offer combinations
+	// the grammar does not have.
+	itemHasMode2   bool
+	itemMode2      int
+	itemMode2Opts  []string
+	itemMode2Label string
+	editIndex      int // -1 = adding a new item
+	itemErr        string
 
 	width       int
 	height      int

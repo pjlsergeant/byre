@@ -348,14 +348,18 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 2
 		}
 	case fVolumes:
-		// vals: name, target, role (volumeVals). The inherited DECLARATION
-		// rides along too: an override opens the add editor, and the scope and
-		// seed this form does not author have to survive it -- shadowing a
-		// machine-scoped volume must not quietly rescope it to this project.
+		// vals: name, target, role, sharing (volumeVals). The inherited
+		// DECLARATION rides along too: an override opens the add editor, and
+		// the scope and seed this form does not author have to survive it --
+		// shadowing a machine-scoped volume must not quietly rescope it to
+		// this project.
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 		if r.vals[2] == "cache" {
 			next.itemMode = 1
+		}
+		if r.vals[3] == "exclusive" {
+			next.itemMode2 = 1
 		}
 		for _, v := range m.lowerNow().Volumes {
 			if v.Name == r.ident {
@@ -464,6 +468,10 @@ func (m model) startItem(idx int) model {
 	m.itemModeOpts = nil
 	m.itemModeLabel = ""
 	m.itemModeFirst = false
+	m.itemHasMode2 = false
+	m.itemMode2 = 0
+	m.itemMode2Opts = nil
+	m.itemMode2Label = ""
 	m.itemVolume = nil
 	if m.listField == fEnv {
 		// One picker for the whole screen: an [env] literal and an
@@ -607,12 +615,15 @@ func (m model) startItem(idx int) model {
 		m.itemModeOpts = []string{"ro", "rw", "disabled"}
 		m.itemModeLabel = "Mode"
 	case fVolumes:
-		// Name + target + role. Scope and seed are NOT form controls: both are
-		// declared shapes with consequences a two-word picker can't carry (a
-		// machine scope is one volume shared by every project; a seed is a
-		// one-time host->volume copy with its own grammar), and both are
-		// overwhelmingly skill-authored. An edit preserves whatever the entry
-		// already declares (commitItem) and itemNotes says so.
+		// Name + target + role + sharing. Scope and seed are NOT form
+		// controls: both are declared shapes with consequences a two-word
+		// picker can't carry (a machine scope is one volume shared by every
+		// project; a seed is a one-time host->volume copy with its own
+		// grammar), and both are overwhelmingly skill-authored. An edit
+		// preserves whatever the entry already declares (commitItem) and
+		// itemNotes says so. Sharing IS a control: it is two words, it is the
+		// author's own claim about their data, and it changes what starting a
+		// second worktree box does.
 		m.inputLabels = []string{"Name", "Target (in box)"}
 		name, target := "", ""
 		if idx >= 0 {
@@ -621,11 +632,17 @@ func (m model) startItem(idx int) model {
 			if v.Role == "cache" {
 				m.itemMode = 1
 			}
+			if v.Exclusive() {
+				m.itemMode2 = 1
+			}
 		}
 		m.inputs = []textinput.Model{newInput(name), newInput(target)}
 		m.itemHasMode = true
 		m.itemModeOpts = []string{"state", "cache"}
 		m.itemModeLabel = "Role"
+		m.itemHasMode2 = true
+		m.itemMode2Opts = []string{"shared", "exclusive"}
+		m.itemMode2Label = "Sharing"
 	case fPorts:
 		m.inputLabels = []string{"Container port", "Host port (blank = same)", "Interface (blank = " + config.DefaultPortInterface + ")"}
 		container, host, iface := "", "", ""
@@ -658,13 +675,32 @@ func (m model) itemFocusables() int {
 	if m.itemHasMode {
 		n++
 	}
+	if m.itemHasMode2 {
+		n++
+	}
 	return n
 }
 
-// itemInputIndex maps the control index to an input index, or -1 when the
-// picker holds focus. With itemModeFirst the picker is control 0 and the
+// mode2Control is the second picker's control index: after every input and
+// after the first picker, wherever that one sits. -1 when the form has none.
+func (m model) mode2Control() int {
+	if !m.itemHasMode2 {
+		return -1
+	}
+	n := len(m.inputs)
+	if m.itemHasMode {
+		n++
+	}
+	return n
+}
+
+// itemInputIndex maps the control index to an input index, or -1 when a
+// picker holds focus. With itemModeFirst the first picker is control 0 and the
 // inputs shift up one.
 func (m model) itemInputIndex() int {
+	if c := m.mode2Control(); c >= 0 && m.itemFocus == c {
+		return -1
+	}
 	if m.itemHasMode && m.itemModeFirst {
 		return m.itemFocus - 1 // control 0 = picker; -1 flags it
 	}
@@ -686,7 +722,11 @@ func (m *model) focusItem(i int) {
 	}
 }
 
-func (m *model) onModePicker() bool { return m.itemHasMode && m.itemInputIndex() == -1 }
+func (m *model) onModePicker() bool {
+	return m.itemHasMode && !m.onMode2Picker() && m.itemInputIndex() == -1
+}
+
+func (m *model) onMode2Picker() bool { return m.itemHasMode2 && m.itemFocus == m.mode2Control() }
 
 func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -735,11 +775,19 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusItem(m.itemFocus - 1)
 		return m, nil
 	case "left":
+		if m.onMode2Picker() {
+			m.itemMode2 = wrap(m.itemMode2-1, len(m.itemMode2Opts))
+			return m, nil
+		}
 		if m.onModePicker() {
 			m.itemMode = wrap(m.itemMode-1, len(m.itemModeOpts))
 			return m.syncHostEnvLabel(), nil
 		}
 	case "right":
+		if m.onMode2Picker() {
+			m.itemMode2 = wrap(m.itemMode2+1, len(m.itemMode2Opts))
+			return m, nil
+		}
 		if m.onModePicker() {
 			m.itemMode = wrap(m.itemMode+1, len(m.itemModeOpts))
 			return m.syncHostEnvLabel(), nil
@@ -1050,6 +1098,12 @@ func (m model) commitItem() model {
 		if m.itemMode == 1 {
 			v.Role = "cache"
 		}
+		// Written only when it is the non-default answer: `sharing = "shared"`
+		// in every volume block would be noise in a file people hand-edit,
+		// and the empty spelling means exactly the same thing.
+		if m.itemMode2 == 1 {
+			v.Sharing = "exclusive"
+		}
 		// Carry the declared scope and seed through: this form authors neither,
 		// so dropping them would silently un-share a machine volume (or un-seed
 		// a state one) as a side effect of retyping a target. Editing carries
@@ -1129,10 +1183,11 @@ func mountLine(mt config.Mount) string {
 }
 
 // volumeLine renders one [[volumes]] declaration: name, mount point, role, and
-// the two properties that change what the entry MEANS -- a machine scope
-// (one volume shared by every project of this user) and a seed (a one-time
-// copy into a fresh volume). Both are flagged because a row that omitted them
-// would read as an ordinary per-project volume.
+// the properties that change what the entry MEANS -- a machine scope (one
+// volume shared by every project of this user), an exclusive sharing contract
+// (develop refuses a second live box that would mount it), and a seed (a
+// one-time copy into a fresh volume). Each is flagged because a row that
+// omitted it would read as an ordinary, freely shared per-project volume.
 func volumeLine(v config.Volume) string {
 	role := v.Role
 	if role == "" {
@@ -1141,6 +1196,9 @@ func volumeLine(v config.Volume) string {
 	s := fmt.Sprintf("%s -> %s (%s)", v.Name, v.Target, role)
 	if v.MachineScoped() {
 		s += " [machine — shared by all your projects]"
+	}
+	if v.Exclusive() {
+		s += " [exclusive — one live box at a time]"
 	}
 	if v.Seed != nil {
 		s += " [seeded]"
@@ -1711,18 +1769,23 @@ func (m model) viewItem() string {
 	if m.itemHasMode && len(m.itemModeLabel) > pad {
 		pad = len(m.itemModeLabel)
 	}
+	if m.itemHasMode2 && len(m.itemMode2Label) > pad {
+		pad = len(m.itemMode2Label)
+	}
 	for i := range m.inputs {
 		if l := len([]rune(m.itemLabel(i))); l > pad {
 			pad = l
 		}
 	}
-	picker := func() {
+	seg := func(label string, opts []string, sel int, focused bool) {
 		cursor := "  "
-		if m.onModePicker() {
+		if focused {
 			cursor = cursorStyle.Render("▸ ")
 		}
-		label := fmt.Sprintf("%-*s", pad, m.itemModeLabel)
-		fmt.Fprintf(&b, "%s%s: %s\n", cursor, label, renderSeg(m.itemModeOpts, m.itemMode, m.onModePicker()))
+		fmt.Fprintf(&b, "%s%s: %s\n", cursor, fmt.Sprintf("%-*s", pad, label), renderSeg(opts, sel, focused))
+	}
+	picker := func() {
+		seg(m.itemModeLabel, m.itemModeOpts, m.itemMode, m.onModePicker())
 	}
 	if m.itemHasMode && m.itemModeFirst {
 		picker()
@@ -1738,6 +1801,9 @@ func (m model) viewItem() string {
 	}
 	if m.itemHasMode && !m.itemModeFirst {
 		picker()
+	}
+	if m.itemHasMode2 {
+		seg(m.itemMode2Label, m.itemMode2Opts, m.itemMode2, m.onMode2Picker())
 	}
 	for _, note := range m.itemNotes() {
 		b.WriteString(dimStyle.Render("  "+note) + "\n")
@@ -1757,6 +1823,9 @@ func (m model) viewItem() string {
 	switch {
 	case m.listField == fMounts:
 		hint = helpLine("tab", "next", "→", "accept suggestion", "←/→", "mode", "enter", "accept", "^s", "save", "esc", "cancel")
+	case m.itemHasMode2:
+		// Two pickers, so the hint names the action rather than one of them.
+		hint = helpLine("tab", "next", "←/→", "choose", "enter", "accept", "^s", "save", "esc", "cancel")
 	case m.itemHasMode:
 		hint = helpLine("tab", "next", "←/→", strings.ToLower(m.itemModeLabel), "enter", "accept", "^s", "save", "esc", "cancel")
 	}
@@ -1811,6 +1880,14 @@ func (m model) itemNotes() []string {
 		// here, at the moment of editing: silence would read as "this entry
 		// has neither", and both change what saving the row does.
 		notes := []string{"state = precious (auth, history, scratch); cache = disposable. New volumes are project-scoped."}
+		// The sharing note follows the picker: worktree boxes of one project
+		// run concurrently and mount the same volumes, so what "exclusive"
+		// costs has to be readable at the moment of choosing it.
+		if m.itemMode2 == 1 {
+			notes = append(notes, "exclusive: byre develop REFUSES to start a second box of this project while another holds this volume — for data that cannot take two writers.")
+		} else {
+			notes = append(notes, "shared: every box of this project — worktrees included — may hold this volume at once.")
+		}
 		if v := m.volumeBase(); v != nil {
 			if v.MachineScoped() {
 				notes = append(notes, "⚠ scope: machine — ONE volume shared by ALL your projects (kept as declared; ^e to change)")

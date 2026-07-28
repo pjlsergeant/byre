@@ -143,6 +143,14 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	s.WaitForAfter(e, "a add")
 	e = s.Keys("a")
 	s.WaitForAfter(e, "Add Volume")
+	// The Sharing picker is the item editor's LAST control and the only
+	// second picker in the product, so the walk drives it: three tabs from
+	// Name (Target, Role, Sharing), then ←/→. Its note follows the selection,
+	// which is what proves the keypress reached the second picker rather than
+	// the first. Escape below discards the whole draft, so nothing is written.
+	s.WaitFor("shared:")
+	e = s.Keys("Tab", "Tab", "Tab", "Right")
+	s.WaitForAfter(e, "REFUSES")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "a add")
 	e = s.Keys("Escape")
