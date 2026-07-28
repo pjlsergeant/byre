@@ -5,7 +5,11 @@ numbered principle in `docs/PRINCIPLES.md`, each ending with its
 enforcement marker. `[arm: TestName]` names a test that fails when the
 decision is violated; `[no arm]` means the rule is convention only --
 nothing automated will catch a breach, so a reviewer is the only
-tripwire it has.
+tripwire it has. `[arm(gated): TestName]` is an arm that does not run in
+the unit suite: it needs a real engine (`BYRE_DOCKER_TESTS=1`) or a real
+tmux (`BYRE_TUI_TESTS=1`), so `go test ./...` on a contributor's machine
+says nothing about it and CI's gated job is where it actually fires.
+Treat those like `[no arm]` while reviewing a change you have not pushed.
 
 The one-liners are hooks for judging "does this bear on my change",
 not summaries -- the ADR or principle stays the record. Where a line
@@ -38,6 +42,12 @@ this index:
 - When an enforcement arm is built, renamed, or deleted, the marker
   changes with it -- `TestDoctrineIndexArmsResolve` fails on names
   that no longer match a test function.
+- An arm behind `BYRE_DOCKER_TESTS=1` or `BYRE_TUI_TESTS=1` is marked
+  `[arm(gated): ...]`. The same test checks this both ways: a gated
+  marker whose test does not sit behind either gate fails, and so does
+  a plain `[arm: ...]` whose test does -- so an arm cannot quietly
+  become unenforceable-by-default, or keep claiming it is once it runs
+  everywhere.
 - An arm may be partial (a tripwire on the decision's core, not proof
   of every clause); a marker never claims completeness. When in doubt
   whether a test qualifies, it doesn't -- `[no arm]` is the honest
@@ -69,8 +79,8 @@ this index:
 - 0005: agent CLI, launch command, and auth volume come from the skill `agent` selects; core hardcodes none [arm: TestResolveSampleAndAgentSkills]
 - 0006: raw run_args append last and may override any byre flag, except the re-asserted identity labels [arm: TestRunArgsCoreFlagsAndOrder]
 - 0007: never copy host agent credentials into a box; agents log in in-box, the state volume persists it [no arm]
-- 0008: host UID/GID bakes at image build (USER dev, uid-qualified tag); no runtime chown, no root after PID 1 [arm: TestIntegrationLaunchPathAndOwnership]
-- 0009: worktrees inherit the main tree's project identity; mutating repo git runs in-box, never on the host [arm: TestIntegrationConcurrentWorktreeSessions]
+- 0008: host UID/GID bakes at image build (USER dev, uid-qualified tag); no runtime chown, no root after PID 1 [arm(gated): TestIntegrationLaunchPathAndOwnership]
+- 0009: worktrees inherit the main tree's project identity; mutating repo git runs in-box, never on the host [arm(gated): TestIntegrationConcurrentWorktreeSessions]
 - 0010: firewall rules enter via an external root+NET_ADMIN helper joining the netns; the box gains no caps [arm: TestNetnsInitArgv]
 - 0011: the launcher gates on a loopback socket handshake and fails closed on timeout; never a state marker [arm: TestLauncherGateTimesOutClosed]
 - 0012: the firewall allowlist derives from enabled skills' declared egress, port-scoped (partly superseded by 0019, 0020) [arm: TestFirewallComposesAgentEgress]
@@ -78,11 +88,11 @@ this index:
 - 0014: no dockerfile= opt-out -- byre generates the build or isn't involved; the key fails loudly as unknown [arm: TestDockerfileKeyRejectedLoudly]
 - 0015: mounts are disabled via a disabled=true field, never a mode value; the entry stays, emits no bind [arm: TestRunParamsSkipsDisabledMounts]
 - 0016: one static binary per platform on v-tags; version = stamped tag > buildinfo > (devel), never faked [arm: TestResolve]
-- 0017: shared agent login rides an opt-in companion skill plus a machine-scoped uid-qualified volume [arm: TestIntegrationMachineVolumeSharedAcrossProjects]
+- 0017: shared agent login rides an opt-in companion skill plus a machine-scoped uid-qualified volume [arm(gated): TestIntegrationMachineVolumeSharedAcrossProjects]
 - 0018: show effective state, edit only the open layer; !name removal for apt, remove=true for ports [arm: TestMergeAptNpmRemoval]
 - 0019: user egress rides the `egress` config key (union, !removal); enforcement stays the firewall skill [arm: TestResolvedEgressUnionsConfigKey]
 - 0020: only a skill's own functional egress auto-opens; convenience endpoints ship closed in egress_offered [arm: TestFirewallComposesAgentEgress]
-- 0021: deliver is machine-scoped discovery, exec-streamed into root-parented /inbox, atomic no-clobber writes [arm: TestIntegrationDeliverTransport]
+- 0021: deliver is machine-scoped discovery, exec-streamed into root-parented /inbox, atomic no-clobber writes [arm(gated): TestIntegrationDeliverTransport]
 - 0022: the CLI rides cobra but keeps byre's exit-code contract: usage errors exit 2 and never dispatch [arm: TestRunUsageErrors]
 - 0023: grok-shared-auth v1 (symlink-shared auth.json) is retired; a symlinked auth.json never counts (superseded in part by 0036) [arm: TestGrokLoginHookHealsRetiredSymlink]
 - 0024: onboarding offers shared auth only when a companion vouches shared_auth_for (partly superseded by 0025) [arm: TestSharedAuthCompanion]
