@@ -1,7 +1,17 @@
 # Whole-repo review, 2026-07-28 -- findings, decisions, and the worklist
 
-**Status: ACTIVE.** One item shipped (ADR 0052, merged). The rest is decided
-but unimplemented. Delete this file when the worklist is absorbed.
+**Status: EXECUTED (2026-07-28, ~63 commits on main).** The worklist below was
+verified against HEAD (two claims refuted), grilled to ratified decisions, and
+implemented across eight units -- each through a two-reviewer loop (codex +
+grok, unbriefed), the doctrine unit additionally through a delegated
+adjudication seat. Gated suite green -count=1 on the runner, pty tier
+included. What survives this file: the follow-ups accrued during execution
+(recorded in the session devlog's dispatch plan -- onboarding problem rows,
+deliver sibling-printer escaping, the config UI's reserved-env surface,
+tomldoc value-encoding residuals) and one one-line CLAUDE.md edit awaiting
+the maintainer. Deletion of this file is the maintainer's call per
+wip/README.md -- the decisions it records are now in the tree (PRINCIPLES,
+the ADRs, CHANGES) and its git history.
 
 This is a session handoff. It carries everything needed to resume without the
 original conversation.
