@@ -43,7 +43,14 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// the (rw-mounted) project can't define its own sandbox.
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 
-	if ok, _ := hostopen.ExistsNoFollow(cfgPath); ok {
+	// A probe that could not look is not proof the project is unconfigured:
+	// falling through would run the first-run picker over an existing config
+	// and write the answers on top of it. Say which path could not be read.
+	ok, perr := hostopen.ExistsNoFollow(cfgPath)
+	if perr != nil {
+		return fmt.Errorf("cannot tell whether %s exists (%v) — fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
+	}
+	if ok {
 		// Already configured. --template/--agent only configure a NEW project, so
 		// don't silently ignore them on an existing one — point at the file.
 		if anyFlag {

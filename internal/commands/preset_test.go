@@ -194,6 +194,26 @@ func TestPresetPrefersConventionalName(t *testing.T) {
 	}
 }
 
+// Conventional discovery ends in "no byre.preset here", which is a claim about
+// the directory -- so a probe that could not look must surface as itself
+// rather than fall through to that sentence.
+func TestPresetDiscoveryRefusesOnAnInconclusiveProbe(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root traverses a 0000 directory")
+	}
+	_, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
+	if err := os.Chmod(proj, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(proj, 0o700) })
+
+	_, _, _, err := readPreset(proj, "")
+	if err == nil || !strings.Contains(err.Error(), "cannot tell whether") || !strings.Contains(err.Error(), PresetName) {
+		t.Fatalf("an inconclusive probe must surface, got: %v", err)
+	}
+}
+
 func TestPresetApplyRejectsInvalidLayer(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\nnot_a_key = true\n")

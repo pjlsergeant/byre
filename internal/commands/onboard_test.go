@@ -73,6 +73,35 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 	}
 }
 
+// "I could not look" is not "this project is unconfigured": an unreadable
+// store makes the existence probe inconclusive, and falling through would run
+// the first-run picker over a config that may well be there.
+func TestOnboardUnreadableStoreRefusesInsteadOfReonboarding(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root traverses a 0000 directory")
+	}
+	p, proj := onboardPaths(t)
+	cfg := filepath.Join(p.Dir, "byre.config")
+	if err := os.WriteFile(cfg, []byte("agent = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p.Dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(p.Dir, 0o700) })
+
+	err := onboardIfNeeded(discardStreams(), proj, p, "", "", nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot tell whether") || !strings.Contains(err.Error(), cfg) {
+		t.Fatalf("an inconclusive probe must refuse and name the path, got: %v", err)
+	}
+	if err := os.Chmod(p.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if b, rerr := os.ReadFile(cfg); rerr != nil || !strings.Contains(string(b), "claude") {
+		t.Fatalf("the existing config must be untouched: %q %v", string(b), rerr)
+	}
+}
+
 // On a non-TTY an un-flagged axis has nobody to answer for it: refuse loudly
 // rather than fill it from the machine favourite — a favourite is what Enter
 // means at a prompt, and there is no Enter on a pipe.

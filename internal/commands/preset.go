@@ -245,13 +245,24 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 		// prints "run byre preset apply to review it", steering the user
 		// into the one flow that would follow the link. An explicit path
 		// argument below still follows: there the user really did name it.
+		// Only a PROVABLE absence may fall through to the next candidate: the
+		// tail of this branch tells the user there is no preset here, and a
+		// probe that could not look has not established that.
 		p := filepath.Join(projectDir, PresetName)
-		if ok, _ := hostopen.ExistsNoFollow(p); ok {
+		ok, perr := hostopen.ExistsNoFollow(p)
+		if perr != nil {
+			return nil, "", false, fmt.Errorf("cannot tell whether %s is here: %w", p, perr)
+		}
+		if ok {
 			b, err := readPresetDerived(p)
 			return b, p, false, err
 		}
 		legacy := filepath.Join(projectDir, config.ProjectConfigName)
-		if ok, _ := hostopen.ExistsNoFollow(legacy); ok {
+		ok, perr = hostopen.ExistsNoFollow(legacy)
+		if perr != nil {
+			return nil, "", false, fmt.Errorf("cannot tell whether %s is here: %w", legacy, perr)
+		}
+		if ok {
 			b, err := readPresetDerived(legacy)
 			return b, legacy, true, err
 		}

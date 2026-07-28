@@ -86,12 +86,25 @@ func snapshotStore(dir string) storeSnapshot {
 	// slurp of a device or a hung open of a FIFO.
 	if f, fi, ferr := hostopen.OpenRegularIn(root, config.ProjectConfigName); ferr == nil {
 		if fi.Size() <= maxStoreFileBytes {
-			s.config, _ = io.ReadAll(io.LimitReader(f, maxStoreFileBytes))
-			s.configReadable = true
+			s.config, s.configReadable = snapshotConfigBody(f)
 		}
 		f.Close()
 	}
 	return s
+}
+
+// snapshotConfigBody reads the captured config bytes and reports whether they
+// are the WHOLE file. A read that fails partway leaves a prefix, and a prefix
+// diffed as authoritative prints the unread tail as deleted lines -- a false
+// account of the session at the loudest consent moment byre has. A failed read
+// is the same "not readable" state fileSig gives a device or a FIFO, which the
+// report already has words for.
+func snapshotConfigBody(r io.Reader) ([]byte, bool) {
+	b, err := io.ReadAll(io.LimitReader(r, maxStoreFileBytes))
+	if err != nil {
+		return nil, false
+	}
+	return b, true
 }
 
 // fileSig is a comparison signature: content hash for regular files, the target

@@ -2,6 +2,8 @@ package commands
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -300,3 +302,24 @@ func TestReportSelfEditIncompleteWalkInventsNothing(t *testing.T) {
 		t.Errorf("an incomplete enumeration must be said out loud:\n%s", out)
 	}
 }
+
+// A read that fails partway holds a PREFIX of the config. Diffing that prefix
+// as if it were the file prints the unread tail as deleted lines -- a false
+// account of the session at the loudest consent moment byre has -- so a failed
+// read reports the same "not readable" state a device or a FIFO gets.
+func TestSnapshotConfigBodyRefusesATruncatedRead(t *testing.T) {
+	b, ok := snapshotConfigBody(io.MultiReader(strings.NewReader("base = \"node:22\"\n"), errReader{}))
+	if ok {
+		t.Error("a read that failed partway must not be captured as readable")
+	}
+	if len(b) != 0 {
+		t.Errorf("partial bytes must not be kept: %q", b)
+	}
+	if b, ok := snapshotConfigBody(strings.NewReader("base = \"node:22\"\n")); !ok || string(b) != "base = \"node:22\"\n" {
+		t.Errorf("a complete read must be captured: %q %v", string(b), ok)
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("i/o error") }

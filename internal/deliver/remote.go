@@ -315,10 +315,17 @@ func planPack(warn io.Writer, sources []Source) (plan *packPlan, cleanup func(),
 				return plan, cleanup, fmt.Errorf("spooling %s: %w", src.label(), err)
 			}
 			spools = append(spools, f.Name())
+			// The spool's size is taken from this copy and its bytes are what
+			// the archive ships, so a Close that reports a failed final write
+			// must not pass as a complete spool -- it would deliver a
+			// truncated file under a byte count that says otherwise.
 			n, err := io.Copy(f, src.Reader)
-			f.Close()
+			cerr := f.Close()
 			if err != nil {
 				return plan, cleanup, fmt.Errorf("spooling %s: %w", src.label(), err)
+			}
+			if cerr != nil {
+				return plan, cleanup, fmt.Errorf("spooling %s (closing the spool file): %w", src.label(), cerr)
 			}
 			plan.entries = append(plan.entries, packEntry{name: claim(src.Name), path: f.Name(), size: n})
 			plan.bytes += n

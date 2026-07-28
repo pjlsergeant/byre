@@ -195,7 +195,12 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 // behind (deleting it then would destroy the only copy).
 func migrateStore(s Streams, paths project.Paths, oldDir string) (found, safe bool, err error) {
 	safe = true
-	if ok, _ := hostopen.ExistsNoFollow(filepath.Join(oldDir, "path")); ok {
+	// Only a PROVABLE absence may leave found false: the caller turns that into
+	// "nothing found for old id X; nothing to migrate", and a probe that could
+	// not look has not established it. (A store this probe cannot read fails
+	// the reads below too, which abort with the cause -- so the degrade here
+	// is what keeps the two answers from disagreeing.)
+	if ok, perr := hostopen.ExistsNoFollow(filepath.Join(oldDir, "path")); ok || perr != nil {
 		found = true
 	}
 	for _, name := range []string{config.ProjectConfigName, appliedRecord} {

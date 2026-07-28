@@ -968,8 +968,19 @@ func stageRegularFromFD(in *os.File, dstRoot *os.Root, dst string, b *copyBudget
 	if err != nil {
 		return err
 	}
-	defer o.Close()
-	return copyExactly(o, in, fi.Size(), in.Name())
+	// The copy error first, then the close: a deferred Close on a write-mode
+	// file swallows the error the final write reports (ENOSPC on the context
+	// dir is the everyday one), and a short file would then be built into the
+	// image as if it were the whole thing.
+	cerr := copyExactly(o, in, fi.Size(), in.Name())
+	closeErr := o.Close()
+	if cerr != nil {
+		return cerr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("%s: writing it into the build context: %w", in.Name(), closeErr)
+	}
+	return nil
 }
 
 // copyExactly copies exactly size bytes from in to out, refusing a source that
