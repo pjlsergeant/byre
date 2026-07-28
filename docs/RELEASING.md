@@ -52,6 +52,41 @@ Dry-run the whole pipeline locally with:
 goreleaser release --snapshot --clean   # artifacts land in dist/, nothing published
 ```
 
+## What a version number promises
+
+byre is **1.x**. The tag is a release ordinal with a stability
+expectation, not a semver contract over every config key: a **minor
+release may remove a live config key**, and byre's answer to the
+breakage is loudness, not a window.
+
+A live-key removal ships three things together, or it does not ship:
+
+1. a `CHANGES.md` entry that names the key and the replacement;
+2. a **refusal carrying the remedy** -- the key parses to an error whose
+   text is the migration (`internal/config/config.go`'s removed-key map
+   and `internal/skills`' equivalent are where those live), never a
+   silent ignore or a bare "unknown key";
+3. the whole apparatus gone with it -- parser field, editor row, docs,
+   tests.
+
+This is a judgment call per key, made at removal time: how much config
+in the wild plausibly carries it, and how cheap the migration is. The
+`npm_global` removal (2026-07-28, v1.x) is the **exceptional** case on
+the record -- a key that named one ecosystem in byre's vocabulary,
+removed in a minor with a `dockerfile_pre` remedy in the refusal. Treat
+it as precedent for the mechanism, not as a licence to remove keys
+casually.
+
+*Compatibility paths* are the other thing and are governed differently:
+they get the stated window in ADR 0049 (two minors or 90 days,
+whichever is longer). A tolerated legacy spelling waits; a key byre
+means to stop supporting outright gets judgment.
+
+A user whom an upgrade breaks has one answer, and it must stay true:
+`install.sh` takes `BYRE_VERSION` to pin a tag (documented on the
+site's install page). Anything that removes a live key is one
+`BYRE_VERSION=vX.Y.Z` away from being reversible.
+
 ## Install paths
 
 All three are live; the README's Install section blesses Homebrew and

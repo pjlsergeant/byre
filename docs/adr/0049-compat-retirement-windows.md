@@ -16,6 +16,11 @@ recovery remedy in the message and a CHANGES.md recovery path. Removal
 means the whole apparatus goes together: parser field, migration
 machinery, command surface, catalog/UI rows, tests, docs.
 
+The window governs *compatibility paths* only: a **live** config key
+byre decides to stop supporting gets judgment rather than a window --
+removable in a minor, loudly, per the position stated in
+`docs/RELEASING.md`.
+
 Already retired under this policy: `SharedAuthDeclined` (stale key now
 parses as a tolerated retired key), adoption-record migration and
 decline-record deletion (old records are inert files), `skill update`

@@ -36,6 +36,26 @@ go build -o ~/bin/byre ./cmd/byre
 
 You need Docker (or Podman) running on the host.
 
+## Pinning a version
+
+`install.sh` installs the latest release. Two environment variables
+change that:
+
+```sh
+# a specific release instead of the latest
+curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | BYRE_VERSION=v1.4.0 sh
+
+# somewhere other than /usr/local/bin (or ~/.local/bin when that is not writable)
+curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | BYRE_INSTALL_DIR=~/bin sh
+```
+
+`BYRE_VERSION` is the way back if an upgrade breaks you. byre is 1.x
+and a minor release may retire a config key -- always with a `CHANGES`
+entry and an error message carrying the migration, never silently --
+so if a new version refuses something your config relies on, pin the
+last version that worked while you migrate. `byre version` prints what
+you are running.
+
 ## Platform
 
 Linux and macOS, over Docker or Podman -- rootful or rootless (rootless
