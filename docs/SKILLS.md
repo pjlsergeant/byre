@@ -77,7 +77,9 @@ own directory**, not the project: `..` escapes and symlinks pointing out
 of the skill dir are refused, and `"."` is legal and means the whole
 skill directory (how a package that ships a tree stages it). They are
 COPY'd before the skill's raw `[build].dockerfile` lines, so a `RUN`
-there can read them.
+there can read them. One destination takes one source: two entries
+installing to the same image path are refused at resolve, because only
+one of them can land there and which one would be map order.
 
 Note the asymmetry, which is easy to trip over: a USER's config has a
 `[files]` key with the same name and a different root. Theirs resolves

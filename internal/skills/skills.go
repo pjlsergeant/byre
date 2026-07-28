@@ -948,11 +948,21 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 		// dir (reject escapes) and require absolute destinations. Sorted by source
 		// for deterministic build-context staging and COPY emission.
 		dir := sk.dir
+		destBy := map[string]string{} // image dest -> the source that claimed it
 		for _, src := range slices.Sorted(maps.Keys(f.Build.Files)) {
 			dest := f.Build.Files[src]
 			if !filepath.IsAbs(dest) {
 				return Resolved{}, fmt.Errorf("skill %q: file destination %q must be an absolute image path", name, dest)
 			}
+			// Two sources for one destination: only one file can be there, and
+			// which one is map-iteration order at every consumer that keys by
+			// dest (planGuard's byDest, so a guarded launch gate or firewall
+			// script could be re-asserted from either). Silent shadowing of an
+			// authoring mistake, refused where the author can see it.
+			if prev, dup := destBy[dest]; dup {
+				return Resolved{}, fmt.Errorf("skill %q: build files %q and %q both install to %q; one destination, one source", name, prev, src, dest)
+			}
+			destBy[dest] = src
 			real, perr := skillRelPath(dir, src)
 			if perr != nil {
 				return Resolved{}, fmt.Errorf("skill %q: build file: %w", name, perr)

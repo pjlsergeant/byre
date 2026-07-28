@@ -362,3 +362,32 @@ func TestRemovedSkillNpmGlobalRefusesWithItsRemedy(t *testing.T) {
 		}
 	}
 }
+
+// Two sources for one image destination is an authoring mistake with a silent
+// consequence: only one file lands there, and which one is map-iteration order
+// at every consumer that keys by dest -- build/planGuard's byDest among them,
+// so a guarded launch gate or firewall script could be re-asserted from
+// either. Refused at resolve, where the author can see it.
+func TestResolveRejectsTwoBuildFilesForOneDestination(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "dup", "[build.files]\n\"a.sh\" = \"/usr/local/bin/tool\"\n\"b.sh\" = \"/usr/local/bin/tool\"\n",
+		map[string]string{"a.sh": "#!/bin/sh\n", "b.sh": "#!/bin/sh\n"})
+	_, err := Resolve(config.Config{Skills: []string{"dup"}}, catFor(t, dir))
+	if err == nil {
+		t.Fatal("two sources for one destination must be refused")
+	}
+	// The rule that fired, plus both offending sources and the destination
+	// they collide on -- a dozen rules can reject a skill.
+	for _, want := range []string{"both install to", "a.sh", "b.sh", "/usr/local/bin/tool"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name %q: %v", want, err)
+		}
+	}
+	// One source per destination still resolves.
+	ok := testHome(t)
+	writeSkill(t, ok, "fine", "[build.files]\n\"a.sh\" = \"/usr/local/bin/a\"\n\"b.sh\" = \"/usr/local/bin/b\"\n",
+		map[string]string{"a.sh": "#!/bin/sh\n", "b.sh": "#!/bin/sh\n"})
+	if _, err := Resolve(config.Config{Skills: []string{"fine"}}, catFor(t, ok)); err != nil {
+		t.Fatalf("distinct destinations must still resolve: %v", err)
+	}
+}
