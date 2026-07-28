@@ -71,6 +71,7 @@ const (
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
 	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
+	fSeedPrefs       // tri-state: seed_prefs (inherit / on / off), ADR 0045
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
 	// the ad-hoc clear. Separate from fVolumes because they answer different
 	// questions with different blast radii -- one edits a declaration in this
@@ -179,8 +180,14 @@ type model struct {
 	// skipQuestions is [defaults].skip_questions: onboarding configures a new
 	// project from the stored answers instead of asking.
 	skipQuestions bool
-	target        Target // which kind of file this session edits
-	followFile    bool   // followForTarget(target), fixed at open
+	// seedPrefsSel is seed_prefs as a picker index into seedPrefsOpts. The key
+	// is a THREE-state pointer (ADR 0045) -- unset inherits, an explicit false
+	// turns an inherited opt-in back off -- so a checkbox could not express it:
+	// it would have written `seed_prefs = false` for "I didn't say", which is a
+	// different instruction to the cascade.
+	seedPrefsSel int
+	target       Target // which kind of file this session edits
+	followFile   bool   // followForTarget(target), fixed at open
 
 	tmplOpts, agentOpts, engineOpts []string
 	tmplSel, agentSel, engineSel    int
@@ -359,7 +366,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
+		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
 	case TargetGlobal:
@@ -371,7 +378,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
-			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
@@ -386,7 +393,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
 			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
 		}
 	}
 	// The chain pointer: project configs and layers may name a parent layer;
@@ -486,6 +493,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
 	m.dfPost = strings.Join(cfg.DockerfilePost, "\n")
 	m.skipQuestions = cfg.Defaults.SkipQuestions
+	m.seedPrefsSel = seedPrefsSel(cfg.SeedPrefs)
 	// worktree_base is a 3-state choice: "sibling" (checkbox on), a path (checkbox
 	// off, path set), or unset (checkbox off, path empty -> byre worktree refuses).
 	switch v := strings.TrimSpace(cfg.WorktreeBase); v {
@@ -501,6 +509,37 @@ func (m model) loadConfig(cfg config.Config) model {
 	}
 	m.savedSig = m.sig()
 	return m
+}
+
+// seedPrefsOpts are the tri-state's rows, in picker order. "inherit" is index
+// 0 because it is what an unset key means and what a fresh file writes:
+// nothing.
+var seedPrefsOpts = []string{"inherit", "on", "off"}
+
+// seedPrefsSel maps the stored pointer onto a picker row, and seedPrefsValue
+// maps a row back. The pair is the whole tri-state contract: index 0 removes
+// the key, 1 and 2 write an explicit true/false.
+func seedPrefsSel(v *bool) int {
+	switch {
+	case v == nil:
+		return 0
+	case *v:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func seedPrefsValue(sel int) *bool {
+	yes, no := true, false
+	switch sel {
+	case 1:
+		return &yes
+	case 2:
+		return &no
+	default:
+		return nil
+	}
 }
 
 // envItems converts the config env map into a stable, sorted-by-key slice for
@@ -668,6 +707,8 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.wtSibling = !m.wtSibling
 		case f == fSkipQuestions:
 			m.skipQuestions = !m.skipQuestions
+		case f == fSeedPrefs:
+			m.seedPrefsSel = wrap(m.seedPrefsSel+1, len(seedPrefsOpts))
 		}
 		return m, nil
 	}
@@ -702,6 +743,8 @@ func (m *model) cycle(dir int) {
 		m.wtSibling = !m.wtSibling
 	case fSkipQuestions:
 		m.skipQuestions = !m.skipQuestions
+	case fSeedPrefs:
+		m.seedPrefsSel = wrap(m.seedPrefsSel+dir, len(seedPrefsOpts))
 	case fTemplate:
 		m.tmplSel = m.skipDisabled(m.tmplOpts, wrap(m.tmplSel+dir, len(m.tmplOpts)), dir)
 	case fExtends:
@@ -1039,6 +1082,20 @@ func (m model) renderValue(f fieldID, focused bool) string {
 			s = focusStyle.Render(s)
 		}
 		return s
+	case fSeedPrefs:
+		s := renderSeg(seedPrefsOpts, m.seedPrefsSel, focused)
+		// The perishability is the whole shape of this feature and belongs
+		// where the choice is made: the seed only ever fires into a volume that
+		// does not exist yet, so ticking it on a project whose agent volume is
+		// already there does nothing and never will (the runner leaves a
+		// diverged volume alone).
+		s += dimStyle.Render("  copies the agent's curated prefs into a volume being CREATED — an existing one is left alone")
+		if m.seedPrefsSel == 0 {
+			if lower := m.lowerNow().SeedPrefs; lower != nil {
+				s += dimStyle.Render(fmt.Sprintf("  (inherited: %s)", boolWord(*lower)))
+			}
+		}
+		return s
 	case fWorktreeSibling:
 		box := "[ ]"
 		if m.wtSibling {
@@ -1343,6 +1400,15 @@ func keyArrow(dir int) tea.KeyType {
 		return tea.KeyLeft
 	}
 	return tea.KeyRight
+}
+
+// boolWord renders an inherited tri-state value in the picker's own words, so
+// the inherit row and the explicit rows read from one vocabulary.
+func boolWord(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 func wrap(i, n int) int {

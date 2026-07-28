@@ -215,6 +215,7 @@ func (m *model) write(cfg config.Config, force bool) error {
 func (m model) assemble() config.Config {
 	out := m.base
 	out.Base = strings.TrimSpace(m.ti.Value())
+	out.SeedPrefs = seedPrefsValue(m.seedPrefsSel)
 	// worktree_base is only editable in the global editor; elsewhere it round-trips
 	// via m.base untouched. Sibling checkbox wins; else the base path; else unset.
 	if m.target == TargetGlobal {
@@ -383,6 +384,7 @@ func (m model) sig() string {
 	// to dirty(): esc quits without the discard confirm, ctrl+e reloads the
 	// file over the change, and the footer claims saved when nothing was.
 	parts = append(parts, fmt.Sprintf("skipq:%v", m.skipQuestions))
+	parts = append(parts, "seedprefs:"+seedPrefsOpts[m.seedPrefsSel])
 	return strings.Join(parts, "\x00")
 }
 

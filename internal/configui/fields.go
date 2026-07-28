@@ -76,6 +76,7 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fWorktreeBase:    {label: "Base path"},
 	fExtends:         {label: "Extends"},
 	fSkipQuestions:   {label: "Skip questions"},
+	fSeedPrefs:       {label: "Seed prefs"},
 }
 
 // fieldLabel is the display name (not the raw TOML key); the underlying key
