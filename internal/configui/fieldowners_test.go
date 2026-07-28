@@ -16,41 +16,50 @@ import (
 // editor. Between them, adding a key to config.Config and stopping there fails
 // three tests, each naming its own missing piece.
 //
-// configFieldOwners maps each toml-visible config.Config field to the rows
-// that surface it. Several keys share a row (env and env_from_host are one
-// screen: both answer "where does this variable's value come from"), and
-// several rows share a key (worktree_base is a checkbox plus a path input).
+// configFieldOwners maps each toml-visible config key to the rows that surface
+// it. Several keys share a row (env and env_from_host are one screen: both
+// answer "where does this variable's value come from"), and several rows share
+// a key (worktree_base is a checkbox plus a path input).
+//
+// Keys are the FULL toml path: the walk descends table-shaped fields, so
+// [defaults] is not one entry covering whatever it happens to contain -- each
+// member answers for itself, or a field added under it ships with no surface
+// and no failing test.
 var configFieldOwners = map[string][]fieldID{
-	"engine":          {fEngine},
-	"template":        {fTemplate},
-	"agent":           {fAgent},
-	"base":            {fBase},
-	"extends":         {fExtends},
-	"seed_prefs":      {fSeedPrefs},
-	"worktree_base":   {fWorktreeSibling, fWorktreeBase},
-	"defaults":        {fSkipQuestions, fSharedAuth},
-	"sources":         {fSources},
-	"apt":             {fApt},
-	"env":             {fEnv},
-	"env_from_host":   {fEnv},
-	"files":           {fFiles, fSkillFiles},
-	"skills":          {fSkills},
-	"mounts":          {fMounts},
-	"volumes":         {fVolumes},
-	"ports":           {fPorts},
-	"egress":          {fEgress},
-	"egress_offered":  {fEgress},
-	"mcp":             {fMCP},
-	"claude_skills":   {fClaudeSkills},
-	"context":         {fContext},
-	"dockerfile_pre":  {fDockerfilePre},
-	"dockerfile_post": {fDockerfilePost},
-	"run_args":        {fRunArgs},
+	"engine":        {fEngine},
+	"template":      {fTemplate},
+	"agent":         {fAgent},
+	"base":          {fBase},
+	"extends":       {fExtends},
+	"seed_prefs":    {fSeedPrefs},
+	"worktree_base": {fWorktreeSibling, fWorktreeBase},
+	// [defaults], member by member.
+	"defaults.skip_questions": {fSkipQuestions},
+	"defaults.shared_auth":    {fSharedAuth},
+	"sources":                 {fSources},
+	"apt":                     {fApt},
+	"env":                     {fEnv},
+	"env_from_host":           {fEnv},
+	"files":                   {fFiles, fSkillFiles},
+	"skills":                  {fSkills},
+	"mounts":                  {fMounts},
+	"volumes":                 {fVolumes},
+	"ports":                   {fPorts},
+	"egress":                  {fEgress},
+	"egress_offered":          {fEgress},
+	"mcp":                     {fMCP},
+	"claude_skills":           {fClaudeSkills},
+	"context":                 {fContext},
+	"dockerfile_pre":          {fDockerfilePre},
+	"dockerfile_post":         {fDockerfilePost},
+	"run_args":                {fRunArgs},
 }
 
 // noWidgetKeys names the keys that deliberately have NO row, with the reason
 // stated here rather than left as a silent absence. An exemption is a
-// decision; the map is where it is written down.
+// decision; the map is where it is written down. An entry exempts the key
+// WHOLE -- the walk does not descend into it -- so the reason has to cover
+// whatever the key contains.
 var noWidgetKeys = map[string]string{
 	"shared_auth": "the pre-2026-07-28 top-level spelling: read once and migrated into [defaults] on the next write, so a row would offer to edit a key byre is removing (the [defaults] one has the row -- fSharedAuth)",
 }
@@ -83,26 +92,57 @@ func reachableFields(t *testing.T) map[fieldID]bool {
 	return out
 }
 
-func TestEveryConfigKeyHasAReachableRow(t *testing.T) {
-	reachable := reachableFields(t)
-	rt := reflect.TypeOf(config.Config{})
+// walkConfigKeys visits every toml-visible key of rt, DESCENDING into
+// table-shaped fields (a struct field with toml-tagged members of its own) so
+// each member is a key in its own right. Without the descent a nested table is
+// one blob answered by whatever rows its parent happens to name, and a field
+// added under it inherits that answer for free -- which is how a key ships
+// with no surface. A struct with no tagged members (a custom unmarshaler's
+// type) is a leaf: there is nothing inside it the grammar names.
+func walkConfigKeys(rt reflect.Type, prefix string, skip map[string]string, visit func(goPath, tomlPath string, ft reflect.Type)) {
 	for i := 0; i < rt.NumField(); i++ {
-		name := rt.Field(i).Name
-		tag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]
+		f := rt.Field(i)
+		tag := strings.Split(f.Tag.Get("toml"), ",")[0]
 		if tag == "" || tag == "-" {
 			continue // cascade-internal: never in a layer file
 		}
+		path := prefix + tag
+		ft := f.Type
+		for ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+		}
+		if skip[path] != "" {
+			continue // exempt WHOLE, members included: the reason names why
+		}
+		if ft.Kind() == reflect.Struct && taggedFields(ft) > 0 {
+			walkConfigKeys(ft, path+".", skip, visit)
+			continue
+		}
+		visit(f.Name, path, ft)
+	}
+}
+
+func taggedFields(rt reflect.Type) int {
+	n := 0
+	for i := 0; i < rt.NumField(); i++ {
+		if tag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]; tag != "" && tag != "-" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestEveryConfigKeyHasAReachableRow(t *testing.T) {
+	reachable := reachableFields(t)
+	walkConfigKeys(reflect.TypeOf(config.Config{}), "", noWidgetKeys, func(name, tag string, _ reflect.Type) {
 		owners, ok := configFieldOwners[tag]
 		if !ok {
-			if why := noWidgetKeys[tag]; why != "" {
-				continue
-			}
 			t.Errorf("config.%s (toml %q) has no editor row.\n"+
 				"  Give it one: a fieldID in form.go, a fieldInfos entry in fields.go, a case in renderValue "+
 				"(or fieldRows + the listitem switches for a list), and the field in newModel's sections for "+
 				"every target it belongs to — then add it to configFieldOwners here.\n"+
 				"  If it deliberately gets none, say why in noWidgetKeys.", name, tag)
-			continue
+			return
 		}
 		if len(owners) == 0 {
 			t.Errorf("config.%s (toml %q): configFieldOwners entry is empty — name the row(s), or move it to noWidgetKeys with a reason", name, tag)
@@ -117,6 +157,11 @@ func TestEveryConfigKeyHasAReachableRow(t *testing.T) {
 					"add it to a section in newModel, or the key is unreachable in every editor", name, tag, fieldLabel(f))
 			}
 		}
+	})
+	// The descent is load-bearing, so pin that it happened: a walk that
+	// silently stopped at [defaults] would pass every assertion above.
+	if _, ok := configFieldOwners["defaults.skip_questions"]; !ok {
+		t.Error("the nested-key entries went missing — the walk is no longer descending")
 	}
 }
 
