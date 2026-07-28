@@ -362,6 +362,9 @@ func pkgParts(cat *packages.Catalog, name string, tier statusTier) (id, provenan
 func pkgIDWidth(cat *packages.Catalog, names []string, tier statusTier) int {
 	w := 0
 	for _, n := range names {
+		if n == "" {
+			continue // an absent template prints "(none)", not a package row
+		}
 		id, _ := pkgParts(cat, n, tier)
 		if l := displayLen(id); l > w {
 			w = l
@@ -472,7 +475,7 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		row("Project id", s.ID)
 	}
 	row("Agent", orDefault(s.Agent, "(none)"))
-	pkgW := pkgIDWidth(s.Cat, append(append([]string{}, s.Skills...), s.Template), tier)
+	pkgW := pkgIDWidth(s.Cat, append(s.Skills[:len(s.Skills):len(s.Skills)], s.Template), tier)
 	if s.Template != "" {
 		row("Template", pkgLine(s.Cat, s.Template, tier, pkgW))
 	} else {
