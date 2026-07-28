@@ -22,7 +22,13 @@ CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 # mktemp file and an atomic rename onto the fixed name: a plain `>` to a
 # predictable path would FOLLOW anything planted there (a symlink at the
 # fixed name would route byre's write into the link's target; rename
-# replaces the plant instead, and `mv -T` refuses a planted directory).
+# replaces the plant instead). A planted DIRECTORY would swallow the mv —
+# POSIX mv moves the file INTO it — so probe with -d first (BSD mv has no
+# -T to refuse it, and the wrapper test runs on macOS hosts too; -d
+# follows symlinks, covering the symlink-to-directory arm). The probe→mv
+# window is not raceless like -T was, but losing it only lands the merge
+# file inside an agent-made TMPDIR directory: nothing is overwritten and
+# the content is the context the agent already reads.
 # Best-effort throughout: context is informational, so a failure composing
 # it must never block the launch — degrade to the baked file alone, then to
 # no injection at all, dropping the partial write rather than injecting it.
@@ -33,7 +39,8 @@ merged="${TMPDIR:-/tmp}/byre-agent-context.md"
 tmp=""
 if tmp=$(mktemp "$merged.XXXXXXXX" 2>/dev/null); then
   { [ -r "$CTX" ] && cat "$CTX"; printf '%s' "${BYRE_SESSION_CONTEXT:-}"; } > "$tmp" 2>/dev/null &&
-    mv -fT "$tmp" "$merged" 2>/dev/null ||
+    [ ! -d "$merged" ] &&
+    mv -f "$tmp" "$merged" 2>/dev/null ||
     { rm -f "$tmp" 2>/dev/null || true; merged=""; }
 else
   merged=""
