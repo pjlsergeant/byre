@@ -45,9 +45,11 @@ var claimSurface = map[string]claimClass{
 	"EnvFromHost": rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden)"),
 	"Files": rendered("guard-collision warnings when an entry covers a security path (warnGuardCollisions); " +
 		"artifact shadows (mcp.json, agent context, claude-skills) degrade their delivery lines; otherwise build input"),
-	"Skills":       rendered("the Skills row and every attributed grant, egress, posture, and containment row"),
-	"Mounts":       rendered("bind rows; a mount over a guarded path degrades the network claim (GuardMountShadow)"),
-	"Volumes":      rendered("volume rows (state/cache/machine split)"),
+	"Skills": rendered("the Skills row and every attributed grant, egress, posture, and containment row"),
+	"Mounts": rendered("bind rows; a target covering a byre-managed path renders the blanket runtime-shadow " +
+		"disclosure in the Containment register, on status, develop and the apply review (managedPathShadows, ADR 0052)"),
+	"Volumes": rendered("volume rows (state/cache/machine split); a target covering a byre-managed path renders " +
+		"the same runtime-shadow disclosure as Mounts"),
 	"Ports":        rendered("port rows via portStatusLine -- the runtime's own normalization, so the row can't lie about defaults"),
 	"Egress":       rendered("egress rows + networkLine; config entries marked unenforced when no posture arms them (ADR 0019)"),
 	"EgressClosed": rendered("closure rows (closureLine); subtracts from the allowlist, the summary counts, and networkLine's blocked tally"),

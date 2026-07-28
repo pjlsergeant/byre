@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -125,6 +126,30 @@ func TestSkillGrantSummaryContainmentTopSorted(t *testing.T) {
 	}
 	if !sorted[1].CrossProject {
 		t.Fatalf("cross-project second: %+v", sorted)
+	}
+}
+
+// A proposed mount or volume over a byre-managed path is a containment
+// disclosure, not a storage row (ADR 0052): the review that asks for consent
+// carries it at the same weight as a skill's declared hole, or the user
+// answers before ever seeing it.
+func TestShadowGrantLinesRideContainmentWeight(t *testing.T) {
+	cfg := config.Config{
+		Volumes: []config.Volume{{Name: "gate", Role: "state", Target: gen.ByreDir}},
+		Mounts:  []config.Mount{{Host: "~/ok", Target: "/opt/data", Mode: "ro"}},
+	}
+	lines := shadowGrantLines(cfg, skills.Resolved{})
+	if len(lines) != 1 {
+		t.Fatalf("expected exactly the shadowing entry: %+v", lines)
+	}
+	if !lines[0].Containment || !strings.Contains(lines[0].Text, gen.ByreDir) {
+		t.Fatalf("the shadow line must name the target at containment weight: %+v", lines[0])
+	}
+	if sorted := sortGrantLines(append([]grantLine{{Text: "plain"}}, lines...)); !sorted[0].Containment {
+		t.Fatalf("containment sorts first in the review: %+v", sorted)
+	}
+	if l := shadowGrantLines(config.Config{Mounts: cfg.Mounts}, skills.Resolved{}); len(l) != 0 {
+		t.Errorf("a harmless proposal discloses nothing: %+v", l)
 	}
 }
 
