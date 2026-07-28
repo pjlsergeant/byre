@@ -18,8 +18,9 @@ import (
 // config anyway (develop, rebuild) detect fatally from it instead;
 // informational commands (status, dockerrun) keep their own best-effort
 // semantics.
-// A DECLINED engine (hostexec refused a binary resolved out of a directory
-// the box writes) fails the whole enumeration rather than dropping out of it.
+// A DECLINED engine (any resolution failure that isn't absence: a binary
+// hostexec refused out of a box-writable directory, a relative-PATH ErrDot
+// refusal) fails the whole enumeration rather than dropping out of it.
 // These commands speak in totals — "completely removed", "migrated" — and
 // forget already refuses over an engine it could not fully query, on exactly
 // this reasoning; an engine byre never even reached is the same uncertainty
