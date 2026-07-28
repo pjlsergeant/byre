@@ -632,6 +632,78 @@ func TestInlineTableInArrayElementKeepsItsElement(t *testing.T) {
 	}
 }
 
+// The in-place treatment follows the descendant rule, not just the header
+// line: a [mcp.extra] subtable is its element's content, so a construct
+// inside it belongs to that element too.
+func TestInlineTableInDescendantSubtableKeepsItsElement(t *testing.T) {
+	src := "[[mcp]]\nname = \"first\"\n\n[mcp.extra]\nheaders = { A = \"1\", B = \"2\" }\n\n[[mcp]]\nname = \"second\"\n"
+	d := load(t, src)
+	if err := d.SetKey([]string{"mcp", "extra", "headers"}, "A", String("edited")); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	if strings.Contains(out, "[mcp.extra.headers]") {
+		t.Fatalf("a construct under an element's subtable must stay inline:\n%s", out)
+	}
+	blocks := mustParse(t, d)["mcp"].([]any)
+	h := blocks[0].(map[string]any)["extra"].(map[string]any)["headers"].(map[string]any)
+	if h["A"] != "edited" || h["B"] != "2" {
+		t.Fatalf("first element's subtable construct = %v", h)
+	}
+	if _, stray := blocks[1].(map[string]any)["extra"]; stray {
+		t.Fatalf("the second element gained a subtable it never declared: %v", blocks[1])
+	}
+}
+
+// Creating structure on a path that runs through an array of tables is
+// refused: whichever element the new key landed in, the caller never named
+// it. Editing an existing construct there is a different question, answered
+// above.
+func TestSetKeyRefusesCreationUnderArrayOfTables(t *testing.T) {
+	src := "[[mcp]]\nname = \"first\"\nheaders = { A = \"1\" }\n\n[[mcp]]\nname = \"second\"\n"
+	for _, tc := range []struct {
+		what  string
+		table []string
+		key   string
+	}{
+		{"a new key under the array itself", []string{"mcp"}, "url"},
+		{"a new subtable under an element", []string{"mcp", "auth"}, "token"},
+		{"a construct no element declares", []string{"mcp", "extra", "deep"}, "x"},
+	} {
+		d := load(t, src)
+		err := d.SetKey(tc.table, tc.key, String("v"))
+		if err == nil {
+			t.Fatalf("%s: accepted", tc.what)
+		}
+		if !strings.Contains(err.Error(), "array of tables [[mcp]]") {
+			t.Fatalf("%s: error should name the rule that fired: %v", tc.what, err)
+		}
+		if !strings.Contains(err.Error(), encodeKeyPath(fullPath(tc.table, tc.key))) {
+			t.Fatalf("%s: error should name the offending path: %v", tc.what, err)
+		}
+		if string(d.Bytes()) != src {
+			t.Fatalf("%s: the document must be left as it was:\n%s", tc.what, d.Bytes())
+		}
+	}
+
+	// The same paths, when they name something that already exists, still
+	// resolve -- first match, edited where it lives.
+	d := load(t, src)
+	if err := d.SetKey([]string{"mcp"}, "name", String("renamed")); err != nil {
+		t.Fatalf("editing an existing key: %v", err)
+	}
+	if err := d.SetKey([]string{"mcp", "headers"}, "A", String("2")); err != nil {
+		t.Fatalf("editing an existing inline member: %v", err)
+	}
+	blocks := mustParse(t, d)["mcp"].([]any)
+	if blocks[0].(map[string]any)["name"] != "renamed" {
+		t.Fatalf("first match should be the one edited: %v", blocks)
+	}
+	if blocks[1].(map[string]any)["name"] != "second" {
+		t.Fatalf("second element damaged: %v", blocks)
+	}
+}
+
 // A brand-new member joins the construct rather than opening a rival
 // definition of the same table.
 func TestSetKeyAddsNewMemberToInlineTable(t *testing.T) {

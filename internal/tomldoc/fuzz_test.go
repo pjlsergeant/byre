@@ -50,6 +50,8 @@ func FuzzEdit(f *testing.F) {
 		{twoMCP, 0, "mcp.headers", "Authorization", "v"},
 		{twoMCP, 2, "mcp.headers", "Accept", ""},
 		{twoMCP, 1, "mcp.headers", "New", "v"},
+		{twoMCP, 0, "mcp.auth", "token", "v"}, // creation under an array: refused
+
 		{"", 0, "a.b", "c", "v"},
 	}
 	for _, s := range seeds {

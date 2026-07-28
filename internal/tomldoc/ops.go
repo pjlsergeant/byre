@@ -18,6 +18,15 @@ import (
 // the last key of the same table (or right after its header), a new ROOT key
 // before the first table header (TOML's own requirement), and a key in an
 // absent table appends a fresh [table] block at the end.
+//
+// An EXISTING target -- a key, or a member of an inline table -- resolves to
+// the FIRST match in document order and is edited where it lives. CREATING
+// one on a path that runs through an array of tables is refused: a key path
+// cannot name an array element, because an element is identified by its
+// POSITION. Every somewhere a created `[mcp.headers]` block or a new key
+// under `[[mcp]]` could go reads as one particular element, and not the one
+// the caller meant to name -- it has not named any. Element identity belongs
+// to the position/match APIs: AppendArrayTable and ReplaceArrayTableNth.
 func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	if err := spellable(fullPath(table, key)); err != nil {
 		return err
@@ -28,6 +37,10 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	}
 	if i, rel, ok := d.inlineTarget(fullPath(table, key)); ok {
 		return d.rewriteInline(i, rel, rendered, false)
+	}
+	if arr, ok := d.arrayContext(table); ok {
+		return fmt.Errorf("tomldoc: cannot create %s: the path runs through the array of tables [[%s]], whose elements are identified by position, not by key path",
+			encodeKeyPath(fullPath(table, key)), encodeKeyPath(arr))
 	}
 	line := fmt.Sprintf("%s = %s\n", encodeKey(key), rendered)
 	if at, ok := d.insertPointInTable(table); ok {
@@ -120,6 +133,19 @@ func (d *Doc) inlineTarget(full []string) (int, []string, bool) {
 		}
 	}
 	return -1, nil, false
+}
+
+// arrayContext reports the [[name]] whose elements a table path runs through
+// -- its own path, or any path beneath it. Creating structure there has no
+// sound answer: insertPointInTable would anchor in the LAST element that
+// matched, and an appended block joins whichever element was declared last.
+func (d *Doc) arrayContext(table []string) ([]string, bool) {
+	for _, e := range d.exprs {
+		if e.kind == unstable.ArrayTable && prefixOf(e.table, table) {
+			return e.table, true
+		}
+	}
+	return nil, false
 }
 
 // rewriteInline applies one member edit to an inline-table construct by

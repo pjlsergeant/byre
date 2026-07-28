@@ -84,6 +84,10 @@ Behavioral contract (grilled, each default approved):
   where it stands -- an element is identified by its position, so a
   promoted `[mcp.headers]` block would join whichever element was
   declared last.
+- A path-addressed edit resolves an existing target first-match, in
+  document order; CREATING one on a path that runs through an array of
+  tables is refused, because a key path cannot name an element -- there,
+  position is identity, and it belongs to the position/match APIs.
 - No-op saves leave the document byte-identical.
 - Every edit is re-read with the STRICT decoder before it is handed
   back, and a failure restores the pre-edit bytes: the expression parser
