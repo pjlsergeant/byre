@@ -254,3 +254,27 @@ func TestSharedAuthAlreadyOn(t *testing.T) {
 		t.Fatal("unreadable file must suppress the offer")
 	}
 }
+
+// SaveDefault's parse door is tomldoc's, not config.Parse's, so it was the
+// one refusal left saying "fix this file" without saying where. Same rule as
+// its shared-auth sibling: no byre command can be the remedy, so the message
+// has to be enough to fix the file by hand.
+func TestSaveDefaultRefusesUnparsableFileWithPosition(t *testing.T) {
+	home := t.TempDir()
+	writeDefault(t, home, "template = \"go\"\nagent = \"unclosed\n")
+	err := SaveDefault(home, "go", "claude")
+	if err == nil {
+		t.Fatal("an unparsable default.config must be refused, not guessed at")
+	}
+	for _, want := range []string{filepath.Join(home, "default.config"), "line 2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal must carry %q, got: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "byre config") {
+		t.Errorf("the remedy must not name a command that refuses this file too: %v", err)
+	}
+	if got := readDefault(t, home); !strings.Contains(got, "unclosed") {
+		t.Fatalf("a refused edit must leave the file untouched:\n%s", got)
+	}
+}

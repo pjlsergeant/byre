@@ -28,6 +28,7 @@
 package tomldoc
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -35,6 +36,36 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/pelletier/go-toml/v2/unstable"
 )
+
+// Positioned renders a decode failure's location into byre's message shape.
+// It lives here because this package owns byre's adaptation of go-toml, and
+// because the shape is doctrine, not decoration: PRINCIPLES.md P6 puts every
+// config parse refusal outside the editor's reach, which makes the message
+// the entire repair instruction -- so it has ONE renderer, not one per parse
+// door. go-toml's DecodeError carries a 1-indexed line and column plus the
+// key it was reading; the wrap keeps it reachable through errors.As.
+//
+// An error carrying no position passes through untouched: byre's own
+// rejections, and any sub-parse of SYNTHETIC bytes (config's shared_auth
+// shapes), whose coordinates address a document the user never wrote. No
+// position beats a wrong one.
+func Positioned(err error) error {
+	var de *toml.DecodeError
+	if !errors.As(err, &de) {
+		return err
+	}
+	line, column := de.Position()
+	if line == 0 {
+		// go-toml derives the position from a highlight subslice of the
+		// document; an error built without one reports 0,0, and "line 0"
+		// sends the reader somewhere that does not exist.
+		return err
+	}
+	if key := de.Key(); len(key) > 0 {
+		return fmt.Errorf("%w (key %q, line %d, column %d)", err, strings.Join(key, "."), line, column)
+	}
+	return fmt.Errorf("%w (line %d, column %d)", err, line, column)
+}
 
 // span is a half-open byte range [start, end) into Doc.src.
 type span struct{ start, end int }
@@ -142,10 +173,30 @@ func (d *Doc) reindex() error {
 		}
 	}
 	if err := p.Error(); err != nil {
-		return err
+		return Positioned(positionOracle(d.src, err))
 	}
 	d.exprs = exprs
 	return nil
+}
+
+// positionOracle upgrades the unstable parser's message-only error into one
+// that says where. The stable decoder streams THIS parser, so a document
+// rejected here is rejected there too -- and decoding into a map accepts any
+// document, so the oracle judges syntax rather than a schema. What comes back
+// is go-toml's own DecodeError for the same bytes, position attached.
+//
+// Two honest limits. The oracle enforces rules this parser does not (a
+// duplicate key, say), so in a document that breaks both it reports whichever
+// it meets first: a true defect at a true position in the same file, not
+// necessarily the one that stopped the index. And where it accepts bytes this
+// parser refused, the parser's own error stands unpositioned -- byre does not
+// publish a location it cannot corroborate.
+func positionOracle(src []byte, err error) error {
+	var m map[string]any
+	if oracle := toml.Unmarshal(src, &m); oracle != nil {
+		return oracle
+	}
+	return err
 }
 
 func (d *Doc) rawSpan(r unstable.Range) span {

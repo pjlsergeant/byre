@@ -203,11 +203,14 @@ the editor and `vim` write the same file, held to the same validation)
 -- a right is not an interface.
 
 **Scope: P6 governs parseable config.** A file hand-edited into a state
-byre's parser refuses is outside it: `byre config` names the file, the
-line and column, and the key it was reading, then stops, rather than
-reconciling against a document it cannot read -- a save would have to
-guess what to preserve, and the guess would land on the rest of the
-user's file. There is no editor to be inside at that point: the refusal
+byre's parser refuses is outside it: `byre config` names the file, plus
+the line, column and key wherever the decoder can identify them, then
+stops, rather than reconciling against a document it cannot read -- a
+save would have to guess what to preserve, and the guess would land on
+the rest of the user's file. Wherever it cannot -- a value decoded from
+a rewritten fragment has no coordinates in the user's document -- it
+names what it can and claims no position, because a wrong location is
+worse than none. There is no editor to be inside at that point: the refusal
 happens before the screen opens, so the refusal itself is the only
 surface left to carry the remedy, and what P6 asks of it is that it be
 precise enough to fix the file by hand. That is a standard the message

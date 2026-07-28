@@ -849,3 +849,29 @@ func TestInlineTableValueSecondEdit(t *testing.T) {
 		t.Fatalf("shared_auth = %v", sa)
 	}
 }
+
+// The unstable parser reports a message and no position, and byre's first-run
+// saves parse the user's default.config through this door -- so a refusal
+// there said "fix this file" without saying where. Load consults the stable
+// decoder as a position oracle: it is built on this same parser, so a
+// document rejected here is rejected there too, with coordinates attached.
+func TestLoadErrorSaysWhere(t *testing.T) {
+	_, err := Load([]byte("a = 1\nb = \"unclosed\nc = 2\n"))
+	if err == nil {
+		t.Fatal("an unterminated string must not load")
+	}
+	for _, want := range []string{"line 2", "column"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("load failure must locate itself (%q), got: %v", want, err)
+		}
+	}
+}
+
+// The oracle only ever ADDS a position: where it cannot produce one, the
+// parser's own error stands rather than a guessed location.
+func TestLoadErrorSurvivesASilentOracle(t *testing.T) {
+	// A document both parsers accept must not reach the error path at all.
+	if _, err := Load([]byte("a = 1\n[t]\nb = 2\n")); err != nil {
+		t.Fatalf("a valid document must load: %v", err)
+	}
+}

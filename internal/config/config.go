@@ -30,6 +30,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
 // CatalogLoader is the ONE seam through which config's internal resolution
@@ -796,17 +797,30 @@ func Parse(content []byte) (Config, error) {
 	}
 	var strict *toml.StrictMissingError
 	if !errors.As(err, &strict) {
-		return Config{}, positioned(err)
+		return Config{}, tomldoc.Positioned(err)
 	}
 	// Tolerate retired top-level keys (retiredConfigKeys) that past versions
 	// wrote; any other unknown key is a real typo.
-	var real []string
+	//
+	// real carries the bare key paths the refusal lookup below matches on;
+	// located carries the same paths with the position go-toml reports for
+	// each. These positions are REAL document coordinates -- the strict
+	// decoder found the key in the user's own bytes -- and a typo is the
+	// commonest refusal byre issues, so dropping them was dropping the
+	// answer from the question byre gets asked most.
+	var real, located []string
 	for _, de := range strict.Errors {
 		k := de.Key()
 		if len(k) == 1 && retiredConfigKeys[k[0]] != "" {
 			continue
 		}
-		real = append(real, strings.Join(k, "."))
+		name := strings.Join(k, ".")
+		real = append(real, name)
+		if line, column := de.Position(); line > 0 {
+			located = append(located, fmt.Sprintf("%s (line %d, column %d)", name, line, column))
+		} else {
+			located = append(located, name)
+		}
 	}
 	for _, k := range real {
 		if remedy := refusedConfigKeys[k]; remedy != "" {
@@ -820,36 +834,16 @@ func Parse(content []byte) (Config, error) {
 		// Naming both beats naming neither; a format stamp that could
 		// distinguish them was considered and consciously not built, since
 		// this already fails loudly rather than guessing.
-		return Config{}, fmt.Errorf("unknown key(s): [%s] — a typo, or a config written by a newer byre (upgrade byre, or remove the key)", strings.Join(real, " "))
+		return Config{}, fmt.Errorf("unknown key(s): [%s] — a typo, or a config written by a newer byre (upgrade byre, or remove the key)", strings.Join(located, ", "))
 	}
 	// Retired keys only: decode again leniently so their values drop.
 	var lenient Config
 	d := toml.NewDecoder(bytes.NewReader(content))
 	d.EnableUnmarshalerInterface()
 	if err := d.Decode(&lenient); err != nil {
-		return Config{}, positioned(err)
+		return Config{}, tomldoc.Positioned(err)
 	}
 	return lenient, nil
-}
-
-// positioned appends the failure's location to a decode error. A config byre
-// cannot parse is a dead end the user has to leave the tool to escape --
-// every byre editor refuses to open one -- so this message is the whole
-// repair instruction, and "somewhere in this file" is not enough of one.
-// go-toml's DecodeError carries a 1-indexed line and column plus the key it
-// was reading; the wrap keeps the original error reachable through errors.As.
-// Errors that carry no position (byre's own rejections, and the shared_auth
-// sub-parse, whose coordinates address a synthetic document) pass through.
-func positioned(err error) error {
-	var de *toml.DecodeError
-	if !errors.As(err, &de) {
-		return err
-	}
-	line, column := de.Position()
-	if key := de.Key(); len(key) > 0 {
-		return fmt.Errorf("%w (key %q, line %d, column %d)", err, strings.Join(key, "."), line, column)
-	}
-	return fmt.Errorf("%w (line %d, column %d)", err, line, column)
 }
 
 // decodeStrict is the one strict decode under Parse: unknown keys error

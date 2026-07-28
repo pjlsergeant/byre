@@ -183,8 +183,9 @@ func (s SharedAuthPref) CompanionPick(agent string) string {
 // Each shape is decoded by re-parsing a SYNTHETIC document, so the line and
 // column the inner decoder reports address bytes the user never wrote. The
 // inner error is folded in as text (%v, not %w) to keep those coordinates
-// out of reach of Parse's positioned(): naming the key beats pointing at the
-// wrong line.
+// out of reach of tomldoc.Positioned: naming the field beats pointing at the
+// wrong line, which is why the published claim says "where the decoder can
+// identify it" rather than promising a position for every refusal.
 func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 	t := strings.TrimSpace(string(data))
 	switch {

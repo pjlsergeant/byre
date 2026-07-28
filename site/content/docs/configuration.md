@@ -81,10 +81,11 @@ One exception, and it only arrives if you went into the files first: a
 config file hand-edited into something the TOML parser refuses. The
 editor will not reconcile against a document it cannot read -- it would
 have to guess what to preserve, and guess wrong about the rest of your
-file -- so it hands you the repair instead: the file, the line and
-column, and the key it was reading when it gave up. byre's own saves
-cannot turn a loadable file into an unloadable one; only a hand edit
-gets you here.
+file -- so it hands you the repair instead: the file, and the line,
+column and key wherever it can pin them down. Where it can't, it says
+so by staying quiet about the position rather than guessing at one.
+byre's own saves cannot turn a loadable file into an unloadable one;
+only a hand edit gets you here.
 
 The complete vocabulary, the cascade's merge rules, presets,
 and layers live in the

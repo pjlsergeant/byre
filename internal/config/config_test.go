@@ -1502,3 +1502,25 @@ func TestSharedAuthParseErrorClaimsNoPosition(t *testing.T) {
 		t.Errorf("a sub-parse's synthetic coordinates must not be reported, got: %v", err)
 	}
 }
+
+// A typo is the commonest refusal by far, and it is the one the strict
+// decoder knows most about: go-toml reports a REAL document position for
+// every unknown key (not the synthetic kind shared_auth's sub-parse
+// produces). Parse used to keep the key names and throw the positions away.
+func TestUnknownKeyErrorSaysWhere(t *testing.T) {
+	body := "engine = \"docker\"\n\nnope = 1\n\n[[mounts]]\nbogus = \"a\"\n"
+	_, err := Parse([]byte(body))
+	if err == nil {
+		t.Fatal("unknown keys must not parse")
+	}
+	for _, want := range []string{
+		"unknown key(s)",
+		"nope (line 3, column 1)",
+		"mounts.bogus (line 6, column 1)",
+		"newer byre", // the existing both-causes prose survives
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("unknown-key refusal must carry %q, got: %v", want, err)
+		}
+	}
+}
