@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -162,6 +164,45 @@ func TestExclusiveVolumeRefusesWhatItCannotProve(t *testing.T) {
 				}, nil, nil
 			},
 			want: "does not match its own address",
+		},
+		// A record from a byre this build cannot read is not evidence of
+		// anything; nor is one whose bytes verify but do not parse.
+		"sibling whose record is from a newer byre": {
+			build: func(t *testing.T, p project.Paths) (*fakeRunner, []sessionRunner, []declinedEngine) {
+				_, vol := exclusiveConfig(p)
+				rec := sampleLaunchRecord()
+				rec.Record = LaunchRecordVersion + 1
+				rec.Volumes = []launchVolume{{Name: vol, Target: "/var/lib/ledger", Sharing: "exclusive"}}
+				hash, err := writeLaunchRecord(p, rec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return &fakeRunner{
+					live:       map[string][]string{projectLabel(p): {"box"}},
+					labelsByID: map[string]map[string]string{"box": {workdirKey: "byre-wt-abc123", launchKey: hash}},
+				}, nil, nil
+			},
+			want: "written by a newer byre",
+		},
+		"sibling whose record verifies but does not parse": {
+			build: func(t *testing.T, p project.Paths) (*fakeRunner, []sessionRunner, []declinedEngine) {
+				// Addressed correctly and still unusable: the hash is of THESE
+				// bytes, so verification passes and the decode is what fails.
+				body := "this is not a launch record {{{\n"
+				sum := sha256.Sum256([]byte(body))
+				hash := hex.EncodeToString(sum[:])
+				if err := hostopen.MkdirAllIn(p.Home, filepath.Join("projects", p.ID, "launches"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := hostopen.PublishFile(filepath.Join(launchesDir(p), hash+".toml"), body, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return &fakeRunner{
+					live:       map[string][]string{projectLabel(p): {"box"}},
+					labelsByID: map[string]map[string]string{"box": {workdirKey: "byre-wt-abc123", launchKey: hash}},
+				}, nil, nil
+			},
+			want: "present but unreadable",
 		},
 		"peer engine that cannot be listed": {
 			build: func(t *testing.T, p project.Paths) (*fakeRunner, []sessionRunner, []declinedEngine) {

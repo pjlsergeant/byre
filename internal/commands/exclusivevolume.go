@@ -89,8 +89,12 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 	// below names the volume that actually collided.
 	all := slices.Sorted(maps.Values(want))
 
+	// Every arm prints through dataf: the engine's own error text, a
+	// container's labels and a volume target are all strings byre did not
+	// author, and a refusal is exactly the surface an attacker would want to
+	// dress up with control sequences (P4).
 	for _, d := range declined {
-		fmt.Fprintf(w, "%s, and byre will not run %s to look for a box holding it: %v\n", exclusiveRefusal(all...), d.Engine, d)
+		dataf(w, "%s, and byre will not run %s to look for a box holding it: %v\n", exclusiveRefusal(all...), d.Engine, d)
 		fmt.Fprint(w, exclusiveRemedy)
 		return ExitError{Code: ExitRefused}
 	}
@@ -106,14 +110,14 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 			if deliver.IsUnreachable(err) {
 				why = fmt.Sprintf("%s isn't reachable", rr.Engine())
 			}
-			fmt.Fprintf(w, "%s, and byre could not list this project's boxes on %s (%s) — a session there could be holding it.\n", exclusiveRefusal(all...), rr.Engine(), why)
+			dataf(w, "%s, and byre could not list this project's boxes on %s (%s) — a session there could be holding it.\n", exclusiveRefusal(all...), rr.Engine(), why)
 			fmt.Fprint(w, exclusiveRemedy)
 			return ExitError{Code: ExitRefused}
 		}
 		for _, id := range ids {
 			labels, lerr := rr.ContainerLabels(id)
 			if lerr != nil {
-				fmt.Fprintf(w, "%s, and byre could not read the labels of %s box %s (%v) — it could be holding it.\n", exclusiveRefusal(all...), rr.Engine(), shortID(id), firstLine(lerr.Error()))
+				dataf(w, "%s, and byre could not read the labels of %s box %s (%v) — it could be holding it.\n", exclusiveRefusal(all...), rr.Engine(), shortID(id), firstLine(lerr.Error()))
 				fmt.Fprint(w, exclusiveRemedy)
 				return ExitError{Code: ExitRefused}
 			}
@@ -126,14 +130,14 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 			}
 			rec, st := readLaunchRecord(paths, labels)
 			if st != launchRecordOK {
-				fmt.Fprintf(w, "%s, and byre cannot tell what %s is holding: %s.\n", exclusiveRefusal(all...), siblingLabel(labels, id), exclusiveUnknownReason(st))
+				dataf(w, "%s, and byre cannot tell what %s is holding: %s.\n", exclusiveRefusal(all...), siblingLabel(labels, id), exclusiveUnknownReason(st))
 				fmt.Fprint(w, exclusiveRemedy)
 				return ExitError{Code: ExitRefused}
 			}
 			for _, held := range rec.Volumes {
 				if decl, ok := want[held.Name]; ok {
-					fmt.Fprintf(w, "%s, and %s is holding it (mounted at %s).\n", exclusiveRefusal(decl), siblingLabel(labels, id), held.Target)
-					fmt.Fprintf(w, "  • stop it:             %s stop %s\n", rr.Engine(), shortID(id))
+					dataf(w, "%s, and %s is holding it (mounted at %s).\n", exclusiveRefusal(decl), siblingLabel(labels, id), held.Target)
+					dataf(w, "  • stop it:             %s stop %s\n", rr.Engine(), shortID(id))
 					fmt.Fprint(w, exclusiveRemedy)
 					return ExitError{Code: ExitRefused}
 				}
@@ -144,7 +148,10 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 }
 
 // siblingLabel names another box the way the Worktrees status row does: the
-// worktree it belongs to, then the id to act on.
+// worktree it belongs to, then the id to act on. The workdir label is the
+// CONTAINER's, and a container carrying byre's project label need not be one
+// byre created -- so the composed string goes through dataf at every call
+// site rather than being trusted here.
 func siblingLabel(labels map[string]string, id string) string {
 	if wd := labels[workdirKey]; wd != "" {
 		return fmt.Sprintf("the session in %s (%s)", wd, shortID(id))
@@ -161,7 +168,7 @@ func siblingLabel(labels map[string]string, id string) string {
 func exclusiveUnknownReason(st launchState) string {
 	switch st {
 	case launchPreRecord:
-		return "it carries no launch record (an older byre started it), and this project's volume names are derived, so it mounts the same set by construction"
+		return "it carries no launch record (an older byre started it), so there is nothing that says what it mounted — and volume names are derived from the project, not chosen, so nothing about its config would have kept it off this one"
 	case launchMissing:
 		return "its launch record is no longer in the store"
 	case launchTampered:

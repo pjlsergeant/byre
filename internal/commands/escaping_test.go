@@ -12,6 +12,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 	"github.com/pjlsergeant/byre/internal/testtools"
 )
@@ -645,4 +646,45 @@ func TestPresetReviewKeepsItsOwnHighlight(t *testing.T) {
 	if got, want := strings.Count(out, "\x1b"), strings.Count(out, "\x1b[1;33m")+strings.Count(out, "\x1b[0m"); got != want {
 		t.Errorf("%d escapes present, %d accounted for by the highlight:\n%q", got, want, out)
 	}
+}
+
+// The single-writer refusal prints strings byre did not author: the engine's
+// own error text, and the `byre.workdir` label off a CONTAINER -- and a
+// container carrying byre's project label need not be one byre created, so
+// that label is an attacker's field. A refusal is exactly the surface worth
+// dressing up with control sequences: it is the one byre prints when it is
+// about to stop, and a rewound line could hide which volume it named.
+func TestExclusiveRefusalEscapesEngineAndLabelValues(t *testing.T) {
+	p, _ := testPaths(t)
+	cfg, vol := exclusiveConfig(p)
+	holder := siblingHolding(t, p, vol)
+	holder[workdirKey] = "byre-wt" + escCSI + escOSC
+	f := &fakeRunner{
+		live:       map[string][]string{projectLabel(p): {"sibling-box"}},
+		labelsByID: map[string]map[string]string{"sibling-box": holder},
+	}
+	s, _, errBuf := testStreams("", false)
+	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err == nil {
+		t.Fatal("want a refusal")
+	}
+	assertNoESC(t, "exclusive volume refusal (forged workdir label)", errBuf.String())
+	assertKept(t, "exclusive volume refusal (forged workdir label)", errBuf.String(), `sharing = "exclusive"`, "byre-wt")
+
+	// The same for an engine's own error text, on the arm that reports it.
+	p2, _ := testPaths(t)
+	cfg2, _ := exclusiveConfig(p2)
+	rv := combine(cfg2, skills.Resolved{})
+	rv.otherEngines = []sessionRunner{&fakeRunner{
+		engine: runner.Podman,
+		// Deliberately NOT an unreachable-shaped error: that arm substitutes
+		// byre's own wording, and it is the raw engine text that needs the
+		// funnel.
+		liveErr: errors.New("podman: " + escCSI + "unexpected daemon reply" + escOSC),
+	}}
+	s2, _, errBuf2 := testStreams("", false)
+	if err := develop(&fakeRunner{}, s2, p2, rv, false); err == nil {
+		t.Fatal("want a refusal")
+	}
+	assertNoESC(t, "exclusive volume refusal (hostile engine error)", errBuf2.String())
+	assertKept(t, "exclusive volume refusal (hostile engine error)", errBuf2.String(), "unexpected daemon reply")
 }

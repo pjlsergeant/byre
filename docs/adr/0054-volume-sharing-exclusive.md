@@ -105,9 +105,12 @@ sibling, start the engine, or delete one config key), and a wrong launch costs
 the volume's contents, irreversibly. "byre cannot prove the sibling is not
 holding it" is not "the sibling is not holding it".
 
-The no-record arm is the strongest of these rather than the weakest: volume
-names are DERIVED, not chosen, so an older-byre box of this project mounts the
-identical project-scoped set by construction. The unreadable arm is also the
+The no-record arm is not the weakest of these: an older-byre box leaves nothing
+that says what it mounted, and volume names are DERIVED from the project rather
+than chosen, so nothing about that box's own config would have kept it off this
+volume. What byre cannot claim is that it DID mount it -- the exclusive
+declaration may postdate that box's launch. Cannot-rule-out is the claim, and
+it is the one the refusal text makes. The unreadable arm is also the
 adversarial one -- under `--self-edit` the box owns the store, and if
 "unreadable" resolved to "proceed", an agent could delete its own record to buy
 a second writer for its neighbour.
