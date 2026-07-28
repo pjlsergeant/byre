@@ -113,6 +113,49 @@ func TestPkgColumnSizesToTheLongestID(t *testing.T) {
 	}
 }
 
+// A delivery verdict that says delivery WORKS folds into the rows it
+// qualifies; one that has stopped asserting keeps its own row at every tier.
+// That is the whole rule behind the fold: the default tier folds mechanism,
+// never a withdrawal.
+func TestDefaultTierFoldsOnlyAWorkingDeliveryVerdict(t *testing.T) {
+	decl := []skills.MCPDecl{{Skill: skills.MCPFromConfig, MCP: config.MCP{Name: "github", Command: []string{"gh-mcp"}}}}
+
+	var works strings.Builder
+	renderStatus(&works, statusInfo{Agent: "byre/claude", AgentMCP: "inject", MCPs: decl}, tierDefault, noWrapWidth)
+	assertRow(t, works.String(), "MCP servers", "github — local: gh-mcp  (config)  — delivered")
+	if strings.Contains(works.String(), "the agent session receives") {
+		t.Errorf("a working verdict must not keep its own arrow row:\n%s", works.String())
+	}
+
+	// No adapter: the verdict is a claim byre has withdrawn, so it keeps the
+	// row and the remedy even in the short page.
+	var degraded strings.Builder
+	renderStatus(&degraded, statusInfo{Agent: "byre/gemini", MCPs: decl}, tierDefault, noWrapWidth)
+	out := degraded.String()
+	if !strings.Contains(out, "NOT delivered: agent skill byre/gemini has no MCP adapter") {
+		t.Errorf("a withdrawn verdict must keep its own row at the default tier:\n%s", out)
+	}
+	if strings.Contains(out, "— delivered") {
+		t.Errorf("a withdrawn verdict must not be folded into the row as delivery:\n%s", out)
+	}
+}
+
+// Template and Skills share one id column, so they line up with each other
+// as they always have -- sizing each set on its own fixed the overflow and
+// broke that.
+func TestPackageRowsShareOneIDColumn(t *testing.T) {
+	// The template is IN the set the width is computed from, so a template
+	// id wider than every skill still moves the shared column.
+	skillsOnly := []string{"byre/claude"}
+	withTemplate := append(append([]string{}, skillsOnly...), "some/very-long-template-id")
+	if pkgIDWidth(nil, withTemplate, tierDefault) <= pkgIDWidth(nil, skillsOnly, tierDefault) {
+		t.Error("the template does not participate in the shared id column")
+	}
+	if got, want := pkgIDWidth(nil, withTemplate, tierDefault), len("some/very-long-template-id")+2; got != want {
+		t.Errorf("id column = %d, want %d (the widest id plus a gap)", got, want)
+	}
+}
+
 // Output that is not going to a terminal wraps at the fixed fallback, so a
 // redirected `byre status` is byte-identical wherever it is produced -- which
 // is what lets the README and the docs site pin a sample of it.
