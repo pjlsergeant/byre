@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/testtools"
 )
@@ -39,13 +40,24 @@ func exitRepo(t *testing.T) (project.Paths, string) {
 	return project.Paths{WorkDir: dir, Canonical: dir}, dir
 }
 
+// gitExe is the host git the git-backed tests run: resolved the way
+// production does, with no roots (a temp-dir fixture is nobody's box).
+func gitExe(t *testing.T) string {
+	t.Helper()
+	p, err := hostexec.Look("git", hostexec.NewRoots())
+	if err != nil {
+		t.Skipf("no host git: %v", err)
+	}
+	return p
+}
+
 // exitReport snapshots, applies mutate, and returns what the user would see.
 func exitReport(t *testing.T, paths project.Paths, mutate func()) string {
 	t.Helper()
-	before := snapshotExit(paths)
+	before := snapshotExit(paths, gitExe(t))
 	mutate()
 	var out bytes.Buffer
-	reportExit(&out, before, snapshotExit(paths))
+	reportExit(&out, before, snapshotExit(paths, gitExe(t)))
 	return out.String()
 }
 
@@ -575,7 +587,7 @@ func TestExitSnapshotEnumerationBounds(t *testing.T) {
 		old := gitConfigProbeBudget
 		gitConfigProbeBudget = -time.Second // every listing probe lands over budget
 		defer func() { gitConfigProbeBudget = old }()
-		s := snapshotExit(paths)
+		s := snapshotExit(paths, gitExe(t))
 		var sawUnreadable bool
 		for f := range s.unreadable {
 			if strings.Contains(f, "worktrees") {
@@ -607,7 +619,7 @@ func TestSnapshotHooksCapClearsCompleteness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if s := snapshotExit(paths); s.hooksWalked {
+	if s := snapshotExit(paths, gitExe(t)); s.hooksWalked {
 		t.Errorf("a truncated hooks walk must clear hooksWalked (%d entries captured)", len(s.hooks))
 	}
 }

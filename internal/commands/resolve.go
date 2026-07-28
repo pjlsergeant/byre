@@ -32,6 +32,13 @@ type resolved struct {
 	// switch (ADR 0004). Set by Develop; nil in combine() (and thus in unit
 	// tests, which drive develop directly) means "no cross-engine check".
 	otherEngines []sessionRunner
+	// gitExe is the host git this invocation runs (hostGit): an absolute path
+	// pinned for the process, or "" when there is none to run -- not
+	// installed, or resolved out of a directory the box writes. Set by
+	// Develop; "" in combine() (and thus in unit tests, which drive develop
+	// directly) means the git-backed probes degrade, which is the same shape
+	// a host with no git already produces.
+	gitExe string
 }
 
 // combine forms the resolved view from a loaded config and its skills — the

@@ -197,7 +197,7 @@ type exitSnapshot struct {
 // symlink degrades that one entry instead of hanging or ballooning host byre.
 // Nothing here blocks or fails a session: an unreadable target just sits out
 // the comparison.
-func snapshotExit(paths project.Paths) exitSnapshot {
+func snapshotExit(paths project.Paths, gitExe string) exitSnapshot {
 	s := exitSnapshot{
 		hooks:             map[string]string{},
 		config:            map[string]map[string]string{},
@@ -220,7 +220,7 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 			s.configFromListing[exitDisplay(paths, cfg)] = true
 		}
 		for _, cfg := range fixedCfgs {
-			if kv, ok := readGitConfig(cfg); ok {
+			if kv, ok := readGitConfig(gitExe, cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
 			} else if !confirmedAbsent(cfg) {
 				// Present, or byre cannot tell. Either way it is not a
@@ -239,7 +239,7 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 				s.unreadable[exitDisplay(paths, cfg)] = true
 				continue
 			}
-			if kv, ok := readGitConfig(cfg); ok {
+			if kv, ok := readGitConfig(gitExe, cfg); ok {
 				s.config[exitDisplay(paths, cfg)] = kv
 			} else if !confirmedAbsent(cfg) {
 				s.unreadable[exitDisplay(paths, cfg)] = true
@@ -251,7 +251,7 @@ func snapshotExit(paths project.Paths) exitSnapshot {
 		// (core.hookspath is exec-relevant) but never traversed: the target can
 		// be $HOME or /tmp, and walking an arbitrary host directory is a cost
 		// and a privacy problem byre has no business taking on.
-		if p, ok := containedHooksPath(paths); ok {
+		if p, ok := containedHooksPath(gitExe, paths); ok {
 			hooksDirs = append(hooksDirs, p)
 		}
 		for _, dir := range hooksDirs {
@@ -334,8 +334,8 @@ func gitConfigFiles(gitDir string) (fixed, fromListing []string, listed bool) {
 // fail by staying quiet. Rides gitProbe, so it is bounded and time-capped
 // against a hostile file and degrades (ok=false) when git is absent or the file
 // is unreadable -- an unsolicited probe never blocks a session.
-func readGitConfig(path string) (map[string]string, bool) {
-	out, err := gitProbe("config", "--file", path, "--list", "-z")
+func readGitConfig(gitExe, path string) (map[string]string, bool) {
+	out, err := gitProbe(gitExe, "config", "--file", path, "--list", "-z")
 	if err != nil {
 		return nil, false
 	}
@@ -368,8 +368,8 @@ func readGitConfig(path string) (map[string]string, bool) {
 // by the user's own ~/.gitconfig gets watched, and can produce a line the agent
 // had nothing to do with. Passive attribution already covers that, and
 // hostopen.InTreeByIdentity still gates the walk.
-func containedHooksPath(paths project.Paths) (string, bool) {
-	raw, err := gitProbe("-C", paths.WorkDir, "config", "--get", "core.hooksPath")
+func containedHooksPath(gitExe string, paths project.Paths) (string, bool) {
+	raw, err := gitProbe(gitExe, "-C", paths.WorkDir, "config", "--get", "core.hooksPath")
 	if err != nil {
 		return "", false
 	}

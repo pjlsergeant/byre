@@ -134,6 +134,13 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		}
 	}
 
+	// One root set for every host tool this render spawns: the engine probes
+	// below, and the `git:` env sources. A refusal shows on the rows they feed
+	// (EngineErr; a git source rendering as NOT passed) rather than failing a
+	// read-only view.
+	roots := boxWritableRoots(paths)
+	gitExe, _ := hostGit(roots)
+
 	info := statusInfo{
 		Agent:              cfg.Agent,
 		Template:           cfg.Template,
@@ -151,7 +158,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 		ClaudeSkillsClosed: cfg.ClaudeSkillsClosed,
 		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		ProjectRunArgs:     len(cfg.RunArgs) > 0,
-		HostEnv:            resolveHostEnv(cfg),
+		HostEnv:            resolveHostEnv(cfg, gitExe),
 		ArtifactShadows:    artifactShadows(cfg),
 		Cat:                cat,
 	}
@@ -239,7 +246,7 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// is knowable whatever happened to resolution, and this line is now the
 	// only place a shadow is reported.
 	info.ManagedShadows = managedPathShadows(cfg, res)
-	if eng, exe, derr := runner.Detect(cfg.Engine, hostexec.Looker(boxWritableRoots(paths))); derr != nil {
+	if eng, exe, derr := runner.Detect(cfg.Engine, hostexec.Looker(roots)); derr != nil {
 		info.Engine = orDefault(cfg.Engine, "auto")
 		// Carries a shadowed-engine refusal as well as "not installed" — the
 		// engine row is where status already says why it cannot speak for the

@@ -37,7 +37,7 @@ type hostEnvResult struct {
 // runner applies, never its own re-derivation of the intent (the
 // render-from-effect rule; the empty-git-identity lie was the 2026-07
 // review's headline finding).
-func resolveHostEnv(cfg config.Config) []hostEnvResult {
+func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 	keys := make([]string, 0, len(cfg.EnvFromHost))
 	for k := range cfg.EnvFromHost {
 		keys = append(keys, k)
@@ -50,7 +50,7 @@ func resolveHostEnv(cfg config.Config) []hostEnvResult {
 			r.State = hostEnvDisabled
 		} else if explicit {
 			r.State = hostEnvOverridden
-		} else if v := hostSourceValue(r.Source); v != "" {
+		} else if v := hostSourceValue(r.Source, gitExe); v != "" {
 			r.Value, r.State = v, hostEnvDelivered
 		} else {
 			r.State = hostEnvEmpty
@@ -91,9 +91,9 @@ func providedEnv(cfg config.Config, hostEnv []hostEnvResult) map[string]bool {
 // read as empty — validation already refused them at config load; this is
 // a total function here so a scheme reaching this point through a path
 // that skipped validation sets nothing rather than panicking.
-func hostSourceValue(src string) string {
+func hostSourceValue(src, gitExe string) string {
 	if key, ok := strings.CutPrefix(src, "git:"); ok {
-		return gitConfig(key)
+		return gitConfig(gitExe, key)
 	}
 	if name, ok := strings.CutPrefix(src, "env:"); ok {
 		return os.Getenv(name)
@@ -104,11 +104,11 @@ func hostSourceValue(src string) string {
 	return ""
 }
 
-func gitConfig(key string) string {
+func gitConfig(gitExe, key string) string {
 	// Unsolicited (develop/status env resolution) against agent-shaped git
 	// state — gitProbe's bounds apply; any refusal degrades to "" like an
 	// unset key.
-	out, err := gitProbe("config", "--get", key)
+	out, err := gitProbe(gitExe, "config", "--get", key)
 	if err != nil {
 		return ""
 	}

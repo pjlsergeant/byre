@@ -87,9 +87,14 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	engine, ident := resolveEngineIdentity(rv.cfg, boxWritableRoots(paths))
+	roots := boxWritableRoots(paths)
+	engine, ident := resolveEngineIdentity(rv.cfg, roots)
 	image := imageTag(paths.ID, ident.UID, ident.GID)
-	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg))
+	// A git byre won't run resolves the `git:` env sources to empty, exactly as
+	// an absent git does -- and the printed argv is then what develop would
+	// actually pass, which is the whole contract of this command.
+	gitExe, _ := hostGit(roots)
+	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg, gitExe))
 	if err != nil {
 		return err
 	}

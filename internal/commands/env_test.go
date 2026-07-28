@@ -22,7 +22,9 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 			"ABSENT":          "env:BYRE_TEST_NO_SUCH_V", // unset host var: nothing
 		},
 	}
-	results := resolveHostEnv(cfg)
+	// "" for the host git: this case turns on the `git:` source LOSING to an
+	// explicit [env] key, which it must do before any probe runs.
+	results := resolveHostEnv(cfg, "")
 	states := map[string]hostEnvState{}
 	for _, r := range results {
 		states[r.Key] = r.State
@@ -60,7 +62,7 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 // macOS zoneinfo trees.
 func TestHostTimezone(t *testing.T) {
 	t.Setenv("TZ", "America/New_York")
-	if got := hostSourceValue("tz:"); got != "America/New_York" {
+	if got := hostSourceValue("tz:", ""); got != "America/New_York" {
 		t.Fatalf("tz: must prefer the TZ env var, got %q", got)
 	}
 

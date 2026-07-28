@@ -229,7 +229,7 @@ func TestWorktreeCreateAssemblesContainer(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "wt")
 	f := &fakeRunner{}
-	if err := worktreeCreate(f, discardStreams(), paths, repo, "feat", target); err != nil {
+	if err := worktreeCreate(f, discardStreams(), paths, repo, "feat", target, gitExe(t)); err != nil {
 		t.Fatalf("worktreeCreate: %v", err)
 	}
 	if len(f.builds) != 1 {
@@ -286,7 +286,7 @@ func TestWorktreeCreateFromLinkedWorktree(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "wt")
 	f := &fakeRunner{}
-	if err := worktreeCreate(f, discardStreams(), paths, linked, "feat", target); err != nil {
+	if err := worktreeCreate(f, discardStreams(), paths, linked, "feat", target, gitExe(t)); err != nil {
 		t.Fatalf("worktreeCreate: %v", err)
 	}
 	rec := f.worktreeAdds[0]
@@ -346,7 +346,7 @@ func TestWorktreeCreateRunsNoAgentCodeOnHost(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "wt")
 	f := &fakeRunner{}
-	if err := worktreeCreate(f, discardStreams(), paths, repo, "hostile", target); err != nil {
+	if err := worktreeCreate(f, discardStreams(), paths, repo, "hostile", target, gitExe(t)); err != nil {
 		t.Fatalf("worktreeCreate: %v", err)
 	}
 
@@ -360,7 +360,7 @@ func TestWorktreeCreateRunsNoAgentCodeOnHost(t *testing.T) {
 		}
 	}
 	// Nothing registered host-side: the registration is the box's job.
-	if reg, err := worktreeRegistered(paths.Canonical, target); err != nil || reg {
+	if reg, err := worktreeRegistered(gitExe(t), paths.Canonical, target); err != nil || reg {
 		t.Errorf("host-side registration happened (reg=%v err=%v) — the host must not run git worktree add", reg, err)
 	}
 	if entries, _ := os.ReadDir(target); len(entries) != 0 {
@@ -379,7 +379,7 @@ func TestWorktreeCreateFailureRemovesEmptyDir(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "wt")
 	f := &fakeRunner{worktreeAddErr: os.ErrDeadlineExceeded}
-	err = worktreeCreate(f, discardStreams(), paths, repo, "feat", target)
+	err = worktreeCreate(f, discardStreams(), paths, repo, "feat", target, gitExe(t))
 	if err == nil || !strings.Contains(err.Error(), "failed") {
 		t.Fatalf("want create failure, got %v", err)
 	}
@@ -404,7 +404,7 @@ func TestWorktreeCreateRefusesConcurrentTargetDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := &fakeRunner{}
-	err = worktreeCreate(f, discardStreams(), paths, repo, "feat", target)
+	err = worktreeCreate(f, discardStreams(), paths, repo, "feat", target, gitExe(t))
 	if err == nil || !strings.Contains(err.Error(), "another `byre worktree`") {
 		t.Fatalf("want the concurrent-create refusal, got %v", err)
 	}

@@ -200,13 +200,13 @@ func TestIntegrationWorktreeCreateInBox(t *testing.T) {
 	ident := testIdentity(t, r)
 	t.Cleanup(func() { _ = r.ImageRemove(imageTag(p.ID, ident.UID, ident.GID)) })
 	target := filepath.Join(t.TempDir(), "wt")
-	if err := worktreeCreate(r, discardStreams(), p, proj, "boxed", target); err != nil {
+	if err := worktreeCreate(r, discardStreams(), p, proj, "boxed", target, gitExe(t)); err != nil {
 		t.Fatalf("worktreeCreate: %v", err)
 	}
 
 	// Registered, and --no-checkout: the target holds ONLY the .git pointer
 	// (population is the first session's job).
-	if reg, err := worktreeRegistered(p.Canonical, target); err != nil || !reg {
+	if reg, err := worktreeRegistered(gitExe(t), p.Canonical, target); err != nil || !reg {
 		t.Fatalf("worktree not registered host-side: reg=%v err=%v", reg, err)
 	}
 	entries, err := os.ReadDir(target)
@@ -254,7 +254,7 @@ func TestIntegrationWorktreeCreateInBox(t *testing.T) {
 		commonHost, commonTarget, p.Canonical, target2, "nogit"); err == nil {
 		t.Fatal("WorktreeAdd on a git-less image should fail")
 	}
-	if reg, err := worktreeRegistered(p.Canonical, target2); err != nil || reg {
+	if reg, err := worktreeRegistered(gitExe(t), p.Canonical, target2); err != nil || reg {
 		t.Fatalf("git-less create must register nothing: reg=%v err=%v", reg, err)
 	}
 	if entries, _ := os.ReadDir(target2); len(entries) != 0 {
@@ -318,7 +318,7 @@ func TestIntegrationWorktreeCreateIsolatesMetadataWrites(t *testing.T) {
 	ident := testIdentity(t, r)
 	t.Cleanup(func() { _ = r.ImageRemove(imageTag(p.ID, ident.UID, ident.GID)) })
 	target := filepath.Join(t.TempDir(), "wt")
-	if err := worktreeCreate(r, discardStreams(), p, proj, "boxed", target); err != nil {
+	if err := worktreeCreate(r, discardStreams(), p, proj, "boxed", target, gitExe(t)); err != nil {
 		t.Fatalf("worktreeCreate: %v", err)
 	}
 
@@ -332,7 +332,7 @@ func TestIntegrationWorktreeCreateIsolatesMetadataWrites(t *testing.T) {
 		t.Fatalf("host sentinel was modified — a metadata write escaped the box:\n%q", got)
 	}
 	// And the real metadata still landed: registered, branch created, marker set.
-	if reg, err := worktreeRegistered(p.Canonical, target); err != nil || !reg {
+	if reg, err := worktreeRegistered(gitExe(t), p.Canonical, target); err != nil || !reg {
 		t.Fatalf("worktree not registered: reg=%v err=%v", reg, err)
 	}
 	if err := exec.Command("git", "-C", p.Canonical, "rev-parse", "--verify", "-q", "refs/heads/boxed").Run(); err != nil {

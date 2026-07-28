@@ -114,6 +114,10 @@ func MCPRemove(s Streams, projectDir string, global bool, name string) error {
 // arms read statusInfo fields, so every one they consult has to be
 // populated here too, or the arm silently never fires.
 func MCPList(s Streams, projectDir string) error {
+	// The env-provided column is render-from-effect: it must resolve `git:`
+	// sources through the same host git develop would run, so a git byre
+	// declines to run reads as "not passed" here too.
+	gitExe, _ := hostGit(boxWritableRootsFor(projectDir))
 	info, err := listDeclInfo(s, projectDir,
 		func(info *statusInfo, cfg config.Config) {
 			info.EgressClosed = cfg.EgressClosed
@@ -124,7 +128,7 @@ func MCPList(s Streams, projectDir string) error {
 			info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
 			// Same shared resolution status/develop use: "provided" means
 			// delivered, never configured-and-hoped (render-from-effect).
-			info.EnvProvided = providedEnv(cfg, resolveHostEnv(cfg))
+			info.EnvProvided = providedEnv(cfg, resolveHostEnv(cfg, gitExe))
 			info.ArtifactShadows = artifactShadows(cfg)
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {

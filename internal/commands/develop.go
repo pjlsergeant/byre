@@ -104,6 +104,20 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	// it. Hand develop the other installed engines so it can check them under
 	// the setup lock (ADR 0004).
 	rv.otherEngines = installedEnginesExcept(eng, roots)
+	// The session-end report (ADR 0047) runs host git AUTOMATICALLY, at every
+	// exit, with nobody watching for a command to fail. So a git resolved out
+	// of a directory the box writes DEGRADES rather than refusing: the probes
+	// are skipped and the loss is disclosed once, here, before the session --
+	// a session end must never be blockable by the thing it reports on, and a
+	// line printed in the middle of the exit report is a line nobody reads.
+	// Absence stays silent, as it already does: a host with no git is not a
+	// disclosure, it is a host with no git.
+	var shadowed *hostexec.ShadowError
+	if gitExe, gerr := hostGit(roots); errors.As(gerr, &shadowed) {
+		fmt.Fprintf(s.Err, "byre: %v The session-end report's git probes and any `git:` env sources are skipped for this session.\n", shadowed)
+	} else {
+		rv.gitExe = gitExe
+	}
 	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit)
 }
 
@@ -167,7 +181,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 	// One host-env resolution feeds the runtime env, the exposure tally,
 	// and (in status) the row -- render-from-effect, no re-derivation.
-	hostEnv := resolveHostEnv(rv.cfg)
+	hostEnv := resolveHostEnv(rv.cfg, rv.gitExe)
 	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
 	if err != nil {
 		return err
@@ -289,7 +303,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// Same timing, same reason, for the places the HOST runs code from (ADR
 	// 0047): after byre's own setup, so the exit report shows the session's
 	// changes rather than byre's staging.
-	watch := snapshotExit(paths)
+	watch := snapshotExit(paths, rv.gitExe)
 
 	// Every real session opens by showing the walls going up: the terse
 	// exposure lines. Printed only once the container exists — a launch that
@@ -349,7 +363,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if selfEdit {
 			reportSelfEditChanges(s.Err, paths.Dir, store)
 		}
-		reportExit(s.Err, watch, snapshotExit(paths))
+		reportExit(s.Err, watch, snapshotExit(paths, rv.gitExe))
 	}
 	if runErr != nil {
 		if len(live) > 0 {

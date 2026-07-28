@@ -48,6 +48,16 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	if err != nil {
 		return err
 	}
+	roots := boxWritableRoots(paths)
+	// The registration probes below report a REPO FACT the user acts on, so a
+	// git byre won't run (absent, or resolved out of a directory the box
+	// writes) has to be visible rather than read as "not registered". The
+	// probes already degrade on their own error; this line is what tells the
+	// user why the answer got vaguer.
+	gitExe, gerr := hostGit(roots)
+	if gerr != nil {
+		fmt.Fprintf(s.Err, "byre: %v — byre can't check whether the target is already a registered worktree; the create in the box will refuse a stale registration itself.\n", gerr)
+	}
 	// Location: --path (explicit) wins; else the configured worktree_base. byre
 	// will NOT guess a location (least surprise — no directories created where you
 	// didn't ask). Resolved before any git work so we never half-create.
@@ -78,12 +88,12 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	// refusal — an unanswerable probe falls back to the plain behavior, and the
 	// in-box add fails loudly on a stale registration anyway.
 	if _, lerr := hostopen.PlainLstat(target, hostopen.HostUserOwned); lerr == nil {
-		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
+		if reg, perr := worktreeRegistered(gitExe, paths.Canonical, target); perr == nil && reg {
 			return fmt.Errorf("%s is already a registered worktree of this repo — continue with `byre develop` there, "+
 				"or remove it first: git -C %s worktree remove --force %s", target, paths.Canonical, target)
 		}
 		return fmt.Errorf("target path already exists: %s (pass --path to choose another location)", target)
-	} else if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
+	} else if reg, perr := worktreeRegistered(gitExe, paths.Canonical, target); perr == nil && reg {
 		return fmt.Errorf("%s is registered as a worktree but missing on disk — a previous create was likely interrupted. "+
 			"Clear stale registrations with `git -C %s worktree prune` (it drops only entries whose directory is gone), then retry", target, paths.Canonical)
 	}
@@ -97,12 +107,12 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	if cerr != nil {
 		return cerr
 	}
-	eng, engExe, derr := runner.Detect(cfg.Engine, hostexec.Looker(boxWritableRoots(paths)))
+	eng, engExe, derr := runner.Detect(cfg.Engine, hostexec.Looker(roots))
 	if derr != nil {
 		return fmt.Errorf("byre worktree needs a container engine — it creates and checks out the worktree inside the box (where the repo's git hooks and filters run contained, not on the host): %w.\n"+
 			"Start Docker or Podman, or run `git worktree add %s %s` yourself (that runs on the host, running the repo's own git hooks and filters there)", derr, target, name)
 	}
-	if err := worktreeCreate(runner.New(eng, engExe), s, paths, top, name, target); err != nil {
+	if err := worktreeCreate(runner.New(eng, engExe), s, paths, top, name, target, gitExe); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: created worktree at %s (branch %s); starting a session…\n", target, name)
@@ -117,7 +127,7 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 // the one-shot creation container that registers the worktree and drops the
 // pending-checkout marker — all git mutation in the box. Split from Worktree
 // so it runs end-to-end against a fake engine.
-func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, name, target string) error {
+func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, name, target, gitExe string) error {
 	commonTarget, commonHost, err := worktreeCommonGitDir(paths)
 	if err != nil {
 		return err
@@ -161,7 +171,7 @@ func worktreeCreate(r engineRunner, s Streams, paths project.Paths, projectDir, 
 		// retry isn't refused by the exists check. If a registration survived
 		// (create killed mid-remove), say so with the targeted remedy.
 		_ = hostopen.PlainRemove(target, hostopen.ByreCreated)
-		if reg, perr := worktreeRegistered(paths.Canonical, target); perr == nil && reg {
+		if reg, perr := worktreeRegistered(gitExe, paths.Canonical, target); perr == nil && reg {
 			return fmt.Errorf("creating the worktree in the box failed, and it is still registered: %w\n"+
 				"remove it with `git -C %s worktree remove --force %s`, then retry", err, paths.Canonical, target)
 		}
@@ -246,8 +256,8 @@ func worktreeCommonGitDir(paths project.Paths) (target, host string, err error) 
 // repo at mainDir, via a bounded read-only probe (`worktree list --porcelain`
 // prints one `worktree <path>` line per registration). Paths are compared
 // canonicalized, since git records its own absolute spelling.
-func worktreeRegistered(mainDir, target string) (bool, error) {
-	out, err := gitProbe("-C", mainDir, "worktree", "list", "--porcelain")
+func worktreeRegistered(gitExe, mainDir, target string) (bool, error) {
+	out, err := gitProbe(gitExe, "-C", mainDir, "worktree", "list", "--porcelain")
 	if err != nil {
 		return false, err
 	}
