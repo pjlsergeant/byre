@@ -246,3 +246,25 @@ func TestExclusiveVolumeSeesAHolderOnAnotherEngine(t *testing.T) {
 		t.Fatalf("test is not exercising the peer set: %v", err)
 	}
 }
+
+// Where byre could not LOOK, it cannot say which of the declared volumes is
+// at risk -- naming one would imply it had checked, so the uncertainty arms
+// name them all.
+func TestExclusiveVolumeUncertaintyNamesEveryDeclaration(t *testing.T) {
+	p, _ := testPaths(t)
+	cfg := config.Config{Volumes: []config.Volume{
+		{Name: "ledger", Role: "state", Target: "/var/lib/ledger", Sharing: "exclusive"},
+		{Name: "index", Role: "state", Target: "/var/lib/index", Sharing: "exclusive"},
+	}}
+	rv := combine(cfg, skills.Resolved{})
+	rv.declinedEngines = []declinedEngine{{Engine: "podman", Err: errors.New("resolved out of a box-writable directory")}}
+	s, _, errBuf := testStreams("", false)
+
+	if err := develop(&fakeRunner{}, s, p, rv, false); err == nil {
+		t.Fatal("want a refusal")
+	}
+	got := errBuf.String()
+	if !strings.Contains(got, `volumes "index", "ledger" declare`) {
+		t.Errorf("both declarations must be named, sorted:\n%s", got)
+	}
+}

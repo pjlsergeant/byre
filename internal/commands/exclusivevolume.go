@@ -3,6 +3,9 @@ package commands
 import (
 	"fmt"
 	"io"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/deliver"
@@ -32,10 +35,19 @@ import (
 // workdir refusal and ADR 0004's cross-engine refusal, both of which block.
 
 // exclusiveRefusal is the shared head of every single-writer refusal: the rule
-// that fired, and the declared volume it fired for. One place, because the
-// refusal has five arms and they must be recognisable as one rule.
-func exclusiveRefusal(decl string) string {
-	return fmt.Sprintf("byre: refusing to start — volume %q declares sharing = \"exclusive\" (at most one live box may mount it)", decl)
+// that fired, and the volume (or volumes) it fired for. One place, because the
+// refusal has six arms and they must be recognisable as one rule.
+func exclusiveRefusal(decl ...string) string {
+	quoted := make([]string, len(decl))
+	for i, d := range decl {
+		quoted[i] = fmt.Sprintf("%q", d)
+	}
+	noun, verb := "volume", "declares"
+	if len(decl) > 1 {
+		noun, verb = "volumes", "declare"
+	}
+	return fmt.Sprintf("byre: refusing to start — %s %s %s sharing = \"exclusive\" (at most one live box may mount it)",
+		noun, strings.Join(quoted, ", "), verb)
 }
 
 // exclusiveRemedy is the way out, printed under every arm. Stopping the holder
@@ -71,19 +83,14 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 	if len(want) == 0 {
 		return nil
 	}
-	// One name for the message when several are declared: the refusal is
-	// about the contract, and naming every exclusive volume in a sentence
-	// about an engine byre could not reach would be noise. The conflict arm
+	// The arms that report an uncertainty rather than a collision name every
+	// exclusive volume, sorted: byre could not look, so it cannot say which of
+	// them is at risk, and picking one would imply it had. The conflict arm
 	// below names the volume that actually collided.
-	anyDecl := ""
-	for _, decl := range want {
-		if anyDecl == "" || decl < anyDecl {
-			anyDecl = decl
-		}
-	}
+	all := slices.Sorted(maps.Values(want))
 
 	for _, d := range declined {
-		fmt.Fprintf(w, "%s, and byre will not run %s to look for a box holding it: %v\n", exclusiveRefusal(anyDecl), d.Engine, d)
+		fmt.Fprintf(w, "%s, and byre will not run %s to look for a box holding it: %v\n", exclusiveRefusal(all...), d.Engine, d)
 		fmt.Fprint(w, exclusiveRemedy)
 		return ExitError{Code: ExitRefused}
 	}
@@ -99,14 +106,14 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 			if deliver.IsUnreachable(err) {
 				why = fmt.Sprintf("%s isn't reachable", rr.Engine())
 			}
-			fmt.Fprintf(w, "%s, and byre could not list this project's boxes on %s (%s) — a session there could be holding it.\n", exclusiveRefusal(anyDecl), rr.Engine(), why)
+			fmt.Fprintf(w, "%s, and byre could not list this project's boxes on %s (%s) — a session there could be holding it.\n", exclusiveRefusal(all...), rr.Engine(), why)
 			fmt.Fprint(w, exclusiveRemedy)
 			return ExitError{Code: ExitRefused}
 		}
 		for _, id := range ids {
 			labels, lerr := rr.ContainerLabels(id)
 			if lerr != nil {
-				fmt.Fprintf(w, "%s, and byre could not read the labels of %s box %s (%v) — it could be holding it.\n", exclusiveRefusal(anyDecl), rr.Engine(), shortID(id), firstLine(lerr.Error()))
+				fmt.Fprintf(w, "%s, and byre could not read the labels of %s box %s (%v) — it could be holding it.\n", exclusiveRefusal(all...), rr.Engine(), shortID(id), firstLine(lerr.Error()))
 				fmt.Fprint(w, exclusiveRemedy)
 				return ExitError{Code: ExitRefused}
 			}
@@ -119,7 +126,7 @@ func refuseExclusiveVolumeHolders(w io.Writer, paths project.Paths, uid int, vol
 			}
 			rec, st := readLaunchRecord(paths, labels)
 			if st != launchRecordOK {
-				fmt.Fprintf(w, "%s, and byre cannot tell what %s is holding: %s.\n", exclusiveRefusal(anyDecl), siblingLabel(labels, id), exclusiveUnknownReason(st))
+				fmt.Fprintf(w, "%s, and byre cannot tell what %s is holding: %s.\n", exclusiveRefusal(all...), siblingLabel(labels, id), exclusiveUnknownReason(st))
 				fmt.Fprint(w, exclusiveRemedy)
 				return ExitError{Code: ExitRefused}
 			}
