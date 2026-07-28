@@ -99,9 +99,15 @@ func snapshotStore(dir string) storeSnapshot {
 // account of the session at the loudest consent moment byre has. A failed read
 // is the same "not readable" state fileSig gives a device or a FIFO, which the
 // report already has words for.
+//
+// The bound is read at limit+1 and judged on the length, hostopen's idiom: a
+// LimitReader stops at the limit with a clean EOF, so the limit alone cannot
+// tell a file that ended there from one that goes on -- and the size check the
+// caller made is a separate, earlier observation of a file the agent can
+// append to in between. The extra byte is the proof.
 func snapshotConfigBody(r io.Reader) ([]byte, bool) {
-	b, err := io.ReadAll(io.LimitReader(r, maxStoreFileBytes))
-	if err != nil {
+	b, err := io.ReadAll(io.LimitReader(r, maxStoreFileBytes+1))
+	if err != nil || len(b) > maxStoreFileBytes {
 		return nil, false
 	}
 	return b, true

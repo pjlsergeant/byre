@@ -318,6 +318,22 @@ func TestSnapshotConfigBodyRefusesATruncatedRead(t *testing.T) {
 	if b, ok := snapshotConfigBody(strings.NewReader("base = \"node:22\"\n")); !ok || string(b) != "base = \"node:22\"\n" {
 		t.Errorf("a complete read must be captured: %q %v", string(b), ok)
 	}
+
+	// The bound is the other way to hold a prefix, and the one the caller's
+	// size check cannot close: it observed the size earlier, and the agent
+	// owns the file in between. A body ending exactly AT the bound is whole; a
+	// byte past it is a file that goes on, and the read cannot say how far.
+	atLimit := strings.Repeat("x", maxStoreFileBytes)
+	if b, ok := snapshotConfigBody(strings.NewReader(atLimit)); !ok || len(b) != maxStoreFileBytes {
+		t.Errorf("a body ending exactly at the bound is whole: len=%d ok=%v", len(b), ok)
+	}
+	b, ok = snapshotConfigBody(strings.NewReader(atLimit + "x"))
+	if ok {
+		t.Error("a body one byte past the bound must not be captured as readable")
+	}
+	if len(b) != 0 {
+		t.Errorf("the truncated prefix must not be kept: %d bytes", len(b))
+	}
 }
 
 type errReader struct{}
