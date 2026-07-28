@@ -2,7 +2,6 @@ package commands
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -138,10 +137,13 @@ func configReferences(cat *packages.Catalog, cfg config.Config, id string) bool 
 func renderRefHits(hits []refHit) string {
 	var b strings.Builder
 	for _, h := range hits {
+		// The rendered block is what install prints as already-escaped: these
+		// are host paths and store locations byre did not author, so the
+		// escaping has to happen HERE for that claim to hold.
 		if h.Guarded {
-			fmt.Fprintf(&b, "  %s  (could not read %s -- counted as a reference)\n", h.Where, h.Path)
+			dataf(&b, "  %s  (could not read %s -- counted as a reference)\n", h.Where, h.Path)
 		} else {
-			fmt.Fprintf(&b, "  %s\n", h.Where)
+			dataf(&b, "  %s\n", h.Where)
 		}
 	}
 	return b.String()

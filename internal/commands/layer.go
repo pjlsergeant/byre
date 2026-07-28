@@ -65,8 +65,8 @@ func LayerNew(s Streams, name string) error {
 	if err := config.AtomicWrite(path, stub); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Err, "byre: created %s\n", path)
-	fmt.Fprintf(s.Err, "extend it from a project: extends = %q in its byre.config (byre config, EXTENDS)\n", name)
+	dataf(s.Err, "byre: created %s\n", path)
+	dataf(s.Err, "extend it from a project: extends = %q in its byre.config (byre config, EXTENDS)\n", name)
 	return nil
 }
 
@@ -88,15 +88,14 @@ func LayerList(s Streams) error {
 	}
 	for _, li := range infos {
 		// Layer names are directory names the user (or anything) dropped on
-		// disk: escape them like every other listing surface.
-		name := packages.EscapeTerminal(li.Name)
+		// disk, and a broken layer's reason quotes the file that broke it.
 		switch {
 		case li.Reason != "":
-			fmt.Fprintf(s.Out, "%-28s  BROKEN  %s\n", name, packages.EscapeTerminal(li.Reason))
+			dataf(s.Out, "%-28s  BROKEN  %s\n", li.Name, li.Reason)
 		case li.Extends != "":
-			fmt.Fprintf(s.Out, "%-28s  extends %s\n", name, packages.EscapeTerminal(li.Extends))
+			dataf(s.Out, "%-28s  extends %s\n", li.Name, li.Extends)
 		default:
-			fmt.Fprintln(s.Out, name)
+			dataf(s.Out, "%s\n", li.Name)
 		}
 	}
 	return nil
@@ -117,7 +116,7 @@ func LayerValidate(s Streams, name string) error {
 		var bad int
 		for _, li := range infos {
 			if li.Reason != "" {
-				fmt.Fprintf(s.Err, "byre: layer %s: %s\n", packages.EscapeTerminal(li.Name), packages.EscapeTerminal(li.Reason))
+				dataf(s.Err, "byre: layer %s: %s\n", li.Name, li.Reason)
 				bad++
 			}
 		}
@@ -140,9 +139,9 @@ func LayerValidate(s Streams, name string) error {
 		return fmt.Errorf("%s", EscapeMultiline(err.Error()))
 	}
 	if names := config.ChainNames(chain); len(names) > 1 {
-		fmt.Fprintf(s.Err, "byre: layer %s ok (chain: %s)\n", name, strings.Join(names, " -> "))
+		dataf(s.Err, "byre: layer %s ok (chain: %s)\n", name, strings.Join(names, " -> "))
 	} else {
-		fmt.Fprintf(s.Err, "byre: layer %s ok\n", name)
+		dataf(s.Err, "byre: layer %s ok\n", name)
 	}
 	return nil
 }

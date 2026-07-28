@@ -79,7 +79,7 @@ func PackageInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes
 	// Same ID, same digest: no-op -- unless the installed copy is
 	// broken, where re-landing the same verified bytes IS the repair.
 	if replacing && old.Digest == acq.Digest && !brokenInstalled {
-		fmt.Fprintf(s.Err, "byre: %s %s is already installed (sha256:%s...) -- nothing to do\n", id, old.Version, acq.Digest[:8])
+		dataf(s.Err, "byre: %s %s is already installed (sha256:%s...) -- nothing to do\n", id, old.Version, acq.Digest[:8])
 		return nil
 	}
 
@@ -90,9 +90,9 @@ func PackageInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes
 		// Repair: the digest pins these to the exact bytes originally
 		// consented to, but boxes referencing the id flip from a resolve
 		// error back to running code -- activation-shaped, so it confirms.
-		fmt.Fprintf(s.Err, "byre: %s %s is installed but its snapshot is broken -- reinstalling the same verified bytes (sha256:%s...)\n", id, old.Version, short(acq.Digest))
+		dataf(s.Err, "byre: %s %s is installed but its snapshot is broken -- reinstalling the same verified bytes (sha256:%s...)\n", id, old.Version, short(acq.Digest))
 		if len(hits) > 0 {
-			fmt.Fprintf(s.Err, "Boxes referencing it (currently failing to resolve) run it again at next launch:\n%s", renderRefHits(hits))
+			dataf(s.Err, "Boxes referencing it (currently failing to resolve) run it again at next launch:\n%s", escaped(renderRefHits(hits)))
 		}
 		if err := requireConsent(s, yes, "Repair? [y/N]: "); err != nil {
 			return err
@@ -101,14 +101,14 @@ func PackageInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes
 		// Same ID, different digest: replacement -- machine-wide scope,
 		// affected boxes enumerated, package-level diff, grant declarations
 		// called out. TTY confirm or --yes; never a silent default.
-		fmt.Fprintf(s.Err, "byre: replacing %s\n", id)
-		fmt.Fprintf(s.Err, "  installed: %s (sha256:%s...)\n", old.Version, short(old.Digest))
-		fmt.Fprintf(s.Err, "  candidate: %s (sha256:%s...)\n", acq.Core.Version, short(acq.Digest))
+		dataf(s.Err, "byre: replacing %s\n", id)
+		dataf(s.Err, "  installed: %s (sha256:%s...)\n", old.Version, short(old.Digest))
+		dataf(s.Err, "  candidate: %s (sha256:%s...)\n", acq.Core.Version, short(acq.Digest))
 		printPayloadDiff(s.Err, home, old, acq)
 		printGrantDelta(s.Err, home, old, acq)
 		fmt.Fprintln(s.Err, "Replacement is machine-wide: every box referencing this id runs the new code at its next launch.")
 		if len(hits) > 0 {
-			fmt.Fprintf(s.Err, "Affected boxes:\n%s", renderRefHits(hits))
+			dataf(s.Err, "Affected boxes:\n%s", escaped(renderRefHits(hits)))
 		} else {
 			fmt.Fprintln(s.Err, "No stored config currently references it.")
 		}
@@ -118,7 +118,7 @@ func PackageInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes
 	case len(hits) > 0:
 		// Install-as-activation: dangling references flip from failing
 		// to running new code. Treated like a replacement.
-		fmt.Fprintf(s.Err, "byre: %s is not installed, but stored configs already reference it -- installing ACTIVATES it there at next launch:\n%s", id, renderRefHits(hits))
+		dataf(s.Err, "byre: %s is not installed, but stored configs already reference it -- installing ACTIVATES it there at next launch:\n%s", id, escaped(renderRefHits(hits)))
 		printAcquiredSummary(s.Err, acq)
 		if err := requireConsent(s, yes, "Install and activate? [y/N]: "); err != nil {
 			return err
@@ -151,7 +151,7 @@ func PackageInstall(s Streams, kind packages.Kind, uri, expectDigest string, yes
 	if err := packages.WithStoreLock(home, func() error { return packages.LandSnapshot(home, snap) }); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Err, "byre: installed %s %s (sha256:%s...)\n", id, acq.Core.Version, short(acq.Digest))
+	dataf(s.Err, "byre: installed %s %s (sha256:%s...)\n", id, acq.Core.Version, short(acq.Digest))
 	// The closer must not walk back the consent narrative just accepted:
 	// only a FRESH, unreferenced install grants nothing; replacement
 	// and activation change what referencing boxes run next launch.
@@ -193,10 +193,9 @@ func short(digest string) string {
 // printAcquiredSummary is the install grant summary: the same contribution set
 // inspect leads with, rendered from the acquired manifest.
 func printAcquiredSummary(w io.Writer, acq *packages.Acquired) {
-	fmt.Fprintf(w, "Package: %s %s (%s), sha256:%s...\n",
-		packages.EscapeTerminal(acq.Core.ID), packages.EscapeTerminal(acq.Core.Version), acq.Kind, short(acq.Digest))
+	dataf(w, "Package: %s %s (%s), sha256:%s...\n", acq.Core.ID, acq.Core.Version, acq.Kind, short(acq.Digest))
 	if acq.Core.Description != "" {
-		fmt.Fprintf(w, "  %s\n", packages.EscapeTerminal(acq.Core.Description))
+		dataf(w, "  %s\n", acq.Core.Description)
 	}
 	if acq.Kind == packages.KindSkill {
 		if f, err := skills.ParsePrimaryBytes(acq.Manifest); err == nil {
@@ -213,7 +212,7 @@ func printAcquiredSummary(w io.Writer, acq *packages.Acquired) {
 func printPayloadDiff(w io.Writer, home string, old packages.IndexEntry, acq *packages.Acquired) {
 	oldEnt, err := readInstalledManifest(home, old, acq.Primary)
 	if err != nil {
-		fmt.Fprintf(w, "  (old payload list unavailable: %v)\n", err)
+		dataf(w, "  (old payload list unavailable: %v)\n", err)
 		return
 	}
 	oldByDest := map[string]packages.FileEntry{}
@@ -241,13 +240,13 @@ func printPayloadDiff(w io.Writer, home string, old packages.IndexEntry, acq *pa
 	sort.Strings(changed)
 	sort.Strings(removed)
 	for _, d := range added {
-		fmt.Fprintf(w, "  payload added:   %s\n", packages.EscapeTerminal(d))
+		dataf(w, "  payload added:   %s\n", d)
 	}
 	for _, d := range changed {
-		fmt.Fprintf(w, "  payload changed: %s\n", packages.EscapeTerminal(d))
+		dataf(w, "  payload changed: %s\n", d)
 	}
 	for _, d := range removed {
-		fmt.Fprintf(w, "  payload removed: %s\n", packages.EscapeTerminal(d))
+		dataf(w, "  payload removed: %s\n", d)
 	}
 	if len(added)+len(changed)+len(removed) == 0 {
 		fmt.Fprintln(w, "  payloads unchanged (manifest text differs)")
@@ -279,7 +278,7 @@ func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *pac
 		if len(lines) > 0 {
 			fmt.Fprintln(w, "Installed version unreadable -- candidate grant declarations (in full, not a diff):")
 			for _, l := range lines {
-				fmt.Fprintf(w, "  + %s\n", l)
+				dataf(w, "  + %s\n", escaped(l))
 			}
 		}
 		return
@@ -302,14 +301,14 @@ func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *pac
 	if len(fresh) > 0 {
 		fmt.Fprintln(w, "New or widened grant declarations in the package:")
 		for _, l := range fresh {
-			fmt.Fprintf(w, "  + %s\n", l)
+			dataf(w, "  + %s\n", escaped(l))
 		}
 	}
 	if len(dropped) > 0 {
 		// Removals change the trust surface too (they are CHANGED contributions).
 		fmt.Fprintln(w, "No longer declared:")
 		for _, l := range dropped {
-			fmt.Fprintf(w, "  - %s\n", l)
+			dataf(w, "  - %s\n", escaped(l))
 		}
 	}
 }
@@ -332,17 +331,17 @@ func grantLines(kind packages.Kind, raw []byte) map[string]bool {
 		if f, err := skills.ParsePrimaryBytes(raw); err == nil {
 			printSkillContributions(&b, f)
 			for _, l := range f.Build.Dockerfile {
-				fmt.Fprintf(&b, "dockerfile (not introspected): %s\n", packages.EscapeTerminal(l))
+				dataf(&b, "dockerfile (not introspected): %s\n", l)
 			}
 		}
 	} else {
 		printTemplateShape(&b, raw)
 		if cfg, err := config.ParseTemplateBody(raw); err == nil {
 			for _, l := range append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...) {
-				fmt.Fprintf(&b, "dockerfile (not introspected): %s\n", packages.EscapeTerminal(l))
+				dataf(&b, "dockerfile (not introspected): %s\n", l)
 			}
 			for _, a := range cfg.RunArgs {
-				fmt.Fprintf(&b, "run_arg: %s\n", packages.EscapeTerminal(a))
+				dataf(&b, "run_arg: %s\n", a)
 			}
 		}
 	}
@@ -424,7 +423,7 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 	// conservative wording -- never promise activation we cannot prove.
 	takeover := contested != nil && len(contested.Claimants) == 2
 	if contested != nil {
-		fmt.Fprintf(s.Err, "byre: %s is contested: %s\n", ent.ID, packages.EscapeTerminal(contested.Reason))
+		dataf(s.Err, "byre: %s is contested: %s\n", ent.ID, contested.Reason)
 		if takeover {
 			fmt.Fprintln(s.Err, "Removing the installed copy leaves the other claimant as this id's SOLE provider -- it loads normally from then on.")
 		} else {
@@ -434,11 +433,11 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 	if len(hits) > 0 {
 		switch {
 		case takeover:
-			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes run the surviving claimant at next launch:\n%s", ent.ID, renderRefHits(hits))
+			dataf(s.Err, "byre: these configs reference %s -- their boxes run the surviving claimant at next launch:\n%s", ent.ID, escaped(renderRefHits(hits)))
 		case contested != nil:
-			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes keep hitting the conflict error at next develop:\n%s", ent.ID, renderRefHits(hits))
+			dataf(s.Err, "byre: these configs reference %s -- their boxes keep hitting the conflict error at next develop:\n%s", ent.ID, escaped(renderRefHits(hits)))
 		default:
-			fmt.Fprintf(s.Err, "byre: these configs reference %s -- their boxes hit a resolve error at next develop:\n%s", ent.ID, renderRefHits(hits))
+			dataf(s.Err, "byre: these configs reference %s -- their boxes hit a resolve error at next develop:\n%s", ent.ID, escaped(renderRefHits(hits)))
 		}
 	}
 	if err := requireConsent(s, yes, fmt.Sprintf("Uninstall %s? [y/N]: ", ent.ID)); err != nil {
@@ -447,7 +446,7 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 	if err := packages.WithStoreLock(home, func() error { return packages.RemoveInstalled(home, ent.ID) }); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Err, "byre: uninstalled %s\n", ent.ID)
+	dataf(s.Err, "byre: uninstalled %s\n", ent.ID)
 	switch {
 	case takeover:
 		fmt.Fprintln(s.Err, "      The surviving claimant now provides this id; referencing boxes load it at their next launch.")

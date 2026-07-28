@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/skills"
 	"github.com/pjlsergeant/byre/internal/testtools"
 )
@@ -210,4 +212,167 @@ func TestSkillInspectEscapesManifestValues(t *testing.T) {
 	printTemplateShape(&tb, []byte("base = \"node:22\"\n\n[files]\n\"payload\\u001B[2K.sh\" = \"/usr/local/bin/payload\"\n"))
 	assertNoESC(t, "printTemplateShape", tb.String())
 	assertKept(t, "printTemplateShape", tb.String(), "files: 1", "payload")
+}
+
+// --- the funnel surfaces: install, layer, preset ---
+//
+// These three print through dataf, which escapes each ARGUMENT and leaves
+// byre's own format string to do the framing. The preset review is the one
+// place in the package that means to emit ANSI (the TTY highlight on a
+// containment grant), and it says so by passing escaped() -- so its arm asserts
+// the highlight SURVIVES while everything around it is data.
+
+// TestDatafRendersArgumentsAsData pins the funnel itself.
+func TestDatafRendersArgumentsAsData(t *testing.T) {
+	var b bytes.Buffer
+	dataf(&b, "byre: %s is contested: %s\n", "acme/x"+escCSI, errors.New("two claimants\nbyre: all fine"))
+	out := b.String()
+
+	if n := strings.Count(out, "\n"); n != 1 {
+		t.Errorf("dataf wrote %d lines, want 1 -- an argument framed one: %q", n, out)
+	}
+	if strings.IndexByte(out, 0x1b) >= 0 {
+		t.Errorf("dataf printed a raw ESC: %q", out)
+	}
+	if !strings.Contains(out, "acme/x") || !strings.Contains(out, "two claimants") {
+		t.Errorf("dataf dropped an argument: %q", out)
+	}
+
+	// escaped() is the exemption, and it is total: what a composer already
+	// rendered passes through, styling included.
+	var styled bytes.Buffer
+	dataf(&styled, "  ⚠ %s\n", escaped("\x1b[1;33mgrant\x1b[0m"))
+	if styled.String() != "  ⚠ \x1b[1;33mgrant\x1b[0m\n" {
+		t.Errorf("escaped() must pass through untouched, got %q", styled.String())
+	}
+}
+
+// installSummary renders the install grant summary and the reference block --
+// the two composers install prints, both fed from manifest and store bytes.
+func installSummary(t *testing.T, payload string) string {
+	t.Helper()
+	var b bytes.Buffer
+	printAcquiredSummary(&b, &packages.Acquired{
+		Core: packages.Manifest{
+			ID:          "acme/tool" + payload,
+			Version:     "1.2.3" + payload,
+			Description: "does things" + payload,
+		},
+		Kind:   packages.KindSkill,
+		Digest: "abc123def456",
+	})
+	b.WriteString(renderRefHits([]refHit{
+		{Where: "~/.byre/projects/p" + payload},
+		{Where: "~/.byre/projects/q" + payload, Path: "/store/q" + payload, Guarded: true},
+	}))
+	return b.String()
+}
+
+func TestInstallReviewEscapesManifestValues(t *testing.T) {
+	out := installSummary(t, escCSI+"\nPackage: acme/innocent 9.9.9\r"+escOSC)
+
+	if i := strings.IndexByte(out, 0x1b); i >= 0 {
+		t.Errorf("the install review printed a raw ESC at byte %d: %q", i, out)
+	}
+	clean := installSummary(t, "\x01\x02")
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("the install review printed %d lines, want %d -- a manifest value forged one:\n%s", got, want, out)
+	}
+	for _, want := range []string{"acme/tool", "1.2.3", "does things", "could not read"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the install review dropped %q: %q", want, out)
+		}
+	}
+}
+
+// layerListing lists layers whose DIRECTORY names carry payload -- names byre
+// never authored, since anything can drop a directory in the layers dir.
+func layerListing(t *testing.T, payload string) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	writeLayerFile(t, home, "steady"+payload, "base = \"node:22\"\n")
+	writeLayerFile(t, home, "broken"+payload, "base = [oops\n")
+	s, out, _ := testStreams("", false)
+	if err := LayerList(s); err != nil {
+		t.Fatalf("layer list failed: %v", err)
+	}
+	// The listing only: the store-ensure notices on stderr fire once per
+	// process, so counting them would make the two runs incomparable.
+	return out.String()
+}
+
+func TestLayerListEscapesLayerNames(t *testing.T) {
+	out := layerListing(t, escCSI+"\nsteady  extends nothing\r"+escOSC)
+
+	if i := strings.IndexByte(out, 0x1b); i >= 0 {
+		t.Errorf("layer list printed a raw ESC at byte %d: %q", i, out)
+	}
+	clean := layerListing(t, "\x01\x02")
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("layer list printed %d lines, want %d -- a directory name forged one:\n%s", got, want, out)
+	}
+	if !strings.Contains(out, "steady") || !strings.Contains(out, "BROKEN") {
+		t.Errorf("layer list dropped a row: %q", out)
+	}
+}
+
+// presetReview renders the consent review over a preset carrying payload in
+// every field it shows, against a stored config so the diff half runs too.
+// The body payload stays free of line breaks on purpose: the review DIFFS the
+// preset file, and a file that really does have two lines really does diff as
+// two lines -- that is content, not a forged report line.
+func presetReview(t *testing.T, payload, body string, tty bool) string {
+	t.Helper()
+	paths, _ := testPaths(t)
+	preset := config.Config{
+		Base:  "node:22" + payload,
+		Agent: "claude" + payload,
+		Mounts: []config.Mount{
+			// A mount over a byre-managed path: a containment grant, which is
+			// what the TTY highlight is for.
+			{Host: "/host" + payload, Target: "/usr/local/bin", Mode: "rw"},
+		},
+	}
+	content := []byte("base = \"node:22" + body + "\"\n")
+	store := []byte("base = \"node:20\"\n")
+	s, _, errBuf := testStreams("", tty)
+	renderPresetReview(s, paths, preset, content,
+		[]missingRef{{Name: "acme/x" + payload, Kind: packages.KindSkill}},
+		"Inspect", store, true)
+	return errBuf.String()
+}
+
+func TestPresetReviewEscapesPresetValues(t *testing.T) {
+	payload := escCSI + "\n  ⚠ nothing to see here\r" + escOSC
+	out := presetReview(t, payload, escCSI+escOSC, false)
+
+	if i := strings.IndexByte(out, 0x1b); i >= 0 {
+		t.Errorf("the preset review printed a raw ESC at byte %d: %q", i, out)
+	}
+	clean := presetReview(t, "\x01\x02", "\x01\x02", false)
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("the preset review printed %d lines, want %d -- a preset value forged a grant row:\n%s", got, want, out)
+	}
+	for _, want := range []string{"node:22", "acme/x", "not installed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the preset review dropped %q: %q", want, out)
+		}
+	}
+}
+
+// TestPresetReviewKeepsItsOwnHighlight is the other side of the same rule: the
+// funnel must not strip the styling byre applies deliberately, or the loudest
+// row in the consent review goes quiet.
+func TestPresetReviewKeepsItsOwnHighlight(t *testing.T) {
+	out := presetReview(t, escCSI, escCSI, true)
+
+	if !strings.Contains(out, "\x1b[1;33m") {
+		t.Fatalf("the TTY containment highlight vanished:\n%q", out)
+	}
+	// Every escape in the output belongs to byre's own highlight pair; a
+	// preset-supplied one would break the count.
+	if got, want := strings.Count(out, "\x1b"), strings.Count(out, "\x1b[1;33m")+strings.Count(out, "\x1b[0m"); got != want {
+		t.Errorf("%d escapes present, %d accounted for by the highlight:\n%q", got, want, out)
+	}
 }

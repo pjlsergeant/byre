@@ -68,7 +68,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return err
 	}
 	if legacyName {
-		fmt.Fprintf(s.Err, "byre: %s is the legacy name -- the convention is now %s (rename when convenient; both apply the same way).\n", config.ProjectConfigName, PresetName)
+		dataf(s.Err, "byre: %s is the legacy name -- the convention is now %s (rename when convenient; both apply the same way).\n", config.ProjectConfigName, PresetName)
 	}
 	preset, err := parsePreset(content, source)
 	if err != nil {
@@ -104,16 +104,16 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	// trip install-as-activation inside the normal install flow, correctly).
 	for _, m := range missing {
 		if m.Hint == nil {
-			fmt.Fprintf(s.Err, "byre: %s %q is not installed and the preset carries no [sources] hint -- install it yourself (byre %s install <manifest-url>) or continue without it.\n", m.Kind, m.Name, m.Kind)
+			dataf(s.Err, "byre: %s %q is not installed and the preset carries no [sources] hint -- install it yourself (byre %s install <manifest-url>) or continue without it.\n", m.Kind, m.Name, m.Kind)
 			continue
 		}
-		fmt.Fprintf(s.Err, "\nbyre: the preset references %s %q, not installed. Its hint:\n", m.Kind, m.Name)
+		dataf(s.Err, "\nbyre: the preset references %s %q, not installed. Its hint:\n", m.Kind, m.Name)
 		if err := installForKind(s, m.Kind, m.Hint.URI, m.Hint.Digest); err != nil {
 			// Declining (or a failed fetch) still completes the apply
 			// honestly: the reference stays in the written config, marked in
 			// the review, and the box fails loudly at develop with the
 			// reinstall remedy.
-			fmt.Fprintf(s.Err, "byre: %q not installed (%v) -- continuing; the review marks it.\n", m.Name, err)
+			dataf(s.Err, "byre: %q not installed (%v) -- continuing; the review marks it.\n", m.Name, err)
 		}
 	}
 
@@ -179,7 +179,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 			// drift will read "unapplied/diverged" until a re-apply records it.
 			return fmt.Errorf("byre.config was applied, but recording the applied marker failed (%w) -- re-run preset apply to record it", err)
 		}
-		fmt.Fprintf(s.Err, "byre: applied %s into %s\n", source, storePath)
+		dataf(s.Err, "byre: applied %s into %s\n", source, storePath)
 		return nil
 	})
 }
@@ -204,7 +204,7 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 		return err
 	}
 	if legacyName {
-		fmt.Fprintf(s.Err, "byre: %s is the legacy name -- the convention is now %s.\n", config.ProjectConfigName, PresetName)
+		dataf(s.Err, "byre: %s is the legacy name -- the convention is now %s.\n", config.ProjectConfigName, PresetName)
 	}
 	preset, err := parsePreset(content, source)
 	if err != nil {
@@ -225,7 +225,9 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	// introducing references gets a report, not a walk-through.
 	for _, m := range missing {
 		if m.Hint != nil {
-			fmt.Fprintf(s.Out, "  install it: %s\n", m.Hint.InstallHint(string(m.Kind)))
+			// The hint escapes the URI and digest it quotes; the funnel covers the
+			// rest of the line, attribution included.
+			dataf(s.Out, "  install it: %s\n", m.Hint.InstallHint(string(m.Kind)))
 		}
 	}
 	fmt.Fprintln(s.Out, "Nothing written. `byre preset apply` reviews again and writes byre.config on confirm.")
@@ -363,33 +365,33 @@ func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 // does not have); against an existing byre.config the review shows the diff.
 func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb string, store []byte, hasStore bool) {
 	cfg, grants := effectiveReview(paths, preset)
-	fmt.Fprintf(s.Err, "\n%s preset -- the box this composes:\n", verb)
-	// Every rendered field below can carry preset-controlled bytes:
-	// escape BEFORE byre's own styling so hostile run_args/mount paths/skill
-	// names cannot forge grant rows or extra lines in the consent review.
-	fmt.Fprintf(s.Err, "  base=%s  agent=%s  template=%s\n",
-		packages.EscapeTerminal(config.OrNone(cfg.Base)),
-		packages.EscapeTerminal(config.OrNone(cfg.Agent)),
-		packages.EscapeTerminal(config.OrNone(preset.Template)))
+	dataf(s.Err, "\n%s preset -- the box this composes:\n", verb)
+	// Every rendered field below can carry preset-controlled bytes: the funnel
+	// renders them as data so hostile run_args/mount paths/skill names cannot
+	// forge grant rows or extra lines in the consent review.
+	dataf(s.Err, "  base=%s  agent=%s  template=%s\n",
+		config.OrNone(cfg.Base), config.OrNone(cfg.Agent), config.OrNone(preset.Template))
 	if preset.Extends != "" {
 		// The resolved chain, root-first, the project last (merge order).
 		// Best-effort here: apply hard-failed on a broken chain already, and
 		// inspect's review carries the walk error in its cascade fallback.
 		cat, _ := builtins.LoadCatalogRaw(paths.Home)
 		if chain, cerr := config.LoadExtendsChain(paths.Home, cat, preset.Extends); cerr == nil {
-			fmt.Fprintf(s.Err, "  extends: %s -> project\n",
-				packages.EscapeTerminal(strings.Join(config.ChainNames(chain), " -> ")))
+			dataf(s.Err, "  extends: %s -> project\n", strings.Join(config.ChainNames(chain), " -> "))
 		}
 	}
 	for _, g := range grants {
+		// Escaped BEFORE byre's own styling, and passed as escaped() so the
+		// funnel keeps the highlight: this is the one report line in the
+		// package that is MEANT to carry an escape sequence.
 		line := packages.EscapeTerminal(g.Text)
 		if (g.Containment || g.CrossProject) && s.TTY {
 			line = "\x1b[1;33m" + line + "\x1b[0m"
 		}
-		fmt.Fprintf(s.Err, "  ⚠ %s\n", line)
+		dataf(s.Err, "  ⚠ %s\n", escaped(line))
 	}
 	for _, m := range missing {
-		fmt.Fprintf(s.Err, "  ⚠ %s %s: not installed -- grants unknown\n", m.Kind, packages.EscapeTerminal(m.Name))
+		dataf(s.Err, "  ⚠ %s %s: not installed -- grants unknown\n", m.Kind, m.Name)
 	}
 	if hasStore {
 		if bytes.Equal(store, content) {
@@ -398,24 +400,13 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 			fmt.Fprintln(s.Err, "Changes vs your current byre.config -- applying replaces the whole file:")
 			for _, l := range unifiedDiff("your current config", "preset", string(store), string(content)) {
 				// Diff lines carry hostile preset bytes too.
-				fmt.Fprintln(s.Err, packages.EscapeTerminal(l))
+				dataf(s.Err, "%s\n", l)
 			}
 			fmt.Fprintln(s.Err, "------")
 		}
 	} else {
-		fmt.Fprintf(s.Err, "--- preset ---\n%s\n------\n", EscapeMultiline(string(content)))
+		dataf(s.Err, "--- preset ---\n%s\n------\n", escaped(EscapeMultiline(string(content))))
 	}
-}
-
-// EscapeMultiline terminal-escapes hostile text LINE BY LINE -- EscapeTerminal
-// strips every control character including newlines, which would collapse a
-// rendered file body into one unreadable run.
-func EscapeMultiline(text string) string {
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = packages.EscapeTerminal(l)
-	}
-	return strings.Join(lines, "\n")
 }
 
 // presetState reports the drift state of a repo-shipped preset relative
