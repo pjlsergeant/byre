@@ -579,6 +579,63 @@ func TestInlineTableNestedMembersSurviveRewrite(t *testing.T) {
 	}
 }
 
+// An EMPTY block is one line long: removing it must not take the header that
+// follows, and a key added to it must not land in the next table (fuzz).
+func TestEmptyBlockDoesNotReachIntoTheNextLine(t *testing.T) {
+	src := "[env]\n[defaults]\nskip_questions = true\n"
+	d := load(t, src)
+	if err := d.RemoveTable([]string{"env"}); err != nil {
+		t.Fatal(err)
+	}
+	m := mustParse(t, d)
+	def, ok := m["defaults"].(map[string]any)
+	if !ok || def["skip_questions"] != true {
+		t.Fatalf("the following table was damaged: %v\n%s", m, d.Bytes())
+	}
+
+	d2 := load(t, src)
+	if err := d2.SetKey([]string{"env"}, "FOO", String("bar")); err != nil {
+		t.Fatal(err)
+	}
+	m = mustParse(t, d2)
+	if m["env"].(map[string]any)["FOO"] != "bar" {
+		t.Fatalf("key did not land in the empty table it names: %v\n%s", m, d2.Bytes())
+	}
+	if _, stray := m["defaults"].(map[string]any)["FOO"]; stray {
+		t.Fatalf("key landed in the next table: %v\n%s", m, d2.Bytes())
+	}
+}
+
+// A quoted key is spelled in TOML's escape language, not Go's (fuzz).
+func TestQuotedKeyUsesTOMLEscapes(t *testing.T) {
+	d := load(t, "")
+	key := "bell\aand\vvertical"
+	if err := d.SetKey([]string{"env"}, key, String("x")); err != nil {
+		t.Fatal(err)
+	}
+	m := mustParse(t, d)
+	if got := m["env"].(map[string]any)[key]; got != "x" {
+		t.Fatalf("key did not round-trip: %v\n%s", m, d.Bytes())
+	}
+}
+
+// A key TOML cannot spell is refused, not approximated: substituting U+FFFD
+// would write a key the caller never named (fuzz).
+func TestUnspellableKeyRefused(t *testing.T) {
+	src := "base = \"node:22\"\n"
+	d := load(t, src)
+	err := d.SetKey(nil, "bad\xc2", String("x"))
+	if err == nil {
+		t.Fatal("an invalid-UTF-8 key was accepted")
+	}
+	if !strings.Contains(err.Error(), "not valid UTF-8") {
+		t.Fatalf("error should name the rule that fired: %v", err)
+	}
+	if string(d.Bytes()) != src {
+		t.Fatalf("the document must be left as it was:\n%s", d.Bytes())
+	}
+}
+
 // The engine's own backstop: an edit that yields syntactically valid but
 // semantically illegal TOML (a key defined twice -- what the expression
 // parser happily accepts) must not be handed back. Driven at the splice

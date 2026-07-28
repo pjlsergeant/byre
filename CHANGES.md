@@ -2,6 +2,19 @@
 
 ## unreleased
 
+- **Saving no longer breaks a config that spells a section inline.** If your
+  file said `defaults = { skip_questions = true }` rather than a `[defaults]`
+  block, `byre config` wrote a second `[defaults]` beside it -- the file it
+  had just saved, and every command after it, then failed to load; dropping a
+  key out of such a section did nothing at all, silently. An edit inside an
+  inline table now rewrites that one construct as a proper section carrying
+  its members (the comment above it comes along), and every edit is re-read
+  with the strict parser before it is handed back, so this class of mistake
+  cannot reach your file again. Two further byte-level bugs the new fuzzer
+  found went with it: an empty `[section]` was removed or added to as if it
+  owned the line after it, and a key needing quotes was spelled with Go's
+  escapes instead of TOML's.
+
 - **A mount or volume over byre's own paths is disclosed once, and skills
   are no longer exempt.** byre re-asserts its launcher, launch gate and
   firewall script at the end of the build, but a bind or named volume is

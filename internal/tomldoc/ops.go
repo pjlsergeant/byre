@@ -7,6 +7,7 @@ package tomldoc
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pelletier/go-toml/v2/unstable"
 )
@@ -18,6 +19,9 @@ import (
 // before the first table header (TOML's own requirement), and a key in an
 // absent table appends a fresh [table] block at the end.
 func (d *Doc) SetKey(table []string, key string, rendered string) error {
+	if err := spellable(fullPath(table, key)); err != nil {
+		return err
+	}
 	keyPath := []string{key}
 	if i := d.findKeyValue(table, keyPath); i >= 0 {
 		return d.splice(d.exprs[i].valSpan, []byte(rendered))
@@ -462,11 +466,27 @@ func separatorAt(src []byte, off int) string {
 }
 
 // encodeKey renders one key segment, quoting when it isn't a bare TOML key.
+// The quoted form rides the same escaping as a string VALUE: Go's %q spells a
+// different language (\a, \v and \x have no meaning in a TOML basic string),
+// so a key holding one of those characters came out unparseable.
 func encodeKey(k string) string {
 	if isBareKey(k) {
 		return k
 	}
-	return fmt.Sprintf("%q", k)
+	return escaped(k)
+}
+
+// spellable reports whether a key path can be written at all. TOML is Unicode
+// text: bytes that aren't valid UTF-8 have no spelling, and escaped() would
+// substitute U+FFFD -- writing SOME key, silently, that is not the one the
+// caller named.
+func spellable(path []string) error {
+	for _, k := range path {
+		if !utf8.ValidString(k) {
+			return fmt.Errorf("tomldoc: key %q is not valid UTF-8 and has no TOML spelling", k)
+		}
+	}
+	return nil
 }
 
 // encodeKeyPath renders a dotted key path with per-segment quoting.

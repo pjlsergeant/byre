@@ -1,0 +1,6 @@
+go test fuzz v1
+string("[1]\n[0]")
+byte('×')
+string("")
+string("1")
+string("0")

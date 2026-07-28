@@ -329,6 +329,14 @@ func (d *Doc) lineSpan(s span) span {
 		start--
 	}
 	end := s.end
+	// A span that already ends ON a line boundary covers whole lines: header
+	// spans are line spans to begin with, and expanding one again reaches
+	// into the line that FOLLOWS. An empty block then took its neighbour's
+	// header with it, and a key inserted into an empty table landed inside
+	// the next one (fuzz).
+	if end > s.start && d.src[end-1] == '\n' {
+		return span{start, end}
+	}
 	for end < len(d.src) && d.src[end] != '\n' {
 		end++
 	}
