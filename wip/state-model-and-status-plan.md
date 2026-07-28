@@ -4,8 +4,14 @@
 in a grilling session on 2026-07-28 (immediately after the 82-commit review
 worklist landed). Nothing here is speculative: where a claim about the code
 appears, it was verified at HEAD that day -- see
-`wip/state-model-launch-record.md` for the four external-review findings with
-their file:line evidence, which this plan is the answer to.
+`wip/state-model-launch-record.md` for the four review findings with their
+file:line evidence, which this plan is the answer to.
+
+All of the work below is correctness and robustness: making byre's status
+output tell the truth about a running box, making config edits take effect in
+the right order, running the tool byre means to run, and rendering values
+byre did not author without garbling the terminal. It is all defensive,
+correctness-oriented product work on byre's own behavior.
 
 Delete this file when the work ships (absorbed into ADRs + docs).
 
@@ -19,9 +25,9 @@ depend on the launch record existing.
 | # | Item | Depends on |
 |---|---|---|
 | A | Save/launch ordering: re-resolve under the lock | -- |
-| B | Host exec pinning (the urgent security item) | -- |
-| C | `skill.go` escaping funnel | -- |
-| D | Deliver porcelain audit | -- |
+| B | Host tool resolution: pin the absolute path (the urgent correctness item) | -- |
+| C | `skill.go` output-sanitization funnel | -- |
+| D | Deliver porcelain output review | -- |
 | E | Status overhaul: three tiers + the mess in the current output | -- |
 | F | The launch record + status Running/Next-launch split | A, E |
 | G | Volume `sharing = "exclusive"` + enforcement | F |
@@ -43,18 +49,18 @@ nonsense `Reserved env` row in the pasted status output.
 skill set BEFORE taking the project setup lock (resolve at `develop.go:86`,
 lock at `:213` -- the code's own comment names the ordering); the only
 post-lock revalidation is `requireRecorded`, a forget-fence. The editor's save
-takes the same lock. So: develop reads a config granting `~/secrets`, waits for
-the lock the editor holds; you delete the mount and save (succeeds); develop
-acquires the lock and builds from its **stale in-memory resolution** -- the
-revoked grant launches, silently. Same shape in `rebuild` and
-`ensureProjectImage` (worktree).
+takes the same lock. So: develop reads a config with a `~/secrets` mount, waits
+for the lock the editor holds; you delete the mount and save (succeeds);
+develop acquires the lock and builds from its **stale in-memory resolution** --
+the removed mount launches anyway, with no indication. Same shape in `rebuild`
+and `ensureProjectImage` (worktree).
 
 **Decision.** Move the authoritative read inside the lock: after acquiring it,
 re-run the same resolve, and use THAT resolution for everything the lock
 guards (generate, build, seed, create). The pre-lock resolve survives only for
 what genuinely precedes the lock (onboarding prompts, engine detection).
 
-**Rejected: generation counters / compare-and-retry** (the external reviewer's
+**Rejected: generation counters / compare-and-retry** (the reviewer's
 suggestion). Counters earn their keep when re-reading is expensive or when
 drift must be detected without re-reading. Here the re-read is milliseconds and
 engine-free, and it doesn't merely *detect* the drift -- it resolves it by
@@ -67,53 +73,59 @@ describes what actually launched.
 
 ---
 
-## B. Host exec pinning -- the urgent item
+## B. Host tool resolution -- the urgent correctness item
 
 **The bug (verified).** `runner.Detect` calls `LookPath` and DISCARDS the
 absolute path, keeping the bare name; all ~20 engine invocations re-resolve
 `"docker"`/`"podman"` through PATH per call, and `gitprobe.go:27` runs bare
-`"git"`. Nothing pins a resolved path or checks it against agent-writable
-roots. On a host whose PATH holds an ABSOLUTE entry inside an agent-writable
-dir (direnv `.venv/bin`, a project `.bin`) ahead of the real binary, the agent
-plants `git`/`docker` and byre executes it host-side, as the user,
-**automatically** -- the exit report's own probes fire at every session end.
-Go's `ErrDot` covers relative entries only, so the vector needs an absolute
-one. ADR 0047 covers the project tree as an execution channel with THE HUMAN as
-trigger; byre as the AUTOMATIC trigger is uncovered doctrine -- and 0047's own
-probes are such a trigger.
+`"git"`. Nothing pins a resolved path or checks it against directories the box
+can write. So if the host PATH lists an ABSOLUTE directory that the box can
+write (direnv `.venv/bin`, a project `.bin`) ahead of the real binary, byre
+resolves and runs whatever `git`/`docker` sits in that directory instead of the
+intended system tool -- including at automatic points like the exit report's
+session-end probes, so it can happen without anyone running a command. Go's
+`ErrDot` already declines *relative* PATH entries, so the case that needs
+fixing is the absolute one. ADR 0047 covers the case where a person later runs
+a tool over the project tree; the case where byre itself runs a tool
+automatically is not yet covered -- and 0047's own probes are one such
+automatic run.
 
 **Decisions.**
 
 1. **Scope: one resolver for every host-side spawn.** The engine and `git` (the
-   verified automatic triggers), plus `ssh` (deliver transport), the editor
-   spawn, and the clipboard tools. Same helper, one line each -- no reason to
-   leave user-invoked spawns on the old path once it exists.
+   verified automatic ones), plus `ssh` (deliver transport), the editor spawn,
+   and the clipboard tools. Same helper, one line each -- no reason to leave
+   user-invoked spawns on the old path once it exists.
 2. **Pin once per process.** Resolve the absolute path at first use per binary
    and reuse it for the process lifetime; the runner stores the absolute engine
    path instead of the bare name. PATH is read once per byre invocation.
-3. **Refusal rule (the doctrine fork, resolved):** the helper refuses a binary
-   whose resolved path lies under a known agent-writable root for this project
-   -- the project tree, its worktrees, the common git dir, and (under
-   `--self-edit`) the mounted store. Everything else pins silently and runs.
-   This is NOT path-nannying (parked: "a knife needs to be sharp"): byre never
-   judges the user's PATH, only whether the AGENT can author the binary byre
-   executes -- exactly TODO.md's recorded confused-deputy carve-out ("byre must
-   never let agent-writable state amplify into host actions beyond the grant").
-4. **Per-caller disposition:** `develop` finding its ENGINE under an
-   agent-writable root is a hard named refusal (nothing safe can proceed). The
-   EXIT REPORT finding `git` there DEGRADES -- skips the probes, prints one
-   disclosure line -- because a session end must never be blockable by the
-   thing it reports on.
+3. **Resolution rule (the doctrine fork, resolved):** the helper declines to run
+   a binary whose resolved path lies under a directory the box can write for
+   this project -- the project tree, its worktrees, the common git dir, and
+   (under `--self-edit`) the mounted store. Everything else pins silently and
+   runs. This is NOT path-nannying (parked: "a knife needs to be sharp"): byre
+   never judges the user's PATH; it just declines to run a tool it resolved out
+   of a directory the box itself writes, so byre runs the system tool it
+   intended rather than a copy that happens to shadow it. This is TODO.md's
+   recorded rule that byre's own host-side actions stay inside the directories
+   the project explicitly grants -- the same class the store-path fix already
+   handled.
+4. **Per-caller disposition:** `develop` finding its ENGINE under a box-writable
+   directory is a hard named refusal (nothing safe can proceed). The EXIT REPORT
+   finding `git` there DEGRADES -- skips the probes, prints one disclosure line
+   -- because a session end must never be blockable by the thing it reports on.
 5. **Explicitly not doing:** checksums, signature checks, or any judgement of
    binary CONTENT. Resolution locus is the whole test.
 
 ---
 
-## C. `skill.go` escaping funnel
+## C. `skill.go` output-sanitization funnel
 
-`internal/commands/skill.go` still escapes at each of ~51 print sites, while
-Unit 10 funneled `install.go`/`layer.go`/`preset.go` through `dataf` (escape
-per argument, one place). Correct today; one forgotten line from a gap.
+`internal/commands/skill.go` still sanitizes control characters at each of ~51
+print sites, while Unit 10 funneled `install.go`/`layer.go`/`preset.go` through
+`dataf` (sanitize per argument, one place). Correct today; one forgotten line
+from a gap where a value byre did not author could carry control bytes that
+garble the terminal render.
 
 **Decision:** mechanical conversion to `dataf`/`escaped()`, removing the
 per-site `EscapeTerminal` calls, extending the existing per-surface arms. No
@@ -122,19 +134,19 @@ design content. (`dataf` and the `escaped(string)` named-exemption type live in
 
 ---
 
-## D. Deliver porcelain audit
+## D. Deliver porcelain output review
 
 deliver/grab print machine-readable output on **stdout** that scripts parse; it
-was deliberately excluded from terminal-escaping, with landed filenames
-sanitized where the claims are made (`sanitizeBase`). Unit 10's open question:
-has the whole stdout stream been audited for other externally-authored strings?
-No hole is known.
+was deliberately left out of the terminal control-character sanitization, with
+landed filenames cleaned where the claims are made (`sanitizeBase`). Unit 10's
+open question: has the whole stdout stream been reviewed for other strings byre
+did not author? No gap is known.
 
-**Decision:** run it as a read-only verification task -- every stdout write
-site in `internal/deliver`, classifying each interpolated string by author and
-sanitization -- and **record the result either way**: clean becomes a package
-comment stating the porcelain contract and who sanitizes what; a hole becomes a
-fix. No machinery beyond that.
+**Decision:** run it as a read-only review task -- every stdout write site in
+`internal/deliver`, classifying each interpolated string by who authored it and
+whether it is cleaned -- and **record the result either way**: clean becomes a
+package comment stating the porcelain contract and who cleans what; a gap
+becomes a fix. No machinery beyond that.
 
 ---
 
@@ -157,18 +169,17 @@ agent session receives:`, `-> the agent command injects (...)`, the
 preset-differs sentence). Each was added honestly; the sum buries the exposure
 rows the page exists for. An editing problem, not a mechanism problem.
 
-**Class 3 -- substance: the `Reserved env` row cries wolf.** The pasted example
+**Class 3 -- substance: the `Reserved env` row over-warns.** The pasted example
 reads `⚠ pjlsergeant/devlog sets BYRE_SCRATCH -- byre runtime control; the
 network + launch claim(s) above ride it`. But `BYRE_SCRATCH` is the devlog
 skill's OWN variable naming its scratch volume; it controls nothing of byre's.
-It squats the reserved prefix, so ADR 0050's conservative unknown-key default
-maps it to network+launch and the row announces byre-runtime-control for a
-scratch path -- on a box whose network is `open` and asserts nothing
-degradable. Doctrinally correct, practically nonsense. **Two fixes:** (3a) the
-UNKNOWN-key wording must stop claiming knowledge byre lacks -- "sets
-BYRE_SCRATCH -- not a control this byre recognizes; treated cautiously" rather
-than "byre runtime control"; (3b) the `BYRE_SCRATCH` rename, out of tree (see
-§0).
+It uses the reserved prefix, so ADR 0050's conservative unknown-key default maps
+it to network+launch and the row announces byre-runtime-control for a scratch
+path -- on a box whose network is `open` and asserts nothing degradable.
+Correct by rule, wrong in effect. **Two fixes:** (3a) the UNKNOWN-key wording
+must stop claiming knowledge byre lacks -- "sets BYRE_SCRATCH -- not a control
+this byre recognizes; treated cautiously" rather than "byre runtime control";
+(3b) the `BYRE_SCRATCH` rename, out of tree (see §0).
 
 **The three tiers (ratified).**
 
@@ -176,7 +187,7 @@ than "byre runtime control"; (3b) the `BYRE_SCRATCH` rename, out of tree (see
 - **`--full`** -- everything, no truncation.
 - **`--data`** -- the same information as `--full`, as JSON.
 
-**The honesty rule for the default tier (the fork, resolved):** the default
+**The completeness rule for the default tier (the fork, resolved):** the default
 tier may TRUNCATE VALUES and COLLAPSE NOTES, but **never elides a row's
 existence**. If a grant, mount, volume, skill, port, or reserved-env key
 exists, the default view shows that it exists. Concretely:
@@ -188,8 +199,8 @@ exists, the default view shows that it exists. Concretely:
 - Collapse the delivery arrows into the row they qualify (`MCP servers:
   agentblocks (config) -- delivered`), full mechanism sentence under `--full`.
 - **Never collapse a claim degradation or a containment disclosure.** The
-  Reserved env warning, containment rows and any claim hedge stay at full
-  strength in the default view -- they are the point, and they are short.
+  Reserved env note, containment rows and any claim hedge stay at full strength
+  in the default view -- they are the point, and they are short.
 - Every truncation is VISIBLE as a truncation (count or ellipsis, never silent
   absence), so the default view is a summary of everything, never a subset.
 
@@ -212,9 +223,9 @@ renders those; its only engine queries are liveness (`RunningContainersByLabel`)
 and identity labels (`ContainerLabels`, orphan detection). It never inspects the
 running container's mounts, ports, env or network mode, and NOTHING queryable
 survives a launch -- container labels carry identity only. Edit the config while
-a box runs and status shows the safer next-launch world above a container still
-holding the old mounts and open network. The develop banner IS an accurate
-launch-time record but is transient stderr.
+a box runs and status shows the next-launch world above a container still
+holding the old mounts and old network setting. The develop banner IS an
+accurate launch-time record but is transient stderr.
 
 **Decisions.**
 
@@ -234,10 +245,11 @@ launch-time record but is transient stderr.
    `~/.byre/projects/<id>/launches/<hash>.toml`; container created with
    `byre.launch=<hash>`. Content-addressing gives integrity free -- status
    re-hashes what it reads and a mismatch is disclosed, not trusted. **Honest
-   caveat for the ADR:** under `--self-edit` the store is agent-writable, so
-   the record is forgeable there; that sits inside the existing self-edit trust
-   ruling and its confused-deputy carve-out (the record only ever INFORMS,
-   never triggers host action) -- but it must be said.
+   caveat for the ADR:** under `--self-edit` the store is writable by the box,
+   so status must VERIFY the record (it re-hashes) rather than trust it -- and
+   the record only ever INFORMS a human reading status, never drives a host
+   action. That sits inside the existing self-edit trust ruling -- but it must
+   be said.
 3. **Lifecycle:** written at create, read by status, reaped with the container
    (opportunistic, the `reapStaleEmbedRoots` pattern). A MISSING record (any
    container launched by an older byre, or a hand-deleted file) degrades
@@ -303,12 +315,12 @@ run_args = ["-e", "INTTEST_VM=172.17.0.1"]   # raw tier, verbatim
 ```
 
 **No hashing of values** (considered, rejected): everything in the record is
-non-secret by construction (env KEYS only, user-configured paths/ports, skill
-identities, an image digest), and hashing would destroy the record's entire
-purpose -- a hashed bind row cannot tell you `/secrets` is still mounted. The
-one place a secret could lurk is `run_args` verbatim, which status already
-prints verbatim today and the configuration reference already warns is not for
-secrets. No new exposure.
+non-sensitive by construction (env KEYS only, user-configured paths/ports,
+skill identities, an image digest), and hashing would destroy the record's
+entire purpose -- a hashed bind row cannot tell you `/secrets` is still mounted.
+The one field that could carry a sensitive value is `run_args` verbatim, which
+status already prints verbatim today and the configuration reference already
+warns is not the place for sensitive values. No new exposure.
 
 **The status split (Pete's ruling -- the running box is ALWAYS the subject when
 one exists):**
@@ -336,7 +348,7 @@ one exists):**
   TRUE; only the "box running" half goes stale, in the harmless direction.
 - **At SAVE:** the report line gains the clause when true -- `byre: config
   written -- a box is running; changes apply at the next develop.` Fresh at the
-  moment it is actionable (you just revoked something and it has not happened
+  moment it is actionable (you just changed a grant and it has not taken effect
   yet). Engine unreachable degrades to the plain message silently.
 - The editor's exposure headline keeps NEXT-LAUNCH semantics throughout (it
   describes the config being edited -- Unit 12 made that claim precise); the
@@ -357,7 +369,8 @@ split as "unnecessary: agents already handle concurrent access to one state dir"
 grammar: skills contribute arbitrary `[[volumes]]`, config declares them, the
 editor writes them (as of 2026-07-28). `Volume` carries
 Name/Role/Target/Seed/Scope, and `Scope` only WIDENS sharing. Nothing lets an
-author say "single-writer SQLite" or "must not be shared".
+author say "single-writer SQLite" or "must not be shared" -- so two concurrent
+boxes writing one such volume can corrupt it.
 
 **Decisions.**
 
@@ -374,7 +387,7 @@ author say "single-writer SQLite" or "must not be shared".
    refusal in the session-already-live family (exit 3, naming the volume and the
    worktree holding it). This BLOCKS, deliberately: degrade-never-block governs
    byre's claims ABOUT ITSELF, whereas this is byre honoring a volume's own
-   declared contract against corruption -- same family as the
+   declared single-writer contract against data corruption -- same family as the
    one-session-per-workdir refusal and ADR 0004's cross-engine refusal, both of
    which already block.
 3. **Surfaces + doctrine:** the volumes widget gains the field (P0 -- a new key
@@ -382,16 +395,16 @@ author say "single-writer SQLite" or "must not be shared".
    `exclusive`; GLOSSARY and SKILLS.md define it; an ADR records the decision
    AND **amends ADR 0009's rationale** so the "agents tolerate shared state
    dirs" sentence is scoped to what it was about -- closing the drift the
-   reviewer found. Nothing bundled changes on day one.
+   review found. Nothing bundled changes on day one.
 
 ---
 
 ## H. Editor Reserved-env row
 
 `byre status` gives a skill's `BYRE_` key a dedicated attributed row naming the
-key AND which claims it skews. The editor now degrades its exposure headline
+key AND which claims it affects. The editor now degrades its exposure headline
 (Unit 12) and its Env screen shows the key attributed to the skill -- but no
-editor surface says WHAT the key skews.
+editor surface says WHAT the key affects.
 
 **Decision:** build it -- a `skews: network` style annotation on the existing
 attributed Env row, reusing `skills.ReservedEnvClaims` (the single owner Unit 12
@@ -404,8 +417,8 @@ vocabulary now has one home, so the note cannot drift. Fold 3a's wording fix
 
 ## Sequencing
 
-1. **B (host exec pinning)** -- first, independent, and the one item with a
-   live security consequence.
+1. **B (host tool resolution)** -- first, independent, and the one item that can
+   currently make byre run the wrong host binary.
 2. **A (re-resolve under the lock)** -- independent, small, and F's record must
    be written from the post-lock resolution.
 3. **E (status overhaul: tiers + wrapping + noise + 3a wording)** -- so F's new
@@ -424,7 +437,7 @@ Opus subagents implement one unit at a time; the orchestrator owns the
 two-reviewer loop (codex + grok, concurrent, unbriefed, each required to
 produce a `Doctrine:` line against `docs/adr/README.md`) and routes findings
 back; subagents never run `byre-codereview` or `byre-inttest`. Green before
-every commit (`gofmt`, `go vet`, `go test ./...`); every bug fix red-verified
+every commit (`gofmt`, `go vet`, `go test ./...`); every bug fix re-verified
 against real pre-fix code (`git show <commit>^:<file>`, not `git stash`);
 rejection tests name the rule that fired; no commit trailers; `git add` only
 touched files; nothing pushed. One `-count=1` gated runner pass at the end
