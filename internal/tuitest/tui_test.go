@@ -129,6 +129,36 @@ func TestIntegrationTUIBeatPasteDeliversText(t *testing.T) {
 	}
 }
 
+// Exit code 2 is byre's usage-error contract, and until here nothing
+// observed it as a PROCESS status: the run()-level tests assert a
+// usageError value, and the mapping from that value to os.Exit(2) lives in
+// main(), past the seam they reach. So does the print beside it -- the one
+// exit boundary that does not go through fatal().
+//
+// The operand is hostile for that second reason: an ESC and a newline in
+// argv must reach the screen as DATA. The rejection quotes the operand with
+// %q, so the whole thing lands on one line with the control bytes spelled
+// out -- an ESC that survived would have moved the cursor instead of
+// printing, and a newline that survived would have framed a line of its own
+// under byre's message.
+func TestIntegrationTUIUsageErrorExitsTwo(t *testing.T) {
+	Require(t)
+	_, env := storeEnv(t)
+	const hostile = "boom\n\x1b[31mred"
+	s := Start(t, Opts{Env: env, Dir: t.TempDir()}, Binary(t), "config", hostile)
+
+	s.WaitFor(`["boom\n\x1b[31mred"]`)
+	if st := s.WaitForExit(); st != 2 {
+		t.Fatalf("a malformed invocation must exit 2 (the usage-error contract), got %d\n%s", st, s.CaptureNow())
+	}
+	// A floor, not the proof above it: capture-pane renders escapes rather
+	// than reporting them, so this catches only what a captured screen could
+	// still carry.
+	if final := s.CaptureNow(); strings.ContainsRune(final, 0x1b) {
+		t.Fatalf("raw escape on the screen:\n%q", final)
+	}
+}
+
 // A passthrough added through the Source picker must appear ON THE SCREEN
 // that added it, before any save. This is the pty tier because the model
 // tier cannot fail it: the model DID hold the new key -- m.hostEnv had it,
