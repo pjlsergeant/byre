@@ -70,6 +70,19 @@ digest pins what the running box was BUILT from. It is an engine inspect after
 the build; a failure records an empty digest WITH the reason, because an honest
 empty beats a plausible hash byre never obtained.
 
+**Values are recorded EFFECTIVE, not as the config spells them.** The base is
+the instance: an empty `base` key means `gen.DefaultBase`, and a record holding
+`""` would mean "whatever `DefaultBase` meant on the byre that wrote this" -- a
+value only recoverable by asking a LATER byre what its default is now, which is
+precisely the re-derivation this record exists to abolish. Change that default
+in a release and every such record silently starts describing an image its box
+never ran, with no delta to show for it: `""` on both sides compares equal
+while `FROM` really did move. So `imageRecord` resolves it once, where the
+record is assembled. The comparison normalizes too, but for a different
+population -- that is what keeps a record written BEFORE this rule, holding a
+bare `""`, comparable at all. The `(default: ...)` spelling survives as display
+only.
+
 ### Storage: a store file named by its own hash, pointed at by a label
 
 `~/.byre/projects/<id>/launches/<sha256>.toml`, written under the setup lock
@@ -179,9 +192,11 @@ out, and each closed a defect a reviewer found:
   forever, on the ordinary claude-minus-statsig config. One function
   (`egressAfterClosures`) now performs the subtraction for both the resolution
   that feeds the record and the view that is compared to it.
-- an empty base is not "unchanged": it is byre's own default, and the image
-  built is a different image. Any inequality is a delta, with the default named
-  on whichever side is empty.
+- the base is compared by EFFECTIVE value, never by config spelling. `gen`
+  substitutes `gen.DefaultBase` for an empty `base`, so writing the default out
+  explicitly and leaving it unwritten produce the same `FROM` -- and a `~ Base`
+  line across that edit is a standing false row. Empty still RENDERS as the
+  default it stands for, so the line names what will actually be built.
 - `run_args` compare as SLICES. Joining on a space is not injective, so a
   joined compare calls `{"--label", "x=a b"}` and `{"--label x=a", "b"}` equal
   -- reporting no change across an edit that changes what the engine is handed.

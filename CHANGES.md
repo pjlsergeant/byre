@@ -26,10 +26,11 @@
   absent entirely when nothing differs. Every line in it is a real
   difference: both sides are normalized the way the engine got them
   (so `~/secrets` and `/home/you/secrets` are one mount, not a pair), egress
-  is compared after your `!host` closures rather than before, an empty
-  `base` is compared as byre's default rather than as "unchanged", and
-  `run_args` are compared as an argv rather than as a joined string. With no
-  box running, nothing changes: the rows are the next launch, as before.
+  is compared after your `!host` closures rather than before, the base is
+  compared (and recorded) as the image byre will actually `FROM` rather than
+  as the config's spelling of it, and `run_args` are compared as an argv
+  rather than as a joined string. With no box running, nothing changes: the
+  rows are the next launch, as before.
 
   byre re-hashes the record rather than trusting it (under `--self-edit`
   the store is the box's to write), and every state it cannot use degrades
