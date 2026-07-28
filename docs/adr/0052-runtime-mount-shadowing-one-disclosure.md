@@ -107,6 +107,13 @@ tidied away.
   launcher, or a volume over `/etc/byre/claude-skills` intended to supply the
   skills, discloses exactly like a hostile one. Judging intent would mean
   introspecting mount contents -- the policing role byre refuses.
+- **The preset-apply grant review does not carry the line.** A preset whose
+  `[[volumes]]` targets `/etc/byre` renders there as an ordinary volume row,
+  and the disclosure arrives at the first develop instead of before the
+  adoption. Whether that clears ADR 0050's bar -- grant-shaped content renders
+  with the same weight whichever table carries it -- is open; the review knows
+  the proposed config but not the resolved netns hooks, so the check it could
+  run today is the `/etc/byre`-and-launcher subset.
 - **Skills that legitimately want to place something under `/etc/byre` have no
   quiet path.** None does today (every builtin's targets are under
   `/home/dev` or the docker socket). If one arrives, the answer is a build
