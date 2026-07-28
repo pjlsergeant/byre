@@ -304,7 +304,11 @@ on the next develop), every other file listed as added/changed/deleted.
 - **Scalars override** -- last layer wins, `seed_prefs` included: an
   explicit `seed_prefs = false` in a later layer turns an inherited
   opt-in off (tri-state, ADR 0045); unset inherits.
-- **Lists union** -- `skills`, `mounts`, etc. accumulate across layers.
+- **Lists union, identity replaces** -- plain string lists (`skills`,
+  `apt`, `egress`) accumulate across layers; an entry with an identity
+  replaces the accumulated entry of that identity (mounts by target,
+  volumes and `[[mcp]]`/`[[claude_skills]]`/`[[context]]` by name, ports
+  by container port -- ADR 0018's 2026-07-28 amendment).
 - **Removal markers** -- a later layer drops something an earlier layer
   added: `!name` where the entry's identity is a string (skills, apt,
   volumes, mounts by target), `remove = true` where it's

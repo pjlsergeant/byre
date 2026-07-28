@@ -1434,12 +1434,20 @@ func (m model) viewList() string {
 func rowAnnotation(r listRow) string {
 	switch r.kind {
 	case rowLocal:
+		if r.closed {
+			// A port this file binds twice: the later binding replaces this
+			// one, so the row is config that publishes nothing.
+			return "  (replaced by a later entry in this file)"
+		}
 		if r.also {
 			return "  (also " + r.source + ")"
 		}
 	case rowOverride:
 		return "  (overrides " + r.source + ")"
 	case rowInherited:
+		if r.closed {
+			return "  (" + r.source + " — replaced by this file's entry)"
+		}
 		return "  (" + r.source + ")"
 	case rowRemoved:
 		if r.source == "" {

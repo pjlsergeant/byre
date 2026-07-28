@@ -2,6 +2,20 @@
 
 ## unreleased
 
+- **Binding a port your config already inherits now REPLACES it instead of
+  publishing both.** `[[ports]]` was the one identity-keyed thing in a byre
+  config that unioned: a project binding container port 3000 on a different
+  host port got the inherited publish *and* its own, and the only way to
+  change an inherited binding was to write a `remove = true` marker beside the
+  new one -- two entries for what `mounts`, `volumes`, `[[mcp]]` and the rest
+  say in one. A binding now replaces every accumulated binding of the same
+  container port, which is the identity `remove = true` already used. Removal
+  markers are unchanged, and a marker beside a binding for one port in one
+  layer still resolves off. Accepted consequence: publishing one container
+  port on two host ports from a single config file no longer works -- it did,
+  by accident of the union -- and the config editor now shows a replaced
+  binding as replaced rather than counting it as a live publish.
+
 - **A stored shared-credentials answer is checked against what is actually
   installed before it is applied.** With `defaults.skip_questions` set, a new
   project took the remembered companion skill on faith. If that skill had been

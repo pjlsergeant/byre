@@ -321,19 +321,28 @@ func reconcileSources(doc *tomldoc.Doc, cur, want map[string]config.SourceHint) 
 // `key = [ {...} ]` spelling of the whole list is one construct and is
 // normalized to blocks when anything in the list changes.
 // reconcilePorts is reconcileBlocks for ports, plus the one shape ports have
-// that no other vocabulary does: a layer may legally hold BOTH a
-// `remove = true` marker and a binding for the same container port (drop the
-// inherited one, publish mine -- pinned by
-// config.TestValidateLayerPortRemoveNoCollision). Identity is the container
-// port, and the DOC-level selector is the container value too, so both blocks
-// answer to one selector: a save replaced the marker with the binding and
-// destroyed the marker.
+// that no other vocabulary does: SEVERAL blocks in one file can share the
+// identity reconcileBlocks matches on. Identity is the container port, and the
+// DOC-level selector is the container value too, so every block for one port
+// answers to a single selector -- a save picked the first and destroyed the
+// rest.
+//
+// Two file shapes reach that. A `remove = true` marker beside a binding for
+// the same port is legal in a layer (config.TestValidateLayerPortRemoveNoCollision
+// pins it) and resolves off, since removals apply after additions. And a
+// hand-authored file may simply bind one container port twice -- the merge
+// keeps the last of them (replacement by container port, ADR 0018), but the
+// FILE still holds both blocks, and this reconciler edits the file.
 //
 // Position within the matching set is what tells them apart. Each block is
 // addressed by (container, occurrence), so an edit rewrites exactly the block
 // it means -- ADR 0044's promise that bytes outside the edited construct
 // survive, comments included. Rewriting the whole construct would have been
 // simpler and would have taken every port block's comments with it.
+//
+// Replacement across LAYERS needs nothing here: this reconciler diffs one
+// file's before and after, and which layer's binding wins at resolution is not
+// a question it asks.
 func reconcilePorts(doc *tomldoc.Doc, cur, want []config.Port) error {
 	if reflect.DeepEqual(cur, want) {
 		return nil

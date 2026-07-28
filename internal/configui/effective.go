@@ -1004,6 +1004,15 @@ func (m model) portRows() []listRow {
 			localKeys[portKey(p)] = true
 		}
 	}
+	// lastLocalFor is the index of the LAST plain binding this file gives a
+	// container port -- the one that survives, since a binding replaces every
+	// accumulated binding of its container port, this file's own included.
+	lastLocalFor := map[int]int{}
+	for i, p := range m.ports {
+		if !p.Remove {
+			lastLocalFor[p.Container] = i
+		}
+	}
 	lowerByContainer := map[int]bool{}
 	lowerKeys := map[string]bool{}
 	var rows []listRow
@@ -1014,9 +1023,9 @@ func (m model) portRows() []listRow {
 		lowerKeys[portKey(p)] = true
 		lowerByContainer[p.Container] = true
 		c := p.Container
-		// Attribute by the full effective identity, not container alone: two
-		// layers may bind the same container port on different interfaces/host
-		// ports, and each row must name its own layer.
+		// Attribute by the full effective identity, not container alone: a raw
+		// layer may bind the same container port more than once, and each row
+		// must name the layer that actually declares the binding shown.
 		k := portKey(p)
 		src := m.lowerSource(func(cf config.Config) bool { return hasPortKey(cf.Ports, k) })
 		switch {
@@ -1030,6 +1039,13 @@ func (m model) portRows() []listRow {
 					break
 				}
 			}
+		case hasKey(lastLocalFor, c):
+			// Replaced: this file binds the same container port differently, so
+			// the inherited binding is gone from the resolved set (ADR 0018's
+			// replace-by-container-port). The row stays -- it is config, and the
+			// menu's Remove still writes a marker -- but closed keeps it out of
+			// every tally, since a replaced binding publishes nothing.
+			rows = append(rows, listRow{kind: rowInherited, closed: true, text: portLine(p), ident: strconv.Itoa(c), source: src})
 		default:
 			rows = append(rows, listRow{kind: rowInherited, text: portLine(p), ident: strconv.Itoa(p.Container), source: src})
 		}
@@ -1049,7 +1065,9 @@ func (m model) portRows() []listRow {
 			rows = append(rows, listRow{kind: rowRemoved, text: portLine(p), idx: markerIdx[p.Container]})
 			continue
 		}
-		rows = append(rows, listRow{kind: rowLocal, text: portLine(p), idx: i})
+		// A file's own earlier binding of a container port is replaced by its
+		// later one, same rule, so only the last of them is effective.
+		rows = append(rows, listRow{kind: rowLocal, closed: lastLocalFor[p.Container] != i, text: portLine(p), idx: i})
 	}
 	for i, p := range m.ports {
 		if p.Remove && !lowerByContainer[p.Container] && !localByContainer[p.Container] {

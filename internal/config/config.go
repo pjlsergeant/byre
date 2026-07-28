@@ -1664,32 +1664,35 @@ func mergeByIdentity[T any](base, over []T, id func(T) string) []T {
 	return out
 }
 
-// mergePorts unions port bindings, deduping by EFFECTIVE identity so an override
-// that spells out the defaults (e.g. adds interface=127.0.0.1, or host equal to
-// the container port) collapses onto the base entry instead of colliding. A
-// `remove = true` entry in over drops every accumulated binding of that
-// container port (ADR 0018) — applied after over's additions, matching the
-// `!name` lists' additions-then-removals order within a layer.
+// mergePorts REPLACES by container port: a plain binding in a later layer
+// supersedes every accumulated binding of the same container port, the
+// replace-by-name idiom every other identity-keyed vocabulary uses
+// (mergeByIdentity for mounts and volumes, mergeNamedDecls for mcp/context).
+// Ports are keyed on the container port -- the same identity `remove = true`
+// keys on (ADR 0018) -- so "publish MY 3000 there, not the inherited one" is
+// one binding, not a binding plus a marker. Unioning instead meant a project
+// re-binding an inherited container port ADDED a second publish rather than
+// changing it, and the only way to change one was a marker beside the new
+// binding.
+//
+// Within one over list the same rule applies, last wins: the replacement is
+// against everything accumulated so far, and a layer is not exempt from its own
+// vocabulary.
+//
+// Markers are unchanged: `remove = true` drops every binding of its container
+// port, applied AFTER over's additions, so a marker and a binding for one port
+// in one layer still resolves off (the `!name` lists' order within a layer).
 func mergePorts(base, over []Port) []Port {
-	key := func(p Port) string {
-		iface, host := PortEffective(p)
-		return fmt.Sprintf("%s:%d:%d", iface, host, p.Container)
-	}
 	out := append([]Port{}, base...)
-	seen := map[string]bool{}
-	for _, p := range out {
-		seen[key(p)] = true
-	}
 	var removals []int
 	for _, p := range over {
 		if p.Remove {
 			removals = append(removals, p.Container)
 			continue
 		}
-		if !seen[key(p)] {
-			seen[key(p)] = true
-			out = append(out, p)
-		}
+		c := p.Container
+		out = filter(out, func(o Port) bool { return o.Container != c })
+		out = append(out, p)
 	}
 	for _, rm := range removals {
 		out = filter(out, func(p Port) bool { return p.Container != rm })

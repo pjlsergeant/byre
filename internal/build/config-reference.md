@@ -23,8 +23,11 @@ Layers merge in that order -- defaults, template, the `extends` chain
 - **Scalars override.** A later layer's `base` or `engine` replaces an
   earlier one's -- `seed_prefs` included: an explicit `false` in a later
   layer turns an inherited opt-in off; leaving it unset inherits.
-- **Lists union.** `skills`, `apt`, `mounts` and friends accumulate
-  across layers.
+- **Lists union; entries with an identity replace.** `skills`, `apt` and
+  `egress` accumulate across layers. Anything with an identity replaces
+  the inherited entry of the same identity instead: mounts by target,
+  volumes and the `[[mcp]]`/`[[claude_skills]]`/`[[context]]`
+  declarations by name, ports by container port.
 - **A later layer can remove an inherited entry:** `"!name"` for named
   lists (skills, apt, volumes; mounts by target), and
   `remove = true` for ports (keyed by container port). `!host` entries

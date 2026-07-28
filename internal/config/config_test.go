@@ -891,6 +891,45 @@ func TestMergePortsRemove(t *testing.T) {
 	}
 }
 
+// A plain binding REPLACES every accumulated binding of the same container
+// port -- the replace-by-name idiom mounts, volumes and the named-declaration
+// vocabularies all use, keyed on the identity `remove = true` already keys on
+// (ADR 0018). Before this, re-binding an inherited port ADDED a second publish
+// and the only way to change one was a marker beside the new binding.
+func TestMergePortsReplaceByContainerPort(t *testing.T) {
+	base := Config{Ports: []Port{
+		{Container: 3000},
+		{Container: 3000, Interface: "0.0.0.0", Host: 13000},
+		{Container: 5432},
+	}}
+	over := Config{Ports: []Port{{Container: 3000, Host: 8080}}}
+	got := Merge(base, over).Ports
+	want := []Port{{Container: 5432}, {Container: 3000, Host: 8080}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("replace by container port: got %+v, want %+v", got, want)
+	}
+}
+
+// The replacement is against everything accumulated so far, this layer's own
+// earlier entries included: a layer is not exempt from its own vocabulary.
+func TestMergePortsLastWinsWithinOneLayer(t *testing.T) {
+	over := Config{Ports: []Port{
+		{Container: 3000, Host: 8080},
+		{Container: 3000, Host: 9090},
+	}}
+	got := Merge(Config{}, over).Ports
+	want := []Port{{Container: 3000, Host: 9090}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("within-layer last wins: got %+v, want %+v", got, want)
+	}
+	// A restatement that only spells out the defaults still collapses onto one
+	// binding, which is what the old dedup bought and replacement keeps.
+	same := Config{Ports: []Port{{Container: 3000}, {Container: 3000, Interface: "127.0.0.1", Host: 3000}}}
+	if got := Merge(Config{}, same).Ports; len(got) != 1 {
+		t.Fatalf("a spelled-out restatement must not become a second binding: %+v", got)
+	}
+}
+
 func TestMergePortsRemoveAfterAdditions(t *testing.T) {
 	// Removals apply after the same layer's additions, matching the `!name`
 	// lists: an add+remove of the same container port in one layer resolves off.

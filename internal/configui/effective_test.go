@@ -513,19 +513,33 @@ func TestSigDistinguishesPortMarker(t *testing.T) {
 	}
 }
 
-// Two lower layers binding the same container port on different interfaces
-// must each be attributed to their own layer.
-func TestPortAttributionByFullIdentity(t *testing.T) {
+// A later layer binding a container port REPLACES the earlier layer's binding
+// of it (ADR 0018's replace-by-container-port), so the screen shows one row
+// for one container port, attributed to the layer that won. Each layer's
+// binding is still identified by its full identity -- that is what makes the
+// attribution name the right layer when two of them bind different ports.
+func TestPortAttributionAfterReplacement(t *testing.T) {
 	m := effectiveModel()
 	m.inh.Templates["go"] = config.Config{
 		Ports: []config.Port{{Container: 5432, Interface: "0.0.0.0", Host: 15432}},
 	}
 	rows := m.portRows()
+	tmplLine := portLine(config.Port{Container: 5432, Interface: "0.0.0.0", Host: 15432})
+	if r := rowByText(t, rows, tmplLine); r.source != "template:go" {
+		t.Errorf("template's binding misattributed: %+v", r)
+	}
+	for _, r := range rows {
+		if r.text == portLine(config.Port{Container: 5432}) {
+			t.Errorf("the replaced binding must not read as effective: %+v", r)
+		}
+	}
+	// Different container ports still coexist, each named by its own layer.
+	m.inh.Templates["go"] = config.Config{Ports: []config.Port{{Container: 5433}}}
+	rows = m.portRows()
 	if r := rowByText(t, rows, portLine(config.Port{Container: 5432})); r.source != "default" {
 		t.Errorf("default's binding misattributed: %+v", r)
 	}
-	tmplLine := portLine(config.Port{Container: 5432, Interface: "0.0.0.0", Host: 15432})
-	if r := rowByText(t, rows, tmplLine); r.source != "template:go" {
+	if r := rowByText(t, rows, portLine(config.Port{Container: 5433})); r.source != "template:go" {
 		t.Errorf("template's binding misattributed: %+v", r)
 	}
 }
@@ -1036,4 +1050,44 @@ func TestScalarPickersDistinguishInheritFromOff(t *testing.T) {
 			t.Errorf("choosing auto against an inherited engine must write it, got %q", got)
 		}
 	})
+}
+
+// A binding replaces an inherited one of the same container port, so the
+// screen must not show two live publishes where the box gets one. The
+// replaced row stays (it is config, and Remove still writes a marker) but
+// counts as nothing.
+func TestPortRowsShowReplacementNotUnion(t *testing.T) {
+	m := effectiveModel() // default binds 5432
+	m.ports = []config.Port{{Container: 5432, Host: 15432}}
+	rows := m.portRows()
+
+	replaced := rowByText(t, rows, portLine(config.Port{Container: 5432}))
+	if replaced.kind != rowInherited || !replaced.closed {
+		t.Errorf("the inherited binding must read as replaced, not live: %+v", replaced)
+	}
+	if ann := rowAnnotation(replaced); !strings.Contains(ann, "replaced by this file") {
+		t.Errorf("the replaced row must say what happened to it: %q", ann)
+	}
+	mine := rowByText(t, rows, portLine(config.Port{Container: 5432, Host: 15432}))
+	if mine.kind != rowLocal || mine.closed {
+		t.Errorf("this file's binding is the live one: %+v", mine)
+	}
+	if eff, _, _, _ := rowCounts(rows); eff != 1 {
+		t.Errorf("one container port, one effective publish: got %d", eff)
+	}
+
+	// The same rule inside one file: the later binding wins, the earlier one
+	// is shown replaced rather than silently counted.
+	m.ports = []config.Port{{Container: 4000, Host: 8080}, {Container: 4000, Host: 9090}}
+	rows = m.portRows()
+	first := rowByText(t, rows, portLine(config.Port{Container: 4000, Host: 8080}))
+	if !first.closed {
+		t.Errorf("an earlier same-file binding must not read as effective: %+v", first)
+	}
+	if ann := rowAnnotation(first); !strings.Contains(ann, "later entry in this file") {
+		t.Errorf("the shadowed row must say why: %q", ann)
+	}
+	if last := rowByText(t, rows, portLine(config.Port{Container: 4000, Host: 9090})); last.closed {
+		t.Errorf("the last binding of a port is the live one: %+v", last)
+	}
 }

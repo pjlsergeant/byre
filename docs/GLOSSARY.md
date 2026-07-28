@@ -102,7 +102,9 @@ existing installs are recognized by -- they keep Apple's names.
 The config resolution `default ⊕ template ⊕ chain(root … parent) ⊕
 project` -- the chain being the project's named layers, walked via
 `extends`, and empty for a project that extends nothing. Scalars
-override (last wins), lists union, a removal marker removes.
+override (last wins), plain string lists union, identity-keyed lists
+replace by identity (mounts by target, volumes and named declarations by
+name, ports by container port), and a removal marker removes.
 
 **Removal marker**:
 A later layer's off-switch for an inherited list entry. Two spellings by

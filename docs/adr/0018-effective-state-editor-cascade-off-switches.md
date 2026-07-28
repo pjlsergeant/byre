@@ -59,6 +59,22 @@ resolve.
   an int), and the user intent is "this project must not expose the
   inherited 3000" regardless of how a lower layer bound it -- so removal
   deliberately ignores interface and host port.
+
+  **Amended 2026-07-28:** a plain binding REPLACES by container port too.
+  As first shipped, `ports` was the one identity-keyed vocabulary that
+  UNIONED: a later layer binding an inherited container port differently
+  got both publishes, and changing one meant writing a `remove = true`
+  marker beside the new binding -- two entries for what every other
+  vocabulary says in one. Replacement is now the rule, keyed on the same
+  container port the marker keys on, matching `mounts`, `volumes`,
+  `[[mcp]]`, `[[claude_skills]]` and `[[context]]`. It applies within a
+  layer as well as across layers (last wins), because a layer is not
+  exempt from its own vocabulary. Marker semantics are untouched:
+  removals still apply after additions, so a marker and a binding for one
+  port in one layer still resolves off. Accepted consequence: publishing
+  one container port on two host ports is no longer expressible from a
+  single layer -- it was, by accident of the union, and nothing in byre
+  wrote such a config.
 - `env` stays override-only. A project can override an inherited key's
   value (including to empty) but cannot unset it. Deferred, not refused:
   override-to-empty covers the known cases, and the natural spellings
