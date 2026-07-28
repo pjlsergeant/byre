@@ -130,10 +130,11 @@ declaration carrying it. No box of that vintage can have mounted a volume its
 own config called exclusive.
 
 That leaves the honest gap, and the enforcement covers it: a user may add
-`sharing = "exclusive"` while an older-byre box is already running. That box
-mounted the volume as shared, because it was. The conflict test keys on the
-mounted NAME, so it is caught -- and where the box predates records entirely,
-the no-record arm refuses anyway.
+`sharing = "exclusive"` while an older-byre box is already running. IF that
+box mounted this volume, it could only have done so under shared semantics --
+and whether it did is knowable only from its record. The conflict test keys
+on the mounted NAME, so a recorded mount is caught -- and where the box
+predates records entirely, the no-record arm refuses on cannot-rule-out.
 
 ## Surfaces
 

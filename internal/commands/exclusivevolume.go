@@ -66,9 +66,10 @@ const exclusiveRemedy = "  • stop the other session, or drop `sharing = \"excl
 // whose labels byre cannot read, and a sibling with no usable launch record
 // all land in the same arm -- byre cannot prove the sibling is NOT holding the
 // volume, and for a volume declared single-writer that is not a fact byre may
-// assume. A sibling with no record at all is the strongest of those: volume
-// names are DERIVED, not chosen, so an older-byre box of this project mounts
-// the identical project-scoped set by construction.
+// assume. A sibling with no record at all is the same cannot-rule-out: its
+// set is whatever it resolved at launch, unknowable now -- and volume names
+// are DERIVED, not chosen, so nothing about its config would have kept it off
+// this volume if its resolution included one by this name.
 //
 // The whole check is gated on this session declaring at least one exclusive
 // volume. Nothing bundled does, so the common launch pays nothing and gains no
