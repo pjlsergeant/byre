@@ -23,7 +23,7 @@ the rationale lives.
   (ADR 0049 #4): collapse to RetiredNames tombstones.
 - [ ] (S) **shared_auth array-shape retirement: build the warning channel first**
   (ADR 0049 #2). No parse-time warning channel exists; the array shape is also
-  round-tripped by EncodeTOMLLine. Warn one release, then drop both arms.
+  round-tripped by EncodeTOMLValue. Warn one release, then drop both arms.
 - [ ] (M) **config.CatalogLoader silent nil-fallback** (ADR 0049 residue): an
   entrypoint that skips builtins gets a bundled-less catalog silently; the
   real fix is threading a catalog into config.Load's signature (the staged

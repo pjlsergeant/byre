@@ -91,7 +91,7 @@ this index:
 - 0010: firewall rules enter via an external root+NET_ADMIN helper joining the netns; the box gains no caps; annotated -- a contribution that displaces byre's machinery is disclosed whatever field it rides (0050, 0052), granted-channel consequences are disclaimed once, and the DNS residual is published on the security-model page [arm: TestNetnsInitArgv]
 - 0011: the launcher gates on a loopback socket handshake and fails closed on timeout; never a state marker [arm: TestLauncherGateTimesOutClosed]
 - 0012: the firewall allowlist derives from enabled skills' declared egress, port-scoped (partly superseded by 0019, 0020) [arm: TestFirewallComposesAgentEgress]
-- 0013: seed_prefs copies only a skill-curated per-file allowlist of secret-free files, never a directory [arm: TestResolvePrefsRejectsWholeDir]
+- 0013: seed_prefs copies only a skill-curated per-file allowlist of secret-free files, never a directory copy [arm: TestResolvePrefsRejectsWholeDir]
 - 0014: no dockerfile= opt-out -- byre generates the build or isn't involved; the key fails loudly as unknown [arm: TestDockerfileKeyRejectedLoudly]
 - 0015: mounts are disabled via a disabled=true field, never a mode value; the entry stays, emits no bind [arm: TestRunParamsSkipsDisabledMounts]
 - 0016: one static binary per platform on v-tags; version = stamped tag > buildinfo > (devel), never faked [arm: TestResolve]

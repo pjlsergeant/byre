@@ -43,7 +43,7 @@ remedies).
    accepts both the legacy array and the table shape).
    **Blocker, recorded so it isn't lost: removal needs a warning
    release first, and no parse-time warning channel exists today** --
-   the array shape is also round-tripped by `EncodeTOMLLine`. Sequence:
+   the array shape is also round-tripped by `EncodeTOMLValue`. Sequence:
    build the warning channel (or piggyback on develop-time notices),
    warn one release, then drop the array arm of the parser and encoder.
 3. **Repo-root `byre.config` as a legacy preset name** (accepted beside

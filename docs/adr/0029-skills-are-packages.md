@@ -133,9 +133,11 @@ sticky-decline records are deleted; `adopted` records migrate to
   live in github.com/pjlsergeant/pjlsergeant-byre-skills; byre's own
   repo ships a `byre.preset` and self-hosts on installed packages -- the
   dogfood is the acceptance test.
-- `byre skill update` is a transitional stub (bundled packages update
-  with byre itself); the materialize/update/backup machinery and
-  `skills.bak/` are gone.
+- There is no update verb. Bundled packages update with byre itself, and
+  an installed one is updated by re-running `byre skill install` on it:
+  same id, different digest is a REPLACEMENT, which is machine-wide and
+  therefore consented separately from a fresh install. The
+  materialize/update/backup machinery and `skills.bak/` are gone.
 - Consciously deferred: bundled display digests in inspect (since shipped,
   2026-07-14: computed from `embed.FS`), authenticated
   (private-repo) https fetch, and the interactive one-confirm legacy
