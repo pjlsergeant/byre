@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -716,12 +717,27 @@ func captureBoundedExec(d time.Duration, name string, args ...string) (string, e
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	// Own process group, and cancel it as a GROUP. An engine client spawns
+	// local helpers of its own (credential and transport helpers), and
+	// CommandContext's default kills the direct child only -- so the deadline
+	// would leave those running while byre walked away. Setpgid is also what
+	// makes the negative-pid kill legal: it needs a group leader. These
+	// children are non-interactive and byre-internal (an inspect, a
+	// run-to-completion helper, a one-shot probe -- none reads the tty), so
+	// taking them out of the foreground group costs nothing a user sees.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 	// Killing the child is not enough to return: cmd.Wait blocks until every
 	// writer of the output pipes closes, and a DESCENDANT that inherited them
-	// (an engine client's own helper) keeps them open past its parent's death.
-	// WaitDelay is the deadline on that second wait -- without it the bound
-	// stops the child and byre goes on waiting anyway, which is the wedge the
-	// bound exists to prevent.
+	// keeps them open past its parent's death -- one that changed its own
+	// group escapes the kill above too. WaitDelay is the deadline on that
+	// second wait; without it the bound stops the child and byre goes on
+	// waiting anyway, which is the wedge the bound exists to prevent.
 	cmd.WaitDelay = waitDelay
 	stderr := &capBuffer{max: 64 << 10}
 	cmd.Stderr = stderr

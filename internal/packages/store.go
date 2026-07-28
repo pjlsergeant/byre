@@ -48,12 +48,23 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 	}
 	root := filepath.Join(home, "bundled")
 	if bundled == nil {
-		// No embedded FS (tests, partial fixtures): nothing to mirror, so this
-		// process never swaps and there is no window to race -- but the dir is
-		// part of the store's shape either way. Same tolerance LoadCatalog
-		// extends.
-		if err := hostopen.PlainMkdirAll(root, 0o755, hostopen.StoreOwned); err != nil {
-			return err
+		// No embedded FS (tests, partial fixtures): nothing to mirror, but the
+		// dir is part of the store's shape either way (the tolerance
+		// LoadCatalog extends). The CREATE still takes the lock. "This process
+		// never swaps" is not the invariant that matters -- another process on
+		// the same store may be mid-swap, and this one having nothing to write
+		// says nothing about that one. A stat first keeps the ordinary case
+		// lock-free, and like every other decision here it is made again under
+		// the lock.
+		if _, err := hostopen.PlainStat(root, hostopen.StoreOwned); err != nil {
+			if lerr := WithStoreLock(home, func() error {
+				if _, serr := hostopen.PlainStat(root, hostopen.StoreOwned); serr == nil {
+					return nil
+				}
+				return hostopen.PlainMkdirAll(root, 0o755, hostopen.StoreOwned)
+			}); lerr != nil {
+				return lerr
+			}
 		}
 	} else if stale, _ := mirrorStale(home, root, byreVer); stale {
 		// The regeneration happens under the store-global lock. writeMirror's

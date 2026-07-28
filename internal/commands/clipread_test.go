@@ -232,7 +232,10 @@ func TestClipReadOutKillsTheWholeGroup(t *testing.T) {
 	if err == nil {
 		t.Fatal("a read that outlives its deadline must be an error")
 	}
-	if el := time.Since(start); el > 30*time.Second {
-		t.Fatalf("the read waited on a descendant past the deadline: %s", el)
+	// Under clipWaitDelay, not merely finite: a group that died closes the
+	// pipes at once, so a read that takes the full delay to return is one
+	// WaitDelay rescued rather than the group kill.
+	if el := time.Since(start); el >= clipWaitDelay {
+		t.Fatalf("the read took %s to return: the group was not killed, WaitDelay was", el)
 	}
 }

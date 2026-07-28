@@ -303,19 +303,28 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 		offer.VolumeNames = append(offer.VolumeNames, vol)
 	}
 	offer.PrefYes = onboard.SharedAuthPreference(home, agent)
-	pick := onboard.SharedAuthPick(home, agent)
-	if pick != "" {
-		// Prefill only if the pick is still among live claimants.
-		for _, c := range offer.Claimants {
-			if c == pick {
-				offer.PrefPick = pick
-				break
-			}
-		}
-		if offer.PrefPick == "" {
-			// Saved pick missing/INVALID: no prefill + notice; leave store alone.
+	if pick := onboard.SharedAuthPick(home, agent); pick != "" {
+		// LIVENESS is skills.SharedAuthPickLive's question -- the same call the
+		// two apply paths and the editor's row make. A string match against
+		// offer.Claimants answers a different one: that list is display names,
+		// already filtered of anything enabled machine-wide, so a pick that is
+		// installed AND granted read as "no longer installed" here while every
+		// other surface read it live.
+		if !skills.SharedAuthPickLive(cat, agent, pick) {
+			// Missing/INVALID: no prefill + notice; leave the store alone.
 			offer.StalePickNotice = onboard.StalePickNotice(pick)
 			offer.PrefYes = false
+		} else {
+			// PREFILL is the display list's question, and only it: a prefill
+			// has to point at a row the picker is showing. A live pick this
+			// offer isn't showing (already on machine-wide) preselects nothing
+			// -- and says nothing, because nothing is wrong.
+			for _, c := range offer.Claimants {
+				if c == pick {
+					offer.PrefPick = pick
+					break
+				}
+			}
 		}
 	}
 	return offer

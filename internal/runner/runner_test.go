@@ -3,7 +3,9 @@ package runner
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -276,5 +278,34 @@ func TestCaptureBoundedCapsOutput(t *testing.T) {
 	_, err := captureBoundedExec(2*time.Minute, "yes", strings.Repeat("x", 4096))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("unbounded child output must fail, not fill memory: %v", err)
+	}
+}
+
+// The deadline must reach the whole process GROUP. An engine client spawns
+// local helpers of its own (credential, transport), and killing the direct
+// child leaves them running -- WaitDelay unwedges byre, but the descendants
+// outlive it, which is the leak.
+//
+// Asserted directly: the descendant would touch a marker a second after the
+// deadline, and the marker must never appear. The elapsed check is the second
+// signal -- a group that died closes the pipes at once, so a call that instead
+// takes waitDelay to return is one WaitDelay rescued rather than the kill.
+func TestCaptureBoundedKillsTheWholeGroup(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on PATH")
+	}
+	marker := filepath.Join(t.TempDir(), "descendant-lived")
+	start := time.Now()
+	_, err := captureBoundedExec(150*time.Millisecond, "sh", "-c",
+		"(sleep 1; touch "+marker+") & wait")
+	if err == nil {
+		t.Fatal("a call that outlives its deadline must be an error")
+	}
+	if el := time.Since(start); el >= waitDelay {
+		t.Errorf("the call took %s to return: the group was not killed, WaitDelay was", el)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if _, serr := os.Stat(marker); serr == nil {
+		t.Error("a descendant outlived the deadline: the kill reached the child, not the group")
 	}
 }

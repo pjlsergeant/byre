@@ -666,3 +666,50 @@ func TestSharedAuthFlagTellsAmbiguityFromAbsence(t *testing.T) {
 		t.Fatalf("no claimant at all must still say so: %v", err)
 	}
 }
+
+// The offer's staleness verdict must be the SAME verdict the apply paths and
+// the config editor reach (skills.SharedAuthPickLive). Matching the stored
+// pick against offer.Claimants answers a different question: that list is
+// display names already filtered of anything enabled machine-wide, so a pick
+// that is installed AND granted read as "no longer installed" here while every
+// other surface read it live.
+func TestSharedAuthOfferDoesNotCallAGrantedPickStale(t *testing.T) {
+	p, _ := onboardPaths(t)
+	// Two claimants; the stored pick is the one already enabled machine-wide,
+	// so it is filtered out of the displayed list but is emphatically live.
+	writeLocalSkill(t, p.Home, "aa-auth", "shared_auth_for = \"claude\"\n")
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"skills = [\"claude-shared-auth\"]\n\n[defaults]\nshared_auth = { claude = \"claude-shared-auth\" }\n"), 0o644)
+
+	cat, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := buildSharedAuthOffer(p.Home, cat, "claude")
+	if offer.StalePickNotice != "" {
+		t.Errorf("an installed, already-granted pick must not be reported missing: %q", offer.StalePickNotice)
+	}
+	// No prefill either: a prefill has to point at a row the picker shows, and
+	// this one is not among them.
+	if offer.PrefPick != "" {
+		t.Errorf("prefill must name a row the picker shows, got %q (claimants %v)", offer.PrefPick, offer.Claimants)
+	}
+	if slices.Contains(offer.Claimants, "claude-shared-auth") {
+		t.Errorf("a machine-wide-enabled claimant must stay out of the offer: %v", offer.Claimants)
+	}
+
+	// A pick nothing claims is still stale, through the shared predicate.
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"[defaults]\nshared_auth = { claude = \"gone-shared-auth\" }\n"), 0o644)
+	cat2, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := buildSharedAuthOffer(p.Home, cat2, "claude")
+	if gone.StalePickNotice != onboard.StalePickNotice("gone-shared-auth") {
+		t.Errorf("a pick no skill claims must still be reported: %q", gone.StalePickNotice)
+	}
+	if gone.PrefYes {
+		t.Error("a stale pick must not prefill yes")
+	}
+}

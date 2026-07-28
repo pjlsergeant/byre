@@ -139,3 +139,48 @@ func TestEnsureStoreRebuildsAMirrorWhoseTreeIsGone(t *testing.T) {
 		t.Errorf("rebuilding the mirror must be said out loud: %q", out.String())
 	}
 }
+
+// The nil-FS path has nothing to mirror, but it still creates the mirror
+// PATH -- and "this process never swaps" is not the invariant that matters:
+// another process on the same store can be mid-swap, and an MkdirAll landing
+// in that window is the same corruption whatever this process was doing. It
+// takes the lock too, which the seam can prove: the create must not land while
+// a real-FS ensure holds the window open.
+func TestEnsureStoreNilFSDoesNotCreateDuringTheSwap(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "bundled")
+	if err := EnsureStore(home, bundledFS(), "v1", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	inSwap, proceed := make(chan struct{}), make(chan struct{})
+	pinMidSwap(t, func() {
+		close(inSwap)
+		<-proceed
+	})
+	aDone := make(chan error, 1)
+	go func() { aDone <- EnsureStore(home, bundledFS(), "v2", nil) }()
+	<-inSwap
+
+	bDone := make(chan error, 1)
+	go func() { bDone <- EnsureStore(home, nil, "v2", nil) }()
+	select {
+	case err := <-bDone:
+		t.Fatalf("a nil-FS ensure finished while the swap window was open: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("the nil-FS path recreated the mirror mid-swap: %v", err)
+	}
+
+	close(proceed)
+	if err := <-aDone; err != nil {
+		t.Fatalf("the swapping ensure failed: %v", err)
+	}
+	if err := <-bDone; err != nil {
+		t.Fatalf("the nil-FS ensure failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "skills", "claude", "skill.toml")); err != nil {
+		t.Errorf("mirror incomplete after the swap: %v", err)
+	}
+}
