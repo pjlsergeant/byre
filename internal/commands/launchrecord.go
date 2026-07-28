@@ -352,7 +352,7 @@ const (
 func launchDegradeNote(st launchState) string {
 	switch st {
 	case launchPreRecord:
-		return "no launch record — this box predates launch records (or was started by an older byre), so the rows above describe the CURRENT CONFIG, not this box"
+		return "no launch record — this box predates launch records (an older byre, or the record write failed at launch), so the rows above describe the CURRENT CONFIG, not this box"
 	case launchMissing:
 		return "launch record missing — the box points at a record that is no longer in the store, so the rows above describe the CURRENT CONFIG, not this box"
 	case launchTampered:
