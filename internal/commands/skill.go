@@ -42,20 +42,19 @@ func PackageList(s Streams, kind packages.Kind) error {
 		skills.MarkLoadFailures(cat)
 	}
 	for _, ent := range cat.List(kind) {
-		id := packages.EscapeTerminal(ent.ID)
+		id := ent.ID
 		if ent.Alias != "" {
-			id = packages.EscapeTerminal(ent.Alias) + " (" + packages.EscapeTerminal(ent.ID) + ")"
+			id = ent.Alias + " (" + ent.ID + ")"
 		}
-		label := packages.EscapeTerminal(ent.ProvenanceLabel())
-		desc := packages.EscapeTerminal(ent.Description)
+		label := ent.ProvenanceLabel()
 		switch ent.Provenance {
 		case packages.ProvInvalid, packages.ProvConflict, packages.ProvLegacy:
-			fmt.Fprintf(s.Out, "%-28s  %-16s  %s\n", id, label, packages.EscapeTerminal(ent.Reason))
+			dataf(s.Out, "%-28s  %-16s  %s\n", id, label, ent.Reason)
 		default:
-			if desc != "" {
-				fmt.Fprintf(s.Out, "%-28s  %-16s  %s\n", id, label, desc)
+			if ent.Description != "" {
+				dataf(s.Out, "%-28s  %-16s  %s\n", id, label, ent.Description)
 			} else {
-				fmt.Fprintf(s.Out, "%-28s  %s\n", id, label)
+				dataf(s.Out, "%-28s  %s\n", id, label)
 			}
 		}
 	}
@@ -90,36 +89,36 @@ func PackageInspect(s Streams, kind packages.Kind, id string) error {
 	if ent.Kind != kind && ent.Kind != "" {
 		return fmt.Errorf("package %q is a %s; use `byre %s inspect`", ent.ID, ent.Kind, ent.Kind)
 	}
-	fmt.Fprintf(s.Out, "ID:          %s\n", packages.EscapeTerminal(ent.ID))
+	dataf(s.Out, "ID:          %s\n", ent.ID)
 	if ent.Alias != "" {
-		fmt.Fprintf(s.Out, "Alias:       %s\n", packages.EscapeTerminal(ent.Alias))
+		dataf(s.Out, "Alias:       %s\n", ent.Alias)
 	}
-	fmt.Fprintf(s.Out, "Kind:        %s\n", ent.Kind)
-	fmt.Fprintf(s.Out, "Version:     %s\n", packages.EscapeTerminal(ent.Version))
+	dataf(s.Out, "Kind:        %s\n", ent.Kind)
+	dataf(s.Out, "Version:     %s\n", ent.Version)
 	switch ent.Provenance {
 	case packages.ProvInstalled:
-		fmt.Fprintf(s.Out, "Digest:      sha256:%s\n", packages.EscapeTerminal(ent.Digest))
+		dataf(s.Out, "Digest:      sha256:%s\n", ent.Digest)
 		if ent.SourceURI != "" {
 			// Provenance of acquisition, never an instruction byre follows.
-			fmt.Fprintf(s.Out, "Acquired:    %s\n", packages.EscapeTerminal(ent.SourceURI))
+			dataf(s.Out, "Acquired:    %s\n", ent.SourceURI)
 		}
 	case packages.ProvBundled:
 		// Display digest computed from the embedded bytes (ADR 0029): inspect
 		// parity with installed rows, never an integrity claim.
 		if d, err := packages.DisplayDigest(ent); err == nil {
-			fmt.Fprintf(s.Out, "Digest:      sha256:%s\n", d)
+			dataf(s.Out, "Digest:      sha256:%s\n", d)
 		} else {
 			// Our own embedded bytes failing to digest is a byre bug; degrade
 			// the claim loudly rather than blocking inspect.
-			fmt.Fprintf(s.Err, "byre: display digest unavailable for %s: %v\n", packages.EscapeTerminal(ent.ID), err)
+			dataf(s.Err, "byre: display digest unavailable for %s: %v\n", ent.ID, err)
 		}
 	}
-	fmt.Fprintf(s.Out, "Provenance:  %s\n", packages.EscapeTerminal(ent.ProvenanceLabel()))
+	dataf(s.Out, "Provenance:  %s\n", ent.ProvenanceLabel())
 	if ent.Description != "" {
-		fmt.Fprintf(s.Out, "Description: %s\n", packages.EscapeTerminal(ent.Description))
+		dataf(s.Out, "Description: %s\n", ent.Description)
 	}
 	if ent.Reason != "" {
-		fmt.Fprintf(s.Out, "Status:      %s\n", packages.EscapeTerminal(ent.Reason))
+		dataf(s.Out, "Status:      %s\n", ent.Reason)
 	}
 	switch {
 	case kind == packages.KindSkill && (ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvLocal || ent.Provenance == packages.ProvInstalled):
@@ -132,10 +131,10 @@ func PackageInspect(s Streams, kind packages.Kind, id string) error {
 	// Source path for full review: local dir or ~/.byre/bundled mirror.
 	srcPath := inspectSourcePath(home, ent)
 	if srcPath != "" {
-		fmt.Fprintf(s.Out, "\nSource: %s\n", srcPath)
+		dataf(s.Out, "\nSource: %s\n", srcPath)
 	}
 	if ent.Provenance == packages.ProvBundled || ent.Provenance == packages.ProvInstalled {
-		fmt.Fprintln(s.Out, "This package is immutable. To edit: byre", kind, "fork", ent.DisplayName(), "<new-id>")
+		dataf(s.Out, "This package is immutable. To edit: byre %s fork %s <new-id>\n", kind, ent.DisplayName())
 	}
 	return nil
 }
@@ -162,9 +161,9 @@ func printSkillContributions(w io.Writer, f skills.File) {
 	rt := f.Runtime
 	fmt.Fprintln(w, "\nContributions:")
 	if f.Agent != nil && f.Agent.Command != "" {
-		fmt.Fprintf(w, "  agent command: %s\n", packages.EscapeTerminal(f.Agent.Command))
+		dataf(w, "  agent command: %s\n", f.Agent.Command)
 		if f.Agent.State != "" {
-			fmt.Fprintf(w, "  agent state:   %s\n", packages.EscapeTerminal(f.Agent.State))
+			dataf(w, "  agent state:   %s\n", f.Agent.State)
 		}
 	}
 	for _, m := range rt.Mounts {
@@ -175,71 +174,71 @@ func printSkillContributions(w io.Writer, f skills.File) {
 		if m.Disabled {
 			mode += ", disabled"
 		}
-		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), mode)
+		dataf(w, "  mount: %s -> %s (%s)\n", m.Host, m.Target, mode)
 	}
 	for _, v := range f.Volumes {
 		scope := v.Scope
 		if scope == "" {
 			scope = "project"
 		}
-		fmt.Fprintf(w, "  volume: %s (%s, %s) -> %s\n", packages.EscapeTerminal(v.Name), v.Role, scope, packages.EscapeTerminal(v.Target))
+		dataf(w, "  volume: %s (%s, %s) -> %s\n", v.Name, v.Role, scope, v.Target)
 	}
 	for _, c := range rt.Caps {
-		fmt.Fprintf(w, "  cap: %s\n", packages.EscapeTerminal(c))
+		dataf(w, "  cap: %s\n", c)
 	}
 	for _, a := range rt.RunArgs {
-		fmt.Fprintf(w, "  run_arg: %s\n", packages.EscapeTerminal(a))
+		dataf(w, "  run_arg: %s\n", a)
 	}
 	if rt.NetnsInit != "" {
-		fmt.Fprintf(w, "  netns_init: %s\n", packages.EscapeTerminal(rt.NetnsInit))
+		dataf(w, "  netns_init: %s\n", rt.NetnsInit)
 	}
 	if rt.NetworkPosture != "" {
-		fmt.Fprintf(w, "  network_posture: %s\n", packages.EscapeTerminal(rt.NetworkPosture))
+		dataf(w, "  network_posture: %s\n", rt.NetworkPosture)
 	}
 	for _, p := range rt.SockGroups {
-		fmt.Fprintf(w, "  sock_groups: %s\n", packages.EscapeTerminal(p))
+		dataf(w, "  sock_groups: %s\n", p)
 	}
 	if rt.Containment != "" {
-		fmt.Fprintf(w, "  containment: %s\n", packages.EscapeTerminal(rt.Containment))
+		dataf(w, "  containment: %s\n", rt.Containment)
 	}
 	for _, e := range rt.Egress {
-		fmt.Fprintf(w, "  egress: %s\n", packages.EscapeTerminal(e))
+		dataf(w, "  egress: %s\n", e)
 	}
 	for _, e := range rt.EgressOffered {
-		fmt.Fprintf(w, "  egress_offered: %s\n", packages.EscapeTerminal(e))
+		dataf(w, "  egress_offered: %s\n", e)
 	}
 	// MCP declarations: wiring, but part of the trust surface — a remote URL
 	// implies egress and the env list names what the server will consume.
 	for _, m := range f.MCPs {
 		if m.Remote() {
-			fmt.Fprintf(w, "  mcp: %s (remote: %s)\n", packages.EscapeTerminal(m.Name), packages.EscapeTerminal(m.URL))
+			dataf(w, "  mcp: %s (remote: %s)\n", m.Name, m.URL)
 		} else {
-			fmt.Fprintf(w, "  mcp: %s (local: %s)\n", packages.EscapeTerminal(m.Name), packages.EscapeTerminal(strings.Join(m.Command, " ")))
+			dataf(w, "  mcp: %s (local: %s)\n", m.Name, strings.Join(m.Command, " "))
 		}
 		for _, k := range m.Env {
-			fmt.Fprintf(w, "    consumes env: %s\n", packages.EscapeTerminal(k))
+			dataf(w, "    consumes env: %s\n", k)
 		}
 		for _, e := range m.Egress {
-			fmt.Fprintf(w, "    egress: %s\n", packages.EscapeTerminal(e))
+			dataf(w, "    egress: %s\n", e)
 		}
 		// Headers with VALUES: inspect is the pre-enable trust surface, and a
 		// template (or a literal a manifest smuggles) is exactly what the
 		// reviewer must see.
 		for _, k := range m.HeaderNames() {
-			fmt.Fprintf(w, "    header: %s: %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(m.Headers[k]))
+			dataf(w, "    header: %s: %s\n", k, m.Headers[k])
 		}
 	}
 	for _, k := range slices.Sorted(maps.Keys(rt.Env)) {
-		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.Env[k]))
+		dataf(w, "  env: %s=%s\n", k, rt.Env[k])
 	}
 	for _, k := range slices.Sorted(maps.Keys(rt.EnvDocs)) {
-		fmt.Fprintf(w, "  env consumed: %s -- %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(rt.EnvDocs[k]))
+		dataf(w, "  env consumed: %s -- %s\n", k, rt.EnvDocs[k])
 	}
 	if f.CompanionFor != "" {
-		fmt.Fprintf(w, "  companion_for: %s\n", packages.EscapeTerminal(f.CompanionFor))
+		dataf(w, "  companion_for: %s\n", f.CompanionFor)
 	}
 	if f.SharedAuthFor != "" {
-		fmt.Fprintf(w, "  shared_auth_for: %s\n", packages.EscapeTerminal(f.SharedAuthFor))
+		dataf(w, "  shared_auth_for: %s\n", f.SharedAuthFor)
 	}
 	// Build summary: counts + names, not inline dumps.
 	var buildParts []string
@@ -250,7 +249,7 @@ func printSkillContributions(w io.Writer, f skills.File) {
 		buildParts = append(buildParts, fmt.Sprintf("%d dockerfile lines", n))
 	}
 	if len(buildParts) > 0 {
-		fmt.Fprintf(w, "  build: %s\n", strings.Join(buildParts, ", "))
+		dataf(w, "  build: %s\n", strings.Join(buildParts, ", "))
 	}
 	if n := len(f.Build.Files); n > 0 {
 		names := slices.Sorted(maps.Keys(f.Build.Files))
@@ -258,14 +257,14 @@ func printSkillContributions(w io.Writer, f skills.File) {
 		if len(shown) > 8 {
 			shown = append(shown[:8], "...")
 		}
-		fmt.Fprintf(w, "  files: %d (%s)\n", n, packages.EscapeTerminal(strings.Join(shown, ", ")))
+		dataf(w, "  files: %d (%s)\n", n, strings.Join(shown, ", "))
 	}
 	if f.Context.Text != "" || f.Context.File != "" {
 		src := "inline"
 		if f.Context.File != "" {
 			src = f.Context.File
 		}
-		fmt.Fprintf(w, "  context: present (%s)\n", packages.EscapeTerminal(src))
+		dataf(w, "  context: present (%s)\n", src)
 	}
 }
 
@@ -288,26 +287,26 @@ func printTemplateShape(w io.Writer, raw []byte) {
 	}
 	fmt.Fprintln(w, "\nShape:")
 	if cfg.Base != "" {
-		fmt.Fprintf(w, "  base: %s\n", packages.EscapeTerminal(cfg.Base))
+		dataf(w, "  base: %s\n", cfg.Base)
 	}
 	if cfg.Engine != "" {
-		fmt.Fprintf(w, "  engine: %s\n", packages.EscapeTerminal(cfg.Engine))
+		dataf(w, "  engine: %s\n", cfg.Engine)
 	}
 	// Templates are cascade LAYERS: `!name` entries, `target = "!x"` mounts,
 	// and `remove = true` ports subtract from lower layers. Render them as
 	// removals, never as grants — the trust surface must agree with the merge.
 	for _, a := range cfg.Apt {
-		fmt.Fprintf(w, "  %s\n", listLine("apt", a))
+		printListLine(w, "apt", a)
 	}
 	for _, e := range cfg.EgressOffered {
-		fmt.Fprintf(w, "  %s\n", listLine("egress_offered", e))
+		printListLine(w, "egress_offered", e)
 	}
 	for _, e := range cfg.Egress {
-		fmt.Fprintf(w, "  %s\n", listLine("egress", e))
+		printListLine(w, "egress", e)
 	}
 	for _, m := range cfg.Mounts {
 		if name, ok := config.CutRemoval(m.Target); ok {
-			fmt.Fprintf(w, "  removes mount: %s\n", packages.EscapeTerminal(name))
+			dataf(w, "  removes mount: %s\n", name)
 			continue
 		}
 		mode := m.Mode
@@ -317,43 +316,45 @@ func printTemplateShape(w io.Writer, raw []byte) {
 		if m.Disabled {
 			mode += ", disabled"
 		}
-		fmt.Fprintf(w, "  mount: %s -> %s (%s)\n", packages.EscapeTerminal(m.Host), packages.EscapeTerminal(m.Target), mode)
+		dataf(w, "  mount: %s -> %s (%s)\n", m.Host, m.Target, mode)
 	}
 	for _, v := range cfg.Volumes {
 		if name, ok := config.CutRemoval(v.Name); ok {
-			fmt.Fprintf(w, "  removes volume: %s\n", packages.EscapeTerminal(name))
+			dataf(w, "  removes volume: %s\n", name)
 			continue
 		}
 		scope := v.Scope
 		if scope == "" {
 			scope = "project"
 		}
-		line := fmt.Sprintf("  volume: %s (%s, %s) -> %s", packages.EscapeTerminal(v.Name), v.Role, scope, packages.EscapeTerminal(v.Target))
+		// The seed suffix is a second write rather than a composed string, so
+		// its host path rides the funnel as its own argument.
+		dataf(w, "  volume: %s (%s, %s) -> %s", v.Name, v.Role, scope, v.Target)
 		if v.Seed != nil {
 			if v.Seed.Host != "" {
-				line += fmt.Sprintf(" [seed host=%s]", packages.EscapeTerminal(v.Seed.Host))
+				dataf(w, " [seed host=%s]", v.Seed.Host)
 			} else if v.Seed.Literal != "" {
-				line += " [seed literal]"
+				dataf(w, " [seed literal]")
 			}
 		}
-		fmt.Fprintln(w, line)
+		dataf(w, "\n")
 	}
 	for _, p := range cfg.Ports {
 		if p.Remove {
-			fmt.Fprintf(w, "  removes port: container %d\n", p.Container)
+			dataf(w, "  removes port: container %d\n", p.Container)
 			continue
 		}
 		iface, host := config.PortEffective(p)
-		fmt.Fprintf(w, "  port: %s:%d -> container %d\n", packages.EscapeTerminal(iface), host, p.Container)
+		dataf(w, "  port: %s:%d -> container %d\n", iface, host, p.Container)
 	}
 	for _, k := range slices.Sorted(maps.Keys(cfg.Env)) {
-		fmt.Fprintf(w, "  env: %s=%s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.Env[k]))
+		dataf(w, "  env: %s=%s\n", k, cfg.Env[k])
 	}
 	for _, k := range slices.Sorted(maps.Keys(cfg.EnvFromHost)) {
-		fmt.Fprintf(w, "  env_from_host: %s <- %s\n", packages.EscapeTerminal(k), packages.EscapeTerminal(cfg.EnvFromHost[k]))
+		dataf(w, "  env_from_host: %s <- %s\n", k, cfg.EnvFromHost[k])
 	}
 	if n := len(cfg.RunArgs); n > 0 {
-		fmt.Fprintf(w, "  run_args: %d (raw docker flags)\n", n)
+		dataf(w, "  run_args: %d (raw docker flags)\n", n)
 	}
 	if n := len(cfg.Files); n > 0 {
 		names := slices.Sorted(maps.Keys(cfg.Files))
@@ -361,26 +362,28 @@ func printTemplateShape(w io.Writer, raw []byte) {
 		if len(shown) > 8 {
 			shown = append(shown[:8], "...")
 		}
-		fmt.Fprintf(w, "  files: %d (%s)\n", n, packages.EscapeTerminal(strings.Join(shown, ", ")))
+		dataf(w, "  files: %d (%s)\n", n, strings.Join(shown, ", "))
 	}
 	if n := len(cfg.DockerfilePre) + len(cfg.DockerfilePost); n > 0 {
-		fmt.Fprintf(w, "  dockerfile lines: %d (pre+post)\n", n)
+		dataf(w, "  dockerfile lines: %d (pre+post)\n", n)
 	}
 	if cfg.WorktreeBase != "" {
-		fmt.Fprintf(w, "  worktree_base: %s\n", packages.EscapeTerminal(cfg.WorktreeBase))
+		dataf(w, "  worktree_base: %s\n", cfg.WorktreeBase)
 	}
 	if cfg.SeedPrefsEnabled() {
 		fmt.Fprintln(w, "  seed_prefs: true")
 	}
 }
 
-// listLine renders one string-list entry, showing `!name` cascade markers as
-// removals instead of grants.
-func listLine(key, val string) string {
+// printListLine writes one string-list entry, showing `!name` cascade markers
+// as removals instead of grants. It writes rather than returns so the entry
+// stays an ARGUMENT to the funnel instead of a pre-composed line.
+func printListLine(w io.Writer, key, val string) {
 	if name, ok := config.CutRemoval(val); ok {
-		return fmt.Sprintf("removes %s: %s", key, packages.EscapeTerminal(name))
+		dataf(w, "  removes %s: %s\n", key, name)
+		return
 	}
-	return fmt.Sprintf("%s: %s", key, packages.EscapeTerminal(val))
+	dataf(w, "  %s: %s\n", key, val)
 }
 
 func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
@@ -468,15 +471,15 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 		return fmt.Errorf("publishing the fork: %w", err)
 	}
 
-	fmt.Fprintf(s.Err, "byre: forked %s -> %s\n", src.ID, destDir)
+	dataf(s.Err, "byre: forked %s -> %s\n", src.ID, destDir)
 	key := "skills"
 	if kind == packages.KindTemplate {
 		key = "template"
 	}
 	if kind == packages.KindTemplate {
-		fmt.Fprintf(s.Err, "      To use it: set template = %q in your byre.config\n", newID)
+		dataf(s.Err, "      To use it: set template = %q in your byre.config\n", newID)
 	} else {
-		fmt.Fprintf(s.Err, "      To use it: add %q to %s (or set agent = %q) in your byre.config\n", newID, key, newID)
+		dataf(s.Err, "      To use it: add %q to %s (or set agent = %q) in your byre.config\n", newID, key, newID)
 	}
 	// Companion note when forking an agent skill.
 	if kind == packages.KindSkill {
@@ -488,7 +491,7 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 		if sk, err := skills.Load(cat, src.ID); err == nil {
 			for _, v := range sk.File.Volumes {
 				if v.MachineScoped() {
-					fmt.Fprintf(s.Err, "      Warning: volume %q is machine-scoped — the fork still names the same volume\n", v.Name)
+					dataf(s.Err, "      Warning: volume %q is machine-scoped — the fork still names the same volume\n", v.Name)
 					fmt.Fprintln(s.Err, "      (same credentials/identity) until you rename it.")
 					break
 				}
@@ -586,7 +589,7 @@ func PackageInit(s Streams, kind packages.Kind, name string) error {
 	if err := hostopen.PlainWriteFile(path, []byte(example), 0o644, hostopen.StoreOwned); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Err, "byre: created %s\n", path)
+	dataf(s.Err, "byre: created %s\n", path)
 	return nil
 }
 
@@ -656,7 +659,7 @@ func PackageValidate(s Streams, kind packages.Kind, name string) error {
 			}
 			n++
 		}
-		fmt.Fprintf(s.Err, "byre: %d %s package(s) ok\n", n, kind)
+		dataf(s.Err, "byre: %d %s package(s) ok\n", n, kind)
 		return nil
 	}
 	ent, err := cat.ResolveName(name)
@@ -669,7 +672,7 @@ func PackageValidate(s Streams, kind packages.Kind, name string) error {
 	if err := validateOne(cat, ent); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Err, "byre: %s ok\n", ent.ID)
+	dataf(s.Err, "byre: %s ok\n", ent.ID)
 	return nil
 }
 
@@ -702,7 +705,7 @@ func SkillArchiveLegacy(s Streams) error {
 		return nil
 	}
 	for _, m := range moved {
-		fmt.Fprintf(s.Err, "byre: archived %s\n", m)
+		dataf(s.Err, "byre: archived %s\n", m)
 	}
 	return nil
 }

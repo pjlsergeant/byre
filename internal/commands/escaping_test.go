@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,24 +249,218 @@ func TestSelfEditReportEscapesStoreContent(t *testing.T) {
 	assertKept(t, "reportSelfEditChanges", out, `+agent = "`, "planted", ".sh")
 }
 
-func TestSkillInspectEscapesManifestValues(t *testing.T) {
-	// [build].files source names come straight off the manifest, and inspect
-	// is the PRE-trust surface: it renders a package the user has not enabled.
+// skillContributions renders the contribution block over a manifest whose
+// every displayed field carries the same payload -- inspect is the PRE-trust
+// surface, so every one of these strings is an author byre has not vouched
+// for.
+func skillContributions(payload string) string {
 	var f skills.File
+	f.Agent = &skills.AgentContrib{Command: "run --wild" + payload, State: "state" + payload}
+	f.CompanionFor = "acme/agent" + payload
+	f.Volumes = []config.Volume{{Name: "creds" + payload, Role: "state", Target: "/home/dev/.acme" + payload}}
+	f.MCPs = []config.MCP{{
+		Name:    "gh" + payload,
+		URL:     "https://mcp.example" + payload,
+		Env:     []string{"GITHUB_TOKEN" + payload},
+		Egress:  []string{"auth.example" + payload + ":443"},
+		Headers: map[string]string{"Authorization" + payload: "Bearer ${TOKEN}" + payload},
+	}}
+	f.Runtime.Mounts = []config.Mount{{Host: "/var/run/docker.sock" + payload, Target: "/sock" + payload, Mode: "rw"}}
+	f.Runtime.Caps = []string{"SYS_PTRACE" + payload}
+	f.Runtime.RunArgs = []string{"--privileged" + payload}
+	f.Runtime.NetnsInit = "/usr/local/bin/fw" + payload
+	f.Runtime.Egress = []string{"api.example" + payload + ":443"}
+	f.Runtime.Env = map[string]string{"TOKEN_NAME" + payload: "value" + payload}
+	f.Runtime.EnvDocs = map[string]string{"NGROK" + payload: "get one at example.com" + payload}
+	f.Runtime.Containment = "reaches the host engine" + payload
 	f.Build.Files = map[string]string{
-		"payload" + escCSI + ".sh": "/usr/local/bin/payload",
-		"notes" + escOSC + ".md":   "/opt/notes.md",
+		"payload" + payload + ".sh": "/usr/local/bin/payload",
+		"notes" + payload + ".md":   "/opt/notes.md",
 	}
+	f.Context.File = "context" + payload + ".md"
 	var b bytes.Buffer
 	printSkillContributions(&b, f)
-	assertNoESC(t, "printSkillContributions", b.String())
-	assertKept(t, "printSkillContributions", b.String(), "files: 2", "payload", "notes")
+	return b.String()
+}
 
-	// The template half of inspect renders the same key from a template body.
+func TestSkillInspectEscapesManifestValues(t *testing.T) {
+	out := skillContributions(escCSI + "\n  cap: SYS_ADMIN\r" + escOSC)
+
+	assertNoESC(t, "printSkillContributions", out)
+	assertKept(t, "printSkillContributions", out, "files: 2", "payload", "notes", "SYS_PTRACE", "Bearer")
+
+	// Framing: one physical line per contribution, whatever a manifest value
+	// contains. The clean render carries the same fields with a payload that
+	// frames nothing, so any extra line is one a value forged.
+	clean := skillContributions("\x01\x02")
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("printSkillContributions wrote %d lines, want %d -- a manifest value forged one:\n%s", got, want, out)
+	}
+
+	// The template half of inspect renders the same keys from a template body.
 	var tb bytes.Buffer
 	printTemplateShape(&tb, []byte("base = \"node:22\"\n\n[files]\n\"payload\\u001B[2K.sh\" = \"/usr/local/bin/payload\"\n"))
 	assertNoESC(t, "printTemplateShape", tb.String())
 	assertKept(t, "printTemplateShape", tb.String(), "files: 1", "payload")
+}
+
+// templateShape renders the template half over a body whose every shown key
+// carries payload -- a template is a package like any other, so its bytes are
+// its author's, not byre's.
+func templateShape(payload string) string {
+	var b bytes.Buffer
+	printTemplateShape(&b, []byte(`base = "node:22`+payload+`"
+engine = "docker`+payload+`"
+apt = ["curl`+payload+`", "!wget`+payload+`"]
+egress = ["api.example`+payload+`:443"]
+worktree_base = "main`+payload+`"
+
+[env]
+"TOKEN`+payload+`" = "value`+payload+`"
+
+[env_from_host]
+"HOST_KEY`+payload+`" = "env:SOURCE`+payload+`"
+
+[files]
+"payload`+payload+`.sh" = "/usr/local/bin/payload"
+
+[[mounts]]
+host = "/host`+payload+`"
+target = "/target`+payload+`"
+mode = "rw"
+
+[[volumes]]
+name = "vol`+payload+`"
+role = "state"
+target = "/data`+payload+`"
+seed = { host = "/seed`+payload+`" }
+
+[[ports]]
+interface = "127.0.0.1"
+host = 15432
+container = 5432
+`))
+	return b.String()
+}
+
+func TestTemplateShapeEscapesTemplateValues(t *testing.T) {
+	out := templateShape(tomlPayload(escCSI + "\n  base: node:20\r" + escOSC))
+
+	assertNoESC(t, "printTemplateShape", out)
+	assertKept(t, "printTemplateShape", out, "node:22", "curl", "removes apt", "seed host=", "15432")
+
+	clean := templateShape(tomlPayload("\x01\x02"))
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("printTemplateShape wrote %d lines, want %d -- a template value forged one:\n%s", got, want, out)
+	}
+}
+
+// tomlPayload renders a payload for a TOML basic string: the parser hands the
+// same bytes back, but a control character cannot sit raw in a manifest file.
+func tomlPayload(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		case r == '"' || r == '\\':
+			b.WriteRune('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// storeSkills lays a store down with two local skills: one that loads, and one
+// the catalog REFUSES -- whose refusal reason quotes the offending manifest
+// value straight back at the terminal. The payload is the same in both.
+func storeSkills(t *testing.T, payload string) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+	write := func(name, body string) {
+		dir := filepath.Join(home, "skills", "pete", name)
+		mustMkdirAll(t, dir, 0o755)
+		mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte(body), 0o644)
+	}
+	write("ok", `description = "does things `+payload+`"
+
+[package]
+id = "pete/ok"
+kind = "skill"
+version = "1.2.3`+payload+`"
+`)
+	write("bad", `[[runtime.mounts]]
+host = "/x"
+target = "relative`+payload+`"
+`)
+	return home
+}
+
+// packageListing is the catalog listing: byre's own columns around a
+// description and a refusal reason it did not author.
+func packageListing(t *testing.T, payload string) string {
+	t.Helper()
+	storeSkills(t, payload)
+	s, out, _ := testStreams("", false)
+	if err := PackageList(s, packages.KindSkill); err != nil {
+		t.Fatalf("skill list failed: %v", err)
+	}
+	// The listing only: the store-ensure notices go to stderr, and they fire
+	// once per process, which would make the two runs incomparable.
+	return out.String()
+}
+
+func TestPackageListEscapesManifestValues(t *testing.T) {
+	out := packageListing(t, tomlPayload(escCSI+"\npete/innocent                 local             fine\r"+escOSC))
+
+	assertNoESC(t, "skill list", out)
+	assertKept(t, "skill list", out, "pete/ok", "does things", "pete/bad", "INVALID")
+
+	clean := packageListing(t, tomlPayload("\x01\x02"))
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("skill list printed %d lines, want %d -- a manifest value forged a row:\n%s", got, want, out)
+	}
+}
+
+// packageInspect is the per-package page: the same manifest values in byre's
+// labeled rows, plus the refused package's Status row.
+func packageInspect(t *testing.T, payload string) string {
+	t.Helper()
+	storeSkills(t, payload)
+	var b bytes.Buffer
+	for _, id := range []string{"pete/ok", "pete/bad"} {
+		s, out, _ := testStreams("", false)
+		if err := PackageInspect(s, packages.KindSkill, id); err != nil {
+			t.Fatalf("skill inspect %s failed: %v", id, err)
+		}
+		b.WriteString(out.String())
+	}
+	return b.String()
+}
+
+func TestPackageInspectEscapesManifestValues(t *testing.T) {
+	out := packageInspect(t, tomlPayload(escCSI+"\nProvenance:  bundled\r"+escOSC))
+
+	assertNoESC(t, "skill inspect", out)
+	assertKept(t, "skill inspect", out, "pete/ok", "1.2.3", "does things", "pete/bad")
+
+	clean := packageInspect(t, tomlPayload("\x01\x02"))
+	if got, want := strings.Count(out, "\n"), strings.Count(clean, "\n"); got != want {
+		t.Errorf("skill inspect printed %d lines, want %d -- a manifest value forged a row:\n%s", got, want, out)
+	}
+	// The row a payload aimed at: exactly one Provenance line per package.
+	rows := 0
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "Provenance:") {
+			rows++
+		}
+	}
+	if rows != 2 {
+		t.Errorf("a manifest value forged a Provenance row (%d found, want 2):\n%s", rows, out)
+	}
 }
 
 // --- the funnel surfaces: install, layer, preset ---
