@@ -200,3 +200,55 @@ func TestIntegrationLabelQueries(t *testing.T) {
 		t.Fatalf("absent label = (%v, %v), want none", none, err)
 	}
 }
+
+// TestIntegrationPreStartMarkerAndForcelessRemove pins the two ENGINE
+// behaviours clearSessionMarkers rests on (commands/reset.go), which the
+// argv pins cannot reach and the fake models rather than proves:
+//
+//   - a container created and never started is invisible to the running-only
+//     query and visible to the -a one. That difference IS the pre-start
+//     ownership marker: develop creates under the setup lock and starts after
+//     releasing it, so reset/forget recognize a develop caught in between.
+//   - a forceless remove FAILS on a running container. reset/forget clear a
+//     pre-start marker with it precisely so a session that started in the
+//     meantime makes the removal fail and the teardown abort, rather than
+//     yanking a live box out from under its user.
+func TestIntegrationPreStartMarkerAndForcelessRemove(t *testing.T) {
+	r := requireEngine(t)
+
+	created := "byre.inttest=" + smokeName(t, "prestart")
+	name := smokeName(t, "prestart-c")
+	if err := r.Create([]string{"create", "--name", name, "--label", created, smokeImage, "sleep", "30"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })
+
+	if running, err := r.RunningContainersByLabel(created); err != nil || len(running) != 0 {
+		t.Fatalf("RunningContainersByLabel = (%v, %v) for a created-never-started container, want none", running, err)
+	}
+	ids, err := r.ContainersByLabel(created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("ContainersByLabel = %v, want the one created-never-started container (the pre-start marker)", ids)
+	}
+	if err := r.ContainerRemove(ids[0]); err != nil {
+		t.Fatalf("forceless ContainerRemove of a created-never-started container: %v", err)
+	}
+	if left, err := r.ContainersByLabel(created); err != nil || len(left) != 0 {
+		t.Fatalf("ContainersByLabel = (%v, %v) after the remove, want none", left, err)
+	}
+
+	live := "byre.inttest=" + smokeName(t, "live")
+	// rm -f at cleanup, not stop: busybox sleep ignores SIGTERM.
+	id := engineOut(t, r, "run", "-d", "--label", live, smokeImage, "sleep", "30")
+	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", id).Run() })
+
+	if err := r.ContainerRemove(id); err == nil {
+		t.Fatalf("forceless ContainerRemove of the RUNNING container %s succeeded; the teardown guard depends on it failing", id)
+	}
+	if still, err := r.RunningContainersByLabel(live); err != nil || len(still) != 1 {
+		t.Fatalf("RunningContainersByLabel = (%v, %v) after the refused remove, want the container still running", still, err)
+	}
+}
