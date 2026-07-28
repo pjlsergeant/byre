@@ -95,9 +95,9 @@ fi
 # Per-session agent context — the DYNAMIC additions only: the egress
 # allowlist this box actually enforces, and the --self-edit note when that
 # grant is present. Exported as BYRE_SESSION_CONTEXT for the agent command
-# to inject alongside the BAKED /etc/byre/agent-context.md (claude:
-# --append-system-prompt-file for the baked file, --append-system-prompt for
-# this var). byre never writes an agent-owned file to deliver prose (ADR
+# to inject alongside the BAKED /etc/byre/agent-context.md (claude: the
+# byre-claude-launch wrapper merges baked file + this var into one
+# --append-system-prompt-file). byre never writes an agent-owned file to deliver prose (ADR
 # 0046): the agent's memory file belongs to the user, and expropriating it
 # was never byre's to do.
 # Always exported (possibly empty), so an injecting command's
@@ -148,8 +148,7 @@ if grep -Eq " /home/dev/\.byre-self [^ ]+ rw[, ]" /proc/mounts 2>/dev/null && [ 
 fi
 # Exported with a LEADING blank line when non-empty, so an adapter can
 # concatenate baked+session directly ("$(cat agent-context.md)$BYRE_SESSION_CONTEXT")
-# without separator logic of its own; a standalone append (claude's second
-# flag) tolerates the leading newlines.
+# without separator logic of its own.
 if [ -n "$BYRE_SESSION_CONTEXT" ]; then
   BYRE_SESSION_CONTEXT="
 

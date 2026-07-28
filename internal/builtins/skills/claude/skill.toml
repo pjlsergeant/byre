@@ -21,7 +21,11 @@ description = "The Claude Code agent; login persists per project."
 
 [build]
 apt = ["curl", "ca-certificates"]
+files = { "claude-launch.sh" = "/usr/local/bin/byre-claude-launch" }
 dockerfile = [
+  # The launch wrapper must be executable: bundled extraction writes 0644
+  # (the grok/codex/opencode wrappers carry the same line).
+  "RUN chmod +x /usr/local/bin/byre-claude-launch",
   "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://claude.ai/install.sh | bash'",
   "RUN test -x /home/dev/.local/bin/claude && ln -sf /home/dev/.local/bin/claude /usr/local/bin/claude",
   # The installer writes residue into ~/.claude (e.g. a downloads/ dir). That dir
@@ -73,19 +77,22 @@ egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.an
 # convergence. Known boundaries: a same-name skill the in-box agent authored
 # into ~/.claude/skills (personal scope) shadows the delivered one — box state
 # wins, byre doesn't clobber it; attach shells don't carry the flag.
-command = "claude --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json --add-dir /etc/byre/claude-skills --append-system-prompt-file /etc/byre/agent-context.md --append-system-prompt \"$BYRE_SESSION_CONTEXT\""
+command = "byre-claude-launch --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json --add-dir /etc/byre/claude-skills"
 # mcp = "inject" is the author's vouch that the command above consumes the
 # baked file; status keys delivery reporting off it.
 mcp = "inject"
 # claude_skills = "inject" is the same vouch for the baked Claude Skill tree.
 claude_skills = "inject"
-# context = "inject" is the same vouch for the agent context (ADR 0046):
-# --append-system-prompt-file carries the BAKED /etc/byre/agent-context.md
-# (chassis facts, skill snippets, [[context]] standing instructions;
-# flag+both-together verified on 2.1.220) and the second --append-system-prompt
-# carries the launcher's per-session additions ($BYRE_SESSION_CONTEXT: the
-# enforced egress allowlist, the --self-edit note; always exported, possibly
-# empty, so the reference is safe unconditionally). byre writes NOTHING into
+# context = "inject" is the same vouch for the agent context (ADR 0046): the
+# byre-claude-launch wrapper merges the BAKED /etc/byre/agent-context.md
+# (chassis facts, skill snippets, [[context]] standing instructions) with the
+# launcher's per-session additions ($BYRE_SESSION_CONTEXT: the enforced
+# egress allowlist, the --self-edit note) into ONE temp file it passes as a
+# single --append-system-prompt-file. ONE flag, never the pair: the CLI
+# rejects --append-system-prompt alongside --append-system-prompt-file
+# (observed 2026-07-29; 2.1.220 still accepted both — and an EMPTY second
+# flag slips the check, so the retired two-flag form only died once session
+# additions existed: --self-edit, a firewall). byre writes NOTHING into
 # ~/.claude: the user-memory CLAUDE.md is the USER'S file, never byre's to
 # rewrite (ADR 0046), and both the repo's /workspace/CLAUDE.md and the user's own memory
 # now reach the session untouched, on top of the injected prompt.

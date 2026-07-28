@@ -62,8 +62,8 @@ type AgentContrib struct {
 	// (chassis facts, skill snippets, [[context]] standing instructions —
 	// /etc/byre/agent-context.md, plus the launcher's per-session additions
 	// in $BYRE_SESSION_CONTEXT): "inject" means the agent command itself
-	// consumes them (claude: --append-system-prompt-file + a second append
-	// for the env var) — the skill author VOUCHES the command does so, the
+	// consumes them (claude: a launch wrapper merging both into one
+	// --append-system-prompt-file) — the skill author VOUCHES the command does so, the
 	// MCP/claude_skills pattern (ADR 0046). Absent means no adapter: the
 	// context still bakes, and status reports declared-but-not-delivered
 	// with the path. byre NEVER writes an agent-owned file to deliver

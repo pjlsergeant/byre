@@ -88,6 +88,7 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
+		"byre/claude /usr/local/bin/byre-claude-launch",
 		"byre/codex /etc/byre/firstrun.d/codex-login",
 		"byre/grok /etc/byre/firstrun.d/grok-login",
 		"byre/grok /etc/byre/firstrun.d/grok-bundled",
@@ -101,8 +102,8 @@ func TestSelfHostCompositionResolves(t *testing.T) {
 	if res.Agent == nil || res.Agent.Context != "inject" {
 		t.Errorf("claude must vouch context injection")
 	}
-	if !strings.Contains(res.AgentCommand(), "--append-system-prompt-file /etc/byre/agent-context.md") {
-		t.Errorf("claude command must inject the baked context: %q", res.AgentCommand())
+	if !strings.Contains(res.AgentCommand(), "byre-claude-launch") {
+		t.Errorf("claude command must ride the context-injection wrapper: %q", res.AgentCommand())
 	}
 }
 

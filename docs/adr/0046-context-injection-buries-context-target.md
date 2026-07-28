@@ -59,9 +59,15 @@ directly onto the baked text).
 
 ## The adapters (each source-verified against the vendor tree)
 
-- **claude** -- `--append-system-prompt-file /etc/byre/agent-context.md`
-  plus `--append-system-prompt "$BYRE_SESSION_CONTEXT"`; both flags and
-  their combination verified against 2.1.220. System-prompt append is
+- **claude** -- the launch wrapper (`byre-claude-launch`) merges the baked
+  `/etc/byre/agent-context.md` with `$BYRE_SESSION_CONTEXT` into one temp
+  file passed as a single `--append-system-prompt-file`. Originally the
+  two flags rode side by side (`--append-system-prompt-file` plus
+  `--append-system-prompt "$BYRE_SESSION_CONTEXT"`, the pair verified
+  against 2.1.220), but later CLIs reject the combination ("Cannot use
+  both", field-hit 2026-07-29) -- and an EMPTY second flag slips that
+  check, so the pair only died on boxes with session additions
+  (`--self-edit`, a firewall) -- hence the merge. System-prompt append is
   arguably the RIGHT authority level for standing instructions anyway.
 - **codex** -- the launch wrapper adds
   `-c developer_instructions="<baked>+<session>"`: a stable config key
