@@ -579,6 +579,94 @@ func TestInlineTableNestedMembersSurviveRewrite(t *testing.T) {
 	}
 }
 
+// Inside an [[array]] element, position IS identity: a member edited in the
+// FIRST element must stay in the first element. Promoting the construct to a
+// [mcp.headers] block appends it after the LAST element, which is where TOML
+// then says it lives -- a header silently moved to another server, with both
+// spellings parsing cleanly.
+func TestInlineTableInArrayElementKeepsItsElement(t *testing.T) {
+	src := "[[mcp]]\nname = \"first\"\nheaders = { Authorization = \"tok\", Accept = \"json\" } # keep\n\n[[mcp]]\nname = \"second\"\n"
+	d := load(t, src)
+	if err := d.SetKey([]string{"mcp", "headers"}, "Authorization", String("rotated")); err != nil {
+		t.Fatal(err)
+	}
+	m := mustParse(t, d)
+	blocks := m["mcp"].([]any)
+	first := blocks[0].(map[string]any)
+	second := blocks[1].(map[string]any)
+	h, ok := first["headers"].(map[string]any)
+	if !ok {
+		t.Fatalf("the member left the element that declared it: %v", m)
+	}
+	if h["Authorization"] != "rotated" || h["Accept"] != "json" {
+		t.Fatalf("first element's headers = %v", h)
+	}
+	if _, stray := second["headers"]; stray {
+		t.Fatalf("the second element gained a member it never declared: %v", second)
+	}
+	out := string(d.Bytes())
+	if strings.Contains(out, "[mcp.headers]") {
+		t.Fatalf("the construct must stay inline where it stands:\n%s", out)
+	}
+	if !strings.Contains(out, "} # keep") {
+		t.Fatalf("in-place rewrite should keep the trailing comment:\n%s", out)
+	}
+
+	// Emptying it takes the member's whole line, and still only its own.
+	if err := d.RemoveKey([]string{"mcp", "headers"}, "Authorization"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.RemoveKey([]string{"mcp", "headers"}, "Accept"); err != nil {
+		t.Fatal(err)
+	}
+	m = mustParse(t, d)
+	blocks = m["mcp"].([]any)
+	if _, ok := blocks[0].(map[string]any)["headers"]; ok {
+		t.Fatalf("emptied construct survives: %v", blocks[0])
+	}
+	if blocks[0].(map[string]any)["name"] != "first" || blocks[1].(map[string]any)["name"] != "second" {
+		t.Fatalf("elements damaged: %v", blocks)
+	}
+	if strings.Contains(string(d.Bytes()), "keep") {
+		t.Fatalf("the member's line should be gone whole:\n%s", d.Bytes())
+	}
+}
+
+// A brand-new member joins the construct rather than opening a rival
+// definition of the same table.
+func TestSetKeyAddsNewMemberToInlineTable(t *testing.T) {
+	d := load(t, "defaults = { skip_questions = true }\n")
+	if err := d.SetKey([]string{"defaults"}, "shared_auth", InlineStringMap(map[string]string{"claude": "peer"})); err != nil {
+		t.Fatal(err)
+	}
+	def := mustParse(t, d)["defaults"].(map[string]any)
+	if def["skip_questions"] != true {
+		t.Fatalf("existing member lost: %v", def)
+	}
+	if def["shared_auth"].(map[string]any)["claude"] != "peer" {
+		t.Fatalf("new member = %v", def)
+	}
+}
+
+// A document that was ALREADY semantically broken stays editable: the strict
+// re-read exists to catch what an edit breaks, and refusing here would strand
+// the file at exactly the moment the user is trying to repair it.
+func TestBrokenDocumentStaysEditable(t *testing.T) {
+	// Two definitions of d -- the expression parser accepts it, the strict
+	// decoder does not.
+	src := "d = { x = 1 }\n[d]\ny = 2\n"
+	if err := toml.Unmarshal([]byte(src), &map[string]any{}); err == nil {
+		t.Fatal("fixture is not actually broken")
+	}
+	d := load(t, src)
+	if err := d.SetKey(nil, "base", String("node:22")); err != nil {
+		t.Fatalf("an already-broken document must stay editable: %v", err)
+	}
+	if !strings.Contains(string(d.Bytes()), `base = "node:22"`) {
+		t.Fatalf("edit not applied:\n%s", d.Bytes())
+	}
+}
+
 // An EMPTY block is one line long: removing it must not take the header that
 // follows, and a key added to it must not land in the next table (fuzz).
 func TestEmptyBlockDoesNotReachIntoTheNextLine(t *testing.T) {
@@ -630,6 +718,18 @@ func TestUnspellableKeyRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not valid UTF-8") {
 		t.Fatalf("error should name the rule that fired: %v", err)
+	}
+	if string(d.Bytes()) != src {
+		t.Fatalf("the document must be left as it was:\n%s", d.Bytes())
+	}
+
+	// Every entry point that ENCODES a caller's key path answers the same
+	// way -- one guarded call and one silent substitution is no guard.
+	if err := d.AppendArrayTable("bad\xc2", KV("name", String("x"))); err == nil {
+		t.Fatal("AppendArrayTable accepted an unspellable name")
+	}
+	if _, err := d.ReplaceArrayTable("bad\xc2", "name", "x", ""); err == nil {
+		t.Fatal("ReplaceArrayTable accepted an unspellable name")
 	}
 	if string(d.Bytes()) != src {
 		t.Fatalf("the document must be left as it was:\n%s", d.Bytes())

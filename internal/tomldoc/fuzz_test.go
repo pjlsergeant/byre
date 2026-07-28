@@ -23,6 +23,11 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 )
 
+// twoMCP is the ownership shape: an array-of-tables whose FIRST element holds
+// an inline table. A member belongs to the element that declares it, and
+// position is that element's whole identity.
+const twoMCP = "[[mcp]]\nname = \"first\"\nheaders = { Authorization = \"tok\", Accept = \"json\" }\n\n[[mcp]]\nname = \"second\"\n"
+
 func FuzzEdit(f *testing.F) {
 	seeds := []struct {
 		src   string
@@ -42,6 +47,9 @@ func FuzzEdit(f *testing.F) {
 		{"[foo]\nbar = { x = 1 }\nbaz = 2\n", 0, "foo.bar", "x", "v"},
 		{"# glued\nenv.FOO = \"bar\"\n", 2, "env", "FOO", ""},
 		{"[[mcp]]\nname = \"x\"\n", 0, "mcp", "name", "y"},
+		{twoMCP, 0, "mcp.headers", "Authorization", "v"},
+		{twoMCP, 2, "mcp.headers", "Accept", ""},
+		{twoMCP, 1, "mcp.headers", "New", "v"},
 		{"", 0, "a.b", "c", "v"},
 	}
 	for _, s := range seeds {
@@ -100,20 +108,33 @@ func withoutPath(m map[string]any, path []string) string {
 	return fmt.Sprintf("%#v", c)
 }
 
-func deletePath(m map[string]any, path []string) {
-	head := path[0]
-	if len(path) == 1 {
-		delete(m, head)
-		return
-	}
-	sub, ok := m[head].(map[string]any)
-	if !ok {
-		delete(m, head) // a scalar the deeper path displaces
-		return
-	}
-	deletePath(sub, path[1:])
-	if len(sub) == 0 {
-		delete(m, head)
+// deletePath descends ARRAYS as well as tables, applying the rest of the path
+// to every element: a path through an array-of-tables addresses at most one
+// element, so an edit that lands in a DIFFERENT element than the one it
+// targeted still shows up as a difference between the two sides.
+func deletePath(v any, path []string) {
+	switch t := v.(type) {
+	case []any:
+		for _, e := range t {
+			deletePath(e, path)
+		}
+	case map[string]any:
+		head := path[0]
+		if len(path) == 1 {
+			delete(t, head)
+			return
+		}
+		switch sub := t[head].(type) {
+		case map[string]any:
+			deletePath(sub, path[1:])
+			if len(sub) == 0 {
+				delete(t, head)
+			}
+		case []any:
+			deletePath(sub, path[1:])
+		default:
+			delete(t, head) // a scalar the deeper path displaces
+		}
 	}
 }
 

@@ -68,6 +68,9 @@ type expr struct {
 	// construct, and the construct is what gets rewritten.
 	inline  bool
 	members []inlineMember
+	// inArray marks a key-value living inside an [[array]] element, where
+	// position IS identity: a construct there is rewritten where it stands.
+	inArray bool
 }
 
 // inlineMember is one leaf key-value inside an inline table. path is the key
@@ -108,6 +111,11 @@ func (d *Doc) reindex() error {
 	p.Reset(d.src)
 	var exprs []expr
 	var table []string
+	// The context an [[array]] element opens, and whether the current one is
+	// still inside it: an element is identified by its POSITION, so what is
+	// written under it cannot be moved elsewhere in the document.
+	var arrayPath []string
+	inArray := false
 	for p.NextExpression() {
 		e := p.Expression()
 		switch e.Kind {
@@ -116,12 +124,20 @@ func (d *Doc) reindex() error {
 		case unstable.Table, unstable.ArrayTable:
 			path, hdr := d.headerPathAndSpan(e)
 			table = path
+			if e.Kind == unstable.ArrayTable {
+				arrayPath, inArray = path, true
+			} else {
+				// A [mcp.headers] under [[mcp]] is that element's subtable
+				// (blockEnd's descendant rule); a [env] leaves the element.
+				inArray = arrayPath != nil && len(path) > len(arrayPath) && eq(path[:len(arrayPath)], arrayPath)
+			}
 			exprs = append(exprs, expr{kind: e.Kind, table: path, span: hdr})
 		case unstable.KeyValue:
 			ex, err := d.keyValueExpr(e, table)
 			if err != nil {
 				return err
 			}
+			ex.inArray = inArray
 			exprs = append(exprs, ex)
 		}
 	}

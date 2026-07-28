@@ -123,15 +123,24 @@ func (d *Doc) inlineTarget(full []string) (int, []string, bool) {
 }
 
 // rewriteInline applies one member edit to an inline-table construct by
-// rewriting THAT construct in house shape (ADR 0044): the inline line goes --
-// with the comments glued above it, which describe this config and follow it
-// -- and a [table] block carrying the members plus/minus the edit takes its
+// rewriting THAT construct in house shape (ADR 0044), in one of the two
+// shapes its CONTEXT makes house:
+//
+// At root or under a plain [table], the block: the inline line goes -- with
+// the comments glued above it, which describe this config and follow it --
+// and a [table] block carrying the members plus/minus the edit takes its
 // place at the end of the document. The block cannot land where the inline
 // line sat: a table header claims everything after it, so an in-place swap
-// would swallow the following root keys into the new table.
+// would swallow the following root keys into the new table. A removal that
+// empties the construct takes the whole thing: an empty [table] block still
+// asserts the table the caller asked to drop.
 //
-// A removal that empties the construct takes the whole thing: an empty
-// [table] block still asserts the table the caller asked to drop.
+// Inside an [[array]] element, the inline form, re-emitted where it stands:
+// the promoted block would have to go somewhere, and every somewhere reads as
+// a different element -- a [mcp.headers] appended at the end joins the LAST
+// [[mcp]], silently moving the member to another server. Both spellings parse,
+// so nothing downstream can catch that. The inline spelling is house shape
+// here anyway: it is what byre's own renderer writes for these values.
 func (d *Doc) rewriteInline(i int, rel []string, rendered string, remove bool) error {
 	e := d.exprs[i]
 	type member struct {
@@ -166,6 +175,14 @@ func (d *Doc) rewriteInline(i int, rel []string, rendered string, remove bool) e
 		kept[at] = add
 	}
 
+	if e.inArray && len(kept) > 0 {
+		parts := make([]string, len(kept))
+		for j, m := range kept {
+			parts[j] = encodeKeyPath(m.path) + " = " + m.text
+		}
+		return d.splice(e.valSpan, []byte("{ "+strings.Join(parts, ", ")+" }"))
+	}
+
 	rm := d.lineSpan(e.span)
 	rm.start = d.gluedCommentStart(i, rm.start)
 	lead := string(d.src[rm.start:d.lineSpan(e.span).start]) // the glued comment lines
@@ -194,6 +211,9 @@ func prefixOf(a, b []string) bool {
 // body is the key-value lines only, newline-terminated). It lands after the
 // last existing [[name]] block, else at the end of the document.
 func (d *Doc) AppendArrayTable(name string, body string) error {
+	if err := spellable([]string{name}); err != nil {
+		return err
+	}
 	block := fmt.Sprintf("[[%s]]\n%s", encodeKeyPath([]string{name}), body)
 	at := len(d.src)
 	if last := d.lastArrayTable(name); last >= 0 {
@@ -212,6 +232,9 @@ func (d *Doc) ReplaceArrayTable(name, matchKey, matchValue, body string) (bool, 
 
 // ReplaceArrayTableNth is ReplaceArrayTable on the skip-th matching block.
 func (d *Doc) ReplaceArrayTableNth(name, matchKey, matchValue string, skip int, body string) (bool, error) {
+	if err := spellable([]string{name}); err != nil {
+		return false, err
+	}
 	hdr := d.matchArrayTableNth(name, matchKey, matchValue, skip)
 	if hdr < 0 {
 		return false, nil
@@ -479,7 +502,9 @@ func encodeKey(k string) string {
 // spellable reports whether a key path can be written at all. TOML is Unicode
 // text: bytes that aren't valid UTF-8 have no spelling, and escaped() would
 // substitute U+FFFD -- writing SOME key, silently, that is not the one the
-// caller named.
+// caller named. Every entry point that ENCODES a caller's key path checks it;
+// the ones that only match against parsed keys don't need to, since a key
+// that cannot be spelled cannot have been parsed either.
 func spellable(path []string) error {
 	for _, k := range path {
 		if !utf8.ValidString(k) {

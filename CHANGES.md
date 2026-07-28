@@ -7,8 +7,10 @@
   block, `byre config` wrote a second `[defaults]` beside it -- the file it
   had just saved, and every command after it, then failed to load; dropping a
   key out of such a section did nothing at all, silently. An edit inside an
-  inline table now rewrites that one construct as a proper section carrying
-  its members (the comment above it comes along), and every edit is re-read
+  inline table now rewrites that one construct carrying its members -- as a
+  proper section (the comment above it comes along), or in place where it
+  sits inside an entry of a `[[block]]` list, since moving it there would
+  hand it to a different entry -- and every edit is re-read
   with the strict parser before it is handed back, so this class of mistake
   cannot reach your file again. Two further byte-level bugs the new fuzzer
   found went with it: an empty `[section]` was removed or added to as if it
