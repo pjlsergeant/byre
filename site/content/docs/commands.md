@@ -96,3 +96,27 @@ every command and flag.
 | Command | What it does |
 |---|---|
 | `byre completion <shell>` | Generate a shell completion script. |
+
+## Exit codes
+
+Scriptable, and the same for every command unless a row says otherwise.
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |
+| `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |
+| `2` | You typed it wrong: an unknown flag, a bad argument count. |
+| `3` | `byre develop` refused to start because a session is already live in this directory. `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |
+| `4` | `byre deliver --boxes` reached part of the pool but not all of it. |
+| `70` | byre crashed. That is a bug in byre; the report is on stderr and we would like to see it. |
+
+`byre develop` adds one rule on top, deliberately: once the box has
+actually run, **whatever status the agent's own process exits with, `0`
+through `127`, is passed straight through** -- no byre banner -- so a
+script sees what your agent did rather than what byre made of it. Past
+`127` the box died on a signal (`128+n`), and byre calls that its own
+failure with the signal decoded, because nothing in a box's normal life
+ends that way. The overlap is real and cannot be designed away: a
+`develop` exiting `1` is byre's own failure if it never got the box
+running and the agent's status if it did -- the stderr message is what
+tells them apart.

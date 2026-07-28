@@ -97,7 +97,9 @@ nothing-was-delivered outcome is nonzero — cancelling the picker or the
 paste prompt, an empty paste, an ambiguous box set with no terminal —
 exit 1, alongside ordinary errors (2 stays usage; `--boxes` uses 4 for a
 partial pool, see Remote delivery; 70 is a byre crash, never a delivery
-outcome).
+outcome). The whole contract, byre-wide, is published at
+[/docs/commands/#exit-codes](https://getbyre.com/docs/commands/#exit-codes),
+generated from these same constants.
 
 ## What works where
 

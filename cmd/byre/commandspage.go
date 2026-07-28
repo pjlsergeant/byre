@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pjlsergeant/byre/internal/commands"
+	"github.com/pjlsergeant/byre/internal/deliver"
 )
 
 // commandsPageCmd is hidden plumbing for the site: it renders the
@@ -96,7 +97,36 @@ every command and flag.
 			return "", fmt.Errorf("command %q has no commands-page area — add it to commandsPageAreas (cmd/byre/commandspage.go)", n)
 		}
 	}
+	b.WriteString(exitCodeSection())
 	return b.String(), nil
+}
+
+// exitCodeSection renders the exit-code contract with the numbers taken from
+// the constants the binary actually exits with, so a code cannot be changed
+// in one place and published from another. The contract is CLI reference, and
+// this is the CLI reference page; DELIVER.md states deliver's half for the
+// people reading the design record.
+func exitCodeSection() string {
+	return fmt.Sprintf("\n## Exit codes\n\n"+
+		"Scriptable, and the same for every command unless a row says otherwise.\n\n"+
+		"| Code | Meaning |\n|---|---|\n"+
+		"| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |\n"+
+		"| `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |\n"+
+		"| `2` | You typed it wrong: an unknown flag, a bad argument count. |\n"+
+		"| `%d` | `byre develop` refused to start because a session is already live in this directory. `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |\n"+
+		"| `%d` | `byre deliver --boxes` reached part of the pool but not all of it. |\n"+
+		"| `%d` | byre crashed. That is a bug in byre; the report is on stderr and we would like to see it. |\n\n"+
+		"`byre develop` adds one rule on top, deliberately: once the box has\n"+
+		"actually run, **whatever status the agent's own process exits with, `0`\n"+
+		"through `127`, is passed straight through** -- no byre banner -- so a\n"+
+		"script sees what your agent did rather than what byre made of it. Past\n"+
+		"`127` the box died on a signal (`128+n`), and byre calls that its own\n"+
+		"failure with the signal decoded, because nothing in a box's normal life\n"+
+		"ends that way. The overlap is real and cannot be designed away: a\n"+
+		"`develop` exiting `1` is byre's own failure if it never got the box\n"+
+		"running and the agent's status if it did -- the stderr message is what\n"+
+		"tells them apart.\n",
+		commands.ExitRefused, deliver.ExitPartialPool, exitPanic)
 }
 
 func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {
