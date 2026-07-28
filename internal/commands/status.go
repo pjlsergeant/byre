@@ -58,7 +58,7 @@ type statusInfo struct {
 	EnvKeys []string
 	// SkillReservedEnv are skill runtime-env keys in byre's reserved
 	// BYRE_ namespace: accepted (trusted machinery) but rendered, with
-	// the claims each can skew degraded -- see reservedEnvClaims.
+	// the claims each can skew degraded -- see skills.ReservedEnvClaims.
 	SkillReservedEnv []skills.ReservedEnvSet
 	// ArtifactShadows marks byre-baked artifact paths (mcp.json, the agent
 	// context file, the claude-skills dir) that a project `files` entry
@@ -671,7 +671,7 @@ func renderStatus(w io.Writer, s statusInfo) {
 			label = ""
 		}
 		row(label, fmt.Sprintf("⚠ %s sets %s — byre runtime control; the %s claim(s) above ride it",
-			e.Skill, e.Key, strings.Join(reservedEnvClaims(e.Key), " + ")))
+			e.Skill, e.Key, strings.Join(skills.ReservedEnvClaims(e.Key), " + ")))
 	}
 
 	if len(s.RunArgs) > 0 {
@@ -779,7 +779,7 @@ func mcpDeliveryLine(s statusInfo) string {
 		return "-> no agent selected; declared set bakes to " + gen.MCPConfigPath + " for anything that wants it"
 	case s.ArtifactShadows[gen.MCPConfigPath]:
 		return "-> delivery not warranted: a project files entry overwrites " + gen.MCPConfigPath + " (baked before the project block; your file wins)"
-	case reservedEnvTouches(s.SkillReservedEnv, "MCP delivery"):
+	case skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimMCPDelivery):
 		return "-> delivery not warranted: a skill sets byre's MCP controls (see Reserved env)"
 	case s.AgentMCP == "inject":
 		return fmt.Sprintf("-> the agent session receives: %s  (injected via %s)", list, gen.MCPConfigPath)
@@ -841,7 +841,7 @@ func contextDeliveryLine(s statusInfo) string {
 		return "-> no agent selected; the text bakes to " + baked + " for anything that wants it"
 	case s.ArtifactShadows["/etc/byre/"+gen.AgentContextName]:
 		return "-> delivery not warranted: a project files entry overwrites " + baked + " (baked before the project block; your file wins)"
-	case reservedEnvTouches(s.SkillReservedEnv, "context delivery"):
+	case skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimContextDelivery):
 		return "-> delivery not warranted: a skill sets byre's context controls (see Reserved env)"
 	case s.AgentContext == "inject":
 		return "-> the agent command injects the baked text (" + baked + "; argument-channel agents truncate very large context, disclosed in-session)"
@@ -1105,35 +1105,6 @@ func warnManagedPathShadows(w io.Writer, cfg config.Config, res skills.Resolved)
 	}
 }
 
-// reservedEnvClaims names the status claims one reserved BYRE_ variable
-// can skew, for the degradation lines. Unknown BYRE_* keys (a future
-// chassis knob this map hasn't met) conservatively degrade "network" --
-// the claim with the most riding on it -- plus "launch". The chassis-
-// knob inventory itself is pinned by gen's
-// TestChassisScriptKnobsRideReservedPrefix.
-func reservedEnvClaims(key string) []string {
-	switch key {
-	case "BYRE_EGRESS", "BYRE_EGRESS_DENY", "BYRE_LAUNCH_GATE_FILE", "BYRE_LAUNCH_GATE_TIMEOUT":
-		return []string{"network"}
-	case "BYRE_CONTEXT_DIR", "BYRE_AGENT_CONTEXT", "BYRE_SESSION_CONTEXT":
-		return []string{"context delivery"}
-	case "BYRE_MCP_CONFIG":
-		return []string{"MCP delivery"}
-	case "BYRE_ENVD_DIR", "BYRE_FIRSTRUN_DIR":
-		// Both run after the gate wait (no network reach) but before the
-		// agent execs, and env.d is SOURCED -- a redirected dir can rewrite
-		// the delivery vars the agent command consumes, so both delivery
-		// claims degrade with it (the review's sibling-controls finding).
-		return []string{"context delivery", "MCP delivery", "launch"}
-	case "BYRE_WORKSPACE_DIR",
-		"BYRE_IMAGE_PATH_FILE", "BYRE_ASSUME_TTY", "BYRE_GEMINI_DIR",
-		"BYRE_IDENTITY_BASE", "BYRE_UID", "BYRE_GID", "BYRE_PROJECT", "BYRE_WORKTREE":
-		return []string{"launch"}
-	default:
-		return []string{"network", "launch"}
-	}
-}
-
 // artifactShadows reports the byre-baked artifact paths a project `files`
 // entry overwrites. These are emitted before the project block and NOT
 // re-asserted by the build tail (deliberately: they are wiring, not the
@@ -1156,20 +1127,6 @@ func artifactShadows(cfg config.Config) map[string]bool {
 		mark(path.Join(dest, path.Base(src)))
 	}
 	return hits
-}
-
-// reservedEnvTouches reports whether any skill-set reserved variable can
-// skew the named claim -- the hedge predicate the claim lines consult. It
-// takes the resolved set rather than a statusInfo so the launch banner's
-// tally (exposureOf) consults the same predicate over the same data: two
-// renderings of one claim, degrading on one input.
-func reservedEnvTouches(sets []skills.ReservedEnvSet, claim string) bool {
-	for _, e := range sets {
-		if slices.Contains(reservedEnvClaims(e.Key), claim) {
-			return true
-		}
-	}
-	return false
 }
 
 // networkLine renders the Network row. Default: "open". With a skill-declared
@@ -1213,7 +1170,7 @@ func networkLine(s statusInfo) string {
 	if len(s.BuildRaw) > 0 {
 		raw = append(raw, "raw build lines")
 	}
-	if reservedEnvTouches(s.SkillReservedEnv, "network") {
+	if skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimNetwork) {
 		raw = append(raw, "a skill setting byre's network controls")
 	}
 	if len(raw) > 0 {

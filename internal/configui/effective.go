@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // rowKind classifies one effective-list row by where its value comes from and
@@ -1094,6 +1095,26 @@ func (m model) effectiveSkills() []string {
 	return out
 }
 
+// reservedEnvNow is the editor's view of the skills holding byre's own BYRE_
+// knobs (ADR 0050 tier 2), built through the same owner status and the launch
+// banner read -- skills.ReservedEnvOf decides which keys count, and the claim
+// mapping decides what each skews.
+//
+// It reads the LIVE effective skill set, not a set resolved when the editor
+// opened, because that is what the rest of this file does and what the screen
+// promises: ticking a skill that sets BYRE_LAUNCH_GATE_FILE has to make the
+// exposure line stop asserting the posture, in the same keystroke it makes
+// its mounts and env appear. Same resolution as the other two surfaces (each
+// skill's declared [runtime].env), evaluated at this editor's current state
+// rather than at launch.
+func (m model) reservedEnvNow() []skills.ReservedEnvSet {
+	var out []skills.ReservedEnvSet
+	for _, sk := range m.effectiveSkills() {
+		out = append(out, skills.ReservedEnvOf(sk, m.inh.Skills[sk].Env)...)
+	}
+	return out
+}
+
 // envCounts tallies the Env screen by distinct KEY rather than by row: one
 // variable in the box is one count, however many layers name it. rowCounts
 // cannot do this -- it is per-row and field-agnostic -- and the two summaries
@@ -1268,6 +1289,10 @@ func (m model) exposureNow() config.Exposure {
 	}
 	e.Env = len(envKeys)
 	e.Posture = m.postureNow()
+	// A skill holding byre's own network knobs degrades the posture claim here
+	// exactly as it does on status and at launch: this line is the same claim,
+	// so it cannot be the one surface that still asserts it.
+	e.SkillNetControls = skills.ReservedEnvTouches(m.reservedEnvNow(), skills.ClaimNetwork)
 	// The allowlist size only means something under a posture that arms it
 	// (open-denylist's network is open — counting doors in a wall that isn't
 	// there would be noise); otherwise the per-field summary carries the

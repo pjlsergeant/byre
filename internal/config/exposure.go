@@ -51,9 +51,10 @@ type Exposure struct {
 	// SkillNetControls: a skill sets one of byre's own BYRE_ network knobs
 	// (the launch gate, the announced egress), so the construction the
 	// posture claim describes is no longer the one in force — ADR 0050's
-	// tier 2, and the third of status's networkLine degradation inputs. The
-	// launch banner and status resolve it from the same reserved-env set;
-	// the config UI leaves it false, having no reserved-env surface at all.
+	// tier 2, and the third of status's networkLine degradation inputs. All
+	// three surfaces that render this claim resolve it through one owner,
+	// skills.ReservedEnvTouches: the launch banner and status from the set
+	// resolved at launch, the config editor from its live effective skills.
 	SkillNetControls bool
 }
 

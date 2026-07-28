@@ -1091,3 +1091,67 @@ func TestPortRowsShowReplacementNotUnion(t *testing.T) {
 		t.Errorf("the last binding of a port is the live one: %+v", last)
 	}
 }
+
+// The editor's exposure line is the THIRD rendering of the posture claim
+// `byre status` and develop's launch banner also make, so it degrades on the
+// same input: a skill holding one of byre's own BYRE_ network knobs (ADR
+// 0050 tier 2). Sibling of internal/commands'
+// TestLaunchBannerAndStatusDegradeOnOneReservedEnvSet, deliberately carrying
+// the SAME table of keys: three surfaces, one answer per key, and a table
+// that disagrees with its sibling fails against the shared owner
+// (skills.ReservedEnvClaims) rather than drifting quietly.
+//
+// The wanted values are literals, never read back from the predicate under
+// test: computing them would pin only that this surface agrees with itself.
+func TestEditorExposureDegradesOnTheSameReservedEnvSet(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		hedge bool
+	}{
+		{"BYRE_EGRESS", true},
+		{"BYRE_EGRESS_DENY", true},
+		{"BYRE_LAUNCH_GATE_FILE", true},
+		{"BYRE_LAUNCH_GATE_TIMEOUT", true},
+		{"BYRE_MCP_CONFIG", false},    // MCP delivery's knob, not the network's
+		{"BYRE_CONTEXT_DIR", false},   // context delivery's
+		{"BYRE_WORKSPACE_DIR", false}, // launch-only
+		{"BYRE_KNOB_FROM_A_LATER", true},
+	} {
+		inh := Inherited{Skills: map[string]SkillRuntime{
+			"fw":    {Posture: "deny-by-default", Egress: []string{"example.com:443"}},
+			"knobs": {Env: map[string]string{tc.key: "/somewhere/else"}},
+		}}
+		cfg := config.Config{Skills: []string{"fw", "knobs"}}
+		m := newModel("t", "/x", cfg, nil, nil, []string{"fw", "knobs"}, nil, inh, nil, TargetProject)
+
+		e := m.exposureNow()
+		if e.SkillNetControls != tc.hedge {
+			t.Errorf("%s: the editor's degradation input = %v, want %v", tc.key, e.SkillNetControls, tc.hedge)
+		}
+		// The input has to reach the claim the user reads, not just the tally.
+		if got := strings.Contains(e.NetworkLine(), "not guaranteed"); got != tc.hedge {
+			t.Errorf("%s: editor exposure qualified = %v, want %v: %s", tc.key, got, tc.hedge, e.NetworkLine())
+		}
+	}
+}
+
+// Ticking the skill is what arms the hedge: the editor's claim answers for
+// the state on screen, so a skill present but switched OFF asserts the
+// posture, and switching it on stops asserting in the same keystroke. This is
+// the one thing the launch and status renderings cannot check -- they resolve
+// once, and only this surface has a "not yet saved" state to get wrong.
+func TestEditorExposureFollowsTheLiveSkillToggle(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"fw":    {Posture: "deny-by-default", Egress: []string{"example.com:443"}},
+		"knobs": {Env: map[string]string{"BYRE_LAUNCH_GATE_FILE": "/dev/null"}},
+	}}
+	m := newModel("t", "/x", config.Config{Skills: []string{"fw"}}, nil, nil,
+		[]string{"fw", "knobs"}, nil, inh, nil, TargetProject)
+	if e := m.exposureNow(); e.SkillNetControls {
+		t.Fatalf("a skill that is not enabled skews nothing: %s", e.NetworkLine())
+	}
+	m.skills = append(m.skills, "knobs")
+	if e := m.exposureNow(); !e.SkillNetControls {
+		t.Errorf("enabling the skill must stop the claim asserting: %s", e.NetworkLine())
+	}
+}

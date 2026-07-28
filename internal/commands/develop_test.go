@@ -346,8 +346,13 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 	}
 }
 
-// The launch banner and the status Network row are two renderings of ONE
-// posture claim, so they degrade on one resolved set (ADR 0050). Two things
+// The launch banner and the status Network row are two of the THREE
+// renderings of one posture claim, so they degrade on one resolved set (ADR
+// 0050). The third is the config editor's exposure line, armed by its own
+// sibling over this same table (configui's
+// TestEditorExposureDegradesOnTheSameReservedEnvSet) -- it lives there
+// because its input is the editor's live skill set, not a launch-time
+// resolution. All three read one owner: skills.ReservedEnvTouches. Two things
 // are pinned, and the second is why the wanted values are spelled out rather
 // than read back from reservedEnvClaims: WHICH keys skew the network claim,
 // and that both surfaces reach that verdict. Computing the want from the

@@ -573,7 +573,7 @@ func exposureOf(rv resolved, selfEdit bool, hostEnv []hostEnvResult) config.Expo
 		// consults over the same resolved set: a skill holding byre's own
 		// network knobs makes the posture claim describe a construction that
 		// is no longer in force (ADR 0050).
-		SkillNetControls: reservedEnvTouches(rv.skills.ReservedEnv(), "network"),
+		SkillNetControls: skills.ReservedEnvTouches(rv.skills.ReservedEnv(), skills.ClaimNetwork),
 	}
 	for _, m := range rv.mounts {
 		if m.Disabled {

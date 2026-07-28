@@ -2,6 +2,17 @@
 
 ## unreleased
 
+- **The config editor's exposure line stops asserting a network posture a
+  skill has skewed.** `byre status` and the launch banner both qualify the
+  posture when an enabled skill sets one of byre's own `BYRE_` network knobs
+  (the launch gate, the announced egress) -- the box no longer runs the wall
+  byre built, so the claim stops standing behind it. The editor's headline
+  `exposure:` line was the one surface still printing `network
+  deny-by-default` flat in that case, which is the claim at its most
+  confident on the screen where you are choosing skills. It now renders the
+  same hedge as the other two, and it follows the tick: enabling such a skill
+  qualifies the line in the same keystroke that adds its mounts and env.
+
 - **`byre config` with no terminal says what to use instead.** It used to
   reach past your redirected stdin for the controlling terminal and draw the
   editor there, or fail with `could not open a new TTY` if there wasn't one.
