@@ -243,6 +243,12 @@ func TestDefaultTierElidesNoRow(t *testing.T) {
 		"MCP servers":   len(info.MCPs),
 		"Claude Skills": len(info.ClaudeSkills),
 	}
+	// DigestHint is the one default-only ADDITION: a continuation row under
+	// Skills naming the digest cut. Derived from the product's own predicate
+	// so the allowance holds whether or not the fixture carries digests.
+	if anyDigestDropped(info.Cat, info.Skills) {
+		allowed["Skills"] = full["Skills"] + 1
+	}
 	for label, n := range full {
 		want, ok := allowed[label]
 		if !ok {
