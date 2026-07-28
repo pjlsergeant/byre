@@ -40,6 +40,30 @@ func hostGit(roots hostexec.Roots) (string, error) {
 	return p, nil
 }
 
+// hostGitForSession is hostGit for a session: the git to run, plus the one
+// line to print when byre DECLINED the git PATH offered.
+//
+// The session-end report (ADR 0047) runs host git automatically, at every
+// exit, with nobody watching for a command to fail. So a declined git degrades
+// rather than refusing -- a session end must never be blockable by the thing
+// it reports on, which is this ADR's own no-gates rule turned on itself. The
+// line is returned rather than printed so the caller can put it BEFORE the
+// session: a disclosure in the middle of an exit report is one nobody reads.
+//
+// Absence returns ("", "") and stays silent, as it already did: a host with no
+// git is not a disclosure, it is a host with no git.
+func hostGitForSession(roots hostexec.Roots) (exe, disclosure string) {
+	p, err := hostGit(roots)
+	if err == nil {
+		return p, ""
+	}
+	var shadow *hostexec.ShadowError
+	if errors.As(err, &shadow) {
+		return "", fmt.Sprintf("byre: %v The session-end report's git probes and any `git:` env sources are skipped for this session.", shadow)
+	}
+	return "", ""
+}
+
 // gitProbe runs a read-only git query against agent-shaped state (the
 // project tree) under the standing bounds — CLAUDE.md's rule: a passive
 // probe of what the agent can shape must degrade, never wedge (5s wall
