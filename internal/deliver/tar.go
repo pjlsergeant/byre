@@ -29,7 +29,7 @@ func RunTar(cfg Config, opts Options, archive io.Reader) ([]string, error) {
 	}
 	// pickArg for the same reason as RunSources: name the worktree box by its
 	// own workdir id, not the shared project id.
-	fmt.Fprintf(cfg.Err, "byre: delivering to %s (%s, %s)%s\n",
+	reportf(cfg, "byre: delivering to %s (%s, %s)%s",
 		pickArg(sess), sess.EngineName, shortID(sess.ID), foreignNote(sess))
 	u := &tarUnpack{cfg: cfg, sess: sess, claimed: map[string]string{}}
 	err = u.run(archive)
@@ -70,11 +70,11 @@ func (u *tarUnpack) run(archive io.Reader) error {
 		return fmt.Errorf("the archive contained no entries")
 	}
 	if u.failed > 0 {
-		fmt.Fprintf(u.cfg.Err, "byre: delivered %d of %d files, %s; %d %s failed\n",
+		reportf(u.cfg, "byre: delivered %d of %d files, %s; %d %s failed",
 			u.okFiles, u.files, sizeString(u.bytes), u.failed, plural(u.failed, "entry", "entries"))
 		return fmt.Errorf("%d %s failed", u.failed, plural(u.failed, "entry", "entries"))
 	}
-	fmt.Fprintf(u.cfg.Err, "byre: delivered %d %s, %s\n",
+	reportf(u.cfg, "byre: delivered %d %s, %s",
 		u.files, plural(u.files, "file", "files"), sizeString(u.bytes))
 	return nil
 }
@@ -84,7 +84,7 @@ func (u *tarUnpack) run(archive io.Reader) error {
 func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 	top, rest, renamed, ok := splitEntryName(hdr.Name)
 	if !ok {
-		fmt.Fprintf(u.cfg.Err, "byre: skipping archive entry %q (unusable name)\n", hdr.Name)
+		reportf(u.cfg, "byre: skipping archive entry %q (unusable name)", hdr.Name)
 		u.failed++
 		return
 	}
@@ -93,13 +93,13 @@ func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 		if rest != "" {
 			clean += "/" + rest
 		}
-		fmt.Fprintf(u.cfg.Err, "byre: renamed %q (control characters) → %q\n", hdr.Name, clean)
+		reportf(u.cfg, "byre: renamed %q (control characters) → %q", hdr.Name, clean)
 	}
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		if rest == "" {
 			if _, err := u.root(top); err != nil {
-				fmt.Fprintf(u.cfg.Err, "byre: %v\n", err)
+				reportf(u.cfg, "byre: %v", err)
 				u.failed++
 			}
 			return
@@ -110,7 +110,7 @@ func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 				strings.NewReader(""), "sh", "-c", mkdirScript, "byre-deliver", root+"/"+rest)
 		}
 		if err != nil {
-			fmt.Fprintf(u.cfg.Err, "byre: creating %s: %v\n", rest, err)
+			reportf(u.cfg, "byre: creating %s: %v", rest, err)
 			u.failed++
 		}
 	case tar.TypeReg:
@@ -120,7 +120,7 @@ func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 			// top-level result.
 			got, err := deliverStream(u.cfg, u.sess, content, top, "/inbox", false)
 			if err != nil {
-				fmt.Fprintf(u.cfg.Err, "byre: %v\n", err)
+				reportf(u.cfg, "byre: %v", err)
 				u.failed++
 				return
 			}
@@ -131,7 +131,7 @@ func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 		}
 		root, err := u.root(top)
 		if err != nil {
-			fmt.Fprintf(u.cfg.Err, "byre: %v\n", err)
+			reportf(u.cfg, "byre: %v", err)
 			u.failed++
 			return
 		}
@@ -140,7 +140,7 @@ func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 			destDir += "/" + d
 		}
 		if _, err := deliverStream(u.cfg, u.sess, content, baseOf(rest), destDir, true); err != nil {
-			fmt.Fprintf(u.cfg.Err, "byre: %v\n", err)
+			reportf(u.cfg, "byre: %v", err)
 			u.failed++
 			return
 		}
@@ -149,7 +149,7 @@ func (u *tarUnpack) entry(hdr *tar.Header, content io.Reader) {
 	default:
 		// The packer never emits these; an alien archive's links/devices are
 		// skipped the way local delivery skips them.
-		fmt.Fprintf(u.cfg.Err, "byre: skipping archive entry %s (not a regular file or directory)\n", hdr.Name)
+		reportf(u.cfg, "byre: skipping archive entry %s (not a regular file or directory)", hdr.Name)
 	}
 }
 
@@ -161,7 +161,7 @@ func (u *tarUnpack) root(top string) (string, error) {
 	}
 	stem, ext, sanitized := splitName(top)
 	if sanitized {
-		fmt.Fprintf(u.cfg.Err, "byre: renamed %q → %q\n", top, stem+ext)
+		reportf(u.cfg, "byre: renamed %q → %q", top, stem+ext)
 	}
 	out, err := u.sess.Engine.ExecInput(u.sess.ID, u.sess.UID, u.sess.GID,
 		strings.NewReader(""), "sh", "-c", dirScript, "byre-deliver", stem, ext)

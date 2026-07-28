@@ -95,14 +95,14 @@ func (d *destination) Close() error { return d.root.Close() }
 func (d *destination) claimFile(cfg Config, relDir string, fill func(io.Writer) error) (string, int64, error) {
 	stem, ext, sanitized := splitName(d.base)
 	if sanitized {
-		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", d.base, stem+ext)
+		reportf(cfg, "byre: renamed %q → %q", d.base, stem+ext)
 	}
 	claimed, size, err := claimStream(d.root, relDir, stem, ext, fill)
 	if err != nil {
 		return "", 0, err
 	}
 	if baseOf(claimed) != stem+ext {
-		fmt.Fprintf(cfg.Err, "byre: %s existed — landed as %s\n", stem+ext, baseOf(claimed))
+		reportf(cfg, "byre: %s existed — landed as %s", stem+ext, baseOf(claimed))
 	}
 	return filepath.Join(d.dir, filepath.FromSlash(claimed)), size, nil
 }
@@ -113,7 +113,7 @@ func (d *destination) claimFile(cfg Config, relDir string, fill func(io.Writer) 
 func (d *destination) claimDir(cfg Config) (*tree, error) {
 	stem, ext, sanitized := splitName(d.base)
 	if sanitized {
-		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", d.base, stem+ext)
+		reportf(cfg, "byre: renamed %q → %q", d.base, stem+ext)
 	}
 	n := stem + ext
 	for k := 2; ; k++ {
@@ -130,7 +130,7 @@ func (d *destination) claimDir(cfg Config) (*tree, error) {
 		n = fmt.Sprintf("%s-%d%s", stem, k, ext)
 	}
 	if n != stem+ext {
-		fmt.Fprintf(cfg.Err, "byre: %s existed — landed as %s\n", stem+ext, n)
+		reportf(cfg, "byre: %s existed — landed as %s", stem+ext, n)
 	}
 	sub, err := d.root.OpenRoot(n)
 	if err != nil {
@@ -159,7 +159,7 @@ func (t *tree) mkdirAll(rel string) error {
 func (t *tree) claimInterior(cfg Config, rel string, fill func(io.Writer) error) (string, int64, error) {
 	stem, ext, sanitized := splitName(baseOf(rel))
 	if sanitized {
-		fmt.Fprintf(cfg.Err, "byre: renamed %q → %q\n", baseOf(rel), stem+ext)
+		reportf(cfg, "byre: renamed %q → %q", baseOf(rel), stem+ext)
 	}
 	claimed, size, err := claimStream(t.root, dirOf(rel), stem, ext, fill)
 	if err != nil {

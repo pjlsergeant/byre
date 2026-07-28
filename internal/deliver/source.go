@@ -64,7 +64,7 @@ func deliverSource(cfg Config, sess Session, src Source) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(cfg.Err, "byre: delivered %s (%s) → %s\n", src.Kind, sizeString(int64(len(src.Data))), landed)
+		reportf(cfg, "byre: delivered %s (%s) → %s", src.Kind, sizeString(int64(len(src.Data))), landed)
 		return landed, nil
 	case src.Reader != nil:
 		cr := &countingReader{r: src.Reader}
@@ -72,7 +72,7 @@ func deliverSource(cfg Config, sess Session, src Source) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(cfg.Err, "byre: delivered %s (%s) → %s\n", src.Kind, sizeString(cr.n), landed)
+		reportf(cfg, "byre: delivered %s (%s) → %s", src.Kind, sizeString(cr.n), landed)
 		return landed, nil
 	default:
 		return "", fmt.Errorf("empty source %q", src.Name)

@@ -59,7 +59,7 @@ func Boxes(cfg Config, opts Options) (partial bool, err error) {
 		fmt.Fprintln(cfg.Out, boxLine(s))
 	}
 	if p.hidden > 0 {
-		fmt.Fprintf(cfg.Err, "byre: %d %s hidden by the uid filter; --skip-uid-check to include them\n",
+		reportf(cfg, "byre: %d %s hidden by the uid filter; --skip-uid-check to include them",
 			p.hidden, plural(p.hidden, "session", "sessions"))
 	}
 	return p.partial, nil

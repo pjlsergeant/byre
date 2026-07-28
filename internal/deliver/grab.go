@@ -6,8 +6,6 @@ import (
 	"io"
 	"path"
 	"strings"
-
-	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // maxControlReplyBytes bounds the classification reply -- a control channel
@@ -80,7 +78,7 @@ func RunGrab(cfg Config, opts Options, boxPath, hostPath string) ([]string, erro
 	}
 	abs := boxAbs(boxPath)
 	// pickArg, not ProjectID — same worktree-naming rule as RunSources.
-	fmt.Fprintf(cfg.Err, "byre: grabbing %s from %s (%s, %s)%s\n",
+	reportf(cfg, "byre: grabbing %s from %s (%s, %s)%s",
 		abs, pickArg(sess), sess.EngineName, shortID(sess.ID), foreignNote(sess))
 
 	out, err := sess.Engine.ExecInput(sess.ID, sess.UID, sess.GID, strings.NewReader(""),
@@ -130,7 +128,7 @@ func grabFileToStdout(cfg Config, sess Session, abs string) error {
 		"sh", "-c", catScript, "byre-grab", abs); err != nil {
 		return fmt.Errorf("grabbing %s: %w", abs, err)
 	}
-	fmt.Fprintf(cfg.Err, "byre: grabbed %s (%s)\n", abs, sizeString(cw.n))
+	reportf(cfg, "byre: grabbed %s (%s)", abs, sizeString(cw.n))
 	return nil
 }
 
@@ -149,7 +147,7 @@ func grabFile(cfg Config, sess Session, abs, hostPath string) ([]string, error) 
 		return nil, fmt.Errorf("grabbing %s: %w", abs, err)
 	}
 	fmt.Fprintln(cfg.Out, landed)
-	fmt.Fprintf(cfg.Err, "byre: grabbed %s → %s (%s)\n", abs, landed, sizeString(size))
+	reportf(cfg, "byre: grabbed %s → %s (%s)", abs, landed, sizeString(size))
 	return []string{landed}, nil
 }
 
@@ -185,7 +183,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		if !ok {
 			// Enumeration output is agent input: a record naming a path outside
 			// the grabbed directory is ignored loudly, never landed.
-			fmt.Fprintf(cfg.Err, "byre: ignoring enumerated %q (outside %s)\n", packages.EscapeTerminal(rec.path), packages.EscapeTerminal(phys))
+			reportf(cfg, "byre: ignoring enumerated %q (outside %s)", rec.path, phys)
 			failed++
 			continue
 		}
@@ -194,17 +192,17 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 		}
 		clean, renamed, ok := sanitizeGrabRel(rel)
 		if !ok {
-			fmt.Fprintf(cfg.Err, "byre: skipping %s/%s (unusable name)\n", packages.EscapeTerminal(phys), packages.EscapeTerminal(rel))
+			reportf(cfg, "byre: skipping %s/%s (unusable name)", phys, rel)
 			failed++
 			continue
 		}
 		if renamed {
-			fmt.Fprintf(cfg.Err, "byre: renamed %q (control characters) → %q\n", packages.EscapeTerminal(rel), packages.EscapeTerminal(clean))
+			reportf(cfg, "byre: renamed %q (control characters) → %q", rel, clean)
 		}
 		switch rec.tag {
 		case 'd':
 			if err := tree.mkdirAll(clean); err != nil {
-				fmt.Fprintf(cfg.Err, "byre: creating %s: %s\n", packages.EscapeTerminal(clean), packages.EscapeTerminal(err.Error()))
+				reportf(cfg, "byre: creating %s: %s", clean, err.Error())
 				failed++
 			}
 		case 'f':
@@ -214,7 +212,7 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 			// covers a directory born between the two passes.
 			if d := dirOf(clean); d != "" {
 				if err := tree.mkdirAll(d); err != nil {
-					fmt.Fprintf(cfg.Err, "byre: creating %s: %s\n", packages.EscapeTerminal(d), packages.EscapeTerminal(err.Error()))
+					reportf(cfg, "byre: creating %s: %s", d, err.Error())
 					failed++
 					continue
 				}
@@ -227,26 +225,26 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 				// The ERROR text carries the box path back verbatim (the engine echoes
 				// what it was asked for), so escaping the name alone left the same
 				// bytes reaching the terminal by another route.
-				fmt.Fprintf(cfg.Err, "byre: grabbing %s: %s\n", packages.EscapeTerminal(boxFile), packages.EscapeTerminal(err.Error()))
+				reportf(cfg, "byre: grabbing %s: %s", boxFile, err.Error())
 				failed++
 				continue
 			}
 			okFiles++
 			nbytes += size
 		case 'o':
-			fmt.Fprintf(cfg.Err, "byre: skipping %s (not a regular file or directory)\n", packages.EscapeTerminal(rec.path))
+			reportf(cfg, "byre: skipping %s (not a regular file or directory)", rec.path)
 		}
 	}
 	if sink.truncated {
-		fmt.Fprintf(cfg.Err, "byre: enumeration of %s exceeded byre's grab limits (%d entries / %d bytes) — grab truncated (incomplete)\n", abs, maxGrabEntries, maxGrabBytes)
+		reportf(cfg, "byre: enumeration of %s exceeded byre's grab limits (%d entries / %d bytes) — grab truncated (incomplete)", abs, maxGrabEntries, maxGrabBytes)
 		failed++
 	}
 	if sink.outOfFrame {
-		fmt.Fprintf(cfg.Err, "byre: enumeration of %s was malformed partway — the grab may be incomplete\n", abs)
+		reportf(cfg, "byre: enumeration of %s was malformed partway — the grab may be incomplete", abs)
 		failed++
 	}
 	if enumErr != nil {
-		fmt.Fprintf(cfg.Err, "byre: enumerating %s in the box failed partway (%s) — the grab may be incomplete\n", abs, packages.EscapeTerminal(firstLine(enumErr)))
+		reportf(cfg, "byre: enumerating %s in the box failed partway (%s) — the grab may be incomplete", abs, firstLine(enumErr))
 		failed++
 	}
 	landed := tree.path
@@ -254,11 +252,11 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 	if failed > 0 {
 		// `failed` counts ENTRIES (files, dirs, and the enumeration itself),
 		// so a dirs-only failure can't hide behind an "N of N files" line.
-		fmt.Fprintf(cfg.Err, "byre: grabbed %s — %d of %d files, %s; %d %s failed\n",
+		reportf(cfg, "byre: grabbed %s — %d of %d files, %s; %d %s failed",
 			landed, okFiles, files, sizeString(nbytes), failed, plural(failed, "entry", "entries"))
 		return []string{landed}, fmt.Errorf("grabbing %s/: %d entries failed", abs, failed)
 	}
-	fmt.Fprintf(cfg.Err, "byre: grabbed %s — %d %s, %s\n", landed, files, plural(files, "file", "files"), sizeString(nbytes))
+	reportf(cfg, "byre: grabbed %s — %d %s, %s", landed, files, plural(files, "file", "files"), sizeString(nbytes))
 	return []string{landed}, nil
 }
 

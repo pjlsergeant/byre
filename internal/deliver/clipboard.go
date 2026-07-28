@@ -1,7 +1,6 @@
 package deliver
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -64,16 +63,16 @@ func shipClipboard(cfg Config, opts Options, landed []string) {
 		noun = "paths"
 	}
 	if cfg.Clip == nil || cfg.Clip.Write == nil {
-		fmt.Fprintf(cfg.Err, "byre: clipboard unavailable — %s printed above\n", noun)
+		reportf(cfg, "byre: clipboard unavailable — %s printed above", noun)
 		return
 	}
 	if err := cfg.Clip.Write(clipboardPayload(landed)); err != nil {
-		fmt.Fprintf(cfg.Err, "byre: clipboard write failed (%v) — %s printed above\n", err, noun)
+		reportf(cfg, "byre: clipboard write failed (%v) — %s printed above", err, noun)
 		return
 	}
 	if cfg.Clip.BestEffort {
-		fmt.Fprintf(cfg.Err, "byre: %s sent to the clipboard via %s (best-effort) — also printed above\n", noun, cfg.Clip.Name)
+		reportf(cfg, "byre: %s sent to the clipboard via %s (best-effort) — also printed above", noun, cfg.Clip.Name)
 		return
 	}
-	fmt.Fprintf(cfg.Err, "byre: %s copied to the clipboard (%s)\n", noun, cfg.Clip.Name)
+	reportf(cfg, "byre: %s copied to the clipboard (%s)", noun, cfg.Clip.Name)
 }

@@ -30,7 +30,7 @@ type pool struct {
 // print on every deliver/grab (field report, 2026-07-19).
 func flushUnreachable(cfg Config, p pool) {
 	for _, name := range p.unreachable {
-		fmt.Fprintf(cfg.Err, "byre: %s isn't reachable; skipping it\n", name)
+		reportf(cfg, "byre: %s isn't reachable; skipping it", name)
 	}
 }
 
@@ -56,7 +56,7 @@ func discover(cfg Config, opts Options) (pool, error) {
 				p.unreachable = append(p.unreachable, eng.Name())
 				continue
 			}
-			fmt.Fprintf(cfg.Err, "byre: warning: %s query failed (%s); its sessions are invisible this run\n", eng.Name(), firstLine(err))
+			reportf(cfg, "byre: warning: %s query failed (%s); its sessions are invisible this run", eng.Name(), firstLine(err))
 			p.partial = true
 			continue
 		}
@@ -105,19 +105,19 @@ func inspect(cfg Config, opts Options, eng Engine, id string) (Session, sessionV
 		s.ProjectID = labels[cfg.ProjectLabel]
 		s.WorkdirID = labels[cfg.WorkdirLabel]
 	} else {
-		fmt.Fprintf(cfg.Err, "byre: warning: could not read labels of %s (%v)\n", shortID(id), err)
+		reportf(cfg, "byre: warning: could not read labels of %s (%v)", shortID(id), err)
 		s.ProjectID = "(unknown)"
 	}
 	env, err := eng.Env(id)
 	if err != nil {
-		fmt.Fprintf(cfg.Err, "byre: warning: could not read the identity of %s (%v); it cannot be a target\n", shortID(id), err)
+		reportf(cfg, "byre: warning: could not read the identity of %s (%v); it cannot be a target", shortID(id), err)
 		return s, sessionUnusable
 	}
 	uid, uerr := strconv.Atoi(strings.TrimSpace(env["BYRE_UID"]))
 	gid, gerr := strconv.Atoi(strings.TrimSpace(env["BYRE_GID"]))
 	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
 		// Not a box byre can attach to (shell.go's fail-closed rule).
-		fmt.Fprintf(cfg.Err, "byre: warning: %s carries no valid BYRE_UID/BYRE_GID; it cannot be a target\n", shortID(id))
+		reportf(cfg, "byre: warning: %s carries no valid BYRE_UID/BYRE_GID; it cannot be a target", shortID(id))
 		return s, sessionUnusable
 	}
 	s.UID, s.GID = uid, gid

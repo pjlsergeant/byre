@@ -195,7 +195,7 @@ func pickRemoteBox(cfg Config, opts Options, target SSHTarget, remoteByre string
 		return sessions[0].ID, nil
 	}
 	if partial {
-		fmt.Fprintf(cfg.Err, "byre: an engine query failed on %s — pick explicitly\n", target)
+		reportf(cfg, "byre: an engine query failed on %s — pick explicitly", target)
 	}
 	if cfg.Pick != nil {
 		s, ok, err := cfg.Pick(sessions)
@@ -370,11 +370,11 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 			return fmt.Errorf("delivering %s: broken symlink: %w", src, err)
 		}
 		if target.IsDir() {
-			fmt.Fprintf(warn, "byre: skipping %s (symlink to a directory)\n", src)
+			reportTo(warn, "byre: skipping %s (symlink to a directory)", src)
 			return nil
 		}
 		if !target.Mode().IsRegular() {
-			fmt.Fprintf(warn, "byre: skipping %s (symlink to something other than a file)\n", src)
+			reportTo(warn, "byre: skipping %s (symlink to something other than a file)", src)
 			return nil
 		}
 		plan.entries = append(plan.entries, packEntry{name: claim(filepath.Base(src)), path: src, follow: true, size: target.Size()})
@@ -428,7 +428,7 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 				f, oerr := hostRoot.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 				if oerr != nil {
 					if isLink {
-						fmt.Fprintf(warn, "byre: skipping %s (symlink outside the delivered directory, or broken)\n", p)
+						reportTo(warn, "byre: skipping %s (symlink outside the delivered directory, or broken)", p)
 						return nil
 					}
 					return fmt.Errorf("delivering %s: %w", p, oerr)
@@ -437,21 +437,21 @@ func planPath(warn io.Writer, plan *packPlan, claim func(string) string, src str
 				f.Close()
 				if serr != nil || !st.Mode().IsRegular() {
 					if isLink {
-						fmt.Fprintf(warn, "byre: skipping %s (symlink to something other than a file)\n", p)
+						reportTo(warn, "byre: skipping %s (symlink to something other than a file)", p)
 						return nil
 					}
-					fmt.Fprintf(warn, "byre: skipping %s (not a regular file)\n", p)
+					reportTo(warn, "byre: skipping %s (not a regular file)", p)
 					return nil
 				}
 				plan.entries = append(plan.entries, packEntry{name: name, root: hostRoot, rel: rel, size: st.Size()})
 				plan.bytes += st.Size()
 			default:
-				fmt.Fprintf(warn, "byre: skipping %s (not a regular file or directory)\n", p)
+				reportTo(warn, "byre: skipping %s (not a regular file or directory)", p)
 			}
 			return nil
 		})
 	default:
-		fmt.Fprintf(warn, "byre: skipping %s (not a regular file or directory)\n", src)
+		reportTo(warn, "byre: skipping %s (not a regular file or directory)", src)
 		return nil
 	}
 }

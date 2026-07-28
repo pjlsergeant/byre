@@ -10,19 +10,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/hostopen"
-	"github.com/pjlsergeant/byre/internal/packages"
 )
-
-// reportf writes one line of delivery reporting to the user's terminal. Every
-// line names something byre did not author -- a host path the user passed, an
-// entry name from a walked directory, an error from the engine -- so the whole
-// formatted line prints as data: terminal control sequences are stripped, and
-// the funnel adds the framing newline so an embedded one cannot forge a second
-// report line. byre's own wording carries no control characters, so this costs
-// its messages nothing.
-func reportf(cfg Config, format string, args ...any) {
-	fmt.Fprintln(cfg.Err, packages.EscapeTerminal(fmt.Sprintf(format, args...)))
-}
 
 // The transport is one `exec -i` per delivered file, running a small POSIX-sh
 // script inside the box as the dev identity. The scripts take every variable
