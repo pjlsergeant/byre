@@ -315,10 +315,17 @@ func printGrantDelta(w io.Writer, home string, old packages.IndexEntry, acq *pac
 }
 
 // grantLines renders a manifest's contribution summary and returns its lines
-// as a set, for declaration-level diffing. Unlike inspect (counts, per the
-// depth ruling), the DIFF must be content-sensitive: raw Dockerfile commands
-// and run_args are included verbatim (escaped, marked not-introspected) so a
-// replacement cannot swap build code behind an unchanged count.
+// as a set, for declaration-level diffing.
+//
+// The depth ruling, in full, because it is cited from here and lives nowhere
+// else: a SUMMARY renders build content as counts ("3 dockerfile lines" --
+// printSkillContributions), which is the right depth for a reader deciding
+// whether to look at a package at all. A DIFF cannot: it is what the reviewer
+// consents against on a replacement, and a count is stable under a total
+// rewrite of what it counts, so a swapped `RUN` line would land under an
+// unchanged summary. Raw Dockerfile commands and run_args are therefore
+// included verbatim here (escaped, marked not-introspected). The asymmetry is
+// deliberate; do not "align" the two.
 func grantLines(kind packages.Kind, raw []byte) map[string]bool {
 	var b strings.Builder
 	if kind == packages.KindSkill {

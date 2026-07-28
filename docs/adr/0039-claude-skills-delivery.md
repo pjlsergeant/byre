@@ -71,7 +71,8 @@ from = "claude-skills/review-loop"
   claude's fuller contract is claude's and evolves; a malformed skill is
   non-fatal to a claude session (spike-verified), so this is hygiene with
   good attribution, not session survival. First consumer of the yaml.v3
-  dependency (approved on demonstrated merit).
+  dependency (approved on demonstrated merit) -- see the dependency note
+  below.
 
 ## The bake: /etc/byre/claude-skills, always
 
@@ -152,6 +153,26 @@ Agent Skills format vouches with the same key and reads the same tree.
 Carrier packages (a byre skill that ships only Claude Skills) need no new
 machinery — ADR 0029 already gives them identity, digests, and install
 consent, and enabling stays the grant.
+
+### The yaml.v3 dependency, on the record
+
+`gopkg.in/yaml.v3` is byre's one YAML parser and it stays, on the same
+terms `textdiff` is kept on (`internal/commands/diff.go`) -- the register
+for a dependency byre accepts with its eyes open:
+
+- **Upstream is archived** (2025-04-01, terminal release, explicitly
+  unmaintained). Nothing will be fixed there, and Dependabot has nothing
+  to signal: a silent dependency is not a maintained one.
+- **Blast radius is one call.** It parses the YAML frontmatter of a
+  `SKILL.md` -- a bounded block byre has already split off at the `---`
+  fences, from a payload the install consent covered -- into two string
+  fields. No network, no filesystem, no process. A parse that goes wrong
+  yields a wrong name or description on a skill byre then refuses or
+  attributes wrongly, not a compromise.
+- **Replacement, if it comes to that:** the frontmatter byre reads is a
+  flat map of scalars; hand-parsing that block is a day's work, and the
+  validation around it (fences, closure, non-empty name) is byre's
+  already.
 
 User guide: `docs/SKILLS.md`. Vocabulary: `GLOSSARY.md` (Claude Skill,
 Claude Skills adapter).
