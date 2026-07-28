@@ -293,3 +293,34 @@ func TestWriteEnvEmitsSortedAndQuoted(t *testing.T) {
 		t.Errorf("writeEnv output:\n%q\nwant:\n%q", first, want)
 	}
 }
+
+// writeFiles has writeEnv's shape and writeEnv's exposure: the golden fixture
+// stages no files, so nothing else in the suite executes this emit loop, and
+// dropping the sort would leave the suite green while the Dockerfile stopped
+// being byte-stable (ADR 0001's cache sharing dies quietly). Sources arrive
+// from a Go map, whose iteration order is randomized per range.
+func TestWriteFilesEmitsSortedAndStable(t *testing.T) {
+	files := map[string]string{
+		"files/zed.sh":   "/opt/zed.sh",
+		"files/alpha.md": "/etc/alpha.md",
+		"files/mid.conf": "/etc/mid.conf",
+	}
+	var first string
+	for i := 0; i < 20; i++ { // map order is randomized per RANGE, so repeat
+		var b strings.Builder
+		writeFiles(&b, files)
+		if i == 0 {
+			first = b.String()
+			continue
+		}
+		if b.String() != first {
+			t.Fatalf("writeFiles is not byte-stable across map iterations:\n%q\nvs\n%q", first, b.String())
+		}
+	}
+	want := CopyLine("files/alpha.md", "/etc/alpha.md") + "\n" +
+		CopyLine("files/mid.conf", "/etc/mid.conf") + "\n" +
+		CopyLine("files/zed.sh", "/opt/zed.sh") + "\n"
+	if first != want {
+		t.Errorf("writeFiles output:\n%q\nwant:\n%q", first, want)
+	}
+}
