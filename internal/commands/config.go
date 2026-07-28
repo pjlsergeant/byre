@@ -129,6 +129,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 			// Key by display name (what the picker lists) and canonical ID.
 			rt := configui.SkillRuntime{
 				Mounts:        sk.File.Runtime.Mounts,
+				Volumes:       sk.File.Volumes,
 				Env:           sk.File.Runtime.Env,
 				Files:         sk.File.Build.Files,
 				EnvDocs:       sk.File.Runtime.EnvDocs,

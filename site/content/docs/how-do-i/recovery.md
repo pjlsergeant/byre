@@ -52,12 +52,12 @@ See
 ## Uninstall byre completely?
 
 tldr: `byre forget` in each project, clear machine volumes from the
-**Volumes** section of `byre config`, then delete `~/.byre` and the
+**Volume data** section of `byre config`, then delete `~/.byre` and the
 binary.
 
 `forget` clears a project's volumes, image, and host-side config across
 every installed engine. Machine-wide volumes (shared agent logins)
-survive it by design -- clear them from the **Volumes** section of
+survive it by design -- clear them from the **Volume data** section of
 `byre config`, or remove `byre-machine-u*` volumes with your engine
 directly. Everything
 byre ever makes is prefixed `byre-` on the engine and lives under

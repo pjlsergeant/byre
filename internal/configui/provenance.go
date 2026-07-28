@@ -10,11 +10,15 @@ import (
 )
 
 // SkillRuntime is one skill's runtime contribution, shown read-only in the
-// list screens with a (skill:name) tag. Volumes are omitted: they have their
-// own engine-backed screen, which already resolves skills.
+// list screens with a (skill:name) tag.
 type SkillRuntime struct {
 	Mounts []config.Mount
-	Env    map[string]string
+	// Volumes are the skill's [[volumes]] declarations, shown read-only on the
+	// Volumes screen. Skills declare most of a box's volumes, so a screen
+	// listing only the config's own entries would answer "what storage does
+	// this box get" with a near-empty list.
+	Volumes []config.Volume
+	Env     map[string]string
 	// EnvDocs documents env vars the skill CONSUMES but does not set (var
 	// name -> one-line guidance). The env screen renders each var nothing
 	// else provides as a dim suggestion row; enter prefills the add editor.

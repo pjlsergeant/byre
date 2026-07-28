@@ -266,6 +266,10 @@ func (m model) assemble() config.Config {
 	if len(out.Mounts) == 0 {
 		out.Mounts = nil
 	}
+	out.Volumes = append([]config.Volume{}, m.volumes...)
+	if len(out.Volumes) == 0 {
+		out.Volumes = nil
+	}
 	out.Ports = append([]config.Port{}, m.ports...)
 	if len(out.Ports) == 0 {
 		out.Ports = nil
@@ -344,6 +348,11 @@ func (m model) sig() string {
 	}
 	for _, mt := range m.mounts {
 		parts = append(parts, "mnt:"+mountLine(mt))
+	}
+	for _, v := range m.volumes {
+		// volumeLine flags scope and seed, so an edit that only preserves them
+		// still signs identically -- which is right: nothing changed.
+		parts = append(parts, "vol:"+volumeLine(v))
 	}
 	for _, pt := range m.ports {
 		// portLine renders the effective binding, which a removal marker

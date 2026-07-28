@@ -58,7 +58,7 @@ const (
 	fEnv
 	fEgress
 	fMounts
-	fVolumes
+	fVolumes // [[volumes]] declarations: named storage that survives rebuilds
 	fRunArgs
 	fDockerfilePre
 	fDockerfilePost
@@ -71,6 +71,12 @@ const (
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
 	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
+	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
+	// the ad-hoc clear. Separate from fVolumes because they answer different
+	// questions with different blast radii -- one edits a declaration in this
+	// file, the other deletes data on the machine -- and only this one needs an
+	// engine, so the global and layer editors carry the declarations without it.
+	fVolumeData
 
 	// fCount bounds the enum and must stay last. The fieldInfos growth guard
 	// (fields_test.go) walks fBase..fCount-1 and counts against fCount, so a
@@ -196,6 +202,7 @@ type model struct {
 	files        []kvItem // [files]: project-relative source -> absolute in-image destination
 	hostEnv      []kvItem // [env_from_host]: key -> scheme source ("" = disabled here)
 	mounts       []config.Mount
+	volumes      []config.Volume // [[volumes]] declarations incl. `!name` removal markers
 	ports        []config.Port
 	egress       []string             // firewall-allowlist extensions, host[:port] (ADR 0019)
 	mcps         []config.MCP         // [[mcp]] declarations incl. `!name` closure markers
@@ -340,9 +347,13 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// editable half is an advanced build-input mechanism, and the skill rows
 	// on that screen are there to be READ (and to warn about a destination
 	// collision), not acted on.
-	advanced := []fieldID{fRunArgs, fFiles, fDockerfilePre, fDockerfilePost}
+	// Volume DECLARATIONS ride every target: they are ordinary cascade
+	// grammar, so a layer or the global default may declare them, and the
+	// engine has no say in what a file says. Only the DATA row needs a
+	// VolumeAdmin -- without an engine there is nothing to list or clear.
+	advanced := []fieldID{fRunArgs, fFiles, fDockerfilePre, fDockerfilePost, fVolumes}
 	if vols != nil {
-		advanced = append(advanced, fVolumes)
+		advanced = append(advanced, fVolumeData)
 	}
 	// MCP servers sit in BUILD, not GRANTS: declarations are wiring, like
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
@@ -464,6 +475,7 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.files = envItems(cfg.Files)
 	m.hostEnv = envItems(cfg.EnvFromHost)
 	m.mounts = append([]config.Mount{}, cfg.Mounts...)
+	m.volumes = append([]config.Volume{}, cfg.Volumes...)
 	m.ports = append([]config.Port{}, cfg.Ports...)
 	m.egress = append([]string{}, cfg.Egress...)
 	m.mcps = append([]config.MCP{}, cfg.MCPs...)
@@ -643,7 +655,7 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 			m.status = ""
 			m.errMsg = ""
-		case f == fVolumes:
+		case f == fVolumeData:
 			return m.openVolumes(), nil
 		case f == fSkills:
 			m.skillCur = 0
@@ -1068,7 +1080,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		return m.renderPick(m.agentOpts, m.agentSel, focused)
 	case fEngine:
 		return renderSeg(m.engineOpts, m.engineSel, focused)
-	case fVolumes:
+	case fVolumeData:
 		s := "view / clear" // an action row, not an empty value — don't dim it
 		if focused {
 			s += dimStyle.Render("  (enter)")

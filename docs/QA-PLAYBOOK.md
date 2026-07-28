@@ -438,7 +438,7 @@ the raw truth.
 ## Journey: Volumes screen scope grouping
 
 With at least one project volume and one machine identity volume
-existing: `byre config` → Volumes. Expect two groups — "Project
+existing: `byre config` → Volume data. Expect two groups — "Project
 volumes" and "Machine volumes — shared by all your projects" — engine
 suffix per row, and the state-volume explainer line at the bottom.
 

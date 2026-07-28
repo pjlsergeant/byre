@@ -71,6 +71,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.skillFilesRows()
 	case fMounts:
 		return m.mountRows()
+	case fVolumes:
+		return m.volumeRows()
 	case fPorts:
 		return m.portRows()
 	case fEgress:
@@ -868,6 +870,82 @@ func (m model) mountRows() []listRow {
 	return rows
 }
 
+// volumeRows is mountRows over [[volumes]]: identity is the NAME (that is what
+// `!name` removes and what merge replaces by), and skills are the dominant
+// declarer, so their contributions show read-only with the skill that brought
+// them. The engine-side question -- which of these exist on disk, and clear one
+// -- is the Volume data screen's; this one is about what the config SAYS.
+func (m model) volumeRows() []listRow {
+	localIdx := map[string]int{}  // name -> index of a real local entry
+	markerIdx := map[string]int{} // name -> index of a !name marker
+	for i, v := range m.volumes {
+		if n, ok := config.CutRemoval(v.Name); ok {
+			markerIdx[n] = i
+		} else {
+			localIdx[v.Name] = i
+		}
+	}
+	lower := map[string]bool{}
+	var rows []listRow
+	for _, v := range m.lowerNow().Volumes {
+		if config.IsRemoval(v.Name) || lower[v.Name] {
+			continue
+		}
+		lower[v.Name] = true
+		n := v.Name
+		src := m.lowerSource(func(c config.Config) bool { return hasVolumeName(c.Volumes, n) })
+		switch {
+		case hasKey(markerIdx, n):
+			rows = append(rows, listRow{kind: rowRemoved, text: volumeLine(v), source: src, idx: markerIdx[n]})
+		case hasKey(localIdx, n):
+			rows = append(rows, listRow{kind: rowOverride, text: volumeLine(m.volumes[localIdx[n]]), source: src, idx: localIdx[n]})
+		default:
+			rows = append(rows, listRow{kind: rowInherited, text: volumeLine(v), ident: n, source: src, vals: volumeVals(v)})
+		}
+	}
+	for i, v := range m.volumes {
+		if config.IsRemoval(v.Name) || lower[v.Name] {
+			continue
+		}
+		// Same-layer marker beats the same-layer entry (removals apply last).
+		if hasKey(markerIdx, v.Name) {
+			rows = append(rows, listRow{kind: rowRemoved, text: volumeLine(v), idx: markerIdx[v.Name]})
+			continue
+		}
+		rows = append(rows, listRow{kind: rowLocal, text: volumeLine(v), idx: i})
+	}
+	for i, v := range m.volumes {
+		if n, ok := config.CutRemoval(v.Name); ok && !lower[n] && !hasKey(localIdx, n) {
+			rows = append(rows, listRow{kind: rowStaleMarker, text: n, idx: i})
+		}
+	}
+	for _, sk := range m.effectiveSkills() {
+		for _, v := range m.inh.Skills[sk].Volumes {
+			rows = append(rows, listRow{kind: rowSkill, text: volumeLine(v), source: "skill:" + sk})
+		}
+	}
+	return rows
+}
+
+func hasVolumeName(vs []config.Volume, name string) bool {
+	for _, v := range vs {
+		if v.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// volumeVals flattens a declaration for the override editor's prefill, in the
+// item editor's order (name, target, role).
+func volumeVals(v config.Volume) []string {
+	role := v.Role
+	if role == "" {
+		role = "state"
+	}
+	return []string{v.Name, v.Target, role}
+}
+
 func (m model) portRows() []listRow {
 	markerIdx := map[int]int{} // container -> index of a remove marker
 	for i, p := range m.ports {
@@ -945,7 +1023,7 @@ func (m model) effectiveSkills() []string {
 		if !e.on() {
 			continue
 		}
-		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0 || len(rt.ClaudeSkills) > 0 || len(rt.Files) > 0) {
+		if rt, ok := m.inh.Skills[e.name]; ok && (len(rt.Mounts) > 0 || len(rt.Volumes) > 0 || len(rt.Env) > 0 || len(rt.EnvDocs) > 0 || len(rt.Egress) > 0 || len(rt.Offered) > 0 || len(rt.MCPs) > 0 || len(rt.ClaudeSkills) > 0 || len(rt.Files) > 0) {
 			out = append(out, e.name)
 		}
 	}

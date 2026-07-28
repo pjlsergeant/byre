@@ -536,7 +536,7 @@ Two mount species:
      project's box -- the shared-auth companion skills' identity
      volumes are the canonical use. `byre status` lists them on their
      own "Shared vols" row; `reset`/`forget` never touch them and say
-     so (delete one deliberately via `byre config` -> Volumes ->
+     so (delete one deliberately via `byre config` -> Volume data ->
      clear, which refuses while ANY byre session runs). `seed` is
      invalid on a machine-scoped volume. (Worktree sharing remains an
      identity question, not a volume one -- ADR 0009.)

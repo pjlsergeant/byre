@@ -158,7 +158,7 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		switch f {
 		case fEnv, fFiles:
 			return []menuChoice{{"Override here", "e", actOverride}}
-		case fMounts, fMCP, fClaudeSkills, fContext:
+		case fMounts, fVolumes, fMCP, fClaudeSkills, fContext:
 			return []menuChoice{
 				{"Override here", "e", actOverride},
 				{"Remove in this project", "d", actRemoveHere},
@@ -293,6 +293,8 @@ func (m *model) removeHere(r listRow) {
 		m.egress = append(m.egress, "!"+r.ident)
 	case fMounts:
 		m.mounts = append(m.mounts, config.Mount{Target: "!" + r.ident})
+	case fVolumes:
+		m.volumes = append(m.volumes, config.Volume{Name: "!" + r.ident})
 	case fMCP:
 		m.mcps = append(m.mcps, config.MCP{Name: "!" + r.ident})
 	case fClaudeSkills:
@@ -333,6 +335,13 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 1
 		case "disabled":
 			next.itemMode = 2
+		}
+	case fVolumes:
+		// vals: name, target, role (volumeVals).
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(r.vals[1])
+		if r.vals[2] == "cache" {
+			next.itemMode = 1
 		}
 	case fMCP:
 		// vals: name, url, command(argv form), env, egress, headers (mcpVals).
@@ -406,6 +415,8 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.files = append(m.files[:i], m.files[i+1:]...)
 	case fMounts:
 		m.mounts = append(m.mounts[:i], m.mounts[i+1:]...)
+	case fVolumes:
+		m.volumes = append(m.volumes[:i], m.volumes[i+1:]...)
 	case fPorts:
 		m.ports = append(m.ports[:i], m.ports[i+1:]...)
 	case fEgress:
@@ -573,6 +584,26 @@ func (m model) startItem(idx int) model {
 		m.itemHasMode = true
 		m.itemModeOpts = []string{"ro", "rw", "disabled"}
 		m.itemModeLabel = "Mode"
+	case fVolumes:
+		// Name + target + role. Scope and seed are NOT form controls: both are
+		// declared shapes with consequences a two-word picker can't carry (a
+		// machine scope is one volume shared by every project; a seed is a
+		// one-time host->volume copy with its own grammar), and both are
+		// overwhelmingly skill-authored. An edit preserves whatever the entry
+		// already declares (commitItem) and itemNotes says so.
+		m.inputLabels = []string{"Name", "Target (in box)"}
+		name, target := "", ""
+		if idx >= 0 {
+			v := m.volumes[idx]
+			name, target = v.Name, v.Target
+			if v.Role == "cache" {
+				m.itemMode = 1
+			}
+		}
+		m.inputs = []textinput.Model{newInput(name), newInput(target)}
+		m.itemHasMode = true
+		m.itemModeOpts = []string{"state", "cache"}
+		m.itemModeLabel = "Role"
 	case fPorts:
 		m.inputLabels = []string{"Container port", "Host port (blank = same)", "Interface (blank = " + config.DefaultPortInterface + ")"}
 		container, host, iface := "", "", ""
@@ -986,6 +1017,24 @@ func (m model) commitItem() model {
 			}
 		}
 		m.mounts = putAt(m.mounts, m.editIndex, mt)
+	case fVolumes:
+		name := strings.TrimSpace(m.inputs[0].Value())
+		target := strings.TrimSpace(m.inputs[1].Value())
+		if name == "" || target == "" {
+			m.itemErr = "name and target are both required"
+			return m
+		}
+		v := config.Volume{Name: name, Target: target, Role: "state"}
+		if m.itemMode == 1 {
+			v.Role = "cache"
+		}
+		// Carry the entry's declared scope and seed through the edit: this form
+		// authors neither, so dropping them would silently un-share a machine
+		// volume (or un-seed a state one) as a side effect of retyping a target.
+		if m.editIndex >= 0 {
+			v.Scope, v.Seed = m.volumes[m.editIndex].Scope, m.volumes[m.editIndex].Seed
+		}
+		m.volumes = putAt(m.volumes, m.editIndex, v)
 	case fPorts:
 		// The inputs are strings, so the numeric parse happens here; ranges and
 		// collisions are the layer check's (validatePorts).
@@ -1042,6 +1091,26 @@ func mountLine(mt config.Mount) string {
 		mode += ", disabled"
 	}
 	return fmt.Sprintf("%s -> %s (%s)", mt.Host, mt.Target, mode)
+}
+
+// volumeLine renders one [[volumes]] declaration: name, mount point, role, and
+// the two properties that change what the entry MEANS -- a machine scope
+// (one volume shared by every project of this user) and a seed (a one-time
+// copy into a fresh volume). Both are flagged because a row that omitted them
+// would read as an ordinary per-project volume.
+func volumeLine(v config.Volume) string {
+	role := v.Role
+	if role == "" {
+		role = "state"
+	}
+	s := fmt.Sprintf("%s -> %s (%s)", v.Name, v.Target, role)
+	if v.MachineScoped() {
+		s += " [machine — shared by all your projects]"
+	}
+	if v.Seed != nil {
+		s += " [seeded]"
+	}
+	return s
 }
 
 func portLine(p config.Port) string {
@@ -1683,6 +1752,22 @@ func (m model) itemNotes() []string {
 		notes := nameNotes(m.inputs[0].Value(), config.ValidClaudeSkillName)
 		if n := claudeSkillDirNote(m.inputs[0].Value(), m.inputs[1].Value()); n != "" {
 			notes = append(notes, "⚠ "+n+" (accepted anyway — the dir can be created later)")
+		}
+		return notes
+	}
+	if m.listField == fVolumes {
+		// The two declared properties this form does not author are named
+		// here, at the moment of editing: silence would read as "this entry
+		// has neither", and both change what saving the row does.
+		notes := []string{"state = precious (auth, history, scratch); cache = disposable. New volumes are project-scoped."}
+		if m.editIndex >= 0 && m.editIndex < len(m.volumes) {
+			v := m.volumes[m.editIndex]
+			if v.MachineScoped() {
+				notes = append(notes, "⚠ scope: machine — ONE volume shared by ALL your projects (kept as declared; ^e to change)")
+			}
+			if v.Seed != nil {
+				notes = append(notes, "seed: filled once when the volume is first created (kept as declared; ^e to change)")
+			}
 		}
 		return notes
 	}

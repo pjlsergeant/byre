@@ -35,9 +35,12 @@ The editor shows one screen, organized the way `byre status` reports:
   grants -- they apply nothing to any box. (`shared_auth` is a
   favourite too, but has no editor surface today: it is written by
   onboarding and read by the next box.)
-- **Volumes.** The box's named volumes across every engine, including
-  clearing one deliberately (the only way byre ever deletes a
-  machine-wide volume).
+- **Volumes.** The named volumes this config declares -- add, edit, and
+  turn an inherited one off, with every skill's contribution shown
+  read-only beside them.
+- **Volume data.** The same volumes as they exist on every engine right
+  now, including clearing one deliberately (the only way byre ever
+  deletes a machine-wide volume).
 - **Extends.** Chain this project onto a shared config layer.
 
 Everything inherited is labeled with where it came from -- a template,
