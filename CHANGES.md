@@ -2,6 +2,21 @@
 
 ## unreleased
 
+- **Four things your config could hold that the editor could not show you.**
+  `byre config` now has: a **Volumes** screen that declares, edits and turns
+  off `[[volumes]]` entries -- with every skill's contribution listed
+  read-only beside yours -- in the project, layer and global editors alike
+  (the engine-side list-and-clear moves to its own **Volume data** row, and
+  still needs an engine); a three-state **Seed prefs** row, because
+  `seed_prefs` has three answers (inherit, on, off) and no checkbox can say
+  the third; a read-only **Package sources** screen for the `[sources]`
+  install hints `byre preset apply` records, which is what turns "skill
+  acme/tool is missing" into a copyable command; and a read-only
+  **Shared creds** row in `--global` showing the companion skill your stored
+  answer names -- flagged if nothing installed claims that pairing any more.
+  A test now fails when a config key has no editor row at all, so this class
+  of gap is caught before a release rather than after one.
+
 - **Binding a port your config already inherits now REPLACES it instead of
   publishing both.** `[[ports]]` was the one identity-keyed thing in a byre
   config that unioned: a project binding container port 3000 on a different
