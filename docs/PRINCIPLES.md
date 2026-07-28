@@ -203,13 +203,17 @@ the editor and `vim` write the same file, held to the same validation)
 -- a right is not an interface.
 
 **Scope: P6 governs parseable config.** A file hand-edited into a state
-byre's parser refuses is outside it: `byre config` names the file and
-the parse failure and stops, rather than reconciling against a document
-it cannot read -- a save would have to guess what to preserve, and the
-guess would land on the rest of the user's file. There is no editor to
-be inside at that point: the refusal happens before the screen opens,
-so the refusal itself is the only surface left to carry the remedy, and
-what P6 asks of it is that it be precise enough to fix the file by hand.
+byre's parser refuses is outside it: `byre config` names the file, the
+line and column, and the key it was reading, then stops, rather than
+reconciling against a document it cannot read -- a save would have to
+guess what to preserve, and the guess would land on the rest of the
+user's file. There is no editor to be inside at that point: the refusal
+happens before the screen opens, so the refusal itself is the only
+surface left to carry the remedy, and what P6 asks of it is that it be
+precise enough to fix the file by hand. That is a standard the message
+has to MEET, not a licence to stop at "this file is broken": a byre
+error may not name a byre command as the remedy here, because every one
+of them parses the file before it opens.
 
 That boundary is honest only because byre cannot MOVE a file there:
 every structured save of a stored config file rides the one document
