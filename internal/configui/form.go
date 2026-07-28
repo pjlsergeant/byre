@@ -17,6 +17,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/onboard"
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -35,10 +36,11 @@ import (
 // editor and quitting must leave no trace.
 // guard, when non-nil, wraps every write in the caller's lock -- the project
 // store's setup lock, which is what concurrent worktree sessions contend on.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error, guard func(func() error) error) (bool, error) {
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error, guard func(func() error) error, roots hostexec.Roots) (bool, error) {
 	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
 	m.prepare = prepare
 	m.guard = guard
+	m.editorRoots = roots
 	fm, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return false, err
@@ -319,6 +321,11 @@ type model struct {
 	saveBaseErr error
 	// guard wraps each write in the caller's lock (nil = write directly).
 	guard func(func() error) error
+	// editorRoots are the directories this project's box can write, used for
+	// the one binary the ^e handoff resolves: the shell byre execs the user's
+	// $EDITOR through. Zero value (a global or layer edit, which belongs to no
+	// project) means nothing to decline.
+	editorRoots hostexec.Roots
 }
 
 func newModel(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target) model {
@@ -678,7 +685,7 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// that actually landed, not editor round-trips.
 		m.preEditorRaw, m.preEditorErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
 		m.errMsg = ""
-		return m, openEditor(m.filePath)
+		return m, openEditor(m.filePath, m.editorRoots)
 	case "up", "shift+tab":
 		m.setFocus(m.focus - 1)
 		m.status = ""

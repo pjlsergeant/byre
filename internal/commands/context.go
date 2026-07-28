@@ -17,6 +17,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/editorcmd"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -43,7 +44,7 @@ var contextVerbs = declVerbs[config.ContextDecl]{
 // the `git commit` shape: `byre context add <name>` with no --text/--file
 // opens an editor rather than demanding prose on a command line. The launch
 // rides the shared shell-semantics launcher (editorcmd). Swapped in tests.
-var editProse = func(seed string) (string, error) {
+var editProse = func(seed string, roots hostexec.Roots) (string, error) {
 	f, err := hostopen.PlainCreateTemp("", "byre-context-*.md", hostopen.ProcessTemp)
 	if err != nil {
 		return "", err
@@ -58,7 +59,11 @@ var editProse = func(seed string) (string, error) {
 		return "", err
 	}
 	editor := editorcmd.Resolve()
-	if err := editorcmd.Command(editor, path).Run(); err != nil {
+	cmd, err := editorcmd.Command(editor, path, roots)
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s: %w", editor, err)
 	}
 	b, err := hostopen.PlainReadFile(path, hostopen.ByreCreated)
@@ -94,7 +99,9 @@ func ContextAdd(s Streams, projectDir string, global bool, name, text, file stri
 				seed, existing = cd.Text, true
 			}
 		}
-		edited, err := editProse(seed)
+		// --global edits the machine default and belongs to no project, so the
+		// root set is empty there; a project edit carries its own.
+		edited, err := editProse(seed, boxWritableRootsFor(projectDir))
 		if err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"os"
 	"os/exec"
 	"strings"
@@ -54,7 +55,7 @@ func TestHostPickerRidesControllingTTYWhenStdinBusy(t *testing.T) {
 	}
 	t.Cleanup(func() { f.Close() })
 	openControllingTTY = func() *os.File { return f }
-	if hostPicker(Streams{TTY: false}, "deliver") == nil {
+	if hostPicker(Streams{TTY: false}, "deliver", hostexec.NewRoots()) == nil {
 		t.Fatal("no picker despite a controlling terminal")
 	}
 }
@@ -68,7 +69,7 @@ func TestHostPickerNilWithoutAnyTerminal(t *testing.T) {
 	t.Setenv("DISPLAY", "")
 	t.Setenv("WAYLAND_DISPLAY", "")
 	t.Setenv("SSH_CONNECTION", "r") // darwin: a remote shell has no WindowServer
-	if hostPicker(Streams{TTY: false}, "deliver") != nil {
+	if hostPicker(Streams{TTY: false}, "deliver", hostexec.NewRoots()) != nil {
 		t.Fatal("picker conjured from nothing")
 	}
 }
@@ -128,20 +129,20 @@ func TestPickViewVerbFollowsCaller(t *testing.T) {
 
 func TestGraphicalPickToolDarwinNeedsLocalSession(t *testing.T) {
 	stubClipTools(t, "osascript")
-	if p := graphicalPickTool("darwin", env(map[string]string{"SSH_CONNECTION": "1.2.3.4"}), pickTextFor("deliver")); p != nil {
+	if p := graphicalPickTool("darwin", env(map[string]string{"SSH_CONNECTION": "1.2.3.4"}), pickTextFor("deliver"), hostexec.NewRoots()); p != nil {
 		t.Fatal("SSH'd darwin must not attempt a dialog")
 	}
-	if p := graphicalPickTool("darwin", env(nil), pickTextFor("deliver")); p == nil {
+	if p := graphicalPickTool("darwin", env(nil), pickTextFor("deliver"), hostexec.NewRoots()); p == nil {
 		t.Fatal("local darwin with osascript should offer a dialog")
 	}
 }
 
 func TestGraphicalPickToolLinuxNeedsDisplay(t *testing.T) {
 	stubClipTools(t, "zenity")
-	if p := graphicalPickTool("linux", env(nil), pickTextFor("deliver")); p != nil {
+	if p := graphicalPickTool("linux", env(nil), pickTextFor("deliver"), hostexec.NewRoots()); p != nil {
 		t.Fatal("no DISPLAY/WAYLAND_DISPLAY: no dialog")
 	}
-	if p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver")); p == nil {
+	if p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"), hostexec.NewRoots()); p == nil {
 		t.Fatal("X11 with zenity should offer a dialog")
 	}
 }
@@ -171,7 +172,7 @@ func TestGraphicalPickerToolFailureIsNotCancel(t *testing.T) {
 	clipRunOut = func(name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("zenity: cannot open display")
 	}
-	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"))
+	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"), hostexec.NewRoots())
 	_, ok, err := p(pickSessions())
 	if ok || err == nil {
 		t.Fatalf("broken dialog masqueraded as a choice: ok=%v err=%v", ok, err)
@@ -188,7 +189,7 @@ func TestGraphicalPickerExitOneIsCancel(t *testing.T) {
 	clipRunOut = func(name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("zenity: %w", realErr)
 	}
-	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"))
+	p := graphicalPickTool("linux", env(map[string]string{"DISPLAY": ":0"}), pickTextFor("deliver"), hostexec.NewRoots())
 	_, ok, err := p(pickSessions())
 	if ok || err != nil {
 		t.Fatalf("cancel (exit 1) should be a clean no: ok=%v err=%v", ok, err)

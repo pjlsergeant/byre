@@ -13,6 +13,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/editorcmd"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
@@ -24,8 +25,15 @@ type editorClosedMsg struct{ err error }
 // path, through the shared shell-semantics launcher (editorcmd). On exit,
 // editorClosedMsg triggers a reload from disk (or the prose round-trip,
 // when prosePath is set).
-func openEditor(path string) tea.Cmd {
-	return tea.ExecProcess(editorcmd.Command(editorcmd.Resolve(), path), func(err error) tea.Msg {
+func openEditor(path string, roots hostexec.Roots) tea.Cmd {
+	cmd, err := editorcmd.Command(editorcmd.Resolve(), path, roots)
+	if err != nil {
+		// byre won't launch its own shell out of a directory the box writes.
+		// Reported on the same channel an editor that exited badly uses, so
+		// the screen stays up and the message lands where the user is looking.
+		return func() tea.Msg { return editorClosedMsg{err} }
+	}
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return editorClosedMsg{err}
 	})
 }

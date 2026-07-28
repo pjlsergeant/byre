@@ -13,7 +13,8 @@ import (
 // Deliver, minus the clipboard leg: the landed path prints to stdout, where
 // the user's own shell already is.
 func Grab(s Streams, dir string, opts deliver.Options, boxPath, hostPath string) error {
-	return grabWith(s, dir, opts, boxPath, hostPath, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), hostPicker(s, "grab"))
+	roots := boxWritableRootsFor(dir)
+	return grabWith(s, dir, opts, boxPath, hostPath, installedEngines(roots), os.Getuid(), hostPicker(s, "grab", roots))
 }
 
 func grabWith(s Streams, dir string, opts deliver.Options, boxPath, hostPath string, engines []sessionRunner, uid int, pick func([]deliver.Session) (deliver.Session, bool, error)) error {

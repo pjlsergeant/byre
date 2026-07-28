@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 )
 
 // Host clipboard READ for deliver's no-arg mode. Import priority (ADR
@@ -39,9 +40,12 @@ type clipBackend struct {
 
 const typeFileRefs = "file-refs" // normalized tag for file references
 
-// clipRunOut is the capture-exec seam for read tools. Errors wrap the
-// original (%w), so callers that must distinguish exit codes — a dialog's
-// cancel-exit vs a broken tool — can errors.As their way to the ExitError.
+// clipRunOut is the capture-exec seam for read tools. name is the ABSOLUTE
+// path clipLookPath already resolved, not the tool's name -- probing a name
+// and then executing the name would be two PATH reads with a window between
+// them. Errors wrap the original (%w), so callers that must distinguish exit
+// codes — a dialog's cancel-exit vs a broken tool — can errors.As their way
+// to the ExitError.
 var clipRunOut = func(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	// Children leave the tty's foreground process group: Terminal.app's
@@ -313,11 +317,13 @@ func parseFileRefs(raw string) []string {
 
 // --- platform backends ---
 
-// darwinBackend reads the macOS pasteboard via osascript/pbpaste.
-func darwinBackend() clipBackend {
+// darwinBackend reads the macOS pasteboard via osascript/pbpaste. osa is the
+// resolved osascript the caller already probed for; the other two tools are
+// resolved here, and a tool that won't resolve simply isn't offered.
+func darwinBackend(osa string, roots hostexec.Roots) clipBackend {
 	return clipBackend{
 		listTypes: func() ([]string, error) {
-			out, err := clipReadOut("osascript", "-e", "clipboard info")
+			out, err := clipReadOut(osa, "-e", "clipboard info")
 			if err != nil {
 				return nil, err
 			}
@@ -329,20 +335,24 @@ func darwinBackend() clipBackend {
 				// JXA + NSPasteboard: the one route that yields EVERY file of a
 				// multi-select Finder copy (AppleScript's furl coercion returns
 				// only the first).
-				return clipReadOut("osascript", "-l", "JavaScript", "-e", darwinFileRefsJXA)
+				return clipReadOut(osa, "-l", "JavaScript", "-e", darwinFileRefsJXA)
 			case "image/png":
-				if _, err := clipLookPath("pngpaste"); err == nil {
-					return clipReadOut("pngpaste", "-")
+				if exe, err := clipLookPath("pngpaste", roots); err == nil {
+					return clipReadOut(exe, "-")
 				}
-				return darwinClipData("PNGf")
+				return darwinClipData(osa, "PNGf")
 			case "image/jpeg":
-				return darwinClipData("JPEG")
+				return darwinClipData(osa, "JPEG")
 			case "image/gif":
-				return darwinClipData("GIFf")
+				return darwinClipData(osa, "GIFf")
 			case "image/tiff":
-				return darwinClipData("TIFF")
+				return darwinClipData(osa, "TIFF")
 			case "text/plain":
-				return clipReadOut("pbpaste")
+				exe, err := clipLookPath("pbpaste", roots)
+				if err != nil {
+					return nil, err
+				}
+				return clipReadOut(exe)
 			}
 			return nil, fmt.Errorf("unsupported clipboard type %q", typ)
 		},
@@ -390,8 +400,8 @@ func parseDarwinClipInfo(info string) []string {
 
 // darwinClipData reads binary clipboard data via AppleScript's hex rendering:
 // `the clipboard as «class PNGf»` prints `«data PNGf6789...»`.
-func darwinClipData(class string) ([]byte, error) {
-	out, err := clipReadOut("osascript", "-e", "the clipboard as «class "+class+"»")
+func darwinClipData(osa, class string) ([]byte, error) {
+	out, err := clipReadOut(osa, "-e", "the clipboard as «class "+class+"»")
 	if err != nil {
 		return nil, err
 	}
@@ -409,12 +419,12 @@ func parseDarwinHexData(out, class string) ([]byte, error) {
 
 // linuxBackend reads via wl-paste (Wayland) or xclip (X11), whichever the
 // session offers.
-func linuxBackend(getenv func(string) string) *clipBackend {
+func linuxBackend(getenv func(string) string, roots hostexec.Roots) *clipBackend {
 	if getenv("WAYLAND_DISPLAY") != "" {
-		if _, err := clipLookPath("wl-paste"); err == nil {
+		if exe, err := clipLookPath("wl-paste", roots); err == nil {
 			return &clipBackend{
 				listTypes: func() ([]string, error) {
-					out, err := clipReadOut("wl-paste", "--list-types")
+					out, err := clipReadOut(exe, "--list-types")
 					if err != nil {
 						return nil, err
 					}
@@ -422,18 +432,18 @@ func linuxBackend(getenv func(string) string) *clipBackend {
 				},
 				fetch: func(typ string) ([]byte, error) {
 					if typ == typeFileRefs {
-						return clipReadOut("wl-paste", "--type", "text/uri-list")
+						return clipReadOut(exe, "--type", "text/uri-list")
 					}
-					return clipReadOut("wl-paste", "--type", typ)
+					return clipReadOut(exe, "--type", typ)
 				},
 			}
 		}
 	}
 	if getenv("DISPLAY") != "" {
-		if _, err := clipLookPath("xclip"); err == nil {
+		if exe, err := clipLookPath("xclip", roots); err == nil {
 			return &clipBackend{
 				listTypes: func() ([]string, error) {
-					out, err := clipReadOut("xclip", "-selection", "clipboard", "-t", "TARGETS", "-o")
+					out, err := clipReadOut(exe, "-selection", "clipboard", "-t", "TARGETS", "-o")
 					if err != nil {
 						return nil, err
 					}
@@ -441,12 +451,12 @@ func linuxBackend(getenv func(string) string) *clipBackend {
 				},
 				fetch: func(typ string) ([]byte, error) {
 					if typ == typeFileRefs {
-						return clipReadOut("xclip", "-selection", "clipboard", "-t", "text/uri-list", "-o")
+						return clipReadOut(exe, "-selection", "clipboard", "-t", "text/uri-list", "-o")
 					}
 					if typ == "text/plain" {
-						return clipReadOut("xclip", "-selection", "clipboard", "-o")
+						return clipReadOut(exe, "-selection", "clipboard", "-o")
 					}
-					return clipReadOut("xclip", "-selection", "clipboard", "-t", typ, "-o")
+					return clipReadOut(exe, "-selection", "clipboard", "-t", typ, "-o")
 				},
 			}
 		}
@@ -478,15 +488,15 @@ func normalizeLinuxTypes(listing string) []string {
 
 // hostClipboardReader probes for a read backend; nil means no read path
 // (headless SSH: the paste beat degrades to literal text capture).
-func hostClipboardReader() *clipBackend {
+func hostClipboardReader(roots hostexec.Roots) *clipBackend {
 	switch runtime.GOOS {
 	case "darwin":
-		if _, err := clipLookPath("osascript"); err == nil {
-			cb := darwinBackend()
+		if exe, err := clipLookPath("osascript", roots); err == nil {
+			cb := darwinBackend(exe, roots)
 			return &cb
 		}
 		return nil
 	default:
-		return linuxBackend(os.Getenv)
+		return linuxBackend(os.Getenv, roots)
 	}
 }

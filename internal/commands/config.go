@@ -11,6 +11,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/configui"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -166,6 +167,10 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	}
 
 	var path, title string
+	// The editor's ^e handoff execs a shell; a project edit hands it that
+	// project's box-writable roots, and --global/--layer (which belong to no
+	// project) hand it nothing to decline.
+	var editorRoots hostexec.Roots
 	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
 	var prepare func() error      // deferred store setup, run by the UI before its first write
 	var lockFile string           // the project store's setup lock ("" = no shared contender)
@@ -196,6 +201,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		// and the editor's missing-source note must ask the same tree the
 		// build will.
 		inh.ProjectDir = paths.Canonical
+		editorRoots = boxWritableRoots(paths)
 		// Fail the id-collision check loudly before the editor opens, but defer
 		// the enrolling Bootstrap to write time: opening the editor on a project
 		// byre has never seen and quitting without saving must leave no
@@ -232,7 +238,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	if lockFile != "" {
 		guard = func(write func() error) error { return withSetupLock(s.Err, lockFile, write) }
 	}
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare, guard)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare, guard, editorRoots)
 	if err != nil {
 		return err
 	}

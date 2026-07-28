@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func TestContextAddEditorFlow(t *testing.T) {
 	orig := editProse
 	defer func() { editProse = orig }()
 	var seen string
-	editProse = func(seed string) (string, error) {
+	editProse = func(seed string, _ hostexec.Roots) (string, error) {
 		seen = seed
 		return seed + "From the editor.\n", nil
 	}
@@ -70,7 +71,7 @@ func TestContextAddEditorFlow(t *testing.T) {
 
 	// Emptying the buffer is a refusal pointing at remove, not a silent
 	// empty declaration.
-	editProse = func(string) (string, error) { return "\n", nil }
+	editProse = func(string, hostexec.Roots) (string, error) { return "\n", nil }
 	if err := ContextAdd(s, dir, false, "notes", "", ""); err == nil || !strings.Contains(err.Error(), "byre context remove") {
 		t.Fatalf("empty editor buffer: err = %v", err)
 	}
@@ -149,7 +150,7 @@ func TestContextAddEditorNewNameEmptyNoRemoveHint(t *testing.T) {
 	dir, _, _, s, _ := mcpTestProject(t)
 	orig := editProse
 	defer func() { editProse = orig }()
-	editProse = func(string) (string, error) { return "\n", nil }
+	editProse = func(string, hostexec.Roots) (string, error) { return "\n", nil }
 	err := ContextAdd(s, dir, false, "fresh", "", "")
 	if err == nil || !strings.Contains(err.Error(), "nothing added") {
 		t.Fatalf("new-name empty buffer: err = %v", err)
@@ -174,7 +175,7 @@ func TestContextAddEditorNoopSaysUnchanged(t *testing.T) {
 	errw.Reset()
 	orig := editProse
 	defer func() { editProse = orig }()
-	editProse = func(seed string) (string, error) { return seed, nil }
+	editProse = func(seed string, _ hostexec.Roots) (string, error) { return seed, nil }
 	if err := ContextAdd(s, dir, false, "notes", "", ""); err != nil {
 		t.Fatalf("no-op round trip must not error: %v", err)
 	}

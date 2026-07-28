@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 )
 
 // Host clipboard probing for deliver. Capabilities are probed per-axis and
@@ -22,8 +23,14 @@ import (
 // "clipboard unavailable" and stdout remains the contract.
 
 // Seams for tests: tool lookup, tool execution, and the OSC 52 sink.
+//
+// clipLookPath answers with the ABSOLUTE path to run, and every spawn below
+// runs that path rather than the name it probed for. Probing a name and then
+// executing the name is two PATH reads with a window between them, and it is
+// what let a helper sitting in a directory the box writes be resolved twice
+// over -- the probe rides hostexec, so it is pinned and declined there once.
 var (
-	clipLookPath = exec.LookPath
+	clipLookPath = hostexec.Look
 	clipRunTool  = func(name string, args []string, stdin string) error {
 		cmd := exec.Command(name, args...)
 		// Out of the fg process group, like clipRunOut: keeps clipboard
@@ -40,7 +47,7 @@ var (
 
 // clipboardWriter probes the host for a clipboard write path. goos and env
 // and the OSC 52 sink are parameters so the probe order is unit-testable.
-func clipboardWriter(goos string, getenv func(string) string, osc52 io.Writer) *deliver.Clipboard {
+func clipboardWriter(goos string, getenv func(string) string, osc52 io.Writer, roots hostexec.Roots) *deliver.Clipboard {
 	type tool struct {
 		name string
 		args []string
@@ -59,11 +66,11 @@ func clipboardWriter(goos string, getenv func(string) string, osc52 io.Writer) *
 		}
 	}
 	for _, c := range candidates {
-		if _, err := clipLookPath(c.name); err == nil {
-			c := c
+		if exe, err := clipLookPath(c.name, roots); err == nil {
+			c, exe := c, exe
 			return &deliver.Clipboard{
-				Name:  c.name,
-				Write: func(text string) error { return clipRunTool(c.name, c.args, text) },
+				Name:  c.name, // the NAME is what the user is told; exe is what runs
+				Write: func(text string) error { return clipRunTool(exe, c.args, text) },
 			}
 		}
 	}
@@ -86,10 +93,10 @@ func clipboardWriter(goos string, getenv func(string) string, osc52 io.Writer) *
 // hostClipboardWriter is clipboardWriter wired to the real host: OSC 52 only
 // when stderr is a terminal (the sequence must reach a terminal to mean
 // anything; into a pipe it's just bytes).
-func hostClipboardWriter() *deliver.Clipboard {
+func hostClipboardWriter(roots hostexec.Roots) *deliver.Clipboard {
 	var osc io.Writer
 	if isTTY(os.Stderr) {
 		osc = os.Stderr
 	}
-	return clipboardWriter(runtime.GOOS, os.Getenv, osc)
+	return clipboardWriter(runtime.GOOS, os.Getenv, osc, roots)
 }

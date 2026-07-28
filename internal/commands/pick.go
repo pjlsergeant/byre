@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
@@ -52,7 +53,7 @@ func pickTextFor(verb string) pickText {
 
 // hostPicker picks the adapter for this invocation. verb is "deliver" or
 // "grab" — the shared picker, worded for the caller.
-func hostPicker(s Streams, verb string) func([]deliver.Session) (deliver.Session, bool, error) {
+func hostPicker(s Streams, verb string, roots hostexec.Roots) func([]deliver.Session) (deliver.Session, bool, error) {
 	pt := pickTextFor(verb)
 	if s.TTY {
 		return func(sessions []deliver.Session) (deliver.Session, bool, error) {
@@ -81,7 +82,7 @@ func hostPicker(s Streams, verb string) func([]deliver.Session) (deliver.Session
 			return runPick(tty, out, pt, sessions)
 		}
 	}
-	if tool := graphicalPickTool(runtime.GOOS, os.Getenv, pt); tool != nil {
+	if tool := graphicalPickTool(runtime.GOOS, os.Getenv, pt, roots); tool != nil {
 		return tool
 	}
 	return nil
@@ -207,13 +208,14 @@ func runPick(in *os.File, out io.Writer, pt pickText, sessions []deliver.Session
 // graphicalPickTool probes for a dialog tool; each returned func shows the
 // sessions and maps the answer back. Labels are matched by pickLabel, which
 // is unique per session (workdir ids are unique; container ids break ties).
-func graphicalPickTool(goos string, getenv func(string) string, pt pickText) func([]deliver.Session) (deliver.Session, bool, error) {
+func graphicalPickTool(goos string, getenv func(string) string, pt pickText, roots hostexec.Roots) func([]deliver.Session) (deliver.Session, bool, error) {
 	switch goos {
 	case "darwin":
 		if getenv("SSH_CONNECTION") != "" {
 			return nil // remote shell: no local WindowServer to draw on
 		}
-		if _, err := clipLookPath("osascript"); err != nil {
+		osa, err := clipLookPath("osascript", roots)
+		if err != nil {
 			return nil
 		}
 		return func(sessions []deliver.Session) (deliver.Session, bool, error) {
@@ -222,7 +224,7 @@ func graphicalPickTool(goos string, getenv func(string) string, pt pickText) fun
 				labels[i] = `"` + strings.ReplaceAll(pickRow(s), `"`, `\"`) + `"`
 			}
 			script := fmt.Sprintf(`choose from list {%s} with prompt %q`, strings.Join(labels, ", "), pt.dialog)
-			out, err := clipRunOut("osascript", "-e", script)
+			out, err := clipRunOut(osa, "-e", script)
 			if err != nil {
 				return deliver.Session{}, false, fmt.Errorf("picker dialog: %w", err)
 			}
@@ -232,13 +234,13 @@ func graphicalPickTool(goos string, getenv func(string) string, pt pickText) fun
 		if getenv("DISPLAY") == "" && getenv("WAYLAND_DISPLAY") == "" {
 			return nil
 		}
-		if _, err := clipLookPath("zenity"); err == nil {
+		if zen, err := clipLookPath("zenity", roots); err == nil {
 			return func(sessions []deliver.Session) (deliver.Session, bool, error) {
 				args := []string{"--list", "--title", pt.appTitle, "--text", pt.dialog, "--column", "box"}
 				for _, s := range sessions {
 					args = append(args, pickRow(s))
 				}
-				out, err := clipRunOut("zenity", args...)
+				out, err := clipRunOut(zen, args...)
 				if err != nil {
 					// Exit 1 is the user pressing Cancel; anything else is a
 					// broken dialog and must not masquerade as a choice.
@@ -250,13 +252,13 @@ func graphicalPickTool(goos string, getenv func(string) string, pt pickText) fun
 				return matchPick(sessions, strings.TrimSpace(string(out)))
 			}
 		}
-		if _, err := clipLookPath("kdialog"); err == nil {
+		if kd, err := clipLookPath("kdialog", roots); err == nil {
 			return func(sessions []deliver.Session) (deliver.Session, bool, error) {
 				args := []string{"--menu", pt.dialog}
 				for _, s := range sessions {
 					args = append(args, pickRow(s), pickRow(s)) // tag, label
 				}
-				out, err := clipRunOut("kdialog", args...)
+				out, err := clipRunOut(kd, args...)
 				if err != nil {
 					if exitCode(err) == 1 { // cancel
 						return deliver.Session{}, false, nil

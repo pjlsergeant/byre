@@ -5,6 +5,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/pjlsergeant/byre/internal/hostexec"
 )
 
 // OS notifications are deliver's feedback channel for GRAPHICAL launches
@@ -37,7 +39,7 @@ const notifyTitle = "byre deliver"
 // auto-dismiss ("giving up after"); failures stay until acknowledged. If
 // dialogs are refused in some context (-1713 no-user-interaction), the
 // banner is still attempted as a fallback.
-func notify(goos string, body string, sticky bool) {
+func notify(goos string, body string, sticky bool, roots hostexec.Roots) {
 	switch goos {
 	case "darwin":
 		esc := func(s string) string { // AppleScript string literal escaping
@@ -57,36 +59,40 @@ func notify(goos string, body string, sticky bool) {
 		}
 		script := fmt.Sprintf(`display dialog "%s" with title "%s" buttons {"OK"} default button 1 with icon %s%s`,
 			bodyEsc, esc(notifyTitle), icon, dismiss)
-		if _, err := clipRunOut("osascript", "-e", script); err != nil {
+		osa, err := clipLookPath("osascript", roots)
+		if err != nil {
+			return // no osascript to notify with; the terminal path already ran
+		}
+		if _, err := clipRunOut(osa, "-e", script); err != nil {
 			banner := fmt.Sprintf(`display notification "%s" with title "%s"`, esc(body), esc(notifyTitle))
-			_, _ = clipRunOut("osascript", "-e", banner)
+			_, _ = clipRunOut(osa, "-e", banner)
 		}
 	default:
-		if _, err := clipLookPath("notify-send"); err == nil {
+		if ns, err := clipLookPath("notify-send", roots); err == nil {
 			// -u critical keeps a failure on screen until acknowledged --
 			// the linux spelling of the macOS sticky dialog.
 			urgency := "normal"
 			if sticky {
 				urgency = "critical"
 			}
-			_, _ = clipRunOut("notify-send", "-u", urgency, notifyTitle, body)
+			_, _ = clipRunOut(ns, "-u", urgency, notifyTitle, body)
 		}
 	}
 }
 
 // deliverNotify reports a deliver outcome on the notification channel when —
 // and only when — nothing else reaches the user: no TTY, GUI present.
-func deliverNotify(s Streams, landed []string, err error) {
+func deliverNotify(s Streams, landed []string, err error, roots hostexec.Roots) {
 	if s.TTY || !guiSession(runtime.GOOS, os.Getenv) {
 		return
 	}
 	switch {
 	case err != nil && len(landed) == 0:
-		notify(runtime.GOOS, firstNotifyLine(err.Error()), true)
+		notify(runtime.GOOS, firstNotifyLine(err.Error()), true, roots)
 	case err != nil:
-		notify(runtime.GOOS, fmt.Sprintf("%s — but %s", notifySummary(landed), firstNotifyLine(err.Error())), true)
+		notify(runtime.GOOS, fmt.Sprintf("%s — but %s", notifySummary(landed), firstNotifyLine(err.Error())), true, roots)
 	case len(landed) > 0:
-		notify(runtime.GOOS, notifySummary(landed)+" — path copied to the clipboard", false)
+		notify(runtime.GOOS, notifySummary(landed)+" — path copied to the clipboard", false, roots)
 	}
 }
 

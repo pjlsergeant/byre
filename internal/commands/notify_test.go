@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"strings"
 	"testing"
 )
@@ -33,8 +34,9 @@ func stubRunOut(t *testing.T) *[]string {
 }
 
 func TestNotifyDarwinEscapesAppleScript(t *testing.T) {
+	stubClipTools(t, "osascript") // the notifier resolves its tool before spawning
 	calls := stubRunOut(t)
-	notify("darwin", `path "with" quotes \ and slash`, false)
+	notify("darwin", `path "with" quotes \ and slash`, false, hostexec.NewRoots())
 	if len(*calls) != 1 {
 		t.Fatalf("calls = %v", *calls)
 	}
@@ -48,13 +50,14 @@ func TestNotifyDarwinIsAnAutoDismissingDialog(t *testing.T) {
 	// Field-found: notification banners from bare osascript are
 	// permission-gated and showed NOTHING on a successful Quick Action.
 	// Success = dialog that gives up; failure = sticky dialog.
+	stubClipTools(t, "osascript")
 	calls := stubRunOut(t)
-	notify("darwin", "ok", false)
+	notify("darwin", "ok", false, hostexec.NewRoots())
 	if got := (*calls)[0]; !strings.Contains(got, "display dialog") || !strings.Contains(got, "giving up after 5") ||
 		!strings.Contains(got, "closes itself") {
 		t.Fatalf("success should auto-dismiss AND say so: %q", got)
 	}
-	notify("darwin", "bad", true)
+	notify("darwin", "bad", true, hostexec.NewRoots())
 	if got := (*calls)[1]; !strings.Contains(got, "display dialog") || strings.Contains(got, "giving up") ||
 		strings.Contains(got, "closes itself") || !strings.Contains(got, "icon caution") {
 		t.Fatalf("failure should be sticky and not claim to close: %q", got)
@@ -64,6 +67,7 @@ func TestNotifyDarwinIsAnAutoDismissingDialog(t *testing.T) {
 func TestNotifyDarwinFallsBackToBanner(t *testing.T) {
 	// -1713 territory (no user interaction allowed): the banner is still
 	// attempted so SOME channel gets the outcome.
+	stubClipTools(t, "osascript")
 	orig := clipRunOut
 	t.Cleanup(func() { clipRunOut = orig })
 	var calls []string
@@ -74,7 +78,7 @@ func TestNotifyDarwinFallsBackToBanner(t *testing.T) {
 		}
 		return nil, nil
 	}
-	notify("darwin", "b", false)
+	notify("darwin", "b", false, hostexec.NewRoots())
 	if len(calls) != 2 || !strings.Contains(calls[1], "display notification") {
 		t.Fatalf("no banner fallback: %v", calls)
 	}
@@ -83,8 +87,8 @@ func TestNotifyDarwinFallsBackToBanner(t *testing.T) {
 func TestNotifyLinuxUsesNotifySend(t *testing.T) {
 	stubClipTools(t, "notify-send") // lookup succeeds
 	calls := stubRunOut(t)
-	notify("linux", "/inbox/a.png", false)
-	if len(*calls) != 1 || !strings.HasPrefix((*calls)[0], "notify-send ") {
+	notify("linux", "/inbox/a.png", false, hostexec.NewRoots())
+	if len(*calls) != 1 || !strings.HasPrefix((*calls)[0], "/usr/bin/notify-send ") {
 		t.Fatalf("calls = %v", *calls)
 	}
 }
@@ -92,7 +96,7 @@ func TestNotifyLinuxUsesNotifySend(t *testing.T) {
 func TestNotifyLinuxSilentWithoutTool(t *testing.T) {
 	stubClipTools(t) // nothing available
 	calls := stubRunOut(t)
-	notify("linux", "b", true)
+	notify("linux", "b", true, hostexec.NewRoots())
 	if len(*calls) != 0 {
 		t.Fatalf("should not exec anything: %v", *calls)
 	}

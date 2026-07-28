@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -23,6 +24,10 @@ import (
 const deliverCancelled = "byre: cancelled — nothing delivered"
 
 func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error {
+	// One root set for every host tool this delivery spawns: the engines, the
+	// clipboard and picker helpers, the notifier, and ssh. Resolved from the
+	// cwd's project, since that is the tree a box for it can write.
+	roots := boxWritableRootsFor(dir)
 	// The protocol handshake runs before ANYTHING else — a skewed remote
 	// invocation must fail before discovery, listings, or payload (ADR 0037).
 	if opts.Proto != 0 {
@@ -31,10 +36,10 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 		}
 	}
 	if opts.Boxes {
-		return deliverBoxes(s, dir, opts)
+		return deliverBoxes(s, dir, opts, roots)
 	}
 	if opts.Tar {
-		return deliverTar(s, dir, opts)
+		return deliverTar(s, dir, opts, roots)
 	}
 	// An ssh:// first argument routes the delivery through another machine
 	// running byre (ADR 0037); the remaining arguments are the sources, and
@@ -54,20 +59,20 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 	if !remote && opts.RemoteByre != "" {
 		return fmt.Errorf("--remote-byre only applies to an ssh:// delivery")
 	}
-	sources, err := deliverSources(s, opts, paths, hostClipboardReader())
+	sources, err := deliverSources(s, opts, paths, hostClipboardReader(roots))
 	if err != nil { // cancel arrives as ExitError{1}
-		deliverNotify(s, nil, err)
+		deliverNotify(s, nil, err, roots)
 		return err
 	}
 	var landed []string
 	if remote {
-		landed, err = deliverRemote(s, opts, target, sources)
+		landed, err = deliverRemote(s, opts, target, sources, roots)
 	} else {
-		landed, err = deliverWith(s, dir, opts, sources, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), hostClipboardWriter(), hostPicker(s, "deliver"))
+		landed, err = deliverWith(s, dir, opts, sources, installedEngines(roots), os.Getuid(), hostClipboardWriter(roots), hostPicker(s, "deliver", roots))
 	}
 	// Graphical launches (the deliver app, a .desktop entry) have no terminal
 	// to read: the outcome ALSO goes to the notification center.
-	deliverNotify(s, landed, err)
+	deliverNotify(s, landed, err, roots)
 	return err
 }
 
@@ -75,14 +80,14 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 // and clipboard (selection and the round-trip are local capabilities), the
 // real ssh, and the terminal's TTY-ness for the sending meter. No engines —
 // the boxes are on the far machine.
-func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, sources []deliver.Source) ([]string, error) {
+func deliverRemote(s Streams, opts deliver.Options, target deliver.SSHTarget, sources []deliver.Source, roots hostexec.Roots) ([]string, error) {
 	cfg := deliver.Config{
 		Out:  s.Out,
 		Err:  s.Err,
-		Clip: hostClipboardWriter(),
-		Pick: hostPicker(s, "deliver"),
+		Clip: hostClipboardWriter(roots),
+		Pick: hostPicker(s, "deliver", roots),
 	}
-	landed, err := deliver.RunRemote(cfg, opts, target, sources, sshExec, s.TTY)
+	landed, err := deliver.RunRemote(cfg, opts, target, sources, sshExecWith(roots), s.TTY)
 	if deliver.IsCancelled(err) {
 		fmt.Fprintln(s.Err, deliverCancelled)
 		return landed, ExitError{Code: 1}
@@ -253,8 +258,8 @@ var stdinIsPiped = func() bool {
 // remote delivery (ADR 0037). Stdout carries the line grammar, stderr the
 // notes, and a partial pool exits ExitPartialPool so the caller knows not to
 // auto-pick — the list itself still printed and stays usable.
-func deliverBoxes(s Streams, dir string, opts deliver.Options) error {
-	cfg, err := deliverConfig(s, dir, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), nil, nil)
+func deliverBoxes(s Streams, dir string, opts deliver.Options, roots hostexec.Roots) error {
+	cfg, err := deliverConfig(s, dir, installedEngines(roots), os.Getuid(), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -272,8 +277,8 @@ func deliverBoxes(s Streams, dir string, opts deliver.Options) error {
 // on stdin into the selected box. Normally invoked over ssh by a local byre
 // (which passes --box and --no-clip), but a hand-run works identically:
 // picker, clipboard garnish, and cancel behave as in a plain delivery.
-func deliverTar(s Streams, dir string, opts deliver.Options) error {
-	cfg, err := deliverConfig(s, dir, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), hostClipboardWriter(), hostPicker(s, "deliver"))
+func deliverTar(s Streams, dir string, opts deliver.Options, roots hostexec.Roots) error {
+	cfg, err := deliverConfig(s, dir, installedEngines(roots), os.Getuid(), hostClipboardWriter(roots), hostPicker(s, "deliver", roots))
 	if err != nil {
 		return err
 	}

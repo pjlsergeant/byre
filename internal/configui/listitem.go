@@ -717,7 +717,7 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.prosePath = f.Name()
-			return m, openEditor(m.prosePath)
+			return m, openEditor(m.prosePath, m.editorRoots)
 		}
 	case "ctrl+s":
 		// Global save: accept the open item first — a ^s that silently dropped

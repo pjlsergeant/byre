@@ -7,6 +7,7 @@ package commands
 import (
 	"bytes"
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"io"
 	"os"
 	"os/exec"
@@ -336,7 +337,7 @@ func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
 		}
 		return deliver.Session{}, false, fmt.Errorf("our box %s missing from the remote list: %+v", ids[0], ss)
 	}}
-	landed, err := deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, target, sources, sshExec, false)
+	landed, err := deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, target, sources, sshExecWith(hostexec.NewRoots()), false)
 	if err != nil {
 		t.Fatalf("loopback delivery failed: %v\nstderr: %s", err, errw.String())
 	}
@@ -359,7 +360,7 @@ func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
 
 	// Exit-code translation through a REAL sshd: a missing remote binary is
 	// the shell's 127, and byre must say "PATH", not "exit status".
-	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: "/nonexistent/byre", NoClip: true}, target, sources, sshExec, false)
+	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: "/nonexistent/byre", NoClip: true}, target, sources, sshExecWith(hostexec.NewRoots()), false)
 	if err == nil || !strings.Contains(err.Error(), "ssh PATH") {
 		t.Fatalf("127 translation: err = %v", err)
 	}
@@ -369,7 +370,7 @@ func TestIntegrationDeliverLoopbackSSH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, down, sources, sshExec, false)
+	_, err = deliver.RunRemote(cfg, deliver.Options{RemoteByre: bin, NoClip: true}, down, sources, sshExecWith(hostexec.NewRoots()), false)
 	if err == nil || !strings.Contains(err.Error(), "ssh to") {
 		t.Fatalf("255 translation: err = %v", err)
 	}

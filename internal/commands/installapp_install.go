@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
@@ -47,8 +48,16 @@ func realInstallDeps() (installDeps, error) {
 		goos: runtime.GOOS,
 		home: home,
 		exe:  exe,
+		// installapp runs macOS build tools (osacompile, codesign, touch) over
+		// artifacts under the user's home. It is user-invoked and carries no
+		// project, so the root set is empty and every tool pins silently --
+		// what the resolver buys here is the pin, one PATH read per tool.
 		run: func(name string, args ...string) error {
-			out, err := exec.Command(name, args...).CombinedOutput()
+			exe, lerr := hostexec.Look(name, hostexec.NewRoots())
+			if lerr != nil {
+				return fmt.Errorf("%s: %w", name, lerr)
+			}
+			out, err := exec.Command(exe, args...).CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("%s: %s: %s", name, err, strings.TrimSpace(string(out)))
 			}
