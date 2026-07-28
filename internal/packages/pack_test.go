@@ -343,3 +343,73 @@ text = """
 		t.Errorf("marker-shaped lines = %d, want 3 (string data + author comment + generated):\n%s", got, manifest)
 	}
 }
+
+// A top-level bare key (companion_for, shared_auth_for) is only such while it
+// precedes every table header: TOML scopes a bare key to the most recent
+// header, so the same line emitted after [package] reads as a package.* key,
+// which StripPackageTable removes before the stage-2 parse — the pairing
+// would vanish silently from every packed companion skill.
+func TestPackKeepsTopLevelKeysBeforePackageHeader(t *testing.T) {
+	home := t.TempDir()
+	dir := writeLocalSkill(t, home, "pete/sec", map[string]string{
+		"skill.toml": `# a companion of the codex agent skill
+companion_for = "codex"
+
+[package]
+id = "pete/sec"
+version = "1.0.0"
+requires_byre = ">=1.2.0"
+description = "a companion"
+
+[build]
+apt = ["python3"]
+`,
+	})
+	cat, err := LoadCatalog(home, nil, "v1.2.0", "1.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/sec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, digest1, err := Pack(ent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(first)
+	keyAt := strings.Index(s, `companion_for = "codex"`)
+	hdrAt := strings.Index(s, "[package]")
+	if keyAt < 0 {
+		t.Fatalf("companion_for dropped from packed manifest:\n%s", s)
+	}
+	if keyAt > hdrAt {
+		t.Fatalf("companion_for emitted after [package] (offset %d > %d) — it parses as package.companion_for there:\n%s", keyAt, hdrAt, s)
+	}
+	if !strings.Contains(s, "# a companion of the codex agent skill") {
+		t.Fatalf("comment attached to the top-level key dropped:\n%s", s)
+	}
+
+	// Write the output over the primary (the publishing flow) and pack again.
+	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), first, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err = LoadCatalog(home, nil, "v1.2.0", "1.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err = cat.ResolveName("pete/sec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, digest2, err := Pack(ent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(second) != string(first) {
+		t.Errorf("re-pack changed the manifest:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+	if digest2 != digest1 {
+		t.Errorf("re-pack changed the digest: %s -> %s", digest1, digest2)
+	}
+}

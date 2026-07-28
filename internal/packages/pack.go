@@ -139,7 +139,34 @@ func assembleManifest(m Manifest, kind Kind, raw []byte, entries []FileEntry) []
 		}
 	}
 
-	return []byte(hdr.String() + body + files.String())
+	// The body's leading top-level lines — bare keys like companion_for /
+	// shared_auth_for and their comments — must stay BEFORE the [package]
+	// header: TOML scopes a bare key to the most recent table header, so the
+	// same line emitted after it would read as a package.* key, which
+	// StripPackageTable removes before the stage-2 parse ever sees it.
+	pre, tables := splitLeadingTopLevel(body)
+	pre = strings.TrimRight(pre, " \t\r\n")
+	if pre != "" {
+		pre += "\n\n"
+	}
+	return []byte(pre + hdr.String() + tables + files.String())
+}
+
+// splitLeadingTopLevel splits body at its first top-level table header
+// (multiline-string-aware, same as StripPackageTable). A body with no header
+// at all is all preamble: bare keys are the only thing it can contain, and
+// they must land before the [package] header like any other preamble.
+func splitLeadingTopLevel(body string) (preamble, tables string) {
+	lines := strings.Split(body, "\n")
+	state := tomlOutside
+	for i, line := range lines {
+		atLineStart := state
+		state = state.advance(line)
+		if atLineStart == tomlOutside && strings.HasPrefix(strings.TrimSpace(line), "[") {
+			return strings.Join(lines[:i], "\n"), strings.Join(lines[i:], "\n")
+		}
+	}
+	return body, ""
 }
 
 // packMarker is the comment pack writes above the generated files list.
