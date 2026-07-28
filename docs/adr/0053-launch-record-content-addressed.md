@@ -80,8 +80,12 @@ never ran, with no delta to show for it: `""` on both sides compares equal
 while `FROM` really did move. So `imageRecord` resolves it once, where the
 record is assembled. The comparison normalizes too, but for a different
 population -- that is what keeps a record written BEFORE this rule, holding a
-bare `""`, comparable at all. The `(default: ...)` spelling survives as display
-only.
+bare `""`, comparable at all. For THOSE records the moved-default delta is
+unrecoverable: their `""` reads as today's default on both sides, so the first
+`DefaultBase` change after an upgrade shows no `~ Base` line for boxes
+launched before the rule. Accepted -- the value was never written down, and
+only records written from here on carry it. The `(default: ...)` spelling
+survives as display only.
 
 ### Storage: a store file named by its own hash, pointed at by a label
 

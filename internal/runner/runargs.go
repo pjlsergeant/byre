@@ -35,7 +35,7 @@ type NamedVolume struct {
 type RunParams struct {
 	Image           string
 	Name            string   // container name; makes single-session atomic (engine rejects a dup)
-	Labels          []string // identity labels (byre.project=<id>, byre.workdir=<wt-id>); re-asserted last so run_args can't override them
+	Labels          []string // every byre.* label on the container (identity, client, netns nonce, launch record); re-asserted last so run_args can't override any of them (ADR 0006)
 	WorkspaceHost   string   // worktree dir bound rw at WorkspaceTarget
 	WorkspaceTarget string
 	Env             map[string]string

@@ -415,8 +415,9 @@ lines and flags them as not-introspected, and `byre status --full` shows
 them verbatim.
 
 **`run_args` is last-wins** (ADR 0006): byre's own flags first, `run_args`
-appended last, so a raw flag can override byre's -- except the identity
-labels, re-asserted after it.
+appended last, so a raw flag can override byre's -- except the labels byre
+puts on the container (identity, client pid, netns nonce, launch-record
+address), all re-asserted after it.
 
 There is no full-Dockerfile opt-out: byre either generates the build or
 isn't involved (ADR 0014). A whole hand-written Dockerfile means raw
