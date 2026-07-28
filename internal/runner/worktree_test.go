@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // The create container is minimal and hermetic: its own entrypoint (never the
@@ -67,12 +69,8 @@ func TestWorktreeAddArgsKeepID(t *testing.T) {
 // initWtRepo makes a real repo with one commit for script tests.
 func initWtRepo(t *testing.T) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh not on PATH")
-	}
+	testtools.NeedTool(t, "git")
+	testtools.NeedTool(t, "sh")
 	dir := t.TempDir()
 	for _, args := range [][]string{
 		{"-C", dir, "init", "-q"},
@@ -248,13 +246,14 @@ func TestWorktreeAddScriptFailedAddPreservesExistingRegistration(t *testing.T) {
 // A box image without git gets a loud, actionable message — never a silently
 // missing worktree.
 func TestWorktreeAddScriptNoGit(t *testing.T) {
+	testtools.NeedTool(t, "sh")
 	shPath, err := exec.LookPath("sh")
 	if err != nil {
-		t.Skip("sh not on PATH")
+		t.Fatal(err)
 	}
 	bin := t.TempDir()
 	if err := os.Symlink(shPath, filepath.Join(bin, "sh")); err != nil {
-		t.Skip("cannot symlink sh")
+		testtools.Unavailable(t, "symlink", err)
 	}
 	cmd := exec.Command(filepath.Join(bin, "sh"), "-c", worktreeAddScript)
 	cmd.Env = []string{"PATH=" + bin, "BYRE_WT_MAIN=/x", "BYRE_WT_TARGET=/y", "BYRE_WT_BRANCH=b"}

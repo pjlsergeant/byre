@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func mkClaudeSkillCarrier(name string, decls ...ClaudeSkillDecl) Skill {
@@ -168,7 +169,7 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 	fifo := filepath.Join(base, "fifo")
 	writeClaudeSkill(t, fifo, "fifo", "")
 	if err := syscall.Mkfifo(filepath.Join(fifo, "pipe"), 0o644); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if err := ValidateClaudeSkillDir(fifo, "fifo"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("fifo: %v", err)
@@ -180,7 +181,7 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := syscall.Mkfifo(filepath.Join(fifoSkill, "SKILL.md"), 0o644); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if err := ValidateClaudeSkillDir(fifoSkill, "fifoskill"); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("fifo SKILL.md: %v", err)

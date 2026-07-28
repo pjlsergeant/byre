@@ -67,8 +67,15 @@ jobs:
       # its toolchain installs come back here when it revives.)
       - name: install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
+      # BYRE_REQUIRE_TEST_TOOLS turns the suite's tool/feature skips (git, a
+      # shell, symlinks, FIFOs — internal/testtools) into failures. On a
+      # developer's machine a missing tool is a skip; here the environment is
+      # chosen, so a skip is how a shrunken runner image deletes coverage
+      # while CI keeps reporting green. Ubuntu only for now: this leg is the
+      # authoritative one, and demanding the same set of a runner nobody has
+      # audited would fail for the wrong reason.
       - name: go test
-        run: BYRE_TUI_TESTS=1 go test -race ./...
+        run: BYRE_TUI_TESTS=1 BYRE_REQUIRE_TEST_TOOLS=1 go test -race ./...
 
   # The engine-free tiers (unit suite + tmux TUI tier) on macOS — the OS
   # most byre hosts actually run, previously covered only by daily use.

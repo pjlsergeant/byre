@@ -13,6 +13,8 @@ import (
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func bundledFS() fstest.MapFS {
@@ -344,7 +346,7 @@ func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
 		return dir
 	}
 	if err := syscall.Mkfifo(filepath.Join(mk("fifo"), "skill.toml"), 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if err := os.Symlink("/dev/tty", filepath.Join(mk("linked"), "skill.toml")); err != nil {
 		t.Fatal(err)

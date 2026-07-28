@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func TestMergeScalarOverride(t *testing.T) {
@@ -1345,7 +1346,7 @@ func TestLoadRefusesFifoStoreConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := syscall.Mkfifo(filepath.Join(p.Dir, ProjectConfigName), 0o644); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	done := make(chan error, 1)
 	go func() {

@@ -3,10 +3,11 @@ package commands
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func fixedNow() time.Time {
@@ -190,9 +191,7 @@ func TestReadClipboardAllFetchesFailSurfacesFirstError(t *testing.T) {
 // on nobody, and a compositor that stops answering its own advertised type
 // would otherwise wedge `byre deliver` with no way out but ctrl-C.
 func TestClipReadOutIsBounded(t *testing.T) {
-	if _, err := exec.LookPath("sleep"); err != nil {
-		t.Skip("no sleep on PATH")
-	}
+	testtools.NeedTool(t, "sleep")
 	start := time.Now()
 	_, err := clipReadBounded(50*time.Millisecond, clipMaxOutput, "sleep", "60")
 	if err == nil {
@@ -208,9 +207,7 @@ func TestClipReadOutIsBounded(t *testing.T) {
 
 // Output past the cap fails rather than becoming host memory.
 func TestClipReadOutCapsTheOutput(t *testing.T) {
-	if _, err := exec.LookPath("yes"); err != nil {
-		t.Skip("no yes on PATH")
-	}
+	testtools.NeedTool(t, "yes")
 	_, err := clipReadBounded(time.Minute, 4096, "yes", strings.Repeat("x", 64))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("an unbounded pasteboard must fail, not fill memory: %v", err)
@@ -222,9 +219,7 @@ func TestClipReadOutCapsTheOutput(t *testing.T) {
 // blocked past the deadline that was supposed to end it -- exactly the wedge
 // the bound exists to prevent.
 func TestClipReadOutKillsTheWholeGroup(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh on PATH")
-	}
+	testtools.NeedTool(t, "sh")
 	// The shell exits at once; the backgrounded sleep inherits stdout and would
 	// hold the pipe open for a minute.
 	start := time.Now()

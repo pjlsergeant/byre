@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // runLauncher drives the real embedded launcher under bash with the gate file
@@ -264,9 +266,7 @@ func TestProfileEnvShimRestoresImagePath(t *testing.T) {
 // checkout in the box at first session start. Driven via the
 // BYRE_WORKSPACE_DIR seam against a real --no-checkout worktree.
 func TestLauncherPopulatesPendingWorktree(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	git := func(args ...string) {
@@ -314,9 +314,7 @@ func TestLauncherPopulatesPendingWorktree(t *testing.T) {
 
 // No marker: a normal box start must not touch the working tree.
 func TestLauncherLeavesNonPendingWorktreeAlone(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	dir := t.TempDir()
 	if out, err := exec.Command("git", "init", "-q", dir).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
@@ -364,9 +362,7 @@ func runLauncherInWorktree(t *testing.T, ws string) (int, string) {
 // launcher must say so loudly and KEEP the marker (resumable once git is
 // added), not skip silently into an empty tree.
 func TestLauncherWorktreeNoGitIsLoudAndResumable(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
@@ -429,9 +425,7 @@ func TestLauncherWorktreeNoGitIsLoudAndResumable(t *testing.T) {
 // box deleted, or a checkout that never happened) must surface loudly, not
 // launch silently into emptiness.
 func TestLauncherWarnsUnpopulatedWorktreeWithoutMarker(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {

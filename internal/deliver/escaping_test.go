@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // The arm for the delivery transport's reporting: every line it prints names
@@ -37,12 +39,12 @@ func deliverPayloadTree(t *testing.T, payload string) string {
 	mustWrite(t, filepath.Join(proj, "a.txt"), "A")
 	mustSymlink(t, "../outside", filepath.Join(proj, "escape"+payload))
 	if err := mkfifo(filepath.Join(proj, "pipe")); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	// A top-level non-regular source: deliverPath's own skip line.
 	fifo := filepath.Join(dir, "top"+payload+".pipe")
 	if err := mkfifo(fifo); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if _, err := RunSources(cfg, Options{}, PathSources([]string{proj, fifo})); err != nil {
 		t.Fatalf("delivery failed: %v", err)

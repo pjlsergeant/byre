@@ -13,6 +13,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // shipPreset writes a repo-shipped preset file (byre.preset by default).
@@ -615,7 +616,7 @@ func TestPresetApplyResolvesLayerChainInReview(t *testing.T) {
 func TestPresetStateHostilepresetFileDegrades(t *testing.T) {
 	p, proj := onboardPaths(t)
 	if err := syscall.Mkfifo(filepath.Join(proj, PresetName), 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	done := make(chan string, 1)
 	go func() { s, _ := presetState(proj, p); done <- s }()
@@ -651,7 +652,7 @@ func TestPresetApplyDerivedPathRefusesSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, filepath.Join(proj, PresetName)); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 
 	s, _, _ := testStreams("y\n", true)

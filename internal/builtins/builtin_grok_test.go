@@ -12,6 +12,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // TestGrokSkillPinsLoadBearingFacts pins the grok facts unit tests can hold
@@ -214,11 +215,7 @@ func TestGrokLoginHookStandsDownForSharedAuth(t *testing.T) {
 // shapes (scope-keyed map, refresh_token-bearing OIDC entry) — the same file
 // `GROK_AUTH_PATH` seeding writes.
 func TestGrokAuthBrokerBehavior(t *testing.T) {
-	for _, dep := range []string{"bash", "jq", "flock", "date"} {
-		if _, err := exec.LookPath(dep); err != nil {
-			t.Skipf("%s not on PATH", dep)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq", "flock", "date")
 	_, cat := testCat(t)
 	broker := filepath.Join(skillDir(t, cat, "grok-shared-auth"), "grok-auth-broker.sh")
 
@@ -472,11 +469,7 @@ func TestGrokAuthBrokerBehavior(t *testing.T) {
 // per-box login (refresh_token present) is promoted to the machine store
 // and dropped locally so exactly one copy of the chain exists.
 func TestGrokSharedAuthSeedHookBehavior(t *testing.T) {
-	for _, dep := range []string{"jq", "date", "flock"} {
-		if _, err := exec.LookPath(dep); err != nil {
-			t.Skipf("%s not on PATH", dep)
-		}
-	}
+	testtools.NeedTool(t, "jq", "date", "flock")
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "grok-shared-auth"), "00-grok-shared-auth.sh")
 

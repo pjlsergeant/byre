@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // writeTestContext lays down a small known agent-context file and returns
@@ -28,14 +29,10 @@ func writeTestContext(t *testing.T, dir string) string {
 // canonical mcp.json. This drives the REAL script against the REAL
 // renderer's output (the two halves of the contract), with a stub codex
 // capturing argv — so a format change in either half fails here, not in a
-// live box. Skips where bash or jq is unavailable (the image always has
-// both; CI runners do too).
+// live box. Needs bash and jq, which the image always has and CI runners do
+// too -- so their absence is a skip here and a failure in CI.
 func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 
@@ -110,11 +107,7 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 // combined `command` array, {type:"local"|"remote"}, remote headers expanded
 // to literal values (no by-name tier), local env inherited (no `environment`).
 func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	// A stub opencode that records OPENCODE_CONFIG_CONTENT (empty marker if unset).
@@ -192,11 +185,7 @@ func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
 // A pre-existing OPENCODE_CONFIG_CONTENT is preserved and byre's servers
 // deep-merge ON TOP (additive), not clobbered.
 func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	envFile := filepath.Join(dir, "env")
@@ -250,11 +239,7 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 // unbound-variable trip on the empty array); the context injection is
 // UNCONDITIONAL (the baked file always exists), so exactly one -c remains.
 func TestCodexMCPLaunchWrapperEmptySet(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	argvFile := filepath.Join(dir, "argv")
@@ -281,11 +266,7 @@ func TestCodexMCPLaunchWrapperEmptySet(t *testing.T) {
 // injection is UNCONDITIONAL (ADR 0046), so OPENCODE_CONFIG_CONTENT is now
 // always set, carrying exactly the instructions entry.
 func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	envFile := filepath.Join(dir, "env")
@@ -324,9 +305,7 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 // killing the exec (MAX_ARG_STRLEN binds far
 // under byre's uncapped-but-tiered context bounds).
 func TestGrokLaunchWrapperInjectsAndCaps(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash unavailable")
-	}
+	testtools.NeedTool(t, "bash")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	argvFile := filepath.Join(dir, "argv")
@@ -378,11 +357,7 @@ func TestGrokLaunchWrapperInjectsAndCaps(t *testing.T) {
 
 // The codex wrapper shares the argv cap (same MAX_ARG_STRLEN exposure).
 func TestCodexLaunchWrapperCapsContext(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
@@ -415,11 +390,7 @@ func TestCodexLaunchWrapperCapsContext(t *testing.T) {
 // A user's non-array `instructions` (bare string) coerces instead of
 // bricking the launch on a jq type error.
 func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	envFile := filepath.Join(dir, "env")
@@ -457,9 +428,7 @@ func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
 // and let UTF-8 slip past to a dead exec). And the session additions append
 // AFTER the disclosure, never silently dropped by the truncation.
 func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash unavailable")
-	}
+	testtools.NeedTool(t, "bash")
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
@@ -535,11 +504,7 @@ func TestGrokSkillChmodsLaunchWrapper(t *testing.T) {
 // The codex wrapper shares the byte-cap + session-survival algorithm; its
 // own fixture so a codex-only edit can't regress it.
 func TestCodexLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
-	for _, bin := range []string{"bash", "jq"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s unavailable", bin)
-		}
-	}
+	testtools.NeedTool(t, "bash", "jq")
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"

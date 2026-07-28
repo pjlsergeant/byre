@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // fakeSSH scripts one response per remote invocation, records what was
@@ -405,7 +407,7 @@ func TestPackNothingDeliverable(t *testing.T) {
 	cfg, _, errw := remoteConfig()
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := mkfifo(fifo); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	_, err := RunRemote(cfg, Options{Box: "abc"}, SSHTarget{Host: "far"}, PathSources([]string{fifo}), ssh.exec, false)
 	if err == nil || !strings.Contains(err.Error(), "nothing deliverable") {
@@ -430,7 +432,7 @@ func TestPackSkipsSymlinkToFifoInTree(t *testing.T) {
 	mustWrite(t, filepath.Join(sub, "notes.txt"), "n")
 	fifo := filepath.Join(dir, "pipe")
 	if err := mkfifo(fifo); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if err := os.Symlink(fifo, filepath.Join(sub, "pipelink")); err != nil {
 		t.Fatal(err)

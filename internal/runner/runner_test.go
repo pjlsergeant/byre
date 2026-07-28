@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // fakeLook returns a LookPath that "finds" only the named binaries.
@@ -170,9 +172,7 @@ func TestIsRootlessPodman(t *testing.T) {
 // goroutine racing a live box, so "waits forever" there means the agent parks
 // at the launch gate with nothing coming.
 func TestCaptureBoundedKillsAChildThatNeverAnswers(t *testing.T) {
-	if _, err := exec.LookPath("sleep"); err != nil {
-		t.Skip("no sleep on PATH")
-	}
+	testtools.NeedTool(t, "sleep")
 	start := time.Now()
 	_, err := captureBoundedExec(50*time.Millisecond, "sleep", "60")
 	if err == nil {
@@ -271,9 +271,7 @@ func TestHelperRefusesToStartWithoutACleanupHandle(t *testing.T) {
 // The stdout cap is real: a child that floods it fails rather than becoming
 // byre's memory. These calls answer with an id, a mode or a gid.
 func TestCaptureBoundedCapsOutput(t *testing.T) {
-	if _, err := exec.LookPath("yes"); err != nil {
-		t.Skip("no yes on PATH")
-	}
+	testtools.NeedTool(t, "yes")
 	// captureBoundedMax is 8 MiB; `yes` fills it in well under the bound.
 	_, err := captureBoundedExec(2*time.Minute, "yes", strings.Repeat("x", 4096))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
@@ -291,9 +289,7 @@ func TestCaptureBoundedCapsOutput(t *testing.T) {
 // signal -- a group that died closes the pipes at once, so a call that instead
 // takes waitDelay to return is one WaitDelay rescued rather than the kill.
 func TestCaptureBoundedKillsTheWholeGroup(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh on PATH")
-	}
+	testtools.NeedTool(t, "sh")
 	marker := filepath.Join(t.TempDir(), "descendant-lived")
 	start := time.Now()
 	_, err := captureBoundedExec(150*time.Millisecond, "sh", "-c",

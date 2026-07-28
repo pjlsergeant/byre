@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func TestPublishFileWritesAndLeavesNoStagedFile(t *testing.T) {
@@ -33,7 +35,7 @@ func TestPublishFileReplacesASymlinkRatherThanWritingThroughIt(t *testing.T) {
 	}
 	p := filepath.Join(dir, "record")
 	if err := os.Symlink(victim, p); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := PublishFile(p, "byre wrote this\n", 0o600); err != nil {
 		t.Fatal(err)
@@ -80,7 +82,7 @@ func TestPublishFileExclusiveRefusesASymlinkedName(t *testing.T) {
 	}
 	p := filepath.Join(dir, "record")
 	if err := os.Symlink(victim, p); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := PublishFileExclusive(p, "byre wrote this\n", 0o600); err == nil {
 		t.Fatal("an existing name must be refused even when it is a symlink")
@@ -179,7 +181,7 @@ func TestPublishThroughASymlinkedDirectory(t *testing.T) {
 	}
 	link := filepath.Join(base, "link")
 	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := PublishFile(filepath.Join(link, "record"), "x\n", 0o600); err != nil {
 		t.Fatalf("publishing through a symlinked directory: %v", err)

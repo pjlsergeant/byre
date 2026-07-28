@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func TestWorktreeLeaf(t *testing.T) {
@@ -23,9 +24,7 @@ func TestWorktreeLeaf(t *testing.T) {
 // worktreeParent resolves the three worktree_base states: unset (refuse),
 // "sibling" (beside the repo), and a path (under it).
 func TestWorktreeParent(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	repo := initRepo(t)
 	canon, _ := project.Canonicalize(repo)
 	home := t.TempDir()
@@ -77,9 +76,7 @@ func TestWorktreeRefusesWithoutLocation(t *testing.T) {
 // hosts; the host-side probes and the tests' own fixtures use it).
 func initRepo(t *testing.T) string {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	dir := t.TempDir()
 	for _, args := range [][]string{
 		{"-C", dir, "init", "-q"},
@@ -93,9 +90,7 @@ func initRepo(t *testing.T) string {
 }
 
 func TestGitToplevel(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	if _, ok := gitToplevel(t.TempDir()); ok {
 		t.Error("empty dir reported as a git repo")
 	}

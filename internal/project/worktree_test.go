@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // makeWorktree fabricates git's on-disk worktree layout (no git binary needed):
@@ -205,7 +207,7 @@ func TestDetectWorktreeMountsStructuralPathNotSymlinkedCommondir(t *testing.T) {
 	// what we plant as commondir content.
 	link := filepath.Join(t.TempDir(), "commonlink")
 	if err := os.Symlink(realCommon, link); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	gd := filepath.Join(realCommon, "worktrees", "wt")
 	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte(link+"\n"), 0o644); err != nil {
@@ -251,7 +253,7 @@ func TestDetectWorktreeHostPathResolvesSymlinkedGitDir(t *testing.T) {
 	// THROUGH it, so structCommon = <link>/.git has a symlink component.
 	link := filepath.Join(root, "link")
 	if err := os.Symlink(realBase, link); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	gdViaLink := filepath.Join(link, ".git", "worktrees", "wt")
 	if err := os.WriteFile(filepath.Join(gd, "commondir"), []byte("../..\n"), 0o644); err != nil {
@@ -335,7 +337,7 @@ func detectWithTimeout(t *testing.T, dir string) (worktreeInfo, bool, error) {
 func TestDetectWorktreeDotGitFifoDoesNotBlock(t *testing.T) {
 	dir := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(dir, ".git"), 0o644); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	_, ok, err := detectWithTimeout(t, dir)
 	if err != nil {
@@ -386,12 +388,12 @@ func TestDetectWorktreeHostileMetadataFiles(t *testing.T) {
 	}{
 		{"fifo", func(t *testing.T, path string, _ []byte) {
 			if err := syscall.Mkfifo(path, 0o644); err != nil {
-				t.Skipf("mkfifo unavailable: %v", err)
+				testtools.Unavailable(t, "mkfifo", err)
 			}
 		}},
 		{"symlink-to-dev-zero", func(t *testing.T, path string, _ []byte) {
 			if err := os.Symlink("/dev/zero", path); err != nil {
-				t.Skipf("symlink unavailable: %v", err)
+				testtools.Unavailable(t, "symlink", err)
 			}
 		}},
 		{"symlink-to-valid-content", func(t *testing.T, path string, valid []byte) {
@@ -403,7 +405,7 @@ func TestDetectWorktreeHostileMetadataFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := os.Symlink(target, path); err != nil {
-				t.Skipf("symlink unavailable: %v", err)
+				testtools.Unavailable(t, "symlink", err)
 			}
 		}},
 		{"oversized", func(t *testing.T, path string, valid []byte) {
@@ -458,7 +460,7 @@ func TestReadMetaFile(t *testing.T) {
 	t.Run("fifo", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "f")
 		if err := syscall.Mkfifo(path, 0o644); err != nil {
-			t.Skipf("mkfifo unavailable: %v", err)
+			testtools.Unavailable(t, "mkfifo", err)
 		}
 		done := make(chan error, 1)
 		go func() {
@@ -482,7 +484,7 @@ func TestReadMetaFile(t *testing.T) {
 		}
 		path := filepath.Join(dir, "link")
 		if err := os.Symlink(target, path); err != nil {
-			t.Skipf("symlink unavailable: %v", err)
+			testtools.Unavailable(t, "symlink", err)
 		}
 		if _, _, err := readMetaFile(path); !errors.Is(err, syscall.ELOOP) {
 			t.Fatalf("want ELOOP for a symlink, got %v", err)

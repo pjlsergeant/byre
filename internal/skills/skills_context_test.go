@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func TestResolveContextFromFile(t *testing.T) {
@@ -266,7 +267,7 @@ func TestLoadHostileContextFileFailsNotBlocks(t *testing.T) {
 	home := testHome(t)
 	writeSkill(t, home, "evilctx", "[context]\nfile = \"context.md\"\n", nil)
 	if err := syscall.Mkfifo(filepath.Join(home, "skills", "evilctx", "context.md"), 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	cat := catFor(t, home)
 	done := make(chan error, 1)

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // fakeEngine is a configurable Engine. Its ExecInput understands the three
@@ -237,9 +239,7 @@ func TestRunSurfacesUniquifiedName(t *testing.T) {
 // ln-EEXIST uniquify picks the next free -k name, the content lands there,
 // and the noclobber temp is cleaned up.
 func TestFileClaimLoop(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh on PATH")
-	}
+	testtools.NeedTool(t, "sh")
 	d := t.TempDir()
 	for _, existing := range []string{"report.pdf", "report-2.pdf"} {
 		if err := os.WriteFile(filepath.Join(d, existing), []byte("old"), 0o644); err != nil {
@@ -375,7 +375,7 @@ func TestSymlinkToFifoInTreeSkipped(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "real.txt"), "R")
 	fifo := filepath.Join(dir, "pipe")
 	if err := mkfifo(fifo); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if err := os.Symlink(fifo, filepath.Join(root, "pipelink")); err != nil {
 		t.Fatal(err)
@@ -546,7 +546,7 @@ func TestInteriorSymlinkToFifoDoesNotBlock(t *testing.T) {
 	mustMkdir(t, root)
 	mustWrite(t, filepath.Join(root, "real.txt"), "R")
 	if err := mkfifo(filepath.Join(root, "pipe")); err != nil { // FIFO inside the tree
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	if err := os.Symlink("pipe", filepath.Join(root, "pipelink")); err != nil { // relative → contained
 		t.Fatal(err)
@@ -577,7 +577,7 @@ func TestTopLevelSymlinkToFifoDoesNotBlock(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "pipe")
 	if err := mkfifo(fifo); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	link := filepath.Join(dir, "namedlink")
 	if err := os.Symlink(fifo, link); err != nil {
@@ -604,7 +604,7 @@ func TestFifoSkippedWithNote(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "pipe")
 	if err := mkfifo(fifo); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	landed, err := RunSources(cfg, Options{}, PathSources([]string{fifo}))
 	if err != nil {

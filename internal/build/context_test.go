@@ -18,6 +18,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func bootstrapped(t *testing.T) project.Paths {
@@ -86,7 +87,7 @@ func TestAssembleRefusesSymlinkedContextRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(victim, paths.ContextDir); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 
 	if _, err := Assemble(paths, config.Config{}, skills.Resolved{}); err == nil {
@@ -123,7 +124,7 @@ func TestAssembleRefusesInStoreSymlinkedContextRoot(t *testing.T) {
 	}
 	// RELATIVE target: this is the shape os.Root follows, the actual hole.
 	if err := os.Symlink("sibling", paths.ContextDir); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 
 	if _, err := Assemble(paths, config.Config{}, skills.Resolved{}); err == nil {
@@ -151,7 +152,7 @@ func TestAssembleNeutralizesSymlinkedContextChild(t *testing.T) {
 	// context/ is a real dir; context/files is a symlink to the victim.
 	filesLink := filepath.Join(paths.ContextDir, "files")
 	if err := os.Symlink(victim, filesLink); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	// A `files` entry so staging must write under files/ this build.
 	if err := os.WriteFile(filepath.Join(paths.Canonical, "seed.txt"), []byte("hi"), 0o644); err != nil {
@@ -550,7 +551,7 @@ func copyWithin(t *testing.T, src, dst string) error {
 func TestCopyPathRejectsInteriorFIFO(t *testing.T) {
 	src := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(src, "pipe"), 0o644); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	err := copyWithin(t, src, filepath.Join(t.TempDir(), "staged"))
 	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
@@ -565,7 +566,7 @@ func TestCopyPathRejectsInteriorFIFO(t *testing.T) {
 func TestCopyPathRejectsTopLevelFIFO(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
-		t.Skipf("mkfifo unavailable: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	err := copyWithin(t, fifo, filepath.Join(t.TempDir(), "staged"))
 	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
@@ -628,7 +629,7 @@ func TestCopyPathRejectsInteriorSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("real", filepath.Join(src, "link")); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	dr, base := dstAt(t, filepath.Join(t.TempDir(), "staged"))
 	if err := copyPath(src, dr, base, nil); err == nil {
@@ -655,14 +656,14 @@ func TestCopyPathRejectsEscapingSymlinkComponents(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := os.Symlink(outside, filepath.Join(src, "a", "leak")); err != nil {
-				t.Skipf("symlink unavailable: %v", err)
+				testtools.Unavailable(t, "symlink", err)
 			}
 		}},
 		{"intermediate-component", func(t *testing.T, src string) {
 			// `a` is itself a symlink to an external directory; the walk must
 			// reject it before descending, not follow it to enumerate outside.
 			if err := os.Symlink(t.TempDir(), filepath.Join(src, "a")); err != nil {
-				t.Skipf("symlink unavailable: %v", err)
+				testtools.Unavailable(t, "symlink", err)
 			}
 		}},
 	} {
@@ -689,7 +690,7 @@ func TestCopyPathRejectsTopLevelDirSymlink(t *testing.T) {
 	}
 	link := filepath.Join(t.TempDir(), "assets")
 	if err := os.Symlink(external, link); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	dst := filepath.Join(t.TempDir(), "staged")
 	dr, base := dstAt(t, dst)
@@ -713,7 +714,7 @@ func TestCopyRootedEntryRefusesEscapingAncestor(t *testing.T) {
 	}
 	// `sub` inside the root is a symlink to an external directory.
 	if err := os.Symlink(external, filepath.Join(projRoot, "sub")); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	root, err := os.OpenRoot(projRoot)
 	if err != nil {
@@ -738,7 +739,7 @@ func TestAssembleFilesFollowsUserNamedTopLevelSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("real.txt", filepath.Join(paths.Canonical, "link.txt")); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if _, err := Assemble(paths, config.Config{Base: "debian:bookworm", Files: map[string]string{"link.txt": "/opt/x"}}, skills.Resolved{}); err != nil {
 		t.Fatalf("a user-named top-level symlink source must be followed, got: %v", err)
@@ -800,7 +801,7 @@ func TestAgentWritableRelResolvesAlias(t *testing.T) {
 	}
 	alias := filepath.Join(t.TempDir(), "linkproj")
 	if err := os.Symlink(real, alias); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	aliased := filepath.Join(alias, "a", "myskill")
 	// Lexical-only would miss it.
@@ -816,7 +817,7 @@ func TestAgentWritableRelResolvesAlias(t *testing.T) {
 	// anchored (lexical match wins), so os.Root refuses it — not demoted to the
 	// by-pathname copyPath route by resolving first.
 	if err := os.Symlink(string(filepath.Separator)+"etc", filepath.Join(real, "sub")); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	rel, ok = agentWritableRel(real, filepath.Join(real, "sub", "passwd"))
 	if !ok || rel != filepath.Join("sub", "passwd") {

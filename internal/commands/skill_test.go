@@ -2,6 +2,7 @@ package commands
 
 import (
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/testtools"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -62,7 +63,7 @@ func TestCopyDirFollowsLinksRefusesIrregulars(t *testing.T) {
 
 	src2 := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(src2, "pipe"), 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	dst2 := filepath.Join(t.TempDir(), "dst")
 	done := make(chan error, 1)
@@ -92,7 +93,7 @@ func TestForkFailureLeavesNoDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := syscall.Mkfifo(filepath.Join(srcDir, "pipe"), 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	s, _, _ := testStreams("", false)
 	if err := PackageFork(s, packages.KindSkill, "pete/tool", "me/fork"); err == nil {

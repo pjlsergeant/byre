@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // --- flow tests (fake engine) ---
@@ -458,9 +460,7 @@ func TestBoxAbs(t *testing.T) {
 
 func needSh(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh on PATH")
-	}
+	testtools.NeedTool(t, "sh")
 }
 
 func runScript(t *testing.T, script string, args ...string) (string, string, error) {

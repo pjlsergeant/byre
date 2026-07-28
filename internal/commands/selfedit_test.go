@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // unifiedDiff itself is the upstream-tested gopls differ; these pin the
@@ -141,7 +143,7 @@ func TestReportSelfEditChanges(t *testing.T) {
 		}
 		before := snapshotStore(fifoDir)
 		if err := syscall.Mkfifo(filepath.Join(fifoDir, "pipe"), 0o644); err != nil {
-			t.Skipf("mkfifo unsupported here: %v", err)
+			testtools.Unavailable(t, "mkfifo", err)
 		}
 		var out bytes.Buffer
 		// A plain os.Open of the FIFO would block forever; the report must
@@ -186,7 +188,7 @@ func TestReportSelfEditChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := syscall.Mkfifo(cfgp, 0o644); err != nil {
-			t.Skipf("mkfifo unsupported here: %v", err)
+			testtools.Unavailable(t, "mkfifo", err)
 		}
 		var out bytes.Buffer
 		reportSelfEditChanges(&out, fdir, before)

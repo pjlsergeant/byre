@@ -7,6 +7,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func tlsFetcher(t *testing.T, mux http.Handler) (*Fetcher, string) {
@@ -201,7 +203,7 @@ func TestFetchLocalManifestRejectsNonRegular(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "skill.toml")
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	var f Fetcher
 	// Must error immediately — the old Stat-then-ReadFile path blocked
@@ -239,7 +241,7 @@ func TestFetchLocalPayloadRejectsNonRegular(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("[package]\n"), 0o644)
 	if err := syscall.Mkfifo(filepath.Join(dir, "hook.sh"), 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	var f Fetcher
 	_, src, err := f.FetchManifest(filepath.Join(dir, "skill.toml"))

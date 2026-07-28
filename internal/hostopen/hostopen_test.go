@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func TestOpenRegularAcceptsRegularAndReadsIt(t *testing.T) {
@@ -33,7 +35,7 @@ func TestOpenRegularAcceptsRegularAndReadsIt(t *testing.T) {
 func TestOpenRegularRejectsFIFOImmediately(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "fifo")
 	if err := syscall.Mkfifo(p, 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	// The whole point: this returns (a plain O_RDONLY open of a FIFO with
 	// no writer blocks forever), and it returns ErrNotRegular.
@@ -191,7 +193,7 @@ func TestReadFileBoundedRefusalBranches(t *testing.T) {
 	t.Run("a FIFO is refused, not blocked on", func(t *testing.T) {
 		p := filepath.Join(dir, "fifo")
 		if err := syscall.Mkfifo(p, 0o644); err != nil {
-			t.Skipf("mkfifo unavailable: %v", err)
+			testtools.Unavailable(t, "mkfifo", err)
 		}
 		if _, err := ReadFileBounded(p, false, 1<<20); !errors.Is(err, ErrNotRegular) {
 			t.Errorf("a FIFO must be refused as not-regular, got %v", err)
@@ -263,7 +265,7 @@ func TestOpenLockFileRefusesASymlinkedName(t *testing.T) {
 	}
 	lockPath := filepath.Join(dir, "lock")
 	if err := os.Symlink(victim, lockPath); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	f, _, err := OpenLockFile(lockPath)
 	if err == nil {
@@ -281,7 +283,7 @@ func TestOpenLockFileRefusesASymlinkedName(t *testing.T) {
 func TestOpenLockFileRefusesAFIFOWithoutHanging(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "lock")
 	if err := syscall.Mkfifo(p, 0o644); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		testtools.Unavailable(t, "mkfifo", err)
 	}
 	f, _, err := OpenLockFile(p)
 	if err == nil {
@@ -343,7 +345,7 @@ func TestSameFileAt(t *testing.T) {
 	}
 	link := filepath.Join(dir, "link")
 	if err := os.Symlink(p, link); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if ok, err := SameFileAt(link, held); err != nil || ok {
 		t.Fatalf("symlink to the held inode: ok=%v err=%v, want false, nil", ok, err)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // exitRepo makes a standalone git checkout and returns Paths shaped as develop
@@ -19,9 +20,7 @@ import (
 // path, never whole sentences (CLAUDE.md).
 func exitRepo(t *testing.T) (project.Paths, string) {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	testtools.NeedTool(t, "git")
 	dir := t.TempDir()
 	// macOS /var -> /private/var: the report renders paths against WorkDir, so
 	// an unresolved temp dir would make every path print absolute.
@@ -299,7 +298,7 @@ func TestExitReportHostileFilesystem(t *testing.T) {
 		paths, dir := exitRepo(t)
 		fifo := filepath.Join(dir, ".git", "hooks", "pre-commit")
 		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-			t.Skipf("mkfifo unsupported: %v", err)
+			testtools.Unavailable(t, "mkfifo", err)
 		}
 		done := make(chan string, 1)
 		go func() { done <- exitReport(t, paths, func() {}) }()
@@ -319,7 +318,7 @@ func TestExitReportHostileFilesystem(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(outside, hooks); err != nil {
-			t.Skipf("symlink unsupported: %v", err)
+			testtools.Unavailable(t, "symlink", err)
 		}
 		if got := exitReport(t, paths, func() {}); strings.Contains(got, "secret-hook") {
 			t.Errorf("followed a swapped hooks symlink out of the tree:\n%s", got)

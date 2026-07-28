@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func writeLocalSkill(t *testing.T, home, id string, files map[string]string) string {
@@ -112,7 +114,7 @@ requires_byre = ">=0.1.0"
 `,
 	})
 	if err := os.Symlink("/etc/passwd", filepath.Join(dir, "link")); err != nil {
-		t.Skip("symlinks unavailable")
+		testtools.Unavailable(t, "symlink", err)
 	}
 	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
 	if err != nil {

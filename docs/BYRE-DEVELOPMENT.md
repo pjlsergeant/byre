@@ -86,6 +86,25 @@ re-install; the next `byre develop` rebuild picks it up. Two caveats:
 - `version` in `[package]` is display metadata; bump it on meaningful edits
   (replacement itself keys on the digest).
 
+## Test dependencies: skip here, fail in CI
+
+Plenty of unit tests need something of the machine -- `git`, a POSIX
+shell, `bash`+`jq`, a filesystem that makes symlinks or FIFOs. They skip
+when it isn't there, via `internal/testtools` (`NeedTool`,
+`Unavailable`), so a minimal container doesn't fail a suite over a tool
+nobody promised it. CI is the opposite case: the environment is chosen,
+and a skip is how a shrunken runner image deletes coverage while the
+suite still reports green. So the ubuntu unit job sets
+`BYRE_REQUIRE_TEST_TOOLS=1` and every one of those skips becomes a
+failure naming the missing dependency -- ADR 0038's gate-set-without-the-
+tool rule, pointed at the unit suite. Set it locally to see what your
+machine is not covering.
+
+Skips that turn on the OS's own semantics -- a check root doesn't fail, a
+backend only Linux has -- stay plain `t.Skip`: no CI image can supply
+those, and demanding them would just make the suite unrunnable where it
+legitimately differs.
+
 ## The inttest VM
 
 Engine-touching tests can't run in the box (no engine; bind mounts resolve

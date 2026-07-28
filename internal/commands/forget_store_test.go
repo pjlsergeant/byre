@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // forget's store clear is the most destructive loop byre has: enumerate a
@@ -24,7 +26,7 @@ func TestClearStoreContentsRefusesASymlinkedStoreDir(t *testing.T) {
 	}
 	store := filepath.Join(base, "store")
 	if err := os.Symlink(victim, store); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 
 	if err := clearStoreContents(store); err == nil {

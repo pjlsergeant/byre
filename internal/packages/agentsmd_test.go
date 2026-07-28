@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // EnsureStore lands the byre-owned AGENTS.md at the store root and keeps it
@@ -159,7 +161,7 @@ func TestEnsureAgentsMDNeverWritesThroughSymlink(t *testing.T) {
 	}
 	path := filepath.Join(home, "AGENTS.md")
 	if err := os.Symlink(target, path); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := EnsureStore(home, nil, "test", nil); err != nil {
 		t.Fatalf("EnsureStore: %v", err)

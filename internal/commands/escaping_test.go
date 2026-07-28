@@ -10,6 +10,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // The arm for the reporting surfaces that print byre's own words around
@@ -183,7 +184,7 @@ func TestSelfEditReportEscapesStoreContent(t *testing.T) {
 	out := report(t, dir, func() {
 		mustWriteFile(t, cfg, []byte("base = \"node:22\"\nagent = \""+escOSC+"claude\"\n"), 0o644)
 		if err := os.WriteFile(planted, []byte("#!/bin/sh\n"), 0o644); err != nil {
-			t.Skipf("filesystem rejects a control character in a filename: %v", err)
+			testtools.Unavailable(t, "control characters in filenames", err)
 		}
 	})
 

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 func TestExistsNoFollowThreeStates(t *testing.T) {
@@ -24,7 +26,7 @@ func TestExistsNoFollowThreeStates(t *testing.T) {
 	// though following it would report nothing there.
 	dangling := filepath.Join(dir, "dangling")
 	if err := os.Symlink(filepath.Join(dir, "nowhere"), dangling); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if ok, err := ExistsNoFollow(dangling); !ok || err != nil {
 		t.Fatalf("dangling symlink: ok=%v err=%v, want true, nil", ok, err)
@@ -57,7 +59,7 @@ func TestStatNoFollowDescribesTheLinkNotItsTarget(t *testing.T) {
 	}
 	link := filepath.Join(dir, "link")
 	if err := os.Symlink(target, link); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	fi, err := StatNoFollow(link)
 	if err != nil {
@@ -79,7 +81,7 @@ func TestReadDirNoFollowRefusesASymlinkedDirectory(t *testing.T) {
 	}
 	store := filepath.Join(base, "store")
 	if err := os.Symlink(victim, store); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if _, err := ReadDirNoFollow(store); err == nil {
 		t.Fatal("listing through a symlinked directory must be refused")
@@ -132,7 +134,7 @@ func TestMkdirAllInRefusesASymlinkedTailComponent(t *testing.T) {
 	}
 	// byre's own store directory, replaced with a link out of the store.
 	if err := os.Symlink(elsewhere, filepath.Join(parent, "projects", "proj-abc123")); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := MkdirAllIn(parent, filepath.Join("projects", "proj-abc123", "context"), 0o755); err == nil {
 		t.Fatal("a symlinked store component must be refused")
@@ -152,7 +154,7 @@ func TestMkdirAllInFollowsASymlinkedParent(t *testing.T) {
 	}
 	link := filepath.Join(base, "link")
 	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := MkdirAllIn(link, "proj-abc123", 0o755); err != nil {
 		t.Fatalf("symlinked parent must still work: %v", err)
@@ -175,7 +177,7 @@ func TestOpenChildNoFollowRefusesAContainedSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("target", filepath.Join(parent, "child")); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	root, err := os.OpenRoot(parent)
 	if err != nil {
@@ -196,7 +198,7 @@ func TestMkdirAllInRefusesAContainedSymlinkComponent(t *testing.T) {
 	}
 	// Contained, so os.Root resolves it: only the descent's own check refuses.
 	if err := os.Symlink("target", filepath.Join(parent, "projects", "proj-abc123")); err != nil {
-		t.Skipf("symlink: %v", err)
+		testtools.Unavailable(t, "symlink", err)
 	}
 	if err := MkdirAllIn(parent, filepath.Join("projects", "proj-abc123", "context"), 0o755); err == nil {
 		t.Fatal("a contained symlink at a store component must be refused")
