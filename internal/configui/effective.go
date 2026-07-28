@@ -69,6 +69,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.filesRows()
 	case fSkillFiles:
 		return m.skillFilesRows()
+	case fSources:
+		return m.sourceRows()
 	case fMounts:
 		return m.mountRows()
 	case fVolumes:
@@ -662,6 +664,49 @@ func (m model) skillFilesRows() []listRow {
 		}
 	}
 	return rows
+}
+
+// sourceRows is the [sources] view: package id -> where to install it from,
+// this layer's entries and the ones it inherits, each attributed. READ-ONLY,
+// and the label says who writes it: `byre preset apply` records a preset's
+// hints here after the human accepts them, so an add row would offer a second,
+// consent-free way to author acquisition instructions for packages byre will
+// later print as commands. Shown rather than hidden, because a hint is what
+// turns "skill acme/tool is missing" into a copyable command, and the answer to
+// "where would that command send me" must not require opening the file.
+func (m model) sourceRows() []listRow {
+	local := m.base.Sources
+	var rows []listRow
+	lower := m.lowerNow().Sources
+	for _, id := range slices.Sorted(maps.Keys(lower)) {
+		id := id
+		if _, overridden := local[id]; overridden {
+			continue // the local row below carries it, marked as the override
+		}
+		src := m.lowerSource(func(c config.Config) bool { _, ok := c.Sources[id]; return ok })
+		rows = append(rows, listRow{kind: rowInherited, text: sourceLine(id, lower[id]), ident: id, source: src, idx: -1})
+	}
+	for _, id := range slices.Sorted(maps.Keys(local)) {
+		id := id
+		kind, src := rowLocal, ""
+		if _, inherited := lower[id]; inherited {
+			kind = rowOverride
+			src = m.lowerSource(func(c config.Config) bool { _, ok := c.Sources[id]; return ok })
+		}
+		rows = append(rows, listRow{kind: kind, text: sourceLine(id, local[id]), ident: id, source: src, idx: -1})
+	}
+	return rows
+}
+
+// sourceLine renders one hint: the package id, where it comes from, and
+// whether the hint pins a digest -- an unpinned hint installs whatever the URI
+// serves today, which is the one property of a hint worth reading at a glance.
+func sourceLine(id string, h config.SourceHint) string {
+	line := id + " — " + h.URI
+	if h.Digest != "" {
+		return line + "  (pinned " + h.Digest + ")"
+	}
+	return line + "  (unpinned)"
 }
 
 // fileLine renders one baked file. The arrow reads left-to-right as the copy

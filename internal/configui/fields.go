@@ -77,6 +77,8 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fExtends:         {label: "Extends"},
 	fSkipQuestions:   {label: "Skip questions"},
 	fSeedPrefs:       {label: "Seed prefs"},
+	fSources: {label: "Package sources", kind: kindList, item: "Package source", noun: "hint", readOnly: true,
+		explain: "read-only — where a named package installs from; `byre preset apply` writes it"},
 }
 
 // fieldLabel is the display name (not the raw TOML key); the underlying key

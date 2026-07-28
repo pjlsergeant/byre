@@ -56,7 +56,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.save(), nil // global save-in-place; feedback via subFooterNote
 	case "a":
 		if isReadOnlyField(m.listField) {
-			m.status = readOnlyFieldNote()
+			m.status = readOnlyFieldNote(m.listField)
 			return m, nil
 		}
 		m.itemHostEnv = false
@@ -64,7 +64,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.listCur == addRow {
 			if isReadOnlyField(m.listField) {
-				m.status = readOnlyFieldNote()
+				m.status = readOnlyFieldNote(m.listField)
 				return m, nil
 			}
 			m.itemHostEnv = false
@@ -72,6 +72,13 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		r := rows[m.listCur]
 		m.status = ""
+		// A read-only screen has no row menu either: its rows carry ordinary
+		// kinds (a [sources] hint this file set is genuinely local), and
+		// rowChoices would offer Edit/Delete on them.
+		if isReadOnlyField(m.listField) {
+			m.status = readOnlyFieldNote(m.listField)
+			return m, nil
+		}
 		// A skill row usually has no actions (the pointer note explains) — but
 		// an MCP skill row is closable (rowChoices offers Remove), so the menu
 		// must open for it like any actionable row.
@@ -114,6 +121,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // row has none (the dead-ends read as information, not errors).
 func (m model) accelerate(r listRow, key string) (tea.Model, tea.Cmd) {
 	m.status = ""
+	if isReadOnlyField(m.listField) {
+		m.status = readOnlyFieldNote(m.listField)
+		return m, nil
+	}
 	for _, c := range m.rowChoices(m.listField, r) {
 		if c.key == key {
 			return m.applyRowAct(c.act, r)
@@ -1892,7 +1903,12 @@ func (m model) syncHostEnvLabel() model {
 }
 
 // readOnlyFieldNote answers a keypress a read-only screen cannot honor, with
-// the route that does work rather than a bare refusal.
-func readOnlyFieldNote() string {
+// the route that does work rather than a bare refusal. Per field, because the
+// route differs: a skill's payload is changed by forking the skill, while
+// [sources] is written by the one flow that takes a human's consent for it.
+func readOnlyFieldNote(f fieldID) string {
+	if f == fSources {
+		return "read-only — [sources] hints are recorded by `byre preset apply` when you accept a preset's packages; ^e edits the file by hand"
+	}
 	return "read-only — a skill's payload is the skill's; fork the skill (byre skill fork <id> <new-id>) to change what it bakes in"
 }

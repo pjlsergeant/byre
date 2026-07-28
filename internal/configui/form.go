@@ -72,6 +72,7 @@ const (
 	fExtends         // parent named layer (the extends chain pointer)
 	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
 	fSeedPrefs       // tri-state: seed_prefs (inherit / on / off), ADR 0045
+	fSources         // read-only view of [sources] acquisition hints
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
 	// the ad-hoc clear. Separate from fVolumes because they answer different
 	// questions with different blast radii -- one edits a declaration in this
@@ -366,7 +367,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
 		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
+		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
 	case TargetGlobal:
@@ -378,7 +379,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		sections = []section{
 			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
-			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
 			// shows it (in a project editor it would falsely read "unset — will
 			// refuse" whenever a global default is actually inherited).
@@ -393,7 +394,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
 			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
-			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fMCP, fClaudeSkills, fContext}},
+			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 		}
 	}
 	// The chain pointer: project configs and layers may name a parent layer;
