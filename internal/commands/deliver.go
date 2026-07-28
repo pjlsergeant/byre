@@ -68,7 +68,12 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 	if remote {
 		landed, err = deliverRemote(s, opts, target, sources, roots)
 	} else {
-		landed, err = deliverWith(s, dir, opts, sources, installedEngines(roots), os.Getuid(), hostClipboardWriter(roots), hostPicker(s, "deliver", roots))
+		engines, declined := installedEngines(roots)
+		// Discovery states which boxes exist; an engine byre won't run is one
+		// it cannot enumerate, so the pool it reports is short by an unknown
+		// amount rather than complete.
+		noteDeclinedEngines(s.Err, declined, "boxes running there are not in this delivery's pool.")
+		landed, err = deliverWith(s, dir, opts, sources, engines, os.Getuid(), hostClipboardWriter(roots), hostPicker(s, "deliver", roots))
 	}
 	// Graphical launches (the deliver app, a .desktop entry) have no terminal
 	// to read: the outcome ALSO goes to the notification center.
@@ -259,7 +264,9 @@ var stdinIsPiped = func() bool {
 // notes, and a partial pool exits ExitPartialPool so the caller knows not to
 // auto-pick — the list itself still printed and stays usable.
 func deliverBoxes(s Streams, dir string, opts deliver.Options, roots hostexec.Roots) error {
-	cfg, err := deliverConfig(s, dir, installedEngines(roots), os.Getuid(), nil, nil)
+	engines, declined := installedEngines(roots)
+	noteDeclinedEngines(s.Err, declined, "boxes running there are missing from this listing.")
+	cfg, err := deliverConfig(s, dir, engines, os.Getuid(), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -278,7 +285,9 @@ func deliverBoxes(s Streams, dir string, opts deliver.Options, roots hostexec.Ro
 // (which passes --box and --no-clip), but a hand-run works identically:
 // picker, clipboard garnish, and cancel behave as in a plain delivery.
 func deliverTar(s Streams, dir string, opts deliver.Options, roots hostexec.Roots) error {
-	cfg, err := deliverConfig(s, dir, installedEngines(roots), os.Getuid(), hostClipboardWriter(roots), hostPicker(s, "deliver", roots))
+	engines, declined := installedEngines(roots)
+	noteDeclinedEngines(s.Err, declined, "boxes running there are not in this delivery's pool.")
+	cfg, err := deliverConfig(s, dir, engines, os.Getuid(), hostClipboardWriter(roots), hostPicker(s, "deliver", roots))
 	if err != nil {
 		return err
 	}

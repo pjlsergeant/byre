@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pjlsergeant/byre/internal/hostexec"
@@ -17,16 +18,23 @@ import (
 // config anyway (develop, rebuild) detect fatally from it instead;
 // informational commands (status, dockerrun) keep their own best-effort
 // semantics.
+// A DECLINED engine (hostexec refused a binary resolved out of a directory
+// the box writes) fails the whole enumeration rather than dropping out of it.
+// These commands speak in totals — "completely removed", "migrated" — and
+// forget already refuses over an engine it could not fully query, on exactly
+// this reasoning; an engine byre never even reached is the same uncertainty
+// one step earlier. Silently skipping it would let forget delete the store
+// while real docker volumes, images and credentials stayed behind, under the
+// word "completely".
 func lifecycleEngines(roots hostexec.Roots) ([]engineRunner, error) {
 	var out []engineRunner
 	for _, e := range []string{"docker", "podman"} {
 		eng, exe, err := runner.Detect(e, hostexec.Looker(roots))
 		if err != nil {
-			// Not installed, or resolved out of a directory the box writes.
-			// Either way this engine is not one byre will drive; the loop's
-			// own "no engine found" answer covers a host where neither is
-			// usable, and the lifecycle commands refuse rather than claim.
-			continue
+			if errors.As(err, new(*runner.NotInstalledError)) {
+				continue // genuinely not here; nothing of this project can be on it
+			}
+			return nil, fmt.Errorf("byre cannot account for %s on this machine, and this command speaks in totals: %w", e, err)
 		}
 		out = append(out, runner.New(eng, exe))
 	}

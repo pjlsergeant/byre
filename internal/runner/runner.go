@@ -39,6 +39,19 @@ const (
 // testable without a real engine installed.
 type LookPath func(string) (string, error)
 
+// NotInstalledError is Detect's "this engine simply is not on this machine"
+// answer, and the ONE failure a caller enumerating engines may treat as
+// "skip it". Every other failure -- a declined binary above all -- means byre
+// could not establish what is on that engine, which is not the same thing:
+// a caller that skips it is claiming a coverage it does not have ("every
+// installed engine", "completely removed"). Carrying it as a TYPE rather than
+// a message is what lets those callers tell the two apart.
+type NotInstalledError struct{ Engine string }
+
+func (e *NotInstalledError) Error() string {
+	return fmt.Sprintf("engine %q not found on PATH", e.Engine)
+}
+
 // Detect resolves which engine to use from the config setting ("auto",
 // "docker", or "podman"), and returns the absolute path to run it by. With
 // "auto" it prefers docker, then podman. look is exec.LookPath in tests that
@@ -73,7 +86,7 @@ func Detect(setting string, look LookPath) (Engine, string, error) {
 		p, err := look(setting)
 		if err != nil {
 			if errors.Is(err, exec.ErrNotFound) {
-				return "", "", fmt.Errorf("engine %q not found on PATH", setting)
+				return "", "", &NotInstalledError{Engine: setting}
 			}
 			return "", "", err
 		}

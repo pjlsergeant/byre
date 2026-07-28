@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -218,7 +219,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		lockFile = paths.LockFile
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
-		vols = newVolumeAdmin(paths, projectDir, prepare) // nil if the engine/config won't resolve
+		vols = newVolumeAdmin(s.Err, paths, projectDir, prepare) // nil if the engine/config won't resolve
 	}
 
 	cur, err := config.ParseFile(path, target != configui.TargetProject)
@@ -268,12 +269,21 @@ type volumeAdmin struct {
 // editor omits the Volumes section) when the config or engines won't resolve.
 // The section is shown even with zero volumes — the screen re-resolves on each
 // open, so volumes added later (e.g. via $EDITOR) appear without restarting.
-func newVolumeAdmin(paths project.Paths, projectDir string, prepare func() error) configui.VolumeAdmin {
+//
+// w takes the one case where a missing section needs a reason: an engine byre
+// DECLINED to run. "No engine installed" explains itself and the row's absence
+// is unsurprising; a section that vanishes because a binary is being shadowed
+// would otherwise be a silent product hole (P0 -- the screen is the product).
+func newVolumeAdmin(w io.Writer, paths project.Paths, projectDir string, prepare func() error) configui.VolumeAdmin {
 	if _, err := resolve(paths, projectDir, nil); err != nil {
 		return nil
 	}
 	rs, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
+		var shadow *hostexec.ShadowError
+		if errors.As(err, &shadow) {
+			fmt.Fprintf(w, "byre: %v The editor's Volumes section is hidden — byre can't list or clear volumes it can't reach.\n", shadow)
+		}
 		return nil // no engine → can't list/clear; hide the section
 	}
 	return &volumeAdmin{rs: rs, paths: paths, projectDir: projectDir, prepare: prepare}

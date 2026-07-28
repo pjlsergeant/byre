@@ -103,20 +103,11 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	// while a box runs on the previous engine, the configured runner can't see
 	// it. Hand develop the other installed engines so it can check them under
 	// the setup lock (ADR 0004).
-	rv.otherEngines = installedEnginesExcept(eng, roots)
-	// The session-end report (ADR 0047) runs host git AUTOMATICALLY, at every
-	// exit, with nobody watching for a command to fail. So a git resolved out
-	// of a directory the box writes DEGRADES rather than refusing: the probes
-	// are skipped and the loss is disclosed once, here, before the session --
-	// a session end must never be blockable by the thing it reports on, and a
-	// line printed in the middle of the exit report is a line nobody reads.
-	// Absence stays silent, as it already does: a host with no git is not a
-	// disclosure, it is a host with no git.
-	var shadowed *hostexec.ShadowError
-	if gitExe, gerr := hostGit(roots); errors.As(gerr, &shadowed) {
-		fmt.Fprintf(s.Err, "byre: %v The session-end report's git probes and any `git:` env sources are skipped for this session.\n", shadowed)
-	} else {
-		rv.gitExe = gitExe
+	rv.otherEngines, rv.declinedEngines = installedEnginesExcept(eng, roots)
+	gitExe, disclosure := hostGitForSession(roots)
+	rv.gitExe = gitExe
+	if disclosure != "" {
+		fmt.Fprintln(s.Err, disclosure)
 	}
 	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit)
 }
@@ -245,7 +236,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// installed engine (#4 ruling, 2026-07-22 -- no ambient "podman isn't
 		// reachable" note on every develop beside an installed-but-stopped engine).
 		toCheck, tracked := crossEnginesToCheck(s.Err, rv.otherEngines, r.Engine(), paths)
-		skipped, err := refuseCrossEngineSession(s.Err, toCheck, r.Engine(), paths)
+		skipped, err := refuseCrossEngineSession(s.Err, toCheck, rv.declinedEngines, r.Engine(), paths)
 		if err != nil {
 			return err
 		}
@@ -494,7 +485,20 @@ func announceWorktree(w io.Writer, paths project.Paths) {
 // uncertainty lands back in the engine record as unresolved and keeps being
 // re-checked -- an inconclusive check must never advance the record into
 // silence.
-func refuseCrossEngineSession(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) (skipped []string, err error) {
+func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []*hostexec.ShadowError, self runner.Engine, paths project.Paths) (skipped []string, err error) {
+	// A DECLINED engine takes the unreachable arm's treatment, one step
+	// earlier: byre never got a runner for it, so it cannot be queried at all.
+	// Same shape and for the same reason -- refusing outright would brick
+	// develop over an engine that may hold nothing, while a silent skip would
+	// let a live docker session sit invisible while `engine = podman` starts a
+	// second agent on the same tree. NOT scoped by crossEnginesToCheck: the
+	// engine record answers "was this engine implicated", and this answers
+	// "byre will not run a binary on this machine", which is worth saying
+	// whatever the record holds.
+	for _, d := range declined {
+		fmt.Fprintf(w, "byre: %v A competing session under %s can't be ruled out — single-session isn't guaranteed against it.\n", d, d.Name)
+		skipped = append(skipped, d.Name)
+	}
 	label := workdirLabel(paths)
 	for _, rr := range others {
 		ids, err := rr.ContainersByLabel(label)

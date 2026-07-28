@@ -14,7 +14,9 @@ import (
 // the user's own shell already is.
 func Grab(s Streams, dir string, opts deliver.Options, boxPath, hostPath string) error {
 	roots := boxWritableRootsFor(dir)
-	return grabWith(s, dir, opts, boxPath, hostPath, installedEngines(roots), os.Getuid(), hostPicker(s, "grab", roots))
+	engines, declined := installedEngines(roots)
+	noteDeclinedEngines(s.Err, declined, "boxes running there are not in this grab's pool.")
+	return grabWith(s, dir, opts, boxPath, hostPath, engines, os.Getuid(), hostPicker(s, "grab", roots))
 }
 
 func grabWith(s Streams, dir string, opts deliver.Options, boxPath, hostPath string, engines []sessionRunner, uid int, pick func([]deliver.Session) (deliver.Session, bool, error)) error {

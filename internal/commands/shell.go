@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -22,37 +24,65 @@ import (
 // were set as run-time -e vars), so we only add HOME, which the launcher sets at
 // runtime and isn't in the container's configured env.
 func Shell(s Streams, projectDir string, skipUIDCheck bool) error {
-	return shell(s, projectDir, installedEngines(boxWritableRootsFor(projectDir)), os.Getuid(), skipUIDCheck)
+	engines, declined := installedEngines(boxWritableRootsFor(projectDir))
+	// Said up front, not folded into a "no session found": shell finds the
+	// session in WHICHEVER engine holds it, so an engine byre won't look at
+	// turns a confident negative into an unknown.
+	noteDeclinedEngines(s.Err, declined, "byre can't look there for this project's session.")
+	return shell(s, projectDir, engines, os.Getuid(), skipUIDCheck)
 }
 
 // installedEngines returns a sessionRunner per installed engine, in shell's
-// probe order (docker, then podman). Engines not on PATH are skipped.
-func installedEngines(roots hostexec.Roots) []sessionRunner {
+// probe order (docker, then podman), AND the engines byre found but declined
+// to run (hostexec refused a binary resolved out of a directory the box
+// writes).
+//
+// The two are returned separately because they are not the same answer. An
+// absent engine holds no boxes and costs the caller nothing. A declined one
+// may be holding this project's live session right now, and byre cannot look
+// — so every caller that enumerates engines to make a statement about them
+// has to say so rather than quietly enumerate one fewer.
+func installedEngines(roots hostexec.Roots) ([]sessionRunner, []*hostexec.ShadowError) {
 	var out []sessionRunner
+	var declined []*hostexec.ShadowError
 	for _, e := range []string{"docker", "podman"} {
 		eng, exe, err := runner.Detect(e, hostexec.Looker(roots))
 		if err != nil {
-			// Not installed, or resolved out of a directory the box writes:
-			// an engine byre won't drive either way. Session discovery then
-			// simply doesn't see that engine's boxes, which is the same
-			// degrade an absent engine already produces.
+			var shadow *hostexec.ShadowError
+			if errors.As(err, &shadow) {
+				declined = append(declined, shadow)
+			}
 			continue
 		}
 		out = append(out, runner.New(eng, exe))
 	}
-	return out
+	return out, declined
 }
 
 // installedEnginesExcept is installedEngines minus the given engine — the OTHER
 // engines develop must check for a competing session after an engine switch.
-func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) []sessionRunner {
+// A declined engine is never "self" (develop's own engine resolved, or develop
+// already refused), so the declined list passes through whole.
+func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) ([]sessionRunner, []*hostexec.ShadowError) {
+	all, declined := installedEngines(roots)
 	var out []sessionRunner
-	for _, rr := range installedEngines(roots) {
+	for _, rr := range all {
 		if rr.Engine() != self {
 			out = append(out, rr)
 		}
 	}
-	return out
+	return out, declined
+}
+
+// noteDeclinedEngines discloses engines byre found but will not run, with the
+// consequence for the caller's own claim. Loud every time and unscoped by the
+// engine record: unlike an installed-but-stopped engine (whose ambient note
+// the #4 ruling removed), a declined one is a finding about this machine right
+// now, and the user's ten-second fix is in the message.
+func noteDeclinedEngines(w io.Writer, declined []*hostexec.ShadowError, consequence string) {
+	for _, d := range declined {
+		fmt.Fprintf(w, "byre: %v %s\n", d, consequence)
+	}
 }
 
 func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int, skipUIDCheck bool) error {
