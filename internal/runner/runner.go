@@ -595,6 +595,25 @@ func (r *Runner) ImageExists(tag string) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
+// ImageDigest returns the engine's own id for the image a tag currently
+// resolves to ("sha256:..."), which is what a container created from that tag
+// actually runs. Deliberately .Id and not RepoDigests: byre's images are built
+// locally and never pushed, so a registry digest does not exist for them,
+// while the image id does and is exactly the fact `byre rebuild` moves the tag
+// away from. A caller that cannot get an answer records the failure rather
+// than a guess.
+func (r *Runner) ImageDigest(tag string) (string, error) {
+	out, err := r.capture(r.bin(), "image", "inspect", "-f", "{{.Id}}", tag)
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(out)
+	if id == "" {
+		return "", fmt.Errorf("%s image inspect gave no id for %s", r.engine, tag)
+	}
+	return id, nil
+}
+
 // ImageRemove removes an image by tag.
 func (r *Runner) ImageRemove(tag string) error {
 	_, err := r.capture(r.bin(), "image", "rm", tag)

@@ -300,6 +300,16 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// Must land on params before Create so --group-add is on the argv.
 		warnSockSources(r, s.Err, params, rv.skills)
 		applySockGroups(r, s.Err, image, &params, rv.skills)
+		// The launch record: what byre is about to tell the engine, made
+		// durable and addressable, so `byre status` can describe THIS box for
+		// as long as it runs instead of re-resolving the config. Written last
+		// under the lock, from the same params Create receives, so nothing
+		// between here and the create can move underneath it. A write failure
+		// degrades (the box still launches; status falls back to the config).
+		launchLabel, launchHash := recordLaunch(s.Err, paths, launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base)))
+		if launchLabel != "" {
+			params.Labels = append(params.Labels, launchLabel)
+		}
 		// The container name makes the session atomic: losing the name means a
 		// concurrent develop won the race (a session is now live — report it)
 		// or a leftover container holds it (say which and how to clear it).
@@ -310,6 +320,10 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			}
 			return fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
 		}
+		// Records outlive their containers otherwise: this is the only moment
+		// byre holds the lock AND knows which containers of the project exist.
+		// Opportunistic by construction -- nothing here can fail the launch.
+		reapLaunchRecords(r, paths, launchHash)
 		return nil
 	}); err != nil {
 		return err

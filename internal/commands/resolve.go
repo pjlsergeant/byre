@@ -6,6 +6,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -28,6 +29,12 @@ type resolved struct {
 	// Skill set (skills.ClaudeSkillSet).
 	claudeSkills    []skills.ClaudeSkillDecl
 	claudeSkillsErr error
+	// cat is the package catalog this resolution read, carried so the launch
+	// record can name each skill's provenance AS ACQUIRED at launch. Looking it
+	// up again at status time would answer with today's catalog, which is the
+	// re-derivation the record exists to abolish. nil in combine() (and thus in
+	// unit tests, which drive develop directly) drops the provenance column.
+	cat *packages.Catalog
 	// otherEngines are session runners for installed engines OTHER than the
 	// configured one, so develop can enforce single-session across an engine
 	// switch (ADR 0004). Set by Develop; nil in combine() (and thus in unit
@@ -197,6 +204,7 @@ func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolve
 		return resolved{}, err
 	}
 	rv := combine(cfg, res)
+	rv.cat = cat
 	if err := rv.validate(); err != nil {
 		return resolved{}, err
 	}

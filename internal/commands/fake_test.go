@@ -83,9 +83,11 @@ type fakeRunner struct {
 	failRemove  map[string]bool // volume names whose removal fails
 
 	// images
-	images   map[string]bool // tag -> exists
-	rmImages []string
-	builds   []string // tag, with " nocache" appended when noCache
+	images         map[string]bool   // tag -> exists
+	imageDigests   map[string]string // tag -> ImageDigest answer (default: a stable fake)
+	imageDigestErr error             // ImageDigest failure (the record's honest-empty path)
+	rmImages       []string
+	builds         []string // tag, with " nocache" appended when noCache
 
 	ops []string
 }
@@ -340,6 +342,18 @@ func (f *fakeRunner) MigrateVolume(src, dst, image string, id runner.Identity) e
 }
 
 func (f *fakeRunner) ImageExists(tag string) (bool, error) { return f.images[tag], nil }
+
+// ImageDigest answers with a stable per-tag digest so develop's launch record
+// is deterministic; imageDigestErr drives the honest-degradation path.
+func (f *fakeRunner) ImageDigest(tag string) (string, error) {
+	if f.imageDigestErr != nil {
+		return "", f.imageDigestErr
+	}
+	if d, ok := f.imageDigests[tag]; ok {
+		return d, nil
+	}
+	return "sha256:" + strings.Repeat("a", 64), nil
+}
 
 func (f *fakeRunner) ImageRemove(tag string) error {
 	f.rmImages = append(f.rmImages, tag)
