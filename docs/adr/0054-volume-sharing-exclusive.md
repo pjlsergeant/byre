@@ -144,12 +144,22 @@ the no-record arm refuses anyway.
   sharing) needs two controls, and folding them into one would offer
   combinations the grammar does not have. The volumes editor goes from three
   focusable controls to four; no other form changes. Only the non-default
-  answer is written, so `sharing = "shared"` never appears in a file.
+  answer is written, so `sharing = "shared"` never appears in a file. The
+  block renderer emits the key: a field the model carries and the renderer
+  forgets is invisible everywhere except the file, which is where the contract
+  lives -- a guard now holds every `[[block]]` vocabulary to that.
 - **List rows**: `name -> target (role) [exclusive — one live box at a time]`,
   beside the existing machine-scope and seed flags.
-- **Status**: the volume rows mark an exclusive volume by name, and the
-  Worktrees row stops saying siblings "share these volumes" unqualified -- the
-  sibling it names is why the next develop refuses.
+- **Status**: the volume rows mark an exclusive volume by name -- from the
+  RECORD when a box is running, since that box is the page's subject and this
+  is what the record's `sharing` field is for. The Worktrees row stops saying
+  siblings "share these volumes" unqualified, but its qualifier reads the
+  CURRENT CONFIG even then: it is a claim about what the next develop will do,
+  and the current config has the last word on enforcement. The two can
+  disagree, and must -- a declaration deleted since the launch would otherwise
+  have status promising a refusal that will not happen.
+- **`--data`**: each volume carries `sharing`, always spelled out like
+  `scope`, so the two tiers cannot describe different boxes.
 - **Docs**: the configuration reference, ARCHITECTURE (Mounts & volumes, and
   the worktree paragraph), GLOSSARY (Volume sharing), SKILLS.md (authoring).
 
