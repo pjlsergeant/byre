@@ -61,7 +61,12 @@ func notify(goos string, body string, sticky bool, roots hostexec.Roots) {
 			bodyEsc, esc(notifyTitle), icon, dismiss)
 		osa, err := clipLookPath("osascript", roots)
 		if err != nil {
-			return // no osascript to notify with; the terminal path already ran
+			// No osascript byre will run — absent, or resolved out of a
+			// directory the box writes. Silent, like the linux arm with no
+			// notify-send: notification is a best-effort channel, and byre
+			// has nowhere else to say so (this path runs only when there is
+			// no terminal).
+			return
 		}
 		if _, err := clipRunOut(osa, "-e", script); err != nil {
 			banner := fmt.Sprintf(`display notification "%s" with title "%s"`, esc(body), esc(notifyTitle))
