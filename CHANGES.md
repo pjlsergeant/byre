@@ -7,10 +7,12 @@
   carry terminal escape sequences, and byre printed them straight through --
   so a name chosen for the purpose could erase the line reporting it, rewrite
   the lines above, or add lines of its own that read as byre's. `byre status`,
-  the end-of-session report, the self-edit report, `byre skill inspect` and
-  `byre deliver` now strip control sequences from everything they quote back
-  and hold each report to one line. The text still shows: these surfaces tell
-  you what is there, they just no longer let it type.
+  the end-of-session report, the self-edit report, `byre skill inspect`, and
+  the notices `byre deliver` prints for the files and directories you name it
+  -- what it sent, skipped or renamed -- now strip control sequences from
+  everything they quote back and hold each report to one line. The text still
+  shows: these surfaces tell you what is there, they just no longer let it
+  type.
 
 - **Saving no longer breaks a config that spells a section inline.** If your
   file said `defaults = { skip_questions = true }` rather than a `[defaults]`
