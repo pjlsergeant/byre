@@ -348,11 +348,21 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 2
 		}
 	case fVolumes:
-		// vals: name, target, role (volumeVals).
+		// vals: name, target, role (volumeVals). The inherited DECLARATION
+		// rides along too: an override opens the add editor, and the scope and
+		// seed this form does not author have to survive it -- shadowing a
+		// machine-scoped volume must not quietly rescope it to this project.
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 		if r.vals[2] == "cache" {
 			next.itemMode = 1
+		}
+		for _, v := range m.lowerNow().Volumes {
+			if v.Name == r.ident {
+				v := v
+				next.itemVolume = &v
+				break
+			}
 		}
 	case fMCP:
 		// vals: name, url, command(argv form), env, egress, headers (mcpVals).
@@ -454,6 +464,7 @@ func (m model) startItem(idx int) model {
 	m.itemModeOpts = nil
 	m.itemModeLabel = ""
 	m.itemModeFirst = false
+	m.itemVolume = nil
 	if m.listField == fEnv {
 		// One picker for the whole screen: an [env] literal and an
 		// env_from_host passthrough answer the same question ("where does
@@ -1039,11 +1050,13 @@ func (m model) commitItem() model {
 		if m.itemMode == 1 {
 			v.Role = "cache"
 		}
-		// Carry the entry's declared scope and seed through the edit: this form
-		// authors neither, so dropping them would silently un-share a machine
-		// volume (or un-seed a state one) as a side effect of retyping a target.
-		if m.editIndex >= 0 {
-			v.Scope, v.Seed = m.volumes[m.editIndex].Scope, m.volumes[m.editIndex].Seed
+		// Carry the declared scope and seed through: this form authors neither,
+		// so dropping them would silently un-share a machine volume (or un-seed
+		// a state one) as a side effect of retyping a target. Editing carries
+		// them from the entry being edited, overriding from the inherited
+		// declaration being shadowed -- both are "the entry this row is about".
+		if base := m.volumeBase(); base != nil {
+			v.Scope, v.Seed = base.Scope, base.Seed
 		}
 		m.volumes = putAt(m.volumes, m.editIndex, v)
 	case fPorts:
@@ -1079,6 +1092,17 @@ func (m model) commitItem() model {
 	m.itemErr = ""
 	m.mode = modeList
 	return m
+}
+
+// volumeBase is the declaration whose scope and seed the open volume editor
+// must carry: the entry being EDITED, or -- for an override, which opens the
+// ADD editor with no index -- the inherited declaration being shadowed. nil
+// for a plain add, which is project-scoped and unseeded by construction.
+func (m model) volumeBase() *config.Volume {
+	if m.editIndex >= 0 && m.editIndex < len(m.volumes) {
+		return &m.volumes[m.editIndex]
+	}
+	return m.itemVolume
 }
 
 // putAt appends v when idx < 0 else replaces the element at idx — always into
@@ -1779,8 +1803,7 @@ func (m model) itemNotes() []string {
 		// here, at the moment of editing: silence would read as "this entry
 		// has neither", and both change what saving the row does.
 		notes := []string{"state = precious (auth, history, scratch); cache = disposable. New volumes are project-scoped."}
-		if m.editIndex >= 0 && m.editIndex < len(m.volumes) {
-			v := m.volumes[m.editIndex]
+		if v := m.volumeBase(); v != nil {
 			if v.MachineScoped() {
 				notes = append(notes, "⚠ scope: machine — ONE volume shared by ALL your projects (kept as declared; ^e to change)")
 			}

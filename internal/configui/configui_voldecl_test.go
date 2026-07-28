@@ -232,3 +232,73 @@ func TestVolumeRowsOpenTheirOwnScreens(t *testing.T) {
 		t.Errorf("Volumes should open the declaration list, mode=%v field=%v", next.mode, next.listField)
 	}
 }
+
+// Overriding an inherited volume opens the ADD editor, so the scope and seed
+// the form does not author have nothing to be read from unless the inherited
+// declaration rides along. Without that, shadowing a machine-scoped identity
+// volume silently rescoped it to this project -- a different volume, on a
+// different name, with the agent's shared login not in it -- and the
+// machine-scope warning never showed, because it keyed on editing an entry
+// this file already had.
+func TestVolumeOverrideCarriesScopeAndSeed(t *testing.T) {
+	inh := Inherited{
+		HasLower: true,
+		Default: config.Config{Volumes: []config.Volume{
+			{Name: "claude-identity", Role: "state", Target: "/home/dev/.byre-identity/claude", Scope: "machine"},
+			{Name: "cfg", Role: "state", Target: "/home/dev/.cfg", Seed: &config.Seed{Host: "~/seed"}},
+		}},
+	}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, inh, nil, TargetProject)
+	m.listField = fVolumes
+
+	rows := m.fieldRows(fVolumes)
+	ident := rowByText(t, rows, volumeLine(inh.Default.Volumes[0]))
+	if ident.kind != rowInherited {
+		t.Fatalf("expected an inherited row to override: %+v", ident)
+	}
+	next := m.startOverride(ident)
+	// The warning must show HERE, at the moment of overriding -- it used to
+	// appear only when editing an entry this file already had.
+	if notes := strings.Join(next.itemNotes(), "\n"); !strings.Contains(notes, "machine") {
+		t.Errorf("overriding a machine-scoped volume must disclose the scope:\n%s", notes)
+	}
+	next.inputs[1].SetValue("/home/dev/.identity")
+	next = next.commitItem()
+	if next.itemErr != "" {
+		t.Fatalf("commit: %s", next.itemErr)
+	}
+	got := next.assemble().Volumes
+	if len(got) != 1 {
+		t.Fatalf("the override must be this layer's only entry: %+v", got)
+	}
+	if got[0].Scope != "machine" {
+		t.Errorf("the override silently rescoped a machine volume: %+v", got[0])
+	}
+
+	// Same for a seed.
+	seeded := rowByText(t, m.fieldRows(fVolumes), volumeLine(inh.Default.Volumes[1]))
+	sn := m.startOverride(seeded)
+	if notes := strings.Join(sn.itemNotes(), "\n"); !strings.Contains(notes, "seed") {
+		t.Errorf("overriding a seeded volume must disclose the seed:\n%s", notes)
+	}
+	sn.inputs[1].SetValue("/home/dev/.config")
+	sn = sn.commitItem()
+	if sn.itemErr != "" {
+		t.Fatalf("commit: %s", sn.itemErr)
+	}
+	if v := sn.assemble().Volumes[0]; v.Seed == nil || v.Seed.Host != "~/seed" {
+		t.Errorf("the override dropped the seed: %+v", v)
+	}
+
+	// A plain ADD is project-scoped and unseeded: nothing to carry.
+	add := m.startItem(-1)
+	add.inputs[0].SetValue("scratch")
+	add.inputs[1].SetValue("/home/dev/scratch")
+	add = add.commitItem()
+	if add.itemErr != "" {
+		t.Fatalf("commit: %s", add.itemErr)
+	}
+	if v := add.assemble().Volumes[0]; v.Scope != "" || v.Seed != nil {
+		t.Errorf("a new volume must be project-scoped and unseeded: %+v", v)
+	}
+}

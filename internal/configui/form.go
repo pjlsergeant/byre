@@ -225,7 +225,13 @@ type model struct {
 	// it (non-empty routes editorClosedMsg back to the item editor).
 	itemProse string
 	prosePath string
-	skills    []string // enabled skill names (multi-select)
+	// itemVolume is the declaration an OVERRIDE of an inherited volume starts
+	// from. Overriding opens the ADD editor (editIndex -1), so without this
+	// there is no entry to carry the scope and seed the form does not author --
+	// and shadowing a machine-scoped volume would silently rescope it to this
+	// project. nil for a plain add.
+	itemVolume *config.Volume
+	skills     []string // enabled skill names (multi-select)
 
 	// Freeform raw-tier working state (edited as text blocks).
 	runArgs string // one arg per line
