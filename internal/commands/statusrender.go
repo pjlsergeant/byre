@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -19,10 +19,10 @@ import (
 //
 // Both tiers render the same PAGE -- every row that exists appears in both.
 // The default tier truncates values and folds mechanism notes; every
-// truncation names itself (a count, an ellipsis, a `--full` pointer), so the
-// short page is a summary of the long one and never a subset of it. Two
-// things it never folds: a claim degradation and a containment disclosure.
-// Those rows are what the page exists for, and they are short.
+// truncation names itself (a count and a `--full` pointer), so the short page
+// is a summary of the long one and never a subset of it. Two things it never
+// folds: a claim degradation and a containment disclosure. Those rows are
+// what the page exists for, and they are short.
 type statusTier int
 
 const (
@@ -55,23 +55,41 @@ const statusLabelMin = 13
 // lets the README and the docs site pin a sample of it.
 const statusFallbackWidth = 80
 
+// statusMinWidth / statusMaxWidth bound a real terminal's width. The floor is
+// a CLAMP, not a substitution: below it byre lays out AT the floor and the
+// terminal wraps whatever overhangs. A 30-column terminal cannot carry a
+// 13-cell label plus a value column, and laying out at 80 there would
+// guarantee the column-zero continuations this funnel exists to end -- 48 is
+// the narrowest two-column page byre will draw, and it draws that. The
+// ceiling keeps a 300-column terminal from producing rows no eye tracks back
+// to the start of.
+const (
+	statusMinWidth = 48
+	statusMaxWidth = 160
+)
+
 // statusWidth is the column budget for a render to w: the terminal's own
-// width when byre is printing to one, the fixed fallback otherwise. Clamped
-// at both ends -- a 20-column terminal cannot be laid out two-column, and a
-// 300-column one produces rows no eye tracks back.
+// width, clamped, when byre is printing to a terminal; the fixed fallback
+// when it is not (a pipe, a file, a test buffer) or when the size cannot be
+// read. An unreadable size is the only case that substitutes, because there
+// is no measurement to clamp.
 func statusWidth(w io.Writer) int {
 	f, ok := w.(interface{ Fd() uintptr })
 	if !ok {
 		return statusFallbackWidth
 	}
 	cols, _, err := xterm.GetSize(f.Fd())
-	if err != nil || cols < 48 {
+	if err != nil || cols <= 0 {
 		return statusFallbackWidth
 	}
-	if cols > 160 {
-		return 160
-	}
-	return cols
+	return clampStatusWidth(cols)
+}
+
+// clampStatusWidth applies the narrow/wide policy to a measured width. Split
+// out because the policy is the part worth pinning and a test cannot conjure
+// a 30-column terminal.
+func clampStatusWidth(cols int) int {
+	return min(max(cols, statusMinWidth), statusMaxWidth)
 }
 
 // writeStatusRows lays rows out on w.
@@ -98,10 +116,10 @@ func writeStatusRows(w io.Writer, rows []statusRow, width int) {
 		}
 	}
 	indent := strings.Repeat(" ", labelW+1)
-	avail := width - labelW - 1
-	if avail < 24 {
-		avail = 24
-	}
+	// The value column's own floor, the same clamp-not-substitute policy as
+	// statusWidth's: under 24 cells there is no column left to wrap into, so
+	// byre lays out at 24 and what overhangs is the terminal's problem.
+	avail := max(width-labelW-1, 24)
 	for _, r := range rows {
 		head := ""
 		if r.Label != "" {
@@ -115,14 +133,22 @@ func writeStatusRows(w io.Writer, rows []statusRow, width int) {
 	}
 }
 
-// displayLen counts a rendered string's columns. Rune count, not byte count:
-// status prints em dashes and warning signs of byre's own, and a byte count
-// would wrap those rows early. It does not model double-width runes -- the
-// only ones byre prints are the 🛑 containment markers, which cost one column
-// on the rows that carry them.
-func displayLen(s string) int { return utf8.RuneCountInString(s) }
+// displayLen counts a rendered string's terminal CELLS -- not bytes, and not
+// runes either. Status renders values byre did not author: a CJK path, an
+// emoji in a skill's name, and byre's own 🛑 containment marker (East Asian
+// Width W) all occupy two cells apiece. Measuring them as one lets a row
+// exceed the budget and be wrapped by the TERMINAL at column zero, which is
+// precisely the failure this funnel exists to end -- and it would hit the
+// containment rows first, the rows that matter most.
+//
+// ansi.StringWidth rather than a per-rune width table: it measures grapheme
+// CLUSTERS, so a flag or a ZWJ-joined emoji counts as the one cell-pair it
+// occupies instead of the sum of its parts. It is already a direct
+// dependency (the config editor measures with it), so byre states the width
+// question once for the whole product.
+func displayLen(s string) int { return ansi.StringWidth(s) }
 
-// wrapValue breaks one row's value into lines of at most width columns.
+// wrapValue breaks one row's value into lines of at most width CELLS.
 //
 // It breaks at the separators the row grammar already uses -- ", " and "; "
 // between clauses -- so a wrapped row breaks between the things it lists.
@@ -144,12 +170,12 @@ func wrapValue(val string, width int) []string {
 	}
 	for _, seg := range clauses(val) {
 		r := []rune(seg)
-		if len(cur) > 0 && len(cur)+len(r) > width {
+		if len(cur) > 0 && displayLen(string(cur))+displayLen(seg) > width {
 			flush()
 			r = []rune(strings.TrimLeft(string(r), " "))
 		}
 		cur = append(cur, r...)
-		for len(cur) > width {
+		for displayLen(string(cur)) > width {
 			cut := lastSpaceWithin(cur, width)
 			if cut == 0 {
 				break // one token longer than the budget: leave it whole
@@ -179,15 +205,22 @@ func clauses(s string) []string {
 	return append(out, s[start:])
 }
 
-// lastSpaceWithin returns the index just past the last space at or before
-// width, or 0 when the first token alone overruns the budget.
+// lastSpaceWithin returns the rune index just past the last space whose
+// preceding text fits width CELLS, or 0 when the first token alone overruns
+// the budget. A space is never inside a grapheme cluster, so every candidate
+// prefix ends on a cluster boundary and displayLen measures it exactly.
 func lastSpaceWithin(r []rune, width int) int {
-	for i := width; i > 0; i-- {
-		if r[i-1] == ' ' {
-			return i
+	cut := 0
+	for i, c := range r {
+		if c != ' ' {
+			continue
 		}
+		if displayLen(string(r[:i])) > width {
+			break
+		}
+		cut = i + 1
 	}
-	return 0
+	return cut
 }
 
 // pkgColumn formats a package id and its provenance as two columns, with the

@@ -379,6 +379,36 @@ func pkgLine(cat *packages.Catalog, name string, tier statusTier, idWidth int) s
 	return pkgColumn(id, prov, idWidth)
 }
 
+// DigestHint is the pointer a package row carries when the default tier
+// dropped an acquisition digest. Dropping the digest is a truncation, and
+// the rule is that a truncation names itself: without this the short
+// provenance is indistinguishable from a package that never had a digest.
+const DigestHint = "(--full for package digests)"
+
+// digestDropped reports whether the default tier's provenance for name hides
+// a digest the full tier shows. Only an installed package carries one, so
+// this is false for everything else and the hint stays off those pages.
+func digestDropped(cat *packages.Catalog, name string) bool {
+	if cat == nil || name == "" {
+		return false
+	}
+	ent, ok := cat.Lookup(name)
+	if !ok {
+		return false
+	}
+	return ent.ProvenanceLabel() != ent.ProvenanceShort()
+}
+
+// anyDigestDropped is digestDropped over a set.
+func anyDigestDropped(cat *packages.Catalog, names []string) bool {
+	for _, n := range names {
+		if digestDropped(cat, n) {
+			return true
+		}
+	}
+	return false
+}
+
 // hostEnvRow renders the live env_from_host entries with their OUTCOME --
 // the row reads from the same resolution the runtime applied, so it can
 // only describe what actually crossed. Disabled entries are omitted;
@@ -476,8 +506,16 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	}
 	row("Agent", orDefault(s.Agent, "(none)"))
 	pkgW := pkgIDWidth(s.Cat, append(s.Skills[:len(s.Skills):len(s.Skills)], s.Template), tier)
+	// The digest the default tier drops is a truncation like any other, so
+	// it says so -- but only where one was actually dropped, or the hint
+	// would advertise detail that does not exist.
+	dropped := !tier.full() && digestDropped(s.Cat, s.Template)
 	if s.Template != "" {
-		row("Template", pkgLine(s.Cat, s.Template, tier, pkgW))
+		line := pkgLine(s.Cat, s.Template, tier, pkgW)
+		if dropped {
+			line += "  " + DigestHint
+		}
+		row("Template", line)
 	} else {
 		row("Template", "(none)")
 	}
@@ -629,13 +667,17 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	} else if len(s.Skills) == 0 {
 		row("Skills", "none")
 	} else {
-		// One row per skill with provenance label.
+		// One row per skill with provenance label, plus one pointer under
+		// the block when the tier dropped any of their digests.
 		for i, name := range s.Skills {
 			label := "Skills"
 			if i > 0 {
 				label = ""
 			}
 			row(label, pkgLine(s.Cat, name, tier, pkgW))
+		}
+		if !tier.full() && anyDigestDropped(s.Cat, s.Skills) {
+			row("", DigestHint)
 		}
 	}
 
@@ -1325,6 +1367,16 @@ func networkLine(s statusInfo) string {
 		n := len(s.EgressClosed)
 		claim = fmt.Sprintf("%s (open network, %d %s blocked)", claim, n, plural(n, "host", "hosts"))
 	}
+	if raw := networkDisplacers(s); len(raw) > 0 {
+		return claim + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"
+	}
+	return claim + "  (skill: " + s.NetPostureSkill + ")"
+}
+
+// networkDisplacers names what has displaced byre's own construction of the
+// network, in the wording the Network row hedges with. Empty means nothing
+// has, and the row asserts unqualified.
+func networkDisplacers(s statusInfo) []string {
 	var raw []string
 	if s.ProjectRunArgs {
 		raw = append(raw, "raw run_args")
@@ -1335,10 +1387,25 @@ func networkLine(s statusInfo) string {
 	if skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimNetwork) {
 		raw = append(raw, "a skill setting byre's network controls")
 	}
-	if len(raw) > 0 {
-		return claim + "  (declared; " + strings.Join(raw, " + ") + " present — not guaranteed)"
+	return raw
+}
+
+// networkWarranted reports whether byre stands behind the Network row AS
+// PRINTED. It is networkLine's own branch structure, so the page and --data
+// can never disagree about whether the wall is byre's: unresolved skills mean
+// the posture is unknown and nothing is warranted; the open default has no
+// posture to withdraw, so it stands however raw the config is (the row says
+// "open" flat, and it is still open); a declared posture stands only while
+// nothing has displaced byre's construction of it.
+func networkWarranted(s statusInfo) bool {
+	switch {
+	case s.SkillErr != "":
+		return false
+	case s.NetPosture == "":
+		return true
+	default:
+		return len(networkDisplacers(s)) == 0
 	}
-	return claim + "  (skill: " + s.NetPostureSkill + ")"
 }
 
 // portStatusLine renders a published port as "iface:host -> container", via

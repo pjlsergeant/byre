@@ -10,15 +10,19 @@
   with every row above it. Wrapping is now byre's: values hang to the value
   column, break at the separators the rows already use rather than through
   a path, and the id column is sized from the widest id on the page. It
-  wraps to your terminal's width, or to 80 columns when the output is not a
-  terminal, so a redirected `byre status` is the same wherever it is
-  produced.
+  lays out to your terminal's width (clamped to 48-160 columns), or to a
+  fixed 80 when the output is not a terminal, so a redirected `byre status`
+  is the same wherever it is produced. Width is counted in terminal CELLS,
+  so a CJK path in a mount, an emoji in a skill name, and byre's own
+  two-cell 🛑 containment marker no longer overrun the line they were
+  measured into.
 
   The page itself is now the DEFAULT of three tiers. It shows every row that
   exists -- a grant, mount, volume, skill, port or reserved key is never
   elided -- and cuts long values down, marking each cut with a count and a
   pointer (`Raw build: 2 lines  (passed through, not introspected; --full to
-  show)`). It folds the delivery arrows that say delivery WORKS into the
+  show)`, `(--full for package digests)` under a skill whose acquisition
+  digest it dropped). It folds the delivery arrows that say delivery WORKS into the
   rows they qualify, and never folds one that has stopped asserting. A claim
   degradation and a containment disclosure stay at full strength: they are
   what the page is for. **`byre status --full`** is the same page

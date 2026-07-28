@@ -92,8 +92,11 @@ type statusDataEngine struct {
 
 type statusDataNetwork struct {
 	// Posture is the skill-declared posture, empty for the open default.
-	// Enforced says whether byre stands behind it: a raw escape hatch or a
-	// skill holding byre's own network knobs takes that away.
+	// Warranted is whether byre stands behind the Network ROW AS PRINTED
+	// (networkWarranted): a raw escape hatch or a skill holding byre's own
+	// network knobs takes that away from a declared posture, unresolved
+	// skills make it unknowable, and the open default has no posture to
+	// withdraw.
 	Posture      string             `json:"posture"`
 	PostureSkill string             `json:"posture_skill,omitempty"`
 	Warranted    bool               `json:"warranted"`
@@ -191,7 +194,8 @@ type statusDataHostEnv struct {
 	Source string `json:"source"`
 	// State is the outcome, not the intent: delivered / empty (configured,
 	// resolved to nothing, NOT passed) / overridden (an explicit [env] key
-	// beats the passthrough) / disabled (a layer switched it off).
+	// beats the passthrough). An entry a layer switched off is absent, the
+	// same way it is absent from the page.
 	State string `json:"state"`
 }
 
@@ -354,6 +358,14 @@ func statusDataOf(s statusInfo) statusData {
 	}
 
 	for _, r := range s.HostEnv {
+		// A DISABLED entry (`KEY = ""` in some layer) is not a channel this
+		// box has -- the page omits it for that reason, and emitting it here
+		// would make --data a superset of --full rather than the same
+		// content, inviting a reader to count a passthrough that was
+		// switched off as one that exists.
+		if r.State == hostEnvDisabled {
+			continue
+		}
 		d.HostEnv = append(d.HostEnv, statusDataHostEnv{
 			Key: r.Key, Source: r.Source, State: hostEnvStateName(r.State),
 		})
@@ -368,18 +380,17 @@ func statusDataOf(s statusInfo) statusData {
 	return d
 }
 
-// statusDataNetworkOf mirrors networkLine's judgment: what byre WARRANTS,
-// not merely what a skill declared. One predicate for both surfaces would be
-// the ideal; until the page's prose is factored out, the rule is stated once
-// here and once there, and this comment is the pointer between them.
+// statusDataNetworkOf reports what byre WARRANTS, not merely what a skill
+// declared -- through networkWarranted, the same predicate the Network row
+// itself branches on, so the page and this document cannot disagree about
+// whether the wall is byre's.
 func statusDataNetworkOf(s statusInfo) statusDataNetwork {
 	n := statusDataNetwork{
 		Posture:      s.NetPosture,
 		PostureSkill: s.NetPostureSkill,
 		Closed:       s.EgressClosed,
+		Warranted:    networkWarranted(s),
 	}
-	n.Warranted = s.SkillErr == "" && !s.ProjectRunArgs && len(s.BuildRaw) == 0 &&
-		!skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimNetwork)
 	enforced := config.PostureEnforcesAllowlist(s.NetPosture)
 	seen := map[string]bool{}
 	for _, a := range s.Egress {

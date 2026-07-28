@@ -85,15 +85,100 @@ func TestStatusDataCoversTheFullPage(t *testing.T) {
 		t.Errorf("network.warranted = %v; a raw build line plus an unrecognized reserved key must withdraw the claim", net["warranted"])
 	}
 	res, _ := got["reserved_env"].([]any)
-	if len(res) != 1 {
-		t.Fatalf("reserved_env = %v, want one entry", res)
+	byKey := map[string]map[string]any{}
+	for _, e := range res {
+		m, _ := e.(map[string]any)
+		key, _ := m["key"].(string)
+		byKey[key] = m
 	}
-	entry, _ := res[0].(map[string]any)
-	if entry["known"] != false {
-		t.Errorf("BYRE_SCRATCH must not be reported as a known chassis knob: %v", entry)
+	// A key byre reads and a key it does not must be distinguishable as
+	// DATA, not only in the prose: both degrade, only one is a byre control.
+	scratch, ok := byKey["BYRE_SCRATCH"]
+	if !ok {
+		t.Fatalf("reserved_env = %v, want the unrecognized key", res)
 	}
-	if note, _ := entry["note"].(string); !strings.Contains(note, "not a control this byre recognizes") {
+	if scratch["known"] != false {
+		t.Errorf("BYRE_SCRATCH must not be reported as a known chassis knob: %v", scratch)
+	}
+	if note, _ := scratch["note"].(string); !strings.Contains(note, "not a control this byre recognizes") {
 		t.Errorf("reserved_env note overclaims: %q", note)
+	}
+	if knob, ok := byKey["BYRE_EGRESS"]; !ok || knob["known"] != true {
+		t.Errorf("a chassis knob must be reported as known: %v", byKey["BYRE_EGRESS"])
+	}
+}
+
+// The page and --data read ONE predicate for whether byre stands behind the
+// Network row, so they cannot disagree about whether the wall is byre's. The
+// open default is the case that caught it: the row prints "open" flat with
+// raw run_args present, and --data must not call that unwarranted.
+func TestStatusDataNetworkWarrantAgreesWithThePage(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		info      statusInfo
+		wantRow   string // a fragment the Network row must carry
+		warranted bool
+	}{
+		{
+			name:      "open network, raw run_args -- nothing to withdraw",
+			info:      statusInfo{ProjectRunArgs: true, RunArgs: []string{"--privileged"}},
+			wantRow:   "open",
+			warranted: true,
+		},
+		{
+			name:      "declared posture, raw run_args -- withdrawn",
+			info:      statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall", ProjectRunArgs: true},
+			wantRow:   "not guaranteed",
+			warranted: false,
+		},
+		{
+			name:      "declared posture, nothing displacing it",
+			info:      statusInfo{NetPosture: "deny-by-default", NetPostureSkill: "firewall"},
+			wantRow:   "skill: firewall",
+			warranted: true,
+		},
+		{
+			name:      "skills unresolved -- unknowable",
+			info:      statusInfo{NetPosture: "deny-by-default", SkillErr: "broken"},
+			wantRow:   "unknown",
+			warranted: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if row := networkLine(tc.info); !strings.Contains(row, tc.wantRow) {
+				t.Fatalf("Network row = %q, want it to carry %q", row, tc.wantRow)
+			}
+			got := decodeStatusData(t, tc.info)
+			net, _ := got["network"].(map[string]any)
+			if net["warranted"] != tc.warranted {
+				t.Errorf("network.warranted = %v, want %v -- the page says %q",
+					net["warranted"], tc.warranted, networkLine(tc.info))
+			}
+		})
+	}
+}
+
+// A passthrough a layer switched off is not a channel this box has: the page
+// omits it, so --data omits it too. Emitting it would make --data a superset
+// of --full rather than the same content, and invite a reader to count a
+// disabled passthrough as one that exists.
+func TestStatusDataOmitsDisabledHostEnvTheSameWayThePageDoes(t *testing.T) {
+	info := statusInfo{HostEnv: []hostEnvResult{
+		{Key: "TERM", Source: "env:TERM", Value: "xterm", State: hostEnvDelivered},
+		{Key: "TZ", Source: "tz:", State: hostEnvDisabled},
+	}}
+	var page strings.Builder
+	renderStatus(&page, info, tierFull, noWrapWidth)
+	if strings.Contains(page.String(), "TZ") {
+		t.Fatalf("the page's own rule changed -- it now shows a disabled entry:\n%s", page.String())
+	}
+	got := decodeStatusData(t, info)
+	entries, _ := got["host_env"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("host_env = %v, want only the entry the page shows", entries)
+	}
+	if e, _ := entries[0].(map[string]any); e["key"] != "TERM" {
+		t.Errorf("host_env kept the wrong entry: %v", entries[0])
 	}
 }
 

@@ -745,6 +745,7 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                       Host mounts:  none
                       Skills:       byre/claude         bundled v1.3.1
                                     pjlsergeant/devlog  installed 1.0.0
+                                    (--full for package digests)
                       State vols:   .claude
                       Cache vols:   none
                       Host env:     2 keys from host: GIT_AUTHOR_EMAIL,
@@ -768,8 +769,12 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   Layout is byre's, not the terminal's: the row funnel wraps
                   a long value itself, hanging to the value column and
                   breaking at the row grammar's separators rather than
-                  through a path. It wraps to the terminal's width when
-                  printing to one, and to 80 columns otherwise -- so
+                  through a path. Width is measured in terminal CELLS, so a
+                  CJK path or byre's own two-cell 🛑 marker does not overrun
+                  and get re-wrapped at column zero. It lays out to the
+                  terminal's width when printing to one -- clamped to
+                  [48, 160], and BELOW the floor it lays out at 48 rather
+                  than pretending to 80 -- and to a fixed 80 otherwise, so
                   redirected output is the same wherever it is produced.
 
 byre dockerfile   Print the generated Dockerfile for this directory.
