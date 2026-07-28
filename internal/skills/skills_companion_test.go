@@ -137,3 +137,38 @@ func bundledSrcFS(t *testing.T) fs.FS {
 	t.Helper()
 	return os.DirFS("../builtins")
 }
+
+// The stored-pick predicate is shared by three surfaces (the offer, the
+// skip_questions apply path, the config editor's row), so it is pinned here
+// rather than at each of them: two implementations would drift into a grant
+// one surface allows and another flags.
+func TestSharedAuthPickLive(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "claude", "[agent]\ncommand = \"claude\"\n", nil)
+	writeSkill(t, dir, "claude-shared-auth", "shared_auth_for = \"claude\"\n", nil)
+	writeSkill(t, dir, "opencode-shared-auth", "shared_auth_for = \"opencode\"\n", nil)
+	cat := catFor(t, dir)
+
+	if !SharedAuthPickLive(cat, "claude", "claude-shared-auth") {
+		t.Error("an installed claimant must read live")
+	}
+	// A name nothing claims: uninstalled, renamed, or never real.
+	if SharedAuthPickLive(cat, "claude", "gone-shared-auth") {
+		t.Error("a pick no skill claims must not read live")
+	}
+	// A companion that claims a DIFFERENT agent does not answer for this one --
+	// the case where a name survives but the pairing it stood for did not.
+	if SharedAuthPickLive(cat, "claude", "opencode-shared-auth") {
+		t.Error("a claimant of another agent must not satisfy this agent's pick")
+	}
+	for _, tc := range []struct{ agent, pick string }{
+		{"", "claude-shared-auth"}, {"claude", ""}, {"claude", "claude"},
+	} {
+		if SharedAuthPickLive(cat, tc.agent, tc.pick) {
+			t.Errorf("(%q, %q) must not read live", tc.agent, tc.pick)
+		}
+	}
+	if SharedAuthPickLive(nil, "claude", "claude-shared-auth") {
+		t.Error("no catalog is no evidence of a live claimant")
+	}
+}

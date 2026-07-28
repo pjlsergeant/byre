@@ -20,6 +20,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/onboard"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // Run shows the interactive editor for cfg and returns whether the caller
@@ -1444,39 +1445,15 @@ func (m model) sharedAuthLine() string {
 			continue
 		}
 		row := packages.EscapeTerminal(a) + " → " + packages.EscapeTerminal(pick)
-		if !m.sharedAuthPickLive(a, pick) {
+		// The ONE owner of "does this stored pick still name a companion"
+		// (skills.SharedAuthPickLive): this row and the two apply paths must
+		// not disagree about a grant.
+		if !skills.SharedAuthPickLive(m.inh.Catalog, a, pick) {
 			row += warnStyle.Render("  ⚠ " + onboard.StalePickNotice(packages.EscapeTerminal(pick)))
 		}
 		parts = append(parts, row)
 	}
 	return strings.Join(parts, dimStyle.Render(" · "))
-}
-
-// sharedAuthPickLive reports whether pick still names a skill vouching itself
-// as agent's shared-auth companion (shared_auth_for). Alias-expanded on every
-// side, because a stored pick and a declaration may spell the same package two
-// ways -- the same tolerance SharedAuthAlreadyOn extends, for the same reason.
-func (m model) sharedAuthPickLive(agent, pick string) bool {
-	if agent == "" || pick == "" {
-		return false
-	}
-	expand := func(s string) string {
-		if m.inh.Catalog == nil {
-			return s
-		}
-		return m.inh.Catalog.ExpandAlias(s)
-	}
-	want, wantPick := expand(agent), expand(pick)
-	for _, name := range m.skillOpts {
-		rt, ok := m.inh.Skills[name]
-		if !ok || rt.SharedAuthFor == "" || expand(rt.SharedAuthFor) != want {
-			continue
-		}
-		if name == pick || expand(name) == wantPick {
-			return true
-		}
-	}
-	return false
 }
 
 // boolWord renders an inherited tri-state value in the picker's own words, so

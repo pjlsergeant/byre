@@ -3,22 +3,35 @@ package configui
 import (
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/onboard"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
+
+// A REAL catalog, because the staleness check is skills.SharedAuthPickLive
+// over the catalog -- the same call the two apply paths make. A hand-built
+// map would test a shape production never produces.
+func sharedAuthCatalog(t *testing.T) *packages.Catalog {
+	t.Helper()
+	bundled := fstest.MapFS{
+		"skills/claude/skill.toml":               &fstest.MapFile{Data: []byte("description = \"c\"\n[agent]\ncommand = \"claude\"\n")},
+		"skills/claude-shared-auth/skill.toml":   &fstest.MapFile{Data: []byte("shared_auth_for = \"claude\"\n")},
+		"skills/opencode-shared-auth/skill.toml": &fstest.MapFile{Data: []byte("shared_auth_for = \"opencode\"\n")},
+	}
+	cat, err := packages.LoadCatalog(t.TempDir(), bundled, "v0.2.0", "0.2.0", packages.Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cat
+}
 
 func sharedAuthModel(t *testing.T, pref config.SharedAuthPref) model {
 	t.Helper()
-	inh := Inherited{
-		Skills: map[string]SkillRuntime{
-			"claude":               {},
-			"claude-shared-auth":   {SharedAuthFor: "claude"},
-			"opencode-shared-auth": {SharedAuthFor: "opencode"},
-		},
-	}
+	inh := Inherited{Catalog: sharedAuthCatalog(t)}
 	cfg := config.Config{Defaults: config.Defaults{SharedAuth: pref}}
 	m := newModel("t", "/x", cfg, nil, []string{"claude"},
 		[]string{"claude", "claude-shared-auth", "opencode-shared-auth"}, nil, inh, nil, TargetGlobal)

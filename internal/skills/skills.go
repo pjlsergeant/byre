@@ -647,6 +647,33 @@ func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
 	return append(bundled, other...)
 }
 
+// SharedAuthPickLive reports whether a STORED shared-auth pick still names a
+// skill vouching itself as agent's companion. The one owner of that question:
+// a stored pick is a name, and three surfaces have to agree on whether the
+// name still means anything -- the interactive offer, the apply path that
+// skips it (defaults.skip_questions), and the config editor's read-only row.
+// Two implementations of it would drift into a grant one surface allows and
+// another flags.
+//
+// Alias-tolerant on every side, because a pick is stored in whatever form the
+// picker offered (the alias where one exists, the canonical id otherwise) --
+// the same tolerance SharedAuthAlreadyOn extends, for the same reason.
+func SharedAuthPickLive(cat *packages.Catalog, agent, pick string) bool {
+	if agent == "" || pick == "" || cat == nil {
+		return false
+	}
+	wantPick := cat.ExpandAlias(pick)
+	for _, c := range SharedAuthClaimants(cat, agent) {
+		if c.Name == pick || cat.ExpandAlias(c.Name) == wantPick {
+			return true
+		}
+		if ent, ok := cat.Lookup(c.Name); ok && ent.Alias == pick {
+			return true
+		}
+	}
+	return false
+}
+
 // SharedAuthCompanion returns the single ready shared-auth companion for
 // agent, plus HOW MANY skills claim the pairing. A name comes back only for
 // exactly one claimant -- byre never picks between rival claimants -- but the

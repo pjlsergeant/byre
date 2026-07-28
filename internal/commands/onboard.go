@@ -126,7 +126,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			companion, stale := "", ""
 			if defA != "" && onboard.SharedAuthPreference(paths.Home, defA) {
 				if pick := onboard.SharedAuthPick(paths.Home, defA); pick != "" {
-					if sharedAuthClaimantLive(cat, defA, pick) {
+					if skills.SharedAuthPickLive(cat, defA, pick) {
 						companion = pick
 					} else {
 						stale = onboard.StalePickNotice(pick)
@@ -256,26 +256,6 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		}
 	}
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
-}
-
-// sharedAuthClaimantLive reports whether pick still names a skill that claims
-// to be agent's shared-auth companion. Both spellings count -- a pick is
-// stored in whatever form the picker offered, which is the alias where one
-// exists and the canonical id otherwise (SharedAuthAlreadyOn checks both for
-// the same reason).
-func sharedAuthClaimantLive(cat *packages.Catalog, agent, pick string) bool {
-	if pick == "" {
-		return false
-	}
-	for _, c := range skills.SharedAuthClaimants(cat, agent) {
-		if c.Name == pick {
-			return true
-		}
-		if ent, ok := cat.Lookup(c.Name); ok && ent.Alias == pick {
-			return true
-		}
-	}
-	return false
 }
 
 // buildSharedAuthOffer assembles the shared-auth offer for agent: live claimants with
