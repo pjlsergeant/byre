@@ -43,11 +43,15 @@ this index:
   changes with it -- `TestDoctrineIndexArmsResolve` fails on names
   that no longer match a test function.
 - An arm behind `BYRE_DOCKER_TESTS=1` or `BYRE_TUI_TESTS=1` is marked
-  `[arm(gated): ...]`. The same test checks this both ways: a gated
-  marker whose test does not sit behind either gate fails, and so does
-  a plain `[arm: ...]` whose test does -- so an arm cannot quietly
-  become unenforceable-by-default, or keep claiming it is once it runs
-  everywhere.
+  `[arm(gated): ...]`, and gated tests live in a file whose NAME says so
+  -- one with `integration` in it, or one under `internal/tuitest/`.
+  `TestDoctrineIndexArmsResolve` checks the marker against that
+  convention both ways: a gated marker on a test in an ordinary unit
+  file fails, and so does a plain `[arm: ...]` on a test in a gated
+  file. So an arm cannot quietly become unenforceable-by-default, or
+  keep claiming it is once it runs everywhere. A gated arm in a
+  wrongly-named file fails with the convention in the message: move the
+  test, don't weaken the marker.
 - An arm may be partial (a tripwire on the decision's core, not proof
   of every clause); a marker never claims completeness. When in doubt
   whether a test qualifies, it doesn't -- `[no arm]` is the honest

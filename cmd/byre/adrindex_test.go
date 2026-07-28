@@ -79,14 +79,16 @@ func TestDoctrineIndexCoversCorpus(t *testing.T) {
 	}
 }
 
-// gatedTestFile reports whether every test in this file needs one of the
-// tier gates. The two env var names are the gates themselves; a file under
-// internal/tuitest counts because its tests spell the tmux gate as the
-// harness's own Require, which names BYRE_TUI_TESTS one file over.
-func gatedTestFile(path, content string) bool {
-	return strings.Contains(content, "BYRE_DOCKER_TESTS") ||
-		strings.Contains(content, "BYRE_TUI_TESTS") ||
-		strings.Contains(filepath.ToSlash(path), "internal/tuitest/")
+// gatedTestFile reports whether this file is one where every test rides a
+// tier gate. It judges the file's NAME, which is a convention the repo
+// keeps, and not its contents: a file's text says nothing reliable here --
+// tuitest holds ordinary unit tests beside its pty ones, and a comment
+// mentioning BYRE_DOCKER_TESTS gates nothing at all. So: gated tests live
+// in a file whose name says "integration", or under internal/tuitest.
+func gatedTestFile(path string) bool {
+	p := filepath.ToSlash(path)
+	return strings.Contains(filepath.Base(p), "integration") ||
+		strings.Contains(p, "internal/tuitest/")
 }
 
 func TestDoctrineIndexArmsResolve(t *testing.T) {
@@ -114,7 +116,7 @@ func TestDoctrineIndexArmsResolve(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		gatedFile[path] = gatedTestFile(path, string(b))
+		gatedFile[path] = gatedTestFile(path)
 		for _, m := range funcRe.FindAllStringSubmatch(string(b), -1) {
 			testFuncs[m[1]] = append(testFuncs[m[1]], path)
 		}
@@ -138,9 +140,9 @@ func TestDoctrineIndexArmsResolve(t *testing.T) {
 			for _, f := range files {
 				switch {
 				case e.gated && !gatedFile[f]:
-					t.Errorf("index entry %s marks arm %s [arm(gated)], but %s sits behind no tier gate -- drop the (gated)", id, arm, f)
+					t.Errorf("index entry %s marks arm %s [arm(gated)], but %s is not a gated-tier file -- gated tests live in an *integration*_test.go or under internal/tuitest; move the test or drop the (gated)", id, arm, f)
 				case !e.gated && gatedFile[f]:
-					t.Errorf("index entry %s marks arm %s [arm], but %s runs only behind BYRE_DOCKER_TESTS/BYRE_TUI_TESTS -- mark it [arm(gated)]", id, arm, f)
+					t.Errorf("index entry %s marks arm %s [arm], but %s is a gated-tier file (an *integration*_test.go, or internal/tuitest) -- mark it [arm(gated)]", id, arm, f)
 				}
 			}
 		}
