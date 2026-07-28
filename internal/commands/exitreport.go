@@ -367,7 +367,7 @@ func readGitConfig(path string) (map[string]string, bool) {
 // to "which directory will git use" -- but it means an in-tree hooks dir named
 // by the user's own ~/.gitconfig gets watched, and can produce a line the agent
 // had nothing to do with. Passive attribution already covers that, and
-// inTreeByIdentity still gates the walk.
+// hostopen.InTreeByIdentity still gates the walk.
 func containedHooksPath(paths project.Paths) (string, bool) {
 	raw, err := gitProbe("-C", paths.WorkDir, "config", "--get", "core.hooksPath")
 	if err != nil {
@@ -382,7 +382,7 @@ func containedHooksPath(paths project.Paths) (string, bool) {
 	}
 	p = filepath.Clean(p)
 	for _, root := range []string{paths.WorkDir, paths.Canonical} {
-		if root != "" && inTreeByIdentity(root, p) {
+		if root != "" && hostopen.InTreeByIdentity(root, p) {
 			return p, true
 		}
 	}
