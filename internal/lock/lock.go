@@ -47,6 +47,17 @@ func TryAcquire(path string) (l *Lock, ok bool, err error) {
 	return l, true, nil
 }
 
+// The requeue loop below is UNBOUNDED, deliberately. A process that keeps
+// unlinking and recreating the lock file can keep a waiter cycling forever --
+// but so can one that simply HOLDS the flock, which no timeout here would
+// help with either, so a bound would close one path to a wedge and leave its
+// twin open. It would also cost something real: legitimate waits are behind a
+// live `byre develop` doing a cold build, and a timeout that fired there
+// would abort a correct wait as if it were a fault. Waiters are not silent --
+// acquireNoisy prints one "waiting for another byre setup..." line, so a wedge
+// is visible and ctrl-C ends it. The only actor that can drive the loop is
+// something already running on the host with write access to ~/.byre, which
+// is the --self-edit trust boundary, disclosed where that grant is taken.
 func acquire(path string, nonblock bool) (*Lock, error) {
 	for {
 		f, locked, err := hostopen.OpenLockFile(path)
