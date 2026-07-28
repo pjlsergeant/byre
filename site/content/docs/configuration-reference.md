@@ -143,8 +143,13 @@ exceptions noted inline.
   `byre-<project-id>-<name>` for project scope,
   `byre-machine-u<uid>-<name>` for machine scope -- per *user*
   deliberately, so two users on a shared box never silently share
-  state. See [Volumes & state](/docs/volumes-and-state/) for the
-  user-side model.
+  state. Optional `sharing = "exclusive"` declares the volume
+  single-writer: worktree boxes of one project run concurrently and
+  mount the same volumes, so `byre develop` refuses to start a second
+  box that would mount it while another holds it (exit `3`). The
+  default, `"shared"`, is what every byre volume has always been.
+  Project scope only -- byre can only see this project's boxes. See
+  [Volumes & state](/docs/volumes-and-state/) for the user-side model.
 - `seed_prefs` -- one-time copy of the agent's curated non-secret pref
   files into a fresh state volume. Three states, not two (inherit, on,
   off), so a layer that turns it on can be turned back off downstream.

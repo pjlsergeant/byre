@@ -342,6 +342,33 @@ func TestValidateVolumeScope(t *testing.T) {
 	}
 }
 
+func TestValidateVolumeSharing(t *testing.T) {
+	for _, s := range []string{"", "shared", "exclusive"} {
+		ok := Config{Volumes: []Volume{{Name: "db", Role: "state", Target: "/t", Sharing: s}}}
+		if err := ok.Validate(); err != nil {
+			t.Errorf("sharing %q rejected: %v", s, err)
+		}
+	}
+	bad := Config{Volumes: []Volume{{Name: "db", Role: "state", Target: "/t", Sharing: "single"}}}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), `sharing "single" invalid`) {
+		t.Errorf("expected the sharing-vocabulary rule to fire on %q, got %v", "single", err)
+	}
+	// exclusive + machine scope don't compose: the single-writer scan covers
+	// this project's live boxes, and a machine-scoped volume is mounted by
+	// every project of this user.
+	crossProject := Config{Volumes: []Volume{{Name: "db", Role: "state", Target: "/t", Scope: "machine", Sharing: "exclusive"}}}
+	if err := crossProject.Validate(); err == nil ||
+		!strings.Contains(err.Error(), `sharing = "exclusive" is not valid on a machine-scoped volume`) {
+		t.Errorf("expected rejection of exclusive on a machine-scoped volume, got %v", err)
+	}
+	// A removal marker stays name-only: sharing beside a `!name` means a real
+	// declaration with a mistyped name, not a removal.
+	marker := Config{Volumes: []Volume{{Name: "!db", Sharing: "exclusive"}}}
+	if err := marker.ValidateLayer(); err == nil || !strings.Contains(err.Error(), "removal marker takes only a name") {
+		t.Errorf("expected the marker-shape rule to fire on a marker carrying sharing, got %v", err)
+	}
+}
+
 func TestValidateLiteralSeed(t *testing.T) {
 	ok := Config{Volumes: []Volume{{Name: "c", Role: "state", Target: "/t", Seed: &Seed{Literal: "x", Path: "a/b.conf"}}}}
 	if err := ok.Validate(); err != nil {

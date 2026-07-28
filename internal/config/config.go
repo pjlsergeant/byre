@@ -315,11 +315,28 @@ type Volume struct {
 	// byre-machine-u<uid>-<name>, mounted identically by every project that
 	// declares it -- ADR 0017). General grammar: valid in config or skill.
 	Scope string `toml:"scope,omitempty"`
+	// Sharing is the volume's concurrency contract: "shared" (default -- any
+	// number of boxes may mount it at once) or "exclusive" (at most one live
+	// box, enforced at develop). Scope says WHICH boxes may see the volume;
+	// this says how many of them may hold it at the same time, and the two
+	// are independent questions.
+	//
+	// A word rather than a bool because the answers are not a switch: a
+	// per-worktree copy is a third answer to the same question, and a
+	// `exclusive = true` key would have nowhere to put it. General grammar:
+	// valid in config or skill.
+	Sharing string `toml:"sharing,omitempty"`
 }
 
 // MachineScoped reports whether the volume is machine-scoped (shared across
 // all of one user's projects) rather than the default project scope.
 func (v Volume) MachineScoped() bool { return v.Scope == "machine" }
+
+// Exclusive reports whether the volume declares a single-writer contract.
+// Default (empty) is shared: that is what every volume byre has ever mounted
+// does, and it is what ADR 0009's reasoning covers for the agent state dirs
+// it was written about.
+func (v Volume) Exclusive() bool { return v.Sharing == "exclusive" }
 
 // Config is one resolved (or single-layer) byre configuration. omitempty keeps
 // regenerated config files (byre config) clean — only set fields are written.
@@ -1234,6 +1251,21 @@ func validateVolumeShape(v Volume) error {
 	default:
 		return fmt.Errorf("volume %s: scope %q invalid (want project|machine)", v.Name, v.Scope)
 	}
+	switch v.Sharing {
+	case "", "shared", "exclusive":
+	default:
+		return fmt.Errorf("volume %s: sharing %q invalid (want shared|exclusive)", v.Name, v.Sharing)
+	}
+	if v.Exclusive() && v.MachineScoped() {
+		// byre honors single-writer by scanning the live boxes of THIS
+		// project (the label it owns) before a launch mounts the volume. A
+		// machine-scoped volume is mounted identically by every project of
+		// this user, so the boxes that could break the contract are ones the
+		// scan never sees -- byre would be selling a guarantee it cannot
+		// keep. Refused where the author can see it, rather than enforced
+		// halfway.
+		return fmt.Errorf("volume %s: sharing = \"exclusive\" is not valid on a machine-scoped volume — byre enforces single-writer across this project's live boxes, and a machine-scoped volume is mounted by every project of this user", v.Name)
+	}
 	if v.Seed != nil {
 		if v.MachineScoped() {
 			// The seed pipeline names its target volume project-scoped
@@ -1458,7 +1490,7 @@ func (c Config) ValidateLayer() error {
 	for _, v := range c.Volumes {
 		if IsRemoval(v.Name) {
 			// Same rule as mount markers above: a marker is name-only.
-			if v.Role != "" || v.Target != "" || v.Seed != nil || v.Scope != "" {
+			if v.Role != "" || v.Target != "" || v.Seed != nil || v.Scope != "" || v.Sharing != "" {
 				return fmt.Errorf("volume %s: a removal marker takes only a name — other fields here suggest a real volume with a mistyped name", v.Name)
 			}
 			continue
