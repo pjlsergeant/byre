@@ -11,6 +11,33 @@
 // ids, the caller uid) arrives via Config, so the whole flow is unit-testable
 // with a fake engine. ADR 0021 (deliver) and ADR 0040 (grab) carry the
 // rationale; docs/DELIVER.md is the user-facing behavior.
+//
+// # The porcelain contract
+//
+// The two streams are different surfaces and answer to different rules.
+// Stderr is the human one and rides the report funnel (report.go): every line
+// terminal-escaped, the framing newline byre's to add. Stdout is
+// MACHINE-READABLE and is deliberately NOT escaped — a shell reading the
+// landed paths back must get the bytes of the path, not a rendering of it.
+// Three grammars share it, each framed one line per record:
+//
+//   - landed paths, one per line (RunSources, RunTar, RunGrab). Every one is
+//     built from a name byre sanitized (splitName/sanitizeBase/sanitizeRel)
+//     before it was claimed, so the line-framing holds by construction rather
+//     than by escaping. Grab's paths are assembled HOST-side from that
+//     sanitized name and the destination the user named; deliver's are
+//     REPORTED by the box, so they pass landedPath, which applies the same
+//     rule to a reply byre did not build. The user's own destination spelling
+//     is not sanitized and is not meant to be: the user authored it, and the
+//     threat model is the agent.
+//   - the --boxes line grammar (proto.go), tab-separated, each field through
+//     grammarField.
+//   - `byre grab <path> -`, where the stream is not a grammar at all: the box
+//     file's CONTENT is stdout, byte-for-byte, and nothing else prints there.
+//
+// So the invariant to preserve when adding a stdout write: whatever is
+// interpolated is either byre's own, the user's own, or has been through the
+// package's sanitizers — never a raw string the box authored.
 package deliver
 
 import (

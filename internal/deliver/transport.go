@@ -172,11 +172,7 @@ func deliverStream(cfg Config, sess Session, content io.Reader, name, destDir st
 	if err != nil {
 		return "", fmt.Errorf("delivering %s: %w", name, err)
 	}
-	// Trim ONLY the protocol line-framing, never arbitrary whitespace: a
-	// filename may legitimately end in a space, and the printed path must be
-	// the path that actually landed (TrimSpace would report /inbox/report for
-	// a file that landed as "/inbox/report ").
-	landed := strings.TrimRight(out, "\r\n")
+	landed := landedPath(out)
 	if landed == "" {
 		return "", fmt.Errorf("delivering %s: the box reported no landed path", name)
 	}
@@ -197,7 +193,7 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("delivering %s/: %w", src, err)
 	}
-	root := strings.TrimRight(out, "\r\n") // line-framing only — see deliverStream
+	root := landedPath(out)
 	if root == "" {
 		return "", fmt.Errorf("delivering %s/: the box reported no landed path", src)
 	}
@@ -362,6 +358,28 @@ func splitName(name string) (stem, ext string, sanitized bool) {
 		stem, ext = base, ""
 	}
 	return stem, ext, changed || sc
+}
+
+// landedPath turns a transport script's reply into the one path it claims to
+// have landed — the value that goes on stdout, where one line IS one landed
+// path.
+//
+// It trims ONLY the protocol line-framing, never arbitrary whitespace: a
+// filename may legitimately end in a space, and the printed path must be the
+// path that actually landed (TrimSpace would report /inbox/report for a file
+// that landed as "/inbox/report ").
+//
+// Then it maps control characters to '_', by the same rule and for the same
+// reason as the --boxes grammar's grammarField. byre only ever names a
+// sanitizeBase'd stem and ext under a directory it chose, so an honest reply
+// has no control characters and this changes nothing. A reply that has them
+// did not come from the script byre sent: the box's filesystem is the agent's,
+// so the sh on the far end of `exec` is not byre's to warrant. That reply is
+// the ONLY box-authored string on the porcelain stream, and an interior
+// newline in it forges a second landed path — one the ssh leg parses back as
+// real (parseLandedPaths) and the clipboard then carries.
+func landedPath(out string) string {
+	return grammarField(strings.TrimRight(out, "\r\n"))
 }
 
 // sanitizeBase replaces control characters in a basename with '_'.

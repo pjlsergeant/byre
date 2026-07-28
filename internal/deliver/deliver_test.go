@@ -42,6 +42,7 @@ type fakeEngine struct {
 	boxOther    []string          // box paths that are neither (symlinks, FIFOs)
 	enumOut     string            // overrides enumerateScript output (hostile-output tests)
 	classifyOut string            // overrides classifyScript output (control-channel tests)
+	landedOut   string            // overrides the file/dir claim reply (a box that lies about where things landed)
 	enumErr     error             // enumerateScript exec error (partial-walk tests)
 	catErr      error             // catScript exec error
 }
@@ -121,9 +122,15 @@ func (f *fakeEngine) ExecInput(id string, uid, gid int, stdin io.Reader, argv ..
 		n := claim(rel, stem, ext)
 		b, _ := io.ReadAll(stdin)
 		f.streams = append(f.streams, id+" "+rel+n+"<-"+string(b))
+		if f.landedOut != "" {
+			return f.landedOut, nil
+		}
 		return dir + "/" + n + "\n", nil
 	case strings.Contains(script, "mkdir \"/inbox/$n\""): // dirScript: stem ext
 		n := claim("", args[0], args[1])
+		if f.landedOut != "" {
+			return f.landedOut, nil
+		}
 		return "/inbox/" + n + "\n", nil
 	default: // mkdirScript: dir
 		if f.failMkdir {

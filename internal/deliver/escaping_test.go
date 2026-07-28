@@ -169,6 +169,77 @@ func TestGrabReportsEscapeBoxNames(t *testing.T) {
 	}
 }
 
+// The stdout arm. Stderr is escaped at the funnel; stdout is deliberately not
+// (a script must read back the bytes of the path), so its framing rests on
+// every value being sanitized where it is CLAIMED. The one value on that
+// stream byre does not build is the landed path a box REPORTS -- the box's
+// filesystem is the agent's, so the sh answering `exec` is not byre's to
+// warrant -- which makes the reply where the porcelain contract is tested.
+const forgedLanded = "/inbox/landed" + escFrame + "/inbox/never-landed" + escCSI + escOSC + "\n"
+
+func assertOnePorcelainLine(t *testing.T, out string) {
+	t.Helper()
+	if n := strings.Count(out, "\n"); n != 1 {
+		t.Errorf("stdout carried %d landed paths, want 1 -- the box's reply forged one: %q", n, out)
+	}
+	if !strings.HasSuffix(out, "\n") {
+		t.Errorf("stdout must frame its line: %q", out)
+	}
+	if i := strings.IndexByte(out, 0x1b); i >= 0 {
+		t.Errorf("stdout carried a raw ESC at byte %d: %q", i, out)
+	}
+	// Framing is not censorship: the path the box named still prints.
+	if !strings.Contains(out, "/inbox/landed") {
+		t.Errorf("stdout dropped the reported path: %q", out)
+	}
+}
+
+func TestLandedPathStdoutStaysFramed(t *testing.T) {
+	t.Run("file", func(t *testing.T) {
+		eng := box("docker", "aaa")
+		eng.landedOut = forgedLanded
+		cfg, out, _ := testConfig(eng)
+		if _, err := RunSources(cfg, Options{}, PathSources([]string{writeFile(t, "report.pdf", "x")})); err != nil {
+			t.Fatal(err)
+		}
+		assertOnePorcelainLine(t, out.String())
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		eng := box("docker", "aaa")
+		eng.landedOut = forgedLanded
+		cfg, out, _ := testConfig(eng)
+		dir := t.TempDir()
+		mustMkdir(t, filepath.Join(dir, "bug"))
+		mustWrite(t, filepath.Join(dir, "bug", "notes.txt"), "n")
+		if _, err := RunSources(cfg, Options{}, PathSources([]string{filepath.Join(dir, "bug")})); err != nil {
+			t.Fatal(err)
+		}
+		assertOnePorcelainLine(t, out.String())
+	})
+
+	t.Run("tar", func(t *testing.T) {
+		eng := box("docker", "aaa")
+		eng.landedOut = forgedLanded
+		cfg, out, _ := testConfig(eng)
+		if _, err := RunTar(cfg, Options{}, mktar(t, tarEntry{Name: "bug/notes.txt", Content: "n"})); err != nil {
+			t.Fatal(err)
+		}
+		assertOnePorcelainLine(t, out.String())
+	})
+
+	// The remote leg reprints the far byre's stdout on THIS terminal, so the
+	// local rule -- not the far end's version of byre -- decides what lands
+	// there.
+	t.Run("remote reprint", func(t *testing.T) {
+		for _, p := range parseLandedPaths(forgedLanded) {
+			if strings.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+				t.Errorf("parseLandedPaths returned a control character in %q", p)
+			}
+		}
+	})
+}
+
 // planPayloadPack plans a remote send over a tree whose entries carry payload:
 // the planner reports through a caller-supplied warn writer, the one report
 // path in this package that is not the session config.

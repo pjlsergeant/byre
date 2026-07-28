@@ -19,9 +19,11 @@ import (
 //   - the send meter (remote.go) OWNS its line: it writes CR-anchored progress
 //     and an explicit erase, so it is the one place here that emits ANSI on
 //     purpose. It writes to m.err directly and must never be funneled.
-//   - stdout (cfg.Out) is the porcelain contract, not a report: the landed
-//     paths it carries are already sanitized where they are claimed
-//     (sanitizeBase), which is what makes that stream line-framed.
+//   - stdout (cfg.Out) is the porcelain contract, not a report: it must carry
+//     the bytes a script reads back, so it is escaped nowhere. What keeps it
+//     line-framed is that its values are sanitized where they are CLAIMED
+//     (sanitizeBase and its callers) rather than where they are printed. See
+//     the porcelain contract in the package comment for who authors what.
 
 // reportTo writes one report line to w. The writer form exists for the remote
 // planner, which reports through a caller-supplied warn writer rather than the

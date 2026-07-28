@@ -238,11 +238,14 @@ func remoteFailure(err error, target SSHTarget, remoteByre, doing string) error 
 func parseLandedPaths(out string) []string {
 	var landed []string
 	for _, line := range strings.Split(out, "\n") {
-		// Strip only the CR of a CRLF frame, never the path's own trailing
-		// space (a filename may end in one; the remote already trimmed the
-		// LF by splitting). See transport.go deliverStream.
-		if line = strings.TrimRight(line, "\r"); line != "" {
-			landed = append(landed, line)
+		// landedPath strips only the CR of a CRLF frame, never the path's own
+		// trailing space (a filename may end in one; the split already took
+		// the LF), and maps control characters. The remote byre sanitized
+		// its own stdout, so this changes nothing for a remote speaking the
+		// protocol — it means the reprint on THIS terminal answers to the
+		// local rule rather than to the far end's version of byre.
+		if p := landedPath(line); p != "" {
+			landed = append(landed, p)
 		}
 	}
 	return landed
