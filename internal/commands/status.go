@@ -354,25 +354,26 @@ func pkgParts(cat *packages.Catalog, name string, tier statusTier) (id, provenan
 	return ent.ID, ent.ProvenanceShort()
 }
 
-// pkgLines formats "id  provenance" for a SET of packages, the id column
-// sized to the widest id in that set -- so one long id widens the column
-// instead of overflowing a fixed one and pushing its own provenance out of
-// alignment with every row above it.
-func pkgLines(cat *packages.Catalog, names []string, tier statusTier) []string {
-	ids := make([]string, len(names))
-	provs := make([]string, len(names))
+// pkgIDWidth is the id column EVERY package row on the page shares -- the
+// template's and the skills' alike, so they line up with each other. One
+// long id widens the column for all of them; a fixed width was the bug,
+// since an id longer than it (pjlsergeant/claude-skills-pocock) pushed its
+// own provenance out and mangled the alignment of every row around it.
+func pkgIDWidth(cat *packages.Catalog, names []string, tier statusTier) int {
 	w := 0
-	for i, n := range names {
-		ids[i], provs[i] = pkgParts(cat, n, tier)
-		if l := displayLen(ids[i]); l > w {
+	for _, n := range names {
+		id, _ := pkgParts(cat, n, tier)
+		if l := displayLen(id); l > w {
 			w = l
 		}
 	}
-	out := make([]string, len(names))
-	for i := range names {
-		out[i] = pkgColumn(ids[i], provs[i], w+2)
-	}
-	return out
+	return w + 2
+}
+
+// pkgLine formats "id  provenance" against a shared id column.
+func pkgLine(cat *packages.Catalog, name string, tier statusTier, idWidth int) string {
+	id, prov := pkgParts(cat, name, tier)
+	return pkgColumn(id, prov, idWidth)
 }
 
 // hostEnvRow renders the live env_from_host entries with their OUTCOME --
@@ -471,8 +472,9 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		row("Project id", s.ID)
 	}
 	row("Agent", orDefault(s.Agent, "(none)"))
+	pkgW := pkgIDWidth(s.Cat, append(append([]string{}, s.Skills...), s.Template), tier)
 	if s.Template != "" {
-		row("Template", pkgLines(s.Cat, []string{s.Template}, tier)[0])
+		row("Template", pkgLine(s.Cat, s.Template, tier, pkgW))
 	} else {
 		row("Template", "(none)")
 	}
@@ -625,12 +627,12 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		row("Skills", "none")
 	} else {
 		// One row per skill with provenance label.
-		for i, line := range pkgLines(s.Cat, s.Skills, tier) {
+		for i, name := range s.Skills {
 			label := "Skills"
 			if i > 0 {
 				label = ""
 			}
-			row(label, line)
+			row(label, pkgLine(s.Cat, name, tier, pkgW))
 		}
 	}
 

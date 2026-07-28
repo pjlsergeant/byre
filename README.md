@@ -79,17 +79,21 @@ Ask the box what it can touch, any time:
 $ byre status
 Project id:   my-project-pjl-069d95
 Agent:        byre/claude
-Template:     byre/go                 bundled v1.3.1
+Template:     byre/go      bundled v1.3.1
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
 Network:      open
 Ports:        none
 Host mounts:  none
-Skills:       byre/claude             bundled v1.3.1
+Skills:       byre/claude  bundled v1.3.1
 State vols:   .claude
 Cache vols:   none
 Container:    running (0d95f3a2c1b4)
 ```
+
+Every row that exists is on that page -- long values are cut down and
+each cut says so. `byre status --full` shows them whole; `byre status
+--data` prints the same content as JSON.
 
 Everything from here on has a page on the docs site:
 **[getbyre.com/docs](https://getbyre.com/docs/)**.

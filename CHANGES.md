@@ -2,6 +2,40 @@
 
 ## unreleased
 
+- **`byre status` gets three tiers, and stops shredding its own layout.**
+  Long values used to run off the end of the line and let the TERMINAL wrap
+  them, so the continuation landed at column zero where it reads as a new
+  row -- `Host env`, `Reserved env` and `Raw build` all did it, and a skill
+  id longer than 24 characters pushed its own provenance out of alignment
+  with every row above it. Wrapping is now byre's: values hang to the value
+  column, break at the separators the rows already use rather than through
+  a path, and the id column is sized from the widest id on the page. It
+  wraps to your terminal's width, or to 80 columns when the output is not a
+  terminal, so a redirected `byre status` is the same wherever it is
+  produced.
+
+  The page itself is now the DEFAULT of three tiers. It shows every row that
+  exists -- a grant, mount, volume, skill, port or reserved key is never
+  elided -- and cuts long values down, marking each cut with a count and a
+  pointer (`Raw build: 2 lines  (passed through, not introspected; --full to
+  show)`). It folds the delivery arrows that say delivery WORKS into the
+  rows they qualify, and never folds one that has stopped asserting. A claim
+  degradation and a containment disclosure stay at full strength: they are
+  what the page is for. **`byre status --full`** is the same page
+  untruncated. **`byre status --data`** is the same content as JSON, with a
+  `version` field; it is versioned but NOT frozen, nothing consumes it yet,
+  and it is deliberately not documented as a scripting interface -- changes
+  to its shape will be noted here.
+
+- **A skill's `BYRE_`-prefixed variable byre has never heard of stops being
+  announced as a byre control.** A skill setting a reserved key degrades the
+  claims that could ride it, conservatively, whether or not byre recognizes
+  the key -- that is unchanged. But the row said `sets BYRE_SCRATCH — byre
+  runtime control`, which is a claim about a variable byre has no knowledge
+  of: it wears byre's prefix and nothing more. It now reads `not a control
+  this byre recognizes; treated cautiously`, and still names the skill, the
+  key and the claims that ride it.
+
 - **The config editor's exposure line stops asserting a network posture a
   skill has skewed.** `byre status` and the launch banner both qualify the
   posture when an enabled skill sets one of byre's own `BYRE_` network knobs

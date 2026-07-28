@@ -388,8 +388,9 @@ Raw blocks are symmetric across both layers byre controls
 | build   | `base`, `apt`, `files`, `env` | `dockerfile_pre`, `dockerfile_post` |
 | runtime | `mounts`, `volumes`, `env`                  | `run_args`                          |
 
-byre never parses inside a raw block -- `byre status` shows raw blocks
-verbatim and flags them as not-introspected.
+byre never parses inside a raw block -- `byre status` counts the raw build
+lines and flags them as not-introspected, and `byre status --full` shows
+them verbatim.
 
 **`run_args` is last-wins** (ADR 0006): byre's own flags first, `run_args`
 appended last, so a raw flag can override byre's -- except the identity
@@ -731,23 +732,45 @@ byre rebuild      Rebuild the image with the cache disabled (--no-cache) -- the
 
 byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   every grant and who granted it, network posture + egress,
-                  volumes, raw blocks verbatim-but-flagged, session state.
+                  volumes, raw blocks flagged as not introspected, session
+                  state.
 
                       Project id:   repo-abc123
                       Agent:        byre/claude
-                      Template:     byre/go                 bundled v1.3.1
+                      Template:     byre/go             bundled v1.3.1
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
                       Network:      open
                       Ports:        none
                       Host mounts:  none
-                      Skills:       byre/claude             bundled v1.3.1
-                                    pjlsergeant/devlog      installed 1.0.0
+                      Skills:       byre/claude         bundled v1.3.1
+                                    pjlsergeant/devlog  installed 1.0.0
                       State vols:   .claude
                       Cache vols:   none
-                      Host env:     GIT_AUTHOR_EMAIL <- git:user.email, ...  (host values; env_from_host)
+                      Host env:     2 keys from host: GIT_AUTHOR_EMAIL,
+                                    GIT_AUTHOR_NAME  (env_from_host; --full for sources)
                       Raw run args: --cap-add=SYS_PTRACE   (passed through; not introspected)
                       Container:    not running
+
+                  Three tiers. The DEFAULT page above shows every row that
+                  exists -- a grant, mount, volume, skill, port or reserved
+                  key is never elided -- and truncates long values, marking
+                  each truncation with a count and a `--full` pointer. It
+                  never folds a claim degradation or a containment
+                  disclosure: those rows are the point, and they are short.
+                  `--full` is the same page untruncated (raw build lines
+                  verbatim, passthrough sources, package digests, the full
+                  delivery sentences). `--data` is the same content as JSON,
+                  carrying a `version` field; it is versioned but not frozen,
+                  nothing consumes it yet, and it is not a scripting
+                  interface until it says so.
+
+                  Layout is byre's, not the terminal's: the row funnel wraps
+                  a long value itself, hanging to the value column and
+                  breaking at the row grammar's separators rather than
+                  through a path. It wraps to the terminal's width when
+                  printing to one, and to 80 columns otherwise -- so
+                  redirected output is the same wherever it is produced.
 
 byre dockerfile   Print the generated Dockerfile for this directory.
 
