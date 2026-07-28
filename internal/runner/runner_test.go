@@ -134,4 +134,29 @@ func TestIsRootlessPodman(t *testing.T) {
 	if _, err := r.IsRootlessPodman(); err == nil {
 		t.Fatal("expected the query error to propagate")
 	}
+
+	// Anything that is not one of the template's two answers is INCONCLUSIVE,
+	// not false: the mode-select would otherwise hand a rootless engine the
+	// rootful identity on an empty string or a moved field, and every one of
+	// those shapes reads as "not true".
+	for _, out := range []string{"", "<no value>", "Rootless: true", "yes"} {
+		r := &Runner{engine: Podman, capture: func(string, ...string) (string, error) {
+			return out, nil
+		}}
+		got, err := r.IsRootlessPodman()
+		if err == nil {
+			t.Errorf("podman info %q = (%v, nil), want an inconclusive error", out, got)
+			continue
+		}
+		if !strings.Contains(err.Error(), "no usable rootless answer") {
+			t.Errorf("podman info %q: err = %v, want the inconclusive-answer rule", out, err)
+		}
+	}
+	// An engine handing back a wall of text must not become a wall of error.
+	r = &Runner{engine: Podman, capture: func(string, ...string) (string, error) {
+		return strings.Repeat("x", 5000), nil
+	}}
+	if _, err := r.IsRootlessPodman(); err == nil || len(err.Error()) > 200 {
+		t.Errorf("an oversized answer must be bounded in the error: %v", err)
+	}
 }

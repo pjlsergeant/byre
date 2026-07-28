@@ -90,6 +90,7 @@ type statusInfo struct {
 	Orphaned          bool     // Container is running but its byre client is gone (terminal died; box survives)
 	SiblingSessions   []string // OTHER live sessions in this project, "workdir-id (short-id)" (worktrees sharing these volumes)
 	Rootless          bool     // true if the engine is rootless Podman
+	RootlessErr       string   // why the rootless probe could not answer; byre then runs on the host identity
 	KeepID            bool     // rootless Podman with keep-id mapping support (the supported rootless path)
 	EngineErr         string   // why the engine/container state is unknown, if applicable
 	SkillErr          string   // why skills couldn't be resolved, if applicable
@@ -243,7 +244,15 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	} else {
 		info.Engine = string(eng)
 		r := runner.New(eng)
-		if rootless, rerr := r.IsRootlessPodman(); rerr == nil && rootless {
+		// The probe decides which identity a session is built and run with, so
+		// a failure is not nothing to report: develop runs on the host
+		// identity, which is the WRONG one if this engine is in fact rootless
+		// (the userns remap lands files owned by another id). Bare "podman" on
+		// this row would claim the question was settled.
+		switch rootless, rerr := r.IsRootlessPodman(); {
+		case rerr != nil:
+			info.RootlessErr = firstLine(rerr.Error())
+		case rootless:
 			info.Rootless = true
 			if ok, kerr := r.SupportsKeepIDMapping(); kerr == nil && ok {
 				info.KeepID = true
@@ -392,6 +401,8 @@ func renderStatus(w io.Writer, s statusInfo) {
 	}
 	if s.EngineErr != "" {
 		row("Engine", s.Engine+"  (not found: "+s.EngineErr+")")
+	} else if s.RootlessErr != "" {
+		row("Engine", s.Engine+"  (could not tell whether this Podman is rootless: "+s.RootlessErr+" — byre runs boxes as your host uid, which is the wrong identity if it IS rootless: files would land owned by another id)")
 	} else if s.KeepID {
 		row("Engine", s.Engine+fmt.Sprintf("  (rootless — keep-id: the box's dev user is uid %d, mapped to you)", genericUID))
 	} else if s.Rootless {

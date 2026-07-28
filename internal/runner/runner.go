@@ -107,7 +107,30 @@ func (r *Runner) IsRootlessPodman() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(out) == "true", nil
+	// Only the two answers this template can give count as answers. Reading
+	// "anything that isn't true" as false hands a rootless engine the rootful
+	// path -- and the shapes that reach here otherwise (an empty string, Go's
+	// "<no value>" for a field a future Podman moved, a wrapper's banner) all
+	// look like false to that test. Inconclusive is an error, which is the
+	// state every caller already handles.
+	switch answer := strings.TrimSpace(out); answer {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s info gave no usable rootless answer (%q)", r.engine, truncate(answer, 60))
+	}
+}
+
+// truncate bounds an engine-authored string interpolated into an error: the
+// answer above is one word when the query works, and an engine that instead
+// hands back a page of text must not become a page of byre error.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // Build builds the image tagged tag from the given context directory and

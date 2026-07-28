@@ -155,6 +155,22 @@ func TestRenderStatusRootlessPodman(t *testing.T) {
 	}
 }
 
+// The rootless probe picks the identity boxes are built and run with, so a
+// probe that could not answer is a fact about this engine's row: byre falls
+// back to the host identity, which is the wrong one if the engine IS rootless.
+// Bare "podman" would claim a settled question.
+func TestRenderStatusDisclosesAnInconclusiveRootlessProbe(t *testing.T) {
+	var b bytes.Buffer
+	renderStatus(&b, statusInfo{Engine: "podman", Canonical: "/p", RootlessErr: "podman info gave no usable rootless answer (\"<no value>\")"})
+	out := b.String()
+	if !strings.Contains(out, "could not tell") || !strings.Contains(out, "no usable rootless answer") {
+		t.Errorf("an inconclusive probe must be disclosed on the Engine row: %s", out)
+	}
+	if !strings.Contains(out, "host uid") {
+		t.Errorf("the disclosure must say what byre did instead: %s", out)
+	}
+}
+
 func TestNetworkLine(t *testing.T) {
 	cases := []struct {
 		name string
