@@ -209,14 +209,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if err != nil {
 			return err
 		}
-		// The engine is the one thing this re-read cannot honor: the runner, the
-		// identity mode, the image tag and the ADR 0004 peer set were all fixed
-		// by the pre-lock detection, and re-detecting would re-probe the host
-		// from inside the lock. A save that names a DIFFERENT engine gets a
-		// refusal rather than a box on the engine the config just stopped
-		// naming. `auto` names whatever byre found, which is what is running.
-		if e := fresh.cfg.Engine; e != "" && e != "auto" && e != string(r.Engine()) {
-			return fmt.Errorf("the configured engine changed to %q while develop waited for the setup lock (this session resolved %s); nothing was built — re-run `byre develop`", e, r.Engine())
+		// The engine is the one thing this re-read cannot honor -- develop's
+		// ADR 0004 peer set is fixed by the pre-lock detection too -- so the
+		// shared refusal fires before anything is built.
+		if err := refuseEngineChangedUnderLock(fresh.cfg, r.Engine(), "develop"); err != nil {
+			return err
 		}
 		rv = fresh
 		// The build warnings speak for the config that is about to be built,

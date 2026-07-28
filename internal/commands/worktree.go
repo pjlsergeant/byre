@@ -214,6 +214,15 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 		if err != nil {
 			return err
 		}
+		// Worktree detected the engine from its own earlier read of the config
+		// (see Worktree), so this read can name a different one — and the whole
+		// chain hangs off that detection: the runner, the identity mode behind
+		// ident, the image tag, and the creation container that runs from the
+		// image. Refuse rather than register a worktree against an image the
+		// develop handoff will not use.
+		if err := refuseEngineChangedUnderLock(rv.cfg, r.Engine(), "worktree"); err != nil {
+			return err
+		}
 		warnNonDebianBase(s.Err, rv.cfg.Base)
 		return buildImageWarn(s.Err, r, paths, rv.cfg, rv.skills, image, false, ident)
 	}); err != nil {

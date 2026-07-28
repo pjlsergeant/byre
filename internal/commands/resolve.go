@@ -7,6 +7,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -74,6 +75,23 @@ func (rv resolved) refresh() (resolved, error) {
 	fresh.declinedEngines = rv.declinedEngines
 	fresh.gitExe = rv.gitExe
 	return fresh, nil
+}
+
+// refuseEngineChangedUnderLock names the one drift the re-read above cannot
+// absorb. Every setup writer detects the engine BEFORE taking the lock, and
+// the runner, the identity mode (ADR 0032) and the image tag all descend from
+// that detection — so a save that renames the engine while the writer waits
+// can only be refused: building or launching on the engine the config just
+// stopped naming would report success for an image the next develop never
+// runs, under an identity mode that engine may not even use. `""`/`auto` is
+// not a change: it names whatever byre found, which is what is running.
+// Called under the lock, on the fresh read, before anything is built.
+func refuseEngineChangedUnderLock(cfg config.Config, running runner.Engine, command string) error {
+	e := cfg.Engine
+	if e == "" || e == "auto" || e == string(running) {
+		return nil
+	}
+	return fmt.Errorf("the configured engine changed to %q while %s waited for the setup lock (this session resolved %s); nothing was built — re-run the command", e, command, running)
 }
 
 // combine forms the resolved view from a loaded config and its skills — the

@@ -275,9 +275,9 @@ detect, which host tools to pin), and everything the lock guards -- generate,
 build, seed, create, and the exposure banner that describes the result -- comes
 from the read taken under it. `rebuild` and the worktree create step read
 under the lock for the same reason. The one thing the later read cannot honor
-is a changed `engine`: the runner, the identity mode and the image tag are
-already fixed by the earlier detection, so develop refuses by name rather than
-launch on the engine the config just stopped naming.
+is a changed `engine`: the runner, the identity mode (ADR 0032) and the image
+tag are already fixed by the earlier detection, so all three refuse by name
+rather than build or launch on the engine the config just stopped naming.
 
 ## Config
 

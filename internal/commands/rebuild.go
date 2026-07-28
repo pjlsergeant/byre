@@ -39,12 +39,12 @@ func Rebuild(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	return rebuild(s.Err, rr, paths, rv, ident)
+	return rebuild(s.Err, rr, eng, paths, rv, ident)
 }
 
 // rebuild is Rebuild's engine-facing core, split out so it can run against a
 // fake engine. w gets the progress note (stderr in production).
-func rebuild(w io.Writer, r imageRunner, paths project.Paths, rv resolved, ident runner.Identity) error {
+func rebuild(w io.Writer, r imageRunner, eng runner.Engine, paths project.Paths, rv resolved, ident runner.Identity) error {
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	return withSetupLock(w, paths.LockFile, func() error {
 		// Re-establish enrollment under the lock, same as develop: a concurrent
@@ -57,6 +57,14 @@ func rebuild(w io.Writer, r imageRunner, paths project.Paths, rv resolved, ident
 		// had to name the engine.
 		fresh, err := rv.refresh()
 		if err != nil {
+			return err
+		}
+		// The image is only worth building for the engine that will run it:
+		// eng, the identity mode behind ident, and the image tag all come from
+		// the pre-lock detection, so a save that renames the engine gets the
+		// same refusal develop gives rather than a rebuild reported as done
+		// for an image the next develop never looks at.
+		if err := refuseEngineChangedUnderLock(fresh.cfg, eng, "rebuild"); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)

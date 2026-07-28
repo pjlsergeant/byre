@@ -535,3 +535,28 @@ func TestEnsureProjectImageReadsTheConfigUnderTheSetupLock(t *testing.T) {
 		t.Errorf("the image was generated from a config read before the lock:\n%s", firstLine(string(df)))
 	}
 }
+
+// And the worktree create step: `byre worktree` detects the engine from its own
+// earlier read of the config, so a save landing while ensureProjectImage waits
+// can rename it -- which would build the image, and run the creation container,
+// on an engine the config no longer names.
+func TestEnsureProjectImageRefusesAnEngineChangedUnderTheSetupLock(t *testing.T) {
+	p, proj := testPaths(t)
+	writeStoreConfig(t, proj, "engine = \"docker\"\n")
+	f := &fakeRunner{} // the engine Worktree detected: docker
+	str := discardStreams()
+	notice := lockWaitWriter(str.Err)
+	str.Err = notice
+	err := saveDuringLockWait(t, p, notice,
+		func() { writeStoreConfig(t, proj, "engine = \"podman\"\n") },
+		func() error {
+			_, _, err := ensureProjectImage(f, str, p, proj)
+			return err
+		})
+	if err == nil || !strings.Contains(err.Error(), "engine changed") || !strings.Contains(err.Error(), "podman") {
+		t.Fatalf("expected the engine-changed refusal naming podman, got %v", err)
+	}
+	if len(f.builds) != 0 {
+		t.Fatalf("the refusal must precede the build: builds=%v", f.builds)
+	}
+}

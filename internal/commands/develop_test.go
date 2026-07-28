@@ -639,7 +639,7 @@ func TestRebuildBuildsNoCache(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	var out bytes.Buffer
-	if err := rebuild(&out, f, p, combine(config.Config{}, skills.Resolved{}), hostIdentity()); err != nil {
+	if err := rebuild(&out, f, runner.Docker, p, combine(config.Config{}, skills.Resolved{}), hostIdentity()); err != nil {
 		t.Fatal(err)
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
@@ -687,7 +687,15 @@ func saveDuringLockWait(t *testing.T, p project.Paths, notice *lockWaitNotice, s
 	select {
 	case <-notice.waited:
 	case <-time.After(30 * time.Second):
-		t.Error("the setup writer never queued on the held lock")
+		// Proceeding here would order the save against nothing: the writer
+		// might still be ahead of its pre-lock read, and the test would then
+		// pass or fail on evidence it never established. Let the writer finish
+		// so it isn't left blocked, then fail.
+		if rerr := lk.Release(); rerr != nil {
+			t.Error(rerr)
+		}
+		<-done
+		t.Fatal("the setup writer never queued on the held lock, so the save could not be ordered against it")
 	}
 	save()
 	if err := lk.Release(); err != nil {
@@ -786,7 +794,7 @@ func TestRebuildBuildsTheConfigSavedUnderTheLock(t *testing.T) {
 	notice := lockWaitWriter(&out)
 	err = saveDuringLockWait(t, p, notice,
 		func() { writeStoreConfig(t, proj, "base = \"ubuntu:24.04\"\n") },
-		func() error { return rebuild(notice, &fakeRunner{}, p, rv, hostIdentity()) })
+		func() error { return rebuild(notice, &fakeRunner{}, runner.Docker, p, rv, hostIdentity()) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,6 +804,31 @@ func TestRebuildBuildsTheConfigSavedUnderTheLock(t *testing.T) {
 	}
 	if !strings.Contains(string(df), "FROM ubuntu:24.04") {
 		t.Errorf("rebuild generated from the stale base:\n%s", firstLine(string(df)))
+	}
+}
+
+// The same refusal guards rebuild: its image is built for the engine detected
+// before the lock, with that engine's identity mode baked in, so a save that
+// renames the engine must not produce a "rebuilt" image the next develop never
+// looks at.
+func TestRebuildRefusesAnEngineChangedUnderTheLock(t *testing.T) {
+	p, proj := testPaths(t)
+	writeStoreConfig(t, proj, "engine = \"docker\"\n")
+	rv, err := resolve(p, proj, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{} // the detected engine: docker
+	var out bytes.Buffer
+	notice := lockWaitWriter(&out)
+	err = saveDuringLockWait(t, p, notice,
+		func() { writeStoreConfig(t, proj, "engine = \"podman\"\n") },
+		func() error { return rebuild(notice, f, runner.Docker, p, rv, hostIdentity()) })
+	if err == nil || !strings.Contains(err.Error(), "engine changed") || !strings.Contains(err.Error(), "podman") {
+		t.Fatalf("expected the engine-changed refusal naming podman, got %v", err)
+	}
+	if len(f.builds) != 0 {
+		t.Fatalf("the refusal must precede the build: builds=%v", f.builds)
 	}
 }
 
