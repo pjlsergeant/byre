@@ -17,11 +17,13 @@ import (
 // host` would (ssh prompts on /dev/tty, so a stdin busy with the tar stream
 // never blocks authentication).
 //
-// The ssh BINARY is resolved once through hostexec against the project's
-// box-writable roots: an ssh sitting in the project tree would carry the
-// delivery's payload, its stdin, and the user's credentials to a host of the
-// agent's choosing, so a refusal here fails the delivery by name rather than
-// letting it proceed.
+// Each call resolves `ssh` through hostexec against the project's
+// box-writable roots. The LOOKUP is per call; the ANSWER comes from the
+// process pin, so PATH is still read once and a remote delivery's several
+// hops (the box listing, then the transfer) cannot be handed two different
+// binaries. An ssh sitting in the project tree would carry the delivery's
+// payload, its stdin, and the user's credentials to a host of the agent's
+// choosing, so a refusal fails the delivery by name rather than proceeding.
 func sshExecWith(roots hostexec.Roots) deliver.SSHExec {
 	return func(t deliver.SSHTarget, remoteArgv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return sshExec(roots, t, remoteArgv, stdin, stdout, stderr)
