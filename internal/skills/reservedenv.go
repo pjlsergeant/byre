@@ -133,6 +133,23 @@ func ReservedEnvNote(e ReservedEnvSet) string {
 	return fmt.Sprintf("%s sets %s — not a control this byre recognizes; treated cautiously, so the %s claim(s) ride it", e.Skill, e.Key, claims)
 }
 
+// ReservedEnvSkew is ReservedEnvNote's row-sized register, for a surface with
+// a line rather than a page: the config editor's Env row already prints the
+// key and its skill attribution, so the annotation carries only what the row
+// itself cannot say -- which claims stop being warranted, and, for a key byre
+// does not read, that byre cannot tell what the key does.
+//
+// It sits beside ReservedEnvNote rather than inside the editor so the two
+// registers answer off one inventory: a key status calls unrecognized can
+// never read as a byre control one screen over.
+func ReservedEnvSkew(key string) string {
+	claims := "skews: " + strings.Join(ReservedEnvClaims(key), " + ")
+	if ReservedEnvKnown(key) {
+		return claims
+	}
+	return "not a control byre recognizes; " + claims
+}
+
 // ReservedEnvTouches reports whether any skill-set reserved variable in sets
 // can skew the named claim -- the hedge predicate every claim surface
 // consults. It takes the resolved set rather than any one surface's view, so

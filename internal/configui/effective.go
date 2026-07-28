@@ -54,6 +54,12 @@ type listRow struct {
 	// property, never inferred from kind -- the row keeps its kind (menu
 	// semantics) but tallies as a closed door, not a live grant.
 	closed bool
+	// skews: the claims this row's value can stop byre asserting, phrased by
+	// skills.ReservedEnvSkew. Set only on a skill env row holding one of
+	// byre's reserved BYRE_ keys (ADR 0050 tier 2), empty everywhere else:
+	// the attribution says WHO set the key, and this says what it affects --
+	// which was the one thing status printed and no editor screen did.
+	skews string
 }
 
 // fieldRows builds the effective rows for a list field: inherited entries in
@@ -759,8 +765,18 @@ func (m model) envRows() []listRow {
 	}
 	for _, sk := range m.effectiveSkills() {
 		env := m.inh.Skills[sk].Env
+		// Which keys are byre's own is skills' question, not a prefix test
+		// restated here -- the same owner reservedEnvNow and status consult.
+		reserved := map[string]bool{}
+		for _, e := range skills.ReservedEnvOf(sk, env) {
+			reserved[e.Key] = true
+		}
 		for _, k := range slices.Sorted(maps.Keys(env)) {
-			rows = append(rows, listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk})
+			r := listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk}
+			if reserved[k] {
+				r.skews = skills.ReservedEnvSkew(k)
+			}
+			rows = append(rows, r)
 		}
 	}
 	// The env_from_host passthrough (ADR 0026). It lands in the box's env, so

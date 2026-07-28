@@ -1135,6 +1135,66 @@ func TestEditorExposureDegradesOnTheSameReservedEnvSet(t *testing.T) {
 	}
 }
 
+// The Env screen is where a user MEETS a skill's reserved BYRE_ key, and it
+// showed the key attributed to its skill and nothing about what holding it
+// costs -- a claim `byre status` spells out on its own row. The annotation
+// closes that gap on the EXISTING row (P0: a TUI claim gap ranks with an
+// engine one) and speaks skills.ReservedEnvSkew, the owner status's row
+// speaks, so the two surfaces cannot disagree about a key.
+//
+// The wanted values are literals, never read back from the helper under test.
+func TestSkillReservedEnvRowNamesTheClaimsItSkews(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"knobs": {Env: map[string]string{
+			"BYRE_EGRESS":  "example.com:443",
+			"BYRE_SCRATCH": "/home/dev/scratch",
+			"EDITOR":       "vim",
+		}},
+	}}
+	m := newModel("t", "/x", config.Config{Skills: []string{"knobs"}}, nil, nil,
+		[]string{"knobs"}, nil, inh, nil, TargetProject)
+	rows := m.envRows()
+
+	// A chassis knob names the claims that stop asserting while it is set.
+	known := rowByText(t, rows, "BYRE_EGRESS=example.com:443")
+	if ann := rowAnnotation(known); ann != "  (skill:knobs — skews: network)" {
+		t.Errorf("a reserved knob's row must name its skill AND its claims: %q", ann)
+	}
+
+	// A key wearing the prefix byre does not read gets the honest register,
+	// never an announcement of a control byre has never heard of.
+	unknown := rowAnnotation(rowByText(t, rows, "BYRE_SCRATCH=/home/dev/scratch"))
+	if !strings.Contains(unknown, "not a control byre recognizes") {
+		t.Errorf("an unrecognized reserved key must say so: %q", unknown)
+	}
+	if !strings.Contains(unknown, "skews: network + launch") {
+		t.Errorf("an unrecognized reserved key still degrades conservatively: %q", unknown)
+	}
+	if strings.Contains(unknown, "runtime control") {
+		t.Errorf("an unrecognized key must not read as a byre control: %q", unknown)
+	}
+
+	// An ordinary skill env var is unchanged: the note is about byre's own
+	// namespace, not about skill env in general.
+	plain := rowByText(t, rows, "EDITOR=vim")
+	if plain.skews != "" || rowAnnotation(plain) != "  (skill:knobs)" {
+		t.Errorf("a plain skill env row must be untouched: %+v %q", plain, rowAnnotation(plain))
+	}
+
+	// The note rides the existing row: one skill row per skill env key, no
+	// extra row and nothing reordered, so the cursor still indexes what it
+	// indexed before. (The rest of the screen is byre's shipped passthrough.)
+	skillRows := 0
+	for _, r := range rows {
+		if r.kind == rowSkill {
+			skillRows++
+		}
+	}
+	if skillRows != 3 {
+		t.Errorf("annotating a row must not mint one: %d skill rows, want 3", skillRows)
+	}
+}
+
 // Ticking the skill is what arms the hedge: the editor's claim answers for
 // the state on screen, so a skill present but switched OFF asserts the
 // posture, and switching it on stops asserting in the same keystroke. This is
