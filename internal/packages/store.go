@@ -32,7 +32,13 @@ const stampName = "bundled/.byre-version"
 // and the version written into generated [package] headers in the mirror.
 // out, when non-nil, receives human notices (mirror regen, legacy found).
 func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) error {
-	for _, sub := range []string{"skills", "templates", "bundled"} {
+	// NOT "bundled": every touch of the mirror path, its CREATION included,
+	// happens under the store lock below. An unlocked MkdirAll here lands in
+	// the window a locked writer's swap has the tree renamed aside -- so the
+	// winner's rename-in meets an occupied path, its best-effort restore finds
+	// the path taken too, and the only complete copy of the mirror is stranded
+	// at bundled.old under a name nothing reads.
+	for _, sub := range []string{"skills", "templates"} {
 		if err := hostopen.PlainMkdirAll(filepath.Join(home, sub), 0o755, hostopen.StoreOwned); err != nil {
 			return err
 		}
@@ -40,32 +46,38 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 	if err := ensureAgentsMD(home, out); err != nil {
 		return err
 	}
-	stampPath := filepath.Join(home, stampName)
-	cur, _ := hostopen.PlainReadFile(stampPath, hostopen.StoreOwned)
-	// A nil bundled FS (tests, partial fixtures) has no mirror to write --
-	// same tolerance LoadCatalog extends.
-	needMirror := bundled != nil && strings.TrimSpace(string(cur)) != byreVer
-	if needMirror {
+	root := filepath.Join(home, "bundled")
+	if bundled == nil {
+		// No embedded FS (tests, partial fixtures): nothing to mirror, so this
+		// process never swaps and there is no window to race -- but the dir is
+		// part of the store's shape either way. Same tolerance LoadCatalog
+		// extends.
+		if err := hostopen.PlainMkdirAll(root, 0o755, hostopen.StoreOwned); err != nil {
+			return err
+		}
+	} else if stale, _ := mirrorStale(home, root, byreVer); stale {
 		// The regeneration happens under the store-global lock. writeMirror's
 		// swap is three renames over one path, and EVERY byre command runs
 		// EnsureStore -- so two starting at once (a develop and a status, two
 		// worktree sessions) is ordinary, not a theoretical race, and their
 		// swaps interleave into a ~/.byre/bundled that is missing or half a
-		// tree. The stamp read above stays OUTSIDE the lock as the steady-state
-		// fast path: it is right on every run but the one that upgrades.
+		// tree.
 		//
-		// Re-read under the lock, because that fast path is exactly what goes
-		// stale while queueing: the process that waited would otherwise
-		// regenerate a mirror the winner just wrote, swapping the tree a third
-		// process may be reading.
+		// The check above is the steady-state fast path and NOTHING more: it is
+		// right on every run but the one that upgrades, and everything it
+		// decided is decided again under the lock. That re-decision is the
+		// point -- the fast path is exactly what goes stale while queueing, so
+		// the process that waited would otherwise regenerate a mirror the
+		// winner just wrote, swapping the tree a third process may be reading.
 		wrote := false
 		if err := WithStoreLock(home, func() error {
-			if cur, _ := hostopen.PlainReadFile(stampPath, hostopen.StoreOwned); strings.TrimSpace(string(cur)) == byreVer {
+			if stale, _ := mirrorStale(home, root, byreVer); !stale {
 				return nil
 			}
 			if err := writeMirror(home, bundled, byreVer); err != nil {
 				return fmt.Errorf("bundled mirror: %w", err)
 			}
+			stampPath := filepath.Join(home, stampName)
 			if err := hostopen.PlainMkdirAll(filepath.Dir(stampPath), 0o755, hostopen.StoreOwned); err != nil {
 				return err
 			}
@@ -78,7 +90,7 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 			return err
 		}
 		if wrote && out != nil {
-			fmt.Fprintf(out, "byre: refreshed %s mirror for %s\n", DisplayPath(filepath.Join(home, "bundled")), byreVer)
+			fmt.Fprintf(out, "byre: refreshed %s mirror for %s\n", DisplayPath(root), byreVer)
 		}
 	}
 
@@ -95,6 +107,18 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		fmt.Fprintln(out, "      (or move them by hand to skills.legacy/ / templates.legacy/)")
 	}
 	return nil
+}
+
+// mirrorStale reports whether ~/.byre/bundled needs regenerating: the version
+// stamp does not match, or the tree the stamp vouches for is not there. The
+// second half is what lets the mirror's creation live under the lock -- a
+// missing tree is a reason to take the lock, never a reason to mkdir past it.
+// present is returned for the caller's own reporting.
+func mirrorStale(home, root, byreVer string) (stale, present bool) {
+	fi, err := hostopen.PlainStat(root, hostopen.StoreOwned)
+	present = err == nil && fi.IsDir()
+	cur, _ := hostopen.PlainReadFile(filepath.Join(home, stampName), hostopen.StoreOwned)
+	return strings.TrimSpace(string(cur)) != byreVer || !present, present
 }
 
 // findLegacyDirs returns store-relative paths of flat skill/template dirs
@@ -182,6 +206,14 @@ func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
 	return moved, nil
 }
 
+// midSwap runs inside the swap's open window -- after the old mirror is
+// renamed aside and before the new one is renamed in, the moment when
+// ~/.byre/bundled does not exist. A no-op in production; the concurrency test
+// holds the window open with it to prove nothing outside the lock recreates
+// the path. A seam, because the window is where the bug lived and a test that
+// cannot enter it can only assert the outcome it happens to get.
+var midSwap = func() {}
+
 // writeMirror regenerates ~/.byre/bundled from embed.FS with a README and
 // generated [package] headers on primary files.
 func writeMirror(home string, bundled fs.FS, byreVer string) error {
@@ -246,6 +278,7 @@ To modify a bundled package, fork it:
 			return err
 		}
 	}
+	midSwap()
 	if err := hostopen.PlainRename(tmp, root, hostopen.StoreOwned); err != nil {
 		_ = hostopen.PlainRename(old, root, hostopen.StoreOwned) // best-effort restore
 		return err
