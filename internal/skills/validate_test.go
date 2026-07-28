@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -130,6 +131,36 @@ func TestBundledSkillValuesAreJudgedAtLoad(t *testing.T) {
 	for _, want := range []string{"network_posture", "Deny-Default", "must match"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name the rule and the offending value, missing %q: %v", want, err)
+		}
+	}
+}
+
+// The other side of the extraction, pinned so nobody "finishes the job": a
+// set-dependent rule must NOT migrate into the single-manifest tier. Two
+// skills each declaring a network_posture are individually valid -- validate
+// and install accept both, correctly -- and only the config that enables both
+// is wrong, which nothing but Resolve can see. This is what makes
+// `byre skill validate` a partial promise (docs/SKILLS.md).
+func TestSetDependentRulesStayAtResolve(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "fw1", "[runtime]\nnetwork_posture = \"deny-by-default\"\n", nil)
+	writeSkill(t, dir, "fw2", "[runtime]\nnetwork_posture = \"open\"\n", nil)
+	cat := catFor(t, dir)
+
+	// Each passes the tier `byre skill validate` and install walk.
+	for _, n := range []string{"fw1", "fw2"} {
+		if _, err := Load(cat, n); err != nil {
+			t.Fatalf("skill %s is valid on its own terms: %v", n, err)
+		}
+	}
+	// Enabling both is the error, and only the set shows it.
+	_, err := Resolve(config.Config{Skills: []string{"fw1", "fw2"}}, cat)
+	if err == nil {
+		t.Fatal("two declared network postures must be refused")
+	}
+	for _, want := range []string{"both declare a network_posture", "fw1", "fw2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the rule and both claimants, missing %q: %v", want, err)
 		}
 	}
 }

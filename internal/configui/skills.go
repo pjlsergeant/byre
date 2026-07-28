@@ -121,6 +121,21 @@ func (m model) skillEntries() []skillEntry {
 			e.provLabel = rt.ProvLabel
 			e.disabled = rt.DisabledReason
 		}
+		// A name the config already carries is in `seen`, so the problem-row
+		// append below skips it -- the reason has to be MERGED into the row
+		// the config built, which also keeps that row's enabled/inherited/
+		// locked state and its agent-section placement (a fresh appended row
+		// would lose all four). Same catalog lookup the pickers read, so an
+		// enabled skill that broke cannot read normal here while `skill list`
+		// and the agent picker both name the reason.
+		if e.disabled == "" {
+			if d := m.optDisabled(n); d != "" {
+				e.disabled = d
+				if p := m.optProv(n); p != "" {
+					e.provLabel = p
+				}
+			}
+		}
 		if agentSet[n] || n == primary {
 			e.agent = true
 			agent = append(agent, e)
