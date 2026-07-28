@@ -136,6 +136,19 @@ must never be blockable by the thing it reports on. That last one is
 this ADR's own rule turned on itself: the report is a notice, and a
 notice that can block a session is a gate.
 
+The disposition that is easiest to get wrong is a THIRD one, and two
+independent reviewers found it in the first cut: a command that
+ENUMERATES engines must not treat "declined" as "not installed". An
+absent engine holds nothing; a declined one may be holding this
+project's live session while byre cannot look. So the enumerators
+report the two separately, `develop`'s single-session check takes a
+declined engine as uncheckable (a loud note, and a place in the skipped
+set so the engine record stays unresolved), and the commands that speak
+in TOTALS -- `forget`, `reset`, `rehome` -- refuse rather than quietly
+enumerate one fewer. Skipping it there would let `forget` delete the
+store while that engine's volumes, images and credentials stayed
+behind, under the word "completely".
+
 ## Accepted residuals
 
 Stated here so none of them is later "discovered" as a bug:

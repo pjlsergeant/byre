@@ -228,7 +228,11 @@ tree, the main tree, the common git dir, byre's store for the project --
 is declined rather than run, naming the tool, the path and the
 directory. `develop` refuses outright on its engine; the session-end
 probes degrade and disclose instead, since a session end must not be
-blockable by the thing it reports on (ADR 0047).
+blockable by the thing it reports on (ADR 0047). A declined engine is
+never read as an ABSENT one: `develop`'s single-session check treats it
+as uncheckable rather than as one engine fewer, and the commands that
+speak in totals (`forget`, `reset`, `rehome`) refuse rather than claim
+"completely removed" over an engine byre never reached.
 
 **Rootless Podman** is a first-class path with its own ownership math
 (ADR 0032): the chassis bakes a GENERIC dev uid (1000) instead of the
