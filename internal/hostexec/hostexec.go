@@ -12,10 +12,11 @@
 //
 // NOT OUT OF A DIRECTORY THE BOX WRITES. byre asks the host for `docker`; if
 // PATH answers with a file sitting in the project tree, byre would be running
-// the agent's own binary, at moments nobody typed a command for (the session
-// -end probes fire on every exit). So a resolved path that lands under one of
-// the caller's roots is declined, by name, with the remedy. Go's own ErrDot
-// already declines RELATIVE PATH entries; the absolute case is this package's.
+// the agent's own binary, at moments nobody typed a command for -- the
+// session-end probes fire on every exit. So a resolved path that lands under
+// one of the caller's roots is declined, by name, with the remedy. Go's own
+// ErrDot already declines RELATIVE PATH entries; the absolute case is this
+// package's.
 //
 // This is not a judgement of the user's PATH, and there is deliberately no
 // judgement of binary CONTENT -- no checksums, no signatures. Where the
