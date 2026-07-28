@@ -219,6 +219,17 @@ the operations it needs -- build, run, volume/image/container ops --
 shelling out to the engine CLI, never the SDK (ADR 0002). `engine =
 "auto"` (default) picks `docker` if present, else `podman`.
 
+Detection resolves the CLI to an ABSOLUTE path and every engine call
+runs that path, pinned for the invocation -- as do byre's other
+host-side spawns (`git`, `ssh`, the shell behind `$EDITOR`, the
+clipboard helpers), all through `internal/hostexec`. A binary PATH
+resolves out of a directory this project's box can write -- the work
+tree, the main tree, the common git dir, byre's store for the project --
+is declined rather than run, naming the tool, the path and the
+directory. `develop` refuses outright on its engine; the session-end
+probes degrade and disclose instead, since a session end must not be
+blockable by the thing it reports on (ADR 0047).
+
 **Rootless Podman** is a first-class path with its own ownership math
 (ADR 0032): the chassis bakes a GENERIC dev uid (1000) instead of the
 host's, and the box -- plus every helper container that fills its volumes

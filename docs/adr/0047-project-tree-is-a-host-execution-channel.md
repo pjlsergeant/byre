@@ -106,6 +106,36 @@ It is also a gate, which P1 forbids where a report will do -- and it
 would only stop an agent that wouldn't think to set `core.hooksPath`,
 i.e. an accidental one, which is not a failure mode that writes hooks.
 
+## The half byre owns: the tools byre itself runs
+
+This ADR is about the code the USER's host runs later. There is a second
+half it did not cover, and the exit report's own probes sat squarely in
+it: byre spawns host tools automatically -- the engine CLI, and the
+`git` these probes ride -- and it resolved them by bare name, re-reading
+PATH on every call. A host PATH listing an absolute directory the box
+can write (a direnv `.venv/bin`, a project `.bin`) ahead of the real
+binary meant byre ran whatever `git` or `docker` sat there, at a session
+end nobody typed a command for.
+
+That is byre's own construction, not the user's arrangement, so it is
+byre's to fix (P4: warrant what byre builds). Every host-side spawn now
+resolves through one helper (`internal/hostexec`): the absolute path is
+pinned once per invocation, and a binary resolved out of a directory
+this project's box can write -- the work tree, the main tree, the common
+git dir, byre's store for the project -- is declined by name, with the
+path and the root, so the fix is reordering PATH. No checksums, no
+signature checks, no judgement of binary CONTENT: where the binary was
+resolved FROM is the whole test, and byre still passes no judgement on
+the user's PATH.
+
+Dispositions follow the caller, not a single rule: `develop` finding its
+ENGINE there is a hard refusal (nothing safe can proceed), while the
+exit report finding `git` there DEGRADES -- the probes are skipped and
+the loss is disclosed once, before the session -- because a session end
+must never be blockable by the thing it reports on. That last one is
+this ADR's own rule turned on itself: the report is a notice, and a
+notice that can block a session is a gate.
+
 ## Accepted residuals
 
 Stated here so none of them is later "discovered" as a bug:
@@ -131,3 +161,9 @@ Stated here so none of them is later "discovered" as a bug:
 - **`byre shell` establishes no snapshot of its own**; its writes are
   covered only by the owning `develop` process.
 - **Detection, not prevention.** An unread report protects nobody.
+- **Sibling worktrees are not in the box-writable root set.** The only
+  listing of them lives in the common git dir, which the box writes, so
+  trusting it would let an agent choose which host directories byre
+  refuses to run tools from -- a refusal it can aim is worse than the
+  shadow it would close. The work tree, the main tree and the common git
+  dir are byre's own resolution and cover the case.

@@ -188,7 +188,14 @@ your code, and running anything out of it -- `git` included -- runs what
 it wrote. When a session ends byre mentions changes it noticed in a few
 of those places, in the register of "we thought you should know"; it
 checks a handful of spots, not everything, and a quiet exit is not a
-clean bill of health.
+clean bill of health. byre holds its OWN host commands to that same
+rule: the engine CLI, `git`, `ssh`, the shell it opens your `$EDITOR`
+through and the clipboard helpers are each resolved once per run, and a
+binary your PATH answers with out of a directory that project's box can
+write is declined by name -- the tool, the path and the directory, so
+the fix is reordering PATH. It is no comment on your PATH, and no
+judgement of what is inside a binary; where byre resolved it from is the
+whole test.
 
 **`--self-edit` is transitive trust of the agent with your host.** A
 self-edit agent authors the next develop's config -- mounts, run args,
