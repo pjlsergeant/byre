@@ -17,6 +17,13 @@ Considered and rejected:
   unnecessary: agents already handle concurrent access to one state dir
   (same as two CLI processes sharing `~/.claude` on a host). Sharing one
   volume is safe; *copying* credentials is what breaks (ADR 0007).
+  **Amended 2026-07-29 (ADR 0054):** that sentence is about the AGENT
+  STATE volume, and it still holds there. It was never a warranty that
+  every volume a project might declare tolerates concurrent holders --
+  and once skills, config and the config editor could all declare
+  arbitrary `[[volumes]]`, it was being read as one. A volume whose data
+  cannot take two writers says so with `sharing = "exclusive"`, and
+  `develop` refuses the second box.
 - **An inherit/standalone opt-out** -- YAGNI; `git clone` is the escape
   hatch (a clone is not a linked worktree).
 - **Remounting the common git dir at a byre-chosen path** -- git worktree

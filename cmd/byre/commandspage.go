@@ -113,7 +113,7 @@ func exitCodeSection() string {
 		"| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |\n"+
 		"| `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |\n"+
 		"| `2` | You typed it wrong: an unknown flag, a bad argument count. One known exception, recorded rather than fixed: a panic on a goroutine other than the main one ends the process through Go's runtime, which also exits `2` -- byre cannot recover another goroutine's panic to re-code it. A Go panic trace on stderr, rather than a usage message, is what tells you which happened. |\n"+
-		"| `%d` | `byre develop` refused to start because a session is already live in this directory. `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |\n"+
+		"| `%d` | `byre develop` declined to start: a session is already live in this directory, or a live box of this project is holding a volume declared `sharing = \"exclusive\"` (or byre could not establish that none is). `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |\n"+
 		"| `%d` | `byre deliver --boxes` reached part of the pool but not all of it. |\n"+
 		"| `%d` | byre crashed. That is a bug in byre; the report is on stderr and we would like to see it. |\n\n"+
 		"### What `byre develop` does differently\n\n"+
@@ -130,8 +130,9 @@ func exitCodeSection() string {
 		"What separates them is the shape of byre's own output, and that rule\n"+
 		"holds:\n\n"+
 		"- A byre failure carries the `byre: ` error banner.\n"+
-		"- A refusal (`%d`) carries the session-already-live report naming the\n"+
-		"  running box and how to reach it.\n"+
+		"- A refusal (`%d`) carries byre's own report naming what it declined\n"+
+		"  over -- the running box and how to reach it, or the exclusive volume\n"+
+		"  and who is holding it.\n"+
 		"- A crash (`%d`) carries the panic report.\n"+
 		"- A passed-through agent status carries **no byre error banner at all**.\n\n"+
 		"Note what that does NOT say: quiet output is not the test. The agent's\n"+

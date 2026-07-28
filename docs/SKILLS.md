@@ -112,6 +112,22 @@ the config editor's env screen shows each unprovided var as a dim
 suggestion row attributed to your skill, and enter prefills the add
 editor with the name.
 
+A skill declares the storage it needs with `[[volumes]]` -- `name`,
+`role` (`cache` or `state`), `target`. Two properties are worth deciding
+rather than defaulting through. `scope = "machine"` makes it one volume
+per user per machine, mounted by every project that declares it (ADR
+0017); the shared-auth companions' identity volumes are the case it
+exists for. `sharing = "exclusive"` declares the volume single-writer
+(ADR 0054): worktree boxes of one project run **concurrently** and mount
+the identical volume set, so if two holders would corrupt your data --
+an embedded database, an index with no locking -- say so and `byre
+develop` refuses the second box instead. The default, `sharing =
+"shared"`, is what every byre volume has always been, and it is the
+right answer for caches and for agent state directories (agents already
+tolerate a shared state dir; that is what ADR 0009 settled). Exclusive
+is project scope only: byre can see this project's live boxes and no
+others.
+
 A skill can wire MCP servers into the box with `[[mcp]]` blocks (ADR
 0033) -- `name` plus a local `command` argv or a remote `url`; ship a
 local server's binary through the normal `[build]` machinery. List the

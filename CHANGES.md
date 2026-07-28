@@ -2,6 +2,37 @@
 
 ## unreleased
 
+- **A volume can now say it must not have two writers.** Worktrees of one
+  project are designed to run at the same time, and they mount the same
+  named volumes -- that is the point for a cache and for an agent's state
+  directory. It is not the point for a single-writer database, and until
+  now nothing in the `[[volumes]]` grammar could say so: `scope` chose
+  WHICH boxes see a volume, and nothing chose how many may hold it at once.
+
+  `sharing = "exclusive"` declares single-writer data. `byre develop` then
+  reads the **launch records** of your project's live boxes -- what they
+  actually mounted, not what your config says today -- and refuses to start
+  (exit `3`, the same code a live session gets) rather than mount a volume
+  one of them is holding. It names the volume, the worktree holding it, and
+  how to stop that box. This one BLOCKS on purpose: byre degrades rather
+  than blocks over its own bookkeeping, but this is your data's contract,
+  and a corrupted volume is not something a later disclosure undoes.
+
+  It refuses just as firmly where it cannot establish that nobody is
+  holding it: a sibling started by an older byre (no record), a record
+  that is missing, unreadable, or does not match its own address, a box
+  whose labels the engine would not answer for, an engine byre cannot
+  reach or will not run. Each says which. A wrong refusal costs you one
+  command; a wrong launch costs the volume.
+
+  The default, `sharing = "shared"`, is exactly what every byre volume has
+  always been -- nothing byre ships declares otherwise, and the check does
+  not even run unless something in your config does. The volumes editor
+  gains a **Sharing** picker beside Role, `byre status` marks an exclusive
+  volume in its row and qualifies the Worktrees line, and the combination
+  with `scope = "machine"` is refused: byre can see this project's boxes,
+  not your other projects'. (ADR 0054)
+
 - **`byre status` now describes the box that is RUNNING, not the one your
   config would launch next.** Until now status resolved the config as it is
   right now and rendered that beside a live container: delete a

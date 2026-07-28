@@ -227,6 +227,20 @@ per-project login today; the tokens involved are inference-scoped where
 the vendor allows it (Claude's setup-token). `byre status` names shared
 volumes; `reset` / `forget` never delete them silently.
 
+**A single-writer volume is byre's contract, not the kernel's.** A
+volume can declare `sharing = "exclusive"`
+([ADR 0054](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0054-volume-sharing-exclusive.md)),
+and `byre develop` then refuses to start a second box of the project
+while another one holds it -- reading the live boxes' launch records to
+find out, and refusing equally where it cannot establish that none is
+holding it. What that does NOT cover: a `docker run -v` you type
+yourself, anything already inside a running box, and a stopped box that
+someone starts by hand while a launch is in flight. Exclusive is also
+refused on a machine-scoped volume, because the boxes that could break
+the contract there belong to your other projects, which byre's scan
+does not see -- so cross-project data has no single-writer vocabulary
+at all.
+
 **Agents hold usable credentials by construction.** Whatever auth story
 you choose, the agent can read its own credential -- it needs it to
 work. byre's job is that the credential's scope is what you chose, its

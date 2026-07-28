@@ -285,7 +285,9 @@ a shell via `byre shell`) rather than spawning a parallel one -- two boxes
 on one directory would race the shared state volumes. For two agents on
 one codebase, use worktrees: each worktree is its own workdir with its
 own session, deliberately sharing the project's config, volumes, and
-image (ADR 0009).
+image (ADR 0009). A volume that cannot take two concurrent holders says
+so with `sharing = "exclusive"`, and `develop` then refuses the second
+box rather than corrupt it (ADR 0054).
 
 **The configuration a session launches is read under the setup lock.** The
 config editor's save takes that same lock, so a save landing while `develop`
@@ -595,6 +597,13 @@ Two mount species:
      clear, which refuses while ANY byre session runs). `seed` is
      invalid on a machine-scoped volume. (Worktree sharing remains an
      identity question, not a volume one -- ADR 0009.)
+   - **sharing** -- `shared` (default) or `exclusive` (ADR 0054). Scope
+     says *which* boxes may see a volume; sharing says how many may hold
+     it at once. `exclusive` declares single-writer data: `develop`
+     reads the launch records of this project's live boxes and refuses
+     (exit 3) rather than mount a volume one of them is holding, and
+     refuses equally when it cannot establish that none is. Project
+     scope only -- byre can only see this project's boxes.
    - **seed** (state only, optional) -- initialize a *fresh* volume from
      a host path or config literal (non-secrets only), once. A copy, not
      a shared mount; nothing flows back.

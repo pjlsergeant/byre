@@ -454,7 +454,7 @@ but not bound. Disabling is a switch (the entry and its mode survive);
 **Volume**:
 A Docker named volume, surviving rebuilds. Usually contributed by a
 skill. Project-scoped by default (`byre-<project_id>-<name>`); see Volume
-scope.
+scope and Volume sharing.
 
 **Volume scope**:
 Which boxes share a volume: `project` (the default -- one per project) or
@@ -463,6 +463,19 @@ identically by every project that declares it; ADR 0017). General
 `[[volumes]]` grammar, config or skill. "Machine" deliberately means
 per-USER-per-machine -- the uid qualifier keeps two users on a shared box
 from silently sharing state.
+
+**Volume sharing**:
+How many boxes may hold a volume at once: `shared` (the default -- any
+number, which is what every byre volume has always been) or `exclusive`
+(at most one live box; ADR 0054). Scope answers *which* boxes may see
+the volume, sharing answers *how many at a time* -- independent
+questions. `exclusive` is enforced: `develop` reads this project's live
+boxes' launch records and refuses (exit 3) rather than mount a volume
+one of them is holding, or than proceed where it cannot establish that
+none is. Project scope only. General `[[volumes]]` grammar, config or
+skill.
+_Avoid_: "locked", "single-user" (a lock is held and released; this is a
+declared property of the data)
 
 **Identity volume**:
 The informal name for a machine-scoped volume holding one agent's

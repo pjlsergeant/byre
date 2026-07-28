@@ -106,7 +106,7 @@ Scriptable, and the same for every command unless a row says otherwise.
 | `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |
 | `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |
 | `2` | You typed it wrong: an unknown flag, a bad argument count. One known exception, recorded rather than fixed: a panic on a goroutine other than the main one ends the process through Go's runtime, which also exits `2` -- byre cannot recover another goroutine's panic to re-code it. A Go panic trace on stderr, rather than a usage message, is what tells you which happened. |
-| `3` | `byre develop` refused to start because a session is already live in this directory. `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |
+| `3` | `byre develop` declined to start: a session is already live in this directory, or a live box of this project is holding a volume declared `sharing = "exclusive"` (or byre could not establish that none is). `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |
 | `4` | `byre deliver --boxes` reached part of the pool but not all of it. |
 | `70` | byre crashed. That is a bug in byre; the report is on stderr and we would like to see it. |
 
@@ -128,8 +128,9 @@ What separates them is the shape of byre's own output, and that rule
 holds:
 
 - A byre failure carries the `byre: ` error banner.
-- A refusal (`3`) carries the session-already-live report naming the
-  running box and how to reach it.
+- A refusal (`3`) carries byre's own report naming what it declined
+  over -- the running box and how to reach it, or the exclusive volume
+  and who is holding it.
 - A crash (`70`) carries the panic report.
 - A passed-through agent status carries **no byre error banner at all**.
 
