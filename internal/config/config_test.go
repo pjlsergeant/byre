@@ -1392,12 +1392,15 @@ func TestLoadFollowsSymlinkedDefaultConfig(t *testing.T) {
 // that no longer install would otherwise change what the box contains with
 // nothing said. Distinct from retiredConfigKeys, which is the silent arm for
 // keys whose absence changes nothing.
+// The position rides alongside the prewritten remedy: this branch reads the
+// same StrictMissingError the unknown-key branch does, so a removed key byre
+// can locate exactly must not be the one refusal that says only "somewhere".
 func TestRemovedNpmGlobalRefusesWithItsRemedy(t *testing.T) {
-	_, err := Parse([]byte("npm_global = [\"prettier\"]\n"))
+	_, err := Parse([]byte("engine = \"docker\"\n\nnpm_global = [\"prettier\"]\n"))
 	if err == nil {
 		t.Fatal("a removed key must be refused, not ignored")
 	}
-	for _, want := range []string{"npm_global is removed", "dockerfile_pre"} {
+	for _, want := range []string{"npm_global is removed", "dockerfile_pre", "line 3, column 1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name the rule and the remedy, missing %q: %v", want, err)
 		}

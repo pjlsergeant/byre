@@ -800,41 +800,52 @@ func Parse(content []byte) (Config, error) {
 		return Config{}, tomldoc.Positioned(err)
 	}
 	// Tolerate retired top-level keys (retiredConfigKeys) that past versions
-	// wrote; any other unknown key is a real typo.
+	// wrote; any other unknown key is a real typo or a removed one.
 	//
-	// real carries the bare key paths the refusal lookup below matches on;
-	// located carries the same paths with the position go-toml reports for
-	// each. These positions are REAL document coordinates -- the strict
-	// decoder found the key in the user's own bytes -- and a typo is the
-	// commonest refusal byre issues, so dropping them was dropping the
-	// answer from the question byre gets asked most.
-	var real, located []string
+	// The positions here are REAL document coordinates -- the strict decoder
+	// found each key in the user's own bytes, unlike the synthetic ones a
+	// sub-parse produces -- and BOTH refusals below carry them. A typo is the
+	// commonest refusal byre issues and a removal is the loudest, so these
+	// are the two messages least able to afford saying only "somewhere".
+	type badKey struct {
+		name      string // bare key path; refusedConfigKeys is keyed by it
+		line, col int    // 0 when go-toml reported no position
+	}
+	var bad []badKey
 	for _, de := range strict.Errors {
 		k := de.Key()
 		if len(k) == 1 && retiredConfigKeys[k[0]] != "" {
 			continue
 		}
-		name := strings.Join(k, ".")
-		real = append(real, name)
-		if line, column := de.Position(); line > 0 {
-			located = append(located, fmt.Sprintf("%s (line %d, column %d)", name, line, column))
-		} else {
-			located = append(located, name)
+		line, col := de.Position()
+		bad = append(bad, badKey{name: strings.Join(k, "."), line: line, col: col})
+	}
+	for _, b := range bad {
+		if remedy := refusedConfigKeys[b.name]; remedy != "" {
+			if b.line == 0 {
+				return Config{}, fmt.Errorf("%s", remedy)
+			}
+			// The remedy is prewritten prose that ends in a code sample, so
+			// the location follows on its own line and names the key again:
+			// by then the reader is several lines past where it was said.
+			return Config{}, fmt.Errorf("%s\n(%s is at line %d, column %d)", remedy, b.name, b.line, b.col)
 		}
 	}
-	for _, k := range real {
-		if remedy := refusedConfigKeys[k]; remedy != "" {
-			return Config{}, fmt.Errorf("%s", remedy)
+	if len(bad) > 0 {
+		names := make([]string, len(bad))
+		for i, b := range bad {
+			names[i] = b.name
+			if b.line > 0 {
+				names[i] = fmt.Sprintf("%s (line %d, column %d)", b.name, b.line, b.col)
+			}
 		}
-	}
-	if len(real) > 0 {
 		// Two causes, and byre cannot tell them apart: a typo, or a config a
 		// NEWER byre wrote (strict decode points one direction -- ADR 0049's
 		// windows handle old keys meeting new binaries, not the reverse).
 		// Naming both beats naming neither; a format stamp that could
 		// distinguish them was considered and consciously not built, since
 		// this already fails loudly rather than guessing.
-		return Config{}, fmt.Errorf("unknown key(s): [%s] — a typo, or a config written by a newer byre (upgrade byre, or remove the key)", strings.Join(located, ", "))
+		return Config{}, fmt.Errorf("unknown key(s): [%s] — a typo, or a config written by a newer byre (upgrade byre, or remove the key)", strings.Join(names, ", "))
 	}
 	// Retired keys only: decode again leniently so their values drop.
 	var lenient Config

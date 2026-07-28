@@ -122,14 +122,22 @@ func exitCodeSection() string {
 		"banner -- so a script sees what your agent did rather than what byre made\n"+
 		"of it.\n\n"+
 		"That band covers the whole table above, and byre does not renumber\n"+
-		"around it: an agent exiting `%d` or `%d` gives you `develop` exit `%d` or\n"+
-		"`%d`, indistinguishable BY CODE from byre's own refusal or byre's own\n"+
-		"crash. What separates them is context, and it is reliable: byre's\n"+
-		"refusals and crashes always say so on stderr -- the refusal names the\n"+
-		"live session, the crash prints a panic report -- while a passed-through\n"+
-		"status arrives with byre silent. A script that needs certainty branches\n"+
-		"on that, and on whether the box launched at all; the code alone cannot\n"+
-		"carry both meanings and does not pretend to.\n\n"+
+		"around it. `1` is the collision you will actually meet: an agent that\n"+
+		"exits `1` and a byre that failed before the box ever launched both\n"+
+		"leave you with process status `1`. `%d` and `%d` collide the same way --\n"+
+		"an agent exiting either gives you `develop` exit `%d` or `%d`,\n"+
+		"indistinguishable BY CODE from byre's own refusal or byre's own crash.\n\n"+
+		"What separates them is the shape of byre's own output, and that rule\n"+
+		"holds:\n\n"+
+		"- A byre failure carries the `byre: ` error banner.\n"+
+		"- A refusal (`%d`) carries the session-already-live report naming the\n"+
+		"  running box and how to reach it.\n"+
+		"- A crash (`%d`) carries the panic report.\n"+
+		"- A passed-through agent status carries **no byre error banner at all**.\n\n"+
+		"Note what that does NOT say: quiet output is not the test. The agent's\n"+
+		"own stderr is yours to read either way, and byre's exit report (what\n"+
+		"changed in the box) prints on a normal session end too. The test is the\n"+
+		"absence of a byre ERROR banner, not the absence of output.\n\n"+
 		"Past `127` the passthrough stops: byre exits `1` on its own account,\n"+
 		"with the box's real status in the message. It is careful about how much\n"+
 		"it claims that status means:\n\n"+
@@ -142,7 +150,8 @@ func exitCodeSection() string {
 		"- `128`, and `193` upward, are left undecoded. Outside the signal range\n"+
 		"  there is nothing honest to add.\n",
 		commands.ExitRefused, deliver.ExitPartialPool, exitPanic,
-		commands.ExitRefused, exitPanic, commands.ExitRefused, exitPanic)
+		commands.ExitRefused, exitPanic, commands.ExitRefused, exitPanic,
+		commands.ExitRefused, exitPanic)
 }
 
 func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {

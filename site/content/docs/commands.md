@@ -118,14 +118,25 @@ banner -- so a script sees what your agent did rather than what byre made
 of it.
 
 That band covers the whole table above, and byre does not renumber
-around it: an agent exiting `3` or `70` gives you `develop` exit `3` or
-`70`, indistinguishable BY CODE from byre's own refusal or byre's own
-crash. What separates them is context, and it is reliable: byre's
-refusals and crashes always say so on stderr -- the refusal names the
-live session, the crash prints a panic report -- while a passed-through
-status arrives with byre silent. A script that needs certainty branches
-on that, and on whether the box launched at all; the code alone cannot
-carry both meanings and does not pretend to.
+around it. `1` is the collision you will actually meet: an agent that
+exits `1` and a byre that failed before the box ever launched both
+leave you with process status `1`. `3` and `70` collide the same way --
+an agent exiting either gives you `develop` exit `3` or `70`,
+indistinguishable BY CODE from byre's own refusal or byre's own crash.
+
+What separates them is the shape of byre's own output, and that rule
+holds:
+
+- A byre failure carries the `byre: ` error banner.
+- A refusal (`3`) carries the session-already-live report naming the
+  running box and how to reach it.
+- A crash (`70`) carries the panic report.
+- A passed-through agent status carries **no byre error banner at all**.
+
+Note what that does NOT say: quiet output is not the test. The agent's
+own stderr is yours to read either way, and byre's exit report (what
+changed in the box) prints on a normal session end too. The test is the
+absence of a byre ERROR banner, not the absence of output.
 
 Past `127` the passthrough stops: byre exits `1` on its own account,
 with the box's real status in the message. It is careful about how much
