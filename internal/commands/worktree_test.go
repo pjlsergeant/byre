@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -206,6 +207,12 @@ func TestWorktreeRefusesWithoutEngine(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", bin)
+	// The resolver pins per PROCESS; a `docker` pinned by an earlier test in
+	// this binary would answer past the PATH this test just narrowed. Drop the
+	// pins on the way in and on the way out (t.Setenv restores PATH, and the
+	// pins taken under the narrow one must not outlive it).
+	hostexec.ResetPins()
+	t.Cleanup(hostexec.ResetPins)
 	t.Setenv("BYRE_HOME", t.TempDir())
 	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-noeng")
 	err := Worktree(discardStreams(), repo, "noeng", target, false)

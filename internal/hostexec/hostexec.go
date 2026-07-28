@@ -148,6 +148,20 @@ var process = NewResolver(exec.LookPath)
 // Look resolves name against the process-wide pin set. See Resolver.Look.
 func Look(name string, roots Roots) (string, error) { return process.Look(name, roots) }
 
+// ResetPins drops the process pin set so the next lookup reads PATH again.
+//
+// For TESTS ONLY, and specifically for the ones that set PATH: byre is a
+// single-shot CLI where reading PATH once is the whole point, so nothing in
+// production wants this. A test process runs many invocations' worth of code
+// under one pin set, and a `docker` pinned by an earlier test would answer a
+// later test that deliberately removed it from PATH -- a green pass on a
+// machine with no engine and a failure on one with an engine installed.
+func ResetPins() {
+	process.mu.Lock()
+	defer process.mu.Unlock()
+	clear(process.pinned)
+}
+
 // Looker adapts Look to the bare lookup signature the injectable seams take
 // (runner.LookPath, the clipboard probe), binding roots once.
 func Looker(roots Roots) func(string) (string, error) {
