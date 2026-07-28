@@ -451,6 +451,153 @@ func TestIntegerIdentityNormalizes(t *testing.T) {
 	mustParse(t, d)
 }
 
+// An edit that targets a member INSIDE an inline table rewrites that
+// construct in house shape: the inline line goes, a [table] block carries the
+// members plus the edit. Appending a second definition instead produced valid
+// syntax that the strict decoder refuses -- the file byre had just written was
+// unloadable.
+func TestSetKeyInsideInlineTableRewritesConstruct(t *testing.T) {
+	src := "base = \"node:22\"\n" +
+		"# what the defaults are for\n" +
+		"defaults = { skip_questions = true, template = 'go' } # trailing\n" +
+		"engine = \"docker\"\n"
+	d := load(t, src)
+	if err := d.SetKey([]string{"defaults"}, "skip_questions", Bool(false)); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	if strings.Contains(out, "defaults = {") {
+		t.Fatalf("inline construct should be gone:\n%s", out)
+	}
+	if n := strings.Count(out, "[defaults]"); n != 1 {
+		t.Fatalf("want exactly one [defaults] header, got %d:\n%s", n, out)
+	}
+	m := mustParse(t, d)
+	def := m["defaults"].(map[string]any)
+	if def["skip_questions"] != false {
+		t.Fatalf("skip_questions = %v", def["skip_questions"])
+	}
+	// Sibling members ride the rewrite, spelling intact.
+	if def["template"] != "go" {
+		t.Fatalf("sibling member lost: %v", def)
+	}
+	if !strings.Contains(out, "template = 'go'") {
+		t.Fatalf("sibling member should keep its spelling:\n%s", out)
+	}
+	// The rest of the document is untouched, and a following root key does
+	// NOT get swallowed into the new table.
+	if m["engine"] != "docker" {
+		t.Fatalf("following root key swallowed by the new table: %v", m)
+	}
+	if !strings.Contains(out, "# what the defaults are for\n[defaults]") {
+		t.Fatalf("the comment attached to the construct should follow it:\n%s", out)
+	}
+}
+
+// Removing one member of an inline table rewrites the construct too -- the
+// silent byte-identical no-op left the removed key live in the file.
+func TestRemoveKeyInsideInlineTable(t *testing.T) {
+	d := load(t, "defaults = { skip_questions = true, template = 'go' }\nbase = \"node:22\"\n")
+	if err := d.RemoveKey([]string{"defaults"}, "skip_questions"); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	if strings.Contains(out, "skip_questions") {
+		t.Fatalf("member not removed:\n%s", out)
+	}
+	m := mustParse(t, d)
+	def := m["defaults"].(map[string]any)
+	if _, ok := def["skip_questions"]; ok {
+		t.Fatalf("defaults = %v", def)
+	}
+	if def["template"] != "go" {
+		t.Fatalf("surviving member lost: %v", def)
+	}
+	if m["base"] != "node:22" {
+		t.Fatalf("unrelated key damaged: %v", m)
+	}
+}
+
+// Removing the LAST member takes the whole construct: an empty [defaults]
+// block would keep asserting a table the caller asked to drop, which is what
+// reconcile's remove-when-inherit means.
+func TestRemoveKeyLastInlineMemberRemovesConstruct(t *testing.T) {
+	d := load(t, "base = \"node:22\"\n\n# describes defaults\ndefaults = { skip_questions = true } # trailing\n\n[env]\nFOO = \"bar\"\n")
+	if err := d.RemoveKey([]string{"defaults"}, "skip_questions"); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	for _, gone := range []string{"defaults", "skip_questions", "describes defaults", "trailing"} {
+		if strings.Contains(out, gone) {
+			t.Fatalf("construct not fully removed (%q survives):\n%s", gone, out)
+		}
+	}
+	m := mustParse(t, d)
+	if _, ok := m["defaults"]; ok {
+		t.Fatalf("defaults survives: %v", m)
+	}
+	if m["base"] != "node:22" || m["env"].(map[string]any)["FOO"] != "bar" {
+		t.Fatalf("neighbours damaged: %v", m)
+	}
+}
+
+// Nesting inside the construct rides the rewrite as dotted keys under the one
+// header, and a member with no leaves of its own still declares its table.
+func TestInlineTableNestedMembersSurviveRewrite(t *testing.T) {
+	d := load(t, "d = { a = { b = 1 }, c = {}, z = 0xBB8 }\n")
+	if err := d.SetKey([]string{"d"}, "z", Int(7)); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	if !strings.Contains(out, "a.b = 1") {
+		t.Fatalf("nested member should spell dotted under the header:\n%s", out)
+	}
+	m := mustParse(t, d)
+	dm := m["d"].(map[string]any)
+	if dm["a"].(map[string]any)["b"] != int64(1) {
+		t.Fatalf("nested member lost: %v", dm)
+	}
+	if _, ok := dm["c"].(map[string]any); !ok {
+		t.Fatalf("empty nested table lost: %v", dm)
+	}
+	if dm["z"] != int64(7) {
+		t.Fatalf("z = %v", dm["z"])
+	}
+
+	// Addressing INTO the nesting works too, and the edit displaces the
+	// member it lands on rather than spelling the key twice.
+	if err := d.SetKey([]string{"d", "a"}, "b", Int(2)); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetKey([]string{"d"}, "c", String("scalar-now")); err != nil {
+		t.Fatal(err)
+	}
+	m = mustParse(t, d)
+	dm = m["d"].(map[string]any)
+	if dm["a"].(map[string]any)["b"] != int64(2) || dm["c"] != "scalar-now" {
+		t.Fatalf("d = %v", dm)
+	}
+}
+
+// The engine's own backstop: an edit that yields syntactically valid but
+// semantically illegal TOML (a key defined twice -- what the expression
+// parser happily accepts) must not be handed back. Driven at the splice
+// seam, since no public operation reaches this state any more.
+func TestSpliceRefusesSemanticallyInvalidResult(t *testing.T) {
+	src := "d = { x = 1 }\n"
+	d := load(t, src)
+	err := d.splice(span{len(src), len(src)}, []byte("[d]\ny = 2\n"))
+	if err == nil {
+		t.Fatal("splice accepted a document that defines d twice")
+	}
+	if !strings.Contains(err.Error(), "internal bug") {
+		t.Fatalf("error should name the rule that fired: %v", err)
+	}
+	if string(d.Bytes()) != src {
+		t.Fatalf("the document must be left as it was:\n%s", d.Bytes())
+	}
+}
+
 // The SECOND edit of an inline-table value must work: the parser reports an
 // InlineTable's Raw as just the opening brace, so trusting the length made
 // the re-edit splice one byte into invalid TOML. byre's own house shapes are

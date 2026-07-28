@@ -22,6 +22,9 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	if i := d.findKeyValue(table, keyPath); i >= 0 {
 		return d.splice(d.exprs[i].valSpan, []byte(rendered))
 	}
+	if i, rel, ok := d.inlineTarget(fullPath(table, key)); ok {
+		return d.rewriteInline(i, rel, rendered, false)
+	}
 	line := fmt.Sprintf("%s = %s\n", encodeKey(key), rendered)
 	if at, ok := d.insertPointInTable(table); ok {
 		return d.splice(span{at, at}, []byte(line))
@@ -75,15 +78,112 @@ func (d *Doc) dottedKinInsert(table []string) (int, []string, bool) {
 
 // RemoveKey removes key (relative to table) if present: its full line --
 // trailing inline comment included -- plus any full-line comments glued
-// immediately above. Absent keys are a no-op.
+// immediately above. A member of an inline table takes the construct with it
+// (see rewriteInline). Absent keys are a no-op.
 func (d *Doc) RemoveKey(table []string, key string) error {
 	i := d.findKeyValue(table, []string{key})
 	if i < 0 {
+		if j, rel, ok := d.inlineTarget(fullPath(table, key)); ok {
+			return d.rewriteInline(j, rel, "", true)
+		}
 		return nil
 	}
 	rm := d.lineSpan(d.exprs[i].span)
 	rm.start = d.gluedCommentStart(i, rm.start)
 	return d.splice(rm, nil)
+}
+
+// fullPath is a table context plus a key: the path an edit addresses.
+func fullPath(table []string, key string) []string {
+	return append(append([]string(nil), table...), key)
+}
+
+// inlineTarget finds the inline-table construct an edit addresses INSIDE:
+// the indexed key-value whose value is an inline table and whose own path is
+// a strict prefix of full. It returns that expression's index and the target
+// path relative to the construct. The innermost such construct wins... which
+// is the outermost inline table, since a nested one is not indexed as an
+// expression of its own -- its leaves belong to the construct that encloses
+// them, and that is the construct an edit rewrites.
+func (d *Doc) inlineTarget(full []string) (int, []string, bool) {
+	for i, e := range d.exprs {
+		if e.kind != unstable.KeyValue || !e.inline {
+			continue
+		}
+		own := append(append([]string(nil), e.table...), e.key...)
+		if len(own) < len(full) && eq(own, full[:len(own)]) {
+			return i, full[len(own):], true
+		}
+	}
+	return -1, nil, false
+}
+
+// rewriteInline applies one member edit to an inline-table construct by
+// rewriting THAT construct in house shape (ADR 0044): the inline line goes --
+// with the comments glued above it, which describe this config and follow it
+// -- and a [table] block carrying the members plus/minus the edit takes its
+// place at the end of the document. The block cannot land where the inline
+// line sat: a table header claims everything after it, so an in-place swap
+// would swallow the following root keys into the new table.
+//
+// A removal that empties the construct takes the whole thing: an empty
+// [table] block still asserts the table the caller asked to drop.
+func (d *Doc) rewriteInline(i int, rel []string, rendered string, remove bool) error {
+	e := d.exprs[i]
+	type member struct {
+		path []string
+		text string
+	}
+	var kept []member
+	at := -1
+	for _, m := range e.members {
+		// The edit displaces the member it names, anything nested under it
+		// (setting d.a replaces whatever table d.a was), and anything it now
+		// sits under (setting d.a.b where d.a was a scalar). Keeping either
+		// side would spell a key twice.
+		if prefixOf(rel, m.path) || prefixOf(m.path, rel) {
+			if at < 0 {
+				at = len(kept)
+			}
+			continue
+		}
+		kept = append(kept, member{path: m.path, text: string(d.src[m.val.start:m.val.end])})
+	}
+	if remove && at < 0 {
+		return nil // absent member: nothing to rewrite
+	}
+	if !remove {
+		add := member{path: rel, text: rendered}
+		if at < 0 {
+			at = len(kept)
+		}
+		kept = append(kept, member{})
+		copy(kept[at+1:], kept[at:])
+		kept[at] = add
+	}
+
+	rm := d.lineSpan(e.span)
+	rm.start = d.gluedCommentStart(i, rm.start)
+	lead := string(d.src[rm.start:d.lineSpan(e.span).start]) // the glued comment lines
+	out := make([]byte, 0, len(d.src)+len(rendered)+16)
+	out = append(out, d.src[:rm.start]...)
+	out = append(out, d.src[rm.end:]...)
+	if len(kept) > 0 {
+		var b strings.Builder
+		b.WriteString(separatorAt(out, len(out)))
+		b.WriteString(lead)
+		b.WriteString("[" + encodeKeyPath(append(append([]string(nil), e.table...), e.key...)) + "]\n")
+		for _, m := range kept {
+			b.WriteString(encodeKeyPath(m.path) + " = " + m.text + "\n")
+		}
+		out = append(out, b.String()...)
+	}
+	return d.adopt(out)
+}
+
+// prefixOf reports whether a is a prefix of b (equal paths included).
+func prefixOf(a, b []string) bool {
+	return len(a) <= len(b) && eq(a, b[:len(a)])
 }
 
 // AppendArrayTable appends one [[name]] block with the rendered body (the
@@ -344,14 +444,18 @@ func isCommentLine(prefix []byte) bool {
 
 // separated returns the separator needed before appending a block at off: a
 // blank line when the document has content that doesn't already end with one.
-func (d *Doc) separated(off int) string {
+func (d *Doc) separated(off int) string { return separatorAt(d.src, off) }
+
+// separatorAt is separated against any bytes -- a rewrite computes its
+// insertion against the document it is BUILDING, not the one on the Doc.
+func separatorAt(src []byte, off int) string {
 	if off == 0 {
 		return ""
 	}
-	if off >= 2 && d.src[off-1] == '\n' && d.src[off-2] == '\n' {
+	if off >= 2 && src[off-1] == '\n' && src[off-2] == '\n' {
 		return ""
 	}
-	if d.src[off-1] == '\n' {
+	if src[off-1] == '\n' {
 		return "\n"
 	}
 	return "\n\n"
