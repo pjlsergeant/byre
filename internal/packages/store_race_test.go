@@ -184,3 +184,20 @@ func TestEnsureStoreNilFSDoesNotCreateDuringTheSwap(t *testing.T) {
 		t.Errorf("mirror incomplete after the swap: %v", err)
 	}
 }
+
+// A regular FILE at the mirror path is not a store byre can use. The nil-FS
+// path decides by stat, and treating any successful stat as sufficient turned
+// what MkdirAll used to refuse into a silent success -- so byre would carry on
+// with ~/.byre/bundled as a file.
+func TestEnsureStoreRefusesAFileAtTheMirrorPath(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "bundled"), []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureStore(home, nil, "test", nil); err == nil {
+		t.Fatal("a file where the mirror belongs must be refused, not accepted")
+	}
+}

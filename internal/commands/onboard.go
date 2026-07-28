@@ -258,6 +258,20 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
+// offeredPickRow finds the DISPLAYED claimant row a stored pick names, under
+// the shared spelling rule. Separate from liveness on purpose: liveness asks
+// whether the package still exists, this asks whether the picker has a row to
+// preselect, and the two answers differ for a claimant filtered out as already
+// granted machine-wide.
+func offeredPickRow(cat *packages.Catalog, claimants []string, pick string) (string, bool) {
+	for _, c := range claimants {
+		if skills.SameSkillRef(cat, c, pick) {
+			return c, true
+		}
+	}
+	return "", false
+}
+
 // buildSharedAuthOffer assembles the shared-auth offer for agent: live claimants with
 // provenance labels, saved pick prefill, and a stale-pick notice when needed.
 func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onboard.SharedAuthOffer {
@@ -304,27 +318,29 @@ func buildSharedAuthOffer(home string, cat *packages.Catalog, agent string) onbo
 	}
 	offer.PrefYes = onboard.SharedAuthPreference(home, agent)
 	if pick := onboard.SharedAuthPick(home, agent); pick != "" {
-		// LIVENESS is skills.SharedAuthPickLive's question -- the same call the
-		// two apply paths and the editor's row make. A string match against
-		// offer.Claimants answers a different one: that list is display names,
-		// already filtered of anything enabled machine-wide, so a pick that is
-		// installed AND granted read as "no longer installed" here while every
-		// other surface read it live.
-		if !skills.SharedAuthPickLive(cat, agent, pick) {
+		// One rule, three outcomes, because a stored pick can be any of three
+		// things and each prefills differently.
+		//
+		// The pick is resolved against the rows this offer will SHOW, using
+		// the same alias equality the liveness check uses (SameSkillRef): a
+		// pick stored canonically whose claimant displays as its alias is the
+		// same package, and a byte comparison made it live-but-unselectable --
+		// which then defaulted the multi-claim picker to N despite a valid
+		// stored preference.
+		switch row, shown := offeredPickRow(cat, offer.Claimants, pick); {
+		case shown:
+			offer.PrefPick = row
+		case skills.SharedAuthPickLive(cat, agent, pick):
+			// Live, but not on offer: already enabled machine-wide, so it was
+			// filtered out. Nothing is wrong, so no notice -- but the yes must
+			// NOT stand. A prefilled Yes with the picked companion absent hands
+			// Enter to whichever rival remains, granting machine-wide
+			// credentials to a package the user never chose.
+			offer.PrefYes = false
+		default:
 			// Missing/INVALID: no prefill + notice; leave the store alone.
 			offer.StalePickNotice = onboard.StalePickNotice(pick)
 			offer.PrefYes = false
-		} else {
-			// PREFILL is the display list's question, and only it: a prefill
-			// has to point at a row the picker is showing. A live pick this
-			// offer isn't showing (already on machine-wide) preselects nothing
-			// -- and says nothing, because nothing is wrong.
-			for _, c := range offer.Claimants {
-				if c == pick {
-					offer.PrefPick = pick
-					break
-				}
-			}
 		}
 	}
 	return offer

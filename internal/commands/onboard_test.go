@@ -689,13 +689,19 @@ func TestSharedAuthOfferDoesNotCallAGrantedPickStale(t *testing.T) {
 	if offer.StalePickNotice != "" {
 		t.Errorf("an installed, already-granted pick must not be reported missing: %q", offer.StalePickNotice)
 	}
-	// No prefill either: a prefill has to point at a row the picker shows, and
-	// this one is not among them.
+	// No prefill: a prefill has to point at a row the picker shows, and this
+	// one is not among them.
 	if offer.PrefPick != "" {
 		t.Errorf("prefill must name a row the picker shows, got %q (claimants %v)", offer.PrefPick, offer.Claimants)
 	}
 	if slices.Contains(offer.Claimants, "claude-shared-auth") {
 		t.Errorf("a machine-wide-enabled claimant must stay out of the offer: %v", offer.Claimants)
+	}
+	// And the yes must NOT stand. With the picked companion absent and exactly
+	// one RIVAL left, a prefilled Yes turns the single-claim [Y/n] into Enter
+	// granting machine-wide credentials to a package the user never chose.
+	if offer.PrefYes {
+		t.Errorf("a pick that is not on offer must not leave Yes prefilled (claimants %v)", offer.Claimants)
 	}
 
 	// A pick nothing claims is still stale, through the shared predicate.
@@ -711,5 +717,44 @@ func TestSharedAuthOfferDoesNotCallAGrantedPickStale(t *testing.T) {
 	}
 	if gone.PrefYes {
 		t.Error("a stale pick must not prefill yes")
+	}
+}
+
+// A pick stored as the CANONICAL id whose claimant displays as its alias is
+// the same package. Byte-matching it against the displayed rows found nothing,
+// so the picker defaulted to N despite a valid stored preference -- while the
+// liveness check, which does expand aliases, called it live. Prefill and
+// liveness now share one spelling rule (skills.SameSkillRef).
+func TestSharedAuthOfferPrefillsACanonicallyStoredPick(t *testing.T) {
+	p, _ := onboardPaths(t)
+	// Two claimants, so the offer is a picker and the prefill decides its row.
+	writeLocalSkill(t, p.Home, "aa-auth", "shared_auth_for = \"claude\"\n")
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"[defaults]\nshared_auth = { claude = \"byre/claude-shared-auth\" }\n"), 0o644)
+
+	cat, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := buildSharedAuthOffer(p.Home, cat, "claude")
+	if offer.StalePickNotice != "" {
+		t.Errorf("a canonically-stored pick is not missing: %q", offer.StalePickNotice)
+	}
+	// The row's own DISPLAY name, since that is what the picker matches on.
+	if offer.PrefPick != "claude-shared-auth" {
+		t.Errorf("PrefPick = %q, want the displayed row claude-shared-auth (claimants %v)", offer.PrefPick, offer.Claimants)
+	}
+	if !offer.PrefYes {
+		t.Error("a live, offered pick must keep its yes")
+	}
+	// And the alias spelling still works, unchanged.
+	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
+		"[defaults]\nshared_auth = { claude = \"claude-shared-auth\" }\n"), 0o644)
+	cat2, err := builtins.LoadCatalogRaw(p.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := buildSharedAuthOffer(p.Home, cat2, "claude"); got.PrefPick != "claude-shared-auth" {
+		t.Errorf("the alias spelling must still prefill, got %q", got.PrefPick)
 	}
 }

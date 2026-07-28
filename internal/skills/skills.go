@@ -647,6 +647,25 @@ func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
 	return append(bundled, other...)
 }
 
+// SameSkillRef reports whether two references name the same skill, tolerating
+// the alias/canonical spelling difference: a pick stored as the canonical id
+// and a row displaying the alias are one package, and a byte comparison would
+// call them two. The ONE spelling-equality rule the shared-auth surfaces use --
+// liveness and prefill both, because a predicate that accepts a spelling its
+// caller's own matching rejects is a pick that reads live and selects nothing.
+func SameSkillRef(cat *packages.Catalog, a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	if cat == nil {
+		return false
+	}
+	return cat.ExpandAlias(a) == cat.ExpandAlias(b)
+}
+
 // SharedAuthPickLive reports whether a STORED shared-auth pick still names a
 // skill vouching itself as agent's companion. The one owner of that question:
 // a stored pick is a name, and three surfaces have to agree on whether the
@@ -655,19 +674,15 @@ func SharedAuthClaimants(cat *packages.Catalog, agent string) []Skill {
 // Two implementations of it would drift into a grant one surface allows and
 // another flags.
 //
-// Alias-tolerant on every side, because a pick is stored in whatever form the
-// picker offered (the alias where one exists, the canonical id otherwise) --
-// the same tolerance SharedAuthAlreadyOn extends, for the same reason.
+// Alias-tolerant, because a pick is stored in whatever form the picker offered
+// (the alias where one exists, the canonical id otherwise) -- the same
+// tolerance SharedAuthAlreadyOn extends, for the same reason.
 func SharedAuthPickLive(cat *packages.Catalog, agent, pick string) bool {
 	if agent == "" || pick == "" || cat == nil {
 		return false
 	}
-	wantPick := cat.ExpandAlias(pick)
 	for _, c := range SharedAuthClaimants(cat, agent) {
-		if c.Name == pick || cat.ExpandAlias(c.Name) == wantPick {
-			return true
-		}
-		if ent, ok := cat.Lookup(c.Name); ok && ent.Alias == pick {
+		if SameSkillRef(cat, c.Name, pick) {
 			return true
 		}
 	}

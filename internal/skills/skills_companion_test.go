@@ -172,3 +172,44 @@ func TestSharedAuthPickLive(t *testing.T) {
 		t.Error("no catalog is no evidence of a live claimant")
 	}
 }
+
+// The spelling rule liveness and prefill share: a pick stored as the canonical
+// id and a row displaying the alias are one package, and a byte comparison
+// would call them two -- which is how a pick read live and selected nothing.
+func TestSameSkillRef(t *testing.T) {
+	dir := testHome(t)
+	writeSkill(t, dir, "local-auth", "shared_auth_for = \"claude\"\n", nil)
+	cat := catFor(t, dir)
+
+	if !SameSkillRef(cat, "local-auth", "local-auth") {
+		t.Error("identical names must match")
+	}
+	if SameSkillRef(cat, "local-auth", "other-auth") {
+		t.Error("different names must not match")
+	}
+	for _, tc := range []struct{ a, b string }{{"", "x"}, {"x", ""}, {"", ""}} {
+		if SameSkillRef(cat, tc.a, tc.b) {
+			t.Errorf("(%q, %q) must not match", tc.a, tc.b)
+		}
+	}
+	// Without a catalog there is no alias table, so only byte equality holds.
+	if !SameSkillRef(nil, "x", "x") || SameSkillRef(nil, "byre/x", "x") {
+		t.Error("no catalog means no alias expansion, and identity still matches")
+	}
+
+	// The case the rule exists for: a bundled skill's canonical id against the
+	// bare alias every surface displays it under.
+	bcat, err := packages.LoadCatalog(t.TempDir(), bundledSrcFS(t), "0.2.0", "0.2.0", packages.Stage2Hooks{Skill: ValidatePrimaryBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !SameSkillRef(bcat, "byre/claude-shared-auth", "claude-shared-auth") {
+		t.Error("a canonical id and its bare alias name one package")
+	}
+	if !SameSkillRef(bcat, "claude-shared-auth", "byre/claude-shared-auth") {
+		t.Error("the rule must hold in both directions")
+	}
+	if SameSkillRef(bcat, "byre/claude-shared-auth", "byre/codex-shared-auth") {
+		t.Error("two different bundled skills must not match")
+	}
+}

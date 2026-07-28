@@ -56,9 +56,14 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		// says nothing about that one. A stat first keeps the ordinary case
 		// lock-free, and like every other decision here it is made again under
 		// the lock.
-		if _, err := hostopen.PlainStat(root, hostopen.StoreOwned); err != nil {
+		// IsDir, not merely "the stat worked": a regular file sitting at the
+		// mirror path is not a store byre can use, and treating a successful
+		// stat as sufficient turned what MkdirAll used to refuse into a silent
+		// success. Both checks, since the one under the lock is the one that
+		// decides.
+		if fi, err := hostopen.PlainStat(root, hostopen.StoreOwned); err != nil || !fi.IsDir() {
 			if lerr := WithStoreLock(home, func() error {
-				if _, serr := hostopen.PlainStat(root, hostopen.StoreOwned); serr == nil {
+				if fi, serr := hostopen.PlainStat(root, hostopen.StoreOwned); serr == nil && fi.IsDir() {
 					return nil
 				}
 				return hostopen.PlainMkdirAll(root, 0o755, hostopen.StoreOwned)
