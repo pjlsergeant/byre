@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -29,10 +30,22 @@ import (
 
 // StatusDataVersion is the shape of the --data document. Bump it when a
 // consumer would have to change, and note the change in CHANGES.md.
-const StatusDataVersion = 1
+//
+// 2 (2026-07-28): the Running / Next-launch split. `subject` says whose box
+// the exposure fields describe, `launch` carries the record, and
+// `changes_on_next_launch` carries the diff -- the same content --full
+// renders, which is the rule this document is held to.
+const StatusDataVersion = 2
 
 type statusData struct {
 	Version int `json:"version"`
+
+	// Subject is what the exposure fields below describe:
+	// "running_box" when a verified launch record was read (the box IS the
+	// subject whenever one exists), else "next_launch". A reader that ignores
+	// this field will read next-launch config as though it were live state --
+	// the exact confusion the record exists to end.
+	Subject string `json:"subject"`
 
 	ProjectID  string   `json:"project_id,omitempty"`
 	Workdir    string   `json:"workdir"`
@@ -76,6 +89,41 @@ type statusData struct {
 	ManagedShadows []statusDataShadow      `json:"managed_path_shadows,omitempty"`
 
 	Container statusDataContainer `json:"container"`
+
+	// Launch is the running box's record when byre read and VERIFIED one; it
+	// is present with a state and a note and no record when byre could not,
+	// so a reader learns why rather than inferring absence.
+	Launch *statusDataLaunch `json:"launch,omitempty"`
+	// Changes is what differs in the current config, in the page's own words.
+	// Absent when nothing differs.
+	Changes []string `json:"changes_on_next_launch,omitempty"`
+}
+
+type statusDataLaunch struct {
+	// State is verified / pre_record / missing / tampered / unreadable /
+	// newer_schema. Only "verified" means the fields above describe the box.
+	State string `json:"state"`
+	// Note is the human sentence the page prints for a non-verified state.
+	Note string `json:"note,omitempty"`
+	// Record is the content address the container carries, full length.
+	Record  string `json:"record,omitempty"`
+	Schema  int    `json:"schema,omitempty"`
+	Byre    string `json:"byre,omitempty"`
+	Created string `json:"created,omitempty"`
+	Engine  string `json:"engine,omitempty"`
+	// Image is what the box RAN: the tag it was created from and the engine's
+	// id for it, which a later `byre rebuild` moves the tag away from.
+	Image *statusDataImage `json:"image,omitempty"`
+	// BoxEnvKeys are the env keys the box received. KEYS only, here as
+	// everywhere.
+	BoxEnvKeys []string `json:"box_env_keys,omitempty"`
+}
+
+type statusDataImage struct {
+	Tag         string `json:"tag,omitempty"`
+	Digest      string `json:"digest,omitempty"`
+	DigestError string `json:"digest_error,omitempty"`
+	Base        string `json:"base,omitempty"`
 }
 
 type statusDataEngine struct {
@@ -242,6 +290,7 @@ func writeStatusData(w io.Writer, s statusInfo) error {
 func statusDataOf(s statusInfo) statusData {
 	d := statusData{
 		Version:    StatusDataVersion,
+		Subject:    statusSubject(s),
 		ProjectID:  s.ID,
 		Workdir:    s.Canonical,
 		WorktreeOf: s.WorktreeOf,
@@ -377,7 +426,63 @@ func statusDataOf(s statusInfo) statusData {
 		d.ManagedShadows = append(d.ManagedShadows, statusDataShadow{Target: sh.Target, Source: sh.Source})
 	}
 	d.Container = statusDataContainerOf(s)
+	d.Launch = statusDataLaunchOf(s)
+	for _, c := range launchChanges(s) {
+		d.Changes = append(d.Changes, c.String())
+	}
 	return d
+}
+
+// statusSubject names whose box the exposure fields describe. The running box
+// is the subject whenever byre could read a record for one.
+func statusSubject(s statusInfo) string {
+	if s.Launch != nil {
+		return "running_box"
+	}
+	return "next_launch"
+}
+
+// statusDataLaunchOf projects the record (or the reason there isn't one) into
+// the wire shape. It is emitted for any running box, including one byre could
+// not read a record for: `--data` carries the same qualifiers the page does,
+// and "no launch key" would leave a reader to invent an explanation.
+func statusDataLaunchOf(s statusInfo) *statusDataLaunch {
+	if s.Container == "" {
+		return nil
+	}
+	l := &statusDataLaunch{State: launchStateName(s.LaunchState), Note: launchDegradeNote(s.LaunchState)}
+	if s.Launch == nil {
+		return l
+	}
+	l.Record = s.LaunchHash
+	l.Schema = s.Launch.Record
+	l.Byre = s.Launch.Byre
+	l.Created = s.Launch.Created.UTC().Format(time.RFC3339)
+	l.Engine = s.Launch.Engine
+	l.BoxEnvKeys = s.BoxEnvKeys
+	l.Image = &statusDataImage{
+		Tag: s.Image.Tag, Digest: s.Image.Digest, DigestError: s.Image.DigestError, Base: s.Image.Base,
+	}
+	return l
+}
+
+func launchStateName(st launchState) string {
+	switch st {
+	case launchRecordOK:
+		return "verified"
+	case launchPreRecord:
+		return "pre_record"
+	case launchMissing:
+		return "missing"
+	case launchTampered:
+		return "tampered"
+	case launchNewer:
+		return "newer_schema"
+	case launchUnreadable:
+		return "unreadable"
+	default:
+		return "none"
+	}
 }
 
 // statusDataNetworkOf reports what byre WARRANTS, not merely what a skill

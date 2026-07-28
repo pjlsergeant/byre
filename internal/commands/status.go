@@ -99,6 +99,31 @@ type statusInfo struct {
 	PresetNote        string   // note about a committed repo-side preset (byre.preset; legacy byre.config name accepted through its window)
 	PresetShort       string   // the same note, default-tier length
 	Cat               *packages.Catalog
+	// Base is the base image the next build would use. Rendered only under a
+	// launch record (as the running box's Image row), and always compared, so
+	// a changed base shows up as a next-launch difference.
+	Base string
+	// The Running / Next-launch split (statuslaunch.go). When Launch is
+	// non-nil, every field above that the record can speak for has ALREADY
+	// been replaced by the record's value: the page renders the running box.
+	// Changes is what differs in the current config. LaunchState is why there
+	// is no record when there isn't one, and it is rendered as a qualifier
+	// rather than swallowed -- byre degrades, it does not guess.
+	Launch      *launchRecord
+	LaunchState launchState
+	LaunchHash  string
+	Changes     []launchDelta
+	// LaunchSkills carries the skill identities AS ACQUIRED at launch, so the
+	// Skills rows show the provenance the box was built with rather than
+	// today's catalog. BoxEnvKeys are the env keys the box actually received
+	// (values never recorded). Image pins what it ran.
+	LaunchSkills []launchSkill
+	BoxEnvKeys   []string
+	Image        launchImage
+	// RecordedRawBuild is the recorded box's raw-build-lines flag, feeding the
+	// Network row's hedge in place of today's BuildRaw when a record is the
+	// subject.
+	RecordedRawBuild bool
 }
 
 // StatusOptions selects `byre status`'s output. SelfEdit mirrors
@@ -178,6 +203,7 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 		MCPClosed:          cfg.MCPClosed,
 		ClaudeSkillsClosed: cfg.ClaudeSkillsClosed,
 		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
+		Base:               cfg.Base,
 		ProjectRunArgs:     len(cfg.RunArgs) > 0,
 		HostEnv:            resolveHostEnv(cfg, gitExe),
 		ArtifactShadows:    artifactShadows(cfg),
@@ -307,6 +333,22 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 			// contradiction. Best-effort: label errors leave plain "running".
 			if labels, lerr := r.ContainerLabels(mine[0]); lerr == nil {
 				info.Orphaned = clientGone(labels)
+				// The running box becomes the page's subject. A record byre
+				// can VERIFY replaces the exposure rows and the current
+				// config becomes the diff; anything else qualifies the rows
+				// and leaves them describing the config, which is what byre
+				// can still stand behind.
+				rec, st := readLaunchRecord(paths, labels)
+				info.LaunchState = st
+				if rec != nil {
+					info.Launch = rec
+					info.LaunchHash = labels[launchKey]
+					now, next := applyLaunchRecord(&info, rec, paths)
+					info.Changes = diffLaunch(now, next)
+				}
+			} else {
+				// Not knowing the labels is not knowing there is no record.
+				info.LaunchState = launchUnreadable
 			}
 		}
 		// Other live sessions in the same project (worktrees sharing these
@@ -547,6 +589,12 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	if s.WorktreeOf != "" {
 		row("Worktree of", s.WorktreeOf+"  (config, volumes, image inherited)")
 	}
+	// The image the running box actually RAN. Only under a record: with no box
+	// there is nothing to pin, and the tag alone answers nothing -- `byre
+	// rebuild` moves it while this container keeps what it was created from.
+	if s.Launch != nil {
+		row("Image", imageLine(s, tier))
+	}
 	row("Network", networkLine(s))
 
 	// Containment: warranty disclaimer for skill-declared holes (e.g.
@@ -662,11 +710,29 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		row("Self-edit", fmt.Sprintf("%s -> %s  (rw)  [GRANT via --self-edit]", s.SelfEdit, selfEditTarget))
 	}
 
-	if s.SkillErr != "" {
-		row("Skills", strings.Join(s.Skills, ", ")+"  (unresolved: "+s.SkillErr+")")
-	} else if len(s.Skills) == 0 {
+	switch {
+	case s.Launch != nil && len(s.LaunchSkills) > 0:
+		// A running box's skills carry the provenance they were ACQUIRED
+		// with, off the record. Looking them up in today's catalog would
+		// answer about a package that may since have been reinstalled from
+		// somewhere else -- the re-derivation the record exists to abolish.
+		// The record WINS over a resolution error, because the error is about
+		// the next launch; the Next launch section carries it instead.
+		w := launchSkillIDWidth(s.LaunchSkills)
+		for i, sk := range s.LaunchSkills {
+			label := "Skills"
+			if i > 0 {
+				label = ""
+			}
+			row(label, pkgColumn(sk.Name, sk.Provenance, w))
+		}
+	case s.Launch != nil:
 		row("Skills", "none")
-	} else {
+	case s.SkillErr != "":
+		row("Skills", strings.Join(s.Skills, ", ")+"  (unresolved: "+s.SkillErr+")")
+	case len(s.Skills) == 0:
+		row("Skills", "none")
+	default:
 		// One row per skill with provenance label, plus one pointer under
 		// the block when the tier dropped any of their digests.
 		for i, name := range s.Skills {
@@ -790,6 +856,14 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	if len(s.EnvKeys) > 0 {
 		row("Env", strings.Join(s.EnvKeys, ", ")+"  (baked into the image)")
 	}
+	// Under a record, the honest answer to "what env was this box HANDED?" is
+	// the key set that went onto the engine's argv: byre's plumbing, the
+	// skills' runtime env and the host passthrough. (Config [env] is not here
+	// because it never rides `-e` -- it is baked into the image, and the Env
+	// row above is where it lives.) Keys only, here as everywhere.
+	if len(s.BoxEnvKeys) > 0 {
+		row("Box env", boxEnvRow(s.BoxEnvKeys, tier))
+	}
 
 	// Skill-granted runtime holes, attributed to the skill that opened them.
 	for i, g := range s.Grants {
@@ -865,13 +939,119 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	} else {
 		row("Container", "not running")
 	}
+	// What the page is ABOUT, as a continuation of the row where a reader
+	// confirms a box is live. Its own line rather than a second em-dash
+	// clause on the Container row, which already carries the orphan sentence.
+	// Never folded by tier and never omitted: whether the rows describe the
+	// box or the config is the one thing a reader must not have to infer.
+	if s.Container != "" {
+		if mark := launchSubjectMark(s); mark != "" {
+			row("", mark)
+		} else if note := launchDegradeNote(s.LaunchState); note != "" {
+			row("", "⚠ "+note)
+		}
+	}
 	if len(s.SiblingSessions) > 0 {
 		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s  (share these volumes)",
 			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", ")))
 	} else if s.SiblingQueryErr != "" {
 		row("Worktrees", "sibling sessions unknown — the engine didn't answer: "+s.SiblingQueryErr)
 	}
+	// What differs in the current config, in the row vocabulary of the blocks
+	// above. Absent entirely when nothing differs -- an "unchanged" line is a
+	// row nobody needs, and its absence reads correctly.
+	for i, d := range launchChanges(s) {
+		label := "Next launch"
+		if i > 0 {
+			label = ""
+		}
+		row(label, d.String())
+	}
 	return rows
+}
+
+// launchChanges is the Next launch section's content: the computed deltas,
+// plus the one next-launch fact that is not a delta -- a skill set that no
+// longer resolves. That error would otherwise vanish under a record (the
+// Skills rows describe the running box), and "your next develop will fail" is
+// exactly the kind of thing this section exists to surface.
+func launchChanges(s statusInfo) []launchDelta {
+	if s.Launch == nil {
+		return nil
+	}
+	out := s.Changes
+	if s.SkillErr != "" {
+		out = append(append([]launchDelta{}, out...), launchDelta{Sign: "~", Text: "Skills do not resolve for the next launch: " + s.SkillErr})
+	}
+	return out
+}
+
+// launchSubjectMark is the Container row's statement of what the page is
+// about. It rides that row because that is where a reader confirms a box is
+// live, and the sentence is the answer to the question the row raises.
+func launchSubjectMark(s statusInfo) string {
+	if s.Launch == nil {
+		return ""
+	}
+	return "↳ the grant rows above describe THIS box (launch record " +
+		shortHash(s.LaunchHash) + "). Other rows describe the current config."
+}
+
+// shortHash abbreviates a record address for a human-facing row. The full
+// value stays on the container label and in --data, which is where anything
+// checking an address should read it.
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
+}
+
+// imageLine renders what the running box was built from. The tag is what the
+// user recognises; the digest is what survives a `byre rebuild` moving the
+// tag, and it is the reason this row exists at all.
+func imageLine(s statusInfo, tier statusTier) string {
+	parts := []string{s.Image.Tag}
+	switch {
+	case s.Image.Digest != "":
+		d := s.Image.Digest
+		if !tier.full() && len(d) > 19 {
+			d = d[:19] + "…  (" + FullHint + ")"
+		}
+		parts = append(parts, d)
+	case s.Image.DigestError != "":
+		parts = append(parts, "digest not recorded: "+s.Image.DigestError)
+	}
+	if s.Image.Base != "" {
+		parts = append(parts, "base "+s.Image.Base)
+	}
+	if len(parts) == 1 {
+		return orDefault(parts[0], "(unrecorded)")
+	}
+	return parts[0] + "  (" + strings.Join(parts[1:], "; ") + ")"
+}
+
+// boxEnvRow lists the env keys the box received. The default tier counts them
+// and points at --full: this is a long list of mostly-plumbing names, and the
+// truncation names itself like every other.
+func boxEnvRow(keys []string, tier statusTier) string {
+	if tier.full() {
+		return strings.Join(keys, ", ") + "  (keys the box received; values never recorded)"
+	}
+	return fmt.Sprintf("%d %s the box received  (values never recorded; %s)",
+		len(keys), plural(len(keys), "key", "keys"), FullHint)
+}
+
+// launchSkillIDWidth is pkgIDWidth over a record's skill identities: the id
+// column every recorded skill row shares.
+func launchSkillIDWidth(sks []launchSkill) int {
+	w := 0
+	for _, sk := range sks {
+		if l := displayLen(sk.Name); l > w {
+			w = l
+		}
+	}
+	return w + 2
 }
 
 // mcpStatusLine renders one declared MCP server: what it is, who declared
@@ -1074,7 +1254,7 @@ func closureLine(c string, s statusInfo) string {
 		disp += " (every port)"
 	}
 	switch {
-	case s.SkillErr != "":
+	case s.postureUnknown():
 		return disp + "  (config — posture unknown, skills unresolved)"
 	case s.NetPosture == config.PostureOpenDenylist:
 		return disp + "  (config — blocked; skill: " + s.NetPostureSkill + ")"
@@ -1350,7 +1530,7 @@ func artifactShadows(cfg config.Config) map[string]bool {
 //     covered and nothing about what covers it (ADR 0052);
 //   - unresolved skills mean the posture is simply unknown.
 func networkLine(s statusInfo) string {
-	if s.SkillErr != "" {
+	if s.postureUnknown() {
 		return "unknown  (skills unresolved)"
 	}
 	if s.NetPosture == "" {
@@ -1381,7 +1561,10 @@ func networkDisplacers(s statusInfo) []string {
 	if s.ProjectRunArgs {
 		raw = append(raw, "raw run_args")
 	}
-	if len(s.BuildRaw) > 0 {
+	// Under a record the inputs come off the record (applyLaunchRecord set
+	// them): a hedge computed from today's raw build lines would describe a
+	// construction the running box never had.
+	if (s.Launch == nil && len(s.BuildRaw) > 0) || (s.Launch != nil && s.RecordedRawBuild) {
 		raw = append(raw, "raw build lines")
 	}
 	if skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimNetwork) {
@@ -1399,7 +1582,7 @@ func networkDisplacers(s statusInfo) []string {
 // nothing has displaced byre's construction of it.
 func networkWarranted(s statusInfo) bool {
 	switch {
-	case s.SkillErr != "":
+	case s.postureUnknown():
 		return false
 	case s.NetPosture == "":
 		return true
