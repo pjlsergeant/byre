@@ -80,15 +80,14 @@ func TestDoctrineIndexCoversCorpus(t *testing.T) {
 }
 
 // gatedTestFile reports whether this file is one where every test rides a
-// tier gate. It judges the file's NAME, which is a convention the repo
-// keeps, and not its contents: a file's text says nothing reliable here --
-// tuitest holds ordinary unit tests beside its pty ones, and a comment
-// mentioning BYRE_DOCKER_TESTS gates nothing at all. So: gated tests live
-// in a file whose name says "integration", or under internal/tuitest.
+// tier gate. It judges the file's NAME, a convention the repo keeps, and
+// never its contents: a comment mentioning BYRE_DOCKER_TESTS gates nothing,
+// and a directory is no better a proxy -- internal/tuitest holds ordinary
+// ungated unit tests (the harness's own) beside its pty ones, so naming one
+// of those as an arm would be forced into a marker that lies. One rule: a
+// gated test lives in a file whose name says "integration".
 func gatedTestFile(path string) bool {
-	p := filepath.ToSlash(path)
-	return strings.Contains(filepath.Base(p), "integration") ||
-		strings.Contains(p, "internal/tuitest/")
+	return strings.Contains(filepath.Base(filepath.ToSlash(path)), "integration")
 }
 
 func TestDoctrineIndexArmsResolve(t *testing.T) {
@@ -140,9 +139,9 @@ func TestDoctrineIndexArmsResolve(t *testing.T) {
 			for _, f := range files {
 				switch {
 				case e.gated && !gatedFile[f]:
-					t.Errorf("index entry %s marks arm %s [arm(gated)], but %s is not a gated-tier file -- gated tests live in an *integration*_test.go or under internal/tuitest; move the test or drop the (gated)", id, arm, f)
+					t.Errorf("index entry %s marks arm %s [arm(gated)], but %s is not a gated-tier file -- a gated test lives in a file whose name says %q; move the test or drop the (gated)", id, arm, f, "integration")
 				case !e.gated && gatedFile[f]:
-					t.Errorf("index entry %s marks arm %s [arm], but %s is a gated-tier file (an *integration*_test.go, or internal/tuitest) -- mark it [arm(gated)]", id, arm, f)
+					t.Errorf("index entry %s marks arm %s [arm], but %s is a gated-tier file (its name says %q) -- mark it [arm(gated)]", id, arm, f, "integration")
 				}
 			}
 		}

@@ -95,7 +95,8 @@ func Binary(t *testing.T) string {
 // out of the key, so the list is the full input set rather than the subset
 // this repo happens to use today.
 var productSourceFields = []string{
-	"GoFiles", "CgoFiles", "SFiles", "CFiles", "HFiles", "SysoFiles", "EmbedFiles",
+	"GoFiles", "CgoFiles", "SFiles", "CFiles", "CXXFiles", "MFiles", "FFiles",
+	"HFiles", "SwigFiles", "SwigCXXFiles", "SysoFiles", "EmbedFiles",
 }
 
 // recordProductSources puts the built binary's own inputs into Go's test
