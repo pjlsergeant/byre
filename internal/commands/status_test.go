@@ -2,6 +2,8 @@ package commands
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -824,6 +826,29 @@ func TestManagedPathShadows(t *testing.T) {
 	// Nothing declared anywhere -> silence.
 	if h := managedPathShadows(config.Config{}, skills.Resolved{}); len(h) != 0 {
 		t.Errorf("no mounts/volumes -> no shadows, got %v", h)
+	}
+}
+
+// Unresolved skills take every skill-derived row down with them, but the
+// project's own mounts are knowable regardless -- and with the disclosure now
+// the only place a shadow is reported, going silent here would hide it
+// completely.
+func TestStatusDisclosesShadowWhenSkillsUnresolved(t *testing.T) {
+	p, proj := testPaths(t)
+	cfgText := "skills = [\"no-such-skill\"]\n\n[[volumes]]\nname = \"v\"\nrole = \"state\"\ntarget = \"/etc/byre\"\n"
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte(cfgText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, out, _ := testStreams("", false)
+	if err := Status(s, proj, false); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "unresolved") {
+		t.Fatalf("expected the skills row to report the resolution failure:\n%s", got)
+	}
+	if !strings.Contains(got, gen.ByreDir+" ("+shadowFromConfig+")") {
+		t.Errorf("the config shadow must still be disclosed:\n%s", got)
 	}
 }
 

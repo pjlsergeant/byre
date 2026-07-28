@@ -26,21 +26,35 @@ project block, so byre's content wins and a note says the entry did not take
 effect. There is no runtime equivalent. A bind or a named volume is applied by
 the engine over the built image, and byre has nothing that runs after it.
 
-The sharpest instance: `[[volumes]] target = "/etc/byre"` seeds a fresh, empty
-volume, the box's agent owns what is in it, and the launcher reads an absent or
-emptied launch gate as "no gate" and skips its wait. The next `docker restart`
-recreates the netns with no firewall in it and the box launches anyway --
-failing OPEN on a configuration whose Network row said deny-by-default.
+The sharpest instance is `[[volumes]] target = "/etc/byre"`. What the box sees
+there is the volume's content, which is written once -- both engines copy the
+image directory into a NEW named volume on first use, and never again. From
+then on the volume is the authority: the box gets whatever it holds, which is
+what the image held when the volume was created, and a gate a later build
+bakes never arrives. The launcher's wait is `[ -s "$GATE_FILE" ]`, so an
+absent or emptied gate is not a failure it can see -- it reads "no gate, and
+nothing to wait for", and the next `docker restart` recreates the netns with
+no firewall in it and launches anyway, on a configuration whose Network row
+said deny-by-default. A bind mount over the same path skips even the initial
+copy.
 
 ## The decision
 
 **One line per offending mount/volume target, in the containment register.**
-It states that byre cannot re-assert over a runtime mount, that containment
-(firewall / launch gate) is therefore not guaranteed for the session, and that
-the delivery claims describe what byre BUILT rather than what the box sees. It
-renders on `byre status` beside the skill-declared containment holes and as a
-🛑 warning at develop, from one exported prose function so the two cannot
-drift.
+It states that byre cannot re-assert over a runtime mount, that the box
+therefore gets what is mounted rather than what byre baked, and that whatever
+byre claims from that path -- the firewall's launch gate, the MCP /
+instructions / Claude Skills delivery -- describes byre's construction and not
+this box. It renders on `byre status` beside the skill-declared containment
+holes and as a 🛑 warning at develop, from one exported prose function so the
+two cannot drift.
+
+The consequence is worded as the scope byre stops warranting rather than as a
+list of things that broke, because the two differ: a bind on `mcp.json` alone
+leaves the launch gate untouched, and byre cannot tell which case it is
+looking at -- it knows a path is covered and nothing about what covers it.
+Naming the claims that read from that path is the whole of what it can
+honestly say, and it is said the same way whichever path was hit.
 
 Detection is mount-centric: a target shadows if it overlaps a *managed root*
 -- `/etc/byre` as a whole, the launcher, and each declared netns hook. A

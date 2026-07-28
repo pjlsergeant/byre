@@ -111,9 +111,11 @@ artifacts under `/etc/byre` -- and re-asserts the security-critical ones
 at the end of the build, so a `files` entry cannot quietly replace them.
 A bind mount or a named volume is different: the engine applies it over
 the finished image, and byre has nothing that runs afterwards. A volume
-at `/etc/byre` gives the box an empty directory where the gate should
-be; the launcher treats no gate as nothing to wait for, so the next
-`docker restart` brings the box up with its netns unfirewalled. `byre
+at `/etc/byre` is filled from the image once, when it is created, and is
+the authority from then on -- so a gate a later build bakes never
+reaches the box, and anything that empties the file it holds is
+permanent. The launcher treats no gate as nothing to wait for, so the
+next `docker restart` brings the box up with its netns unfirewalled. `byre
 status` and `byre develop` disclose any mount or volume covering those
 paths -- the project's own and any a skill declares, named -- in the
 Containment register, and then run it: this is your configuration to
