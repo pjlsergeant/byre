@@ -530,6 +530,9 @@ func renderVolume(v config.Volume) string {
 	if v.Scope != "" {
 		b += tomldoc.KV("scope", tomldoc.String(v.Scope))
 	}
+	if v.Sharing != "" {
+		b += tomldoc.KV("sharing", tomldoc.String(v.Sharing))
+	}
 	if v.Seed != nil {
 		s := map[string]string{}
 		if v.Seed.Host != "" {

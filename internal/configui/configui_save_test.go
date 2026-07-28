@@ -1009,3 +1009,138 @@ func TestSaveMigratesLegacySharedAuthOnAnUnrelatedEdit(t *testing.T) {
 		t.Errorf("the preference itself must survive the move: %+v", back.StoredSharedAuth())
 	}
 }
+
+// The picker writes to the model; the FILE is the contract. commitItem set
+// Sharing and every in-memory assertion passed while renderVolume dropped the
+// key on the way to disk -- so an exclusive volume chosen in the editor was
+// silently shared again on save, and editing any other field of a hand-written
+// exclusive volume stripped the declaration out of the user's file.
+func TestSaveWritesVolumeSharing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+
+	// Adding an exclusive volume writes the key.
+	cfg := config.Config{Volumes: []config.Volume{
+		{Name: "ledger", Role: "state", Target: "/var/lib/ledger", Sharing: "exclusive"},
+	}}
+	if err := Save(path, false, cfg, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `sharing = "exclusive"`) {
+		t.Fatalf("the save dropped the single-writer declaration:\n%s", raw)
+	}
+	back, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !back.Volumes[0].Exclusive() {
+		t.Fatalf("round trip lost sharing: %+v", back.Volumes[0])
+	}
+
+	// Editing an unrelated field of a HAND-WRITTEN exclusive volume must not
+	// strip it. reconcileBlocks short-circuits on DeepEqual, so only a real
+	// edit exercises the rewrite that did the stripping.
+	hand := filepath.Join(dir, "hand.config")
+	initial := "# the ledger takes one writer\n[[volumes]]\nname = \"ledger\"\nrole = \"state\"\ntarget = \"/var/lib/ledger\"\nsharing = \"exclusive\"\n"
+	if err := os.WriteFile(hand, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := config.ParseFile(hand, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := config.Config{Volumes: append([]config.Volume{}, cur.Volumes...)}
+	edited.Volumes[0].Target = "/var/lib/ledger2"
+	if err := Save(hand, false, edited, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := config.ParseFile(hand, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.Volumes[0].Exclusive() || after.Volumes[0].Target != "/var/lib/ledger2" {
+		t.Errorf("retyping a target must not un-declare single-writer: %+v", after.Volumes[0])
+	}
+
+	// The default answer writes no key: `sharing = "shared"` in every block
+	// would be noise in a file people hand-edit.
+	plain := filepath.Join(dir, "plain.config")
+	if err := Save(plain, false, config.Config{Volumes: []config.Volume{
+		{Name: "deps", Role: "cache", Target: "/workspace/node_modules"},
+	}}, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	praw, err := os.ReadFile(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(praw), "sharing") {
+		t.Errorf("the default answer must write no key:\n%s", praw)
+	}
+}
+
+// The class the sharing bug belonged to: a [[block]] field the model carries
+// and the renderer forgets is invisible everywhere except the file. Every
+// toml-tagged field of every block vocabulary must reach its renderer, so the
+// next added field cannot be silently unsaveable.
+func TestBlockRenderersEmitEveryTaggedField(t *testing.T) {
+	cases := []struct {
+		vocab  string
+		render func(reflect.Value) string
+		zero   any
+	}{
+		{"mounts", func(v reflect.Value) string { return renderMount(v.Interface().(config.Mount)) }, config.Mount{}},
+		{"volumes", func(v reflect.Value) string { return renderVolume(v.Interface().(config.Volume)) }, config.Volume{}},
+		{"ports", func(v reflect.Value) string { return renderPort(v.Interface().(config.Port)) }, config.Port{}},
+		{"mcp", func(v reflect.Value) string { return renderMCP(v.Interface().(config.MCP)) }, config.MCP{}},
+		{"claude_skills", func(v reflect.Value) string { return renderClaudeSkill(v.Interface().(config.ClaudeSkill)) }, config.ClaudeSkill{}},
+		{"context", func(v reflect.Value) string { return renderContext(v.Interface().(config.ContextDecl)) }, config.ContextDecl{}},
+	}
+	for _, tc := range cases {
+		rt := reflect.TypeOf(tc.zero)
+		full := reflect.New(rt).Elem()
+		fillNonZero(t, full)
+		out := tc.render(full)
+		for i := 0; i < rt.NumField(); i++ {
+			tag := strings.Split(rt.Field(i).Tag.Get("toml"), ",")[0]
+			if tag == "" || tag == "-" {
+				continue
+			}
+			if !strings.Contains(out, tag+" = ") {
+				t.Errorf("[[%s]]: render%s drops %q — a field the editor can set and the file never gets is lost on save\n%s",
+					tc.vocab, rt.Name(), tag, out)
+			}
+		}
+	}
+}
+
+// fillNonZero gives every field a value a renderer's `if set` branch accepts.
+func fillNonZero(t *testing.T, v reflect.Value) {
+	t.Helper()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		switch f.Kind() {
+		case reflect.String:
+			f.SetString("x")
+		case reflect.Bool:
+			f.SetBool(true)
+		case reflect.Int:
+			f.SetInt(1)
+		case reflect.Slice:
+			f.Set(reflect.Append(f, reflect.ValueOf("x")))
+		case reflect.Map:
+			m := reflect.MakeMap(f.Type())
+			m.SetMapIndex(reflect.ValueOf("k"), reflect.ValueOf("v"))
+			f.Set(m)
+		case reflect.Pointer:
+			f.Set(reflect.New(f.Type().Elem()))
+			fillNonZero(t, f.Elem())
+		default:
+			t.Fatalf("fillNonZero has no case for %s (%s) — extend it with the new field's kind", v.Type().Field(i).Name, f.Kind())
+		}
+	}
+}
