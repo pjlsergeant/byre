@@ -40,6 +40,15 @@ the rationale lives.
   empty -- box commits will fail until set") turns that into a ten-second fix.
   Degrade-not-block stays; this is legibility only.
 
+- [ ] (L) **The state model is missing "the box that was actually launched"**
+  (external review, verified 2026-07-28): a content-addressed launch record per
+  container, status splitting Running vs Next launch, resolve-under-lock (or
+  generation revalidation) in develop, per-volume concurrency vocabulary -- and
+  the independent URGENT piece, host exec pinning (byre re-resolves bare
+  `docker`/`git` through PATH on every call, so an absolute agent-writable PATH
+  entry makes byre the automatic trigger). Verdicts + evidence:
+  wip/state-model-launch-record.md.
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
