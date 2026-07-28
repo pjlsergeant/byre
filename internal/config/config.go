@@ -796,7 +796,7 @@ func Parse(content []byte) (Config, error) {
 	}
 	var strict *toml.StrictMissingError
 	if !errors.As(err, &strict) {
-		return Config{}, err
+		return Config{}, positioned(err)
 	}
 	// Tolerate retired top-level keys (retiredConfigKeys) that past versions
 	// wrote; any other unknown key is a real typo.
@@ -827,9 +827,29 @@ func Parse(content []byte) (Config, error) {
 	d := toml.NewDecoder(bytes.NewReader(content))
 	d.EnableUnmarshalerInterface()
 	if err := d.Decode(&lenient); err != nil {
-		return Config{}, err
+		return Config{}, positioned(err)
 	}
 	return lenient, nil
+}
+
+// positioned appends the failure's location to a decode error. A config byre
+// cannot parse is a dead end the user has to leave the tool to escape --
+// every byre editor refuses to open one -- so this message is the whole
+// repair instruction, and "somewhere in this file" is not enough of one.
+// go-toml's DecodeError carries a 1-indexed line and column plus the key it
+// was reading; the wrap keeps the original error reachable through errors.As.
+// Errors that carry no position (byre's own rejections, and the shared_auth
+// sub-parse, whose coordinates address a synthetic document) pass through.
+func positioned(err error) error {
+	var de *toml.DecodeError
+	if !errors.As(err, &de) {
+		return err
+	}
+	line, column := de.Position()
+	if key := de.Key(); len(key) > 0 {
+		return fmt.Errorf("%w (key %q, line %d, column %d)", err, strings.Join(key, "."), line, column)
+	}
+	return fmt.Errorf("%w (line %d, column %d)", err, line, column)
 }
 
 // decodeStrict is the one strict decode under Parse: unknown keys error

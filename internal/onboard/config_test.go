@@ -116,14 +116,25 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	}
 }
 
-// A file the editor can't parse is refused with a remedy naming the config
-// UI (PRINCIPLES.md §6: no error sends the user into the file) — never a guessed write.
+// A file the editor can't parse is refused — never a guessed write. P6's
+// scope note governs what the refusal must then say: no byre editor can be
+// the remedy (each one parses this file before it opens), so the message
+// itself has to be precise enough to fix the file by hand — the path, and
+// where in it.
 func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "skills = [\"unclosed\n")
 	err := SaveSharedAuthDefaultPick(home, "claude", "", true)
-	if err == nil || !strings.Contains(err.Error(), "byre config --global") {
-		t.Fatalf("err = %v, want the config-UI remedy", err)
+	if err == nil {
+		t.Fatal("an unparsable default.config must be refused, not guessed at")
+	}
+	for _, want := range []string{filepath.Join(home, "default.config"), "line 1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal must carry %q, got: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "byre config") {
+		t.Errorf("the remedy must not name a command that refuses this file too: %v", err)
 	}
 	if got := readDefault(t, home); !strings.Contains(got, "unclosed") {
 		t.Fatalf("a refused edit must leave the file untouched:\n%s", got)

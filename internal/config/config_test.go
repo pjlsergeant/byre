@@ -1435,3 +1435,70 @@ func TestValidateRejectsReservedNamespaceInEnvFromHost(t *testing.T) {
 		t.Errorf("non-reserved passthrough keys must stay legal, got %v", err)
 	}
 }
+
+// A config file byre cannot parse is a dead end for the user: every byre
+// editor refuses to open one, so the error message IS the repair
+// instruction. go-toml's DecodeError carries the line, the column and the
+// key it was reading -- the parse error path must not throw them away.
+func TestParseErrorSaysWhere(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		want []string
+	}{
+		// A value that never arrives: no key context, position only.
+		"syntax": {
+			body: "engine = \"docker\"\ntemplate = \nagent = \"claude\"\n",
+			want: []string{"line 2", "column 12"},
+		},
+		// A wrong type: the decoder knows which key it was reading.
+		"type": {
+			body: "engine = \"docker\"\n\n[skills]\nfoo = 1\n",
+			want: []string{`key "skills"`, "line 3", "column 2"},
+		},
+	} {
+		_, err := Parse([]byte(tc.body))
+		if err == nil {
+			t.Fatalf("%s: a broken document must not parse", name)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: parse error must locate the failure (%q), got: %v", name, want, err)
+			}
+		}
+	}
+}
+
+// ParseFile names the file as well: the position is only actionable once the
+// user knows which of the cascade's layers carries it.
+func TestParseFileErrorNamesFileAndPosition(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "byre.config")
+	if err := os.WriteFile(path, []byte("engine = \"docker\"\ntemplate = \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ParseFile(path, true)
+	if err == nil {
+		t.Fatal("a broken config file must not parse")
+	}
+	for _, want := range []string{path, "line 2", "column 12"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("parse error must carry %q, got: %v", want, err)
+		}
+	}
+}
+
+// shared_auth decodes through its own UnmarshalTOML, which re-parses a
+// SYNTHETIC document -- so any position that sub-parse reports addresses
+// bytes the user never wrote. The rule: no position rather than a wrong one.
+func TestSharedAuthParseErrorClaimsNoPosition(t *testing.T) {
+	_, err := Parse([]byte("engine = \"docker\"\n\nshared_auth = 5\n"))
+	if err == nil {
+		t.Fatal("a non-array, non-table shared_auth must not parse")
+	}
+	if !strings.Contains(err.Error(), "shared_auth") {
+		t.Errorf("rejection must name shared_auth, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "line ") || strings.Contains(err.Error(), "column ") {
+		t.Errorf("a sub-parse's synthetic coordinates must not be reported, got: %v", err)
+	}
+}

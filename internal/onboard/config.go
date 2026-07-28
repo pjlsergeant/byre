@@ -73,7 +73,10 @@ func SaveDefault(home, template, agent string) error {
 	}
 	doc, err := tomldoc.Load([]byte(content))
 	if err != nil {
-		return fmt.Errorf("%s: %w — fix it (byre config --global opens it), then re-run", path, err)
+		// No byre command can be the remedy: `byre config --global` parses
+		// this same file before it opens, so it refuses too. The named path
+		// and the parse failure are what the user takes to their own editor.
+		return fmt.Errorf("%s: %w — fix it in your own editor, then re-run", path, err)
 	}
 	for _, kv := range []struct{ key, val string }{{"template", template}, {"agent", agent}} {
 		if kv.val == "" {
@@ -156,7 +159,9 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	}
 	cfg, err := config.Parse([]byte(content))
 	if err != nil {
-		return fmt.Errorf("%s: %w — fix it (byre config --global opens it), then answer again", path, err)
+		// Same as SaveDefault: the editor byre would point at refuses this
+		// file too. config.Parse's error carries the line and column.
+		return fmt.Errorf("%s: %w — fix it in your own editor, then answer again", path, err)
 	}
 	want := cfg.StoredSharedAuth().Clone()
 	if yes {

@@ -179,6 +179,12 @@ func (s SharedAuthPref) CompanionPick(agent string) string {
 // for the inline spellings (`["claude"]`, `{ claude = "c" }`), a key-value
 // document for the `[shared_auth]` table form. Consuming the whole subtree
 // here is also what keeps the strict unknown-key check out of it.
+//
+// Each shape is decoded by re-parsing a SYNTHETIC document, so the line and
+// column the inner decoder reports address bytes the user never wrote. The
+// inner error is folded in as text (%v, not %w) to keep those coordinates
+// out of reach of Parse's positioned(): naming the key beats pointing at the
+// wrong line.
 func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 	t := strings.TrimSpace(string(data))
 	switch {
@@ -187,7 +193,7 @@ func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 			V []string `toml:"v"`
 		}
 		if err := toml.Unmarshal([]byte("v = "+t), &v); err != nil {
-			return fmt.Errorf("shared_auth: want an array of agent names: %w", err)
+			return fmt.Errorf("shared_auth: want an array of agent names: %v", err)
 		}
 		s.Yes = v.V
 		return nil
@@ -196,14 +202,14 @@ func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 			V map[string]string `toml:"v"`
 		}
 		if err := toml.Unmarshal([]byte("v = "+t), &v); err != nil {
-			return fmt.Errorf("shared_auth: want agent = companion strings: %w", err)
+			return fmt.Errorf("shared_auth: want agent = companion strings: %v", err)
 		}
 		s.Pick = v.V
 		return nil
 	default:
 		var m map[string]string
 		if err := toml.Unmarshal([]byte(t), &m); err != nil {
-			return fmt.Errorf("shared_auth: want array or table of agent = companion strings: %w", err)
+			return fmt.Errorf("shared_auth: want array or table of agent = companion strings: %v", err)
 		}
 		s.Pick = m
 		return nil

@@ -62,8 +62,10 @@ func Save(path string, follow bool, cfg config.Config, openRaw []byte, openErr e
 	cur, err := config.Parse(raw)
 	if err != nil {
 		// Reconciling against a file byre can't read would guess at what to
-		// preserve. The parse error names the problem; fixing the file is
-		// the editor's flow (it refuses to open broken files the same way).
+		// preserve. No byre editor is the repair route -- `byre config`
+		// refuses to open a file it cannot parse, and this save refuses for
+		// the same reason -- so the message carries the whole instruction:
+		// the file, and (from config.Parse) the line and column to fix.
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	doc, err := tomldoc.Load(raw)

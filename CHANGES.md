@@ -2,6 +2,15 @@
 
 ## unreleased
 
+- **A config file byre refuses now says which line.** A syntax error in
+  `byre.config` (or `default.config`, or a layer) got you the file's path and
+  `toml: unexpected character U+000A at start of value` -- nothing about
+  where. Every config parse failure now carries the line, the column, and the
+  key the decoder was reading. This is the one error class byre has no repair
+  route for: `byre config` parses the file before it opens a screen, so it
+  refuses a broken one too -- which is why the two messages that used to
+  answer "byre config --global opens it" now send you to your own editor.
+
 - **A skill package is checked when byre gets it, not when you finally run
   it.** `network_posture = "Deny-Default"` used to pass `byre skill validate`,
   `pack`, `inspect`, `install` and `list` -- every command that looks at a
