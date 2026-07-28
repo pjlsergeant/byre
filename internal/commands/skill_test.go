@@ -132,3 +132,34 @@ func TestForkPublishesStagedTree(t *testing.T) {
 		t.Fatalf("published primary must carry the fork identity, got:\n%s", b)
 	}
 }
+
+// The inspect footer is a command to paste. A local package can sit under a
+// directory whose name carries shell metacharacters, so the URI is quoted as
+// well as escaped -- unquoted, the pasted line runs `byre skill install`
+// against a different argv than the one inspect vouched for.
+func TestInspectURIQuotesThePastedSource(t *testing.T) {
+	installHome(t)
+	dir := filepath.Join(t.TempDir(), "my skills; touch pwned")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(dir, "skill.toml")
+	if err := os.WriteFile(manifest, []byte(`[package]
+id = "pete/quoted"
+version = "1.0.0"
+kind = "skill"
+package_api = 1
+requires_byre = ">=0.1.0"
+description = "inspect quoting fixture"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, out, _ := testStreams("", false)
+	if err := inspectURI(s, packages.KindSkill, manifest); err != nil {
+		t.Fatal(err)
+	}
+	want := packages.ShellArg(manifest)
+	if !strings.Contains(out.String(), "install "+want+" ") {
+		t.Errorf("the pasted install line must carry the quoted source %s:\n%s", want, out.String())
+	}
+}

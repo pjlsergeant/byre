@@ -60,8 +60,11 @@ func inspectURI(s Streams, kind packages.Kind, uri string) error {
 			packages.EscapeTerminal(e.Dest), strings.ToLower(e.SHA256[:12]), exec)
 	}
 	fmt.Fprintf(s.Out, "\nDigest: sha256:%s\n", acq.Digest)
+	// Printed to be pasted, so the URI is terminal-escaped AND shell-quoted
+	// (ADR 0029): a path or URI carrying shell metacharacters must run as the
+	// one argument this line names, not expand into different argv.
 	fmt.Fprintf(s.Out, "Not installed. To install:\n  byre %s install %s --digest sha256:%s\n",
-		kind, packages.EscapeTerminal(uri), acq.Digest)
+		kind, packages.ShellArg(packages.EscapeTerminal(uri)), acq.Digest)
 	return nil
 }
 
