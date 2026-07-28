@@ -346,6 +346,16 @@ remedy, and creates nothing.
    worktree box's /inbox (verify bytes), labeled by the box's own
    workdir id ("delivering to <proj>-wt1-…"). status shows siblings the
    same way: "workdir-id (short-id)".
+5a. Single-writer: with the worktree box still up, add
+   `[[volumes]] name = "ledger" role = "state" target = "/var/lib/ledger"
+   sharing = "exclusive"` and develop from the main tree. It must REFUSE
+   (exit 3) naming `ledger`, the worktree holding it, and `docker stop
+   <id>`; nothing built, nothing created. Stop the worktree box and the
+   same develop succeeds. status then marks `ledger (exclusive)` on its
+   State vols row, and the Worktrees row (with a sibling up again) names
+   it rather than saying only "share these volumes". Only the gated
+   integration suite can stage two live boxes -- this is the journey that
+   proves the refusal against a real engine.
 6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
 
 ## Journey: config UI ^e round-trip

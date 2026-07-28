@@ -50,5 +50,12 @@ from the path, so the old image and volumes would be orphaned --
 `byre rehome` lists likely candidates: stored projects whose recorded
 path no longer exists.
 
-Declaring your own volumes, engine-side naming, and one-time seeds:
-the [configuration reference](/docs/configuration-reference/#key-reference).
+**Worktree boxes share these volumes, and that is the point** -- two
+sessions on one repo, one agent login, one cache. If a volume holds data
+that cannot take two writers, declare `sharing = "exclusive"` on it and
+`byre develop` will refuse to start the second box rather than corrupt
+it, naming the worktree that is holding it.
+
+Declaring your own volumes, engine-side naming, one-time seeds, and the
+sharing contract: the
+[configuration reference](/docs/configuration-reference/#key-reference).
