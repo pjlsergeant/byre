@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"path/filepath"
+
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 )
@@ -35,15 +37,36 @@ func boxWritableRoots(paths project.Paths) hostexec.Roots {
 }
 
 // boxWritableRootsFor is boxWritableRoots for the commands that hold only a
-// project DIRECTORY at the point they need the root set. A directory that
-// won't resolve degrades to the empty set rather than failing the command:
-// every caller here is about to resolve the same paths itself and fail on its
-// own terms with a better message, and a resolution failure is not evidence
-// of a shadowed binary.
+// project DIRECTORY at the point they need the root set.
+//
+// A Resolve failure must not empty the set. Resolve reads worktree metadata
+// the box writes, so failing it is something an agent can ARRANGE -- corrupt
+// the gitdir pointer and every root disappears, which would turn the check off
+// for the very tree that turned it off. It is also not caught downstream in
+// time: deliver spawns clipboard, picker and notifier helpers BEFORE any later
+// path resolution fails.
+//
+// So the fallback is what needs no resolution at all: the directory the caller
+// is standing in, both as spelled and canonicalized (containment is judged by
+// identity, but a root that can't be stat'd degrades to a lexical test, and
+// then the spelling matters). It is genuinely narrower -- the main tree, the
+// common git dir and the store are precisely what Resolve computes, and a
+// worktree-derived id would name the WRONG store -- but the tree a PATH entry
+// realistically points into is this one, and a narrower set is a smaller hole
+// than no set.
 func boxWritableRootsFor(projectDir string) hostexec.Roots {
-	paths, err := project.Resolve(projectDir)
+	if paths, err := project.Resolve(projectDir); err == nil {
+		return boxWritableRoots(paths)
+	}
+	abs, err := filepath.Abs(projectDir)
 	if err != nil {
 		return hostexec.NewRoots()
 	}
-	return boxWritableRoots(paths)
+	dirs := []string{abs}
+	// Canonicalize falls back to the cleaned absolute path on its own failure,
+	// so this only ever ADDS a spelling; the duplicate is dropped.
+	if canon, cerr := project.Canonicalize(abs); cerr == nil && canon != abs {
+		dirs = append(dirs, canon)
+	}
+	return hostexec.NewRoots(dirs...)
 }
