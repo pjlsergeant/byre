@@ -72,8 +72,15 @@ tldr: a GitHub issue with `byre version`, `byre status`, and the
 generated Dockerfile (`byre dockerfile`).
 
 Those three artifacts exist for this moment -- they say exactly which
-byre, what the box could touch, and what was built, with nothing secret
-in any of them. Better still, ask an agent or two to confirm the bug
+byre, what the box could touch, and what was built. Skim them before
+you paste, because they report your config faithfully: `[env]` values
+are baked into the generated Dockerfile as literals (`byre status`
+lists only the keys), and whatever you put in `run_args`,
+`dockerfile_pre` or `dockerfile_post` is echoed back word for word in
+both. byre never puts a credential in a box itself -- logins arrive
+through mounts and volumes, which show up as paths -- so usually there
+is nothing to redact; the two places to look are the ones you wrote.
+Better still, ask an agent or two to confirm the bug
 against the source first -- the repo is built to be read, and an
 agent-verified report usually gets fixed fast
 ([CONTRIBUTING.md](https://github.com/pjlsergeant/byre/blob/main/CONTRIBUTING.md)

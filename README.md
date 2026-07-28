@@ -327,8 +327,10 @@ ask.
 
 ## Platform
 
-Linux and macOS, over Docker or Podman -- rootful or rootless (rootless
-Podman 4.3+ runs under `--userns=keep-id`). byre bakes a dev identity into
+Linux and macOS, over Docker or Podman -- rootful, plus rootless **Podman**
+4.3+, which byre detects and runs under `--userns=keep-id`. Rootless
+*Docker* is not detected as rootless: byre gives it the rootful treatment,
+so that is the identity story you get there. byre bakes a dev identity into
 the image so the agent runs unprivileged as you and files land correctly
 owned. Debian-derived base images only.
 

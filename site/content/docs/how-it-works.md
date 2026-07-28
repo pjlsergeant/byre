@@ -21,10 +21,16 @@ same four steps, and every step's output is inspectable.
    `~/.byre/projects/<id>/context/Dockerfile.generated` and printed any time by
    `byre dockerfile`. Blocks emit in a stable, cache-friendly order --
    base, template, byre's core, each enabled skill, your project's tail,
-   then a short security guard where byre re-asserts its own launcher and
-   enforcement files (in Docker the last write to a path wins, so nothing
-   earlier can quietly replace them) -- so ten projects on one template
-   share the expensive layers in Docker's own cache.
+   then a short security guard where byre re-copies its own launcher and
+   enforcement files after your block (in Docker the last write to a path
+   wins, so a `files` entry aimed at one of those paths can't leave its
+   content there) -- so ten projects on one template share the expensive
+   layers in Docker's own cache. That guard is narrow on purpose: it
+   covers `files` entries, inside the image. A raw build line or a
+   runtime mount over the same path is answered by
+   [byre withdrawing the claim](/docs/security-model/#the-contract) and
+   saying so, not by a guard that would have to out-guess your own
+   `RUN` line.
 3. **Build.** Plain `docker build`. byre owns no caching layer of its
    own: an unchanged config is a full cache hit; a change rebuilds
    only from the changed instruction onward. `byre rebuild` (`--no-cache`) is the
