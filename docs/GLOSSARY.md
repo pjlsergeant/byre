@@ -24,6 +24,32 @@ noun itself.
 One foreground run of a project's box (one `byre develop`, one container).
 Single-session per project directory; parallelism comes from worktrees.
 
+**Launch record**:
+What byre TOLD THE ENGINE for one container, made durable: the exposure
+facts as they went out the door -- binds, ports, volumes, env KEYS (never
+values), network posture and resolved egress, image tag AND digest, base,
+`run_args` verbatim, skill identities. Written under the setup lock at
+create to `~/.byre/projects/<id>/launches/<sha256>.toml`, named by the
+sha256 of its own bytes, and pointed at by the container's
+`byre.launch=<sha256>` label. `byre status` re-hashes it rather than
+trusting it, and while a box runs that box is status's subject. It is not
+a copy of the config: it is one step closer to reality than config, and
+deliberately holds nothing byre would otherwise have to re-derive. (ADR
+0053)
+_Avoid_: "manifest" (taken: a package's `[package]` table), "snapshot"
+(implies restorable state; this is a description, never restored),
+"session record" (the record outlives the attached session and describes
+the container, not the run)
+
+**Next launch**:
+status's section for what DIFFERS between the running box and the current
+config -- the only place the two are shown apart. Absent when nothing
+differs. The same phrase qualifies the config editor's exposure headline
+("changes apply at next launch"), which describes the config being edited
+throughout.
+_Avoid_: "pending changes", "drift" (drift is taken: the config editor's
+file-changed-on-disk check)
+
 **Exit report**:
 What byre prints when a session ends: changes it noticed in the small,
 fixed set of places the HOST runs code from (git config's exec-relevant

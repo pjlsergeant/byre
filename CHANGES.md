@@ -2,6 +2,53 @@
 
 ## unreleased
 
+- **`byre status` now describes the box that is RUNNING, not the one your
+  config would launch next.** Until now status resolved the config as it is
+  right now and rendered that beside a live container: delete a
+  `~/secrets` mount from your config and status showed a mount list with no
+  `/secrets` row in it, directly above `Container: running` on a box that
+  was still holding the secrets. Nothing about a launch survived it --
+  container labels carried identity only.
+
+  Every container byre creates now carries a **launch record**: what byre
+  told the engine (binds, ports, volumes, env KEYS -- never values --
+  network posture and resolved egress, the image tag AND its digest, the
+  base, `run_args` verbatim, and the skill identities), written under the
+  setup lock at create to `~/.byre/projects/<id>/launches/<sha256>.toml`
+  and pointed at by a `byre.launch=<sha256>` container label. The image
+  digest is the quiet win: `byre rebuild` moves the tag, and only the
+  digest pins what the running box was BUILT from.
+
+  With a box running, the grant rows come from its record and the
+  `Container` row says so, an `Image` row names what it ran, and a **`Next
+  launch`** section lists only what differs in your current config (`- Bind
+  /home/pete/secrets -> /secrets  (ro)`, `+ Network deny-by-default`) --
+  absent entirely when nothing differs. With no box running, nothing
+  changes: the rows are the next launch, as before.
+
+  byre re-hashes the record rather than trusting it (under `--self-edit`
+  the store is the box's to write), and every state it cannot use degrades
+  with one qualifier instead of a guess: a box started by an older byre
+  says it predates launch records, a deleted record says so, bytes that do
+  not match their own address are refused and disclosed, and a record from
+  a newer byre gets liveness only. The record informs a human reading
+  status and drives no host action. Records are reaped opportunistically
+  when nothing points at them; failing to write one never blocks a launch.
+  (ADR 0053)
+
+- **The config editor says when your changes take effect.** With a box
+  already running, the exposure headline gains `· box running -- changes
+  apply at next launch` and the save report reads `byre: wrote <path> — a
+  box is running; changes apply at the next develop.` The headline itself
+  is unchanged: it always described the config being edited, and this
+  labels that rather than re-scoping it. An unreachable engine degrades to
+  the plain messages, silently.
+
+- **`byre status --data` is version 2**: it gains `subject`
+  (`running_box` / `next_launch`), a `launch` object carrying the record --
+  or the state and the sentence explaining why there isn't one -- and
+  `changes_on_next_launch`. Still versioned, not frozen.
+
 - **`byre status` gets three tiers, and stops shredding its own layout.**
   Long values used to run off the end of the line and let the TERMINAL wrap
   them, so the continuation landed at column zero where it reads as a new

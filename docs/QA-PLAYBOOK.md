@@ -270,6 +270,35 @@ The 2026-07-16 field-failure regression check.
    just say "running".)
 6. TEARDOWN: rm boxes + per-project volumes.
 
+## Journey: launch record (status describes the RUNNING box)
+
+Needs a real engine; the split only shows against a live container.
+1. Add `[[mounts]]` `host = "~/qa-secrets"` `target = "/secrets"` to the
+   project config, `byre develop` in one window.
+2. Host-side: `docker inspect -f '{{index .Config.Labels "byre.launch"}}'
+   byre-<id>` prints a 64-hex address, and
+   `~/.byre/projects/<id>/launches/<that>.toml` exists.
+   `shasum -a 256` of the file equals the label. It carries `record = 1`,
+   an `[image]` with a real `digest`, `[[binds]]` including `/secrets`,
+   and `env_keys` with KEYS only — no values anywhere in the file.
+3. Delete the mount from the config (`byre config` or the file), then
+   `byre status` from another window.
+   Expect: `Host mounts` STILL lists `/secrets`; the `Container` row is
+   followed by "↳ the grant rows above describe THIS box (launch record
+   …)"; a `Next launch` section lists `- Bind …/qa-secrets -> /secrets`.
+   `byre status --data` says `"subject": "running_box"` and carries the
+   same line under `changes_on_next_launch`.
+4. `byre config` while the box runs: the exposure headline ends
+   "· box running -- changes apply at next launch"; ctrl+s reports
+   "— a box is running; changes apply at the next develop."
+5. Edit one byte of the record file host-side, `byre status` again.
+   Expect: no subject line; the ⚠ qualifier says the record "does NOT
+   match its own address" and the rows describe the CURRENT CONFIG.
+6. Exit the box, `byre develop` again, then check
+   `~/.byre/projects/<id>/launches/`: the old record is gone (reaped) and
+   exactly one new one is there.
+7. TEARDOWN: rm box; restore the config.
+
 ## Journey: worktrees
 
 Needs a git repo with a commit; main project already developed, and the

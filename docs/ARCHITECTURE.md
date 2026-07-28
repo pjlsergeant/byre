@@ -259,6 +259,26 @@ A running session is identified by **labels** (`byre.project` +
 `byre.workdir`), not an assumed name (ADR 0004); that's how `byre status`
 finds "is a session running for this directory?".
 
+**Every container also carries a launch record** (`byre.launch=<sha256>`,
+ADR 0053). Under the setup lock, immediately before `create`, byre writes
+what it is about to tell the engine -- binds, ports, volumes, env KEYS
+(never values), network posture and resolved egress, the image tag AND
+digest, `run_args` verbatim, the skill identities -- to
+`~/.byre/projects/<id>/launches/<sha256>.toml`, named by the sha256 of its
+own bytes, and stamps that hash on the container. It records what byre TOLD
+THE ENGINE, deliberately not the config that produced it: the record is one
+step closer to reality than config, never a second copy of it.
+
+`byre status` reads it back and VERIFIES it by re-hashing (the store is
+box-writable under `--self-edit`, so the address is checked, not trusted;
+the record only ever informs a human reading status and drives no host
+action). While a box runs, that box is status's subject: the grant rows
+come from its record and the `Container` row says so, and a `Next launch`
+section lists only what differs in the current config. A record byre cannot
+read or verify degrades the page with one qualifier instead of a guess.
+Records are reaped opportunistically at the next create, when nothing
+points at them.
+
 **`develop` is single-session per directory** (ADR 0004): if a session is
 already running here, it reports that session (and how to stop it, or get
 a shell via `byre shell`) rather than spawning a parallel one -- two boxes

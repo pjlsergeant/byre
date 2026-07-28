@@ -44,13 +44,18 @@ Agent:        byre/claude
 Template:     byre/go      bundled v1.3.1
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
+Image:        byre-my-project-pjl-069d95-u501-g20  (sha256:1f0b7c9d4e2a…
+              (--full to show); base golang:1.26-bookworm)
 Network:      open
 Ports:        none
 Host mounts:  none
 Skills:       byre/claude  bundled v1.3.1
 State vols:   .claude
 Cache vols:   none
+Box env:      10 keys the box received  (values never recorded; --full to show)
 Container:    running (0d95f3a2c1b4)
+              ↳ the grant rows above describe THIS box (launch record
+              4c1e8a7b2d90). Other rows describe the current config.
 ```
 
 Every row that exists is on that page -- long values are cut down and
