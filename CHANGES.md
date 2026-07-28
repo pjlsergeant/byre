@@ -133,12 +133,15 @@
   carry terminal escape sequences, and byre printed them straight through --
   so a name chosen for the purpose could erase the line reporting it, rewrite
   the lines above, or add lines of its own that read as byre's. `byre status`,
-  the end-of-session report, the self-edit report, `byre skill inspect`, and
-  the notices `byre deliver` prints for the files and directories you name it
-  -- what it sent, skipped or renamed -- now strip control sequences from
-  everything they quote back and hold each report to one line. The text still
-  shows: these surfaces tell you what is there, they just no longer let it
-  type.
+  the end-of-session report, the self-edit report, `byre skill inspect`,
+  `byre deliver` and `byre grab` in every mode -- archives included, where the
+  names come from whoever built the tar, and grabs, where they come from the
+  box -- and the install, layer and preset reviews now strip control sequences
+  from everything they quote back and hold each report to one line. The text
+  still shows: these surfaces tell you what is there, they just no longer let
+  it type. The one deliberate exception stays: the containment warnings in a
+  preset review are still highlighted on a terminal, because byre wrote that
+  highlight.
 
 - **Saving no longer breaks a config that spells a section inline.** If your
   file said `defaults = { skip_questions = true }` rather than a `[defaults]`
