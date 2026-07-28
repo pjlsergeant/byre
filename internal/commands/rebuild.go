@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -29,11 +30,11 @@ func Rebuild(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	eng, err := runner.Detect(rv.cfg.Engine, nil)
+	eng, engExe, err := runner.Detect(rv.cfg.Engine, hostexec.Looker(boxWritableRoots(paths)))
 	if err != nil {
 		return err
 	}
-	rr := runner.New(eng)
+	rr := runner.New(eng, engExe)
 	// Same mode-select develop applies: the rebuilt image must carry the same
 	// identity the next develop will run with.
 	ident, err := resolveIdentity(s.Err, rr)

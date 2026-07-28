@@ -163,7 +163,7 @@ func TestParseEnvLines(t *testing.T) {
 }
 
 func TestContainerEnvUsesCaptureSeam(t *testing.T) {
-	r := New(Docker)
+	r := New(Docker, "")
 	r.capture = func(name string, args ...string) (string, error) {
 		return "BYRE_UID=1000\nBYRE_GID=1000\nCODEX_HOME=/home/dev/.codex\n", nil
 	}
@@ -254,7 +254,7 @@ func TestProbeSockGroupArgs(t *testing.T) {
 }
 
 func TestProbeSockGroupParsesGID(t *testing.T) {
-	r := New(Docker)
+	r := New(Docker, "")
 	r.captureBounded = func(d time.Duration, name string, args ...string) (string, error) {
 		return "989\n", nil
 	}
@@ -265,7 +265,7 @@ func TestProbeSockGroupParsesGID(t *testing.T) {
 }
 
 func TestIsDockerDesktop(t *testing.T) {
-	r := New(Docker)
+	r := New(Docker, "")
 	r.capture = func(name string, args ...string) (string, error) {
 		return "Docker Desktop\n", nil
 	}
@@ -280,7 +280,7 @@ func TestIsDockerDesktop(t *testing.T) {
 	if err != nil || ok {
 		t.Fatalf("native Linux should not be Desktop: %v %v", ok, err)
 	}
-	r2 := New(Podman)
+	r2 := New(Podman, "")
 	ok, err = r2.IsDockerDesktop()
 	if err != nil || ok {
 		t.Fatalf("Podman is never Desktop: %v %v", ok, err)

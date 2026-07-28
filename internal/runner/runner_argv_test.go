@@ -18,6 +18,22 @@ func argvRunner(e Engine) (*Runner, *[]string) {
 	return r, &gotArgs
 }
 
+// argv[0] is the PINNED path, not the engine name: resolving once is only
+// worth anything if the binary byre checked is the binary byre execs.
+func TestArgvUsesPinnedPath(t *testing.T) {
+	var got []string
+	r := &Runner{engine: Docker, exe: "/opt/homebrew/bin/docker", stream: func(name string, args ...string) error {
+		got = append([]string{name}, args...)
+		return nil
+	}}
+	if err := r.Build("byre-img.v0", "/ctx/Dockerfile", "/ctx", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got[0] != "/opt/homebrew/bin/docker" {
+		t.Fatalf("argv[0] = %q, want the pinned absolute path", got)
+	}
+}
+
 func TestBuildArgv(t *testing.T) {
 	r, gotArgs := argvRunner(Docker)
 	if err := r.Build("byre-img.v0", "/ctx/.byre/Dockerfile", "/ctx", false, nil); err != nil {

@@ -47,7 +47,7 @@ func (r *Runner) SupportsKeepIDMapping() (bool, error) {
 	if r.engine != Podman {
 		return false, nil
 	}
-	out, err := r.capture(string(r.engine), "--version")
+	out, err := r.capture(r.bin(), "--version")
 	if err != nil {
 		return false, err
 	}

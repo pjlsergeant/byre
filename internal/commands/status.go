@@ -13,6 +13,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -238,12 +239,15 @@ func Status(s Streams, projectDir string, selfEdit bool) error {
 	// is knowable whatever happened to resolution, and this line is now the
 	// only place a shadow is reported.
 	info.ManagedShadows = managedPathShadows(cfg, res)
-	if eng, derr := runner.Detect(cfg.Engine, nil); derr != nil {
+	if eng, exe, derr := runner.Detect(cfg.Engine, hostexec.Looker(boxWritableRoots(paths))); derr != nil {
 		info.Engine = orDefault(cfg.Engine, "auto")
+		// Carries a shadowed-engine refusal as well as "not installed" — the
+		// engine row is where status already says why it cannot speak for the
+		// engine, and a refusal must be visible somewhere the user looks.
 		info.EngineErr = derr.Error()
 	} else {
 		info.Engine = string(eng)
-		r := runner.New(eng)
+		r := runner.New(eng, exe)
 		// The probe decides which identity a session is built and run with, so
 		// a failure is not nothing to report: develop runs on the host
 		// identity, which is the WRONG one if this engine is in fact rootless

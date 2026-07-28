@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -96,12 +97,12 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	if cerr != nil {
 		return cerr
 	}
-	eng, derr := runner.Detect(cfg.Engine, nil)
+	eng, engExe, derr := runner.Detect(cfg.Engine, hostexec.Looker(boxWritableRoots(paths)))
 	if derr != nil {
 		return fmt.Errorf("byre worktree needs a container engine — it creates and checks out the worktree inside the box (where the repo's git hooks and filters run contained, not on the host): %w.\n"+
 			"Start Docker or Podman, or run `git worktree add %s %s` yourself (that runs on the host, running the repo's own git hooks and filters there)", derr, target, name)
 	}
-	if err := worktreeCreate(runner.New(eng), s, paths, top, name, target); err != nil {
+	if err := worktreeCreate(runner.New(eng, engExe), s, paths, top, name, target); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: created worktree at %s (branch %s); starting a session…\n", target, name)

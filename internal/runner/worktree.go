@@ -99,7 +99,7 @@ exit 1`
 // built for), so everything it writes lands owned by the dev user. Output is
 // streamed: git's progress and errors belong to the invoking user.
 func (r *Runner) WorktreeAdd(image, name string, id Identity, commonHost, commonTarget, mainDir, target, branch string) error {
-	return r.stream(string(r.engine), worktreeAddArgs(image, name, id, commonHost, commonTarget, mainDir, target, branch)...)
+	return r.stream(r.bin(), worktreeAddArgs(image, name, id, commonHost, commonTarget, mainDir, target, branch)...)
 }
 
 // worktreeAddArgs builds the create-container argv (pure, for testing).

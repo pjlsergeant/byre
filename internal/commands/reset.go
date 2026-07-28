@@ -35,7 +35,7 @@ func Reset(s Streams, projectDir string, force bool) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	engines, err := lifecycleEngines()
+	engines, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
 		return err
 	}

@@ -51,12 +51,12 @@ func requireAgentRunner(t *testing.T) *runner.Runner {
 	if setting == "" {
 		setting = "auto"
 	}
-	eng, err := runner.Detect(setting, nil)
+	eng, exe, err := runner.Detect(setting, nil)
 	if err != nil {
 		t.Fatalf("BYRE_AGENT_TESTS=1 but no engine (BYRE_TEST_ENGINE=%q): %v", setting, err)
 	}
 	t.Logf("engine: %s", eng)
-	return runner.New(eng)
+	return runner.New(eng, exe)
 }
 
 // buildAgentBox writes cfgTOML as the project config, resolves it, and builds

@@ -12,6 +12,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -90,7 +91,11 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	warnNonDebianBase(s.Err, rv.cfg.Base)
 	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
 	warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
-	eng, err := runner.Detect(rv.cfg.Engine, nil)
+	// One root set for every host tool this invocation spawns. The ENGINE is
+	// the hard case (decision: nothing safe can proceed on a shadowed engine),
+	// so a refusal here ends develop by name rather than degrading.
+	roots := boxWritableRoots(paths)
+	eng, engExe, err := runner.Detect(rv.cfg.Engine, hostexec.Looker(roots))
 	if err != nil {
 		return err
 	}
@@ -98,8 +103,8 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	// while a box runs on the previous engine, the configured runner can't see
 	// it. Hand develop the other installed engines so it can check them under
 	// the setup lock (ADR 0004).
-	rv.otherEngines = installedEnginesExcept(eng)
-	return develop(runner.New(eng), s, paths, rv, selfEdit)
+	rv.otherEngines = installedEnginesExcept(eng, roots)
+	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit)
 }
 
 // develop is the engine-facing core of Develop — the live-session fast path,

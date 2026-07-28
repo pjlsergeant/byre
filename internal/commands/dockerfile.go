@@ -2,12 +2,13 @@ package commands
 
 import (
 	"fmt"
-	"github.com/pjlsergeant/byre/internal/config"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/build"
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -86,7 +87,7 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	engine, ident := resolveEngineIdentity(rv.cfg)
+	engine, ident := resolveEngineIdentity(rv.cfg, boxWritableRoots(paths))
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg))
 	if err != nil {
@@ -109,12 +110,12 @@ func DockerRun(s Streams, projectDir string) error {
 // the identity follow the engine (keep-id under rootless Podman) so the
 // printed argv matches what develop would run -- host identity when no
 // engine is reachable.
-func resolveEngineIdentity(cfg config.Config) (string, runner.Identity) {
+func resolveEngineIdentity(cfg config.Config, roots hostexec.Roots) (string, runner.Identity) {
 	engine := orDefault(cfg.Engine, "docker")
 	ident := hostIdentity()
-	if eng, derr := runner.Detect(cfg.Engine, nil); derr == nil {
+	if eng, exe, derr := runner.Detect(cfg.Engine, hostexec.Looker(roots)); derr == nil {
 		engine = string(eng)
-		ident = engineIdentity(runner.New(eng), os.Getuid(), os.Getgid())
+		ident = engineIdentity(runner.New(eng, exe), os.Getuid(), os.Getgid())
 	}
 	return engine, ident
 }
@@ -140,7 +141,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 	if len(hooks) == 0 {
 		return fmt.Errorf("no netns hooks (firewall) enabled for this project — nothing to eject")
 	}
-	engine, ident := resolveEngineIdentity(rv.cfg)
+	engine, ident := resolveEngineIdentity(rv.cfg, boxWritableRoots(paths))
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 
 	var b strings.Builder

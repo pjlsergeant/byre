@@ -32,12 +32,12 @@ func requireEngine(t *testing.T) *Runner {
 	if setting == "" {
 		setting = "auto"
 	}
-	eng, err := Detect(setting, nil)
+	eng, exe, err := Detect(setting, nil)
 	if err != nil {
 		t.Fatalf("BYRE_DOCKER_TESTS=1 but no engine (BYRE_TEST_ENGINE=%q): %v", setting, err)
 	}
 	t.Logf("engine: %s", eng)
-	return New(eng)
+	return New(eng, exe)
 }
 
 // smokeName returns a unique, recognizable name so parallel/aborted runs

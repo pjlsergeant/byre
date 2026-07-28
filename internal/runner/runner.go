@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -31,32 +32,54 @@ const (
 	Podman Engine = "podman"
 )
 
-// LookPath mirrors exec.LookPath; injectable so engine detection is testable
-// without a real engine installed.
+// LookPath mirrors exec.LookPath but returns the path to RUN, which is not
+// always the path PATH names: production passes hostexec's resolver, which
+// pins the answer for the invocation and refuses a binary sitting in a
+// directory the project's box can write. Injectable so engine detection is
+// testable without a real engine installed.
 type LookPath func(string) (string, error)
 
 // Detect resolves which engine to use from the config setting ("auto",
-// "docker", or "podman"). With "auto" it prefers docker, then podman. look is
-// exec.LookPath in production; tests inject a fake.
-func Detect(setting string, look LookPath) (Engine, error) {
+// "docker", or "podman"), and returns the absolute path to run it by. With
+// "auto" it prefers docker, then podman. look is exec.LookPath in tests that
+// pass nil; callers with a project in hand pass hostexec.Looker(roots).
+//
+// The engine NAME and the engine PATH are both returned because they answer
+// different questions: the name is what the user configured and what every
+// message says, the path is what byre execs. Keeping only the name is what
+// let every one of the ~20 engine calls re-read PATH.
+func Detect(setting string, look LookPath) (Engine, string, error) {
 	if look == nil {
 		look = exec.LookPath
 	}
 	switch setting {
 	case "", "auto":
 		for _, e := range []Engine{Docker, Podman} {
-			if _, err := look(string(e)); err == nil {
-				return e, nil
+			p, err := look(string(e))
+			if err == nil {
+				return e, p, nil
+			}
+			// Only "not installed" moves on to the next engine. A lookup that
+			// failed for any OTHER reason -- hostexec declining a docker
+			// resolved out of the project tree -- is reported, never stepped
+			// over: falling through to podman would hide the shadowed binary
+			// behind a working session.
+			if !errors.Is(err, exec.ErrNotFound) {
+				return "", "", err
 			}
 		}
-		return "", fmt.Errorf("no container engine found on PATH (looked for docker, podman)")
+		return "", "", fmt.Errorf("no container engine found on PATH (looked for docker, podman)")
 	case string(Docker), string(Podman):
-		if _, err := look(setting); err != nil {
-			return "", fmt.Errorf("engine %q not found on PATH", setting)
+		p, err := look(setting)
+		if err != nil {
+			if errors.Is(err, exec.ErrNotFound) {
+				return "", "", fmt.Errorf("engine %q not found on PATH", setting)
+			}
+			return "", "", err
 		}
-		return Engine(setting), nil
+		return Engine(setting), p, nil
 	default:
-		return "", fmt.Errorf("unknown engine %q (want auto|docker|podman)", setting)
+		return "", "", fmt.Errorf("unknown engine %q (want auto|docker|podman)", setting)
 	}
 }
 
@@ -69,7 +92,12 @@ func Detect(setting string, look LookPath) (Engine, error) {
 // streamOut connects child stdout to a caller-supplied writer (streaming
 // arbitrary content OUT of a container, too big or too binary to capture).
 type Runner struct {
-	engine    Engine
+	engine Engine
+	// exe is the absolute path the engine CLI was resolved to, pinned for the
+	// invocation. Every exec below runs THIS, not the bare name: a bare name
+	// re-reads PATH per call, so the binary byre resolved and the binary byre
+	// ran were two lookups with a window between them.
+	exe       string
 	stream    func(name string, args ...string) error
 	capture   func(name string, args ...string) (string, error)
 	streamIn  func(stdin io.Reader, name string, args ...string) error
@@ -84,10 +112,12 @@ type Runner struct {
 	captureBounded func(d time.Duration, name string, args ...string) (string, error)
 }
 
-// New returns a Runner for the given engine using real exec.
-func New(e Engine) *Runner {
+// New returns a Runner for the given engine using real exec. exe is the
+// absolute path Detect resolved the CLI to.
+func New(e Engine, exe string) *Runner {
 	return &Runner{
 		engine: e,
+		exe:    exe,
 		// stream/capture are the no-input cases of their ...In siblings:
 		// os.Stdin for the interactive form, a nil Reader (== no stdin) for
 		// the captured one. Separate implementations drifted -- one grew a
@@ -153,19 +183,29 @@ func (r *Runner) runHelperBounded(d time.Duration, kind string, argv func(name s
 	if err != nil {
 		return "", err
 	}
-	out, cerr := r.captureBounded(d, string(r.engine), argv(name)...)
+	out, cerr := r.captureBounded(d, r.bin(), argv(name)...)
 	if cerr != nil {
 		// Best-effort: an already-exited container makes this a harmless
 		// error, and a kill that cannot land leaves the caller's own
 		// fail-closed handling as the backstop (which is why runNetnsInits
 		// stops the box rather than trusting this).
-		_, _ = r.captureBounded(helperKillTimeout, string(r.engine), "kill", name)
+		_, _ = r.captureBounded(helperKillTimeout, r.bin(), "kill", name)
 	}
 	return out, cerr
 }
 
 // Engine reports the engine this runner invokes.
 func (r *Runner) Engine() Engine { return r.engine }
+
+// bin is argv[0] for every engine call: the path Detect pinned. A Runner
+// assembled without one -- the exec-seam fakes in tests -- falls back to the
+// bare name, which is also what the fakes assert on.
+func (r *Runner) bin() string {
+	if r.exe == "" {
+		return string(r.engine)
+	}
+	return r.exe
+}
 
 // IsRootlessPodman reports whether this runner drives Podman in ROOTLESS mode.
 // It is the identity mode-select's pivot (ADR 0032): rootful engines bake the
@@ -179,7 +219,7 @@ func (r *Runner) IsRootlessPodman() (bool, error) {
 	if r.engine != Podman {
 		return false, nil
 	}
-	out, err := r.capture(string(r.engine), "info", "--format", "{{.Host.Security.Rootless}}")
+	out, err := r.capture(r.bin(), "info", "--format", "{{.Host.Security.Rootless}}")
 	if err != nil {
 		return false, err
 	}
@@ -221,7 +261,7 @@ func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildAr
 	for _, a := range buildArgs {
 		args = append(args, "--build-arg", a)
 	}
-	return r.stream(string(r.engine), append(args, contextDir)...)
+	return r.stream(r.bin(), append(args, contextDir)...)
 }
 
 // Create creates (without starting) a container from the assembled create
@@ -229,7 +269,7 @@ func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildAr
 // that follows; a name conflict surfaces here, in the engine's stderr.
 // Output is captured (create prints the id), not streamed.
 func (r *Runner) Create(args []string) error {
-	_, err := r.capture(string(r.engine), args...)
+	_, err := r.capture(r.bin(), args...)
 	return err
 }
 
@@ -240,7 +280,7 @@ func (r *Runner) Create(args []string) error {
 // callers can't fully distinguish it from an agent exit 1; the engine's
 // stderr (streamed) names the cause.
 func (r *Runner) StartAttach(container string) error {
-	return r.stream(string(r.engine), "start", "--attach", "--interactive", container)
+	return r.stream(r.bin(), "start", "--attach", "--interactive", container)
 }
 
 // RunningContainersByLabel returns the ids of running containers carrying label
@@ -263,7 +303,7 @@ func (r *Runner) containersByLabel(label string, all bool) ([]string, error) {
 	if all {
 		args = append(args, "-a")
 	}
-	out, err := r.capture(string(r.engine), args...)
+	out, err := r.capture(r.bin(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +321,7 @@ func (r *Runner) containersByLabel(label string, all bool) ([]string, error) {
 // that: removing a pre-start marker succeeds, while a session that started in
 // the meantime makes the removal fail and the caller abort.
 func (r *Runner) ContainerRemove(container string) error {
-	_, err := r.capture(string(r.engine), "rm", container)
+	_, err := r.capture(r.bin(), "rm", container)
 	return err
 }
 
@@ -289,7 +329,7 @@ func (r *Runner) ContainerRemove(container string) error {
 // plus the `-e` vars set at run time), so callers can act on the identity/env
 // the session ACTUALLY started with rather than re-deriving it.
 func (r *Runner) ContainerEnv(id string) (map[string]string, error) {
-	out, err := r.capture(string(r.engine), "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", id)
+	out, err := r.capture(r.bin(), "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", id)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +340,7 @@ func (r *Runner) ContainerEnv(id string) (map[string]string, error) {
 // the identity byre stamped at run time (byre.project / byre.workdir) off the
 // container itself rather than re-deriving it from host state.
 func (r *Runner) ContainerLabels(id string) (map[string]string, error) {
-	out, err := r.capture(string(r.engine), "inspect", "-f", "{{json .Config.Labels}}", id)
+	out, err := r.capture(r.bin(), "inspect", "-f", "{{json .Config.Labels}}", id)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +362,7 @@ func (r *Runner) ContainerLabels(id string) (map[string]string, error) {
 // exports it at run time, so `exec` doesn't inherit it — ADR 0021's attach
 // model is byre shell's, HOME included); /home/dev is the chassis dev home.
 func (r *Runner) ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
-	return r.captureIn(stdin, string(r.engine), execInputArgs(containerID, uid, gid, command...)...)
+	return r.captureIn(stdin, r.bin(), execInputArgs(containerID, uid, gid, command...)...)
 }
 
 // execInputArgs builds the engine `exec -i` argv (pure, for testing).
@@ -338,7 +378,7 @@ func execInputArgs(containerID string, uid, gid int, command ...string) []string
 // rather than captured because grabbed content is arbitrary in size and shape;
 // stderr is captured and surfaces in the error.
 func (r *Runner) ExecOutput(containerID string, uid, gid int, stdout io.Writer, command ...string) error {
-	return r.streamOut(stdout, string(r.engine), execInputArgs(containerID, uid, gid, command...)...)
+	return r.streamOut(stdout, r.bin(), execInputArgs(containerID, uid, gid, command...)...)
 }
 
 // NetworkMode returns a container's network mode as the engine reports it
@@ -347,7 +387,7 @@ func (r *Runner) ExecOutput(containerID string, uid, gid int, stdout io.Writer, 
 // container's network namespace (NetnsInit) use this to establish the
 // namespace is actually the container's own before touching it.
 func (r *Runner) NetworkMode(container string) (string, error) {
-	out, err := r.captureBounded(netnsProbeTimeout, string(r.engine), "inspect", "-f", "{{.HostConfig.NetworkMode}}", container)
+	out, err := r.captureBounded(netnsProbeTimeout, r.bin(), "inspect", "-f", "{{.HostConfig.NetworkMode}}", container)
 	if err != nil {
 		return "", err
 	}
@@ -358,7 +398,7 @@ func (r *Runner) NetworkMode(container string) (string, error) {
 // byre must actively end a session it cannot let run — e.g. netns hooks were
 // refused and the launch gate can't be trusted to fail the launch closed.
 func (r *Runner) Stop(container string) error {
-	_, err := r.capture(string(r.engine), "stop", "-t", "2", container)
+	_, err := r.capture(r.bin(), "stop", "-t", "2", container)
 	return err
 }
 
@@ -381,7 +421,7 @@ func parseEnvLines(out string) map[string]string {
 // non-TTY caller (CI, a script piping into byre) doesn't hit "the input device
 // is not a TTY".
 func (r *Runner) Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error {
-	return r.stream(string(r.engine), execArgs(containerID, uid, gid, workdir, env, tty, command...)...)
+	return r.stream(r.bin(), execArgs(containerID, uid, gid, workdir, env, tty, command...)...)
 }
 
 // execArgs builds the engine `exec` argv (pure, for testing). Env keys are
@@ -483,7 +523,7 @@ func (r *Runner) IsDockerDesktop() (bool, error) {
 	}
 	// OperatingSystem is "Docker Desktop" on Desktop; native Linux reports the
 	// host OS (e.g. "Debian GNU/Linux ..."). Name alone is unreliable.
-	out, err := r.capture(string(r.engine), "info", "--format", "{{.OperatingSystem}}")
+	out, err := r.capture(r.bin(), "info", "--format", "{{.OperatingSystem}}")
 	if err != nil {
 		return false, err
 	}
@@ -515,7 +555,7 @@ func netnsInitArgs(name, image, container, entrypoint string, env map[string]str
 
 // VolumeExists reports whether a named volume exists.
 func (r *Runner) VolumeExists(name string) (bool, error) {
-	out, err := r.capture(string(r.engine), "volume", "ls", "-q", "--filter", "name=^"+name+"$")
+	out, err := r.capture(r.bin(), "volume", "ls", "-q", "--filter", "name=^"+name+"$")
 	if err != nil {
 		return false, err
 	}
@@ -529,13 +569,13 @@ func (r *Runner) VolumeExists(name string) (bool, error) {
 
 // VolumeCreate creates a named volume.
 func (r *Runner) VolumeCreate(name string) error {
-	_, err := r.capture(string(r.engine), "volume", "create", name)
+	_, err := r.capture(r.bin(), "volume", "create", name)
 	return err
 }
 
 // ImageExists reports whether an image with the given tag exists locally.
 func (r *Runner) ImageExists(tag string) (bool, error) {
-	out, err := r.capture(string(r.engine), "images", "-q", tag)
+	out, err := r.capture(r.bin(), "images", "-q", tag)
 	if err != nil {
 		return false, err
 	}
@@ -544,7 +584,7 @@ func (r *Runner) ImageExists(tag string) (bool, error) {
 
 // ImageRemove removes an image by tag.
 func (r *Runner) ImageRemove(tag string) error {
-	_, err := r.capture(string(r.engine), "image", "rm", tag)
+	_, err := r.capture(r.bin(), "image", "rm", tag)
 	return err
 }
 
@@ -561,12 +601,12 @@ func (r *Runner) MigrateVolume(src, dst, image string, id Identity) error {
 		"--mount", "type=volume,source="+src+",target=/from,readonly",
 		"--mount", "type=volume,source="+dst+",target=/to",
 		image, "-c", script)
-	return r.stream(string(r.engine), args...)
+	return r.stream(r.bin(), args...)
 }
 
 // VolumesByPrefix lists existing volume names beginning with prefix.
 func (r *Runner) VolumesByPrefix(prefix string) ([]string, error) {
-	out, err := r.capture(string(r.engine), "volume", "ls", "-q", "--filter", "name="+prefix)
+	out, err := r.capture(r.bin(), "volume", "ls", "-q", "--filter", "name="+prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +622,7 @@ func (r *Runner) VolumesByPrefix(prefix string) ([]string, error) {
 
 // VolumeRemove removes a named volume.
 func (r *Runner) VolumeRemove(name string) error {
-	_, err := r.capture(string(r.engine), "volume", "rm", name)
+	_, err := r.capture(r.bin(), "volume", "rm", name)
 	return err
 }
 
@@ -604,7 +644,7 @@ func (r *Runner) SeedVolume(name, hostPath, image string, id Identity) error {
 		"--mount", "type=volume,source="+name+",target=/dest",
 		"--mount", "type=bind,source="+hostPath+",target=/src,readonly",
 		image, "-c", script)
-	return r.stream(string(r.engine), args...)
+	return r.stream(r.bin(), args...)
 }
 
 // SeedLiteral writes content to destPath inside a fresh named volume (creating
@@ -621,7 +661,7 @@ func (r *Runner) SeedLiteral(volName, destPath, content, image string, id Identi
 		"-e", "BYRE_DEST="+destPath,
 		"--mount", "type=volume,source="+volName+",target=/dest",
 		image, "-c", script)
-	return r.streamIn(strings.NewReader(content), string(r.engine), args...)
+	return r.streamIn(strings.NewReader(content), r.bin(), args...)
 }
 
 // SeedFiles copies a curated subset of srcDir (the relative paths in files,
@@ -655,7 +695,7 @@ chown -R "$BYRE_OWNER" /dest`
 		"--mount", "type=bind,source="+srcDir+",target=/src,readonly",
 		image, "-c", script, "seed-prefs")
 	args = append(args, files...)
-	return r.stream(string(r.engine), args...)
+	return r.stream(r.bin(), args...)
 }
 
 func streamInExec(stdin io.Reader, name string, args ...string) error {

@@ -266,7 +266,7 @@ func newVolumeAdmin(paths project.Paths, projectDir string, prepare func() error
 	if _, err := resolve(paths, projectDir, nil); err != nil {
 		return nil
 	}
-	rs, err := lifecycleEngines()
+	rs, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
 		return nil // no engine → can't list/clear; hide the section
 	}

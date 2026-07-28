@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -21,28 +22,32 @@ import (
 // were set as run-time -e vars), so we only add HOME, which the launcher sets at
 // runtime and isn't in the container's configured env.
 func Shell(s Streams, projectDir string, skipUIDCheck bool) error {
-	return shell(s, projectDir, installedEngines(), os.Getuid(), skipUIDCheck)
+	return shell(s, projectDir, installedEngines(boxWritableRootsFor(projectDir)), os.Getuid(), skipUIDCheck)
 }
 
 // installedEngines returns a sessionRunner per installed engine, in shell's
 // probe order (docker, then podman). Engines not on PATH are skipped.
-func installedEngines() []sessionRunner {
+func installedEngines(roots hostexec.Roots) []sessionRunner {
 	var out []sessionRunner
 	for _, e := range []string{"docker", "podman"} {
-		eng, err := runner.Detect(e, nil)
+		eng, exe, err := runner.Detect(e, hostexec.Looker(roots))
 		if err != nil {
-			continue // engine not installed
+			// Not installed, or resolved out of a directory the box writes:
+			// an engine byre won't drive either way. Session discovery then
+			// simply doesn't see that engine's boxes, which is the same
+			// degrade an absent engine already produces.
+			continue
 		}
-		out = append(out, runner.New(eng))
+		out = append(out, runner.New(eng, exe))
 	}
 	return out
 }
 
 // installedEnginesExcept is installedEngines minus the given engine — the OTHER
 // engines develop must check for a competing session after an engine switch.
-func installedEnginesExcept(self runner.Engine) []sessionRunner {
+func installedEnginesExcept(self runner.Engine, roots hostexec.Roots) []sessionRunner {
 	var out []sessionRunner
-	for _, rr := range installedEngines() {
+	for _, rr := range installedEngines(roots) {
 		if rr.Engine() != self {
 			out = append(out, rr)
 		}

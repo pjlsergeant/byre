@@ -42,12 +42,12 @@ func requireEngineRunner(t *testing.T) *runner.Runner {
 	if setting == "" {
 		setting = "auto"
 	}
-	eng, err := runner.Detect(setting, nil)
+	eng, exe, err := runner.Detect(setting, nil)
 	if err != nil {
 		t.Fatalf("BYRE_DOCKER_TESTS=1 but no engine (BYRE_TEST_ENGINE=%q): %v", setting, err)
 	}
 	t.Logf("engine: %s", eng)
-	return runner.New(eng)
+	return runner.New(eng, exe)
 }
 
 // testIdentity resolves the identity develop would use on r — host identity
@@ -315,11 +315,11 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 	if os.Getenv("BYRE_DOCKER_TESTS") != "1" {
 		t.Skip("set BYRE_DOCKER_TESTS=1 to run byre integration tests")
 	}
-	eng, err := runner.Detect("podman", nil)
+	eng, exe, err := runner.Detect("podman", nil)
 	if err != nil {
 		t.Skip("podman not installed")
 	}
-	r := runner.New(eng)
+	r := runner.New(eng, exe)
 	if rootless, rerr := r.IsRootlessPodman(); rerr != nil || !rootless {
 		t.Skipf("podman is not rootless here (rootless=%v err=%v)", rootless, rerr)
 	}

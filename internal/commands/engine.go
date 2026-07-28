@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/runner"
 )
 
@@ -16,14 +17,18 @@ import (
 // config anyway (develop, rebuild) detect fatally from it instead;
 // informational commands (status, dockerrun) keep their own best-effort
 // semantics.
-func lifecycleEngines() ([]engineRunner, error) {
+func lifecycleEngines(roots hostexec.Roots) ([]engineRunner, error) {
 	var out []engineRunner
 	for _, e := range []string{"docker", "podman"} {
-		eng, err := runner.Detect(e, nil)
+		eng, exe, err := runner.Detect(e, hostexec.Looker(roots))
 		if err != nil {
-			continue // engine not installed
+			// Not installed, or resolved out of a directory the box writes.
+			// Either way this engine is not one byre will drive; the loop's
+			// own "no engine found" answer covers a host where neither is
+			// usable, and the lifecycle commands refuse rather than claim.
+			continue
 		}
-		out = append(out, runner.New(eng))
+		out = append(out, runner.New(eng, exe))
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no container engine found on PATH (looked for docker, podman)")

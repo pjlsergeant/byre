@@ -63,7 +63,7 @@ func Deliver(s Streams, dir string, opts deliver.Options, paths []string) error 
 	if remote {
 		landed, err = deliverRemote(s, opts, target, sources)
 	} else {
-		landed, err = deliverWith(s, dir, opts, sources, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s, "deliver"))
+		landed, err = deliverWith(s, dir, opts, sources, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), hostClipboardWriter(), hostPicker(s, "deliver"))
 	}
 	// Graphical launches (the deliver app, a .desktop entry) have no terminal
 	// to read: the outcome ALSO goes to the notification center.
@@ -254,7 +254,7 @@ var stdinIsPiped = func() bool {
 // notes, and a partial pool exits ExitPartialPool so the caller knows not to
 // auto-pick — the list itself still printed and stays usable.
 func deliverBoxes(s Streams, dir string, opts deliver.Options) error {
-	cfg, err := deliverConfig(s, dir, installedEngines(), os.Getuid(), nil, nil)
+	cfg, err := deliverConfig(s, dir, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func deliverBoxes(s Streams, dir string, opts deliver.Options) error {
 // (which passes --box and --no-clip), but a hand-run works identically:
 // picker, clipboard garnish, and cancel behave as in a plain delivery.
 func deliverTar(s Streams, dir string, opts deliver.Options) error {
-	cfg, err := deliverConfig(s, dir, installedEngines(), os.Getuid(), hostClipboardWriter(), hostPicker(s, "deliver"))
+	cfg, err := deliverConfig(s, dir, installedEngines(boxWritableRootsFor(dir)), os.Getuid(), hostClipboardWriter(), hostPicker(s, "deliver"))
 	if err != nil {
 		return err
 	}

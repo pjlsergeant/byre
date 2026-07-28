@@ -28,22 +28,30 @@ func fakeLook(found ...string) LookPath {
 }
 
 func TestDetectAutoPrefersDocker(t *testing.T) {
-	e, err := Detect("auto", fakeLook("docker", "podman"))
+	e, exe, err := Detect("auto", fakeLook("docker", "podman"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e != Docker {
 		t.Fatalf("auto with both = %q, want docker", e)
 	}
+	// The ABSOLUTE path comes back with the name: discarding it is what left
+	// every engine call re-reading PATH.
+	if exe != "/usr/bin/docker" {
+		t.Errorf("exe = %q, want the resolved absolute path", exe)
+	}
 }
 
 func TestDetectAutoFallsBackToPodman(t *testing.T) {
-	e, err := Detect("auto", fakeLook("podman"))
+	e, exe, err := Detect("auto", fakeLook("podman"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e != Podman {
 		t.Fatalf("auto with only podman = %q, want podman", e)
+	}
+	if exe != "/usr/bin/podman" {
+		t.Errorf("exe = %q, want the resolved absolute path", exe)
 	}
 }
 
@@ -51,7 +59,7 @@ func TestDetectAutoFallsBackToPodman(t *testing.T) {
 // missing, an unknown setting -- and each test names which one, or the wrong
 // rule keeps it green.
 func TestDetectAutoNoEngine(t *testing.T) {
-	_, err := Detect("auto", fakeLook())
+	_, _, err := Detect("auto", fakeLook())
 	if err == nil {
 		t.Fatal("expected error when no engine present")
 	}
@@ -61,7 +69,7 @@ func TestDetectAutoNoEngine(t *testing.T) {
 }
 
 func TestDetectExplicitMissing(t *testing.T) {
-	_, err := Detect("docker", fakeLook("podman"))
+	_, _, err := Detect("docker", fakeLook("podman"))
 	if err == nil {
 		t.Fatal("expected error when explicit engine missing")
 	}
@@ -71,20 +79,45 @@ func TestDetectExplicitMissing(t *testing.T) {
 	}
 }
 
+// A lookup that refuses -- hostexec declining a docker resolved out of the
+// project tree -- must NOT be stepped over the way "not installed" is: auto
+// would otherwise hand back podman and hide the shadowed binary behind a
+// working session. Both arms report the refusal itself.
+func TestDetectSurfacesNonAbsenceLookupFailures(t *testing.T) {
+	refuse := func(name string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("declines to run docker: resolved inside /proj")
+		}
+		return "/usr/bin/" + name, nil
+	}
+	for _, setting := range []string{"auto", "docker"} {
+		_, _, err := Detect(setting, refuse)
+		if err == nil {
+			t.Fatalf("%s: expected the refusal to surface", setting)
+		}
+		if !strings.Contains(err.Error(), "declines to run docker") {
+			t.Errorf("%s: wrong rule fired: %v", setting, err)
+		}
+	}
+}
+
 func TestDetectExplicitFound(t *testing.T) {
-	e, err := Detect("podman", fakeLook("podman"))
+	e, exe, err := Detect("podman", fakeLook("podman"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e != Podman {
 		t.Fatalf("explicit podman = %q", e)
 	}
+	if exe != "/usr/bin/podman" {
+		t.Errorf("exe = %q, want the resolved absolute path", exe)
+	}
 }
 
 func TestDetectUnknown(t *testing.T) {
 	// fakeLook("containerd") makes it present on PATH, so a not-found rejection
 	// here would be the wrong rule -- the setting itself is what's unknown.
-	_, err := Detect("containerd", fakeLook("containerd"))
+	_, _, err := Detect("containerd", fakeLook("containerd"))
 	if err == nil {
 		t.Fatal("expected error for unknown engine setting")
 	}
@@ -94,7 +127,7 @@ func TestDetectUnknown(t *testing.T) {
 }
 
 func TestEmptyDefaultsToAuto(t *testing.T) {
-	e, err := Detect("", fakeLook("docker"))
+	e, _, err := Detect("", fakeLook("docker"))
 	if err != nil {
 		t.Fatal(err)
 	}

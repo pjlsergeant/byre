@@ -47,7 +47,7 @@ func Rehome(s Streams, projectDir, oldID string) error {
 	if err := paths.Bootstrap(); err != nil {
 		return err
 	}
-	engines, err := lifecycleEngines()
+	engines, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
 		return err
 	}

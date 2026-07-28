@@ -39,7 +39,7 @@ func Forget(s Streams, projectDir string, force bool) error {
 	if err := paths.Bootstrap(); err != nil { // re-ensures dir+lock shape for the lock below
 		return err
 	}
-	engines, err := lifecycleEngines()
+	engines, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
 		return err
 	}
