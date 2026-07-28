@@ -46,16 +46,38 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 	// same tolerance LoadCatalog extends.
 	needMirror := bundled != nil && strings.TrimSpace(string(cur)) != byreVer
 	if needMirror {
-		if err := writeMirror(home, bundled, byreVer); err != nil {
-			return fmt.Errorf("bundled mirror: %w", err)
-		}
-		if err := hostopen.PlainMkdirAll(filepath.Dir(stampPath), 0o755, hostopen.StoreOwned); err != nil {
+		// The regeneration happens under the store-global lock. writeMirror's
+		// swap is three renames over one path, and EVERY byre command runs
+		// EnsureStore -- so two starting at once (a develop and a status, two
+		// worktree sessions) is ordinary, not a theoretical race, and their
+		// swaps interleave into a ~/.byre/bundled that is missing or half a
+		// tree. The stamp read above stays OUTSIDE the lock as the steady-state
+		// fast path: it is right on every run but the one that upgrades.
+		//
+		// Re-read under the lock, because that fast path is exactly what goes
+		// stale while queueing: the process that waited would otherwise
+		// regenerate a mirror the winner just wrote, swapping the tree a third
+		// process may be reading.
+		wrote := false
+		if err := WithStoreLock(home, func() error {
+			if cur, _ := hostopen.PlainReadFile(stampPath, hostopen.StoreOwned); strings.TrimSpace(string(cur)) == byreVer {
+				return nil
+			}
+			if err := writeMirror(home, bundled, byreVer); err != nil {
+				return fmt.Errorf("bundled mirror: %w", err)
+			}
+			if err := hostopen.PlainMkdirAll(filepath.Dir(stampPath), 0o755, hostopen.StoreOwned); err != nil {
+				return err
+			}
+			if err := hostopen.PlainWriteFile(stampPath, []byte(byreVer+"\n"), 0o644, hostopen.StoreOwned); err != nil {
+				return err
+			}
+			wrote = true
+			return nil
+		}); err != nil {
 			return err
 		}
-		if err := hostopen.PlainWriteFile(stampPath, []byte(byreVer+"\n"), 0o644, hostopen.StoreOwned); err != nil {
-			return err
-		}
-		if out != nil {
+		if wrote && out != nil {
 			fmt.Fprintf(out, "byre: refreshed %s mirror for %s\n", DisplayPath(filepath.Join(home, "bundled")), byreVer)
 		}
 	}
