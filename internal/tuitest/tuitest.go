@@ -89,45 +89,89 @@ func Binary(t *testing.T) string {
 	return binPath
 }
 
-// recordProductSources opens every source file that goes into the built
-// binary, so Go's test cache keys this package's results on the PRODUCT.
+// productSourceFields are the per-package `go list` fields naming files the
+// compiler and linker consume. Restricting this to GoFiles plus EmbedFiles
+// would leave real build inputs — cgo, assembly, headers, prebuilt objects —
+// out of the key, so the list is the full input set rather than the subset
+// this repo happens to use today.
+var productSourceFields = []string{
+	"GoFiles", "CgoFiles", "SFiles", "CFiles", "HFiles", "SysoFiles", "EmbedFiles",
+}
+
+// recordProductSources puts the built binary's own inputs into Go's test
+// cache key for this package, so a product edit re-runs the tier instead of
+// replaying a cached pass.
 //
-// Nothing else does. The binary is built in a SUBPROCESS, so the import
+// Nothing else does it. The binary is built in a SUBPROCESS, so the import
 // graph carries no edge to it, and the blank imports in productdeps_test.go
-// are not enough on their own: `go test` keys a cached result on the test
-// binary's CONTENT, and the linker drops blank-imported code nothing
-// references — editing a configui screen leaves the test binary byte-
-// identical and the whole pty tier replays a cached pass (measured against
-// this repo: a changed `savedStatus` was still reported "(cached)"). What
-// `go test` does re-check is the content of every file the test process
-// OPENS inside the module root, which is an edge the import graph cannot
-// provide at all for cmd/byre — package main, and unimportable.
+// are not enough: `go test` keys a cached result on the test binary's
+// CONTENT, and the linker drops blank-imported code nothing references, so
+// editing a configui screen leaves the test binary byte-identical and the
+// whole pty tier reports "(cached)". What `go test` re-checks instead is
+// what the test PROCESS touched inside the module root, which is also the
+// only edge that can reach cmd/byre at all — package main, unimportable.
 //
-// The file list comes from `go list -deps`, so it is the build's own answer
-// rather than a hand-kept mirror of it. Files outside the module root
-// (the stdlib, module cache) are skipped: `go test` ignores them, and
-// hashing them on every later invocation is pure cost. Directories are
-// never opened here — a directory in the input list makes go test's hash
-// fail and drops the results out of the cache entirely, which would trade
-// this fix for "the tier never caches".
+// Two kinds of input, and the difference is the whole design (cmd/go's
+// hashOpen is the reference):
+//
+//   - A file contributes its SIZE and MTIME, not its bytes. Every edit to a
+//     listed file therefore invalidates.
+//   - A directory contributes its ENTRY LIST — each child's name, size,
+//     mode and mtime. So opening the directories too is what catches a file
+//     being ADDED or REMOVED, which no per-file record can see: on a cache
+//     hit nothing runs, so `go list` is never consulted and the recorded
+//     set is last run's. The sharp case is a new file under an existing
+//     //go:embed root (a new bundled skill tree, zero .go edits) — bundled
+//     into the binary, invisible to every source file's mtime.
+//
+// Hence: read every listed file, and open every directory from each file's
+// own up to its package's, which covers embed trees at any depth. A brand
+// new PACKAGE needs no special handling — it joins the build only when an
+// existing file imports it, and that import edit is itself a file change.
+//
+// The module root is deliberately NOT walked to: its entry list carries
+// .git, whose mtime moves on every commit, and the tier would then re-run
+// for reasons that have nothing to do with the product. Files outside the
+// module root (stdlib, module cache) are skipped because `go test` ignores
+// them, and stat-ing them on every later invocation is pure cost.
 func recordProductSources(root string) error {
-	const tmpl = `{{$d := .Dir}}{{range .GoFiles}}{{$d}}/{{.}}
-{{end}}{{range .EmbedFiles}}{{$d}}/{{.}}
-{{end}}`
-	cmd := exec.Command("go", "list", "-deps", "-f", tmpl, "./cmd/byre")
+	var tmpl strings.Builder
+	tmpl.WriteString("{{$d := .Dir}}")
+	for _, field := range productSourceFields {
+		// pkg dir, tab, file path -- the pkg dir bounds the walk upward.
+		fmt.Fprintf(&tmpl, "{{range .%s}}{{$d}}\t{{$d}}/{{.}}\n{{end}}", field)
+	}
+	cmd := exec.Command("go", "list", "-deps", "-f", tmpl.String(), "./cmd/byre")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("listing the product's sources for the test-cache key: %v", err)
 	}
+
 	prefix := root + string(filepath.Separator)
-	for _, f := range strings.Split(string(out), "\n") {
-		if f == "" || !strings.HasPrefix(f, prefix) {
+	dirs := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		pkgDir, file, ok := strings.Cut(line, "\t")
+		if !ok || !strings.HasPrefix(file, prefix) {
 			continue
 		}
-		// The build just succeeded, so every one of these is readable; the
-		// read is for the testlog, and its bytes are not wanted here.
-		_, _ = hostopen.PlainReadFile(f, hostopen.TestHarness)
+		// A listed source that cannot be read after a successful build is a
+		// broken invariant, not a degrade case: carrying on would leave the
+		// key quietly weaker than it claims to be.
+		if _, err := hostopen.PlainReadFile(file, hostopen.TestHarness); err != nil {
+			return fmt.Errorf("reading %s for the test-cache key: %w", file, err)
+		}
+		for d := filepath.Dir(file); strings.HasPrefix(d, prefix); d = filepath.Dir(d) {
+			dirs[d] = true
+			if d == pkgDir {
+				break
+			}
+		}
+	}
+	for d := range dirs {
+		if _, err := hostopen.PlainReadDir(d, hostopen.TestHarness); err != nil {
+			return fmt.Errorf("listing %s for the test-cache key: %w", d, err)
+		}
 	}
 	return nil
 }

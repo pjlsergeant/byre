@@ -10,7 +10,7 @@ package tuitest
 // test binary's content, and the linker drops blank-imported code nothing
 // references, so an edit to a configui screen leaves this binary byte-
 // identical. recordProductSources (tuitest.go) is what makes a product edit
-// re-run the tier.
+// -- or a product file appearing or disappearing -- re-run the tier.
 //
 // internal/commands transitively reaches every byre package cmd/byre embeds;
 // the rest of cmd/byre's own import block is named alongside it so the
