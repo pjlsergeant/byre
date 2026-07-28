@@ -31,6 +31,9 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	if err := spellable(fullPath(table, key)); err != nil {
 		return err
 	}
+	if err := spellableText("value", rendered); err != nil {
+		return err
+	}
 	keyPath := []string{key}
 	if i := d.findKeyValue(table, keyPath); i >= 0 {
 		return d.splice(d.exprs[i].valSpan, []byte(rendered))
@@ -44,11 +47,11 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	}
 	line := fmt.Sprintf("%s = %s\n", encodeKey(key), rendered)
 	if at, ok := d.insertPointInTable(table); ok {
-		return d.splice(span{at, at}, []byte(line))
+		return d.splice(span{at, at}, d.lineAt(at, line))
 	}
 	if table == nil {
 		at := d.rootInsertPoint()
-		return d.splice(span{at, at}, []byte(line))
+		return d.splice(span{at, at}, d.lineAt(at, line))
 	}
 	// No [table] header, but the table may exist through DOTTED spellings
 	// (`env.FOO = "x"` at root). Emitting a [table] header then would
@@ -58,7 +61,7 @@ func (d *Doc) SetKey(table []string, key string, rendered string) error {
 	if at, ctx, ok := d.dottedKinInsert(table); ok {
 		rel := append(append([]string(nil), table[len(ctx):]...), key)
 		dotted := fmt.Sprintf("%s = %s\n", encodeKeyPath(rel), rendered)
-		return d.splice(span{at, at}, []byte(dotted))
+		return d.splice(span{at, at}, d.lineAt(at, dotted))
 	}
 	block := fmt.Sprintf("[%s]\n%s", encodeKeyPath(table), line)
 	at := len(d.src)
@@ -240,6 +243,9 @@ func (d *Doc) AppendArrayTable(name string, body string) error {
 	if err := spellable([]string{name}); err != nil {
 		return err
 	}
+	if err := spellableText("block body", body); err != nil {
+		return err
+	}
 	block := fmt.Sprintf("[[%s]]\n%s", encodeKeyPath([]string{name}), body)
 	at := len(d.src)
 	if last := d.lastArrayTable(name); last >= 0 {
@@ -259,6 +265,9 @@ func (d *Doc) ReplaceArrayTable(name, matchKey, matchValue, body string) (bool, 
 // ReplaceArrayTableNth is ReplaceArrayTable on the skip-th matching block.
 func (d *Doc) ReplaceArrayTableNth(name, matchKey, matchValue string, skip int, body string) (bool, error) {
 	if err := spellable([]string{name}); err != nil {
+		return false, err
+	}
+	if err := spellableText("block body", body); err != nil {
 		return false, err
 	}
 	hdr := d.matchArrayTableNth(name, matchKey, matchValue, skip)
@@ -286,14 +295,24 @@ func (d *Doc) RemoveArrayTableNth(name, matchKey, matchValue string, skip int) (
 	return true, d.splice(s, nil)
 }
 
-// RemoveTable removes an entire [table] block (header, body, glued comments
-// above). Absent tables are a no-op.
+// RemoveTable removes an entire table construct: a [table] block (header,
+// body, glued comments above), or the inline `table = { ... }` spelling of
+// the same path, which is one line and goes by RemoveKey's removal unit. A
+// table nested INSIDE an inline construct is one of its members, and members
+// belong to RemoveKey. Absent tables are a no-op.
 func (d *Doc) RemoveTable(table []string) error {
 	for i, e := range d.exprs {
 		if e.kind == unstable.Table && eq(e.table, table) {
 			s := span{d.gluedCommentStart(i, e.span.start), d.blockEnd(i)}
 			return d.splice(s, nil)
 		}
+	}
+	// A nil key path asks findKeyValue for the expression whose OWN full path
+	// is table -- the key that spells the table inline.
+	if i := d.findKeyValue(table, nil); i >= 0 && d.exprs[i].inline {
+		rm := d.lineSpan(d.exprs[i].span)
+		rm.start = d.gluedCommentStart(i, rm.start)
+		return d.splice(rm, nil)
 	}
 	return nil
 }
@@ -495,6 +514,18 @@ func isCommentLine(prefix []byte) bool {
 	return true
 }
 
+// lineAt renders a whole-line insertion at off, opening a new line first when
+// off does not sit on one. A document whose last line has no newline -- an
+// unterminated comment, a config saved without one -- otherwise takes the
+// insertion INTO that line: absorbed into the comment, or run onto the end of
+// a key-value.
+func (d *Doc) lineAt(off int, line string) []byte {
+	if off > 0 && d.src[off-1] != '\n' {
+		return []byte("\n" + line)
+	}
+	return []byte(line)
+}
+
 // separated returns the separator needed before appending a block at off: a
 // blank line when the document has content that doesn't already end with one.
 func (d *Doc) separated(off int) string { return separatorAt(d.src, off) }
@@ -525,16 +556,31 @@ func encodeKey(k string) string {
 	return escaped(k)
 }
 
-// spellable reports whether a key path can be written at all. TOML is Unicode
-// text: bytes that aren't valid UTF-8 have no spelling, and escaped() would
-// substitute U+FFFD -- writing SOME key, silently, that is not the one the
-// caller named. Every entry point that ENCODES a caller's key path checks it;
-// the ones that only match against parsed keys don't need to, since a key
-// that cannot be spelled cannot have been parsed either.
+// spellableText refuses text TOML cannot carry. TOML is Unicode text, so a
+// byte sequence that isn't valid UTF-8 has no spelling in it, and writing one
+// anyway means writing SOMETHING -- a substituted U+FFFD -- that the caller
+// never asked for, silently, into the user's file.
+//
+// The check lives at the MUTATIONS rather than in the renderers, which stay
+// total: String and its kin take a value and return text, with no channel to
+// refuse through. So they pass unspellable bytes through verbatim instead of
+// substituting, which leaves the evidence intact for the mutation about to
+// commit it. Everything reaching the document is either rendered content
+// checked here, or bytes already in the document.
+func spellableText(noun, s string) error {
+	if utf8.ValidString(s) {
+		return nil
+	}
+	return fmt.Errorf("tomldoc: %s %q is not valid UTF-8 and has no TOML spelling", noun, s)
+}
+
+// spellable checks a caller's key path. Every entry point that ENCODES one
+// calls it; the ones that only match against parsed keys don't need to, since
+// a key that cannot be spelled cannot have been parsed either.
 func spellable(path []string) error {
 	for _, k := range path {
-		if !utf8.ValidString(k) {
-			return fmt.Errorf("tomldoc: key %q is not valid UTF-8 and has no TOML spelling", k)
+		if err := spellableText("key", k); err != nil {
+			return err
 		}
 	}
 	return nil

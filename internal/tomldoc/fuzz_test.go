@@ -13,7 +13,10 @@ package tomldoc
 //  1. the result parses under the STRICT decoder -- the one the product loads
 //     config with, which refuses things the expression parser accepts;
 //  2. every key the edit did not address survives with its value;
-//  3. a refused edit leaves the document byte-identical.
+//  3. a refused edit leaves the document byte-identical;
+//  4. the value an edit wrote is the value that reads back -- the target key
+//     is what invariant 2 excludes, so a renderer that mangles its input
+//     would show up nowhere else.
 
 import (
 	"fmt"
@@ -50,8 +53,10 @@ func FuzzEdit(f *testing.F) {
 		{twoMCP, 0, "mcp.headers", "Authorization", "v"},
 		{twoMCP, 2, "mcp.headers", "Accept", ""},
 		{twoMCP, 1, "mcp.headers", "New", "v"},
-		{twoMCP, 0, "mcp.auth", "token", "v"}, // creation under an array: refused
-
+		{twoMCP, 0, "mcp.auth", "token", "v"},                             // creation under an array: refused
+		{"defaults = { skip_questions = true }\n", 3, "", "defaults", ""}, // RemoveTable over an inline construct
+		{"base = \"x\"\n", 0, "", "base", "bad\xc2"},                      // a value with no TOML spelling
+		{"base = \"x\"\n", 0, "", "base", "prose\nwith\nlines"},
 		{"", 0, "a.b", "c", "v"},
 	}
 	for _, s := range seeds {
@@ -97,6 +102,16 @@ func FuzzEdit(f *testing.F) {
 		if a, b := withoutPath(before, target), withoutPath(after, target); a != b {
 			t.Fatalf("keys the edit did not address changed\nop=%d target=%v\nbefore: %s\nafter:  %s\nsrc:\n%s\nout:\n%s", op%4, target, a, b, src, out)
 		}
+		// The key the edit DID address: what was written is what reads back.
+		// A renderer that mangles its input -- an escape spelled wrong, a
+		// byte substituted -- shows up here and nowhere else, since the
+		// target path is exactly what the comparison above excludes.
+		if op%4 == 0 {
+			got, ok := lookupPath(after, target)
+			if !ok || got != value {
+				t.Fatalf("the value written is not the value that reads back\ntarget=%v\nwrote: %q\nread:  %#v (found=%v)\nout:\n%s", target, value, got, ok, out)
+			}
+		}
 	})
 }
 
@@ -138,6 +153,28 @@ func deletePath(v any, path []string) {
 			delete(t, head) // a scalar the deeper path displaces
 		}
 	}
+}
+
+// lookupPath finds the value at a key path, taking the FIRST element that
+// resolves it where the path runs through an array -- the same first-match
+// resolution the engine itself uses for an existing target.
+func lookupPath(v any, path []string) (any, bool) {
+	if len(path) == 0 {
+		return v, true
+	}
+	switch t := v.(type) {
+	case []any:
+		for _, e := range t {
+			if got, ok := lookupPath(e, path); ok {
+				return got, true
+			}
+		}
+	case map[string]any:
+		if sub, ok := t[path[0]]; ok {
+			return lookupPath(sub, path[1:])
+		}
+	}
+	return nil, false
 }
 
 func cloneAny(v any) any {

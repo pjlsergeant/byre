@@ -79,7 +79,9 @@ Behavioral contract (grilled, each default approved):
   then that construct alone is rewritten in house shape (an interior
   comment belongs to the construct). An inline `defaults = { ... }` an
   edit reaches INSIDE is such a construct: it becomes a `[defaults]`
-  block carrying its members, and emptying it removes it whole. Inside
+  block carrying its members, and emptying it removes it whole -- as
+  does removing the table itself, which takes the construct's line the
+  way any removal takes a line. Inside
   an `[[array]]` element the house shape is the INLINE one, re-emitted
   where it stands -- an element is identified by its position, so a
   promoted `[mcp.headers]` block would join whichever element was
@@ -88,6 +90,11 @@ Behavioral contract (grilled, each default approved):
   document order; CREATING one on a path that runs through an array of
   tables is refused, because a key path cannot name an element -- there,
   position is identity, and it belongs to the position/match APIs.
+- Text TOML cannot carry -- a key or a value that isn't valid UTF-8 --
+  is refused at the mutation, naming the rule, with the document left as
+  it was. The renderers stay total (they take a value and return text,
+  with no channel to refuse through) and pass such bytes along verbatim
+  rather than substituting U+FFFD, so the refusal has something to see.
 - No-op saves leave the document byte-identical.
 - Every edit is re-read with the STRICT decoder before it is handed
   back, and a failure restores the pre-edit bytes: the expression parser

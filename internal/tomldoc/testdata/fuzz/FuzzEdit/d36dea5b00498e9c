@@ -1,0 +1,6 @@
+go test fuzz v1
+string("#")
+byte('d')
+string("")
+string("0")
+string("0")

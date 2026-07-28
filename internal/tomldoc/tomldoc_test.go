@@ -704,6 +704,148 @@ func TestSetKeyRefusesCreationUnderArrayOfTables(t *testing.T) {
 	}
 }
 
+// RemoveTable targets a TABLE, and an inline table is one: dropping
+// `defaults = { ... }` must take the construct, not report success while
+// leaving every key it holds live in the file.
+func TestRemoveTableTakesInlineConstruct(t *testing.T) {
+	d := load(t, "base = \"node:22\"\n\n# describes defaults\ndefaults = { skip_questions = true } # trailing\n\n[env]\nFOO = \"bar\"\n")
+	if err := d.RemoveTable([]string{"defaults"}); err != nil {
+		t.Fatal(err)
+	}
+	out := string(d.Bytes())
+	for _, gone := range []string{"defaults", "skip_questions", "describes defaults", "trailing"} {
+		if strings.Contains(out, gone) {
+			t.Fatalf("construct not removed whole (%q survives):\n%s", gone, out)
+		}
+	}
+	m := mustParse(t, d)
+	if _, ok := m["defaults"]; ok {
+		t.Fatalf("defaults survives: %v", m)
+	}
+	if m["base"] != "node:22" || m["env"].(map[string]any)["FOO"] != "bar" {
+		t.Fatalf("neighbours damaged: %v", m)
+	}
+}
+
+// Inside an [[array]] element the same removal is just a line deletion, so
+// ownership takes care of itself -- first match, and its neighbour keeps
+// what it declared.
+func TestRemoveTableTakesInlineConstructInArrayElement(t *testing.T) {
+	d := load(t, "[[mcp]]\nname = \"first\"\nheaders = { A = \"1\" }\n\n[[mcp]]\nname = \"second\"\nheaders = { B = \"2\" }\n")
+	if err := d.RemoveTable([]string{"mcp", "headers"}); err != nil {
+		t.Fatal(err)
+	}
+	blocks := mustParse(t, d)["mcp"].([]any)
+	if _, ok := blocks[0].(map[string]any)["headers"]; ok {
+		t.Fatalf("first element's construct survives: %v", blocks[0])
+	}
+	h, ok := blocks[1].(map[string]any)["headers"].(map[string]any)
+	if !ok || h["B"] != "2" {
+		t.Fatalf("the neighbour's construct was touched: %v", blocks[1])
+	}
+}
+
+// A value byre cannot spell is refused at the mutation, not silently
+// approximated on the way to the file. The renderers keep such bytes
+// verbatim so the refusal has something to see.
+func TestUnwritableValueRefused(t *testing.T) {
+	src := "base = \"node:22\"\n"
+	d := load(t, src)
+	err := d.SetKey(nil, "base", String("bad\xc2"))
+	if err == nil {
+		t.Fatal("SetKey accepted a value with no TOML spelling")
+	}
+	if !strings.Contains(err.Error(), "not valid UTF-8") {
+		t.Fatalf("error should name the rule that fired: %v", err)
+	}
+	if string(d.Bytes()) != src {
+		t.Fatalf("the document must be left as it was:\n%s", d.Bytes())
+	}
+
+	// Every mutation that carries rendered content answers the same way.
+	for _, tc := range []struct {
+		what string
+		run  func() error
+	}{
+		{"a value inside a rendered map", func() error {
+			return d.SetKey(nil, "shared_auth", InlineStringMap(map[string]string{"claude": "bad\xc2"}))
+		}},
+		{"an array element", func() error {
+			return d.SetKey(nil, "apt", StringArray([]string{"jq", "bad\xc2"}))
+		}},
+		{"a block body", func() error {
+			return d.AppendArrayTable("mcp", KV("name", String("bad\xc2")))
+		}},
+		{"a replacement body", func() error {
+			_, err := d.ReplaceArrayTable("mcp", "name", "x", KV("name", String("bad\xc2")))
+			return err
+		}},
+		{"multiline prose", func() error {
+			return d.SetKey(nil, "text", String("first line\nbad\xc2\n"))
+		}},
+	} {
+		err := tc.run()
+		if err == nil {
+			t.Fatalf("%s: accepted", tc.what)
+		}
+		if !strings.Contains(err.Error(), "not valid UTF-8") {
+			t.Fatalf("%s: error should name the rule that fired: %v", tc.what, err)
+		}
+		if string(d.Bytes()) != src {
+			t.Fatalf("%s: the document must be left as it was:\n%s", tc.what, d.Bytes())
+		}
+	}
+}
+
+// A document whose last line has no newline still gains keys as LINES: the
+// insertion point is the end of that line, so an unterminated comment
+// swallowed the new key whole, and an unterminated key-value had the new one
+// spliced onto its end (fuzz).
+func TestInsertIntoDocumentWithoutTrailingNewline(t *testing.T) {
+	t.Run("after a comment", func(t *testing.T) {
+		d := load(t, "# just a comment")
+		if err := d.SetKey(nil, "base", String("node:22")); err != nil {
+			t.Fatal(err)
+		}
+		if got := mustParse(t, d)["base"]; got != "node:22" {
+			t.Fatalf("the key was absorbed into the comment: %v\n%q", got, d.Bytes())
+		}
+		if !strings.Contains(string(d.Bytes()), "# just a comment") {
+			t.Fatalf("comment damaged:\n%s", d.Bytes())
+		}
+	})
+	t.Run("after a root key", func(t *testing.T) {
+		d := load(t, "base = \"node:22\"")
+		if err := d.SetKey(nil, "agent", String("claude")); err != nil {
+			t.Fatal(err)
+		}
+		m := mustParse(t, d)
+		if m["base"] != "node:22" || m["agent"] != "claude" {
+			t.Fatalf("keys = %v\n%q", m, d.Bytes())
+		}
+	})
+	t.Run("inside a table", func(t *testing.T) {
+		d := load(t, "[env]\nFOO = \"bar\"")
+		if err := d.SetKey([]string{"env"}, "BAR", String("baz")); err != nil {
+			t.Fatal(err)
+		}
+		env := mustParse(t, d)["env"].(map[string]any)
+		if env["FOO"] != "bar" || env["BAR"] != "baz" {
+			t.Fatalf("env = %v\n%q", env, d.Bytes())
+		}
+	})
+	t.Run("joining dotted kin", func(t *testing.T) {
+		d := load(t, "env.FOO = \"bar\"")
+		if err := d.SetKey([]string{"env"}, "BAR", String("baz")); err != nil {
+			t.Fatal(err)
+		}
+		env := mustParse(t, d)["env"].(map[string]any)
+		if env["FOO"] != "bar" || env["BAR"] != "baz" {
+			t.Fatalf("env = %v\n%q", env, d.Bytes())
+		}
+	})
+}
+
 // A brand-new member joins the construct rather than opening a rival
 // definition of the same table.
 func TestSetKeyAddsNewMemberToInlineTable(t *testing.T) {

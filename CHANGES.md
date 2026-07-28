@@ -150,8 +150,10 @@
   sits inside an entry of a `[[block]]` list, since moving it there would
   hand it to a different entry -- and every edit is re-read
   with the strict parser before it is handed back, so this class of mistake
-  cannot reach your file again. Two further byte-level bugs the new fuzzer
-  found went with it: an empty `[section]` was removed or added to as if it
+  cannot reach your file again. Three further byte-level bugs the new fuzzer
+  found went with it: a config whose last line carried no newline refused
+  every new key it was given -- or, where that line was a comment, swallowed
+  the key into it -- an empty `[section]` was removed or added to as if it
   owned the line after it, and a key needing quotes was spelled with Go's
   escapes instead of TOML's.
 

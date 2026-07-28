@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // String renders a TOML string value. Prose -- anything with a newline --
@@ -50,10 +51,22 @@ func literalSafe(s string) bool {
 }
 
 // escaped renders a basic (double-quoted, escape-processed) TOML string.
+// Bytes that aren't valid UTF-8 pass through as they came: TOML has no
+// spelling for them, and a renderer has no way to say so -- substituting
+// U+FFFD would put a plausible character nobody asked for into the file,
+// where it reads as the user's own text. Passing them through leaves them
+// for the mutation to refuse (spellableText).
 func escaped(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
-	for _, r := range s {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		i += size
 		switch r {
 		case '"':
 			b.WriteString(`\"`)
