@@ -84,7 +84,7 @@ this index:
 - 0003: sandbox config is read from the host-side store only; in-tree config is inert until applied (partly superseded by 0029) [arm: TestPresetApplyDeclineWritesNothing]
 - 0004: sessions are found via byre.project/byre.workdir labels; develop refuses a second session per directory [arm: TestDevelopRefusesWhenSessionLive]
 - 0005: agent CLI, launch command, and auth volume come from the skill `agent` selects; core hardcodes none [arm: TestResolveSampleAndAgentSkills]
-- 0006: raw run_args append last and may override any byre flag, except the re-asserted identity labels [arm: TestRunArgsCoreFlagsAndOrder]
+- 0006: raw run_args append last and may override any byre flag, except byre's OWN LABEL SET, re-asserted after them and not overridable -- the exception is the whole of RunParams.Labels (identity, client pid, the netns nonce, the launch record address), not a fixed pair; amended 2026-07-29 [arm: TestRunArgsCoreFlagsAndOrder, TestLaunchLabelSurvivesASpoofingRunArg]
 - 0007: never copy host agent credentials into a box; agents log in in-box, the state volume persists it [no arm]
 - 0008: host UID/GID bakes at image build (USER dev, uid-qualified tag); no runtime chown, no root after PID 1 [arm(gated): TestIntegrationLaunchPathAndOwnership]
 - 0009: worktrees inherit the main tree's project identity; mutating repo git runs in-box, never on the host [arm(gated): TestIntegrationConcurrentWorktreeSessions]

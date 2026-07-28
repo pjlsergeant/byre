@@ -86,9 +86,16 @@ a container.
 
 This sits inside the existing self-edit trust ruling rather than extending it,
 but it has to be said out loud: **the record only ever INFORMS a human reading
-status. No host action is driven by it.** A forged record can make a status page
-lie about a box in a session that already authors its own next sandbox; it
-cannot make byre mount, build or run anything.
+status. No host action is driven by it.** An edited record is refused rather
+than believed, so the forgeable outcome is not a false page: it is a WITHDRAWN
+one. A self-edit agent can delete its own record or make it unreadable, and
+status then says which and falls back to describing the current config.
+
+**Residual, disclosed** (`site/content/docs/security-model.md`): a `--self-edit`
+box can therefore stop `byre status` describing it. The failure direction is a
+claim withdrawn, never a false one, and it costs an agent nothing it did not
+already have -- a box that authors its own next sandbox can already change
+what the next status page describes by editing the config.
 
 Worktrees share one project store (ADR 0009). Each worktree box writes its own
 record there and they are told apart by their addresses, not by their paths --

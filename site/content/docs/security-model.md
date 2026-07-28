@@ -204,6 +204,19 @@ containment beyond that point, and byre does not pretend otherwise: the
 launch banner says exactly this, and the session ends with a diff of
 what changed in the store.
 
+**A `--self-edit` box can stop `byre status` describing it.** Every
+container carries a launch record -- what byre told the engine, in the
+project store, addressed by the hash of its own bytes
+([ADR 0053](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0053-launch-record-content-addressed.md))
+-- and that store is exactly what `--self-edit` mounts read-write. byre
+re-hashes rather than trusts, so a record an agent EDITS is refused, not
+believed; but an agent can delete its own record or make it unreadable,
+and status then says so and falls back to describing your current config.
+The failure direction is a claim withdrawn, never a false one, and the
+record only ever informs a human reading status -- no host action is
+driven by it. Boxes started before this shipped, or by an older byre,
+degrade the same way.
+
 **Shared (machine-scoped) volumes cross project boundaries.** The
 shared-auth skills
 ([ADR 0017](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0017-shared-agent-identity.md))
