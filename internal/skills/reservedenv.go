@@ -114,8 +114,9 @@ func ReservedEnvKnown(key string) bool {
 	return ok
 }
 
-// ReservedEnvNote is the sentence every surface prints for a skill-set
-// reserved key -- status's row, and the config editor's Env row.
+// ReservedEnvNote is the sentence status's Reserved env row prints for a
+// skill-set reserved key; the config editor's Env row annotates via
+// ReservedEnvSkew, the row-sized register off the same inventory.
 //
 // The two registers are the point. For a knob byre reads, byre knows what
 // the skill took over and says so. For a key byre does not recognize it says

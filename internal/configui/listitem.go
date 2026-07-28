@@ -1482,9 +1482,11 @@ func rowAnnotation(r listRow) string {
 		return "  (removes nothing — stale marker)"
 	case rowSkill:
 		if r.skews != "" {
-			// A reserved BYRE_ key is a byre control a skill took over: the
-			// attribution alone reads like any other skill env var, and the
-			// claims it costs were legible only in `byre status`.
+			// A reserved BYRE_ key costs claims (a known knob names them; an
+			// unknown key gets the qualified wording -- never "byre control",
+			// which would claim knowledge byre lacks). Without the annotation
+			// the attribution reads like any other skill env var and the cost
+			// was legible only in `byre status`.
 			return "  (" + r.source + " — " + r.skews + ")"
 		}
 		return "  (" + r.source + ")"
