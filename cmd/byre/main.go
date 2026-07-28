@@ -1033,7 +1033,10 @@ func main() {
 	if rerr != nil {
 		var uerr usageError
 		if errors.As(rerr, &uerr) {
-			fmt.Fprintln(os.Stderr, string(uerr))
+			// The other exit boundary, and held to fatal()'s rule: a usage line
+			// echoes argv, so it prints as data. byre's own usage text carries no
+			// control characters, making this a no-op for every message it emits.
+			fmt.Fprintln(os.Stderr, commands.EscapeMultiline(string(uerr)))
 			os.Exit(2)
 		}
 		fatal(rerr)
