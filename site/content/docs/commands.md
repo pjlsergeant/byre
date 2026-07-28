@@ -105,18 +105,37 @@ Scriptable, and the same for every command unless a row says otherwise.
 |---|---|
 | `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |
 | `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |
-| `2` | You typed it wrong: an unknown flag, a bad argument count. |
+| `2` | You typed it wrong: an unknown flag, a bad argument count. One known exception, recorded rather than fixed: a panic on a goroutine other than the main one ends the process through Go's runtime, which also exits `2` -- byre cannot recover another goroutine's panic to re-code it. A Go panic trace on stderr, rather than a usage message, is what tells you which happened. |
 | `3` | `byre develop` refused to start because a session is already live in this directory. `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |
 | `4` | `byre deliver --boxes` reached part of the pool but not all of it. |
 | `70` | byre crashed. That is a bug in byre; the report is on stderr and we would like to see it. |
 
-`byre develop` adds one rule on top, deliberately: once the box has
-actually run, **whatever status the agent's own process exits with, `0`
-through `127`, is passed straight through** -- no byre banner -- so a
-script sees what your agent did rather than what byre made of it. Past
-`127` the box died on a signal (`128+n`), and byre calls that its own
-failure with the signal decoded, because nothing in a box's normal life
-ends that way. The overlap is real and cannot be designed away: a
-`develop` exiting `1` is byre's own failure if it never got the box
-running and the agent's status if it did -- the stderr message is what
-tells them apart.
+### What `byre develop` does differently
+
+Once the box has actually run, **whatever status the agent's own process
+exits with, `0` through `127`, is passed straight through** -- no byre
+banner -- so a script sees what your agent did rather than what byre made
+of it.
+
+That band covers the whole table above, and byre does not renumber
+around it: an agent exiting `3` or `70` gives you `develop` exit `3` or
+`70`, indistinguishable BY CODE from byre's own refusal or byre's own
+crash. What separates them is context, and it is reliable: byre's
+refusals and crashes always say so on stderr -- the refusal names the
+live session, the crash prints a panic report -- while a passed-through
+status arrives with byre silent. A script that needs certainty branches
+on that, and on whether the box launched at all; the code alone cannot
+carry both meanings and does not pretend to.
+
+Past `127` the passthrough stops: byre exits `1` on its own account,
+with the box's real status in the message. It is careful about how much
+it claims that status means:
+
+- `137` is read as SIGKILL and said so plainly: the box was killed out
+  from under the session -- removed externally, engine shutdown, or the
+  kernel's OOM killer. Nothing in a box's normal life ends that way.
+- `129`-`192` are decoded **tentatively** ("possibly SIGTERM"), because
+  `128+n` is a convention and not a guarantee: a process can exit `130`
+  deliberately with no signal anywhere near it.
+- `128`, and `193` upward, are left undecoded. Outside the signal range
+  there is nothing honest to add.

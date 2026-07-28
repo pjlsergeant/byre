@@ -112,21 +112,37 @@ func exitCodeSection() string {
 		"| Code | Meaning |\n|---|---|\n"+
 		"| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |\n"+
 		"| `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |\n"+
-		"| `2` | You typed it wrong: an unknown flag, a bad argument count. |\n"+
+		"| `2` | You typed it wrong: an unknown flag, a bad argument count. One known exception, recorded rather than fixed: a panic on a goroutine other than the main one ends the process through Go's runtime, which also exits `2` -- byre cannot recover another goroutine's panic to re-code it. A Go panic trace on stderr, rather than a usage message, is what tells you which happened. |\n"+
 		"| `%d` | `byre develop` refused to start because a session is already live in this directory. `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |\n"+
 		"| `%d` | `byre deliver --boxes` reached part of the pool but not all of it. |\n"+
 		"| `%d` | byre crashed. That is a bug in byre; the report is on stderr and we would like to see it. |\n\n"+
-		"`byre develop` adds one rule on top, deliberately: once the box has\n"+
-		"actually run, **whatever status the agent's own process exits with, `0`\n"+
-		"through `127`, is passed straight through** -- no byre banner -- so a\n"+
-		"script sees what your agent did rather than what byre made of it. Past\n"+
-		"`127` the box died on a signal (`128+n`), and byre calls that its own\n"+
-		"failure with the signal decoded, because nothing in a box's normal life\n"+
-		"ends that way. The overlap is real and cannot be designed away: a\n"+
-		"`develop` exiting `1` is byre's own failure if it never got the box\n"+
-		"running and the agent's status if it did -- the stderr message is what\n"+
-		"tells them apart.\n",
-		commands.ExitRefused, deliver.ExitPartialPool, exitPanic)
+		"### What `byre develop` does differently\n\n"+
+		"Once the box has actually run, **whatever status the agent's own process\n"+
+		"exits with, `0` through `127`, is passed straight through** -- no byre\n"+
+		"banner -- so a script sees what your agent did rather than what byre made\n"+
+		"of it.\n\n"+
+		"That band covers the whole table above, and byre does not renumber\n"+
+		"around it: an agent exiting `%d` or `%d` gives you `develop` exit `%d` or\n"+
+		"`%d`, indistinguishable BY CODE from byre's own refusal or byre's own\n"+
+		"crash. What separates them is context, and it is reliable: byre's\n"+
+		"refusals and crashes always say so on stderr -- the refusal names the\n"+
+		"live session, the crash prints a panic report -- while a passed-through\n"+
+		"status arrives with byre silent. A script that needs certainty branches\n"+
+		"on that, and on whether the box launched at all; the code alone cannot\n"+
+		"carry both meanings and does not pretend to.\n\n"+
+		"Past `127` the passthrough stops: byre exits `1` on its own account,\n"+
+		"with the box's real status in the message. It is careful about how much\n"+
+		"it claims that status means:\n\n"+
+		"- `137` is read as SIGKILL and said so plainly: the box was killed out\n"+
+		"  from under the session -- removed externally, engine shutdown, or the\n"+
+		"  kernel's OOM killer. Nothing in a box's normal life ends that way.\n"+
+		"- `129`-`192` are decoded **tentatively** (\"possibly SIGTERM\"), because\n"+
+		"  `128+n` is a convention and not a guarantee: a process can exit `130`\n"+
+		"  deliberately with no signal anywhere near it.\n"+
+		"- `128`, and `193` upward, are left undecoded. Outside the signal range\n"+
+		"  there is nothing honest to add.\n",
+		commands.ExitRefused, deliver.ExitPartialPool, exitPanic,
+		commands.ExitRefused, exitPanic, commands.ExitRefused, exitPanic)
 }
 
 func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {
