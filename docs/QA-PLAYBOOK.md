@@ -361,7 +361,15 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
 2. `byre develop` prints the same note; in the built box
    `/usr/local/bin/byre-launch` is byre's launcher (shebang + header),
    not the planted file — and the deny-by-default banner still holds.
-3. TEARDOWN: remove the entry + rm box.
+3. The runtime half, which no guard covers: add `[[volumes]]` `name =
+   "gate"` `role = "state"` `target = "/etc/byre"`. `byre develop` prints
+   the 🛑 line naming `/etc/byre (config)`; `byre status` carries it as a
+   Containment row, and the Network row still reads `deny-by-default
+   (skill: firewall)` — the claim describes what byre built, the
+   Containment line disclaims what the box has. In the box, `/etc/byre` is
+   the volume (`mount | grep /etc/byre`), populated from the image on
+   first use.
+4. TEARDOWN: remove the entry + the volume + rm box.
 
 ## Journey: config UI, env_from_host scheme picker
 
