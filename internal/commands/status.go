@@ -952,8 +952,15 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		}
 	}
 	if len(s.SiblingSessions) > 0 {
-		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s  (share these volumes)",
-			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", ")))
+		// "share these volumes" was the whole story until a volume could
+		// declare otherwise. Where one does, the row says which, because the
+		// sibling this row names is the reason the next develop refuses.
+		share := "  (share these volumes)"
+		if ex := exclusiveVolumeNames(s.Volumes); len(ex) > 0 {
+			share = fmt.Sprintf("  (share these volumes; %s exclusive — develop refuses a second box mounting it)", strings.Join(ex, ", "))
+		}
+		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s%s",
+			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", "), share))
 	} else if s.SiblingQueryErr != "" {
 		row("Worktrees", "sibling sessions unknown — the engine didn't answer: "+s.SiblingQueryErr)
 	}
@@ -1599,16 +1606,37 @@ func portStatusLine(p config.Port) string {
 	return fmt.Sprintf("%s:%d -> %d  (host -> container)", iface, host, p.Container)
 }
 
+// splitVolumes sorts the declared volumes into the three rows, marking the
+// ones that carry a single-writer contract. The marker rides the NAME rather
+// than a row of its own: `exclusive` changes what starting a second box does
+// (develop refuses), so a reader scanning the volume list must not have to
+// look somewhere else to learn it.
 func splitVolumes(vols []config.Volume) (state, cache, machine []string) {
 	for _, v := range vols {
+		name := v.Name
+		if v.Exclusive() {
+			name += " (exclusive)"
+		}
 		switch {
 		case v.MachineScoped():
-			machine = append(machine, v.Name)
+			machine = append(machine, name)
 		case v.Role == "state":
-			state = append(state, v.Name)
+			state = append(state, name)
 		default:
-			cache = append(cache, v.Name)
+			cache = append(cache, name)
 		}
 	}
 	return state, cache, machine
+}
+
+// exclusiveVolumeNames are the declared single-writer volumes, for the
+// Worktrees row's qualifier.
+func exclusiveVolumeNames(vols []config.Volume) []string {
+	var out []string
+	for _, v := range vols {
+		if v.Exclusive() {
+			out = append(out, v.Name)
+		}
+	}
+	return out
 }

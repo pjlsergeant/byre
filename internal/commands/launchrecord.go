@@ -175,6 +175,14 @@ type launchVolume struct {
 	Decl   string `toml:"decl,omitempty"`
 	Role   string `toml:"role,omitempty"`
 	Scope  string `toml:"scope"`
+	// Sharing is the concurrency contract the volume was mounted under,
+	// always written (never omitted) so a record that LACKS the key is
+	// recognisably one a byre without the vocabulary wrote. Reading it back
+	// as shared is not a guess: config and skill files both decode strictly,
+	// so a byre that did not know the key refused outright any declaration
+	// carrying it -- no box of that vintage can have mounted an exclusive
+	// volume.
+	Sharing string `toml:"sharing"`
 }
 
 type launchSkill struct {
@@ -233,11 +241,14 @@ func launchRecordOf(paths project.Paths, rv resolved, params runner.RunParams, e
 		decl[scopedVolumeName(paths.ID, os.Getuid(), v)] = v
 	}
 	for _, v := range params.Volumes {
-		lv := launchVolume{Name: v.Name, Target: v.Target, Scope: "project"}
+		lv := launchVolume{Name: v.Name, Target: v.Target, Scope: "project", Sharing: "shared"}
 		if d, ok := decl[v.Name]; ok {
 			lv.Decl, lv.Role = d.Name, d.Role
 			if d.MachineScoped() {
 				lv.Scope = "machine"
+			}
+			if d.Exclusive() {
+				lv.Sharing = "exclusive"
 			}
 		}
 		rec.Volumes = append(rec.Volumes, lv)

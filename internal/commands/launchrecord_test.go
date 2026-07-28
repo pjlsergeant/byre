@@ -55,7 +55,7 @@ func sampleLaunchRecord() launchRecord {
 			{Host: "/home/pete/secrets", Target: "/secrets", Mode: "ro"},
 		},
 		Ports:   []launchPort{{Interface: "127.0.0.1", Host: 15432, Container: 5432}},
-		Volumes: []launchVolume{{Name: "byre-byre-dev-4f21bc-claude-state", Target: "/home/dev/.claude", Decl: "claude-state", Role: "state", Scope: "project"}},
+		Volumes: []launchVolume{{Name: "byre-byre-dev-4f21bc-claude-state", Target: "/home/dev/.claude", Decl: "claude-state", Role: "state", Scope: "project", Sharing: "shared"}},
 		Skills:  []launchSkill{{Name: "claude", Provenance: "bundled v1.4.0"}},
 	}
 }
@@ -110,6 +110,7 @@ target = '/home/dev/.claude'
 decl = 'claude-state'
 role = 'state'
 scope = 'project'
+sharing = 'shared'
 
 [[skills]]
 name = 'claude'

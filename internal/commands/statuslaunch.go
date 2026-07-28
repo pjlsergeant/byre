@@ -138,7 +138,7 @@ func recordedViewOf(rec *launchRecord, paths project.Paths) exposureView {
 		if name == "" {
 			name = vol.Name // a record without the declared name still names something
 		}
-		v.Volumes = append(v.Volumes, config.Volume{Name: name, Role: vol.Role, Target: vol.Target, Scope: vol.Scope})
+		v.Volumes = append(v.Volumes, config.Volume{Name: name, Role: vol.Role, Target: vol.Target, Scope: vol.Scope, Sharing: vol.Sharing})
 	}
 	v.Egress = append(v.Egress, launchEgress(rec.Network.Egress)...)
 	sort.Strings(v.Egress)
@@ -349,6 +349,10 @@ func portKeys(ps []config.Port) []string {
 	return out
 }
 
+// Sharing is normalized on both sides for the same reason scope is: a record
+// written before the field carries "", the config spelling of the same
+// default, and comparing them raw would report a sharing change on every
+// pre-field box forever.
 func volumeKeys(vs []config.Volume) []string {
 	var out []string
 	for _, v := range vs {
@@ -356,7 +360,7 @@ func volumeKeys(vs []config.Volume) []string {
 		if scope == "" {
 			scope = "project"
 		}
-		out = append(out, fmt.Sprintf("%s -> %s  (%s, %s)", v.Name, v.Target, orDefault(v.Role, "cache"), scope))
+		out = append(out, fmt.Sprintf("%s -> %s  (%s, %s, %s)", v.Name, v.Target, orDefault(v.Role, "cache"), scope, orDefault(v.Sharing, "shared")))
 	}
 	return out
 }
