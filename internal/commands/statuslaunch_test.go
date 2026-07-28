@@ -362,6 +362,33 @@ func TestNextLaunchBaseClearedIsStillADelta(t *testing.T) {
 	}
 }
 
+// The base is compared by EFFECTIVE value, not by config spelling. gen
+// substitutes gen.DefaultBase for an empty base, so writing the default out
+// explicitly (or deleting that line) changes the config and changes nothing
+// about the image -- and a `~ Base` line there would be exactly the standing
+// false row this section's rules forbid.
+func TestNextLaunchBaseSpellingTheDefaultIsNotADelta(t *testing.T) {
+	// Box ran on the default; config now spells it out.
+	rec := &launchRecord{Record: 1, Image: launchImage{Base: ""}}
+	s := statusInfo{Canonical: "/p", Container: "abc", Engine: "docker", Base: gen.DefaultBase}
+	if got := deltaOf(t, rec, s); len(got) != 0 {
+		t.Errorf("spelling the default out is not a difference: %v", got)
+	}
+	// And the reverse: box ran on the explicit spelling, config deleted it.
+	rec.Image.Base = gen.DefaultBase
+	s.Base = ""
+	if got := deltaOf(t, rec, s); len(got) != 0 {
+		t.Errorf("deleting the explicit default is not a difference: %v", got)
+	}
+	// A base that really differs from the default still reports, from the
+	// empty side too -- the normalization must not swallow real changes.
+	rec.Image.Base = ""
+	s.Base = "golang:1.26-bookworm"
+	if got := deltaOf(t, rec, s); len(got) != 1 {
+		t.Errorf("a real base change must still report: %v", got)
+	}
+}
+
 // run_args are compared as SLICES. Joining on a space is not injective, so a
 // joined compare calls two different argvs equal and reports no change across
 // an edit that changes what the engine is handed.

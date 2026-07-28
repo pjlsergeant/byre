@@ -208,10 +208,15 @@ func diffLaunch(now, next exposureView) []launchDelta {
 		out = append(out, launchDelta{Sign: sign, Text: fmt.Sprintf(format, args...)})
 	}
 
-	// Any inequality, including a base CLEARED back to byre's own default:
-	// empty does not mean "unchanged", it means gen.DefaultBase, and the image
-	// that gets built is a different image either way.
-	if now.Base != next.Base {
+	// Compared by EFFECTIVE value, which is the only thing a delta line can
+	// honestly claim: gen.Dockerfile substitutes gen.DefaultBase for an empty
+	// base, so `base = "debian:bookworm"` and no base at all emit the same
+	// FROM. Adding or deleting that explicit spelling changes the config and
+	// changes nothing about the image -- a `~ Base ... (rebuild required)`
+	// there is the standing-false-row failure this section's own rules
+	// forbid. An empty side still RENDERS as the default it stands for, so
+	// the line names what the box will actually be built from.
+	if baseEffective(now.Base) != baseEffective(next.Base) {
 		add("~", "Base %s -> %s  (rebuild required)", baseLabel(now.Base), baseLabel(next.Base))
 	}
 	diffSet(bindKeys(now.Binds), bindKeys(next.Binds), func(sign, text string) { add(sign, "Bind %s", text) })
@@ -252,6 +257,11 @@ func diffLaunch(now, next exposureView) []launchDelta {
 	}
 	return out
 }
+
+// baseEffective is the image gen will actually FROM: an empty base is not
+// "no base", it is byre's own default. Comparisons go through here; the
+// config SPELLING is not a fact about the box.
+func baseEffective(b string) string { return orDefault(b, gen.DefaultBase) }
 
 // baseLabel renders a base image for a delta line, naming byre's own default
 // rather than printing nothing where a value was cleared.
