@@ -536,8 +536,12 @@ func reportExit(w io.Writer, before, after exitSnapshot) {
 	}
 	fmt.Fprintln(w, "⚠ we thought you should know -- a few things changed during this run")
 	fmt.Fprintln(w, "  (byre checks a handful of places, not everything):")
+	// Every line names a path or a git config value the session wrote, so the
+	// content is the agent's to choose; the strip lands on the one funnel all
+	// three diffs pour through, and keeps a value with an embedded newline from
+	// inventing extra report lines.
 	for _, l := range lines {
-		fmt.Fprintln(w, "   "+l)
+		fmt.Fprintln(w, "   "+packages.EscapeTerminal(l))
 	}
 }
 

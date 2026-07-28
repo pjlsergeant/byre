@@ -360,12 +360,18 @@ func siblingNames(r interface {
 // renderStatus writes the flat, scannable "what can this thing touch?" block.
 // Raw run_args are shown verbatim and flagged as not introspected by byre.
 func renderStatus(w io.Writer, s statusInfo) {
+	// Every row is data -- config-authored paths, skill names, engine output --
+	// and status emits no ANSI of its own, so the strip lands here rather than
+	// at each of the sixty-odd call sites: a value carrying CSI/OSC bytes would
+	// otherwise repaint or exfiltrate from the very screen reporting it, and one
+	// unescaped call site is all it takes. Control characters go too, so a row
+	// stays one line: the "Label: value" grammar is what makes status scannable.
 	row := func(label, val string) {
 		head := ""
 		if label != "" {
-			head = label + ":"
+			head = packages.EscapeTerminal(label) + ":"
 		}
-		fmt.Fprintf(w, "%-13s %s\n", head, val)
+		fmt.Fprintf(w, "%-13s %s\n", head, packages.EscapeTerminal(val))
 	}
 
 	if s.ID != "" {
@@ -941,7 +947,7 @@ func warnGuardCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
 	}
 	sort.Strings(hits)
 	for _, dest := range hits {
-		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, a byre-managed security path; byre re-asserts its own copy at the build tail, so your file does not take effect there.\n", dest)
+		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, a byre-managed security path; byre re-asserts its own copy at the build tail, so your file does not take effect there.\n", packages.EscapeTerminal(dest))
 	}
 	// The baked ARTIFACTS (mcp.json, the agent context file, the claude-skills
 	// tree) are the opposite case: they are emitted BEFORE the project block
@@ -956,7 +962,7 @@ func warnGuardCollisions(w io.Writer, cfg config.Config, res skills.Resolved) {
 	}
 	sort.Strings(shadows)
 	for _, dest := range shadows {
-		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, which byre bakes BEFORE the project block: your file wins, and what byre delivers there is no longer what it reports.\n", dest)
+		fmt.Fprintf(w, "byre: note — a `files` entry targets %s, which byre bakes BEFORE the project block: your file wins, and what byre delivers there is no longer what it reports.\n", packages.EscapeTerminal(dest))
 	}
 }
 
@@ -1080,7 +1086,11 @@ func ManagedPathShadowText(sh ManagedPathShadow) string {
 // containment hole made legible per the footgun doctrine -- tell, don't refuse.
 func warnManagedPathShadows(w io.Writer, cfg config.Config, res skills.Resolved) {
 	for _, sh := range managedPathShadows(cfg, res) {
-		fmt.Fprintf(w, "🛑 byre: %s\n", ManagedPathShadowText(sh))
+		// The rendered text carries a config-authored target and source; byre's
+		// own wording around them has no control characters, so stripping the
+		// whole line covers both interpolations at once. Status prints the same
+		// text through renderStatus's row funnel.
+		fmt.Fprintf(w, "🛑 byre: %s\n", packages.EscapeTerminal(ManagedPathShadowText(sh)))
 	}
 }
 

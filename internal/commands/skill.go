@@ -251,7 +251,7 @@ func printSkillContributions(w io.Writer, f skills.File) {
 		if len(shown) > 8 {
 			shown = append(shown[:8], "...")
 		}
-		fmt.Fprintf(w, "  files: %d (%s)\n", n, strings.Join(shown, ", "))
+		fmt.Fprintf(w, "  files: %d (%s)\n", n, packages.EscapeTerminal(strings.Join(shown, ", ")))
 	}
 	if f.Context.Text != "" || f.Context.File != "" {
 		src := "inline"
@@ -354,7 +354,7 @@ func printTemplateShape(w io.Writer, raw []byte) {
 		if len(shown) > 8 {
 			shown = append(shown[:8], "...")
 		}
-		fmt.Fprintf(w, "  files: %d (%s)\n", n, strings.Join(shown, ", "))
+		fmt.Fprintf(w, "  files: %d (%s)\n", n, packages.EscapeTerminal(strings.Join(shown, ", ")))
 	}
 	if n := len(cfg.DockerfilePre) + len(cfg.DockerfilePost); n > 0 {
 		fmt.Fprintf(w, "  dockerfile lines: %d (pre+post)\n", n)

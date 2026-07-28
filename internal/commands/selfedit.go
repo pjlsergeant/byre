@@ -13,6 +13,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/packages"
 )
 
 // maxStoreFileBytes bounds every host-side read the self-edit report makes of
@@ -209,8 +210,11 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 			// Both sides diffable. Any byte change yields hunks (a final-newline-only
 			// edit shows a "\ No newline" marker), so unequal content never prints a
 			// bare header.
+			// The hunks are config bytes the session may have written itself, so
+			// they print as data: one strip per line covers the body and the
+			// hunk headers, and holds the diff to one line per line.
 			for _, l := range unifiedDiff("byre.config (session start)", "byre.config (now)", string(before.config), string(after.config)) {
-				fmt.Fprintln(w, "      "+l)
+				fmt.Fprintln(w, "      "+packages.EscapeTerminal(l))
 			}
 		case beforeUnreadable && afterUnreadable:
 			fmt.Fprintln(w, "      (not a readable regular file before or after — cannot show a diff)")
@@ -230,7 +234,7 @@ func reportSelfEditChanges(w io.Writer, dir string, before storeSnapshot) {
 			if rel == config.ProjectConfigName {
 				continue // shown as the diff above
 			}
-			fmt.Fprintf(w, "   %s %s\n", g.label, rel)
+			fmt.Fprintf(w, "   %s %s\n", g.label, packages.EscapeTerminal(rel))
 		}
 	}
 }
