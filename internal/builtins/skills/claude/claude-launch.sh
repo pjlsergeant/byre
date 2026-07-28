@@ -23,12 +23,18 @@ CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 # predictable path would FOLLOW anything planted there (a symlink at the
 # fixed name would route byre's write into the link's target; rename
 # replaces the plant instead). A planted DIRECTORY would swallow the mv —
-# POSIX mv moves the file INTO it — so probe with -d first (BSD mv has no
-# -T to refuse it, and the wrapper test runs on macOS hosts too; -d
-# follows symlinks, covering the symlink-to-directory arm). The probe→mv
-# window is not raceless like -T was, but losing it only lands the merge
-# file inside an agent-made TMPDIR directory: nothing is overwritten and
-# the content is the context the agent already reads.
+# POSIX mv moves the file INTO it, and reports SUCCESS — so probe with -d
+# first (BSD mv has no -T to refuse it, and the wrapper test runs on
+# macOS hosts too; -d follows symlinks, covering the symlink-to-directory
+# arm), and re-probe with -f AFTER the mv: a directory landing between
+# the two swallows the temp file but leaves the fixed name a non-file, so
+# the -f probe takes the degrade branch instead of handing claude a
+# directory path. The residue of that lost race is one context copy
+# inside the agent-made directory: nothing overwritten, same-trust
+# content. What no probe can close is the read side — the merge file
+# lives in TMPDIR, so a concurrently-running agent (a claude REVIEWER
+# launch) can always corrupt or delete it before claude reads it; that
+# only sabotages the agent's own context, and predates this wrapper.
 # Best-effort throughout: context is informational, so a failure composing
 # it must never block the launch — degrade to the baked file alone, then to
 # no injection at all, dropping the partial write rather than injecting it.
@@ -40,7 +46,8 @@ tmp=""
 if tmp=$(mktemp "$merged.XXXXXXXX" 2>/dev/null); then
   { [ -r "$CTX" ] && cat "$CTX"; printf '%s' "${BYRE_SESSION_CONTEXT:-}"; } > "$tmp" 2>/dev/null &&
     [ ! -d "$merged" ] &&
-    mv -f "$tmp" "$merged" 2>/dev/null ||
+    mv -f "$tmp" "$merged" 2>/dev/null &&
+    [ -f "$merged" ] ||
     { rm -f "$tmp" 2>/dev/null || true; merged=""; }
 else
   merged=""

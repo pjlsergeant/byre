@@ -576,7 +576,7 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	run := func(session, tmpdir string) []string {
+	run := func(session, tmpdir string, extraEnv ...string) []string {
 		t.Helper()
 		cmd := exec.Command("bash", "-c", res.AgentCommand())
 		cmd.Env = append(os.Environ(),
@@ -585,6 +585,7 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 			"TMPDIR="+tmpdir,
 			"PATH="+dir+":"+os.Getenv("PATH"),
 		)
+		cmd.Env = append(cmd.Env, extraEnv...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("launch failed: %v\n%s", err, out)
 		}
@@ -701,5 +702,21 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 	}
 	if merges, err := filepath.Glob(filepath.Join(dir, "byre-agent-context*")); err != nil || len(merges) != 0 {
 		t.Errorf("the refused rename leaked its mktemp intermediate: %v (%v)", merges, err)
+	}
+
+	// The race the -d probe can LOSE: the directory lands between the probe
+	// and the mv. POSIX mv then reports success — it moved the temp file
+	// INTO the plant — so only the post-mv -f probe notices the fixed name
+	// is not a file. An mv shim makes the race deterministic: it plants the
+	// directory, then runs the real mv. The launch must degrade to the
+	// baked file, never hand claude the directory path.
+	shim := "#!/bin/sh\n" +
+		"if [ -n \"${BYRE_TEST_PLANT:-}\" ]; then rm -rf \"$BYRE_TEST_PLANT\"; mkdir -p \"$BYRE_TEST_PLANT\"; fi\n" +
+		"exec /bin/mv \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "mv"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if file, got := readInjected(run("\n\nsession note", dir, "BYRE_TEST_PLANT="+mergePath)); file != ctxPath || got != "test context\n" {
+		t.Errorf("lost probe race must degrade to the baked file, injected %q content %q", file, got)
 	}
 }
