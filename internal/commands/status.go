@@ -113,6 +113,12 @@ type statusInfo struct {
 	LaunchState launchState
 	LaunchHash  string
 	Changes     []launchDelta
+	// NextVolumes are the volumes the CURRENT CONFIG would mount, kept aside
+	// when a record replaces Volumes. A row that speaks for the next develop
+	// -- not for the running box -- has to read it: the Worktrees row's
+	// single-writer qualifier is a claim about what the NEXT launch will
+	// refuse, and ADR 0054 gives the current config the last word there.
+	NextVolumes []config.Volume
 	// LaunchSkills carries the skill identities AS ACQUIRED at launch, so the
 	// Skills rows show the provenance the box was built with rather than
 	// today's catalog. BoxEnvKeys are the env keys the box actually received
@@ -345,6 +351,7 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 					info.LaunchHash = labels[launchKey]
 					now, next := applyLaunchRecord(&info, rec, paths)
 					info.Changes = diffLaunch(now, next)
+					info.NextVolumes = next.Volumes
 				}
 			} else {
 				// Not knowing the labels is not knowing there is no record.
@@ -955,9 +962,15 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		// "share these volumes" was the whole story until a volume could
 		// declare otherwise. Where one does, the row says which, because the
 		// sibling this row names is the reason the next develop refuses.
+		// The qualifier is a claim about what the NEXT develop does, so it
+		// reads the current config even while the rows above describe the
+		// running box: ADR 0054 gives the current config the last word on
+		// enforcement, so a declaration deleted since this box started must
+		// not have status promising a refusal that will not happen -- nor the
+		// reverse, a declaration added since going unannounced.
 		share := "  (share these volumes)"
-		if ex := exclusiveVolumeNames(s.Volumes); len(ex) > 0 {
-			share = fmt.Sprintf("  (share these volumes; %s exclusive — develop refuses a second box mounting it)", strings.Join(ex, ", "))
+		if ex := exclusiveVolumeNames(s.nextLaunchVolumes()); len(ex) > 0 {
+			share = fmt.Sprintf("  (share these volumes; %s exclusive — the next develop refuses a second box mounting it)", strings.Join(ex, ", "))
 		}
 		row("Worktrees", fmt.Sprintf("%d other session(s) live: %s%s",
 			len(s.SiblingSessions), strings.Join(s.SiblingSessions, ", "), share))
@@ -1627,6 +1640,16 @@ func splitVolumes(vols []config.Volume) (state, cache, machine []string) {
 		}
 	}
 	return state, cache, machine
+}
+
+// nextLaunchVolumes are the volumes the next develop would mount. With no
+// record the rows ARE the next launch and Volumes is already that; with one,
+// Volumes holds the running box's and the config view was kept aside.
+func (s statusInfo) nextLaunchVolumes() []config.Volume {
+	if s.Launch != nil {
+		return s.NextVolumes
+	}
+	return s.Volumes
 }
 
 // exclusiveVolumeNames are the declared single-writer volumes, for the

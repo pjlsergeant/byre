@@ -1156,7 +1156,7 @@ func TestRenderStatusMarksExclusiveVolumes(t *testing.T) {
 	assertRow(t, out, "State vols", "ledger (exclusive)")
 	assertRow(t, out, "Cache vols", "node_modules")
 	wt := strings.Join(statusRows(out)["Worktrees"], " ")
-	if !strings.Contains(wt, "ledger exclusive") || !strings.Contains(wt, "refuses") {
+	if !strings.Contains(wt, "ledger exclusive") || !strings.Contains(wt, "next develop refuses") {
 		t.Errorf("the Worktrees row must qualify the sharing claim, got %q", wt)
 	}
 
@@ -1168,5 +1168,49 @@ func TestRenderStatusMarksExclusiveVolumes(t *testing.T) {
 	assertRow(t, plain.String(), "State vols", "ledger")
 	if got := strings.Join(statusRows(plain.String())["Worktrees"], " "); !strings.Contains(got, "(share these volumes)") {
 		t.Errorf("a shared-only project keeps the plain Worktrees row, got %q", got)
+	}
+}
+
+// The volume ROWS speak for the running box (the record is the subject); the
+// Worktrees qualifier speaks for the NEXT develop, and ADR 0054 gives the
+// current config the last word on enforcement. So the two must be able to
+// disagree, in both directions -- otherwise status promises a refusal that
+// will not happen, or hides one that will.
+func TestWorktreesSharingQualifierFollowsTheNextLaunch(t *testing.T) {
+	running := func(recorded, configured string) statusInfo {
+		return statusInfo{
+			Engine:    "docker",
+			Canonical: "/p",
+			Container: "abcdef0123456789",
+			// Volumes is what applyLaunchRecord leaves behind: the record's.
+			Volumes:         []config.Volume{{Name: "ledger", Role: "state", Sharing: recorded}},
+			NextVolumes:     []config.Volume{{Name: "ledger", Role: "state", Sharing: configured}},
+			Launch:          &launchRecord{Record: LaunchRecordVersion},
+			LaunchState:     launchRecordOK,
+			SiblingSessions: []string{"proj-wt1 (beef0123)"},
+		}
+	}
+	worktrees := func(info statusInfo) string {
+		var b bytes.Buffer
+		renderStatusTest(&b, info)
+		return strings.Join(statusRows(b.String())["Worktrees"], " ")
+	}
+
+	// Declaration deleted since this box launched: it is still holding an
+	// exclusive volume, and the next develop will NOT refuse over it.
+	dropped := running("exclusive", "")
+	if got := worktrees(dropped); strings.Contains(got, "exclusive") {
+		t.Errorf("a deleted declaration must not promise a refusal that will not happen: %q", got)
+	}
+	// ...while the row above still describes the box that IS running.
+	var b bytes.Buffer
+	renderStatusTest(&b, dropped)
+	assertRow(t, b.String(), "State vols", "ledger (exclusive)")
+
+	// Declaration added since: the running box mounted it freely, and the
+	// next develop will refuse. The warning is true and must appear.
+	added := running("", "exclusive")
+	if got := worktrees(added); !strings.Contains(got, "ledger exclusive") {
+		t.Errorf("a declaration added since the launch must be announced: %q", got)
 	}
 }
