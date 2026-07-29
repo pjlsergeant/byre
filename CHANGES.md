@@ -1,5 +1,27 @@
 # Changes
 
+## Unreleased
+
+- **Publishing a skill from a fresh machine now has a supported path.**
+  The round trip back from a distribution repo used to dead-end: the
+  catalog knew your id only as *installed*, `pack` pointed at `fork`
+  (the wrong tool -- new id, old payload), and the symlink escape hatch
+  was silently skipped by the store walk. Now: `byre skill adopt <dir>`
+  makes a checkout the local source for the id it declares; a symlinked
+  package dir loads like a real one; a local package shadows your own
+  installed copy with the label saying so (`local (shadows installed
+  v1.4.0)`) instead of dying as a duplicate-id conflict; and
+  `pack -o skill.toml` writes after all reads, so packing onto the
+  manifest inside the linked dir no longer truncates it first.
+
+- **Two skills installing different bytes to the same image path now
+  refuse the build.** Cross-skill destination collisions used to
+  resolve by build order, last writer wins, silently -- so a lib one
+  skill shipped could be replaced by another skill's older copy and the
+  loser failed inscrutably at runtime. Byte-identical copies (the
+  deliberate each-works-alone pattern) still compose; divergence
+  refuses the develop naming both skills and the path.
+
 ## v1.5.0 — 2026-07-29
 
 - **A firstrun hook that fails now says so.** Skill setup scripts

@@ -94,6 +94,18 @@ installing to the same image path are refused wherever the manifest is
 judged (validate, install, ingest, develop), because only one of them
 can land there and which one would be map order.
 
+The same rule spans the composed skill SET, with one carve-out: two
+*different* enabled skills may claim the same image destination only
+with byte-identical content (permission bits included). That is the
+dual-ship pattern — each skill carries the same lib so either works
+alone — and both COPYs are emitted; divergent content refuses the
+assemble at develop, naming both skills and the destination, because
+the alternative is build-order last-writer-wins with nothing the user
+can read saying which skill's file their box runs. Judged over the
+staged bytes, so keep dual-shipped files exactly in sync — a shared
+source of truth in your repo, copied into each package at release.
+(ADR 0056.)
+
 Note the asymmetry, which is easy to trip over: a USER's config has a
 `[files]` key with the same name and a different root. Theirs resolves
 against the project and exists to stage a repo file into the build so
@@ -174,7 +186,7 @@ To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
 
 ```sh
-byre skill pack owner/name > skill.toml   # the distribution manifest
+byre skill pack owner/name -o skill.toml   # the distribution manifest
 ```
 
 `pack` enumerates every file in the package directory (the manifest
@@ -184,7 +196,22 @@ ready `install --digest` command. Host the manifest with its payload
 files beside it (payload paths resolve relative to the manifest, same
 origin only) -- a raw GitHub URL at a tag works as-is. Re-publishing is
 edit, bump `version`, re-pack, re-tag: installers see a replacement
-review of exactly what changed.
+review of exactly what changed. Prefer `-o` over a shell redirect: `-o`
+writes only after every read, so the manifest may be its own output
+target; `pack id > skill.toml` truncates the target before byre runs.
+
+**Publishing from another machine (the round trip).** The catalog on a
+fresh machine knows your published package only as *installed* --
+immutable, not packable. `byre skill adopt <dir>` re-establishes the
+source: it reads the id your repo checkout's `skill.toml` declares and
+symlinks the directory into the store at that id's path, validated by a
+full catalog reload (a directory that would land INVALID rolls the link
+back out). Where the id is also installed -- your own preset installed
+it -- the adopted copy *shadows* the snapshot: `list` shows `local
+(shadows installed <version>)`, boxes build from your working copy, and
+removing the link falls back to the snapshot. The release loop is then:
+edit in the repo, bump `version`, `pack <id> -o <repo>/skill.toml`,
+commit and tag. (ADR 0055.)
 
 Templates get the identical verb set (`byre template ...`). Templates
 are *shape* (base image, packages, egress offers); they never reference

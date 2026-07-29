@@ -25,16 +25,25 @@ covers installing, publishing, and the packaging workflow; the per-field
 - **installed** -- immutable, content-addressed snapshots under
   `~/.byre/packages/<digest>/`.
 
-Forking (`byre skill fork <id> <new-id>`) is the only way to modify
-bundled or installed content: it copies the package into a local
-editable one.
+Forking (`byre skill fork <id> <new-id>`) copies bundled or installed
+content into a local editable package under a NEW id. To edit and
+publish under the SAME id -- the author's own round trip from a
+distribution-repo checkout -- `byre skill adopt <dir>` makes a
+directory the local source for the id its manifest declares (a
+validated symlink into the store). A local package with the same id and
+kind as an installed one shadows the snapshot; `list` labels it
+`local (shadows installed <version>)`, and removing the local entry
+falls back to the snapshot.
 
 ## Distribution
 
-`byre skill pack <owner>/<name>` enumerates every file in the package,
-computes per-file sha256s and exec bits, and emits the distribution
-manifest -- a `skill.toml` carrying the payload list plus the package
-digest -- and prints a ready `install --digest` command.
+`byre skill pack <owner>/<name> -o skill.toml` enumerates every file in
+the package, computes per-file sha256s and exec bits, and writes the
+distribution manifest -- a `skill.toml` carrying the payload list plus
+the package digest -- and prints a ready `install --digest` command.
+`-o` writes after all reads, so the manifest inside the packed
+directory is a safe target (a shell redirect would truncate it before
+byre reads it).
 
 `byre skill install <uri> --digest sha256:...` fetches, verifies file
 by file, and snapshots. `--digest` pins the install to the reviewed

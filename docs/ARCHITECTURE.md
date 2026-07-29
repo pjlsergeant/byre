@@ -827,8 +827,8 @@ byre forget       Remove all of byre's host-side state for this directory --
                   project tree.
 
 byre skill ...    list / inspect <id|url> / install / uninstall / fork /
-                  init / validate / pack -- the package verbs (same set on
-                  `byre template ...`). See docs/SKILLS.md.
+                  init / adopt / validate / pack -- the package verbs (same
+                  set on `byre template ...`). See docs/SKILLS.md.
 byre preset ...   apply / inspect -- review and apply a config preset
                   (byre.preset, a path, or an https URI).
 byre mcp ...      add / remove / list -- declare MCP servers in the project

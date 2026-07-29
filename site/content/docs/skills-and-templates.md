@@ -49,13 +49,16 @@ and [a custom stack](/docs/how-do-i/toolkit/#make-a-template-for-a-stack-byre-do
 ## Share it
 
 ```sh
-byre skill pack pete/my-tools > skill.toml    # distribution manifest
+byre skill pack pete/my-tools -o skill.toml   # distribution manifest
 byre skill install https://... --digest sha256:...
 ```
 
 `pack` writes a manifest with every file's hash; `install` verifies
 byte-for-byte and grants nothing until a box enables the result;
 `inspect <uri>` shows what you'd be trusting before anything lands.
+Releasing from another machine's repo checkout is `byre skill adopt
+<dir>` -- it makes the directory the local source for the id it
+declares, shadowing your own installed copy while the link exists.
 Provenance, digest pinning, uninstall semantics, and the full authoring
 contract: the [packaging reference](/docs/packaging-reference/).
 

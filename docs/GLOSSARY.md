@@ -214,7 +214,12 @@ version, never loaded from).
 **Local package**:
 An editable directory under `~/.byre/skills|templates/` (bare or
 `owner/name` nested); the id defaults to the store path. The directory
-is the package: no manifest hashes, no install lifecycle.
+is the package: no manifest hashes, no install lifecycle. A symlinked
+directory is the user's own arrangement and loads like a real one; when
+the same id is also installed (same kind), the local package **shadows**
+the snapshot — it wins resolution, the label says `local (shadows
+installed <version>)`, and the snapshot returns when the local entry
+goes. (ADR 0055.)
 
 **Installed package**:
 A content-addressed, hash-verified snapshot under
@@ -224,9 +229,17 @@ must be qualified (`owner/name`). Immutable; edit by forking.
 
 **Fork**:
 `byre skill|template fork <id> <new-id>`: copy an immutable (bundled or
-installed) package into a local, editable one under a new id. The only
-artifact-to-source transition; provenance in the fork is a documentary
-comment, never read for resolution or trust.
+installed) package into a local, editable one under a NEW id — for
+making someone else's package yours. Provenance in the fork is a
+documentary comment, never read for resolution or trust. To re-establish
+the source for the SAME id, the verb is adopt.
+
+**Adopt**:
+`byre skill|template adopt <dir>`: make a directory the local source for
+the package id its manifest declares — a symlink at the store path the
+id names, validated by a catalog reload (anything landing non-LOCAL
+rolls the link back out). The publishing round trip back from a
+distribution repo checkout. (ADR 0055.)
 
 **Manifest**:
 A package's `[package]` block in its primary file (`skill.toml` /
