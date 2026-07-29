@@ -321,6 +321,24 @@ func peekDescription(raw []byte) string {
 	return ""
 }
 
+// dirEntryIsDir reports whether a store walk entry is a directory, judging a
+// symlink by what it resolves to. The store is the user's own tree and a
+// symlinked package dir is their choice (the same policy readPrimaryBounded
+// documents for the primary file) — an author who keeps the source in a git
+// repo and links it into the store gets a working package, not a silent skip.
+// A dangling or non-dir link stats to an error/non-dir and is skipped like
+// any other stray file.
+func dirEntryIsDir(e os.DirEntry, path string) bool {
+	if e.IsDir() {
+		return true
+	}
+	if e.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+	fi, err := hostopen.PlainStat(path, hostopen.StoreOwned)
+	return err == nil && fi.IsDir()
+}
+
 func (c *Catalog) loadLocal(root string, kind Kind) error {
 	prim := PrimaryName(kind)
 	// Two-level walk: root/<name>/prim or root/<owner>/<name>/prim.
@@ -332,11 +350,10 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 		return err
 	}
 	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		level1 := filepath.Join(root, e.Name())
+		if strings.HasPrefix(e.Name(), ".") || !dirEntryIsDir(e, level1) {
 			continue
 		}
-		// Skip backup / non-package dirs.
-		level1 := filepath.Join(root, e.Name())
 		if _, err := hostopen.PlainStat(filepath.Join(level1, prim), hostopen.StoreOwned); err == nil {
 			// Package root at level 1 (bare id).
 			if err := c.ingestLocal(e.Name(), level1, kind, prim); err != nil {
@@ -350,10 +367,10 @@ func (c *Catalog) loadLocal(root string, kind Kind) error {
 			continue
 		}
 		for _, s := range sub {
-			if !s.IsDir() || strings.HasPrefix(s.Name(), ".") {
+			level2 := filepath.Join(level1, s.Name())
+			if strings.HasPrefix(s.Name(), ".") || !dirEntryIsDir(s, level2) {
 				continue
 			}
-			level2 := filepath.Join(level1, s.Name())
 			if _, err := hostopen.PlainStat(filepath.Join(level2, prim), hostopen.StoreOwned); err == nil {
 				id := e.Name() + "/" + s.Name()
 				if err := c.ingestLocal(id, level2, kind, prim); err != nil {

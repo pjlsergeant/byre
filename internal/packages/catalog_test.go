@@ -393,3 +393,50 @@ func TestHostileLocalPrimaryDegradesNotBlocks(t *testing.T) {
 		t.Fatalf("a symlink to a real primary must load as the user's local package, got ok=%v ent=%+v", ok, ent)
 	}
 }
+
+// TestSymlinkedPackageDirLoads pins the store-walk half of the symlink policy
+// readPrimaryBounded documents: the store is the user's own tree, so a
+// package DIRECTORY that is a symlink (the author keeps the source in a git
+// repo and links it into the store) loads exactly like a real directory — at
+// both the owner and the package level. A dangling link is skipped like any
+// stray file, not turned into an error.
+func TestSymlinkedPackageDirLoads(t *testing.T) {
+	home := t.TempDir()
+	src := t.TempDir() // stands in for the author's git repo
+
+	writeSkill := func(dir, id string) {
+		mustMkdirAll(t, dir, 0o755)
+		body := fmt.Sprintf("[package]\nid = %q\npackage_api = 1\nkind = \"skill\"\n", id)
+		mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte(body), 0o644)
+	}
+
+	// Package-level link: skills/owner/<link> -> repo dir.
+	writeSkill(filepath.Join(src, "review"), "owner/review")
+	mustMkdirAll(t, filepath.Join(home, "skills", "owner"), 0o755)
+	if err := os.Symlink(filepath.Join(src, "review"), filepath.Join(home, "skills", "owner", "review")); err != nil {
+		t.Fatal(err)
+	}
+	// Owner-level link: skills/<link> -> repo owner dir containing a package.
+	writeSkill(filepath.Join(src, "owner2", "tools"), "owner2/tools")
+	if err := os.Symlink(filepath.Join(src, "owner2"), filepath.Join(home, "skills", "owner2")); err != nil {
+		t.Fatal(err)
+	}
+	// Dangling link: skipped, no entry, no problem row.
+	if err := os.Symlink(filepath.Join(src, "gone"), filepath.Join(home, "skills", "dangling")); err != nil {
+		t.Fatal(err)
+	}
+
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"owner/review", "owner2/tools"} {
+		ent, ok := cat.Lookup(id)
+		if !ok || ent.Provenance != ProvLocal {
+			t.Fatalf("%s: symlinked package dir must load as local, got ok=%v ent=%+v", id, ok, ent)
+		}
+	}
+	if ent, ok := cat.Lookup("dangling"); ok {
+		t.Fatalf("dangling symlink must be skipped, got %+v", ent)
+	}
+}
