@@ -220,25 +220,20 @@ func noContentUnder(t *testing.T, dir, want string) {
 	}
 }
 
-// growthArm is shared by both build routes: every staged regular file rides
-// stageRegularFromFD -> copyExactly, so that is where the growth question is
-// actually answered. A real mid-copy write cannot be staged deterministically,
-// so the arm poses the same disagreement the production code detects -- a size
-// that no longer matches the source -- in both directions.
-func growthArm(t *testing.T) treecopytest.Outcome {
-	t.Helper()
-	grown := copyExactly(io.Discard, strings.NewReader(treePayload), int64(len(treePayload))-4, "src")
-	shrunk := copyExactly(io.Discard, strings.NewReader(treePayload), int64(len(treePayload))+4, "src")
-	if grown == nil {
+// TestCopyExactlyRefusesGrowthAndShrink pins the size contract both build
+// routes funnel into (stageRegularFromFD -> copyExactly): a source whose size
+// disagrees with the promise is refused in either direction, never staged
+// torn or short. This is a plain unit test, NOT a treecopytest table arm: a
+// real mid-copy write cannot be posed through the routes deterministically,
+// and the table's cells only claim what their harness actually executes —
+// its growth row says N/A and names this test.
+func TestCopyExactlyRefusesGrowthAndShrink(t *testing.T) {
+	if err := copyExactly(io.Discard, strings.NewReader(treePayload), int64(len(treePayload))-4, "src"); err == nil {
 		t.Error("a source larger than its observed size must be refused, not staged torn")
 	}
-	if shrunk == nil {
+	if err := copyExactly(io.Discard, strings.NewReader(treePayload), int64(len(treePayload))+4, "src"); err == nil {
 		t.Error("a source smaller than its observed size must be refused, not staged short")
 	}
-	if grown == nil || shrunk == nil {
-		return treecopytest.Success
-	}
-	return treecopytest.Refusal
 }
 
 func stageCopyArms() map[string]treeArm {
@@ -324,7 +319,6 @@ func stageCopyArms() map[string]treeArm {
 			assertAbsent(t, stagedFiles(paths, "dev"))
 			return buildOutcome(err)
 		},
-		"growth during copy": growthArm,
 	}
 }
 
@@ -403,6 +397,5 @@ func copyPathArms() map[string]treeArm {
 			assertAbsent(t, dst)
 			return buildOutcome(err)
 		},
-		"growth during copy": growthArm,
 	}
 }

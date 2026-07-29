@@ -282,8 +282,8 @@ func Cases() []Case {
 			Threat:    "an agent appending to a file while it is being staged: an unbounded copy chases the writer, and a bounded one bakes a torn read into the image as if it were whole.",
 			Invariant: "a source whose size moved is refused, not staged short or staged chasing.",
 			Expect: map[Route]Expect{
-				BuildStageCopy: {Outcome: Refusal, Why: "every staged regular file rides stageRegularFromFD -> copyExactly, which copies exactly the fd's observed size and then probes one byte past it, so growth and shrinkage are both refused. A real mid-copy write cannot be staged deterministically, so the harness poses the same question the production code asks: a size that disagrees with the source."},
-				BuildCopyPath:  {Outcome: Refusal, Why: "the same copyExactly funnel -- both build routes converge on it."},
+				BuildStageCopy: {Outcome: NotApplicable, Why: "a real mid-copy write cannot be posed through this route deterministically (build has no mid-walk mutation seam, deliberately), and a cell must not claim an outcome its harness never executes. Both build routes funnel every staged regular file through stageRegularFromFD -> copyExactly, whose growth/shrink refusal is pinned by its own unit test (TestCopyExactlyRefusesGrowthAndShrink) -- outside this table, under its real name."},
+				BuildCopyPath:  {Outcome: NotApplicable, Why: "the same copyExactly funnel and the same limit: pinned by TestCopyExactlyRefusesGrowthAndShrink, not posed through the route."},
 				DeliverLocal:   {Outcome: NotApplicable, Why: "deliver.local streams the open descriptor into the box with no size promise to break: the landed file is whatever the stream carried, and the summary reports the bytes that actually moved. The send-time size check on the REMOTE leg (internal/deliver/remote.go) is a different transport and out of this table's scope."},
 			},
 		},

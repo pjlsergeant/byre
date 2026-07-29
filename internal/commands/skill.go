@@ -463,7 +463,7 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 	// new header.
 	body = packages.StripPackageTable(body)
 	if _, ok, err := packages.ParseManifestCore(body); err != nil || ok {
-		return fmt.Errorf("forking %s: its primary did not parse, so the old [package] header cannot be stripped — fix the source package first", src.ID)
+		return fmt.Errorf("forking %s: its primary is unreadable or still declares [package] after the strip — the fork would carry the source's package table under its new header; fix the source package first", src.ID)
 	}
 	header := fmt.Sprintf(
 		"# Forked from %s@%s\n# Informational only: byre never reads this for resolution, updates, or trust.\n\n[package]\nid = %q\nkind = %q\n\n",
