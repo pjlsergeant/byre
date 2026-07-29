@@ -109,6 +109,21 @@ func TestPackOutRefusesPayloadTarget(t *testing.T) {
 	if b, rerr := os.ReadFile(filepath.Join(repo, "README.md")); rerr != nil || string(b) != "docs\n" {
 		t.Fatalf("refused pack must leave the payload untouched, got %q, %v", b, rerr)
 	}
+
+	// A symlink OUTSIDE the package whose target is a payload: the write
+	// would follow it, so the guard must resolve the final component too.
+	link := filepath.Join(t.TempDir(), "innocent-name.md")
+	if err := os.Symlink(filepath.Join(repo, "README.md"), link); err != nil {
+		t.Fatal(err)
+	}
+	s3, _, _ := testStreams("", false)
+	err = PackagePack(s3, packages.KindSkill, "pete/tool", link)
+	if err == nil || !strings.Contains(err.Error(), "would overwrite a packed payload") {
+		t.Fatalf("want refusal through the leaf symlink, got %v", err)
+	}
+	if b, rerr := os.ReadFile(filepath.Join(repo, "README.md")); rerr != nil || string(b) != "docs\n" {
+		t.Fatalf("payload must survive the leaf-symlink attempt, got %q, %v", b, rerr)
+	}
 }
 
 // TestAdoptShadowsInstalled: adopting on the machine where the id is already

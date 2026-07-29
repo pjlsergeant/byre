@@ -72,12 +72,20 @@ func packOutGuard(dir, primary, outPath string) error {
 	if err != nil {
 		return nil
 	}
-	parent := filepath.Dir(filepath.Clean(outPath))
-	rparent, err := filepath.EvalSymlinks(parent)
+	// Resolve the WHOLE output path first: the final component may itself be
+	// a symlink to an in-package payload (following it at the write would
+	// overwrite the payload from a name outside the package), or an
+	// in-package link pointing out (harmless — the bytes land elsewhere).
+	// Only a nonexistent leaf falls back to parent+base: a name that does
+	// not exist is not a packed payload (pack enumerated existing files).
+	out, err := filepath.EvalSymlinks(filepath.Clean(outPath))
 	if err != nil {
-		return nil
+		rparent, perr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(outPath)))
+		if perr != nil {
+			return nil
+		}
+		out = filepath.Join(rparent, filepath.Base(filepath.Clean(outPath)))
 	}
-	out := filepath.Join(rparent, filepath.Base(filepath.Clean(outPath)))
 	if out == filepath.Join(rdir, primary) {
 		return nil
 	}

@@ -51,7 +51,13 @@ new-id copies.
 `pack <id> > <manifest inside the linked dir>` the obvious release command,
 and the shell truncates the target at exec — before byre reads it. `-o`
 opens the output only once the whole package is in hand, so the
-file-inside-the-packed-dir spelling is safe; adopt's success hint prints it.
+file-inside-the-packed-dir spelling is safe; adopt's success hint prints
+it. Inside the package directory, only the primary is a valid target: a
+`-o` naming a packed PAYLOAD would emit a manifest recording that file's
+pre-overwrite hash and then replace the file — a distribution failing its
+own install verification — so it refuses, with the path fully
+symlink-resolved on both sides (the repo checkout, the store link, and a
+leaf symlink from outside are all the same file).
 
 ## What this does not decide
 
