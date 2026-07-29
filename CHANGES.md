@@ -1,6 +1,6 @@
 # Changes
 
-## unreleased
+## v1.5.0 — 2026-07-29
 
 - **A firstrun hook that fails now says so.** Skill setup scripts
   (`/etc/byre/firstrun.d/`) run at every launch, and one that failed
