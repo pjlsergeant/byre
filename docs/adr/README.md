@@ -106,7 +106,7 @@ this index:
 - 0025: the shared-auth offer is per box: yes writes only this project's byre.config; saved answers only prefill, except under the two suppressions, which disclose at the switch [arm: TestOnboardSharedAuthDeclineRecordsNothingAndReasks, TestSkipQuestionsCheckboxDisclosesCredentialsUnticked, TestGlobalSkillsScreenDisclosesSharedAuthSuppression]
 - 0026: host values cross only via env_from_host entries (attributed grants); git identity is the core layer [arm: TestResolveHostEnvPrecedenceAndStates]
 - 0027: a containment hole gets its own loud 🛑 line; existing status rows stay undegraded (warranty model) [arm: TestRenderStatusContainmentAndSockGroups]
-- 0028: env.d hooks may only export env -- anything that runs, prompts, or mutates belongs in firstrun.d [arm: TestClaudeSharedAuthEnvHookExportsOnly]
+- 0028: env.d hooks: the exported environment is the only lasting effect -- computing an export is fine; output, prompts, mutation, or reconfiguring the sourcing shell belongs in firstrun.d [arm: TestClaudeSharedAuthEnvHookExportsOnly, TestBundledEnvdHooksHavePurityArms, TestDockerHostComposeEnvHookIsPure]
 - 0029: packages: bundled ships from embed.FS only, installs are digest-verified; retired names get tombstones [arm: TestRetiredNamesTombstone]
 - 0030: egress !closures survive the cascade, subtracting after skill union; portless !host closes every port [arm: TestResolvedEgressClosuresSubtractSkillEntries]
 - 0031: env_from_host sources are a closed scheme set (git:/env:/tz:/""); TERM and TZ ship in the core layer [arm: TestEnvFromHostCoreLayerAndValidation]

@@ -155,9 +155,14 @@ func TestLauncherEnvdExportsReachAgent(t *testing.T) {
 	}
 }
 
-// A hook whose commands fail (reading an absent token file, say) must never
-// block the launch — errexit is suspended around the source.
-func TestLauncherEnvdBrokenHookStillLaunches(t *testing.T) {
+// The narrow claim the suspension actually buys: a hook whose COMMANDS fail
+// (reading an absent token file, say) while leaving strict mode alone does not
+// block the launch — errexit/nounset are suspended around the source, so the
+// failures are inert and the exports after them still land. This is not a
+// containment claim: a hook that re-enables errexit and then fails, or calls
+// `exit`/`exec`, still kills the launch. Such a hook is out of contract (ADR
+// 0028), and the contract — not this loop — is what keeps it from happening.
+func TestLauncherEnvdHookCommandFailureTolerated(t *testing.T) {
 	envd := t.TempDir()
 	hook := "false\nexport AFTER_FAILURE=set\nno-such-command-zzz\n"
 	if err := os.WriteFile(filepath.Join(envd, "10-broken.sh"), []byte(hook), 0o644); err != nil {
@@ -166,6 +171,143 @@ func TestLauncherEnvdBrokenHookStillLaunches(t *testing.T) {
 	code, out := runLauncherEnvd(t, envd, "sh", "-c", `test "$AFTER_FAILURE" = set`)
 	if code != 0 {
 		t.Fatalf("a failing env.d hook must not block the launch (exit %d): %s", code, out)
+	}
+}
+
+// runLauncherFirstrun drives the real launcher with a firstrun.d override dir,
+// mirroring runLauncherEnvd's seams (the env.d dir points nowhere so only the
+// firstrun loop is in play).
+func runLauncherFirstrun(t *testing.T, firstrunDir string, cmd ...string) (int, string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command("bash", append([]string{script}, cmd...)...)
+	c.Env = append(os.Environ(),
+		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
+		"BYRE_FIRSTRUN_DIR="+firstrunDir,
+		"BYRE_ENVD_DIR="+filepath.Join(dir, "no-envd"),
+	)
+	out, err := c.CombinedOutput()
+	if err == nil {
+		return 0, string(out)
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode(), string(out)
+	}
+	t.Fatalf("launcher did not run: %v (%s)", err, out)
+	return -1, ""
+}
+
+// warningLine returns the byre-framed line mentioning want, or "".
+func warningLine(out, want string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "byre:") && strings.Contains(line, want) {
+			return line
+		}
+	}
+	return ""
+}
+
+// A firstrun hook that RAN and failed must not cost the user their box — but
+// it must not vanish either: one skill's broken setup is exactly the thing
+// that makes a box boot subtly wrong, and an invisible failure is unbuggable.
+// The warning is byre-framed, names the hook, and carries the status.
+func TestLauncherFirstrunFailureWarnsAndContinues(t *testing.T) {
+	firstrun := t.TempDir()
+	if err := os.WriteFile(filepath.Join(firstrun, "10-fails"), []byte("exit 7\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runLauncherFirstrun(t, firstrun, "true")
+	if code != 0 {
+		t.Fatalf("a failing firstrun hook must not block the launch (exit %d): %s", code, out)
+	}
+	line := warningLine(out, "10-fails")
+	if line == "" {
+		t.Fatalf("no byre-framed warning naming the failing hook:\n%s", out)
+	}
+	if !strings.Contains(line, "7") {
+		t.Errorf("warning does not carry the hook's exit status: %q", line)
+	}
+}
+
+// The warning interpolates a hook NAME, and a filename is attacker-shaped
+// input (a skill, or anything that can write firstrun.d, chooses it): every
+// byte but NUL and `/` is legal, so an unescaped name could repaint the
+// terminal or forge further byre lines. printf's %q is what stops that — the
+// assertion is that the raw control byte never reaches the stream, not merely
+// that some escaped form appears beside it.
+func TestLauncherFirstrunHostileHookNameIsEscaped(t *testing.T) {
+	firstrun := t.TempDir()
+	const esc = "\x1b"
+	name := "10-hostile" + esc + "[31m" + "\x07" + "tail"
+	if err := os.WriteFile(filepath.Join(firstrun, name), []byte("exit 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runLauncherFirstrun(t, firstrun, "true")
+	if code != 0 {
+		t.Fatalf("launch must continue past the hostile-named hook (exit %d): %q", code, out)
+	}
+	if warningLine(out, "10-hostile") == "" {
+		t.Fatalf("no byre-framed warning naming the failing hook:\n%q", out)
+	}
+	for _, raw := range []string{esc, "\x07"} {
+		if strings.Contains(out, raw) {
+			t.Errorf("raw control byte %q reached the terminal — the hook name must be escaped: %q", raw, out)
+		}
+	}
+}
+
+// Best-effort is per HOOK, not "the last one wins": a failure early in the
+// glob order must not skip the hooks after it. Asserted on a later hook's
+// side effect, because the launcher exec'ing at all proves only that the loop
+// ended, not that it kept going.
+func TestLauncherFirstrunContinuesAfterFailure(t *testing.T) {
+	dir := t.TempDir()
+	firstrun := filepath.Join(dir, "firstrun.d")
+	if err := os.MkdirAll(firstrun, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "later-hook-ran")
+	if err := os.WriteFile(filepath.Join(firstrun, "10-fails"), []byte("exit 4\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(firstrun, "20-succeeds"), []byte("touch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runLauncherFirstrun(t, firstrun, "true")
+	if code != 0 {
+		t.Fatalf("launcher exit %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("a hook after the failing one never ran — the loop stopped early:\n%s", out)
+	}
+}
+
+// An unreadable hook, and the literal path an unmatched glob leaves behind,
+// are a NO-OP, not a failure: neither ran, so neither has a status to report,
+// and warning about them would make every box with an empty firstrun.d noisy.
+func TestLauncherFirstrunSilentOnUnreadableAndEmpty(t *testing.T) {
+	firstrun := t.TempDir()
+	code, out := runLauncherFirstrun(t, firstrun, "true") // empty dir: glob matches nothing
+	if code != 0 || strings.Contains(out, "firstrun hook") {
+		t.Fatalf("an empty firstrun.d must be silent (exit %d):\n%s", code, out)
+	}
+	unreadable := filepath.Join(firstrun, "10-unreadable")
+	if err := os.WriteFile(unreadable, []byte("exit 9\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	// Running as root defeats the mode bits; the readable-hook cases carry the
+	// rest of the loop's contract, so skip rather than assert something false.
+	if f, err := os.Open(unreadable); err == nil {
+		f.Close()
+		t.Skip("this user can read a 0000 file (root?) — the unreadable arm is unobservable here")
+	}
+	code, out = runLauncherFirstrun(t, firstrun, "true")
+	if code != 0 || strings.Contains(out, "firstrun hook") {
+		t.Fatalf("an unreadable hook must be a silent no-op (exit %d):\n%s", code, out)
 	}
 }
 

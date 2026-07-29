@@ -168,18 +168,35 @@ export BYRE_SESSION_CONTEXT
 FIRSTRUN_DIR="${BYRE_FIRSTRUN_DIR:-/etc/byre/firstrun.d}"
 if [ -d "$FIRSTRUN_DIR" ]; then
   for hook in "$FIRSTRUN_DIR"/*; do
-    [ -r "$hook" ] && bash "$hook" || true
+    # Unreadable entries -- and the literal "$FIRSTRUN_DIR/*" an unmatched glob
+    # leaves behind -- are a silent no-op. A hook that RAN and failed is not:
+    # the launcher continues (one skill's broken setup must not cost the user
+    # their box) but says so, because a hook failing invisibly is how a box
+    # boots subtly wrong. The `if bash ...; then :; else` shape is load-bearing
+    # under `set -e`: the naive `bash "$hook"; status=$?` kills the launcher on
+    # the failing hook, the exact inversion of best-effort.
+    if [ -r "$hook" ]; then
+      if bash "$hook"; then
+        :
+      else
+        status=$?
+        printf 'byre: firstrun hook %q exited %d (continuing)\n' "$hook" "$status" >&2
+      fi
+    fi
   done
 fi
 
 # Launch env hooks — skills drop scripts here to put env into the AGENT
 # process (a firstrun hook runs in its own process, so it can't). Sourced (not
 # executed) in glob order, after firstrun hooks and immediately before exec,
-# still as the unprivileged dev user. Best-effort per hook: a broken hook must
-# never block the launch (errexit/nounset are suspended around the source; a
-# hook must still never call `exit` -- sourced code exits the launcher). First
-# user: claude-shared-auth exports CLAUDE_CODE_OAUTH_TOKEN from its identity
-# volume (ADR 0017). The dir override is a test seam, per the gate precedent.
+# still as the unprivileged dev user. Hooks owe this shell the ADR 0028 purity
+# contract: the environment they leave behind is their only lasting effect.
+# errexit/nounset are suspended around each source so strict mode does not turn
+# a pure hook's benign unset reference into a dead launcher -- that suspension
+# is a courtesy to hooks that KEEP the contract, not a container for ones that
+# break it, and best-effort is guaranteed only to the former. First user:
+# claude-shared-auth exports CLAUDE_CODE_OAUTH_TOKEN from its identity volume
+# (ADR 0017). The dir override is a test seam, per the gate precedent.
 ENVD_DIR="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
 if [ -d "$ENVD_DIR" ]; then
   for envhook in "$ENVD_DIR"/*.sh; do

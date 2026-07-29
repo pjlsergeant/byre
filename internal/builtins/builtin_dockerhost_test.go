@@ -1,9 +1,11 @@
 package builtins
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -101,45 +103,130 @@ RUN . /etc/os-release \
 	}
 }
 
-// TestDockerHostComposeEnvHook pins the env.d script: defaults
-// COMPOSE_PROJECT_NAME from BYRE_WORKTREE and respects an existing override.
-func TestDockerHostComposeEnvHook(t *testing.T) {
-	_, cat := testCat(t)
-	hook := filepath.Join(skillDir(t, cat, "docker-host"), "env.sh")
-	// Default from BYRE_WORKTREE.
-	cmd := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
-	cmd.Env = append(os.Environ(), "BYRE_WORKTREE=wt-abc", "BYRE_PROJECT=proj")
-	// Clear any inherited COMPOSE_PROJECT_NAME.
-	var cleaned []string
-	for _, e := range cmd.Env {
-		if strings.HasPrefix(e, "COMPOSE_PROJECT_NAME=") {
+// cleanHookEnv is the environment an env.d hook is sourced under in these
+// tests: PATH (the hook's helpers must resolve) plus exactly what the case
+// hands it. Inherited agent credentials are absent by construction -- a
+// CLAUDE_CODE_OAUTH_TOKEN from the box running the suite would otherwise sit
+// in both baseline and final and quietly widen what "unchanged" means.
+func cleanHookEnv(extra ...string) []string {
+	return append([]string{"PATH=" + os.Getenv("PATH")}, extra...)
+}
+
+// sourceEnvHook sources an env.d hook the way the launcher and /etc/profile.d
+// do, and reports EVERYTHING observable it left behind: stdout, stderr, and
+// the exported environment. hook == "" runs the same shell with the same env
+// and sources nothing -- the BASELINE, so a caller can subtract it and see the
+// delta in both directions (a var the hook set, and one it deliberately
+// unset). ADR 0028's contract is that the delta is all there is.
+func sourceEnvHook(t *testing.T, hook string, env []string) (stdout, stderr string, exported map[string]string) {
+	t.Helper()
+	envOut := filepath.Join(t.TempDir(), "env.out")
+	script := `env -0 >"$2"`
+	if hook != "" {
+		script = `. "$1"; ` + script
+	}
+	cmd := exec.Command("bash", "-c", script, "bash", hook, envOut)
+	cmd.Env = env
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("sourcing %q failed: %v (stdout=%q stderr=%q)", hook, err, out.String(), errOut.String())
+	}
+	b, err := os.ReadFile(envOut)
+	if err != nil {
+		t.Fatalf("hook terminated the sourcing shell before it could report its env: %v", err)
+	}
+	exported = map[string]string{}
+	for _, kv := range strings.Split(strings.TrimSuffix(string(b), "\x00"), "\x00") {
+		k, v, ok := strings.Cut(kv, "=")
+		// `_` is bash's own last-argument variable (here: env's path), set by
+		// the shell for every command and identical across both runs; it is
+		// noise in the delta, never a hook's doing.
+		if !ok || k == "_" {
 			continue
 		}
-		cleaned = append(cleaned, e)
+		exported[k] = v
 	}
-	cmd.Env = cleaned
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
+	return out.String(), errOut.String(), exported
+}
+
+// envDelta is what changed between a baseline environment and one produced by
+// sourcing a hook: keys added or altered, and keys the hook removed.
+func envDelta(baseline, final map[string]string) (changed map[string]string, removed []string) {
+	changed = map[string]string{}
+	for k, v := range final {
+		if bv, ok := baseline[k]; !ok || bv != v {
+			changed[k] = v
+		}
 	}
-	if string(out) != "byre-wt-abc" {
-		t.Errorf("COMPOSE_PROJECT_NAME = %q, want byre-wt-abc", out)
+	for k := range baseline {
+		if _, ok := final[k]; !ok {
+			removed = append(removed, k)
+		}
 	}
-	// User override respected.
-	cmd2 := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
-	cmd2.Env = append(cleaned, "BYRE_WORKTREE=wt-abc", "COMPOSE_PROJECT_NAME=custom")
-	out2, err := cmd2.Output()
-	if err != nil {
-		t.Fatal(err)
+	sort.Strings(removed)
+	return changed, removed
+}
+
+// TestDockerHostComposeEnvHookIsPure pins the env.d script on both axes.
+// BEHAVIOR: COMPOSE_PROJECT_NAME defaults from BYRE_WORKTREE, respects an
+// existing override, and differs per worktree. PURITY (ADR 0028): the
+// exported environment is the hook's ONLY lasting effect -- no output on
+// stdout or stderr, and the env delta is exactly the one variable. The
+// contract's filesystem clause holds vacuously here: this hook declares no
+// filesystem inputs at all (it reads only BYRE_WORKTREE), so there is nothing
+// for it to leave modified.
+//
+// Partial arm, per the ADR: this exercises the hook's known branches, it does
+// not prove the absence of every possible external effect.
+func TestDockerHostComposeEnvHookIsPure(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "docker-host"), "env.sh")
+
+	// Default from BYRE_WORKTREE, measured against a baseline of the same shell.
+	env := cleanHookEnv("BYRE_WORKTREE=wt-abc", "BYRE_PROJECT=proj")
+	_, _, baseline := sourceEnvHook(t, "", env)
+	stdout, stderr, final := sourceEnvHook(t, hook, env)
+	if stdout != "" || stderr != "" {
+		t.Errorf("env.d hook must be silent: stdout=%q stderr=%q", stdout, stderr)
 	}
-	if string(out2) != "custom" {
-		t.Errorf("override lost: %q", out2)
+	if final["COMPOSE_PROJECT_NAME"] != "byre-wt-abc" {
+		t.Errorf("COMPOSE_PROJECT_NAME = %q, want byre-wt-abc", final["COMPOSE_PROJECT_NAME"])
 	}
+	changed, removed := envDelta(baseline, final)
+	delete(changed, "COMPOSE_PROJECT_NAME")
+	if len(changed) != 0 || len(removed) != 0 {
+		t.Errorf("hook left more than its export behind: changed=%v removed=%v", changed, removed)
+	}
+
+	// User override respected -- and then the hook changes nothing at all.
+	env2 := cleanHookEnv("BYRE_WORKTREE=wt-abc", "COMPOSE_PROJECT_NAME=custom")
+	_, _, baseline2 := sourceEnvHook(t, "", env2)
+	stdout, stderr, final2 := sourceEnvHook(t, hook, env2)
+	if stdout != "" || stderr != "" {
+		t.Errorf("override path must be silent: stdout=%q stderr=%q", stdout, stderr)
+	}
+	if final2["COMPOSE_PROJECT_NAME"] != "custom" {
+		t.Errorf("override lost: %q", final2["COMPOSE_PROJECT_NAME"])
+	}
+	if changed2, removed2 := envDelta(baseline2, final2); len(changed2) != 0 || len(removed2) != 0 {
+		t.Errorf("hook must be a no-op with an override set: changed=%v removed=%v", changed2, removed2)
+	}
+
+	// No BYRE_WORKTREE at all: nothing exported, nothing said.
+	env3 := cleanHookEnv()
+	_, _, baseline3 := sourceEnvHook(t, "", env3)
+	stdout, stderr, final3 := sourceEnvHook(t, hook, env3)
+	if stdout != "" || stderr != "" {
+		t.Errorf("no-worktree path must be silent: stdout=%q stderr=%q", stdout, stderr)
+	}
+	if changed3, removed3 := envDelta(baseline3, final3); len(changed3) != 0 || len(removed3) != 0 {
+		t.Errorf("without BYRE_WORKTREE the hook must do nothing: changed=%v removed=%v", changed3, removed3)
+	}
+
 	// Distinct worktrees -> distinct names (the D-M2 race).
-	cmd3 := exec.Command("sh", "-c", `. "`+hook+`" && printf '%s' "$COMPOSE_PROJECT_NAME"`)
-	cmd3.Env = append(cleaned, "BYRE_WORKTREE=wt-other")
-	out3, _ := cmd3.Output()
-	if string(out3) == string(out) {
-		t.Errorf("worktrees must not share COMPOSE_PROJECT_NAME: both %q", out)
+	_, _, other := sourceEnvHook(t, hook, cleanHookEnv("BYRE_WORKTREE=wt-other"))
+	if other["COMPOSE_PROJECT_NAME"] == final["COMPOSE_PROJECT_NAME"] {
+		t.Errorf("worktrees must not share COMPOSE_PROJECT_NAME: both %q", other["COMPOSE_PROJECT_NAME"])
 	}
 }

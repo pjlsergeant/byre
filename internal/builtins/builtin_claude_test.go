@@ -99,11 +99,13 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 }
 
 // The claude-shared-auth env.sh hook is SOURCED (by the launcher and, via
-// /etc/profile.d, by every login shell), so it is a PURE env-setter: it exports
-// the shared token stripped of whitespace and does nothing else -- no warning,
-// no prompt, no file move even when a leftover per-project login sits alongside
-// the token. That remediation moved to firstrun.sh (tested below), because
-// sourcing env.d into every login shell must never re-fire a prompt.
+// /etc/profile.d, by every login shell), so it owes ADR 0028's purity
+// contract: the exported environment is its only lasting effect. It may
+// COMPUTE that export (it strips whitespace with `tr`); what it may not do is
+// leave anything else behind -- no warning, no prompt, no file move even when
+// a leftover per-project login sits alongside the token. That remediation
+// moved to firstrun.sh (tested below), because sourcing env.d into every login
+// shell must never re-fire a prompt.
 func TestClaudeSharedAuthEnvHookExportsOnly(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "claude-shared-auth"), "env.sh")

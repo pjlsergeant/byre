@@ -317,9 +317,10 @@ offer. Mechanics: ADR 0025.
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
-the launcher sources (sorted, best-effort, unprivileged) after firstrun
-hooks and immediately before exec'ing the agent -- the only way a skill
-can put env into the agent process at launch. Sibling of `firstrun.d`.
+the launcher sources (sorted, unprivileged, owing ADR 0028's purity
+contract) after firstrun hooks and immediately before exec'ing the
+agent -- the only way a skill can put env into the agent process at
+launch. Sibling of `firstrun.d`.
 
 **Core**:
 The byre binary minus all skill content: config resolution, generation,

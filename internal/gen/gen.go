@@ -194,7 +194,8 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// Login shells (e.g. `byre shell`) source /etc/profile.d/*.sh; this shim
 	// sources env.d there so a shell session gets the same env.d-provided
 	// environment the launcher gives the agent (COMPOSE_PROJECT_NAME, shared
-	// tokens). env.d hooks are pure env-setters, so this is safe and quiet.
+	// tokens). Safe and quiet because env.d hooks owe the ADR 0028 purity
+	// contract: the environment they export is their only lasting effect.
 	"COPY " + ProfileEnvName + " " + profileEnvPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
