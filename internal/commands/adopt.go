@@ -79,10 +79,12 @@ func PackageAdopt(s Streams, kind packages.Kind, dir string) error {
 			// The authoring case: the local entry will shadow the snapshot,
 			// announced below once the reload confirms it. Same kind only —
 			// a cross-kind id would link, conflict at reload, and roll back
-			// with the conflict's wording; refuse here with the real reason
+			// with the conflict's wording; refuse here with the real remedy
 			// instead of mutating the store on the way to a worse error.
+			// (Not "use the other verb": that verb expects the other
+			// primary file and would not adopt this directory either.)
 			if prev.Kind != kind {
-				return fmt.Errorf("%q is installed as a %s; use `byre %s adopt`", id, prev.Kind, prev.Kind)
+				return fmt.Errorf("%q is installed as a %s, so a %s cannot take the id — uninstall it (`byre %s uninstall %s`) or change the directory's declared id", id, prev.Kind, kind, prev.Kind, id)
 			}
 		default:
 			return fmt.Errorf("%q already occupies the catalog (%s); resolve that first: %s", id, prev.Provenance, prev.Reason)
