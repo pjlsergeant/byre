@@ -402,6 +402,39 @@ case (language templates ship CA certs transitively and would mask it).
    layer's egress in the banner/probe. Edit the layer → next develop
    picks it up (live resolution).
 
+## Journey: firstrun failure disclosure
+
+New in v1.5.0; the disclosure line is the assert, the surviving box is
+the contract.
+
+1. Local skill shipping a failing hook: `skill.toml` with `[package]`
+   (id/kind) and `[build]` `files = { "hook.sh" =
+   "/etc/byre/firstrun.d/50-qa-failhook.sh" }` (the files map goes under
+   `[build]` -- a bare `files` line below `[package]` is silently
+   consumed as `package.files`; see the TODO finding until it warns).
+   `hook.sh`: echo something, `exit 7`.
+2. Enable it (`skills = ["qa/failhook"]` in the STORE config), develop
+   (template/agent none). Expect, between the network banner and the
+   prompt: the hook's own output, then
+   `byre: firstrun hook /etc/byre/firstrun.d/50-qa-failhook.sh exited 7 (continuing)`
+   -- and the `dev@` prompt after it (the box LAUNCHES).
+3. TEARDOWN: rm box + image; drop the skill.
+
+## Journey: manifest spellings + fork refusal
+
+No engine needed. New in v1.5.0 (the scanner-family kill).
+
+1. Fork any bundled skill, then rewrite its primary's `[package]` header
+   to `["package"] # comment` (keep the fields). `skill validate` must
+   ACCEPT (rc 0) -- the quoted spelling and trailing comment are valid
+   TOML and no longer misread.
+2. Corrupt the fork's primary (`[package` unclosed) and fork FROM it:
+   the refusal is loud at the catalog layer ("invalid: parse
+   [package]: ..."), rc 1 -- and if a corruption ever slips past
+   resolve, the fork-time strip guard refuses before publishing rather
+   than shipping a double `[package]`.
+3. TEARDOWN: rm the fork dirs from the store.
+
 ## Journey: security-guard clobber note
 
 On a project with a netns skill enabled (`skills = ["firewall"]`):

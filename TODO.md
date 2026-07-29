@@ -33,6 +33,16 @@ the rationale lives.
   persisted struct so Merge no longer tolerates its own output as input;
   only then decide whether the full type split pays.
 
+- [ ] (S) **Bare keys after `[package]` are silently swallowed** (QA pass
+  2026-07-29): a skill author writing `files = {...}` (or any bare key)
+  below the `[package]` header has authored `package.files` -- stripped
+  with the package tree before stage 2 ever sees it, so the entry
+  vanishes without a word while `skill validate` says ok. The same key
+  top-level is loudly refused ("unknown key(s)"). A validate-time note
+  ("bare key under [package] -- move it above the header, or under its
+  real table") turns a silent no-op into a ten-second fix; pack.go
+  already documents this exact TOML-scoping footgun for its own output.
+
 - [ ] (XS) **Warn when an `env_from_host` source resolves empty** (2026-07-20).
   A devbox with no global git identity got no `GIT_AUTHOR_*` in the box, but
   `byre status` still showed `<- git:user.email` as if delivery were assured;
