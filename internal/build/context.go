@@ -5,6 +5,7 @@
 package build
 
 import (
+	"bytes"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -45,6 +46,12 @@ type fileCopy struct {
 	// validation walk and this staging, so the walk's verdict can be
 	// stale -- the bound must hold where the bytes actually move.
 	budget *copyBudget
+	// skill+dest are set on skill-file jobs only: the image destination this
+	// job's COPY will claim and the skill claiming it, so Assemble can judge
+	// cross-skill same-dest claims over the STAGED bytes (see
+	// refuseDivergentSkillDests).
+	skill string
+	dest  string
 }
 
 // copyBudget is a cumulative files/bytes allowance charged per staged
@@ -248,6 +255,9 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 		if err := stageCopy(ctxRoot, agentWritableRoots(paths, cfg, res), j); err != nil {
 			return "", fmt.Errorf("%s: %w", j.what, err)
 		}
+	}
+	if err := refuseDivergentSkillDests(ctxRoot, jobs); err != nil {
+		return "", err
 	}
 	df := gen.Dockerfile(in)
 
@@ -498,7 +508,7 @@ func planSkillBlocks(blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, 
 			if staged == ".." || strings.HasPrefix(staged, ".."+string(filepath.Separator)) || filepath.IsAbs(staged) {
 				return nil, nil, fmt.Errorf("skill %q: staged file path escapes the build context", b.Name)
 			}
-			jobs = append(jobs, fileCopy{src: sf.Src, staged: staged, what: fmt.Sprintf("skill %q files: copying %s", b.Name, sf.Rel)})
+			jobs = append(jobs, fileCopy{src: sf.Src, staged: staged, what: fmt.Sprintf("skill %q files: copying %s", b.Name, sf.Rel), skill: b.Name, dest: sf.Dest})
 			if gb.Files == nil {
 				gb.Files = make(map[string]string)
 			}
@@ -507,6 +517,117 @@ func planSkillBlocks(blocks []skills.BuildBlock) ([]gen.SkillBlock, []fileCopy, 
 		out = append(out, gb)
 	}
 	return out, jobs, nil
+}
+
+// refuseDivergentSkillDests extends the one-dest-one-source rule across the
+// composed skill set: skills.Resolve refuses two sources for one destination
+// WITHIN a manifest, but two different skills claiming the same image dest
+// resolved by COPY order, last writer wins, silently — the exact "silent
+// shadowing" that intra-skill check exists to prevent. Byte-identical claims
+// are ALLOWED: the dual-ship pattern (two skills each carrying the same lib
+// so either works alone) is legitimate, and identical bytes make the COPY
+// order irrelevant. The judgment runs over the STAGED trees — the bytes that
+// actually ship, post symlink-refusal and bounds — never a second read of
+// the sources. Granularity matches the intra-skill rule: same dest STRING;
+// overlapping directory contents under different dest strings merge by COPY
+// semantics as before.
+func refuseDivergentSkillDests(ctxRoot *os.Root, jobs []fileCopy) error {
+	claims := map[string]fileCopy{} // dest -> first claimant
+	for _, j := range jobs {
+		if j.dest == "" {
+			continue
+		}
+		first, ok := claims[j.dest]
+		if !ok {
+			claims[j.dest] = j
+			continue
+		}
+		same, err := equalStagedTrees(ctxRoot, first.staged, j.staged)
+		if err != nil {
+			return fmt.Errorf("comparing staged claims on %s: %w", j.dest, err)
+		}
+		if !same {
+			return fmt.Errorf("skills %q and %q both install to %s with different content; the build-order winner would silently replace the loser — ship identical bytes or distinct destinations", first.skill, j.skill, j.dest)
+		}
+	}
+	return nil
+}
+
+// equalStagedTrees compares two staged paths inside the context root:
+// directories by entry set and recursion, regular files by permission bits,
+// size, and bytes (a byte-identical pair differing only in the exec bit
+// still diverges in the image — COPY preserves the staged mode).
+func equalStagedTrees(ctxRoot *os.Root, a, b string) (bool, error) {
+	fa, err := ctxRoot.Open(a)
+	if err != nil {
+		return false, err
+	}
+	defer fa.Close()
+	fb, err := ctxRoot.Open(b)
+	if err != nil {
+		return false, err
+	}
+	defer fb.Close()
+	ia, err := fa.Stat()
+	if err != nil {
+		return false, err
+	}
+	ib, err := fb.Stat()
+	if err != nil {
+		return false, err
+	}
+	if ia.IsDir() != ib.IsDir() {
+		return false, nil
+	}
+	if ia.IsDir() {
+		ea, err := fa.ReadDir(-1)
+		if err != nil {
+			return false, err
+		}
+		eb, err := fb.ReadDir(-1)
+		if err != nil {
+			return false, err
+		}
+		if len(ea) != len(eb) {
+			return false, nil
+		}
+		sort.Slice(ea, func(i, j int) bool { return ea[i].Name() < ea[j].Name() })
+		sort.Slice(eb, func(i, j int) bool { return eb[i].Name() < eb[j].Name() })
+		for i := range ea {
+			if ea[i].Name() != eb[i].Name() {
+				return false, nil
+			}
+			same, err := equalStagedTrees(ctxRoot, filepath.Join(a, ea[i].Name()), filepath.Join(b, eb[i].Name()))
+			if err != nil || !same {
+				return same, err
+			}
+		}
+		return true, nil
+	}
+	if ia.Mode().Perm() != ib.Mode().Perm() || ia.Size() != ib.Size() {
+		return false, nil
+	}
+	const chunk = 64 * 1024
+	bufA, bufB := make([]byte, chunk), make([]byte, chunk)
+	for {
+		na, errA := io.ReadFull(fa, bufA)
+		nb, errB := io.ReadFull(fb, bufB)
+		if na != nb || !bytes.Equal(bufA[:na], bufB[:nb]) {
+			return false, nil
+		}
+		if errA == io.EOF || errA == io.ErrUnexpectedEOF {
+			if errB == io.EOF || errB == io.ErrUnexpectedEOF {
+				return true, nil
+			}
+			return false, nil
+		}
+		if errA != nil {
+			return false, errA
+		}
+		if errB != nil {
+			return false, errB
+		}
+	}
 }
 
 // planClaudeSkills stages the effective Claude Skill set under the canonical

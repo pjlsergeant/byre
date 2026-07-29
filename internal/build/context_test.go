@@ -894,6 +894,66 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 	}
 }
 
+// Cross-skill same-dest claims are judged over the STAGED bytes: identical
+// content is the dual-ship pattern (two skills each carrying the same lib so
+// either works alone) and both COPYs are emitted; divergent content would
+// resolve by build order, last writer wins, silently -- refused, naming both
+// skills and the destination. A byte-identical pair differing only in the
+// exec bit is divergent (COPY preserves the staged mode).
+func TestAssembleCrossSkillDestCollision(t *testing.T) {
+	writeSrc := func(t *testing.T, name, content string, mode os.FileMode) string {
+		t.Helper()
+		p := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(p, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	twoSkills := func(srcA, srcB string) skills.Resolved {
+		return skills.Resolved{Skills: []skills.Skill{
+			{Name: "devlog", Files: []skills.SkillFile{{Src: srcA, Rel: "lib.sh", Dest: "/usr/local/lib/byre-devlog-lib.sh"}}},
+			{Name: "codereview", Files: []skills.SkillFile{{Src: srcB, Rel: "lib.sh", Dest: "/usr/local/lib/byre-devlog-lib.sh"}}},
+		}}
+	}
+
+	t.Run("identical bytes allowed, both COPYs emitted", func(t *testing.T) {
+		paths := bootstrapped(t)
+		lib := "#!/bin/sh\nsay() { echo hi; }\n"
+		df, err := Assemble(paths, config.Config{Base: "node:22"}, twoSkills(
+			writeSrc(t, "lib.sh", lib, 0o644), writeSrc(t, "lib.sh", lib, 0o644)))
+		if err != nil {
+			t.Fatalf("byte-identical dual-ship must assemble: %v", err)
+		}
+		for _, skill := range []string{"devlog", "codereview"} {
+			if !strings.Contains(df, gen.CopyLine("skills/"+skill+"/lib.sh", "/usr/local/lib/byre-devlog-lib.sh")) {
+				t.Errorf("missing %s COPY:\n%s", skill, df)
+			}
+		}
+	})
+
+	t.Run("divergent bytes refused naming both skills", func(t *testing.T) {
+		paths := bootstrapped(t)
+		_, err := Assemble(paths, config.Config{Base: "node:22"}, twoSkills(
+			writeSrc(t, "lib.sh", "say() { echo hi; }\n", 0o644),
+			writeSrc(t, "lib.sh", "say() { echo hi; }\nextra() { :; }\n", 0o644)))
+		if err == nil || !strings.Contains(err.Error(), "different content") ||
+			!strings.Contains(err.Error(), `"devlog"`) || !strings.Contains(err.Error(), `"codereview"`) ||
+			!strings.Contains(err.Error(), "/usr/local/lib/byre-devlog-lib.sh") {
+			t.Fatalf("want divergent-content refusal naming both skills and the dest, got %v", err)
+		}
+	})
+
+	t.Run("exec-bit divergence refused", func(t *testing.T) {
+		paths := bootstrapped(t)
+		lib := "#!/bin/sh\nsay() { echo hi; }\n"
+		_, err := Assemble(paths, config.Config{Base: "node:22"}, twoSkills(
+			writeSrc(t, "lib.sh", lib, 0o755), writeSrc(t, "lib.sh", lib, 0o644)))
+		if err == nil || !strings.Contains(err.Error(), "different content") {
+			t.Fatalf("want refusal on mode divergence, got %v", err)
+		}
+	})
+}
+
 // A pre-ADR-0046 skill's context_target is tolerated and INERT: the context
 // file assembles as if the field were absent, and no placement pointer bakes
 // anywhere -- delivery is the agent command's injection, never a byre write
