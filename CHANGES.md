@@ -2,6 +2,32 @@
 
 ## unreleased
 
+- **A firstrun hook that fails now says so.** Skill setup scripts
+  (`/etc/byre/firstrun.d/`) run at every launch, and one that failed
+  vanished silently -- the box still started, subtly wrong, with nothing
+  on the screen to say why. The launcher now prints one line naming the
+  hook and its exit status, and keeps launching: one skill's broken
+  setup should cost you a warning, not your box.
+
+- **Valid manifests stopped being rejected for their spelling.** byre
+  judged a package's `[package]` table with hand-rolled text scanning,
+  and valid TOML the scanner didn't expect -- `["package"]`,
+  `[package] # a comment`, `package.id = "..."`, an inline
+  `package = {...}`, a multiline array above the first table -- was
+  misread: manifests falsely rejected, an empty `["package"]` reported
+  as no package at all, re-packs of quoted spellings accreting duplicate
+  generated comments. All structural judgment now rides the TOML parser
+  itself. If your skill.toml was valid TOML, it now parses; nothing that
+  parsed before stopped parsing. (A manifest that does not parse at all
+  now always says so, instead of sometimes being treated as
+  package-less.)
+
+- **`byre skill fork` refuses a source it cannot rewrite.** Forking
+  rewrites the source's `[package]` header into the fork's identity; a
+  source whose primary would not parse used to ship the fork with the
+  old table still inside. It now refuses with the reason instead of
+  publishing a broken fork.
+
 - **A volume can now say it must not have two writers.** Worktrees of one
   project are designed to run at the same time, and they mount the same
   named volumes -- that is the point for a cache and for an agent's state
