@@ -12,14 +12,12 @@
 
 ## Positioning statement
 
-For **developers who already run coding agents daily and want full autonomy
-without handing the agent their machine**, byre is **the local-first,
-Docker-native project harness for autonomous coding agents**: one command puts
-Claude Code, Codex, Gemini, Grok, or OpenCode in a throwaway,
-project-scoped container that sees the repo and what you explicitly grant — nothing else. Unlike
-account-backed sandbox products, agents' built-in host sandboxes, or
-hand-authored devcontainers, byre needs **no account, no cloud, and no
-authoring** — and everything it does is a generated file you can read.
+byre is **the local-first, Docker-native harness that brings your
+environment to any folder**: one command and your agent is running with
+full autonomy, your tools installed, your defaults applied, its login
+persisting, per project, across rebuilds, inside a throwaway,
+project-scoped container that sees the folder and what you explicitly
+grant. No account, no cloud, no authoring.
 
 Not (yet) the audience: agent-skeptics, teams/eng-leads, Docker aesthetes --
 secondary reads, not the target. Known-unreachable (reader evidence):
@@ -31,13 +29,18 @@ environment are correctly out of scope.
 ## One-liners for different slots
 
 - **Formal / repo description:** *Run an AI coding agent in a throwaway,
-  project-scoped container — no account, no cloud, just your Docker.*
+  project-scoped container with your tools and defaults already inside,
+  and agent logins that persist. No account, no cloud, just your
+  Docker.*
 - **Elevator (~40 words):** *byre puts Claude Code, Codex, Gemini, Grok,
-  or OpenCode in a throwaway container that sees one project and what you
-  explicitly grant —
-  not your home dir, keys, or the rest of your machine. One command in.
-  Local Docker/Podman, no account, MIT, free forever.*
-- **The framing fact (use everywhere it fits):** Anthropic's own sandboxing
+  or OpenCode in a throwaway container around any folder, with your
+  tools and skills inside and full autonomy on. Agent logins persist per
+  project across rebuilds. The box sees the folder and what you grant,
+  not your home dir or keys. One command in. Local Docker/Podman, no
+  account, MIT, free forever.*
+- **The framing fact (for host-sandbox and exposure contexts -- the
+  security model, whats-boxed, the why-not page -- no longer the
+  everywhere-fact):** Anthropic's own sandboxing
   docs concede that sandboxed commands **inherit host environment variables —
   credentials included — by default**, and can read `~/.ssh` and
   `~/.aws/credentials` unless you hand-configure denials. That is precisely
@@ -58,6 +61,18 @@ environment are correctly out of scope.
 - **Never claim "secure".** byre is not a security product and never
   competes on isolation strength. The words are *boxed*, *scoped*,
   *legible* — not *secure*, *safe*, *hardened*.
+- **Lead with the toolkit, the editor, and the logins that survive
+  rebuilds.** Containment is the enabler of full autonomy: on any page
+  that claims autonomy, pair the claim with a concrete statement of
+  what the box can see, shown through legibility (`status`, the
+  generated Dockerfile) — at page or section level, not necessarily the
+  next sentence; the H1 and farm epigram stay exempt as the accepted
+  safety idiom. Argue comparative isolation strength only where the
+  reader is already evaluating containment (the security model, the
+  why-not page).
+- **Prefer plain sentences over dash asides.** Spend the dash where an
+  aside earns it; a page whose every sentence pivots on a dash reads as
+  AI-cadence the same way stacked epigrams do.
 - **The name is just a name.** No etymology on the page -- it's easily
   googled. The farm in the H1 is cute; an occasional light touch in body
   prose is fine ("new pastures"), but no cows and no etymology -- those
@@ -72,8 +87,10 @@ environment are correctly out of scope.
 
 ## "Why not X?" entry format
 
-The entries themselves live in `README.md`. When a new alternative needs
-one: **answer the question literally** -- "why not X?" gets X's actual
+The entries themselves live in `site/content/why-not.md` (their
+canonical home since 2026-07-29; README and landing carry the shared
+thesis-plus-pointer strip only — PLACEMENT.md P2/P5). When a new
+alternative needs one: **answer the question literally** -- "why not X?" gets X's actual
 drawbacks, crisp and factual, as the lede; the honest concession goes in a
 trailing italic parenthetical *("but it gives you kernel-level isolation,
 and we don't")*, never as the opening -- and only when it's a concession
@@ -129,14 +146,18 @@ parallel-agents-per-git-branch — a different problem; releases stalled since
 API-first, for building agent products, not local dev). Single-agent Docker
 wrappers (largest, *claudebox* at ~1.1k stars, unmaintained ~10 months).
 
-**The wedge nobody else occupies:** *local + no-account + generated-readable
-+ per-project agent state + a personal toolkit that follows you into any
-folder*, all five at once. Each competitor concedes at least one: Docker
+**The wedge nobody else occupies:** *a personal toolkit that follows
+you into any folder + a screen that shows and edits the box's whole
+config (every live key editable or shown read-only with its owner
+named, PRINCIPLES.md P0) + per-project agent state + local + no-account
++ generated-readable*, all six at once. The toolkit and the screen are
+the product (P0). Each competitor concedes at least one: Docker
 Sandboxes (account, opacity), native sandboxes (host execution, shared
-state), devcontainers (hand-authoring, no state story) — and none of them
-has the per-*person* layer at all. That fifth element is the real answer
-to "why not a VPS / raw Docker / devcontainers": your environment doesn't
-follow you there.
+state), devcontainers (hand-authoring, no state story) — and none of
+them has the per-*person* layer at all. That layer is the real answer
+to "why not a VPS / raw Docker / devcontainers": your environment
+doesn't follow you there. Wedge phrasing is internal: it never migrates
+verbatim into conversion copy.
 
 ## Site plan
 
@@ -146,7 +167,7 @@ working record.
 
 ### The surfaces and their readers
 
-Four surfaces, two jobs: a surface either **converts** (turns a visitor
+Five surfaces, two jobs: a surface either **converts** (turns a visitor
 into a try) or **serves** (answers a user who already said yes). A page
 must know which job it's doing; a page doing both does neither.
 
@@ -154,6 +175,7 @@ must know which job it's doing; a page doing both does neither.
 |---|---|---|---|
 | `README.md` | GitHub visitor (human or their agent) | deciding whether to care; ~30 seconds | convert |
 | Site landing (`/`) | someone sent a link, or searching | same decision, but off-GitHub -- can carry media | convert |
+| Site `/why-not/` | evaluator comparing alternatives | clicked through from either convert surface | convert |
 | Site `/docs/` | someone who said yes | installing, configuring, hitting a question | serve |
 | Repo `docs/` | contributor, auditor, skill author | verifying or extending byre | serve (deep) |
 
@@ -185,20 +207,21 @@ applies. Placement (PLACEMENT.md P11 applied):
 
 | Where | Demo |
 |---|---|
-| Landing | the hero clip only (develop → Claude; VM-recorded) -- resist the arcade |
+| Landing | the hero clip (develop → Claude; VM-recorded, storyboard must show comfort: familiar tools present, agent already authenticated) + `config-tui-walk`, which on revival REPLACES the TUI section's hand-curated text artifact in place. One moving embed per section, never stacked |
 | `/docs/quickstart/` | first-run picker + `status` (generated) |
 | `/docs/configuration/` | the `byre config` TUI walk -- the flagship generated demo |
 | Cookbook | per-recipe where interactive: deliver paste flow, completion (generated); firewall / worktrees (engine-bound → VM-recorded, added when recorded) |
 | `/docs/install/`, `/docs/commands/`, volumes, contract | none -- nothing interactive |
 
 A generated demo's slot is its `{{</* demo cast="<slug>" */>}}` shortcode
-(grep `{{</* demo` for the inventory); the shortcode renders a visible
-placeholder when the cast is absent and hard-fails under
+(grep `{{</* demo` for the inventory); the shortcode renders nothing
+visible when the cast is absent and hard-fails under
 `HUGO_REQUIRE_CASTS=1` (the deploy workflow). A slot whose cast does not
-exist at all yet carries a visible placeholder in the page (blockquote
-marker + `<!-- demo-placeholder: <slug> -->` comment), so layout is
-judged with the demo's space reserved and the placeholder inventory is
-grep-able. Static screenshots use the same convention
+exist at all yet is marked with an
+`<!-- demo-placeholder: <slug> -->` comment -- invisible in the page
+(that is the shipped reality on every parked slot; the earlier
+blockquote-marker idea never shipped), but the placeholder inventory
+stays grep-able. Static screenshots use the same convention
 (`<!-- image-placeholder: <slug> -->`).
 
 ### User documentation vs Reference

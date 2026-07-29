@@ -8,7 +8,7 @@ Run `byre develop` in a project, worktree, or scratch directory, and byre create
 
 MIT licensed | open source | local | single binary | no lock-in | for Linux and macOS
 
-**📖 Full documentation: [getbyre.com/docs](https://getbyre.com/docs/)** -- [quickstart](https://getbyre.com/docs/quickstart/) · [cookbook](https://getbyre.com/docs/how-do-i/) · [security model](https://getbyre.com/docs/security-model/)
+**📖 Full documentation: [getbyre.com/docs](https://getbyre.com/docs/)** -- [quickstart](https://getbyre.com/docs/quickstart/) · [configuration](https://getbyre.com/docs/configuration/) · [cookbook](https://getbyre.com/docs/how-do-i/) · [security model](https://getbyre.com/docs/security-model/)
 
 ```console
 $ brew install --cask pjlsergeant/tap/byre   # (see below for Linux)
@@ -25,6 +25,8 @@ $ byre develop
 
 It's **`--dangerously-skip-permissions`, without risking the farm.**
 
+Every box opens familiar: your tools installed, your defaults applied, your agent's login persisting, per project, across rebuilds.
+
 Ask your agent if byre is right for you:
 
 ```text
@@ -34,15 +36,47 @@ or just vibe-coded trash? Is it right for me? Would you be happy there?
 
 ## Comfortable: bring your environment
 
-Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents [stay logged in across rebuilds](https://getbyre.com/docs/volumes-and-state/), and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
+Bring your familiar tools, reusable skills, caches, and stack-specific packages. Agents [stay logged in, per project, across rebuilds](https://getbyre.com/docs/volumes-and-state/), and your defaults follow you everywhere. Templates handle different stacks, and project configuration handles the exceptions.
 
-byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, Grok, and OpenCode. Fork the bundled ones or bring your own.
+byre ships templates for Go, Node, and Python, and agent skills for Claude Code, Codex, Gemini, Grok, and OpenCode. Fork the bundled ones or bring your own: you and your agent can build templates and skills, add them in seconds to any of your projects, or stick them in the defaults to always have them available: mounts, volumes, packages, agent contexts.
+
+The first time you want a postgres client, it's a line in one project's config. When it belongs everywhere you write node, it moves into your node template. After a while, `byre develop` in a brand-new directory lands you somewhere familiar: your tools installed, your agent launching, nothing to set up.
+
+## Change the box in seconds
+
+`byre config` opens a keyboard-driven editor over the whole box (it works over SSH), in the same vocabulary `byre status` prints:
+
+```text
+byre project config  (client-api-pjl-3bbe8c)
+exposure: 1 host mount · 11 env vars · network deny-by-default · egress 7 hosts
+
+─ GRANTS — what this box can reach ─────────────────────────
+▸ Extra mounts      : 1 mount  (enter to edit)
+  Ports             : (none)
+  Egress            : 7 hosts  (7 from skills)  — 11 offered
+  Env vars          : 11 vars  (6 inherited, 5 from skills)
+
+─ BUILD — how the box is made ──────────────────────────────
+  Template          : [go] [node] [python] [none]
+  Agent             : [claude] [codex] [gemini] [grok] [opencode] [none]
+  Packages          : 2 packages
+  Skills            : 3 enabled
+  MCP servers       : (none)
+  Instructions      : 1 snippet
+··· (more below)
+
+↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · ^q quit
+```
+
+One client's projects need their own standing instructions? Keep them in a shared layer and point each of that client's projects at it. Want ripgrep in just this box? Add the package and rebuild. The agent needs a sibling repo? Mount it read-only. Each is a couple of seconds in `byre config`, then relaunch and `/resume` where you left off.
+
+And if you want to live dangerously: `byre develop --self-edit` hands the agent its own box config, and what it changed is shown when you leave.
+
+Underneath, it's a cascade of TOML files -- your personal baseline, the template, optional shared layers, this project's overrides -- read only from byre's host-side store, never from inside the project. The editor is the interface: no byre feature ever requires you to open those files yourself. They stay plain TOML so they're diffable, shareable, and always yours to edit by hand if you prefer: a right, not a step in any recipe. The editor's walk lives on the [configuration page](https://getbyre.com/docs/configuration/); the merge rules, the `!name` removal syntax, the `env` sharp edge, and `byre.preset` (a repo's saved setup answers -- inert until you review and apply it) live in the [configuration reference](https://getbyre.com/docs/configuration-reference/).
 
 ## Constrained: keep the host out of reach
 
-The current folder is mounted into the box. Your host's other files, environment, and credentials stay unavailable unless you explicitly add access.
-
-When you need more, the `byre config` TUI can mount additional host folders, install extra packages, or adjust network access. Relaunch and `/resume` the session where you left off.
+The current folder is mounted into the box. Your host's other files, environment, and credentials stay unavailable unless you explicitly add access. When you need more, grants are rows in the editor above: mounts, env vars, egress, ports.
 
 `byre status` shows the resulting access in one place. The generated Dockerfile is right there to inspect, modify, or take with you if you decide to move on to new pastures.
 
@@ -103,18 +137,6 @@ each cut says so. `byre status --full` shows them whole; `byre status
 Everything from here on has a page on the docs site:
 **[getbyre.com/docs](https://getbyre.com/docs/)**.
 
-## Your toolkit, every folder
-
-You and your agent can build templates and skills, and add them in
-seconds to any of your projects -- or stick them in the defaults
-to always have them available: mounts, volumes, packages, agent contexts.
-
-The first time you want a postgres client,
-it's a line in one project's config. When it belongs everywhere you
-write node, it moves into your node template. After a while, `byre
-develop` in a brand-new directory lands you somewhere familiar: your
-tools installed, your agent launching, nothing to set up.
-
 ## What's boxed, what isn't
 
 Your host filesystem, environment, and credentials are boxed -- the agent
@@ -125,30 +147,6 @@ product nor your nanny. The contract in full:
 threat model and sharp facts:
 [security model](https://getbyre.com/docs/security-model/).
 
-## Configuration
-
-**`byre config`** opens an interactive editor in your terminal
-(keyboard-driven, works over SSH): grants first (mounts, env), then build
-choices, in the same vocabulary `byre status` prints. Adding a package or
-mounting another repo read-only takes a couple of seconds.
-
-Underneath, it's a cascade of TOML files -- your personal baseline, the
-template, optional shared layers, this project's overrides -- read only
-from byre's host-side store, never from inside the project. The editor
-is the interface: no byre feature ever requires you to open those files
-yourself. They stay plain TOML so they're diffable, shareable, and
-always yours to edit by hand if you prefer -- a right, not a step in
-any recipe. The vocabulary covers packages, env, mounts, volumes, skills,
-MCP servers, Claude Skills, and standing instructions for your agent;
-raw Dockerfile lines and `docker run` args cover the rest.
-
-The editor's walk lives on the
-[configuration page](https://getbyre.com/docs/configuration/); the merge
-rules, the `!name` removal syntax, the `env` sharp edge, and
-`byre.preset` (a repo's saved setup answers -- inert until you review and
-apply it) live in the
-[configuration reference](https://getbyre.com/docs/configuration-reference/).
-
 ## Commands
 
 `byre develop`, `byre status`, `byre config`, `byre deliver`, and a
@@ -158,54 +156,11 @@ hatches. The full table is at
 
 ## Why not…?
 
-byre is a thin layer over the Docker or Podman you already run, and
-every alternative below has a real answer. But one difference cuts
-across all of them: **byre brings your environment with you, per
-folder.** Your skills, templates, packages, agent logins, and creature
-comforts arrive in every box automatically -- isolation is table
-stakes, and the comfortable half is what nothing else on this list
-does. With that said, the specifics:
-
-**…raw Docker?** Nothing -- and byre never takes it away. You'd just be
-hand-rolling what it generates: host-matched file ownership, per-project
-agent login that survives rebuilds, templates, a clean reset. If you want to
-stop using byre, `byre dockerfile` prints your exit.
-
-**…Docker Sandboxes™?** Commercial product with a hosted control plane (you
-sign in) and paid tiers. Not open source. *(But it gives you kernel-level
-microVM isolation, and we don't.)*
-
-**…your agent's built-in sandbox?** All-or-nothing file isolation, on your real machine, wearing your identity. Env vars and credentials come along by default, so a stray `git push` goes out as *you*. byre's box contains nothing that you didn't put in it.
-
-**…nothing -- just keep YOLOing on the host?** The host is the incumbent:
-zero setup, and nothing bad has happened yet. But the agent works as you,
-in your real home dir -- byre exists because Claude went editing a sibling
-repository and did things with an ssh key it shouldn't have. The box costs
-one command, so the host's convenience argument is gone. *(If you've never
-had the scare, you may not feel the need -- byre is for after your first
-one.)*
-
-**…devcontainers?** You hand-write the Dockerfile and JSON per project, and
-wire up agent credentials yourself. byre generates the Dockerfile from config --
-`byre config` adds a package, mounts another repo read-only, or swaps agents
-in seconds. *(But it's the mature industry spec, and we're young.)*
-
-**…container-use?** Explicitly experimental, and MCP-shaped: your agent
-manages a fleet of environments; you don't sit inside one. byre does
-parallel the git way -- one boxed session per worktree, sharing the repo's
-image, volumes, and agent login.
-
-**…a cloud sandbox (e2b, Daytona, your agent's web offering)?** Account,
-usage billing, your code in their cloud -- and they're repo-shaped, built
-for shipping agent products or driving a GitHub repo. byre is for dropping
-into whatever folder you're standing in.
-
-**…a cheap VPS (a Hetzner box)?** A box per project doesn't scale across
-many repos -- and half of what you'd point an agent at isn't a repo, just a
-folder. byre is a throwaway box per folder, on the machine you're already
-sitting at, with your toolkit already inside. *(But a remote box is real
-hardware isolation -- if the agent must never share a kernel with your
-machine, rent one.)*
+Isolation is table stakes; the comfortable half is what nothing else
+has. The honest comparisons -- raw Docker, Docker Sandboxes™,
+devcontainers, your agent's built-in sandbox, a VPS, or staying on the
+host -- concessions included:
+[getbyre.com/why-not](https://getbyre.com/why-not/).
 
 ## How do I...?
 

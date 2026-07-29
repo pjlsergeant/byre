@@ -27,6 +27,8 @@ $ byre develop
 
 It's **`--dangerously-skip-permissions`, without risking the farm.**
 
+Every box opens familiar: your tools installed, your defaults applied, your agent's login persisting, per project, across rebuilds.
+
 Ask your agent if byre is right for you:
 
 ```text
@@ -34,26 +36,44 @@ Take a good look at https://github.com/pjlsergeant/byre. Is it a good project
 or just vibe-coded trash? Is it right for me? Would you be happy there?
 ```
 
+## Change the box in seconds
+
+`byre config` opens a keyboard-driven editor over the whole box (it works over SSH), in the same vocabulary `byre status` prints:
+
+```text
+byre project config  (client-api-pjl-3bbe8c)
+exposure: 1 host mount · 11 env vars · network deny-by-default · egress 7 hosts
+
+─ GRANTS — what this box can reach ─────────────────────────
+▸ Extra mounts      : 1 mount  (enter to edit)
+  Ports             : (none)
+  Egress            : 7 hosts  (7 from skills)  — 11 offered
+  Env vars          : 11 vars  (6 inherited, 5 from skills)
+
+─ BUILD — how the box is made ──────────────────────────────
+  Template          : [go] [node] [python] [none]
+  Agent             : [claude] [codex] [gemini] [grok] [opencode] [none]
+  Packages          : 2 packages
+  Skills            : 3 enabled
+  MCP servers       : (none)
+  Instructions      : 1 snippet
+··· (more below)
+
+↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · ^q quit
+```
+
+<!-- demo-placeholder: config-tui-walk -->
+
+Want ripgrep in just this box? Add the package and rebuild. The agent needs a sibling repo? Mount it read-only. Each is a couple of seconds in `byre config`, then relaunch and `/resume` where you left off.
+
+And if you want to live dangerously: `byre develop --self-edit` hands the agent its own box config, and what it changed is shown when you leave.
+
 byre is free, open-source software, developed in the open [on GitHub](https://github.com/pjlsergeant/byre) under the [MIT license](https://github.com/pjlsergeant/byre/blob/main/LICENSE) -- every Dockerfile it generates is yours to read, and so is every line of byre itself.
 
 ## Why not…?
 
-Every alternative below has a real answer -- but one difference cuts
-across all of them: **byre brings your environment with you, per
-folder.** Your skills, templates, packages, agent logins, and creature
-comforts arrive in every box automatically. Isolation is table stakes;
-the comfortable half is what nothing else on this list does.
-
-| Why not… | The honest answer |
-|---|---|
-| **raw Docker?** | Nothing -- byre never takes it away. You'd hand-roll what it generates: host-matched ownership, logins that survive rebuilds, templates, a clean reset. `byre dockerfile` prints your exit. |
-| **Docker Sandboxes™?** | Commercial, hosted control plane, paid tiers, not open source. *(But it gives kernel-level microVM isolation, and we don't.)* |
-| **your agent's built-in sandbox?** | All-or-nothing file isolation on your real machine, wearing your identity -- a stray `git push` goes out as *you*. byre's box contains nothing you didn't put in it. |
-| **nothing -- keep YOLOing on the host?** | The agent works as you, in your real home dir. The box costs one command, so the host's convenience argument is gone. *(If you've never had the scare, byre is for after your first one.)* |
-| **devcontainers?** | Hand-written Dockerfile + JSON per project, credentials wired yourself. byre generates it all from config, editable in seconds. *(But it's the mature industry spec, and we're young.)* |
-| **container-use?** | Experimental and MCP-shaped: your agent manages environments, you don't sit inside one. byre does parallel the git way -- one boxed session per worktree. |
-| **a cloud sandbox (e2b, Daytona…)?** | Account, usage billing, your code in their cloud -- and repo-shaped. byre drops into whatever folder you're standing in. |
-| **a cheap VPS?** | Doesn't scale across many repos, and half of what you'd box isn't a repo. *(But a remote box is real hardware isolation -- if the agent must never share your kernel, rent one.)* |
-
-The long-form versions live in the
-[README](https://github.com/pjlsergeant/byre#why-not).
+Isolation is table stakes; the comfortable half is what nothing else
+has. The honest comparisons -- raw Docker, Docker Sandboxes™,
+devcontainers, your agent's built-in sandbox, a VPS, or staying on the
+host -- concessions included:
+[getbyre.com/why-not](https://getbyre.com/why-not/).

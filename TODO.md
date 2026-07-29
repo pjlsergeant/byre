@@ -58,7 +58,12 @@ the rationale lives.
   presentation: scene pacing, framing, what each demo shows. Revive =
   polish the scenarios, restore the two workflow blocks, re-place the
   {{</* demo */>}} shortcodes. Media tier after: the VM-recorded casts
-  (hero clip on the landing, firewall, worktrees).
+  (hero clip on the landing, firewall, worktrees). Two repositioning
+  requirements (2026-07-29): the hero clip's storyboard must visibly
+  show comfort (familiar tools present, agent already authenticated),
+  not only develop → Claude; and on the landing, config-tui-walk
+  REPLACES the TUI section's curated text block in place -- one moving
+  embed per section, never stacked.
 
 ## Standing
 
@@ -70,6 +75,10 @@ Disciplines and tripwires, not tasks.
     site/content/docs/quickstart.md -- identical blocks.
   - develop launch banner: README hero console block, site landing
     (site/content/_index.md) hero block.
+  - `byre config` console block (configui form): README "Change the box
+    in seconds", site landing -- identical curated blocks, captured from
+    the real editor (tmux capture-pane against a seeded store).
+    Re-verify when the form's sections or footer keys change.
   - install commands: README hero + "Install" (brew, blessed), site
     landing hero (brew), site/content/docs/install.md (all routes).
   - How-do-I tldrs: README index and site cookbook are verbatim-identical
@@ -84,6 +93,11 @@ Disciplines and tripwires, not tasks.
   statement; the plain what-it-is sentence under it is mandatory mitigation.
   If cold readers bounce post-launch, revisit
   (docs/marketing/positioning.md "Voice rules").
+- **Post-launch why-not tripwire (2026-07-29):** the comparisons live
+  on getbyre.com/why-not; README and landing carry only the one-line
+  thesis + pointer strip. If "how is this different from X" becomes the
+  recurring cold-reader question, the strip was not enough -- a summary
+  table returns to the README.
 - **`internal/commands` is never carved (2026-07-16, supersedes the
   carve-as-you-touch tripwire):** commands is the thin adapter layer —
   domain logic lives in domain packages, commands files hold Streams-glue

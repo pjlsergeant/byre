@@ -15,8 +15,10 @@ other surface gets a summary plus a link, never a second copy.
 
 **P2. Canonical homes, by content type.** Conversion copy: `README.md`,
 steered by the positioning doc (`docs/marketing/positioning.md`; the
-landing adapts from it). Operational docs: `site/content/docs/` (this
-repo). Deep reference (architecture, skill authoring, credential
+landing adapts from it). The why-not comparisons:
+`site/content/why-not.md` (a convert page); README and landing carry
+the shared thesis-plus-pointer strip only. Operational docs:
+`site/content/docs/` (this repo). Deep reference (architecture, skill authoring, credential
 mechanics): repo `docs/` -- the site links to these on GitHub, never
 mirrors them. Point-in-time rationale: `docs/adr/`. (The positioning
 doc's header carries the same canonicality rule.)
@@ -34,10 +36,11 @@ makes P3's aggressive trim safe: the README is sized for the human skim.
 
 **P5. Duplicate only the stable.** A fact appears on two surfaces only
 when it changes rarely: the H1 pitch, the blessed install command, the
-develop one-liner, the How-do-I tldrs. Volatile content lives only in
-its canonical home. (The boxed/not-boxed contract left this list when
-the README's copy became a summary-plus-link; whats-boxed.md is its one
-home.)
+develop one-liner, the How-do-I tldrs, the hero comfort fact, the
+why-not strip, the config console block, and the landing's TUI scenario
+subset (a per-line-verbatim subset of the README's). Volatile content lives only in its canonical
+home. (The boxed/not-boxed contract left this list when the README's
+copy became a summary-plus-link; whats-boxed.md is its one home.)
 
 **P6. A README summary is a different genre, not an excerpt -- and
 shared text is verbatim or absent.** README summaries are written for
@@ -54,9 +57,12 @@ output, not transcripts; deriving them from captures would put them in
 the wrong genre.
 
 **P8. Depth links down, never sideways.** README → site `/docs/` → repo
-`docs/`. A repo doc earns a site page only when its audience flips from
-contributor to user (first flip: the security model to
-`/docs/security-model/`; repo SECURITY.md keeps the reporting policy).
+`docs/`. P8 governs serve/depth documentation links; conversion pages
+link laterally between themselves (the convert surfaces' strip points
+at `/why-not/`, per P2). A repo doc earns a site page only when its
+audience flips from contributor to user (first flip: the security model
+to `/docs/security-model/`; repo SECURITY.md keeps the reporting
+policy).
 
 **P9. Pinned artifacts are inventoried.** Every surface showing real
 byre output is a lockstep liability; the status/marketing tripwire in
