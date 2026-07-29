@@ -547,7 +547,7 @@ func refuseDivergentSkillDests(ctxRoot *os.Root, jobs []fileCopy) error {
 			return fmt.Errorf("comparing staged claims on %s: %w", j.dest, err)
 		}
 		if diff != "" {
-			return fmt.Errorf("skills %q and %q both install to %s but their copies differ (%s); the build-order winner would silently replace the loser — ship identical bytes or distinct destinations", first.skill, j.skill, j.dest, diff)
+			return fmt.Errorf("skills %q and %q both install to %s but their copies differ (%s); the build-order winner would silently replace the loser — ship identical copies (bytes and exec bit) or distinct destinations", first.skill, j.skill, j.dest, diff)
 		}
 	}
 	return nil

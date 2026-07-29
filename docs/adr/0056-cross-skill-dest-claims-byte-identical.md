@@ -53,7 +53,11 @@ umask-002 host, and the staged image varied by host umask besides.
 Staging now normalizes regular-file modes git-style (`stageRegularFromFD`):
 0644, or 0755 when the source has any exec bit; an fchmod sets the exact
 bits so byre's own process umask can't leak in either; setuid/setgid/sticky
-drop with the rest (directories were already staged at a constant 0755).
+drop with the rest. Directories stage at 0755 still filtered by the staging
+process's umask — an accepted residual: dir modes are never compared
+between claims (one process, one umask, so they cannot diverge a
+dual-ship), they just remain umask-shaped in the image on exotic-umask
+hosts.
 Only the exec bit of a source mode is authored content — the rest is umask
 noise, and a 0600 "restriction" was already fiction in a world-readable
 image layer.
