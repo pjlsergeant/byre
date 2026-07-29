@@ -1008,10 +1008,10 @@ func copyExactlyAndClose(out io.WriteCloser, in io.Reader, size int64, name stri
 // deliver's REMOTE leg makes the same size promise at send time
 // (internal/deliver/remote.go), separately and deliberately; deliver.local
 // makes none, because it streams a descriptor into the box with nothing to
-// hold the stream to. The shared expectation table
-// (internal/treecopytest) states that difference — growth is n/a for
-// deliver.local — and pins the refusal here through TestTreeCopyTableStageCopy
-// and TestTreeCopyTableCopyPath, which both funnel into this check.
+// hold the stream to. The shared expectation table (internal/treecopytest)
+// marks growth N/A on every route — no route can pose a real mid-copy write
+// deterministically — and the refusal here is pinned directly by
+// TestCopyExactlyRefusesGrowthAndShrink and TestCopyExactlyRefusesMutatedSource.
 func copyExactly(out io.Writer, in io.Reader, size int64, name string) error {
 	n, err := io.Copy(out, io.LimitReader(in, size))
 	if err != nil {
