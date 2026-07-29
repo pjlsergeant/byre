@@ -1,6 +1,6 @@
 package tomldoc
 
-// byre's ONE fuzz target, and the reason is specific to this package: tomldoc
+// byre's ONLY fuzzed package, and the reason is specific to this one: tomldoc
 // edits a document it did not write and hands the result back to be SAVED
 // over the user's file. A wrong answer here is silent -- valid-looking bytes
 // that lose or duplicate a key -- and the loss is the user's, not byre's.
@@ -8,7 +8,9 @@ package tomldoc
 // considered and declined: they read, they fail loudly at parse, and a
 // rejected file changes nothing on disk.
 //
-// The invariants, against a random document crossed with a random edit:
+// Two targets, because the two mutation shapes carry different contracts and
+// so need different oracles. FuzzEdit crosses a random document with a random
+// single-key edit:
 //
 //  1. the result parses under the STRICT decoder -- the one the product loads
 //     config with, which refuses things the expression parser accepts;
@@ -17,6 +19,10 @@ package tomldoc
 //  4. the value an edit wrote is the value that reads back -- the target key
 //     is what invariant 2 excludes, so a renderer that mangles its input
 //     would show up nowhere else.
+//
+// FuzzRemoveTableTree crosses a random document with a whole-tree removal,
+// which writes nothing and so can be held to a byte-level oracle instead: see
+// its own comment.
 
 import (
 	"fmt"
@@ -113,6 +119,123 @@ func FuzzEdit(f *testing.F) {
 			}
 		}
 	})
+}
+
+// FuzzRemoveTableTree fuzzes the whole-tree removal, whose contract is
+// stronger than an edit's and needs a stronger oracle to match. "The output
+// parses clean" is NOT that oracle: a rebuild that dropped a byte from a line
+// it meant to keep, or re-emitted one, would still parse.
+//
+// The oracle is RETAINED SOURCE SPANS. Every span the removal takes is a whole
+// line or a run of them, so what the output may be is exactly the input's line
+// sequence with some lines deleted: each surviving line must be byte-identical
+// to the input line it came from, and the survivors must appear in the input's
+// own order. Alongside that, the semantic pair -- the tree is gone, everything
+// else decodes to what it decoded to before -- and idempotence, since a second
+// removal has nothing left to target.
+func FuzzRemoveTableTree(f *testing.F) {
+	seeds := []struct {
+		src  string
+		name string
+	}{
+		{nasty, "package"},
+		{"[package]\nid = \"x\"\n\n[build]\napt = []\n", "package"},
+		{"[\"package\"]\nid = \"x\"\n[build]\n", "package"},
+		{"['package']\n\n[build]\n", "package"},
+		{"[package] # trailing\nid = \"x\"\n", "package"},
+		{"[package]\nid = \"x\"\n\n[build]\n\n[[package.files]]\nsrc = \"a\"\n", "package"},
+		{"[[\"package\".files]]\nsrc = \"a\"\n\n[['package'.files]]\nsrc = \"b\"\n", "package"},
+		{"package.id = \"x\"\nother = 1\n", "package"},
+		{"package = { id = \"x\" }\nother = 1\n", "package"},
+		{"meta = { package = { id = \"x\" } }\n", "package"},
+		{"# glued\n[package]\nid = \"x\"\n\n# for build\n[build]\napt = []\n", "package"},
+		{"[build]\nd = \"\"\"\n[package]\nid = \"no\"\n\"\"\"\n\n[package]\nid = \"x\"\n", "package"},
+		{"a = [\n  [1, 2],\n]\n\n[package]\n", "package"},
+		{twoMCP, "mcp"},
+		{"[package]\n", "package"},
+		{"", "package"},
+	}
+	for _, s := range seeds {
+		f.Add(s.src, s.name)
+	}
+
+	f.Fuzz(func(t *testing.T, src, name string) {
+		d, err := Load([]byte(src))
+		if err != nil {
+			return // not a document; Load is the gate, not this test
+		}
+		var before map[string]any
+		if err := toml.Unmarshal([]byte(src), &before); err != nil {
+			return // already broken before the removal; nothing to attribute
+		}
+		if err := d.RemoveTableTree(name); err != nil {
+			t.Fatalf("RemoveTableTree(%q) on a clean document: %v\nsrc:\n%s", name, err, src)
+		}
+		out := string(d.Bytes())
+
+		if !linesAreSubsequence(out, src) {
+			t.Fatalf("output lines are not retained source lines\nname=%q\nsrc:\n%q\nout:\n%q", name, src, out)
+		}
+		var after map[string]any
+		if uerr := toml.Unmarshal([]byte(out), &after); uerr != nil {
+			t.Fatalf("removal produced a document the strict decoder refuses: %v\nname=%q\n%s", uerr, name, out)
+		}
+		if _, still := after[name]; still && name != "" {
+			t.Fatalf("the tree %q survived the removal\nsrc:\n%s\nout:\n%s", name, src, out)
+		}
+		if a, b := withoutPath(before, []string{name}), withoutPath(after, []string{name}); a != b {
+			t.Fatalf("keys outside the tree changed\nname=%q\nbefore: %s\nafter:  %s\nsrc:\n%s\nout:\n%s", name, a, b, src, out)
+		}
+		// Idempotent: the second pass has nothing to target, so it must not
+		// move a byte.
+		d2, err := Load([]byte(out))
+		if err != nil {
+			t.Fatalf("removal output does not reload: %v\n%s", err, out)
+		}
+		if err := d2.RemoveTableTree(name); err != nil {
+			t.Fatalf("second removal: %v\n%s", err, out)
+		}
+		if again := string(d2.Bytes()); again != out {
+			t.Fatalf("removal is not idempotent\nfirst:  %q\nsecond: %q", out, again)
+		}
+	})
+}
+
+// linesAreSubsequence reports whether out's lines are, in order and byte for
+// byte, a subsequence of src's. Greedy matching decides it: a line that can be
+// matched earlier never has to be matched later, so failing greedily means
+// failing outright.
+func linesAreSubsequence(out, src string) bool {
+	o, s := linesWithTerminators(out), linesWithTerminators(src)
+	i := 0
+	for _, line := range o {
+		for i < len(s) && s[i] != line {
+			i++
+		}
+		if i == len(s) {
+			return false
+		}
+		i++
+	}
+	return true
+}
+
+// linesWithTerminators splits into lines that KEEP their newline, so an empty
+// document is no lines rather than one empty one, and a final line without a
+// terminator stays distinguishable from one with it. strings.Split cannot say
+// either, and both are ordinary shapes for a document a removal emptied or a
+// file saved without a trailing newline.
+func linesWithTerminators(s string) []string {
+	var out []string
+	for len(s) > 0 {
+		i := strings.IndexByte(s, '\n')
+		if i < 0 {
+			return append(out, s)
+		}
+		out = append(out, s[:i+1])
+		s = s[i+1:]
+	}
+	return out
 }
 
 // withoutPath renders m for comparison with the edit's own path taken out --

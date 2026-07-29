@@ -344,6 +344,173 @@ text = """
 	}
 }
 
+// A pack marker is dropped only when it is ATTACHED to a package.files array
+// header. What counts as one of those headers is the PARSER's answer, so the
+// quoted spellings answer too -- with literal-text matching, a manifest whose
+// files headers were quoted accreted a fresh marker on every re-pack.
+func TestStripPackMarkersAttachment(t *testing.T) {
+	marker := packMarker(KindSkill)
+	other := packMarker(KindTemplate)
+	for _, c := range []struct{ name, src, want string }{
+		{
+			"bare header",
+			marker + "\n[[package.files]]\nsrc = \"a\"\n",
+			"[[package.files]]\nsrc = \"a\"\n",
+		},
+		{
+			"basic-quoted header",
+			marker + "\n[[\"package\".files]]\nsrc = \"a\"\n",
+			"[[\"package\".files]]\nsrc = \"a\"\n",
+		},
+		{
+			"literal-quoted header",
+			marker + "\n[['package'.files]]\nsrc = \"a\"\n",
+			"[['package'.files]]\nsrc = \"a\"\n",
+		},
+		{
+			"stacked markers across blank lines",
+			marker + "\n\n" + other + "\n\n[[package.files]]\nsrc = \"a\"\n",
+			"\n\n[[package.files]]\nsrc = \"a\"\n",
+		},
+		{
+			// A foreign table between the marker and the files list breaks the
+			// attachment: the comment describes [build], not pack's output.
+			"foreign table in between",
+			marker + "\n[build]\napt = []\n\n[[package.files]]\nsrc = \"a\"\n",
+			marker + "\n[build]\napt = []\n\n[[package.files]]\nsrc = \"a\"\n",
+		},
+		{
+			"foreign comment in between",
+			marker + "\n# an author's note\n[[package.files]]\nsrc = \"a\"\n",
+			marker + "\n# an author's note\n[[package.files]]\nsrc = \"a\"\n",
+		},
+		{
+			"no files list at all",
+			"[build]\napt = []\n\n" + marker + "\n",
+			"[build]\napt = []\n\n" + marker + "\n",
+		},
+		{
+			"marker-shaped line inside a multiline string is data",
+			"d = \"\"\"\n" + marker + "\n\"\"\"\n\n[[package.files]]\nsrc = \"a\"\n",
+			"d = \"\"\"\n" + marker + "\n\"\"\"\n\n[[package.files]]\nsrc = \"a\"\n",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := stripPackMarkers(c.src); got != c.want {
+				t.Errorf("got  %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The body splits at its first REAL header. A multiline array's continuation
+// line may begin with '[' -- the line scanner this replaced split there,
+// cutting the array in half and emitting the fragments on either side of the
+// [package] header.
+func TestSplitLeadingTopLevel(t *testing.T) {
+	for _, c := range []struct{ name, body, pre, tables string }{
+		{"no header", "a = 1\nb = 2\n", "a = 1\nb = 2\n", ""},
+		{"header first", "[build]\napt = []\n", "", "[build]\napt = []\n"},
+		{
+			"multiline array continuation",
+			"matrix = [\n  [1, 2],\n  [3, 4],\n]\n\n[build]\napt = []\n",
+			"matrix = [\n  [1, 2],\n  [3, 4],\n]\n\n",
+			"[build]\napt = []\n",
+		},
+		{
+			"header-shaped line in a multiline string",
+			"d = \"\"\"\n[build]\n\"\"\"\n\n[real]\nx = 1\n",
+			"d = \"\"\"\n[build]\n\"\"\"\n\n",
+			"[real]\nx = 1\n",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pre, tables := splitLeadingTopLevel(c.body)
+			if pre != c.pre || tables != c.tables {
+				t.Errorf("pre  = %q, want %q\ntables = %q, want %q", pre, c.pre, tables, c.tables)
+			}
+		})
+	}
+}
+
+// Pack is a fixed point over NONCANONICAL sources too: a quoted [package]
+// header, quoted files headers with a stale marker above them, and a preamble
+// bare key whose multiline array has continuation lines starting with '['.
+// The FIRST pack of such a source is deliberately not its own input -- pack
+// normalizes the core and regenerates the list -- but the SECOND must
+// reproduce the first, bytes and digest.
+func TestPackIsFixedPointOverNoncanonicalInput(t *testing.T) {
+	home := t.TempDir()
+	dir := writeLocalSkill(t, home, "pete/tool", map[string]string{
+		"skill.toml": `# a companion of the codex agent skill
+companion_for = "codex"
+matrix = [
+  [1, 2],
+  [3, 4],
+]
+
+["package"]
+id = "pete/tool"
+version = "1.0.0"
+requires_byre = ">=0.1.0"
+
+[build]
+apt = ["curl"]
+
+` + packMarker(KindSkill) + `
+[["package".files]]
+src = "stale"
+dest = "stale"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+`,
+		"install.sh": "#!/bin/sh\n",
+	})
+	packOnce := func(t *testing.T) ([]byte, string) {
+		t.Helper()
+		cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ent, err := cat.ResolveName("pete/tool")
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest, digest, err := Pack(ent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return manifest, digest
+	}
+	first, digest1 := packOnce(t)
+	s := string(first)
+	if got := strings.Count(s, packMarker(KindSkill)); got != 1 {
+		t.Fatalf("marker appears %d times, want exactly 1 (the quoted files header let it accrete):\n%s", got, s)
+	}
+	if strings.Contains(s, `src = "stale"`) || strings.Contains(s, `["package"]`) {
+		t.Fatalf("the quoted package tree survived the strip:\n%s", s)
+	}
+	// The preamble key and its multiline array come through whole, and BEFORE
+	// the [package] header -- after it they would read as package.* keys.
+	if !strings.Contains(s, "matrix = [\n  [1, 2],\n  [3, 4],\n]\n") {
+		t.Fatalf("the multiline array was cut:\n%s", s)
+	}
+	keyAt, hdrAt := strings.Index(s, `companion_for = "codex"`), strings.Index(s, "[package]")
+	if keyAt < 0 || hdrAt < 0 || keyAt > hdrAt {
+		t.Fatalf("preamble keys must precede [package] (key %d, header %d):\n%s", keyAt, hdrAt, s)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "skill.toml"), first, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, digest2 := packOnce(t)
+	if string(second) != string(first) {
+		t.Errorf("re-pack changed the manifest:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+	if digest2 != digest1 {
+		t.Errorf("re-pack changed the digest: %s -> %s", digest1, digest2)
+	}
+}
+
 // A top-level bare key (companion_for, shared_auth_for) is only such while it
 // precedes every table header: TOML scopes a bare key to the most recent
 // header, so the same line emitted after [package] reads as a package.* key,

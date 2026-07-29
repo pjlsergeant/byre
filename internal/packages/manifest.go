@@ -5,11 +5,20 @@ import (
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
+
+	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
 // PackageAPI is the manifest-format contract byre currently understands.
 // Bump only when the frozen [package] core itself changes.
 const PackageAPI = 1
+
+// packageTree is the root key whose whole subtree is the manifest core:
+// [package], [package.x], [[package.files]], `package.id = ...`, and every
+// quoted spelling of those. Structural judgments about it ride tomldoc's
+// parse -- never a text search, which cannot tell ["package"] from a
+// `[package]` line inside a Dockerfile heredoc.
+const packageTree = "package"
 
 // Manifest is the frozen [package] core, shared by skills and templates.
 // Stage-1 parse reads only these fields, leniently, for compatibility checks.
@@ -30,6 +39,12 @@ type packageRoot struct {
 // ParseManifestCore is stage 1: extract [package] leniently (unknown keys
 // outside and inside [package] are ignored). Missing [package] returns a
 // zero Manifest and ok=false -- local packages may omit it.
+//
+// Malformed TOML is an ERROR, never "absent": a manifest byre cannot parse is
+// a manifest byre must not silently treat as a package-less local directory.
+// Presence, when the decoded core is all-zero, is the PARSED document's answer
+// -- any expression defining the package tree, empty and quoted tables
+// included -- so `["package"]` with nothing under it reads as present.
 func ParseManifestCore(content []byte) (m Manifest, ok bool, err error) {
 	var root packageRoot
 	// Lenient: do NOT check Undecoded. Stage 1 must survive a newer package
@@ -38,10 +53,19 @@ func ParseManifestCore(content []byte) (m Manifest, ok bool, err error) {
 		return Manifest{}, false, fmt.Errorf("parse [package]: %w", err)
 	}
 	if root.Package == (Manifest{}) {
-		// Distinguish "no [package] table" from "empty table": either way the
-		// caller treats it as absent for local packages. An all-zero table is
-		// not useful content.
-		if !strings.Contains(string(content), "[package]") {
+		// An all-zero core is either "no package tree at all" or "a tree that
+		// declares no fields byre reads", and those answer differently: only
+		// the first is ABSENT. A manifest carrying `["package"]` or a files
+		// list and nothing else has declared itself a package, and the callers
+		// that branch on ok -- local ingest, Acquire -- must see it as one.
+		doc, derr := tomldoc.Load(content)
+		if derr != nil {
+			// The strict decoder above accepted these bytes, so this is byre's
+			// own parser disagreeing with itself -- report it rather than
+			// guessing at absence.
+			return Manifest{}, false, fmt.Errorf("parse [package]: %w", derr)
+		}
+		if !doc.HasTableTree(packageTree) {
 			return Manifest{}, false, nil
 		}
 	}
@@ -109,51 +133,28 @@ func RequiredManifestFields(m Manifest) error {
 	return nil
 }
 
-// StripPackageTable returns content with the [package] table removed so the
-// remainder can be strict-parsed as a skill.toml body or a cascade Config
-// (template.config). Handles a trailing table at EOF and mid-file tables;
-// only top-level [package] (not [package.files]) is stripped as a whole
-// section including nested [[package.files]] etc. -- anything under the
-// package key prefix until the next top-level non-package header.
+// StripPackageTable returns content with the whole package tree removed so
+// the remainder can be strict-parsed as a skill.toml body or a cascade Config
+// (template.config). It is a compatibility wrapper over
+// tomldoc.RemoveTableTree, which owns the operation: [package], nested
+// [package.x], [[package.files]] blocks wherever they resume, dotted and
+// inline spellings, every quoted variant, and the glued comments that describe
+// them. Bytes outside those constructs -- including a comment attached to the
+// header that FOLLOWS a removed block -- come through identically.
 //
-// Header detection is multiline-string-aware (tomlStringState): a line that
-// merely LOOKS like a header inside a """/”' value — a `[package]` in a
-// Dockerfile heredoc, say — is data, neither starting nor ending a section.
-// Lines inside a multiline string that belongs to the package table are
-// stripped with it.
-//
-// For phase 1 there are no [[package.files]] in bundled/local manifests;
-// the strip still removes contiguous package.* headers so stage-2 parsers
-// that reject unknown keys do not see them.
+// The signature never errors, so it cannot report a document it could not
+// parse; it returns such input UNCHANGED. That is not a repair: the caller's
+// stage-2 parse then meets the same bytes and fails loudly with a position,
+// which is where an unparseable manifest belongs.
 func StripPackageTable(content []byte) []byte {
-	lines := strings.Split(string(content), "\n")
-	var out []string
-	inPackage := false
-	state := tomlOutside
-	for _, line := range lines {
-		atLineStart := state
-		state = state.advance(line)
-		trim := strings.TrimSpace(line)
-		if atLineStart == tomlOutside && strings.HasPrefix(trim, "[") {
-			// Top-level table header?
-			name := strings.TrimSuffix(strings.TrimPrefix(trim, "["), "]")
-			name = strings.TrimSpace(name)
-			// [package] or [package.something] or [[package.files]]
-			base := strings.TrimPrefix(name, "[")
-			base = strings.TrimSuffix(base, "]")
-			if base == "package" || strings.HasPrefix(base, "package.") {
-				inPackage = true
-				continue
-			}
-			// Any other table ends the package section.
-			inPackage = false
-		}
-		if inPackage {
-			continue
-		}
-		out = append(out, line)
+	d, err := tomldoc.Load(content)
+	if err != nil {
+		return append([]byte(nil), content...)
 	}
-	return []byte(strings.Join(out, "\n"))
+	if err := d.RemoveTableTree(packageTree); err != nil {
+		return append([]byte(nil), content...)
+	}
+	return d.Bytes()
 }
 
 // GenerateBundledHeader returns the [package] TOML block injected into bundled

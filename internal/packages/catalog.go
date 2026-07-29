@@ -183,6 +183,12 @@ func (c *Catalog) loadBundled(bundled fs.FS) error {
 				RequiresByre: ">=" + trimV(c.CompatVer),
 				Description:  desc,
 			}
+			// The parse error is suppressed because this call reads ONE
+			// diagnostic field off an already-synthesized core. A bundled
+			// manifest byre cannot parse is a byre bug, and it fails loudly
+			// where it matters -- the stage-2 hooks below, and the golden
+			// builtins tests -- so refusing to show a description here would
+			// only hide a working entry behind a defect it does not have.
 			if core, ok, _ := ParseManifestCore(raw); ok {
 				if core.Description != "" {
 					m.Description = core.Description
@@ -297,7 +303,11 @@ func (c *Catalog) loadInstalled() error {
 
 // peekDescription pulls a top-level description = "..." from a primary file
 // without a full parse (bundled skill.tomls put description outside [package]
-// today). Best-effort; empty on failure.
+// today). Best-effort by design: the value is one row of display text, and
+// every caller has already decided the entry's fate by other means -- an
+// unparseable manifest is refused or marked INVALID by the code that called
+// this, so a parse error here would be reported twice or, worse, turn a
+// missing description into a load failure. Empty on failure.
 func peekDescription(raw []byte) string {
 	if m, ok, err := ParseManifestCore(raw); err == nil && ok && m.Description != "" {
 		return m.Description

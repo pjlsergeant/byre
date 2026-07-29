@@ -456,8 +456,15 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 		return err
 	}
 	// Strip any existing [package] and write a local-style primary with a
-	// provenance comment + declared id.
+	// provenance comment + declared id. The strip returns unreadable input
+	// UNCHANGED (every other consumer has a strict parse behind it that then
+	// fails loudly) — here nothing re-parses before publishing, so verify the
+	// strip took: a fork must not ship the source's [package] table under the
+	// new header.
 	body = packages.StripPackageTable(body)
+	if _, ok, err := packages.ParseManifestCore(body); err != nil || ok {
+		return fmt.Errorf("forking %s: its primary did not parse, so the old [package] header cannot be stripped — fix the source package first", src.ID)
+	}
 	header := fmt.Sprintf(
 		"# Forked from %s@%s\n# Informational only: byre never reads this for resolution, updates, or trust.\n\n[package]\nid = %q\nkind = %q\n\n",
 		src.ID, src.Version, newID, kind,

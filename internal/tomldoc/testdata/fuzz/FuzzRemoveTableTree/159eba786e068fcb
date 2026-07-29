@@ -1,0 +1,3 @@
+go test fuzz v1
+string("[0]#000000000\n00= \"0\"")
+string("0")

@@ -35,6 +35,70 @@ func TestParseManifestCoreAbsent(t *testing.T) {
 	}
 }
 
+// An EMPTY package table is present, however it is spelled. The text search
+// this replaced saw only the one unquoted spelling, so `["package"]` with
+// nothing under it read as "no package block at all" -- and an installed
+// package with an empty core would have been treated as a local directory.
+func TestParseManifestCoreEmptyTableIsPresent(t *testing.T) {
+	for _, src := range []string{
+		"[package]\n",
+		"[\"package\"]\n",
+		"['package']\n",
+		"[\"package\".meta]\nnote = \"x\"\n",
+		"[[package.files]]\nsrc = \"a\"\ndest = \"a\"\nsha256 = \"\"\n",
+	} {
+		m, ok, err := ParseManifestCore([]byte(src))
+		if err != nil {
+			t.Errorf("%q: %v", src, err)
+			continue
+		}
+		if !ok {
+			t.Errorf("%q: reported absent; an empty package tree is still declared", src)
+		}
+		if m != (Manifest{}) {
+			t.Errorf("%q: core = %+v, want zero", src, m)
+		}
+	}
+}
+
+// Dotted and inline spellings of the core decode like any other, and are
+// present.
+func TestParseManifestCoreDottedAndInline(t *testing.T) {
+	for _, src := range []string{
+		"package.id = \"pete/x\"\n",
+		"package = { id = \"pete/x\" }\n",
+	} {
+		m, ok, err := ParseManifestCore([]byte(src))
+		if err != nil || !ok || m.ID != "pete/x" {
+			t.Errorf("%q: ok=%v m=%+v err=%v", src, ok, m, err)
+		}
+	}
+}
+
+// Malformed TOML is an ERROR on the stage-1 path, never "package absent":
+// reading it as absent would let an unparseable manifest through as a
+// package-less local directory instead of failing at the door.
+func TestParseManifestCoreMalformedIsError(t *testing.T) {
+	for _, src := range []string{
+		"[package\nid = \"x\"\n",
+		"id = \n",
+		"[package]\nid = \"x\"\n[package]\nid = \"y\"\n",
+		"description = \"unterminated\n",
+	} {
+		m, ok, err := ParseManifestCore([]byte(src))
+		if err == nil {
+			t.Errorf("%q: want an error, got ok=%v m=%+v", src, ok, m)
+			continue
+		}
+		if ok {
+			t.Errorf("%q: an error must not also report presence", src)
+		}
+		if !strings.Contains(err.Error(), "parse [package]") {
+			t.Errorf("%q: error does not name the stage-1 parse: %v", src, err)
+		}
+	}
+}
+
 func TestCheckCompatibility(t *testing.T) {
 	m := Manifest{PackageAPI: 1, RequiresByre: ">=0.2.0"}
 	if err := CheckCompatibility(m, "0.2.1"); err != nil {
@@ -136,6 +200,90 @@ env = { K = "v" }
 		if strings.Contains(out, `id = "owner/example"`) {
 			t.Errorf("%s: real [package] table survived:\n%s", c.name, out)
 		}
+	}
+}
+
+// Every spelling of the package tree is the package tree: quoted headers,
+// quoted-dotted subtables, a trailing comment on the header line, dotted and
+// inline forms, and files blocks that resume after an intervening foreign
+// table. The line scanner this replaced missed all of them.
+func TestStripPackageTableSpellings(t *testing.T) {
+	for _, c := range []struct{ name, src, want string }{
+		{
+			"quoted header",
+			"[\"package\"]\nid = \"x\"\n\n[build]\napt = [\"a\"]\n",
+			"\n[build]\napt = [\"a\"]\n",
+		},
+		{
+			"literal-quoted header",
+			"['package']\nid = \"x\"\n\n[build]\napt = [\"a\"]\n",
+			"\n[build]\napt = [\"a\"]\n",
+		},
+		{
+			"quoted dotted subtable",
+			"[\"package\".meta]\nnote = \"x\"\n\n[build]\napt = [\"a\"]\n",
+			"\n[build]\napt = [\"a\"]\n",
+		},
+		{
+			"trailing comment on the header",
+			"[package] # the frozen core\nid = \"x\"\n\n[build]\napt = [\"a\"]\n",
+			"\n[build]\napt = [\"a\"]\n",
+		},
+		{
+			"non-contiguous files blocks after a foreign table",
+			"[package]\nid = \"x\"\n\n[build]\napt = [\"a\"]\n\n[[package.files]]\nsrc = \"a\"\n\n[[\"package\".files]]\nsrc = \"b\"\n",
+			"\n[build]\napt = [\"a\"]\n\n\n",
+		},
+		{
+			"top-level dotted key",
+			"package.id = \"x\"\ndescription = \"hi\"\n\n[build]\napt = [\"a\"]\n",
+			"description = \"hi\"\n\n[build]\napt = [\"a\"]\n",
+		},
+		{
+			"inline table",
+			"package = { id = \"x\" }\ndescription = \"hi\"\n",
+			"description = \"hi\"\n",
+		},
+		{
+			// meta.package's root is meta: the strip has no claim on it.
+			"nested inline member is not the package tree",
+			"meta = { package = { id = \"x\" } }\ndescription = \"hi\"\n",
+			"meta = { package = { id = \"x\" } }\ndescription = \"hi\"\n",
+		},
+		{
+			// A multiline array's continuation line can begin with '[', and a
+			// header-shaped line can sit inside a multiline string; neither is
+			// structure.
+			"header-shaped text in values",
+			"matrix = [\n  [1, 2],\n]\nd = \"\"\"\n[package]\nid = \"no\"\n\"\"\"\n\n[package]\nid = \"x\"\n",
+			"matrix = [\n  [1, 2],\n]\nd = \"\"\"\n[package]\nid = \"no\"\n\"\"\"\n\n",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := string(StripPackageTable([]byte(c.src))); got != c.want {
+				t.Errorf("got  %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The comment above the table that FOLLOWS a removed package block describes
+// that table, not the block: it comes through byte for byte.
+func TestStripPackageTableKeepsTheNextTablesComment(t *testing.T) {
+	src := "# describes the core\n[package]\nid = \"x\"\n\n# describes the build\n[build]\napt = [\"a\"]\n"
+	want := "\n# describes the build\n[build]\napt = [\"a\"]\n"
+	if got := string(StripPackageTable([]byte(src))); got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+// The signature cannot report a parse failure, so it reports nothing: input it
+// could not read comes back unchanged, for the caller's strict stage-2 parse
+// to refuse with a position.
+func TestStripPackageTableReturnsUnreadableInputUnchanged(t *testing.T) {
+	src := "[package\nid = \"x\"\n"
+	if got := string(StripPackageTable([]byte(src))); got != src {
+		t.Errorf("got %q, want the input unchanged (%q)", got, src)
 	}
 }
 

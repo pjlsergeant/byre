@@ -304,7 +304,14 @@ To modify a bundled package, fork it:
 }
 
 // mirrorPrimary rewrites a primary file for the mirror: strip any existing
-// [package] table and prepend a generated header.
+// package tree and prepend a generated header.
+//
+// No strict parse stands behind the strip here, unlike every other consumer:
+// the mirror is display-only (ADR 0029), written from bytes byre SHIPS. A
+// bundled manifest the strip cannot read comes through whole, so the header
+// would be prepended to a file that still declares its own [package] -- and
+// that is a defect in this repo's own skills, caught by the builtins golden
+// tests long before a mirror is written.
 func mirrorPrimary(embedPath string, raw []byte, byreVer string) []byte {
 	// embedPath like skills/claude/skill.toml or templates/go/template.config
 	parts := strings.Split(filepath.ToSlash(embedPath), "/")
