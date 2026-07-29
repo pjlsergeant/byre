@@ -174,15 +174,6 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			fmt.Fprintf(s.Err, "   this store is the REPO's, shared with %s and every other worktree of it — not scoped to this worktree.\n", paths.Canonical)
 		}
 	}
-	// Everything the config decides is read, derived and used inside the lock
-	// below. These carry the results back out to the launch: the netns hooks
-	// run alongside the attached session, and the exposure banner speaks for
-	// the box that was created.
-	var hostEnv []hostEnvResult
-	var hooks []skills.NetnsHook
-	var netnsLabel string
-	var netnsEnv map[string]string
-
 	// Setup (generate + build + seed) AND container creation are serialized by
 	// the lock; the interactive session that follows is not (the lock is
 	// per-project, and sibling worktrees running concurrently is the point).
@@ -192,156 +183,15 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// lock and must dissolve that marker (clearSessionMarkers) before touching
 	// volumes; if one does, the start below fails loudly instead of the
 	// session launching against wiped, engine-recreated volumes.
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		// Re-establish enrollment UNDER the lock before any store/engine mutation.
-		// develop resolved config/skills BEFORE taking the lock, so a concurrent
-		// `byre forget` could have cleared the store (path record included) while
-		// we waited; building now would resurrect a forgotten project.
-		if err := requireRecorded(paths); err != nil {
-			return err
-		}
-		// The authoritative read of the config cascade and the skill set. The
-		// editor's save takes THIS lock, so a save that landed while develop
-		// waited for it is the configuration that launches -- re-reading here
-		// doesn't merely detect that drift, it resolves it. rv is REPLACED, not
-		// shadowed: the build, the seed, the run params and (after the lock) the
-		// exposure banner and containment lines all describe the box that was
-		// actually created, never the one develop set out to create.
-		fresh, err := rv.refresh()
-		if err != nil {
-			return err
-		}
-		// The engine is the one thing this re-read cannot honor -- develop's
-		// ADR 0004 peer set is fixed by the pre-lock detection too -- so the
-		// shared refusal fires before anything is built.
-		if err := refuseEngineChangedUnderLock(fresh.cfg, r.Engine(), "develop"); err != nil {
-			return err
-		}
-		rv = fresh
-		// The build warnings speak for the config that is about to be built,
-		// which is this one.
-		warnNonDebianBase(s.Err, rv.cfg.Base)
-		warnGuardCollisions(s.Err, rv.cfg, rv.skills)
-		warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
-		// One host-env resolution feeds the runtime env, the exposure tally,
-		// and (in status) the row -- render-from-effect, no re-derivation.
-		hostEnv = resolveHostEnv(rv.cfg, rv.gitExe)
-		params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
-		if err != nil {
-			return err
-		}
-		// Netns-hook plumbing is decided before the container exists: the
-		// per-invocation nonce label is the hooks' ownership proof (see naming.go)
-		// and must be on the CREATE argv below. Without a nonce (no randomness)
-		// the hooks are skipped and the launch gate fails the launch closed.
-		hooks = rv.skills.NetnsInits()
-		if len(hooks) > 0 {
-			if nonce := runNonce(); nonce != "" {
-				netnsLabel = runKey + "=" + nonce
-				params.Labels = append(params.Labels, netnsLabel)
-				// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
-				// union of every enabled skill's declared egress plus the config
-				// `egress` key (ADR 0019) — computed here, so it can't come from
-				// baked image ENV. Copy params.Env so keys added below don't leak
-				// into the box's own runtime env. (Under an allowlist posture the
-				// box ALSO carries BYRE_EGRESS — runParams set it there so the
-				// launcher announces the list in agent memory; same value, so the
-				// overwrite below is a no-op on that path.)
-				netnsEnv = make(map[string]string, len(params.Env)+1)
-				for k, v := range params.Env {
-					netnsEnv[k] = v
-				}
-				netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
-				// The config's `!host[:port]` closures, as written (portless =
-				// every port). The deny-by-default helper never reads this (its
-				// allowlist above is already subtracted); the open-denylist
-				// helper drops exactly these.
-				netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
-			} else {
-				fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
-			}
-		}
-		// Single-session across an engine switch (ADR 0004): under the lock, refuse
-		// if a competing box exists on another installed engine. The per-worktree
-		// engine record scopes the query (crossEnginesToCheck): steady state skips
-		// it entirely, a recorded switch narrows it to the engines a prior session
-		// implicated, and a missing/invalid record widens it to every other
-		// installed engine (#4 ruling, 2026-07-22 -- no ambient "podman isn't
-		// reachable" note on every develop beside an installed-but-stopped engine).
-		toCheck, tracked := crossEnginesToCheck(s.Err, rv.otherEngines, r.Engine(), paths)
-		skipped, err := refuseCrossEngineSession(s.Err, toCheck, rv.declinedEngines, r.Engine(), paths)
-		if err != nil {
-			return err
-		}
-		// Single-WRITER, where the check above is single-SESSION. A volume may
-		// declare `sharing = "exclusive"`, and sibling worktrees mount the
-		// identical project-scoped volume set by construction (ADR 0009), so
-		// this asks the siblings' launch records what they are actually
-		// holding. Placed with the other gates -- before the engine record,
-		// the build and the seed -- so a refusal leaves the store exactly as
-		// it found it.
-		if err := refuseExclusiveVolumeHolders(s.Err, paths, os.Getuid(), rv.volumes, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines); err != nil {
-			return err
-		}
-		// Only after sole-session is established: a refusal above must leave the
-		// record pointing at the engine that still holds the session. An engine
-		// skipped as unreachable stays UNRESOLVED in the record -- but only when
-		// the record implicated it (tracked); an untracked check carries no prior
-		// session's claim, so its skips are disclosed above and not carried.
-		if !tracked {
-			skipped = nil
-		}
-		recordSessionEngine(s.Err, paths, r.Engine(), skipped)
-		if berr := buildImageWarn(s.Err, r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
-			return berr
-		}
-		// Seed fresh state volumes that declare a config-level seed, using the
-		// image we just built. One-time; existing volumes are left alone.
-		if err := seedVolumes(r, s.Err, paths, image, rv.volumes, ident); err != nil {
-			return err
-		}
-		// Opt-in: seed the agent's curated non-secret prefs into its fresh state
-		// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
-		if p := rv.skills.AgentPrefs(); rv.cfg.SeedPrefsEnabled() && p != nil {
-			if err := seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, ident); err != nil {
-				return err
-			}
-		}
-		// sock_groups: engine-side gid probe (needs the just-built image) +
-		// host-source warning (engine stays the authority; Desktop suppressed).
-		// Must land on params before Create so --group-add is on the argv.
-		warnSockSources(r, s.Err, params, rv.skills)
-		applySockGroups(r, s.Err, image, &params, rv.skills)
-		// The launch record: what byre is about to tell the engine, made
-		// durable and addressable, so `byre status` can describe THIS box for
-		// as long as it runs instead of re-resolving the config. Written last
-		// under the lock, from the same params Create receives, so nothing
-		// between here and the create can move underneath it. A write failure
-		// degrades (the box still launches; status falls back to the config).
-		launchLabel, launchHash := recordLaunch(s.Err, paths, launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base)))
-		if launchLabel != "" {
-			params.Labels = append(params.Labels, launchLabel)
-		}
-		// The container name makes the session atomic: losing the name means a
-		// concurrent develop won the race (a session is now live — report it)
-		// or a leftover container holds it (say which and how to clear it).
-		if cerr := r.Create(runner.CreateArgs(params)); cerr != nil {
-			if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
-				reportRunning(s.Err, r.Engine(), live)
-				return ExitError{Code: ExitRefused} // refused, session already live
-			}
-			return fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
-		}
-		// Records outlive their containers otherwise: this is the only moment
-		// byre holds the lock AND knows which containers of the project exist.
-		// Opportunistic by construction -- nothing here can fail the launch.
-		// Every engine byre can see, not just this one: sibling worktrees share
-		// this store and may run on the other engine, and their records are not
-		// ours to delete. The peer set is the one develop already resolved for
-		// the ADR 0004 check, so this costs no new host probing.
-		reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
-		return nil
-	}); err != nil {
+	//
+	// Everything after this call reads ONLY prep — the rv this function was
+	// handed is the pre-lock read, stale by contract once the authoritative
+	// re-read under the lock has happened (prep.rv is that re-read). prep's
+	// fields are read-only from here.
+	prep, err := setupLocked(s.Err, paths.LockFile, func() (preparedLaunch, error) {
+		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident)
+	})
+	if err != nil {
 		return err
 	}
 
@@ -355,7 +205,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// Same timing, same reason, for the places the HOST runs code from (ADR
 	// 0047): after byre's own setup, so the exit report shows the session's
 	// changes rather than byre's staging.
-	watch := snapshotExit(paths, rv.gitExe)
+	watch := snapshotExit(paths, prep.rv.gitExe)
 
 	// Every real session opens by showing the walls going up: the terse
 	// exposure lines. Printed only once the container exists — a launch that
@@ -363,12 +213,12 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// warning above is consciously pre-create: it guards a decision, not a
 	// session.) The config UI renders the same tally (config.Exposure owns the
 	// words); `byre status` is the detailed, attributed view.
-	exp := exposureOf(rv, selfEdit, hostEnv)
+	exp := exposureOf(prep.rv, selfEdit, prep.hostEnv)
 	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
 	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
 	// Containment holes (e.g. docker-host): loud standing grant, at least
 	// self-edit's 🛑 weight. Skill-owned text; byre frames and attributes.
-	for _, c := range rv.skills.Containments() {
+	for _, c := range prep.rv.skills.Containments() {
 		fmt.Fprintf(s.Err, "byre: 🛑 containment hole: %s  (skill: %s)\n", c.Text, c.Skill)
 	}
 	// Netns-init hooks (e.g. the firewall skill's rules) are applied from
@@ -377,12 +227,12 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// the session keeps the goroutine from outliving develop (and its s.Err
 	// writes).
 	var netnsWait func()
-	if len(hooks) > 0 && netnsLabel != "" {
+	if len(prep.hooks) > 0 && prep.netnsLabel != "" {
 		done := make(chan struct{})
 		finished := make(chan struct{})
 		go func() {
 			defer close(finished)
-			runNetnsInits(r, s.Err, netnsLabel, image, hooks, netnsEnv, ident.KeepID, done)
+			runNetnsInits(r, s.Err, prep.netnsLabel, image, prep.hooks, prep.netnsEnv, ident.KeepID, done)
 		}()
 		netnsWait = func() { close(done); <-finished }
 	}
@@ -415,7 +265,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if selfEdit {
 			reportSelfEditChanges(s.Err, paths.Dir, store)
 		}
-		reportExit(s.Err, watch, snapshotExit(paths, rv.gitExe))
+		reportExit(s.Err, watch, snapshotExit(paths, prep.rv.gitExe))
 	}
 	if runErr != nil {
 		if len(live) > 0 {
@@ -427,42 +277,221 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// forceless rm can't kill a running session, and after a normal agent
 		// exit the container is already gone — both failures are ignorable.
 		_ = r.ContainerRemove(containerName(paths))
-		// Distinguish the agent/container's own exit from a byre failure. The
-		// 125-127 band docker RUN reserves for engine-level failures is not
-		// reserved on THIS path: the session is create + `start --attach`, and
-		// start reports an engine-level failure (the marker container removed
-		// by a concurrent reset, say) as exit 1 with the cause on stderr. So
-		// every code the engine hands back below 128 is the agent's own status
-		// and passes through unbannered — including 126 and 127, which an
-		// agent's own shell spends on "not executable" and "not found".
-		// A signal-terminated process (ExitCode() == -1) and a non-ExitError
-		// failure (the engine binary itself could not run) stay byre errors.
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			code := exitErr.ExitCode()
-			if code >= 0 && code <= 127 {
-				return ExitError{Code: code}
-			}
-			// 128+n usually means the box died on signal n. The bare "exit
-			// status 137" reads like a byre bug to the person whose box just
-			// vanished; decode it. Only SIGKILL supports the strong
-			// killed-out-from-under diagnosis (docker rm -f, engine shutdown,
-			// the OOM killer — nothing in a box's normal life SIGKILLs its
-			// PID 1). The convention is ambiguous for the rest — a process
-			// can literally exit(130) with no signal involved — so other
-			// codes in the signal range (1-31 classic, through 64 for Linux
-			// realtime signals) decode tentatively, and codes beyond it
-			// can't be signals and stay undecoded.
-			if code == 128+9 {
-				return fmt.Errorf("exit status %d (SIGKILL — the box was killed out from under the session: removed externally, engine shutdown, or the kernel OOM killer)", code)
-			}
-			if code > 128 && code <= 128+64 {
-				return fmt.Errorf("exit status %d (possibly %s)", code, signalName(code-128))
-			}
-		}
-		return runErr
+		return decodeAgentExit(runErr)
 	}
 	return nil
+}
+
+// preparedLaunch is what the locked setup phase hands to the launch. rv is the
+// AUTHORITATIVE resolution — the one re-read under the lock, describing the
+// box that was actually created — and post-lock code reads only this struct:
+// the rv develop entered with is stale by contract (the editor's save may have
+// landed while develop waited for the lock). The netns fields carry the hook
+// plumbing whose labels are already on the created container's argv.
+type preparedLaunch struct {
+	rv         resolved
+	hostEnv    []hostEnvResult
+	hooks      []skills.NetnsHook
+	netnsLabel string
+	netnsEnv   map[string]string
+}
+
+// prepareLaunchLocked is the setup-lock body of develop: re-enroll, the
+// authoritative config re-read, the refusal gates, the build, the seed, the
+// launch record, and container creation — in an order that is the contract
+// (see the comments at each step). It runs entirely under the setup lock —
+// container Create and record reaping included, because the created container
+// is the session-ownership marker (never hoist them out). The preparedLaunch
+// is built only on the all-success path.
+func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity) (preparedLaunch, error) {
+	none := preparedLaunch{}
+	// Re-establish enrollment UNDER the lock before any store/engine mutation.
+	// develop resolved config/skills BEFORE taking the lock, so a concurrent
+	// `byre forget` could have cleared the store (path record included) while
+	// we waited; building now would resurrect a forgotten project.
+	if err := requireRecorded(paths); err != nil {
+		return none, err
+	}
+	// The authoritative read of the config cascade and the skill set. The
+	// editor's save takes THIS lock, so a save that landed while develop
+	// waited for it is the configuration that launches -- re-reading here
+	// doesn't merely detect that drift, it resolves it. rv is REPLACED, not
+	// shadowed: the build, the seed, the run params and (after the lock) the
+	// exposure banner and containment lines all describe the box that was
+	// actually created, never the one develop set out to create.
+	fresh, err := rv.refresh()
+	if err != nil {
+		return none, err
+	}
+	// The engine is the one thing this re-read cannot honor -- develop's
+	// ADR 0004 peer set is fixed by the pre-lock detection too -- so the
+	// shared refusal fires before anything is built.
+	if err := refuseEngineChangedUnderLock(fresh.cfg, r.Engine(), "develop"); err != nil {
+		return none, err
+	}
+	rv = fresh
+	// The build warnings speak for the config that is about to be built,
+	// which is this one.
+	warnNonDebianBase(s.Err, rv.cfg.Base)
+	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
+	warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
+	// One host-env resolution feeds the runtime env, the exposure tally,
+	// and (in status) the row -- render-from-effect, no re-derivation.
+	hostEnv := resolveHostEnv(rv.cfg, rv.gitExe)
+	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
+	if err != nil {
+		return none, err
+	}
+	// Netns-hook plumbing is decided before the container exists: the
+	// per-invocation nonce label is the hooks' ownership proof (see naming.go)
+	// and must be on the CREATE argv below. Without a nonce (no randomness)
+	// the hooks are skipped and the launch gate fails the launch closed.
+	hooks := rv.skills.NetnsInits()
+	var netnsLabel string
+	var netnsEnv map[string]string
+	if len(hooks) > 0 {
+		if nonce := runNonce(); nonce != "" {
+			netnsLabel = runKey + "=" + nonce
+			params.Labels = append(params.Labels, netnsLabel)
+			// The netns helper needs the resolved allowlist. BYRE_EGRESS is the
+			// union of every enabled skill's declared egress plus the config
+			// `egress` key (ADR 0019) — computed here, so it can't come from
+			// baked image ENV. Copy params.Env so keys added below don't leak
+			// into the box's own runtime env. (Under an allowlist posture the
+			// box ALSO carries BYRE_EGRESS — runParams set it there so the
+			// launcher announces the list in agent memory; same value, so the
+			// overwrite below is a no-op on that path.)
+			netnsEnv = make(map[string]string, len(params.Env)+1)
+			for k, v := range params.Env {
+				netnsEnv[k] = v
+			}
+			netnsEnv["BYRE_EGRESS"] = strings.Join(resolvedEgress(rv), " ")
+			// The config's `!host[:port]` closures, as written (portless =
+			// every port). The deny-by-default helper never reads this (its
+			// allowlist above is already subtracted); the open-denylist
+			// helper drops exactly these.
+			netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
+		} else {
+			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
+		}
+	}
+	// Single-session across an engine switch (ADR 0004): under the lock, refuse
+	// if a competing box exists on another installed engine. The per-worktree
+	// engine record scopes the query (crossEnginesToCheck): steady state skips
+	// it entirely, a recorded switch narrows it to the engines a prior session
+	// implicated, and a missing/invalid record widens it to every other
+	// installed engine (#4 ruling, 2026-07-22 -- no ambient "podman isn't
+	// reachable" note on every develop beside an installed-but-stopped engine).
+	toCheck, tracked := crossEnginesToCheck(s.Err, rv.otherEngines, r.Engine(), paths)
+	skipped, err := refuseCrossEngineSession(s.Err, toCheck, rv.declinedEngines, r.Engine(), paths)
+	if err != nil {
+		return none, err
+	}
+	// Single-WRITER, where the check above is single-SESSION. A volume may
+	// declare `sharing = "exclusive"`, and sibling worktrees mount the
+	// identical project-scoped volume set by construction (ADR 0009), so
+	// this asks the siblings' launch records what they are actually
+	// holding. Placed with the other gates -- before the engine record,
+	// the build and the seed -- so a refusal leaves the store exactly as
+	// it found it.
+	if err := refuseExclusiveVolumeHolders(s.Err, paths, os.Getuid(), rv.volumes, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines); err != nil {
+		return none, err
+	}
+	// Only after sole-session is established: a refusal above must leave the
+	// record pointing at the engine that still holds the session. An engine
+	// skipped as unreachable stays UNRESOLVED in the record -- but only when
+	// the record implicated it (tracked); an untracked check carries no prior
+	// session's claim, so its skips are disclosed above and not carried.
+	if !tracked {
+		skipped = nil
+	}
+	recordSessionEngine(s.Err, paths, r.Engine(), skipped)
+	if berr := buildImageWarn(s.Err, r, paths, rv.cfg, rv.skills, image, false, ident); berr != nil {
+		return none, berr
+	}
+	// Seed fresh state volumes that declare a config-level seed, using the
+	// image we just built. One-time; existing volumes are left alone.
+	if err := seedVolumes(r, s.Err, paths, image, rv.volumes, ident); err != nil {
+		return none, err
+	}
+	// Opt-in: seed the agent's curated non-secret prefs into its fresh state
+	// volume (config seed_prefs). No-op unless enabled and the volume is fresh.
+	if p := rv.skills.AgentPrefs(); rv.cfg.SeedPrefsEnabled() && p != nil {
+		if err := seedPrefs(r, s.Err, paths, image, rv.skills.AgentState(), p.From, p.Files, ident); err != nil {
+			return none, err
+		}
+	}
+	// sock_groups: engine-side gid probe (needs the just-built image) +
+	// host-source warning (engine stays the authority; Desktop suppressed).
+	// Must land on params before Create so --group-add is on the argv.
+	warnSockSources(r, s.Err, params, rv.skills)
+	applySockGroups(r, s.Err, image, &params, rv.skills)
+	// The launch record: what byre is about to tell the engine, made
+	// durable and addressable, so `byre status` can describe THIS box for
+	// as long as it runs instead of re-resolving the config. Written last
+	// under the lock, from the same params Create receives, so nothing
+	// between here and the create can move underneath it. A write failure
+	// degrades (the box still launches; status falls back to the config).
+	launchLabel, launchHash := recordLaunch(s.Err, paths, launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base)))
+	if launchLabel != "" {
+		params.Labels = append(params.Labels, launchLabel)
+	}
+	// The container name makes the session atomic: losing the name means a
+	// concurrent develop won the race (a session is now live — report it)
+	// or a leftover container holds it (say which and how to clear it).
+	if cerr := r.Create(runner.CreateArgs(params)); cerr != nil {
+		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
+			reportRunning(s.Err, r.Engine(), live)
+			return none, ExitError{Code: ExitRefused} // refused, session already live
+		}
+		return none, fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
+	}
+	// Records outlive their containers otherwise: this is the only moment
+	// byre holds the lock AND knows which containers of the project exist.
+	// Opportunistic by construction -- nothing here can fail the launch.
+	// Every engine byre can see, not just this one: sibling worktrees share
+	// this store and may run on the other engine, and their records are not
+	// ours to delete. The peer set is the one develop already resolved for
+	// the ADR 0004 check, so this costs no new host probing.
+	reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
+	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv}, nil
+}
+
+// decodeAgentExit distinguishes the agent/container's own exit from a byre
+// failure. The 125-127 band docker RUN reserves for engine-level failures is
+// not reserved on THIS path: the session is create + `start --attach`, and
+// start reports an engine-level failure (the marker container removed by a
+// concurrent reset, say) as exit 1 with the cause on stderr. So every code
+// the engine hands back below 128 is the agent's own status and passes
+// through unbannered — including 126 and 127, which an agent's own shell
+// spends on "not executable" and "not found". A signal-terminated process
+// (ExitCode() == -1) and a non-ExitError failure (the engine binary itself
+// could not run) stay byre errors: the original runErr comes back unchanged.
+func decodeAgentExit(runErr error) error {
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		code := exitErr.ExitCode()
+		if code >= 0 && code <= 127 {
+			return ExitError{Code: code}
+		}
+		// 128+n usually means the box died on signal n. The bare "exit
+		// status 137" reads like a byre bug to the person whose box just
+		// vanished; decode it. Only SIGKILL supports the strong
+		// killed-out-from-under diagnosis (docker rm -f, engine shutdown,
+		// the OOM killer — nothing in a box's normal life SIGKILLs its
+		// PID 1). The convention is ambiguous for the rest — a process
+		// can literally exit(130) with no signal involved — so other
+		// codes in the signal range (1-31 classic, through 64 for Linux
+		// realtime signals) decode tentatively, and codes beyond it
+		// can't be signals and stay undecoded.
+		if code == 128+9 {
+			return fmt.Errorf("exit status %d (SIGKILL — the box was killed out from under the session: removed externally, engine shutdown, or the kernel OOM killer)", code)
+		}
+		if code > 128 && code <= 128+64 {
+			return fmt.Errorf("exit status %d (possibly %s)", code, signalName(code-128))
+		}
+	}
+	return runErr
 }
 
 // buildImageWarn generates the build context and builds the project's image,

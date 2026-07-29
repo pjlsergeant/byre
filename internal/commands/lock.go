@@ -52,16 +52,33 @@ func acquireNoisy(w io.Writer, path string) (*lock.Lock, error) {
 	return lock.Acquire(path)
 }
 
+// setupLocked runs fn while holding the per-project setup lock and hands its
+// result across the lock boundary as a real return value — the boundary's
+// contract lives in the signature instead of in variables captured around a
+// closure. Both fn's error and any unlock error surface (joined), and either
+// one discards the value: a caller never sees a partially prepared T. That
+// discard preserves the existing abandon-on-Release-failure semantics — fn's
+// side effects (a created container, say) stand, but the launch that would
+// have consumed the value does not run. w gets the waiting note if the lock
+// is held.
+func setupLocked[T any](w io.Writer, path string, fn func() (T, error)) (T, error) {
+	var zero T
+	lk, err := acquireNoisy(w, path)
+	if err != nil {
+		return zero, err
+	}
+	v, ferr := fn()
+	if err := errors.Join(ferr, lk.Release()); err != nil {
+		return zero, err
+	}
+	return v, nil
+}
+
 // withSetupLock runs fn while holding the per-project setup lock, surfacing both
 // fn's error and any unlock error. w gets the waiting note if the lock is held.
 func withSetupLock(w io.Writer, path string, fn func() error) error {
-	lk, err := acquireNoisy(w, path)
-	if err != nil {
-		return err
-	}
-	ferr := fn()
-	rerr := lk.Release()
-	return errors.Join(ferr, rerr)
+	_, err := setupLocked(w, path, func() (struct{}, error) { return struct{}{}, fn() })
+	return err
 }
 
 // withTwoSetupLocks holds two setup locks (acquired in a stable order to avoid

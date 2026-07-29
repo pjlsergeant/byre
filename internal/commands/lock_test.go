@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -145,6 +146,63 @@ func TestWithTwoSetupLocksSurvivesOppositeOrders(t *testing.T) {
 	}
 	if overlapped.Load() {
 		t.Fatal("two callers ran fn at the same time: the pair of locks is not mutually exclusive")
+	}
+}
+
+// TestSetupLockedCarriesTheValueAcrossTheLock pins the typed boundary: the
+// locked function's result reaches the caller as a return value, not via
+// captured variables.
+func TestSetupLockedCarriesTheValueAcrossTheLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lock")
+	got, err := setupLocked(io.Discard, path, func() (string, error) { return "prepared", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "prepared" {
+		t.Fatalf("value must cross the lock boundary, got %q", got)
+	}
+}
+
+// TestSetupLockedDiscardsTheValueOnError pins the no-partial-value rule: when
+// the locked function errors, the caller sees the zero T and the function's
+// own error — even if the function returned a non-zero value beside it.
+func TestSetupLockedDiscardsTheValueOnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lock")
+	sentinel := errors.New("setup failed")
+	var ran bool
+	got, err := setupLocked(io.Discard, path, func() (string, error) {
+		ran = true
+		return "half-built", sentinel
+	})
+	if !ran {
+		t.Fatal("the locked function must have run")
+	}
+	if err == nil || !errors.Is(err, sentinel) {
+		t.Fatalf("the function's own error must be reachable via errors.Is, got %v", err)
+	}
+	if got != "" {
+		t.Fatalf("an error must discard the value (no partially prepared result), got %q", got)
+	}
+}
+
+// TestSetupLockedAcquireFailureSkipsTheFunction pins that a lock that cannot
+// be taken never runs the locked function: nothing guarded by the lock may
+// happen without it.
+func TestSetupLockedAcquireFailureSkipsTheFunction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "no-such-dir", "lock") // parent missing: acquire fails
+	var ran bool
+	got, err := setupLocked(io.Discard, path, func() (string, error) {
+		ran = true
+		return "unreachable", nil
+	})
+	if err == nil {
+		t.Fatal("acquiring a lock in a missing directory must fail")
+	}
+	if ran {
+		t.Fatal("the locked function must not run when the lock was never taken")
+	}
+	if got != "" {
+		t.Fatalf("acquire failure must return the zero value, got %q", got)
 	}
 }
 
