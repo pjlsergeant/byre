@@ -170,6 +170,13 @@ func PlainMkdirAll(path string, perm fs.FileMode, _ Reason) error { return os.Mk
 // same byre-owned directory).
 func PlainRename(oldpath, newpath string, _ Reason) error { return os.Rename(oldpath, newpath) }
 
+// PlainSymlink's reason covers LINKNAME — the path where the write happens.
+// The target is inert bytes written into the link, not a path this call
+// resolves; whoever later READS through the link owns judging what it
+// resolves to (the store walk stats through it, the primary read judges the
+// descriptor).
+func PlainSymlink(target, linkname string, _ Reason) error { return os.Symlink(target, linkname) }
+
 func PlainChmod(name string, mode fs.FileMode, _ Reason) error { return os.Chmod(name, mode) }
 
 // The name-minting creators. byre picks the NAME, so the STRING route is

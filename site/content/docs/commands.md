@@ -70,6 +70,7 @@ every command and flag.
 | `byre skill pack <name>` | Emit the distribution manifest for a local skill. |
 | `byre skill fork <id> <new-id>` | Fork an immutable skill into a local editable package. |
 | `byre skill init <name>` | Scaffold a new local skill package. |
+| `byre skill adopt <dir>` | Make a directory the local source for the skill id it declares (symlink into the store). |
 | `byre skill validate [name]` | Two-stage parse and resolve-check a skill (or all). |
 | `byre skill archive-legacy` | Move LEGACY materialized dirs to skills.legacy/ / templates.legacy/. |
 | `byre template` | Manage template packages (list, inspect, fork, init, validate). |
@@ -80,6 +81,7 @@ every command and flag.
 | `byre template pack <name>` | Emit the distribution manifest for a local template. |
 | `byre template fork <id> <new-id>` | Fork an immutable template into a local editable package. |
 | `byre template init <name>` | Scaffold a new local template package. |
+| `byre template adopt <dir>` | Make a directory the local source for the template id it declares (symlink into the store). |
 | `byre template validate [name]` | Two-stage parse a template (or all). |
 
 ## Lifecycle & recovery

@@ -767,6 +767,12 @@ func packageCmd(s commands.Streams, noun string, kind packages.Kind, usage, insp
 			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackageInit(s, kind, args[0]) },
 		},
 		&cobra.Command{
+			Use:   "adopt <dir>",
+			Short: "Make a directory the local source for the " + noun + " id it declares (symlink into the store).",
+			Args:  exactArgsU(1, noun+" adopt <dir>"),
+			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackageAdopt(s, kind, args[0]) },
+		},
+		&cobra.Command{
 			Use:   "validate [name]",
 			Short: validateShort,
 			Args:  maxArgsU(1, noun+" validate [name]"),
@@ -785,7 +791,7 @@ func packageCmd(s commands.Streams, noun string, kind packages.Kind, usage, insp
 
 func skillCmd(s commands.Streams) *cobra.Command {
 	return packageCmd(s, "skill", packages.KindSkill,
-		"list|inspect|install|uninstall|fork|init|validate|pack|archive-legacy",
+		"list|inspect|install|uninstall|fork|init|adopt|validate|pack|archive-legacy",
 		"Show skill package metadata and grants (URIs fetch without installing).",
 		"Two-stage parse and resolve-check a skill (or all).",
 		&cobra.Command{
@@ -799,7 +805,7 @@ func skillCmd(s commands.Streams) *cobra.Command {
 
 func templateCmd(s commands.Streams) *cobra.Command {
 	return packageCmd(s, "template", packages.KindTemplate,
-		"list|inspect|install|uninstall|fork|init|validate|pack",
+		"list|inspect|install|uninstall|fork|init|adopt|validate|pack",
 		"Show template package metadata (URIs fetch without installing).",
 		"Two-stage parse a template (or all).",
 	)

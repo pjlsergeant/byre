@@ -402,10 +402,11 @@ func TestUninstallRemovesBrokenInstall(t *testing.T) {
 	}
 }
 
-// Uninstalling the installed side of a contested id is activation, not
-// cleanup: the local claimant becomes the sole provider and referencing
-// boxes run IT -- the consent must say so, not promise a resolve error.
-func TestUninstallContestedIdDisclosesTakeover(t *testing.T) {
+// A same-kind local package SHADOWS the installed snapshot (not a contest),
+// so uninstalling the snapshot is cleanup with no launch-time change: boxes
+// were already running the local copy. The consent must say that, not
+// promise a resolve error or a contest.
+func TestUninstallShadowedSnapshotIsCleanup(t *testing.T) {
 	home := installHome(t)
 	uri, _ := publishSkill(t, "pete/tool", "1.0.0", "")
 	if err := PackageInstall(discardStreams(), packages.KindSkill, uri, "", false); err != nil {
@@ -427,11 +428,11 @@ func TestUninstallContestedIdDisclosesTakeover(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := errBuf.String()
-	if !strings.Contains(out, "contested") || !strings.Contains(out, "surviving claimant") {
-		t.Fatalf("contested uninstall must disclose the takeover:\n%s", out)
+	if !strings.Contains(out, "shadowed by the local package") {
+		t.Fatalf("uninstalling a shadowed snapshot must disclose the shadow:\n%s", out)
 	}
-	if strings.Contains(out, "resolve error") || strings.Contains(out, "reinstall remedy") {
-		t.Fatalf("contested uninstall must not promise a resolve error:\n%s", out)
+	if strings.Contains(out, "resolve error") || strings.Contains(out, "reinstall remedy") || strings.Contains(out, "contested") {
+		t.Fatalf("a shadowed snapshot's removal must not promise a resolve error or a contest:\n%s", out)
 	}
 	if !strings.Contains(out, "someproj") {
 		t.Fatalf("referencing box must be named:\n%s", out)

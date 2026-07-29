@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -375,7 +376,7 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 		return err
 	}
 	var ent *packages.Entry
-	var contested *packages.Entry
+	var contested, shadowedBy *packages.Entry
 	if row, present := idx[cat.ExpandAlias(id)]; present {
 		// The index is authoritative for what uninstall can remove: the
 		// catalog may hold an INVALID row (broken snapshot) or a CONFLICT row
@@ -390,9 +391,16 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 		ent = &packages.Entry{ID: cat.ExpandAlias(id), Kind: k, Provenance: packages.ProvInstalled}
 		// A CONFLICT row means another claimant survives this removal and
 		// becomes the id's sole provider -- that is activation, not cleanup,
-		// and the consent below must say so.
-		if cr, ok := cat.Lookup(id); ok && cr.Provenance == packages.ProvConflict {
-			contested = cr
+		// and the consent below must say so. A LOCAL row shadowing this
+		// install means the opposite: the local copy is ALREADY the provider,
+		// so removal changes nothing at launch.
+		if cr, ok := cat.Lookup(id); ok {
+			switch {
+			case cr.Provenance == packages.ProvConflict:
+				contested = cr
+			case cr.Provenance == packages.ProvLocal && cr.ShadowsInstalled != "":
+				shadowedBy = cr
+			}
 		}
 	} else {
 		var ok bool
@@ -416,19 +424,23 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 	}
 
 	hits := scanReferences(home, cat, ent.ID)
-	// A contested id with exactly two claimants means removal ACTIVATES the
-	// survivor; with more (installed + local skill + local template), the
-	// remaining claimants keep conflicting and boxes keep failing. An empty
-	// claimant list (a conflict row from an unexpected path) gets the
-	// conservative wording -- never promise activation we cannot prove.
-	takeover := contested != nil && len(contested.Claimants) == 2
-	if contested != nil {
+	// A contested id with exactly two claimants, one of them THIS snapshot,
+	// means removal ACTIVATES the survivor. Both-local contests (the
+	// snapshot got shadowed before a third claimant collided) stay contested
+	// whatever happens to the snapshot, and an empty claimant list (a
+	// conflict row from an unexpected path) gets the conservative
+	// wording -- never promise activation we cannot prove.
+	takeover := contested != nil && len(contested.Claimants) == 2 && slices.Contains(contested.Claimants, packages.SnapshotDir(home, idx[ent.ID].Digest))
+	switch {
+	case contested != nil:
 		dataf(s.Err, "byre: %s is contested: %s\n", ent.ID, contested.Reason)
 		if takeover {
 			fmt.Fprintln(s.Err, "Removing the installed copy leaves the other claimant as this id's SOLE provider -- it loads normally from then on.")
 		} else {
 			fmt.Fprintln(s.Err, "Removing the installed copy leaves the id contested among the remaining claimants -- it stays unresolvable until one remains.")
 		}
+	case shadowedBy != nil:
+		dataf(s.Err, "byre: the installed %s is shadowed by the local package at %s -- boxes already run the local copy; removing the snapshot changes nothing at launch.\n", ent.ID, shadowedBy.Dir)
 	}
 	if len(hits) > 0 {
 		switch {
@@ -436,6 +448,8 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 			dataf(s.Err, "byre: these configs reference %s -- their boxes run the surviving claimant at next launch:\n%s", ent.ID, escaped(renderRefHits(hits)))
 		case contested != nil:
 			dataf(s.Err, "byre: these configs reference %s -- their boxes keep hitting the conflict error at next develop:\n%s", ent.ID, escaped(renderRefHits(hits)))
+		case shadowedBy != nil:
+			dataf(s.Err, "byre: these configs reference %s -- their boxes keep running the local package:\n%s", ent.ID, escaped(renderRefHits(hits)))
 		default:
 			dataf(s.Err, "byre: these configs reference %s -- their boxes hit a resolve error at next develop:\n%s", ent.ID, escaped(renderRefHits(hits)))
 		}
@@ -452,6 +466,8 @@ func PackageUninstall(s Streams, kind packages.Kind, id string, yes bool) error 
 		fmt.Fprintln(s.Err, "      The surviving claimant now provides this id; referencing boxes load it at their next launch.")
 	case contested != nil:
 		fmt.Fprintln(s.Err, "      The id remains contested among the remaining claimants.")
+	case shadowedBy != nil:
+		fmt.Fprintln(s.Err, "      The local package now solely provides this id.")
 	case len(hits) > 0:
 		fmt.Fprintln(s.Err, "      Referencing boxes will print the reinstall remedy when they next resolve.")
 	}

@@ -786,6 +786,11 @@ func (e *Entry) ReadPrimary() ([]byte, error) {
 // its reads must never block. Symlinks are followed (follow=true): the
 // store is the user's own tree and a symlinked primary is their choice —
 // the judgment is on what the link resolves TO, same as the fetcher.
+// ReadPrimaryBounded is readPrimaryBounded for callers outside the catalog
+// walk that judge a primary at a path the user named (adopt's candidate
+// directory) — same descriptor judgment, same cap.
+func ReadPrimaryBounded(path string) ([]byte, error) { return readPrimaryBounded(path) }
+
 func readPrimaryBounded(path string) ([]byte, error) {
 	fh, _, err := hostopen.OpenRegular(path, true)
 	if err != nil {

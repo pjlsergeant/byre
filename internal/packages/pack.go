@@ -22,7 +22,7 @@ import (
 // mechanical and filled in.
 func Pack(ent *Entry) ([]byte, string, error) {
 	if ent.Provenance != ProvLocal {
-		return nil, "", fmt.Errorf("pack works on local packages; %q is %s (fork it first)", ent.ID, ent.Provenance)
+		return nil, "", fmt.Errorf("pack works on local packages; %q is %s — `byre %s adopt <dir>` makes a directory the local source for this id, `fork` copies it to a NEW id", ent.ID, ent.Provenance, ent.Kind)
 	}
 	if ent.Dir == "" {
 		return nil, "", fmt.Errorf("package %q has no directory", ent.ID)
