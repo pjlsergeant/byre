@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -40,6 +41,9 @@ func PackagePack(s Streams, kind packages.Kind, name, outPath string) error {
 		return err
 	}
 	if outPath != "" {
+		if err := packOutGuard(ent.Dir, ent.Primary, outPath); err != nil {
+			return err
+		}
 		if err := hostopen.PlainWriteFile(outPath, manifest, 0o644, hostopen.UserNamed); err != nil {
 			return err
 		}
@@ -53,6 +57,35 @@ func PackagePack(s Streams, kind packages.Kind, name, outPath string) error {
 	fmt.Fprintf(s.Err, "      Publish the manifest with its payload files beside it, then hand out:\n")
 	fmt.Fprintf(s.Err, "      byre %s install <manifest-url> --digest sha256:%s\n", kind, digest)
 	return nil
+}
+
+// packOutGuard refuses a -o target that names a packed PAYLOAD: the manifest
+// already records that file's hash, so writing over it ships a distribution
+// that fails its own integrity check at install. Inside the package
+// directory only the primary is a valid target (the one file pack excludes
+// from the payload list). Both sides resolve through symlinks — the adopted
+// store path and the repo checkout are the same directory under different
+// names. Probe failures degrade to allowing the write (an unreadable dir
+// already failed Pack; a nonexistent parent fails at the write, attributed).
+func packOutGuard(dir, primary, outPath string) error {
+	rdir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil
+	}
+	parent := filepath.Dir(filepath.Clean(outPath))
+	rparent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return nil
+	}
+	out := filepath.Join(rparent, filepath.Base(filepath.Clean(outPath)))
+	if out == filepath.Join(rdir, primary) {
+		return nil
+	}
+	rel, err := filepath.Rel(rdir, out)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	return fmt.Errorf("-o %s would overwrite a packed payload: the manifest already records this file's hash, so the output would fail its own install verification — inside the package dir, only %s is a valid target", outPath, primary)
 }
 
 // inspectURI handles `byre skill|template inspect <uri>` (phase 2):

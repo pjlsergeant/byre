@@ -10,6 +10,17 @@ import (
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
+// adoptRollback takes the just-created link back out and reports the reason
+// the adoption failed. A removal that itself fails must not claim a
+// rollback that did not happen: the error then carries both facts and the
+// by-hand remedy, because the store is left holding the link.
+func adoptRollback(dest, reason string) error {
+	if rerr := hostopen.PlainRemove(dest, hostopen.StoreOwned); rerr != nil {
+		return fmt.Errorf("adopt failed (%s) and the link could not be removed (%v) — remove %s by hand", reason, rerr, dest)
+	}
+	return fmt.Errorf("adopt rolled back: %s", reason)
+}
+
 // PackageAdopt establishes a directory as the local source for the package
 // id it declares: a symlink at the store path the id names. This is the
 // round trip back from a distribution repo — on any machine that isn't the
@@ -90,17 +101,15 @@ func PackageAdopt(s Streams, kind packages.Kind, dir string) error {
 	// why.
 	cat2, err := builtins.LoadCatalogRaw(home)
 	if err != nil {
-		_ = hostopen.PlainRemove(dest, hostopen.StoreOwned)
-		return err
+		return adoptRollback(dest, err.Error())
 	}
 	ent, ok := cat2.Lookup(id)
 	if !ok || ent.Provenance != packages.ProvLocal {
-		_ = hostopen.PlainRemove(dest, hostopen.StoreOwned)
 		reason := "the catalog did not load it"
 		if ok && ent.Reason != "" {
 			reason = ent.Reason
 		}
-		return fmt.Errorf("adopt rolled back: %s", reason)
+		return adoptRollback(dest, reason)
 	}
 	dataf(s.Err, "byre: adopted %s -> %s\n", id, dest)
 	if ent.ShadowsInstalled != "" {

@@ -86,6 +86,31 @@ func TestPackOutIntoPackedDir(t *testing.T) {
 	}
 }
 
+// TestPackOutRefusesPayloadTarget: -o naming a packed PAYLOAD would emit a
+// manifest recording that file's pre-overwrite hash and then replace the
+// file — a distribution that fails its own install verification. Refused,
+// naming the one valid in-package target. The symlink route (repo path vs
+// store path) must not dodge the check.
+func TestPackOutRefusesPayloadTarget(t *testing.T) {
+	installHome(t)
+	repo := adoptRepoDir(t, "pete/tool", `kind = "skill"`)
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("docs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _, _ := testStreams("", false)
+	if err := PackageAdopt(s, packages.KindSkill, repo); err != nil {
+		t.Fatal(err)
+	}
+	s2, _, _ := testStreams("", false)
+	err := PackagePack(s2, packages.KindSkill, "pete/tool", filepath.Join(repo, "README.md"))
+	if err == nil || !strings.Contains(err.Error(), "would overwrite a packed payload") {
+		t.Fatalf("want payload-target refusal, got %v", err)
+	}
+	if b, rerr := os.ReadFile(filepath.Join(repo, "README.md")); rerr != nil || string(b) != "docs\n" {
+		t.Fatalf("refused pack must leave the payload untouched, got %q, %v", b, rerr)
+	}
+}
+
 // TestAdoptShadowsInstalled: adopting on the machine where the id is already
 // installed (the publisher's own) must yield the LOCAL entry shadowing the
 // snapshot — announced, not a conflict row.
