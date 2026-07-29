@@ -50,11 +50,39 @@ func TestAdoptRoundTrip(t *testing.T) {
 	}
 	// The round trip's point: pack under the SAME id now works.
 	s2, out, errBuf2 := testStreams("", false)
-	if err := PackagePack(s2, packages.KindSkill, "pete/tool"); err != nil {
+	if err := PackagePack(s2, packages.KindSkill, "pete/tool", ""); err != nil {
 		t.Fatalf("pack after adopt: %v\n%s", err, errBuf2.String())
 	}
 	if !strings.Contains(out.String(), `id = "pete/tool"`) {
 		t.Fatalf("packed manifest should carry the id, got:\n%s", out.String())
+	}
+}
+
+// TestPackOutIntoPackedDir pins -o's reason to exist: the output file IS the
+// manifest inside the adopted (symlinked) package dir — the path a shell
+// redirect would truncate before byre reads it. Written after all reads, the
+// result must be the full packed manifest, not a self-truncated stub.
+func TestPackOutIntoPackedDir(t *testing.T) {
+	installHome(t)
+	repo := adoptRepoDir(t, "pete/tool", `kind = "skill"`)
+	s, _, _ := testStreams("", false)
+	if err := PackageAdopt(s, packages.KindSkill, repo); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(repo, "skill.toml")
+	s2, _, errBuf := testStreams("", false)
+	if err := PackagePack(s2, packages.KindSkill, "pete/tool", manifest); err != nil {
+		t.Fatalf("pack -o: %v\n%s", err, errBuf.String())
+	}
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `id = "pete/tool"`) || !strings.Contains(string(b), `version = "1.1.0"`) {
+		t.Fatalf("packed manifest must survive being its own output target, got:\n%s", b)
+	}
+	if !strings.Contains(errBuf.String(), "packed pete/tool -> "+manifest) {
+		t.Fatalf("pack -o must announce the written file, got:\n%s", errBuf.String())
 	}
 }
 

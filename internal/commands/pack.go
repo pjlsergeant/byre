@@ -11,7 +11,12 @@ import (
 	"github.com/pjlsergeant/byre/internal/version"
 )
 
-func PackagePack(s Streams, kind packages.Kind, name string) error {
+// PackagePack emits a local package's distribution manifest — to Out, or to
+// outPath when set. The file write happens strictly AFTER Pack has read the
+// whole package, so outPath may name a file inside the packed directory
+// (the adopted-repo layout); the shell-redirect spelling truncates that
+// same file before byre reads it.
+func PackagePack(s Streams, kind packages.Kind, name, outPath string) error {
 	home, err := project.Home()
 	if err != nil {
 		return err
@@ -34,10 +39,17 @@ func PackagePack(s Streams, kind packages.Kind, name string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.Out.Write(manifest); err != nil {
-		return err
+	if outPath != "" {
+		if err := hostopen.PlainWriteFile(outPath, manifest, 0o644, hostopen.UserNamed); err != nil {
+			return err
+		}
+		fmt.Fprintf(s.Err, "byre: packed %s -> %s (sha256:%s)\n", ent.ID, outPath, digest)
+	} else {
+		if _, err := s.Out.Write(manifest); err != nil {
+			return err
+		}
+		fmt.Fprintf(s.Err, "byre: packed %s (sha256:%s)\n", ent.ID, digest)
 	}
-	fmt.Fprintf(s.Err, "byre: packed %s (sha256:%s)\n", ent.ID, digest)
 	fmt.Fprintf(s.Err, "      Publish the manifest with its payload files beside it, then hand out:\n")
 	fmt.Fprintf(s.Err, "      byre %s install <manifest-url> --digest sha256:%s\n", kind, digest)
 	return nil

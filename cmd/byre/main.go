@@ -748,12 +748,7 @@ func packageCmd(s commands.Streams, noun string, kind packages.Kind, usage, insp
 		uninstallCmd(s, noun, func(st commands.Streams, id string, yes bool) error {
 			return commands.PackageUninstall(st, kind, id, yes)
 		}),
-		&cobra.Command{
-			Use:   "pack <name>",
-			Short: "Emit the distribution manifest for a local " + noun + ".",
-			Args:  exactArgsU(1, noun+" pack <name>"),
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackagePack(s, kind, args[0]) },
-		},
+		packCmd(s, noun, kind),
 		&cobra.Command{
 			Use:   "fork <id> <new-id>",
 			Short: "Fork an immutable " + noun + " into a local editable package.",
@@ -787,6 +782,23 @@ func packageCmd(s commands.Streams, noun string, kind packages.Kind, usage, insp
 	)
 	root.AddCommand(extra...)
 	return root
+}
+
+// packCmd is the one package verb with a flag: -o writes the manifest to a
+// file AFTER every read completes. The shell-redirect spelling
+// (`pack id > skill.toml`) truncates the target at exec — fatal when the
+// target is the manifest inside an adopted (symlinked) package dir, which
+// is exactly where a publisher points it.
+func packCmd(s commands.Streams, noun string, kind packages.Kind) *cobra.Command {
+	var out string
+	c := &cobra.Command{
+		Use:   "pack <name>",
+		Short: "Emit the distribution manifest for a local " + noun + ".",
+		Args:  exactArgsU(1, noun+" pack <name>"),
+		RunE:  func(cmd *cobra.Command, args []string) error { return commands.PackagePack(s, kind, args[0], out) },
+	}
+	c.Flags().StringVarP(&out, "out", "o", "", "write the manifest to this file (written after all reads, so the file may live inside the packed directory)")
+	return c
 }
 
 func skillCmd(s commands.Streams) *cobra.Command {

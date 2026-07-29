@@ -106,5 +106,8 @@ func PackageAdopt(s Streams, kind packages.Kind, dir string) error {
 	if ent.ShadowsInstalled != "" {
 		dataf(s.Err, "      shadows installed %s; remove the link to fall back to the snapshot\n", ent.ShadowsInstalled)
 	}
+	// -o, not a shell redirect: `pack %s > <file in the linked dir>`
+	// truncates the manifest before byre reads it.
+	dataf(s.Err, "      Publish: byre %s pack %s -o %s\n", kind, id, filepath.Join(abs, prim))
 	return nil
 }
