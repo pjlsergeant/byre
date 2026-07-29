@@ -210,9 +210,19 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 	// source agent-writable, plain OpenRoot would be a host-exfiltration
 	// primitive). And because the walk rides hostRoot.FS(), the delivered
 	// names and their contents always come from the SAME directory even if
-	// the pathname is swapped mid-walk. This mirrors internal/build's
-	// copyPath. A top-level symlink the USER named is a different case — that
-	// is their explicit choice and is followed by deliverPath, not here.
+	// the pathname is swapped mid-walk. A top-level symlink the USER named is
+	// a different case — that is their explicit choice and is followed by
+	// deliverPath, not here.
+	//
+	// internal/build's staging walks a tree this same way, and the duplication
+	// is deliberate: the contracts differ. Build rejects and fails the whole
+	// operation where this skips the entry and reports a count, and the two
+	// disagree by route on a top-level symlink the user named (followed by
+	// deliverPath and by build's stageCopy, refused by build's copyPath). Both
+	// sites take their dangerous primitives from internal/hostopen, so only
+	// the POLICY is duplicated; drift in it is caught by the shared
+	// expectation table in internal/treecopytest (TestTreeCopyTableDeliverLocal
+	// here, TestTreeCopyTableStageCopy and TestTreeCopyTableCopyPath in build).
 	hostRoot, err := hostopen.OpenDirRootNoFollow(src)
 	if err != nil {
 		return root, fmt.Errorf("delivering %s/: %w", src, err)

@@ -829,7 +829,17 @@ func withinRoot(root, path string) (string, bool) {
 // is the configured source itself — a user-named symlink there is followed;
 // interior entries reject symlinks (agent-planted). The fd's fstat is the only
 // thing trusted for the entry's type, and opens are O_NONBLOCK so a FIFO returns
-// instead of blocking. Mirrors internal/deliver/transport.go.
+// instead of blocking.
+//
+// internal/deliver's transport walks a tree this same way, and the duplication
+// is deliberate: the two answer to different contracts. This one rejects and
+// fails the whole staging; deliver skips the entry, reports it, and carries a
+// count. The top-level symlink rule differs by ROUTE too -- followed here (the
+// user named the `files` source), refused outright by copyPath. Both sites take
+// their dangerous primitives from internal/hostopen, so only the POLICY is
+// duplicated; drift in it is caught by the shared expectation table in
+// internal/treecopytest (TestTreeCopyTableStageCopy, TestTreeCopyTableCopyPath,
+// TestTreeCopyTableDeliverLocal).
 func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, topLevel bool, b *copyBudget) error {
 	if !topLevel {
 		// Lstat through the root to reject an interior symlink WITHOUT following
@@ -900,7 +910,9 @@ func copyRootedEntry(root *os.Root, rel string, dstRoot *os.Root, dst string, to
 // an escaping symlink after classification cannot pull an external file in.
 // Opens are O_NONBLOCK and the type is trusted only from the fd's fstat, so a
 // swap to a FIFO returns instead of hanging and is rejected rather than staged.
-// This mirrors internal/deliver/transport.go.
+// The duplication with internal/deliver's transport is deliberate and the two
+// policies differ; copyRootedEntry states the terms. This route's share of the
+// shared expectation table is posed by TestTreeCopyTableCopyPath.
 func copyPath(src string, dstRoot *os.Root, dst string, b *copyBudget) error {
 	info, err := hostopen.StatNoFollow(src)
 	if err != nil {
@@ -991,8 +1003,15 @@ func copyExactlyAndClose(out io.WriteCloser, in io.Reader, size int64, name stri
 
 // copyExactly copies exactly size bytes from in to out, refusing a source that
 // holds more or fewer. The limit makes a shrink visible (the copy falls short)
-// but hides growth — one read past the promise tells them apart. Mirrors
-// deliver's send-time check (internal/deliver/remote.go).
+// but hides growth — one read past the promise tells them apart.
+//
+// deliver's REMOTE leg makes the same size promise at send time
+// (internal/deliver/remote.go), separately and deliberately; deliver.local
+// makes none, because it streams a descriptor into the box with nothing to
+// hold the stream to. The shared expectation table
+// (internal/treecopytest) states that difference — growth is n/a for
+// deliver.local — and pins the refusal here through TestTreeCopyTableStageCopy
+// and TestTreeCopyTableCopyPath, which both funnel into this check.
 func copyExactly(out io.Writer, in io.Reader, size int64, name string) error {
 	n, err := io.Copy(out, io.LimitReader(in, size))
 	if err != nil {

@@ -116,7 +116,7 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 - Container engine: shells out to the `docker`/`podman` **CLI** (no SDK).
 - Layout: `cmd/byre`, `internal/{project,config,gen,build,runner,skills,
   packages,builtins,onboard,commands,deliver,lock,configui,version,
-  editorcmd,hostopen,tomldoc,tuitest}`.
+  editorcmd,hostopen,tomldoc,treecopytest,tuitest}`.
 
 ## Coding Conventions
 
