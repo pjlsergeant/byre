@@ -490,6 +490,41 @@ func TestUninstallMultiClaimantStaysContested(t *testing.T) {
 	}
 }
 
+// The POSITIVE takeover arm: a kind-mismatch pair (installed skill + local
+// template, same id) is a genuine two-claimant contest whose claimant list
+// contains the snapshot dir — removing the installed copy activates the
+// survivor, and the disclosure must promise exactly that. Guards the
+// SnapshotDir/locationOf path equality the takeover check rests on: if they
+// ever diverge, only this test dies (the multi-claimant test passes on the
+// NEGATIVE side regardless).
+func TestUninstallKindMismatchContestPromisesTakeover(t *testing.T) {
+	home := installHome(t)
+	uri, _ := publishSkill(t, "pete/tool", "1.0.0", "")
+	if err := PackageInstall(discardStreams(), packages.KindSkill, uri, "", false); err != nil {
+		t.Fatal(err)
+	}
+	tdir := filepath.Join(home, "templates", "pete", "tool")
+	mustMkdirAll(t, tdir, 0o755)
+	mustWriteFile(t, filepath.Join(tdir, "template.config"), []byte("base = \"debian:stable\"\n"), 0o644)
+
+	s, _, errBuf := testStreams("", false)
+	if err := PackageUninstall(s, packages.KindSkill, "pete/tool", true); err != nil {
+		t.Fatal(err)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "SOLE provider") || !strings.Contains(out, "surviving claimant now provides") {
+		t.Fatalf("two-claimant contest including the snapshot must promise the takeover:\n%s", out)
+	}
+	cat, err := packages.LoadCatalog(home, nil, "v0.2.0", "0.2.0", packages.Stage2Hooks{Skill: skills.ValidatePrimaryBytes, Template: config.ValidateTemplateBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/tool")
+	if err != nil || ent.Provenance != packages.ProvLocal || ent.Kind != packages.KindTemplate {
+		t.Fatalf("survivor should be the local template, got %+v, %v", ent, err)
+	}
+}
+
 func TestInspectURIDoesNotInstall(t *testing.T) {
 	home := installHome(t)
 	uri, digest := publishSkill(t, "pete/tool", "1.0.0", "")

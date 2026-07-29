@@ -124,6 +124,19 @@ func TestPackOutRefusesPayloadTarget(t *testing.T) {
 	if b, rerr := os.ReadFile(filepath.Join(repo, "README.md")); rerr != nil || string(b) != "docs\n" {
 		t.Fatalf("payload must survive the leaf-symlink attempt, got %q, %v", b, rerr)
 	}
+
+	// The RELATIVE spelling from inside the package dir: EvalSymlinks keeps
+	// a relative path relative, and Rel(absolute, relative) errors — which
+	// the degrade arm read as "outside the package", failing open.
+	t.Chdir(repo)
+	s4, _, _ := testStreams("", false)
+	err = PackagePack(s4, packages.KindSkill, "pete/tool", "README.md")
+	if err == nil || !strings.Contains(err.Error(), "would overwrite a packed payload") {
+		t.Fatalf("want refusal for the relative in-package spelling, got %v", err)
+	}
+	if b, rerr := os.ReadFile(filepath.Join(repo, "README.md")); rerr != nil || string(b) != "docs\n" {
+		t.Fatalf("payload must survive the relative-path attempt, got %q, %v", b, rerr)
+	}
 }
 
 // TestAdoptShadowsInstalled: adopting on the machine where the id is already
@@ -167,6 +180,26 @@ func TestAdoptRefusals(t *testing.T) {
 	s2, _, _ := testStreams("", false)
 	if err := PackageAdopt(s2, packages.KindSkill, tmpl); err == nil || !strings.Contains(err.Error(), `declares kind "template"`) {
 		t.Fatalf("want kind-mismatch refusal, got %v", err)
+	}
+
+	// Cross-kind against an INSTALLED id: refused before the store mutates
+	// (the link-then-conflict-then-rollback path reports the wrong layer).
+	uri, digest := publishSkill(t, "pete/installed-skill", "1.0.0", "")
+	s2b, _, _ := testStreams("", false)
+	if err := PackageInstall(s2b, packages.KindSkill, uri, "sha256:"+digest, false); err != nil {
+		t.Fatal(err)
+	}
+	tdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tdir, "template.config"),
+		[]byte("[package]\nid = \"pete/installed-skill\"\npackage_api = 1\nkind = \"template\"\n\nbase = \"debian:stable\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s2c, _, _ := testStreams("", false)
+	if err := PackageAdopt(s2c, packages.KindTemplate, tdir); err == nil || !strings.Contains(err.Error(), "installed as a skill") {
+		t.Fatalf("want installed-kind refusal, got %v", err)
+	}
+	if _, lerr := os.Lstat(filepath.Join(home, "templates", "pete", "installed-skill")); !os.IsNotExist(lerr) {
+		t.Fatalf("cross-kind adopt must not touch the store, got %v", lerr)
 	}
 
 	// Occupied store path (even a dangling link is an occupant).

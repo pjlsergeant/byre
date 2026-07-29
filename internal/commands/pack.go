@@ -68,23 +68,35 @@ func PackagePack(s Streams, kind packages.Kind, name, outPath string) error {
 // names. Probe failures degrade to allowing the write (an unreadable dir
 // already failed Pack; a nonexistent parent fails at the write, attributed).
 func packOutGuard(dir, primary, outPath string) error {
-	rdir, err := filepath.EvalSymlinks(dir)
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil
 	}
-	// Resolve the WHOLE output path first: the final component may itself be
+	rdir, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		return nil
+	}
+	// Absolute FIRST, then resolve the WHOLE path: EvalSymlinks keeps a
+	// relative input relative, and filepath.Rel(absolute, relative) below
+	// errors — which the degrade arm would read as "outside the package",
+	// failing open for exactly the in-package spelling
+	// (`cd repo && pack id -o README.md`). The final component matters too:
 	// a symlink to an in-package payload (following it at the write would
 	// overwrite the payload from a name outside the package), or an
 	// in-package link pointing out (harmless — the bytes land elsewhere).
 	// Only a nonexistent leaf falls back to parent+base: a name that does
 	// not exist is not a packed payload (pack enumerated existing files).
-	out, err := filepath.EvalSymlinks(filepath.Clean(outPath))
+	absOut, err := filepath.Abs(outPath)
 	if err != nil {
-		rparent, perr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(outPath)))
+		return nil
+	}
+	out, err := filepath.EvalSymlinks(absOut)
+	if err != nil {
+		rparent, perr := filepath.EvalSymlinks(filepath.Dir(absOut))
 		if perr != nil {
 			return nil
 		}
-		out = filepath.Join(rparent, filepath.Base(filepath.Clean(outPath)))
+		out = filepath.Join(rparent, filepath.Base(absOut))
 	}
 	if out == filepath.Join(rdir, primary) {
 		return nil

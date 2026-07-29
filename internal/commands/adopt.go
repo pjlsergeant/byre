@@ -77,7 +77,13 @@ func PackageAdopt(s Streams, kind packages.Kind, dir string) error {
 			return fmt.Errorf("%q is already a local package at %s; remove that first", id, prev.Dir)
 		case packages.ProvInstalled:
 			// The authoring case: the local entry will shadow the snapshot,
-			// announced below once the reload confirms it.
+			// announced below once the reload confirms it. Same kind only —
+			// a cross-kind id would link, conflict at reload, and roll back
+			// with the conflict's wording; refuse here with the real reason
+			// instead of mutating the store on the way to a worse error.
+			if prev.Kind != kind {
+				return fmt.Errorf("%q is installed as a %s; use `byre %s adopt`", id, prev.Kind, prev.Kind)
+			}
 		default:
 			return fmt.Errorf("%q already occupies the catalog (%s); resolve that first: %s", id, prev.Provenance, prev.Reason)
 		}
