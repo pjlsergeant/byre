@@ -52,6 +52,14 @@ type Entry struct {
 	Digest string
 	// SourceURI is where an installed package was acquired from (index row).
 	SourceURI string
+
+	// ShadowsInstalled is the version of the installed snapshot this LOCAL
+	// entry displaces (same id, both loaded). The store is the author's own
+	// tree: their working copy outranks the immutable snapshot on the machine
+	// that has both, and the label says so instead of the pair becoming a
+	// conflict row. Empty everywhere else; "(unversioned)" when the shadowed
+	// snapshot has no version, so the label never claims nothing was there.
+	ShadowsInstalled string
 }
 
 // Catalog is the multi-provider package index for one store.
@@ -537,6 +545,18 @@ func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason,
 
 func (c *Catalog) put(ent *Entry) {
 	if prev, ok := c.byID[ent.ID]; ok {
+		// Local shadows installed (same id, same kind): the authoring
+		// override. Load order guarantees the installed entry is prev. Any
+		// other pairing (kind mismatch, double local, double installed)
+		// stays a conflict row below.
+		if prev.Provenance == ProvInstalled && ent.Provenance == ProvLocal && prev.Kind == ent.Kind {
+			ent.ShadowsInstalled = prev.Version
+			if ent.ShadowsInstalled == "" {
+				ent.ShadowsInstalled = "(unversioned)"
+			}
+			c.byID[ent.ID] = ent
+			return
+		}
 		// Scoped conflict: replace both with conflict rows. A third or
 		// later claimant joins the existing row's claimant list -- the reason
 		// must name every location, not just the latest pair.
@@ -839,6 +859,12 @@ func (e *Entry) provenanceLabel(digest bool) string {
 		}
 		return label
 	case ProvLocal:
+		// The shadow is announced, not silent: on the authoring machine the
+		// working copy outranks the installed snapshot, and every surface
+		// that shows provenance says which snapshot lost.
+		if e.ShadowsInstalled != "" {
+			return "local (shadows installed " + e.ShadowsInstalled + ")"
+		}
 		return "local"
 	case ProvLegacy:
 		return "LEGACY"

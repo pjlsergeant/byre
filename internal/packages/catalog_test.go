@@ -440,3 +440,62 @@ func TestSymlinkedPackageDirLoads(t *testing.T) {
 		t.Fatalf("dangling symlink must be skipped, got %+v", ent)
 	}
 }
+
+// TestLocalShadowsInstalled pins the authoring precedence: when one id is
+// both installed (immutable snapshot) and local (the author's working copy in
+// the store), the local entry wins and its label announces which snapshot
+// lost. Removing the local copy brings the installed entry back untouched.
+// A kind mismatch is NOT the authoring case and stays a conflict row.
+func TestLocalShadowsInstalled(t *testing.T) {
+	home := t.TempDir()
+	s := testSnapshot("pete/tool", "1.0.0")
+	if err := WithStoreLock(home, func() error { return LandSnapshot(home, s) }); err != nil {
+		t.Fatal(err)
+	}
+	local := filepath.Join(home, "skills", "pete", "tool")
+	mustMkdirAll(t, local, 0o755)
+	mustWriteFile(t, filepath.Join(local, "skill.toml"),
+		[]byte("[package]\nid = \"pete/tool\"\npackage_api = 1\nkind = \"skill\"\nversion = \"1.1.0-dev\"\n"), 0o644)
+
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, err := cat.ResolveName("pete/tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent.Provenance != ProvLocal || ent.Dir != local {
+		t.Fatalf("local must shadow installed, got %+v", ent)
+	}
+	if !strings.Contains(ent.ProvenanceLabel(), "shadows installed 1.0.0") {
+		t.Fatalf("label must announce the shadow, got %q", ent.ProvenanceLabel())
+	}
+
+	// Local copy gone: the installed snapshot is loadable again.
+	mustRemoveAll(t, local)
+	cat2, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent2, err := cat2.ResolveName("pete/tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent2.Provenance != ProvInstalled || ent2.Digest != s.Digest {
+		t.Fatalf("installed must return when local goes, got %+v", ent2)
+	}
+
+	// Kind mismatch (installed skill, local TEMPLATE, same id): conflict, not shadow.
+	tdir := filepath.Join(home, "templates", "pete", "tool")
+	mustMkdirAll(t, tdir, 0o755)
+	mustWriteFile(t, filepath.Join(tdir, "template.config"),
+		[]byte("[package]\nid = \"pete/tool\"\npackage_api = 1\nkind = \"template\"\n"), 0o644)
+	cat3, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ent3, ok := cat3.Lookup("pete/tool"); !ok || ent3.Provenance != ProvConflict {
+		t.Fatalf("kind mismatch must stay a conflict row, got ok=%v ent=%+v", ok, ent3)
+	}
+}
