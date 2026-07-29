@@ -20,7 +20,12 @@
   skill shipped could be replaced by another skill's older copy and the
   loser failed inscrutably at runtime. Byte-identical copies (the
   deliberate each-works-alone pattern) still compose; divergence
-  refuses the develop naming both skills and the path.
+  refuses the develop naming both skills, the path, and what differed.
+  Staged file modes are normalized git-style (0644, or 0755 for an
+  executable source), so the authoring host's umask neither leaks into
+  the image nor counts as divergence -- a working-tree checkout's 0664
+  copy composes with an installed snapshot's 0644 one, and only a real
+  exec-bit difference refuses.
 
 ## v1.5.0 — 2026-07-29
 

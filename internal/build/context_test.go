@@ -464,7 +464,9 @@ func TestAssembleFilesRejectsNestedSymlink(t *testing.T) {
 	}
 }
 
-// Ordinary files and nested directories stage unchanged, preserving modes.
+// Ordinary files and nested directories stage with NORMALIZED modes — 0644,
+// or 0755 when the source has any exec bit (the git rule) — so the authoring
+// host's umask never reaches the image (stageRegularFromFD states the terms).
 // dstAt opens an os.Root at dst's parent, so a staging helper's now-root-
 // relative destination writes land at the real dst path — tests still verify
 // content by the absolute dst. Its two returns feed the helpers' trailing
@@ -493,6 +495,9 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "sub", "deep", "leaf"), []byte("leaf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "tool"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	dst := filepath.Join(t.TempDir(), "staged")
 	dr, base := dstAt(t, dst)
@@ -502,7 +507,8 @@ func TestCopyPathStagesRegularTree(t *testing.T) {
 	for rel, wantMode := range map[string]os.FileMode{
 		"top.txt":       0o644,
 		"sub/exec.sh":   0o755,
-		"sub/deep/leaf": 0o600,
+		"sub/deep/leaf": 0o644, // 0600 source: owner-only is umask noise, normalized away
+		"sub/tool":      0o755, // 0700 source: only the exec bit is authored
 	} {
 		fi, err := os.Stat(filepath.Join(dst, filepath.FromSlash(rel)))
 		if err != nil {
@@ -898,8 +904,10 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 // content is the dual-ship pattern (two skills each carrying the same lib so
 // either works alone) and both COPYs are emitted; divergent content would
 // resolve by build order, last writer wins, silently -- refused, naming both
-// skills and the destination. A byte-identical pair differing only in the
-// exec bit is divergent (COPY preserves the staged mode).
+// skills, the destination, and WHAT differed. A byte-identical pair differing
+// only in the exec bit is divergent (COPY preserves the staged mode); a pair
+// differing only in umask bits is NOT -- staging normalizes modes, so a
+// 0664 working-tree copy composes with a 0644 snapshot.
 func TestAssembleCrossSkillDestCollision(t *testing.T) {
 	writeSrc := func(t *testing.T, name, content string, mode os.FileMode) string {
 		t.Helper()
@@ -936,20 +944,38 @@ func TestAssembleCrossSkillDestCollision(t *testing.T) {
 		_, err := Assemble(paths, config.Config{Base: "node:22"}, twoSkills(
 			writeSrc(t, "lib.sh", "say() { echo hi; }\n", 0o644),
 			writeSrc(t, "lib.sh", "say() { echo hi; }\nextra() { :; }\n", 0o644)))
-		if err == nil || !strings.Contains(err.Error(), "different content") ||
+		if err == nil || !strings.Contains(err.Error(), "content differs") ||
 			!strings.Contains(err.Error(), `"devlog"`) || !strings.Contains(err.Error(), `"codereview"`) ||
 			!strings.Contains(err.Error(), "/usr/local/lib/byre-devlog-lib.sh") {
 			t.Fatalf("want divergent-content refusal naming both skills and the dest, got %v", err)
 		}
 	})
 
-	t.Run("exec-bit divergence refused", func(t *testing.T) {
+	t.Run("exec-bit divergence refused naming the modes", func(t *testing.T) {
 		paths := bootstrapped(t)
 		lib := "#!/bin/sh\nsay() { echo hi; }\n"
 		_, err := Assemble(paths, config.Config{Base: "node:22"}, twoSkills(
 			writeSrc(t, "lib.sh", lib, 0o755), writeSrc(t, "lib.sh", lib, 0o644)))
-		if err == nil || !strings.Contains(err.Error(), "different content") {
-			t.Fatalf("want refusal on mode divergence, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), `mode 0755 in "devlog"`) ||
+			!strings.Contains(err.Error(), `0644 in "codereview"`) {
+			t.Fatalf("want refusal naming the diverging modes per skill, got %v", err)
+		}
+	})
+
+	t.Run("umask bits are not divergence", func(t *testing.T) {
+		paths := bootstrapped(t)
+		lib := "#!/bin/sh\nsay() { echo hi; }\n"
+		// The field case: an installed snapshot's 0644 next to an adopted
+		// working-tree copy carrying the author's group-write umask bit.
+		df, err := Assemble(paths, config.Config{Base: "node:22"}, twoSkills(
+			writeSrc(t, "lib.sh", lib, 0o644), writeSrc(t, "lib.sh", lib, 0o664)))
+		if err != nil {
+			t.Fatalf("umask-only mode difference must compose: %v", err)
+		}
+		for _, skill := range []string{"devlog", "codereview"} {
+			if !strings.Contains(df, gen.CopyLine("skills/"+skill+"/lib.sh", "/usr/local/lib/byre-devlog-lib.sh")) {
+				t.Errorf("missing %s COPY:\n%s", skill, df)
+			}
 		}
 	})
 }

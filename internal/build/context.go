@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -542,70 +542,95 @@ func refuseDivergentSkillDests(ctxRoot *os.Root, jobs []fileCopy) error {
 			claims[j.dest] = j
 			continue
 		}
-		same, err := equalStagedTrees(ctxRoot, first.staged, j.staged)
+		diff, err := diffStagedTrees(ctxRoot, first, j, "")
 		if err != nil {
 			return fmt.Errorf("comparing staged claims on %s: %w", j.dest, err)
 		}
-		if !same {
-			return fmt.Errorf("skills %q and %q both install to %s with different content; the build-order winner would silently replace the loser — ship identical bytes or distinct destinations", first.skill, j.skill, j.dest)
+		if diff != "" {
+			return fmt.Errorf("skills %q and %q both install to %s but their copies differ (%s); the build-order winner would silently replace the loser — ship identical bytes or distinct destinations", first.skill, j.skill, j.dest, diff)
 		}
 	}
 	return nil
 }
 
-// equalStagedTrees compares two staged paths inside the context root:
-// directories by entry set and recursion, regular files by permission bits,
-// size, and bytes (a byte-identical pair differing only in the exec bit
-// still diverges in the image — COPY preserves the staged mode).
-func equalStagedTrees(ctxRoot *os.Root, a, b string) (bool, error) {
-	fa, err := ctxRoot.Open(a)
+// diffStagedTrees compares two staged claims inside the context root and
+// returns a description of the first difference found, "" when the trees are
+// identical: directories by entry set and recursion, regular files by
+// permission bits, size, and bytes. Staging normalizes modes
+// (stageRegularFromFD), so a mode difference between claims is the exec bit —
+// which diverges in the image even over identical bytes, since COPY preserves
+// the staged mode. rel is the path under the claimed destination, "" at the
+// top; the description names it so a divergence deep in a directory claim
+// points at the file, not just the dest.
+func diffStagedTrees(ctxRoot *os.Root, a, b fileCopy, rel string) (string, error) {
+	at := func(msg string) string {
+		if rel == "" {
+			return msg
+		}
+		return fmt.Sprintf("%s: %s", rel, msg)
+	}
+	fa, err := ctxRoot.Open(filepath.Join(a.staged, rel))
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	defer fa.Close()
-	fb, err := ctxRoot.Open(b)
+	fb, err := ctxRoot.Open(filepath.Join(b.staged, rel))
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	defer fb.Close()
 	ia, err := fa.Stat()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	ib, err := fb.Stat()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if ia.IsDir() != ib.IsDir() {
-		return false, nil
+		dir, file := a.skill, b.skill
+		if ib.IsDir() {
+			dir, file = b.skill, a.skill
+		}
+		return at(fmt.Sprintf("a directory in %q, a file in %q", dir, file)), nil
 	}
 	if ia.IsDir() {
 		ea, err := fa.ReadDir(-1)
 		if err != nil {
-			return false, err
+			return "", err
 		}
 		eb, err := fb.ReadDir(-1)
 		if err != nil {
-			return false, err
+			return "", err
 		}
-		if len(ea) != len(eb) {
-			return false, nil
+		names := map[string][2]bool{}
+		for _, e := range ea {
+			names[e.Name()] = [2]bool{true, names[e.Name()][1]}
 		}
-		sort.Slice(ea, func(i, j int) bool { return ea[i].Name() < ea[j].Name() })
-		sort.Slice(eb, func(i, j int) bool { return eb[i].Name() < eb[j].Name() })
-		for i := range ea {
-			if ea[i].Name() != eb[i].Name() {
-				return false, nil
+		for _, e := range eb {
+			names[e.Name()] = [2]bool{names[e.Name()][0], true}
+		}
+		for _, name := range slices.Sorted(maps.Keys(names)) {
+			in := names[name]
+			entry := path.Join(rel, name)
+			switch {
+			case !in[1]:
+				return fmt.Sprintf("%s exists only in %q's copy", entry, a.skill), nil
+			case !in[0]:
+				return fmt.Sprintf("%s exists only in %q's copy", entry, b.skill), nil
 			}
-			same, err := equalStagedTrees(ctxRoot, filepath.Join(a, ea[i].Name()), filepath.Join(b, eb[i].Name()))
-			if err != nil || !same {
-				return same, err
+			diff, err := diffStagedTrees(ctxRoot, a, b, entry)
+			if err != nil || diff != "" {
+				return diff, err
 			}
 		}
-		return true, nil
+		return "", nil
 	}
-	if ia.Mode().Perm() != ib.Mode().Perm() || ia.Size() != ib.Size() {
-		return false, nil
+	if ia.Mode().Perm() != ib.Mode().Perm() {
+		return at(fmt.Sprintf("mode %#o in %q, %#o in %q", ia.Mode().Perm(), a.skill, ib.Mode().Perm(), b.skill)), nil
+	}
+	if ia.Size() != ib.Size() {
+		return at("content differs"), nil
 	}
 	const chunk = 64 * 1024
 	bufA, bufB := make([]byte, chunk), make([]byte, chunk)
@@ -613,19 +638,19 @@ func equalStagedTrees(ctxRoot *os.Root, a, b string) (bool, error) {
 		na, errA := io.ReadFull(fa, bufA)
 		nb, errB := io.ReadFull(fb, bufB)
 		if na != nb || !bytes.Equal(bufA[:na], bufB[:nb]) {
-			return false, nil
+			return at("content differs"), nil
 		}
 		if errA == io.EOF || errA == io.ErrUnexpectedEOF {
 			if errB == io.EOF || errB == io.ErrUnexpectedEOF {
-				return true, nil
+				return "", nil
 			}
-			return false, nil
+			return at("content differs"), nil
 		}
 		if errA != nil {
-			return false, errA
+			return "", errA
 		}
 		if errB != nil {
-			return false, errB
+			return "", errB
 		}
 	}
 }
@@ -1073,8 +1098,16 @@ func copyPath(src string, dstRoot *os.Root, dst string, b *copyBudget) error {
 	return stageRegularFromFD(in, dstRoot, dst, b)
 }
 
-// stageRegularFromFD copies an already-open source file into dst, preserving its
-// permission bits. It re-checks the fd's type so no pathname is re-resolved: the
+// stageRegularFromFD copies an already-open source file into dst with a
+// NORMALIZED mode — 0644, or 0755 when the source carries any exec bit (the
+// git rule). Only the exec bit is authored content; the rest of a host file's
+// mode is the authoring machine's umask showing through, and letting it into
+// the context makes the image vary by host and breaks dual-ship composition
+// across provenances (ADR 0056 judges same-dest claims mode-exact; installed
+// snapshots stage 0644 while a working-tree checkout carries whatever the
+// author's umask left). Setuid/setgid/sticky are dropped with the rest.
+//
+// It re-checks the fd's type so no pathname is re-resolved: the
 // top-level caller opens by name (a swap to a FIFO with O_NONBLOCK, or to a
 // directory, opens successfully), so trusting the fd's fstat here — not a prior
 // pathname Lstat — is what actually keeps a non-regular file out of the image.
@@ -1097,8 +1130,19 @@ func stageRegularFromFD(in *os.File, dstRoot *os.Root, dst string, b *copyBudget
 	if err := b.charge(fi.Size()); err != nil {
 		return err
 	}
-	o, err := dstRoot.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fi.Mode().Perm()&fs.ModePerm)
+	mode := os.FileMode(0o644)
+	if fi.Mode().Perm()&0o111 != 0 {
+		mode = 0o755
+	}
+	o, err := dstRoot.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
+		return err
+	}
+	// OpenFile's mode is filtered through this process's umask; the fchmod
+	// sets the exact bits so byre's own umask can't leak into the image
+	// either.
+	if err := o.Chmod(mode); err != nil {
+		o.Close()
 		return err
 	}
 	return copyExactlyAndClose(o, in, fi.Size(), in.Name())

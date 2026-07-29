@@ -96,15 +96,17 @@ can land there and which one would be map order.
 
 The same rule spans the composed skill SET, with one carve-out: two
 *different* enabled skills may claim the same image destination only
-with byte-identical content (permission bits included). That is the
+with byte-identical content (exec bit included — byre normalizes the
+rest of a file's mode at staging, git-style, so an umask difference
+between two checkouts never counts as divergence). That is the
 dual-ship pattern — each skill carries the same lib so either works
 alone — and both COPYs are emitted; divergent content refuses the
-assemble at develop, naming both skills and the destination, because
-the alternative is build-order last-writer-wins with nothing the user
-can read saying which skill's file their box runs. Judged over the
-staged bytes, so keep dual-shipped files exactly in sync — a shared
-source of truth in your repo, copied into each package at release.
-(ADR 0056.)
+assemble at develop, naming both skills, the destination, and what
+differed, because the alternative is build-order last-writer-wins with
+nothing the user can read saying which skill's file their box runs.
+Judged over the staged bytes, so keep dual-shipped files exactly in
+sync — a shared source of truth in your repo, copied into each package
+at release. (ADR 0056.)
 
 Note the asymmetry, which is easy to trip over: a USER's config has a
 `[files]` key with the same name and a different root. Theirs resolves

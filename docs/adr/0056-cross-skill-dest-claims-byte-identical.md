@@ -40,6 +40,30 @@ in behavior with identical bytes). Granularity matches the intra-skill
 rule: same destination STRING. Overlapping directory CONTENTS under
 different dest strings merge by COPY semantics, as they always have.
 
+## Amended 2026-07-30: staging normalizes modes, so mode divergence = exec bit
+
+The rule fired in the field one day in: `pjlsergeant/devlog` (installed
+snapshot, 0644) against `pjlsergeant/codereview` (adopted working tree,
+0664 under the author's group-write umask) — identical bytes, one umask
+bit, refused as "different content". Snapshots normalize to 0644 at
+install; working trees carry whatever the authoring host's umask left; so
+dual-ship across those two provenances could never compose on a
+umask-002 host, and the staged image varied by host umask besides.
+
+Staging now normalizes regular-file modes git-style (`stageRegularFromFD`):
+0644, or 0755 when the source has any exec bit; an fchmod sets the exact
+bits so byre's own process umask can't leak in either; setuid/setgid/sticky
+drop with the rest (directories were already staged at a constant 0755).
+Only the exec bit of a source mode is authored content — the rest is umask
+noise, and a 0600 "restriction" was already fiction in a world-readable
+image layer.
+
+The comparison above is UNCHANGED — staged modes still count, and the
+refusal on exec-bit divergence stands for the reason given. Normalization
+means the only mode divergence that can reach it IS the exec bit. The
+refusal also now names what differed (first diverging path, modes per
+skill, or "content differs") instead of a blanket "different content".
+
 ## Where it does not run
 
 Resolve-time surfaces (`validate`, `status`) do not pre-judge this: a
