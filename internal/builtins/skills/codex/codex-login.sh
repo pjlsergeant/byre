@@ -20,6 +20,41 @@ export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
 # the server has since expired or invalidated — that only surfaces at use time,
 # where byre-codereview reports it and points back to `codex login --device-auth`.
 cred="$CODEX_HOME/auth.json"
+diag_dir="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/codex"
+diag_log="$diag_dir/byre-auth-diagnostic.log"
+
+# Complements codex-shared-auth's diagnostics so the shared log shows whether
+# this later hook accepted or removed the asserted link. Deliberately records
+# no credential contents, hashes, token metadata, or environment values.
+diag_event() {
+  [ -n "${CODEX_AUTH_DIAGNOSTIC_BYRE:-}" ] || return 0
+  mkdir -p "$diag_dir" 2>/dev/null || return 0
+  : >>"$diag_log" 2>/dev/null || return 0
+  chmod 600 "$diag_log" 2>/dev/null || true
+  printf '%s component=codex-login box=%s project=%s pid=%s event=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf unknown)" \
+    "$(hostname 2>/dev/null || printf unknown)" "${COMPOSE_PROJECT_NAME:-unknown}" \
+    "$$" "$1" >>"$diag_log" 2>/dev/null || true
+}
+
+diag_path() {
+  [ -n "${CODEX_AUTH_DIAGNOSTIC_BYRE:-}" ] || return 0
+  if [ -L "$cred" ]; then
+    kind=symlink
+  elif [ -e "$cred" ]; then
+    kind=non_symlink
+  else
+    kind=absent
+  fi
+  meta=""
+  if [ "$kind" != absent ]; then
+    meta="$(stat -c 'dev=%d ino=%i mode=%a uid=%u gid=%g size=%s mtime=%Y' "$cred" 2>/dev/null || printf stat_failed)"
+  fi
+  diag_event "credential_state_${1}_${kind}_${meta}"
+}
+
+diag_event hook_start
+diag_path initial
 # A symlinked credential must never count — drop it so a clean re-login writes a
 # fresh regular file a planted link can't redirect. ONE exception (ADR 0017):
 # codex-shared-auth's own link into the identity volume is legitimate, and a
@@ -44,11 +79,20 @@ if [ -L "$cred" ]; then
   # codex's dir. Mirrors the opencode-login hook.
   if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename "$target")" = "auth.json" ]; then
     shared_auth=1
+    diag_event shared_link_accepted
   else
+    diag_event foreign_link_remove_begin
     rm -f "$cred"
+    diag_path after_foreign_link_remove
   fi
 fi
-codex login status >/dev/null 2>&1 && exit 0
+if codex login status >/dev/null 2>&1; then
+  diag_event login_status_authenticated
+  diag_path authenticated
+  exit 0
+fi
+diag_event login_status_unauthenticated
+diag_path before_device_login
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
 # signal-death toward the launcher — the box proceeds to the agent regardless.
@@ -69,6 +113,16 @@ echo ""
 # the interrupt wouldn't land until the timeout elapsed).
 TO=""
 command -v timeout >/dev/null 2>&1 && TO="timeout --foreground 600"
-$TO codex login --device-auth \
-  || echo "byre: codex login didn't complete. To do it later, open another terminal and run 'byre shell', then 'codex login --device-auth'." >&2
+if $TO codex login --device-auth; then
+  diag_event device_login_succeeded
+  reconcile="${BYRE_CODEX_AUTH_RECONCILE:-/usr/local/lib/byre-codex-auth-reconcile}"
+  if [ -r "$reconcile" ]; then
+    bash "$reconcile" post_device_login ||
+      echo "byre: Codex login succeeded, but its machine-wide shared-auth reconciliation failed; it will retry next launch." >&2
+  fi
+else
+  echo "byre: codex login didn't complete. To do it later, open another terminal and run 'byre shell', then 'codex login --device-auth'." >&2
+fi
+diag_path after_device_login
+diag_event hook_end
 exit 0

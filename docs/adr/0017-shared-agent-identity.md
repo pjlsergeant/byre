@@ -32,9 +32,17 @@ differ (research-verified): Claude Code's refresh tokens are single-use
 replaces symlinked files via temp+rename, so for Claude the shared
 volume carries a **static one-year inference-only token** (minted by
 `claude setup-token`, pasted at a firstrun prompt, exported as
-`CLAUDE_CODE_OAUTH_TOKEN` by an env.d hook). Codex writes `auth.json` in
-place and OpenAI endorses moving it between machines, so its companion
-is one idempotently-asserted **symlink** into the identity volume.
+`CLAUDE_CODE_OAUTH_TOKEN` by an env.d hook). Codex refreshes `auth.json` in
+place and OpenAI endorses moving it between machines, so its companion is one
+idempotently-asserted **symlink** into the identity volume. Codex 0.146 changed
+the login-side fact: OAuth login clears and revokes existing auth before
+saving, which removes the symlink and leaves the replacement as a regular
+per-box file. The companion therefore reconciles under a machine-volume lock:
+valid conflicts choose the newer `last_refresh` (mtime fallback), publication
+is an atomic rename inside the identity volume, and the local path returns to
+the symlink. Missing local auth never authorizes deleting shared auth.
+Byre-managed device login reconciles before returning; an unwrapped
+mid-session `codex login` converges on the next box launch.
 Gemini is symlink-shaped too, but Google's OAuth refresh-rotation
 behavior is unverified: `gemini-shared-auth` shipped with its
 description saying so -- the API-key path is verified and
@@ -73,12 +81,19 @@ generic feature); a host-side token broker (revocation theater, and
 byre is structurally daemon-less); sharing whole state dirs (cwd-keyed
 state collides across projects -- everything is /workspace).
 
+**Amendment (2026-07-31).** The original “logout-fork heal” made shared bytes
+win every conflict. Field diagnostics disproved its premise on Codex 0.146:
+ordinary login itself revokes/unlinks first, so the newer local file is the
+only live credential and restoring shared bytes restores a revoked chain.
+Freshness-aware reconciliation above replaces that rule.
+
 **Verification record (2026-07-07, live on the maintainer's host).**
 Claude: verified end-to-end -- with one fix found live: interactive
 Claude Code's first-run gate is its ONBOARDING state, not its auth state,
 so the skill seeds `hasCompletedOnboarding` into fresh config dirs (the
 env token alone never got consulted). Codex: verified (one login,
-second box authenticated; the logout-fork heal works). Gemini: the
+second box authenticated; the then-current shared-always-wins heal appeared
+to work on that version, superseded by the amendment above). Gemini: the
 API-KEY path is verified and rotation-immune (a static key has no
 refresh tokens); OAuth sharing remains unverified and the rotation gate
 stands open, optional -- two concurrent boxes, forced refresh, neither

@@ -187,20 +187,30 @@ Also: "dev containers do not prevent a malicious project from exfiltrating ...
 the Claude Code credentials stored in ~/.claude"
 (https://code.claude.com/docs/en/devcontainer).
 
-## OpenAI Codex CLI (0.142.5, empirical + source)
+## OpenAI Codex CLI (0.146.0, empirical + source)
 
 > **SOURCE-CONFIRMED / EXTENDED 2026-07-16** (repo at codex-rs, main
 > @ f64233d142; in-box binary 0.144.5; tree carries no release-version
 > literal -- workspace version is `0.0.0`, stamped at build -- so it pins by
 > commit). The 2026-07-06 record below stands; deltas that matter for
 > sharing one auth.json across boxes:
+> - **OAuth login clears before saving** (0.146 field-confirmed):
+>   `clear_existing_auth_before_login` calls `logout_with_revoke`, which
+>   revokes and removes `$CODEX_HOME/auth.json` before device/browser login.
+>   With a per-file symlink this removes the LINK; successful login then
+>   creates a fresh regular local file. Refresh remains in-place and
+>   symlink-safe. `codex-shared-auth` therefore reconciles valid local/shared
+>   conflicts by `last_refresh` (mtime fallback) under `flock`, atomically
+>   publishes the winner, and restores the link. It never treats link absence
+>   alone as authority to delete shared auth.
 > - **`codex logout` REVOKES the refresh token server-side** before deleting
 >   the file: `logout_with_revoke` -> `revoke_auth_tokens` POSTs to
 >   `auth.openai.com/oauth/revoke` (revoke.rs), best-effort, then
 >   `remove_file`. In a shared-auth box this kills the login for EVERY box on
->   the machine, unrecoverably (the local delete only unlinks a symlink; the
->   server-side revocation is what bites). Documented in codex-shared-auth's
->   skill.toml as a do-not-run hazard.
+>   the machine until a replacement login is reconciled (the local delete only
+>   unlinks a symlink; the server-side revocation is what bites). The companion
+>   documents this as intentional machine-wide logout/login behavior rather
+>   than claiming link repair can revive the revoked chain.
 > - **`CODEX_ACCESS_TOKEN` semantics CHANGED**: it is no longer a generic
 >   ChatGPT access-token override. `classify_codex_access_token` (access_token.rs)
 >   routes an `at-` prefix to a Personal Access Token, else an Agent-Identity
@@ -257,7 +267,9 @@ evidence that binary cache and state can already cohabit oddly. Inside
 
 ### 2. Credential write patterns
 
-**In-place write, NOT rename** -- symlink-safe. `FileAuthStorage::save` in
+**Refresh/storage write is in-place, NOT rename** -- symlink-safe once the
+path exists. OAuth login first clears the path as described above.
+`FileAuthStorage::save` in
 `codex-rs/login/src/auth/storage.rs` (main, 2026-07-06): opens with
 `options.truncate(true).write(true).create(true)` (+ `mode(0o600)` on unix),
 then `write_all` + `flush` -- no temp file, no rename, and no file locking

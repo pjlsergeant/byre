@@ -4,33 +4,32 @@
 # the codex skill (skills = ["codex-shared-auth"] — per box via the onboarding
 # offer's yes in the project's byre.config, or machine-wide by hand in
 # ~/.byre/default.config). Mechanism:
-# $CODEX_HOME/auth.json becomes a symlink
-# into the machine-scoped identity volume — safe for Codex specifically
-# because it writes credentials IN PLACE (source-verified) and OpenAI's docs
-# endorse moving auth.json between machines; the first `codex login` in any
-# box writes straight through the dangling link into the shared volume, so
-# there is no bootstrap prompt at all. Evidence:
+# $CODEX_HOME/auth.json normally becomes a symlink into the machine-scoped
+# identity volume. Refresh writes are in-place and therefore follow it. OAuth
+# LOGIN is different as of Codex 0.146: login first revokes and removes the
+# existing auth path, so a successful login lands as a fresh regular local
+# file. A short locked reconciler validates both candidates, chooses the newer
+# credential (`last_refresh`, then mtime), atomically publishes it to the
+# identity volume, and restores the symlink. Evidence:
 # docs/AGENT-CREDENTIAL-MECHANICS.md. (Claude gets a token-env mechanism
 # instead — its refresh rotation makes file sharing unsafe; see
 # claude-shared-auth.)
 #
-# The firstrun hook re-asserts the symlink EVERY launch, healing the
-# logout-fork: `codex logout` unlinks the symlink, and a later login would
-# otherwise write a local file, silently forking the credential. The codex
-# skill's own login hook keeps its anti-planting symlink removal for any
-# OTHER symlink; links into /home/dev/.byre-identity/ are recognized as ours.
+# The firstrun hook reconciles and re-asserts the symlink EVERY launch. The
+# codex skill's own device-login hook also reconciles immediately after a
+# successful login, so other boxes see the replacement without waiting for a
+# restart. A bare mid-session `codex login` remains local until this box's next
+# launch; that is the accepted residual without wrapping or patching Codex.
 #
 # Accepted residual (recorded in the design, do not re-raise): Codex's
 # cross-process refresh has no lock — two boxes refreshing in the same window
 # race benignly (last-writer-wins on a still-valid token).
 #
-# HAZARD — never run `codex logout` in a shared-auth box (source-confirmed
-# 2026-07-16, codex-rs/login/src/auth/revoke.rs): logout REVOKES the refresh
-# token SERVER-SIDE (POST auth.openai.com/oauth/revoke) before unlinking, so
-# ONE box's logout kills the shared login for EVERY box — and the symlink heal
-# can't recover it (the chain is dead server-side, not just locally forked).
-# byre can't intercept it (codex makes the call itself); this is documented,
-# not gated. Re-auth is a fresh `codex login --device-auth` in any box.
+# Logout (and the clear-before-login phase) revokes the refresh token
+# server-side before unlinking. That intentionally affects every box sharing
+# the login. A successful replacement login becomes the machine credential at
+# the next reconciliation; Byre never deletes shared auth merely because one
+# box's local link is absent, since absence alone does not prove revocation.
 
 description = "Share one Codex login across all your projects."
 
@@ -40,7 +39,8 @@ description = "Share one Codex login across all your projects."
 shared_auth_for = "codex"
 
 [build]
-files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-codex-shared-auth" }
+apt = ["jq", "util-linux"]
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-codex-shared-auth", "reconcile.sh" = "/usr/local/lib/byre-codex-auth-reconcile" }
 
 [[volumes]]
 name = "codex-identity"

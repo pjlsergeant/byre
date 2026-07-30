@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -23,9 +24,14 @@ func TestCodexSharedAuthCompositionResolves(t *testing.T) {
 		t.Fatalf("codex + codex-shared-auth failed to resolve: %v", err)
 	}
 	var companion string
+	var reconciler bool
 	var codexHooks []string
 	for _, b := range res.BuildBlocks() {
 		for _, sf := range b.Files {
+			if (b.Name == "byre/codex-shared-auth" || b.Name == "codex-shared-auth") &&
+				sf.Dest == "/usr/local/lib/byre-codex-auth-reconcile" {
+				reconciler = true
+			}
 			if !strings.HasPrefix(sf.Dest, "/etc/byre/firstrun.d/") {
 				continue
 			}
@@ -39,6 +45,9 @@ func TestCodexSharedAuthCompositionResolves(t *testing.T) {
 	}
 	if companion == "" {
 		t.Fatal("symlink-assert hook not shipped")
+	}
+	if !reconciler {
+		t.Fatal("shared-auth reconciliation helper not shipped")
 	}
 	if len(codexHooks) == 0 {
 		t.Fatal("codex ships no firstrun hooks; the ordering invariant has nothing to order against")
@@ -65,17 +74,93 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	t.Helper()
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
 	cmd := exec.Command("bash", hook)
-	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "CODEX_HOME="+codexHome)
+	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "CODEX_HOME="+codexHome,
+		"BYRE_CODEX_AUTH_RECONCILE="+reconcile)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
 	}
 }
 
-// The symlink-assert hook's four behaviors, driven for real: fresh box gets a
-// dangling link; an existing per-project login is ADOPTED (moved, then
-// linked); a local fork is healed in favor of the shared credential; and the
-// whole thing is idempotent.
+// Diagnostics are strictly opt-in and record lifecycle/file metadata without
+// copying credential material into the shared log.
+func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	logPath := filepath.Join(base, "codex", "byre-auth-diagnostic.log")
+	const secret = "must-not-appear-in-diagnostics"
+
+	run := func(enabled bool) {
+		t.Helper()
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
+			"BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+		if enabled {
+			cmd.Env = append(cmd.Env, "CODEX_AUTH_DIAGNOSTIC_BYRE=1")
+		} else {
+			cmd.Env = append(cmd.Env, "CODEX_AUTH_DIAGNOSTIC_BYRE=")
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook failed: %v (%s)", err, out)
+		}
+	}
+
+	run(false)
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Fatalf("diagnostic log must not exist when disabled: %v", err)
+	}
+
+	if err := os.Remove(cred); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shared, []byte(`{"auth_mode":"chatgpt","tokens":{"access_token":"`+secret+`","refresh_token":"shared-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"auth_mode":"chatgpt","tokens":{"access_token":"`+secret+`","refresh_token":"local-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(true)
+
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(logged)
+	for _, want := range []string{
+		"component=shared-auth",
+		"event=reconcile_start",
+		"event=winner_local_newer",
+		"event=local_published",
+		"state=local_before",
+		"kind=non_symlink",
+		"state=local_final",
+		"kind=symlink",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("diagnostic log missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, secret) {
+		t.Fatalf("diagnostic log leaked credential contents:\n%s", text)
+	}
+	info, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("diagnostic log mode = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// The reconciliation hook's core behaviors, driven for real: fresh box gets a
+// dangling link; an existing per-project login is published; a newer local
+// login replaces stale shared auth; a newer shared login beats a stale local
+// copy; and the whole thing is idempotent.
 func TestCodexSharedAuthHookBehavior(t *testing.T) {
 	base, home := t.TempDir(), t.TempDir()
 	shared := filepath.Join(base, "codex", "auth.json")
@@ -94,36 +179,252 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 	if err := os.Remove(cred); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(cred, []byte(`{"adopted":true}`), 0o600); err != nil {
+	adopted := `{"auth_mode":"chatgpt","tokens":{"access_token":"adopted","refresh_token":"adopted-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	if err := os.WriteFile(cred, []byte(adopted), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runCodexSharedAuthHook(t, base, home)
-	if b, err := os.ReadFile(shared); err != nil || string(b) != `{"adopted":true}` {
+	if b, err := os.ReadFile(shared); err != nil || string(b) != adopted {
 		t.Fatalf("existing login not adopted into the shared volume: %v %q", err, b)
 	}
 	if got, _ := os.Readlink(cred); got != shared {
 		t.Fatalf("adopted cred not re-linked: %q", got)
 	}
 
-	// 3. Heal a fork: local plain file AND shared credential — shared wins.
+	// 3. A fresh login is local because Codex unlinks before login; newer local
+	// auth must replace the now-revoked shared credential.
 	if err := os.Remove(cred); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(cred, []byte(`{"fork":true}`), 0o600); err != nil {
+	freshLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":"fresh-local","refresh_token":"fresh-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(cred, []byte(freshLocal), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runCodexSharedAuthHook(t, base, home)
-	if b, _ := os.ReadFile(shared); string(b) != `{"adopted":true}` {
-		t.Fatalf("shared credential clobbered by a fork: %q", b)
+	if b, _ := os.ReadFile(shared); string(b) != freshLocal {
+		t.Fatalf("newer local login not published: %q", b)
 	}
 	if got, _ := os.Readlink(cred); got != shared {
-		t.Fatalf("fork not healed to the link: %q", got)
+		t.Fatalf("fresh local login not re-linked: %q", got)
 	}
 
-	// 4. Idempotent: run again, nothing changes.
+	// 4. A stale local copy must not replace a newer shared credential.
+	if err := os.Remove(cred); err != nil {
+		t.Fatal(err)
+	}
+	staleLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":"stale-local","refresh_token":"stale-refresh"},"last_refresh":"2026-07-19T00:00:00Z"}`
+	if err := os.WriteFile(cred, []byte(staleLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	runCodexSharedAuthHook(t, base, home)
-	if b, _ := os.ReadFile(cred); string(b) != `{"adopted":true}` {
+	if b, _ := os.ReadFile(shared); string(b) != freshLocal {
+		t.Fatalf("stale local login replaced newer shared auth: %q", b)
+	}
+	if got, _ := os.Readlink(cred); got != shared {
+		t.Fatalf("stale local login not re-linked: %q", got)
+	}
+
+	// 5. Idempotent: run again, nothing changes.
+	runCodexSharedAuthHook(t, base, home)
+	if b, _ := os.ReadFile(cred); string(b) != freshLocal {
 		t.Fatalf("idempotent re-run changed the credential: %q", b)
+	}
+}
+
+func TestCodexSharedAuthMalformedLocalCannotReplaceShared(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	validShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"valid","refresh_token":"valid-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(validShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"tokens":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(shared); err != nil || string(got) != validShared {
+		t.Fatalf("valid shared auth changed: %v %q", err, got)
+	}
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("malformed local auth was not replaced by shared link: %q (%v)", got, err)
+	}
+}
+
+func TestCodexSharedAuthHollowTokensCannotReplaceShared(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	validShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"valid","refresh_token":"valid-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(validShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(`{"auth_mode":"chatgpt","tokens":{},"last_refresh":"2026-07-21T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(shared); err != nil || string(got) != validShared {
+		t.Fatalf("hollow local tokens replaced valid shared auth: %v %q", err, got)
+	}
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("hollow local auth was not replaced by shared link: %q (%v)", got, err)
+	}
+}
+
+func TestCodexSharedAuthWhitespaceTokensCannotReplaceShared(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	validShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"valid","refresh_token":"valid-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(validShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blankLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":" ","refresh_token":"   "},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(cred, []byte(blankLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(shared); err != nil || string(got) != validShared {
+		t.Fatalf("whitespace-only local tokens replaced valid shared auth: %v %q", err, got)
+	}
+}
+
+func TestCodexSharedAuthPublishFailureReturnsNonzero(t *testing.T) {
+	_, cat := testCat(t)
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base, home := t.TempDir(), t.TempDir()
+	identity := filepath.Join(base, "codex")
+	if err := os.MkdirAll(identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	local := `{"auth_mode":"chatgpt","tokens":{"access_token":"local","refresh_token":"local-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(local), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(identity, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(identity, 0o700) })
+
+	cmd := exec.Command("bash", reconcile, "test_publish_failure")
+	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("publish failure returned success:\n%s", out)
+	}
+	if !strings.Contains(string(out), "keeping the local login") {
+		t.Fatalf("publish failure was not disclosed:\n%s", out)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(home, "auth.json")); readErr != nil || string(got) != local {
+		t.Fatalf("publish failure did not preserve local login: %v %q", readErr, got)
+	}
+}
+
+func TestCodexSharedAuthMissingLocalNeverDeletesShared(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	validShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"still-valid","refresh_token":"still-valid-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(validShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(shared); err != nil || string(got) != validShared {
+		t.Fatalf("missing local path caused shared auth mutation: %v %q", err, got)
+	}
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("missing local path did not become shared link: %q (%v)", got, err)
+	}
+}
+
+func TestCodexSharedAuthMtimeFallbackForAPIKey(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shared, []byte(`{"auth_mode":"apikey","OPENAI_API_KEY":"older"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Unix(100, 0)
+	if err := os.Chtimes(shared, old, old); err != nil {
+		t.Fatal(err)
+	}
+	freshLocal := `{"auth_mode":"apikey","OPENAI_API_KEY":"newer"}`
+	if err := os.WriteFile(cred, []byte(freshLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newer := time.Unix(200, 0)
+	if err := os.Chtimes(cred, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(shared); err != nil || string(got) != freshLocal {
+		t.Fatalf("newer API-key auth did not win by mtime: %v %q", err, got)
+	}
+}
+
+func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base, homeOld, homeNew := t.TempDir(), t.TempDir(), t.TempDir()
+	oldAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	newAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(homeOld, "auth.json"), []byte(oldAuth), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(homeNew, "auth.json"), []byte(newAuth), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(home string, done chan<- error) {
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
+			"BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+		_, err := cmd.CombinedOutput()
+		done <- err
+	}
+	done := make(chan error, 2)
+	go run(homeOld, done)
+	go run(homeNew, done)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatalf("concurrent reconciliation failed: %v", err)
+		}
+	}
+
+	shared := filepath.Join(base, "codex", "auth.json")
+	if got, err := os.ReadFile(shared); err != nil || string(got) != newAuth {
+		t.Fatalf("concurrent reconciliation did not retain newest auth: %v %q", err, got)
+	}
+	for _, home := range []string{homeOld, homeNew} {
+		if got, err := os.Readlink(filepath.Join(home, "auth.json")); err != nil || got != shared {
+			t.Fatalf("%s not linked to shared auth: %q (%v)", home, got, err)
+		}
 	}
 }
 
@@ -212,5 +513,42 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	run(home2)
 	if loginAttempted() {
 		t.Fatal("a logged-in codex must short-circuit the login; one was attempted")
+	}
+}
+
+func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
+	_, cat := testCat(t)
+	loginHook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	freshAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"fresh","refresh_token":"fresh-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then exit 1; fi\n" +
+		"if [ \"$1 $2\" = 'login --device-auth' ]; then\n" +
+		"  printf '%s' '" + freshAuth + "' > \"$CODEX_HOME/auth.json\"\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("sh", loginHook)
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+":/usr/bin:/bin",
+		"CODEX_HOME="+home,
+		"BYRE_IDENTITY_BASE="+base,
+		"BYRE_CODEX_AUTH_RECONCILE="+reconcile,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("login hook failed: %v (%s)", err, out)
+	}
+	if got, err := os.ReadFile(shared); err != nil || string(got) != freshAuth {
+		t.Fatalf("successful device login was not published: %v %q", err, got)
+	}
+	if got, err := os.Readlink(filepath.Join(home, "auth.json")); err != nil || got != shared {
+		t.Fatalf("successful device login was not re-linked: %q (%v)", got, err)
 	}
 }

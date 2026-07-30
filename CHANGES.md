@@ -1,5 +1,17 @@
 # Changes
 
+## Unreleased
+
+- **Codex shared login no longer restores a revoked credential after
+  re-authentication.** Codex 0.146 clears and revokes existing auth before
+  every OAuth login, unlinking Byre's shared-auth symlink and saving the new
+  live credential as a regular per-box file. The old startup heal discarded
+  that file and re-linked the revoked shared bytes. Shared auth now reconciles
+  under a machine-volume lock, validates both candidates, chooses the newer
+  login by refresh time (mtime fallback), publishes it atomically, and restores
+  the symlink. Missing local auth never deletes shared auth, and Byre-managed
+  device login publishes its replacement immediately.
+
 ## v1.6.0 — 2026-07-30
 
 - **The baked `dev` user now has a proper `/etc/shadow` record.** The

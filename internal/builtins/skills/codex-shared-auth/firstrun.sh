@@ -1,51 +1,15 @@
 #!/bin/bash
-# codex-shared-auth firstrun hook (ADR 0017) — idempotently asserts, EVERY
-# launch, that $CODEX_HOME/auth.json is a symlink into the machine-wide
-# identity volume. A dangling link is fine (the first `codex login` anywhere
-# writes through it into the shared volume — Codex writes in place). Runs
-# before the codex skill's login hook (00- prefix sorts first), so that hook
-# sees either a valid shared credential or the expected dangling link.
-# The base override is a test seam (the launcher's gate-file precedent).
-IDENTITY_DIR="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/codex"
-SHARED="$IDENTITY_DIR/auth.json"
-export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
-cred="$CODEX_HOME/auth.json"
+# codex-shared-auth firstrun hook (ADR 0017) — reconcile any regular local
+# credential produced by Codex's clear-before-login flow, then assert that
+# $CODEX_HOME/auth.json is a symlink into the machine-wide identity volume.
+# Runs before the codex skill's own login hook.
+set -u
 
-# Failing to create either dir means shared auth cannot be asserted this
-# launch; say so before degrading (best-effort, never block the launch) —
-# otherwise the fallback to a per-project login is silent and the user
-# believes the machine-wide credential is in play.
-if ! mkdir -p "$IDENTITY_DIR" "$CODEX_HOME" 2>/dev/null; then
-  echo "byre codex-shared-auth: cannot create $IDENTITY_DIR or $CODEX_HOME — shared auth not asserted this launch (falling back to a per-project login)." >&2
+RECONCILE=${BYRE_CODEX_AUTH_RECONCILE:-/usr/local/lib/byre-codex-auth-reconcile}
+if [ ! -r "$RECONCILE" ]; then
+  echo "byre codex-shared-auth: reconciliation helper $RECONCILE is unavailable — shared auth not asserted this launch." >&2
   exit 0
 fi
 
-# Adopt an existing per-project login rather than clobbering it: if this box
-# already has a real auth.json and the shared copy doesn't exist yet, MOVE the
-# file into the identity volume (it becomes the machine-wide credential).
-if [ -f "$cred" ] && [ ! -L "$cred" ] && [ ! -e "$SHARED" ]; then
-  # Say it out loud: this box's login is becoming THE machine credential.
-  echo "byre codex-shared-auth: promoting this box's existing Codex login to the machine-wide shared credential" >&2
-  mv "$cred" "$SHARED" 2>/dev/null || true
-fi
-
-# Assert the symlink. This also heals the logout-fork: `codex logout` deletes
-# the symlink (not the target), and a later login would otherwise write a
-# local file, silently forking off the shared credential. When both a local
-# file AND a shared credential exist, the shared one wins (the local copy is
-# a fork; discarding it is the healing).
-# Raw `readlink != $SHARED` (lexical) is sound here BECAUSE this hook
-# OVERWRITES on any mismatch -- it never trusts a link, so no canonicalization
-# is needed (unlike the login hook, which trusts-and-keeps). Whether $SHARED
-# itself could be a link escaping the identity volume is a deferred residual
-# (only an agent sabotaging its own writable store sets that up; see TODO.md).
-if [ ! -L "$cred" ] || [ "$(readlink "$cred")" != "$SHARED" ]; then
-  if [ -f "$cred" ] && [ ! -L "$cred" ] && [ -e "$SHARED" ]; then
-    # Say it out loud: a local fork is being discarded for the shared login.
-    echo "byre codex-shared-auth: replacing this box's local Codex login with the machine-wide shared credential (the local copy was a post-logout fork)" >&2
-  fi
-  rm -f "$cred"
-  ln -s "$SHARED" "$cred" 2>/dev/null || true
-fi
-[ -f "$SHARED" ] && chmod 600 "$SHARED" 2>/dev/null || true
+bash "$RECONCILE" startup || true
 exit 0
