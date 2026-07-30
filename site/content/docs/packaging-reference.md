@@ -69,7 +69,7 @@ A template is shape, never composition: base image, packages, egress
 offers, optional files copied read-only into the image. Its config bans
 `skills`, `agent`, and `[sources]` -- composition belongs in a
 [preset](/docs/configuration-reference/#presets-byrepreset). Same verb
-set: `byre template init / fork / validate / pack / install /
+set: `byre template init / fork / adopt / validate / pack / install /
 uninstall / inspect`.
 
 ## MCP and Claude Skills wiring

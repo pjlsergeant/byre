@@ -28,8 +28,9 @@ conventions are what stands in its place.
   snapshots under `packages/<digest>/`, plus `index.toml` recording
   what was acquired from where. NEVER edit anything here. Snapshots are
   the record of what was installed; an edited snapshot makes every
-  digest byre prints a lie. To change an installed package, fork it
-  (below).
+  digest byre prints a lie. To change an installed package, fork it --
+  or, if the id is yours, adopt your checkout as its live source (both
+  below).
 - `bundled/` -- a display mirror of the packages compiled into the
   byre binary, regenerated on every byre version change. byre never
   loads from it; edits are ignored and destroyed.
@@ -77,8 +78,10 @@ a working package, and byre's index will not know it moved.
     byre skill uninstall <id>
     byre skill fork <id> <new-id>         immutable -> editable copy
     byre skill init <name>                start a fresh local skill
+    byre skill adopt <dir>                a checkout becomes the local
+                                          source for its declared id
     byre skill validate [name]
-    byre skill pack <name>                emit a distributable manifest
+    byre skill pack <name> -o skill.toml  emit a distributable manifest
     byre skill archive-legacy             park leftover legacy dirs
 
 `byre template` has the same verbs (except `archive-legacy`, which
@@ -131,7 +134,10 @@ Version the source pieces instead:
 - Keep your local skills in a git repo cloned AT `skills/<owner>/`
   (or `skills/` itself if everything in it is yours). The catalog
   walker skips dot-directories, so the `.git/` inside is invisible to
-  byre. The same works under `templates/`.
+  byre. The same works under `templates/`. A clone living elsewhere
+  works too: `byre skill adopt <dir>` symlinks it into the store, and
+  the walker follows the link. A local package with an installed
+  copy's id shadows the snapshot (the catalog label says so).
 - `packages/` needs no versioning (it lands its own `.gitignore`):
   snapshots are re-acquirable byte-for-byte. Reproducibility comes from
   pinned install commands -- a `[sources]` hint (uri + digest) in the
@@ -144,9 +150,13 @@ Version the source pieces instead:
 ## Sharing skills with others
 
 Give the skill a qualified id (`owner/name`) and a version in its
-`[package]` block, then `byre skill pack <name>` -- it emits a
-manifest with a per-file payload list and prints the package digest
-plus a ready `--digest`-pinned install command. Host the files
+`[package]` block, then `byre skill pack <name> -o skill.toml` -- it
+emits a manifest with a per-file payload list and prints the package
+digest plus a ready `--digest`-pinned install command. (Use `-o`, not
+a shell redirect: `>` truncates the target before byre reads it.)
+Releasing from a fresh checkout of the published repo is
+`byre skill adopt <dir>`, then the same `pack -o` onto the manifest
+inside it. Host the files
 anywhere https serves them raw (a git tag on GitHub works); consumers
 install by manifest URL. For private code, `file:` URLs from a local
 clone are the path -- the fetcher does no auth. Put a `[sources]`

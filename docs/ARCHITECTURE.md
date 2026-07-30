@@ -476,8 +476,9 @@ the byre binary, immutable, under `byre/*` ids (a display mirror sits at
 directories under `~/.byre/skills|templates/`; **installed** are
 content-addressed, hash-verified snapshots acquired with
 `byre skill install <manifest-url>` and inert until a config enables
-them. To edit an immutable package, `byre skill fork` it into a local
-one. `docs/SKILLS.md` is the user guide. The store carries its own guide
+them. To edit an immutable package under a NEW id, `byre skill fork` it into
+a local one; to make a checkout the live source for the SAME id,
+`byre skill adopt` it. `docs/SKILLS.md` is the user guide. The store carries its own guide
 for host-side coding agents at `~/.byre/AGENTS.md` -- byre-owned,
 regenerated whenever it differs from the running binary's copy: the map,
 per-entry write rules (the consent-document rule for

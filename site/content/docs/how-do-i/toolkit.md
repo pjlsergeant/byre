@@ -28,7 +28,7 @@ optional files. Fork the nearest bundled one
 
 ## Share a skill or template with someone else?
 
-tldr: `byre skill pack <id> > skill.toml`, host the directory anywhere
+tldr: `byre skill pack <id> -o skill.toml`, host the directory anywhere
 https reaches; they run `byre skill install <uri> --digest sha256:...`.
 
 `pack` emits a manifest carrying every file's hash and the package
@@ -36,6 +36,11 @@ digest, so `install` verifies byte-for-byte and `--digest` pins to
 exactly what was reviewed. `byre skill inspect <uri>` shows the full
 trust surface -- contributions, grants, hashes -- without installing,
 and installing grants nothing until a box enables the skill.
+
+To cut a release from a fresh checkout of your published repo,
+`byre skill adopt <dir>` makes the checkout the live source for the id
+it declares (shadowing any installed copy of your own skill -- the
+catalog label says so), then `pack -o` the manifest inside it.
 
 ## Share one config baseline across many projects?
 

@@ -65,8 +65,9 @@ the path.
 
 A local skill is a directory with a `skill.toml`; `byre skill init
 <name>` scaffolds one, and `byre skill fork <id> <new-id>` copies any
-immutable package into a local editable one (the only way to modify
-bundled/installed content). `byre skill validate` runs the full strict
+immutable package into a local editable one under a new id; to make a
+checkout the live source for the SAME id, `byre skill adopt` it (see
+Publishing below). `byre skill validate` runs the full strict
 parse plus every value rule byre can judge from ONE manifest; broken
 local packages also show as INVALID rows in `list` with the reason, and
 install refuses a package that fails the same rules.
