@@ -83,6 +83,12 @@ func TestDevelopRefusesCrossEngineSession(t *testing.T) {
 	if !strings.Contains(stderr.String(), "podman") {
 		t.Errorf("refusal should name the competing engine: %s", stderr.String())
 	}
+	// The cross-engine match comes from ps -a, so it can be a non-running
+	// ownership marker where attach/shell/stop all fail; the removal bullet
+	// is the remedy that always clears the refusal.
+	if !strings.Contains(stderr.String(), "podman rm ") {
+		t.Errorf("cross-engine refusal should offer the removal remedy: %s", stderr.String())
+	}
 }
 
 // A cross-engine query error that is NOT unreachable is fatal (sole-session

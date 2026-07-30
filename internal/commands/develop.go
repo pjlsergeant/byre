@@ -603,6 +603,11 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []de
 		if len(ids) > 0 {
 			fmt.Fprintf(w, "byre: a session for this project already exists under %s, but the configured engine is now %s — refusing to start a second box on the same working tree.\n", rr.Engine(), self)
 			reportRunning(w, rr.Engine(), ids)
+			// This match came from ps -a (ownership markers count), so unlike
+			// the same-engine refusal it can name a container that is not
+			// running — where attach/shell/stop all fail and only removal
+			// clears the refusal. Say so.
+			fmt.Fprintf(w, "  • not running? remove it:  %s rm %s\n", rr.Engine(), shortID(ids[0]))
 			return nil, ExitError{Code: ExitRefused}
 		}
 	}
@@ -613,10 +618,9 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []de
 // rather than silently opening a shell (which conflated "run the agent" with
 // "give me a shell" — that's `byre shell` now). The detach keys are pinned in
 // the attach command because both engines let config override the default
-// sequence, and the caveat must be true as printed. The cross-engine caller
-// can hand this ids that are created-but-never-started or exited; attach and
-// stop then fail loudly for one wasted command each — state-aware wording is
-// deliberately not plumbed for that sliver.
+// sequence, and the caveat must be true as printed. The same-engine caller
+// only ever passes running containers; the cross-engine caller can pass a
+// non-running ownership marker, and appends its own removal bullet for it.
 func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 	id := shortID(ids[0])
 	if len(ids) > 1 {
