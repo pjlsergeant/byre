@@ -452,13 +452,14 @@ Steps 1-4 need no engine; step 5 needs a develop. New in v1.6.0
    shows an INVALID row naming the mismatch ("declared id X does not
    match store path Y"), never a silent skip. Re-adopt lands the new id;
    rm the stale link.
-4. Shadow: `skill install` the packed manifest (file path is fine), then
-   adopt a same-id checkout. The label reads `local (shadows installed
-   vX.Y.Z)` -- not a duplicate-id conflict -- on `skill list` and in the
-   config UI picker.
-5. Dest collision (engine): two enabled local skills whose `files`
-   entries claim the same image dest. Byte-identical copies compose --
-   including one checkout copy at 0664 vs an installed 0644 (umask bits
+4. Shadow: rm the adopted link, `skill install` the packed manifest
+   (file path is fine), then re-adopt the checkout. The label reads
+   `local (shadows installed vX.Y.Z)` -- not a duplicate-id conflict --
+   on `skill list` and in the config UI picker.
+5. Dest collision (engine): two enabled skills with DISTINCT ids -- one
+   installed, one an adopted checkout -- whose `files` entries claim
+   the same image dest. Byte-identical copies compose, including the
+   checkout's 0664 copy vs the installed snapshot's 0644 (umask bits
    are not divergence). Divergent bytes refuse the develop naming both
    skills + the path; an exec-bit-only difference refuses naming the
    exec bit.
