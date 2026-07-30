@@ -611,14 +611,19 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []de
 
 // reportRunning tells the user a session is already live and how to act on it,
 // rather than silently opening a shell (which conflated "run the agent" with
-// "give me a shell" — that's `byre shell` now).
+// "give me a shell" — that's `byre shell` now). The detach keys are pinned in
+// the attach command because both engines let config override the default
+// sequence, and the caveat must be true as printed. The cross-engine caller
+// can hand this ids that are created-but-never-started or exited; attach and
+// stop then fail loudly for one wasted command each — state-aware wording is
+// deliberately not plumbed for that sliver.
 func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 	id := shortID(ids[0])
 	if len(ids) > 1 {
 		fmt.Fprintf(w, "byre: %d containers match this project; the first is %s\n", len(ids), id)
 	}
 	fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
-	fmt.Fprintf(w, "  • re-attach to it:     %s attach %s   (detach again: Ctrl-P Ctrl-Q; Ctrl-C reaches the agent)\n", eng, id)
+	fmt.Fprintf(w, "  • re-attach to it:     %s attach --detach-keys=ctrl-p,ctrl-q %s   (detach again: Ctrl-P Ctrl-Q; Ctrl-C reaches the agent)\n", eng, id)
 	fmt.Fprintf(w, "  • open a shell in it:  byre shell\n")
 	fmt.Fprintf(w, "  • stop it:             %s stop %s\n", eng, id)
 }

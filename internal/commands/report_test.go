@@ -21,8 +21,8 @@ func TestReportRunning(t *testing.T) {
 	if !strings.Contains(out, "docker stop ") {
 		t.Errorf("should give the engine stop command:\n%s", out)
 	}
-	if !strings.Contains(out, "docker attach ") {
-		t.Errorf("should give the engine re-attach command:\n%s", out)
+	if !strings.Contains(out, "docker attach --detach-keys=ctrl-p,ctrl-q ") {
+		t.Errorf("should give the engine re-attach command with pinned detach keys:\n%s", out)
 	}
 	if !strings.Contains(out, "Ctrl-P Ctrl-Q") {
 		t.Errorf("re-attach line should carry the detach keys:\n%s", out)
