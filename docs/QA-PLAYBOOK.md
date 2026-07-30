@@ -441,7 +441,7 @@ Steps 1-4 need no engine; step 5 needs a develop. New in v1.6.0
 (ADR 0055 + 0056).
 
 1. Make a checkout dir with a `[package]`-only skill.toml (qualified id,
-   `requires_byre`) and one payload file. `byre skill adopt <dir>` →
+   `version`, `requires_byre`) and one payload file. `byre skill adopt <dir>` →
    "adopted <id> -> <store path>" plus a Publish hint naming the exact
    `pack -o` line. `skill list` shows the id with provenance `local`.
 2. `pack -o` onto the manifest INSIDE the linked dir: a refusal (e.g.
