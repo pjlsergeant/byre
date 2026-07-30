@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The baked `dev` user now has a proper `/etc/shadow` record.** The
+  core block wrote `dev:x:...` to /etc/passwd -- an explicit pointer to
+  a shadow record it never created -- so anything PAM-flavored (sudo's
+  account phase under some configs, `su`, cron, sshd from skills)
+  refused the user. The core block now writes `dev:*::0:99999:7:::`
+  itself (`*` locks password auth; no password ever authenticates), and
+  the pre-existing-dev scrub covers /etc/shadow alongside passwd and
+  group -- previously a base image shipping its own `dev` left its
+  shadow line orphaned, where it (and any real password hash in it)
+  would attach to the user byre creates.
+
 - **Publishing a skill from a fresh machine now has a supported path.**
   The round trip back from a distribution repo used to dead-end: the
   catalog knew your id only as *installed*, `pack` pointed at `fork`

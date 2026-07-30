@@ -21,8 +21,10 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi \
  && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \
+ && if [ -f /etc/shadow ]; then sed -i '/^dev:/d' /etc/shadow; else install -m 640 /dev/null /etc/shadow; fi \
  && if ! getent group "$BYRE_GID" >/dev/null 2>&1; then echo "dev:x:${BYRE_GID}:" >> /etc/group; fi \
  && echo "dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash" >> /etc/passwd \
+ && echo "dev:*::0:99999:7:::" >> /etc/shadow \
  && mkdir -p /home/dev /workspace /inbox && chown "${BYRE_UID}:${BYRE_GID}" /home/dev /inbox
 ENV PATH=/home/dev/.local/bin:$PATH
 COPY byre-launch /usr/local/bin/byre-launch

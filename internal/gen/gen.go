@@ -167,6 +167,19 @@ const LaunchGatePath = ByreDir + "/launch-gate"
 // another name — is fine: /etc/passwd allows two names per uid, and `dev` is
 // looked up by name.)
 //
+// /etc/shadow gets the same treatment, for two reasons. The `x` password
+// field written to /etc/passwd delegates authentication to /etc/shadow, and
+// PAM's account phase (sudo, su, cron, sshd) refuses a user whose shadow
+// record is missing — so the record must exist even though no password ever
+// authenticates. And the scrub must cover shadow too: dropping a base
+// image's `dev` from passwd/group while leaving its shadow line would let
+// that stale entry — possibly a real password hash — authenticate for the
+// user byre now owns. The entry `dev:*::0:99999:7:::` locks password auth
+// (`*` matches no hash) with the last-change field empty, not 0 — 0 means
+// "must change password at next login", which PAM also refuses. A base
+// without /etc/shadow gets one created 0640 (root-only read; nothing in a
+// box needs the sgid-shadow group convention).
+//
 // The ARG default keeps this block byte-stable (the golden test asserts on the
 // template text); only the build-arg VALUE varies per host.
 const coreBlock = "ARG BYRE_UID=1000\n" +
@@ -176,8 +189,10 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	" && rm -rf /var/lib/apt/lists/*\n" +
 	"RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi \\\n" +
 	" && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \\\n" +
+	" && if [ -f /etc/shadow ]; then sed -i '/^dev:/d' /etc/shadow; else install -m 640 /dev/null /etc/shadow; fi \\\n" +
 	" && if ! getent group \"$BYRE_GID\" >/dev/null 2>&1; then echo \"dev:x:${BYRE_GID}:\" >> /etc/group; fi \\\n" +
 	" && echo \"dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash\" >> /etc/passwd \\\n" +
+	" && echo \"dev:*::0:99999:7:::\" >> /etc/shadow \\\n" +
 	// /inbox is deliver's landing spot: dev-owned so the exec-stream writes as
 	// the dev identity, root-PARENTED (/ stays root's) so the agent cannot
 	// replace the inbox itself with a symlink — the structural half of the
