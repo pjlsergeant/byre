@@ -8,10 +8,11 @@
   account phase under some configs, `su`, cron, sshd from skills)
   refused the user. The core block now writes `dev:*::0:99999:7:::`
   itself (`*` locks password auth; no password ever authenticates), and
-  the pre-existing-dev scrub covers /etc/shadow alongside passwd and
-  group -- previously a base image shipping its own `dev` left its
-  shadow line orphaned, where it (and any real password hash in it)
-  would attach to the user byre creates.
+  the pre-existing-dev scrub covers /etc/shadow and /etc/gshadow
+  alongside passwd and group -- previously a base image shipping its
+  own `dev` left those lines orphaned, where they (and any real
+  password hash in them) would attach to the user and group byre
+  creates.
 
 - **Publishing a skill from a fresh machine now has a supported path.**
   The round trip back from a distribution repo used to dead-end: the

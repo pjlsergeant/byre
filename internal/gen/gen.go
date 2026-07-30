@@ -180,6 +180,12 @@ const LaunchGatePath = ByreDir + "/launch-gate"
 // without /etc/shadow gets one created 0640 (root-only read; nothing in a
 // box needs the sgid-shadow group convention).
 //
+// /etc/gshadow gets the scrub only, no entry: a stale `dev` gshadow line
+// is the same re-attach hazard (a base image's group password becoming
+// usable via newgrp/sg against byre's group), but the write half buys
+// nothing — with `x` in /etc/group and no gshadow line, group-password
+// auth already fails closed, which is the locked state we want.
+//
 // The ARG default keeps this block byte-stable (the golden test asserts on the
 // template text); only the build-arg VALUE varies per host.
 const coreBlock = "ARG BYRE_UID=1000\n" +
@@ -189,6 +195,7 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	" && rm -rf /var/lib/apt/lists/*\n" +
 	"RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi \\\n" +
 	" && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \\\n" +
+	" && if [ -f /etc/gshadow ]; then sed -i '/^dev:/d' /etc/gshadow; fi \\\n" +
 	" && if [ -f /etc/shadow ]; then sed -i '/^dev:/d' /etc/shadow; else install -m 640 /dev/null /etc/shadow; fi \\\n" +
 	" && if ! getent group \"$BYRE_GID\" >/dev/null 2>&1; then echo \"dev:x:${BYRE_GID}:\" >> /etc/group; fi \\\n" +
 	" && echo \"dev:x:${BYRE_UID}:${BYRE_GID}:byre:/home/dev:/bin/bash\" >> /etc/passwd \\\n" +
