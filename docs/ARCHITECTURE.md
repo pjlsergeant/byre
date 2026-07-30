@@ -280,8 +280,9 @@ Records are reaped opportunistically at the next create, when nothing
 points at them.
 
 **`develop` is single-session per directory** (ADR 0004): if a session is
-already running here, it reports that session (and how to stop it, or get
-a shell via `byre shell`) rather than spawning a parallel one -- two boxes
+already running here, it reports that session (and how to re-attach to
+its terminal, stop it, or get a shell via `byre shell`) rather than
+spawning a parallel one -- two boxes
 on one directory would race the shared state volumes. For two agents on
 one codebase, use worktrees: each worktree is its own workdir with its
 own session, deliberately sharing the project's config, volumes, and

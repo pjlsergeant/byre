@@ -618,6 +618,7 @@ func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
 		fmt.Fprintf(w, "byre: %d containers match this project; the first is %s\n", len(ids), id)
 	}
 	fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
+	fmt.Fprintf(w, "  • re-attach to it:     %s attach %s   (detach again: Ctrl-P Ctrl-Q; Ctrl-C reaches the agent)\n", eng, id)
 	fmt.Fprintf(w, "  • open a shell in it:  byre shell\n")
 	fmt.Fprintf(w, "  • stop it:             %s stop %s\n", eng, id)
 }
