@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v1.6.0 — 2026-07-30
 
 - **The baked `dev` user now has a proper `/etc/shadow` record.** The
   core block wrote `dev:x:...` to /etc/passwd -- an explicit pointer to
@@ -19,7 +19,8 @@
   catalog knew your id only as *installed*, `pack` pointed at `fork`
   (the wrong tool -- new id, old payload), and the symlink escape hatch
   was silently skipped by the store walk. Now: `byre skill adopt <dir>`
-  makes a checkout the local source for the id it declares; a symlinked
+  (and `byre template adopt`) makes a checkout the local source for the
+  id it declares; a symlinked
   package dir loads like a real one; a local package shadows your own
   installed copy with the label saying so (`local (shadows installed
   v1.4.0)`) instead of dying as a duplicate-id conflict; and

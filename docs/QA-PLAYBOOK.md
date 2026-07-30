@@ -435,6 +435,36 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
    than shipping a double `[package]`.
 3. TEARDOWN: rm the fork dirs from the store.
 
+## Journey: skill authoring round trip (adopt / pack / shadow)
+
+Steps 1-4 need no engine; step 5 needs a develop. New in v1.6.0
+(ADR 0055 + 0056).
+
+1. Make a checkout dir with a `[package]`-only skill.toml (qualified id,
+   `requires_byre`) and one payload file. `byre skill adopt <dir>` →
+   "adopted <id> -> <store path>" plus a Publish hint naming the exact
+   `pack -o` line. `skill list` shows the id with provenance `local`.
+2. `pack -o` onto the manifest INSIDE the linked dir: a refusal (e.g.
+   strip `requires_byre` first) must leave the manifest bytes intact --
+   the write happens after all reads. Restore, pack twice: same digest
+   both times, `[[package.files]]` list appended once.
+3. Edit the checkout's declared id WITHOUT re-adopting: `skill list`
+   shows an INVALID row naming the mismatch ("declared id X does not
+   match store path Y"), never a silent skip. Re-adopt lands the new id;
+   rm the stale link.
+4. Shadow: `skill install` the packed manifest (file path is fine), then
+   adopt a same-id checkout. The label reads `local (shadows installed
+   vX.Y.Z)` -- not a duplicate-id conflict -- on `skill list` and in the
+   config UI picker.
+5. Dest collision (engine): two enabled local skills whose `files`
+   entries claim the same image dest. Byte-identical copies compose --
+   including one checkout copy at 0664 vs an installed 0644 (umask bits
+   are not divergence). Divergent bytes refuse the develop naming both
+   skills + the path; an exec-bit-only difference refuses naming the
+   exec bit.
+6. TEARDOWN: uninstall the installed copy, rm the adopted links + the
+   checkout, rm box if built.
+
 ## Journey: security-guard clobber note
 
 On a project with a netns skill enabled (`skills = ["firewall"]`):
