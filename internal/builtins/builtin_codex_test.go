@@ -87,32 +87,28 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	}
 }
 
-// writeCodexHookShims gives the materialized Linux hook its process-group and
-// file-lock primitives on macOS CI too. The system Perl supplies both there;
-// exec preserves the PID just like util-linux setsid in the shipped image.
-func writeCodexHookShims(t *testing.T, bin string) {
+// writeCodexSetsidShim supplies setsid on macOS; Linux uses util-linux.
+func writeCodexSetsidShim(t *testing.T, bin string) {
 	t.Helper()
-	testtools.NeedTool(t, "bash", "jq", "date", "perl", "ps")
-	// Linux must exercise the exact util-linux CLI shipped in the box. The
-	// shims exist only for stock macOS, which has neither setsid nor flock.
+	testtools.NeedTool(t, "bash", "jq", "date")
 	if runtime.GOOS != "darwin" {
-		testtools.NeedTool(t, "setsid", "flock")
+		testtools.NeedTool(t, "setsid")
 		return
 	}
+	testtools.NeedTool(t, "perl")
 	setsid := "#!/bin/sh\nexec perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "setsid"), []byte(setsid), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	flock := `#!/usr/bin/perl
-use Fcntl qw(LOCK_EX LOCK_UN);
-my $fd = $ARGV[-1];
-open(my $fh, ">&=$fd") or exit 1;
-my $op = (grep { $_ eq '-u' } @ARGV) ? LOCK_UN : LOCK_EX;
-flock($fh, $op) or exit 1;
-`
-	if err := os.WriteFile(filepath.Join(bin, "flock"), []byte(flock), 0o755); err != nil {
-		t.Fatal(err)
+}
+
+// Shared-auth lock tests require util-linux flock, which macOS CI lacks.
+func needCodexFlock(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "darwin" {
+		t.Skip("shared Codex auth hook requires util-linux flock")
 	}
+	testtools.NeedTool(t, "flock")
 }
 
 // Diagnostics are strictly opt-in and record lifecycle/file metadata without
@@ -420,6 +416,7 @@ func TestCodexSharedAuthMtimeFallbackForAPIKey(t *testing.T) {
 }
 
 func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
+	needCodexFlock(t)
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
@@ -650,7 +647,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			home, bin := t.TempDir(), t.TempDir()
-			writeCodexHookShims(t, bin)
+			writeCodexSetsidShim(t, bin)
 			probeStamp := filepath.Join(home, "probe")
 			loginStamp := filepath.Join(home, "login")
 			accessToken := tt.accessToken
@@ -712,7 +709,7 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 	home, bin := t.TempDir(), t.TempDir()
-	writeCodexHookShims(t, bin)
+	writeCodexSetsidShim(t, bin)
 	auth := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"refresh"},"last_refresh":"2020-01-01T00:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(auth), 0o600); err != nil {
 		t.Fatal(err)
@@ -765,13 +762,14 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 }
 
 func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
+	needCodexFlock(t)
 	_, cat := testCat(t)
 	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
-	writeCodexHookShims(t, bin)
+	writeCodexSetsidShim(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
 		t.Fatal(err)
@@ -831,13 +829,14 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 }
 
 func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
+	needCodexFlock(t)
 	_, cat := testCat(t)
 	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
-	writeCodexHookShims(t, bin)
+	writeCodexSetsidShim(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
 		t.Fatal(err)
@@ -887,13 +886,14 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 }
 
 func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
+	needCodexFlock(t)
 	_, cat := testCat(t)
 	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
-	writeCodexHookShims(t, bin)
+	writeCodexSetsidShim(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
 		t.Fatal(err)
