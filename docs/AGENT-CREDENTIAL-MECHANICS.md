@@ -204,8 +204,10 @@ the Claude Code credentials stored in ~/.claude"
 >   publishes the winner, and restores the link. It never treats link absence
 >   alone as authority to delete shared auth.
 > - **Cold-start validation is expiry-gated and fail-open**: the Codex firstrun
->   hook mirrors Codex's five-minute JWT-expiry / eight-day `last_refresh`
->   policy, then serializes a short `app-server` `account/read` refresh probe
+>   hook deliberately narrows Codex's proactive policy: a decodable JWT probes
+>   only within five minutes of expiry, while non-JWT tokens fall back to the
+>   eight-day `last_refresh` threshold. It then serializes a short `app-server`
+>   `account/read` refresh probe
 >   with the companion's machine lock. Network, process, and protocol ambiguity
 >   preserve auth and launch with a warning; a concurrent credential change
 >   suppresses recovery. An unavailable account is

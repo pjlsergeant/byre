@@ -828,7 +828,7 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 	stub := "#!/bin/sh\n" +
 		"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
 		"if [ \"$1\" = app-server ]; then\n" +
-		"  (sleep 0.2; printf '%s' " + strconv.Quote(fresh) + " > " + strconv.Quote(shared) + ") &\n" +
+		"  (sleep 0.05; printf '%s' " + strconv.Quote(fresh) + " > " + strconv.Quote(shared) + ") &\n" +
 		"  printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'\n" +
 		"  sleep 2; exit 0\nfi\n" +
 		"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(badLogin) + "; exit 0; fi\n" +

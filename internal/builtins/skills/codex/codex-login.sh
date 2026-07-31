@@ -59,10 +59,10 @@ diag_path() {
   diag_event "credential_state_${1}_${kind}_${meta}"
 }
 
-# Match Codex 0.146's proactive-refresh policy without putting a network request
-# on every launch: JWT expiry within five minutes, or (when the access token is
-# not a JWT) last_refresh older than eight days. Missing timestamps are left to
-# Codex, just as its own policy does. API-key/PAT credentials never probe.
+# Narrow Codex 0.146's proactive-refresh policy to avoid a network request on
+# every launch: a decodable JWT wins and probes only within five minutes of
+# expiry; non-JWT access tokens fall back to last_refresh older than eight days.
+# Missing timestamps are left to Codex. API-key/PAT credentials never probe.
 needs_live_probe() {
   [ "$(jq -r '.auth_mode // empty' "$cred" 2>/dev/null)" = chatgpt ] || return 1
   token="$(jq -r '.tokens.access_token // empty' "$cred" 2>/dev/null)" || return 1
@@ -125,8 +125,8 @@ live_probe() {
     break
   done
 
-  exec {rpc_in}>&-
-  exec {rpc_out}<&-
+  { exec {rpc_in}>&-; } 2>/dev/null || true
+  { exec {rpc_out}<&-; } 2>/dev/null || true
   # EOF normally stops app-server. Give it time to finish any in-place auth
   # write before escalating, and target the dedicated session so plugin/git
   # children cannot outlive the credential lock.
