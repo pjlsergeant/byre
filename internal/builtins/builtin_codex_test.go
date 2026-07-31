@@ -1,10 +1,12 @@
 package builtins
 
 import (
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -474,8 +476,9 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	loginAttempted := func() bool { _, err := os.Stat(stamp); return err == nil }
 	run := func(codexHome string) {
 		t.Helper()
-		cmd := exec.Command("sh", hook)
-		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome)
+		cmd := exec.Command("bash", hook)
+		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome,
+			"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("hook failed: %v (%s)", err, out)
 		}
@@ -535,7 +538,7 @@ func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("sh", loginHook)
+	cmd := exec.Command("bash", loginHook)
 	cmd.Env = append(os.Environ(),
 		"PATH="+bin+":/usr/bin:/bin",
 		"CODEX_HOME="+home,
@@ -550,5 +553,350 @@ func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
 	}
 	if got, err := os.Readlink(filepath.Join(home, "auth.json")); err != nil || got != shared {
 		t.Fatalf("successful device login was not re-linked: %q (%v)", got, err)
+	}
+}
+
+func TestCodexLoginHookColdStartProbe(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+
+	tests := []struct {
+		name            string
+		accessToken     string
+		lastRefresh     string
+		appServerBody   string
+		refreshesFile   bool
+		wantProbe       bool
+		wantLogin       bool
+		wantWarning     bool
+		wantUnconfirmed bool
+	}{
+		{
+			name:        "fresh credential avoids network probe",
+			lastRefresh: time.Now().UTC().Format(time.RFC3339),
+		},
+		{
+			name:        "fresh jwt overrides old refresh timestamp",
+			accessToken: "x." + base64.RawURLEncoding.EncodeToString([]byte(`{"exp":`+strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10)+`}`)) + ".x",
+			lastRefresh: "2020-01-01T00:00:00Z",
+		},
+		{
+			name:          "expiring jwt requires probe",
+			accessToken:   "x." + base64.RawURLEncoding.EncodeToString([]byte(`{"exp":`+strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)+`}`)) + ".x",
+			lastRefresh:   time.Now().UTC().Format(time.RFC3339),
+			appServerBody: `{"id":1,"result":{"account":{"type":"chatgpt","email":"private@example.test","planType":"pro"},"requiresOpenaiAuth":true}}`,
+			refreshesFile: true,
+			wantProbe:     true,
+		},
+		{
+			name:          "stale credential refreshes through app server",
+			lastRefresh:   "2020-01-01T00:00:00Z",
+			appServerBody: `{"id":1,"result":{"account":{"type":"chatgpt","email":"private@example.test","planType":"pro"},"requiresOpenaiAuth":true}}`,
+			refreshesFile: true,
+			wantProbe:     true,
+		},
+		{
+			name:            "account present without persisted refresh warns but launches",
+			lastRefresh:     "2020-01-01T00:00:00Z",
+			appServerBody:   `{"id":1,"result":{"account":{"type":"chatgpt","email":"private@example.test","planType":"pro"},"requiresOpenaiAuth":true}}`,
+			wantProbe:       true,
+			wantUnconfirmed: true,
+		},
+		{
+			name:        "ambiguous probe preserves credential",
+			lastRefresh: "2020-01-01T00:00:00Z",
+			wantProbe:   true,
+			wantWarning: true,
+		},
+		{
+			name:          "unavailable account starts recovery",
+			lastRefresh:   "2020-01-01T00:00:00Z",
+			appServerBody: `{"id":1,"result":{"account":null,"requiresOpenaiAuth":true}}`,
+			wantProbe:     true,
+			wantLogin:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home, bin := t.TempDir(), t.TempDir()
+			probeStamp := filepath.Join(home, "probe")
+			loginStamp := filepath.Join(home, "login")
+			accessToken := tt.accessToken
+			if accessToken == "" {
+				accessToken = "opaque"
+			}
+			auth := `{"auth_mode":"chatgpt","tokens":{"access_token":` + strconv.Quote(accessToken) + `,"refresh_token":"refresh"},"last_refresh":` + strconv.Quote(tt.lastRefresh) + `}`
+			if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(auth), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			stub := "#!/bin/sh\n" +
+				"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
+				"if [ \"$1\" = app-server ]; then\n" +
+				"  touch " + strconv.Quote(probeStamp) + "\n"
+			if tt.refreshesFile {
+				fresh := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"new-refresh"},"last_refresh":` + strconv.Quote(time.Now().UTC().Format(time.RFC3339)) + `}`
+				stub += "  printf '%s' " + strconv.Quote(fresh) + " > \"$CODEX_HOME/auth.json\"\n"
+			}
+			if tt.appServerBody != "" {
+				stub += "  printf '%s\\n' " + strconv.Quote(tt.appServerBody) + "\n"
+			}
+			stub += "  sleep 1; exit 0\nfi\n" +
+				"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(loginStamp) + "; exit 0; fi\n" +
+				"exit 1\n"
+			if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			cmd := exec.Command("bash", hook)
+			cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+				"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("hook failed: %v (%s)", err, out)
+			}
+			_, probeErr := os.Stat(probeStamp)
+			if got := probeErr == nil; got != tt.wantProbe {
+				t.Errorf("probe ran = %v, want %v (%s)", got, tt.wantProbe, out)
+			}
+			_, loginErr := os.Stat(loginStamp)
+			if got := loginErr == nil; got != tt.wantLogin {
+				t.Errorf("login ran = %v, want %v (%s)", got, tt.wantLogin, out)
+			}
+			if got := strings.Contains(string(out), "could not verify"); got != tt.wantWarning {
+				t.Errorf("ambiguous warning = %v, want %v (%s)", got, tt.wantWarning, out)
+			}
+			if got := strings.Contains(string(out), "refresh was not persisted"); got != tt.wantUnconfirmed {
+				t.Errorf("unconfirmed-refresh warning = %v, want %v (%s)", got, tt.wantUnconfirmed, out)
+			}
+			if strings.Contains(string(out), "private@example.test") {
+				t.Fatalf("account email leaked from private RPC response: %s", out)
+			}
+		})
+	}
+}
+
+func TestCodexLoginHookReapsAppServer(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+	home, bin := t.TempDir(), t.TempDir()
+	auth := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"refresh"},"last_refresh":"2020-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(auth), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pidFile := filepath.Join(home, "app-server.pid")
+	childPIDFile := filepath.Join(home, "app-server-child.pid")
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
+		"if [ \"$1\" = app-server ]; then\n" +
+		"  printf '%s' \"$$\" > " + strconv.Quote(pidFile) + "\n" +
+		"  printf '%s\\n' '{\"id\":1,\"result\":{\"account\":{\"type\":\"chatgpt\"},\"requiresOpenaiAuth\":true}}'\n" +
+		"  trap '' TERM\n" +
+		"  sleep 1000 &\n" +
+		"  printf '%s' \"$!\" > " + strconv.Quote(childPIDFile) + "\n" +
+		"  wait\n" +
+		"fi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", hook)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+		"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	for _, pidPath := range []string{pidFile, childPIDFile} {
+		b, err := os.ReadFile(pidPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pid, err := strconv.Atoi(string(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		processActive := func() bool {
+			stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+			if err != nil {
+				return false
+			}
+			fields := strings.Fields(string(stat))
+			return len(fields) > 2 && fields[2] != "Z"
+		}
+		for i := 0; i < 20; i++ {
+			if !processActive() {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if processActive() {
+			t.Fatalf("app-server process %d from %s survived probe cleanup", pid, filepath.Base(pidPath))
+		}
+	}
+}
+
+func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
+	_, cat := testCat(t)
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	identity := filepath.Join(base, "codex")
+	if err := os.MkdirAll(identity, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(identity, "auth.json")
+	stale := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"dead"},"last_refresh":"2020-01-01T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, filepath.Join(home, "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	// The production trust root is intentionally not configurable. Materialize a
+	// test-only copy with that one literal replaced so the destructive boundary
+	// can be exercised without sharing /home/dev state between parallel tests.
+	testSrc := strings.Replace(string(src), `/home/dev/.byre-identity/codex`, identity, 1)
+	testHook := filepath.Join(t.TempDir(), "codex-login.sh")
+	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loginStamp := filepath.Join(home, "safe-login")
+	fresh := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"fresh"},"last_refresh":"2030-01-01T00:00:00Z"}`
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
+		"if [ \"$1\" = app-server ]; then printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'; sleep 1; exit 0; fi\n" +
+		"if [ \"$1 $2\" = 'login --device-auth' ]; then\n" +
+		"  test ! -e \"$CODEX_HOME/auth.json\" && test ! -L \"$CODEX_HOME/auth.json\" || exit 41\n" +
+		"  test -s " + strconv.Quote(shared) + " || exit 42\n" +
+		"  echo shared-login-stderr-visible >&2\n" +
+		"  touch " + strconv.Quote(loginStamp) + "\n" +
+		"  printf '%s' " + strconv.Quote(fresh) + " > \"$CODEX_HOME/auth.json\"\n" +
+		"  exit 0\nfi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	cmd := exec.Command("bash", testHook)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	if !strings.Contains(string(out), "shared-login-stderr-visible") {
+		t.Fatalf("shared lock setup swallowed later stderr: %s", out)
+	}
+	if _, err := os.Stat(loginStamp); err != nil {
+		t.Fatalf("safe device login did not run: %v", err)
+	}
+	if got, err := os.ReadFile(shared); err != nil || string(got) != fresh {
+		t.Fatalf("fresh login was not published safely: %v %q", err, got)
+	}
+	if got, err := os.Readlink(filepath.Join(home, "auth.json")); err != nil || got != shared {
+		t.Fatalf("shared link was not restored: %q (%v)", got, err)
+	}
+}
+
+func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
+	_, cat := testCat(t)
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	identity := filepath.Join(base, "codex")
+	if err := os.MkdirAll(identity, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(identity, "auth.json")
+	stale := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"loser"},"last_refresh":"2020-01-01T00:00:00Z"}`
+	fresh := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"winner"},"last_refresh":"2030-01-01T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, filepath.Join(home, "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+	testSrc := strings.Replace(string(src), `/home/dev/.byre-identity/codex`, identity, 1)
+	testHook := filepath.Join(t.TempDir(), "codex-login.sh")
+	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	badLogin := filepath.Join(home, "login-must-not-run")
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
+		"if [ \"$1\" = app-server ]; then\n" +
+		"  (sleep 0.2; printf '%s' " + strconv.Quote(fresh) + " > " + strconv.Quote(shared) + ") &\n" +
+		"  printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'\n" +
+		"  sleep 2; exit 0\nfi\n" +
+		"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(badLogin) + "; exit 0; fi\n" +
+		"exit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", testHook)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+		"BYRE_IDENTITY_BASE="+base, "CODEX_AUTH_DIAGNOSTIC_BYRE=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	if _, err := os.Stat(badLogin); !os.IsNotExist(err) {
+		t.Fatalf("sibling refresh must suppress device login: %v", err)
+	}
+	if got, err := os.ReadFile(shared); err != nil || string(got) != fresh {
+		t.Fatalf("sibling's refreshed credential was not retained: %v %q", err, got)
+	}
+	log, err := os.ReadFile(filepath.Join(identity, "byre-auth-diagnostic.log"))
+	if err != nil || !strings.Contains(string(log), "live_probe_sibling_changed_credential") {
+		t.Fatalf("sibling refresh was not classified: %v %s", err, log)
+	}
+}
+
+func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
+	_, cat := testCat(t)
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	identity := filepath.Join(base, "codex")
+	if err := os.MkdirAll(identity, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(identity, "auth.json")
+	stale := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"dead"},"last_refresh":"2020-01-01T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cred := filepath.Join(home, "auth.json")
+	if err := os.Symlink(shared, cred); err != nil {
+		t.Fatal(err)
+	}
+	testSrc := strings.Replace(string(src), `/home/dev/.byre-identity/codex`, identity, 1)
+	testHook := filepath.Join(t.TempDir(), "codex-login.sh")
+	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
+		"if [ \"$1\" = app-server ]; then printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'; exit 0; fi\n" +
+		"if [ \"$1 $2\" = 'login --device-auth' ]; then test ! -e \"$CODEX_HOME/auth.json\" && exit 1; fi\n" +
+		"exit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", testHook)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("failed device login did not restore shared link: %q (%v)", got, err)
+	}
+	if got, err := os.ReadFile(shared); err != nil || string(got) != stale {
+		t.Fatalf("failed device login changed shared credential: %v %q", err, got)
 	}
 }

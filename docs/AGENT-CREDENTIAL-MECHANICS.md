@@ -203,6 +203,18 @@ the Claude Code credentials stored in ~/.claude"
 >   conflicts by `last_refresh` (mtime fallback) under `flock`, atomically
 >   publishes the winner, and restores the link. It never treats link absence
 >   alone as authority to delete shared auth.
+> - **Cold-start validation is expiry-gated and fail-open**: the Codex firstrun
+>   hook mirrors Codex's five-minute JWT-expiry / eight-day `last_refresh`
+>   policy, then serializes a short `app-server` `account/read` refresh probe
+>   with the companion's machine lock. Network, process, and protocol ambiguity
+>   preserve auth and launch with a warning; a concurrent credential change
+>   suppresses recovery. An unavailable account is
+>   rechecked for a delayed sibling write before device login. Before that
+>   interactive login, Byre removes only the box-local symlink: Codex's
+>   unconditional pre-login logout then has no shared credential to revoke.
+>   Success creates a regular local file which the reconciler publishes;
+>   cancellation or failure restores the validated link without overwriting a
+>   regular file, so the current launch can still use the machine-wide file.
 > - **`codex logout` REVOKES the refresh token server-side** before deleting
 >   the file: `logout_with_revoke` -> `revoke_auth_tokens` POSTs to
 >   `auth.openai.com/oauth/revoke` (revoke.rs), best-effort, then

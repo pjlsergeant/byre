@@ -10,7 +10,12 @@
   under a machine-volume lock, validates both candidates, chooses the newer
   login by refresh time (mtime fallback), publishes it atomically, and restores
   the symlink. Missing local auth never deletes shared auth, and Byre-managed
-  device login publishes its replacement immediately.
+  device login publishes its replacement immediately. At cold start, Byre now
+  asks Codex to refresh ChatGPT credentials only when Codex's own expiry policy
+  says they are stale; a confirmed unavailable account starts device login,
+  while network and protocol ambiguity preserve the credential and launch with
+  a warning. Shared login detaches only the box-local symlink first, preventing
+  Codex's implicit pre-login logout from revoking the machine-wide credential.
 
 ## v1.6.0 — 2026-07-30
 
