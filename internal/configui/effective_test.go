@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -982,6 +983,9 @@ func TestScalarPickersDistinguishInheritFromOff(t *testing.T) {
 
 	t.Run("absent selects inherit and writes nothing", func(t *testing.T) {
 		m := base(config.Config{})
+		if got, want := m.agentOpts[len(m.agentOpts)-2:], []string{noneOption, "(inherit: claude)"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("none and inherit must finish the picker in that order: got %v, want %v", got, want)
+		}
 		if !isInheritRow(m.agentOpts[m.agentSel]) {
 			t.Fatalf("absent agent must select the inherit row, got %q in %v", m.agentOpts[m.agentSel], m.agentOpts)
 		}

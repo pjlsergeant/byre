@@ -3,6 +3,7 @@ package configui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,6 +38,14 @@ func TestUnloadableSkillShowsDisabledWithReason(t *testing.T) {
 	}
 	if d := m.optDisabled("brokenmount"); !strings.Contains(d, "mount target") {
 		t.Errorf("the picker row must be disabled-with-reason, got %q", d)
+	}
+
+	// Disabled catalog rows do not displace the meta-choices from the end.
+	m.inh.HasLower = true
+	m.inh.Default.Agent = "claude"
+	m = m.loadConfig(config.Config{})
+	if got, want := m.agentOpts[len(m.agentOpts)-2:], []string{noneOption, "(inherit: claude)"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("problem rows must precede none/inherit: got %v in %v", got, m.agentOpts)
 	}
 }
 

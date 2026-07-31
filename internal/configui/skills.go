@@ -398,10 +398,10 @@ func pickerOpts(discovered []string, current string) []string {
 // With nothing below, absence and the sentinel are genuinely the same thing,
 // so the picker doesn't grow a choice that means nothing -- and the file byre
 // writes is unchanged from before (the sentinel row keeps mapping to absent).
-const inheritPrefix = "(inherit — "
+const inheritPrefix = "(inherit: "
 
-func inheritRow(value, source string) string {
-	return inheritPrefix + value + ", from " + source + ")"
+func inheritRow(value string) string {
+	return inheritPrefix + value + ")"
 }
 
 func isInheritRow(s string) bool { return strings.HasPrefix(s, inheritPrefix) }
@@ -421,17 +421,16 @@ func indexOfInherit(opts []string) int {
 
 // scalarOpts is pickerOpts plus the inherit row, for the fields that carry an
 // off-switch sentinel. lowerValue is what the cascade below provides ("" =
-// nothing below, so no inherit row); lowerSource attributes it.
-// sentinelFirst keeps each picker's historical row order (engine leads with
-// "auto"; template/agent end with "none"); the inherit row is inserted
-// adjacent to the sentinel, since that is the row it exists to be told apart
-// from.
-func scalarOpts(discovered []string, current, lowerValue, lowerSource, sentinel string, sentinelFirst bool) []string {
+// nothing below, so no inherit row).
+// sentinelFirst keeps each picker's historical sentinel position (engine leads
+// with "auto"; template/agent end with "none"). For the latter, inherit comes
+// last: it is the exceptional meta-choice, not one of the concrete values.
+func scalarOpts(discovered []string, current, lowerValue, sentinel string, sentinelFirst bool) []string {
 	var opts []string
 	if sentinelFirst {
 		opts = append(opts, sentinel)
 		if lowerValue != "" {
-			opts = append(opts, inheritRow(lowerValue, lowerSource))
+			opts = append(opts, inheritRow(lowerValue))
 		}
 	}
 	for _, d := range discovered {
@@ -443,10 +442,10 @@ func scalarOpts(discovered []string, current, lowerValue, lowerSource, sentinel 
 		opts = append(opts, current)
 	}
 	if !sentinelFirst {
-		if lowerValue != "" {
-			opts = append(opts, inheritRow(lowerValue, lowerSource))
-		}
 		opts = append(opts, sentinel)
+		if lowerValue != "" {
+			opts = append(opts, inheritRow(lowerValue))
+		}
 	}
 	return opts
 }

@@ -126,14 +126,13 @@ func (m model) lowerNow() config.Config {
 	return lower
 }
 
-// lowerScalar reports what the cascade BELOW this file provides for one
-// scalar field, and where it comes from -- the inherit row's content. The
-// selected template counts as lower for agent/engine (a template may set
-// them); for the template field itself it must not, or the row would report
+// lowerScalar reports what the cascade BELOW this file provides for one scalar
+// field. The selected template counts as lower for agent/engine (a template may
+// set them); for the template field itself it must not, or the row would report
 // the very selection it describes.
-func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool) (value, source string) {
+func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool) string {
 	if !m.inh.HasLower {
-		return "", ""
+		return ""
 	}
 	lower := m.inh.Default
 	if includeTemplate {
@@ -148,10 +147,7 @@ func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool)
 		lower = config.Merge(lower, nl.Config)
 	}
 	v := config.FromNone(get(lower))
-	if v == "" {
-		return "", ""
-	}
-	return v, m.lowerSource(func(c config.Config) bool { return config.FromNone(get(c)) == v })
+	return v
 }
 
 // templateNow, agentNow and engineNow are the EFFECTIVE selections: an

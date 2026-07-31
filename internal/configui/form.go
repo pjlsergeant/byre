@@ -479,21 +479,21 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.ti.SetValue(cfg.Base)
 	// Template first, and its selection with it: the agent/engine inherit rows
 	// consult the selected template as part of the lower cascade.
-	tmplLower, tmplSrc := m.lowerScalar(func(c config.Config) string { return c.Template }, false)
+	tmplLower := m.lowerScalar(func(c config.Config) string { return c.Template }, false)
 	m.tmplInherit, m.tmplStored = tmplLower, cfg.Template == noneOption
-	m.tmplOpts = scalarOpts(m.templates, cfg.Template, tmplLower, tmplSrc, noneOption, false)
+	m.tmplOpts = scalarOpts(m.templates, cfg.Template, tmplLower, noneOption, false)
 	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
 	m.tmplSel = scalarSel(m.tmplOpts, cfg.Template, noneOption)
 
-	agentLower, agentSrc := m.lowerScalar(func(c config.Config) string { return c.Agent }, true)
+	agentLower := m.lowerScalar(func(c config.Config) string { return c.Agent }, true)
 	m.agentInherit, m.agentStored = agentLower, cfg.Agent == noneOption
-	m.agentOpts = scalarOpts(m.agents, cfg.Agent, agentLower, agentSrc, noneOption, false)
+	m.agentOpts = scalarOpts(m.agents, cfg.Agent, agentLower, noneOption, false)
 	// Problem rows appear in pickers disabled-with-reason.
 	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
 
-	engineLower, engineSrc := m.lowerScalar(func(c config.Config) string { return c.Engine }, true)
+	engineLower := m.lowerScalar(func(c config.Config) string { return c.Engine }, true)
 	m.engineInherit, m.engineStored = engineLower, cfg.Engine == "auto"
-	m.engineOpts = scalarOpts([]string{"docker", "podman"}, cfg.Engine, engineLower, engineSrc, "auto", true)
+	m.engineOpts = scalarOpts([]string{"docker", "podman"}, cfg.Engine, engineLower, "auto", true)
 	if cfg.Engine != "" && cfg.Engine != "auto" && !contains(m.engineOpts, cfg.Engine) {
 		m.engineOpts = append(m.engineOpts, cfg.Engine)
 	}
@@ -544,31 +544,32 @@ func (m model) loadConfig(cfg config.Config) model {
 	return m
 }
 
-// seedPrefsOpts are the tri-state's rows, in picker order. "inherit" is index
-// 0 because it is what an unset key means and what a fresh file writes:
-// nothing.
-var seedPrefsOpts = []string{"inherit", "on", "off"}
+// seedPrefsOpts are the tri-state's rows, in picker order. Inherit comes last,
+// consistently with the other exceptional meta-choices.
+var seedPrefsOpts = []string{"on", "off", "inherit"}
+
+const seedPrefsInherit = 2
 
 // seedPrefsSel maps the stored pointer onto a picker row, and seedPrefsValue
-// maps a row back. The pair is the whole tri-state contract: index 0 removes
-// the key, 1 and 2 write an explicit true/false.
+// maps a row back. The pair is the whole tri-state contract: indices 0 and 1
+// write explicit true/false; index 2 removes the key.
 func seedPrefsSel(v *bool) int {
 	switch {
 	case v == nil:
-		return 0
+		return seedPrefsInherit
 	case *v:
-		return 1
+		return 0
 	default:
-		return 2
+		return 1
 	}
 }
 
 func seedPrefsValue(sel int) *bool {
 	yes, no := true, false
 	switch sel {
-	case 1:
+	case 0:
 		return &yes
-	case 2:
+	case 1:
 		return &no
 	default:
 		return nil
@@ -1135,7 +1136,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 		// already there does nothing and never will (the runner leaves a
 		// diverged volume alone).
 		s += dimStyle.Render("  copies the agent's curated prefs into a volume being CREATED — an existing one is left alone")
-		if m.seedPrefsSel == 0 {
+		if m.seedPrefsSel == seedPrefsInherit {
 			if lower := m.lowerNow().SeedPrefs; lower != nil {
 				s += dimStyle.Render(fmt.Sprintf("  (inherited: %s)", boolWord(*lower)))
 			}
@@ -1320,7 +1321,9 @@ func (m model) renderPick(opts []string, sel int, focused bool) string {
 }
 
 // appendPickerProblems adds catalog INVALID/conflict/LEGACY names of kind to
-// opts (agentsOnly: only LooksLikeAgent skill rows).
+// opts (agentsOnly: only LooksLikeAgent skill rows). Disabled problem rows sit
+// before the none/inherit meta-choices so inherit remains the final selectable
+// and displayed option.
 func appendPickerProblems(opts []string, cat *packages.Catalog, kind packages.Kind, agentsOnly bool) []string {
 	if cat == nil {
 		return opts
@@ -1329,6 +1332,7 @@ func appendPickerProblems(opts []string, cat *packages.Catalog, kind packages.Ki
 	for _, o := range opts {
 		seen[o] = true
 	}
+	var problems []string
 	for _, ent := range cat.ListProblemRows(kind) {
 		// The agent picker only lists skill problem rows whose primary carries
 		// an [agent] table (LooksLikeAgent, set at ingest) — a broken plain
@@ -1344,9 +1348,19 @@ func appendPickerProblems(opts []string, cat *packages.Catalog, kind packages.Ki
 			continue
 		}
 		seen[name] = true
-		opts = append(opts, name)
+		problems = append(problems, name)
 	}
-	return opts
+	insert := len(opts)
+	for i, o := range opts {
+		if o == noneOption || isInheritRow(o) {
+			insert = i
+			break
+		}
+	}
+	out := make([]string, 0, len(opts)+len(problems))
+	out = append(out, opts[:insert]...)
+	out = append(out, problems...)
+	return append(out, opts[insert:]...)
 }
 
 // ---- cursor-list plumbing ----------------------------------------------------

@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,15 +15,18 @@ import (
 // and "unset" has to survive an open-and-save untouched -- writing
 // `seed_prefs = false` for "I didn't say" is a different instruction.
 func TestSeedPrefsWidgetWritesAllThreeStates(t *testing.T) {
+	if got, want := seedPrefsOpts, []string{"on", "off", "inherit"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("picker order = %v, want %v", got, want)
+	}
 	yes, no := true, false
 	for _, tc := range []struct {
 		name string
 		in   *bool
 		sel  int
 	}{
-		{"unset loads inherit", nil, 0},
-		{"true loads on", &yes, 1},
-		{"false loads off", &no, 2},
+		{"unset loads inherit", nil, 2},
+		{"true loads on", &yes, 0},
+		{"false loads off", &no, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newModel("t", "/x", config.Config{SeedPrefs: tc.in}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
@@ -49,6 +53,7 @@ func TestSeedPrefsWidgetWritesAllThreeStates(t *testing.T) {
 		mm, _ := m.updateForm(k)
 		return mm.(model)
 	}
+	// A fresh unset value starts at the final inherit row and wraps to on.
 	m = drive(m, tea.KeyMsg{Type: tea.KeyRight})
 	if got := m.assemble().SeedPrefs; got == nil || !*got {
 		t.Fatalf("inherit -> right should be an explicit on, got %v", got)
@@ -95,7 +100,7 @@ func TestSeedPrefsInheritRowNamesTheInheritedValue(t *testing.T) {
 		t.Errorf("inherit row should name the inherited value: %q", got)
 	}
 	// An explicit selection is the answer; nothing to report about the cascade.
-	m.seedPrefsSel = 2
+	m.seedPrefsSel = 1
 	if got := m.renderValue(fSeedPrefs, false); strings.Contains(got, "inherited:") {
 		t.Errorf("an explicit choice must not also claim to inherit: %q", got)
 	}
