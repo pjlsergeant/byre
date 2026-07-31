@@ -85,6 +85,27 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	}
 }
 
+// writeCodexHookShims gives the materialized Linux hook its process-group and
+// file-lock primitives on macOS CI too. The system Perl supplies both there;
+// exec preserves the PID just like util-linux setsid in the shipped image.
+func writeCodexHookShims(t *testing.T, bin string) {
+	t.Helper()
+	setsid := "#!/bin/sh\nexec perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "setsid"), []byte(setsid), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	flock := `#!/usr/bin/perl
+use Fcntl qw(LOCK_EX LOCK_UN);
+my $fd = $ARGV[-1];
+open(my $fh, ">&=$fd") or exit 1;
+my $op = (grep { $_ eq '-u' } @ARGV) ? LOCK_UN : LOCK_EX;
+flock($fh, $op) or exit 1;
+`
+	if err := os.WriteFile(filepath.Join(bin, "flock"), []byte(flock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Diagnostics are strictly opt-in and record lifecycle/file metadata without
 // copying credential material into the shared log.
 func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
@@ -590,7 +611,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 		},
 		{
 			name:          "stale credential refreshes through app server",
-			lastRefresh:   "2020-01-01T00:00:00Z",
+			lastRefresh:   "2020-01-01T00:00:00.123456789Z",
 			appServerBody: `{"id":1,"result":{"account":{"type":"chatgpt","email":"private@example.test","planType":"pro"},"requiresOpenaiAuth":true}}`,
 			refreshesFile: true,
 			wantProbe:     true,
@@ -620,6 +641,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			home, bin := t.TempDir(), t.TempDir()
+			writeCodexHookShims(t, bin)
 			probeStamp := filepath.Join(home, "probe")
 			loginStamp := filepath.Join(home, "login")
 			accessToken := tt.accessToken
@@ -680,6 +702,7 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 	home, bin := t.TempDir(), t.TempDir()
+	writeCodexHookShims(t, bin)
 	auth := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"refresh"},"last_refresh":"2020-01-01T00:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(auth), 0o600); err != nil {
 		t.Fatal(err)
@@ -715,12 +738,9 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 			t.Fatal(err)
 		}
 		processActive := func() bool {
-			stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-			if err != nil {
-				return false
-			}
-			fields := strings.Fields(string(stat))
-			return len(fields) > 2 && fields[2] != "Z"
+			out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+			state := strings.TrimSpace(string(out))
+			return err == nil && state != "" && state[0] != 'Z'
 		}
 		for i := 0; i < 20; i++ {
 			if !processActive() {
@@ -741,6 +761,7 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	writeCodexHookShims(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
 		t.Fatal(err)
@@ -806,6 +827,7 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	writeCodexHookShims(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
 		t.Fatal(err)
@@ -861,6 +883,7 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	writeCodexHookShims(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
 		t.Fatal(err)

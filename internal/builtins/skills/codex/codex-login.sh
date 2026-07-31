@@ -77,7 +77,9 @@ needs_live_probe() {
       2) payload="${payload}==" ;;
       3) payload="${payload}=" ;;
     esac
-    exp="$(printf '%s' "$payload" | base64 -d 2>/dev/null | jq -r '.exp | select(type == "number") // empty' 2>/dev/null)"
+    # jq's decoder is portable across GNU/BSD hosts (`base64 -d` is GNU;
+    # macOS spells it `-D`). The skill already requires jq.
+    exp="$(printf '%s' "$payload" | jq -Rr '@base64d | fromjson | .exp | select(type == "number") // empty' 2>/dev/null)"
     if [[ "$exp" =~ ^[0-9]+$ ]]; then
       [ "$exp" -le "$(($(date +%s) + 300))" ]
       return
@@ -86,7 +88,14 @@ needs_live_probe() {
 
   refreshed="$(jq -r '.last_refresh // empty' "$cred" 2>/dev/null)" || return 1
   [ -n "$refreshed" ] || return 1
-  refreshed_epoch="$(date -d "$refreshed" +%s 2>/dev/null)" || return 1
+  # Codex writes nanosecond RFC3339 timestamps; BSD date's strptime rejects
+  # fractional seconds, so normalize the UTC form before its fallback parser.
+  case "$refreshed" in
+    *.*Z) refreshed_bsd="${refreshed%%.*}Z" ;;
+    *) refreshed_bsd="$refreshed" ;;
+  esac
+  refreshed_epoch="$(date -d "$refreshed" +%s 2>/dev/null ||
+    date -j -f '%Y-%m-%dT%H:%M:%SZ' "$refreshed_bsd" +%s 2>/dev/null)" || return 1
   [ "$refreshed_epoch" -le "$(($(date +%s) - 8 * 24 * 60 * 60))" ]
 }
 
@@ -94,25 +103,34 @@ needs_live_probe() {
 # auth is required but unavailable, and 20 for every ambiguous outcome. Raw RPC
 # output may contain account email/plan data, so it is never printed or logged.
 live_probe() {
-  # exec makes CODEX_AUTH_RPC_PID the app-server itself, not a wrapper shell;
-  # cleanup must not orphan a process that can continue refreshing shared auth.
-  coproc CODEX_AUTH_RPC { exec setsid codex app-server 2>/dev/null; }
-  rpc_pid=$CODEX_AUTH_RPC_PID
-  rpc_in=${CODEX_AUTH_RPC[1]}
-  rpc_out=${CODEX_AUTH_RPC[0]}
+  # Bash 3.2 (the macOS CI shell) has no coproc. Two FIFOs plus fixed FDs keep
+  # the hook portable; the parent's read/write opens prevent FIFO-open deadlock,
+  # while the child closes those extra copies before exec so closing fd 7 still
+  # delivers EOF. exec makes rpc_pid the setsid/app-server process itself.
+  rpc_dir="$(mktemp -d "${TMPDIR:-/tmp}/byre-codex-rpc.XXXXXX")" || return 20
+  rpc_in="$rpc_dir/in"
+  rpc_out="$rpc_dir/out"
+  if ! mkfifo "$rpc_in" "$rpc_out" || ! exec 7<>"$rpc_in" || ! exec 8<>"$rpc_out"; then
+    { exec 7>&-; } 2>/dev/null || true
+    { exec 8>&-; } 2>/dev/null || true
+    rm -rf "$rpc_dir"
+    return 20
+  fi
+  ( exec 7>&- 8>&-; exec setsid codex app-server 2>/dev/null ) <"$rpc_in" >"$rpc_out" &
+  rpc_pid=$!
   # A startup crash or older Codex closing stdin must classify as ambiguous,
   # not terminate the whole hook with SIGPIPE before EXIT cleanup can run.
   trap '' PIPE
   printf '%s\n' \
     '{"method":"initialize","id":0,"params":{"clientInfo":{"name":"byre-auth-probe","title":"Byre auth probe","version":"1"}}}' \
     '{"method":"initialized","params":{}}' \
-    '{"method":"account/read","id":1,"params":{"refreshToken":true}}' >&"$rpc_in" || true
+    '{"method":"account/read","id":1,"params":{"refreshToken":true}}' >&7 || true
   trap - PIPE
 
   outcome=20
   deadline=$((SECONDS + 8))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if ! IFS= read -r -t 1 line <&"$rpc_out"; then
+    if ! IFS= read -r -t 1 line <&8; then
       kill -0 "$rpc_pid" 2>/dev/null || break
       continue
     fi
@@ -125,8 +143,8 @@ live_probe() {
     break
   done
 
-  { exec {rpc_in}>&-; } 2>/dev/null || true
-  { exec {rpc_out}<&-; } 2>/dev/null || true
+  { exec 7>&-; } 2>/dev/null || true
+  { exec 8>&-; } 2>/dev/null || true
   # EOF normally stops app-server. Give it time to finish any in-place auth
   # write before escalating, and target the dedicated session so plugin/git
   # children cannot outlive the credential lock.
@@ -135,6 +153,7 @@ live_probe() {
   sleep 1
   kill -KILL -- "-$rpc_pid" 2>/dev/null || kill -KILL "$rpc_pid" 2>/dev/null || true
   wait "$rpc_pid" 2>/dev/null || true
+  rm -rf "$rpc_dir"
   return "$outcome"
 }
 

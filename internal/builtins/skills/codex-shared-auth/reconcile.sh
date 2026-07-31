@@ -67,14 +67,19 @@ auth_valid() {
 }
 
 refresh_epoch() {
-  local stamp
+  local stamp stamp_bsd
   stamp="$(jq -r '.last_refresh // empty' "$1" 2>/dev/null)" || return 1
   [ -n "$stamp" ] || return 1
-  date -d "$stamp" +%s 2>/dev/null
+  case "$stamp" in
+    *.*Z) stamp_bsd="${stamp%%.*}Z" ;;
+    *) stamp_bsd="$stamp" ;;
+  esac
+  date -d "$stamp" +%s 2>/dev/null ||
+    date -j -f '%Y-%m-%dT%H:%M:%SZ' "$stamp_bsd" +%s 2>/dev/null
 }
 
 mtime_epoch() {
-  stat -c %Y "$1" 2>/dev/null
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
 }
 
 # Prints local or shared. Both inputs have already passed auth_valid.
@@ -111,9 +116,9 @@ publish_local() {
     diag_event publish_temp_failed
     return 1
   }
-  if ! cp -- "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
-     ! mv -f -- "$tmp" "$SHARED" 2>/dev/null; then
-    rm -f -- "$tmp" 2>/dev/null || true
+  if ! cp "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
+     ! mv -f "$tmp" "$SHARED" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null || true
     echo "byre codex-shared-auth: cannot publish the local Codex login machine-wide; keeping the local login." >&2
     diag_event publish_failed
     return 1
@@ -126,7 +131,7 @@ assert_link() {
   if [ -L "$cred" ] && [ "$(readlink "$cred" 2>/dev/null)" = "$SHARED" ]; then
     return 0
   fi
-  rm -f -- "$cred" 2>/dev/null || {
+  rm -f "$cred" 2>/dev/null || {
     echo "byre codex-shared-auth: cannot replace $cred with the machine-wide credential link." >&2
     diag_event local_remove_failed
     return 1
