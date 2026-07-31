@@ -79,7 +79,7 @@ const (
 	fWorktreeBase    // text: base dir for worktrees (when not sibling)
 	fExtends         // parent named layer (the extends chain pointer)
 	fSkipQuestions   // checkbox: configure new projects from stored answers, unasked
-	fSeedPrefs       // tri-state: seed_prefs (inherit / on / off), ADR 0045
+	fSeedPrefs       // tri-state: seed_prefs (on / off / inherit), ADR 0045
 	fSources         // read-only view of [sources] acquisition hints
 	fSharedAuth      // read-only view of [defaults].shared_auth (the picker writes it)
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and

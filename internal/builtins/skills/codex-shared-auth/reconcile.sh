@@ -116,9 +116,9 @@ publish_local() {
     diag_event publish_temp_failed
     return 1
   }
-  if ! cp "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
-     ! mv -f "$tmp" "$SHARED" 2>/dev/null; then
-    rm -f "$tmp" 2>/dev/null || true
+  if ! cp -- "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
+     ! mv -f -- "$tmp" "$SHARED" 2>/dev/null; then
+    rm -f -- "$tmp" 2>/dev/null || true
     echo "byre codex-shared-auth: cannot publish the local Codex login machine-wide; keeping the local login." >&2
     diag_event publish_failed
     return 1
@@ -131,7 +131,7 @@ assert_link() {
   if [ -L "$cred" ] && [ "$(readlink "$cred" 2>/dev/null)" = "$SHARED" ]; then
     return 0
   fi
-  rm -f "$cred" 2>/dev/null || {
+  rm -f -- "$cred" 2>/dev/null || {
     echo "byre codex-shared-auth: cannot replace $cred with the machine-wide credential link." >&2
     diag_event local_remove_failed
     return 1

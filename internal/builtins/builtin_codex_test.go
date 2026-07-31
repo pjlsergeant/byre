@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // TestCodexSharedAuthCompositionResolves pins the codex-shared-auth companion
@@ -90,6 +92,13 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 // exec preserves the PID just like util-linux setsid in the shipped image.
 func writeCodexHookShims(t *testing.T, bin string) {
 	t.Helper()
+	testtools.NeedTool(t, "bash", "jq", "date", "perl", "ps")
+	// Linux must exercise the exact util-linux CLI shipped in the box. The
+	// shims exist only for stock macOS, which has neither setsid nor flock.
+	if runtime.GOOS != "darwin" {
+		testtools.NeedTool(t, "setsid", "flock")
+		return
+	}
 	setsid := "#!/bin/sh\nexec perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "setsid"), []byte(setsid), 0o755); err != nil {
 		t.Fatal(err)
@@ -699,6 +708,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 }
 
 func TestCodexLoginHookReapsAppServer(t *testing.T) {
+	testtools.NeedTool(t, "ps")
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 	home, bin := t.TempDir(), t.TempDir()
