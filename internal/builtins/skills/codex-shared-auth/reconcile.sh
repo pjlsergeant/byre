@@ -100,6 +100,10 @@ choose_winner() {
   # API-key auth has no last_refresh, and timestamps can tie at one-second
   # precision. File mtime is the deterministic fallback; a tie favors local
   # because clear-before-login produces exactly local-regular + shared-old.
+  # Mixed presence (one side has last_refresh, the other does not) lands here
+  # deliberately: preferring the stamped side would silently revert a user's
+  # deliberate API-key login. The accepted cost is that a hand-restored stale
+  # backup with a fresh mtime can win; auth.json.prev caps that blast radius.
   local_mtime="$(mtime_epoch "$cred" 2>/dev/null || printf 0)"
   shared_mtime="$(mtime_epoch "$SHARED" 2>/dev/null || printf 0)"
   if [ "$local_mtime" -ge "$shared_mtime" ]; then
@@ -116,6 +120,13 @@ publish_local() {
     diag_event publish_temp_failed
     return 1
   }
+  # Cap the blast radius of a wrong winner pick: keep the displaced shared
+  # bytes as auth.json.prev so recovery is a file restore, not a re-login on
+  # every box. Best-effort by design; retention failure never blocks publish.
+  if [ -f "$SHARED" ]; then
+    cp -- "$SHARED" "$IDENTITY_DIR/auth.json.prev" 2>/dev/null &&
+      chmod 600 "$IDENTITY_DIR/auth.json.prev" 2>/dev/null || true
+  fi
   if ! cp -- "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
      ! mv -f -- "$tmp" "$SHARED" 2>/dev/null; then
     rm -f -- "$tmp" 2>/dev/null || true
@@ -162,10 +173,27 @@ if { exec 9>"$LOCK"; } 2>/dev/null; then
   lock_open=true
   chmod 600 "$LOCK" 2>/dev/null || true
 fi
-if [ "$lock_open" = true ] && command -v flock >/dev/null 2>&1 &&
-   flock -x 9 2>/dev/null; then
-  diag_event lock_acquired
+if [ "$lock_open" = true ] && command -v flock >/dev/null 2>&1; then
+  if flock -w 3 -x 9 2>/dev/null; then
+    diag_event lock_acquired
+  else
+    # A timeout is positive evidence of a live contender mid-write, and racing
+    # it on the shared file is the one hazard the lock exists to prevent. Skip
+    # the whole reconciliation: local auth stays untouched and usable, the
+    # caller's warning fires, and the next launch retries. flock releases when
+    # its holder dies (kernel, on FD close), so a persistent hold means a live
+    # process is deliberately sitting on it.
+    echo "byre codex-shared-auth: waited 3s for $LOCK; skipped credential reconciliation this launch." >&2
+    echo "byre codex-shared-auth: another launch may be mid-reconcile, so a plain relaunch retries. If it persists, stop the box holding the lock, or remove it from inside any box sharing the login: rm $LOCK" >&2
+    diag_event lock_timeout
+    exit 1
+  fi
 else
+  # Deliberate asymmetry with the timeout arm above, not drift: an unopenable
+  # lock file or missing flock is an environmental defect with no evidence of
+  # a live contender (util-linux is a declared dep and the dir was just
+  # mkdir -p'd), while skipping here would leave a fresh login permanently
+  # unpublished on a hand-broken box. Proceed unserialized, loudly.
   echo "byre codex-shared-auth: WARNING — cannot lock $LOCK; reconciling without cross-box serialization." >&2
   diag_event lock_unavailable
 fi

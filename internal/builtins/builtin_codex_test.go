@@ -457,6 +457,107 @@ func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
 	}
 }
 
+// A held machine-shared lock must skip reconciliation (bounded wait, warn,
+// nonzero), never hang the launch and never touch either credential: the lock
+// file is dev-writable in every box, so an agent can hold it indefinitely.
+func TestCodexSharedAuthLockTimeoutSkipsReconciliation(t *testing.T) {
+	needCodexFlock(t)
+	_, cat := testCat(t)
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base, home := t.TempDir(), t.TempDir()
+	identity := filepath.Join(base, "codex")
+	if err := os.MkdirAll(identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	newLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	shared := filepath.Join(identity, "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.WriteFile(shared, []byte(oldShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(newLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lock := filepath.Join(identity, "auth.lock")
+	holder := exec.Command("flock", lock, "sleep", "60")
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = holder.Process.Kill()
+		_ = holder.Wait()
+	})
+	held := false
+	for range 200 {
+		if exec.Command("flock", "-n", lock, "true").Run() != nil {
+			held = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !held {
+		t.Fatal("could not observe the holder taking the lock")
+	}
+
+	cmd := exec.Command("bash", reconcile, "test_lock_timeout")
+	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("held lock did not produce a nonzero skip:\n%s", out)
+	}
+	if !strings.Contains(string(out), "skipped credential reconciliation") {
+		t.Fatalf("timeout skip was not disclosed:\n%s", out)
+	}
+	if !strings.Contains(string(out), "rm "+lock) {
+		t.Fatalf("timeout warning does not name the lock-removal remedy:\n%s", out)
+	}
+	if got, readErr := os.ReadFile(shared); readErr != nil || string(got) != oldShared {
+		t.Fatalf("timeout skip mutated shared auth: %v %q", readErr, got)
+	}
+	if fi, statErr := os.Lstat(cred); statErr != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("timeout skip replaced the local credential: %v", statErr)
+	}
+	if got, readErr := os.ReadFile(cred); readErr != nil || string(got) != newLocal {
+		t.Fatalf("timeout skip mutated local auth: %v %q", readErr, got)
+	}
+}
+
+// Publishing a winner over an existing shared credential must retain the
+// displaced bytes as auth.json.prev (0600): a wrong winner pick is then a
+// file restore, not a re-login on every box sharing the credential.
+func TestCodexSharedAuthPublishRetainsDisplacedShared(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	newLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(oldShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cred, []byte(newLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(shared); err != nil || string(got) != newLocal {
+		t.Fatalf("newer local login not published: %v %q", err, got)
+	}
+	prev := filepath.Join(base, "codex", "auth.json.prev")
+	got, err := os.ReadFile(prev)
+	if err != nil || string(got) != oldShared {
+		t.Fatalf("displaced shared bytes not retained in %s: %v %q", prev, err, got)
+	}
+	if fi, err := os.Stat(prev); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("retained credential is not 0600: %v %v", fi.Mode(), err)
+	}
+}
+
 // TestCodexLoginHookRejectsForeignSymlink mirrors the opencode login-hook
 // coverage for codex's carve-out: the trusted target is the HARDCODED full
 // path /home/dev/.byre-identity/codex/auth.json (own-dir + basename equality,
