@@ -225,7 +225,8 @@ goes. (ADR 0055.)
 A content-addressed, hash-verified snapshot under
 `~/.byre/packages/<digest>/`, acquired with `byre skill|template
 install <manifest-url>` and recorded in the store index. Installed ids
-must be qualified (`owner/name`). Immutable; edit by forking.
+must be qualified (`owner/name`). Immutable; fork to edit under a new
+id, or adopt to re-establish a local source for the same id.
 
 **Fork**:
 `byre skill|template fork <id> <new-id>`: copy an immutable (bundled or

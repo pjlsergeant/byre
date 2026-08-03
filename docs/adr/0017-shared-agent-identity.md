@@ -41,7 +41,7 @@ per-box file. The companion therefore reconciles under a machine-volume lock:
 valid conflicts choose the newer `last_refresh` (mtime fallback), publication
 is an atomic rename inside the identity volume, and the local path returns to
 the symlink. Missing local auth never authorizes deleting shared auth.
-Byre-managed device login reconciles before returning; an unwrapped
+byre-managed device login reconciles before returning; an unwrapped
 mid-session `codex login` converges on the next box launch.
 Gemini is symlink-shaped too, but Google's OAuth refresh-rotation
 behavior is unverified: `gemini-shared-auth` shipped with its

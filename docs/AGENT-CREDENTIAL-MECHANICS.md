@@ -192,7 +192,9 @@ the Claude Code credentials stored in ~/.claude"
 > **SOURCE-CONFIRMED / EXTENDED 2026-07-16** (repo at codex-rs, main
 > @ f64233d142; in-box binary 0.144.5; tree carries no release-version
 > literal -- workspace version is `0.0.0`, stamped at build -- so it pins by
-> commit). The 2026-07-06 record below stands; deltas that matter for
+> commit). **0.146 deltas FIELD-CONFIRMED 2026-07-31** (in-box binary
+> 0.146.0, the clear-before-login field failure and its diagnostic trace).
+> The 2026-07-06 record below stands; deltas that matter for
 > sharing one auth.json across boxes:
 > - **OAuth login clears before saving** (0.146 field-confirmed):
 >   `clear_existing_auth_before_login` calls `logout_with_revoke`, which
@@ -212,7 +214,7 @@ the Claude Code credentials stored in ~/.claude"
 >   preserve auth and launch with a warning; a concurrent credential change
 >   suppresses recovery. An unavailable account is
 >   rechecked for a delayed sibling write before device login. Before that
->   interactive login, Byre removes only the box-local symlink: Codex's
+>   interactive login, byre removes only the box-local symlink: Codex's
 >   unconditional pre-login logout then has no shared credential to revoke.
 >   Success creates a regular local file which the reconciler publishes;
 >   cancellation or failure restores the validated link without overwriting a

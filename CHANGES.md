@@ -2,17 +2,31 @@
 
 ## Unreleased
 
+- **The already-running refusal now tells you how to get back in — or how to
+  clear a dead marker.** Its first remedy is the re-attach command with the
+  detach keys pinned (`docker attach --detach-keys=ctrl-p,ctrl-q <id>`), so
+  returning to a live session stops being special knowledge. And when the
+  match is on another engine (found via `ps -a`, so it can be a stopped
+  container where attach/shell/stop all fail), the refusal appends the
+  removal remedy that always clears it: `<engine> rm <id>`.
+
+- **Config editor: inherit choices simplified.** Template/agent/engine
+  inherit rows now sit last in each picker and read `(inherit: value)`;
+  seed preferences order their answers on, off, inherit. What gets written
+  to the config is unchanged.
+
 - **Codex shared login no longer restores a revoked credential after
   re-authentication.** Codex 0.146 clears and revokes existing auth before
-  every OAuth login, unlinking Byre's shared-auth symlink and saving the new
+  every OAuth login, unlinking byre's shared-auth symlink and saving the new
   live credential as a regular per-box file. The old startup heal discarded
   that file and re-linked the revoked shared bytes. Shared auth now reconciles
   under a machine-volume lock, validates both candidates, chooses the newer
   login by refresh time (mtime fallback), publishes it atomically, and restores
-  the symlink. Missing local auth never deletes shared auth, and Byre-managed
-  device login publishes its replacement immediately. At cold start, Byre now
-  asks Codex to refresh ChatGPT credentials only when Codex's own expiry policy
-  says they are stale; a confirmed unavailable account starts device login,
+  the symlink. Missing local auth never deletes shared auth, and byre-managed
+  device login publishes its replacement immediately. At cold start, byre now
+  asks Codex to refresh ChatGPT credentials only when they are close to expiry
+  — a deliberately narrower rule than Codex's own proactive refresh; a
+  confirmed unavailable account starts device login,
   while network and protocol ambiguity preserve the credential and launch with
   a warning. Shared login detaches only the box-local symlink first, preventing
   Codex's implicit pre-login logout from revoking the machine-wide credential.

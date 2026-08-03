@@ -454,7 +454,8 @@ Steps 1-4 need no engine; step 5 needs a develop. New in v1.6.0
    rm the stale link.
 4. Shadow: rm the adopted link, `skill install` the packed manifest
    (file path is fine), then re-adopt the checkout. The label reads
-   `local (shadows installed vX.Y.Z)` -- not a duplicate-id conflict --
+   `local (shadows installed X.Y.Z)` (the raw declared version, no `v`
+   prefix) -- not a duplicate-id conflict --
    on `skill list` and in the config UI picker.
 5. Dest collision (engine): two enabled skills with DISTINCT ids -- one
    installed, one an adopted checkout -- whose `files` entries claim
