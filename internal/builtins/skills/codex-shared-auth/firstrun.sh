@@ -11,5 +11,14 @@ if [ ! -r "$RECONCILE" ]; then
   exit 0
 fi
 
-bash "$RECONCILE" startup || true
+# The timeout is the hard bound on adversarial-filesystem hangs inside the
+# shared identity volume (the reconciler's own lock wait is 3s; anything
+# approaching 30s is a planted-FIFO-class stall, not work).
+TO=""
+command -v timeout >/dev/null 2>&1 && TO="timeout 30"
+$TO bash "$RECONCILE" startup
+rc=$?
+if [ "$rc" -eq 124 ]; then
+  echo "byre codex-shared-auth: reconciliation timed out; shared auth not asserted this launch." >&2
+fi
 exit 0

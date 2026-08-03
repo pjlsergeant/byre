@@ -510,8 +510,14 @@ func TestCodexSharedAuthLockTimeoutSkipsReconciliation(t *testing.T) {
 	if !strings.Contains(string(out), "skipped credential reconciliation") {
 		t.Fatalf("timeout skip was not disclosed:\n%s", out)
 	}
-	if !strings.Contains(string(out), "rm "+lock) {
-		t.Fatalf("timeout warning does not name the lock-removal remedy:\n%s", out)
+	// The remedy must be stop-the-holder, never rm: flock is inode-scoped,
+	// so removing the path would let the next launch reconcile unserialized
+	// beside the still-live holder.
+	if !strings.Contains(string(out), "stop the box") {
+		t.Fatalf("timeout warning does not name the stop-the-holder remedy:\n%s", out)
+	}
+	if strings.Contains(string(out), "rm ") {
+		t.Fatalf("timeout warning offers a removal remedy that would split-brain the lock:\n%s", out)
 	}
 	if got, readErr := os.ReadFile(shared); readErr != nil || string(got) != oldShared {
 		t.Fatalf("timeout skip mutated shared auth: %v %q", readErr, got)
@@ -521,6 +527,102 @@ func TestCodexSharedAuthLockTimeoutSkipsReconciliation(t *testing.T) {
 	}
 	if got, readErr := os.ReadFile(cred); readErr != nil || string(got) != newLocal {
 		t.Fatalf("timeout skip mutated local auth: %v %q", readErr, got)
+	}
+}
+
+// A planted non-regular auth.lock must not hang or divert the reconciler:
+// a FIFO would block the write-open before any flock timeout applies, and a
+// symlink would truncate its target. Both are replaced with a fresh lock.
+func TestCodexSharedAuthNonRegularLockIsReplaced(t *testing.T) {
+	needCodexFlock(t)
+	testtools.NeedTool(t, "mkfifo")
+	_, cat := testCat(t)
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+
+	for name, plant := range map[string]func(t *testing.T, lock, victim string){
+		"fifo": func(t *testing.T, lock, _ string) {
+			if err := exec.Command("mkfifo", lock).Run(); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"symlink": func(t *testing.T, lock, victim string) {
+			if err := os.Symlink(victim, lock); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			base, home := t.TempDir(), t.TempDir()
+			identity := filepath.Join(base, "codex")
+			if err := os.MkdirAll(identity, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			auth := `{"auth_mode":"chatgpt","tokens":{"access_token":"a","refresh_token":"r"},"last_refresh":"2026-07-21T00:00:00Z"}`
+			if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(auth), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			victim := filepath.Join(base, "victim")
+			if err := os.WriteFile(victim, []byte("victim-bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			plant(t, filepath.Join(identity, "auth.lock"), victim)
+
+			cmd := exec.Command("timeout", "20", "bash", reconcile, "test_nonregular_lock")
+			cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("reconcile with a planted %s lock failed (a hang shows as timeout exit 124): %v\n%s", name, err, out)
+			}
+			if fi, statErr := os.Lstat(filepath.Join(identity, "auth.lock")); statErr != nil || !fi.Mode().IsRegular() {
+				t.Fatalf("planted %s lock was not replaced with a regular file: %v", name, statErr)
+			}
+			if got, readErr := os.ReadFile(victim); readErr != nil || string(got) != "victim-bytes" {
+				t.Fatalf("planted %s lock diverted a write to its target: %v %q", name, readErr, got)
+			}
+			if got, readErr := os.ReadFile(filepath.Join(identity, "auth.json")); readErr != nil || string(got) != auth {
+				t.Fatalf("reconciliation did not still publish through the fresh lock: %v %q", readErr, got)
+			}
+		})
+	}
+}
+
+// A planted auth.json.prev (symlink or FIFO) must not receive the retention
+// write through it: retention stages temp+rename like publish, so the entry
+// is replaced and the plant's target never sees credential bytes.
+func TestCodexSharedAuthRetentionDoesNotFollowPlantedPrev(t *testing.T) {
+	base, home := t.TempDir(), t.TempDir()
+	identity := filepath.Join(base, "codex")
+	shared := filepath.Join(identity, "auth.json")
+	if err := os.MkdirAll(identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	newLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(oldShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(newLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(base, "victim")
+	if err := os.WriteFile(victim, []byte("victim-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prev := filepath.Join(identity, "auth.json.prev")
+	if err := os.Symlink(victim, prev); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if got, err := os.ReadFile(victim); err != nil || string(got) != "victim-bytes" {
+		t.Fatalf("retention wrote through the planted prev symlink: %v %q", err, got)
+	}
+	if fi, err := os.Lstat(prev); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("planted prev entry was not replaced by a regular file: %v", err)
+	}
+	if got, err := os.ReadFile(prev); err != nil || string(got) != oldShared {
+		t.Fatalf("displaced shared bytes not retained: %v %q", err, got)
 	}
 }
 

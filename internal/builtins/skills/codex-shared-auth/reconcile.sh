@@ -122,10 +122,24 @@ publish_local() {
   }
   # Cap the blast radius of a wrong winner pick: keep the displaced shared
   # bytes as auth.json.prev so recovery is a file restore, not a re-login on
-  # every box. Best-effort by design; retention failure never blocks publish.
+  # every box. Best-effort by design; retention failure never blocks publish
+  # (a full disk must not stop the live credential going machine-wide).
+  # Staged like publish itself — temp + rename — because the .prev path is
+  # dev-writable in every box: a cp onto a planted FIFO would hang inside
+  # the lock, and onto a planted symlink would write through it.
   if [ -f "$SHARED" ]; then
-    cp -- "$SHARED" "$IDENTITY_DIR/auth.json.prev" 2>/dev/null &&
-      chmod 600 "$IDENTITY_DIR/auth.json.prev" 2>/dev/null || true
+    local prev_tmp
+    if prev_tmp="$(mktemp "$IDENTITY_DIR/.auth.json.prev.tmp.XXXXXX" 2>/dev/null)"; then
+      if cp -- "$SHARED" "$prev_tmp" 2>/dev/null && chmod 600 "$prev_tmp" 2>/dev/null &&
+         mv -f -- "$prev_tmp" "$IDENTITY_DIR/auth.json.prev" 2>/dev/null; then
+        :
+      else
+        rm -f -- "$prev_tmp" 2>/dev/null || true
+        diag_event prev_retention_failed
+      fi
+    else
+      diag_event prev_retention_failed
+    fi
   fi
   if ! cp -- "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
      ! mv -f -- "$tmp" "$SHARED" 2>/dev/null; then
@@ -169,6 +183,15 @@ diag_path local_before "$cred"
 diag_path shared_before "$SHARED"
 
 lock_open=false
+# The lock path is dev-writable in every sharing box: a planted FIFO would
+# block the write-open below BEFORE the bounded flock applies, and a planted
+# symlink would truncate whatever it points at. Anything but a regular file
+# is agent debris; replace it. (The recreate can still be raced — the
+# callers' timeout is the hard bound for that.)
+if [ -L "$LOCK" ] || { [ -e "$LOCK" ] && [ ! -f "$LOCK" ]; }; then
+  rm -f -- "$LOCK" 2>/dev/null || true
+  diag_event lock_nonregular_replaced
+fi
 if { exec 9>"$LOCK"; } 2>/dev/null; then
   lock_open=true
   chmod 600 "$LOCK" 2>/dev/null || true
@@ -184,7 +207,12 @@ if [ "$lock_open" = true ] && command -v flock >/dev/null 2>&1; then
     # its holder dies (kernel, on FD close), so a persistent hold means a live
     # process is deliberately sitting on it.
     echo "byre codex-shared-auth: waited 3s for $LOCK; skipped credential reconciliation this launch." >&2
-    echo "byre codex-shared-auth: another launch may be mid-reconcile, so a plain relaunch retries. If it persists, stop the box holding the lock, or remove it from inside any box sharing the login: rm $LOCK" >&2
+    # The remedy is stop-the-holder ONLY: flock lives on the open inode, so
+    # rm'ing the lock path lets the next launch lock a FRESH inode and
+    # reconcile unserialized beside the still-live holder — split-brain, the
+    # exact race the lock exists to prevent. A persistent hold always has a
+    # live holder in a running box, so stopping boxes always clears it.
+    echo "byre codex-shared-auth: another launch may be mid-reconcile, so a plain relaunch retries. If it persists, a live process is holding the lock: stop the box that holds it (the lock releases when its holder dies)." >&2
     diag_event lock_timeout
     exit 1
   fi
