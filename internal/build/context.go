@@ -637,6 +637,17 @@ func diffStagedTrees(ctxRoot *os.Root, a, b fileCopy, rel string) (string, error
 	for {
 		na, errA := io.ReadFull(fa, bufA)
 		nb, errB := io.ReadFull(fb, bufB)
+		// Real read errors must surface before the divergence arm: the sizes
+		// already compared equal, so EOF lands at the same offset on both
+		// sides and a count mismatch below can only mean an I/O failure —
+		// reporting it as "content differs" would send the user to fix their
+		// skills over a failing disk.
+		if errA != nil && errA != io.EOF && errA != io.ErrUnexpectedEOF {
+			return "", errA
+		}
+		if errB != nil && errB != io.EOF && errB != io.ErrUnexpectedEOF {
+			return "", errB
+		}
 		if na != nb || !bytes.Equal(bufA[:na], bufB[:nb]) {
 			return at("content differs"), nil
 		}
@@ -645,12 +656,6 @@ func diffStagedTrees(ctxRoot *os.Root, a, b fileCopy, rel string) (string, error
 				return "", nil
 			}
 			return at("content differs"), nil
-		}
-		if errA != nil {
-			return "", errA
-		}
-		if errB != nil {
-			return "", errB
 		}
 	}
 }
