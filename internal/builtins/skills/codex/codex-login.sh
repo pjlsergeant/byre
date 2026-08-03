@@ -225,7 +225,15 @@ if codex login status >/dev/null 2>&1; then
   if [ -n "$shared_auth" ]; then
     lock="$diag_dir/auth.lock"
     mkdir -p "$diag_dir" 2>/dev/null || true
-    { exec 9>>"$lock"; } 2>/dev/null || true
+    # Same treatment as the reconciler's lock open (its comment has the full
+    # story): the path is dev-writable in every sharing box, so replace
+    # non-regular debris, then open <> — O_RDWR never blocks on a raced-in
+    # FIFO on Linux and carries no O_TRUNC for a raced-in symlink's target.
+    if [ -L "$lock" ] || { [ -e "$lock" ] && [ ! -f "$lock" ]; }; then
+      rm -f -- "$lock" 2>/dev/null || true
+      diag_event live_probe_lock_nonregular_replaced
+    fi
+    { exec 9<>"$lock"; } 2>/dev/null || true
     if ! flock -w 3 -x 9 2>/dev/null; then
       diag_event live_probe_lock_unavailable
       echo "byre: could not lock the shared Codex credential for a startup refresh; launching without changing it." >&2
@@ -324,7 +332,11 @@ if $TO codex login --device-auth; then
   diag_event device_login_succeeded
   reconcile="${BYRE_CODEX_AUTH_RECONCILE:-/usr/local/lib/byre-codex-auth-reconcile}"
   if [ -r "$reconcile" ]; then
-    bash "$reconcile" post_device_login ||
+    # Same hard bound as the firstrun call site: adversarial-filesystem
+    # stalls inside the shared identity volume must not hang the launch.
+    RTO=""
+    command -v timeout >/dev/null 2>&1 && RTO="timeout 30"
+    $RTO bash "$reconcile" post_device_login ||
       echo "byre: Codex login succeeded, but its machine-wide shared-auth reconciliation failed; it will retry next launch." >&2
   fi
 else

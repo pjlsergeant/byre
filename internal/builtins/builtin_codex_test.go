@@ -586,9 +586,10 @@ func TestCodexSharedAuthNonRegularLockIsReplaced(t *testing.T) {
 	}
 }
 
-// A planted auth.json.prev (symlink or FIFO) must not receive the retention
-// write through it: retention stages temp+rename like publish, so the entry
-// is replaced and the plant's target never sees credential bytes.
+// A planted auth.json.prev symlink must not receive the retention write
+// through it: retention stages temp+rename like publish, so the entry is
+// replaced and the plant's target never sees credential bytes. (A planted
+// FIFO is covered by the same rename — mv -f replaces the dirent.)
 func TestCodexSharedAuthRetentionDoesNotFollowPlantedPrev(t *testing.T) {
 	base, home := t.TempDir(), t.TempDir()
 	identity := filepath.Join(base, "codex")

@@ -183,16 +183,17 @@ diag_path local_before "$cred"
 diag_path shared_before "$SHARED"
 
 lock_open=false
-# The lock path is dev-writable in every sharing box: a planted FIFO would
-# block the write-open below BEFORE the bounded flock applies, and a planted
-# symlink would truncate whatever it points at. Anything but a regular file
-# is agent debris; replace it. (The recreate can still be raced — the
-# callers' timeout is the hard bound for that.)
+# The lock path is dev-writable in every sharing box. The <> open below is
+# what makes a hostile entry harmless even when planted BETWEEN the check
+# and the open: O_RDWR|O_CREAT with no O_TRUNC, so a raced symlink's target
+# is opened untouched (flock modifies nothing), and O_RDWR on a FIFO never
+# blocks on Linux (the opener holds both ends). The precheck still replaces
+# debris so the flock lands on the inode every sibling actually uses.
 if [ -L "$LOCK" ] || { [ -e "$LOCK" ] && [ ! -f "$LOCK" ]; }; then
   rm -f -- "$LOCK" 2>/dev/null || true
   diag_event lock_nonregular_replaced
 fi
-if { exec 9>"$LOCK"; } 2>/dev/null; then
+if { exec 9<>"$LOCK"; } 2>/dev/null; then
   lock_open=true
   chmod 600 "$LOCK" 2>/dev/null || true
 fi
