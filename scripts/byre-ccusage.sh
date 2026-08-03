@@ -141,6 +141,10 @@ for pdir in "${PDIRS[@]}"; do
     sub="$(subtree "$agent")"
     "$ENGINE" run --rm -v "$vol":/src:ro alpine \
         tar -C /src -cf - "$sub" 2>/dev/null | tar -xf - -C "$dest" || true
+    # The subtree's CONTENTS are agent-authored: a planted symlink would hand
+    # ccusage an arbitrary host-file read, a FIFO would hang it on open. The
+    # copy's contract is regular files in directories; drop everything else.
+    find "$dest" ! -type f ! -type d -delete 2>/dev/null || true
     if [ -z "$(find "$dest" -type f -print -quit)" ]; then
       rm -rf "$dest"
       printf ' no usage data\n' >&2
