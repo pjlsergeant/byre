@@ -156,7 +156,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if selfEdit {
 			fmt.Fprintln(s.Err, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
 		}
-		reportRunning(s.Err, r.Engine(), ids)
+		reportRunning(s.Err, r.Engine(), ids, true)
 		return ExitError{Code: ExitRefused} // refused, session already live
 	}
 
@@ -269,7 +269,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 	if runErr != nil {
 		if len(live) > 0 {
-			reportRunning(s.Err, r.Engine(), live)
+			reportRunning(s.Err, r.Engine(), live, true)
 			return ExitError{Code: ExitRefused} // refused, session already live
 		}
 		// A start that never ran leaves the created container behind (--rm only
@@ -441,7 +441,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// or a leftover container holds it (say which and how to clear it).
 	if cerr := r.Create(runner.CreateArgs(params)); cerr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
-			reportRunning(s.Err, r.Engine(), live)
+			reportRunning(s.Err, r.Engine(), live, true)
 			return none, ExitError{Code: ExitRefused} // refused, session already live
 		}
 		return none, fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
@@ -602,7 +602,7 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []de
 		}
 		if len(ids) > 0 {
 			fmt.Fprintf(w, "byre: a session for this project already exists under %s, but the configured engine is now %s — refusing to start a second box on the same working tree.\n", rr.Engine(), self)
-			reportRunning(w, rr.Engine(), ids)
+			reportRunning(w, rr.Engine(), ids, false)
 			// This match came from ps -a (ownership markers count), so unlike
 			// the same-engine refusal it can name a container that is not
 			// running — where attach/shell/stop all fail and only removal
@@ -614,19 +614,25 @@ func refuseCrossEngineSession(w io.Writer, others []sessionRunner, declined []de
 	return skipped, nil
 }
 
-// reportRunning tells the user a session is already live and how to act on it,
-// rather than silently opening a shell (which conflated "run the agent" with
-// "give me a shell" — that's `byre shell` now). The detach keys are pinned in
-// the attach command because both engines let config override the default
-// sequence, and the caveat must be true as printed. The same-engine caller
-// only ever passes running containers; the cross-engine caller can pass a
-// non-running ownership marker, and appends its own removal bullet for it.
-func reportRunning(w io.Writer, eng runner.Engine, ids []string) {
+// reportRunning tells the user a session already holds this project and how
+// to act on it, rather than silently opening a shell (which conflated "run
+// the agent" with "give me a shell" — that's `byre shell` now). The detach
+// keys are pinned in the attach command because both engines let config
+// override the default sequence, and the caveat must be true as printed.
+// live distinguishes the callers: the same-engine arms only ever match
+// running containers, but the cross-engine arm matches via ps -a, where an
+// exited ownership marker is possible — its lead line must not assert
+// "running" two lines above its own "not running? remove it" bullet.
+func reportRunning(w io.Writer, eng runner.Engine, ids []string, live bool) {
 	id := shortID(ids[0])
 	if len(ids) > 1 {
 		fmt.Fprintf(w, "byre: %d containers match this project; the first is %s\n", len(ids), id)
 	}
-	fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
+	if live {
+		fmt.Fprintf(w, "byre: a session is already running for this project (%s).\n", id)
+	} else {
+		fmt.Fprintf(w, "byre: the matched container may be running or stopped (%s).\n", id)
+	}
 	fmt.Fprintf(w, "  • re-attach to it:     %s attach --detach-keys=ctrl-p,ctrl-q %s   (detach again: Ctrl-P Ctrl-Q; Ctrl-C reaches the agent)\n", eng, id)
 	fmt.Fprintf(w, "  • open a shell in it:  byre shell\n")
 	fmt.Fprintf(w, "  • stop it:             %s stop %s\n", eng, id)

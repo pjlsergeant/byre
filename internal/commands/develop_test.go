@@ -89,6 +89,11 @@ func TestDevelopRefusesCrossEngineSession(t *testing.T) {
 	if !strings.Contains(stderr.String(), "podman rm ") {
 		t.Errorf("cross-engine refusal should offer the removal remedy: %s", stderr.String())
 	}
+	// The same ps -a match means the container may be exited: the report must
+	// not assert "already running" above its own removal bullet.
+	if strings.Contains(stderr.String(), "already running") {
+		t.Errorf("cross-engine refusal asserts liveness it cannot know: %s", stderr.String())
+	}
 }
 
 // A cross-engine query error that is NOT unreachable is fatal (sole-session
