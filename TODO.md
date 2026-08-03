@@ -58,6 +58,12 @@ the rationale lives.
   shape as the `INTTEST_*` rename. It is why status shows the devlog skill's
   scratch path as a cautiously-treated reserved key.
 
+- [ ] (M) **configui: recompute inherit rows on mid-session template/extends
+  flip** (batch review 2026-08-02): inherit rows/labels and `agentNow()` are
+  baked once in `loadConfig`, so flipping the template then selecting "none"
+  saves *absent* -- the next develop hands the box the template's agent
+  despite the explicit "none". Pre-existing, not from the 0736d928 range.
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
