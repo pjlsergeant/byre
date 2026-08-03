@@ -193,6 +193,12 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	"RUN apt-get update \\\n" +
 	" && apt-get install -y --no-install-recommends gosu \\\n" +
 	" && rm -rf /var/lib/apt/lists/*\n" +
+	// The dev scrubs below are name-scoped, deliberately: a base shipping a
+	// LIVE password hash at dev's uid under another name survives them and
+	// still authenticates to that uid, but Debian-family bases (the only
+	// supported ones — this block is apt-gated) ship locked accounts only,
+	// and a uid-cross-referencing scrub is machinery for a base that is
+	// already broken-as-shipped. Deferred on the record, 2026-08-02 review.
 	"RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi \\\n" +
 	" && if getent group dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/group; fi \\\n" +
 	" && if [ -f /etc/gshadow ]; then sed -i '/^dev:/d' /etc/gshadow; fi \\\n" +
