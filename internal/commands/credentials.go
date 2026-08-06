@@ -49,6 +49,15 @@ const (
 	// deadline + margin <= the launcher default so the two cannot drift
 	// apart silently (the handoff's wait >= deadline + skew pin).
 	credInjectDeadline = 15 * time.Second
+	// credLateThreshold decides which delivery line is honest. The inject
+	// goroutine's start precedes StartAttach, so elapsed-since-entry always
+	// OVERESTIMATES elapsed-since-box-start — an inject that completes
+	// inside this threshold is therefore PROVABLY inside the launcher's
+	// wait (default 20s), and only then does byre say a plain "delivered".
+	// Anything slower gets the hedge: the values are on the tmpfs, but the
+	// box may already have launched without the exports. Measurement, not
+	// clock-epoch assumptions — a slow engine cannot make byre lie.
+	credLateThreshold = 18 * time.Second
 )
 
 // readPassphrase is the masked passphrase read, a seam so tests can answer
@@ -282,9 +291,12 @@ func credentialUnlockLine(unlock string) string {
 // reported, never blocking the box, which simply runs without credentials
 // when its launcher's own wait expires.
 func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID string, ident runner.Identity, stream []byte, done <-chan struct{}) {
+	// entry precedes develop's StartAttach, so elapsed-since-entry bounds
+	// elapsed-since-box-start from above (see credLateThreshold).
+	entry := time.Now()
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
-	deadline := time.Now().Add(credInjectRunningWait)
+	deadline := entry.Add(credInjectRunningWait)
 	running := false
 	for !running {
 		if ids, err := r.RunningContainersByLabel(label); err == nil && len(ids) > 0 {
@@ -305,5 +317,16 @@ func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID str
 		fmt.Fprintf(warn, "byre: credentials: not-delivered (%v) — the box runs without credentials.\n", err)
 		return
 	}
-	fmt.Fprintln(warn, "byre: credentials: delivered.")
+	fmt.Fprintln(warn, credDeliveredLine(time.Since(entry)))
+}
+
+// credDeliveredLine is the one owner of the delivery-honesty rule: a plain
+// "delivered" only when the inject provably landed inside the launcher's
+// wait; past the threshold byre cannot know whether the exports happened
+// and says so (the values still sit on the session tmpfs the agent owns).
+func credDeliveredLine(elapsed time.Duration) string {
+	if elapsed <= credLateThreshold {
+		return "byre: credentials: delivered."
+	}
+	return "byre: credentials: delivered late — the box may have launched without the env exports (the values are on the session tmpfs; restart the agent process to pick them up, or re-run byre develop)."
 }

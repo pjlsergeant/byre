@@ -241,32 +241,30 @@ func TestCredentialsRekeyRefusesReplacedVault(t *testing.T) {
 	if err := CredentialsInit(s, proj, false); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate the race window with the seam: rekey's current-passphrase
-	// read triggers a concurrent --replace before answering.
+	// Simulate the race window with the seam: the replace lands at the
+	// NEW-passphrase prompt — AFTER rekey's unlock succeeded against the
+	// old vault, so the under-lock write is exactly what the guard must
+	// refuse (a replace before the unlock would just be a bad passphrase,
+	// which never reaches the guard).
 	old := readPassphrase
 	t.Cleanup(func() { readPassphrase = old })
 	calls := 0
 	readPassphrase = func(w io.Writer, prompt string) (string, error) {
 		calls++
-		if calls == 1 { // the "current passphrase" prompt: replace first
-			passphraseSeamless := func() {
-				p2, _ := project.Resolve(proj)
-				if err := credentials.Open(p2.Dir, p2.ID).Replace("other"); err != nil {
-					t.Errorf("replace: %v", err)
-				}
+		if calls == 2 { // unlock done; replace before the write
+			p2, _ := project.Resolve(proj)
+			if err := credentials.Open(p2.Dir, p2.ID).Replace("other"); err != nil {
+				t.Errorf("replace: %v", err)
 			}
-			passphraseSeamless()
+		}
+		if calls == 1 {
 			return "pw", nil
 		}
 		return "rotated", nil
 	}
 	err := CredentialsRekey(s, proj)
-	// The pre-lock unlock reads the REPLACED identity, so "pw" no longer
-	// matches — either failure shape (bad passphrase against the new vault,
-	// or ErrVaultChanged when the replace lands post-unlock) leaves the
-	// replacement vault intact. Both are refusals; neither writes.
-	if err == nil {
-		t.Fatal("rekey during a replace must refuse")
+	if !errors.Is(err, credentials.ErrVaultChanged) {
+		t.Fatalf("rekey over a replaced vault: got %v, want ErrVaultChanged", err)
 	}
 	p2, _ := project.Resolve(proj)
 	if _, uerr := credentials.Open(p2.Dir, p2.ID).Unlock("other"); uerr != nil {

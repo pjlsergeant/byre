@@ -447,7 +447,13 @@ func (u *Unlocked) Rekey(newPassphrase string) error {
 	if err != nil {
 		return err
 	}
-	return hostopen.PublishFile(u.v.identityPath(), string(wrapped), 0o600)
+	if err := hostopen.PublishFile(u.v.identityPath(), string(wrapped), 0o600); err != nil {
+		return err
+	}
+	// The published file is now what this Unlocked stands for — a second
+	// Rekey on the same handle must compare against it, not the original.
+	u.wrapped = wrapped
+	return nil
 }
 
 // Set is the cold staged write: encrypt value to the index's recipient and

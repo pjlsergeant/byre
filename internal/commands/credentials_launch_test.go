@@ -258,11 +258,14 @@ func TestRunCredentialInjectFailureReportsNotDelivered(t *testing.T) {
 	}
 }
 
-// TestInjectDeadlineUnderLauncherWait pins the two clocks that decide
-// whether "delivered" means the exports happen: both start at box start, so
-// the host exec deadline plus margin must sit INSIDE the launcher's
-// fail-open wait — the handoff's wait >= deadline + skew pin. Parsed from
-// the launcher script itself so the two cannot drift apart silently.
+// TestInjectDeadlineUnderLauncherWait pins the delivery-honesty clocks
+// against the launcher script itself so they cannot drift apart silently:
+// a plain "delivered" is only claimed when the inject landed inside
+// credLateThreshold, whose measurement OVERESTIMATES time-since-box-start
+// (the goroutine's entry precedes StartAttach) — so the threshold must sit
+// strictly inside the launcher's fail-open wait, and the exec deadline
+// inside the threshold (a max-length successful exec must still be able to
+// earn the plain word).
 func TestInjectDeadlineUnderLauncherWait(t *testing.T) {
 	m := regexp.MustCompile(`BYRE_CRED_WAIT:-(\d+)`).FindSubmatch(gen.LauncherScript())
 	if m == nil {
@@ -272,9 +275,25 @@ func TestInjectDeadlineUnderLauncherWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const margin = 4 * time.Second // launcher pre-wait lines + poll granularity
-	if launcherWait := time.Duration(waitSecs) * time.Second; credInjectDeadline+margin > launcherWait {
-		t.Fatalf("credInjectDeadline %v + %v margin exceeds the launcher's %v wait — a successful inject could land after the box failed open, making 'delivered' dishonest", credInjectDeadline, margin, launcherWait)
+	launcherWait := time.Duration(waitSecs) * time.Second
+	if credLateThreshold >= launcherWait {
+		t.Fatalf("credLateThreshold %v must sit inside the launcher's %v wait — past it byre cannot know the exports happened, and the plain 'delivered' would be a guess", credLateThreshold, launcherWait)
+	}
+	if credInjectDeadline > credLateThreshold {
+		t.Fatalf("credInjectDeadline %v exceeds credLateThreshold %v — even a successful max-length exec could never honestly report plain delivery", credInjectDeadline, credLateThreshold)
+	}
+}
+
+// The honesty rule itself, at its one owner: inside the threshold the plain
+// word; past it the hedge — byre does not probe the box, so it never claims
+// an export it cannot know happened.
+func TestCredDeliveredLineHonesty(t *testing.T) {
+	if got := credDeliveredLine(2 * time.Second); got != "byre: credentials: delivered." {
+		t.Fatalf("in-window line = %q", got)
+	}
+	late := credDeliveredLine(credLateThreshold + time.Second)
+	if !strings.Contains(late, "delivered late") || !strings.Contains(late, "may have launched without") {
+		t.Fatalf("past-window line must hedge: %q", late)
 	}
 }
 
