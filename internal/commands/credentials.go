@@ -290,13 +290,14 @@ func credentialUnlockLine(unlock string) string {
 // baked receiver as the dev identity, bounded. Every failure is fail-open —
 // reported, never blocking the box, which simply runs without credentials
 // when its launcher's own wait expires.
-func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID string, ident runner.Identity, stream []byte, done <-chan struct{}) {
-	// entry precedes develop's StartAttach, so elapsed-since-entry bounds
-	// elapsed-since-box-start from above (see credLateThreshold).
-	entry := time.Now()
+func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID string, ident runner.Identity, stream []byte, epoch time.Time, done <-chan struct{}) {
+	// epoch was captured by develop SYNCHRONOUSLY before this goroutine was
+	// spawned (and so before StartAttach could run): elapsed-since-epoch
+	// bounds elapsed-since-box-start from above by construction, which is
+	// what makes the delivered/late line honest (see credLateThreshold).
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
-	deadline := entry.Add(credInjectRunningWait)
+	deadline := epoch.Add(credInjectRunningWait)
 	running := false
 	for !running {
 		if ids, err := r.RunningContainersByLabel(label); err == nil && len(ids) > 0 {
@@ -317,7 +318,7 @@ func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID str
 		fmt.Fprintf(warn, "byre: credentials: not-delivered (%v) — the box runs without credentials.\n", err)
 		return
 	}
-	fmt.Fprintln(warn, credDeliveredLine(time.Since(entry)))
+	fmt.Fprintln(warn, credDeliveredLine(time.Since(epoch)))
 }
 
 // credDeliveredLine is the one owner of the delivery-honesty rule: a plain

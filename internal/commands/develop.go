@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/build"
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -253,9 +254,15 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		done := make(chan struct{})
 		finished := make(chan struct{})
 		stream := credStream(prep.creds)
+		// The honesty epoch is captured HERE, synchronously, before the
+		// goroutine is spawned and before StartAttach can run — a goroutine
+		// body has no ordering guarantee against the code after `go`, so a
+		// timestamp taken inside it could postdate the box start and make
+		// the delivered/late measurement underestimate.
+		epoch := time.Now()
 		go func() {
 			defer close(finished)
-			runCredentialInject(r, s.Err, workdirLabel(paths), prep.containerID, ident, stream, done)
+			runCredentialInject(r, s.Err, workdirLabel(paths), prep.containerID, ident, stream, epoch, done)
 		}()
 		credWait = func() { close(done); <-finished }
 	}
