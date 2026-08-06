@@ -174,6 +174,13 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			fmt.Fprintf(s.Err, "   this store is the REPO's, shared with %s and every other worktree of it — not scoped to this worktree.\n", paths.Canonical)
 		}
 	}
+	// Credential unlock (launch step 1) is deliberately PRE-lock: a prompt
+	// under the setup lock would stall sibling worktrees on a human, and the
+	// scrypt unwrap is the expensive step. The declared set shown is the
+	// pre-lock read's; the decrypt below uses the authoritative under-lock
+	// declarations (the bytes delivered are those present at decrypt time).
+	unlock := promptCredentialUnlock(s, paths, rv.cfg.Credentials)
+
 	// Setup (generate + build + seed) AND container creation are serialized by
 	// the lock; the interactive session that follows is not (the lock is
 	// per-project, and sibling worktrees running concurrently is the point).
@@ -189,7 +196,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// re-read under the lock has happened (prep.rv is that re-read). prep's
 	// fields are read-only from here.
 	prep, err := setupLocked(s.Err, paths.LockFile, func() (preparedLaunch, error) {
-		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident)
+		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlock)
 	})
 	if err != nil {
 		return err
@@ -236,8 +243,27 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		}()
 		netnsWait = func() { close(done); <-finished }
 	}
+	// Credential delivery (launch step 3) runs concurrently with the
+	// attached session, like the netns hooks: the box's launcher waits
+	// bounded (fail-open) for the sentinel while this execs the framed
+	// stream into the baked receiver. The wait after the session keeps the
+	// goroutine from outliving develop (and its s.Err writes).
+	var credWait func()
+	if len(prep.creds.values) > 0 {
+		done := make(chan struct{})
+		finished := make(chan struct{})
+		stream := credStream(prep.creds)
+		go func() {
+			defer close(finished)
+			runCredentialInject(r, s.Err, workdirLabel(paths), prep.containerID, ident, stream, done)
+		}()
+		credWait = func() { close(done); <-finished }
+	}
 
 	runErr := r.StartAttach(containerName(paths))
+	if credWait != nil {
+		credWait()
+	}
 	if netnsWait != nil {
 		netnsWait()
 	}
@@ -298,6 +324,9 @@ type preparedLaunch struct {
 	// made, the credential inject's target (an exec by ID cannot land on a
 	// same-named successor).
 	containerID string
+	// creds is the under-lock decrypt's product: values held only until the
+	// inject, the manifest, and the record entries already written.
+	creds credPayload
 }
 
 // prepareLaunchLocked is the setup-lock body of develop: re-enroll, the
@@ -307,7 +336,7 @@ type preparedLaunch struct {
 // container Create and record reaping included, because the created container
 // is the session-ownership marker (never hoist them out). The preparedLaunch
 // is built only on the all-success path.
-func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity) (preparedLaunch, error) {
+func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlock *unlockResult) (preparedLaunch, error) {
 	none := preparedLaunch{}
 	// Re-establish enrollment UNDER the lock before any store/engine mutation.
 	// develop resolved config/skills BEFORE taking the lock, so a concurrent
@@ -345,6 +374,17 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
 	if err != nil {
 		return none, err
+	}
+	// Credential decrypt (launch step 2) — under the lock, against the
+	// authoritative declarations. A deliverable set adds the session tmpfs
+	// and arms the launcher's bounded fail-open wait; every other outcome
+	// leaves the launch exactly as it was (no flag, no wait, no tmpfs).
+	creds := decryptCredentialsLocked(s.Err, paths, rv.cfg.Credentials, unlock)
+	if len(creds.values) > 0 {
+		params.Tmpfs = append(params.Tmpfs, credTmpfs(creds, ident, r.Engine()))
+		// Set only when a delivery is in flight; persists with the
+		// container (a bare restart pays at most the launcher's wait).
+		params.Env["BYRE_CRED_EXPECT"] = "1"
 	}
 	// Netns-hook plumbing is decided before the container exists: the
 	// per-invocation nonce label is the hooks' ownership proof (see naming.go)
@@ -436,7 +476,10 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// under the lock, from the same params Create receives, so nothing
 	// between here and the create can move underneath it. A write failure
 	// degrades (the box still launches; status falls back to the config).
-	launchLabel, launchHash := recordLaunch(s.Err, paths, launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base)))
+	rec := launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base))
+	rec.CredentialUnlock = creds.unlock
+	rec.Credentials = creds.record
+	launchLabel, launchHash := recordLaunch(s.Err, paths, rec)
 	if launchLabel != "" {
 		params.Labels = append(params.Labels, launchLabel)
 	}
@@ -459,7 +502,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// ours to delete. The peer set is the one develop already resolved for
 	// the ADR 0004 check, so this costs no new host probing.
 	reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
-	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv, containerID: containerID}, nil
+	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv, containerID: containerID, creds: creds}, nil
 }
 
 // decodeAgentExit distinguishes the agent/container's own exit from a byre

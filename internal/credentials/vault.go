@@ -87,6 +87,12 @@ var NameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 // doesn't pay production's deliberate hundreds of milliseconds.
 var scryptWorkFactor = 18
 
+// SetWorkFactorForTesting lowers the identity-wrap work factor so suites in
+// OTHER packages (commands' launch wiring) don't pay production's deliberate
+// unlock cost on every test vault. Test harness only; production never
+// calls it.
+func SetWorkFactorForTesting(logN int) { scryptWorkFactor = logN }
+
 // ErrVaultExists is Create's refusal when a vault directory already exists
 // (--replace is the explicit discard-and-recreate).
 var ErrVaultExists = errors.New("a credentials vault already exists for this project (byre credentials init --replace discards and recreates it)")

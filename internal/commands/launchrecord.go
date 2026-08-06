@@ -102,17 +102,38 @@ type launchRecord struct {
 	EnvKeys []string `toml:"env_keys"`
 	// RunArgs is the raw passthrough as the engine got it (skill run_args then
 	// the project's own, last-wins), verbatim.
-	RunArgs []string      `toml:"run_args"`
-	Image   launchImage   `toml:"image"`
-	Network launchNetwork `toml:"network"`
-	Binds   []launchBind  `toml:"binds"`
-	Ports   []launchPort  `toml:"ports"`
+	RunArgs []string `toml:"run_args"`
+	// CredentialUnlock is THIS launch's unlock outcome — a launch-time
+	// fact recorded with the launch it belongs to (never project-global:
+	// sibling worktrees each launch their own box). "unlocked",
+	// "not-prompted", or the skip/fail outcome word; empty when nothing was
+	// declared. Status shows it and claims nothing about live in-box state
+	// (the design does not probe the box).
+	CredentialUnlock string        `toml:"credential_unlock,omitempty"`
+	Image            launchImage   `toml:"image"`
+	Network          launchNetwork `toml:"network"`
+	Binds            []launchBind  `toml:"binds"`
+	Ports            []launchPort  `toml:"ports"`
 	// Volumes are the named volumes as mounted. Name is the ENGINE's name (what
 	// byre told the engine); Decl is the declared name status renders, because
 	// a row reading `byre-proj-4f21bc-claude-state` answers a question nobody
 	// asked.
 	Volumes []launchVolume `toml:"volumes"`
 	Skills  []launchSkill  `toml:"skills"`
+	// Credentials are the declared credentials as this launch decrypted
+	// them: name/kind/target plus the decrypt-time outcome ("scheduled" for
+	// a value handed to delivery — deliberately not "delivered": the record
+	// is immutable and written pre-start, and the inject's own outcome is
+	// reported on stderr as it happens, never recorded as live state).
+	// Names and outcomes only; values never.
+	Credentials []launchCredential `toml:"credentials,omitempty"`
+}
+
+type launchCredential struct {
+	Name    string `toml:"name"`
+	Kind    string `toml:"kind"`
+	Target  string `toml:"target"`
+	Outcome string `toml:"outcome"`
 }
 
 // launchImage pins what the box RAN, which the tag alone cannot: `byre
