@@ -57,6 +57,14 @@ every command and flag.
 | `byre context add <name>` | Add or update standing instructions in the project config (or --global defaults). |
 | `byre context remove <name>` | Remove standing instructions (closure-smart). |
 | `byre context list` | Show the resolved standing instructions (name + source). |
+| `byre credentials` | Manage project credentials (an age-encrypted vault; values delivered per launch after unlock). |
+| `byre credentials init` | Create this project's vault (masked passphrase, confirmed). |
+| `byre credentials declare <name>` | Declare a credential in the project config (name, kind, target — never a value). |
+| `byre credentials undeclare <name>` | Remove a credential declaration (closure-smart; the stored value stays). |
+| `byre credentials set <name>` | Store a value: masked prompt on a terminal, or piped stdin. Never an argument. |
+| `byre credentials unset <name>` | Discard a stored value (the declaration stays). |
+| `byre credentials rekey` | Rotate the vault passphrase (the identity is unchanged). |
+| `byre credentials list` | Show declared credentials with kind, target, and value-state. Values render nowhere. |
 
 ## Skills & templates
 

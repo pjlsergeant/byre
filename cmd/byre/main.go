@@ -203,6 +203,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		mcpCmd(dir, s),
 		claudeSkillCmd(dir, s),
 		contextCmd(dir, s),
+		credentialsCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
@@ -713,6 +714,100 @@ lower layer still declares the name. Applies on the next develop.`,
 		},
 	)
 	return ctx
+}
+
+func credentialsCmd(dir string, s commands.Streams) *cobra.Command {
+	creds := &cobra.Command{
+		Use:   "credentials",
+		Short: "Manage project credentials (an age-encrypted vault; values delivered per launch after unlock).",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return usageError("usage: byre credentials init|declare|undeclare|set|unset|rekey|list")
+		},
+	}
+	var initReplace bool
+	initCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Create this project's vault (masked passphrase, confirmed).",
+		Long: `Create the project's credentials vault: values are age-encrypted at rest
+in the host-side store and decrypted only at launch, after the passphrase.
+--replace discards an existing vault and its values (the remedy after a
+suspected leak of the vault files; plain rekey only rotates the passphrase).`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return commands.CredentialsInit(s, dir, initReplace)
+		},
+	}
+	initCmd.Flags().BoolVar(&initReplace, "replace", false, "discard the existing vault (identity AND values) and create a fresh one")
+	var declKind, declTarget string
+	var declGlobal, undeclGlobal bool
+	declare := &cobra.Command{
+		Use:   "declare <name>",
+		Short: "Declare a credential in the project config (name, kind, target — never a value).",
+		Long: `Write a [[credentials]] declaration (add-or-update by name): the standing,
+cascade-visible consent to deliver the named value. kind "env" exports the
+value as the target variable; kind "file" writes it under the session tmpfs
+with the target variable holding the path. The value itself is set
+separately (byre credentials set) and lives only in the vault.`,
+		Args: exactArgsU(1, "credentials declare <name> --kind env|file --target VAR"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return commands.CredentialsDeclare(s, dir, declGlobal, args[0], declKind, declTarget)
+		},
+	}
+	declare.Flags().StringVar(&declKind, "kind", "env", "how the value lands: env (exported variable) or file (tmpfs path in the variable)")
+	declare.Flags().StringVar(&declTarget, "target", "", "the environment variable that carries the value (or the file path)")
+	declare.Flags().BoolVar(&declGlobal, "global", false, "write your global defaults (~/.byre/default.config) instead")
+	undeclare := &cobra.Command{
+		Use:   "undeclare <name>",
+		Short: "Remove a credential declaration (closure-smart; the stored value stays).",
+		Args:  exactArgsU(1, "credentials undeclare <name>"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return commands.CredentialsUndeclare(s, dir, undeclGlobal, args[0])
+		},
+	}
+	undeclare.Flags().BoolVar(&undeclGlobal, "global", false, "edit your global defaults (~/.byre/default.config) instead")
+	creds.AddCommand(
+		initCmd,
+		declare,
+		undeclare,
+		&cobra.Command{
+			Use:   "set <name>",
+			Short: "Store a value: masked prompt on a terminal, or piped stdin. Never an argument.",
+			Long: `Stage a value into the vault, encrypted to the vault recipient (no
+passphrase needed). On a terminal the value is read masked; piped stdin is
+taken whole (op read ... | byre credentials set stripe). A value never
+rides the command line — argv lands in shell history and the process list.`,
+			Args: exactArgsU(1, "credentials set <name>"),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.CredentialsSet(s, dir, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "unset <name>",
+			Short: "Discard a stored value (the declaration stays).",
+			Args:  exactArgsU(1, "credentials unset <name>"),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.CredentialsUnset(s, dir, args[0])
+			},
+		},
+		&cobra.Command{
+			Use:   "rekey",
+			Short: "Rotate the vault passphrase (the identity is unchanged).",
+			Args:  noArgsU,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.CredentialsRekey(s, dir)
+			},
+		},
+		&cobra.Command{
+			Use:   "list",
+			Short: "Show declared credentials with kind, target, and value-state. Values render nowhere.",
+			Args:  noArgsU,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return commands.CredentialsList(s, dir)
+			},
+		},
+	)
+	return creds
 }
 
 // packageCmd builds one package-noun subtree (skill or template): the verbs
