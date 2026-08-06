@@ -218,7 +218,7 @@ func TestIntegrationPreStartMarkerAndForcelessRemove(t *testing.T) {
 
 	created := "byre.inttest=" + smokeName(t, "prestart")
 	name := smokeName(t, "prestart-c")
-	if err := r.Create([]string{"create", "--name", name, "--label", created, smokeImage, "sleep", "30"}); err != nil {
+	if _, err := r.Create([]string{"create", "--name", name, "--label", created, smokeImage, "sleep", "30"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = exec.Command(string(r.Engine()), "rm", "-f", name).Run() })

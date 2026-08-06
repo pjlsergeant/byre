@@ -294,6 +294,10 @@ type preparedLaunch struct {
 	hooks      []skills.NetnsHook
 	netnsLabel string
 	netnsEnv   map[string]string
+	// containerID is what Create printed — the exact container this launch
+	// made, the credential inject's target (an exec by ID cannot land on a
+	// same-named successor).
+	containerID string
 }
 
 // prepareLaunchLocked is the setup-lock body of develop: re-enroll, the
@@ -439,7 +443,8 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// The container name makes the session atomic: losing the name means a
 	// concurrent develop won the race (a session is now live — report it)
 	// or a leftover container holds it (say which and how to clear it).
-	if cerr := r.Create(runner.CreateArgs(params)); cerr != nil {
+	containerID, cerr := r.Create(runner.CreateArgs(params))
+	if cerr != nil {
 		if live, qerr := r.RunningContainersByLabel(workdirLabel(paths)); qerr == nil && len(live) > 0 {
 			reportRunning(s.Err, r.Engine(), live, true)
 			return none, ExitError{Code: ExitRefused} // refused, session already live
@@ -454,7 +459,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// ours to delete. The peer set is the one develop already resolved for
 	// the ADR 0004 check, so this costs no new host probing.
 	reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
-	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv}, nil
+	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv, containerID: containerID}, nil
 }
 
 // decodeAgentExit distinguishes the agent/container's own exit from a byre

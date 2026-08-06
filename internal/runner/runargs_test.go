@@ -286,3 +286,27 @@ func TestIsDockerDesktop(t *testing.T) {
 		t.Fatalf("Podman is never Desktop: %v %v", ok, err)
 	}
 }
+
+func TestRunArgsTmpfs(t *testing.T) {
+	args := RunArgs(RunParams{
+		Image: "img",
+		Tmpfs: []TmpfsMount{{Target: "/run/byre", Size: 8 << 20, Mode: "0700", UID: 501, GID: 20}},
+	})
+	want := "--tmpfs /run/byre:rw,noexec,nosuid,nodev,mode=0700,uid=501,gid=20,size=8388608"
+	if got := strings.Join(args, " "); !strings.Contains(got, want) {
+		t.Fatalf("argv %q missing %q", got, want)
+	}
+}
+
+func TestRunArgsTmpfsNoCopyUp(t *testing.T) {
+	// The caller sets NoCopyUp for podman engines; argv assembly stays
+	// engine-blind and just renders it.
+	args := RunArgs(RunParams{
+		Image: "img",
+		Tmpfs: []TmpfsMount{{Target: "/run/byre", Mode: "0700", UID: 1000, GID: 1000, NoCopyUp: true}},
+	})
+	want := "--tmpfs /run/byre:rw,noexec,nosuid,nodev,mode=0700,uid=1000,gid=1000,notmpcopyup"
+	if got := strings.Join(args, " "); !strings.Contains(got, want) {
+		t.Fatalf("argv %q missing %q", got, want)
+	}
+}

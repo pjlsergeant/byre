@@ -65,8 +65,12 @@ func TestCreatePassesArgsThrough(t *testing.T) {
 		gotArgs = append([]string{name}, args...)
 		return "deadbeef\n", nil
 	}}
-	if err := r.Create([]string{"create", "--rm", "-it", "img.dev-1"}); err != nil {
+	id, err := r.Create([]string{"create", "--rm", "-it", "img.dev-1"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if id != "deadbeef" {
+		t.Fatalf("Create id = %q, want the trimmed engine answer", id)
 	}
 	if want := "docker create --rm -it img.dev-1"; strings.Join(gotArgs, " ") != want {
 		t.Fatalf("Create argv = %q, want %q", strings.Join(gotArgs, " "), want)
@@ -274,4 +278,26 @@ func pinHelperName(t *testing.T, v string) {
 	orig := helperName
 	helperName = func(string) (string, error) { return v, nil }
 	t.Cleanup(func() { helperName = orig })
+}
+
+func TestExecInputBoundedArgvAndDeadline(t *testing.T) {
+	var gotArgs []string
+	var gotD time.Duration
+	var gotStdin string
+	r := &Runner{engine: Docker, captureBoundedIn: func(d time.Duration, stdin io.Reader, name string, args ...string) (string, error) {
+		gotD = d
+		b, _ := io.ReadAll(stdin)
+		gotStdin = string(b)
+		gotArgs = append([]string{name}, args...)
+		return "", nil
+	}}
+	if _, err := r.ExecInputBounded(42*time.Second, "cid", 501, 20, strings.NewReader("payload"), "/etc/byre/credential-receiver"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "docker exec -i -u 501:20 -e HOME=/home/dev cid /etc/byre/credential-receiver"; strings.Join(gotArgs, " ") != want {
+		t.Fatalf("argv = %q, want %q", strings.Join(gotArgs, " "), want)
+	}
+	if gotD != 42*time.Second || gotStdin != "payload" {
+		t.Fatalf("deadline/stdin = %v %q", gotD, gotStdin)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -49,15 +50,16 @@ type fakeRunner struct {
 	labelsErr     error                        // ContainerLabels failure (engine answered nothing)
 	execInputs    []string                     // ExecInput: "id uid:gid args <-stdin"
 
-	execOutputContent string     // what ExecOutput streams (grab tests)
-	creates           [][]string // Create argvs
-	createErr         error
-	starts            []string // StartAttach: container names
-	runErr            error    // StartAttach result
-	runHook           func()   // called inside StartAttach: "while the session is live"
-	execs             []string // "id uid:gid workdir cmd..."
-	netnsErr          error
-	netnsInits        []string // NetnsInit: "container entrypoint"
+	execOutputContent   string     // what ExecOutput streams (grab tests)
+	creates             [][]string // Create argvs
+	createErr           error
+	execInputBoundedErr error    // ExecInputBounded result (credential inject)
+	starts              []string // StartAttach: container names
+	runErr              error    // StartAttach result
+	runHook             func()   // called inside StartAttach: "while the session is live"
+	execs               []string // "id uid:gid workdir cmd..."
+	netnsErr            error
+	netnsInits          []string // NetnsInit: "container entrypoint"
 	// WorktreeAdd: recorded argv-shaped summary + the identity it ran with.
 	worktreeAdds   []string // "image name common(host->target) main target branch"
 	worktreeIdents []runner.Identity
@@ -157,6 +159,17 @@ func (f *fakeRunner) ExecInput(id string, uid, gid int, stdin io.Reader, command
 	return "", nil
 }
 
+// ExecInputBounded records the call like ExecInput (the credential inject's
+// transport); the deadline is dropped — a fake never hangs.
+func (f *fakeRunner) ExecInputBounded(d time.Duration, id string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
+	f.mu.Lock()
+	b, _ := io.ReadAll(stdin)
+	f.execInputs = append(f.execInputs, fmt.Sprintf("%s %d:%d bounded %s <-%s", id, uid, gid, strings.Join(command, " "), b))
+	err := f.execInputBoundedErr
+	f.mu.Unlock()
+	return "", err
+}
+
 // ExecOutput records the call and streams fake content — grab's read leg.
 func (f *fakeRunner) ExecOutput(id string, uid, gid int, stdout io.Writer, command ...string) error {
 	f.mu.Lock()
@@ -250,12 +263,15 @@ func (f *fakeRunner) ContainerRemove(container string) error {
 	return nil
 }
 
-func (f *fakeRunner) Create(args []string) error {
+func (f *fakeRunner) Create(args []string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.creates = append(f.creates, args)
 	f.ops = append(f.ops, "createbox")
-	return f.createErr
+	if f.createErr != nil {
+		return "", f.createErr
+	}
+	return "fake-container-id", nil
 }
 
 func (f *fakeRunner) StartAttach(container string) error {

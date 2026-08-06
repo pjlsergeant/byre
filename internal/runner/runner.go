@@ -123,6 +123,10 @@ type Runner struct {
 	// daemon leaves those waiting forever with the box already up; every other
 	// captured call is answered by a client that fails on its own.
 	captureBounded func(d time.Duration, name string, args ...string) (string, error)
+	// captureBoundedIn is captureBounded with a caller-supplied stdin — the
+	// credential inject's seam (streaming content in, deadline-bounded,
+	// from a goroutine concurrent with the attached session).
+	captureBoundedIn func(d time.Duration, stdin io.Reader, name string, args ...string) (string, error)
 }
 
 // New returns a Runner for the given engine using real exec. exe is the
@@ -135,12 +139,13 @@ func New(e Engine, exe string) *Runner {
 		// os.Stdin for the interactive form, a nil Reader (== no stdin) for
 		// the captured one. Separate implementations drifted -- one grew a
 		// stderr cap the other never got.
-		stream:         func(name string, args ...string) error { return streamInExec(os.Stdin, name, args...) },
-		capture:        func(name string, args ...string) (string, error) { return captureInExec(nil, name, args...) },
-		streamIn:       streamInExec,
-		captureIn:      captureInExec,
-		streamOut:      streamOutExec,
-		captureBounded: captureBoundedExec,
+		stream:           func(name string, args ...string) error { return streamInExec(os.Stdin, name, args...) },
+		capture:          func(name string, args ...string) (string, error) { return captureInExec(nil, name, args...) },
+		streamIn:         streamInExec,
+		captureIn:        captureInExec,
+		streamOut:        streamOutExec,
+		captureBounded:   captureBoundedExec,
+		captureBoundedIn: captureBoundedInExec,
 	}
 }
 
@@ -278,12 +283,17 @@ func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildAr
 }
 
 // Create creates (without starting) a container from the assembled create
-// argv (CreateArgs). The container name is the handle for the StartAttach
-// that follows; a name conflict surfaces here, in the engine's stderr.
-// Output is captured (create prints the id), not streamed.
-func (r *Runner) Create(args []string) error {
-	_, err := r.capture(r.bin(), args...)
-	return err
+// argv (CreateArgs) and returns the container ID the engine printed. The
+// container name is the handle for the StartAttach that follows (a name
+// conflict surfaces here, in the engine's stderr); the ID is the handle for
+// anything that must address THIS container exactly — the credential
+// inject's `exec` targets it rather than re-resolving the name.
+func (r *Runner) Create(args []string) (string, error) {
+	out, err := r.capture(r.bin(), args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // StartAttach starts a created container in the foreground: attached, with
@@ -376,6 +386,16 @@ func (r *Runner) ContainerLabels(id string) (map[string]string, error) {
 // model is byre shell's, HOME included); /home/dev is the chassis dev home.
 func (r *Runner) ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
 	return r.captureIn(stdin, r.bin(), execInputArgs(containerID, uid, gid, command...)...)
+}
+
+// ExecInputBounded is ExecInput under a wall-clock deadline with capped
+// output — the credential inject's transport. The deadline exists because
+// this exec runs from develop's launch path concurrently with the attached
+// session: a wedged daemon (or a receiver that never reads) must cost at
+// most the bound, never a goroutine byre waits on forever. Delivery failure
+// is the caller's fail-open case, not a launch blocker.
+func (r *Runner) ExecInputBounded(d time.Duration, containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
+	return r.captureBoundedIn(d, stdin, r.bin(), execInputArgs(containerID, uid, gid, command...)...)
 }
 
 // execInputArgs builds the engine `exec -i` argv (pure, for testing).
@@ -786,9 +806,16 @@ func streamOutExec(stdout io.Writer, name string, args ...string) error {
 // running. Generous by construction: these are container launches, so the
 // deadline is sized to "something is wrong", never to "this is slow".
 func captureBoundedExec(d time.Duration, name string, args ...string) (string, error) {
+	return captureBoundedInExec(d, nil, name, args...)
+}
+
+// captureBoundedInExec is captureBoundedExec's stdin-carrying core (nil
+// stdin = no input, the plain bounded capture).
+func captureBoundedInExec(d time.Duration, stdin io.Reader, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = stdin
 	// Own process group, and cancel it as a GROUP. An engine client spawns
 	// local helpers of its own (credential and transport helpers), and
 	// CommandContext's default kills the direct child only -- so the deadline

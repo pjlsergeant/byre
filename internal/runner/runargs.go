@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // BindMount is a host-path bind for `docker run -v host:target[:mode]`.
@@ -31,6 +32,42 @@ type NamedVolume struct {
 	Target string
 }
 
+// TmpfsMount is a per-session in-memory filesystem (`docker run --tmpfs`):
+// nothing under it touches image layers, the writable layer, or a volume,
+// and it empties when the container stops — the credential delivery
+// surface. Rendered via the --tmpfs flag (not --mount type=tmpfs) because
+// only the flag form passes uid=/gid= through to the kernel mount.
+type TmpfsMount struct {
+	Target   string
+	Size     int64  // bytes; 0 omits the option (engine default)
+	Mode     string // e.g. "0700"; "" omits
+	UID, GID int    // ownership of the mount root (ADR 0032: the container identity)
+	// NoCopyUp adds notmpcopyup — Podman copies the image directory's
+	// contents up into a fresh tmpfs by default, which a byre-owned
+	// delivery mount never wants. Docker has no such behavior (or option);
+	// the CALLER sets this per engine, keeping argv assembly engine-blind.
+	NoCopyUp bool
+}
+
+// spec renders the --tmpfs value: target:opt,opt,... The fixed options are
+// the brief's pin — rw so the receiver can write, noexec/nosuid/nodev as
+// ordinary mount hygiene (not sold as a defense: the box's own user is
+// handed the contents).
+func (t TmpfsMount) spec() string {
+	opts := []string{"rw", "noexec", "nosuid", "nodev"}
+	if t.Mode != "" {
+		opts = append(opts, "mode="+t.Mode)
+	}
+	opts = append(opts, fmt.Sprintf("uid=%d", t.UID), fmt.Sprintf("gid=%d", t.GID))
+	if t.Size > 0 {
+		opts = append(opts, fmt.Sprintf("size=%d", t.Size))
+	}
+	if t.NoCopyUp {
+		opts = append(opts, "notmpcopyup")
+	}
+	return t.Target + ":" + strings.Join(opts, ",")
+}
+
 // RunParams is everything needed to assemble a `docker run` invocation.
 type RunParams struct {
 	Image           string
@@ -41,6 +78,7 @@ type RunParams struct {
 	Env             map[string]string
 	Binds           []BindMount
 	Volumes         []NamedVolume
+	Tmpfs           []TmpfsMount  // per-session in-memory mounts (credential delivery)
 	Ports           []PortPublish // -p publications (host-exposed container ports)
 	Caps            []string      // --cap-add (from skills)
 	GroupAdds       []int         // --group-add (numeric gids from sock_groups probe; no /etc/group entry needed)
@@ -100,6 +138,9 @@ func RunArgs(p RunParams) []string {
 	}
 	for _, v := range p.Volumes {
 		args = append(args, "--mount", fmt.Sprintf("type=volume,source=%s,target=%s", v.Name, v.Target))
+	}
+	for _, t := range p.Tmpfs {
+		args = append(args, "--tmpfs", t.spec())
 	}
 	for _, pub := range p.Ports {
 		args = append(args, "-p", portSpec(pub))

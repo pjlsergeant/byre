@@ -2,6 +2,7 @@ package commands
 
 import (
 	"io"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/runner"
 )
@@ -23,7 +24,7 @@ type sessionRunner interface {
 	ContainerLabels(id string) (map[string]string, error)
 	NetworkMode(container string) (string, error)
 	Stop(container string) error
-	Create(args []string) error
+	Create(args []string) (string, error)
 	StartAttach(container string) error
 	ContainerRemove(container string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error
@@ -44,6 +45,7 @@ type sessionRunner interface {
 	IsDockerDesktop() (bool, error)
 	Exec(containerID string, uid, gid int, workdir string, env map[string]string, tty bool, command ...string) error
 	ExecInput(containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error)
+	ExecInputBounded(d time.Duration, containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error)
 	ExecOutput(containerID string, uid, gid int, stdout io.Writer, command ...string) error
 }
 
