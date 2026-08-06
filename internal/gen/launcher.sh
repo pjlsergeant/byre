@@ -209,6 +209,59 @@ if [ -d "$ENVD_DIR" ]; then
   done
 fi
 
+# Credential export — the launcher's end of credential delivery
+# (wip/secure-credentials.md step 4). BYRE_CRED_EXPECT is set at create time
+# ONLY when this launch decrypted a deliverable set and scheduled an inject;
+# it is purely a wait/export protocol flag ("wait bounded for .done, then
+# export from the manifest") — no verification meaning. The wait is bounded
+# and FAIL-OPEN: a delivery that never lands costs at most the bound and the
+# box runs without credentials (the opposite direction from the network
+# gate above, deliberately — no credentials is safe, no wall is not). The
+# tmpfs empties on restart, so a restarted, un-re-unlocked box pays the wait
+# once and proceeds without. Placed AFTER the env.d loop so credential
+# exports win env collisions (ADR 0028 ordering); values export byte-exact,
+# no shell re-evaluation. The env overrides are test seams (gate precedent);
+# a user setting them re-points byre's own delivery, which is theirs to do.
+if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
+  CRED_DIR="${BYRE_CRED_DIR:-/run/byre}"
+  cred_wait="${BYRE_CRED_WAIT:-20}"
+  SECONDS=0
+  while [ ! -e "$CRED_DIR/.done" ] && [ "$SECONDS" -lt "$cred_wait" ]; do
+    sleep 0.2
+  done
+  if [ -e "$CRED_DIR/.done" ] && [ -r "$CRED_DIR/manifest" ]; then
+    while read -r cred_name cred_kind cred_target; do
+      # The manifest is byre-authored; these checks keep a corrupt line from
+      # exporting under a name the declaration grammar never allowed.
+      [ -n "$cred_name" ] || continue
+      if ! [[ "$cred_target" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$cred_target" == BYRE_* ]]; then
+        echo "byre: credential ${cred_name}: skipping malformed export target." >&2
+        continue
+      fi
+      cred_file="$CRED_DIR/credentials/$cred_name"
+      case "$cred_kind" in
+      env)
+        if [ -f "$cred_file" ]; then
+          # Byte-exact: read to EOF (values are NUL-free by declaration);
+          # $(cat) would strip trailing newlines the value may carry.
+          cred_val=""
+          IFS= read -rd '' cred_val <"$cred_file" || true
+          export -- "$cred_target=$cred_val"
+          cred_val=""
+        fi
+        ;;
+      file)
+        if [ -f "$cred_file" ]; then
+          export -- "$cred_target=$cred_file"
+        fi
+        ;;
+      esac
+    done <"$CRED_DIR/manifest"
+  else
+    echo "byre: credentials were expected but did not arrive within ${cred_wait}s — launching without them." >&2
+  fi
+fi
+
 # Agent command: explicit run args > recorded agent command > login shell.
 # /etc/byre/agent-cmd is an *executable script* an agent skill installs;
 # executing it (rather than word-splitting its text) preserves quoting/spaces.

@@ -30,6 +30,8 @@ RUN if getent passwd dev >/dev/null 2>&1; then sed -i '/^dev:/d' /etc/passwd; fi
 ENV PATH=/home/dev/.local/bin:$PATH
 COPY byre-launch /usr/local/bin/byre-launch
 RUN chmod +x /usr/local/bin/byre-launch
+COPY byre-credential-receiver /etc/byre/credential-receiver
+RUN chmod +x /etc/byre/credential-receiver
 COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
 
 # --- skill apt (hoisted; see ADR 0042) ---

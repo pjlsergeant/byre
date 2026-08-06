@@ -267,6 +267,9 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 	if err := ctxRoot.WriteFile(gen.LauncherName, gen.LauncherScript(), 0o755); err != nil {
 		return "", err
 	}
+	if err := ctxRoot.WriteFile(gen.ReceiverName, gen.ReceiverScript(), 0o755); err != nil {
+		return "", err
+	}
 	// The /etc/profile.d shim that sources env.d for login shells (COPYed by the
 	// core block); 0644, sourced not executed.
 	if err := ctxRoot.WriteFile(gen.ProfileEnvName, gen.ProfileEnvScript(), 0o644); err != nil {

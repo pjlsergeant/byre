@@ -24,6 +24,22 @@ var launcherScript []byte
 // assembler writes these to <context>/byre-launch.
 func LauncherScript() []byte { return launcherScript }
 
+// ReceiverName is the build-context filename of the credential receiver the
+// core block COPYs to ReceiverPath — the in-box end of the credential
+// delivery stream (exec-stdin frames in, tmpfs files out, .done last).
+const ReceiverName = "byre-credential-receiver"
+
+// ReceiverPath is where the core block installs the credential receiver;
+// the host-side inject execs exactly this path.
+const ReceiverPath = ByreDir + "/credential-receiver"
+
+//go:embed credential-receiver.sh
+var receiverScript []byte
+
+// ReceiverScript returns the constant credential-receiver script bytes. The
+// build-context assembler writes these to <context>/byre-credential-receiver.
+func ReceiverScript() []byte { return receiverScript }
+
 // ProfileEnvName is the build-context filename of the /etc/profile.d shim that
 // sources env.d for login shells (so `byre shell` sessions get the same
 // env.d-provided environment the launcher gives the agent).
@@ -219,6 +235,12 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// MultipleInstructionsDisallowed warning on every build.
 	"COPY " + LauncherName + " " + LauncherPath + "\n" +
 	"RUN chmod +x " + LauncherPath + "\n" +
+	// The credential receiver rides every image at a constant path (like the
+	// launcher): whether a launch delivers credentials is a runtime fact, and
+	// a conditional COPY would fork the cache-shared core block. Inert when
+	// nothing execs it.
+	"COPY " + ReceiverName + " " + ReceiverPath + "\n" +
+	"RUN chmod +x " + ReceiverPath + "\n" +
 	// Login shells (e.g. `byre shell`) source /etc/profile.d/*.sh; this shim
 	// sources env.d there so a shell session gets the same env.d-provided
 	// environment the launcher gives the agent (COMPOSE_PROJECT_NAME, shared
