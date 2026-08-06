@@ -75,7 +75,9 @@ exceptions noted inline.
 - `[[ports]]` -- `container` (required), `host` (defaults to mirror),
   `interface` (defaults to `127.0.0.1` -- localhost-only unless you
   loudly say otherwise). Publishes a box port to the host.
-- `[env_from_host]` -- the one host-to-box data channel:
+- `[env_from_host]` -- the host-environment passthrough channel (the
+  vault-backed `[[credentials]]` below is the other deliberate
+  host-to-box value channel):
   `KEY = "env:HOST_VAR"` (a host env var, at runtime),
   `KEY = "git:config.key"` (from `git config`), `KEY = "tz:"` (your
   timezone), `KEY = ""` (disable an inherited entry). Values resolve at
