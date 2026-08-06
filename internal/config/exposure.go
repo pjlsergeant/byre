@@ -34,15 +34,20 @@ func PostureEnforcesAllowlist(p string) bool {
 // "Grant"): a config-literal env var reaches the box but is not a grant, so
 // the rendered line is labeled "exposure", never "grants".
 type Exposure struct {
-	Workspace      bool   // include the implicit project mount — set by launch; the UI summarizes only config
-	SelfEdit       bool   // --self-edit's rw store mount — launch only; the loudest grant stands in the inventory too, not just the warning above it
-	Mounts         int    // host mounts that will actually bind
-	DisabledMounts int    // switched off: no bind, but staying visible while off is the switch's point
-	Ports          int    // published ports
-	Env            int    // env vars the box gets (config-literal + skill runtime)
-	Posture        string // declared network posture; "" = open (the default world, not a grant)
-	Egress         int    // resolved allowlist size; meaningful only under an allowlist-enforcing posture
-	Closed         int    // closures in effect; the enforced list under open-denylist
+	Workspace      bool // include the implicit project mount — set by launch; the UI summarizes only config
+	SelfEdit       bool // --self-edit's rw store mount — launch only; the loudest grant stands in the inventory too, not just the warning above it
+	Mounts         int  // host mounts that will actually bind
+	DisabledMounts int  // switched off: no bind, but staying visible while off is the switch's point
+	Ports          int  // published ports
+	Env            int  // env vars the box gets (config-literal + skill runtime)
+	// Credentials counts the DECLARED set — the consent surface, presented
+	// beside env as one "what env does the agent see" answer. Whether a
+	// launch actually delivers (vault state, unlock) is launch-time fact,
+	// not tally material.
+	Credentials int
+	Posture     string // declared network posture; "" = open (the default world, not a grant)
+	Egress      int    // resolved allowlist size; meaningful only under an allowlist-enforcing posture
+	Closed      int    // closures in effect; the enforced list under open-denylist
 	// The project's own raw escape hatches degrade the posture claim — the
 	// same honesty rule as status's networkLine: byre can't audit arbitrary
 	// argv or Dockerfile text, so a declared posture is not guaranteed.
@@ -81,6 +86,9 @@ func (e Exposure) GrantsLine() string {
 	}
 	if e.Env > 0 {
 		parts = append(parts, fmt.Sprintf("%d env %s", e.Env, plural("var", e.Env)))
+	}
+	if e.Credentials > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s", e.Credentials, plural("credential", e.Credentials)))
 	}
 	return strings.Join(parts, " · ")
 }

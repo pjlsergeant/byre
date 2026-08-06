@@ -80,8 +80,14 @@ type statusData struct {
 	ClaudeSkillsClosed   []string                `json:"claude_skills_closed,omitempty"`
 	ClaudeSkillsDelivery string                  `json:"claude_skills_delivery,omitempty"`
 
-	Instructions         []statusDataContext `json:"instructions"`
-	InstructionsDelivery string              `json:"instructions_delivery,omitempty"`
+	Instructions []statusDataContext `json:"instructions"`
+	// Credentials is the declared set with value-state; credential_unlock is
+	// the running box's LAUNCH-TIME unlock outcome from its record. Neither
+	// is a live-state claim — byre does not probe the box. Values never
+	// appear anywhere in this document.
+	Credentials          []statusDataCredential `json:"credentials,omitempty"`
+	CredentialUnlock     string                 `json:"credential_unlock,omitempty"`
+	InstructionsDelivery string                 `json:"instructions_delivery,omitempty"`
 
 	HostEnv []statusDataHostEnv `json:"host_env,omitempty"`
 	EnvKeys []string            `json:"env_keys,omitempty"`
@@ -243,6 +249,14 @@ type statusDataContext struct {
 	// Lines counts the inline text's lines. The TEXT is the config editor's
 	// screen, not an exposure fact.
 	Lines int `json:"lines,omitempty"`
+}
+
+type statusDataCredential struct {
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	Target string `json:"target"`
+	// Set is the vault value-state (an entries-dir fact, never a decrypt).
+	Set bool `json:"set"`
 }
 
 type statusDataHostEnv struct {
@@ -413,6 +427,13 @@ func statusDataOf(s statusInfo) statusData {
 	if len(s.Contexts) > 0 {
 		d.InstructionsDelivery = contextDeliveryLine(s).Full
 	}
+
+	for _, cd := range s.Credentials {
+		d.Credentials = append(d.Credentials, statusDataCredential{
+			Name: cd.Name, Kind: cd.Kind, Target: cd.Target, Set: s.CredentialStates[cd.Name],
+		})
+	}
+	d.CredentialUnlock = s.CredentialUnlock
 
 	for _, r := range s.HostEnv {
 		// A DISABLED entry (`KEY = ""` in some layer) is not a channel this

@@ -211,6 +211,24 @@ func grantSummary(c config.Config) []grantLine {
 	if len(c.Skills) > 0 {
 		s = append(s, grantLine{Text: "enables skills (each can add mounts/caps/run_args/volumes): " + strings.Join(c.Skills, ", ")})
 	}
+	// [[credentials]] declarations name which vault values the box may be
+	// handed and which variables carry them — the consent surface for the
+	// credential channel. The proposal carries no VALUES (those live only in
+	// your vault, delivered only after your per-launch passphrase), but a
+	// declaration re-pointing a name at a new target is exactly a
+	// kind/target change this review exists to surface.
+	if len(c.Credentials) > 0 {
+		var rows []string
+		for _, cd := range c.Credentials {
+			if config.IsRemoval(cd.Name) {
+				continue
+			}
+			rows = append(rows, fmt.Sprintf("%s(%s->%s)", cd.Name, cd.Kind, cd.Target))
+		}
+		if len(rows) > 0 {
+			s = append(s, grantLine{Text: "declares project credentials (vault values delivered after your per-launch unlock): " + strings.Join(rows, ", ")})
+		}
+	}
 	return s
 }
 

@@ -252,6 +252,20 @@ func credTmpfs(p credPayload, ident runner.Identity, eng runner.Engine) runner.T
 	}
 }
 
+// credentialUnlockLine renders the record's unlock word for the status
+// Credentials row: launch-time facts, never live-state claims (byre does
+// not probe the box).
+func credentialUnlockLine(unlock string) string {
+	switch unlock {
+	case launchCredentialUnlocked:
+		return "unlocked (credentials were decrypted and handed to delivery)"
+	case launchCredentialNotPrompted:
+		return "not-prompted (credentials were declared while develop waited for the lock)"
+	default:
+		return unlock + " (launched without credentials)"
+	}
+}
+
 // runCredentialInject is launch step 3's host side, run concurrently with
 // the attached session (the netns-hook pattern): wait for the box to be
 // RUNNING (exec needs a live container), then pipe the framed stream to the

@@ -738,14 +738,15 @@ func exposureOf(rv resolved, selfEdit bool, hostEnv []hostEnvResult) config.Expo
 		}
 	}
 	e := config.Exposure{
-		Workspace:  true,
-		SelfEdit:   selfEdit,
-		Ports:      len(rv.cfg.Ports),
-		Env:        len(envKeys),
-		Egress:     len(resolvedEgress(rv)),
-		Closed:     len(rv.cfg.EgressClosed),
-		RawRunArgs: len(rv.cfg.RunArgs) > 0,
-		RawBuild:   len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
+		Workspace:   true,
+		SelfEdit:    selfEdit,
+		Ports:       len(rv.cfg.Ports),
+		Env:         len(envKeys),
+		Credentials: len(rv.cfg.Credentials),
+		Egress:      len(resolvedEgress(rv)),
+		Closed:      len(rv.cfg.EgressClosed),
+		RawRunArgs:  len(rv.cfg.RunArgs) > 0,
+		RawBuild:    len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
 		// The third degradation input, from the predicate status's Network row
 		// consults over the same resolved set: a skill holding byre's own
 		// network knobs makes the posture claim describe a construction that

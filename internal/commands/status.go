@@ -12,6 +12,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -77,6 +78,16 @@ type statusInfo struct {
 	// Contexts is the resolved [[context]] declaration set.
 	AgentContext string
 	Contexts     []config.ContextDecl
+	// Credentials is the declared credential set (config-only vocabulary);
+	// CredentialStates is per-name value-state (set/unset) from the vault's
+	// entries dir; CredentialVault whether a vault exists at all.
+	// CredentialUnlock is the RUNNING box's launch-time unlock outcome, read
+	// off its own launch record — a launch fact, never live in-box state
+	// (the design does not probe the box; there is no live-state field).
+	Credentials      []config.CredentialDecl
+	CredentialStates map[string]bool // name -> a value is stored
+	CredentialVault  bool
+	CredentialUnlock string
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments []skills.ContainmentDecl
@@ -227,6 +238,17 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	// Standing instructions are config-only (no skill union): the resolved
 	// set IS the declared set.
 	info.Contexts = cfg.Contexts
+	// Credentials: the declared set plus the vault's value-state (a dir
+	// listing, never a decrypt — values render nowhere on this page).
+	info.Credentials = cfg.Credentials
+	if len(cfg.Credentials) > 0 {
+		vault := credentials.Open(paths.Dir, paths.ID)
+		info.CredentialVault = vault.Exists()
+		info.CredentialStates = map[string]bool{}
+		for _, n := range vault.EntryNames() {
+			info.CredentialStates[n] = true
+		}
+	}
 	info.EnvProvided = providedEnv(cfg, info.HostEnv)
 	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
 	if paths.IsWorktree {
@@ -352,6 +374,10 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 					now, next := applyLaunchRecord(&info, rec, paths)
 					info.Changes = diffLaunch(now, next)
 					info.NextVolumes = next.Volumes
+					// This box's launch-time unlock outcome — recorded with
+					// the launch it belongs to, so a sibling worktree's
+					// unlock can never masquerade as this box's.
+					info.CredentialUnlock = rec.CredentialUnlock
 				}
 			} else {
 				// Not knowing the labels is not knowing there is no record.
@@ -843,6 +869,30 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	}
 	if len(s.Contexts) > 0 && ctxDelivery.ownRow(tier) {
 		row("", ctxDelivery.Full)
+	}
+
+	// Project credentials: the declared set with kind, target, and
+	// value-state — plus the running box's launch-time unlock outcome.
+	// Values render nowhere; there is no live-state field (byre does not
+	// probe the box).
+	if len(s.Credentials) > 0 {
+		for i, cd := range s.Credentials {
+			label := "Credentials"
+			if i > 0 {
+				label = ""
+			}
+			state := "unset"
+			if s.CredentialStates[cd.Name] {
+				state = "set"
+			}
+			row(label, fmt.Sprintf("%s  %s → %s  (%s)", cd.Name, cd.Kind, cd.Target, state))
+		}
+		if !s.CredentialVault {
+			row("", "no vault — create one: byre credentials init")
+		}
+		if s.CredentialUnlock != "" {
+			row("", "this box launched: "+credentialUnlockLine(s.CredentialUnlock))
+		}
 	}
 
 	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate

@@ -387,6 +387,19 @@ func (m model) credentialRows() []listRow {
 	})
 }
 
+// credentialsNow is the effective declared credential set — the cascade
+// merge of the inherited layers and this file's own declarations (config-
+// only vocabulary, no skill arm). Feeds the exposure tally's credentials
+// segment; the same merge rules as everywhere (Merge is the one owner).
+func (m model) credentialsNow() []config.CredentialDecl {
+	lower := m.lowerNow()
+	merged := config.Merge(
+		config.Config{Credentials: lower.Credentials, CredentialsClosed: lower.CredentialsClosed},
+		config.Config{Credentials: m.base.Credentials, CredentialsClosed: m.base.CredentialsClosed},
+	)
+	return merged.Credentials
+}
+
 func hasMCPName(ms []config.MCP, name string) bool {
 	for _, mc := range ms {
 		if mc.Name == name {
@@ -1347,6 +1360,7 @@ func (m model) exposureNow() config.Exposure {
 		envKeys[k] = true
 	}
 	e.Env = len(envKeys)
+	e.Credentials = len(m.credentialsNow())
 	e.Posture = m.postureNow()
 	// A skill holding byre's own network knobs degrades the posture claim here
 	// exactly as it does on status and at launch: this line is the same claim,
