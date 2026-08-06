@@ -84,6 +84,17 @@ exceptions noted inline.
   refused here too -- a passthrough lands in the box's environment
   exactly as an `[env]` literal does, so the same reservation applies;
   the deliberate-override route is the `run_args` one below.
+- `[[credentials]]` -- named project credentials: `name`, `kind`
+  (`"env"` or `"file"`), and `target` -- the environment variable that
+  carries the value (for `kind = "file"` it instead holds the in-box
+  path `/run/byre/credentials/<name>`; there are no free filesystem
+  targets). The declaration is the standing, cascade-visible consent to
+  the *set*; values never appear in config -- they live age-encrypted
+  in the host-side project store and are decrypted only at launch,
+  after the passphrase prompt (a declined or non-interactive launch
+  runs without them, with a notice, never a block). Values are set with
+  `byre credentials set` (masked prompt or stdin -- never a
+  command-line argument); layers replace by `name`, `!name` removes.
 - `egress` -- firewall allowlist extensions, `"host[:port]"` (port
   defaults to 443); `"!host[:port]"` closes a door, even a
   skill-declared one. Only meaningful with a network-posture skill

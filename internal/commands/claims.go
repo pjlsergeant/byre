@@ -62,6 +62,8 @@ var claimSurface = map[string]claimClass{
 	"ClaudeSkillsClosed": rendered("claude-skill closures, mirroring the MCP trio"),
 	"Contexts":           rendered("context rows + the delivery line"),
 	"ContextsClosed":     rendered("subtracts from the rendered context set at merge (genus uniformity)"),
+	"Credentials":        rendered("the Credentials status rows (name/kind/target/value-state) + the exposure tally's credentials segment; values render nowhere"),
+	"CredentialsClosed":  rendered("subtracts from the rendered credential set at merge (genus uniformity)"),
 	"DockerfilePre":      rendered("Raw build rows, verbatim + not-introspected note; presence degrades the network claim"),
 	"DockerfilePost":     rendered("Raw build rows, same treatment as DockerfilePre"),
 	"RunArgs":            rendered("the Raw run args row, verbatim; presence degrades the network claim"),

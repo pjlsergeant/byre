@@ -50,6 +50,7 @@ var configFieldOwners = map[string][]fieldID{
 	"mcp":                     {fMCP},
 	"claude_skills":           {fClaudeSkills},
 	"context":                 {fContext},
+	"credentials":             {fCredentials},
 	"dockerfile_pre":          {fDockerfilePre},
 	"dockerfile_post":         {fDockerfilePost},
 	"run_args":                {fRunArgs},
@@ -280,7 +281,7 @@ func TestProjectEditorFocusOrder(t *testing.T) {
 	m := newModel("t", "/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 	want := []string{
 		// GRANTS
-		"Extra mounts", "Ports", "Egress", "Env vars",
+		"Extra mounts", "Ports", "Egress", "Env vars", "Credentials",
 		// BUILD
 		"Base image", "Template", "Agent", "Engine", "Seed prefs", "Packages",
 		"Skills", "Skill files", "Package sources", "MCP servers", "Claude Skills", "Instructions",

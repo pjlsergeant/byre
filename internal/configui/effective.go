@@ -92,6 +92,8 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.claudeSkillRows()
 	case fContext:
 		return m.contextRows()
+	case fCredentials:
+		return m.credentialRows()
 	}
 	return nil
 }
@@ -345,6 +347,43 @@ func (m model) contextRows() []listRow {
 		lowerClosed: lowerCfg.ContextsClosed,
 		skillDecls:  func(sk string) []declRowItem { return nil },
 		lowerHas:    func(c config.Config, rawName string) bool { return hasContextName(c.Contexts, rawName) },
+	})
+}
+
+func credentialDeclName(cd config.CredentialDecl) string { return cd.Name }
+
+// credentialDeclLine renders one declaration: name, kind, target. Values
+// render NOWHERE in the editor by design (the brief's masked-entry rule);
+// this read-only screen shows the declared set until the staged-entry
+// Credentials screen ships.
+func credentialDeclLine(cd config.CredentialDecl) string {
+	if config.IsRemoval(cd.Name) {
+		return cd.Name
+	}
+	return cd.Name + " — " + cd.Kind + " → $" + cd.Target
+}
+
+func hasCredentialName(cds []config.CredentialDecl, name string) bool {
+	for _, cd := range cds {
+		if cd.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// credentialRows builds the Credentials screen's effective view — the shared
+// genus state machine over [[credentials]] declarations. Config-only
+// vocabulary (like [[context]]): no skill home, so the skill arm is empty.
+// The list is read-only for now (fieldInfos), sourced from the base layer.
+func (m model) credentialRows() []listRow {
+	lowerCfg := m.lowerNow()
+	return m.namedDeclRows(namedDeclField{
+		local:       declRowItems(m.base.Credentials, credentialDeclName, credentialDeclLine),
+		lower:       declRowItems(lowerCfg.Credentials, credentialDeclName, credentialDeclLine),
+		lowerClosed: lowerCfg.CredentialsClosed,
+		skillDecls:  func(sk string) []declRowItem { return nil },
+		lowerHas:    func(c config.Config, rawName string) bool { return hasCredentialName(c.Credentials, rawName) },
 	})
 }
 

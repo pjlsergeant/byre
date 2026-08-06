@@ -76,7 +76,15 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// The seed_prefs tri-state: Env vars → Seed prefs is five rows down (Base,
+	// Credentials: one past Env vars, GRANTS' read-only screen (the
+	// masked-entry editor is pending; the row keeps the key reachable). Its
+	// explainer names the writing flow, like Package sources below.
+	e = s.Keys("Down", "Enter")
+	s.WaitForAfter(e, "byre credentials")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "$EDITOR")
+
+	// The seed_prefs tri-state: Credentials → Seed prefs is five rows down (Base,
 	// Template, Agent, Engine, Seed prefs). Walked because it is the only FORM
 	// row driven by ←/→ that the walk passes, and its three states are what a
 	// checkbox could not say. Nothing about the row's text — the dirty banner

@@ -780,6 +780,8 @@ func sampleConfig() Config {
 		ClaudeSkillsClosed: []string{"review"},
 		Contexts:           []ContextDecl{{Name: "house-rules", Text: "sample"}},
 		ContextsClosed:     []string{"tone"},
+		Credentials:        []CredentialDecl{{Name: "stripe", Kind: "env", Target: "STRIPE_API_KEY"}},
+		CredentialsClosed:  []string{"github"},
 		DockerfilePre:      []string{"RUN true"},
 		DockerfilePost:     []string{"RUN false"},
 		RunArgs:            []string{"--cap-add=X"},

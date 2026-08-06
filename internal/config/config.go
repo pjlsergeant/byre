@@ -464,6 +464,18 @@ type Config struct {
 	// wholesale). Stored stripped.
 	ClaudeSkillsClosed []string `toml:"-"`
 
+	// Credentials are declared project credentials ([[credentials]]
+	// blocks): the names/kinds/targets of the vault-backed values — see
+	// credentialdecl.go for the model. Values never appear in config; they
+	// live in the host-side vault (internal/credentials). One home (config
+	// layers only); within the cascade a later layer replaces by name.
+	Credentials []CredentialDecl `toml:"credentials,omitempty"`
+	// CredentialsClosed is the set of `!name` credential closures that
+	// survived the cascade — never a TOML key of its own; Merge extracts
+	// markers here (genus uniformity — with no skill home to subtract from
+	// after the merge, survivors are inert). Stored stripped.
+	CredentialsClosed []string `toml:"-"`
+
 	// Contexts are declared standing-instruction snippets ([[context]]
 	// blocks): the operator's prose for the agent's memory — see
 	// contextdecl.go for the model. One home (config layers only); within
@@ -948,6 +960,8 @@ func Merge(base, over Config) Config {
 	// Context declarations: same taxonomy, one home (closures spend
 	// themselves in the merge; survivors are inert).
 	out.Contexts, out.ContextsClosed = mergeContexts(base, over)
+	// Credential declarations: same taxonomy, one home.
+	out.Credentials, out.CredentialsClosed = mergeCredentials(base, over)
 
 	// Raw blocks: append-only/union, no per-line removal in v0.
 	out.DockerfilePre = appendAll(base.DockerfilePre, over.DockerfilePre)
@@ -1427,6 +1441,9 @@ func (c Config) Validate() error {
 	if err := c.validateContextsResolved(); err != nil {
 		return err
 	}
+	if err := c.validateCredentialsResolved(); err != nil {
+		return err
+	}
 	return c.validatePortsResolved()
 }
 
@@ -1514,6 +1531,9 @@ func (c Config) ValidateLayer() error {
 		return err
 	}
 	if err := c.validateContextsLayer(); err != nil {
+		return err
+	}
+	if err := c.validateCredentialsLayer(); err != nil {
 		return err
 	}
 	return c.validatePortsLayer()

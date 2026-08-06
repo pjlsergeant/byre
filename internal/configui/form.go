@@ -82,6 +82,7 @@ const (
 	fSeedPrefs       // tri-state: seed_prefs (on / off / inherit), ADR 0045
 	fSources         // read-only view of [sources] acquisition hints
 	fSharedAuth      // read-only view of [defaults].shared_auth (the picker writes it)
+	fCredentials     // [[credentials]] declarations (read-only pending the masked-entry screen)
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
 	// the ad-hoc clear. Separate from fVolumes because they answer different
 	// questions with different blast radii -- one edits a declaration in this
@@ -398,7 +399,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// MCP servers sit in BUILD, not GRANTS: declarations are wiring, like
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
-		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
+		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv, fCredentials}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
@@ -409,7 +410,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// section says what they actually do (the global editor
 		// presented inert favourites as live machine-wide config).
 		sections = []section{
-			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
+			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv, fCredentials}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
 			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
@@ -425,7 +426,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// A layer carries the full vocabulary EXCEPT template (shape selection
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
-			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
+			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv, fCredentials}},
 			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 		}
 	}

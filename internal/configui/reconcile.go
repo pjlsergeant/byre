@@ -155,6 +155,10 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 		func(cd config.ContextDecl) string { return cd.Name }, renderContext); err != nil {
 		return err
 	}
+	if err := reconcileBlocks(doc, "credentials", cur.Credentials, want.Credentials,
+		func(cd config.CredentialDecl) string { return cd.Name }, renderCredential); err != nil {
+		return err
+	}
 
 	// Raw blocks: element-per-line house shape (long commands).
 	raw := []struct {
@@ -182,6 +186,7 @@ var blockIdentity = map[string]string{
 	"mcp":           "name",
 	"claude_skills": "name",
 	"context":       "name",
+	"credentials":   "name",
 }
 
 func boolPtrEqual(a, b *bool) bool {
@@ -601,6 +606,17 @@ func renderContext(cd config.ContextDecl) string {
 	}
 	if cd.File != "" {
 		b += tomldoc.KV("file", tomldoc.String(cd.File))
+	}
+	return b
+}
+
+func renderCredential(cd config.CredentialDecl) string {
+	b := tomldoc.KV("name", tomldoc.String(cd.Name))
+	if cd.Kind != "" {
+		b += tomldoc.KV("kind", tomldoc.String(cd.Kind))
+	}
+	if cd.Target != "" {
+		b += tomldoc.KV("target", tomldoc.String(cd.Target))
 	}
 	return b
 }
