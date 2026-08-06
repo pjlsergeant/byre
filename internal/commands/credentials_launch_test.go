@@ -7,8 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
@@ -252,6 +255,26 @@ func TestRunCredentialInjectFailureReportsNotDelivered(t *testing.T) {
 	}
 	if !strings.Contains(errBuf.String(), "not-delivered") {
 		t.Fatalf("inject failure must report not-delivered and never block: %s", errBuf.String())
+	}
+}
+
+// TestInjectDeadlineUnderLauncherWait pins the two clocks that decide
+// whether "delivered" means the exports happen: both start at box start, so
+// the host exec deadline plus margin must sit INSIDE the launcher's
+// fail-open wait — the handoff's wait >= deadline + skew pin. Parsed from
+// the launcher script itself so the two cannot drift apart silently.
+func TestInjectDeadlineUnderLauncherWait(t *testing.T) {
+	m := regexp.MustCompile(`BYRE_CRED_WAIT:-(\d+)`).FindSubmatch(gen.LauncherScript())
+	if m == nil {
+		t.Fatal("launcher.sh no longer defaults BYRE_CRED_WAIT — update this pin")
+	}
+	waitSecs, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const margin = 4 * time.Second // launcher pre-wait lines + poll granularity
+	if launcherWait := time.Duration(waitSecs) * time.Second; credInjectDeadline+margin > launcherWait {
+		t.Fatalf("credInjectDeadline %v + %v margin exceeds the launcher's %v wait — a successful inject could land after the box failed open, making 'delivered' dishonest", credInjectDeadline, margin, launcherWait)
 	}
 }
 

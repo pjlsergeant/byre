@@ -343,15 +343,25 @@ func (v *Vault) Unlock(passphrase string) (*Unlocked, error) {
 	if err != nil {
 		return nil, fmt.Errorf("credentials identity: %w", err)
 	}
-	return &Unlocked{v: v, id: id}, nil
+	return &Unlocked{v: v, id: id, wrapped: b}, nil
 }
+
+// ErrVaultChanged is Rekey's refusal when the on-disk identity is no longer
+// the one this Unlocked unwrapped: a concurrent `init --replace` (or
+// another rekey) replaced the vault between the pre-lock unlock and the
+// under-lock write, and publishing the OLD identity would silently corrupt
+// the new vault (its entries would stop decrypting under an identity that
+// "unlocks" fine). Nothing is written; re-running picks up the new vault.
+var ErrVaultChanged = errors.New("the vault changed while rekeying (replaced or rekeyed concurrently) — nothing was written; re-run against the current vault")
 
 // Unlocked is an unwrapped vault identity. It lives in host process memory
 // for the launch and is never persisted (transient memory residency is the
-// disclosed swap/core residual).
+// disclosed swap/core residual). wrapped is the identity file exactly as
+// unlocked — Rekey's is-it-still-this-vault check.
 type Unlocked struct {
-	v  *Vault
-	id *age.X25519Identity
+	v       *Vault
+	id      *age.X25519Identity
+	wrapped []byte
 }
 
 // Recipient returns the unlocked identity's public recipient — what the
@@ -420,8 +430,19 @@ func (u *Unlocked) RepairIndex(kinds map[string]string) {
 // Rekey re-wraps the identity under a new passphrase — a single-file atomic
 // replace. It rotates the PASSPHRASE, not the identity: entries stay
 // encrypted to the same recipient (after a suspected identity leak the
-// remedy is --replace, a new vault). Caller holds the setup lock.
+// remedy is --replace, a new vault). Caller holds the setup lock; the
+// unlock itself ran BEFORE the lock (the scrypt cost never stalls
+// siblings), so this confirms under the lock that the on-disk identity is
+// still the one that was unlocked — a vault replaced in the window gets
+// ErrVaultChanged, never a stale identity written over it.
 func (u *Unlocked) Rekey(newPassphrase string) error {
+	cur, err := hostopen.ReadFileBounded(u.v.identityPath(), false, identityReadCap)
+	if err != nil {
+		return fmt.Errorf("credentials identity: %w", err)
+	}
+	if !bytes.Equal(cur, u.wrapped) {
+		return ErrVaultChanged
+	}
 	wrapped, err := wrapIdentity(u.id, newPassphrase)
 	if err != nil {
 		return err

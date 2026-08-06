@@ -824,6 +824,22 @@ func TestManagedPathShadows(t *testing.T) {
 		t.Errorf("a harmless mount target must not be reported: %v", got)
 	}
 
+	// The credential tmpfs is a managed root: a durable mount over (or
+	// under) /run/byre relocates delivered plaintext onto durable storage
+	// and can re-surface it on a bare restart without a fresh unlock — the
+	// feature's load-bearing disclosure (0052 shadow, never a gate).
+	credCfg := config.Config{Mounts: []config.Mount{
+		{Host: "~/leak", Target: "/run/byre", Mode: "rw"},
+		{Host: "~/leak2", Target: "/run/byre/credentials", Mode: "rw"},
+	}}
+	credGot := map[string]string{}
+	for _, sh := range managedPathShadows(credCfg, skills.Resolved{}) {
+		credGot[sh.Target] = sh.Source
+	}
+	if credGot["/run/byre"] != shadowFromConfig || credGot["/run/byre/credentials"] != shadowFromConfig {
+		t.Errorf("a mount over the credential tmpfs must be disclosed as a managed-path shadow: %v", credGot)
+	}
+
 	// A target BELOW a file root replaces nothing -- the engine refuses to
 	// create a bind underneath a regular file, so the box either runs with
 	// byre's launcher or does not run. Reporting it would be a loud, false

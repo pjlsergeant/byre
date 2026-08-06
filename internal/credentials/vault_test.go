@@ -325,6 +325,35 @@ func TestRekeyRotatesPassphraseNotIdentity(t *testing.T) {
 	}
 }
 
+func TestRekeyRefusesReplacedVault(t *testing.T) {
+	// The rekey race: unlock runs pre-lock; a concurrent init --replace
+	// lands a NEW vault before the rekey's under-lock write. Publishing the
+	// old identity would silently corrupt the new vault, so Rekey compares
+	// the on-disk identity first and refuses.
+	v, _ := created(t)
+	u, err := v.Unlock("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Replace("new-vault-pw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Set("stripe", []byte("new-vault-value"), "env"); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Rekey("rotated"); !errors.Is(err, ErrVaultChanged) {
+		t.Fatalf("rekey over a replaced vault: got %v, want ErrVaultChanged", err)
+	}
+	// The victim: the replacement vault is untouched and fully working.
+	u2, err := v.Unlock("new-vault-pw")
+	if err != nil {
+		t.Fatalf("replacement vault after refused rekey: %v", err)
+	}
+	if val, oc, _ := u2.Decrypt("stripe"); oc != OutcomeDelivered || string(val) != "new-vault-value" {
+		t.Fatalf("replacement vault entries: %s %q", oc, val)
+	}
+}
+
 func TestUnsetAndEntryNames(t *testing.T) {
 	v, _ := created(t)
 	for _, n := range []string{"stripe", "github"} {

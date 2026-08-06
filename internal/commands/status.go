@@ -1458,10 +1458,18 @@ func (r managedRoot) shadows(target string) bool {
 
 // managedRoots are the image paths byre owns for this project: the whole
 // /etc/byre directory -- the launch gate and every baked artifact live under
-// it, so this stays right for artifacts added later -- the launcher, and any
-// netns enforcement script a network-posture skill declares.
+// it, so this stays right for artifacts added later -- the launcher, the
+// credential session tmpfs, and any netns enforcement script a
+// network-posture skill declares.
+//
+// The credential tmpfs entry is the feature's load-bearing residual: a
+// mount or volume landing over /run/byre relocates delivered plaintext onto
+// durable storage, and a durable shadow can re-surface (and re-export) the
+// bytes on a bare restart without a fresh unlock. Disclosed here through
+// the existing shadow machinery, never gated (the user is not the
+// adversary).
 func managedRoots(res skills.Resolved) []managedRoot {
-	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}}
+	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}, {Path: credTmpfsTarget, Dir: true}}
 	for _, h := range res.NetnsInits() {
 		// Clean the hook path: skills.Resolve requires it absolute but not
 		// clean, so a target on its CANONICAL form (e.g. /usr/local/../usr/

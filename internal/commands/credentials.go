@@ -34,12 +34,21 @@ const (
 	// credPassphraseAttempts bounds the wrong-passphrase re-prompt (v13
 	// pin: three attempts, Enter skips at any point).
 	credPassphraseAttempts = 3
-	// credInjectRunningWait bounds the poll for the container to be running
-	// before the inject can exec; credInjectDeadline bounds the exec itself.
-	// Generous ("something is wrong", never "this is slow"): the launcher's
-	// own in-box wait is what decides whether a late delivery still exports.
+	// credInjectRunningWait bounds the poll for the container to be RUNNING.
+	// It does not race the launcher: the launcher's own wait clock only
+	// starts once the box starts, which is exactly when this poll ends.
 	credInjectRunningWait = 60 * time.Second
-	credInjectDeadline    = 60 * time.Second
+	// credInjectDeadline bounds the exec itself, and THIS one is pinned
+	// under the launcher's wait (BYRE_CRED_WAIT, default 20s in
+	// launcher.sh): both clocks start at box start, so an exec that
+	// completes inside this deadline lands before the launcher's fail-open
+	// expires — "delivered" then honestly means the exports happen. The
+	// margin absorbs the launcher's pre-wait lines; a stream is a few MiB
+	// at most, so a full deadline spent is a wedged daemon, and the box
+	// simply runs without credentials (the benign direction). A test pins
+	// deadline + margin <= the launcher default so the two cannot drift
+	// apart silently (the handoff's wait >= deadline + skew pin).
+	credInjectDeadline = 15 * time.Second
 )
 
 // readPassphrase is the masked passphrase read, a seam so tests can answer

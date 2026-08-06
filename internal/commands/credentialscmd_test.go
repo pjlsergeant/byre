@@ -206,6 +206,74 @@ func TestCredentialsDeclareUndeclareList(t *testing.T) {
 	}
 }
 
+func TestCredentialsSetFileKindKeepsTrailingNewline(t *testing.T) {
+	// A declared FILE value is arbitrary bytes: the env-entry newline
+	// courtesy must not mutate a PEM's final newline on the pipe path.
+	p, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	s := ttyStreams(&errBuf)
+	if err := CredentialsDeclare(s, proj, false, "cert", "file", "TLS_CERT"); err != nil {
+		t.Fatal(err)
+	}
+	passphraseSeam(t, "pw", "pw")
+	if err := CredentialsInit(s, proj, false); err != nil {
+		t.Fatal(err)
+	}
+	piped := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("-----END CERT-----\n"), TTY: false}
+	if err := CredentialsSet(piped, proj, "cert"); err != nil {
+		t.Fatal(err)
+	}
+	v := credentials.Open(p.Dir, p.ID)
+	u, _ := v.Unlock("pw")
+	val, oc, _ := u.Decrypt("cert")
+	if oc != credentials.OutcomeDelivered || string(val) != "-----END CERT-----\n" {
+		t.Fatalf("file-kind bytes: %s %q — the trailing newline must survive", oc, val)
+	}
+}
+
+func TestCredentialsRekeyRefusesReplacedVault(t *testing.T) {
+	// The CLI surface of the vault-level guard: rekey against a vault
+	// replaced after its unlock refuses with nothing written.
+	_, proj := testPaths(t)
+	passphraseSeam(t, "pw", "pw")
+	var errBuf bytes.Buffer
+	s := ttyStreams(&errBuf)
+	if err := CredentialsInit(s, proj, false); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the race window with the seam: rekey's current-passphrase
+	// read triggers a concurrent --replace before answering.
+	old := readPassphrase
+	t.Cleanup(func() { readPassphrase = old })
+	calls := 0
+	readPassphrase = func(w io.Writer, prompt string) (string, error) {
+		calls++
+		if calls == 1 { // the "current passphrase" prompt: replace first
+			passphraseSeamless := func() {
+				p2, _ := project.Resolve(proj)
+				if err := credentials.Open(p2.Dir, p2.ID).Replace("other"); err != nil {
+					t.Errorf("replace: %v", err)
+				}
+			}
+			passphraseSeamless()
+			return "pw", nil
+		}
+		return "rotated", nil
+	}
+	err := CredentialsRekey(s, proj)
+	// The pre-lock unlock reads the REPLACED identity, so "pw" no longer
+	// matches — either failure shape (bad passphrase against the new vault,
+	// or ErrVaultChanged when the replace lands post-unlock) leaves the
+	// replacement vault intact. Both are refusals; neither writes.
+	if err == nil {
+		t.Fatal("rekey during a replace must refuse")
+	}
+	p2, _ := project.Resolve(proj)
+	if _, uerr := credentials.Open(p2.Dir, p2.ID).Unlock("other"); uerr != nil {
+		t.Fatalf("replacement vault must be untouched: %v", uerr)
+	}
+}
+
 func TestCredentialsSetRefusesEmptyValue(t *testing.T) {
 	_, proj := testPaths(t)
 	passphraseSeam(t, "pw", "pw", "")

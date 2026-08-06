@@ -23,8 +23,8 @@ func storeEnv(t *testing.T) (string, map[string]string) {
 
 // downTo walks the global editor's fixed field order from the top (focus
 // starts on the first GRANTS field) to the Base image row: Mounts, Ports,
-// Egress, Env, Template, Agent, Base.
-const downsToBase = 6
+// Egress, Env, Credentials, Template, Agent, Base.
+const downsToBase = 7
 
 func TestIntegrationTUIConfigSaveThenQuit(t *testing.T) {
 	Require(t)

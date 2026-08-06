@@ -144,13 +144,6 @@ func CredentialsSet(s Streams, projectDir string, name string) error {
 		}
 		value = b
 	}
-	// The entry-path courtesy: one trailing newline stripped (echo without
-	// -n, an editor's final newline). A value that NEEDS a trailing newline
-	// keeps any beyond the first.
-	value = credentials.StripTrailingNewline(value)
-	if len(value) == 0 {
-		return errors.New("refusing to store an empty value (unset removes a value)")
-	}
 	// The declared kind, when the name is declared, so env constraints catch
 	// at save (where re-entry is cheap) rather than at launch.
 	kind := ""
@@ -160,6 +153,17 @@ func CredentialsSet(s Streams, projectDir string, name string) error {
 				kind = d.Kind
 			}
 		}
+	}
+	// The entry-path courtesy: one trailing newline stripped (echo without
+	// -n, an editor's final newline) — for env-kind and undeclared names,
+	// where a stray newline corrupts the exported token byte-exactly. A
+	// declared FILE value is arbitrary bytes and stays untouched: a PEM's
+	// final newline is part of the file.
+	if kind != "file" {
+		value = credentials.StripTrailingNewline(value)
+	}
+	if len(value) == 0 {
+		return errors.New("refusing to store an empty value (unset removes a value)")
 	}
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
 		return v.Set(name, value, kind)
