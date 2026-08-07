@@ -372,15 +372,43 @@ func hasCredentialName(cds []config.CredentialDecl, name string) bool {
 	return false
 }
 
+// credentialVals flattens a declaration for the override editor's prefill.
+func credentialVals(cd config.CredentialDecl) []string {
+	return []string{cd.Name, cd.Kind, cd.Target}
+}
+
+// credValueState is the per-name value-state cell: staged (typed this
+// session, written at ^s) beats set/unset (the vault's entries dir). Only
+// meaningful where a vault can exist (the project editor).
+func (m model) credValueState(name string) string {
+	switch {
+	case m.stagedCredValues[name] != nil:
+		return "staged"
+	case m.credStoredNames[name]:
+		return "set"
+	default:
+		return "unset"
+	}
+}
+
 // credentialRows builds the Credentials screen's effective view — the shared
 // genus state machine over [[credentials]] declarations. Config-only
 // vocabulary (like [[context]]): no skill home, so the skill arm is empty.
-// The list is read-only for now (fieldInfos), sourced from the base layer.
+// Every row carries the value-state cell in the project editor; the VALUE
+// itself renders nowhere, ever.
 func (m model) credentialRows() []listRow {
+	line := func(cd config.CredentialDecl) string {
+		s := credentialDeclLine(cd)
+		if m.credVault == nil || config.IsRemoval(cd.Name) {
+			return s
+		}
+		return s + "  (" + m.credValueState(cd.Name) + ")"
+	}
 	lowerCfg := m.lowerNow()
 	return m.namedDeclRows(namedDeclField{
-		local:       declRowItems(m.base.Credentials, credentialDeclName, credentialDeclLine),
-		lower:       declRowItems(lowerCfg.Credentials, credentialDeclName, credentialDeclLine),
+		local:       declRowItems(m.credentials, credentialDeclName, line),
+		lower:       declRowItems(lowerCfg.Credentials, credentialDeclName, line),
+		lowerVals:   func(i int) []string { return credentialVals(lowerCfg.Credentials[i]) },
 		lowerClosed: lowerCfg.CredentialsClosed,
 		skillDecls:  func(sk string) []declRowItem { return nil },
 		lowerHas:    func(c config.Config, rawName string) bool { return hasCredentialName(c.Credentials, rawName) },

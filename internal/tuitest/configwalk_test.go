@@ -76,11 +76,16 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// Credentials: one past Env vars, GRANTS' read-only screen (the
-	// masked-entry editor is pending; the row keeps the key reachable). Its
-	// explainer names the writing flow, like Package sources below.
+	// Credentials: one past Env vars. The item editor is the product's one
+	// masked-input form — the add screen proves the Kind picker and the
+	// masked Value row paint (global editor: no Value row — the vault is
+	// project-scoped, so this asserts the declaration half only).
 	e = s.Keys("Down", "Enter")
-	s.WaitForAfter(e, "byre credentials")
+	s.WaitForAfter(e, "a add")
+	e = s.Keys("a")
+	s.WaitForAfter(e, "Add Credential")
+	e = s.Keys("Escape")
+	s.WaitForAfter(e, "a add")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 

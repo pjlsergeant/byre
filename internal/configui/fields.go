@@ -80,11 +80,8 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fSharedAuth:      {label: "Shared creds"},
 	fSources: {label: "Package sources", kind: kindList, item: "Package source", noun: "hint", readOnly: true,
 		explain: "read-only — where a named package installs from; `byre preset apply` writes it"},
-	// Read-only pending the masked-entry Credentials screen (the north star:
-	// staged masked input, per-name value-state). Until that ships, the row
-	// keeps the key reachable (P0) and names the writer.
-	fCredentials: {label: "Credentials", kind: kindList, item: "Credential", noun: "credential", readOnly: true,
-		explain: "read-only — vault-backed values; `byre credentials` declares and sets them"},
+	fCredentials: {label: "Credentials", kind: kindList, item: "Credential", noun: "credential",
+		explain: "vault-backed values — masked entry, staged until ^s; values render nowhere"},
 }
 
 // fieldLabel is the display name (not the raw TOML key); the underlying key

@@ -5,6 +5,7 @@ package configui
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
@@ -159,6 +161,7 @@ const (
 	modeVolumes
 	modeText
 	modeSkills
+	modeCredPass // inline vault creation: masked new-passphrase + confirm at ^s
 )
 
 type kvItem struct{ Key, Value string }
@@ -226,6 +229,29 @@ type model struct {
 	mcps         []config.MCP         // [[mcp]] declarations incl. `!name` closure markers
 	claudeSkills []config.ClaudeSkill // [[claude_skills]] declarations incl. `!name` closure markers
 	contexts     []config.ContextDecl // [[context]] declarations incl. `!name` closure markers
+	// credentials is the [[credentials]] declaration list (incl. `!name`
+	// closure markers). stagedCredValues holds values typed into the masked
+	// item field, name -> bytes, STAGED until ^s (quit discards them —
+	// exactly the brief's staging rule); they exist only in this process's
+	// memory and render nowhere. credStoredNames is the vault's value-state
+	// at open (refreshed after each flush); credVault is non-nil only for
+	// the project editor (the vault is project-scoped — the global and layer
+	// editors edit declarations only). credStagedGen counts staging edits so
+	// dirty() flips without a value ever entering the signature string.
+	credentials      []config.CredentialDecl
+	stagedCredValues map[string][]byte
+	credStoredNames  map[string]bool
+	credVault        *credentials.Vault
+	credStagedGen    int
+	// credPassInputs back the inline vault-creation modal (modeCredPass):
+	// a vault-less project's first ^s with staged values asks for the new
+	// passphrase right there. credPassErr renders under the inputs;
+	// credPassphrase carries the confirmed answer into the save that
+	// triggered the modal (one-shot: cleared by the flush either way).
+	credPassInputs [2]textinput.Model
+	credPassFocus  int
+	credPassErr    string
+	credPassphrase string
 
 	// itemProse is the [[context]] item editor's inline-text draft, edited
 	// via the $EDITOR handoff; prosePath is the temp file while $EDITOR has
@@ -464,6 +490,19 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		saveBase:     openRaw, // drift baseline starts at open, then tracks
 		saveBaseErr:  openErr,
 	}
+	if target == TargetProject {
+		// The vault lives in the project store beside the file this editor
+		// edits (~/.byre/projects/<id>/), so the store dir and the project
+		// id both fall out of the file path. Value-state is an entries-dir
+		// listing, never a decrypt; only the project editor gets a vault
+		// surface (values are project-scoped — global/layer declare only).
+		store := filepath.Dir(filePath)
+		m.credVault = credentials.Open(store, filepath.Base(store))
+		m.credStoredNames = map[string]bool{}
+		for _, n := range m.credVault.EntryNames() {
+			m.credStoredNames[n] = true
+		}
+	}
 	return m.loadConfig(cfg)
 }
 
@@ -522,6 +561,14 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.mcps = append([]config.MCP{}, cfg.MCPs...)
 	m.claudeSkills = append([]config.ClaudeSkill{}, cfg.ClaudeSkills...)
 	m.contexts = append([]config.ContextDecl{}, cfg.Contexts...)
+	m.credentials = append([]config.CredentialDecl{}, cfg.Credentials...)
+	// A (re)load discards staged values: this runs at open (nothing staged
+	// yet) and after an $EDITOR round-trip, which the ^e gate only allows
+	// from a CLEAN state — so nothing staged can be lost here either.
+	m.stagedCredValues = map[string][]byte{}
+	if m.credStoredNames == nil {
+		m.credStoredNames = map[string]bool{}
+	}
 	m.skills = append([]string{}, cfg.Skills...)
 	m.runArgs = strings.Join(cfg.RunArgs, "\n")
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
@@ -625,6 +672,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateText(msg)
 		case modeSkills:
 			return m.updateSkills(msg)
+		case modeCredPass:
+			return m.updateCredPass(msg)
 		default:
 			return m.updateForm(msg)
 		}
@@ -884,6 +933,8 @@ func (m model) View() string {
 		v = m.viewText()
 	case modeSkills:
 		v = m.viewSkills()
+	case modeCredPass:
+		v = m.viewCredPass()
 	default:
 		v = m.viewForm()
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -169,7 +170,7 @@ func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
 		switch f {
 		case fEnv, fFiles:
 			return []menuChoice{{"Override here", "e", actOverride}}
-		case fMounts, fVolumes, fMCP, fClaudeSkills, fContext:
+		case fMounts, fVolumes, fMCP, fClaudeSkills, fContext, fCredentials:
 			return []menuChoice{
 				{"Override here", "e", actOverride},
 				{"Remove in this project", "d", actRemoveHere},
@@ -312,6 +313,8 @@ func (m *model) removeHere(r listRow) {
 		m.claudeSkills = append(m.claudeSkills, config.ClaudeSkill{Name: "!" + r.ident})
 	case fContext:
 		m.contexts = append(m.contexts, config.ContextDecl{Name: "!" + r.ident})
+	case fCredentials:
+		m.credentials = append(m.credentials, config.CredentialDecl{Name: "!" + r.ident})
 	case fPorts:
 		if c, err := strconv.Atoi(r.ident); err == nil {
 			m.ports = append(m.ports, config.Port{Container: c, Remove: true})
@@ -395,6 +398,14 @@ func (m model) startOverride(r listRow) model {
 		// the path to be supplied (a config override must point at a host dir).
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
+	case fCredentials:
+		// vals: name, kind, target (credentialVals). The value input (when
+		// present) starts empty like every edit: values render nowhere.
+		next.inputs[0].SetValue(r.vals[0])
+		next.inputs[1].SetValue(r.vals[2])
+		if r.vals[1] == "file" {
+			next.itemMode = 1
+		}
 	}
 	return next
 }
@@ -452,6 +463,14 @@ func (m *model) deleteItem(f fieldID, i int) {
 		m.claudeSkills = append(m.claudeSkills[:i], m.claudeSkills[i+1:]...)
 	case fContext:
 		m.contexts = append(m.contexts[:i], m.contexts[i+1:]...)
+	case fCredentials:
+		// A staged value for the deleted declaration is an orphan: nothing
+		// would deliver it, and a later same-named declaration inheriting a
+		// value the user staged for a DIFFERENT credential would be a silent
+		// wrong delivery. Drop it with the row.
+		delete(m.stagedCredValues, m.credentials[i].Name)
+		m.credStagedGen++
+		m.credentials = append(m.credentials[:i], m.credentials[i+1:]...)
 	}
 }
 
@@ -587,6 +606,37 @@ func (m model) startItem(idx int) model {
 		m.itemHasMode = true
 		m.itemModeOpts = []string{"inline text", "host file"}
 		m.itemModeLabel = "Source"
+	case fCredentials:
+		// Kind picker first (it decides what Target means), then Name,
+		// Target, and — in the PROJECT editor only — the masked Value input.
+		// The value stages in memory until ^s and renders nowhere; empty
+		// means "declaration only" (or, when a value is already stored,
+		// "keep it"). Global/layer editors declare only: the vault is
+		// project-scoped, so there is nothing there to stage into.
+		m.itemHasMode = true
+		m.itemModeOpts = []string{"env", "file"}
+		m.itemModeLabel = "Kind"
+		m.itemModeFirst = true
+		m.inputLabels = []string{
+			"Name (required)", // viewItem appends the lowercase hint
+			"Target env var (required)",
+		}
+		name, target := "", ""
+		if idx >= 0 {
+			cd := m.credentials[idx]
+			name, target = cd.Name, cd.Target
+			if cd.Kind == "file" {
+				m.itemMode = 1
+			}
+		}
+		m.inputs = []textinput.Model{newInput(name), newInput(target)}
+		if m.credVault != nil {
+			m.inputLabels = append(m.inputLabels, "Value (masked; staged until ^s — empty keeps what's stored)")
+			val := newInput("")
+			val.EchoMode = textinput.EchoPassword
+			val.EchoCharacter = '•'
+			m.inputs = append(m.inputs, val)
+		}
 	case fFiles:
 		// The labels carry the two rules planFiles enforces at build time, so
 		// a refusal is not the first place a user learns them.
@@ -1030,6 +1080,46 @@ func (m model) commitItem() model {
 			return m
 		}
 		m.contexts = putAt(m.contexts, m.editIndex, cd)
+	case fCredentials:
+		cd := config.CredentialDecl{
+			Name:   strings.ToLower(strings.TrimSpace(m.inputs[0].Value())),
+			Kind:   "env",
+			Target: strings.TrimSpace(m.inputs[1].Value()),
+		}
+		if m.itemMode == 1 {
+			cd.Kind = "file"
+		}
+		if err := config.ValidateCredentialDecl(cd); err != nil {
+			m.itemErr = err.Error()
+			return m
+		}
+		// The masked value (project editor only). NOT trimmed: leading and
+		// trailing bytes are value bytes; the masked input has no newline to
+		// strip. Empty = declaration-only edit (a stored value stays).
+		if len(m.inputs) > 2 {
+			if v := m.inputs[2].Value(); v != "" {
+				if err := credentials.ValidateValue([]byte(v), cd.Kind); err != nil {
+					m.itemErr = err.Error()
+					return m
+				}
+				// A rename with a staged value moves the value with it — the
+				// staging followed THIS declaration, not the old name.
+				if m.editIndex >= 0 {
+					delete(m.stagedCredValues, m.credentials[m.editIndex].Name)
+				}
+				m.stagedCredValues[cd.Name] = []byte(v)
+				m.credStagedGen++
+			} else if m.editIndex >= 0 && m.credentials[m.editIndex].Name != cd.Name {
+				// Rename with no new value typed: an already-staged value
+				// follows the rename too.
+				if old, ok := m.stagedCredValues[m.credentials[m.editIndex].Name]; ok {
+					delete(m.stagedCredValues, m.credentials[m.editIndex].Name)
+					m.stagedCredValues[cd.Name] = old
+					m.credStagedGen++
+				}
+			}
+		}
+		m.credentials = putAt(m.credentials, m.editIndex, cd)
 	case fClaudeSkills:
 		// Shape rules stay config's (ValidateClaudeSkill — the same check the
 		// layer gate runs); the name lowercases itself like MCP names.
