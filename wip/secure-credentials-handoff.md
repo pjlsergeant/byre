@@ -190,14 +190,15 @@ honesty-by-measurement delivery reporting); the `byre credentials` noun
 legibility (status rows + --data, exposure tally segment, preset review
 line, /run/byre in the 0052 managed-path register, read-only editor row).
 
-DEFERRED, awaiting Pete (unchanged gates):
-- The editor Credentials screen (masked staged entry) -- the UI design
-  session; the read-only GRANTS row keeps the key reachable meanwhile.
-- The doctrine unit -- wip/secure-credentials-adr-draft.md holds the new
-  ADR draft; NOTE: docs/adr/0026 is factually stale the moment this merges
-  ("host values cross only via env_from_host") -- the amendment is drafted
-  in the ADR draft's consequences list.
-- Forks 4/7/8, ratification of v12+v13 and of the overnight implementation.
+GATES LIFTED (morning of 2026-08-07, Pete: "get it all done"): the editor
+Credentials screen is BUILT (masked staged entry, value-state cells,
+inline vault creation on first ^s; global/layer editors declare only) and
+the doctrine unit is FILED (ADR 0057 + ten amendment banners + index +
+PRINCIPLES/GLOSSARY/security-model). Both review-clean (codex + grok,
+independent then closure rounds) and engine-side green. Forks 4/7/8 stand
+as the implemented defaults. Remaining for Pete: read-through; the wip/
+files' absorb-delete (committed for history first); anything he wants
+changed in the shipped defaults.
 
 Implementation decisions taken overnight (flag any to revisit):
 - Export manifest rides the delivery stream (base64-framed lines);
@@ -214,6 +215,6 @@ Implementation decisions taken overnight (flag any to revisit):
 
 ## One-line status
 
-DESIGN: v13 settled and review-verified. CODE: built overnight and
-review-clean; awaiting Pete's ratification, the UI session, and the
-doctrine-unit filing.
+DONE: design (v13), implementation, editor screen, doctrine unit -- all
+review-clean and engine-side green on branch secure-credentials. Awaiting
+Pete's read-through and the wip/ absorb-delete.
