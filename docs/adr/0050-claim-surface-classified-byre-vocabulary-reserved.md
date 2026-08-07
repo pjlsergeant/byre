@@ -1,6 +1,6 @@
 # The claim surface is classified, and BYRE_ is reserved vocabulary
 
-> **Amended by ADR 0057** (2026-08-08): [[credentials]] is classified
+> **Amended by ADR 0057** (2026-08-07): [[credentials]] is classified
 > rendered (status rows + the exposure tally's credentials segment; values
 > render nowhere). BYRE_CRED_EXPECT / BYRE_CRED_DIR / BYRE_CRED_WAIT join
 > the reserved chassis vocabulary as launch-claim knobs with wait/export

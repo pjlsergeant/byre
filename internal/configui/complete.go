@@ -202,7 +202,11 @@ func (m model) save() model {
 	if flushed, err := (&m).flushStagedCredentials(); err != nil {
 		m.errMsg = "config saved; credential values NOT saved: " + err.Error()
 		m.status = ""
-		m.savedSig = m.sig() // config half saved; the staged gen keeps dirty
+		// savedSig deliberately NOT advanced: the staged values are still
+		// unsaved work, so dirty() must stay true — the quit confirm and
+		// the ^e clean-state gate both key on it, and advancing the
+		// baseline here would let a quit silently discard the values. The
+		// config half re-saves idempotently on the next ^s.
 		return m
 	} else if flushed > 0 {
 		m.status = savedStatus + fmt.Sprintf("  (+%d credential value%s encrypted into the vault)", flushed, plural(flushed))

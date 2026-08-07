@@ -7,7 +7,7 @@ a secret for the project. This ADR lands the vault:
 `~/.byre/projects/<id>/credentials/` holds named values age-encrypted at
 rest, `[[credentials]]` declarations name what may be delivered and where,
 an explicit passphrase unlocks per launch, and the values arrive in the box
-over an exec-stdin stream onto a per-session tmpfs. Decided 2026-08-08
+over an exec-stdin stream onto a per-session tmpfs. Decided 2026-08-07
 (design brief: thirteen revisions, fifteen independent review rounds; the
 v12 sweep below is the load-bearing decision).
 

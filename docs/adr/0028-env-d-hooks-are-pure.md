@@ -1,6 +1,6 @@
 # env.d hooks are pure env-setters; login shells source them
 
-> **Amended by ADR 0057** (2026-08-08): the launcher's credential export
+> **Amended by ADR 0057** (2026-08-07): the launcher's credential export
 > step runs AFTER the env.d loop, deliberately — credential exports win env
 > collisions, and the step keeps this ADR's purity contract (its exports are
 > its only lasting effect).

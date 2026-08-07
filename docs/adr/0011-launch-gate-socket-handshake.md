@@ -1,6 +1,6 @@
 # Launch gate: loopback socket handshake, fail closed
 
-> **Amended by ADR 0057** (2026-08-08): the credential delivery wait is this
+> **Amended by ADR 0057** (2026-08-07): the credential delivery wait is this
 > gate's deliberate OPPOSITE — bounded FAIL-OPEN (no credentials is safe; no
 > wall is not), sitting after the gate in the launcher. Its sentinel is
 > restart-safe because the delivery tmpfs empties: a restarted,

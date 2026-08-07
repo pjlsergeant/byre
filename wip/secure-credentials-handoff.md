@@ -170,7 +170,7 @@ writer"), so the brief reads as the correctness feature it is.
 - `.byre-devlog/DIARY.md` -- session-by-session narrative; the two most recent
   entries cover the sweep and the confirming reviews.
 
-## OVERNIGHT BUILD (2026-08-08, Pete's dispatch: "build as much of it as you
+## OVERNIGHT BUILD (2026-08-07, Pete's dispatch: "build as much of it as you
 ## can overnight")
 
 The core feature is IMPLEMENTED on branch secure-credentials (11 commits,

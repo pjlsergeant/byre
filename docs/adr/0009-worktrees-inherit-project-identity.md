@@ -1,6 +1,6 @@
 # Worktrees inherit the project identity (no volume scope knob)
 
-> **Amended by ADR 0057** (2026-08-08): the credentials vault is
+> **Amended by ADR 0057** (2026-08-07): the credentials vault is
 > project-store state like everything else here — one vault per project,
 > shared by every worktree, its writes serialised by the same setup lock.
 

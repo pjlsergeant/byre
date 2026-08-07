@@ -1,6 +1,6 @@
 # env_from_host: named host-value passthrough, shipped visible
 
-> **Amended by ADR 0057** (2026-08-08): env_from_host is no longer the ONE
+> **Amended by ADR 0057** (2026-08-07): env_from_host is no longer the ONE
 > deliberate host->box value channel — the project-credentials vault is the
 > second, with its own consent surface ([[credentials]] declarations + the
 > per-launch passphrase). The grant/legibility model here is unchanged.

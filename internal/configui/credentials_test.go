@@ -197,6 +197,38 @@ func TestCredentialSaveVaultlessOpensPassModalAndCreates(t *testing.T) {
 	}
 }
 
+func TestCredentialFlushFailureKeepsDirty(t *testing.T) {
+	// A failed vault flush leaves the staged values as UNSAVED work: dirty
+	// must stay true (the quit confirm and the ^e clean-state gate key on
+	// it), or a quit would silently discard the values (codex, screen
+	// review round 1). Failure induced by a guard that refuses the vault
+	// write after the config write succeeded.
+	m, _ := credTestModel(t, config.Config{})
+	if err := credentials.Open(filepath.Dir(m.filePath), "test-project-id").Create("pw"); err != nil {
+		t.Fatal(err)
+	}
+	m.credVault = credentials.Open(filepath.Dir(m.filePath), "test-project-id")
+	m = commitCredential(m, 0, "stripe", "STRIPE_KEY", "v")
+	calls := 0
+	m.guard = func(do func() error) error {
+		calls++
+		if calls == 1 {
+			return do() // the config write succeeds
+		}
+		return os.ErrPermission // the vault flush fails
+	}
+	m = m.save()
+	if !strings.Contains(m.errMsg, "credential values NOT saved") {
+		t.Fatalf("errMsg = %q", m.errMsg)
+	}
+	if len(m.stagedCredValues) != 1 {
+		t.Fatal("the staged value must survive a failed flush")
+	}
+	if !m.dirty() {
+		t.Fatal("dirty must stay true after a failed flush — quit would silently discard the staged value")
+	}
+}
+
 func TestCredentialPassModalCancelKeepsStaged(t *testing.T) {
 	m, store := credTestModel(t, config.Config{})
 	m = commitCredential(m, 0, "stripe", "STRIPE_KEY", "v")

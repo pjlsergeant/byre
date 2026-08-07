@@ -1,6 +1,6 @@
 # A mount over a byre-managed path gets one blanket disclosure, skills included
 
-> **Amended by ADR 0057** (2026-08-08): /run/byre (the credential delivery
+> **Amended by ADR 0057** (2026-08-07): /run/byre (the credential delivery
 > tmpfs) and the baked receiver under /etc/byre join the managed-path
 > register. The tmpfs shadow is the sharp case: a durable mount there
 > relocates delivered plaintext onto durable storage and can re-surface AND

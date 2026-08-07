@@ -1,6 +1,6 @@
 # ADR NNNN: Project credentials — confidentiality at rest, consent per launch
 
-DRAFT (overnight build, 2026-08-08). Not filed into docs/adr/ — the feature
+DRAFT (overnight build, 2026-08-07). Not filed into docs/adr/ — the feature
 and its doctrine unit await Pete's ratification. Numbering, the README index
 line, and the sibling amendments land together when filed.
 
