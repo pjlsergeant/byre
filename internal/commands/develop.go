@@ -386,7 +386,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// authoritative declarations. A deliverable set adds the session tmpfs
 	// and arms the launcher's bounded fail-open wait; every other outcome
 	// leaves the launch exactly as it was (no flag, no wait, no tmpfs).
-	creds := decryptCredentialsLocked(s.Err, paths, rv.cfg.Credentials, unlock)
+	creds := decryptCredentialsLocked(s.Err, rv.cfg.Credentials, unlock)
 	if len(creds.values) > 0 {
 		params.Tmpfs = append(params.Tmpfs, credTmpfs(creds, ident, r.Engine()))
 		// Set only when a delivery is in flight; persists with the

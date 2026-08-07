@@ -200,7 +200,11 @@ func (m model) save() model {
 	// disk; a develop that decrypts now sees a coherent set). A flush error
 	// keeps the values staged — dirty stays true and says so.
 	if flushed, err := (&m).flushStagedCredentials(); err != nil {
-		m.errMsg = "config saved; credential values NOT saved: " + err.Error()
+		// The error names exactly the credential that failed; values that
+		// landed before it are already unstaged (each Set publishes as it
+		// goes), so the count here is what genuinely remains unsaved.
+		m.errMsg = fmt.Sprintf("config saved; %v — %d staged credential value%s still unsaved",
+			err, len(m.stagedCredValues), plural(len(m.stagedCredValues)))
 		m.status = ""
 		// savedSig deliberately NOT advanced: the staged values are still
 		// unsaved work, so dirty() must stay true — the quit confirm and
@@ -237,6 +241,11 @@ func (m *model) flushStagedCredentials() (int, error) {
 	for _, cd := range m.credentials {
 		kinds[cd.Name] = cd.Kind
 	}
+	// Each Set publishes as it goes, so a mid-loop failure leaves earlier
+	// values genuinely stored: unstage each success as it lands and let the
+	// error name exactly the credential that did not make it — "values NOT
+	// saved" would overstate, and re-encrypting stored values on retry is
+	// wasted work.
 	do := func() error {
 		if !m.credVault.Exists() {
 			if m.credPassphrase == "" {
@@ -248,11 +257,15 @@ func (m *model) flushStagedCredentials() (int, error) {
 		}
 		for name, value := range m.stagedCredValues {
 			if err := m.credVault.Set(name, value, kinds[name]); err != nil {
-				return err
+				return fmt.Errorf("credential %s: %w", name, err)
 			}
+			delete(m.stagedCredValues, name)
+			m.credStoredNames[name] = true
+			m.credStagedGen++
 		}
 		return nil
 	}
+	before := len(m.stagedCredValues)
 	var werr error
 	if m.guard == nil {
 		werr = do()
@@ -261,16 +274,7 @@ func (m *model) flushStagedCredentials() (int, error) {
 	}
 	// The passphrase is one-shot either way: on failure the next ^s re-asks.
 	m.credPassphrase = ""
-	if werr != nil {
-		return 0, werr
-	}
-	n := len(m.stagedCredValues)
-	for name := range m.stagedCredValues {
-		m.credStoredNames[name] = true
-	}
-	m.stagedCredValues = map[string][]byte{}
-	m.credStagedGen++ // state moved staged->stored; the signature must move too
-	return n, nil
+	return before - len(m.stagedCredValues), werr
 }
 
 // write runs Save inside whatever lock the caller supplied (the project

@@ -51,8 +51,8 @@ func CredentialsDeclare(s Streams, projectDir string, global bool, name, kind, t
 // (closure-smart, like every named-declaration remove). The stored VALUE is
 // untouched — `byre credentials unset` discards it.
 func CredentialsUndeclare(s Streams, projectDir string, global bool, name string) error {
-	if !config.ValidCredentialName(name) {
-		return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", name)
+	if err := credentials.ValidateName(name); err != nil {
+		return err
 	}
 	return removeNamedDecl(s, projectDir, global, credentialVerbs, name)
 }
@@ -91,7 +91,7 @@ func CredentialsInit(s Streams, projectDir string, replace bool) error {
 		return err
 	}
 	if pw == "" {
-		return errors.New("an empty passphrase would leave the vault's at-rest encryption worthless — aborted (nothing created)")
+		return errors.New(credentials.EmptyPassphraseWorthless + " — aborted (nothing created)")
 	}
 	confirm, err := readPassphrase(s.Err, "confirm passphrase: ")
 	if err != nil {
@@ -121,8 +121,8 @@ func CredentialsInit(s Streams, projectDir string, replace bool) error {
 // piped (`op read ... | byre credentials set stripe`). Never argv. A cold
 // write: no passphrase needed (the value encrypts to the vault recipient).
 func CredentialsSet(s Streams, projectDir string, name string) error {
-	if !config.ValidCredentialName(name) {
-		return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", name)
+	if err := credentials.ValidateName(name); err != nil {
+		return err
 	}
 	v, paths, err := credProjectVault(projectDir)
 	if err != nil {
@@ -180,8 +180,8 @@ func CredentialsSet(s Streams, projectDir string, name string) error {
 // CredentialsUnset implements `byre credentials unset <name>`: discard the
 // stored value (the declaration, if any, stays — undeclare removes that).
 func CredentialsUnset(s Streams, projectDir string, name string) error {
-	if !config.ValidCredentialName(name) {
-		return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", name)
+	if err := credentials.ValidateName(name); err != nil {
+		return err
 	}
 	v, paths, err := credProjectVault(projectDir)
 	if err != nil {
@@ -224,7 +224,7 @@ func CredentialsRekey(s Streams, projectDir string) error {
 		return err
 	}
 	if newPw == "" {
-		return errors.New("an empty passphrase would leave the vault's at-rest encryption worthless — aborted (nothing changed)")
+		return errors.New(credentials.EmptyPassphraseWorthless + " — aborted (nothing changed)")
 	}
 	confirm, err := readPassphrase(s.Err, "confirm new passphrase: ")
 	if err != nil {
@@ -267,12 +267,8 @@ func CredentialsList(s Streams, projectDir string) error {
 		return nil
 	}
 	for _, d := range cfg.Credentials {
-		state := "unset"
-		if stored[d.Name] {
-			state = "set"
-		}
+		fmt.Fprintf(s.Out, "%s\t%s → %s\t%s\n", d.Name, d.Kind, d.Target, credentials.ValueState(stored[d.Name]))
 		delete(stored, d.Name)
-		fmt.Fprintf(s.Out, "%s\t%s → %s\t%s\n", d.Name, d.Kind, d.Target, state)
 	}
 	for _, n := range v.EntryNames() {
 		if stored[n] {

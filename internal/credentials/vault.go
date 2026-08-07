@@ -1,5 +1,5 @@
 // Package credentials is the host-side project-credentials vault
-// (wip/secure-credentials.md): named values age-encrypted at rest under the
+// (ADR 0057): named values age-encrypted at rest under the
 // project store, unlocked per launch by a passphrase, delivered into the box
 // by the launch flow. The vault's security content is confidentiality at
 // rest against off-box disk access; it claims no integrity against its own
@@ -77,10 +77,46 @@ const (
 	payloadHeader = "byre-credential 1"
 )
 
-// NameRe is the credential name grammar the brief pins. Tighter than the
+// nameRe is the credential name grammar (ADR 0057). Tighter than the
 // named-declaration genus grammar (must start with a letter): the name is a
-// filename under entries/ and a tmpfs filename in the box.
-var NameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+// filename under entries/ and a tmpfs filename in the box. Callers go
+// through ValidName/ValidateName — the grammar AND its refusal prose have
+// one owner here.
+var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// ValidName reports whether s satisfies the credential name grammar.
+func ValidName(s string) bool { return nameRe.MatchString(s) }
+
+// ValidateName is the one refusal for a bad credential name — every
+// surface (vault, config declarations, CLI verbs) speaks it identically.
+// The echo truncates so a pasted wall of input cannot become the message.
+func ValidateName(name string) error {
+	if nameRe.MatchString(name) {
+		return nil
+	}
+	echo := []rune(name)
+	if len(echo) > 64 {
+		echo = append(echo[:64], '…')
+	}
+	return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", string(echo))
+}
+
+// ValueState is the one spelling of the vault value-state cell: "set" when
+// a value is stored, "unset" otherwise. Every surface that renders the
+// pair (the unlock prompt, credentials list, status, the editor's
+// non-staged states) speaks through it, so a third word cannot land on one
+// surface only.
+func ValueState(stored bool) string {
+	if stored {
+		return "set"
+	}
+	return "unset"
+}
+
+// EmptyPassphraseWorthless is the shared refusal prose for an empty vault
+// passphrase (init, rekey, and the editor's inline-creation modal all
+// speak it; callers append their own consequence tail).
+const EmptyPassphraseWorthless = "an empty passphrase would leave the vault's at-rest encryption worthless"
 
 // scryptWorkFactor is the pinned creation work factor (age's own default
 // tier). A var only for the test seam: the suite lowers it so every unlock
@@ -371,11 +407,13 @@ func (u *Unlocked) Recipient() string { return u.id.Recipient().String() }
 // Decrypt reads one entry ONCE (bounded) and returns its value bytes —
 // exactly the bytes present at decrypt time (no snapshot, no hashes; plain
 // correctness against a concurrent cooperating worktree). The caller holds
-// the setup lock across the per-entry decrypts. The non-nil error carries
-// the per-name notice text for the outcome.
+// the setup lock across the per-entry decrypts. Success is the zero
+// Outcome ("") with a nil error; a failure outcome's non-nil error carries
+// the per-name notice text. Deliberately NOT a "delivered" word: decrypt
+// success says nothing about the tmpfs, and delivery speaks for itself.
 func (u *Unlocked) Decrypt(name string) ([]byte, Outcome, error) {
-	if !NameRe.MatchString(name) {
-		return nil, OutcomeMissingValue, fmt.Errorf("credential %q: invalid name", name)
+	if err := ValidateName(name); err != nil {
+		return nil, OutcomeMissingValue, err
 	}
 	b, err := hostopen.ReadFileBounded(u.v.entryPath(name), false, entryReadCap)
 	if err != nil {
@@ -403,7 +441,7 @@ func (u *Unlocked) Decrypt(name string) ([]byte, Outcome, error) {
 		// delivering the wrong value.
 		return nil, OutcomeEntryMismatch, fmt.Errorf("credential %s: the stored value is stamped %q for project %q — a cross-project copy or wrong-project restore? Not delivering it", name, gotName, gotProject)
 	}
-	return value, OutcomeDelivered, nil
+	return value, "", nil
 }
 
 // RepairIndex refreshes the index's display cache and recipient from what
@@ -463,8 +501,8 @@ func (u *Unlocked) Rekey(newPassphrase string) error {
 // constraints here, at save, where re-entry is cheap. Caller holds the
 // setup lock.
 func (v *Vault) Set(name string, value []byte, kind string) error {
-	if !NameRe.MatchString(name) {
-		return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", name)
+	if err := ValidateName(name); err != nil {
+		return err
 	}
 	if err := ValidateValue(value, kind); err != nil {
 		return fmt.Errorf("credential %s: %w", name, err)
@@ -508,8 +546,8 @@ func (v *Vault) Set(name string, value []byte, kind string) error {
 // Unset removes a stored value (and its cache row). Removing a name that
 // holds no value is a no-op, not an error. Caller holds the setup lock.
 func (v *Vault) Unset(name string) error {
-	if !NameRe.MatchString(name) {
-		return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", name)
+	if err := ValidateName(name); err != nil {
+		return err
 	}
 	// Anchored removal: a rename of entries/ (or an interior link under
 	// --self-edit) must not redirect the delete elsewhere on the host.
@@ -543,7 +581,7 @@ func (v *Vault) EntryNames() []string {
 	var names []string
 	for _, e := range ents {
 		n, ok := strings.CutSuffix(e.Name(), ".age")
-		if ok && NameRe.MatchString(n) && e.Type().IsRegular() {
+		if ok && ValidName(n) && e.Type().IsRegular() {
 			names = append(names, n)
 		}
 	}

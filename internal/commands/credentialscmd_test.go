@@ -47,7 +47,7 @@ func TestCredentialsInitAndSetRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	val, oc, _ := u.Decrypt("stripe")
-	if oc != credentials.OutcomeDelivered || string(val) != "sk-live-9" {
+	if oc != "" || string(val) != "sk-live-9" {
 		t.Fatalf("roundtrip: %s %q", oc, val)
 	}
 }
@@ -68,7 +68,7 @@ func TestCredentialsSetPipedStdin(t *testing.T) {
 	v := credentials.Open(p.Dir, p.ID)
 	u, _ := v.Unlock("pw")
 	val, oc, _ := u.Decrypt("github")
-	if oc != credentials.OutcomeDelivered || string(val) != "tok-from-pipe" {
+	if oc != "" || string(val) != "tok-from-pipe" {
 		t.Fatalf("piped roundtrip: %s %q", oc, val)
 	}
 }
@@ -138,7 +138,7 @@ func TestCredentialsRekey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if val, oc, _ := u.Decrypt("a"); oc != credentials.OutcomeDelivered || string(val) != "v1" {
+	if val, oc, _ := u.Decrypt("a"); oc != "" || string(val) != "v1" {
 		t.Fatalf("entries after rekey: %s %q", oc, val)
 	}
 	// The identity-unchanged caveat is said out loud, with the remedy.
@@ -226,7 +226,7 @@ func TestCredentialsSetFileKindKeepsTrailingNewline(t *testing.T) {
 	v := credentials.Open(p.Dir, p.ID)
 	u, _ := v.Unlock("pw")
 	val, oc, _ := u.Decrypt("cert")
-	if oc != credentials.OutcomeDelivered || string(val) != "-----END CERT-----\n" {
+	if oc != "" || string(val) != "-----END CERT-----\n" {
 		t.Fatalf("file-kind bytes: %s %q — the trailing newline must survive", oc, val)
 	}
 }

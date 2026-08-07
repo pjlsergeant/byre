@@ -138,7 +138,7 @@ func TestCredentialSaveFlushesToVault(t *testing.T) {
 		t.Fatal(err)
 	}
 	val, oc, derr := u.Decrypt("stripe")
-	if oc != credentials.OutcomeDelivered || derr != nil || string(val) != "sk-live-2" {
+	if oc != "" || derr != nil || string(val) != "sk-live-2" {
 		t.Fatalf("vault roundtrip: %s %v %q", oc, derr, val)
 	}
 	// The config file carries the declaration and never the value.
@@ -189,7 +189,7 @@ func TestCredentialSaveVaultlessOpensPassModalAndCreates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inline-created vault unlock: %v", err)
 	}
-	if val, oc, _ := u.Decrypt("stripe"); oc != credentials.OutcomeDelivered || string(val) != "sk-live-3" {
+	if val, oc, _ := u.Decrypt("stripe"); oc != "" || string(val) != "sk-live-3" {
 		t.Fatalf("value after inline create: %s %q", oc, val)
 	}
 	if m.credPassphrase != "" {
@@ -218,7 +218,7 @@ func TestCredentialFlushFailureKeepsDirty(t *testing.T) {
 		return os.ErrPermission // the vault flush fails
 	}
 	m = m.save()
-	if !strings.Contains(m.errMsg, "credential values NOT saved") {
+	if !strings.Contains(m.errMsg, "still unsaved") {
 		t.Fatalf("errMsg = %q", m.errMsg)
 	}
 	if len(m.stagedCredValues) != 1 {

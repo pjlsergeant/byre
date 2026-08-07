@@ -210,7 +210,7 @@ if [ -d "$ENVD_DIR" ]; then
 fi
 
 # Credential export — the launcher's end of credential delivery
-# (wip/secure-credentials.md step 4). BYRE_CRED_EXPECT is set at create time
+# (ADR 0057). BYRE_CRED_EXPECT is set at create time
 # ONLY when this launch decrypted a deliverable set and scheduled an inject;
 # it is purely a wait/export protocol flag ("wait bounded for .done, then
 # export from the manifest") — no verification meaning. The wait is bounded

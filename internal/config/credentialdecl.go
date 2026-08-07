@@ -1,7 +1,7 @@
 package config
 
 // Credential declarations ([[credentials]] blocks): byre's vocabulary for
-// named project credentials (wip/secure-credentials.md). The declaration is
+// named project credentials (ADR 0057). The declaration is
 // the standing, cascade-visible consent to the SET — which names exist,
 // what kind each is, and which variable carries it in the box. Values never
 // appear here: they live age-encrypted in the host-side vault
@@ -41,16 +41,12 @@ type CredentialDecl struct {
 // ValidCredentialName reports whether s satisfies the credential name
 // grammar — for callers (the credentials verbs) validating a bare name.
 // The rule's owner is the vault package (names are its entry filenames).
-func ValidCredentialName(s string) bool { return credentials.NameRe.MatchString(s) }
+func ValidCredentialName(s string) bool { return credentials.ValidName(s) }
 
 // ValidateCredentialDecl checks one declaration's own shape.
 func ValidateCredentialDecl(cd CredentialDecl) error {
-	if !credentials.NameRe.MatchString(cd.Name) {
-		name := []rune(cd.Name)
-		if len(name) > 64 {
-			name = append(name[:64], '…')
-		}
-		return fmt.Errorf("credential name %q: must be lowercase [a-z0-9-], starting with a letter (max 63 chars)", string(name))
+	if err := credentials.ValidateName(cd.Name); err != nil {
+		return err
 	}
 	switch cd.Kind {
 	case "env", "file":

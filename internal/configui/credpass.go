@@ -12,6 +12,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/pjlsergeant/byre/internal/credentials"
 )
 
 // openCredPass arms the modal with two fresh masked inputs.
@@ -57,7 +59,7 @@ func (m model) updateCredPass(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		pw := m.credPassInputs[0].Value()
 		if pw == "" {
-			m.credPassErr = "an empty passphrase would leave the vault's at-rest encryption worthless"
+			m.credPassErr = credentials.EmptyPassphraseWorthless
 			return m, nil
 		}
 		if pw != m.credPassInputs[1].Value() {

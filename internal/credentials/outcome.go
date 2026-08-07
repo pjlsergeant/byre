@@ -1,11 +1,15 @@
 package credentials
 
-// Outcome is the small, honest per-launch vocabulary the design brief pins
-// (wip/secure-credentials.md "Outcome vocabulary"): host-side facts reported
-// at the unlock prompt and recorded with the launch. Deliberately NO
-// quarantine, foreign-vault, recipient-mismatch, snapshot-mismatch, or
-// restart-discriminator states — those named adversary conditions that are
-// out of the feature's threat model.
+// Outcome is the small, honest UNLOCK/DECRYPT-time vocabulary (ADR 0057):
+// host-side facts established at the prompt and under the setup lock,
+// reported there and recorded with the launch. The zero value "" means the
+// step succeeded. Deliberately NO quarantine, foreign-vault,
+// recipient-mismatch, snapshot-mismatch, or restart-discriminator states —
+// those named adversary conditions that are out of the feature's threat
+// model. Delivery's own words ("delivered", "not-delivered", the late
+// hedge) are NOT constants here: they are the inject's stderr reporting,
+// spoken as delivery happens and never recorded (the launch record is
+// written pre-start; there is no live-state surface).
 type Outcome string
 
 const (
@@ -30,9 +34,4 @@ const (
 	// (a future format version), or a value that does not fit its declared
 	// kind (an env value carrying NUL or over the env cap).
 	OutcomeUnsupportedFormat Outcome = "unsupported-format"
-	// OutcomeDelivered: the value landed on the session tmpfs.
-	OutcomeDelivered Outcome = "delivered"
-	// OutcomeNotDelivered: delivery timed out or the inject failed; the box
-	// launched without credentials.
-	OutcomeNotDelivered Outcome = "not-delivered"
 )

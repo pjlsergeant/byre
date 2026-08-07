@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # byre credential receiver — the in-box end of the credential delivery
-# stream (wip/secure-credentials.md "Launch and delivery" step 3).
+# stream (ADR 0057).
 #
 # byre pipes the deliverable set over `engine exec -i` stdin as a framed
 # text stream; this script writes each value under the session tmpfs and a

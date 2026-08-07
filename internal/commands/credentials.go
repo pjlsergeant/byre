@@ -1,6 +1,6 @@
 package commands
 
-// The launch side of project credentials (wip/secure-credentials.md):
+// The launch side of project credentials (ADR 0057):
 // the pre-lock unlock prompt, the under-lock read-once decrypt, and the
 // post-start exec-stdin inject onto the session tmpfs. Everything here is
 // degrade-never-block: a declined, absent, non-TTY, or failed unlock — and
@@ -138,11 +138,7 @@ func enumerateCredentials(decls []config.CredentialDecl, stored []string) string
 	}
 	parts := make([]string, 0, len(decls))
 	for _, d := range decls {
-		state := "unset"
-		if has[d.Name] {
-			state = "set"
-		}
-		parts = append(parts, fmt.Sprintf("%s (%s → %s, %s)", d.Name, d.Kind, d.Target, state))
+		parts = append(parts, fmt.Sprintf("%s (%s → %s, %s)", d.Name, d.Kind, d.Target, credentials.ValueState(has[d.Name])))
 	}
 	return fmt.Sprintf("%d declared — %s", len(decls), strings.Join(parts, ", "))
 }
@@ -173,7 +169,7 @@ const (
 // Per-name outcomes report here, where re-entry is actionable. A nil unlock
 // (declarations appeared after the prompt window) and every skip/fail
 // outcome produce an empty deliverable set: the launch proceeds without.
-func decryptCredentialsLocked(w io.Writer, paths project.Paths, decls []config.CredentialDecl, unlock *unlockResult) credPayload {
+func decryptCredentialsLocked(w io.Writer, decls []config.CredentialDecl, unlock *unlockResult) credPayload {
 	p := credPayload{values: map[string][]byte{}}
 	if len(decls) == 0 {
 		return p
@@ -192,7 +188,7 @@ func decryptCredentialsLocked(w io.Writer, paths project.Paths, decls []config.C
 	kinds := map[string]string{}
 	for _, d := range decls {
 		value, outcome, err := unlock.u.Decrypt(d.Name)
-		if outcome != credentials.OutcomeDelivered {
+		if err != nil {
 			fmt.Fprintf(w, "byre: credentials: %s: %s (%v)\n", d.Name, outcome, err)
 			p.record = append(p.record, launchCredential{Name: d.Name, Kind: d.Kind, Target: d.Target, Outcome: string(outcome)})
 			continue

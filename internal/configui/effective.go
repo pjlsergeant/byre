@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -381,14 +382,10 @@ func credentialVals(cd config.CredentialDecl) []string {
 // session, written at ^s) beats set/unset (the vault's entries dir). Only
 // meaningful where a vault can exist (the project editor).
 func (m model) credValueState(name string) string {
-	switch {
-	case m.stagedCredValues[name] != nil:
+	if m.stagedCredValues[name] != nil {
 		return "staged"
-	case m.credStoredNames[name]:
-		return "set"
-	default:
-		return "unset"
 	}
+	return credentials.ValueState(m.credStoredNames[name])
 }
 
 // credentialRows builds the Credentials screen's effective view — the shared

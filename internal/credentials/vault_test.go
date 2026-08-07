@@ -159,7 +159,7 @@ func TestSetDecryptRoundtrip(t *testing.T) {
 		t.Fatalf("Unlock: %v", err)
 	}
 	got, oc, derr := u.Decrypt("stripe")
-	if derr != nil || oc != OutcomeDelivered {
+	if derr != nil || oc != "" {
 		t.Fatalf("Decrypt: outcome=%s err=%v", oc, derr)
 	}
 	if !bytes.Equal(got, value) {
@@ -320,7 +320,7 @@ func TestRekeyRotatesPassphraseNotIdentity(t *testing.T) {
 	}
 	// The identity did NOT rotate: existing entries still decrypt.
 	got, oc, derr := u2.Decrypt("stripe")
-	if oc != OutcomeDelivered || derr != nil || string(got) != "sk" {
+	if oc != "" || derr != nil || string(got) != "sk" {
 		t.Fatalf("entry after Rekey: outcome=%s err=%v value=%q", oc, derr, got)
 	}
 }
@@ -349,7 +349,7 @@ func TestRekeyRefusesReplacedVault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replacement vault after refused rekey: %v", err)
 	}
-	if val, oc, _ := u2.Decrypt("stripe"); oc != OutcomeDelivered || string(val) != "new-vault-value" {
+	if val, oc, _ := u2.Decrypt("stripe"); oc != "" || string(val) != "new-vault-value" {
 		t.Fatalf("replacement vault entries: %s %q", oc, val)
 	}
 }
