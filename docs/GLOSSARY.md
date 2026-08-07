@@ -177,6 +177,19 @@ fresh-file case), serializer
 deliberately outside the rw-mounted project tree so the boxed agent can't
 rewrite its own sandbox.
 
+**Project credentials**:
+Named values a project declares (`[[credentials]]`: name, kind, target)
+and stores age-encrypted in the host-side store's vault, decrypted only at
+launch after the per-launch passphrase and delivered onto a per-session
+tmpfs (ADR 0057). The user-facing noun is "credentials" (`byre
+credentials`, the editor's Credentials screen). Distinct from the AGENT's
+own logins (the agent-login sense -- claude/codex signing in INSIDE the
+box, ADR 0007's territory): project credentials are values the user hands
+the agent, not identities the agent holds.
+_Avoid_: "secrets" as the noun (byre is not a secret manager in the
+rotation/IAM sense -- PRINCIPLES); "vault" for anything but the encrypted
+store itself.
+
 **Proposal / Adoption** (historical):
 Pre-preset (ADR 0029) vocabulary for an in-tree `byre.config` and the
 develop-time prompt that accepted it. The flow is deleted -- presets

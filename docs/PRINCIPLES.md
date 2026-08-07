@@ -324,8 +324,10 @@ unnumbered so `PRINCIPLES.md §n` cites stay unambiguous):
 
 Boundary statements, kept here so they don't get re-argued feature by
 feature. byre is not: an agent (it runs one); a Docker replacement; a
-devcontainer implementation; a policy engine; a secret manager (it seeds
-non-credential data, never stores or rotates secrets); a cloud sandbox
+devcontainer implementation; a policy engine; a secret manager in the
+rotation/IAM sense (project credentials are stored encrypted and
+delivered per launch — ADR 0057 — never rotated, leased, brokered, or
+shared across machines); a cloud sandbox
 service (no hosted runtime, no sign-in, no fleet, no telemetry); a
 security product with a stronger-than-Docker isolation claim
 (it competes on legibility and management, not on the boundary itself).

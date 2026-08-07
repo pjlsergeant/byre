@@ -1,5 +1,10 @@
 # Rootless Podman runs a generic-UID image under keep-id
 
+> **Amended by ADR 0057** (2026-08-08): the credential delivery tmpfs
+> (--tmpfs /run/byre) is owned by the container Identity's UID/GID like
+> every other byre-owned runtime surface; podman additionally gets
+> notmpcopyup.
+
 Decided 2026-07-14. Rootless Podman graduates from detect-and-refuse to a
 first-class path: byre builds a **generic-UID image** (dev at 1000:1000,
 the generated Dockerfile's own ARG defaults) and runs the box with

@@ -1,5 +1,9 @@
 # Worktrees inherit the project identity (no volume scope knob)
 
+> **Amended by ADR 0057** (2026-08-08): the credentials vault is
+> project-store state like everything else here — one vault per project,
+> shared by every worktree, its writes serialised by the same setup lock.
+
 A linked git worktree resolves its byre identity from the **main
 worktree's** canonical path: config, volumes, image, and the setup lock
 come from the project; only the container (name + `byre.workdir` label)

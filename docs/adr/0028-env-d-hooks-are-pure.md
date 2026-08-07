@@ -1,5 +1,10 @@
 # env.d hooks are pure env-setters; login shells source them
 
+> **Amended by ADR 0057** (2026-08-08): the launcher's credential export
+> step runs AFTER the env.d loop, deliberately — credential exports win env
+> collisions, and the step keeps this ADR's purity contract (its exports are
+> its only lasting effect).
+
 byre skills contribute launch-time environment via `env.d` hooks —
 `.sh` files sourced by the launcher just before it execs the agent, so
 their `export`s land in the agent's process. This ADR pins a contract on

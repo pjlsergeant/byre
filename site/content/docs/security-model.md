@@ -50,6 +50,32 @@ with kernel exploits.
 
 ## Specific facts worth knowing
 
+**Project credentials protect the disk, not the running box.** The
+vault ([[credentials]] +
+[ADR 0057](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0057-project-credentials-vault.md))
+stores values age-encrypted in the host-side project store and decrypts
+them only at launch, after the passphrase — that is real protection
+against off-box disk access (a stolen laptop, a backup blob, a synced
+dotfiles directory), and it is the whole of the security content. byre
+writes the decrypted plaintext to exactly one filesystem place — a
+per-session tmpfs that empties when the box stops — and to no host
+file, image layer, engine-visible config value, or volume. What it
+deliberately does NOT do: the agent is handed the delivered values
+(that is the point) and can copy or send them anywhere it can reach —
+an open network exfiltrates an unlocked credential, so pair the vault
+with the firewall skill; the vault's metadata (`index.toml`: the
+recipient and credential names/kinds) is not itself encrypted, so disk
+access learns the names exist; a mount placed over the delivery tmpfs
+relocates the plaintext onto durable storage and can re-surface it on a
+bare restart without a fresh unlock (disclosed as a managed-path
+shadow); a writer to the project store can roll back, forge, or delete
+vault contents; transient plaintext in process memory can reach swap,
+core dumps, or a hibernation image; and a weak passphrase weakens the
+at-rest encryption to match. `--self-edit` hands the agent authorship
+of the vault files along with the rest of the store — its own warning
+covers that. There is no recovery path: a forgotten passphrase means a
+new vault (`byre credentials init --replace`).
+
 **Docker daemon access is root-equivalent.** Anyone who can talk to the
 Docker daemon (the `docker` group) can mount any named volume -- byre's
 included, identity volumes included -- or the host filesystem itself.

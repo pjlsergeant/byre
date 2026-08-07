@@ -1,5 +1,11 @@
 # Credential seeding is out for now -- agents log in in the box
 
+> **Amended by ADR 0057** (2026-08-08): project credentials — user-declared
+> values stored encrypted in the project store and delivered per launch —
+> are a different thing from the agent-login seeding this ADR bans, and do
+> not reopen it: byre still reads no host credential files and seeds no
+> agent logins.
+
 byre does not currently copy host agent credentials into a box. A
 `--seed-creds` feature existed and was removed after it broke in
 practice: all three agent CLIs use rotating OAuth tokens, so a naive

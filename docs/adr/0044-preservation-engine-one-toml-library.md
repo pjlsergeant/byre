@@ -1,5 +1,10 @@
 # Config files are shared custody: the preservation engine, one TOML library
 
+> **Amended by ADR 0057** (2026-08-08): [[credentials]] declaration saves
+> ride tomldoc like every user-config write; the vault's index.toml is
+> MACHINE-authored whole-file (temp+rename) and outside this ADR's
+> style-preserving scope.
+
 Decided 2026-07-25, grilled with the maintainer end-to-end. Three decisions
 that stand together:
 

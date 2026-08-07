@@ -1,5 +1,10 @@
 # env_from_host: named host-value passthrough, shipped visible
 
+> **Amended by ADR 0057** (2026-08-08): env_from_host is no longer the ONE
+> deliberate host->box value channel — the project-credentials vault is the
+> second, with its own consent surface ([[credentials]] declarations + the
+> per-launch passphrase). The grant/legibility model here is unchanged.
+
 > **Amended by ADR 0031** (2026-07-14): the `env:` reservation below is
 > lifted — `env:<HOST_VAR>` and `tz:` are now legal sources, and TERM/TZ
 > joined the shipped core layer. The grant/legibility model is unchanged.

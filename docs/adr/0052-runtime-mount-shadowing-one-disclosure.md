@@ -1,5 +1,12 @@
 # A mount over a byre-managed path gets one blanket disclosure, skills included
 
+> **Amended by ADR 0057** (2026-08-08): /run/byre (the credential delivery
+> tmpfs) and the baked receiver under /etc/byre join the managed-path
+> register. The tmpfs shadow is the sharp case: a durable mount there
+> relocates delivered plaintext onto durable storage and can re-surface AND
+> re-export it on a bare restart without a fresh unlock — disclosed, never
+> gated.
+
 Decided 2026-07-28. A `[[mounts]]` or `[[volumes]]` target covering a path
 byre bakes replaces byre's file in the RUNNING box. byre reports this once,
 in the containment register, and does not degrade the individual claims that
