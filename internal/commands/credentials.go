@@ -263,9 +263,9 @@ func credTmpfs(p credPayload, ident runner.Identity, eng runner.Engine) runner.T
 		Mode:   "0700",
 		UID:    ident.UID,
 		GID:    ident.GID,
-		// Podman copies image content up into a fresh tmpfs; a byre-owned
-		// delivery mount never wants that.
-		NoCopyUp: eng == runner.Podman,
+		// Selects the podman rendering (--mount + U=true; docker's --tmpfs
+		// uid= form is rejected there — see TmpfsMount).
+		Podman: eng == runner.Podman,
 	}
 }
 

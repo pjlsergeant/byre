@@ -1976,6 +1976,22 @@ func nameNotes(raw string, valid func(string) bool) []string {
 // itemNotes are the dim guidance lines under the editor — the form explains
 // itself instead of failing at commit (Pete's review of the first form).
 func (m model) itemNotes() []string {
+	if m.listField == fCredentials {
+		// The credential grammar is tighter than the genus (letter start, no
+		// underscores — the name is a filename in the vault and on the
+		// tmpfs), so the generic nameNotes text would mislead here.
+		notes := []string{"name: lowercase a-z 0-9 - starting with a letter (auto-lowercased on save) — the TARGET carries underscores/caps, the name doesn't"}
+		lower := strings.ToLower(strings.TrimSpace(m.inputs[0].Value()))
+		if lower != "" && !credentials.ValidName(lower) {
+			notes = append(notes, "⚠ this name won't save — lowercase a-z 0-9 - only, starting with a letter, max 63")
+		}
+		if m.itemMode == 1 {
+			notes = append(notes, "file: the value lands as a file on the session tmpfs; the target env var carries its PATH")
+		} else {
+			notes = append(notes, "env: the target env var carries the value itself (max 64 KiB, no NUL bytes)")
+		}
+		return notes
+	}
 	if m.listField == fClaudeSkills {
 		notes := nameNotes(m.inputs[0].Value(), config.ValidClaudeSkillName)
 		if n := claudeSkillDirNote(m.inputs[0].Value(), m.inputs[1].Value()); n != "" {

@@ -32,27 +32,46 @@ type NamedVolume struct {
 	Target string
 }
 
-// TmpfsMount is a per-session in-memory filesystem (`docker run --tmpfs`):
-// nothing under it touches image layers, the writable layer, or a volume,
-// and it empties when the container stops — the credential delivery
-// surface. Rendered via the --tmpfs flag (not --mount type=tmpfs) because
-// only the flag form passes uid=/gid= through to the kernel mount.
+// TmpfsMount is a per-session in-memory filesystem: nothing under it
+// touches image layers, the writable layer, or a volume, and it empties
+// when the container stops — the credential delivery surface. The
+// RENDERING is engine-shaped, the one place in this file that is (probed
+// against real engines, 2026-08-07): docker's --tmpfs flag passes uid=/gid=
+// straight to the kernel mount, while podman REJECTS those options ("unknown
+// mount option") and instead owns the root via --mount type=tmpfs with
+// U=true (chown to the container user); podman's default tmpcopyup is
+// always suppressed (a byre-owned delivery mount never wants image content
+// copied up — and copyup does NOT confer the image dir's ownership, also
+// probed). Docker has no copyup behavior or option.
 type TmpfsMount struct {
 	Target   string
 	Size     int64  // bytes; 0 omits the option (engine default)
 	Mode     string // e.g. "0700"; "" omits
 	UID, GID int    // ownership of the mount root (ADR 0032: the container identity)
-	// NoCopyUp adds notmpcopyup — Podman copies the image directory's
-	// contents up into a fresh tmpfs by default, which a byre-owned
-	// delivery mount never wants. Docker has no such behavior (or option);
-	// the CALLER sets this per engine, keeping argv assembly engine-blind.
-	NoCopyUp bool
+	// Podman selects the podman rendering; the CALLER sets it from the
+	// engine it resolved (this file stays otherwise engine-blind).
+	Podman bool
 }
 
-// spec renders the --tmpfs value: target:opt,opt,... — rw so the receiver
-// can write, noexec/nosuid/nodev as ordinary mount hygiene (ADR 0057: not
-// sold as a defense; the box's own user is handed the contents).
-func (t TmpfsMount) spec() string {
+// args renders the flag pair — rw so the receiver can write,
+// noexec/nosuid/nodev as ordinary mount hygiene (ADR 0057: not sold as a
+// defense; the box's own user is handed the contents).
+func (t TmpfsMount) args() []string {
+	if t.Podman {
+		opts := []string{"type=tmpfs", "destination=" + t.Target}
+		if t.Mode != "" {
+			opts = append(opts, "tmpfs-mode="+t.Mode)
+		}
+		if t.Size > 0 {
+			opts = append(opts, fmt.Sprintf("tmpfs-size=%d", t.Size))
+		}
+		// U=true chowns the mount root to the container user — which IS the
+		// identity byre bakes (USER dev = ident.UID; under keep-id the
+		// mapping lands it back on the same ids), so UID/GID need no
+		// restating here.
+		opts = append(opts, "noexec", "nosuid", "nodev", "notmpcopyup", "U=true")
+		return []string{"--mount", strings.Join(opts, ",")}
+	}
 	opts := []string{"rw", "noexec", "nosuid", "nodev"}
 	if t.Mode != "" {
 		opts = append(opts, "mode="+t.Mode)
@@ -61,10 +80,7 @@ func (t TmpfsMount) spec() string {
 	if t.Size > 0 {
 		opts = append(opts, fmt.Sprintf("size=%d", t.Size))
 	}
-	if t.NoCopyUp {
-		opts = append(opts, "notmpcopyup")
-	}
-	return t.Target + ":" + strings.Join(opts, ",")
+	return []string{"--tmpfs", t.Target + ":" + strings.Join(opts, ",")}
 }
 
 // RunParams is everything needed to assemble a `docker run` invocation.
@@ -139,7 +155,7 @@ func RunArgs(p RunParams) []string {
 		args = append(args, "--mount", fmt.Sprintf("type=volume,source=%s,target=%s", v.Name, v.Target))
 	}
 	for _, t := range p.Tmpfs {
-		args = append(args, "--tmpfs", t.spec())
+		args = append(args, t.args()...)
 	}
 	for _, pub := range p.Ports {
 		args = append(args, "-p", portSpec(pub))

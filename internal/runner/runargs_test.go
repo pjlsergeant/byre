@@ -298,15 +298,19 @@ func TestRunArgsTmpfs(t *testing.T) {
 	}
 }
 
-func TestRunArgsTmpfsNoCopyUp(t *testing.T) {
-	// The caller sets NoCopyUp for podman engines; argv assembly stays
-	// engine-blind and just renders it.
+func TestRunArgsTmpfsPodman(t *testing.T) {
+	// Podman rejects uid=/gid= in --tmpfs (probed against podman 5.4,
+	// 2026-08-07): the podman rendering is --mount type=tmpfs with U=true
+	// chowning to the container user, tmpcopyup suppressed.
 	args := RunArgs(RunParams{
 		Image: "img",
-		Tmpfs: []TmpfsMount{{Target: "/run/byre", Mode: "0700", UID: 1000, GID: 1000, NoCopyUp: true}},
+		Tmpfs: []TmpfsMount{{Target: "/run/byre", Size: 8 << 20, Mode: "0700", UID: 1000, GID: 1000, Podman: true}},
 	})
-	want := "--tmpfs /run/byre:rw,noexec,nosuid,nodev,mode=0700,uid=1000,gid=1000,notmpcopyup"
+	want := "--mount type=tmpfs,destination=/run/byre,tmpfs-mode=0700,tmpfs-size=8388608,noexec,nosuid,nodev,notmpcopyup,U=true"
 	if got := strings.Join(args, " "); !strings.Contains(got, want) {
 		t.Fatalf("argv %q missing %q", got, want)
+	}
+	if strings.Contains(strings.Join(args, " "), "uid=") {
+		t.Fatal("the podman rendering must not carry uid=/gid= — podman refuses them")
 	}
 }
