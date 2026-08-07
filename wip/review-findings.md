@@ -41,17 +41,16 @@ Delete-on-absorb: cut a line when it ships or is ruled out for good.
 - **No Claude leg in the agent canary** -- the flagship agent, installed
   unpinned via `curl | bash`, is the one whose upstream drift nothing catches.
   The matrix runs Opencode, Codex, Gemini and Grok. *(Opus.)*
-- **`--self-edit` in a worktree under-warns**: it mounts the *project* store
-  shared by the main tree and every sibling (ADR 0009); the escalation banner
-  never says so, though `reportSelfEditChanges` already reasons about the
-  sharing. P5 says consent is stated at the scope of its effect, and this is the
-  loudest consent moment. Related: `noteSharedVolumes` warns about volumes only,
-  but `forget` from a worktree also deletes the shared store and image. *(Fable.)*
-- **No editor surface for `shared_auth`, `env_from_host`, `npm_global`, `files`**
-  -- P6 says "for every config feature, always", and `env_from_host` is
-  grant-class. `listitem.go:336`'s own remedy text instructs a hand-edit ("set
-  KEY = \"\" under env_from_host **in this file**"), and the cookbook recipe for
-  "use my API key instead of an agent login" is raw TOML. *(Opus + Fable.)*
+- **`forget`/`reset` from a worktree under-warn**: `noteSharedVolumes` warns
+  about volumes only, but `forget` from a worktree also deletes the shared
+  store and image. *(Fable; the sibling half of this finding — the
+  `--self-edit` banner naming the worktree-sharing scope — SHIPPED
+  2026-08-07, develop.go's "this store is the REPO's" line.)*
+(The "no editor surface for `shared_auth` / `env_from_host` / `npm_global` /
+`files`" absence is GONE: env_from_host rides the Env screen's Source
+picker, `files` is the Build files screen, `shared_auth` is a read-only
+row naming the picker as writer, and `npm_global` was removed from the
+product entirely — the refusal names the dockerfile_pre remedy.)
 
 ## Dependencies -- DONE 2026-07-28
 
@@ -78,17 +77,18 @@ re-litigate; the ones that became doctrine cite where.
    Project-target writes ride the lock and refuse on drift, with a wholesale
    overwrite prompt.
 5. **Are `env_from_host` / `npm_global` / `files` / `shared_auth`
-   grandfathered under P6?** STILL OPEN -- the only question with no answer.
-   P6 says the editor reaches every config feature "always"; these four have
-   no editor surface, and `env_from_host` is grant-class. Either they get
-   screens or P6 gets a stated exception.
+   grandfathered under P6?** ANSWERED by shipping: all three surviving keys
+   have editor surfaces (the Env screen's Source picker, Build files, the
+   read-only Shared creds row) and `npm_global` was removed outright. No
+   P6 exception was ever stated — the screens landed instead.
 6. **Was release signing considered and declined?** Declined on the record now
    (ADR 0051), with attestation deferred and its trigger written down.
 7. **Does ADR 0049 intend a mechanical enforcement arm?** It has none, and
    that is now VISIBLE rather than assumed: the doctrine index marks it
    `[no arm]`, and every review checks the index.
-8. **Should the `--self-edit` banner name the worktree-sharing scope?** Not
-   yet ruled -- see the absences list above, where it sits with P5's
-   consent-at-the-scope-of-effect argument attached.
+8. **Should the `--self-edit` banner name the worktree-sharing scope?**
+   Ruled yes and SHIPPED: the banner says the store is the repo's, shared
+   with every worktree. The `forget` note's sibling gap remains in the
+   absences list.
 9. **Is `bubbletea` at v1.1.0 deliberate?** It was drift. Upgraded, and
    Dependabot now watches the maintenance half.
