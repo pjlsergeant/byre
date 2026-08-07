@@ -345,8 +345,8 @@ func wrapIdentity(id *age.X25519Identity, passphrase string) ([]byte, error) {
 }
 
 // Unlock unwraps the identity under the passphrase — the expensive scrypt
-// step, deliberately run BEFORE any lock is taken (pre-lock prompt; brief
-// launch step 1). A wrong passphrase returns ErrBadPassphrase (the prompt
+// step, deliberately run BEFORE any lock is taken (ADR 0057's lock scope:
+// siblings never stall on authentication). A wrong passphrase returns ErrBadPassphrase (the prompt
 // re-asks, bounded); a missing vault ErrNoVault; anything else is a
 // corrupt/oversize identity (unlock-failed, no re-ask).
 func (v *Vault) Unlock(passphrase string) (*Unlocked, error) {
@@ -456,8 +456,8 @@ func (u *Unlocked) Decrypt(name string) ([]byte, Outcome, error) {
 }
 
 // RepairIndex refreshes the index's display cache and recipient from what
-// an unlock actually established (brief: "repaired from decrypt results at
-// unlock"). kinds carries the declared kind per delivered name; unknown
+// an unlock actually established (ADR 0057: the cache is display-only,
+// repaired here, never load-bearing). kinds carries the declared kind per delivered name; unknown
 // names keep their cached kind. Best-effort — the index is display cache,
 // and a failure must not cost the launch.
 func (u *Unlocked) RepairIndex(kinds map[string]string) {
@@ -621,8 +621,8 @@ func ValidateValue(value []byte, kind string) error {
 }
 
 // StripTrailingNewline removes ONE trailing newline (and a preceding CR) —
-// the entry-path courtesy the brief pins for env values typed or piped in
-// (echo without -n, an editor's final newline).
+// the entry-path courtesy for env values typed or piped in (echo without
+// -n, an editor's final newline); declared file-kind values skip it.
 func StripTrailingNewline(b []byte) []byte {
 	b = bytes.TrimSuffix(b, []byte("\n"))
 	return bytes.TrimSuffix(b, []byte("\r"))

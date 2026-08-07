@@ -80,14 +80,15 @@ type statusData struct {
 	ClaudeSkillsClosed   []string                `json:"claude_skills_closed,omitempty"`
 	ClaudeSkillsDelivery string                  `json:"claude_skills_delivery,omitempty"`
 
-	Instructions []statusDataContext `json:"instructions"`
+	Instructions         []statusDataContext `json:"instructions"`
+	InstructionsDelivery string              `json:"instructions_delivery,omitempty"`
+
 	// Credentials is the declared set with value-state; credential_unlock is
 	// the running box's LAUNCH-TIME unlock outcome from its record. Neither
 	// is a live-state claim — byre does not probe the box. Values never
 	// appear anywhere in this document.
-	Credentials          []statusDataCredential `json:"credentials,omitempty"`
-	CredentialUnlock     string                 `json:"credential_unlock,omitempty"`
-	InstructionsDelivery string                 `json:"instructions_delivery,omitempty"`
+	Credentials      []statusDataCredential `json:"credentials,omitempty"`
+	CredentialUnlock string                 `json:"credential_unlock,omitempty"`
 
 	HostEnv []statusDataHostEnv `json:"host_env,omitempty"`
 	EnvKeys []string            `json:"env_keys,omitempty"`

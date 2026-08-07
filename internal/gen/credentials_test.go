@@ -2,15 +2,15 @@ package gen
 
 import (
 	"bytes"
-
 	"encoding/base64"
 	"fmt"
-	"github.com/pjlsergeant/byre/internal/credentials"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/credentials"
 )
 
 // runReceiver drives the real embedded receiver under bash with a stream on

@@ -18,8 +18,9 @@ const (
 	// OutcomeSkippedNonTTY: no terminal to prompt on; launch proceeds
 	// without credentials, machine-readably noticed.
 	OutcomeSkippedNonTTY Outcome = "skipped-nontty"
-	// OutcomeUnlockFailed: passphrase attempts exhausted, or a corrupt,
-	// oversize, or absent identity.
+	// OutcomeUnlockFailed: passphrase attempts exhausted, a passphrase
+	// read that failed on a live terminal, or a corrupt, oversize, or
+	// absent identity.
 	OutcomeUnlockFailed Outcome = "unlock-failed"
 	// OutcomeMissingValue: declared, but the vault holds no entry.
 	OutcomeMissingValue Outcome = "missing-value"
