@@ -84,7 +84,7 @@ const (
 	fSeedPrefs       // tri-state: seed_prefs (on / off / inherit), ADR 0045
 	fSources         // read-only view of [sources] acquisition hints
 	fSharedAuth      // read-only view of [defaults].shared_auth (the picker writes it)
-	fCredentials     // [[credentials]] declarations (read-only pending the masked-entry screen)
+	fCredentials     // [[credentials]] declarations + masked staged value entry (project editor)
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
 	// the ad-hoc clear. Separate from fVolumes because they answer different
 	// questions with different blast radii -- one edits a declaration in this

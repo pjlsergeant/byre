@@ -416,14 +416,15 @@ func (m model) credentialRows() []listRow {
 }
 
 // credentialsNow is the effective declared credential set — the cascade
-// merge of the inherited layers and this file's own declarations (config-
-// only vocabulary, no skill arm). Feeds the exposure tally's credentials
-// segment; the same merge rules as everywhere (Merge is the one owner).
+// merge of the inherited layers and this session's WORKING declarations
+// (m.credentials, markers included — the exposure tally must move with the
+// edits like every other segment, not with the open-time file). Config-only
+// vocabulary, no skill arm; Merge is the one owner of the rules.
 func (m model) credentialsNow() []config.CredentialDecl {
 	lower := m.lowerNow()
 	merged := config.Merge(
 		config.Config{Credentials: lower.Credentials, CredentialsClosed: lower.CredentialsClosed},
-		config.Config{Credentials: m.base.Credentials, CredentialsClosed: m.base.CredentialsClosed},
+		config.Config{Credentials: m.credentials},
 	)
 	return merged.Credentials
 }

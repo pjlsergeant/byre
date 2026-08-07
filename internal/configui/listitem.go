@@ -1095,8 +1095,16 @@ func (m model) commitItem() model {
 		}
 		// The masked value (project editor only). NOT trimmed: leading and
 		// trailing bytes are value bytes; the masked input has no newline to
-		// strip. Empty = declaration-only edit (a stored value stays).
+		// strip. Empty = declaration-only edit (a stored value stays). Every
+		// mutation lands on a CLONE of the staged map — the failure tail
+		// below returns the pre-commit model, and a shared map would keep a
+		// rejected commit's value staged behind orig's back (putAt's rule,
+		// for the map).
 		if len(m.inputs) > 2 {
+			staged := make(map[string][]byte, len(m.stagedCredValues)+1)
+			for k, v := range m.stagedCredValues {
+				staged[k] = v
+			}
 			if v := m.inputs[2].Value(); v != "" {
 				if err := credentials.ValidateValue([]byte(v), cd.Kind); err != nil {
 					m.itemErr = err.Error()
@@ -1105,17 +1113,27 @@ func (m model) commitItem() model {
 				// A rename with a staged value moves the value with it — the
 				// staging followed THIS declaration, not the old name.
 				if m.editIndex >= 0 {
-					delete(m.stagedCredValues, m.credentials[m.editIndex].Name)
+					delete(staged, m.credentials[m.editIndex].Name)
 				}
-				m.stagedCredValues[cd.Name] = []byte(v)
+				staged[cd.Name] = []byte(v)
+				m.stagedCredValues = staged
 				m.credStagedGen++
 			} else if m.editIndex >= 0 && m.credentials[m.editIndex].Name != cd.Name {
-				// Rename with no new value typed: an already-staged value
-				// follows the rename too.
-				if old, ok := m.stagedCredValues[m.credentials[m.editIndex].Name]; ok {
-					delete(m.stagedCredValues, m.credentials[m.editIndex].Name)
-					m.stagedCredValues[cd.Name] = old
+				oldName := m.credentials[m.editIndex].Name
+				if old, ok := staged[oldName]; ok {
+					// Rename with no new value typed: an already-staged value
+					// follows the rename too.
+					delete(staged, oldName)
+					staged[cd.Name] = old
+					m.stagedCredValues = staged
 					m.credStagedGen++
+				} else if m.credStoredNames[oldName] {
+					// A STORED value cannot follow a rename: cold staged
+					// writes can't re-stamp ciphertext (the payload carries
+					// the name — the accident guard), and byre holds no
+					// passphrase here. Say so instead of letting the (unset)
+					// cell be the only clue.
+					m.status = "renamed — the stored value stays under " + oldName + "; enter the value again for " + cd.Name
 				}
 			}
 		}

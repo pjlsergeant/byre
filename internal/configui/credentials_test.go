@@ -272,6 +272,78 @@ func TestCredentialGlobalEditorDeclaresOnly(t *testing.T) {
 	}
 }
 
+func TestCredentialRejectedCommitLeavesNoStagedValue(t *testing.T) {
+	// A commit the layer check rejects must revert WHOLE, staged value
+	// included: a shared map would keep the secret staged behind orig's
+	// back and a later ^s would encrypt an orphan with no declaration
+	// (grok, screen review round 1).
+	m, _ := credTestModel(t, config.Config{})
+	m = commitCredential(m, 0, "a", "SHARED_TARGET", "")
+	if m.itemErr != "" {
+		t.Fatal(m.itemErr)
+	}
+	// Second credential colliding on the target: ValidateLayer rejects at
+	// the commit tail, after the arm staged the value.
+	m = commitCredential(m, 0, "b", "SHARED_TARGET", "orphan-secret")
+	if !strings.Contains(m.itemErr, "collides") {
+		t.Fatalf("itemErr = %q, want the target-collision rule", m.itemErr)
+	}
+	if len(m.credentials) != 1 {
+		t.Fatalf("declarations must revert: %+v", m.credentials)
+	}
+	if len(m.stagedCredValues) != 0 {
+		t.Fatal("the rejected commit's value must not stay staged")
+	}
+	if m.credStagedGen != 0 {
+		t.Fatal("the staged generation must revert with the model copy")
+	}
+}
+
+func TestCredentialExposureTallyTracksWorkingSet(t *testing.T) {
+	// The exposure headline must move with the session's edits, not the
+	// open-time file (grok, screen review round 1).
+	m, _ := credTestModel(t, config.Config{})
+	if got := len(m.credentialsNow()); got != 0 {
+		t.Fatalf("fresh model credentials tally = %d", got)
+	}
+	m = commitCredential(m, 0, "stripe", "STRIPE_KEY", "")
+	if got := len(m.credentialsNow()); got != 1 {
+		t.Fatalf("tally after add = %d, want 1 (the working set, not m.base)", got)
+	}
+	m.listField = fCredentials
+	m.deleteItem(fCredentials, 0)
+	if got := len(m.credentialsNow()); got != 0 {
+		t.Fatalf("tally after delete = %d, want 0", got)
+	}
+}
+
+func TestCredentialRenameOfStoredValueSaysSo(t *testing.T) {
+	// A stored (vault) value cannot follow a rename — cold writes can't
+	// re-stamp ciphertext — so the commit says so instead of letting the
+	// (unset) cell be the only clue.
+	m, store := credTestModel(t, config.Config{})
+	if err := credentials.Open(store, "test-project-id").Create("pw"); err != nil {
+		t.Fatal(err)
+	}
+	v := credentials.Open(store, "test-project-id")
+	if err := v.Set("stripe", []byte("sk"), "env"); err != nil {
+		t.Fatal(err)
+	}
+	m.credVault = v
+	m.credStoredNames = map[string]bool{"stripe": true}
+	m = commitCredential(m, 0, "stripe", "STRIPE_KEY", "")
+	m.listField = fCredentials
+	m = m.startItem(0)
+	m.inputs[0].SetValue("payments")
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatal(m.itemErr)
+	}
+	if !strings.Contains(m.status, "stays under stripe") {
+		t.Fatalf("rename-of-stored notice missing: %q", m.status)
+	}
+}
+
 func TestCredentialRenameCarriesStagedValue(t *testing.T) {
 	m, _ := credTestModel(t, config.Config{})
 	m = commitCredential(m, 0, "stripe", "STRIPE_KEY", "v1")
