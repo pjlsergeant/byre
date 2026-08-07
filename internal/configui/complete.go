@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -232,7 +233,10 @@ func plural(n int) string {
 
 // flushStagedCredentials writes the staged values into the vault (creating
 // it first when the modal collected a passphrase), under the caller's guard
-// lock like every other write. Values leave the model only on success.
+// lock like every other write. Each value unstages AS its write lands
+// (sorted order, so a partial failure is deterministic): the error then
+// names exactly the credential that failed and the remaining count is the
+// truth.
 func (m *model) flushStagedCredentials() (int, error) {
 	if len(m.stagedCredValues) == 0 || m.credVault == nil {
 		return 0, nil
@@ -255,8 +259,13 @@ func (m *model) flushStagedCredentials() (int, error) {
 				return err
 			}
 		}
-		for name, value := range m.stagedCredValues {
-			if err := m.credVault.Set(name, value, kinds[name]); err != nil {
+		names := make([]string, 0, len(m.stagedCredValues))
+		for name := range m.stagedCredValues {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if err := m.credVault.Set(name, m.stagedCredValues[name], kinds[name]); err != nil {
 				return fmt.Errorf("credential %s: %w", name, err)
 			}
 			delete(m.stagedCredValues, name)

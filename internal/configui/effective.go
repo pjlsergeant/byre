@@ -354,9 +354,8 @@ func (m model) contextRows() []listRow {
 func credentialDeclName(cd config.CredentialDecl) string { return cd.Name }
 
 // credentialDeclLine renders one declaration: name, kind, target. Values
-// render NOWHERE in the editor by design (the brief's masked-entry rule);
-// this read-only screen shows the declared set until the staged-entry
-// Credentials screen ships.
+// render NOWHERE in the editor by design — the value-state cell is the
+// only thing the screen says about them.
 func credentialDeclLine(cd config.CredentialDecl) string {
 	if config.IsRemoval(cd.Name) {
 		return cd.Name

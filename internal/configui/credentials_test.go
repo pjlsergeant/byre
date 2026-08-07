@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -226,6 +227,46 @@ func TestCredentialFlushFailureKeepsDirty(t *testing.T) {
 	}
 	if !m.dirty() {
 		t.Fatal("dirty must stay true after a failed flush — quit would silently discard the staged value")
+	}
+}
+
+func TestCredentialPartialFlushUnstagesWhatLanded(t *testing.T) {
+	// A mid-loop Set failure must leave the truth on both sides: values
+	// written before it are stored and unstaged; the failing one stays
+	// staged, is named in the error, and keeps the model dirty. The flush
+	// iterates sorted, so "a-ok before z-bad" is a contract, not luck. The
+	// failure is induced through Set's own kind validation: z-bad is
+	// declared env but its staged bytes exceed the env cap (stageable here
+	// only by writing the map directly — the item editor validates this at
+	// entry, which is exactly why the flush must too).
+	m, store := credTestModel(t, config.Config{})
+	if err := credentials.Open(store, "test-project-id").Create("pw"); err != nil {
+		t.Fatal(err)
+	}
+	m.credVault = credentials.Open(store, "test-project-id")
+	m = commitCredential(m, 0, "a-ok", "A_OK", "fine")
+	m = commitCredential(m, 0, "z-bad", "Z_BAD", "placeholder")
+	m.stagedCredValues["z-bad"] = bytes.Repeat([]byte("x"), credentials.MaxEnvValue+1)
+	m = m.save()
+	if !strings.Contains(m.errMsg, "credential z-bad") || !strings.Contains(m.errMsg, "1 staged credential value still unsaved") {
+		t.Fatalf("errMsg = %q — must name the failing credential and the true remaining count", m.errMsg)
+	}
+	if len(m.stagedCredValues) != 1 || m.stagedCredValues["z-bad"] == nil {
+		t.Fatalf("staged after partial flush = %v — only the failure may remain", keysOf(m.stagedCredValues))
+	}
+	if !m.credStoredNames["a-ok"] {
+		t.Fatal("the value that landed must show stored")
+	}
+	if !m.dirty() {
+		t.Fatal("a partial flush leaves unsaved work; dirty must stay true")
+	}
+	// The landed value is really in the vault.
+	u, err := credentials.Open(store, "test-project-id").Unlock("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val, oc, _ := u.Decrypt("a-ok"); oc != "" || string(val) != "fine" {
+		t.Fatalf("landed value: %s %q", oc, val)
 	}
 }
 

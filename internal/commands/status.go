@@ -881,11 +881,7 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 			if i > 0 {
 				label = ""
 			}
-			state := "unset"
-			if s.CredentialStates[cd.Name] {
-				state = "set"
-			}
-			row(label, fmt.Sprintf("%s  %s → %s  (%s)", cd.Name, cd.Kind, cd.Target, state))
+			row(label, fmt.Sprintf("%s  %s → %s  (%s)", cd.Name, cd.Kind, cd.Target, credentials.ValueState(s.CredentialStates[cd.Name])))
 		}
 		if !s.CredentialVault {
 			row("", "no vault — create one: byre credentials init")
