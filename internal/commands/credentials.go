@@ -31,8 +31,9 @@ const (
 	// credTmpfsTarget is the session tmpfs the receiver writes and the
 	// launcher reads — an ADR 0052 managed path.
 	credTmpfsTarget = "/run/byre"
-	// credPassphraseAttempts bounds the wrong-passphrase re-prompt (v13
-	// pin: three attempts, Enter skips at any point).
+	// credPassphraseAttempts bounds the wrong-passphrase re-prompt (ADR
+	// 0057): enough for typos, bounded against an endless prompt loop;
+	// Enter skips at any point.
 	credPassphraseAttempts = 3
 	// credInjectRunningWait bounds the poll for the container to be RUNNING.
 	// It does not race the launcher: the launcher's own wait clock only
@@ -81,7 +82,7 @@ type unlockResult struct {
 	outcome credentials.Outcome
 }
 
-// promptCredentialUnlock is launch step 1 (pre-lock, TTY-only): enumerate
+// promptCredentialUnlock is the unlock prompt (pre-lock, TTY-only): enumerate
 // the declared set with per-name value-state, then ask for the passphrase.
 // The declarations are the standing cascade-visible consent to the set; the
 // passphrase entry is both authentication and the per-launch consent act.
@@ -107,8 +108,10 @@ func promptCredentialUnlock(s Streams, paths project.Paths, decls []config.Crede
 	for attempt := 1; attempt <= credPassphraseAttempts; attempt++ {
 		pw, err := readPassphrase(s.Err, "byre: passphrase to unlock credentials for this launch (Enter to skip): ")
 		if err != nil {
+			// A read error on a real terminal is a failed unlock, not a
+			// non-TTY skip — the recorded word must state what happened.
 			fmt.Fprintf(s.Err, "byre: credentials: could not read a passphrase (%v) — launching without credentials.\n", err)
-			return &unlockResult{outcome: credentials.OutcomeSkippedNonTTY}
+			return &unlockResult{outcome: credentials.OutcomeUnlockFailed}
 		}
 		if pw == "" {
 			fmt.Fprintln(s.Err, "byre: credentials: skipped — launching without them.")
@@ -161,7 +164,7 @@ const (
 	launchCredentialNotPrompted = "not-prompted"
 )
 
-// decryptCredentialsLocked is launch step 2, run under the setup lock with
+// decryptCredentialsLocked runs under the setup lock with
 // the AUTHORITATIVE declarations: with the identity already unwrapped, only
 // the cheap per-entry decrypts hold the lock, each ciphertext read ONCE —
 // the delivered bytes are those present at decrypt time (no snapshot, no
@@ -280,7 +283,7 @@ func credentialUnlockLine(unlock string) string {
 	}
 }
 
-// runCredentialInject is launch step 3's host side, run concurrently with
+// runCredentialInject is delivery's host side, run concurrently with
 // the attached session (the netns-hook pattern): wait for the box to be
 // RUNNING (exec needs a live container), then pipe the framed stream to the
 // baked receiver as the dev identity, bounded. Every failure is fail-open —
@@ -294,10 +297,8 @@ func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID str
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	deadline := epoch.Add(credInjectRunningWait)
-	running := false
-	for !running {
+	for {
 		if ids, err := r.RunningContainersByLabel(label); err == nil && len(ids) > 0 {
-			running = true
 			break
 		}
 		if time.Now().After(deadline) {

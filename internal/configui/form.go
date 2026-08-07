@@ -232,7 +232,7 @@ type model struct {
 	// credentials is the [[credentials]] declaration list (incl. `!name`
 	// closure markers). stagedCredValues holds values typed into the masked
 	// item field, name -> bytes, STAGED until ^s (quit discards them —
-	// exactly the brief's staging rule); they exist only in this process's
+	// ADR 0057's staging rule); they exist only in this process's
 	// memory and render nowhere. credStoredNames is the vault's value-state
 	// at open (refreshed after each flush); credVault is non-nil only for
 	// the project editor (the vault is project-scoped — the global and layer

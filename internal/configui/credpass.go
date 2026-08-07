@@ -2,7 +2,7 @@ package configui
 
 // The inline vault-creation modal (modeCredPass): a vault-less project's
 // first ^s with staged credential values asks for the new passphrase right
-// there — the brief's "inline on the first editor ^s" rule. Everything is
+// there — ADR 0057's inline-creation rule. Everything is
 // masked; esc cancels back to the form with the values still staged (the
 // config half of the save has not happened either — the modal runs before
 // any write, so cancel leaves the disk untouched).

@@ -211,7 +211,7 @@ func TestDevelopWrongThenRightPassphrase(t *testing.T) {
 	}
 }
 
-func TestDevelopUnsetVaultPromptEnumerates(t *testing.T) {
+func TestDevelopPromptEnumeratesValueStates(t *testing.T) {
 	p, cfg := credFixture(t)
 	passphraseSeam(t, "")
 	var errBuf bytes.Buffer

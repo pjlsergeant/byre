@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -270,10 +272,10 @@ func CredentialsList(s Streams, projectDir string) error {
 		fmt.Fprintf(s.Out, "%s\t%s → %s\t%s\n", d.Name, d.Kind, d.Target, credentials.ValueState(stored[d.Name]))
 		delete(stored, d.Name)
 	}
-	for _, n := range v.EntryNames() {
-		if stored[n] {
-			fmt.Fprintf(s.Out, "%s\t(stored, not declared — declare it to deliver it)\n", n)
-		}
+	// The leftover map IS the stored-not-declared tail: one directory
+	// listing feeds both loops.
+	for _, n := range slices.Sorted(maps.Keys(stored)) {
+		fmt.Fprintf(s.Out, "%s\t(stored, not declared — declare it to deliver it)\n", n)
 	}
 	if !v.Exists() && len(cfg.Credentials) > 0 {
 		fmt.Fprintln(s.Out, "no vault exists yet — create one: byre credentials init")

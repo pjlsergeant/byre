@@ -12,8 +12,9 @@ package config
 // `!name` closure is fully spent removing the inherited declaration during
 // the merge. Rides the shared named-declaration machinery (nameddecl.go).
 //
-// A declaration is a GRANT surface in the tally sense (a named host-value
-// channel beside env_from_host, ADR 0026 amendment pending), but confers
+// A declaration is a GRANT surface in the tally sense (the second
+// deliberate host-value channel beside env_from_host — ADR 0026, as
+// amended by 0057), but confers
 // nothing by itself: without a vault value and an unlocked launch the box
 // simply runs without it.
 
@@ -37,11 +38,6 @@ type CredentialDecl struct {
 	// no free filesystem targets).
 	Target string `toml:"target"`
 }
-
-// ValidCredentialName reports whether s satisfies the credential name
-// grammar — for callers (the credentials verbs) validating a bare name.
-// The rule's owner is the vault package (names are its entry filenames).
-func ValidCredentialName(s string) bool { return credentials.ValidName(s) }
 
 // ValidateCredentialDecl checks one declaration's own shape.
 func ValidateCredentialDecl(cd CredentialDecl) error {

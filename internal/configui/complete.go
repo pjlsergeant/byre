@@ -166,8 +166,8 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
-	// Staged credential values into a vault-less project: the brief's inline
-	// creation — ask for the new passphrase HERE, at the first ^s, then run
+	// Staged credential values into a vault-less project: inline vault
+	// creation (ADR 0057) — ask for the new passphrase HERE, at the first ^s, then run
 	// this same save with the vault created on the way (finishCredPass).
 	// Checked before any write so a cancelled modal leaves disk untouched.
 	if len(m.stagedCredValues) > 0 && m.credVault != nil && !m.credVault.Exists() && m.credPassphrase == "" {

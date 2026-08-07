@@ -49,10 +49,9 @@ type TmpfsMount struct {
 	NoCopyUp bool
 }
 
-// spec renders the --tmpfs value: target:opt,opt,... The fixed options are
-// the brief's pin — rw so the receiver can write, noexec/nosuid/nodev as
-// ordinary mount hygiene (not sold as a defense: the box's own user is
-// handed the contents).
+// spec renders the --tmpfs value: target:opt,opt,... — rw so the receiver
+// can write, noexec/nosuid/nodev as ordinary mount hygiene (ADR 0057: not
+// sold as a defense; the box's own user is handed the contents).
 func (t TmpfsMount) spec() string {
 	opts := []string{"rw", "noexec", "nosuid", "nodev"}
 	if t.Mode != "" {

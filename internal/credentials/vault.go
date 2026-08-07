@@ -56,10 +56,10 @@ const (
 
 	// scryptMaxWorkFactor bounds the unwrap so a corrupt or
 	// absurdly-parameterised header cannot stall the launch — a liveness
-	// bound, per the brief.
+	// bound (ADR 0057), never a defense.
 	scryptMaxWorkFactor = 20
 
-	// The pre-launch read caps (every pre-launch read is bounded — brief).
+	// The pre-launch read caps (every pre-launch read is bounded — ADR 0057).
 	// Each is a generous multiple of the largest legitimate file: an
 	// identity.age is ~400 bytes, an index.toml a few KiB even with many
 	// entries, an entry ciphertext the value cap plus age overhead.
@@ -67,8 +67,8 @@ const (
 	indexReadCap    = 256 << 10
 	entryReadCap    = MaxFileValue + (64 << 10)
 
-	// MaxEnvValue caps an env-kind value (headroom under MAX_ARG_STRLEN;
-	// brief pins 64 KiB). MaxFileValue caps a file-kind value, generously.
+	// MaxEnvValue caps an env-kind value (headroom under MAX_ARG_STRLEN).
+	// MaxFileValue caps a file-kind value, generously.
 	MaxEnvValue  = 64 << 10
 	MaxFileValue = 4 << 20
 
@@ -77,12 +77,17 @@ const (
 	payloadHeader = "byre-credential 1"
 )
 
-// nameRe is the credential name grammar (ADR 0057). Tighter than the
-// named-declaration genus grammar (must start with a letter): the name is a
-// filename under entries/ and a tmpfs filename in the box. Callers go
-// through ValidName/ValidateName — the grammar AND its refusal prose have
-// one owner here.
-var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+// NameGrammar is the credential name grammar (ADR 0057), exported as the
+// SOURCE string so the receiver script's bash restatement can be pinned
+// byte-identical by test (the clock-pin pattern) — cross-language, so a
+// shared compiled regex cannot be the owner, but the spelling can.
+// Tighter than the named-declaration genus grammar (must start with a
+// letter): the name is a filename under entries/ and a tmpfs filename in
+// the box. Callers go through ValidName/ValidateName — the grammar AND
+// its refusal prose have one owner here.
+const NameGrammar = `^[a-z][a-z0-9-]{0,62}$`
+
+var nameRe = regexp.MustCompile(NameGrammar)
 
 // ValidName reports whether s satisfies the credential name grammar.
 func ValidName(s string) bool { return nameRe.MatchString(s) }
@@ -115,7 +120,8 @@ func ValueState(stored bool) string {
 
 // EmptyPassphraseWorthless is the shared refusal prose for an empty vault
 // passphrase (init, rekey, and the editor's inline-creation modal all
-// speak it; callers append their own consequence tail).
+// speak it; the CLI callers append a consequence tail, the modal uses it
+// bare).
 const EmptyPassphraseWorthless = "an empty passphrase would leave the vault's at-rest encryption worthless"
 
 // scryptWorkFactor is the pinned creation work factor (age's own default
@@ -412,6 +418,11 @@ func (u *Unlocked) Recipient() string { return u.id.Recipient().String() }
 // the per-name notice text. Deliberately NOT a "delivered" word: decrypt
 // success says nothing about the tmpfs, and delivery speaks for itself.
 func (u *Unlocked) Decrypt(name string) ([]byte, Outcome, error) {
+	// Path hygiene for FUTURE callers, unreachable today (every production
+	// name already survived declaration validation): a name outside the
+	// grammar must not form an entry path. An invalid name can hold no
+	// entry, so missing-value is the truthful launch-report word if this
+	// ever fires.
 	if err := ValidateName(name); err != nil {
 		return nil, OutcomeMissingValue, err
 	}

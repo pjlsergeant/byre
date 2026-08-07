@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -15,13 +16,10 @@ import (
 
 // keyMsg builds the two key events the modal tests drive.
 func keyMsg(name string) tea.KeyMsg {
-	switch name {
-	case "enter":
+	if name == "enter" {
 		return tea.KeyMsg{Type: tea.KeyEnter}
-	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)}
+	return tea.KeyMsg{Type: tea.KeyEsc}
 }
 
 func init() {
@@ -64,7 +62,7 @@ func TestCredentialItemEditorStagesMaskedValue(t *testing.T) {
 	if len(probe.inputs) != 3 {
 		t.Fatalf("project add form inputs = %d, want 3 (name, target, value)", len(probe.inputs))
 	}
-	if probe.inputs[2].EchoMode != 1 { // textinput.EchoPassword
+	if probe.inputs[2].EchoMode != textinput.EchoPassword {
 		t.Fatal("the value input must be masked")
 	}
 

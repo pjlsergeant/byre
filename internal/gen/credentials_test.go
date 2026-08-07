@@ -2,8 +2,10 @@ package gen
 
 import (
 	"bytes"
+
 	"encoding/base64"
 	"fmt"
+	"github.com/pjlsergeant/byre/internal/credentials"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -247,5 +249,14 @@ func TestReceiverThenLauncherRoundtrip(t *testing.T) {
 	code, out := runLauncherCreds(t, dir, true, "5", `printf '%s' "$GH_TOKEN"`)
 	if code != 0 || out != "tok-abc" {
 		t.Fatalf("roundtrip: exit %d out %q", code, out)
+	}
+}
+
+// TestReceiverNameGrammarMatchesVault pins the receiver's bash restatement
+// of the credential-name grammar byte-identical to the Go owner — the
+// clock-pin pattern for a rule that must exist in two languages.
+func TestReceiverNameGrammarMatchesVault(t *testing.T) {
+	if !strings.Contains(string(ReceiverScript()), credentials.NameGrammar) {
+		t.Fatalf("credential-receiver.sh no longer restates the name grammar %q byte-identically — the two spellings have drifted", credentials.NameGrammar)
 	}
 }
