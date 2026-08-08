@@ -75,6 +75,9 @@ func TestMCPValidationRejects(t *testing.T) {
 		{"control char in command", MCP{Name: "x", Command: []string{"s\x1b[31m"}}, "control characters"},
 		{"bad scheme", MCP{Name: "x", URL: "ftp://h/m"}, "scheme must be"},
 		{"no host", MCP{Name: "x", URL: "https:///mcp"}, "missing a host"},
+		// url.Parse accepts digit ports outside 1–65535; refuse them here.
+		{"port too high", MCP{Name: "x", URL: "https://h:99999/mcp"}, "port out of range"},
+		{"port zero", MCP{Name: "x", URL: "https://h:0/mcp"}, "port out of range"},
 		{"env value smuggled", MCP{Name: "x", Command: []string{"s"}, Env: []string{"TOKEN=abc"}}, "not a valid environment variable name"},
 		{"bad egress", MCP{Name: "x", Command: []string{"s"}, Egress: []string{"bad host"}}, "not a valid host"},
 	}

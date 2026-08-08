@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -148,6 +149,15 @@ func ValidateMCP(m MCP) error {
 		}
 		if u.Hostname() == "" {
 			return fmt.Errorf("mcp %s: url %q: missing a host", m.Name, m.URL)
+		}
+		// url.Parse accepts any digit string as a port; the TCP range is
+		// narrower. Refuse out-of-range ports here so a bad URL fails at
+		// validation instead of downstream when the implied egress is used.
+		if p := u.Port(); p != "" {
+			n, err := strconv.Atoi(p)
+			if err != nil || n < 1 || n > 65535 {
+				return fmt.Errorf("mcp %s: url %q: port out of range (1-65535)", m.Name, m.URL)
+			}
 		}
 		// The url host becomes an implied egress entry, so it must be
 		// expressible in the egress grammar (hostname, IPv4, or bracketed
