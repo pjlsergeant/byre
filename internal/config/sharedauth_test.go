@@ -65,6 +65,28 @@ func TestStoredSharedAuthPrefersTheSectionOverTheLegacySpelling(t *testing.T) {
 	}
 }
 
+// Equal must be true set equality on Pick keys, not a one-directional map
+// read: a missing key reading as "" made equal-length Picks with disjoint
+// keys and an empty value compare equal ({codex:""} vs {claude:"x"}), so
+// the editor and onboarding could skip-write a genuinely different pref.
+func TestSharedAuthPrefEqualDisjointKeysNotEqual(t *testing.T) {
+	a := SharedAuthPref{Pick: map[string]string{"codex": ""}}
+	b := SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}
+	if a.Equal(b) || b.Equal(a) {
+		t.Errorf("equal-length Picks with disjoint keys must not compare equal: a=%+v b=%+v", a, b)
+	}
+	same := SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}
+	if !b.Equal(same) || !same.Equal(b) {
+		t.Errorf("genuinely equal Picks must compare equal: b=%+v same=%+v", b, same)
+	}
+	// Empty values that share the same key are a real representable state.
+	emptyA := SharedAuthPref{Pick: map[string]string{"codex": ""}}
+	emptyB := SharedAuthPref{Pick: map[string]string{"codex": ""}}
+	if !emptyA.Equal(emptyB) {
+		t.Errorf("same key with empty value must still be equal: %+v vs %+v", emptyA, emptyB)
+	}
+}
+
 // A config can carry BOTH homes -- hand-edited, or mid-migration. Picking
 // one wholesale drops the other's agents, and the next write then clones the
 // winner and deletes the loser, losing a preference the user set. Union per
