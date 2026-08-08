@@ -339,6 +339,10 @@ func (m model) startOverride(r listRow) model {
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 	case fMounts:
+		// vals: host, target, mode — but mode is "disabled" when the inherited
+		// entry is off, so the underlying ro/rw is gone from vals. The
+		// declaration rides along the way itemVolume does for scope/seed:
+		// commitItem restores Mode from this base when the picker is disabled.
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 		switch r.vals[2] {
@@ -346,6 +350,13 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 1
 		case "disabled":
 			next.itemMode = 2
+		}
+		for _, mt := range m.lowerNow().Mounts {
+			if mt.Target == r.ident {
+				mt := mt
+				next.itemMount = &mt
+				break
+			}
 		}
 	case fVolumes:
 		// vals: name, target, role, sharing (volumeVals). The inherited
@@ -473,6 +484,7 @@ func (m model) startItem(idx int) model {
 	m.itemMode2Opts = nil
 	m.itemMode2Label = ""
 	m.itemVolume = nil
+	m.itemMount = nil
 	if m.listField == fEnv {
 		// One picker for the whole screen: an [env] literal and an
 		// env_from_host passthrough answer the same question ("where does
@@ -1081,9 +1093,13 @@ func (m model) commitItem() model {
 		case 2:
 			mt.Disabled = true
 			// Keep the entry's stored ro/rw while it's off, so flipping it back
-			// on restores the mode instead of resetting to ro.
-			if m.editIndex >= 0 {
-				mt.Mode = m.mounts[m.editIndex].Mode
+			// on restores the mode instead of resetting to ro. Same for an
+			// override: mountBase is the inherited declaration being shadowed.
+			if base := m.mountBase(); base != nil {
+				mt.Mode = base.Mode
+				if mt.Mode == "" {
+					mt.Mode = "ro"
+				}
 			}
 		}
 		m.mounts = putAt(m.mounts, m.editIndex, mt)
@@ -1157,6 +1173,17 @@ func (m model) volumeBase() *config.Volume {
 		return &m.volumes[m.editIndex]
 	}
 	return m.itemVolume
+}
+
+// mountBase is the declaration whose mode the open mount editor must carry
+// when the picker is disabled: the entry being EDITED, or -- for an override
+// -- the inherited declaration being shadowed. nil for a plain add, which
+// has no prior mode (the commit path defaults disabled adds to "ro").
+func (m model) mountBase() *config.Mount {
+	if m.editIndex >= 0 && m.editIndex < len(m.mounts) {
+		return &m.mounts[m.editIndex]
+	}
+	return m.itemMount
 }
 
 // putAt appends v when idx < 0 else replaces the element at idx — always into
