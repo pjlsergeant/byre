@@ -368,6 +368,36 @@ func TestListSummariesCountEffectiveState(t *testing.T) {
 	}
 }
 
+// Disabled mounts grant nothing, so the field summary (what the box actually
+// gets) must not count them — local or inherited.
+func TestListSummariesSkipDisabledMounts(t *testing.T) {
+	m := effectiveModel()
+	// Baseline from the fixture: 1 inherited + 1 skill = 2 effective.
+	baseEff, _, _, _ := rowCounts(m.fieldRows(fMounts))
+	if baseEff != 2 {
+		t.Fatalf("fixture mounts baseline: got %d, want 2", baseEff)
+	}
+
+	// A disabled local mount is shown but not effective.
+	m.mounts = []config.Mount{{Host: "/h/off", Target: "/off", Mode: "rw", Disabled: true}}
+	if eff, _, _, _ := rowCounts(m.fieldRows(fMounts)); eff != baseEff {
+		t.Errorf("disabled local mount counted as effective: got %d, want baseline %d", eff, baseEff)
+	}
+	// An enabled local mount adds one.
+	m.mounts = []config.Mount{{Host: "/h/on", Target: "/on", Mode: "rw"}}
+	if eff, _, _, _ := rowCounts(m.fieldRows(fMounts)); eff != baseEff+1 {
+		t.Errorf("enabled local mount must count: got %d, want %d", eff, baseEff+1)
+	}
+
+	// A disabled inherited mount drops out of the tally (the fixture's
+	// default /home/dev/src becomes a non-grant).
+	m.mounts = nil
+	m.inh.Default.Mounts[0].Disabled = true
+	if eff, inh, _, _ := rowCounts(m.fieldRows(fMounts)); eff != 1 || inh != 0 {
+		t.Errorf("disabled inherited mount must not count: eff=%d inh=%d, want 1 (skill only)", eff, inh)
+	}
+}
+
 func TestViewListAnnotations(t *testing.T) {
 	m := effectiveModel()
 	m.listField = fApt
