@@ -970,7 +970,7 @@ func longestCommonPrefix(ss []string) string {
 // still open, not at save time. Any failure keeps the editor open with a
 // message. (Composition rule: never restate a config rule here — config owns
 // the shapes, and a pre-check may only call what its validators call, like
-// fEgress's ParseEgress.)
+// fEgress's CutRemoval+ParseEgress — the same path validateScalarsLayer uses.)
 func (m model) commitItem() model {
 	orig := m
 	if m.listField == fEnv {
@@ -985,8 +985,16 @@ func (m model) commitItem() model {
 		}
 		m.apt = putAt(m.apt, m.editIndex, pkg)
 	case fEgress:
+		// Layer grammar accepts a leading '!' (validateScalarsLayer strips it
+		// with CutRemoval and holds the name to ParseEgress). Call the same
+		// path so the editor cannot drift from what a layer will accept; the
+		// raw entry — marker intact — is what the slice stores either way.
 		entry := strings.TrimSpace(m.inputs[0].Value())
-		if _, _, err := config.ParseEgress(entry); err != nil {
+		check := entry
+		if n, ok := config.CutRemoval(entry); ok {
+			check = n
+		}
+		if _, _, err := config.ParseEgress(check); err != nil {
 			m.itemErr = err.Error()
 			return m
 		}
