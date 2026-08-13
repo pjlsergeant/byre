@@ -15,6 +15,13 @@ package commands
 // `set` reads recipient R, a concurrent identity replacement lands R2, and
 // the R-encrypted blob sitting beside R2 is permanently undecryptable though
 // both writes "succeeded".
+//
+// The COMPARE is the guarantee; the lock is what makes it airtight for the
+// contender that actually exists. Sibling worktree sessions share one project
+// store and one lock, so two of them are fully serialized. A LAYER is shared
+// across projects, whose locks differ — there the compare still refuses the
+// second writer, with the same window the config editor's own layer saves
+// carry (drift-checked, unserialized).
 
 import (
 	"bytes"
@@ -84,6 +91,9 @@ func credentialTarget(projectDir, layer string) (credTarget, error) {
 	return credTarget{
 		// follow=true: a named layer is host-owned (never inside a box
 		// mount), so a dotfiles symlink there is the user's own arrangement.
+		// The lock is THIS project's: it serializes this project's own
+		// sessions, and the compare-and-swap answers for a contender from
+		// another project (see the file comment).
 		path:       path,
 		follow:     true,
 		label:      "layer " + layer,

@@ -418,8 +418,10 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	}
 	if len(creds.values) > 0 {
 		params.Tmpfs = append(params.Tmpfs, credTmpfs(creds, ident, r.Engine()))
-		// Set only when a delivery is in flight; persists with the
-		// container (a bare restart pays at most the launcher's wait).
+		// Set only when a delivery is in flight, and it persists with the
+		// container: a bare restart finds the emptied tmpfs, waits out the
+		// bound, and refuses — the restart refusal, by the same stateless
+		// handshake the network gate uses.
 		params.Env["BYRE_CRED_EXPECT"] = "1"
 	}
 	// Netns-hook plumbing is decided before the container exists: the
