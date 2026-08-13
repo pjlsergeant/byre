@@ -31,8 +31,6 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
-
-	"github.com/pjlsergeant/byre/internal/project"
 )
 
 // ContextDecl is one declared standing-instruction snippet. Exactly one of
@@ -139,34 +137,18 @@ type SourceLayer struct {
 // removable"; the resolved set alone can't say which layer speaks).
 // Attribution probes walk the slice in REVERSE (the latest declarer wins),
 // mirroring the config editor's lowerSource. These are RAW layers for
-// name-probing only — the resolved set stays Load's answer. Sublayers that
-// fail to load just drop out (attribution degrades to fewer labels; develop
-// still fails loudly on a genuinely broken cascade); only an unreadable
-// PROJECT layer errors, since the caller is about to render its content.
+// name-probing only — the resolved set stays Load's answer. The walk itself
+// (and its degradation rules: a broken sublayer drops out, a broken PROJECT
+// layer errors) belongs to CascadeFiles; this view drops the per-file bytes
+// declaration attribution has no use for.
 func ContextSources(projectDir string) ([]SourceLayer, error) {
-	paths, err := project.Resolve(projectDir)
+	files, err := CascadeFiles(projectDir)
 	if err != nil {
 		return nil, err
 	}
-	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName), false)
-	if err != nil {
-		return nil, err
+	out := make([]SourceLayer, 0, len(files))
+	for _, f := range files {
+		out = append(out, SourceLayer{Label: f.Label, Cfg: f.Cfg})
 	}
-	var out []SourceLayer
-	if def, derr := loadLayer(filepath.Join(paths.Home, "default.config"), true); derr == nil {
-		out = append(out, SourceLayer{Label: "default", Cfg: def})
-	}
-	cat, _ := catalogFor(paths.Home)
-	if t := FromNone(proj.Template); t != "" && cat != nil {
-		if tc, terr := loadTemplateLayer(cat, t); terr == nil {
-			out = append(out, SourceLayer{Label: "template:" + t, Cfg: tc})
-		}
-	}
-	if chain, cerr := LoadExtendsChain(paths.Home, cat, proj.Extends); cerr == nil {
-		for _, nl := range chain {
-			out = append(out, SourceLayer{Label: "layer:" + nl.Name, Cfg: nl.Config})
-		}
-	}
-	out = append(out, SourceLayer{Label: "project", Cfg: proj})
 	return out, nil
 }
