@@ -230,6 +230,10 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 		// The refusal is the write path's own -- a value over its kind's cap,
 		// a NUL in an env value, a file that moved under the compare-and-swap.
 		// It names the rule and the offending size; it never carries the value.
+		// The pending value dies with the attempt: the form is where a retry
+		// re-reads it, and this field is meant to hold a plaintext only while a
+		// modal is the reason the editor is elsewhere.
+		m.credPending = nil
 		m.itemErr = err.Error()
 		m.mode = modeItem
 		return m

@@ -587,6 +587,28 @@ func TestEscapingThePassphraseModalWritesNothing(t *testing.T) {
 	}
 }
 
+// A refusal on the way out of the modal is the other exit from it, and it must
+// leave the same nothing behind: the write path said no (an identity appeared
+// under the form, a value over its cap), so the plaintext waiting on the
+// passphrase has nothing left to wait for. It is held HERE and nowhere else, so
+// only this path can drop it.
+func TestARefusedWriteDropsThePendingValue(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.err = errors.New("byre.config gained a credentials identity while the form was open")
+	m := credModel(t, admin, nil)
+	m = addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	got := typeCredPass(t, m, "new-pw", "new-pw")
+	if got.mode != modeItem {
+		t.Fatalf("mode = %v, want the form back", got.mode)
+	}
+	if !strings.Contains(got.itemErr, "gained a credentials identity") {
+		t.Fatalf("itemErr = %q, want the write path's refusal", got.itemErr)
+	}
+	if got.credPending != nil {
+		t.Fatal("the pending value survived the refusal")
+	}
+}
+
 // The write lands on disk on accept, so a buffer that was CLEAN stays clean:
 // quitting after setting a credential must not claim unsaved changes, and the
 // next ^s must not see the editor's own write as another session's drift.
