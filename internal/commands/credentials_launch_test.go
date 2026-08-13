@@ -17,6 +17,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -752,5 +753,43 @@ func TestParseCredentialMode(t *testing.T) {
 	if _, err := ParseCredentialMode("maybe"); err == nil || !strings.Contains(err.Error(), "want ask|skip|stdin") ||
 		!strings.Contains(err.Error(), "maybe") {
 		t.Fatalf("want a refusal naming the rule and the value: %v", err)
+	}
+}
+
+// The session ending mid-poll does not prove the box never ran: attach can
+// return inside the poll gap with the container already running, and a
+// running box with EXPECT set is blocked on this delivery. The inject takes
+// one more look before giving up — a running box still gets its credentials;
+// only a box that never ran is nothing-to-deliver-to.
+func TestCredentialInjectDoneWhileRunningStillDelivers(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+
+	// First running query empty (the box not yet observed), running from the
+	// second on — so only the done arm's re-check can find it.
+	f := &fakeRunner{liveSecond: map[string][]string{"byre.workdir=x": {"cid"}}}
+	var warn bytes.Buffer
+	if err := runCredentialInject(f, &warn, "byre.workdir=x", "cid", runner.Identity{UID: 1000, GID: 1000}, []byte("stream"), time.Now(), done); err != nil {
+		t.Fatal(err)
+	}
+	delivered := false
+	for _, e := range f.execInputs {
+		if strings.Contains(e, "bounded") && strings.Contains(e, gen.ReceiverPath) {
+			delivered = true
+		}
+	}
+	if !delivered {
+		t.Fatalf("a running box must still receive its delivery: %v", f.execInputs)
+	}
+
+	// The sibling: the box truly never ran — no delivery, and no error either
+	// (the session's own outcome is the one the user should read).
+	f = &fakeRunner{}
+	warn.Reset()
+	if err := runCredentialInject(f, &warn, "byre.workdir=x", "cid", runner.Identity{UID: 1000, GID: 1000}, []byte("stream"), time.Now(), done); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.execInputs) != 0 {
+		t.Fatalf("nothing to deliver to, yet an exec ran: %v", f.execInputs)
 	}
 }

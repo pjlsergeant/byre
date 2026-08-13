@@ -610,7 +610,16 @@ func runCredentialInject(r sessionRunner, warn io.Writer, label, containerID str
 		}
 		select {
 		case <-done:
-			return nil // session over before the box ran; nothing to deliver to
+			// The session ending does not prove the box never ran: attach
+			// can return inside the poll gap (a failed attach, an instant
+			// detach) with the container already running — and a running
+			// box with EXPECT set is blocked on this delivery. One more
+			// look settles it; only a box that never ran is
+			// nothing-to-deliver-to. A running box falls through to the
+			// top-of-loop probe, which breaks to the exec below.
+			if ids, err := r.RunningContainersByLabel(label); err != nil || len(ids) == 0 {
+				return nil // session over before the box ran; nothing to deliver to
+			}
 		case <-tick.C:
 		}
 	}
