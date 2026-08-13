@@ -512,7 +512,10 @@ func (m model) startItem(idx int) model {
 				return m
 			}
 			if _, usable, perr := config.ParseEncryptedRow(key, src); !usable || perr != nil {
-				m.status = key + " is a credential — change it with `byre credentials set " + key + "` (this screen would write over the ciphertext)"
+				// unset, not set: set cannot touch the reserved `manifest`
+				// key at all, and for a damaged payload the problem is not
+				// the value — removal is the one repair both cases share.
+				m.status = key + " is a credential — remove it with `byre credentials unset " + key + "` and set it again (this screen would write over the ciphertext)"
 				return m
 			}
 		}

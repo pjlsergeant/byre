@@ -135,7 +135,11 @@ const credentialNoWritePathNote = "nothing here can write a credential to this f
 // write to this file. orig is the pre-commit model every refusal returns.
 func (m model) commitCredentialRow(orig model, key string, moving bool) model {
 	if !m.canWriteCredentials() {
-		orig.itemErr = "this file has no credential write path — set credentials in a project config or a layer (byre credentials set " + key + ")"
+		// Unreachable today (the picker omits the credential scheme and
+		// existing rows refuse to open without a write path), and held to
+		// the same rule as those gates: the note names no CLI verb, because
+		// `byre credentials set` cannot target this file.
+		orig.itemErr = credentialNoWritePathNote
 		return orig
 	}
 	// The key rules ValidateLayer would apply, applied BEFORE the write rather
@@ -275,7 +279,7 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 	m.itemErr = ""
 	m.errMsg = ""
 	m.mode = modeList
-	m.status = p.key + " — credential " + credentials.ValueState(true) + " in " + packages.DisplayPath(m.filePath) + "; applies at the next develop"
+	m.status = p.key + " — credential set in " + packages.DisplayPath(m.filePath) + "; applies at the next develop"
 	return m
 }
 

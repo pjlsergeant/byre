@@ -198,7 +198,8 @@ over a single file's raw bytes.
   user already knows instead of minting a new one.
 - `byre credentials set|unset|rekey|list`. There is no `init`: the first `set`
   mints the identity, prompting for a new passphrase. `list` reads config rows
-  — key, kind, source file, set/unset. `set --layer <name>` targets a layer
+  — key, kind, source file (a row IS the value, so there is no set/unset
+  state). `set --layer <name>` targets a layer
   file explicitly; the default target is the project config.
 
 ## Size
@@ -261,7 +262,7 @@ the standing limit of a review gate, not of credentials.
 - The security-model page carries the at-rest claim and the residual list,
   including mint/swap/transplant/replay in those words.
 - The editor is where these are authored (P0): credential rows show on the Env
-  screen with the value-state cell `credentials list` uses, the Source picker
+  screen, the Source picker
   carries both kinds, the Value input is masked and never echoed, and saving a
   value through the form IS the `set` path — same CAS, same file lock, same
   write-target disclosure, reached through a seam (`configui.CredentialAdmin`)

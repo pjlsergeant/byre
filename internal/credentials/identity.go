@@ -38,16 +38,6 @@ const (
 	MaxEnvValue = 64 << 10
 )
 
-// ValueState is the one spelling of the value-state cell: "set" when a row
-// carries a value, "unset" otherwise. Every surface that renders the pair
-// speaks through it, so a third word cannot land on one surface only.
-func ValueState(stored bool) string {
-	if stored {
-		return "set"
-	}
-	return "unset"
-}
-
 // EmptyPassphraseWorthless is the shared refusal prose for an empty
 // passphrase: the CLI and the unlock prompt both speak it.
 const EmptyPassphraseWorthless = "an empty passphrase would leave the at-rest encryption worthless"

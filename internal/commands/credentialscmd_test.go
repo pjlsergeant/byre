@@ -117,8 +117,8 @@ func TestCredentialsSetMintsTheIdentityAndWritesTheRow(t *testing.T) {
 		t.Fatal("the config must never carry the plaintext")
 	}
 
-	// A second set on the same file is a COLD write: the recipient is
-	// cleartext, so nothing asks for the passphrase again.
+	// A second set on the same file encrypts to the cleartext recipient,
+	// so nothing asks for the passphrase again.
 	passphraseSeam(t, "tok")
 	if err := CredentialsSet(s, proj, "GH_TOKEN", false, ""); err != nil {
 		t.Fatalf("second set: %v", err)
@@ -476,16 +476,16 @@ func TestCredentialsList(t *testing.T) {
 	if err := CredentialsList(s, proj); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject\tset") {
+	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject") {
 		t.Fatalf("list: %s", out.String())
 	}
 	if strings.Contains(out.String(), "\"v\"") {
 		t.Fatal("list must decrypt nothing")
 	}
 
-	// A declared row the cascade does not deliver: the value IS set — the
-	// ciphertext sits in that file — so the list says set, and says what is
-	// beating it. "unset" would send the user to re-enter a value they have.
+	// A declared row the cascade does not deliver: the list still shows the
+	// row and says what is beating it — the remedy is the winning row, not
+	// re-entering a value whose ciphertext already sits in the file.
 	raw, _ := os.ReadFile(projectConfigPath(t, proj))
 	if err := config.AtomicWrite(projectConfigPath(t, proj), string(raw)+"\n[env]\nSTRIPE_KEY = \"literal\"\n"); err != nil {
 		t.Fatal(err)
@@ -495,12 +495,9 @@ func TestCredentialsList(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := out.String()
-	if !strings.Contains(line, "STRIPE_KEY\tenv\tproject\tset — not delivered:") ||
+	if !strings.Contains(line, "STRIPE_KEY\tenv\tproject — not delivered:") ||
 		!strings.Contains(line, "[env] literal in project") {
-		t.Fatalf("overridden row must read set, and name what takes it: %s", line)
-	}
-	if strings.Contains(line, "unset") {
-		t.Fatalf("a row whose file carries the value is not unset: %s", line)
+		t.Fatalf("overridden row must render, and name what takes it: %s", line)
 	}
 }
 
@@ -534,8 +531,8 @@ func TestCredentialsListNamesWhatTakesTheRow(t *testing.T) {
 			if err := CredentialsList(s, proj); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out.String(), "layer acme\tset — not delivered: "+tc.want) {
-				t.Fatalf("want the losing row set in the layer and the reason %q: %s", tc.want, out.String())
+			if !strings.Contains(out.String(), "layer acme — not delivered: "+tc.want) {
+				t.Fatalf("want the losing row in the layer and the reason %q: %s", tc.want, out.String())
 			}
 		})
 	}
@@ -581,8 +578,14 @@ func TestCredentialsListDoesNotSlanderHealthyRowsWhenOneIsBroken(t *testing.T) {
 	if !strings.Contains(out.String(), credentialListUnresolved) {
 		t.Fatalf("the page must carry the qualifier: %s", out.String())
 	}
-	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject\tset") {
+	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject") {
 		t.Fatalf("the healthy row must still render: %s", out.String())
+	}
+	// The offending row is a row a file declares, and this listing exists
+	// because of it — omitting it would show a page whose own qualifier
+	// points at a row that isn't there.
+	if !strings.Contains(out.String(), config.ReservedCredentialItem+"\tenv\tlayer acme") {
+		t.Fatalf("the broken row must render among what the files declare: %s", out.String())
 	}
 	if strings.Contains(out.String(), "not delivered") {
 		t.Fatalf("a healthy row must not be told it was replaced by itself: %s", out.String())

@@ -285,13 +285,9 @@ func TestCredentialValueIsNeverRendered(t *testing.T) {
 			t.Fatalf("the %s carries the plaintext: %q", name, s)
 		}
 	}
-	// The row that landed is the ciphertext, and it says the row holds a value
-	// in `byre credentials list`'s own word.
+	// The row that landed is the ciphertext.
 	if !config.IsCredentialSource(done.hostEnv[0].Value) {
 		t.Fatalf("the row is %q, want a credential row", done.hostEnv[0].Value)
-	}
-	if line := hostEnvLine("STRIPE_KEY", done.hostEnv[0].Value); !strings.Contains(line, credentials.ValueState(true)) {
-		t.Fatalf("row line %q does not carry the value state", line)
 	}
 }
 

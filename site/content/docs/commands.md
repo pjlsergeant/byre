@@ -61,7 +61,7 @@ every command and flag.
 | `byre credentials set KEY` | Store a value under KEY: masked prompt on a terminal, or piped stdin. Never an argument. |
 | `byre credentials unset KEY` | Remove a credential row. The ciphertext goes with it. |
 | `byre credentials rekey` | Rotate one config file's credentials passphrase (the identity is unchanged). |
-| `byre credentials list` | Show this cascade's credential rows: key, kind, source file, set/unset. Values render nowhere. |
+| `byre credentials list` | Show this cascade's credential rows: key, kind, source file. Values render nowhere. |
 
 ## Skills & templates
 

@@ -195,14 +195,12 @@ func hostEnvLine(key, src string) string {
 		return key + " <- disabled"
 	}
 	if config.IsCredentialSource(src) {
-		// The value-state cell, in `byre credentials list`'s own vocabulary
-		// (credentials.ValueState, so a third word cannot land here alone): a
-		// credential row carries a value by construction, and the elided
-		// scheme alone left "is there anything in it" unanswered. What
-		// happens to that value in the cascade -- an [env] literal beating it,
-		// a nearer "" switching it off -- is the row ANNOTATION's job on this
-		// screen, exactly as it is for every other passthrough.
-		return key + " <- credential " + config.RenderSource(src) + " — " + credentials.ValueState(true)
+		// A credential row carries a value by construction — a row IS the
+		// value, so there is no set/unset state to render. What happens to
+		// that value in the cascade -- an [env] literal beating it, a nearer
+		// "" switching it off -- is the row ANNOTATION's job on this screen,
+		// exactly as it is for every other passthrough.
+		return key + " <- credential " + config.RenderSource(src)
 	}
 	return key + " <- host " + src
 }

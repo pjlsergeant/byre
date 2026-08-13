@@ -405,9 +405,9 @@ func sameCredFileState(a []byte, aErr error, b []byte, bErr error) bool {
 // value is masked from the terminal or piped on stdin, never argv.
 //
 // The first set on a file with no [credentials] block mints that file's
-// identity, prompting for the passphrase that wraps it. Every later set is a
-// COLD write: values encrypt to the cleartext recipient, so setting one
-// never asks for a passphrase.
+// identity, prompting for the passphrase that wraps it. Every later set
+// encrypts to the cleartext recipient, so setting one never asks for a
+// passphrase.
 func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer string) error {
 	if err := config.ValidateEnvFromHostKey(key); err != nil {
 		return err
@@ -716,7 +716,7 @@ func CredentialsList(s Streams, projectDir string) error {
 		fmt.Fprintln(s.Out, credentialListUnresolved)
 		declared := declaredCredentialRows(files)
 		for _, d := range declared {
-			fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s\n", d.key, d.kind, d.source, credentials.ValueState(true))
+			fmt.Fprintf(s.Out, "%s\t%s\t%s\n", d.key, d.kind, d.source)
 		}
 		if len(declared) == 0 {
 			fmt.Fprintln(s.Out, "no readable credential rows in this project's cascade.")
@@ -726,20 +726,19 @@ func CredentialsList(s Streams, projectDir string) error {
 	rows := 0
 	for _, g := range groups {
 		for _, r := range g.Rows {
-			fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s\n", r.Key, r.Kind, credentialDisplay(g.Label), credentials.ValueState(true))
+			fmt.Fprintf(s.Out, "%s\t%s\t%s\n", r.Key, r.Kind, credentialDisplay(g.Label))
 			rows++
 		}
 	}
 	// A key some file sets encrypted that the cascade does not deliver: a
 	// nearer layer emptied it, replaced it with another source, or an [env]
 	// literal took it. Declared and not reaching the box is exactly what a
-	// list must say out loud — and the value-state cell says SET, because it
-	// is: the ciphertext sits in that file, and "unset" would send a user to
-	// re-enter a value they already have instead of to the row that is
-	// beating it.
+	// list must say out loud — the ciphertext still sits in that file, so
+	// the remedy is the row that is beating it, never re-entering a value
+	// the user already has.
 	for _, d := range disabledCredentialRows(files, groups) {
-		fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s — not delivered: %s\n",
-			d.key, d.kind, d.source, credentials.ValueState(true), d.reason)
+		fmt.Fprintf(s.Out, "%s\t%s\t%s — not delivered: %s\n",
+			d.key, d.kind, d.source, d.reason)
 		rows++
 	}
 	if rows == 0 {
@@ -768,17 +767,19 @@ func declaredCredentialRows(files []config.CascadeFile) []disabledCredentialRow 
 	var out []disabledCredentialRow
 	for _, f := range files {
 		for _, k := range sortedEnvKeys(f.Cfg.EnvFromHost) {
-			if seen[k] {
+			src := f.Cfg.EnvFromHost[k]
+			// IsCredentialSource, not a successful ParseEncryptedRow: the
+			// row that made resolution fail — damaged payload, reserved key
+			// — is a row a file declares, and this listing exists BECAUSE
+			// of it; a parse filter would omit exactly the offender.
+			if seen[k] || !config.IsCredentialSource(src) {
 				continue
 			}
-			row, ok, err := config.ParseEncryptedRow(k, f.Cfg.EnvFromHost[k])
-			if err != nil || !ok {
-				continue
-			}
+			kind, _ := config.CredentialKindOf(src)
 			seen[k] = true
 			out = append(out, disabledCredentialRow{
 				key:    k,
-				kind:   string(row.Kind),
+				kind:   string(kind),
 				source: credentialDisplay(f.Label),
 			})
 		}

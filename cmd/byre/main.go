@@ -790,7 +790,7 @@ identity itself does not rotate, so every value row stays byte-identical.`,
 		rekey,
 		&cobra.Command{
 			Use:   "list",
-			Short: "Show this cascade's credential rows: key, kind, source file, set/unset. Values render nowhere.",
+			Short: "Show this cascade's credential rows: key, kind, source file. Values render nowhere.",
 			Args:  noArgsU,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return commands.CredentialsList(s, dir)

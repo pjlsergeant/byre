@@ -847,9 +847,6 @@ func TestEnvScreenRendersACredentialRowAndRefusesItWithNoWritePath(t *testing.T)
 	if !strings.Contains(line, "credential") || !strings.Contains(line, config.EncryptedScheme+"[…]") {
 		t.Fatalf("credential row line = %q", line)
 	}
-	if !strings.Contains(line, credentials.ValueState(true)) {
-		t.Fatalf("the row must say whether it holds a value, in list's own word: %q", line)
-	}
 	if strings.Contains(line, "host ") || len(line) > 60 {
 		t.Fatalf("the row must not claim a host source nor carry the blob: %q", line)
 	}
@@ -944,8 +941,11 @@ func TestEnvScreenTreatsUnparsableCredentialRowsAsCredentials(t *testing.T) {
 			if opened.mode == modeItem {
 				t.Fatal("a credential row must not open the picker editor, damaged or not")
 			}
-			if !strings.Contains(opened.status, "byre credentials set "+tc.key) {
-				t.Fatalf("the refusal must name the surface that can change it: %q", opened.status)
+			// unset, never set: for the reserved key, `set` itself refuses,
+			// so naming it would send the user to a command that cannot
+			// repair the row.
+			if !strings.Contains(opened.status, "byre credentials unset "+tc.key) {
+				t.Fatalf("the refusal must name the surface that can repair it: %q", opened.status)
 			}
 			if got := opened.assemble().EnvFromHost[tc.key]; got != tc.row {
 				t.Fatalf("the row must round-trip untouched: %q", got)
