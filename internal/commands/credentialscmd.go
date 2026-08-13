@@ -46,11 +46,14 @@ import (
 	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
-// credentialsTable / envFromHostTable are the two tables every verb here
-// edits, as tomldoc addresses them.
+// credentialsTable / envFromHostTable / envTable are the tables every verb
+// here edits, as tomldoc addresses them. [env] is edited only to REMOVE the
+// literal a credential converts from (see credRowRemovals) — no verb here
+// writes an [env] value.
 var (
 	credentialsTable = []string{"credentials"}
 	envFromHostTable = []string{config.EnvFromHostTable}
+	envTable         = []string{"env"}
 )
 
 // credTarget is the physical file a verb writes: credential rows and the
@@ -143,34 +146,42 @@ func (a *credentialAdmin) HasIdentity() (bool, error) {
 	return f.hasBlock, nil
 }
 
-// Set encrypts one value and writes its row. The file is re-read HERE, per
-// set: those bytes are what the compare-and-swap holds the write to, so a
-// snapshot taken when the editor opened would base a write on a file that has
-// since moved.
-func (a *credentialAdmin) Set(key string, kind credentials.Kind, value []byte, passphrase string) (string, error) {
-	if err := config.ValidateEnvFromHostKey(key); err != nil {
-		return "", err
+// Set applies one editor accept. The file is re-read HERE, per set: those
+// bytes are what the compare-and-swap holds the write to, so a snapshot taken
+// when the editor opened would base a write on a file that has since moved.
+//
+// The removals the accept carries ride the SAME mutation as the row, and the
+// bytes that mutation wrote come back with it — the editor's save baseline is
+// then its own write and not a re-read taken after the lock let go.
+func (a *credentialAdmin) Set(w configui.CredentialWrite) (configui.CredentialResult, error) {
+	if err := config.ValidateEnvFromHostKey(w.Key); err != nil {
+		return configui.CredentialResult{}, err
 	}
-	if err := config.ValidateCredentialKey(key); err != nil {
-		return "", err
+	if err := config.ValidateCredentialKey(w.Key); err != nil {
+		return configui.CredentialResult{}, err
 	}
 	f, err := readCredTarget(a.t)
 	if err != nil {
-		return "", err
+		return configui.CredentialResult{}, err
 	}
 	block, newIdentity := f.block, []byte(nil)
 	if !f.hasBlock {
-		if passphrase == "" {
-			return "", errors.New(credentials.EmptyPassphraseWorthless)
+		if w.Passphrase == "" {
+			return configui.CredentialResult{}, errors.New(credentials.EmptyPassphraseWorthless)
 		}
-		wrapped, recipient, err := credentials.NewIdentity(passphrase)
+		wrapped, recipient, err := credentials.NewIdentity(w.Passphrase)
 		if err != nil {
-			return "", err
+			return configui.CredentialResult{}, err
 		}
 		newIdentity = wrapped
 		block = config.CredentialsBlock{Identity: wrapped, Recipient: recipient}
 	}
-	return writeCredentialRow(a.s, a.t, f, key, kind, value, block, newIdentity)
+	row, after, err := writeCredentialRow(a.s, a.t, f, w.Key, w.Kind, w.Value, block, newIdentity,
+		credRowRemovals{env: w.RemoveEnv, envFromHost: w.RemoveEnvFromHost})
+	if err != nil {
+		return configui.CredentialResult{}, err
+	}
+	return configui.CredentialResult{Row: row, File: after}, nil
 }
 
 // layerWriteDisclosure states what writing to a layer means: every project
@@ -268,7 +279,12 @@ var ErrCredentialFileChanged = errors.New("the config file changed while this co
 // compare-and-swapping against the bytes the caller read. The mutation is
 // re-parsed before it lands: a write that would leave the file unopenable —
 // or its identity unreadable — is refused with the file untouched.
-func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldoc.Doc) error) error {
+//
+// It returns the bytes it WROTE, captured inside the lock. A caller that keeps
+// a save baseline (the editor) must take it from here: a read after the lock
+// releases can pick up a concurrent writer's bytes, and a baseline holding a
+// change this session never made is a drift check that will not fire.
+func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldoc.Doc) error) ([]byte, error) {
 	// Enrollment precedes the LOCK, not just the write: the project lock file
 	// lives in the store directory and is only O_CREATEd there, so on a project
 	// that has never been developed the ACQUISITION fails ENOENT before any
@@ -289,10 +305,11 @@ func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldo
 	// self-healing, and neither can lose a value.
 	if t.prepare != nil {
 		if err := t.prepare(); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return withSetupLock(s.Err, t.lockFile, func() error {
+	var written []byte
+	err := withSetupLock(s.Err, t.lockFile, func() error {
 		now, err := hostopen.ReadFileBounded(t.path, t.follow, config.MaxConfigBytes)
 		if !sameCredFileState(now, err, base.raw, base.readErr) {
 			return ErrCredentialFileChanged
@@ -319,8 +336,16 @@ func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldo
 		if _, _, berr := config.ParseCredentialsBlock(out); berr != nil {
 			return fmt.Errorf("%s (%s): %w — nothing was written", t.label, t.path, berr)
 		}
-		return config.AtomicWrite(t.path, string(out))
+		if werr := config.AtomicWrite(t.path, string(out)); werr != nil {
+			return werr
+		}
+		written = out
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return written, nil
 }
 
 // credentialsFileHeader fronts a config file `byre credentials` creates —
@@ -395,7 +420,7 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	if len(value) == 0 {
 		return errors.New("refusing to store an empty value (byre credentials unset removes a row)")
 	}
-	if _, err := writeCredentialRow(s, t, f, key, kind, value, block, newIdentity); err != nil {
+	if _, _, err := writeCredentialRow(s, t, f, key, kind, value, block, newIdentity, credRowRemovals{}); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: credential %s set in the %s (%s): %d bytes, encrypted to that file's recipient.\n",
@@ -407,40 +432,70 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	return nil
 }
 
+// credRowRemovals are the OTHER rows one write removes as it lands its
+// encrypted row: the [env] literal a credential is converting from, and the
+// env_from_host row it replaces under a different key. Empty for the CLI verb,
+// which sets a key and touches nothing else.
+//
+// They belong to the row's own mutation because the caller that has them (the
+// editor) has already applied them to what the user is looking at. A write that
+// landed the row and left the removals for the next ^s put a quit in between,
+// and a converted [env] literal left behind still wins the cascade (ADR 0026):
+// the box takes the old plaintext while the editor says the credential is set.
+type credRowRemovals struct {
+	env         string
+	envFromHost string
+}
+
 // writeCredentialRow is the value half of `set`, and the ONE owner of it: hold
 // the value to its kind's rules, encrypt it to the FILE's recipient, and
 // compare-and-swap the row in — together with the identity, when this write is
-// the one that mints it (newIdentity nil = the file already had a block).
-// Returns the row source that landed, which the editor puts into its working
-// state so a later whole-file save writes the value back unchanged.
+// the one that mints it (newIdentity nil = the file already had a block), and
+// together with the rows this write replaces. Returns the row source that
+// landed (the editor puts it into its working state so a later whole-file save
+// writes the value back unchanged) and the file bytes the write produced.
 //
 // Every surface that sets a credential goes through here. A second spelling of
 // encrypt-and-CAS would be a second place for the identity and its rows to end
 // up in different generations — the exact split the compare-and-swap exists to
 // prevent — so the editor calls this rather than reimplementing it.
-func writeCredentialRow(s Streams, t credTarget, f credFile, key string, kind credentials.Kind, value []byte, block config.CredentialsBlock, newIdentity []byte) (string, error) {
+func writeCredentialRow(s Streams, t credTarget, f credFile, key string, kind credentials.Kind, value []byte, block config.CredentialsBlock, newIdentity []byte, rm credRowRemovals) (string, []byte, error) {
 	if err := credentials.ValidateValue(value, kind); err != nil {
-		return "", fmt.Errorf("credential %s: %w", key, err)
+		return "", nil, fmt.Errorf("credential %s: %w", key, err)
 	}
 	blob, err := credentials.EncryptValue(block.Recipient, key, kind, value)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	row, err := config.FormatEncryptedRow(kind, blob)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+	after, err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
 		if newIdentity != nil {
 			if err := setCredentialsBlock(doc, newIdentity, block.Recipient); err != nil {
 				return err
 			}
 		}
+		// Removals first, so a row and the row it replaces cannot both be in
+		// the document at any point a later edit reads it. RemoveKey is a
+		// no-op on a key the file does not carry.
+		if rm.env != "" {
+			if err := doc.RemoveKey(envTable, rm.env); err != nil {
+				return err
+			}
+		}
+		if rm.envFromHost != "" {
+			if err := doc.RemoveKey(envFromHostTable, rm.envFromHost); err != nil {
+				return err
+			}
+		}
 		return doc.SetKey(envFromHostTable, key, strconv.Quote(row))
-	}); err != nil {
-		return "", err
+	})
+	if err != nil {
+		return "", nil, err
 	}
-	return row, nil
+	return row, after, nil
 }
 
 // mintCredentialIdentity creates the file's identity: a fresh X25519 key
@@ -537,7 +592,7 @@ func CredentialsUnset(s Streams, projectDir, key, layer string) error {
 	if !config.IsCredentialSource(src) {
 		return fmt.Errorf("%s (%s): %s is a %q source, not a credential — edit it in `byre config`", t.label, t.path, key, src)
 	}
-	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+	if _, err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
 		return doc.RemoveKey(envFromHostTable, key)
 	}); err != nil {
 		return err
@@ -585,7 +640,7 @@ func CredentialsRekey(s Streams, projectDir, layer string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+	if _, err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
 		return setCredentialsBlock(doc, wrapped, id.Recipient())
 	}); err != nil {
 		return err

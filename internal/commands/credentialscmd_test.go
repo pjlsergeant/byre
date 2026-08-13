@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/configui"
 	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/lock"
@@ -761,7 +762,7 @@ func TestEditorAdminMintsOnceAndWritesDecryptableRows(t *testing.T) {
 	if has, err := a.HasIdentity(); err != nil || has {
 		t.Fatalf("a fresh project config already claims an identity: %v %v", has, err)
 	}
-	row, err := a.Set("STRIPE_KEY", credentials.KindEnv, []byte("sk-live-1"), "pw")
+	res, err := a.Set(configui.CredentialWrite{Key: "STRIPE_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1"), Passphrase: "pw"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,8 +777,17 @@ func TestEditorAdminMintsOnceAndWritesDecryptableRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.EnvFromHost["STRIPE_KEY"] != row {
-		t.Fatalf("returned row %q, file has %q", row, cfg.EnvFromHost["STRIPE_KEY"])
+	if cfg.EnvFromHost["STRIPE_KEY"] != res.Row {
+		t.Fatalf("returned row %q, file has %q", res.Row, cfg.EnvFromHost["STRIPE_KEY"])
+	}
+	// And the bytes come back with it: the editor's save baseline is what this
+	// write produced, not a re-read taken after the lock let go.
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(res.File, onDisk) {
+		t.Fatalf("Set returned %d bytes, the file holds %d", len(res.File), len(onDisk))
 	}
 
 	// The second value needs no passphrase, and does not re-mint: the identity
@@ -789,7 +799,7 @@ func TestEditorAdminMintsOnceAndWritesDecryptableRows(t *testing.T) {
 	if has, err := a.HasIdentity(); err != nil || !has {
 		t.Fatalf("HasIdentity after the mint = %v %v", has, err)
 	}
-	if _, err := a.Set("TLS_CERT", credentials.KindFile, []byte("-----BEGIN-----\n"), ""); err != nil {
+	if _, err := a.Set(configui.CredentialWrite{Key: "TLS_CERT", Kind: credentials.KindFile, Value: []byte("-----BEGIN-----\n")}); err != nil {
 		t.Fatalf("second set: %v", err)
 	}
 	if v, k := openCredRow(t, path, "pw", "TLS_CERT"); string(v) != "-----BEGIN-----\n" || k != credentials.KindFile {
@@ -822,7 +832,7 @@ func TestEditorAdminRefusesAnEmptyPassphraseWhenMinting(t *testing.T) {
 	p, _ := testPaths(t)
 	var errBuf bytes.Buffer
 	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
-	_, err := a.Set("STRIPE_KEY", credentials.KindEnv, []byte("sk-live-1"), "")
+	_, err := a.Set(configui.CredentialWrite{Key: "STRIPE_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1")})
 	if err == nil || !strings.Contains(err.Error(), credentials.EmptyPassphraseWorthless) {
 		t.Fatalf("err = %v, want the empty-passphrase refusal", err)
 	}
@@ -838,7 +848,7 @@ func TestEditorAdminRefusesTheReservedKey(t *testing.T) {
 	p, _ := testPaths(t)
 	var errBuf bytes.Buffer
 	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
-	if _, err := a.Set(config.ReservedCredentialItem, credentials.KindEnv, []byte("x"), "pw"); err == nil ||
+	if _, err := a.Set(configui.CredentialWrite{Key: config.ReservedCredentialItem, Kind: credentials.KindEnv, Value: []byte("x"), Passphrase: "pw"}); err == nil ||
 		!strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("err = %v, want the reserved-key rule", err)
 	}
@@ -881,7 +891,7 @@ func TestEditorAdminOnALayerDisclosesAndTakesTheLayerLock(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if _, serr := a.Set("SHARED", credentials.KindEnv, []byte("layer-value"), "pw"); serr != nil {
+		if _, serr := a.Set(configui.CredentialWrite{Key: "SHARED", Kind: credentials.KindEnv, Value: []byte("layer-value"), Passphrase: "pw"}); serr != nil {
 			t.Errorf("contended layer set: %v", serr)
 		}
 		done.Store(true)
@@ -897,6 +907,89 @@ func TestEditorAdminOnALayerDisclosesAndTakesTheLayerLock(t *testing.T) {
 	}
 	wg.Wait()
 	if v, _ := openCredRow(t, layerPath, "pw", "SHARED"); string(v) != "layer-value" {
+		t.Fatalf("round trip: %q", v)
+	}
+}
+
+// An accept that converts an [env] literal writes the encrypted row and removes
+// the literal in ONE compare-and-swap. Split across two writes, the literal sat
+// on disk until ^s — and an [env] literal takes the key out of env_from_host
+// entirely (ADR 0026), so a quit in between delivered the old plaintext to the
+// box while the editor's status said the credential was set.
+func TestEditorAdminConvertsAnEnvLiteralInTheSameWrite(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	path := filepath.Join(p.Dir, config.ProjectConfigName)
+	if err := config.AtomicWrite(path, "[env]\nSTRIPE_KEY = \"plaintext-key\"\nKEEP = \"other\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+
+	res, err := a.Set(configui.CredentialWrite{
+		Key: "STRIPE_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1"),
+		Passphrase: "pw", RemoveEnv: "STRIPE_KEY",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, still := cfg.Env["STRIPE_KEY"]; still {
+		t.Fatalf("[env] still holds %q — the literal outlived the write that replaced it", v)
+	}
+	if cfg.Env["KEEP"] != "other" {
+		t.Fatalf("[env] KEEP = %q — the write took a row it was never given", cfg.Env["KEEP"])
+	}
+	if cfg.EnvFromHost["STRIPE_KEY"] != res.Row {
+		t.Fatalf("env_from_host holds %q, the write returned %q", cfg.EnvFromHost["STRIPE_KEY"], res.Row)
+	}
+	// And the launch side takes it: the row is the winning one, and its file
+	// carries the identity that opens it.
+	groups, gerr := config.EncryptedRows([]config.CascadeFile{{Label: "project", Path: path, Raw: res.File, Cfg: cfg}})
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if len(groups) != 1 || len(groups[0].Rows) != 1 || groups[0].Rows[0].Key != "STRIPE_KEY" || !groups[0].HasBlock {
+		t.Fatalf("the launch side does not deliver the converted row: %+v", groups)
+	}
+	if v, _ := openCredRow(t, path, "pw", "STRIPE_KEY"); string(v) != "sk-live-1" {
+		t.Fatalf("round trip: %q", v)
+	}
+}
+
+// The sibling: an ordinary env_from_host row re-authored as a credential under
+// a NEW key. The old row is removed by the same write that adds the new one, or
+// it outlives the edit that replaced it and keeps delivering.
+func TestEditorAdminRemovesTheRowAKeyChangeReplaces(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	path := filepath.Join(p.Dir, config.ProjectConfigName)
+	if err := config.AtomicWrite(path, "[env_from_host]\nOLD_KEY = \"env:HOST_TOKEN\"\nKEEP = \"env:KEEP\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+
+	if _, err := a.Set(configui.CredentialWrite{
+		Key: "NEW_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1"),
+		Passphrase: "pw", RemoveEnvFromHost: "OLD_KEY",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, still := cfg.EnvFromHost["OLD_KEY"]; still {
+		t.Fatalf("env_from_host still holds OLD_KEY = %q", v)
+	}
+	if cfg.EnvFromHost["KEEP"] != "env:KEEP" {
+		t.Fatalf("KEEP = %q — the write took a row it was never given", cfg.EnvFromHost["KEEP"])
+	}
+	if v, _ := openCredRow(t, path, "pw", "NEW_KEY"); string(v) != "sk-live-1" {
 		t.Fatalf("round trip: %q", v)
 	}
 }

@@ -29,7 +29,6 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
-	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
@@ -49,12 +48,53 @@ type CredentialAdmin interface {
 	// HasIdentity reports whether the file already carries a [credentials]
 	// block. False means the next Set MINTS one and needs a passphrase.
 	HasIdentity() (bool, error)
-	// Set encrypts value under key and kind and writes the row, minting the
-	// file's identity under passphrase when it has none (the passphrase is
-	// unused otherwise -- an existing file's values encrypt to its cleartext
-	// recipient, which is why re-setting one never asks again). It returns the
-	// row source that landed, for the editor's working state.
-	Set(key string, kind credentials.Kind, value []byte, passphrase string) (string, error)
+	// Set applies one accept to the file: encrypt the value, write its row,
+	// remove the rows the accept replaces, and (on a file's first credential)
+	// mint the identity that opens them -- all in ONE compare-and-swap
+	// mutation.
+	Set(CredentialWrite) (CredentialResult, error)
+}
+
+// CredentialWrite is one accept's WHOLE change to the file: the value to
+// encrypt, and the rows that leave with it.
+//
+// They travel together because they have to land together. The editor's buffer
+// applies the accept's other row surgery immediately -- an [env] literal being
+// converted disappears from the screen, a renamed row is replaced -- and that
+// surgery only reaches disk at ^s. Splitting them put a quit-without-^s between
+// the two: the file kept BOTH rows, and the [env] literal still won the cascade
+// (ADR 0026), so the next develop delivered the old plaintext while the status
+// said the credential was set.
+type CredentialWrite struct {
+	Key   string
+	Kind  credentials.Kind
+	Value []byte
+	// Passphrase wraps the identity this write mints on a file's FIRST
+	// credential, and is unused on every later one (values encrypt to the
+	// file's cleartext recipient).
+	Passphrase string
+	// RemoveEnv is the [env] literal this row converts FROM, empty when the
+	// accept converts nothing. The literal must go in the same write: while it
+	// is there it takes the key out of env_from_host entirely.
+	RemoveEnv string
+	// RemoveEnvFromHost is the env_from_host row this write REPLACES under a
+	// different key -- an ordinary source re-authored as a credential and
+	// renamed in one edit. Empty when the key is unchanged (a row that is
+	// ALREADY a credential cannot be renamed at all: the payload is stamped
+	// with its key).
+	RemoveEnvFromHost string
+}
+
+// CredentialResult is what one write left behind.
+type CredentialResult struct {
+	// Row is the row source that landed, for the editor's working state.
+	Row string
+	// File is the file's bytes AS WRITTEN, captured under the lock that wrote
+	// them. It is the editor's new save baseline: re-reading the file after
+	// the lock releases would take whatever a concurrent writer landed in the
+	// window as this session's baseline, and the next ^s would then see no
+	// drift and reconcile over a change it never held.
+	File []byte
 }
 
 // pendingCredential is a value the form has accepted and not yet written: the
@@ -171,11 +211,21 @@ func (m model) commitCredentialUnchanged(orig model, was string) model {
 }
 
 // writeCredential runs the write and folds the result into the working state.
-// The row that lands is on DISK when this returns, so the working state takes
-// the ciphertext too: a later ^s then writes the same value back, unchanged,
-// instead of reconciling it away.
+// The accept's WHOLE change is on disk when this returns -- the row, and the
+// rows it replaces -- so the working state takes the ciphertext too (a later ^s
+// writes the same value back, unchanged, instead of reconciling it away) and
+// the buffer surgery below only mirrors what the file already says.
 func (m model) writeCredential(p pendingCredential, passphrase string) model {
-	row, err := m.creds.Set(p.key, p.kind, p.value, passphrase)
+	w := CredentialWrite{Key: p.key, Kind: p.kind, Value: p.value, Passphrase: passphrase}
+	if p.envIdx >= 0 {
+		w.RemoveEnv = m.env[p.envIdx].Key
+	}
+	if p.idx >= 0 && m.hostEnv[p.idx].Key != p.key {
+		// The row being re-authored moved key: on disk that is a removal plus
+		// an add, or the old row outlives the edit that replaced it.
+		w.RemoveEnvFromHost = m.hostEnv[p.idx].Key
+	}
+	res, err := m.creds.Set(w)
 	if err != nil {
 		// The refusal is the write path's own -- a value over its kind's cap,
 		// a NUL in an env value, a file that moved under the compare-and-swap.
@@ -188,17 +238,20 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 	if p.envIdx >= 0 {
 		m.env = append(append([]kvItem{}, m.env[:p.envIdx]...), m.env[p.envIdx+1:]...)
 	}
-	m.hostEnv = putAt(m.hostEnv, p.idx, kvItem{Key: p.key, Value: row})
+	m.hostEnv = putAt(m.hostEnv, p.idx, kvItem{Key: p.key, Value: res.Row})
 	// The file just changed, by this editor's own hand: re-baseline, or the
 	// next ^s sees another session's write where its own is (drift, and the
-	// overwrite prompt with it).
-	m.saveBase, m.saveBaseErr = hostopen.ReadFileBounded(m.filePath, m.followFile, config.MaxConfigBytes)
+	// overwrite prompt with it). The bytes come from the write itself, taken
+	// under its lock -- a read from here would happen after the lock released,
+	// and a concurrent writer's bytes would become this session's baseline
+	// without ever being in its buffer.
+	m.saveBase, m.saveBaseErr = res.File, nil
 	m.savedOnce = true
 	if clean {
 		// A buffer that was clean stays clean: the one change it just took is
-		// already on disk, and a dirty-quit confirm over it would be a lie.
-		// A buffer that was already dirty stays dirty -- its OTHER edits are
-		// still unsaved.
+		// already on disk, WHOLE (the row and the rows it replaced), and a
+		// dirty-quit confirm over it would be a lie. A buffer that was already
+		// dirty stays dirty -- its OTHER edits are still unsaved.
 		m.savedSig = m.sig()
 	}
 	// The plaintext leaves the model with the form: the value input is not

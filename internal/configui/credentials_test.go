@@ -1,8 +1,13 @@
 package configui
 
 import (
+	"bytes"
+	"encoding/base64"
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +17,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
+	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
 // fakeCredAdmin stands in for the commands-side write path (whose locking and
@@ -20,15 +26,29 @@ import (
 // encrypt to that identity's recipient — so a test can open the row again the
 // way a launch does and prove the editor passed the right key, kind, value and
 // passphrase through.
+//
+// And it writes the real FILE: the row, the identity, and the accept's
+// removals land in one document edit whose bytes come back as the result, the
+// way the write path lands them. That is what makes the editor's own claims
+// checkable here — a buffer that says "saved" is checked against what a
+// quit-without-^s leaves on disk, not against a promise.
 type fakeCredAdmin struct {
+	path       string // the model's file; credModel points this at it
 	disclosure string
 	identity   []byte // nil until the first Set mints one
 	recipient  string
 	passphrase string // as handed to the mint
+	writes     []CredentialWrite
 	rows       map[string]string
 	sets       int
 	mints      int
 	err        error // the write path's refusal, when the test wants one
+	// concurrent runs INSIDE the write's window: after the bytes this write
+	// landed, before the editor takes its baseline. That is exactly where
+	// another session's write used to be adopted as this session's baseline,
+	// because the baseline was re-read from disk instead of taken from the
+	// write.
+	concurrent func()
 }
 
 func newFakeCredAdmin() *fakeCredAdmin {
@@ -40,32 +60,91 @@ func (f *fakeCredAdmin) HasIdentity() (bool, error)    { return f.identity != ni
 func (f *fakeCredAdmin) mintedUnder() string           { return f.passphrase }
 func (f *fakeCredAdmin) row(key string) (string, bool) { r, ok := f.rows[key]; return r, ok }
 
-func (f *fakeCredAdmin) Set(key string, kind credentials.Kind, value []byte, passphrase string) (string, error) {
+// lastWrite is the accept the editor last asked for — the removals included,
+// which is how a test asks whether the editor named the whole change.
+func (f *fakeCredAdmin) lastWrite() CredentialWrite { return f.writes[len(f.writes)-1] }
+
+func (f *fakeCredAdmin) Set(w CredentialWrite) (CredentialResult, error) {
+	f.writes = append(f.writes, w)
 	if f.err != nil {
-		return "", f.err
+		return CredentialResult{}, f.err
 	}
-	if err := credentials.ValidateValue(value, kind); err != nil {
-		return "", err
+	if err := credentials.ValidateValue(w.Value, w.Kind); err != nil {
+		return CredentialResult{}, err
 	}
+	minted := false
 	if f.identity == nil {
-		wrapped, recipient, err := credentials.NewIdentity(passphrase)
+		wrapped, recipient, err := credentials.NewIdentity(w.Passphrase)
 		if err != nil {
-			return "", err
+			return CredentialResult{}, err
 		}
-		f.identity, f.recipient, f.passphrase = wrapped, recipient, passphrase
+		f.identity, f.recipient, f.passphrase = wrapped, recipient, w.Passphrase
 		f.mints++
+		minted = true
 	}
-	blob, err := credentials.EncryptValue(f.recipient, key, kind, value)
+	blob, err := credentials.EncryptValue(f.recipient, w.Key, w.Kind, w.Value)
 	if err != nil {
-		return "", err
+		return CredentialResult{}, err
 	}
-	row, err := config.FormatEncryptedRow(kind, blob)
+	row, err := config.FormatEncryptedRow(w.Kind, blob)
 	if err != nil {
-		return "", err
+		return CredentialResult{}, err
+	}
+	after, err := f.applyToFile(w, row, minted)
+	if err != nil {
+		return CredentialResult{}, err
 	}
 	f.sets++
-	f.rows[key] = row
-	return row, nil
+	f.rows[w.Key] = row
+	delete(f.rows, w.RemoveEnvFromHost)
+	return CredentialResult{Row: row, File: after}, nil
+}
+
+// applyToFile lands one write: the identity (on a mint), the removals the
+// accept carries, and the row — one document, one write, one set of bytes
+// handed back as the caller's new baseline.
+func (f *fakeCredAdmin) applyToFile(w CredentialWrite, row string, minted bool) ([]byte, error) {
+	if f.path == "" {
+		return nil, errors.New("fakeCredAdmin has no file to write (credModel sets it)")
+	}
+	raw, err := os.ReadFile(f.path)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := tomldoc.Load(raw)
+	if err != nil {
+		return nil, err
+	}
+	if minted {
+		id := base64.StdEncoding.EncodeToString(f.identity)
+		if err := doc.SetKey([]string{"credentials"}, "identity", strconv.Quote(id)); err != nil {
+			return nil, err
+		}
+		if err := doc.SetKey([]string{"credentials"}, "recipient", strconv.Quote(f.recipient)); err != nil {
+			return nil, err
+		}
+	}
+	if w.RemoveEnv != "" {
+		if err := doc.RemoveKey([]string{"env"}, w.RemoveEnv); err != nil {
+			return nil, err
+		}
+	}
+	if w.RemoveEnvFromHost != "" {
+		if err := doc.RemoveKey([]string{config.EnvFromHostTable}, w.RemoveEnvFromHost); err != nil {
+			return nil, err
+		}
+	}
+	if err := doc.SetKey([]string{config.EnvFromHostTable}, w.Key, strconv.Quote(row)); err != nil {
+		return nil, err
+	}
+	out := doc.Bytes()
+	if err := os.WriteFile(f.path, out, 0o644); err != nil {
+		return nil, err
+	}
+	if f.concurrent != nil {
+		f.concurrent()
+	}
+	return out, nil
 }
 
 // open decrypts a row the editor wrote, the way a launch does.
@@ -94,25 +173,43 @@ func (f *fakeCredAdmin) open(t *testing.T, key string, passphrase string) []byte
 // (empty) file so the write's re-baselining has something to read.
 func credModel(t *testing.T, admin CredentialAdmin, local map[string]string) model {
 	t.Helper()
+	return credModelWith(t, admin, nil, local)
+}
+
+// credModelWith is credModel with [env] literals too, for the conversion the
+// credential path has to perform ON DISK rather than in the buffer alone.
+func credModelWith(t *testing.T, admin CredentialAdmin, env, hostEnv map[string]string) model {
+	t.Helper()
 	credentials.SetWorkFactorForTesting(10)
 	path := filepath.Join(t.TempDir(), "byre.config")
 	// The rows go in the FILE, not just the config value: newModel re-parses
 	// the bytes it reads at open (one read for state and drift baseline
 	// alike), so a fixture that only passed a Config would open empty.
 	raw := "# Managed by `byre config`.\n"
-	if len(local) > 0 {
-		raw += "\n[env_from_host]\n"
-		for k, v := range local {
-			raw += k + " = " + strconv.Quote(v) + "\n"
-		}
-	}
+	raw += credTable("env", env) + credTable(config.EnvFromHostTable, hostEnv)
 	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := newModel("t", path, config.Config{EnvFromHost: local}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	// The fake writes that same file, so the editor's baseline and a
+	// quit-without-^s are judged against real bytes.
+	if f, ok := admin.(*fakeCredAdmin); ok {
+		f.path = path
+	}
+	m := newModel("t", path, config.Config{Env: env, EnvFromHost: hostEnv}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 	m.creds = admin
 	m.listField = fEnv
 	return m
+}
+
+func credTable(name string, rows map[string]string) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	out := "\n[" + name + "]\n"
+	for _, k := range slices.Sorted(maps.Keys(rows)) {
+		out += k + " = " + strconv.Quote(rows[k]) + "\n"
+	}
+	return out
 }
 
 // addCredential opens the add editor on the credential scheme, with the kind
@@ -511,6 +608,203 @@ func TestACleanBufferStaysCleanAfterACredentialWrite(t *testing.T) {
 	// value back instead of reconciling it away.
 	if got := done.assemble().EnvFromHost["STRIPE_KEY"]; !config.IsCredentialSource(got) {
 		t.Fatalf("EnvFromHost[STRIPE_KEY] = %q", got)
+	}
+}
+
+// openEnvRow opens an [env] literal's row in the item editor.
+func openEnvRow(t *testing.T, m model, key string) model {
+	t.Helper()
+	m.listField = fEnv
+	for i, kv := range m.env {
+		if kv.Key == key {
+			m.itemHostEnv = false
+			return m.startItem(i)
+		}
+	}
+	t.Fatalf("no [env] row for %q", key)
+	return m
+}
+
+// fileState is the config file as it stands, parsed the way a launch reads it.
+func fileState(t *testing.T, path string) (config.Config, []byte) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		t.Fatalf("the editor's write left a file byre cannot read: %v\n%s", err, raw)
+	}
+	return cfg, raw
+}
+
+// Converting an [env] literal to a credential is ONE change, and the accept
+// writes all of it. The literal leaving is not a buffer edit awaiting ^s: an
+// [env] literal takes its key out of env_from_host entirely (ADR 0026), so a
+// quit before ^s would leave the box taking the old plaintext while this screen
+// said the credential was set.
+func TestConvertingAnEnvLiteralRemovesItOnDiskWithTheWrite(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModelWith(t, admin, map[string]string{"STRIPE_KEY": "plaintext-key", "KEEP": "other"}, nil)
+	if m.dirty() {
+		t.Fatal("the fixture opened dirty")
+	}
+
+	m = openEnvRow(t, m, "STRIPE_KEY")
+	m.itemMode = schemeCredential
+	m.itemMode2 = credKindEnv
+	m = m.syncHostEnvLabel()
+	m.inputs[1].SetValue("sk-live-1")
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the conversion was refused: %s", done.itemErr)
+	}
+
+	// The write NAMED the removal, so the file's own mutation carried it.
+	if got := admin.lastWrite().RemoveEnv; got != "STRIPE_KEY" {
+		t.Fatalf("the write asked to remove %q — the accept's literal was left for ^s", got)
+	}
+	// Quit here, without ^s: the file holds the encrypted row and nothing else
+	// of that key.
+	cfg, raw := fileState(t, admin.path)
+	if v, still := cfg.Env["STRIPE_KEY"]; still {
+		t.Fatalf("[env] still holds %q after the accept:\n%s", v, raw)
+	}
+	if cfg.Env["KEEP"] != "other" {
+		t.Fatalf("the accept took an [env] row it was not given: %q", cfg.Env["KEEP"])
+	}
+	if !config.IsCredentialSource(cfg.EnvFromHost["STRIPE_KEY"]) {
+		t.Fatalf("env_from_host[STRIPE_KEY] = %q", cfg.EnvFromHost["STRIPE_KEY"])
+	}
+	// And the launch side delivers it: nothing shadows the row.
+	groups, gerr := config.EncryptedRows([]config.CascadeFile{{Label: "project", Path: admin.path, Raw: raw, Cfg: cfg}})
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if len(groups) != 1 || len(groups[0].Rows) != 1 || groups[0].Rows[0].Key != "STRIPE_KEY" {
+		t.Fatalf("the converted row is not delivered: %+v", groups)
+	}
+	// The buffer mirrors that file, so a clean buffer stays clean truthfully.
+	if done.dirty() {
+		t.Fatal("the conversion left the buffer unsaved though the whole change is on disk")
+	}
+	if _, still := done.assemble().Env["STRIPE_KEY"]; still {
+		t.Fatal("the working state kept the literal it converted")
+	}
+}
+
+// The sibling: an ordinary passthrough re-authored as a credential under a NEW
+// key. The buffer replaces the row; the file must too, or the old row survives
+// a "clean" quit and keeps delivering the host value.
+func TestReauthoringARowUnderANewKeyRemovesTheOldRowOnDisk(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModel(t, admin, map[string]string{"OLD_KEY": "env:HOST_TOKEN", "KEEP": "env:KEEP"})
+
+	m = openHostEnvRow(t, m, "OLD_KEY")
+	m.inputs[0].SetValue("NEW_KEY")
+	m.itemMode = schemeCredential
+	m.itemMode2 = credKindEnv
+	m = m.syncHostEnvLabel()
+	m.inputs[1].SetValue("sk-live-1")
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the re-authoring was refused: %s", done.itemErr)
+	}
+
+	if got := admin.lastWrite().RemoveEnvFromHost; got != "OLD_KEY" {
+		t.Fatalf("the write asked to remove %q — the replaced row was left for ^s", got)
+	}
+	cfg, raw := fileState(t, admin.path)
+	if v, still := cfg.EnvFromHost["OLD_KEY"]; still {
+		t.Fatalf("env_from_host still holds OLD_KEY = %q:\n%s", v, raw)
+	}
+	if cfg.EnvFromHost["KEEP"] != "env:KEEP" {
+		t.Fatalf("the accept took a row it was not given: %q", cfg.EnvFromHost["KEEP"])
+	}
+	if !config.IsCredentialSource(cfg.EnvFromHost["NEW_KEY"]) {
+		t.Fatalf("env_from_host[NEW_KEY] = %q", cfg.EnvFromHost["NEW_KEY"])
+	}
+	if done.dirty() {
+		t.Fatal("the re-authoring left the buffer unsaved though the whole change is on disk")
+	}
+}
+
+// A buffer that was ALREADY dirty stays dirty: its other edits are still
+// unsaved, and the credential write says nothing about them. What it must not
+// do is take those edits to disk on the credential's behalf.
+func TestADirtyBufferStaysDirtyAfterACredentialWrite(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModelWith(t, admin, map[string]string{"KEEP": "other"}, nil)
+	m.apt = append(m.apt, "ripgrep") // an unrelated, unsaved edit
+	if !m.dirty() {
+		t.Fatal("the fixture did not take the unsaved edit")
+	}
+
+	done := addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the write was refused: %s", done.itemErr)
+	}
+	if !done.dirty() {
+		t.Fatal("the credential write claimed the buffer's OTHER edits were saved")
+	}
+	cfg, _ := fileState(t, admin.path)
+	if len(cfg.Apt) != 0 {
+		t.Fatalf("the credential write carried an unrelated edit to disk: %v", cfg.Apt)
+	}
+	// The credential itself IS on disk, and a ^s over it is not drift.
+	if !config.IsCredentialSource(cfg.EnvFromHost["STRIPE_KEY"]) {
+		t.Fatalf("env_from_host[STRIPE_KEY] = %q", cfg.EnvFromHost["STRIPE_KEY"])
+	}
+	saved := done.save()
+	if saved.confirmOverwrite || saved.errMsg != "" {
+		t.Fatalf("^s over the editor's own credential write prompted: overwrite=%v err=%q", saved.confirmOverwrite, saved.errMsg)
+	}
+	if cfg, _ := fileState(t, admin.path); len(cfg.Apt) != 1 {
+		t.Fatalf("the save did not land the other edits: %v", cfg.Apt)
+	}
+}
+
+// The baseline a credential write leaves is what THAT write put on disk, taken
+// under its lock. A concurrent writer landing afterwards is another session's
+// change: the next ^s must see it as drift and ask, not reconcile over it
+// silently (which is what a baseline re-read after the lock produced).
+func TestAConcurrentWriteAfterACredentialWriteIsStillDrift(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModel(t, admin, nil)
+	// Another session's write, landing in the window between this write and the
+	// baseline the editor keeps.
+	admin.concurrent = func() {
+		raw, err := os.ReadFile(admin.path)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err := os.WriteFile(admin.path, append(raw, []byte("\n[env]\nFROM_OTHER = \"1\"\n")...), 0o644); err != nil {
+			t.Error(err)
+		}
+	}
+	done := addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the write was refused: %s", done.itemErr)
+	}
+	_, after := fileState(t, admin.path)
+	if bytes.Equal(done.saveBase, after) {
+		t.Fatal("the editor took the other session's bytes as its own baseline")
+	}
+	if done.saveBaseErr != nil {
+		t.Fatalf("baseline error: %v", done.saveBaseErr)
+	}
+	saved := done.save()
+	if !saved.confirmOverwrite {
+		t.Fatalf("^s did not see the foreign write as drift (err=%q status=%q)", saved.errMsg, saved.status)
+	}
+	if cfg, _ := fileState(t, admin.path); cfg.Env["FROM_OTHER"] != "1" {
+		t.Fatal("the save overwrote the other session's change instead of asking")
 	}
 }
 
