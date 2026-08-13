@@ -174,7 +174,11 @@ func (i *Identity) DecryptValue(key string, kind Kind, blob []byte) ([]byte, Out
 		return nil, OutcomeUnsupportedFormat, fmt.Errorf("credential %s: %w", key, err)
 	}
 	if gotKey != key || gotKind != kind {
-		return nil, OutcomeRowMismatch, fmt.Errorf("credential %s (%s): the stored value is stamped for %s (%s) — a blob copied from another row, a renamed key, or a value restored from history? Not delivering it", key, kind, truncate(gotKey), truncate(string(gotKind)))
+		// %q, not %s: the stamped key and kind come out of a payload anyone
+		// holding the public recipient can mint, and this message lands on
+		// develop's stderr — an unquoted one could carry ESC or CR and
+		// rewrite the terminal around the refusal.
+		return nil, OutcomeRowMismatch, fmt.Errorf("credential %s (%s): the stored value is stamped for %q (%q) — a blob copied from another row, a renamed key, or a value restored from history? Not delivering it", key, kind, truncate(gotKey), truncate(string(gotKind)))
 	}
 	if len(value) > MaxValue {
 		return nil, OutcomeUnsupportedFormat, fmt.Errorf("credential %s: the stored value is %d bytes; the per-value cap is %d", key, len(value), MaxValue)

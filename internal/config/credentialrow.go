@@ -135,7 +135,10 @@ func decodeEncryptedPayload(scheme, payload string) ([]byte, error) {
 	}
 	blob, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
-		return nil, fmt.Errorf("the encrypted value is not valid base64 (%s)", echo(payload))
+		// %q, like every other echo here: the payload is file content, and an
+		// unquoted one could carry ESC or CR onto the terminal this refusal
+		// prints to.
+		return nil, fmt.Errorf("the encrypted value is not valid base64 (%q)", echo(payload))
 	}
 	return blob, nil
 }
@@ -219,7 +222,7 @@ func ParseCredentialsBlock(raw []byte) (CredentialsBlock, bool, error) {
 	}
 	wrapped, err := base64.StdEncoding.DecodeString(identity)
 	if err != nil {
-		return CredentialsBlock{}, false, fmt.Errorf("credentials: identity is not valid base64 (%s)", echo(identity))
+		return CredentialsBlock{}, false, fmt.Errorf("credentials: identity is not valid base64 (%q)", echo(identity))
 	}
 	if err := credentials.ValidateRecipient(b.Recipient); err != nil {
 		return CredentialsBlock{}, false, fmt.Errorf("credentials: %w", err)

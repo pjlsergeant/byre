@@ -89,6 +89,12 @@ func TestParseEncryptedRowRejections(t *testing.T) {
 	if len(err.Error()) > 200 {
 		t.Fatalf("refusal echoes the whole value: %d chars", len(err.Error()))
 	}
+	// And it is quoted: the payload is file content, so control bytes must
+	// not reach the terminal this refusal prints to raw.
+	err = mustRowErr(t, "K", "encrypted:\x1b[2Jnope")
+	if strings.Contains(err.Error(), "\x1b") {
+		t.Fatalf("refusal echoes control bytes raw: %q", err.Error())
+	}
 }
 
 // "manifest" is a legal environment variable name and the delivery stream's

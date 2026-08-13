@@ -103,6 +103,18 @@ func TestInlineKeyBindingMismatch(t *testing.T) {
 	if !strings.Contains(msg, "stamped for") || !strings.Contains(msg, "GITHUB_TOKEN") || !strings.Contains(msg, "STRIPE_KEY") {
 		t.Fatalf("mismatch refusal must name the rule and both keys: %v", derr)
 	}
+
+	// The stamped key is decrypted out of a payload anyone holding the public
+	// recipient can mint, and this message lands on develop's stderr — so it
+	// is quoted, and control bytes never reach the terminal raw.
+	esc, err := EncryptValue(recipient, "A\x1b[2JB", KindEnv, []byte("sk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, derr = id.DecryptValue("STRIPE_KEY", KindEnv, esc)
+	if derr == nil || strings.Contains(derr.Error(), "\x1b") {
+		t.Fatalf("the stamped key must be quoted, not echoed raw: %v", derr)
+	}
 }
 
 func TestInlineKindBindingMismatch(t *testing.T) {
