@@ -1,9 +1,13 @@
 # Config files are shared custody: the preservation engine, one TOML library
 
-> **Amended by ADR 0057** (2026-08-07): [[credentials]] declaration saves
-> ride tomldoc like every user-config write; the vault's index.toml is
-> MACHINE-authored whole-file (temp+rename) and outside this ADR's
-> style-preserving scope.
+> **Amended by ADR 0057** (2026-08-13): credential writes ride tomldoc like
+> every other user-config write — there is no machine-authored carve-out,
+> because a credential lives in the shared-custody config file itself. Set,
+> unset, rekey and identity creation are additionally a compare-and-swap on
+> the COMPLETE file under the lock that guards it, which is preservation's
+> concurrency half stated for the one write whose loser is unrecoverable: a
+> value encrypted to a recipient that has since been replaced can never be
+> opened again.
 
 Decided 2026-07-25, grilled with the maintainer end-to-end. Three decisions
 that stand together:

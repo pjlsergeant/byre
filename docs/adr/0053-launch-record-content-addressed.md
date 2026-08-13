@@ -1,9 +1,9 @@
 # The launch record: what byre told the engine, addressed by its own hash
 
-> **Amended by ADR 0057** (2026-08-07): the record gains credential_unlock
-> and per-name decrypt outcomes ("scheduled", never "delivered" — the
-> record is immutable and written pre-start). Names and outcomes only;
-> values never, the standing keys-not-values rule.
+> **Amended by ADR 0057** (2026-08-13): the record gains credential_unlock
+> and per-KEY decrypt outcomes ("scheduled", never "delivered" — the record is
+> immutable and written pre-start). Keys and outcomes only; values never, the
+> standing keys-not-values rule.
 
 Decided 2026-07-28. Every container byre creates gets a **launch record** -- a
 TOML file in the project store holding the exposure facts byre handed the

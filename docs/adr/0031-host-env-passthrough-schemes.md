@@ -1,5 +1,13 @@
 # env_from_host grows env: and tz: sources; TERM and TZ join the core layer
 
+> **Amended by ADR 0057** (2026-08-13): the closed scheme set gains two more
+> members — `encrypted:` and `encrypted-file:`, a project credential's
+> ciphertext, opened by the physical file's own `[credentials]` identity and
+> delivered as an env var or a tmpfs file. They arrive the way this ADR says a
+> scheme must: as a named decision with its own consent surface, not a quiet
+> extension. The `""` disable and the closed-set rule are unchanged, and they
+> are the only members whose value comes from the config rather than the host.
+
 ADR 0026 shipped `env_from_host` with `git:` as the only source scheme
 and explicitly reserved `env:...` "until someone actually needs it — at
 which point it arrives with its own adoption flagging, not as a quiet

@@ -1,8 +1,10 @@
 # Worktrees inherit the project identity (no volume scope knob)
 
-> **Amended by ADR 0057** (2026-08-07): the credentials vault is
-> project-store state like everything else here — one vault per project,
-> shared by every worktree, its writes serialised by the same setup lock.
+> **Amended by ADR 0057** (2026-08-13): credentials are config, not store
+> state — they live inline in the config files, which a worktree already
+> inherits from the main worktree by this ADR. Writes to the project config
+> serialise on the same setup lock; a layer file has its own lock, because the
+> FILE owns the lock and every cooperating writer takes it.
 
 A linked git worktree resolves its byre identity from the **main
 worktree's** canonical path: config, volumes, image, and the setup lock

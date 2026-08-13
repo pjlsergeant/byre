@@ -1,11 +1,12 @@
 # The claim surface is classified, and BYRE_ is reserved vocabulary
 
-> **Amended by ADR 0057** (2026-08-07): [[credentials]] is classified
-> rendered (status rows + the exposure tally's credentials segment; values
-> render nowhere). BYRE_CRED_EXPECT / BYRE_CRED_DIR / BYRE_CRED_WAIT join
-> the reserved chassis vocabulary as launch-claim knobs with wait/export
-> protocol meaning ONLY — skewing them costs a bounded fail-open wait, the
-> benign direction.
+> **Amended by ADR 0057** (2026-08-13): credential rows are classified
+> rendered (status rows + the exposure tally's credentials segment; ciphertext
+> elides and values render nowhere). BYRE_CRED_EXPECT / BYRE_CRED_DIR /
+> BYRE_CRED_WAIT join the reserved chassis vocabulary as launch-claim knobs
+> with wait/export protocol meaning ONLY — and since the wait is fail-closed,
+> skewing them costs a box that refuses to run its agent, never one running
+> without the credentials it claimed.
 
 Decided 2026-07-27, absorbing the theme-2 spec from the first outside
 review (four independent reviewers; the spec itself was

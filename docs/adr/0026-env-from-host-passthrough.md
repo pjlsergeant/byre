@@ -1,9 +1,12 @@
 # env_from_host: named host-value passthrough, shipped visible
 
-> **Amended by ADR 0057** (2026-08-07): env_from_host is no longer the ONE
-> deliberate host->box value channel — the project-credentials vault is the
-> second, with its own consent surface ([[credentials]] declarations + the
-> per-launch passphrase). The grant/legibility model here is unchanged.
+> **Amended by ADR 0057** (2026-08-13): project credentials ride this table
+> rather than a second channel — `encrypted:` / `encrypted-file:` rows (ADR
+> 0031's scheme set, two members on). Such a row is the one here that asks the
+> host for NOTHING: it is a value the config itself carries, encrypted, so it
+> is delivered on its own tmpfs channel instead of `-e`, and its consent
+> surface is the row plus the per-launch passphrase. The grant/legibility
+> model here is otherwise unchanged.
 
 > **Amended by ADR 0031** (2026-07-14): the `env:` reservation below is
 > lifted — `env:<HOST_VAR>` and `tz:` are now legal sources, and TERM/TZ

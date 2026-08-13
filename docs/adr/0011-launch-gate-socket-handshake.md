@@ -1,10 +1,11 @@
 # Launch gate: loopback socket handshake, fail closed
 
-> **Amended by ADR 0057** (2026-08-07): the credential delivery wait is this
-> gate's deliberate OPPOSITE — bounded FAIL-OPEN (no credentials is safe; no
-> wall is not), sitting after the gate in the launcher. Its sentinel is
-> restart-safe because the delivery tmpfs empties: a restarted,
-> un-re-unlocked box pays at most the bounded wait and runs without.
+> **Amended by ADR 0057** (2026-08-13): the credential delivery wait takes
+> this gate's SHAPE — bounded and FAIL-CLOSED — sitting after the gate in the
+> launcher. Credentials are blocking: no sentinel, a manifest line the
+> launcher cannot honor, or a bare restart with credentials scheduled, and the
+> agent never runs. (An earlier ruling made this wait the gate's deliberate
+> opposite, fail-open; that was overturned before it shipped.)
 
 When a network-posture skill is enabled, the launcher waits **at its very
 top** -- before agent-context placement and before first-run hooks, which
