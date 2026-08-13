@@ -23,8 +23,9 @@ func storeEnv(t *testing.T) (string, map[string]string) {
 
 // downTo walks the global editor's fixed field order from the top (focus
 // starts on the first GRANTS field) to the Base image row: Mounts, Ports,
-// Egress, Env, Credentials, Template, Agent, Base.
-const downsToBase = 7
+// Egress, Env, Template, Agent, Base. Credentials stopped being a field of
+// its own when credential values moved inline onto the Env screen's rows.
+const downsToBase = 6
 
 func TestIntegrationTUIConfigSaveThenQuit(t *testing.T) {
 	Require(t)

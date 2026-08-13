@@ -71,25 +71,18 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	// the picker before driving it -- ←/→ in an input moves the cursor.
 	e = s.Keys("Up", "Right")
 	s.WaitForAfter(e, "host variable")
+	// Three more moves reach `credential`, the picker's last option and the
+	// product's one masked-input form: the kind picker appears beside it, and
+	// the notes state the write. Both are paint a model test cannot prove.
+	// (Nothing is typed, so nothing is written — esc leaves the form.)
+	e = s.Keys("Right", "Right", "Right")
+	s.WaitForAfter(e, "Delivered as")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "a add")
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "$EDITOR")
 
-	// Credentials: one past Env vars. The item editor is the product's one
-	// masked-input form — the add screen proves the Kind picker and the
-	// masked Value row paint (global editor: no Value row — the vault is
-	// project-scoped, so this asserts the declaration half only).
-	e = s.Keys("Down", "Enter")
-	s.WaitForAfter(e, "a add")
-	e = s.Keys("a")
-	s.WaitForAfter(e, "Add Credential")
-	e = s.Keys("Escape")
-	s.WaitForAfter(e, "a add")
-	e = s.Keys("Escape")
-	s.WaitForAfter(e, "$EDITOR")
-
-	// The seed_prefs tri-state: Credentials → Seed prefs is five rows down (Base,
+	// The seed_prefs tri-state: Env vars → Seed prefs is five rows down (Base,
 	// Template, Agent, Engine, Seed prefs). Walked because it is the only FORM
 	// row driven by ←/→ that the walk passes, and its three states are what a
 	// checkbox could not say. Nothing about the row's text — the dirty banner
