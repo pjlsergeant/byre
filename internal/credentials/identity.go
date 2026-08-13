@@ -64,8 +64,8 @@ var scryptWorkFactor = 18
 
 // SetWorkFactorForTesting lowers the identity-wrap work factor so suites in
 // OTHER packages (commands' launch wiring) don't pay production's deliberate
-// unlock cost on every test vault. Test harness only; production never
-// calls it.
+// unlock cost on every identity they mint. Test harness only; production
+// never calls it.
 func SetWorkFactorForTesting(logN int) { scryptWorkFactor = logN }
 
 // wrapIdentity age-encrypts the identity string under the passphrase at the
@@ -91,10 +91,9 @@ func wrapIdentity(id *age.X25519Identity, passphrase string) ([]byte, error) {
 }
 
 // unwrapIdentity unwraps a scrypt-wrapped identity blob — the expensive
-// step, shared by the vault's identity file and a config file's own
-// [credentials] block, so both pay the same pinned work factor and answer a
-// typo the same way. ErrBadPassphrase distinguishes a wrong passphrase
-// (re-askable) from a corrupt or oversize blob.
+// step every unlock pays, at the pinned work factor. ErrBadPassphrase
+// distinguishes a wrong passphrase (re-askable) from a corrupt or oversize
+// blob, where re-asking cannot help.
 func unwrapIdentity(wrapped []byte, passphrase string) (*age.X25519Identity, error) {
 	sid, err := age.NewScryptIdentity(passphrase)
 	if err != nil {

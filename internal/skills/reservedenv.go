@@ -85,10 +85,10 @@ var reservedEnvKnobs = map[string][]string{
 	"BYRE_FIRSTRUN_DIR": {ClaimContextDelivery, ClaimMCPDelivery, ClaimLaunch},
 
 	// The credential-delivery knobs: the flag that arms the launcher's
-	// bounded fail-open wait, and the dir/timeout it reads. Skewing them
-	// costs at most a bounded wait or an un-exported credential — the
-	// benign, fail-open direction — but they steer the launcher, so the
-	// launch claim degrades with them.
+	// bounded wait, and the dir/timeout it reads. That wait fails CLOSED, so
+	// skewing them costs the launch itself — and a redirected dir could feed
+	// the export step something byre never delivered. Either way they steer
+	// the launcher, so the launch claim degrades with them.
 	"BYRE_CRED_EXPECT": {ClaimLaunch},
 	"BYRE_CRED_DIR":    {ClaimLaunch},
 	"BYRE_CRED_WAIT":   {ClaimLaunch},

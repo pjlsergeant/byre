@@ -393,7 +393,8 @@ func (r *Runner) ExecInput(containerID string, uid, gid int, stdin io.Reader, co
 // this exec runs from develop's launch path concurrently with the attached
 // session: a wedged daemon (or a receiver that never reads) must cost at
 // most the bound, never a goroutine byre waits on forever. Delivery failure
-// is the caller's fail-open case, not a launch blocker.
+// then fails the LAUNCH — the caller stops the box, whose own launcher would
+// refuse to start the agent without the values anyway.
 func (r *Runner) ExecInputBounded(d time.Duration, containerID string, uid, gid int, stdin io.Reader, command ...string) (string, error) {
 	return r.captureBoundedIn(d, stdin, r.bin(), execInputArgs(containerID, uid, gid, command...)...)
 }

@@ -40,10 +40,11 @@ type Exposure struct {
 	DisabledMounts int  // switched off: no bind, but staying visible while off is the switch's point
 	Ports          int  // published ports
 	Env            int  // env vars the box gets (config-literal + skill runtime)
-	// Credentials counts the DECLARED set — the consent surface, presented
-	// beside env as one "what env does the agent see" answer. Whether a
-	// launch actually delivers (vault state, unlock) is launch-time fact,
-	// not tally material.
+	// Credentials counts the cascade's winning credential rows — presented
+	// beside env as one "what env does the agent see" answer, and counted
+	// apart from it because an encrypted row never joins the `-e` export.
+	// Whether a launch actually delivers one (the unlock, the decrypt) is a
+	// launch-time fact, not tally material.
 	Credentials int
 	Posture     string // declared network posture; "" = open (the default world, not a grant)
 	Egress      int    // resolved allowlist size; meaningful only under an allowlist-enforcing posture

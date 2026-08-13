@@ -1305,6 +1305,14 @@ func (m model) exposureNow() config.Exposure {
 		if src == "" {
 			continue
 		}
+		// A credential row is counted as a credential, not as env: the launch
+		// tally splits them the same way (an encrypted row never joins the
+		// -e export), and a key counted twice would make the two lines
+		// disagree over one grant.
+		if _, isCred, _ := config.ParseEncryptedRow(k, src); isCred {
+			e.Credentials++
+			continue
+		}
 		envKeys[k] = true
 	}
 	e.Env = len(envKeys)

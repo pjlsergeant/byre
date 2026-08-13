@@ -35,9 +35,9 @@ const (
 	maxKeyBytes = 256
 
 	// valueHeader is the value payload's format line. A byre that does not
-	// know a header reports unsupported-format rather than misparsing it —
-	// which is also why this format does not reuse the vault entry's header:
-	// the fields below it differ.
+	// know a header reports unsupported-format rather than misparsing it,
+	// and the version distinguishes this payload's key/kind stamps from any
+	// earlier shape a file might still carry.
 	valueHeader = "byre-credential 2"
 
 	// valueReadCap bounds the plaintext read at decrypt: the largest legal
