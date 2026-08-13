@@ -379,6 +379,12 @@ func decryptCredentialsLocked(groups []config.CredentialFile, open unlockedFiles
 // and byre would print nothing about it. That silent class is what this
 // closes; the mismatch is transient by construction, so the remedy is to run
 // again.
+//
+// Deliberately ONE-directional. Merged-has/file-lacks is the silent class
+// above; the transient opposite — a row the file view carries that the merged
+// config no longer declares — is accepted, because it delivers one extra value
+// the user was prompted for and the launch record names, which is loud by
+// construction rather than silent.
 func refuseCredentialViewMismatch(hostEnv []hostEnvResult, values map[string][]byte) error {
 	var missing []string
 	for _, r := range hostEnv {

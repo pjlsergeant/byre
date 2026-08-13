@@ -215,6 +215,13 @@ func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldo
 	// dir and its path record together, which is what keeps a write from
 	// resurrecting a store `byre forget` deleted (the concern AtomicWrite
 	// states). This moves WHEN it runs, not who does it.
+	//
+	// The residue that buys, accepted: enrollment now happens even when the
+	// write is refused, so a set the compare-and-swap (or the re-parse) turns
+	// down can leave a freshly created, empty store behind; and a `byre forget`
+	// landing between this call and the lock leaves a config file whose project
+	// has no path record until the next Bootstrap re-makes it. Both are
+	// self-healing, and neither can lose a value.
 	if t.prepare != nil {
 		if err := t.prepare(); err != nil {
 			return err
