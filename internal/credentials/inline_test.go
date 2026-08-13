@@ -72,7 +72,7 @@ func TestInlineEncryptNeedsNoPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, oc, derr := id.DecryptValue("TOKEN", KindEnv, blob); oc != "" || derr != nil || string(got) != "v" {
-		t.Fatalf("cold write then unlock: outcome=%s err=%v value=%q", oc, derr, got)
+		t.Fatalf("set without passphrase, then unlock: outcome=%s err=%v value=%q", oc, derr, got)
 	}
 }
 
@@ -167,14 +167,14 @@ func TestInlineValueCapAtDecrypt(t *testing.T) {
 	// The cap is enforced on the way OUT too: a blob minted past it (anyone
 	// holding the recipient can) is refused rather than delivered.
 	id, recipient, _ := newInline(t, "pw")
-	oversize := forgeEntry(t, recipient, valuePayload("BIG", KindFile, bytes.Repeat([]byte("x"), MaxValue+1)))
+	oversize := forgeBlob(t, recipient, valuePayload("BIG", KindFile, bytes.Repeat([]byte("x"), MaxValue+1)))
 	_, oc, derr := id.DecryptValue("BIG", KindFile, oversize)
 	if oc != OutcomeUnsupportedFormat || derr == nil || !strings.Contains(derr.Error(), "per-value cap") {
 		t.Fatalf("oversize payload: outcome=%s err=%v", oc, derr)
 	}
 	// And the read itself is bounded: a payload far past the cap never lands
 	// in memory whole.
-	huge := forgeEntry(t, recipient, valuePayload("BIG", KindFile, bytes.Repeat([]byte("x"), MaxValue*4)))
+	huge := forgeBlob(t, recipient, valuePayload("BIG", KindFile, bytes.Repeat([]byte("x"), MaxValue*4)))
 	_, oc, derr = id.DecryptValue("BIG", KindFile, huge)
 	if oc != OutcomeUnsupportedFormat || derr == nil || !strings.Contains(derr.Error(), "cap") {
 		t.Fatalf("huge payload: outcome=%s err=%v", oc, derr)
@@ -183,12 +183,12 @@ func TestInlineValueCapAtDecrypt(t *testing.T) {
 
 func TestInlineUnsupportedFormat(t *testing.T) {
 	id, recipient, _ := newInline(t, "pw")
-	forged := forgeEntry(t, recipient, []byte("byre-credential 999\nSTRIPE_KEY\nenv\nvalue"))
+	forged := forgeBlob(t, recipient, []byte("byre-credential 999\nSTRIPE_KEY\nenv\nvalue"))
 	_, oc, derr := id.DecryptValue("STRIPE_KEY", KindEnv, forged)
 	if oc != OutcomeUnsupportedFormat || derr == nil || !strings.Contains(derr.Error(), "format") {
 		t.Fatalf("future-format payload: outcome=%s err=%v", oc, derr)
 	}
-	truncated := forgeEntry(t, recipient, []byte(valueHeader+"\nSTRIPE_KEY"))
+	truncated := forgeBlob(t, recipient, []byte(valueHeader+"\nSTRIPE_KEY"))
 	_, oc, derr = id.DecryptValue("STRIPE_KEY", KindEnv, truncated)
 	if oc != OutcomeUnsupportedFormat || derr == nil || !strings.Contains(derr.Error(), "truncated") {
 		t.Fatalf("truncated payload: outcome=%s err=%v", oc, derr)
@@ -261,10 +261,10 @@ func TestInlineRekeyLeavesValueBlobsByteIdentical(t *testing.T) {
 	}
 }
 
-// forgeEntry encrypts an arbitrary payload to a recipient — how a test mints
-// what an attacker holding the public half could: the key/kind stamp is an
+// forgeBlob encrypts an arbitrary payload to a recipient — how a test mints
+// what anyone holding the public half could: the key/kind stamp is an
 // accident guard, not integrity, and these tests say so by exercising it.
-func forgeEntry(t *testing.T, recipient string, payload []byte) []byte {
+func forgeBlob(t *testing.T, recipient string, payload []byte) []byte {
 	t.Helper()
 	rcp, err := age.ParseX25519Recipient(recipient)
 	if err != nil {

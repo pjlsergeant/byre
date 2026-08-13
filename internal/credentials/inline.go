@@ -112,7 +112,7 @@ func (i *Identity) Rewrap(passphrase string) ([]byte, error) {
 // can refuse an unusable [credentials] block at parse without importing age.
 func ValidateRecipient(recipient string) error {
 	if _, err := age.ParseX25519Recipient(recipient); err != nil {
-		return fmt.Errorf("recipient %q is not an age public key (want age1…)", truncate(recipient))
+		return fmt.Errorf("recipient %q is not an age public key (want age1…)", Echo(recipient))
 	}
 	return nil
 }
@@ -129,7 +129,7 @@ func EncryptValue(recipient, key string, kind Kind, value []byte) ([]byte, error
 	}
 	rcp, err := age.ParseX25519Recipient(recipient)
 	if err != nil {
-		return nil, fmt.Errorf("credential %s: recipient %q is not an age public key — the file's [credentials] block is damaged", key, truncate(recipient))
+		return nil, fmt.Errorf("credential %s: recipient %q is not an age public key — the file's [credentials] block is damaged", key, Echo(recipient))
 	}
 	var buf bytes.Buffer
 	w, err := age.Encrypt(&buf, rcp)
@@ -178,7 +178,7 @@ func (i *Identity) DecryptValue(key string, kind Kind, blob []byte) ([]byte, Out
 		// holding the public recipient can mint, and this message lands on
 		// develop's stderr — an unquoted one could carry ESC or CR and
 		// rewrite the terminal around the refusal.
-		return nil, OutcomeRowMismatch, fmt.Errorf("credential %s (%s): the stored value is stamped for %q (%q) — a blob copied from another row, a renamed key, or a value restored from history? Not delivering it", key, kind, truncate(gotKey), truncate(string(gotKind)))
+		return nil, OutcomeRowMismatch, fmt.Errorf("credential %s (%s): the stored value is stamped for %q (%q) — a blob copied from another row, a renamed key, or a value restored from history? Not delivering it", key, kind, Echo(gotKey), Echo(string(gotKind)))
 	}
 	if len(value) > MaxValue {
 		return nil, OutcomeUnsupportedFormat, fmt.Errorf("credential %s: the stored value is %d bytes; the per-value cap is %d", key, len(value), MaxValue)
@@ -194,13 +194,13 @@ func validateBinding(key string, kind Kind) error {
 		return errors.New("credential: no config key to bind the value to")
 	}
 	if strings.ContainsAny(key, "\n\r") {
-		return fmt.Errorf("credential %q: a config key cannot contain a line break", truncate(key))
+		return fmt.Errorf("credential %q: a config key cannot contain a line break", Echo(key))
 	}
 	if len(key) > maxKeyBytes {
-		return fmt.Errorf("credential %q: the config key is %d bytes; the cap is %d", truncate(key), len(key), maxKeyBytes)
+		return fmt.Errorf("credential %q: the config key is %d bytes; the cap is %d", Echo(key), len(key), maxKeyBytes)
 	}
 	if !kind.Valid() {
-		return fmt.Errorf("credential %s: kind %q invalid (want %s|%s)", key, truncate(string(kind)), KindEnv, KindFile)
+		return fmt.Errorf("credential %s: kind %q invalid (want %s|%s)", key, Echo(string(kind)), KindEnv, KindFile)
 	}
 	return nil
 }
@@ -235,9 +235,11 @@ func parseValuePayload(p []byte) (key string, kind Kind, value []byte, err error
 	return key, Kind(rest[:j]), rest[j+1:], nil
 }
 
-// truncate bounds an echoed value so a pasted wall of input cannot become the
-// message.
-func truncate(s string) string {
+// Echo bounds a value echoed into an error message so a pasted wall of input
+// cannot become the message. One owner for every credential surface (config's
+// row parsing and the commands' flag echoes included): a terminal-safety or
+// escaping fix lands once, not per copy.
+func Echo(s string) string {
 	r := []rune(s)
 	if len(r) > 64 {
 		return string(append(r[:64], '…'))

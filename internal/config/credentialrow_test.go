@@ -216,7 +216,7 @@ func TestParseCredentialsBlockBoundsAnUnknownKeyEcho(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown key") {
 		t.Fatalf("want the unknown-key rule to fire, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), `"`+strings.Repeat("x", 32)+"…\"") {
+	if !strings.Contains(err.Error(), `"`+strings.Repeat("x", 64)+"…\"") {
 		t.Fatalf("the key must be echoed quoted and bounded: %v", err)
 	}
 	if strings.Contains(err.Error(), "must be a string") || strings.Contains(err.Error(), "\x1b") {

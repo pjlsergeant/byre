@@ -90,17 +90,7 @@ func ParseCredentialMode(v string) (CredentialMode, error) {
 	case CredentialStdin:
 		return CredentialStdin, nil
 	}
-	return "", fmt.Errorf("--credentials %q: want ask|skip|stdin", echoValue(v))
-}
-
-// echoValue bounds an echoed flag value so a pasted wall of input cannot
-// become the message.
-func echoValue(v string) string {
-	r := []rune(v)
-	if len(r) > 32 {
-		return string(append(r[:32], '…'))
-	}
-	return v
+	return "", fmt.Errorf("--credentials %q: want ask|skip|stdin", credentials.Echo(v))
 }
 
 // readPassphrase is the masked passphrase read, a seam so tests can answer
@@ -651,10 +641,4 @@ func stopCredentialsClosed(r sessionRunner, warn io.Writer, container string) {
 	if err := r.Stop(container); err != nil {
 		fmt.Fprintf(warn, "byre: stopping the box failed: %v — its own bounded wait ends the launch instead.\n", err)
 	}
-}
-
-// credentialRowCount is the exposure tally's credential segment: the rows
-// the cascade would deliver, which is what a launch actually hands the box.
-func credentialRowCount(groups []config.CredentialFile) int {
-	return countRows(groups)
 }

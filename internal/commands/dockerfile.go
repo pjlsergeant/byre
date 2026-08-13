@@ -118,7 +118,7 @@ func DockerRun(s Streams, projectDir string) error {
 	// is that it prints what develop would run. develop adds these under the
 	// setup lock, after this function's argv is built, so they cannot be
 	// inherited from there.
-	credRows := credentialRowCount(rv.credFiles)
+	credRows := countRows(rv.credFiles)
 	if credRows > 0 {
 		params.Tmpfs = append(params.Tmpfs, credTmpfsDeclared(rv.credFiles, ident, runner.Engine(engine)))
 		params.Env["BYRE_CRED_EXPECT"] = credExpectFlag

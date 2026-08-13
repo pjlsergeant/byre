@@ -790,7 +790,7 @@ func exposureOf(rv resolved, selfEdit bool, hostEnv []hostEnvResult) config.Expo
 		SelfEdit:    selfEdit,
 		Ports:       len(rv.cfg.Ports),
 		Env:         len(envKeys),
-		Credentials: credentialRowCount(rv.credFiles),
+		Credentials: countRows(rv.credFiles),
 		Egress:      len(resolvedEgress(rv)),
 		Closed:      len(rv.cfg.EgressClosed),
 		RawRunArgs:  len(rv.cfg.RunArgs) > 0,

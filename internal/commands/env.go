@@ -9,7 +9,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
-// hostEnvState is the outcome of resolving one env_from_host entry. Four
+// hostEnvState is the outcome of resolving one env_from_host entry. Distinct
 // states, not a boolean: a caller holding only "present" is invited to
 // reconstruct the precedence rules itself and get them wrong -- the exact
 // class of divergence resolveHostEnv exists to end.

@@ -138,7 +138,7 @@ func decodeEncryptedPayload(scheme, payload string) ([]byte, error) {
 		// %q, like every other echo here: the payload is file content, and an
 		// unquoted one could carry ESC or CR onto the terminal this refusal
 		// prints to.
-		return nil, fmt.Errorf("the encrypted value is not valid base64 (%q)", echo(payload))
+		return nil, fmt.Errorf("the encrypted value is not valid base64 (%q)", credentials.Echo(payload))
 	}
 	return blob, nil
 }
@@ -224,7 +224,7 @@ func FormatEncryptedRow(kind credentials.Kind, blob []byte) (string, error) {
 	case credentials.KindFile:
 		return EncryptedFileScheme + base64.StdEncoding.EncodeToString(blob), nil
 	}
-	return "", fmt.Errorf("credential kind %q invalid (want %s|%s)", echo(string(kind)), credentials.KindEnv, credentials.KindFile)
+	return "", fmt.Errorf("credential kind %q invalid (want %s|%s)", credentials.Echo(string(kind)), credentials.KindEnv, credentials.KindFile)
 }
 
 // CredentialsBlock is one physical config file's [credentials] table: the
@@ -267,7 +267,7 @@ func ParseCredentialsBlock(raw []byte) (CredentialsBlock, bool, error) {
 		// echoed it raw and unbounded (a pasted wall, or an ESC, onto the
 		// terminal a develop refusal prints to).
 		if k != "identity" && k != "recipient" {
-			return CredentialsBlock{}, false, fmt.Errorf("credentials: unknown key %q (want identity, recipient)", echo(k))
+			return CredentialsBlock{}, false, fmt.Errorf("credentials: unknown key %q (want identity, recipient)", credentials.Echo(k))
 		}
 		s, ok := table[k].(string)
 		if !ok {
@@ -284,7 +284,7 @@ func ParseCredentialsBlock(raw []byte) (CredentialsBlock, bool, error) {
 	}
 	wrapped, err := base64.StdEncoding.DecodeString(identity)
 	if err != nil {
-		return CredentialsBlock{}, false, fmt.Errorf("credentials: identity is not valid base64 (%q)", echo(identity))
+		return CredentialsBlock{}, false, fmt.Errorf("credentials: identity is not valid base64 (%q)", credentials.Echo(identity))
 	}
 	if err := credentials.ValidateRecipient(b.Recipient); err != nil {
 		return CredentialsBlock{}, false, fmt.Errorf("credentials: %w", err)
@@ -363,14 +363,4 @@ func EncryptedRows(files []CascadeFile) ([]CredentialFile, error) {
 		out = append(out, CredentialFile{Label: f.Label, Path: f.Path, Block: block, HasBlock: has, Rows: rows})
 	}
 	return out, nil
-}
-
-// echo bounds a rejected value so a pasted wall of ciphertext cannot become
-// the message.
-func echo(s string) string {
-	r := []rune(s)
-	if len(r) > 32 {
-		return string(append(r[:32], '…'))
-	}
-	return s
 }

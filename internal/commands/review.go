@@ -352,8 +352,8 @@ func credentialReviewLines(store, content []byte) []grantLine {
 			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential value changed (%s -> %s)%s",
 				key, before.render(key), after.render(key), credentialRejectAdvice), Credential: true})
 		case !hadOld && hadNew:
-			// Quieter: a key that was not here is a new declaration, and the
-			// grant summary already lists it as a row. Say what appeared.
+			// Quieter: a key that was not here is a new row, and the grant
+			// summary already lists it. Say what appeared.
 			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential row appeared (%s)", key, after.render(key)), Credential: true})
 		case hadOld && !hadNew:
 			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential row vanished (was %s) — its value is gone from this file", key, before.render(key)), Credential: true})
