@@ -313,6 +313,12 @@ func (m model) updateCredPass(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab", "down", "shift+tab", "up":
 		return m.focusCredPass(1 - m.credPassFocus), nil
+	case "ctrl+s":
+		// ^s saves everywhere else in this editor; here it would write the
+		// file underneath an open decision. Say that instead of swallowing
+		// the keystroke.
+		m.credPassErr = "finish this passphrase, or esc to cancel it — ^s saves the rest of the screen after that"
+		return m, nil
 	case "enter":
 		if m.credPassFocus == 0 {
 			return m.focusCredPass(1), nil

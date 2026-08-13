@@ -253,7 +253,16 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 	case actOverride:
 		return m.startOverride(r), nil
 	case actDelete:
+		// Deleting a credential row deletes the VALUE: the ciphertext is in
+		// the row and byre keeps no copy of it anywhere else. Read before the
+		// delete, said after it — the same sentence leaving the credential
+		// kind in the form earns.
+		credential := m.itemHostEnv && r.idx >= 0 && r.idx < len(m.hostEnv) &&
+			config.IsCredentialSource(m.hostEnv[r.idx].Value)
 		m.deleteItem(m.listField, r.idx)
+		if credential {
+			m.status = r.ident + " — " + credentialUnsetNote + "; ^s writes it"
+		}
 		if r.also {
 			// Same data-vs-terminal rule as the row paint: the echoed value
 			// rides the status line, so it is escaped there too.
@@ -790,6 +799,11 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// item keeps the editor open with its error and saves nothing.
 		next := m.commitItem()
 		if next.itemErr != "" {
+			return next, nil
+		}
+		if next.mode == modeCredPass {
+			// The item was accepted and is now waiting on a passphrase; the
+			// save belongs after that decision, not underneath its modal.
 			return next, nil
 		}
 		return next.save(), nil
@@ -1846,6 +1860,9 @@ func (m model) viewItem() string {
 	}
 	hint := helpLine("tab", "next", "enter", "accept", "^s", "save", "esc", "cancel")
 	switch {
+	// "accept" would understate it on a credential: enter is the write.
+	case m.listField == fEnv && isCredentialScheme(m.itemMode):
+		hint = helpLine("tab", "next", "←/→", "source", "enter", "encrypt + write", "^s", "save", "esc", "cancel")
 	case m.listField == fMounts:
 		hint = helpLine("tab", "next", "→", "accept suggestion", "←/→", "mode", "enter", "accept", "^s", "save", "esc", "cancel")
 	case m.itemHasMode2:

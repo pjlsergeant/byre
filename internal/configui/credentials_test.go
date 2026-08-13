@@ -581,3 +581,48 @@ func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
 		t.Fatal("this file pinned the layer's own ciphertext instead of its new value")
 	}
 }
+
+// A stored credential row decodes to its KIND and never to its payload: the
+// picker has to open on what the row is, and the value box must not be
+// prefilled with a ciphertext no form can re-encode.
+func TestCredentialSchemesDecodeToTheirKind(t *testing.T) {
+	for _, tc := range []struct {
+		src    string
+		scheme int
+	}{
+		{config.EncryptedScheme + "AAAA", schemeCredEnv},
+		{config.EncryptedFileScheme + "AAAA", schemeCredFile},
+	} {
+		got, arg := hostEnvScheme(tc.src)
+		if got != tc.scheme {
+			t.Errorf("hostEnvScheme(%q) = %d, want %d", tc.src, got, tc.scheme)
+		}
+		if arg != "" {
+			t.Errorf("hostEnvScheme(%q) handed back %q — the payload is not an argument", tc.src, arg)
+		}
+	}
+}
+
+// Deleting a credential row deletes the only copy of that value, so the row
+// action says so rather than reading like any other un-pin.
+func TestDeletingACredentialRowSaysTheValueGoes(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+	m := credModel(t, admin, map[string]string{"STRIPE_KEY": row})
+	var target listRow
+	for _, r := range m.fieldRows(fEnv) {
+		if r.kind == rowHostEnv && r.ident == "STRIPE_KEY" {
+			target = r
+		}
+	}
+	m.itemHostEnv = true
+	next, _ := m.applyRowAct(actDelete, target)
+	got := next.(model)
+	if _, still := got.assemble().EnvFromHost["STRIPE_KEY"]; still {
+		t.Fatal("the row survived the delete")
+	}
+	if !strings.Contains(got.status, "ciphertext") {
+		t.Fatalf("status = %q, want the loss stated", got.status)
+	}
+}
