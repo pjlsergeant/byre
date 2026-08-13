@@ -50,31 +50,62 @@ with kernel exploits.
 
 ## Specific facts worth knowing
 
-**Project credentials protect the disk, not the running box.** The
-vault ([[credentials]] +
-[ADR 0057](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0057-project-credentials-vault.md))
-stores values age-encrypted in the host-side project store and decrypts
-them only at launch, after the passphrase — that is real protection
-against off-box disk access (a stolen laptop, a backup blob, a synced
-dotfiles directory), and it is the whole of the security content. byre
-writes the decrypted plaintext to exactly one filesystem place — a
-per-session tmpfs that empties when the box stops — and to no host
-file, image layer, engine-visible config value, or volume. What it
-deliberately does NOT do: the agent is handed the delivered values
-(that is the point) and can copy or send them anywhere it can reach —
-an open network exfiltrates an unlocked credential, so pair the vault
-with the firewall skill; the vault's metadata (`index.toml`: the
-recipient and credential names/kinds) is not itself encrypted, so disk
-access learns the names exist; a mount placed over the delivery tmpfs
-relocates the plaintext onto durable storage and can re-surface it on a
-bare restart without a fresh unlock (disclosed as a managed-path
-shadow); a writer to the project store can roll back, forge, or delete
-vault contents; transient plaintext in process memory can reach swap,
-core dumps, or a hibernation image; and a weak passphrase weakens the
-at-rest encryption to match. `--self-edit` hands the agent authorship
-of the vault files along with the rest of the store — its own warning
-covers that. There is no recovery path: a forgotten passphrase means a
-new vault (`byre credentials init --replace`).
+**Project credentials protect the disk, not the running box.** A
+credential is an age-encrypted value stored inline in your config files
+— an `encrypted:` or `encrypted-file:` row in `[env_from_host]`, opened
+by the identity in that file's own `[credentials]` block, which is
+itself wrapped under a passphrase with scrypt
+([ADR 0057](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0057-project-credentials.md)).
+The passphrase is the protection: byre decrypts only at launch, after
+you enter it. That is real protection against off-box disk access (a
+stolen laptop, a backup blob, a synced dotfiles directory), and it is
+the whole of the security content. byre writes the decrypted plaintext
+to exactly one filesystem place — a per-session tmpfs that empties when
+the box stops — and to no host file, image layer, engine-visible config
+value, or volume.
+
+What it deliberately does NOT do:
+
+- The agent is handed the delivered values — that is the point — and
+  can copy or send them anywhere it can reach. An open network
+  exfiltrates an unlocked credential, so pair credentials with the
+  firewall skill.
+- The **key names are cleartext**, and so is the recipient each value is
+  encrypted to. Disk access learns which credentials exist and what
+  they are called.
+- A mount placed over the delivery tmpfs relocates the plaintext onto
+  durable storage and can re-surface it on a bare restart without a
+  fresh unlock (disclosed as a managed-path shadow).
+- **Anyone who can write your config files can change what a row
+  delivers.** The encrypted payload is stamped with the key and kind it
+  was set for, which catches accidents — a blob swapped between rows, a
+  value replayed from git history onto a renamed key, a copy-paste
+  across files — but it is not integrity: anyone holding the cleartext
+  recipient can produce a correctly-stamped value. This bites in exactly
+  one place, `byre preset apply`: your repo is the box's own writable
+  tree, so if you ship credentials through a repo preset, whatever
+  writes that repo can **mint** a chosen value (it has the recipient),
+  or **swap**, **transplant**, or **replay** existing blobs without it.
+  The prize is durable poisoning of future sessions — a swapped API key
+  that outlives the box — not plaintext, which the box is handed anyway.
+  byre answers this at the consent gate rather than by hiding the
+  values: the apply review flags every changed row where either side is
+  a credential ("if you didn't rotate this credential, reject"), rows
+  that appeared or vanished, and any change to the `[credentials]`
+  block itself. Credentials you never ship through a preset have no
+  exposure here.
+- Transient plaintext in process memory — byre's during launch, the
+  agent's afterwards — can reach swap, core dumps, or a hibernation
+  image.
+- A weak passphrase weakens the at-rest encryption to match. Your
+  backups and any synced dotfiles carry the ciphertext, so the
+  passphrase is what stands between a copied config file and the value
+  inside it.
+
+`--self-edit` hands the agent authorship of your config files along
+with the rest of the store — its own warning covers that. There is no
+recovery path: a forgotten passphrase means `byre credentials unset` on
+each row and setting the values again.
 
 **Docker daemon access is root-equivalent.** Anyone who can talk to the
 Docker daemon (the `docker` group) can mount any named volume -- byre's

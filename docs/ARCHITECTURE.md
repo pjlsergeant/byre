@@ -685,9 +685,14 @@ Runtime constants:
   your `.gitconfig`, not git credentials), `TERM` (the launching
   terminal's), and `TZ` (the host timezone: the TZ var if set, else
   the `/etc/localtime` symlink's IANA name). Sources are a closed
-  scheme set (`git:<key>`, `env:<HOST_VAR>`, `tz:`); each entry is a
-  grant -- attributed in status, counted in exposure, disable-able per
-  layer (`KEY = ""`). Host env is otherwise isolated (ADR 0026).
+  scheme set (`git:<key>`, `env:<HOST_VAR>`, `tz:`, and the two
+  credential kinds `encrypted:` / `encrypted-file:`); each host-sourced
+  entry is a grant -- attributed in status, counted in exposure,
+  disable-able per layer (`KEY = ""`). A credential row asks the host
+  for nothing: it carries an age ciphertext this config file's own
+  `[credentials]` identity opens, and it is delivered over the
+  credential channel onto the session tmpfs rather than as `-e` (ADR
+  0057). Host env is otherwise isolated (ADR 0026).
 - The launcher: wait at the launch gate if a network-posture skill is
   enabled (ADR 0011), export the per-session context additions as
   `BYRE_SESSION_CONTEXT` (under an allowlist posture, the session's

@@ -105,6 +105,11 @@ grant: `KEY = "env:HOST_VAR"` passes a host env var at launch,
 values resolve at launch and never land in a layer. Git identity,
 `TERM`, and `TZ` already pass through by default.
 
+A row can also carry the value itself, encrypted: that is a **project
+credential**, written by `byre credentials set KEY` or by the same Env
+screen, opened at launch with a passphrase. Use it when the value
+should live with the project rather than in your host environment.
+
 Both live on one screen, because they answer one question -- where does
 this variable's value come from. The **Source** picker on a row switches
 between them, moving the entry rather than leaving a twin behind. One
@@ -123,6 +128,11 @@ credential lands in the agent's state volume, per project, and the
 shared-auth skills make one login serve every box. But where an API key
 is the workflow, `env_from_host` keeps it out of the image, resolves it
 fresh at every launch, and shows as a named grant in `byre status`.
+
+If the key should belong to the project rather than to your host
+environment, `byre credentials set OPENAI_API_KEY` stores it encrypted
+in the config itself and asks for the passphrase at launch -- same
+table, same screen, no host env var to keep in sync.
 
 ## Use Podman instead of Docker?
 

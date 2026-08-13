@@ -178,17 +178,26 @@ deliberately outside the rw-mounted project tree so the boxed agent can't
 rewrite its own sandbox.
 
 **Project credentials**:
-Named values a project declares (`[[credentials]]`: name, kind, target)
-and stores age-encrypted in the host-side store's vault, decrypted only at
-launch after the per-launch passphrase and delivered onto a per-session
-tmpfs (ADR 0057). The user-facing noun is "credentials" (`byre
-credentials`, the editor's Credentials screen). Distinct from the AGENT's
-own logins (the agent-login sense -- claude/codex signing in INSIDE the
-box, ADR 0007's territory): project credentials are values the user hands
-the agent, not identities the agent holds.
+Values a project stores age-encrypted INLINE in its config files (ADR
+0057) and delivers at launch. Each one is a **credential row** in
+`env_from_host` whose source names a **kind**: `encrypted:` (arrives as
+an env var) or `encrypted-file:` (arrives as a file on the session
+tmpfs, its path in an env var). The **`[credentials]` block** is the
+file-local table holding the scrypt-wrapped **identity** that opens THAT
+file's rows and the cleartext **recipient** new values encrypt to; it
+belongs to the physical file and never merges through the cascade.
+Delivery is **blocking**: a declared credential is delivered or the
+launch stops (`--credentials=skip` is the one deliberate way without).
+The user-facing noun is "credentials" (`byre credentials`; the editor
+authors them on its Env screen). Distinct from the AGENT's own logins
+(the agent-login sense -- claude/codex signing in INSIDE the box, ADR
+0007's territory): project credentials are values the user hands the
+agent, not identities the agent holds.
 _Avoid_: "secrets" as the noun (byre is not a secret manager in the
-rotation/IAM sense -- PRINCIPLES); "vault" for anything but the encrypted
-store itself.
+rotation/IAM sense -- PRINCIPLES); "vault", "entry", and
+"declaration" (the vault-directory design ADR 0057 overturned -- there is
+no store directory, no entry name, and no second declaration beside the
+row).
 
 **Proposal / Adoption** (historical):
 Pre-preset (ADR 0029) vocabulary for an in-tree `byre.config` and the
@@ -396,22 +405,29 @@ install remedy)
 Anything that widens what the box can reach beyond a bare box: the project
 mount (the implicit grant every box carries), host mounts, ports, skill
 runtime holes, env *passed through from the host* (`env_from_host` --
-byre ships git identity, TERM, and TZ; a config-literal env var is
-config, not a grant), and egress entries under a restrictive posture (an
+byre ships git identity, TERM, and TZ; a config-literal env var and a
+credential row are config, not grants), and egress entries under a
+restrictive posture (an
 open network is the default world, not a grant). byre makes grants
 legible; it never gates them.
 _Avoid_: permission (implies a policy engine deciding; byre only reports)
 
 **Host env passthrough (`env_from_host`)**:
-The one deliberate host→box data channel: a config map `KEY = "source"`,
-each live entry a grant. Sources are a closed scheme set --
-`git:<config-key>`, `env:<HOST_VAR>` (absent host var sets nothing),
-`tz:` (the host timezone: TZ var if set, else the `/etc/localtime`
-symlink's IANA name), and `""` to disable a lower layer's key. byre's
-core layer ships git identity, TERM, and TZ (ADR 0026/0031). The `BYRE_`
-namespace is refused here as it is in `[env]` (ADR 0050 tier 1): the
-scheme set limits what a passthrough can SPELL, not what it can reach.
-A literal value belongs in `[env]`; it is config, not a grant.
+The one deliberate host→box data channel: a config map `KEY = "source"`.
+Sources are a closed scheme set -- `git:<config-key>`, `env:<HOST_VAR>`
+(absent host var sets nothing), `tz:` (the host timezone: TZ var if set,
+else the `/etc/localtime` symlink's IANA name), the two credential kinds
+`encrypted:` / `encrypted-file:`, and `""` to disable a lower layer's
+key. byre's core layer ships git identity, TERM, and TZ (ADR
+0026/0031). The `BYRE_` namespace is refused here as it is in `[env]`
+(ADR 0050 tier 1): the scheme set limits what a passthrough can SPELL,
+not what it can reach.
+A live entry naming a HOST source is a grant; a plaintext literal
+belongs in `[env]` and is config, not a grant. A **credential row** is
+the third case: a value the config itself carries, encrypted, asking the
+host for nothing -- so it is delivered on the credential channel rather
+than `-e`, and it is classified rendered wherever it appears
+(ciphertext elides, values never render).
 
 **Env docs (`env_docs`)**:
 A skill's declared consumed-env guidance (`[runtime.env_docs]`,

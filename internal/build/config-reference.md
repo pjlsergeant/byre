@@ -75,9 +75,7 @@ exceptions noted inline.
 - `[[ports]]` -- `container` (required), `host` (defaults to mirror),
   `interface` (defaults to `127.0.0.1` -- localhost-only unless you
   loudly say otherwise). Publishes a box port to the host.
-- `[env_from_host]` -- the host-environment passthrough channel (the
-  vault-backed `[[credentials]]` below is the other deliberate
-  host-to-box value channel):
+- `[env_from_host]` -- the deliberate host-to-box value channel:
   `KEY = "env:HOST_VAR"` (a host env var, at runtime),
   `KEY = "git:config.key"` (from `git config`), `KEY = "tz:"` (your
   timezone), `KEY = ""` (disable an inherited entry). Values resolve at
@@ -86,17 +84,29 @@ exceptions noted inline.
   refused here too -- a passthrough lands in the box's environment
   exactly as an `[env]` literal does, so the same reservation applies;
   the deliberate-override route is the `run_args` one below.
-- `[[credentials]]` -- named project credentials: `name`, `kind`
-  (`"env"` or `"file"`), and `target` -- the environment variable that
-  carries the value (for `kind = "file"` it instead holds the in-box
-  path `/run/byre/credentials/<name>`; there are no free filesystem
-  targets). The declaration is the standing, cascade-visible consent to
-  the *set*; values never appear in config -- they live age-encrypted
-  in the host-side project store and are decrypted only at launch,
-  after the passphrase prompt (a declined or non-interactive launch
-  runs without them, with a notice, never a block). Values are set with
-  `byre credentials set` (masked prompt or stdin -- never a
-  command-line argument); layers replace by `name`, `!name` removes.
+  Two more sources make a row a **project credential** rather than a
+  host passthrough -- a value this config carries itself, encrypted:
+  `KEY = "encrypted:<blob>"` arrives as an environment variable, and
+  `KEY = "encrypted-file:<blob>"` arrives as a file on the session
+  tmpfs with `KEY` holding its path. You never type those rows: `byre
+  credentials set KEY` writes one (masked prompt or stdin -- never a
+  command-line argument), and the configuration editor's Env screen
+  writes the same thing. `KEY = ""` in a nearer layer disables an
+  inherited credential like any other row. An env-kind value must be
+  NUL-free and at most 64 KiB; the file-kind ceiling is 256 KiB.
+- `[credentials]` -- written by `byre credentials`, not by hand: the
+  `identity` that opens THIS file's encrypted rows (an age key wrapped
+  under your passphrase) and the cleartext `recipient` new values are
+  encrypted to. The block belongs to the physical file and never merges
+  through the cascade, so a project config can never open a layer's
+  rows. `byre credentials rekey` changes the passphrase and leaves every
+  stored value byte-identical.
+  Delivery is **blocking**: byre asks for one passphrase per config file
+  that contributes a credential, root-most first, and any failure to
+  unlock or decrypt stops the launch naming the file, the row, and the
+  remedy. `byre develop --credentials=skip` launches deliberately
+  without them; `--credentials=stdin` reads passphrases from stdin, one
+  per line.
 - `egress` -- firewall allowlist extensions, `"host[:port]"` (port
   defaults to 443); `"!host[:port]"` closes a door, even a
   skill-declared one. Only meaningful with a network-posture skill
