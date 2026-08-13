@@ -293,6 +293,19 @@ func TestLauncherManifestRejectionsFailClosed(t *testing.T) {
 		{"unknown kind", "GOOD_ONE " + secret + "\n", map[string][]byte{"GOOD_ONE": []byte("z")}, "line 1"},
 		{"value never landed", "GOOD_ONE env\n", nil, "line 1"},
 		{"empty manifest", "", nil, "line 0"},
+		// A manifest cut mid-line: `read` ends the loop on the partial
+		// record without failing, so the rows BEFORE it would export and
+		// the agent would run on a subset. Line 0 is the assertion that
+		// bites — only the whole-file check reports it, so a per-line rule
+		// happening to reject the fragment cannot make this pass.
+		{"truncated final line", "GOOD_ONE env\n" + secret + " en",
+			map[string][]byte{"GOOD_ONE": []byte("z")}, "line 0"},
+		// The same cut landing exactly on a record boundary: every per-line
+		// rule passes, both values are on the tmpfs, and the only thing
+		// separating this from a complete delivery is the missing newline —
+		// and the rows the cut took away, which nothing in the file names.
+		{"truncated on a record boundary", "GOOD_ONE env\nSECOND_KEY env",
+			map[string][]byte{"GOOD_ONE": []byte("z"), "SECOND_KEY": []byte("z")}, "line 0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

@@ -256,6 +256,15 @@ if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
     echo "byre: (re-run \`byre develop\` to deliver them again. To launch deliberately without: \`byre develop --credentials=skip\`.)" >&2
     exit 1
   }
+  # Byre's manifest ends every line, the last one included. A final byte that
+  # is not a newline means the delivery was CUT SHORT -- and `read` would end
+  # the loop on that partial line without failing, exporting only the rows
+  # before it: the partial credential set every rejection below exits over,
+  # reached by silence instead of by a bad line. Refused whole, here, so the
+  # loop only ever sees terminated records.
+  if [ -n "$(tail -c 1 "$CRED_DIR/manifest")" ]; then
+    cred_fail 0 "it does not end in a newline, so the delivery was truncated"
+  fi
   cred_lineno=0
   cred_exported=0
   while read -r cred_key cred_kind; do
