@@ -85,16 +85,22 @@ func addEnvFromHost(env map[string]string, hostEnv []hostEnvResult) {
 }
 
 // providedEnv is the one builder of the "env keys this box actually
-// supplies" set (MCP consumes-X annotations): config literals, plus
-// DELIVERED host passthrough -- a configured source that resolved empty
-// supplies nothing and must not annotate as if it did.
+// supplies" set (MCP consumes-X annotations): config literals, DELIVERED
+// host passthrough -- a configured source that resolved empty supplies
+// nothing and must not annotate as if it did -- and credential rows.
+// A credential counts as provided because the launch is fail-closed on
+// its delivery: a box that refuses the unlock or misses the inject never
+// runs, so every box that EXISTS carries the key (env-kind value, or
+// file-kind path). --credentials=skip is a per-launch choice this
+// standing view cannot see; claiming absence for every launch would be
+// the bigger lie.
 func providedEnv(cfg config.Config, hostEnv []hostEnvResult) map[string]bool {
 	provided := map[string]bool{}
 	for k := range cfg.Env {
 		provided[k] = true
 	}
 	for _, r := range hostEnv {
-		if r.State == hostEnvDelivered {
+		if r.State == hostEnvDelivered || r.State == hostEnvEncrypted {
 			provided[r.Key] = true
 		}
 	}

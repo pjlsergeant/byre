@@ -21,6 +21,7 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 			"WEIRD":           "future:scheme",           // validation refused it upstream; resolves empty
 			"PASSED":          "env:BYRE_TEST_HOSTVAL",   // host var passes through
 			"ABSENT":          "env:BYRE_TEST_NO_SUCH_V", // unset host var: nothing
+			"SECRET":          "encrypted:AAAA",          // credential: its own channel
 		},
 	}
 	// "" for the host git: this case turns on the `git:` source LOSING to an
@@ -36,6 +37,7 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 		"WEIRD":           hostEnvEmpty,
 		"PASSED":          hostEnvDelivered,
 		"ABSENT":          hostEnvEmpty,
+		"SECRET":          hostEnvEncrypted,
 	}
 	for k, w := range want {
 		if states[k] != w {
@@ -52,6 +54,11 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 	provided := providedEnv(cfg, results)
 	if !provided["GIT_AUTHOR_NAME"] || !provided["PASSED"] {
 		t.Errorf("provided must include [env] literals and delivered passthrough: %v", provided)
+	}
+	// A credential row provides its key: the launch is fail-closed on the
+	// delivery, so a box that runs at all carries it.
+	if !provided["SECRET"] {
+		t.Errorf("a credential row must annotate as provided: %v", provided)
 	}
 	if provided["ABSENT"] || provided["WEIRD"] || provided["DISABLED"] {
 		t.Errorf("an undelivered source must NOT annotate as provided: %v", provided)
