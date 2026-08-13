@@ -501,6 +501,48 @@ func TestResolveCarriesTheCascadeCredentialRows(t *testing.T) {
 }
 
 // ttyStreamsWith is ttyStreams with a stdin the stdin-mode unlock can read.
+// `byre dockerrun` prints what develop would run — and for a project with
+// declared credentials, what develop runs is a box ARMED to fail closed
+// without them. A printed command that omitted the arming would hand the
+// user a silent credential-less launch, so the gate rides the argv and the
+// stderr note explains it, exactly as the firewall's does.
+func TestDockerRunCarriesTheCredentialGate(t *testing.T) {
+	_, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	passphraseSeam(t, "pw", "pw", "sk-live-9")
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	s, out, runErr := testStreams("", false)
+	if err := DockerRun(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	cmd := out.String()
+	for _, want := range []string{"-e BYRE_CRED_EXPECT=1", credTmpfsTarget} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("the printed command must carry %q so the box fails closed:\n%s", want, cmd)
+		}
+	}
+	if strings.Contains(cmd, "credential gate") {
+		t.Error("the note must not pollute stdout")
+	}
+	if !strings.Contains(runErr.String(), "credential gate") || !strings.Contains(runErr.String(), "byre develop") {
+		t.Fatalf("dockerrun must say the box stops at its credential gate: %q", runErr.String())
+	}
+}
+
+// No declared credentials, no gate and no note.
+func TestDockerRunWithoutCredentialsStaysQuiet(t *testing.T) {
+	_, proj := testPaths(t)
+	s, out, errBuf := testStreams("", false)
+	if err := DockerRun(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "BYRE_CRED_EXPECT") || strings.Contains(errBuf.String(), "credential gate") {
+		t.Fatalf("unarmed project got a credential gate:\n%s\n%s", out.String(), errBuf.String())
+	}
+}
+
 func ttyStreamsWith(errBuf *bytes.Buffer, stdin string) Streams {
 	return Streams{Out: io.Discard, Err: errBuf, In: strings.NewReader(stdin + "\n"), TTY: false}
 }

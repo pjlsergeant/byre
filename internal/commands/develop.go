@@ -422,7 +422,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 		// container: a bare restart finds the emptied tmpfs, waits out the
 		// bound, and refuses — the restart refusal, by the same stateless
 		// handshake the network gate uses.
-		params.Env["BYRE_CRED_EXPECT"] = "1"
+		params.Env["BYRE_CRED_EXPECT"] = credExpectFlag
 	}
 	// Netns-hook plumbing is decided before the container exists: the
 	// per-invocation nonce label is the hooks' ownership proof (see naming.go)

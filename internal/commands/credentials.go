@@ -383,6 +383,13 @@ func credStream(p credPayload) []byte {
 	return b.Bytes()
 }
 
+// credExpectFlag is what BYRE_CRED_EXPECT carries. The launcher reads it as a
+// flag, not a count ("wait bounded for .done, then export from the
+// manifest"), and every renderer of the run argv — develop's create and the
+// `byre dockerrun` ejection — must spell it the same way, or the ejected
+// command is not the command develop runs.
+const credExpectFlag = "1"
+
 // credTmpfs sizes the session tmpfs for the deliverable set: the payload
 // plus fixed headroom, so an fs-metadata surprise never truncates a value.
 func credTmpfs(p credPayload, ident runner.Identity, eng runner.Engine) runner.TmpfsMount {
@@ -391,6 +398,24 @@ func credTmpfs(p credPayload, ident runner.Identity, eng runner.Engine) runner.T
 		total += int64(len(v))
 	}
 	total += int64(len(p.manifest))
+	return credTmpfsFor(total, ident, eng)
+}
+
+// credTmpfsDeclared sizes the same mount from the DECLARED rows, for the
+// ejection render — which holds no passphrase and so has no plaintext to
+// measure. An age ciphertext is never shorter than its plaintext, so the blob
+// lengths bound the delivery from above.
+func credTmpfsDeclared(groups []config.CredentialFile, ident runner.Identity, eng runner.Engine) runner.TmpfsMount {
+	var total int64
+	for _, g := range groups {
+		for _, r := range g.Rows {
+			total += int64(len(r.Blob))
+		}
+	}
+	return credTmpfsFor(total, ident, eng)
+}
+
+func credTmpfsFor(total int64, ident runner.Identity, eng runner.Engine) runner.TmpfsMount {
 	return runner.TmpfsMount{
 		Target: credTmpfsTarget,
 		Size:   total + (1 << 20),

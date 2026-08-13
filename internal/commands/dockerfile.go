@@ -98,6 +98,20 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
+	// Declared credentials arm the box's own fail-CLOSED wait, and that
+	// arming lives on the run argv (BYRE_CRED_EXPECT plus the session tmpfs
+	// the receiver writes and the launcher reads). Rendered here for the same
+	// reason the firewall gets its note: a printed command that omitted them
+	// would launch a box that declares credentials and never waits for any —
+	// a silent credential-less run, from the one command whose whole contract
+	// is that it prints what develop would run. develop adds these under the
+	// setup lock, after this function's argv is built, so they cannot be
+	// inherited from there.
+	credRows := credentialRowCount(rv.credFiles)
+	if credRows > 0 {
+		params.Tmpfs = append(params.Tmpfs, credTmpfsDeclared(rv.credFiles, ident, runner.Engine(engine)))
+		params.Env["BYRE_CRED_EXPECT"] = credExpectFlag
+	}
 	argv := append([]string{engine}, runner.RunArgs(params)...)
 	fmt.Fprintln(s.Out, shellCommand(argv))
 	// Ejection legibility (ADR 0019): with the firewall enabled, this command
@@ -105,6 +119,14 @@ func DockerRun(s Streams, projectDir string) error {
 	// copy-pasteable stdout line stays clean.
 	if len(rv.skills.NetnsInits()) > 0 {
 		fmt.Fprintln(s.Err, "byre: note — this project runs a firewall byre applies at launch; started with just this command, the box fails closed at its launch gate (~30s). `byre ejectfirewall` prints the netns helper to run alongside it.")
+	}
+	// The credential twin of that note: byre delivers the values after start,
+	// over an exec into the box, and nothing outside byre does.
+	if credRows > 0 {
+		fmt.Fprintf(s.Err, "byre: note — this project declares %d credential row(s) byre delivers after launch; started with just this command, the box stops at its credential gate (~20s). Deliver them with `byre develop`, or drop the -e BYRE_CRED_EXPECT and the /run/byre tmpfs to launch deliberately without them.\n", credRows)
+	}
+	if rv.credErr != nil {
+		fmt.Fprintf(s.Err, "byre: note — byre cannot read this project's credential rows (%v), so this command carries no credential gate; `byre develop` refuses the launch outright.\n", rv.credErr)
 	}
 	return nil
 }
